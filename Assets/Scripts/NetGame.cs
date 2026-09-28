@@ -24,8 +24,8 @@ namespace RockGame
         public readonly NetworkVariable<FixedString128Bytes> EndReason = new NetworkVariable<FixedString128Bytes>();
 
         public readonly NetworkList<DroppedSpear> Spears = new NetworkList<DroppedSpear>();
-
-        public const float SuddenDeathLength = 180f;
+        /// <summary>The host's game settings (Cfg tunables), applied on the client.</summary>
+        public readonly NetworkVariable<FixedString4096Bytes> Tunables = new NetworkVariable<FixedString4096Bytes>();
 
         int m_NextSpearId = 1;
         float m_NextSpearCheck;
@@ -39,8 +39,13 @@ namespace RockGame
         {
             Instance = this;
             State.OnValueChanged += OnStateChanged;
+            Tunables.OnValueChanged += OnTunablesChanged;
+            if (!IsServer) Cfg.Apply(Tunables.Value.ToString());
             if (IsServer)
             {
+                var data = Cfg.Serialize();
+                if (System.Text.Encoding.UTF8.GetByteCount(data) < 4000) Tunables.Value = new FixedString4096Bytes(data);
+                else Debug.LogError("[RockGame] Settings too large to sync: " + data.Length);
                 BuildGrid.Registry.Clear();
                 SpawnNodes();
                 NetworkManager.OnClientDisconnectCallback += OnClientDisconnect;
@@ -50,10 +55,23 @@ namespace RockGame
         public override void OnNetworkDespawn()
         {
             State.OnValueChanged -= OnStateChanged;
+            Tunables.OnValueChanged -= OnTunablesChanged;
             if (IsServer && NetworkManager != null) NetworkManager.OnClientDisconnectCallback -= OnClientDisconnect;
             if (Instance == this) Instance = null;
             foreach (var v in m_SpearVisuals.Values) if (v) Destroy(v);
             m_SpearVisuals.Clear();
+        }
+
+        void OnTunablesChanged(FixedString4096Bytes prev, FixedString4096Bytes cur)
+        {
+            if (!IsServer) Cfg.Apply(cur.ToString());
+        }
+
+        [Rpc(SendTo.ClientsAndHost)]
+        public void FxRpc(byte kind, Vector3 pos, Vector3 dir, ulong skipClient)
+        {
+            if (NetworkManager.LocalClientId == skipClient) return;
+            Fx.Play((FxKind)kind, pos, dir);
         }
 
         void OnStateChanged(byte prev, byte cur)
@@ -118,7 +136,7 @@ namespace RockGame
         void StartSuddenDeath()
         {
             if (Ball.Instance != null && Ball.Instance.IsSpawned) Ball.Instance.NetworkObject.Despawn(true);
-            SetPhase(GameState.SuddenDeath, SuddenDeathLength);
+            SetPhase(GameState.SuddenDeath, Cfg.SuddenDeathLength);
             foreach (var p in PlayerNet.All) p.ServerEnterArena();
             Broadcast("Nobody had the ball in their base - SUDDEN DEATH!");
         }
@@ -244,10 +262,10 @@ namespace RockGame
             var rng = new System.Random(1337);
             float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
             var placed = new List<Vector3>();
-            int trees = 24, stones = 18;
-            for (int n = 0; n < trees + stones; n++)
+            int trees = 24, stones = 18, bushes = 10;
+            for (int n = 0; n < trees + stones + bushes; n++)
             {
-                byte kind = n < trees ? ResourceNode.Tree : ResourceNode.Boulder;
+                byte kind = n < trees ? ResourceNode.Tree : n < trees + stones ? ResourceNode.Boulder : ResourceNode.Bush;
                 for (int attempt = 0; attempt < 60; attempt++)
                 {
                     var p = new Vector3(R(-Cfg.MapHalf + 8, Cfg.MapHalf - 8), 0, R(-Cfg.MapHalf + 8, -5f));

@@ -15,7 +15,7 @@ namespace RockGame
         public static Bootstrap I;
         public static bool Solo, Fast;
 
-        public GameObject playerPrefab, netGamePrefab, structurePrefab, nodePrefab, ballPrefab;
+        public GameObject playerPrefab, netGamePrefab, structurePrefab, nodePrefab, ballPrefab, containerPrefab;
         public Material baseMaterial, ghostMaterial;
 
         [HideInInspector] public string Ip = "127.0.0.1", Port = "7777", Status = "";
@@ -30,6 +30,7 @@ namespace RockGame
         void Awake()
         {
             I = this;
+            Cfg.LoadPrefs();
             Application.targetFrameRate = 144;
             Application.runInBackground = true;
             MapBuilder.Build();
@@ -39,7 +40,7 @@ namespace RockGame
         {
             m_Nm = GetComponent<NetworkManager>();
             m_Ut = GetComponent<UnityTransport>();
-            foreach (var p in new[] { playerPrefab, netGamePrefab, structurePrefab, nodePrefab, ballPrefab })
+            foreach (var p in new[] { playerPrefab, netGamePrefab, structurePrefab, nodePrefab, ballPrefab, containerPrefab })
                 if (p != null && !m_Nm.NetworkConfig.Prefabs.Contains(p)) m_Nm.AddNetworkPrefab(p);
 
             m_Nm.NetworkConfig.ConnectionApproval = true;
@@ -94,6 +95,7 @@ namespace RockGame
         {
             foreach (var a in FindObjectsByType<ArrowProjectile>(FindObjectsSortMode.None)) Destroy(a.gameObject);
             Hud.Clear();
+            Cfg.LoadPrefs(); // drop the host's settings, back to our own
         }
 
         void Approve(NetworkManager.ConnectionApprovalRequest req, NetworkManager.ConnectionApprovalResponse resp)

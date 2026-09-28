@@ -15,6 +15,7 @@ namespace RockGame
         bool m_Report, m_Stuck, m_Spear;
         float m_Life = 6f;
         float m_Gravity = Cfg.ArrowGravity;
+        float m_Power = 1f;
 
         public static void Spawn(Vector3 pos, Vector3 vel, PlayerNet shooter, bool report)
         {
@@ -29,6 +30,7 @@ namespace RockGame
             a.m_Shooter = shooter;
             a.m_ShooterRoot = shooter != null ? shooter.transform : null;
             a.m_Report = report;
+            a.m_Power = Mathf.Clamp01(vel.magnitude / Mathf.Max(1f, Cfg.ArrowSpeed));
         }
 
         /// <summary>Thrown spear. The shooter's copy reports where it landed / who it hit; the networked dropped
@@ -46,6 +48,7 @@ namespace RockGame
             a.m_Spear = true;
             a.m_Gravity = Cfg.SpearGravity;
             a.m_Life = 8f;
+            a.m_Power = Mathf.Clamp01(vel.magnitude / Mathf.Max(1f, Cfg.SpearThrowSpeed));
         }
 
         void Update()
@@ -55,7 +58,7 @@ namespace RockGame
             {
                 // spear flew for ages without hitting anything: let the server drop it where it is
                 if (m_Spear && !m_Stuck && m_Report && m_Shooter != null && m_Shooter.IsSpawned)
-                    m_Shooter.SpearLandRpc(false, default, transform.position, m_Vel.normalized, false);
+                    m_Shooter.SpearLandRpc(false, default, transform.position, m_Vel.normalized);
                 Destroy(gameObject);
                 return;
             }
@@ -84,15 +87,17 @@ namespace RockGame
 
         void OnHit(RaycastHit h)
         {
+            var no = h.collider.GetComponentInParent<NetworkObject>();
+            var dir = m_Vel.normalized;
+            bool reporter = m_Report && m_Shooter != null && m_Shooter.IsSpawned;
+            if (reporter) PredictHit(no, h, dir);
+
             if (m_Spear)
             {
-                if (m_Report && m_Shooter != null && m_Shooter.IsSpawned)
+                if (reporter)
                 {
-                    var sno = h.collider.GetComponentInParent<NetworkObject>();
-                    bool shead = false;
-                    if (sno != null && sno.TryGetComponent(out PlayerNet sp)) shead = h.point.y > sp.transform.position.y + 1.4f;
-                    if (sno != null) m_Shooter.SpearLandRpc(true, sno, h.point, m_Vel.normalized, shead);
-                    else m_Shooter.SpearLandRpc(false, default, h.point, m_Vel.normalized, false);
+                    if (no != null) m_Shooter.SpearLandRpc(true, no, h.point, dir);
+                    else m_Shooter.SpearLandRpc(false, default, h.point, dir);
                 }
                 Destroy(gameObject);
                 return;
@@ -100,16 +105,20 @@ namespace RockGame
             m_Stuck = true;
             m_Life = 5f;
             transform.position = h.point - transform.forward * 0.1f;
-            var no = h.collider.GetComponentInParent<NetworkObject>();
             if (no != null) transform.SetParent(no.transform, true);
+            if (no == null || no.GetComponent<PlayerNet>() == null) Sfx.Play(Sfx.Thud, h.point, 0.4f);
+            if (reporter && no != null) m_Shooter.ArrowHitRpc(no, h.point, dir);
+        }
 
-            if (m_Report && m_Shooter != null && m_Shooter.IsSpawned && no != null)
-            {
-                bool head = false;
-                var p = no.GetComponent<PlayerNet>();
-                if (p != null) head = h.point.y > p.transform.position.y + 1.4f;
-                m_Shooter.ArrowHitRpc(no, h.point, head);
-            }
+        /// <summary>Shooter-side instant feedback (the server confirms kills).</summary>
+        void PredictHit(NetworkObject no, RaycastHit h, Vector3 dir)
+        {
+            if (no == null || !no.TryGetComponent(out PlayerNet p) || p == m_Shooter || p.Dead.Value) return;
+            bool head = p.IsHeadshot(h.point);
+            float dmg = (m_Spear ? Cfg.SpearThrowDamage : Cfg.ArrowPlayerDamage) * m_Power * (head ? Cfg.HeadshotMul : 1f);
+            Fx.Blood(h.point, dir, head);
+            Fx.DamageNumber(h.point, dmg, head);
+            Hud.HitMarker(false, head);
         }
     }
 }

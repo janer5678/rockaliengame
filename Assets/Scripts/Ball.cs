@@ -15,6 +15,7 @@ namespace RockGame
         Rigidbody m_Rb;
         Collider m_Col;
         Transform m_Visual;
+        GameObject m_Mesh;
         GameObject m_Beacon;
         Renderer m_BeaconRenderer;
         Light m_Light;
@@ -40,9 +41,7 @@ namespace RockGame
 
             m_Visual = new GameObject("visual").transform;
             m_Visual.SetParent(transform, false);
-            Art.Part(m_Visual, Art.Ico, new Color(1f, 0.85f, 0.15f), Vector3.zero, Vector3.one * 0.62f, default, false, null, "ball");
-            Art.Box(m_Visual, new Color(0.9f, 0.5f, 0.1f), Vector3.zero, new Vector3(1.28f, 0.12f, 0.12f));
-            Art.Box(m_Visual, new Color(0.9f, 0.5f, 0.1f), Vector3.zero, new Vector3(0.12f, 0.12f, 1.28f));
+            m_Mesh = ItemModels.CreateBall(m_Visual, 1.24f);
 
             var lightGo = new GameObject("glow");
             lightGo.transform.SetParent(m_Visual, false);
@@ -98,18 +97,21 @@ namespace RockGame
 
         void LateUpdate()
         {
-            // Clients: render the carried ball exactly over the carrier's head (avoids interpolation lag)
+            // Clients: render the carried ball in the carrier's arms (avoids interpolation lag).
+            // The carrier themselves sees it in their first-person hands instead.
             var carrier = Carrier;
             if (carrier != null)
             {
-                m_Visual.position = carrier.transform.position + Vector3.up * 2.4f;
-                m_Visual.rotation = Quaternion.Euler(0, Time.time * 90f, 0);
+                m_Visual.position = CarryPoint(carrier);
+                m_Visual.rotation = carrier.transform.rotation;
             }
             else
             {
                 m_Visual.localPosition = Vector3.zero;
                 m_Visual.localRotation = Quaternion.identity;
             }
+            bool show = carrier == null || !carrier.IsOwner;
+            if (m_Mesh.activeSelf != show) m_Mesh.SetActive(show);
         }
 
         void ServerTick()
@@ -124,7 +126,7 @@ namespace RockGame
                 else
                 {
                     m_Rb.isKinematic = true;
-                    transform.position = c.transform.position + Vector3.up * 2.4f;
+                    transform.position = CarryPoint(c);
                 }
             }
 
@@ -139,6 +141,9 @@ namespace RockGame
             if (!IsCarried && p.y < 30f) team = (sbyte)Cfg.BaseTeamAt(p);
             if (BaseTeam.Value != team) BaseTeam.Value = team;
         }
+
+        public static Vector3 CarryPoint(PlayerNet p) =>
+            p.transform.position + p.transform.forward * 0.6f + Vector3.up * (p.Crouch.Value ? 0.8f : 1.15f);
 
         public void ServerReset()
         {
@@ -162,7 +167,7 @@ namespace RockGame
             CarrierId.Value = NoCarrier;
             transform.position = pos;
             m_Rb.isKinematic = false;
-            m_Rb.linearVelocity = Vector3.ClampMagnitude(vel, 12f);
+            m_Rb.linearVelocity = Vector3.ClampMagnitude(vel, 40f);
         }
     }
 }

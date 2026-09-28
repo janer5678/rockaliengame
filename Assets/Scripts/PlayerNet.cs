@@ -8,6 +8,7 @@ namespace RockGame
     /// <summary>
     /// Networked player state + all server-side validation of player actions.
     /// Movement is owner-authoritative (NetworkTransform in Owner mode), everything else is server-authoritative.
+    /// Inventory: slots 0..6 are the hotbar, 7..27 the main inventory.
     /// </summary>
     public class PlayerNet : NetworkBehaviour
     {
@@ -19,51 +20,53 @@ namespace RockGame
         public readonly NetworkVariable<float> Health = new NetworkVariable<float>(Cfg.MaxHealth);
         public readonly NetworkVariable<bool> Dead = new NetworkVariable<bool>();
         public readonly NetworkVariable<double> RespawnAt = new NetworkVariable<double>();
-        public readonly NetworkVariable<int> Wood = new NetworkVariable<int>();
-        public readonly NetworkVariable<int> Stone = new NetworkVariable<int>();
-        public readonly NetworkVariable<int> Arrows = new NetworkVariable<int>();
-        public readonly NetworkVariable<int> OwnedMask = new NetworkVariable<int>();
-        public readonly NetworkVariable<int> Spears = new NetworkVariable<int>();
-        public readonly NetworkVariable<int> RamCharges = new NetworkVariable<int>();  // strikes left on the ram
         public readonly NetworkVariable<int> StuckSpears = new NetworkVariable<int>(); // thrown spears stuck in this player
+        public readonly NetworkList<ItemStack> Inv = new NetworkList<ItemStack>();
 
         // ---- owner-written state ----
-        public readonly NetworkVariable<byte> Held = new NetworkVariable<byte>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
+        public readonly NetworkVariable<byte> HeldSlot = new NetworkVariable<byte>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
         public readonly NetworkVariable<float> Pitch = new NetworkVariable<float>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
+        public readonly NetworkVariable<bool> Crouch = new NetworkVariable<bool>(false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
 
-        public Item HeldItem => (Item)Held.Value;
+        public ItemStack SlotAt(int i) => i >= 0 && i < Inv.Count ? Inv[i] : default;
+        public ItemStack HeldStack => SlotAt(HeldSlot.Value);
+        public Item HeldItem => HeldStack.Id; // None = empty hands (fists)
+        public int Count(Item id) => Inv.Count > 0 ? InvOps.Count(Inv, id) : 0;
         public bool CarryingBall => Ball.Instance != null && Ball.Instance.CarrierId.Value == NetworkObjectId;
-        public Vector3 EyePos => transform.position + Vector3.up * Cfg.EyeHeight;
+        public float EyeHeight => Crouch.Value ? Cfg.CrouchEyeHeight : Cfg.EyeHeight;
+        public Vector3 EyePos => transform.position + Vector3.up * EyeHeight;
+        public bool IsHeadshot(Vector3 point) => point.y > transform.position.y + (Crouch.Value ? 0.85f : 1.35f);
 
-        public bool Owns(Item i)
+        /// <summary>First hotbar slot holding this item, or -1.</summary>
+        public int HotbarSlotOf(Item id)
         {
-            switch (i)
-            {
-                case Item.Rock: return true;
-                case Item.Spear: return Spears.Value > 0;
-                case Item.Ram: return RamCharges.Value > 0;
-                default: return (OwnedMask.Value & (1 << (int)i)) != 0;
-            }
+            for (int i = 0; i < Cfg.HotbarSize; i++) if (SlotAt(i).Id == id) return i;
+            return -1;
         }
 
         // ---- visuals ----
         CharacterController m_CC;
         Transform m_VisualRoot, m_Head, m_Hand;
         GameObject m_HandItem;
+        Item m_HandItemId = (Item)255;
         readonly List<Renderer> m_TeamRenderers = new List<Renderer>();
         readonly List<Material> m_TeamMats = new List<Material>();
         readonly List<GameObject> m_StuckVisuals = new List<GameObject>();
-        float m_Swing;
+        float m_Swing, m_CrouchVis;
 
         public override void OnNetworkSpawn()
         {
             All.Add(this);
             m_CC = GetComponent<CharacterController>();
             if (IsServer)
+            {
                 Team.Value = (byte)(OwnerClientId == NetworkManager.ServerClientId ? 0 : 1);
+                Health.Value = Cfg.MaxHealth;
+                for (int i = 0; i < Cfg.PlayerSlots; i++) Inv.Add(default);
+                ServerGive(Item.Rock, 1);
+            }
 
             BuildBody();
-            Held.OnValueChanged += OnHeldChanged;
             Team.OnValueChanged += OnTeamChanged;
             if (IsOwner)
             {
@@ -76,12 +79,10 @@ namespace RockGame
         public override void OnNetworkDespawn()
         {
             All.Remove(this);
-            Held.OnValueChanged -= OnHeldChanged;
             Team.OnValueChanged -= OnTeamChanged;
             if (Local == this) Local = null;
         }
 
-        void OnHeldChanged(byte prev, byte cur) => RebuildHandItem();
         void OnTeamChanged(byte prev, byte cur) => Recolor();
 
         void BuildBody()
@@ -96,7 +97,6 @@ namespace RockGame
             m_Hand.SetParent(m_VisualRoot, false);
             m_Hand.localPosition = new Vector3(0.45f, 0.85f, 0.15f); // the alien's right hand
             Recolor();
-            RebuildHandItem();
         }
 
         /// <summary>PSX grey alien (Assets/Game/Resources/Alien, CC0 by surt). Body tinted in the team colour.</summary>
@@ -134,10 +134,7 @@ namespace RockGame
         {
             var torso = Art.Part(m_VisualRoot, Art.Capsule, Color.white, new Vector3(0, 0.85f, 0), new Vector3(0.75f, 0.8f, 0.6f));
             m_TeamRenderers.Add(torso.GetComponent<Renderer>());
-            Art.Box(m_VisualRoot, new Color(0.25f, 0.2f, 0.18f), new Vector3(0, 0.95f, 0), new Vector3(0.78f, 0.12f, 0.64f)); // belt
             Art.Box(m_Head, new Color(0.93f, 0.76f, 0.6f), Vector3.zero, new Vector3(0.42f, 0.42f, 0.42f));
-            Art.Box(m_Head, Color.black, new Vector3(-0.09f, 0.05f, 0.21f), new Vector3(0.07f, 0.07f, 0.02f));
-            Art.Box(m_Head, Color.black, new Vector3(0.09f, 0.05f, 0.21f), new Vector3(0.07f, 0.07f, 0.02f));
             var band = Art.Box(m_Head, Color.white, new Vector3(0, 0.17f, 0), new Vector3(0.45f, 0.1f, 0.45f));
             m_TeamRenderers.Add(band.GetComponent<Renderer>());
         }
@@ -175,10 +172,11 @@ namespace RockGame
             }
         }
 
-        void RebuildHandItem()
+        void RebuildHandItem(Item item)
         {
             if (m_HandItem) Destroy(m_HandItem);
-            m_HandItem = ItemModels.Create(HeldItem, m_Hand);
+            m_HandItemId = item;
+            m_HandItem = ItemModels.Create(item, m_Hand);
             m_HandItem.transform.localRotation = Quaternion.Euler(20, 0, 0);
             if (IsOwner) Art.SetLayerShadowsOnly(m_HandItem);
         }
@@ -188,6 +186,19 @@ namespace RockGame
             bool alive = !Dead.Value;
             if (m_VisualRoot.gameObject.activeSelf != alive) m_VisualRoot.gameObject.SetActive(alive);
             if (m_CC.enabled != alive) m_CC.enabled = alive;
+
+            // crouch: collider (so hits line up on every peer) + squashed body
+            float h = Crouch.Value ? Cfg.CrouchHeight : Cfg.StandHeight;
+            if (!Mathf.Approximately(m_CC.height, h))
+            {
+                m_CC.height = h;
+                m_CC.center = new Vector3(0, h * 0.5f, 0);
+            }
+            m_CrouchVis = Mathf.MoveTowards(m_CrouchVis, Crouch.Value ? 1f : 0f, Time.deltaTime * 6f);
+            m_VisualRoot.localScale = new Vector3(1f, Mathf.Lerp(1f, 0.68f, m_CrouchVis), 1f);
+
+            var held = CarryingBall ? Item.None : HeldItem;
+            if (held != m_HandItemId) RebuildHandItem(held);
             if (m_StuckVisuals.Count != Mathf.Min(StuckSpears.Value, k_StuckPos.Length)) RebuildStuckSpears();
             if (!IsOwner) m_Head.localRotation = Quaternion.Euler(Pitch.Value * 0.6f, 0, 0);
             if (m_Swing > 0)
@@ -207,12 +218,36 @@ namespace RockGame
         // Server-side logic
         // =====================================================================
 
-        float m_NextMelee, m_NextShot, m_NextBuild, m_NextUpgrade, m_NextThrow, m_NextRam;
+        float m_NextMelee, m_NextShot, m_NextBuild, m_NextUpgrade, m_NextThrow, m_NextRam, m_NextEat, m_NextFullMsg;
         readonly Queue<float> m_PendingArrows = new Queue<float>();
         readonly Queue<float> m_PendingSpears = new Queue<float>();
 
         bool GameAllowsCombat => NetGame.Instance == null || NetGame.Instance.S != GameState.GameOver;
         bool InSuddenDeath => NetGame.Instance != null && NetGame.Instance.S == GameState.SuddenDeath;
+
+        /// <summary>Server: give items; returns how many didn't fit.</summary>
+        public int ServerGive(Item id, int count, int data = 0)
+        {
+            int left = InvOps.Add(Inv, id, count, data, true);
+            if (left > 0 && Time.time >= m_NextFullMsg)
+            {
+                m_NextFullMsg = Time.time + 2f;
+                Notify("Inventory full!");
+            }
+            return left;
+        }
+
+        void ServerClearSlot(int i)
+        {
+            if (i >= 0 && i < Inv.Count) Inv[i] = default;
+        }
+
+        void ServerConsumeHeld(int n = 1)
+        {
+            var s = HeldStack;
+            if (s.Empty) return;
+            Inv[HeldSlot.Value] = s.WithCount(s.Count - n);
+        }
 
         public void ServerDamage(float dmg, PlayerNet attacker)
         {
@@ -225,8 +260,19 @@ namespace RockGame
         {
             Dead.Value = true;
             Health.Value = 0;
-            ServerDropStuckSpears();
             if (CarryingBall) Ball.Instance.ServerDrop(transform.position + Vector3.up * 1.5f, Vector3.up * 3f);
+
+            // everything goes into a loot bag
+            var items = new List<ItemStack>();
+            for (int i = 0; i < Inv.Count; i++)
+            {
+                if (!Inv[i].Empty) items.Add(Inv[i]);
+                Inv[i] = default;
+            }
+            for (int i = 0; i < StuckSpears.Value; i++) items.Add(ItemStack.Of(Item.Spear, 1));
+            StuckSpears.Value = 0;
+            if (items.Count > 0) Container.SpawnBag(transform.position, Team.Value, items);
+
             RespawnAt.Value = NetworkManager.ServerTime.Time + Cfg.RespawnTime;
             var victimName = Cfg.TeamName[Team.Value];
             if (NetGame.Instance != null)
@@ -239,6 +285,7 @@ namespace RockGame
         public void ServerRespawn()
         {
             Health.Value = Cfg.MaxHealth;
+            if (Count(Item.Rock) == 0) ServerGive(Item.Rock, 1);
             NetGame.SpawnPoint(Team.Value, false, out var pos, out var yaw);
             TeleportRpc(pos, yaw);
             Dead.Value = false;
@@ -247,36 +294,32 @@ namespace RockGame
         public void ServerEnterArena()
         {
             if (CarryingBall) Ball.Instance.ServerDrop(transform.position, Vector3.zero);
-            ServerDropStuckSpears();
+            if (StuckSpears.Value > 0) { ServerGive(Item.Spear, StuckSpears.Value); StuckSpears.Value = 0; }
+            if (Count(Item.Rock) == 0 && ServerGive(Item.Rock, 1) > 0) Inv[0] = ItemStack.Of(Item.Rock, 1); // rocks only - always have one
             Health.Value = Cfg.MaxHealth;
             Dead.Value = false;
             NetGame.SpawnPoint(Team.Value, true, out var pos, out var yaw);
             TeleportRpc(pos, yaw);
         }
 
-        void Notify(string msg) => NotifyRpc(new FixedString128Bytes(msg));
-
-        /// <summary>Spears stuck in this player fall out onto the ground (death / arena teleport).</summary>
-        void ServerDropStuckSpears()
-        {
-            var g = NetGame.Instance;
-            for (int i = 0; i < StuckSpears.Value && g != null; i++)
-            {
-                float a = i * 2.1f;
-                var tip = transform.position + new Vector3(Mathf.Cos(a) * 0.6f, 0.05f, Mathf.Sin(a) * 0.6f);
-                g.ServerDropSpear(tip, new Vector3(-Mathf.Sin(a), -0.15f, Mathf.Cos(a)));
-            }
-            StuckSpears.Value = 0;
-        }
+        void Notify(string msg) => NotifyRpc(new FixedString128Bytes(msg.Length > 120 ? msg.Substring(0, 120) : msg));
 
         // ---------------- combat ----------------
 
+        void ServerHitPlayer(PlayerNet p, float baseDamage, Vector3 point, Vector3 dir)
+        {
+            bool head = p.IsHeadshot(point);
+            p.ServerDamage(baseDamage * (head ? Cfg.HeadshotMul : 1f), this);
+            Fx.Server(head ? FxKind.BloodHead : FxKind.Blood, point, dir, OwnerClientId);
+            if (p.Dead.Value) KillConfirmRpc();
+        }
+
         [Rpc(SendTo.Server)]
-        public void MeleeRpc(bool hasTarget, NetworkObjectReference target, Vector3 point, bool head)
+        public void MeleeRpc(bool hasTarget, NetworkObjectReference target, Vector3 point, bool weak)
         {
             if (Dead.Value || CarryingBall) return;
             var item = HeldItem;
-            if (!Cfg.IsMelee(item) || !Owns(item)) return;
+            if (!Cfg.IsMelee(item)) return;
             if (InSuddenDeath && item != Item.Rock) return;
             var st = Cfg.Melee(item);
             if (Time.time < m_NextMelee) return;
@@ -285,35 +328,44 @@ namespace RockGame
 
             if (!hasTarget || !target.TryGet(out var no)) return;
             if (Vector3.Distance(EyePos, point) > st.Range + 2f) return;
+            var dir = (point - EyePos).normalized;
 
             if (no.TryGetComponent(out PlayerNet p))
             {
                 if (p == this || p.Dead.Value || !GameAllowsCombat) return;
-                p.ServerDamage(st.PlayerDamage * (head ? Cfg.HeadshotMul : 1f), this);
-                HitMarkerRpc(p.Dead.Value);
+                ServerHitPlayer(p, st.PlayerDamage, point, dir);
             }
             else if (no.TryGetComponent(out ResourceNode n))
             {
+                if (n.IsBush) return;
+                weak = weak && n.IsWeakSpotHit(point, 0.8f);
                 bool tree = n.Kind.Value == ResourceNode.Tree;
-                int got = n.ServerHarvest(Mathf.RoundToInt(tree ? st.WoodGather : st.StoneGather));
-                if (tree) Wood.Value += got; else Stone.Value += got;
+                int got = n.ServerHarvest(Mathf.RoundToInt(tree ? st.WoodGather : st.StoneGather), weak, transform.position);
+                if (got > 0) ServerGive(n.Yield, got);
+                Fx.Server(tree ? FxKind.WoodChips : FxKind.StoneChips, point, -dir, OwnerClientId);
+                if (weak) Fx.Server(FxKind.WeakSpot, point, -dir, OwnerClientId);
             }
             else if (no.TryGetComponent(out Structure s))
             {
                 if (s.Team.Value == Team.Value || !GameAllowsCombat) return;
                 float dmg = st.StructureDamage * (s.Tier.Value == 1 ? Cfg.StoneStructureMeleeMul : 1f);
                 s.ServerDamage(dmg);
-                HitMarkerRpc(false);
+                Fx.Server(FxKind.StructureHit, point, -dir, OwnerClientId);
+            }
+            else if (no.TryGetComponent(out Container c))
+            {
+                if (c.IsBag || c.Team.Value == Team.Value || !GameAllowsCombat) return;
+                c.ServerDamage(st.StructureDamage);
+                Fx.Server(FxKind.StructureHit, point, -dir, OwnerClientId);
             }
         }
 
         [Rpc(SendTo.Server)]
         public void FireArrowRpc(Vector3 origin, Vector3 velocity)
         {
-            if (Dead.Value || CarryingBall || InSuddenDeath || HeldItem != Item.Bow || !Owns(Item.Bow) || Arrows.Value <= 0) return;
-            if (Time.time < m_NextShot) return;
+            if (Dead.Value || CarryingBall || InSuddenDeath || HeldItem != Item.Bow) return;
+            if (Time.time < m_NextShot || !InvOps.Remove(Inv, Item.Arrow, 1)) return;
             m_NextShot = Time.time + 0.3f;
-            Arrows.Value--;
             float power = Mathf.Clamp01(velocity.magnitude / Cfg.ArrowSpeed);
             m_PendingArrows.Enqueue(power);
             while (m_PendingArrows.Count > 6) m_PendingArrows.Dequeue();
@@ -321,7 +373,7 @@ namespace RockGame
         }
 
         [Rpc(SendTo.Server)]
-        public void ArrowHitRpc(NetworkObjectReference target, Vector3 point, bool head)
+        public void ArrowHitRpc(NetworkObjectReference target, Vector3 point, Vector3 dir)
         {
             if (m_PendingArrows.Count == 0) return;
             float power = m_PendingArrows.Dequeue();
@@ -329,8 +381,7 @@ namespace RockGame
             if (no.TryGetComponent(out PlayerNet p))
             {
                 if (p == this || p.Dead.Value) return;
-                p.ServerDamage(Cfg.ArrowPlayerDamage * power * (head ? Cfg.HeadshotMul : 1f), this);
-                HitMarkerRpc(p.Dead.Value);
+                ServerHitPlayer(p, Cfg.ArrowPlayerDamage * power, point, dir);
             }
             else if (no.TryGetComponent(out Structure s))
             {
@@ -344,10 +395,10 @@ namespace RockGame
         [Rpc(SendTo.Server)]
         public void ThrowSpearRpc(Vector3 origin, Vector3 velocity)
         {
-            if (Dead.Value || CarryingBall || InSuddenDeath || HeldItem != Item.Spear || Spears.Value <= 0) return;
+            if (Dead.Value || CarryingBall || InSuddenDeath || HeldItem != Item.Spear) return;
             if (Time.time < m_NextThrow) return;
             m_NextThrow = Time.time + 0.5f;
-            Spears.Value--;
+            ServerConsumeHeld();
             m_PendingSpears.Enqueue(Mathf.Clamp01(velocity.magnitude / Cfg.SpearThrowSpeed));
             while (m_PendingSpears.Count > 6) m_PendingSpears.Dequeue();
             SpearVisualRpc(origin, velocity);
@@ -355,7 +406,7 @@ namespace RockGame
 
         /// <summary>Reported by the thrower's client when its spear hits something (client-side hit detection, like arrows).</summary>
         [Rpc(SendTo.Server)]
-        public void SpearLandRpc(bool hasTarget, NetworkObjectReference target, Vector3 point, Vector3 dir, bool head)
+        public void SpearLandRpc(bool hasTarget, NetworkObjectReference target, Vector3 point, Vector3 dir)
         {
             if (m_PendingSpears.Count == 0) return;
             float power = m_PendingSpears.Dequeue();
@@ -368,9 +419,8 @@ namespace RockGame
             {
                 if (no.TryGetComponent(out PlayerNet p) && p != this && !p.Dead.Value)
                 {
-                    p.StuckSpears.Value++; // stuck first so it drops with the body if this kills them
-                    p.ServerDamage(Cfg.SpearThrowDamage * power * (head ? Cfg.HeadshotMul : 1f), this);
-                    HitMarkerRpc(p.Dead.Value);
+                    p.StuckSpears.Value++; // stuck first so it drops into the bag if this kills them
+                    ServerHitPlayer(p, Cfg.SpearThrowDamage * power, point, dir);
                     if (!p.Dead.Value) p.Notify("A spear is stuck in you! Press E to pull it out");
                     return;
                 }
@@ -384,7 +434,8 @@ namespace RockGame
         public void PickupSpearRpc(int id)
         {
             if (Dead.Value || NetGame.Instance == null) return;
-            if (NetGame.Instance.ServerTakeSpear(id, transform.position + Vector3.up, Cfg.SpearPickupRange + 2f)) Spears.Value++;
+            if (InvOps.Space(Inv, Item.Spear) < 1) { Notify("Inventory full!"); return; }
+            if (NetGame.Instance.ServerTakeSpear(id, EyePos, Cfg.SpearPickupRange + 2f)) ServerGive(Item.Spear, 1);
         }
 
         /// <summary>Pull a stuck spear out of a player (yourself or someone else) and keep it.</summary>
@@ -394,33 +445,47 @@ namespace RockGame
             if (Dead.Value || !target.TryGet(out var no) || !no.TryGetComponent(out PlayerNet p)) return;
             if (p.Dead.Value || p.StuckSpears.Value <= 0) return;
             if (p != this && Vector3.Distance(p.transform.position, transform.position) > Cfg.InteractRange + 1.5f) return;
+            if (InvOps.Space(Inv, Item.Spear) < 1) { Notify("Inventory full!"); return; }
             p.StuckSpears.Value--;
-            Spears.Value++;
+            ServerGive(Item.Spear, 1);
             if (p != this) p.Notify($"{Cfg.TeamName[Team.Value]} pulled a spear out of you");
         }
 
         // ---------------- battering ram ----------------
 
-        /// <summary>Hand-held ram strike after a full wind-up: destroys a wooden piece, knocks a stone piece down to wood.</summary>
+        /// <summary>Hand-held ram strike after a full wind-up: destroys a wooden piece / chest, knocks a stone piece down to wood.</summary>
         [Rpc(SendTo.Server)]
         public void RamStrikeRpc(NetworkObjectReference target, Vector3 point)
         {
-            if (Dead.Value || CarryingBall || InSuddenDeath || HeldItem != Item.Ram || RamCharges.Value <= 0 || !GameAllowsCombat) return;
+            if (Dead.Value || CarryingBall || InSuddenDeath || HeldItem != Item.Ram || !GameAllowsCombat) return;
             if (Time.time < m_NextRam) return;
             m_NextRam = Time.time + Cfg.RamWindup * 0.85f;
             SwingRpc();
-            if (!target.TryGet(out var no) || !no.TryGetComponent(out Structure s)) return;
-            if (s.Team.Value == Team.Value) return;
+            if (!target.TryGet(out var no)) return;
             if (Vector3.Distance(EyePos, point) > Cfg.RamRange + 2f) return;
 
-            bool stone = s.Tier.Value == 1;
-            string name = s.DisplayName;
-            if (stone) s.ServerDowngrade();
-            else s.ServerDamage(s.Health.Value + 1f);
-            RamCharges.Value--;
-            HitMarkerRpc(false);
-            Notify((stone ? $"Smashed the {name} down to wood" : $"Smashed the {name}!") +
-                   (RamCharges.Value > 0 ? $"  ({RamCharges.Value} ram hits left)" : "  - your ram broke"));
+            string msg;
+            if (no.TryGetComponent(out Structure s))
+            {
+                if (s.Team.Value == Team.Value) return;
+                bool stone = s.Tier.Value == 1;
+                msg = stone ? $"Smashed the {s.DisplayName} down to wood" : $"Smashed the {s.DisplayName}!";
+                if (stone) s.ServerDowngrade();
+                else s.ServerDamage(s.Health.Value + 1f);
+            }
+            else if (no.TryGetComponent(out Container c) && !c.IsBag && c.Team.Value != Team.Value)
+            {
+                msg = "Smashed the chest open!";
+                c.ServerBreak();
+            }
+            else return;
+
+            var ram = HeldStack;
+            int left = ram.Data - 1;
+            if (left <= 0) ServerClearSlot(HeldSlot.Value);
+            else Inv[HeldSlot.Value] = ItemStack.Of(Item.Ram, 1, left);
+            Fx.Server(FxKind.Smash, point, (EyePos - point).normalized, OwnerClientId);
+            Notify(msg + (left > 0 ? $"  ({left} ram hits left)" : "  - your ram broke"));
         }
 
         // ---------------- crafting ----------------
@@ -428,29 +493,17 @@ namespace RockGame
         [Rpc(SendTo.Server)]
         public void CraftRpc(int recipe)
         {
-            if (Dead.Value || recipe < 0 || recipe >= Cfg.Recipes.Length) return;
+            if (Dead.Value || recipe < 0 || recipe >= Cfg.RecipeCount) return;
             if (InSuddenDeath || (NetGame.Instance != null && NetGame.Instance.S == GameState.GameOver)) return;
-            var r = Cfg.Recipes[recipe];
-            var id = (Cfg.R)recipe;
+            var r = Cfg.GetRecipe(recipe);
+            if (Count(Item.Wood) < r.Wood || Count(Item.Stone) < r.Stone) { Notify($"Not enough resources for {r.Name}"); return; }
+            int data = r.Output == Item.Ram ? Mathf.Clamp(Cfg.RamUses, 1, 255) : 0;
+            if (InvOps.Space(Inv, r.Output, data) < r.Count && !InvOps.HasEmpty(Inv)) { Notify("Inventory full!"); return; }
 
-            Item unique = Item.Rock;
-            switch (id)
-            {
-                case Cfg.R.BuildingPlan: unique = Item.BuildingPlan; break;
-                case Cfg.R.Hatchet: unique = Item.Hatchet; break;
-                case Cfg.R.Pickaxe: unique = Item.Pickaxe; break;
-                case Cfg.R.Bow: unique = Item.Bow; break;
-            }
-            if (unique != Item.Rock && Owns(unique)) { Notify($"You already have a {Cfg.ItemName(unique)}"); return; }
-            if (Wood.Value < r.Wood || Stone.Value < r.Stone) { Notify($"Not enough resources for {r.Name}"); return; }
-
-            Wood.Value -= r.Wood;
-            Stone.Value -= r.Stone;
-            if (unique != Item.Rock) OwnedMask.Value |= 1 << (int)unique;
-            else if (id == Cfg.R.Spear) Spears.Value++;
-            else if (id == Cfg.R.Arrows) Arrows.Value += Cfg.ArrowsPerCraft;
-            else if (id == Cfg.R.Ram) RamCharges.Value += Cfg.RamUses;
-            Notify($"Crafted {r.Name}");
+            InvOps.Remove(Inv, Item.Wood, r.Wood);
+            InvOps.Remove(Inv, Item.Stone, r.Stone);
+            ServerGive(r.Output, r.Count, data);
+            CraftedRpc((byte)r.Output);
         }
 
         // ---------------- building ----------------
@@ -460,7 +513,7 @@ namespace RockGame
         {
             var t = (PieceType)type;
             if (type > (byte)PieceType.Stairs) return;
-            if (Dead.Value || CarryingBall || !Owns(Item.BuildingPlan) || HeldItem != Item.BuildingPlan || InSuddenDeath) return;
+            if (Dead.Value || CarryingBall || HeldItem != Item.BuildingPlan || InSuddenDeath) return;
             if (Time.time < m_NextBuild) return;
 
             var key = new PieceKey(BuildGrid.KindOf(t), i, j, l, t == PieceType.Stairs ? (d & 3) : (d & 1));
@@ -477,9 +530,8 @@ namespace RockGame
             }
             if (!AreaClear(t, pos, rot)) { Notify("Placement blocked"); return; }
             int cost = Cfg.PieceWood(t);
-            if (Wood.Value < cost) { Notify($"Need {cost} wood"); return; }
+            if (!InvOps.Remove(Inv, Item.Wood, cost)) { Notify($"Need {cost} wood"); return; }
 
-            Wood.Value -= cost;
             m_NextBuild = Time.time + Cfg.BuildCooldown * 0.85f;
             var go = Instantiate(Bootstrap.I.structurePrefab, pos, rot);
             var s = go.GetComponent<Structure>();
@@ -507,17 +559,110 @@ namespace RockGame
         [Rpc(SendTo.Server)]
         public void UpgradeRpc(NetworkObjectReference target)
         {
-            if (Dead.Value || !Owns(Item.BuildingPlan) || HeldItem != Item.BuildingPlan || InSuddenDeath) return;
+            if (Dead.Value || HeldItem != Item.BuildingPlan || InSuddenDeath) return;
             if (Time.time < m_NextUpgrade) return;
             if (!target.TryGet(out var no) || !no.TryGetComponent(out Structure s)) return;
-            if (s.Team.Value != Team.Value || !s.HasKey) return;
+            if (s.Team.Value != Team.Value || !s.HasKey || !s.Upgradable) return;
             if (s.Tier.Value == 1) { Notify("Already stone"); return; }
             if (Vector3.Distance(s.transform.position, transform.position) > Cfg.BuildRange + 4f) return;
             int cost = Cfg.PieceUpgradeStone(s.PType);
-            if (Stone.Value < cost) { Notify($"Need {cost} stone to upgrade"); return; }
-            Stone.Value -= cost;
+            if (!InvOps.Remove(Inv, Item.Stone, cost)) { Notify($"Need {cost} stone to upgrade"); return; }
             m_NextUpgrade = Time.time + Cfg.UpgradeCooldown * 0.85f;
             s.ServerUpgrade();
+        }
+
+        /// <summary>Client-side and server-side placement rules for chests and barriers. Returns null if OK, else the reason.</summary>
+        public static string DeployProblem(Item kind, int team, Vector3 pos, float yaw)
+        {
+            int baseTeam = Cfg.BaseTeamAt(pos);
+            if (kind == Item.Chest && baseTeam != team) return "Chests go inside your own base";
+            if (kind == Item.Barrier && baseTeam >= 0 && baseTeam != team) return "You can't put barriers in the enemy base";
+            var rot = Quaternion.Euler(0, yaw, 0);
+            Vector3 c, half;
+            if (kind == Item.Chest) { c = new Vector3(0, 0.36f, 0); half = new Vector3(0.5f, 0.3f, 0.27f); }
+            else { c = new Vector3(0, 0.8f, 0); half = new Vector3(1.15f, 0.65f, 0.15f); }
+            foreach (var h in Physics.OverlapBox(pos + rot * c, half, rot, ~0, QueryTriggerInteraction.Ignore))
+            {
+                if (h.GetComponentInParent<GroundMarker>() != null) continue;
+                var s = h.GetComponentInParent<Structure>();
+                if (s != null && (s.PType == PieceType.Foundation || s.PType == PieceType.Floor)) continue;
+                return "Not enough room here";
+            }
+            return null;
+        }
+
+        [Rpc(SendTo.Server)]
+        public void PlaceDeployableRpc(byte kindByte, Vector3 pos, float yaw)
+        {
+            var kind = (Item)kindByte;
+            if (kind != Item.Chest && kind != Item.Barrier) return;
+            if (Dead.Value || CarryingBall || HeldItem != kind || InSuddenDeath) return;
+            if (Vector3.Distance(pos, transform.position) > Cfg.DeployRange + 3f) return;
+            var problem = DeployProblem(kind, Team.Value, pos, yaw);
+            if (problem != null) { Notify(problem); return; }
+            ServerConsumeHeld();
+            var rot = Quaternion.Euler(0, yaw, 0);
+            if (kind == Item.Chest)
+            {
+                var go = Instantiate(Bootstrap.I.containerPrefab, pos, rot);
+                go.GetComponent<Container>().ServerInit(Container.Chest, Team.Value, Cfg.ChestSlots, null);
+                go.GetComponent<NetworkObject>().Spawn(true);
+            }
+            else
+            {
+                var go = Instantiate(Bootstrap.I.structurePrefab, pos, rot);
+                go.GetComponent<Structure>().ServerInit(PieceType.Barrier, Team.Value, default, false);
+                go.GetComponent<NetworkObject>().Spawn(true);
+            }
+        }
+
+        // ---------------- inventory & containers ----------------
+
+        /// <summary>
+        /// Drag & drop between your inventory (kind 0) and an open container (kind 1).
+        /// dstIdx 255 = shift-click quick move. Death bags are take-only.
+        /// </summary>
+        [Rpc(SendTo.Server)]
+        public void MoveItemRpc(byte srcKind, byte srcIdx, byte dstKind, byte dstIdx, ushort amount, NetworkObjectReference containerRef)
+        {
+            if (Dead.Value) return;
+            Container c = null;
+            if (srcKind == 1 || dstKind == 1)
+            {
+                if (!containerRef.TryGet(out var no) || !no.TryGetComponent(out c) || !c.InReach(EyePos)) return;
+                if (dstKind == 1 && c.TakeOnly) return;
+            }
+            var src = srcKind == 1 ? c.Slots : Inv;
+            if (dstIdx == 255)
+            {
+                if (c == null) return;
+                var other = srcKind == 1 ? Inv : c.Slots;
+                if (other == c.Slots && c.TakeOnly) return;
+                InvOps.QuickMove(src, srcIdx, other, other == Inv);
+                return;
+            }
+            var dst = dstKind == 1 ? c.Slots : Inv;
+            InvOps.Move(src, srcIdx, dst, dstIdx, amount, srcKind == 1 && c.TakeOnly);
+        }
+
+        [Rpc(SendTo.Server)]
+        public void PickBerriesRpc(NetworkObjectReference bushRef)
+        {
+            if (Dead.Value || !bushRef.TryGet(out var no) || !no.TryGetComponent(out ResourceNode n) || !n.IsBush) return;
+            if (Vector3.Distance(n.transform.position, transform.position) > Cfg.InteractRange + 2f) return;
+            if (InvOps.Space(Inv, Item.Berry) < 1) { Notify("Inventory full!"); return; }
+            int got = n.ServerHarvest(Cfg.BerriesPerPick, false, transform.position);
+            if (got > 0) ServerGive(Item.Berry, got);
+        }
+
+        [Rpc(SendTo.Server)]
+        public void EatRpc()
+        {
+            if (Dead.Value || HeldItem != Item.Berry || Time.time < m_NextEat) return;
+            if (Health.Value >= Cfg.MaxHealth) { Notify("You're already at full health"); return; }
+            m_NextEat = Time.time + 0.8f;
+            ServerConsumeHeld();
+            Health.Value = Mathf.Min(Cfg.MaxHealth, Health.Value + Cfg.BerryHeal);
         }
 
         // ---------------- interaction ----------------
@@ -537,18 +682,23 @@ namespace RockGame
         {
             var b = Ball.Instance;
             if (Dead.Value || b == null || b.IsCarried || InSuddenDeath) return;
-            if (Vector3.Distance(b.transform.position, transform.position + Vector3.up) > Cfg.InteractRange + 1.5f) return;
+            if (Vector3.Distance(b.transform.position, EyePos) > Cfg.InteractRange + 2f) return;
             if (b.ServerPickup(this) && NetGame.Instance != null)
                 NetGame.Instance.Broadcast($"{Cfg.TeamName[Team.Value]} picked up the ball!");
         }
 
+        /// <summary>LMB while carrying: throw the ball where you're looking.</summary>
         [Rpc(SendTo.Server)]
-        public void DropBallRpc(Vector3 velocity)
+        public void ThrowBallRpc(Vector3 dir)
         {
-            if (!CarryingBall) return;
-            Ball.Instance.ServerDrop(transform.position + Vector3.up * 2.4f, velocity);
+            if (!CarryingBall || dir.sqrMagnitude < 0.01f) return;
+            dir.Normalize();
+            var eye = EyePos;
+            var pos = eye + dir * 0.9f;
+            if (Physics.Raycast(eye, dir, out var hit, 1.2f, ~0, QueryTriggerInteraction.Ignore) && !hit.collider.transform.IsChildOf(transform))
+                pos = hit.point - dir * 0.7f;
+            Ball.Instance.ServerDrop(pos, dir * Cfg.BallThrowSpeed + Vector3.up * 1.5f);
         }
-
 
         // =====================================================================
         // Server -> client
@@ -565,15 +715,38 @@ namespace RockGame
         public void NotifyRpc(FixedString128Bytes msg) => Hud.Push(msg.ToString());
 
         [Rpc(SendTo.Owner)]
-        public void HitMarkerRpc(bool kill) => Hud.HitMarker(kill);
+        public void KillConfirmRpc()
+        {
+            Hud.HitMarker(true, false);
+            Sfx.Play2D(Sfx.Kill, 0.7f, 0f);
+        }
+
+        [Rpc(SendTo.Owner)]
+        public void CraftedRpc(byte item)
+        {
+            Hud.Push("Crafted " + Cfg.ItemName((Item)item));
+            Sfx.Play2D(Sfx.Pop, 0.5f);
+        }
 
         [Rpc(SendTo.NotOwner)]
-        public void SwingRpc() => m_Swing = 1f;
+        public void SwingRpc()
+        {
+            m_Swing = 1f;
+            Sfx.Play(Sfx.Swing, transform.position + Vector3.up * 1.2f, 0.5f);
+        }
 
         [Rpc(SendTo.NotOwner)]
-        public void ArrowVisualRpc(Vector3 origin, Vector3 velocity) => ArrowProjectile.Spawn(origin, velocity, this, false);
+        public void ArrowVisualRpc(Vector3 origin, Vector3 velocity)
+        {
+            ArrowProjectile.Spawn(origin, velocity, this, false);
+            Sfx.Play(Sfx.Twang, origin, 0.6f);
+        }
 
         [Rpc(SendTo.NotOwner)]
-        public void SpearVisualRpc(Vector3 origin, Vector3 velocity) => ArrowProjectile.SpawnSpear(origin, velocity, this, false);
+        public void SpearVisualRpc(Vector3 origin, Vector3 velocity)
+        {
+            ArrowProjectile.SpawnSpear(origin, velocity, this, false);
+            Sfx.Play(Sfx.Throw, origin, 0.6f);
+        }
     }
 }

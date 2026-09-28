@@ -1,23 +1,33 @@
 using System.Collections.Generic;
+using Unity.Netcode;
 using UnityEngine;
 
 namespace RockGame
 {
-    /// <summary>Immediate-mode (OnGUI) main menu, HUD, crafting menu, pause and end screens.</summary>
+    /// <summary>Immediate-mode (OnGUI) main menu + settings, HUD, inventory/crafting/loot screen, pause and end screens.</summary>
     public class Hud : MonoBehaviour
     {
         struct Msg { public string Text; public float Time; }
         static readonly List<Msg> s_Msgs = new List<Msg>();
         static float s_HitTime = -10f, s_BannerTime = -10f;
-        static bool s_HitKill;
+        static bool s_HitKill, s_HitHead;
         static string s_BannerTitle, s_BannerSub;
         public static bool MouseOverUI;
         static readonly System.Text.RegularExpressions.Regex s_ColorTag = new System.Text.RegularExpressions.Regex("</?color[^>]*>");
 
-        bool m_ShowHelp = true;
-        float m_LastHealth = Cfg.MaxHealth, m_DamageFlash;
-        GUIStyle m_Label, m_Center, m_Big, m_Small, m_Button, m_Box;
+        bool m_ShowHelp = true, m_ShowSettings;
+        float m_LastHealth = 100f, m_DamageFlash;
+        GUIStyle m_Label, m_Center, m_Big, m_Small, m_Button, m_Box, m_Field;
         float m_Scale = 1f;
+        Vector2 m_SettingsScroll;
+        readonly Dictionary<string, string> m_EditBuffers = new Dictionary<string, string>();
+
+        // drag & drop
+        struct SlotRef { public byte Kind; public int Index; }
+        bool m_Dragging, m_DragHalf;
+        SlotRef m_DragFrom;
+        ItemStack m_DragStack;
+        string m_HoverName = "";
 
         public static void Push(string text)
         {
@@ -25,12 +35,17 @@ namespace RockGame
             s_Msgs.Add(new Msg { Text = text, Time = Time.time });
             if (s_Msgs.Count > 6) s_Msgs.RemoveAt(0);
         }
-        public static void HitMarker(bool kill) { s_HitTime = Time.time; s_HitKill = kill; }
+        public static void HitMarker(bool kill, bool head)
+        {
+            if (kill || Time.time - s_HitTime > 0.05f || !s_HitKill) { s_HitKill = kill; s_HitHead = head; }
+            s_HitTime = Time.time;
+        }
         public static void Banner(string title, string sub) { s_BannerTitle = title; s_BannerSub = sub; s_BannerTime = Time.time; }
-        public static void Clear() { s_Msgs.Clear(); s_BannerTime = -10f; }
+        public static void Clear() { s_Msgs.Clear(); s_BannerTime = -10f; Fx.Numbers.Clear(); }
 
         void Update()
         {
+            if (Time.frameCount > 3) ItemIcons.EnsureRendered();
             if (Input.GetKeyDown(KeyCode.F1)) m_ShowHelp = !m_ShowHelp;
             var me = PlayerNet.Local;
             if (me != null)
@@ -52,6 +67,7 @@ namespace RockGame
             m_Small = new GUIStyle(m_Label) { fontSize = Mathf.RoundToInt(13 * m_Scale) };
             m_Button = new GUIStyle(GUI.skin.button) { fontSize = fs };
             m_Box = new GUIStyle(GUI.skin.box);
+            m_Field = new GUIStyle(GUI.skin.textField) { fontSize = Mathf.RoundToInt(14 * m_Scale) };
         }
 
         static void Fill(Rect r, Color c)
@@ -100,7 +116,8 @@ namespace RockGame
 
         void DrawMainMenu(Bootstrap boot)
         {
-            float w = 460 * m_Scale, h = 470 * m_Scale;
+            if (m_ShowSettings) { DrawSettings(); return; }
+            float w = 460 * m_Scale, h = 520 * m_Scale;
             var r = new Rect((Screen.width - w) / 2, (Screen.height - h) / 2, w, h);
             Fill(r, new Color(0, 0, 0, 0.65f));
             GUILayout.BeginArea(new Rect(r.x + 20, r.y + 15, r.width - 40, r.height - 30));
@@ -117,15 +134,84 @@ namespace RockGame
             GUILayout.EndHorizontal();
             GUILayout.Space(10 * m_Scale);
             Bootstrap.Solo = GUILayout.Toggle(Bootstrap.Solo, " Solo test (start without an opponent)", m_Label);
-            Bootstrap.Fast = GUILayout.Toggle(Bootstrap.Fast, " Fast timers (10s ball drop, 90s match)", m_Label);
+            Bootstrap.Fast = GUILayout.Toggle(Bootstrap.Fast, $" Fast timers ({Cfg.FastBallDropDelay:0}s ball drop, {Cfg.FastMatchLength:0}s match)", m_Label);
             GUILayout.Space(12 * m_Scale);
             if (GUILayout.Button("HOST GAME", m_Button, GUILayout.Height(44 * m_Scale))) boot.Host();
             GUILayout.Space(6 * m_Scale);
             if (GUILayout.Button("JOIN GAME", m_Button, GUILayout.Height(44 * m_Scale))) boot.Join();
+            GUILayout.Space(6 * m_Scale);
+            if (GUILayout.Button("GAME SETTINGS", m_Button, GUILayout.Height(36 * m_Scale))) m_ShowSettings = true;
             GUILayout.Space(8 * m_Scale);
             if (!string.IsNullOrEmpty(boot.Status)) GUILayout.Label("<color=#ffcc66>" + boot.Status + "</color>", m_Center);
             GUILayout.FlexibleSpace();
-            GUILayout.Label("Host picks the options. Your friend joins with your IP (port 7777 UDP).", m_Small);
+            GUILayout.Label("Host picks the options and settings. Your friend joins with your IP (port 7777 UDP).", m_Small);
+            GUILayout.EndArea();
+        }
+
+        static string Pretty(string field)
+        {
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < field.Length; i++)
+            {
+                if (i > 0 && char.IsUpper(field[i]) && !char.IsUpper(field[i - 1])) sb.Append(' ');
+                sb.Append(field[i]);
+            }
+            return sb.ToString().Replace("Hp", "HP");
+        }
+
+        /// <summary>Every [Tune] stat in Cfg, editable. Saved on this PC; the host's values are used in a match.</summary>
+        void DrawSettings()
+        {
+            float k = m_Scale;
+            float w = Mathf.Min(Screen.width - 40, 900 * k), h = Screen.height - 40;
+            var r = new Rect((Screen.width - w) / 2, 20, w, h);
+            Fill(r, new Color(0.05f, 0.05f, 0.06f, 0.92f));
+            GUILayout.BeginArea(new Rect(r.x + 16, r.y + 12, r.width - 32, r.height - 24));
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("<b><size=" + Mathf.RoundToInt(28 * k) + ">GAME SETTINGS</size></b>", m_Label);
+            GUILayout.FlexibleSpace();
+            if (GUILayout.Button("Reset all to defaults", m_Button, GUILayout.Width(220 * k), GUILayout.Height(34 * k)))
+            {
+                Cfg.ResetDefaults();
+                Cfg.SavePrefs();
+                m_EditBuffers.Clear();
+            }
+            if (GUILayout.Button("Done", m_Button, GUILayout.Width(120 * k), GUILayout.Height(34 * k))) m_ShowSettings = false;
+            GUILayout.EndHorizontal();
+            GUILayout.Label("When you host, these values are used for the whole match (they're sent to your opponent). Times are in seconds, speeds in m/s. Changed values are highlighted.", m_Small);
+            GUILayout.Space(6 * k);
+
+            m_SettingsScroll = GUILayout.BeginScrollView(m_SettingsScroll);
+            string section = null;
+            int col = 0;
+            const int cols = 2;
+            foreach (var f in Cfg.TuneFields)
+            {
+                var sec = Cfg.SectionOf(f);
+                if (sec != section)
+                {
+                    if (section != null && col != 0) GUILayout.EndHorizontal();
+                    col = 0;
+                    section = sec;
+                    GUILayout.Space(8 * k);
+                    GUILayout.Label($"<b><color=#ffd27a>{sec.ToUpper()}</color></b>", m_Label);
+                }
+                if (col == 0) GUILayout.BeginHorizontal();
+                bool changed = !Cfg.IsDefault(f);
+                GUILayout.Label((changed ? "<color=#8fe38f>" : "") + Pretty(f.Name) + (changed ? "</color>" : ""), m_Small, GUILayout.Width(w * 0.3f));
+                if (!m_EditBuffers.TryGetValue(f.Name, out var text)) text = Cfg.Format(f);
+                var edited = GUILayout.TextField(text, m_Field, GUILayout.Width(w * 0.13f));
+                if (edited != text)
+                {
+                    m_EditBuffers[f.Name] = edited;
+                    if (Cfg.TrySet(f, edited)) Cfg.SavePrefs();
+                }
+                GUILayout.Space(20 * k);
+                col++;
+                if (col == cols) { GUILayout.EndHorizontal(); col = 0; }
+            }
+            if (col != 0) GUILayout.EndHorizontal();
+            GUILayout.EndScrollView();
             GUILayout.EndArea();
         }
 
@@ -199,14 +285,22 @@ namespace RockGame
                 my += 24 * k;
             }
 
-            // ---- crosshair / hit marker / bow draw ----
+            // ---- crosshair / hit marker / charge ----
             float cx = sw / 2, cy = sh / 2;
-            Fill(new Rect(cx - 1, cy - 8, 2, 16), new Color(1, 1, 1, 0.8f));
-            Fill(new Rect(cx - 8, cy - 1, 16, 2), new Color(1, 1, 1, 0.8f));
-            if (Time.time - s_HitTime < 0.25f)
+            if (!pc.MenuOpen)
             {
-                var hc = s_HitKill ? new Color(1, 0.2f, 0.2f) : Color.white;
-                GUI.Label(new Rect(cx - 20, cy - 20, 40, 40), s_HitKill ? "<b><size=30>X</size></b>" : "<b><size=24>x</size></b>", new GUIStyle(m_Center) { normal = { textColor = hc } });
+                Fill(new Rect(cx - 1, cy - 8, 2, 16), new Color(1, 1, 1, 0.8f));
+                Fill(new Rect(cx - 8, cy - 1, 16, 2), new Color(1, 1, 1, 0.8f));
+            }
+            float hitAge = Time.time - s_HitTime;
+            if (hitAge < 0.3f)
+            {
+                float grow = 1f + (0.3f - hitAge) * (s_HitKill ? 3f : 1.5f);
+                var hc = s_HitKill ? new Color(1, 0.15f, 0.15f) : s_HitHead ? new Color(1f, 0.75f, 0.1f) : Color.white;
+                int size = Mathf.RoundToInt((s_HitKill ? 40 : s_HitHead ? 32 : 24) * k * grow);
+                var st = new GUIStyle(m_Center) { fontSize = size, fontStyle = FontStyle.Bold };
+                st.normal.textColor = new Color(hc.r, hc.g, hc.b, Mathf.Clamp01((0.3f - hitAge) * 5f));
+                GUI.Label(new Rect(cx - 50, cy - 50, 100, 100), "X", st);
             }
             float charge = Mathf.Max(pc.DrawAmount, pc.RamCharge);
             if (charge > 0)
@@ -214,68 +308,53 @@ namespace RockGame
                 Fill(new Rect(cx - 50 * k, cy + 30 * k, 100 * k, 8 * k), new Color(0, 0, 0, 0.5f));
                 Fill(new Rect(cx - 50 * k, cy + 30 * k, 100 * k * charge, 8 * k), charge >= 1f ? new Color(1f, 0.85f, 0.2f) : Color.white);
             }
+            DrawDamageNumbers(k);
 
-            // ---- aim info / build info ----
+            // ---- aim info / held item hints ----
             float by = sh - 150 * k;
-            if (!string.IsNullOrEmpty(pc.AimText)) Shadowed(new Rect(0, cy + 45 * k, sw, 26 * k), pc.AimText, m_Center);
-            if (me.HeldItem == Item.BuildingPlan && !me.CarryingBall)
+            if (!string.IsNullOrEmpty(pc.AimText) && !pc.MenuOpen) Shadowed(new Rect(0, cy + 45 * k, sw, 26 * k), pc.AimText, m_Center);
+            if (!me.CarryingBall && !pc.MenuOpen)
             {
-                var p = pc.BuildPiece;
-                Shadowed(new Rect(0, by - 52 * k, sw, 26 * k), $"<b>{Cfg.PieceName(p)}</b>  ({Cfg.PieceWood(p)} wood)    RMB: next piece   R: rotate stairs   F: upgrade to stone", m_Center);
+                string hint = HeldHint(me, pc);
+                if (hint != "") Shadowed(new Rect(0, by - 52 * k, sw, 26 * k), hint, m_Center);
                 if (!string.IsNullOrEmpty(pc.BuildHint)) Shadowed(new Rect(0, by - 28 * k, sw, 26 * k), "<color=#ff8888>" + pc.BuildHint + "</color>", m_Center);
             }
-            else if (me.HeldItem == Item.Ram && !me.CarryingBall)
-                Shadowed(new Rect(0, by - 52 * k, sw, 26 * k), $"<b>Battering Ram</b> ({me.RamCharges.Value} hits left)    hold LMB at an enemy piece: wood breaks instantly, stone drops to wood", m_Center);
-            else if (me.HeldItem == Item.Spear && !me.CarryingBall)
-                Shadowed(new Rect(0, by - 52 * k, sw, 26 * k), $"<b>Spear</b> x{me.Spears.Value}    LMB: stab    hold RMB + LMB: throw    E: pick thrown spears back up", m_Center);
 
             // ---- hotbar ----
-            float slot = 70 * k, gap = 6 * k;
-            int n = Cfg.ItemCount;
-            float hx = cx - (n * slot + (n - 1) * gap) / 2, hy = sh - slot - 14 * k;
-            for (int i = 0; i < n; i++)
+            if (!pc.MenuOpen)
             {
-                var it = (Item)i;
-                bool owned = me.Owns(it);
-                bool sel = me.HeldItem == it;
-                var r = new Rect(hx + i * (slot + gap), hy, slot, slot);
-                Fill(r, sel ? new Color(1f, 0.85f, 0.3f, 0.6f) : new Color(0, 0, 0, owned ? 0.5f : 0.2f));
-                string label = ShortName(it);
-                string count = it == Item.Bow ? me.Arrows.Value + " arr" : it == Item.Spear ? "x" + me.Spears.Value : it == Item.Ram ? me.RamCharges.Value + " hit" : "";
-                var st = new GUIStyle(m_Small) { alignment = TextAnchor.MiddleCenter, wordWrap = true };
-                st.normal.textColor = owned ? Color.white : new Color(1, 1, 1, 0.3f);
-                GUI.Label(r, label, st);
-                GUI.Label(new Rect(r.x + 4, r.y + 2, 20, 20), (i + 1).ToString(), m_Small);
-                if (count != "" && owned) GUI.Label(new Rect(r.x, r.yMax - 20 * k, r.width - 4, 20 * k), count, new GUIStyle(m_Small) { alignment = TextAnchor.LowerRight });
+                float slot = 70 * k, gap = 6 * k;
+                int n = Cfg.HotbarSize;
+                float hx = cx - (n * slot + (n - 1) * gap) / 2, hy = sh - slot - 14 * k;
+                for (int i = 0; i < n; i++)
+                {
+                    var r = new Rect(hx + i * (slot + gap), hy, slot, slot);
+                    bool sel = me.HeldSlot.Value == i && !me.CarryingBall;
+                    DrawSlotVisual(r, me.SlotAt(i), sel, me);
+                    GUI.Label(new Rect(r.x + 4, r.y + 2, 20, 20), (i + 1).ToString(), m_Small);
+                }
             }
 
             // ---- health (bottom left) ----
             float hw = 280 * k;
             var hr = new Rect(14, sh - 44 * k, hw, 28 * k);
             Fill(hr, new Color(0, 0, 0, 0.55f));
-            float hp = me.Health.Value / Cfg.MaxHealth;
+            float hp = Mathf.Clamp01(me.Health.Value / Mathf.Max(1f, Cfg.MaxHealth));
             Fill(new Rect(hr.x + 3, hr.y + 3, (hr.width - 6) * hp, hr.height - 6), Color.Lerp(new Color(0.85f, 0.15f, 0.1f), new Color(0.3f, 0.85f, 0.3f), hp));
             Shadowed(new Rect(hr.x + 8, hr.y + 2, hr.width, hr.height), $"<b>HP {me.Health.Value:0}</b>", m_Label);
-
-            // ---- resources (bottom right) ----
-            var rr = new Rect(sw - 230 * k - 14, sh - 100 * k, 230 * k, 86 * k);
-            Fill(rr, new Color(0, 0, 0, 0.5f));
-            Shadowed(new Rect(rr.x + 12, rr.y + 6, rr.width, 26 * k), $"<color=#d9a066><b>Wood</b></color>   {me.Wood.Value}", m_Label);
-            Shadowed(new Rect(rr.x + 12, rr.y + 32 * k, rr.width, 26 * k), $"<color=#c8c8d0><b>Stone</b></color>   {me.Stone.Value}", m_Label);
-            Shadowed(new Rect(rr.x + 12, rr.y + 58 * k, rr.width, 26 * k), $"<color=#ffffff><b>Arrows</b></color>   {me.Arrows.Value}", m_Label);
 
             // ---- help ----
             if (m_ShowHelp && !pc.MenuOpen)
             {
                 string help =
                     "<b>CONTROLS</b>  (F1 hide)\n" +
-                    "WASD move · Shift sprint · Space jump\n" +
-                    "LMB attack / gather / place · hold LMB = draw bow / ram\n" +
-                    "Spear: hold RMB + LMB to throw\n" +
-                    "1-7 / scroll: switch item · TAB: craft anywhere\n" +
-                    "E: use / pick up / pull out spears\n" +
-                    "G: throw ball · Esc: pause";
-                var hrct = new Rect(12, 92 * k, 380 * k, 160 * k);
+                    "WASD move · Shift sprint · Space jump · Ctrl/C crouch\n" +
+                    "LMB attack / gather / place · hold LMB: draw bow / ram\n" +
+                    "Spear: hold RMB + LMB to throw · Berries: RMB to eat\n" +
+                    "1-7 / scroll: hotbar · TAB: inventory & crafting\n" +
+                    "E: use what you look at (ball, door, chest, bag, bush, spear)\n" +
+                    "Ball: LMB throws it · Esc: pause";
+                var hrct = new Rect(12, 92 * k, 440 * k, 150 * k);
                 Fill(hrct, new Color(0, 0, 0, 0.35f));
                 GUI.Label(new Rect(hrct.x + 8, hrct.y + 4, hrct.width - 10, hrct.height), help, m_Small);
             }
@@ -299,10 +378,10 @@ namespace RockGame
                 Fill(new Rect(0, 0, sw, sh), new Color(0.3f, 0, 0, 0.35f));
                 float t = Mathf.Max(0, (float)(me.RespawnAt.Value - me.NetworkManager.ServerTime.Time));
                 Shadowed(new Rect(0, sh * 0.4f, sw, 60 * k), "YOU DIED", m_Big);
-                Shadowed(new Rect(0, sh * 0.4f + 60 * k, sw, 30 * k), $"Respawning at your base in {Mathf.CeilToInt(t)}", m_Center);
+                Shadowed(new Rect(0, sh * 0.4f + 60 * k, sw, 30 * k), $"Your stuff is in a bag where you died. Respawning at your base in {Mathf.CeilToInt(t)}", m_Center);
             }
 
-            if (pc.MenuOpen) DrawCrafting(me, pc);
+            if (pc.MenuOpen) DrawInventory(me, pc);
 
             if (pc.Paused && (game == null || game.S != GameState.GameOver))
             {
@@ -315,6 +394,224 @@ namespace RockGame
             if (game != null && game.S == GameState.GameOver) DrawGameOver(boot, game, team);
         }
 
+        string HeldHint(PlayerNet me, PlayerController pc)
+        {
+            var s = me.HeldStack;
+            switch (s.Id)
+            {
+                case Item.BuildingPlan: return $"<b>{Cfg.PieceName(pc.BuildPiece)}</b>  ({Cfg.PieceWood(pc.BuildPiece)} wood)    RMB: next piece   R: rotate stairs   F: upgrade to stone";
+                case Item.Ram: return $"<b>Battering Ram</b> ({s.Data} hits left)    hold LMB at an enemy piece: wood breaks instantly, stone drops to wood";
+                case Item.Spear: return "<b>Spear</b>    LMB: stab    hold RMB + LMB: throw    E: pick thrown spears back up";
+                case Item.Bow: return $"<b>Bow</b>  ({me.Count(Item.Arrow)} arrows)    hold LMB to draw, release to fire";
+                case Item.Chest: return "<b>Storage Chest</b>    LMB: place it inside your base";
+                case Item.Barrier: return $"<b>Wooden Barrier</b> x{s.Count}    LMB: place it anywhere (not in the enemy base)";
+                case Item.Berry: return $"<b>Berries</b> x{s.Count}    RMB: eat (+{Cfg.BerryHeal:0} HP)";
+                default: return "";
+            }
+        }
+
+        void DrawDamageNumbers(float k)
+        {
+            var cam = Camera.main;
+            if (cam == null) return;
+            for (int i = Fx.Numbers.Count - 1; i >= 0; i--)
+            {
+                var n = Fx.Numbers[i];
+                float age = Time.time - n.Time;
+                if (age > 0.9f) { Fx.Numbers.RemoveAt(i); continue; }
+                var sp = cam.WorldToScreenPoint(n.Pos + Vector3.up * (0.3f + age * 0.8f));
+                if (sp.z < 0) continue;
+                float a = Mathf.Clamp01((0.9f - age) * 3f);
+                float pop = 1f + Mathf.Max(0, 0.15f - age) * 4f;
+                var st = new GUIStyle(m_Center) { fontSize = Mathf.RoundToInt((n.Head ? 26 : 20) * k * pop), fontStyle = FontStyle.Bold };
+                var c = n.Head ? new Color(1f, 0.8f, 0.15f, a) : new Color(1f, 1f, 1f, a);
+                string txt = Mathf.RoundToInt(n.Value) + (n.Head ? "!" : "");
+                var r = new Rect(sp.x - 60, Screen.height - sp.y - 20, 120, 40);
+                st.normal.textColor = new Color(0, 0, 0, a * 0.8f);
+                GUI.Label(new Rect(r.x + 2, r.y + 2, r.width, r.height), txt, st);
+                st.normal.textColor = c;
+                GUI.Label(r, txt, st);
+            }
+        }
+
+        // ------------------------------------------------------------------ slots
+
+        void DrawSlotVisual(Rect r, ItemStack s, bool selected, PlayerNet me)
+        {
+            Fill(r, selected ? new Color(1f, 0.85f, 0.3f, 0.55f) : new Color(0, 0, 0, 0.5f));
+            Fill(new Rect(r.x, r.yMax - 2, r.width, 2), new Color(1, 1, 1, 0.08f));
+            if (s.Empty) return;
+            var icon = ItemIcons.Get(s.Id);
+            var inner = new Rect(r.x + r.width * 0.1f, r.y + r.height * 0.08f, r.width * 0.8f, r.height * 0.8f);
+            if (icon != null) GUI.DrawTexture(inner, icon, ScaleMode.ScaleToFit, true);
+            else GUI.Label(r, Cfg.ItemName(s.Id), new GUIStyle(m_Small) { alignment = TextAnchor.MiddleCenter, wordWrap = true });
+            string count = s.Count > 1 ? s.Count.ToString() : s.Id == Item.Bow && me != null ? me.Count(Item.Arrow) + "a" : "";
+            if (count != "")
+                Shadowed(new Rect(r.x, r.yMax - 22 * m_Scale, r.width - 5, 20 * m_Scale), count, new GUIStyle(m_Small) { alignment = TextAnchor.LowerRight });
+            if (s.Id == Item.Ram)
+            {
+                float d = Mathf.Clamp01(s.Data / (float)Mathf.Max(1, Cfg.RamUses));
+                Fill(new Rect(r.x + 4, r.yMax - 6, (r.width - 8), 3), new Color(0, 0, 0, 0.6f));
+                Fill(new Rect(r.x + 4, r.yMax - 6, (r.width - 8) * d, 3), new Color(0.4f, 0.9f, 0.4f));
+            }
+        }
+
+        /// <summary>A draggable inventory slot (kind 0 = my inventory, 1 = open container).</summary>
+        void DrawSlot(Rect r, ItemStack s, byte kind, int index, bool selected, PlayerNet me, PlayerController pc)
+        {
+            var e = Event.current;
+            bool hover = r.Contains(e.mousePosition);
+            bool isSource = m_Dragging && m_DragFrom.Kind == kind && m_DragFrom.Index == index;
+            DrawSlotVisual(r, isSource ? default : s, selected, me);
+            if (hover) { Fill(r, new Color(1, 1, 1, 0.08f)); if (!s.Empty) m_HoverName = Cfg.ItemName(s.Id) + ItemBlurb(s); }
+
+            if (e.type == EventType.MouseDown && hover && !s.Empty)
+            {
+                if (e.shift && e.button == 0) QuickMove(kind, index, me, pc);
+                else
+                {
+                    m_Dragging = true;
+                    m_DragHalf = e.button == 1;
+                    m_DragFrom = new SlotRef { Kind = kind, Index = index };
+                    m_DragStack = s;
+                }
+                e.Use();
+            }
+            else if (e.type == EventType.MouseUp && hover && m_Dragging)
+            {
+                int amount = m_DragHalf ? Mathf.Max(1, m_DragStack.Count / 2) : m_DragStack.Count;
+                if (!(m_DragFrom.Kind == kind && m_DragFrom.Index == index))
+                {
+                    me.MoveItemRpc(m_DragFrom.Kind, (byte)m_DragFrom.Index, kind, (byte)index, (ushort)amount, LootRef(pc));
+                    Sfx.Play2D(Sfx.Pop, 0.3f, 0.2f);
+                }
+                m_Dragging = false;
+                e.Use();
+            }
+        }
+
+        static NetworkObjectReference LootRef(PlayerController pc) =>
+            pc.LootTarget != null && pc.LootTarget.IsSpawned ? new NetworkObjectReference(pc.LootTarget.NetworkObject) : default;
+
+        static string ItemBlurb(ItemStack s)
+        {
+            switch (s.Id)
+            {
+                case Item.Ram: return $"  ({s.Data} hits left)";
+                case Item.Berry: return $"  (RMB to eat, +{Cfg.BerryHeal:0} HP)";
+                default: return s.Count > 1 ? $"  x{s.Count}" : "";
+            }
+        }
+
+        /// <summary>Shift-click: to/from the open container, or between hotbar and main inventory.</summary>
+        void QuickMove(byte kind, int index, PlayerNet me, PlayerController pc)
+        {
+            if (pc.LootTarget != null)
+            {
+                if (kind == 0 && pc.LootTarget.TakeOnly) return;
+                me.MoveItemRpc(kind, (byte)index, (byte)(1 - kind), 255, 0, LootRef(pc));
+                Sfx.Play2D(Sfx.Pop, 0.3f, 0.2f);
+                return;
+            }
+            bool fromHotbar = index < Cfg.HotbarSize;
+            int start = fromHotbar ? Cfg.HotbarSize : 0, end = fromHotbar ? Cfg.PlayerSlots : Cfg.HotbarSize;
+            var s = me.SlotAt(index);
+            int target = -1;
+            for (int i = start; i < end && target < 0; i++) if (me.SlotAt(i).Id == s.Id && me.SlotAt(i).Count < Cfg.MaxStack(s.Id)) target = i;
+            for (int i = start; i < end && target < 0; i++) if (me.SlotAt(i).Empty) target = i;
+            if (target >= 0) me.MoveItemRpc(0, (byte)index, 0, (byte)target, s.Count, default);
+        }
+
+        // ------------------------------------------------------------------ inventory / crafting / loot
+
+        void DrawInventory(PlayerNet me, PlayerController pc)
+        {
+            float sw = Screen.width, sh = Screen.height, k = m_Scale;
+            MouseOverUI = true;
+            m_HoverName = "";
+            Fill(new Rect(0, 0, sw, sh), new Color(0, 0, 0, 0.55f));
+            float slot = Mathf.Min(64 * k, (sw - 120) / 24f), gap = 6 * k;
+            float gridW = 7 * slot + 6 * gap;
+            float craftW = 330 * k;
+            bool loot = pc.LootTarget != null;
+            float lootW = loot ? gridW : 0;
+            float total = lootW + gridW + craftW + (loot ? 60 * k : 30 * k);
+            float x0 = Mathf.Max(10, (sw - total) / 2);
+            float top = sh * 0.14f;
+
+            // ---- loot container (left) ----
+            float invX = x0;
+            if (loot)
+            {
+                var c = pc.LootTarget;
+                Shadowed(new Rect(x0, top - 34 * k, lootW, 30 * k), $"<b>{c.DisplayName.ToUpper()}</b>" + (c.TakeOnly ? "  <color=#bbbbbb>(take only)</color>" : ""), m_Label);
+                int n = c.Slots.Count;
+                for (int i = 0; i < n; i++)
+                {
+                    var r = new Rect(x0 + (i % 7) * (slot + gap), top + (i / 7) * (slot + gap), slot, slot);
+                    DrawSlot(r, c.Slots[i], 1, i, false, me, pc);
+                }
+                invX = x0 + lootW + 30 * k;
+            }
+
+            // ---- my inventory (21 slots) + hotbar ----
+            Shadowed(new Rect(invX, top - 34 * k, gridW, 30 * k), "<b>INVENTORY</b>", m_Label);
+            for (int i = 0; i < Cfg.MainSize; i++)
+            {
+                int idx = Cfg.HotbarSize + i;
+                var r = new Rect(invX + (i % 7) * (slot + gap), top + (i / 7) * (slot + gap), slot, slot);
+                DrawSlot(r, me.SlotAt(idx), 0, idx, false, me, pc);
+            }
+            float hotY = top + 3 * (slot + gap) + 26 * k;
+            Shadowed(new Rect(invX, hotY - 26 * k, gridW, 24 * k), "<b>HOTBAR</b>  <color=#bbbbbb>(keys 1-7)</color>", m_Small);
+            for (int i = 0; i < Cfg.HotbarSize; i++)
+            {
+                var r = new Rect(invX + i * (slot + gap), hotY, slot, slot);
+                DrawSlot(r, me.SlotAt(i), 0, i, me.HeldSlot.Value == i, me, pc);
+                GUI.Label(new Rect(r.x + 4, r.y + 2, 20, 20), (i + 1).ToString(), m_Small);
+            }
+            float infoY = hotY + slot + 10 * k;
+            Shadowed(new Rect(invX, infoY, gridW + 200, 24 * k), m_HoverName != "" ? m_HoverName : "Drag to move · right-drag splits a stack · shift-click quick-moves", m_Small);
+
+            // ---- crafting (right) ----
+            float cxp = invX + gridW + 30 * k;
+            Shadowed(new Rect(cxp, top - 34 * k, craftW, 30 * k), $"<b>CRAFTING</b>   <color=#d9a066>{me.Count(Item.Wood)} wood</color>  <color=#c8c8d0>{me.Count(Item.Stone)} stone</color>", m_Label);
+            float row = 50 * k;
+            for (int i = 0; i < Cfg.RecipeCount; i++)
+            {
+                var rec = Cfg.GetRecipe(i);
+                var rr = new Rect(cxp, top + i * (row + 4 * k), craftW, row);
+                bool afford = me.Count(Item.Wood) >= rec.Wood && me.Count(Item.Stone) >= rec.Stone;
+                Fill(rr, new Color(0, 0, 0, 0.45f));
+                var icon = ItemIcons.Get(rec.Output);
+                if (icon != null) GUI.DrawTexture(new Rect(rr.x + 4, rr.y + 3, row - 6, row - 6), icon, ScaleMode.ScaleToFit, true);
+                string cost = rec.Wood + " wood" + (rec.Stone > 0 ? ", " + rec.Stone + " stone" : "");
+                GUI.Label(new Rect(rr.x + row + 4, rr.y + 2, craftW - row - 100 * k, row), $"<b>{rec.Name}</b>\n<size={Mathf.RoundToInt(12 * k)}><color={(afford ? "#bbbbbb" : "#ff7777")}>{cost}</color></size>", m_Label);
+                GUI.enabled = afford;
+                if (GUI.Button(new Rect(rr.xMax - 90 * k, rr.y + 8 * k, 84 * k, row - 16 * k), "Craft", m_Button)) me.CraftRpc(i);
+                GUI.enabled = true;
+            }
+            Shadowed(new Rect(cxp, top + Cfg.RecipeCount * (row + 4 * k) + 6, craftW, 24 * k), "TAB / Esc to close", m_Small);
+
+            // ---- drag visual ----
+            var e = Event.current;
+            if (m_Dragging)
+            {
+                if (e.type == EventType.MouseUp) { m_Dragging = false; e.Use(); } // dropped outside a slot: cancel
+                else
+                {
+                    var icon = ItemIcons.Get(m_DragStack.Id);
+                    var dr = new Rect(e.mousePosition.x - slot * 0.4f, e.mousePosition.y - slot * 0.4f, slot * 0.8f, slot * 0.8f);
+                    if (icon != null) GUI.DrawTexture(dr, icon, ScaleMode.ScaleToFit, true);
+                    else GUI.Label(dr, Cfg.ItemName(m_DragStack.Id), m_Small);
+                    int amt = m_DragHalf ? Mathf.Max(1, m_DragStack.Count / 2) : m_DragStack.Count;
+                    if (amt > 1) Shadowed(new Rect(dr.x, dr.yMax - 16, dr.width, 18), amt.ToString(), new GUIStyle(m_Small) { alignment = TextAnchor.LowerRight });
+                }
+            }
+        }
+
+        // ------------------------------------------------------------------ misc
+
         string BallStatus(int myTeam)
         {
             var b = Ball.Instance;
@@ -323,7 +620,7 @@ namespace RockGame
             {
                 var c = b.Carrier;
                 if (c == null) return "Ball is being carried";
-                return c.IsOwner ? "<color=#ffdd55>You have the ball - drop it (E) inside your base!</color>" : $"<color=#ff7777>{Cfg.TeamName[c.Team.Value]} has the ball!</color>";
+                return c.IsOwner ? "<color=#ffdd55>You have the ball - throw it (LMB) into your base!</color>" : $"<color=#ff7777>{Cfg.TeamName[c.Team.Value]} has the ball!</color>";
             }
             int t = b.BaseTeam.Value;
             if (t < 0) return "The ball is loose - bring it to your base!";
@@ -339,46 +636,6 @@ namespace RockGame
             float ang = Vector3.SignedAngle(me.forward, d, Vector3.up);
             string arrow = Mathf.Abs(ang) < 22.5f ? "ahead" : Mathf.Abs(ang) > 157.5f ? "behind" : ang > 0 ? (ang < 67.5f ? "ahead-right" : ang < 112.5f ? "right" : "behind-right") : (ang > -67.5f ? "ahead-left" : ang > -112.5f ? "left" : "behind-left");
             return $"{dist:0}m {arrow}";
-        }
-
-        static string ShortName(Item i)
-        {
-            switch (i)
-            {
-                case Item.BuildingPlan: return "Build Plan";
-                case Item.Hatchet: return "Hatchet";
-                case Item.Pickaxe: return "Pickaxe";
-                default: return i.ToString();
-            }
-        }
-
-        void DrawCrafting(PlayerNet me, PlayerController pc)
-        {
-            float k = m_Scale;
-            float w = 520 * k, h = Mathf.Min(600 * k, Screen.height - 20);
-            var r = new Rect((Screen.width - w) / 2, (Screen.height - h) / 2, w, h);
-            if (r.Contains(Event.current.mousePosition)) MouseOverUI = true;
-            Fill(r, new Color(0.08f, 0.07f, 0.06f, 0.92f));
-            GUILayout.BeginArea(new Rect(r.x + 16, r.y + 12, r.width - 32, r.height - 24));
-            GUILayout.Label("<b><size=" + Mathf.RoundToInt(26 * k) + ">CRAFTING</size></b>", m_Label);
-            GUILayout.Label("<color=#bbbbbb>Craft anywhere - no table needed</color>", m_Small);
-            GUILayout.Space(8 * k);
-            for (int i = 0; i < Cfg.Recipes.Length; i++)
-            {
-                var rec = Cfg.Recipes[i];
-                bool afford = me.Wood.Value >= rec.Wood && me.Stone.Value >= rec.Stone;
-                bool can = afford;
-                GUILayout.BeginHorizontal();
-                string cost = rec.Wood + " wood" + (rec.Stone > 0 ? ", " + rec.Stone + " stone" : "");
-                GUILayout.Label($"<b>{rec.Name}</b>\n<size={Mathf.RoundToInt(12 * k)}><color={(afford ? "#bbbbbb" : "#ff7777")}>{cost}</color></size>", m_Label, GUILayout.Width(330 * k));
-                GUI.enabled = can;
-                if (GUILayout.Button("Craft", m_Button, GUILayout.Width(120 * k), GUILayout.Height(38 * k))) me.CraftRpc(i);
-                GUI.enabled = true;
-                GUILayout.EndHorizontal();
-            }
-            GUILayout.FlexibleSpace();
-            GUILayout.Label("TAB / Esc to close", m_Small);
-            GUILayout.EndArea();
         }
 
         void DrawGameOver(Bootstrap boot, NetGame game, int myTeam)

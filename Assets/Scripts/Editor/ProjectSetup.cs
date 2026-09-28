@@ -65,6 +65,11 @@ namespace RockGame.EditorTools
                 go.AddComponent<NetworkObject>();
                 go.AddComponent<ResourceNode>();
             });
+            var container = MakePrefab("Container", go =>
+            {
+                go.AddComponent<NetworkObject>();
+                go.AddComponent<Container>();
+            });
             var ball = MakePrefab("Ball", go =>
             {
                 go.AddComponent<NetworkObject>();
@@ -81,10 +86,10 @@ namespace RockGame.EditorTools
                 go.AddComponent<Ball>();
             });
 
-            var prefabs = new[] { player, netGame, structure, node, ball };
+            var prefabs = new[] { player, netGame, structure, node, ball, container };
             RefreshNetworkHashes(prefabs);
 
-            BuildScene(player, netGame, structure, node, ball, baseMat, ghostMat);
+            BuildScene(player, netGame, structure, node, ball, container, baseMat, ghostMat);
 
             PlayerSettings.productName = "Rock Base Brawl";
             PlayerSettings.companyName = "RockGame";
@@ -185,7 +190,7 @@ namespace RockGame.EditorTools
             AssetDatabase.SaveAssets();
         }
 
-        static void BuildScene(GameObject player, GameObject netGame, GameObject structure, GameObject node, GameObject ball, Material baseMat, Material ghostMat)
+        static void BuildScene(GameObject player, GameObject netGame, GameObject structure, GameObject node, GameObject ball, GameObject container, Material baseMat, Material ghostMat)
         {
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
@@ -229,6 +234,7 @@ namespace RockGame.EditorTools
             boot.structurePrefab = structure;
             boot.nodePrefab = node;
             boot.ballPrefab = ball;
+            boot.containerPrefab = container;
             boot.baseMaterial = baseMat;
             boot.ghostMaterial = ghostMat;
             net.AddComponent<Hud>();

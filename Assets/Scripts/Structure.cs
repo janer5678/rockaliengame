@@ -5,7 +5,7 @@ using UnityEngine;
 
 namespace RockGame
 {
-    /// <summary>A building piece (foundation, wall, doorway, floor, stairs).</summary>
+    /// <summary>A building piece (foundation, wall, doorway, floor, stairs) or a free-standing barrier.</summary>
     public class Structure : NetworkBehaviour
     {
         public static readonly List<Structure> All = new List<Structure>();
@@ -25,6 +25,7 @@ namespace RockGame
         public PieceType PType => (PieceType)Type.Value;
         public float MaxHp => Cfg.PieceHp(PType, Tier.Value);
         public string DisplayName => (Tier.Value == 1 ? "Stone " : "Wooden ") + Cfg.PieceName(PType);
+        public bool Upgradable => PType != PieceType.Barrier;
 
         public override void OnNetworkSpawn()
         {
@@ -167,6 +168,26 @@ namespace RockGame
                     {
                         float f = (k + 0.5f) / 6f;
                         Art.Box(tr, trim, new Vector3(0, f * 3f + 0.12f, -1.5f + f * 3f), new Vector3(2.5f, 0.06f, 0.1f));
+                    }
+                    break;
+                }
+                case PieceType.Barrier:
+                {
+                    // a short palisade of sharpened stakes, 2.4m wide and 1.5m tall
+                    for (int k = 0; k < 7; k++)
+                    {
+                        float x = -1.05f + k * 0.35f;
+                        float h = 1.35f + ((k * 37) % 5) * 0.04f;
+                        Art.Box(tr, k % 2 == 0 ? Art.Wood : Art.DarkWood, new Vector3(x, h * 0.5f, 0), new Vector3(0.3f, h, 0.3f), new Vector3(0, k * 13f, 0));
+                        Art.Part(tr, Art.Cone, Art.Wood, new Vector3(x, h, 0), new Vector3(0.3f, 0.3f, 0.3f));
+                    }
+                    Art.Box(tr, Art.DarkWood, new Vector3(0, 0.45f, 0.17f), new Vector3(2.5f, 0.12f, 0.06f));
+                    Art.Box(tr, Art.DarkWood, new Vector3(0, 1.05f, 0.17f), new Vector3(2.5f, 0.12f, 0.06f));
+                    if (col)
+                    {
+                        var bc = root.AddComponent<BoxCollider>();
+                        bc.center = new Vector3(0, 0.75f, 0);
+                        bc.size = new Vector3(2.4f, 1.5f, 0.35f);
                     }
                     break;
                 }

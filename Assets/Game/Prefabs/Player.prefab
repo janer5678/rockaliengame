@@ -160,6 +160,7 @@ MonoBehaviour:
   ShowTopMostFoldoutHeaderGroup: 1
   MenuOpen: 0
   Paused: 0
+  LootTarget: {fileID: 0}
   BuildPiece: 0
   AimText: 
   BuildHint: 
