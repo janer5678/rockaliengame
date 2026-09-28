@@ -3,7 +3,7 @@ using UnityEngine;
 
 namespace RockGame
 {
-    public enum FxKind : byte { Blood, BloodHead, WoodChips, StoneChips, WeakSpot, Break, Smash, StructureHit }
+    public enum FxKind : byte { Blood, BloodHead, WoodChips, StoneChips, WeakSpot, Break, Smash, StructureHit, Chamber }
 
     /// <summary>
     /// Game feel: particles (blood, chips, sparks), camera shake/kick, floating damage numbers and sounds.
@@ -174,7 +174,7 @@ namespace RockGame
     /// <summary>Procedurally synthesised sound effects (the project has no audio assets).</summary>
     public static class Sfx
     {
-        public static AudioClip Swing, Flesh, Headshot, Chop, Clink, Thud, Ding, Smash, Twang, Throw, Pop, Eat, Place, Hurt, Kill, Step;
+        public static AudioClip Swing, Flesh, Headshot, Chop, Clink, Thud, Ding, Smash, Twang, Throw, Pop, Eat, Place, Hurt, Kill, Step, Hiss;
         const int Rate = 44100;
 
         // runs on first access to any clip, so Sfx.Play(Sfx.Chop, ...) always gets a built clip
@@ -202,6 +202,7 @@ namespace RockGame
             Place = Make("build", 0.25f, (t, d) => Mathf.Sin(t * 2 * Mathf.PI * 95) * Env(t, 0.15f) * 0.9f + N() * Env(t, 0.05f) * 0.5f, lowpass: 0.3f);
             Hurt = Make("hurt", 0.2f, (t, d) => Mathf.Sin(t * 2 * Mathf.PI * Mathf.Lerp(90, 50, t / d)) * Env(t, 0.15f) + N() * Env(t, 0.06f) * 0.3f, lowpass: 0.2f);
             Kill = Make("kill", 0.5f, (t, d) => (t < 0.12f ? Mathf.Sin(t * 2 * Mathf.PI * 1318) : Mathf.Sin(t * 2 * Mathf.PI * 1976)) * Env(t < 0.12f ? t : t - 0.12f, 0.2f) * 0.5f);
+            Hiss = Make("hiss", 0.9f, (t, d) => N() * Mathf.Min(1f, t * 20f) * Mathf.Exp(-t * 3f) * 0.5f, lowpass: 0.6f);
             Step = Make("step", 0.08f, (t, d) => N() * Env(t, 0.03f) * 0.25f, lowpass: 0.15f);
         }
 

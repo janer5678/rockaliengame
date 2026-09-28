@@ -14,6 +14,9 @@ namespace RockGame
     {
         public static Bootstrap I;
         public static bool Solo, Fast;
+        /// <summary>Map picked in the menu (Cfg.MapKey format). A random seed is rolled when hosting.</summary>
+        public static int MapChoice;
+        static int s_SeedOverride = -1;
 
         public GameObject playerPrefab, netGamePrefab, structurePrefab, nodePrefab, ballPrefab, containerPrefab;
         public Material baseMaterial, ghostMaterial;
@@ -33,6 +36,9 @@ namespace RockGame
             Cfg.LoadPrefs();
             Application.targetFrameRate = 144;
             Application.runInBackground = true;
+            MapChoice = PlayerPrefs.GetInt("RockGame.Map", 0);
+            ParseMapArgs();
+            Cfg.SetMap(MapChoice, 0);
             MapBuilder.Build();
         }
 
@@ -68,11 +74,39 @@ namespace RockGame
             else if (client) Join();
         }
 
+        static void ParseMapArgs()
+        {
+            var args = System.Environment.GetCommandLineArgs();
+            for (int i = 0; i < args.Length; i++)
+            {
+                switch (args[i].ToLowerInvariant())
+                {
+                    case "-map":
+                        if (i + 1 < args.Length) MapChoice = (MapChoice & 16) | (args[i + 1].ToLowerInvariant().StartsWith("h") ? (int)MapKind.Highlands : (int)MapKind.Plains);
+                        break;
+                    case "-small": MapChoice |= 16; break;
+                    case "-big": MapChoice &= ~16; break;
+                    case "-seed": if (i + 1 < args.Length && int.TryParse(args[i + 1], out var sd)) s_SeedOverride = sd; break;
+                }
+            }
+        }
+
+        /// <summary>Menu: pick the map (rebuilds the background preview).</summary>
+        public void SetMapChoice(int key)
+        {
+            MapChoice = key;
+            PlayerPrefs.SetInt("RockGame.Map", key);
+            Cfg.SetMap(key, 0);
+            MapBuilder.Build();
+        }
+
         ushort ParsedPort => ushort.TryParse(Port, out var p) ? p : (ushort)7777;
 
         public void Host()
         {
             Status = "";
+            Cfg.SetMap(MapChoice, s_SeedOverride >= 0 ? s_SeedOverride : Random.Range(1, 999999));
+            MapBuilder.Build();
             m_Ut.SetConnectionData("127.0.0.1", ParsedPort, "0.0.0.0");
             if (!m_Nm.StartHost()) Status = "Could not start host (is the port already in use?)";
         }
@@ -96,6 +130,8 @@ namespace RockGame
             foreach (var a in FindObjectsByType<ArrowProjectile>(FindObjectsSortMode.None)) Destroy(a.gameObject);
             Hud.Clear();
             Cfg.LoadPrefs(); // drop the host's settings, back to our own
+            Cfg.SetMap(MapChoice, 0);
+            MapBuilder.Build();
         }
 
         void Approve(NetworkManager.ConnectionApprovalRequest req, NetworkManager.ConnectionApprovalResponse resp)
@@ -137,7 +173,7 @@ namespace RockGame
             {
                 m_MenuOrbit += Time.deltaTime * 4f;
                 var cam = Camera.main.transform;
-                var p = Quaternion.Euler(0, m_MenuOrbit, 0) * new Vector3(0, 55, -120);
+                var p = Quaternion.Euler(0, m_MenuOrbit, 0) * new Vector3(0, 55, -120) * (Cfg.MapHalf / 100f);
                 cam.position = p;
                 cam.LookAt(new Vector3(0, 0, 0));
             }

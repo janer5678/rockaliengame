@@ -38,6 +38,10 @@ namespace RockGame
             Log($"local player spawned: team={Cfg.TeamName[me.Team.Value]} host={nm.IsHost} nodes={FindObjectsByType<ResourceNode>(FindObjectsSortMode.None).Length}");
             Check(Cfg.BaseTeamAt(me.transform.position) == me.Team.Value, $"spawned inside own base ({me.transform.position})");
             Check(me.Count(Item.Rock) == 1 && me.HeldItem == Item.Rock, "start with a rock in hand");
+            Check(Vector3.Distance(me.transform.position, Cfg.ChamberPos(me.Team.Value)) < 1.5f, $"spawned in the UFO cryo chamber on {Cfg.MapLabel} (seed {Cfg.MapSeed})");
+            Check(NetGame.Instance != null && NetGame.Instance.MapKey.Value == Cfg.MapKey && NetGame.Instance.MapSeed.Value == Cfg.MapSeed, "map + seed synced from the host");
+            var ufoCell = new PieceKey(PieceKey.KFoundation, Cfg.UfoI[me.Team.Value], Cfg.UfoJ[me.Team.Value], 0, 0);
+            Check(BuildGrid.OnUfo(ufoCell), "can't build on the UFO");
             StartCoroutine(Watch());
             if (m_Mode == "shots") yield return ShotsRoutine(me, pc);
             else if (nm.IsHost) yield return HostRoutine(me, pc);
@@ -110,7 +114,9 @@ namespace RockGame
             yield return new WaitForSeconds(0.6f);
             Check(me.Count(Item.BuildingPlan) == 1, "crafted building plan");
             yield return Hold(me, Item.BuildingPlan);
-            int ci = BuildGrid.CellOf(baseC.x + 0.1f), cj = BuildGrid.CellOf(baseC.z + 0.1f);
+            FreeCell(team, 0, out int ci, out int cj);
+            pc.LocalTeleport(BuildGrid.CellCenter(ci, cj) + new Vector3(-4f, 0.1f, -1.5f), 0); // stand next to it (the UFO moves the free cells around)
+            yield return new WaitForSeconds(0.3f);
             me.PlaceRpc((byte)PieceType.Foundation, ci, cj, 0, 0);
             yield return new WaitForSeconds(1.3f);
             me.PlaceRpc((byte)PieceType.Wall, ci, cj, 0, 1);
@@ -155,7 +161,7 @@ namespace RockGame
             Check(Mathf.Abs(me.transform.position.z - Cfg.ArenaCenter.z) < 30f, "host was teleported to the arena");
             Check(Mathf.Abs(other.transform.position.z - Cfg.ArenaCenter.z) < 30f, "client was teleported to the arena");
             Check(me.HeldItem == Item.Rock, "rock forced in sudden death");
-            int bagsBefore = CountBags();
+            int itemsBefore = NetGame.Instance.Items.Count;
             while (NetGame.Instance != null && NetGame.Instance.S == GameState.SuddenDeath)
             {
                 var tp = other.transform.position;
@@ -166,7 +172,7 @@ namespace RockGame
                 me.MeleeRpc(true, other.NetworkObject, tp + Vector3.up * 1.0f, false);
                 yield return new WaitForSeconds(0.65f);
             }
-            Check(CountBags() > bagsBefore && other.Count(Item.Rock) == 0, "killed player dropped everything in a loot bag");
+            Check(NetGame.Instance.Items.Count > itemsBefore && other.Count(Item.Rock) == 1 && other.Count(Item.Wood) == 0, $"killed player's items spilled out of the body ({NetGame.Instance.Items.Count - itemsBefore} piles), rock kept");
         }
 
         /// <summary>Host-only (the server may write its own inventory directly): crafting, building, chest, bag, berries, barrier, bow, spear, ram.</summary>
@@ -192,7 +198,9 @@ namespace RockGame
 
             // build + upgrade + door
             yield return Hold(me, Item.BuildingPlan);
-            int ci = BuildGrid.CellOf(baseC.x + 0.1f), cj = BuildGrid.CellOf(baseC.z + 0.1f);
+            FreeCell(team, 0, out int ci, out int cj);
+            pc.LocalTeleport(BuildGrid.CellCenter(ci, cj) + new Vector3(-4f, 0.1f, -1.5f), 0); // stand next to it (the UFO moves the free cells around)
+            yield return new WaitForSeconds(0.3f);
             me.PlaceRpc((byte)PieceType.Foundation, ci, cj, 0, 0);
             yield return new WaitForSeconds(1.2f);
             me.PlaceRpc((byte)PieceType.Wall, ci, cj, 0, 1);
@@ -226,7 +234,8 @@ namespace RockGame
             }
 
             // chest: place in base, store stuff, take it back
-            var chestPos = baseC + new Vector3(8f, 0f, 8f);
+            FreeCell(team, 1, out int chI, out int chJ);
+            var chestPos = BuildGrid.CellCenter(chI, chJ);
             pc.LocalTeleport(chestPos + new Vector3(0, 0.1f, -2.5f), 0);
             yield return Hold(me, Item.Chest);
             me.PlaceDeployableRpc((byte)Item.Chest, chestPos, 180f);
@@ -245,6 +254,9 @@ namespace RockGame
                 me.MoveItemRpc(1, 3, 0, 255, 0, chest.NetworkObject);
                 yield return new WaitForSeconds(0.4f);
                 Check(chest.Slots[3].Empty && me.Count(Item.Stone) == before, "shift-click took it back out");
+                me.MoveItemRpc(0, (byte)me.HotbarSlotOf(Item.Rock), 1, 0, 1, chest.NetworkObject);
+                yield return new WaitForSeconds(0.4f);
+                Check(chest.Slots[0].Empty && me.Count(Item.Rock) == 1, "the rock can't be put in a chest");
             }
             var farPos = new Vector3(0, 0.1f, 0);
             Check(PlayerNet.DeployProblem(Item.Chest, team, Cfg.BaseCenter[1 - team], 0) != null && PlayerNet.DeployProblem(Item.Chest, team, farPos, 0) != null, "chests only allowed in own base");
@@ -318,15 +330,33 @@ namespace RockGame
             var landAt = me.transform.position + new Vector3(0, 0.05f, 4f);
             me.SpearLandRpc(false, default, landAt, Vector3.down);
             yield return new WaitForSeconds(0.5f);
-            Check(NetGame.Instance.Spears.Count == 1 && me.Count(Item.Spear) == 0, $"thrown spear landed on the ground (dropped={NetGame.Instance.Spears.Count})");
-            if (NetGame.Instance.Spears.Count == 1)
+            int spearItem = FindWorldItem(Item.Spear);
+            Check(spearItem >= 0 && me.Count(Item.Spear) == 0, "thrown spear landed on the ground as a world item");
+            if (spearItem >= 0)
             {
                 pc.LocalTeleport(landAt + new Vector3(0, 0.05f, -1f), 0);
                 yield return new WaitForSeconds(0.4f);
-                me.PickupSpearRpc(NetGame.Instance.Spears[0].Id);
+                me.PickupItemRpc(spearItem);
                 yield return new WaitForSeconds(0.5f);
-                Check(NetGame.Instance.Spears.Count == 0 && me.Count(Item.Spear) == 1, "picked the spear back up");
+                Check(FindWorldItem(Item.Spear) < 0 && me.Count(Item.Spear) == 1, "picked the spear back up (E)");
             }
+
+            // drag an item out of the inventory onto the ground, then pick it back up
+            int woodSlot = -1;
+            for (int i = 0; i < Cfg.PlayerSlots && woodSlot < 0; i++) if (me.SlotAt(i).Id == Item.Wood) woodSlot = i;
+            int woodBefore = me.Count(Item.Wood);
+            me.DropItemRpc(0, (byte)woodSlot, 100, default);
+            yield return new WaitForSeconds(0.5f);
+            int woodItem = FindWorldItem(Item.Wood);
+            Check(woodItem >= 0 && me.Count(Item.Wood) == woodBefore - 100, "dropped 100 wood on the ground");
+            me.PickupItemRpc(woodItem);
+            yield return new WaitForSeconds(0.5f);
+            Check(me.Count(Item.Wood) == woodBefore && FindWorldItem(Item.Wood) < 0, "picked the wood back up");
+            int rockSlot = me.HotbarSlotOf(Item.Rock);
+            me.DropItemRpc(0, (byte)rockSlot, 1, default);
+            me.MoveItemRpc(0, (byte)rockSlot, 0, (byte)(Cfg.PlayerSlots - 1), 1, default);
+            yield return new WaitForSeconds(0.5f);
+            Check(me.HotbarSlotOf(Item.Rock) == rockSlot && FindWorldItem(Item.Rock) < 0, "the rock can't be dropped or moved off the hotbar");
 
             // hand-held ram on the opponent's wall
             float waitUntil = Time.time + 60f;
@@ -356,151 +386,152 @@ namespace RockGame
             yield return Hold(me, Item.Rock);
         }
 
-        /// <summary>Visual check: build a small base via RPCs and capture screenshots. Run windowed with -host -solo -fast.</summary>
+        /// <summary>Visual check: capture screenshots of the new features. Run windowed with -host -fast (optionally with a client).</summary>
         IEnumerator ShotsRoutine(PlayerNet me, PlayerController pc)
         {
             string dir = ".";
             var args = System.Environment.GetCommandLineArgs();
             for (int i = 0; i < args.Length - 1; i++) if (args[i] == "-shotdir") dir = args[i + 1];
             System.IO.Directory.CreateDirectory(dir);
+            void Snap(string name) { ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(dir, name + ".png")); Log("shot " + name); }
             IEnumerator Shot(string name)
             {
                 yield return new WaitForSeconds(0.6f);
-                ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(dir, name + ".png"));
+                Snap(name);
                 yield return new WaitForSeconds(0.3f);
-                Log("shot " + name);
             }
+            int team = me.Team.Value;
+
+            // 1: waking up in the cryo chamber
+            yield return new WaitForSeconds(0.2f);
+            NetGame.SpawnPoint(team, false, out var cp, out var cy);
+            pc.LocalTeleport(cp, cy);
+            pc.SetLook(cy, 8f);
+            pc.SendMessage("WakeUp", SendMessageOptions.DontRequireReceiver);
+            yield return new WaitForSeconds(0.9f);
+            Snap("01_wake_in_chamber");
+            yield return new WaitForSeconds(0.5f);
+
+            // 2: the crashed UFO from outside
+            var fwd = Cfg.UfoForward(team);
+            var outside = Cfg.UfoCenter(team) + fwd * 11f + Vector3.Cross(Vector3.up, fwd) * 4f + Vector3.up * 0.1f;
+            var look = Cfg.UfoCenter(team) + Vector3.up * 1.5f - outside;
+            pc.LocalTeleport(outside, Quaternion.LookRotation(new Vector3(look.x, 0, look.z)).eulerAngles.y);
+            pc.SetLook(Quaternion.LookRotation(new Vector3(look.x, 0, look.z)).eulerAngles.y, 4f);
+            yield return Shot("02_ufo_outside");
+            var above = Cfg.UfoCenter(team) + fwd * 13f + Vector3.up * 8f;
+            pc.LocalTeleport(above, Quaternion.LookRotation(-fwd).eulerAngles.y);
+            pc.SetLook(Quaternion.LookRotation(-fwd).eulerAngles.y, 28f);
+            yield return Shot("02b_ufo_above");
+            pc.LocalTeleport(new Vector3(Cfg.MapHalf * 0.55f, 45f, Cfg.BaseCenter[team].z - 10f), 0f);
+            pc.SetLook(-30f, 32f);
+            yield return Shot("02c_map_overview");
 
             while (NetGame.Instance == null || NetGame.Instance.S == GameState.Waiting) yield return null;
-            me.ServerGive(Item.Wood, 5000);
-            me.ServerGive(Item.Stone, 3000);
-            pc.LocalTeleport(new Vector3(0, 0.1f, -81f), 0);
-            foreach (var it in new[] { Item.BuildingPlan, Item.Bow, Item.Arrow, Item.Ram, Item.Spear, Item.Chest, Item.Barrier, Item.Hatchet })
+            me.ServerGive(Item.Wood, 3000);
+            me.ServerGive(Item.Stone, 1000);
+            foreach (var it in new[] { Item.BuildingPlan, Item.Bow, Item.Arrow, Item.Hatchet, Item.Spear, Item.Chest })
             {
                 me.CraftRpc(Cfg.RecipeIndex(it));
                 yield return new WaitForSeconds(0.2f);
             }
-            yield return Hold(me, Item.BuildingPlan);
+            me.ServerGive(Item.Berry, 6);
 
-            var plan = new System.Collections.Generic.List<(PieceType, int, int, int, int)>();
-            for (int i = -1; i <= 1; i++) for (int j = -26; j <= -25; j++) plan.Add((PieceType.Foundation, i, j, 0, 0));
-            for (int i = -1; i <= 1; i++) plan.Add((i == 0 ? PieceType.Doorway : PieceType.Wall, i, -27, 0, 1));
-            for (int i = -1; i <= 1; i++) plan.Add((PieceType.Wall, i, -25, 0, 1));
-            for (int j = -26; j <= -25; j++) { plan.Add((PieceType.Wall, -2, j, 0, 0)); plan.Add((PieceType.Wall, 1, j, 0, 0)); }
-            for (int i = -1; i <= 1; i++) for (int j = -26; j <= -25; j++) plan.Add((PieceType.Floor, i, j, 1, 0));
-            plan.Add((PieceType.Wall, -1, -27, 1, 1));
-            plan.Add((PieceType.Wall, 1, -27, 1, 1));
-            foreach (var (t, i, j, l, d) in plan)
-            {
-                me.PlaceRpc((byte)t, i, j, l, d);
-                yield return new WaitForSeconds(1.0f);
-            }
-            int n = 0;
-            foreach (var s in Structure.All)
-                if (s.PType == PieceType.Wall && (n++ % 2 == 0)) { me.UpgradeRpc(s.NetworkObject); yield return new WaitForSeconds(1.35f); }
-            Log($"structures={Structure.All.Count}");
+            // 3: rock (two-handed) idle, swing that connects (bounces up) and one that misses (follows through)
+            ResourceNode tree = null;
+            foreach (var n in FindObjectsByType<ResourceNode>(FindObjectsSortMode.None)) if (n.Kind.Value == ResourceNode.Tree && (tree == null || (n.transform.position - me.transform.position).sqrMagnitude < (tree.transform.position - me.transform.position).sqrMagnitude)) tree = n;
+            var tp = tree.transform.position;
+            var away = (me.transform.position - tp); away.y = 0; away.Normalize();
+            float yawToTree = Quaternion.LookRotation(-away).eulerAngles.y;
+            pc.LocalTeleport(tp + away * 2f + Vector3.up * 0.1f, yawToTree);
+            pc.SetLook(yawToTree, 12f);
+            yield return Hold(me, Item.Rock);
+            yield return Shot("03_rock_idle");
+            pc.DebugSwing(Cfg.RockCooldown);
+            yield return new WaitForSeconds(0.05f);
+            Snap("04_rock_raised");
+            yield return new WaitForSeconds(ViewModel.ImpactTime - 0.05f);
+            pc.DebugImpact(true);
+            yield return new WaitForSeconds(0.14f);
+            Snap("05_rock_hit_bounce");
+            yield return new WaitForSeconds(0.8f);
+            pc.SetLook(yawToTree + 90f, 12f);
+            pc.DebugSwing(Cfg.RockCooldown);
+            yield return new WaitForSeconds(ViewModel.ImpactTime);
+            pc.DebugImpact(false);
+            yield return new WaitForSeconds(0.1f);
+            Snap("06_rock_miss_follow");
+            yield return new WaitForSeconds(0.8f);
 
-            // 1: base with ghost
-            pc.LocalTeleport(new Vector3(4, 0.1f, -88f), 0);
-            pc.SetLook(-15f, 14f);
-            pc.BuildPiece = PieceType.Foundation;
-            yield return Shot("01_base_and_ghost");
-
-            // 2: held items (hands)
-            pc.LocalTeleport(new Vector3(14, 0.1f, -92f), 0);
-            pc.SetLook(-40f, 12f);
-            yield return Hold(me, Item.Ram);
-            yield return Shot("02_ram");
-            yield return Hold(me, Item.Spear);
-            yield return Shot("02b_spear");
-            pc.DebugDraw = 1f;
-            yield return Shot("02c_spear_aim");
+            // 4: bow (Rust style, right hand) + ball
+            pc.SetLook(yawToTree + 90f, 4f);
             yield return Hold(me, Item.Bow);
-            yield return Shot("02d_bow_drawn");
+            yield return Shot("07_bow");
+            pc.DebugDraw = 1f;
+            yield return Shot("08_bow_drawn");
             pc.DebugDraw = -1f;
-            yield return Hold(me, Item.Rock);
-            yield return Shot("02e_rock");
-            foreach (var it in new[] { Item.Rock, Item.Hatchet })
-            {
-                yield return Hold(me, it);
-                yield return new WaitForSeconds(0.5f);
-                pc.DebugSwing(0.8f);
-                yield return new WaitForSeconds(ViewModel.ImpactTime * 0.4f);
-                ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(dir, $"02f_{it}_windup.png"));
-                yield return new WaitForSeconds(ViewModel.ImpactTime * 0.8f);
-                ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(dir, $"02g_{it}_slam.png"));
-                yield return new WaitForSeconds(0.8f);
-            }
-
-            // 3: chest + barrier placed
-            pc.LocalTeleport(new Vector3(8, 0.1f, -66f), 180f);
-            yield return Hold(me, Item.Chest);
-            me.PlaceDeployableRpc((byte)Item.Chest, new Vector3(8, 0, -69f), 0f);
-            yield return new WaitForSeconds(0.4f);
-            pc.LocalTeleport(new Vector3(10, 0.1f, -50f), 180f);
-            yield return Hold(me, Item.Barrier);
-            me.PlaceDeployableRpc((byte)Item.Barrier, new Vector3(10, 0, -53f), 0f);
-            yield return new WaitForSeconds(0.4f);
-            pc.LocalTeleport(new Vector3(12, 0.1f, -46f), 200f);
-            pc.SetLook(200f, 18f);
-            yield return Hold(me, Item.Rock);
-            yield return Shot("03_barrier");
-
-            // 4: tree weak spot (X)
-            ResourceNode tree = null, rock = null, bush = null;
-            foreach (var node in FindObjectsByType<ResourceNode>(FindObjectsSortMode.None))
-            {
-                if (node.Kind.Value == ResourceNode.Tree && tree == null) tree = node;
-                if (node.Kind.Value == ResourceNode.Boulder && rock == null) rock = node;
-                if (node.IsBush && bush == null) bush = node;
-            }
-            foreach (var (node, name) in new[] { (tree, "04_tree_x"), (rock, "05_rock_star"), (bush, "06_bush") })
-            {
-                if (node == null) continue;
-                Vector3 look = node.transform.position + Vector3.up * 1f;
-                if (node.TryGetSpot(out var sp, out var nrm)) { look = sp; }
-                var from = look + (node.TryGetSpot(out _, out var n2) ? new Vector3(n2.x, 0, n2.z).normalized : Vector3.back) * 2.2f;
-                from.y = 0.1f;
-                var d = look - (from + Vector3.up * Cfg.EyeHeight);
-                pc.LocalTeleport(from, Quaternion.LookRotation(new Vector3(d.x, 0, d.z)).eulerAngles.y);
-                pc.SetLook(Quaternion.LookRotation(new Vector3(d.x, 0, d.z)).eulerAngles.y, -Mathf.Asin(d.normalized.y) * Mathf.Rad2Deg);
-                yield return Shot(name);
-            }
-
-            // 7: ball in hands
             while (Ball.Instance == null) yield return null;
-            yield return new WaitForSeconds(4f);
+            yield return new WaitForSeconds(3f);
             pc.LocalTeleport(Ball.Instance.transform.position + new Vector3(0, 0.1f, -1.5f), 0);
             yield return new WaitForSeconds(0.4f);
             me.PickupBallRpc();
             yield return new WaitForSeconds(0.5f);
-            pc.SetLook(0f, 5f);
-            yield return Shot("07_ball_in_hands");
+            pc.SetLook(0f, 3f);
+            yield return Shot("09_ball_in_hands");
+            me.ThrowBallRpc(Vector3.forward + Vector3.up * 0.3f);
+            yield return new WaitForSeconds(0.25f);
+            Snap("10_ball_thrown");
+            yield return new WaitForSeconds(0.6f);
 
-            // 8: inventory + crafting
-            pc.MenuOpen = true;
-            yield return Shot("08_inventory");
-            pc.MenuOpen = false;
-
-            // 9: the other player's alien model (only when a client joined instead of -solo)
-            foreach (var p in PlayerNet.All)
+            // 5: items dropped on the ground (drag out of the inventory)
+            yield return Hold(me, Item.Rock);
+            pc.SetLook(0f, 35f);
+            for (int i = Cfg.PlayerSlots - 1; i >= 0; i--)
             {
-                if (p == me) continue;
-                var fwd = p.transform.forward;
-                pc.LocalTeleport(p.transform.position + fwd * 3f + Vector3.up * 0.1f, Quaternion.LookRotation(-fwd).eulerAngles.y);
-                pc.SetLook(Quaternion.LookRotation(-fwd).eulerAngles.y, 8f);
-                yield return Shot("09_alien");
-                // blood: hit them
-                me.ThrowBallRpc(Vector3.down);
-                yield return new WaitForSeconds(0.3f);
-                yield return Hold(me, Item.Hatchet);
-                Fx.Blood(p.transform.position + Vector3.up * 1.5f, -fwd, true);
-                Fx.DamageNumber(p.transform.position + Vector3.up * 1.5f, 28, true);
-                Hud.HitMarker(false, true);
-                yield return new WaitForSeconds(0.05f);
-                ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(dir, "10_blood.png"));
-                yield return new WaitForSeconds(0.3f);
+                var st = me.SlotAt(i);
+                if (st.Empty || st.Id == Item.Rock || st.Id == Item.Arrow) continue;
+                me.DropItemRpc(0, (byte)i, (ushort)Mathf.Min(st.Count, 200), default);
+                yield return new WaitForSeconds(0.12f);
             }
+            yield return new WaitForSeconds(0.2f);
+            Snap("11_items_tossed");
+            yield return Shot("12_items_on_ground");
+
+            // 6: third-person rig demo (walk / sprint / crouch / jump / swing)
+            var demoRoot = me.transform.position + new Vector3(0, 0, 6f);
+            var demos = new System.Collections.Generic.List<(Transform root, BodyAnimator anim, int mode)>();
+            for (int m = 0; m < 5; m++)
+            {
+                var r = new GameObject("demo" + m).transform;
+                r.position = demoRoot + new Vector3((m - 2) * 1.8f, 0, 0);
+                r.rotation = Quaternion.Euler(0, 200f, 0);
+                var anim = BodyAnimator.TryCreate(r, Cfg.ModelWidth, out _);
+                if (anim == null) { Log("FAIL: rigged alien missing"); break; }
+                demos.Add((r, anim, m));
+            }
+            pc.LocalTeleport(me.transform.position, 0f);
+            pc.SetLook(0f, 8f);
+            float t0 = Time.time;
+            while (Time.time - t0 < 1.35f)
+            {
+                float dt = Time.deltaTime, t = Time.time - t0;
+                foreach (var (r, anim, m) in demos)
+                {
+                    float speed = m == 0 ? 3f : m == 1 ? 7.5f : m == 2 ? 2f : 0f;
+                    r.position += r.forward * speed * dt * 0f; // animate in place, but feed the speed below
+                    var pose = new BodyAnimator.Pose { Crouch = m == 2, Holding = m == 4, TwoHanded = m == 4, Swing = m == 4 ? Mathf.Clamp01(1f - (t % 0.55f) / 0.55f) : 0f };
+                    if (m == 3) r.position = demoRoot + new Vector3((m - 2) * 1.8f, 1.2f, 0);
+                    anim.TickWithVelocity(pose, dt, r.forward * speed);
+                }
+                yield return null;
+            }
+            Snap("13_rig_walk_sprint_crouch_jump_swing");
+            yield return new WaitForSeconds(0.3f);
+
+            // 7: inventory
+            pc.MenuOpen = true;
+            yield return Shot("14_inventory");
+            pc.MenuOpen = false;
             Application.Quit(0);
         }
 
@@ -544,11 +575,30 @@ namespace RockGame
             return c;
         }
 
-        static int CountBags()
+        /// <summary>The n-th cell in the base (centre outwards) where a foundation + walls on +x/+z fit (the UFO is random).</summary>
+        static void FreeCell(int team, int n, out int ci, out int cj)
         {
-            int c = 0;
-            foreach (var b in Container.All) if (b.IsBag) c++;
-            return c;
+            var c = Cfg.BaseCenter[team];
+            int i0 = BuildGrid.CellOf(c.x + 0.1f), j0 = BuildGrid.CellOf(c.z + 0.1f);
+            for (int r = 0; r < 6; r++)
+            for (int di = -r; di <= r; di++)
+            for (int dj = -r; dj <= r; dj++)
+            {
+                if (Mathf.Max(Mathf.Abs(di), Mathf.Abs(dj)) != r) continue;
+                int i = i0 + di, j = j0 + dj;
+                bool ok = true;
+                for (int a = -1; a <= 2 && ok; a++)
+                for (int b = -1; b <= 2 && ok; b++)
+                    ok = Cfg.CellInBase(team, i + a, j + b) && !Cfg.CellBlocked(i + a, j + b);
+                if (ok && n-- == 0) { ci = i; cj = j; return; }
+            }
+            ci = i0; cj = j0;
+        }
+
+        static int FindWorldItem(Item id)
+        {
+            foreach (var it in NetGame.Instance.Items) if (it.Stack.Id == id) return it.Id;
+            return -1;
         }
 
         static void Check(bool ok, string what) => Log((ok ? "PASS: " : "FAIL: ") + what);

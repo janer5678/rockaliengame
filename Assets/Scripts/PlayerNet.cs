@@ -14,6 +14,9 @@ namespace RockGame
     {
         public static PlayerNet Local;
         public static readonly List<PlayerNet> All = new List<PlayerNet>();
+        /// <summary>Hit capsules live on their own layer: hit by raycasts, but they never block movement or physics.</summary>
+        public const int HitboxLayer = 30;
+        static bool s_LayersSet;
 
         // ---- server-written state ----
         public readonly NetworkVariable<byte> Team = new NetworkVariable<byte>();
@@ -35,7 +38,7 @@ namespace RockGame
         public bool CarryingBall => Ball.Instance != null && Ball.Instance.CarrierId.Value == NetworkObjectId;
         public float EyeHeight => Crouch.Value ? Cfg.CrouchEyeHeight : Cfg.EyeHeight;
         public Vector3 EyePos => transform.position + Vector3.up * EyeHeight;
-        public bool IsHeadshot(Vector3 point) => point.y > transform.position.y + (Crouch.Value ? 0.85f : 1.35f);
+        public bool IsHeadshot(Vector3 point) => point.y > transform.position.y + (Crouch.Value ? 0.88f : 1.24f);
 
         /// <summary>First hotbar slot holding this item, or -1.</summary>
         public int HotbarSlotOf(Item id)
@@ -49,6 +52,10 @@ namespace RockGame
         Transform m_VisualRoot, m_Head, m_Hand;
         GameObject m_HandItem;
         Item m_HandItemId = (Item)255;
+        BodyAnimator m_Anim;
+        CapsuleCollider m_Hitbox;
+        float m_DeadSince = -10f;
+        bool m_WasDead;
         readonly List<Renderer> m_TeamRenderers = new List<Renderer>();
         readonly List<Material> m_TeamMats = new List<Material>();
         readonly List<GameObject> m_StuckVisuals = new List<GameObject>();
@@ -58,12 +65,21 @@ namespace RockGame
         {
             All.Add(this);
             m_CC = GetComponent<CharacterController>();
+            if (!s_LayersSet)
+            {
+                s_LayersSet = true;
+                for (int l = 0; l < 32; l++) Physics.IgnoreLayerCollision(HitboxLayer, l, true);
+            }
+            var hb = new GameObject("hitbox") { layer = HitboxLayer };
+            hb.transform.SetParent(transform, false);
+            m_Hitbox = hb.AddComponent<CapsuleCollider>();
             if (IsServer)
             {
                 Team.Value = (byte)(OwnerClientId == NetworkManager.ServerClientId ? 0 : 1);
                 Health.Value = Cfg.MaxHealth;
                 for (int i = 0; i < Cfg.PlayerSlots; i++) Inv.Add(default);
                 ServerGive(Item.Rock, 1);
+                Fx.Server(FxKind.Chamber, Cfg.ChamberPos(Team.Value), new Vector3(Team.Value, 0, 0));
             }
 
             BuildBody();
@@ -92,7 +108,13 @@ namespace RockGame
             m_Head = new GameObject("head").transform;
             m_Head.SetParent(m_VisualRoot, false);
             m_Head.localPosition = new Vector3(0, 1.6f, 0);
-            if (!BuildAlien()) BuildBlockBody();
+            m_Anim = BodyAnimator.TryCreate(m_VisualRoot, Cfg.ModelWidth, out var rigged);
+            if (m_Anim != null) SkinAlien(rigged);
+            else
+            {
+                if (rigged) Destroy(rigged);
+                if (!BuildAlien()) BuildBlockBody();
+            }
             m_Hand = new GameObject("hand").transform;
             m_Hand.SetParent(m_VisualRoot, false);
             m_Hand.localPosition = new Vector3(0.45f, 0.85f, 0.15f); // the alien's right hand
@@ -106,6 +128,13 @@ namespace RockGame
             if (prefab == null) return false;
             var model = Instantiate(prefab, m_VisualRoot, false);
             model.name = "alien";
+            model.transform.localScale = new Vector3(Cfg.ModelWidth, 1f, Cfg.ModelWidth);
+            SkinAlien(model);
+            return true;
+        }
+
+        void SkinAlien(GameObject model)
+        {
             var bodyTex = Resources.Load<Texture2D>("Alien/Alien_Body");
             var headTex = Resources.Load<Texture2D>("Alien/Alien_Head");
             foreach (var r in model.GetComponentsInChildren<Renderer>())
@@ -127,7 +156,6 @@ namespace RockGame
                 }
                 r.sharedMaterials = mats;
             }
-            return true;
         }
 
         void BuildBlockBody()
@@ -177,41 +205,70 @@ namespace RockGame
             if (m_HandItem) Destroy(m_HandItem);
             m_HandItemId = item;
             m_HandItem = ItemModels.Create(item, m_Hand);
-            m_HandItem.transform.localRotation = Quaternion.Euler(20, 0, 0);
+            m_HandItem.transform.localRotation = m_Anim != null ? Quaternion.identity : Quaternion.Euler(20, 0, 0);
+            if (item == Item.Rock) m_HandItem.transform.localScale = Vector3.one * 1.3f;
             if (IsOwner) Art.SetLayerShadowsOnly(m_HandItem);
         }
 
         void Update()
         {
-            bool alive = !Dead.Value;
-            if (m_VisualRoot.gameObject.activeSelf != alive) m_VisualRoot.gameObject.SetActive(alive);
-            if (m_CC.enabled != alive) m_CC.enabled = alive;
+            bool dead = Dead.Value;
+            if (dead && !m_WasDead) m_DeadSince = Time.time;
+            m_WasDead = dead;
+            // the body topples over and stays a moment before disappearing
+            bool showBody = !dead || Time.time - m_DeadSince < 2.5f;
+            if (m_VisualRoot.gameObject.activeSelf != showBody) m_VisualRoot.gameObject.SetActive(showBody);
+            if (m_CC.enabled != !dead) m_CC.enabled = !dead;
+            m_Hitbox.enabled = !dead;
 
-            // crouch: collider (so hits line up on every peer) + squashed body
+            // crouch: collider + hitbox (so hits line up on every peer)
             float h = Crouch.Value ? Cfg.CrouchHeight : Cfg.StandHeight;
             if (!Mathf.Approximately(m_CC.height, h))
             {
                 m_CC.height = h;
                 m_CC.center = new Vector3(0, h * 0.5f, 0);
             }
-            m_CrouchVis = Mathf.MoveTowards(m_CrouchVis, Crouch.Value ? 1f : 0f, Time.deltaTime * 6f);
-            m_VisualRoot.localScale = new Vector3(1f, Mathf.Lerp(1f, 0.68f, m_CrouchVis), 1f);
+            m_Hitbox.radius = Cfg.HitboxRadius;
+            m_Hitbox.height = Mathf.Max(h + 0.05f, Cfg.HitboxRadius * 2f);
+            m_Hitbox.center = new Vector3(0, m_Hitbox.height * 0.5f, 0);
+            if (m_Anim == null)
+            {
+                m_CrouchVis = Mathf.MoveTowards(m_CrouchVis, Crouch.Value ? 1f : 0f, Time.deltaTime * 6f);
+                m_VisualRoot.localScale = new Vector3(1f, Mathf.Lerp(1f, 0.68f, m_CrouchVis), 1f);
+            }
 
-            var held = CarryingBall ? Item.None : HeldItem;
+            var held = CarryingBall || dead ? Item.None : HeldItem;
             if (held != m_HandItemId) RebuildHandItem(held);
             if (m_StuckVisuals.Count != Mathf.Min(StuckSpears.Value, k_StuckPos.Length)) RebuildStuckSpears();
-            if (!IsOwner) m_Head.localRotation = Quaternion.Euler(Pitch.Value * 0.6f, 0, 0);
-            if (m_Swing > 0)
-            {
-                m_Swing = Mathf.Max(0, m_Swing - Time.deltaTime * 3f);
-                m_Hand.localRotation = Quaternion.Euler(Mathf.Sin(m_Swing * Mathf.PI) * 80f, 0, 0);
-            }
+            if (m_Swing > 0) m_Swing = Mathf.Max(0, m_Swing - Time.deltaTime / 0.55f);
+            if (m_Anim == null && !IsOwner) m_Head.localRotation = Quaternion.Euler(Pitch.Value * 0.6f, 0, 0);
+            if (m_Anim == null && m_Swing > 0) m_Hand.localRotation = Quaternion.Euler(Mathf.Sin(m_Swing * Mathf.PI) * 80f, 0, 0);
 
             if (IsServer && Dead.Value && NetGame.Instance != null && NetworkManager.ServerTime.Time >= RespawnAt.Value)
             {
                 var s = NetGame.Instance.S;
                 if (s != GameState.SuddenDeath && s != GameState.GameOver) ServerRespawn();
             }
+        }
+
+        void LateUpdate()
+        {
+            if (m_Anim == null || !m_VisualRoot.gameObject.activeSelf) return;
+            var item = m_HandItemId;
+            m_Anim.Tick(new BodyAnimator.Pose
+            {
+                Crouch = Crouch.Value,
+                Dead = Dead.Value,
+                DeadTime = Time.time - m_DeadSince,
+                Carrying = CarryingBall,
+                Holding = item != Item.None,
+                TwoHanded = item == Item.Rock || item == Item.Spear || item == Item.Ram,
+                Pitch = Pitch.Value,
+                Swing = m_Swing,
+            }, Time.deltaTime);
+            m_Anim.GripPose(out var gp, out var gr);
+            m_Hand.SetPositionAndRotation(gp, gr);
+            if (m_HandItem) m_HandItem.transform.localRotation = Quaternion.identity;
         }
 
         // =====================================================================
@@ -262,16 +319,17 @@ namespace RockGame
             Health.Value = 0;
             if (CarryingBall) Ball.Instance.ServerDrop(transform.position + Vector3.up * 1.5f, Vector3.up * 3f);
 
-            // everything goes into a loot bag
+            // everything spills out of the body (except the rock, which you always keep)
             var items = new List<ItemStack>();
             for (int i = 0; i < Inv.Count; i++)
             {
-                if (!Inv[i].Empty) items.Add(Inv[i]);
+                if (Inv[i].Empty || Inv[i].Id == Item.Rock) continue;
+                items.Add(Inv[i]);
                 Inv[i] = default;
             }
             for (int i = 0; i < StuckSpears.Value; i++) items.Add(ItemStack.Of(Item.Spear, 1));
             StuckSpears.Value = 0;
-            if (items.Count > 0) Container.SpawnBag(transform.position, Team.Value, items);
+            if (items.Count > 0 && NetGame.Instance != null) NetGame.Instance.ServerScatter(items, transform.position + Vector3.up * 1.1f);
 
             RespawnAt.Value = NetworkManager.ServerTime.Time + Cfg.RespawnTime;
             var victimName = Cfg.TeamName[Team.Value];
@@ -289,6 +347,7 @@ namespace RockGame
             NetGame.SpawnPoint(Team.Value, false, out var pos, out var yaw);
             TeleportRpc(pos, yaw);
             Dead.Value = false;
+            Fx.Server(FxKind.Chamber, pos, new Vector3(Team.Value, 0, 0));
         }
 
         public void ServerEnterArena()
@@ -427,15 +486,44 @@ namespace RockGame
                 if (no.TryGetComponent(out Structure s) && s.Team.Value != Team.Value && s.Tier.Value == 0)
                     s.ServerDamage(Cfg.SpearThrowStructureDamage);
             }
-            game.ServerDropSpear(point, dir);
+            game.ServerDropItem(ItemStack.Of(Item.Spear, 1), point, dir, point, true);
         }
 
+        /// <summary>E on an item lying in the world.</summary>
         [Rpc(SendTo.Server)]
-        public void PickupSpearRpc(int id)
+        public void PickupItemRpc(int id)
+        {
+            var g = NetGame.Instance;
+            if (Dead.Value || g == null) return;
+            DroppedItem it = default;
+            bool found = false;
+            foreach (var x in g.Items) if (x.Id == id) { it = x; found = true; break; }
+            if (!found) return;
+            int space = InvOps.Space(Inv, it.Stack.Id, it.Stack.Data);
+            if (space <= 0) { Notify("Inventory full!"); return; }
+            var taken = g.ServerTakeItem(id, EyePos, Cfg.InteractRange + 2.5f, space);
+            if (!taken.Empty) { ServerGive(taken.Id, taken.Count, taken.Data); PickedUpRpc(); }
+        }
+
+        /// <summary>Dragged out of the inventory (or an open chest) onto the ground: thrown in front of you.</summary>
+        [Rpc(SendTo.Server)]
+        public void DropItemRpc(byte kind, byte idx, ushort amount, NetworkObjectReference containerRef)
         {
             if (Dead.Value || NetGame.Instance == null) return;
-            if (InvOps.Space(Inv, Item.Spear) < 1) { Notify("Inventory full!"); return; }
-            if (NetGame.Instance.ServerTakeSpear(id, EyePos, Cfg.SpearPickupRange + 2f)) ServerGive(Item.Spear, 1);
+            NetworkList<ItemStack> list = Inv;
+            if (kind == 1)
+            {
+                if (!containerRef.TryGet(out var no) || !no.TryGetComponent(out Container c) || !c.InReach(EyePos)) return;
+                list = c.Slots;
+            }
+            if (idx >= list.Count) return;
+            var st = list[idx];
+            if (st.Empty) return;
+            if (st.Id == Item.Rock) { Notify("You can't throw your rock away"); return; }
+            int n = Mathf.Clamp(amount, 1, st.Count);
+            list[idx] = st.WithCount(st.Count - n);
+            var fwd = Quaternion.Euler(0, transform.eulerAngles.y, 0) * Vector3.forward;
+            NetGame.Instance.ServerDropItem(st.WithCount(n), transform.position + fwd * 1.3f + Vector3.up * 0.6f, fwd, EyePos - Vector3.up * 0.3f + fwd * 0.4f);
         }
 
         /// <summary>Pull a stuck spear out of a player (yourself or someone else) and keep it.</summary>
@@ -519,6 +607,7 @@ namespace RockGame
             var key = new PieceKey(BuildGrid.KindOf(t), i, j, l, t == PieceType.Stairs ? (d & 3) : (d & 1));
             if (key.L < 0 || key.L > Cfg.MaxLevel) return;
             if (!BuildGrid.InTeamBase(Team.Value, key)) { Notify("You can only build inside your own base area"); return; }
+            if (BuildGrid.OnUfo(key)) { Notify("You can't build on the crashed UFO or block its door"); return; }
             BuildGrid.Pose(t, key, out var pos, out var rot);
             if (Vector3.Distance(pos, transform.position) > Cfg.BuildRange + 4f) { Notify("Too far away"); return; }
             if (BuildGrid.IsOccupied(key, BuildGrid.Registry.ContainsKey)) { Notify("Something is already built there"); return; }
@@ -576,6 +665,7 @@ namespace RockGame
         {
             int baseTeam = Cfg.BaseTeamAt(pos);
             if (kind == Item.Chest && baseTeam != team) return "Chests go inside your own base";
+            if (Cfg.PointBlocked(pos)) return "Not on the crashed UFO or in front of its door";
             if (kind == Item.Barrier && baseTeam >= 0 && baseTeam != team) return "You can't put barriers in the enemy base";
             var rot = Quaternion.Euler(0, yaw, 0);
             Vector3 c, half;
@@ -633,15 +723,21 @@ namespace RockGame
                 if (dstKind == 1 && c.TakeOnly) return;
             }
             var src = srcKind == 1 ? c.Slots : Inv;
+            if (srcIdx >= src.Count) return;
+            bool rockMoving = src[srcIdx].Id == Item.Rock;
             if (dstIdx == 255)
             {
-                if (c == null) return;
+                if (c == null || rockMoving) return; // the rock stays with you
                 var other = srcKind == 1 ? Inv : c.Slots;
                 if (other == c.Slots && c.TakeOnly) return;
                 InvOps.QuickMove(src, srcIdx, other, other == Inv);
                 return;
             }
             var dst = dstKind == 1 ? c.Slots : Inv;
+            if (dstIdx >= dst.Count) return;
+            // the rock can only live on your hotbar (never in a chest or the main inventory)
+            if (rockMoving && !(dst == Inv && dstIdx < Cfg.HotbarSize)) return;
+            if (dst[dstIdx].Id == Item.Rock && !(src == Inv && srcIdx < Cfg.HotbarSize)) return;
             InvOps.Move(src, srcIdx, dst, dstIdx, amount, srcKind == 1 && c.TakeOnly);
         }
 
@@ -687,17 +783,20 @@ namespace RockGame
                 NetGame.Instance.Broadcast($"{Cfg.TeamName[Team.Value]} picked up the ball!");
         }
 
-        /// <summary>LMB while carrying: throw the ball where you're looking.</summary>
+        /// <summary>LMB while carrying: the ball flies straight out from where it is held (lower middle of the screen) along the aim.</summary>
         [Rpc(SendTo.Server)]
         public void ThrowBallRpc(Vector3 dir)
         {
             if (!CarryingBall || dir.sqrMagnitude < 0.01f) return;
             dir.Normalize();
             var eye = EyePos;
-            var pos = eye + dir * 0.9f;
-            if (Physics.Raycast(eye, dir, out var hit, 1.2f, ~0, QueryTriggerInteraction.Ignore) && !hit.collider.transform.IsChildOf(transform))
+            var right = Vector3.Cross(Vector3.up, dir).normalized;
+            if (right.sqrMagnitude < 0.01f) right = transform.right;
+            var camUp = Vector3.Cross(dir, right);
+            var pos = eye + dir * 0.75f - camUp * 0.35f;
+            if (Physics.Linecast(eye, pos, out var hit, ~(1 << HitboxLayer), QueryTriggerInteraction.Ignore) && !hit.collider.transform.IsChildOf(transform))
                 pos = hit.point - dir * 0.7f;
-            Ball.Instance.ServerDrop(pos, dir * Cfg.BallThrowSpeed + Vector3.up * 1.5f);
+            Ball.Instance.ServerThrow(this, pos, dir * Cfg.BallThrowSpeed + Vector3.up * 1f);
         }
 
         // =====================================================================
@@ -720,6 +819,9 @@ namespace RockGame
             Hud.HitMarker(true, false);
             Sfx.Play2D(Sfx.Kill, 0.7f, 0f);
         }
+
+        [Rpc(SendTo.Owner)]
+        public void PickedUpRpc() => Sfx.Play2D(Sfx.Pop, 0.5f);
 
         [Rpc(SendTo.Owner)]
         public void CraftedRpc(byte item)

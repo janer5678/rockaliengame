@@ -73,11 +73,30 @@ namespace RockGame
             {
                 var hits = Physics.RaycastAll(pos, step / dist, dist, ~0, QueryTriggerInteraction.Ignore);
                 System.Array.Sort(hits, (x, y) => x.distance.CompareTo(y.distance));
+                RaycastHit? first = null;
                 foreach (var h in hits)
                 {
                     if (m_ShooterRoot != null && h.collider.transform.IsChildOf(m_ShooterRoot)) continue;
                     if (h.collider.transform.IsChildOf(transform)) continue;
-                    OnHit(h);
+                    first = h;
+                    break;
+                }
+                // hit assist: a near miss on a player still counts (unless something solid is in front)
+                if (Cfg.ProjectileAssist > 0f && (first == null || first.Value.collider.GetComponentInParent<PlayerNet>() == null))
+                {
+                    float limit = first != null ? first.Value.distance : dist;
+                    foreach (var h in Physics.SphereCastAll(pos, Cfg.ProjectileAssist, step / dist, dist, ~0, QueryTriggerInteraction.Ignore))
+                    {
+                        if (h.distance <= 0f || h.distance > limit) continue;
+                        var p = h.collider.GetComponentInParent<PlayerNet>();
+                        if (p == null || p.Dead.Value || (m_ShooterRoot != null && p.transform == m_ShooterRoot)) continue;
+                        first = h;
+                        limit = h.distance;
+                    }
+                }
+                if (first != null)
+                {
+                    OnHit(first.Value);
                     return;
                 }
             }

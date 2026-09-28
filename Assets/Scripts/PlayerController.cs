@@ -32,7 +32,8 @@ namespace RockGame
         float m_NextSwing, m_ImpactAt = -1f, m_NextBuild, m_NextUpgrade, m_DrawStart = -1f, m_NextEat, m_NextBallThrow, m_LastHealth;
         Item m_ImpactItem;
         int m_RotOffset;
-        bool m_WasDead;
+        bool m_WasDead, m_Placed;
+        float m_InputLockUntil;
         Vector2 m_LookDelta;
 
         GameObject m_Ghost;
@@ -54,10 +55,28 @@ namespace RockGame
             m_Cam = Camera.main;
             m_VM = new ViewModel(m_Cam.transform, Cfg.TeamColor[Mathf.Clamp(m_Net.Team.Value, 0, 1)]);
             m_LastHealth = m_Net.Health.Value;
-            // start at our own base
+            TryPlace();
+        }
+
+        /// <summary>Put the player in their cryo chamber once the host's map is built here.</summary>
+        void TryPlace()
+        {
             var game = NetGame.Instance;
-            NetGame.SpawnPoint(m_Net.Team.Value, game != null && game.S == GameState.SuddenDeath, out var pos, out var yaw);
+            if (game == null || !game.IsSpawned || !MapBuilder.IsBuilt(game.MapKey.Value, game.MapSeed.Value)) return;
+            m_Placed = true;
+            bool sd = game.S == GameState.SuddenDeath;
+            NetGame.SpawnPoint(m_Net.Team.Value, sd, out var pos, out var yaw);
             LocalTeleport(pos, yaw);
+            if (!sd) WakeUp();
+        }
+
+        /// <summary>Bioshock-style: the chamber glass slides up in a burst of steam and you step out.</summary>
+        void WakeUp()
+        {
+            Cryo.Open(m_Net.Team.Value);
+            Hud.Wake();
+            m_InputLockUntil = Time.time + 0.6f;
+            SelectSlotOf(Item.Rock);
         }
 
         public override void OnNetworkDespawn()
@@ -94,6 +113,7 @@ namespace RockGame
         /// <summary>AutoTest screenshots: force a draw amount (-1 = off) / trigger a swing animation.</summary>
         public float DebugDraw = -1f;
         public void DebugSwing(float dur) => m_VM.Swing(dur);
+        public void DebugImpact(bool hit) => m_VM.Impact(hit);
 
         public void CloseMenu()
         {
@@ -104,6 +124,7 @@ namespace RockGame
         void Update()
         {
             if (!IsSpawned || !IsOwner) return;
+            if (!m_Placed) { TryPlace(); if (!m_Placed) return; }
             var game = NetGame.Instance;
             bool dead = m_Net.Dead.Value;
             bool gameOver = game != null && game.S == GameState.GameOver;
@@ -129,6 +150,7 @@ namespace RockGame
             Cursor.lockState = cursorFree ? CursorLockMode.None : CursorLockMode.Locked;
             Cursor.visible = cursorFree;
             bool input = !cursorFree && !dead;
+            bool locked = Time.time < m_InputLockUntil;
 
             // ---- damage / respawn feedback ----
             if (m_Net.Health.Value < m_LastHealth - 0.5f && !dead)
@@ -138,7 +160,7 @@ namespace RockGame
                 Sfx.Play2D(Sfx.Hurt, 0.8f);
             }
             m_LastHealth = m_Net.Health.Value;
-            if (m_WasDead && !dead) SelectSlotOf(Item.Rock);
+            if (m_WasDead && !dead && (game == null || game.S != GameState.SuddenDeath)) WakeUp();
             m_WasDead = dead;
 
             // ---- look ----
@@ -209,7 +231,7 @@ namespace RockGame
 
             // ---- actions ----
             if (m_ImpactAt >= 0 && Time.time >= m_ImpactAt) DoImpact();
-            if (input && !gameOver)
+            if (input && !gameOver && !locked)
             {
                 if (carrying) HandleBall();
                 else
@@ -280,6 +302,7 @@ namespace RockGame
             if (s >= 0) m_Net.HeldSlot.Value = (byte)s;
         }
 
+        /// <summary>Hotbar selection skips empty slots - you always hold something (at least the rock).</summary>
         Item SelectItem(bool input, bool sd)
         {
             int cur = m_Net.HeldSlot.Value;
@@ -287,13 +310,22 @@ namespace RockGame
             if (input)
             {
                 for (int k = 0; k < Cfg.HotbarSize; k++)
-                    if (Input.GetKeyDown(KeyCode.Alpha1 + k)) want = k;
+                    if (Input.GetKeyDown(KeyCode.Alpha1 + k) && !m_Net.SlotAt(k).Empty) want = k;
                 float scroll = Input.mouseScrollDelta.y;
-                if (scroll != 0) want = (want + (scroll < 0 ? 1 : -1) + Cfg.HotbarSize) % Cfg.HotbarSize;
+                if (scroll != 0)
+                {
+                    int dir = scroll < 0 ? 1 : -1;
+                    for (int n = 1; n <= Cfg.HotbarSize; n++)
+                    {
+                        int i = ((want + dir * n) % Cfg.HotbarSize + Cfg.HotbarSize) % Cfg.HotbarSize;
+                        if (!m_Net.SlotAt(i).Empty) { want = i; break; }
+                    }
+                }
             }
-            if (sd && m_Net.SlotAt(want).Id != Item.Rock)
+            if (m_Net.SlotAt(want).Empty || (sd && m_Net.SlotAt(want).Id != Item.Rock))
             {
                 int r = m_Net.HotbarSlotOf(Item.Rock);
+                if (r < 0) for (int i = 0; i < Cfg.HotbarSize && r < 0; i++) if (!m_Net.SlotAt(i).Empty) r = i;
                 if (r >= 0) want = r;
             }
             if (want != cur)
@@ -306,7 +338,32 @@ namespace RockGame
             return m_Net.SlotAt(want).Id;
         }
 
-        Ray CenterRay() => new Ray(m_Cam.transform.position, Quaternion.Euler(m_Pitch, m_Yaw, 0) * Vector3.forward);
+        Ray CenterRay() => new Ray(transform.position + Vector3.up * m_Eye, Quaternion.Euler(m_Pitch, m_Yaw, 0) * Vector3.forward);
+
+        /// <summary>
+        /// Aim assist like most melee games: if the exact ray misses a player but a fat sphere along it
+        /// touches one (and nothing solid is in front), count it as hitting that player.
+        /// </summary>
+        bool AimWithAssist(Ray ray, float range, float radius, out RaycastHit best)
+        {
+            bool exact = Aim(ray, range, out best);
+            if (exact && best.collider.GetComponentInParent<PlayerNet>() != null) return true;
+            if (radius <= 0f) return exact;
+            float limit = exact ? best.distance + 0.05f : range;
+            var hits = Physics.SphereCastAll(ray, radius, range, ~0, QueryTriggerInteraction.Ignore);
+            float bd = float.MaxValue;
+            bool found = false;
+            RaycastHit ph = default;
+            foreach (var h in hits)
+            {
+                if (h.collider.transform.IsChildOf(transform) || h.distance <= 0f) continue;
+                var p = h.collider.GetComponentInParent<PlayerNet>();
+                if (p == null || p.Dead.Value || h.distance > limit) continue;
+                if (h.distance < bd) { bd = h.distance; ph = h; found = true; }
+            }
+            if (found) { best = ph; return true; }
+            return exact;
+        }
 
         bool Aim(Ray ray, float range, out RaycastHit best)
         {
@@ -342,7 +399,13 @@ namespace RockGame
             var st = Cfg.Melee(m_ImpactItem);
             var ray = CenterRay();
             Fx.Kick(0.8f);
-            if (!Aim(ray, st.Range, out var hit)) { m_Net.MeleeRpc(false, default, Vector3.zero, false); return; }
+            if (!AimWithAssist(ray, st.Range, Cfg.MeleeAssist, out var hit))
+            {
+                m_VM.Impact(false);
+                m_Net.MeleeRpc(false, default, Vector3.zero, false);
+                return;
+            }
+            m_VM.Impact(true);
 
             var no = hit.collider.GetComponentInParent<NetworkObject>();
             bool weak = false;
@@ -460,6 +523,7 @@ namespace RockGame
         {
             if (!Input.GetMouseButtonDown(0) || Time.time < m_NextBallThrow) return;
             m_NextBallThrow = Time.time + 0.5f;
+            m_NextSwing = Time.time + 0.7f; // no instant swing with whatever comes back into your hands
             m_Net.ThrowBallRpc(CenterRay().direction);
             m_VM.Throw();
             Sfx.Play2D(Sfx.Throw, 0.7f);
@@ -529,13 +593,14 @@ namespace RockGame
 
         // ------------------------------------------------------------------ interaction (whatever you're looking at)
 
-        public enum TargetKind { None, Ball, Door, Container, Bush, PlayerSpear, DroppedSpear, SelfSpear }
+        public enum TargetKind { None, Ball, Door, Container, Bush, PlayerSpear, WorldItem, SelfSpear }
 
         public struct Interactable
         {
             public TargetKind Kind;
             public NetworkObject Obj;
-            public int SpearId;
+            public int ItemId;
+            public ItemStack Stack;
         }
 
         Interactable FindInteract()
@@ -556,18 +621,18 @@ namespace RockGame
                 if (!h.collider.isTrigger) { found = h.distance; break; } // walls block interaction
             }
 
-            // dropped spears have no collider: pick the one closest to the crosshair
+            // items in the world have no collider: pick the one closest to the crosshair
             var game = NetGame.Instance;
             if (game != null)
             {
-                float bestPerp = 0.45f;
-                foreach (var sp in game.Spears)
+                float bestPerp = 0.5f;
+                foreach (var it in game.Items)
                 {
-                    var mid = sp.Pos - sp.Dir * 0.6f;
+                    var mid = it.Center;
                     float t = Vector3.Dot(mid - ray.origin, ray.direction);
-                    if (t < 0 || t > found + 0.3f || t > range) continue;
+                    if (t < 0 || t > found + 0.4f || t > range + 0.5f) continue;
                     float perp = Vector3.Distance(ray.origin + ray.direction * t, mid);
-                    if (perp < bestPerp) { bestPerp = perp; result = new Interactable { Kind = TargetKind.DroppedSpear, SpearId = sp.Id }; }
+                    if (perp < bestPerp) { bestPerp = perp; result = new Interactable { Kind = TargetKind.WorldItem, ItemId = it.Id, Stack = it.Stack }; }
                 }
             }
 
@@ -612,7 +677,7 @@ namespace RockGame
                     break;
                 case TargetKind.Bush: m_Net.PickBerriesRpc(t.Obj); m_VM.Use(); Sfx.Play2D(Sfx.Pop, 0.5f); break;
                 case TargetKind.PlayerSpear: m_Net.PullSpearRpc(t.Obj); m_VM.Use(); break;
-                case TargetKind.DroppedSpear: m_Net.PickupSpearRpc(t.SpearId); m_VM.Use(); Sfx.Play2D(Sfx.Pop, 0.5f); break;
+                case TargetKind.WorldItem: m_Net.PickupItemRpc(t.ItemId); m_VM.Use(); break;
                 case TargetKind.SelfSpear: m_Net.PullSpearRpc(m_Net.NetworkObject); Sfx.Play2D(Sfx.Flesh, 0.6f); break;
             }
         }
@@ -675,6 +740,7 @@ namespace RockGame
                     m_Ghost.transform.SetPositionAndRotation(pos, prot);
                     RefreshClientKeys();
                     if (!BuildGrid.InTeamBase(team, m_GhostKey)) reason = "You can only build inside your base area";
+                    else if (BuildGrid.OnUfo(m_GhostKey)) reason = "You can't build on the crashed UFO or block its door";
                     else if (BuildGrid.IsOccupied(m_GhostKey, m_ClientKeys.Contains)) reason = "Something is already built there";
                     else if (!BuildGrid.IsSupported(m_GhostKey, m_ClientKeys.Contains))
                         reason = t == PieceType.Floor ? "Floors need a wall below or a floor next to them" : "Needs a foundation or floor underneath";
@@ -715,12 +781,12 @@ namespace RockGame
                 case TargetKind.Container:
                 {
                     var c = t.Obj.GetComponent<Container>();
-                    AimText = c.IsBag ? $"{c.DisplayName}   E: loot" : $"Storage Chest ({Cfg.TeamName[c.Team.Value]})  {c.Health.Value:0}/{Cfg.ChestHp:0}   E: open";
+                    AimText = $"Storage Chest ({Cfg.TeamName[c.Team.Value]})  {c.Health.Value:0}/{Cfg.ChestHp:0}   E: open";
                     return;
                 }
                 case TargetKind.Bush: AimText = "Berry Bush   E: pick berries"; return;
                 case TargetKind.PlayerSpear: AimText = "E: pull the spear out"; return;
-                case TargetKind.DroppedSpear: AimText = "E: pick up the spear"; return;
+                case TargetKind.WorldItem: AimText = $"E: pick up {Cfg.ItemName(t.Stack.Id)}" + (t.Stack.Count > 1 ? $" x{t.Stack.Count}" : ""); return;
             }
             string self = m_Net.StuckSpears.Value > 0 ? $"<color=#ff8888>{m_Net.StuckSpears.Value} spear(s) stuck in you - E: pull out</color>" : "";
             AimText = self;

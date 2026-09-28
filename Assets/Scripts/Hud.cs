@@ -9,7 +9,7 @@ namespace RockGame
     {
         struct Msg { public string Text; public float Time; }
         static readonly List<Msg> s_Msgs = new List<Msg>();
-        static float s_HitTime = -10f, s_BannerTime = -10f;
+        static float s_HitTime = -10f, s_BannerTime = -10f, s_WakeTime = -10f;
         static bool s_HitKill, s_HitHead;
         static string s_BannerTitle, s_BannerSub;
         public static bool MouseOverUI;
@@ -40,6 +40,7 @@ namespace RockGame
             if (kill || Time.time - s_HitTime > 0.05f || !s_HitKill) { s_HitKill = kill; s_HitHead = head; }
             s_HitTime = Time.time;
         }
+        public static void Wake() => s_WakeTime = Time.time;
         public static void Banner(string title, string sub) { s_BannerTitle = title; s_BannerSub = sub; s_BannerTime = Time.time; }
         public static void Clear() { s_Msgs.Clear(); s_BannerTime = -10f; Fx.Numbers.Clear(); }
 
@@ -117,7 +118,7 @@ namespace RockGame
         void DrawMainMenu(Bootstrap boot)
         {
             if (m_ShowSettings) { DrawSettings(); return; }
-            float w = 460 * m_Scale, h = 520 * m_Scale;
+            float w = 460 * m_Scale, h = 610 * m_Scale;
             var r = new Rect((Screen.width - w) / 2, (Screen.height - h) / 2, w, h);
             Fill(r, new Color(0, 0, 0, 0.65f));
             GUILayout.BeginArea(new Rect(r.x + 20, r.y + 15, r.width - 40, r.height - 30));
@@ -133,6 +134,20 @@ namespace RockGame
             boot.Port = GUILayout.TextField(boot.Port, new GUIStyle(GUI.skin.textField) { fontSize = m_Label.fontSize });
             GUILayout.EndHorizontal();
             GUILayout.Space(10 * m_Scale);
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Map", m_Label, GUILayout.Width(90 * m_Scale));
+            int key = Bootstrap.MapChoice;
+            bool small = (key & 16) != 0;
+            var kind = (MapKind)(key & 15);
+            if (GUILayout.Toggle(kind == MapKind.Plains, " Plains", m_Button, GUILayout.Height(30 * m_Scale)) && kind != MapKind.Plains) boot.SetMapChoice((int)MapKind.Plains | (small ? 16 : 0));
+            if (GUILayout.Toggle(kind == MapKind.Highlands, " Highlands", m_Button, GUILayout.Height(30 * m_Scale)) && kind != MapKind.Highlands) boot.SetMapChoice((int)MapKind.Highlands | (small ? 16 : 0));
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Size", m_Label, GUILayout.Width(90 * m_Scale));
+            if (GUILayout.Toggle(!small, " Big", m_Button, GUILayout.Height(30 * m_Scale)) && small) boot.SetMapChoice((int)kind);
+            if (GUILayout.Toggle(small, " Small", m_Button, GUILayout.Height(30 * m_Scale)) && !small) boot.SetMapChoice((int)kind | 16);
+            GUILayout.EndHorizontal();
+            GUILayout.Space(6 * m_Scale);
             Bootstrap.Solo = GUILayout.Toggle(Bootstrap.Solo, " Solo test (start without an opponent)", m_Label);
             Bootstrap.Fast = GUILayout.Toggle(Bootstrap.Fast, $" Fast timers ({Cfg.FastBallDropDelay:0}s ball drop, {Cfg.FastMatchLength:0}s match)", m_Label);
             GUILayout.Space(12 * m_Scale);
@@ -230,6 +245,13 @@ namespace RockGame
             int team = me.Team.Value;
 
             if (m_DamageFlash > 0) Fill(new Rect(0, 0, sw, sh), new Color(0.8f, 0, 0, m_DamageFlash * 0.5f));
+            float wake = Time.time - s_WakeTime;
+            if (wake < 1.6f)
+            {
+                float a = Mathf.Clamp01(1f - wake / 1.6f);
+                Fill(new Rect(0, 0, sw, sh), new Color(0.75f, 0.95f, 1f, a * a * 0.95f));
+                if (wake < 1.1f) Shadowed(new Rect(0, sh * 0.42f, sw, 40 * k), "<color=#12506a>REVIVED IN THE CRYO CHAMBER</color>", m_Center);
+            }
 
             // ---- top centre: phase & timer ----
             string phase = "", sub = "";
@@ -352,7 +374,7 @@ namespace RockGame
                     "LMB attack / gather / place · hold LMB: draw bow / ram\n" +
                     "Spear: hold RMB + LMB to throw · Berries: RMB to eat\n" +
                     "1-7 / scroll: hotbar · TAB: inventory & crafting\n" +
-                    "E: use what you look at (ball, door, chest, bag, bush, spear)\n" +
+                    "E: use what you look at (ball, door, chest, bush, items)\n" +
                     "Ball: LMB throws it · Esc: pause";
                 var hrct = new Rect(12, 92 * k, 440 * k, 150 * k);
                 Fill(hrct, new Color(0, 0, 0, 0.35f));
@@ -378,7 +400,7 @@ namespace RockGame
                 Fill(new Rect(0, 0, sw, sh), new Color(0.3f, 0, 0, 0.35f));
                 float t = Mathf.Max(0, (float)(me.RespawnAt.Value - me.NetworkManager.ServerTime.Time));
                 Shadowed(new Rect(0, sh * 0.4f, sw, 60 * k), "YOU DIED", m_Big);
-                Shadowed(new Rect(0, sh * 0.4f + 60 * k, sw, 30 * k), $"Your stuff is in a bag where you died. Respawning at your base in {Mathf.CeilToInt(t)}", m_Center);
+                Shadowed(new Rect(0, sh * 0.4f + 60 * k, sw, 30 * k), $"Your stuff spilled out where you died. Reviving in your UFO in {Mathf.CeilToInt(t)}", m_Center);
             }
 
             if (pc.MenuOpen) DrawInventory(me, pc);
@@ -571,7 +593,7 @@ namespace RockGame
                 GUI.Label(new Rect(r.x + 4, r.y + 2, 20, 20), (i + 1).ToString(), m_Small);
             }
             float infoY = hotY + slot + 10 * k;
-            Shadowed(new Rect(invX, infoY, gridW + 200, 24 * k), m_HoverName != "" ? m_HoverName : "Drag to move · right-drag splits a stack · shift-click quick-moves", m_Small);
+            Shadowed(new Rect(invX, infoY, gridW + 200, 24 * k), m_HoverName != "" ? m_HoverName : "Drag to move · right-drag splits a stack · shift-click quick-moves · drag outside to drop", m_Small);
 
             // ---- crafting (right) ----
             float cxp = invX + gridW + 30 * k;
@@ -597,7 +619,22 @@ namespace RockGame
             var e = Event.current;
             if (m_Dragging)
             {
-                if (e.type == EventType.MouseUp) { m_Dragging = false; e.Use(); } // dropped outside a slot: cancel
+                if (e.type == EventType.MouseUp)
+                {
+                    // released outside the item grids: throw it on the ground (the rock stays with you)
+                    var invRect = new Rect(invX - 10, top - 10, gridW + 20, hotY + slot - top + 20);
+                    var lootRect = new Rect(x0 - 10, top - 10, lootW + 20, 5 * (slot + gap) + 20);
+                    bool outside = !invRect.Contains(e.mousePosition) && !(loot && lootRect.Contains(e.mousePosition));
+                    if (outside && m_DragStack.Id != Item.Rock)
+                    {
+                        int amount = m_DragHalf ? Mathf.Max(1, m_DragStack.Count / 2) : m_DragStack.Count;
+                        me.DropItemRpc(m_DragFrom.Kind, (byte)m_DragFrom.Index, (ushort)amount, LootRef(pc));
+                        Sfx.Play2D(Sfx.Throw, 0.4f);
+                    }
+                    else if (outside) Push("You can't throw your rock away");
+                    m_Dragging = false;
+                    e.Use();
+                }
                 else
                 {
                     var icon = ItemIcons.Get(m_DragStack.Id);

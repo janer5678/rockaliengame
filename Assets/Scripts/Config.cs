@@ -13,6 +13,8 @@ namespace RockGame
 
     public enum GameState : byte { Waiting, PreBall, BallLive, SuddenDeath, GameOver }
 
+    public enum MapKind : byte { Plains, Highlands }
+
     public struct MeleeStats
     {
         public float Cooldown, Range, PlayerDamage, WoodGather, StoneGather, StructureDamage;
@@ -36,10 +38,66 @@ namespace RockGame
     /// <summary>All gameplay tuning lives here. Every [Tune] field is editable in the main menu settings.</summary>
     public static class Cfg
     {
-        // ---------- Map (not tunable) ----------
-        public const float MapHalf = 100f;
+        // ---------- Map (chosen by the host in the menu) ----------
+        public static MapKind Map = MapKind.Plains;
+        public static bool SmallMap;
+        public static int MapSeed;
+        public static float MapHalf => SmallMap ? 62f : 100f;
         public const float BaseHalf = 18f; // bases are 36x36m, aligned to the 3m build grid
         public static readonly Vector3[] BaseCenter = { new Vector3(0, 0, -75), new Vector3(0, 0, 75) };
+        public static string MapLabel => (SmallMap ? "Small " : "Big ") + Map;
+        /// <summary>Packs the map choice for syncing; the seed is sent separately.</summary>
+        public static int MapKey => (int)Map | (SmallMap ? 16 : 0);
+
+        /// <summary>Crashed UFO (spawn) per team: centre cell and door direction (0 +x, 1 -x, 2 +z, 3 -z).</summary>
+        public static readonly int[] UfoI = new int[2], UfoJ = new int[2], UfoDir = new int[2];
+
+        public static void SetMap(int key, int seed)
+        {
+            Map = (MapKind)(key & 15);
+            SmallMap = (key & 16) != 0;
+            MapSeed = seed;
+            float d = SmallMap ? 42f : 75f;
+            BaseCenter[0] = new Vector3(0, 0, -d);
+            BaseCenter[1] = new Vector3(0, 0, d);
+            for (int t = 0; t < 2; t++) PlaceUfo(t);
+        }
+
+        static void PlaceUfo(int team)
+        {
+            var rng = new System.Random(MapSeed * 31 + team * 977 + 5);
+            var c = BaseCenter[team];
+            int iMin = Mathf.FloorToInt((c.x - BaseHalf) / Cell), iMax = Mathf.FloorToInt((c.x + BaseHalf - 0.01f) / Cell);
+            int jMin = Mathf.FloorToInt((c.z - BaseHalf) / Cell), jMax = Mathf.FloorToInt((c.z + BaseHalf - 0.01f) / Cell);
+            int dir = rng.Next(4);
+            // 3x3 footprint plus two clear cells in front of the door, all inside the base
+            int lo = iMin + 1 + (dir == 1 ? 3 : 0), hi = iMax - 1 - (dir == 0 ? 3 : 0);
+            UfoI[team] = rng.Next(lo, hi + 1);
+            lo = jMin + 1 + (dir == 3 ? 3 : 0); hi = jMax - 1 - (dir == 2 ? 3 : 0);
+            UfoJ[team] = rng.Next(lo, hi + 1);
+            UfoDir[team] = dir;
+        }
+
+        public static Vector3 DirVec(int dir) => dir == 0 ? Vector3.right : dir == 1 ? Vector3.left : dir == 2 ? Vector3.forward : Vector3.back;
+        public static Vector3 UfoCenter(int team) => new Vector3((UfoI[team] + 0.5f) * Cell, 0, (UfoJ[team] + 0.5f) * Cell);
+        public static Vector3 UfoForward(int team) => DirVec(UfoDir[team]);
+        /// <summary>Where you (re)spawn: inside the cryo chamber at the back of your UFO.</summary>
+        public static Vector3 ChamberPos(int team) => UfoCenter(team) - UfoForward(team) * 3.0f + Vector3.up * 0.32f;
+
+        /// <summary>Cells covered by a UFO or the path out of its door can't be built on.</summary>
+        public static bool CellBlocked(int i, int j)
+        {
+            for (int t = 0; t < 2; t++)
+            {
+                int di = i - UfoI[t], dj = j - UfoJ[t];
+                if (Mathf.Abs(di) <= 1 && Mathf.Abs(dj) <= 1) return true;
+                var f = DirVec(UfoDir[t]);
+                int fx = Mathf.RoundToInt(f.x), fz = Mathf.RoundToInt(f.z);
+                if ((di == fx * 2 && dj == fz * 2) || (di == fx * 3 && dj == fz * 3)) return true;
+            }
+            return false;
+        }
+        public static bool PointBlocked(Vector3 p) => CellBlocked(Mathf.FloorToInt(p.x / Cell), Mathf.FloorToInt(p.z / Cell));
         public static readonly Color[] TeamColor = { new Color(0.25f, 0.5f, 1f), new Color(1f, 0.3f, 0.25f) };
         public static readonly string[] TeamName = { "BLUE", "RED" };
         public static readonly Vector3 ArenaCenter = new Vector3(0, 0, 1000);
@@ -65,7 +123,7 @@ namespace RockGame
         [Tune("Match")] public static float FastBallDropDelay = 10f;
         [Tune("Match")] public static float FastMatchLength = 90f;
         [Tune("Match")] public static float RespawnTime = 5f;
-        [Tune("Match")] public static float BagLifetime = 300f;
+        [Tune("Match")] public static float ItemDespawnTime = 300f;
 
         // ---------- Player ----------
         [Tune("Player")] public static float MaxHealth = 100f;
@@ -78,9 +136,12 @@ namespace RockGame
         [Tune("Player")] public static float BallThrowSpeed = 16f;
         [Tune("Player")] public static float BerryHeal = 15f;
         [Tune("Player")] public static float HeadshotMul = 2f;
+        [Tune("Player")] public static float ModelWidth = 1.3f;       // alien model + hitbox width scale
+        [Tune("Player")] public static float HitboxRadius = 0.62f;
+        [Tune("Player")] public static float MeleeAssist = 0.35f;     // melee counts as a hit if it passes this close (m)
+        [Tune("Player")] public static float ProjectileAssist = 0.15f; // same for arrows / thrown spears
 
         // ---------- Melee ----------
-        [Tune("Fists")] public static float FistCooldown = 0.45f, FistRange = 2f, FistPlayerDamage = 6f, FistWoodGather = 1f, FistStoneGather = 1f, FistStructureDamage = 1f;
         [Tune("Rock")] public static float RockCooldown = 0.6f, RockRange = 2.3f, RockPlayerDamage = 12f, RockWoodGather = 5f, RockStoneGather = 4f, RockStructureDamage = 3f;
         [Tune("Hatchet")] public static float HatchetCooldown = 0.7f, HatchetRange = 2.5f, HatchetPlayerDamage = 14f, HatchetWoodGather = 15f, HatchetStoneGather = 2f, HatchetStructureDamage = 6f;
         [Tune("Pickaxe")] public static float PickaxeCooldown = 0.8f, PickaxeRange = 2.5f, PickaxePlayerDamage = 14f, PickaxeWoodGather = 3f, PickaxeStoneGather = 12f, PickaxeStructureDamage = 6f;
@@ -89,8 +150,8 @@ namespace RockGame
         [Tune("Melee")] public static float StoneStructureMeleeMul = 0.2f; // stone is very hard to melee - bring a ram
 
         // ---------- Bow ----------
-        [Tune("Bow")] public static float BowDrawTime = 0.8f, ArrowSpeed = 55f, ArrowPlayerDamage = 50f, ArrowWoodStructureDamage = 2f;
-        public const float ArrowGravity = 9.81f, SpearGravity = 9.81f;
+        [Tune("Bow")] public static float BowDrawTime = 0.8f, ArrowSpeed = 95f, ArrowGravity = 5f, ArrowPlayerDamage = 50f, ArrowWoodStructureDamage = 2f;
+        [Tune("Spear")] public static float SpearGravity = 9.81f;
 
         // ---------- Battering ram (hand held) ----------
         // Hold LMB to wind up, then it slams whatever enemy piece you look at:
@@ -157,7 +218,6 @@ namespace RockGame
         {
             switch (i)
             {
-                case Item.None:    return new MeleeStats { Cooldown = FistCooldown, Range = FistRange, PlayerDamage = FistPlayerDamage, WoodGather = FistWoodGather, StoneGather = FistStoneGather, StructureDamage = FistStructureDamage };
                 case Item.Rock:    return new MeleeStats { Cooldown = RockCooldown, Range = RockRange, PlayerDamage = RockPlayerDamage, WoodGather = RockWoodGather, StoneGather = RockStoneGather, StructureDamage = RockStructureDamage };
                 case Item.Hatchet: return new MeleeStats { Cooldown = HatchetCooldown, Range = HatchetRange, PlayerDamage = HatchetPlayerDamage, WoodGather = HatchetWoodGather, StoneGather = HatchetStoneGather, StructureDamage = HatchetStructureDamage };
                 case Item.Pickaxe: return new MeleeStats { Cooldown = PickaxeCooldown, Range = PickaxeRange, PlayerDamage = PickaxePlayerDamage, WoodGather = PickaxeWoodGather, StoneGather = PickaxeStoneGather, StructureDamage = PickaxeStructureDamage };
@@ -165,7 +225,7 @@ namespace RockGame
                 default: return default;
             }
         }
-        public static bool IsMelee(Item i) => i == Item.None || i == Item.Rock || i == Item.Hatchet || i == Item.Pickaxe || i == Item.Spear;
+        public static bool IsMelee(Item i) => i == Item.Rock || i == Item.Hatchet || i == Item.Pickaxe || i == Item.Spear;
 
         // ---------- Building ----------
         public static string PieceName(PieceType t) => t.ToString();
@@ -241,6 +301,7 @@ namespace RockGame
             return -1;
         }
 
+        /// <summary>Raw base membership of a grid cell (ignores the UFO).</summary>
         public static bool CellInBase(int team, int i, int j)
         {
             Vector3 c = new Vector3((i + 0.5f) * Cell, 0, (j + 0.5f) * Cell);

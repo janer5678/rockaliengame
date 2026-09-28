@@ -139,6 +139,18 @@ namespace RockGame
             return Cfg.CellInBase(team, k.I, k.J);
         }
 
+        /// <summary>On the crashed UFO or in the path out of its door (walls touching those cells count too).</summary>
+        public static bool OnUfo(PieceKey k)
+        {
+            if (Cfg.CellBlocked(k.I, k.J)) return true;
+            if (k.Kind == PieceKey.KEdge)
+            {
+                int i2 = k.D == 0 ? k.I + 1 : k.I, j2 = k.D == 0 ? k.J : k.J + 1;
+                return Cfg.CellBlocked(i2, j2);
+            }
+            return false;
+        }
+
         /// <summary>Rust-like support rules. exists() answers whether a (supported) piece is at a key.</summary>
         public static bool IsSupported(PieceKey k, Func<PieceKey, bool> exists)
         {

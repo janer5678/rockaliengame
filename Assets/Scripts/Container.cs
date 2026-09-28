@@ -5,8 +5,8 @@ using UnityEngine;
 namespace RockGame
 {
     /// <summary>
-    /// A lootable slot container: a storage chest placed in a base (anyone who gets to it can use it,
-    /// so it can be raided) or the bag a player drops on death (take-only).
+    /// A storage chest placed in a base. Anyone who gets to it can use it (so it can be raided);
+    /// breaking it spills everything onto the ground. (Kind/Bag support is kept for old saves of the prefab only.)
     /// </summary>
     public class Container : NetworkBehaviour
     {
@@ -25,7 +25,6 @@ namespace RockGame
 
         readonly List<ItemStack> m_Pending = new List<ItemStack>();
         int m_PendingSize;
-        double m_DespawnAt;
         float m_Pop = 1f;
         Transform m_Visual;
 
@@ -46,7 +45,6 @@ namespace RockGame
             if (IsServer)
             {
                 for (int i = 0; i < m_PendingSize; i++) Slots.Add(i < m_Pending.Count ? m_Pending[i] : default);
-                m_DespawnAt = NetworkManager.ServerTime.Time + Cfg.BagLifetime;
             }
             m_Visual = CreateVisual(Kind.Value, Team.Value, transform, null).transform;
             var bc = gameObject.AddComponent<BoxCollider>();
@@ -94,10 +92,6 @@ namespace RockGame
                 float s = 1f + Mathf.Sin(m_Pop * Mathf.PI) * 0.25f;
                 m_Visual.localScale = new Vector3(s, Mathf.Lerp(0.3f, 1f, m_Pop) * s, s);
             }
-            if (!IsServer || !IsBag) return;
-            bool empty = true;
-            for (int i = 0; i < Slots.Count; i++) if (!Slots[i].Empty) { empty = false; break; }
-            if (empty || NetworkManager.ServerTime.Time >= m_DespawnAt) NetworkObject.Despawn(true);
         }
 
         public bool InReach(Vector3 eye) => Vector3.Distance(eye, Center) <= Cfg.LootRange + 1.5f;
@@ -111,22 +105,14 @@ namespace RockGame
             if (Health.Value <= 0) ServerBreak();
         }
 
-        /// <summary>A destroyed chest spills its contents into a bag.</summary>
+        /// <summary>A destroyed chest spills its contents on the ground.</summary>
         public void ServerBreak()
         {
             var items = new List<ItemStack>();
             for (int i = 0; i < Slots.Count; i++) if (!Slots[i].Empty) items.Add(Slots[i]);
-            if (items.Count > 0) SpawnBag(transform.position, Team.Value, items);
+            if (NetGame.Instance != null) NetGame.Instance.ServerScatter(items, transform.position + Vector3.up * 0.5f);
             Fx.Server(FxKind.Break, transform.position + Vector3.up * 0.4f, Vector3.up);
             NetworkObject.Despawn(true);
-        }
-
-        public static void SpawnBag(Vector3 pos, int team, List<ItemStack> items)
-        {
-            if (Physics.Raycast(pos + Vector3.up * 1f, Vector3.down, out var hit, 50f, ~0, QueryTriggerInteraction.Ignore)) pos = hit.point;
-            var go = Instantiate(Bootstrap.I.containerPrefab, pos, Quaternion.Euler(0, Random.Range(0f, 360f), 0));
-            go.GetComponent<Container>().ServerInit(Bag, team, Mathf.Max(items.Count, 7), items);
-            go.GetComponent<NetworkObject>().Spawn(true);
         }
     }
 }

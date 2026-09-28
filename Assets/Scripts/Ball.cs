@@ -19,6 +19,8 @@ namespace RockGame
         GameObject m_Beacon;
         Renderer m_BeaconRenderer;
         Light m_Light;
+        Collider m_IgnoredCol;
+        float m_IgnoreUntil;
 
         public bool IsCarried => CarrierId.Value != NoCarrier;
 
@@ -116,6 +118,11 @@ namespace RockGame
 
         void ServerTick()
         {
+            if (m_IgnoredCol != null && Time.time > m_IgnoreUntil)
+            {
+                Physics.IgnoreCollision(m_Col, m_IgnoredCol, false);
+                m_IgnoredCol = null;
+            }
             if (IsCarried)
             {
                 var c = Carrier;
@@ -160,6 +167,17 @@ namespace RockGame
             CarrierId.Value = p.NetworkObjectId;
             m_Rb.isKinematic = true;
             return true;
+        }
+
+        /// <summary>Thrown by a player: it passes through the thrower for a moment so it can't bounce off them.</summary>
+        public void ServerThrow(PlayerNet thrower, Vector3 pos, Vector3 vel)
+        {
+            if (m_IgnoredCol != null) Physics.IgnoreCollision(m_Col, m_IgnoredCol, false);
+            m_IgnoredCol = thrower.GetComponent<CharacterController>();
+            if (m_IgnoredCol != null) Physics.IgnoreCollision(m_Col, m_IgnoredCol, true);
+            m_IgnoreUntil = Time.time + 0.8f;
+            ServerDrop(pos, vel);
+            m_Col.enabled = true;
         }
 
         public void ServerDrop(Vector3 pos, Vector3 vel)
