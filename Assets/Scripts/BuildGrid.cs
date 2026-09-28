@@ -139,17 +139,17 @@ namespace RockGame
             return Cfg.CellInBase(team, k.I, k.J);
         }
 
-        /// <summary>On the crashed UFO or in the path out of its door (walls touching those cells count too).</summary>
-        public static bool OnUfo(PieceKey k)
+        /// <summary>Foundations and ground-level stairs can't go on the bedrock (it already is a foundation, and you spawn there).</summary>
+        public static bool OnBedrock(PieceKey k)
         {
-            if (Cfg.CellBlocked(k.I, k.J)) return true;
-            if (k.Kind == PieceKey.KEdge)
-            {
-                int i2 = k.D == 0 ? k.I + 1 : k.I, j2 = k.D == 0 ? k.J : k.J + 1;
-                return Cfg.CellBlocked(i2, j2);
-            }
+            if (k.Kind == PieceKey.KFoundation) return Cfg.CellBlocked(k.I, k.J);
+            if (k.Kind == PieceKey.KStairs) return k.L == 0 && Cfg.CellBlocked(k.I, k.J);
             return false;
         }
+
+        /// <summary>A foundation at ground level, or the bedrock (which counts as one and can never be destroyed).</summary>
+        static bool GroundSupport(int i, int j, Func<PieceKey, bool> exists) =>
+            Cfg.IsBedrockCell(i, j) || exists(new PieceKey(PieceKey.KFoundation, i, j, 0, 0));
 
         /// <summary>Rust-like support rules. exists() answers whether a (supported) piece is at a key.</summary>
         public static bool IsSupported(PieceKey k, Func<PieceKey, bool> exists)
@@ -162,7 +162,7 @@ namespace RockGame
                 {
                     int i2 = k.D == 0 ? k.I + 1 : k.I, j2 = k.D == 0 ? k.J : k.J + 1;
                     if (k.L == 0)
-                        return exists(new PieceKey(PieceKey.KFoundation, k.I, k.J, 0, 0)) || exists(new PieceKey(PieceKey.KFoundation, i2, j2, 0, 0));
+                        return GroundSupport(k.I, k.J, exists) || GroundSupport(i2, j2, exists);
                     return exists(new PieceKey(PieceKey.KEdge, k.I, k.J, k.L - 1, k.D))
                         || exists(new PieceKey(PieceKey.KFloor, k.I, k.J, k.L, 0))
                         || exists(new PieceKey(PieceKey.KFloor, i2, j2, k.L, 0));
@@ -179,7 +179,7 @@ namespace RockGame
                         || exists(new PieceKey(PieceKey.KFloor, k.I, k.J + 1, k.L, 0)) || exists(new PieceKey(PieceKey.KFloor, k.I, k.J - 1, k.L, 0));
                 }
                 case PieceKey.KStairs:
-                    if (k.L == 0) return exists(new PieceKey(PieceKey.KFoundation, k.I, k.J, 0, 0));
+                    if (k.L == 0) return GroundSupport(k.I, k.J, exists);
                     return exists(new PieceKey(PieceKey.KFloor, k.I, k.J, k.L, 0));
             }
             return false;

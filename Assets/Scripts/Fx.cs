@@ -3,7 +3,7 @@ using UnityEngine;
 
 namespace RockGame
 {
-    public enum FxKind : byte { Blood, BloodHead, WoodChips, StoneChips, WeakSpot, Break, Smash, StructureHit, Chamber }
+    public enum FxKind : byte { Blood, BloodHead, WoodChips, StoneChips, WeakSpot, Break, Smash, StructureHit, Spawn, C4Placed, Explosion, WandBeam, HelmetBreak, Craft, Drink }
 
     /// <summary>
     /// Game feel: particles (blood, chips, sparks), camera shake/kick, floating damage numbers and sounds.
@@ -64,7 +64,63 @@ namespace RockGame
                 case FxKind.StructureHit: Chips(pos, dir, Art.DarkWood, 6); Sfx.Play(Sfx.Thud, pos); break;
                 case FxKind.Break: Chips(pos, Vector3.up, Art.Wood, 26, 5f); Sfx.Play(Sfx.Smash, pos); break;
                 case FxKind.Smash: Chips(pos, dir, Art.Wood, 30, 7f); Chips(pos, dir, Art.Stone, 12, 6f); Sfx.Play(Sfx.Smash, pos, 1f); break;
+                case FxKind.Spawn:
+                    Sfx.Play(Sfx.Hiss, pos + Vector3.up, 0.7f);
+                    for (int i = 0; i < 6; i++)
+                        FxParticle.Puff(pos + new Vector3(Random.Range(-0.5f, 0.5f), Random.Range(0.2f, 1.8f), Random.Range(-0.5f, 0.5f)), new Color(0.85f, 0.95f, 1f, 0.6f), Random.Range(0.6f, 1.1f));
+                    break;
+                case FxKind.C4Placed: C4Bomb.Spawn(pos, dir); break;
+                case FxKind.Explosion: Explosion(pos); break;
+                case FxKind.WandBeam: WandBeam(pos, dir); break;
+                case FxKind.HelmetBreak: Chips(pos, Vector3.up, new Color(0.55f, 0.6f, 0.65f), 18, 4f); Sfx.Play(Sfx.Clink, pos, 1f, 0.2f); break;
+                case FxKind.Craft: Machine.Pulse(Mathf.RoundToInt(dir.x)); break;
+                case FxKind.Drink:
+                    for (int i = 0; i < 8; i++) FxParticle.Puff(pos + Random.insideUnitSphere * 0.6f + Vector3.up, new Color(0.7f, 0.4f, 1f, 0.5f), Random.Range(0.4f, 0.8f));
+                    Sfx.Play(Sfx.Zap, pos, 0.5f);
+                    break;
             }
+        }
+
+        public static void Explosion(Vector3 pos)
+        {
+            Sfx.Play(Sfx.Boom, pos, 1f, 0.05f);
+            for (int i = 0; i < 14; i++)
+                FxParticle.Puff(pos + Random.insideUnitSphere * 1.8f + Vector3.up * 0.6f, i % 3 == 0 ? new Color(1f, 0.85f, 0.3f, 0.8f) : new Color(1f, 0.45f, 0.1f, 0.7f), Random.Range(1.5f, 3.2f));
+            for (int i = 0; i < 8; i++)
+                FxParticle.Puff(pos + Random.insideUnitSphere * 2.5f + Vector3.up * 1.5f, new Color(0.25f, 0.23f, 0.22f, 0.6f), Random.Range(2f, 3.5f));
+            Chips(pos, Vector3.up, Art.Wood, 30, 9f);
+            Chips(pos, Vector3.up, Art.Stone, 20, 8f);
+            Sparks(pos, Vector3.up, 30);
+            var cam = Camera.main;
+            if (cam != null)
+            {
+                float d = Vector3.Distance(cam.transform.position, pos);
+                Shake(Mathf.Clamp01(1.2f - d / 30f));
+            }
+            var lg = new GameObject("boomLight");
+            lg.transform.position = pos + Vector3.up;
+            var l = lg.AddComponent<Light>();
+            l.type = LightType.Point;
+            l.color = new Color(1f, 0.6f, 0.2f);
+            l.range = 18f;
+            l.intensity = 8f;
+            Object.Destroy(lg, 0.25f);
+        }
+
+        /// <summary>Death wand bolt from `from` to `to`.</summary>
+        public static void WandBeam(Vector3 from, Vector3 to)
+        {
+            var d = to - from;
+            float len = d.magnitude;
+            if (len < 0.1f) return;
+            var mat = new Material(Art.Ghost(new Color(0.4f, 1f, 0.4f, 0.85f)));
+            var go = Art.Part(null, Art.Cube, Color.white, from + d * 0.5f, new Vector3(0.12f, 0.12f, len), Quaternion.LookRotation(d).eulerAngles, false, mat);
+            go.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            go.AddComponent<FadeOut>().Init(mat, 0.45f);
+            for (int i = 0; i < 6; i++) FxParticle.Puff(to + Random.insideUnitSphere * 1.2f, new Color(0.4f, 1f, 0.4f, 0.6f), Random.Range(0.8f, 1.6f));
+            Sparks(to, -d, 20);
+            Sfx.Play(Sfx.Zap, from, 0.9f);
+            Sfx.Play(Sfx.Zap, to, 0.9f);
         }
 
         // ---------------- particles ----------------
@@ -98,6 +154,67 @@ namespace RockGame
             dir = dir.sqrMagnitude > 0.01f ? dir.normalized : Vector3.up;
             for (int i = 0; i < n; i++)
                 FxParticle.Spawn(pos, dir * Random.Range(2f, 6f) + Random.insideUnitSphere * 3f, k_Spark, Random.Range(0.02f, 0.05f), Random.Range(0.15f, 0.35f), 6f, false);
+        }
+    }
+
+    /// <summary>Fades a ghost material out and destroys the object.</summary>
+    public class FadeOut : MonoBehaviour
+    {
+        Material m_Mat;
+        Color m_Color;
+        float m_Life, m_Max;
+
+        public void Init(Material mat, float life)
+        {
+            m_Mat = mat;
+            m_Color = mat.color;
+            m_Life = m_Max = life;
+        }
+
+        void Update()
+        {
+            m_Life -= Time.deltaTime;
+            if (m_Life <= 0) { Destroy(gameObject); return; }
+            var c = m_Color;
+            c.a *= m_Life / m_Max;
+            m_Mat.SetColor("_BaseColor", c);
+        }
+
+        void OnDestroy()
+        {
+            if (m_Mat) Destroy(m_Mat);
+        }
+    }
+
+    /// <summary>A C4 charge stuck where it landed, beeping faster and faster until it goes off (visual only; the server does the damage).</summary>
+    public class C4Bomb : MonoBehaviour
+    {
+        float m_Born, m_NextBeep;
+        GameObject m_Led;
+
+        public static void Spawn(Vector3 pos, Vector3 normal)
+        {
+            var go = new GameObject("C4");
+            if (normal.sqrMagnitude < 0.01f) normal = Vector3.up;
+            go.transform.SetPositionAndRotation(pos, Quaternion.FromToRotation(Vector3.up, normal));
+            var model = ItemModels.Create(Item.C4, go.transform);
+            var b = go.AddComponent<C4Bomb>();
+            b.m_Born = Time.time;
+            var led = model.transform.Find("led");
+            b.m_Led = led != null ? led.gameObject : null;
+            Destroy(go, Cfg.C4Fuse + 0.1f);
+        }
+
+        void Update()
+        {
+            float left = Mathf.Max(0.05f, Cfg.C4Fuse - (Time.time - m_Born));
+            float gap = Mathf.Clamp(left * 0.3f, 0.08f, 0.6f);
+            if (Time.time >= m_NextBeep)
+            {
+                m_NextBeep = Time.time + gap;
+                Sfx.Play(Sfx.Beep, transform.position, 0.6f, 0f);
+            }
+            if (m_Led) m_Led.SetActive(m_NextBeep - Time.time > gap * 0.5f);
         }
     }
 
@@ -174,7 +291,7 @@ namespace RockGame
     /// <summary>Procedurally synthesised sound effects (the project has no audio assets).</summary>
     public static class Sfx
     {
-        public static AudioClip Swing, Flesh, Headshot, Chop, Clink, Thud, Ding, Smash, Twang, Throw, Pop, Eat, Place, Hurt, Kill, Step, Hiss;
+        public static AudioClip Swing, Flesh, Headshot, Chop, Clink, Thud, Ding, Smash, Twang, Throw, Pop, Eat, Place, Hurt, Kill, Step, Hiss, Boom, Beep, Zap, Saw, Hum;
         const int Rate = 44100;
 
         // runs on first access to any clip, so Sfx.Play(Sfx.Chop, ...) always gets a built clip
@@ -203,6 +320,11 @@ namespace RockGame
             Hurt = Make("hurt", 0.2f, (t, d) => Mathf.Sin(t * 2 * Mathf.PI * Mathf.Lerp(90, 50, t / d)) * Env(t, 0.15f) + N() * Env(t, 0.06f) * 0.3f, lowpass: 0.2f);
             Kill = Make("kill", 0.5f, (t, d) => (t < 0.12f ? Mathf.Sin(t * 2 * Mathf.PI * 1318) : Mathf.Sin(t * 2 * Mathf.PI * 1976)) * Env(t < 0.12f ? t : t - 0.12f, 0.2f) * 0.5f);
             Hiss = Make("hiss", 0.9f, (t, d) => N() * Mathf.Min(1f, t * 20f) * Mathf.Exp(-t * 3f) * 0.5f, lowpass: 0.6f);
+            Boom = Make("boom", 1.4f, (t, d) => N() * Env(t, 0.6f) * 0.9f + Mathf.Sin(t * 2 * Mathf.PI * Mathf.Lerp(60, 25, t / d)) * Env(t, 0.8f), lowpass: 0.12f);
+            Beep = Make("beep", 0.08f, (t, d) => Mathf.Sign(Mathf.Sin(t * 2 * Mathf.PI * 1800)) * 0.25f);
+            Zap = Make("zap", 0.3f, (t, d) => (Mathf.Sin(t * 2 * Mathf.PI * Mathf.Lerp(1400, 200, t / d)) * 0.5f + N() * 0.3f) * Env(t, 0.2f));
+            Saw = Make("saw", 0.2f, (t, d) => (Mathf.Sign(Mathf.Sin(t * 2 * Mathf.PI * 95)) * 0.3f + N() * 0.25f) * (0.7f + 0.3f * Mathf.Sin(t * 2 * Mathf.PI * 25)), lowpass: 0.35f);
+            Hum = Make("hum", 1.5f, (t, d) => (Mathf.Sin(t * 2 * Mathf.PI * 55) * 0.5f + Mathf.Sin(t * 2 * Mathf.PI * 110.5f) * 0.3f) * Mathf.Sin(t / d * Mathf.PI), lowpass: 0.5f);
             Step = Make("step", 0.08f, (t, d) => N() * Env(t, 0.03f) * 0.25f, lowpass: 0.15f);
         }
 

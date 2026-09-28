@@ -6,7 +6,8 @@ namespace RockGame
 {
     /// <summary>
     /// Builds the static (non-networked) world identically on every peer from (map, size, seed):
-    /// flat Plains or hilly Highlands terrain, the two bases with their crashed UFO spawns, and the sudden death arena.
+    /// flat Plains or hilly Highlands terrain (with watch towers), the two bases with their bedrock spawn and alien machine,
+    /// the glass wall between the halves and the sudden death arena.
     /// </summary>
     public static class MapBuilder
     {
@@ -14,12 +15,18 @@ namespace RockGame
         static Transform s_Root;
         public static int BuiltKey = -1, BuiltSeed;
 
+        static GameObject s_Glass;
+        /// <summary>Highlands: where the hill rocks go (one half; NetGame mirrors them). They are real stone nodes.</summary>
+        public static readonly List<Vector3> WildRocks = new List<Vector3>();
+
         public static bool IsBuilt(int key, int seed) => s_Root != null && BuiltKey == key && BuiltSeed == seed;
 
         public static void Build()
         {
             if (s_Root) Object.Destroy(s_Root.gameObject);
-            Cryo.All.Clear();
+            s_Glass = null;
+            WildRocks.Clear();
+            Cfg.Towers.Clear();
             s_Root = new GameObject("World").transform;
             BuiltKey = Cfg.MapKey;
             BuiltSeed = Cfg.MapSeed;
@@ -81,8 +88,14 @@ namespace RockGame
                     Art.Box(root, Art.DarkWood, p + Vector3.up * 3.5f, new Vector3(0.2f, 7f, 0.2f), default, true);
                     Art.Box(root, team, p + new Vector3(0.7f, 6.3f, 0), new Vector3(1.4f, 0.9f, 0.05f));
                 }
-                BuildUfo(root, t);
+                BuildBedrock(root, t);
             }
+
+            // ---------- glass wall between the halves (until the ball drops) ----------
+            BuildGlassWall(root, half);
+
+            // ---------- watch towers (wild map) ----------
+            if (Cfg.Map == MapKind.Highlands) PlaceTowers(root);
 
             // ---------- centre ball drop zone ----------
             Art.Part(root, Art.Cylinder, new Color(0.85f, 0.75f, 0.3f), new Vector3(0, 0.02f, 0), new Vector3(12f, 0.02f, 12f));
@@ -198,7 +211,7 @@ namespace RockGame
             go.AddComponent<MeshCollider>().sharedMesh = mesh;
             go.AddComponent<GroundMarker>();
 
-            // scattered boulders on the hills for cover
+            // spots for the stone nodes on the hills (NetGame spawns real, minable nodes there)
             var rng = new System.Random(Cfg.MapSeed + 3);
             float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
             int count = Mathf.RoundToInt(18 * (Cfg.MapHalf / 100f));
@@ -206,139 +219,258 @@ namespace RockGame
             {
                 var p = new Vector3(R(-Cfg.MapHalf + 10, Cfg.MapHalf - 10), 0, R(-Cfg.MapHalf + 10, -12));
                 if (Height(p.x, p.z) < 2f) continue;
+                WildRocks.Add(p);
+            }
+        }
+
+        // =====================================================================
+        // Bedrock spawn platform + alien machine
+        // =====================================================================
+
+        static readonly Color k_Silver = new Color(0.72f, 0.74f, 0.78f), k_SilverDark = new Color(0.5f, 0.52f, 0.56f);
+
+        /// <summary>Unbreakable silver bedrock in the middle of the base (you spawn on it) with the alien machine on its back edge.</summary>
+        static void BuildBedrock(Transform root, int team)
+        {
+            var c = Cfg.BedrockCenter(team);
+            var tc = Cfg.TeamColor[team];
+            var glow = Color.Lerp(tc, Color.white, 0.35f);
+            float s = Cfg.BedrockHalf * 2f;
+            var go = new GameObject("Bedrock " + Cfg.TeamName[team]);
+            go.transform.SetParent(root, false);
+            go.transform.position = c;
+            var t = go.transform;
+            // same height as a foundation (top at BaseY) so foundations and walls line up with it
+            Art.Box(t, k_Silver, new Vector3(0, Cfg.BaseY * 0.5f, 0), new Vector3(s, Cfg.BaseY, s), default, true);
+            Art.Box(t, k_SilverDark, new Vector3(0, Cfg.BaseY * 0.78f, 0), new Vector3(s + 0.04f, 0.1f, s + 0.04f));
+            Art.Box(t, k_SilverDark, new Vector3(0, Cfg.BaseY * 0.25f, 0), new Vector3(s + 0.04f, 0.1f, s + 0.04f));
+            // glowing seams and rivets on top
+            for (int k = -1; k <= 1; k += 2)
+            {
+                Art.Box(t, glow, new Vector3(k * 1.5f, Cfg.BaseY + 0.005f, 0), new Vector3(0.05f, 0.01f, s - 0.2f));
+                Art.Box(t, glow, new Vector3(0, Cfg.BaseY + 0.005f, k * 1.5f), new Vector3(s - 0.2f, 0.01f, 0.05f));
+            }
+            for (int x = -1; x <= 1; x += 2)
+            for (int z = -1; z <= 1; z += 2)
+                Art.Part(t, Art.Cylinder, k_SilverDark, new Vector3(x * (Cfg.BedrockHalf - 0.25f), Cfg.BaseY + 0.01f, z * (Cfg.BedrockHalf - 0.25f)), new Vector3(0.22f, 0.02f, 0.22f));
+            BuildMachine(root, team, glow);
+        }
+
+        static void BuildMachine(Transform root, int team, Color glow)
+        {
+            var go = new GameObject("AlienMachine " + Cfg.TeamName[team]);
+            go.transform.SetParent(root, false);
+            // local +z faces the spawn / the middle of the map
+            go.transform.SetPositionAndRotation(Cfg.MachinePos(team), Quaternion.LookRotation(-Cfg.BackDir(team)));
+            var t = go.transform;
+            var metal = new Color(0.3f, 0.33f, 0.36f);
+            var alien = new Color(0.45f, 0.95f, 0.55f);
+            var screen = Art.Ghost(new Color(0.4f, 1f, 0.8f, 0.7f));
+
+            // heavy base and the main column
+            Art.Box(t, metal, new Vector3(0, 0.25f, 0), new Vector3(2.7f, 0.5f, 1.2f), default, true);
+            Art.Box(t, k_SilverDark, new Vector3(0, 0.52f, 0), new Vector3(2.5f, 0.06f, 1.05f));
+            Art.Part(t, Art.Cylinder, k_Silver, new Vector3(0, 1.45f, -0.05f), new Vector3(0.9f, 0.95f, 0.9f), default, true);
+            Art.Part(t, Art.Cylinder, metal, new Vector3(0, 2.45f, -0.05f), new Vector3(1.15f, 0.08f, 1.15f));
+            // side pylons with glowing tips
+            for (int k = -1; k <= 1; k += 2)
+            {
+                Art.Box(t, metal, new Vector3(k * 1.1f, 1.2f, -0.15f), new Vector3(0.28f, 1.4f, 0.28f), new Vector3(0, 0, -k * 8f), true);
+                Art.Part(t, Art.Ico, glow, new Vector3(k * 1.2f, 2.05f, -0.15f), Vector3.one * 0.16f);
+                Art.Part(t, Art.Cone, k_Silver, new Vector3(k * 1.2f, 2.12f, -0.15f), new Vector3(0.18f, 0.35f, 0.18f));
+            }
+            // slanted consoles with glowing screens facing you
+            for (int k = -1; k <= 1; k += 2)
+            {
+                Art.Box(t, metal, new Vector3(k * 0.75f, 0.85f, 0.45f), new Vector3(0.7f, 0.08f, 0.45f), new Vector3(-35, 0, 0), true);
+                Art.Box(t, Color.white, new Vector3(k * 0.75f, 0.9f, 0.47f), new Vector3(0.6f, 0.02f, 0.36f), new Vector3(-35, 0, 0), false, screen);
+            }
+            // spinning rings around the column (animated by Machine)
+            var rings = new GameObject("rings").transform;
+            rings.SetParent(t, false);
+            rings.localPosition = new Vector3(0, 1.55f, -0.05f);
+            for (int r = 0; r < 2; r++)
+            {
+                var ring = new GameObject("ring").transform;
+                ring.SetParent(rings, false);
+                ring.localRotation = Quaternion.Euler(r == 0 ? 20f : -25f, 0, r == 0 ? 10f : -15f);
+                for (int i = 0; i < 12; i++)
+                {
+                    float a = i * 30f * Mathf.Deg2Rad;
+                    Art.Box(ring, i % 3 == 0 ? glow : k_Silver, new Vector3(Mathf.Sin(a) * 0.72f, 0, Mathf.Cos(a) * 0.72f), new Vector3(0.2f, 0.05f, 0.08f), new Vector3(0, i * 30f + 90f, 0));
+                }
+            }
+            // floating orb on top
+            var orb = Art.Part(t, Art.Ico, alien, new Vector3(0, 2.85f, -0.05f), Vector3.one * 0.32f).transform;
+            Art.Part(orb, Art.Ico, Color.white, Vector3.zero, Vector3.one * 1.5f, default, false, Art.Ghost(new Color(0.5f, 1f, 0.6f, 0.3f)));
+
+            // the socket: a cradle in front of the machine where the ball has to sit to win
+            var socket = new GameObject("socket").transform;
+            socket.SetParent(t, false);
+            socket.position = Cfg.SocketPos(team) - Vector3.up * 0.64f; // on the bedrock
+            for (int i = 0; i < 10; i++)
+            {
+                float a = i * 36f * Mathf.Deg2Rad;
+                Art.Box(socket, i % 2 == 0 ? k_Silver : metal, new Vector3(Mathf.Sin(a) * 0.82f, 0.16f, Mathf.Cos(a) * 0.82f), new Vector3(0.5f, 0.32f, 0.14f), new Vector3(0, i * 36f, 0), true);
+            }
+            var pad = Art.Part(socket, Art.Cylinder, glow, new Vector3(0, 0.012f, 0), new Vector3(1.4f, 0.01f, 1.4f));
+            // arch over the socket with an emitter pointing down into the hole
+            for (int k = -1; k <= 1; k += 2)
+                Art.Box(socket, metal, new Vector3(k * 1.05f, 1.0f, 0), new Vector3(0.14f, 2f, 0.14f), default, true);
+            Art.Box(socket, metal, new Vector3(0, 2.02f, 0), new Vector3(2.24f, 0.16f, 0.2f));
+            Art.Part(socket, Art.Cone, glow, new Vector3(0, 1.72f, 0), new Vector3(0.3f, 0.25f, 0.3f), new Vector3(180, 0, 0));
+            var beam = Art.Part(socket, Art.Cylinder, Color.white, new Vector3(0, 1.0f, 0), new Vector3(0.9f, 0.95f, 0.9f), default, false, Art.Ghost(new Color(glow.r, glow.g, glow.b, 0.22f)));
+            beam.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
+
+            var lg = new GameObject("machineLight");
+            lg.transform.SetParent(t, false);
+            lg.transform.localPosition = new Vector3(0, 2.2f, 0.6f);
+            var l = lg.AddComponent<Light>();
+            l.type = LightType.Point;
+            l.color = alien;
+            l.range = 7f;
+            l.intensity = 1.8f;
+
+            go.AddComponent<Machine>().Init(team, rings, orb, l, beam);
+        }
+
+        // =====================================================================
+        // Glass wall between the two halves
+        // =====================================================================
+
+        static void BuildGlassWall(Transform root, float half)
+        {
+            s_Glass = new GameObject("GlassWall");
+            s_Glass.transform.SetParent(root, false);
+            var t = s_Glass.transform;
+            var glass = Art.Part(t, Art.Cube, Color.white, new Vector3(0, 30f, 0), new Vector3(2 * half + 4, 100f, 0.3f), default, true, Art.Ghost(new Color(0.6f, 0.9f, 1f, 0.16f)), "glass");
+            glass.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
+            var line = Art.Ghost(new Color(0.75f, 0.95f, 1f, 0.45f));
+            for (int k = 0; k < 8; k++)
+            {
+                var b = Art.Part(t, Art.Cube, Color.white, new Vector3(0, 0.6f + k * 4f, 0), new Vector3(2 * half + 4, 0.06f, 0.34f), default, false, line);
+                b.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
+            }
+            for (float x = -half; x <= half; x += 12f)
+            {
+                var b = Art.Part(t, Art.Cube, Color.white, new Vector3(x, 30f, 0), new Vector3(0.08f, 100f, 0.34f), default, false, line);
+                b.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
+            }
+        }
+
+        public static bool GlassUp => s_Glass != null && s_Glass.activeSelf;
+
+        /// <summary>The wall is up until the ball drops (driven by the match state on every peer).</summary>
+        public static void SetGlassWall(bool up)
+        {
+            if (s_Glass == null || s_Glass.activeSelf == up) return;
+            s_Glass.SetActive(up);
+            if (up) return;
+            // shatter
+            float half = Cfg.MapHalf;
+            for (int i = 0; i < 40; i++)
+            {
+                var p = new Vector3(Random.Range(-half, half), Random.Range(0.5f, 12f), 0);
+                p.y += Height(p.x, p.z);
+                FxParticle.Spawn(p, new Vector3(Random.Range(-2f, 2f), Random.Range(0f, 3f), Random.Range(-3f, 3f)), new Color(0.75f, 0.95f, 1f), Random.Range(0.08f, 0.2f), Random.Range(0.8f, 1.6f), 14f, false);
+            }
+            Sfx.Play2D(Sfx.Smash, 0.6f);
+        }
+
+        // =====================================================================
+        // Watch towers (wild map)
+        // =====================================================================
+
+        const float TowerH = 6f, TowerRampAngle = 36f;
+        static float RampRun => TowerH / Mathf.Tan(TowerRampAngle * Mathf.Deg2Rad);
+
+        static void PlaceTowers(Transform root)
+        {
+            var rng = new System.Random(Cfg.MapSeed * 7 + 11);
+            float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
+            float half = Cfg.MapHalf;
+            int want = Cfg.SmallMap ? 1 : 2;
+            var mine = new List<(Vector3 p, float yaw)>();
+            for (int tries = 0; tries < 300 && mine.Count < want; tries++)
+            {
+                var p = new Vector3(R(-half + 16, half - 16), 0, R(-half + 16, -14));
+                var bc = Cfg.BaseCenter[0];
+                if (Mathf.Max(Mathf.Abs(p.x - bc.x), Mathf.Abs(p.z - bc.z)) < Cfg.BaseHalf + 12f) continue;
+                if (new Vector2(p.x, p.z).magnitude < 24f) continue;
+                bool close = false;
+                foreach (var q in mine) if ((q.p - p).magnitude < 35f || (q.p + p).magnitude < 35f) close = true;
+                if (close) continue;
+                float yaw = Mathf.Floor(R(0, 3.99f)) * 90f;
+                var foot = p + Quaternion.Euler(0, yaw, 0) * Vector3.back * (1.9f + RampRun);
+                float h0 = Height(p.x, p.z);
+                bool flat = Mathf.Abs(Height(foot.x, foot.z) - h0) < 1.2f;
+                for (int k = 0; k < 4 && flat; k++)
+                {
+                    var o = Quaternion.Euler(0, k * 90f + 45f, 0) * Vector3.forward * 2.5f;
+                    if (Mathf.Abs(Height(p.x + o.x, p.z + o.z) - h0) > 1.5f) flat = false;
+                }
+                if (!flat && tries < 250) continue;
+                mine.Add((p, yaw));
+            }
+            foreach (var (p, yaw) in mine)
+            {
                 for (int m = 0; m < 2; m++)
                 {
                     var q = m == 0 ? p : -p;
-                    float sc = R(1.5f, 3.2f);
-                    Art.Part(root, Art.MakeRock(k * 7 + 1, 0.3f), k_Rock, new Vector3(q.x, Height(q.x, q.z) + sc * 0.2f, q.z), new Vector3(sc, sc * 0.8f, sc), new Vector3(0, R(0, 360), 0), true);
+                    q.y = Height(q.x, q.z);
+                    Cfg.Towers.Add(q);
+                    BuildTower(root, q, yaw + m * 180f);
                 }
             }
         }
 
-        // =====================================================================
-        // Crashed UFO spawn
-        // =====================================================================
-
-        static void BuildUfo(Transform root, int team)
+        /// <summary>A wooden watch tower: a platform 6 m up with railings and a roof, reached by a ramp.</summary>
+        static void BuildTower(Transform root, Vector3 pos, float yaw)
         {
-            var go = new GameObject("UFO " + Cfg.TeamName[team]);
+            var go = new GameObject("WatchTower");
             go.transform.SetParent(root, false);
-            go.transform.SetPositionAndRotation(Cfg.UfoCenter(team), Quaternion.LookRotation(Cfg.UfoForward(team)));
+            go.transform.SetPositionAndRotation(pos, Quaternion.Euler(0, yaw, 0));
             var t = go.transform;
-            var hull = new Color(0.52f, 0.56f, 0.58f);
-            var dark = new Color(0.28f, 0.3f, 0.33f);
-            var tc = Cfg.TeamColor[team];
-            var glow = Color.Lerp(tc, Color.white, 0.4f);
-
-            // scorched crater + dirt thrown up behind the crash
-            Art.Part(t, Art.Cylinder, new Color(0.22f, 0.2f, 0.17f), new Vector3(0, 0.015f, 0.6f), new Vector3(11.5f, 0.01f, 12.5f));
-            Art.Part(t, Art.MakeRock(team + 40, 0.3f), new Color(0.4f, 0.32f, 0.22f), new Vector3(0, 0.2f, -5.2f), new Vector3(4.5f, 1.4f, 1.6f));
-            Art.Part(t, Art.MakeRock(team + 41, 0.3f), new Color(0.36f, 0.3f, 0.2f), new Vector3(-3.6f, 0.2f, -3.8f), new Vector3(1.8f, 0.9f, 1.8f));
-            Art.Part(t, Art.MakeRock(team + 42, 0.3f), new Color(0.36f, 0.3f, 0.2f), new Vector3(3.6f, 0.2f, -3.8f), new Vector3(1.8f, 1f, 1.8f));
-
-            // floor (walkable) + ramp out of the door
-            Art.Part(t, Art.Cylinder, dark, new Vector3(0, 0.15f, 0), new Vector3(9f, 0.15f, 9f));
-            var floor = new GameObject("floorCol");
-            floor.transform.SetParent(t, false);
-            var fc = floor.AddComponent<BoxCollider>();
-            fc.center = new Vector3(0, 0.15f, 0);
-            fc.size = new Vector3(6.6f, 0.3f, 6.6f);
-            Art.Box(t, dark, new Vector3(0, 0.15f, 4.7f), new Vector3(3.2f, 0.3f, 1.6f), default, true);
-            Art.Box(t, hull, new Vector3(0, 0.1f, 5.9f), new Vector3(3f, 0.08f, 1.4f), new Vector3(8, 0, 0), true); // ramp
-
-            // hull wall ring with a big open door at +z (the door can never be blocked: see Cfg.CellBlocked)
-            const int segs = 18;
-            const float r = 4.3f;
-            for (int i = 0; i < segs; i++)
+            float h = TowerH;
+            const float r = 1.7f;
+            float w = 2 * r + 0.5f;
+            // posts (sunk into the ground) and cross braces
+            for (int x = -1; x <= 1; x += 2)
+            for (int z = -1; z <= 1; z += 2)
+                Art.Box(t, Art.DarkWood, new Vector3(x * r, (h + 1.6f) * 0.5f, z * r), new Vector3(0.32f, h + 3.6f, 0.32f), default, true);
+            for (int k = -1; k <= 1; k += 2)
             {
-                float a = i * 360f / segs;
-                if (Mathf.Abs(Mathf.DeltaAngle(a, 0f)) < 25f) continue;
-                var rad = a * Mathf.Deg2Rad;
-                var p = new Vector3(Mathf.Sin(rad) * r, 1.65f, Mathf.Cos(rad) * r);
-                Art.Box(t, i % 2 == 0 ? hull : hull * 0.93f, p, new Vector3(2f * Mathf.PI * r / segs + 0.12f, 2.7f, 0.35f), new Vector3(0, a, 0), true);
-                if (i % 3 == 0) Art.Box(t, glow, new Vector3(Mathf.Sin(rad) * (r + 0.19f), 2.2f, Mathf.Cos(rad) * (r + 0.19f)), new Vector3(0.35f, 0.12f, 0.03f), new Vector3(0, a, 0));
+                Art.Box(t, Art.Wood, new Vector3(r, h * 0.45f, 0), new Vector3(0.12f, 0.12f, 2f * r * 1.35f), new Vector3(k * 55f, 0, 0));
+                Art.Box(t, Art.Wood, new Vector3(-r, h * 0.45f, 0), new Vector3(0.12f, 0.12f, 2f * r * 1.35f), new Vector3(k * 55f, 0, 0));
+                Art.Box(t, Art.Wood, new Vector3(0, h * 0.45f, r), new Vector3(2f * r * 1.35f, 0.12f, 0.12f), new Vector3(0, 0, k * 55f));
             }
-            // door frame
-            Art.Box(t, glow, new Vector3(-1.85f, 1.65f, 4.05f), new Vector3(0.15f, 2.7f, 0.15f));
-            Art.Box(t, glow, new Vector3(1.85f, 1.65f, 4.05f), new Vector3(0.15f, 2.7f, 0.15f));
-            Art.Box(t, glow, new Vector3(0, 3.0f, 4.05f), new Vector3(3.85f, 0.15f, 0.15f));
-
-            // roof, tilted saucer rim and dome (the crash tilt is only on the rim so the floor stays level)
-            Art.Part(t, Art.Cylinder, hull, new Vector3(0, 3.1f, 0), new Vector3(9.8f, 0.12f, 9.8f));
-            var roof = new GameObject("roofCol");
-            roof.transform.SetParent(t, false);
-            var rc = roof.AddComponent<BoxCollider>();
-            rc.center = new Vector3(0, 3.1f, 0);
-            rc.size = new Vector3(7f, 0.3f, 7f);
-            var rim = new GameObject("rim").transform;
-            rim.SetParent(t, false);
-            rim.localPosition = new Vector3(0, 2.95f, 0);
-            rim.localRotation = Quaternion.Euler(7f, 0, 4f);
-            Art.Part(rim, Art.Cylinder, hull * 0.9f, Vector3.zero, new Vector3(12.5f, 0.1f, 12.5f));
-            for (int i = 0; i < 16; i++)
+            // platform
+            Art.Box(t, Art.Wood, new Vector3(0, h - 0.12f, 0), new Vector3(w, 0.25f, w), default, true);
+            for (int k = -2; k <= 2; k++)
+                Art.Box(t, Art.DarkWood, new Vector3(k * 0.75f, h + 0.005f, 0), new Vector3(0.05f, 0.01f, w - 0.05f));
+            // railings on three sides, open on the ramp side (-z)
+            Art.Box(t, Art.Wood, new Vector3(0, h + 0.55f, r + 0.1f), new Vector3(w, 1.1f, 0.08f), default, true);
+            Art.Box(t, Art.Wood, new Vector3(r + 0.1f, h + 0.55f, 0), new Vector3(0.08f, 1.1f, w), default, true);
+            Art.Box(t, Art.Wood, new Vector3(-(r + 0.1f), h + 0.55f, 0), new Vector3(0.08f, 1.1f, w), default, true);
+            Art.Box(t, Art.DarkWood, new Vector3(0, h + 1.1f, r + 0.1f), new Vector3(w + 0.1f, 0.12f, 0.14f));
+            Art.Box(t, Art.DarkWood, new Vector3(r + 0.1f, h + 1.1f, 0), new Vector3(0.14f, 0.12f, w + 0.1f));
+            Art.Box(t, Art.DarkWood, new Vector3(-(r + 0.1f), h + 1.1f, 0), new Vector3(0.14f, 0.12f, w + 0.1f));
+            // pyramid roof
+            Art.Part(t, Art.Cone, new Color(0.45f, 0.28f, 0.14f), new Vector3(0, h + 2.55f, 0), new Vector3(w + 1.2f, 1.6f, w + 1.2f), new Vector3(0, 45f, 0));
+            Art.Box(t, Art.DarkWood, new Vector3(0, h + 2.5f, 0), new Vector3(w + 0.1f, 0.12f, w + 0.1f));
+            // ramp up to the open side
+            float run = RampRun, len = h / Mathf.Sin(TowerRampAngle * Mathf.Deg2Rad);
+            var rampC = new Vector3(0, h * 0.5f - 0.1f, -(r + 0.25f) - run * 0.5f);
+            Art.Box(t, Art.Wood, rampC, new Vector3(1.5f, 0.2f, len + 0.3f), new Vector3(-TowerRampAngle, 0, 0), true);
+            var dir = new Vector3(0, Mathf.Sin(TowerRampAngle * Mathf.Deg2Rad), Mathf.Cos(TowerRampAngle * Mathf.Deg2Rad));
+            int steps = Mathf.RoundToInt(len / 0.45f);
+            for (int k = 0; k < steps; k++)
             {
-                float a = i * Mathf.PI * 2f / 16f;
-                Art.Box(rim, i % 2 == 0 ? glow : new Color(1f, 0.85f, 0.4f), new Vector3(Mathf.Sin(a) * 6.1f, 0.05f, Mathf.Cos(a) * 6.1f), new Vector3(0.3f, 0.14f, 0.3f));
+                var p = rampC + dir * ((k + 0.5f) / steps - 0.5f) * len + Vector3.up * 0.11f;
+                Art.Box(t, Art.DarkWood, p, new Vector3(1.45f, 0.05f, 0.1f));
             }
-            Art.Part(t, Art.Sphere, Color.white, new Vector3(0, 3.3f, 0), new Vector3(5f, 2.4f, 5f), default, false, Art.Ghost(new Color(0.5f, 0.9f, 1f, 0.55f)));
-            Art.Part(t, Art.Cylinder, dark, new Vector3(0, 3.25f, 0), new Vector3(5.2f, 0.08f, 5.2f));
-            // bent hull plate and debris
-            Art.Box(t, hull * 0.8f, new Vector3(5.6f, 0.3f, 1.5f), new Vector3(1.6f, 0.08f, 1.1f), new Vector3(20, 35, 12));
-            Art.Box(t, hull * 0.8f, new Vector3(-5.2f, 0.25f, 2.6f), new Vector3(1.1f, 0.08f, 0.9f), new Vector3(-15, -20, 25));
-
-            // interior light
-            var lg = new GameObject("ufoLight");
-            lg.transform.SetParent(t, false);
-            lg.transform.localPosition = new Vector3(0, 2.4f, -0.5f);
-            var l = lg.AddComponent<Light>();
-            l.type = LightType.Point;
-            l.color = glow;
-            l.range = 8f;
-            l.intensity = 2.2f;
-
-            BuildChamber(t, team, glow);
-        }
-
-        static void BuildChamber(Transform ufo, int team, Color glow)
-        {
-            var ch = new GameObject("CryoChamber").transform;
-            ch.SetParent(ufo, false);
-            ch.localPosition = new Vector3(0, 0.3f, -3.0f);
-            var metal = new Color(0.4f, 0.43f, 0.47f);
-            Art.Part(ch, Art.Cylinder, metal, new Vector3(0, 0.03f, 0), new Vector3(1.6f, 0.03f, 1.6f));
-            Art.Part(ch, Art.Cylinder, glow, new Vector3(0, 0.07f, 0), new Vector3(1.25f, 0.01f, 1.25f));
-            Art.Part(ch, Art.Cylinder, metal, new Vector3(0, 2.45f, 0), new Vector3(1.7f, 0.12f, 1.7f));
-            // back shell (solid)
-            for (int i = 0; i < 5; i++)
-            {
-                float a = (110f + i * 35f) * Mathf.Deg2Rad;
-                var p = new Vector3(Mathf.Sin(a) * 0.78f, 1.2f, Mathf.Cos(a) * 0.78f);
-                Art.Box(ch, i % 2 == 0 ? metal : metal * 0.85f, p, new Vector3(0.5f, 2.4f, 0.12f), new Vector3(0, a * Mathf.Rad2Deg, 0), true);
-            }
-            // pipes into the hull
-            Art.Box(ch, metal * 0.7f, new Vector3(0.35f, 1.9f, -0.9f), new Vector3(0.12f, 0.12f, 0.5f));
-            Art.Box(ch, metal * 0.7f, new Vector3(-0.35f, 0.6f, -0.9f), new Vector3(0.12f, 0.12f, 0.5f));
-            // glass front that slides up when you wake
-            var glass = new GameObject("glass").transform;
-            glass.SetParent(ch, false);
-            var gm = Art.Ghost(new Color(0.55f, 0.95f, 1f, 0.35f));
-            for (int i = 0; i < 4; i++)
-            {
-                float a = (-52f + i * 35f) * Mathf.Deg2Rad;
-                var p = new Vector3(Mathf.Sin(a) * 0.78f, 1.2f, Mathf.Cos(a) * 0.78f);
-                var g = Art.Part(glass, Art.Cube, Color.white, p, new Vector3(0.5f, 2.35f, 0.04f), new Vector3(0, a * Mathf.Rad2Deg, 0), false, gm);
-                g.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
-            }
-            var lg = new GameObject("cryoLight");
-            lg.transform.SetParent(ch, false);
-            lg.transform.localPosition = new Vector3(0, 2.1f, 0.2f);
-            var l = lg.AddComponent<Light>();
-            l.type = LightType.Point;
-            l.color = new Color(0.6f, 0.95f, 1f);
-            l.range = 3f;
-            l.intensity = 2f;
-            var cryo = ch.gameObject.AddComponent<Cryo>();
-            cryo.Init(team, glass, l);
+            for (int k = -1; k <= 1; k += 2)
+                Art.Box(t, Art.DarkWood, rampC + new Vector3(k * 0.78f, 0.45f, 0), new Vector3(0.08f, 0.08f, len), new Vector3(-TowerRampAngle, 0, 0));
         }
 
         // =====================================================================
@@ -382,46 +514,59 @@ namespace RockGame
     /// <summary>Marks static ground colliders so placement/overlap tests can ignore them.</summary>
     public class GroundMarker : MonoBehaviour { }
 
-    /// <summary>The cryo chamber you wake up in: the glass slides up with a burst of steam.</summary>
-    public class Cryo : MonoBehaviour
+    /// <summary>
+    /// The alien machine on a base's bedrock: press E on it to craft; its socket is where the ball has to sit to win.
+    /// Purely local visuals (the world is built identically on every peer).
+    /// </summary>
+    public class Machine : MonoBehaviour
     {
-        public static readonly List<Cryo> All = new List<Cryo>();
+        public static readonly Machine[] ByTeam = new Machine[2];
         public int Team;
-        Transform m_Glass;
+        Transform m_Rings, m_Orb;
         Light m_Light;
-        float m_OpenAt = -10f;
+        GameObject m_Beam;
+        Vector3 m_OrbBase;
+        float m_Busy;
 
-        public void Init(int team, Transform glass, Light light)
+        public void Init(int team, Transform rings, Transform orb, Light light, GameObject beam)
         {
             Team = team;
-            m_Glass = glass;
+            m_Rings = rings;
+            m_Orb = orb;
+            m_OrbBase = orb.localPosition;
             m_Light = light;
-            All.Add(this);
+            m_Beam = beam;
+            ByTeam[team] = this;
         }
 
-        void OnDestroy() => All.Remove(this);
-
-        public static void Open(int team)
+        void OnDestroy()
         {
-            foreach (var c in All) if (c.Team == team) c.DoOpen();
+            if (ByTeam[Team] == this) ByTeam[Team] = null;
         }
 
-        void DoOpen()
+        /// <summary>Something was crafted: spin up for a moment.</summary>
+        public static void Pulse(int team)
         {
-            m_OpenAt = Time.time;
-            Sfx.Play(Sfx.Hiss, transform.position + Vector3.up, 0.9f);
-            for (int i = 0; i < 6; i++)
-                FxParticle.Puff(transform.position + new Vector3(Random.Range(-0.5f, 0.5f), Random.Range(0.2f, 1.8f), Random.Range(0.2f, 0.9f)), new Color(0.9f, 0.97f, 1f, 0.6f), Random.Range(0.6f, 1.1f));
+            var m = team >= 0 && team < 2 ? ByTeam[team] : null;
+            if (m == null) return;
+            m.m_Busy = 1f;
+            Sfx.Play(Sfx.Zap, m.transform.position + Vector3.up * 1.5f, 0.5f);
+            for (int i = 0; i < 5; i++)
+                FxParticle.Puff(m.transform.position + Vector3.up * Random.Range(1f, 2.8f) + Random.insideUnitSphere * 0.4f, new Color(0.5f, 1f, 0.6f, 0.5f), Random.Range(0.3f, 0.6f));
         }
 
         void Update()
         {
-            // closed -> (0.5s) slides up -> stays open 2.5s -> slides back down
-            float e = Time.time - m_OpenAt;
-            float k = e < 0.35f ? 0f : e < 0.9f ? (e - 0.35f) / 0.55f : e < 3.4f ? 1f : e < 4.2f ? 1f - (e - 3.4f) / 0.8f : 0f;
-            k = k * k * (3 - 2 * k);
-            m_Glass.localPosition = new Vector3(0, k * 2.3f, 0);
-            if (m_Light) m_Light.intensity = 2f + (e < 1.2f ? (1.2f - e) * 6f : 0f);
+            m_Busy = Mathf.Max(0f, m_Busy - Time.deltaTime);
+            float spin = 40f + m_Busy * 600f;
+            if (m_Rings)
+                for (int i = 0; i < m_Rings.childCount; i++)
+                    m_Rings.GetChild(i).Rotate(0, (i == 0 ? spin : -spin * 1.3f) * Time.deltaTime, 0, Space.Self);
+            if (m_Orb) m_Orb.localPosition = m_OrbBase + Vector3.up * Mathf.Sin(Time.time * 2f) * 0.08f;
+            var ball = Ball.Instance;
+            bool socketed = ball != null && ball.IsSpawned && ball.SocketTeam.Value == Team;
+            if (m_Beam && m_Beam.activeSelf == socketed) m_Beam.SetActive(!socketed);
+            if (m_Light) m_Light.intensity = (socketed ? 4f : 1.8f) + m_Busy * 3f + Mathf.Sin(Time.time * 3f) * 0.2f;
         }
     }
 }

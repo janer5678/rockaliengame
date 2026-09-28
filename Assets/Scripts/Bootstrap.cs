@@ -7,7 +7,7 @@ namespace RockGame
     /// <summary>
     /// Lives on the NetworkManager object. Holds prefab/material references, builds the world,
     /// and starts/stops hosting or joining.
-    /// Command line: -host | -client [ip] | -port N | -solo | -fast
+    /// Command line: -host | -client [ip] | -port N | -solo | -fast | -map plains|highlands | -small | -big | -wood | -seed N
     /// </summary>
     [RequireComponent(typeof(NetworkManager))]
     public class Bootstrap : MonoBehaviour
@@ -82,10 +82,11 @@ namespace RockGame
                 switch (args[i].ToLowerInvariant())
                 {
                     case "-map":
-                        if (i + 1 < args.Length) MapChoice = (MapChoice & 16) | (args[i + 1].ToLowerInvariant().StartsWith("h") ? (int)MapKind.Highlands : (int)MapKind.Plains);
+                        if (i + 1 < args.Length) MapChoice = (MapChoice & ~15) | (args[i + 1].ToLowerInvariant().StartsWith("h") ? (int)MapKind.Highlands : (int)MapKind.Plains);
                         break;
-                    case "-small": MapChoice |= 16; break;
-                    case "-big": MapChoice &= ~16; break;
+                    case "-small": MapChoice |= Cfg.SmallBit; break;
+                    case "-big": MapChoice &= ~Cfg.SmallBit; break;
+                    case "-wood": MapChoice |= Cfg.WoodBit; break;
                     case "-seed": if (i + 1 < args.Length && int.TryParse(args[i + 1], out var sd)) s_SeedOverride = sd; break;
                 }
             }
@@ -128,6 +129,7 @@ namespace RockGame
         static void CleanupLocal()
         {
             foreach (var a in FindObjectsByType<ArrowProjectile>(FindObjectsSortMode.None)) Destroy(a.gameObject);
+            AirdropShip.Clear();
             Hud.Clear();
             Cfg.LoadPrefs(); // drop the host's settings, back to our own
             Cfg.SetMap(MapChoice, 0);

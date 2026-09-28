@@ -5,13 +5,15 @@ namespace RockGame
 {
     /// <summary>
     /// A tree (wood), boulder (stone) or berry bush. Trees and boulders have a Rust-style weak spot
-    /// (an X on trees, a sparkle on rocks) that gives bonus resources and jumps somewhere else when hit.
-    /// Depleted nodes regrow later.
+    /// (an X on trees, a sparkle on rocks) that appears after the first hit, gives bonus resources and jumps
+    /// somewhere else when hit. Depleted nodes regrow later. Bushes hold a single berry.
     /// </summary>
     public class ResourceNode : NetworkBehaviour
     {
         public const byte Tree = 0, Boulder = 1, Bush = 2;
         const int SpotCount = 12;
+        /// <summary>Spot value while the node hasn't been hit yet: no weak spot is shown.</summary>
+        public const byte NoSpot = 255;
 
         public readonly NetworkVariable<byte> Kind = new NetworkVariable<byte>();
         public readonly NetworkVariable<int> Amount = new NetworkVariable<int>();
@@ -126,13 +128,13 @@ namespace RockGame
                 Art.Part(tr, Art.MakeRock(Seed.Value, 0.2f), leaf, new Vector3(0, 0.45f, 0), new Vector3(0.75f, 0.5f, 0.7f), new Vector3(0, r() * 360, 0));
                 Art.Part(tr, Art.MakeRock(Seed.Value + 1, 0.2f), leaf * 0.9f, new Vector3(0.4f, 0.35f, 0.2f), new Vector3(0.45f, 0.38f, 0.45f));
                 Art.Part(tr, Art.MakeRock(Seed.Value + 2, 0.2f), leaf * 1.1f, new Vector3(-0.35f, 0.3f, -0.2f), new Vector3(0.45f, 0.35f, 0.4f));
-                m_Berries = new GameObject[8];
+                m_Berries = new GameObject[Mathf.Clamp(MaxAmount, 1, 8)];
                 for (int i = 0; i < m_Berries.Length; i++)
                 {
                     float a = i * 0.8f + r();
-                    float y = 0.35f + r() * 0.45f;
-                    var p = new Vector3(Mathf.Cos(a) * 0.72f, y, Mathf.Sin(a) * 0.68f);
-                    m_Berries[i] = Art.Part(tr, Art.Sphere, ItemModels.Berry, p, Vector3.one * 0.13f);
+                    float y = m_Berries.Length == 1 ? 0.8f : 0.35f + r() * 0.45f;
+                    var p = m_Berries.Length == 1 ? new Vector3(Mathf.Cos(a) * 0.3f, y, Mathf.Sin(a) * 0.25f) : new Vector3(Mathf.Cos(a) * 0.72f, y, Mathf.Sin(a) * 0.68f);
+                    m_Berries[i] = Art.Part(tr, Art.Sphere, ItemModels.Berry, p, Vector3.one * (m_Berries.Length == 1 ? 0.2f : 0.13f));
                 }
                 // interaction only (you walk through bushes)
                 var sc = gameObject.AddComponent<SphereCollider>();
@@ -155,7 +157,7 @@ namespace RockGame
         public bool TryGetSpot(out Vector3 pos, out Vector3 normal)
         {
             pos = normal = default;
-            if (IsBush || m_SpotCollider == null || Amount.Value <= 0) return false;
+            if (IsBush || m_SpotCollider == null || Amount.Value <= 0 || Spot.Value == NoSpot) return false;
             SpotDir(Kind.Value, Spot.Value, out var dir, out var y);
             var worldDir = transform.rotation * dir;
             var center = transform.position + Vector3.up * (y * (Kind.Value == Boulder ? m_Visual.transform.localScale.y : 1f));
@@ -206,7 +208,10 @@ namespace RockGame
             }
 
             if (IsServer && Amount.Value <= 0 && Time.time >= m_RespawnAt)
+            {
                 Amount.Value = MaxAmount;
+                Spot.Value = NoSpot;
+            }
         }
 
         // ---------------- Server ----------------
@@ -214,19 +219,21 @@ namespace RockGame
         {
             Kind.Value = kind;
             Seed.Value = seed;
-            Spot.Value = (byte)(seed % SpotCount);
+            Spot.Value = NoSpot;
             Amount.Value = kind == Tree ? Cfg.TreeAmount : kind == Boulder ? Cfg.StoneAmount : Cfg.BushBerries;
         }
 
-        /// <summary>Returns how much was actually harvested. A weak-spot hit multiplies the yield and moves the spot.</summary>
+        /// <summary>Returns how much was actually harvested. The first hit reveals the weak spot; a weak-spot hit multiplies the yield and moves it.</summary>
         public int ServerHarvest(int want, bool weak, Vector3 hitterPos)
         {
             if (Amount.Value <= 0) return 0;
+            bool first = Spot.Value == NoSpot;
+            if (first) weak = false;
             if (weak) want = Mathf.RoundToInt(want * Cfg.WeakSpotMul);
             int got = Mathf.Min(want, Amount.Value);
             Amount.Value -= got;
             if (Amount.Value <= 0) m_RespawnAt = Time.time + (IsBush ? Cfg.BushRespawnTime : Cfg.NodeRespawnTime);
-            if (weak) Spot.Value = PickSpotFacing(hitterPos);
+            if ((weak || first) && !IsBush && Amount.Value > 0) Spot.Value = PickSpotFacing(hitterPos);
             return got;
         }
 

@@ -6,11 +6,12 @@ namespace RockGame
 {
     /// <summary>
     /// A storage chest placed in a base. Anyone who gets to it can use it (so it can be raided);
-    /// breaking it spills everything onto the ground. (Kind/Bag support is kept for old saves of the prefab only.)
+    /// breaking it spills everything onto the ground. Also used for airdrop crates (one OP item, take only, unbreakable).
+    /// (Kind/Bag support is kept for old saves of the prefab only.)
     /// </summary>
     public class Container : NetworkBehaviour
     {
-        public const byte Chest = 0, Bag = 1;
+        public const byte Chest = 0, Bag = 1, Airdrop = 2;
         public static readonly List<Container> All = new List<Container>();
 
         public readonly NetworkList<ItemStack> Slots = new NetworkList<ItemStack>();
@@ -19,14 +20,25 @@ namespace RockGame
         public readonly NetworkVariable<float> Health = new NetworkVariable<float>();
 
         public bool IsBag => Kind.Value == Bag;
-        public bool TakeOnly => IsBag;
-        public string DisplayName => IsBag ? $"{Cfg.TeamName[Mathf.Clamp(Team.Value, 0, 1)]}'s loot bag" : "Storage Chest";
-        public Vector3 Center => transform.position + Vector3.up * (IsBag ? 0.3f : 0.4f);
+        public bool IsAirdrop => Kind.Value == Airdrop;
+        /// <summary>Chests can be damaged and rammed; bags and airdrops can't.</summary>
+        public bool Breakable => Kind.Value == Chest;
+        public bool TakeOnly => IsBag || IsAirdrop;
+        public string DisplayName => IsBag ? $"{Cfg.TeamName[Mathf.Clamp(Team.Value, 0, 1)]}'s loot bag" : IsAirdrop ? "Alien Airdrop" : "Storage Chest";
+        public Vector3 Center => transform.position + Vector3.up * (IsBag ? 0.3f : IsAirdrop ? 0.6f : 0.4f);
+        public bool Empty
+        {
+            get
+            {
+                for (int i = 0; i < Slots.Count; i++) if (!Slots[i].Empty) return false;
+                return true;
+            }
+        }
 
         readonly List<ItemStack> m_Pending = new List<ItemStack>();
         int m_PendingSize;
         float m_Pop = 1f;
-        Transform m_Visual;
+        Transform m_Visual, m_Crystal;
 
         // ---------------- Server setup (before Spawn) ----------------
         public void ServerInit(byte kind, int team, int size, List<ItemStack> contents)
@@ -49,6 +61,7 @@ namespace RockGame
             m_Visual = CreateVisual(Kind.Value, Team.Value, transform, null).transform;
             var bc = gameObject.AddComponent<BoxCollider>();
             if (IsBag) { bc.center = new Vector3(0, 0.3f, 0); bc.size = new Vector3(0.7f, 0.6f, 0.7f); }
+            else if (IsAirdrop) { bc.center = new Vector3(0, 0.6f, 0); bc.size = new Vector3(1.4f, 1.2f, 1.4f); }
             else { bc.center = new Vector3(0, 0.33f, 0); bc.size = new Vector3(1.1f, 0.66f, 0.62f); }
             m_Pop = 0f;
         }
@@ -66,6 +79,35 @@ namespace RockGame
                 Art.Part(t, Art.Sphere, sack, new Vector3(0, 0.28f, 0), new Vector3(0.7f, 0.55f, 0.62f));
                 Art.Part(t, Art.Sphere, sack * 0.9f, new Vector3(0, 0.55f, 0), new Vector3(0.28f, 0.22f, 0.28f));
                 Art.Part(t, Art.Cylinder, Cfg.TeamColor[Mathf.Clamp(team, 0, 1)], new Vector3(0, 0.5f, 0), new Vector3(0.24f, 0.03f, 0.24f));
+            }
+            else if (kind == Airdrop)
+            {
+                // alien crate: dark metal with glowing seams, a floating crystal and a beacon so you can find it
+                var metal = new Color(0.22f, 0.24f, 0.28f);
+                var glow = new Color(0.75f, 0.35f, 1f);
+                Art.Box(t, metal, new Vector3(0, 0.6f, 0), new Vector3(1.3f, 1.2f, 1.3f));
+                Art.Box(t, metal * 1.3f, new Vector3(0, 1.22f, 0), new Vector3(1.38f, 0.08f, 1.38f));
+                Art.Box(t, metal * 1.3f, new Vector3(0, 0.04f, 0), new Vector3(1.38f, 0.08f, 1.38f));
+                for (int k = 0; k < 4; k++)
+                {
+                    var rot = Quaternion.Euler(0, k * 90f, 0);
+                    Art.Box(t, glow, rot * new Vector3(0, 0.6f, 0.655f), (k % 2 == 0) ? new Vector3(0.9f, 0.06f, 0.02f) : new Vector3(0.02f, 0.06f, 0.9f));
+                    Art.Box(t, glow, rot * new Vector3(0, 0.6f, 0.655f), (k % 2 == 0) ? new Vector3(0.06f, 0.9f, 0.02f) : new Vector3(0.02f, 0.9f, 0.06f));
+                }
+                Art.Part(t, Art.Ico, glow, new Vector3(0, 1.6f, 0), new Vector3(0.22f, 0.35f, 0.22f), new Vector3(0, 30, 0), false, null, "crystal");
+                if (ghost == null)
+                {
+                    var beam = Art.Part(t, Art.Cylinder, Color.white, new Vector3(0, 60f, 0), new Vector3(0.8f, 60f, 0.8f), default, false, Art.Ghost(new Color(0.75f, 0.35f, 1f, 0.3f)), "beacon");
+                    beam.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                    var lg = new GameObject("glow");
+                    lg.transform.SetParent(t, false);
+                    lg.transform.localPosition = new Vector3(0, 1.8f, 0);
+                    var l = lg.AddComponent<Light>();
+                    l.type = LightType.Point;
+                    l.color = glow;
+                    l.range = 8f;
+                    l.intensity = 3f;
+                }
             }
             else
             {
@@ -86,6 +128,11 @@ namespace RockGame
 
         void Update()
         {
+            if (IsAirdrop && m_Visual)
+            {
+                if (m_Crystal == null) m_Crystal = m_Visual.Find("crystal");
+                if (m_Crystal) m_Crystal.Rotate(0, 90f * Time.deltaTime, 0, Space.World); // the crystal on top spins
+            }
             if (m_Pop < 1f && m_Visual)
             {
                 m_Pop = Mathf.Min(1f, m_Pop + Time.deltaTime * 4f);
@@ -100,7 +147,7 @@ namespace RockGame
 
         public void ServerDamage(float dmg)
         {
-            if (!IsServer || !IsSpawned || IsBag || dmg <= 0) return;
+            if (!IsServer || !IsSpawned || !Breakable || dmg <= 0) return;
             Health.Value = Mathf.Max(0, Health.Value - dmg);
             if (Health.Value <= 0) ServerBreak();
         }

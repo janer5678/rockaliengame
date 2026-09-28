@@ -24,6 +24,9 @@ namespace RockGame
         public readonly NetworkVariable<bool> Dead = new NetworkVariable<bool>();
         public readonly NetworkVariable<double> RespawnAt = new NetworkVariable<double>();
         public readonly NetworkVariable<int> StuckSpears = new NetworkVariable<int>(); // thrown spears stuck in this player
+        public readonly NetworkVariable<byte> HelmetHp = new NetworkVariable<byte>();  // worn alien helmet (0 = none)
+        public readonly NetworkVariable<double> InvisUntil = new NetworkVariable<double>(-1);
+        public readonly NetworkVariable<double> RevealUntil = new NetworkVariable<double>(-1); // attacking shows you for a moment
         public readonly NetworkList<ItemStack> Inv = new NetworkList<ItemStack>();
 
         // ---- owner-written state ----
@@ -39,6 +42,12 @@ namespace RockGame
         public float EyeHeight => Crouch.Value ? Cfg.CrouchEyeHeight : Cfg.EyeHeight;
         public Vector3 EyePos => transform.position + Vector3.up * EyeHeight;
         public bool IsHeadshot(Vector3 point) => point.y > transform.position.y + (Crouch.Value ? 0.88f : 1.24f);
+        double Now => NetworkManager != null ? NetworkManager.ServerTime.Time : 0;
+        public bool Invisible => InvisUntil.Value > Now;
+        /// <summary>Invisible and not currently attacking: other players can't see you.</summary>
+        public bool Hidden => Invisible && RevealUntil.Value < Now;
+        /// <summary>Dead, timer done and the ball is live: waiting for "respawn in base / in the wild".</summary>
+        public bool ChoosingRespawn => Dead.Value && Now >= RespawnAt.Value && NetGame.Instance != null && NetGame.Instance.S == GameState.BallLive;
 
         /// <summary>First hotbar slot holding this item, or -1.</summary>
         public int HotbarSlotOf(Item id)
@@ -50,7 +59,7 @@ namespace RockGame
         // ---- visuals ----
         CharacterController m_CC;
         Transform m_VisualRoot, m_Head, m_Hand;
-        GameObject m_HandItem;
+        GameObject m_HandItem, m_Helmet;
         Item m_HandItemId = (Item)255;
         BodyAnimator m_Anim;
         CapsuleCollider m_Hitbox;
@@ -79,7 +88,7 @@ namespace RockGame
                 Health.Value = Cfg.MaxHealth;
                 for (int i = 0; i < Cfg.PlayerSlots; i++) Inv.Add(default);
                 ServerGive(Item.Rock, 1);
-                Fx.Server(FxKind.Chamber, Cfg.ChamberPos(Team.Value), new Vector3(Team.Value, 0, 0));
+                Fx.Server(FxKind.Spawn, Cfg.SpawnPos(Team.Value), Vector3.up);
             }
 
             BuildBody();
@@ -200,6 +209,23 @@ namespace RockGame
             }
         }
 
+        void RebuildHelmet()
+        {
+            if (m_Helmet) { Destroy(m_Helmet); m_Helmet = null; }
+            if (HelmetHp.Value == 0) return;
+            var head = m_Anim != null && m_Anim.HeadBone != null ? m_Anim.HeadBone : m_Head;
+            m_Helmet = ItemModels.Create(Item.Helmet, head);
+            if (m_Anim != null && m_Anim.HeadBone != null)
+            {
+                // sit it on the alien's big head, upright in character space
+                m_Helmet.transform.position = head.position + m_VisualRoot.up * 0.14f + m_VisualRoot.forward * 0.02f;
+                m_Helmet.transform.rotation = m_VisualRoot.rotation;
+                m_Helmet.transform.localScale = Vector3.one * (1.3f / Mathf.Max(0.01f, head.lossyScale.y));
+            }
+            else m_Helmet.transform.localPosition = new Vector3(0, 0.1f, 0);
+            if (IsOwner) Art.SetLayerShadowsOnly(m_Helmet);
+        }
+
         void RebuildHandItem(Item item)
         {
             if (m_HandItem) Destroy(m_HandItem);
@@ -217,6 +243,7 @@ namespace RockGame
             m_WasDead = dead;
             // the body topples over and stays a moment before disappearing
             bool showBody = !dead || Time.time - m_DeadSince < 2.5f;
+            if (!IsOwner && Hidden && !dead) showBody = false; // invisibility potion
             if (m_VisualRoot.gameObject.activeSelf != showBody) m_VisualRoot.gameObject.SetActive(showBody);
             if (m_CC.enabled != !dead) m_CC.enabled = !dead;
             m_Hitbox.enabled = !dead;
@@ -240,14 +267,16 @@ namespace RockGame
             var held = CarryingBall || dead ? Item.None : HeldItem;
             if (held != m_HandItemId) RebuildHandItem(held);
             if (m_StuckVisuals.Count != Mathf.Min(StuckSpears.Value, k_StuckPos.Length)) RebuildStuckSpears();
+            if ((HelmetHp.Value > 0) != (m_Helmet != null)) RebuildHelmet();
             if (m_Swing > 0) m_Swing = Mathf.Max(0, m_Swing - Time.deltaTime / 0.55f);
             if (m_Anim == null && !IsOwner) m_Head.localRotation = Quaternion.Euler(Pitch.Value * 0.6f, 0, 0);
             if (m_Anim == null && m_Swing > 0) m_Hand.localRotation = Quaternion.Euler(Mathf.Sin(m_Swing * Mathf.PI) * 80f, 0, 0);
 
+            // before the wall drops you always come back in your base; after that you choose (RespawnChoiceRpc)
             if (IsServer && Dead.Value && NetGame.Instance != null && NetworkManager.ServerTime.Time >= RespawnAt.Value)
             {
                 var s = NetGame.Instance.S;
-                if (s != GameState.SuddenDeath && s != GameState.GameOver) ServerRespawn();
+                if (s == GameState.Waiting || s == GameState.PreBall) ServerRespawn(false);
             }
         }
 
@@ -262,7 +291,7 @@ namespace RockGame
                 DeadTime = Time.time - m_DeadSince,
                 Carrying = CarryingBall,
                 Holding = item != Item.None,
-                TwoHanded = item == Item.Rock || item == Item.Spear || item == Item.Ram,
+                TwoHanded = item == Item.Rock || item == Item.Spear || item == Item.Ram || item == Item.Chainsaw,
                 Pitch = Pitch.Value,
                 Swing = m_Swing,
             }, Time.deltaTime);
@@ -275,9 +304,16 @@ namespace RockGame
         // Server-side logic
         // =====================================================================
 
-        float m_NextMelee, m_NextShot, m_NextBuild, m_NextUpgrade, m_NextThrow, m_NextRam, m_NextEat, m_NextFullMsg;
+        float m_NextMelee, m_NextShot, m_NextBuild, m_NextUpgrade, m_NextThrow, m_NextRam, m_NextEat, m_NextFullMsg, m_NextWand;
         readonly Queue<float> m_PendingArrows = new Queue<float>();
         readonly Queue<float> m_PendingSpears = new Queue<float>();
+        int m_PendingC4;
+
+        /// <summary>Attacking while invisible shows you for a moment.</summary>
+        void Reveal()
+        {
+            if (Invisible) RevealUntil.Value = Now + Cfg.InvisRevealTime;
+        }
 
         bool GameAllowsCombat => NetGame.Instance == null || NetGame.Instance.S != GameState.GameOver;
         bool InSuddenDeath => NetGame.Instance != null && NetGame.Instance.S == GameState.SuddenDeath;
@@ -306,6 +342,8 @@ namespace RockGame
             Inv[HeldSlot.Value] = s.WithCount(s.Count - n);
         }
 
+        public void NotifyPublic(string msg) => Notify(msg);
+
         public void ServerDamage(float dmg, PlayerNet attacker)
         {
             if (Dead.Value || !GameAllowsCombat) return;
@@ -318,9 +356,13 @@ namespace RockGame
             Dead.Value = true;
             Health.Value = 0;
             if (CarryingBall) Ball.Instance.ServerDrop(transform.position + Vector3.up * 1.5f, Vector3.up * 3f);
+            InvisUntil.Value = -1;
 
             // everything spills out of the body (except the rock, which you always keep)
             var items = new List<ItemStack>();
+            // a helmet that wasn't shot off drops too, with the health it had left
+            if (HelmetHp.Value > 0) items.Add(ItemStack.Of(Item.Helmet, 1, HelmetHp.Value));
+            HelmetHp.Value = 0;
             for (int i = 0; i < Inv.Count; i++)
             {
                 if (Inv[i].Empty || Inv[i].Id == Item.Rock) continue;
@@ -340,14 +382,27 @@ namespace RockGame
             }
         }
 
-        public void ServerRespawn()
+        /// <summary>Back to life on your bedrock, or (wild) somewhere random in the enemy's half of the map.</summary>
+        public void ServerRespawn(bool wild)
         {
             Health.Value = Cfg.MaxHealth;
             if (Count(Item.Rock) == 0) ServerGive(Item.Rock, 1);
-            NetGame.SpawnPoint(Team.Value, false, out var pos, out var yaw);
+            Vector3 pos;
+            float yaw;
+            if (wild) NetGame.WildSpawnPoint(Team.Value, out pos, out yaw);
+            else NetGame.SpawnPoint(Team.Value, false, out pos, out yaw);
             TeleportRpc(pos, yaw);
             Dead.Value = false;
-            Fx.Server(FxKind.Chamber, pos, new Vector3(Team.Value, 0, 0));
+            Fx.Server(FxKind.Spawn, pos, Vector3.up);
+        }
+
+        [Rpc(SendTo.Server)]
+        public void RespawnChoiceRpc(bool wild)
+        {
+            var g = NetGame.Instance;
+            if (!Dead.Value || g == null || NetworkManager.ServerTime.Time < RespawnAt.Value) return;
+            if (g.S == GameState.SuddenDeath || g.S == GameState.GameOver) return;
+            ServerRespawn(wild && g.S == GameState.BallLive); // dying behind the wall always brings you back home
         }
 
         public void ServerEnterArena()
@@ -357,6 +412,7 @@ namespace RockGame
             if (Count(Item.Rock) == 0 && ServerGive(Item.Rock, 1) > 0) Inv[0] = ItemStack.Of(Item.Rock, 1); // rocks only - always have one
             Health.Value = Cfg.MaxHealth;
             Dead.Value = false;
+            InvisUntil.Value = -1;
             NetGame.SpawnPoint(Team.Value, true, out var pos, out var yaw);
             TeleportRpc(pos, yaw);
         }
@@ -368,7 +424,21 @@ namespace RockGame
         void ServerHitPlayer(PlayerNet p, float baseDamage, Vector3 point, Vector3 dir)
         {
             bool head = p.IsHeadshot(point);
-            p.ServerDamage(baseDamage * (head ? Cfg.HeadshotMul : 1f), this);
+            float dmg = baseDamage * (head ? Cfg.HeadshotMul : 1f);
+            if (head && p.HelmetHp.Value > 0)
+            {
+                // the helmet soaks up head damage until it breaks
+                int take = Mathf.Min(p.HelmetHp.Value, Mathf.CeilToInt(dmg));
+                p.HelmetHp.Value = (byte)(p.HelmetHp.Value - take);
+                dmg = Mathf.Max(0f, dmg - take);
+                if (p.HelmetHp.Value == 0)
+                {
+                    Fx.Server(FxKind.HelmetBreak, p.EyePos, Vector3.up);
+                    p.Notify("Your helmet broke!");
+                    Notify("You broke their helmet!");
+                }
+            }
+            p.ServerDamage(dmg, this);
             Fx.Server(head ? FxKind.BloodHead : FxKind.Blood, point, dir, OwnerClientId);
             if (p.Dead.Value) KillConfirmRpc();
         }
@@ -384,8 +454,10 @@ namespace RockGame
             if (Time.time < m_NextMelee) return;
             m_NextMelee = Time.time + st.Cooldown * 0.85f; // small tolerance for latency jitter
             SwingRpc();
+            Reveal();
 
             if (!hasTarget || !target.TryGet(out var no)) return;
+            if (item == Item.Chainsaw) WearChainsaw();
             if (Vector3.Distance(EyePos, point) > st.Range + 2f) return;
             var dir = (point - EyePos).normalized;
 
@@ -413,10 +485,25 @@ namespace RockGame
             }
             else if (no.TryGetComponent(out Container c))
             {
-                if (c.IsBag || c.Team.Value == Team.Value || !GameAllowsCombat) return;
+                if (!c.Breakable || c.Team.Value == Team.Value || !GameAllowsCombat) return;
                 c.ServerDamage(st.StructureDamage);
                 Fx.Server(FxKind.StructureHit, point, -dir, OwnerClientId);
             }
+        }
+
+        /// <summary>The chainsaw wears out a little with every hit and breaks when it runs out.</summary>
+        void WearChainsaw()
+        {
+            var st = HeldStack;
+            if (st.Id != Item.Chainsaw) return;
+            int left = st.Data - 1;
+            if (left <= 0)
+            {
+                ServerClearSlot(HeldSlot.Value);
+                Notify("Your chainsaw broke!");
+                Fx.Server(FxKind.Break, transform.position + Vector3.up * 1.2f, Vector3.up);
+            }
+            else Inv[HeldSlot.Value] = ItemStack.Of(Item.Chainsaw, 1, left);
         }
 
         [Rpc(SendTo.Server)]
@@ -425,6 +512,7 @@ namespace RockGame
             if (Dead.Value || CarryingBall || InSuddenDeath || HeldItem != Item.Bow) return;
             if (Time.time < m_NextShot || !InvOps.Remove(Inv, Item.Arrow, 1)) return;
             m_NextShot = Time.time + 0.3f;
+            Reveal();
             float power = Mathf.Clamp01(velocity.magnitude / Cfg.ArrowSpeed);
             m_PendingArrows.Enqueue(power);
             while (m_PendingArrows.Count > 6) m_PendingArrows.Dequeue();
@@ -441,12 +529,27 @@ namespace RockGame
             {
                 if (p == this || p.Dead.Value) return;
                 ServerHitPlayer(p, Cfg.ArrowPlayerDamage * power, point, dir);
+                return; // arrows that hit someone are gone
             }
-            else if (no.TryGetComponent(out Structure s))
-            {
-                if (s.Team.Value == Team.Value || s.Tier.Value == 1) return;
+            if (no.TryGetComponent(out Structure s) && s.Team.Value != Team.Value && s.Tier.Value == 0)
                 s.ServerDamage(Cfg.ArrowWoodStructureDamage);
-            }
+            DropSpentArrow(point, dir);
+        }
+
+        /// <summary>An arrow hit the ground or something static: it stays there and can be picked back up (E).</summary>
+        [Rpc(SendTo.Server)]
+        public void ArrowLandRpc(Vector3 point, Vector3 dir)
+        {
+            if (m_PendingArrows.Count == 0) return;
+            m_PendingArrows.Dequeue();
+            DropSpentArrow(point, dir);
+        }
+
+        void DropSpentArrow(Vector3 point, Vector3 dir)
+        {
+            if (NetGame.Instance == null || Vector3.Distance(point, transform.position) > 250f) return;
+            if (dir.sqrMagnitude < 0.01f) dir = transform.forward;
+            NetGame.Instance.ServerDropItem(ItemStack.Of(Item.Arrow, 1), point + dir.normalized * 0.08f, dir, point, true);
         }
 
         // ---------------- spear throwing ----------------
@@ -457,6 +560,7 @@ namespace RockGame
             if (Dead.Value || CarryingBall || InSuddenDeath || HeldItem != Item.Spear) return;
             if (Time.time < m_NextThrow) return;
             m_NextThrow = Time.time + 0.5f;
+            Reveal();
             ServerConsumeHeld();
             m_PendingSpears.Enqueue(Mathf.Clamp01(velocity.magnitude / Cfg.SpearThrowSpeed));
             while (m_PendingSpears.Count > 6) m_PendingSpears.Dequeue();
@@ -549,6 +653,7 @@ namespace RockGame
             if (Time.time < m_NextRam) return;
             m_NextRam = Time.time + Cfg.RamWindup * 0.85f;
             SwingRpc();
+            Reveal();
             if (!target.TryGet(out var no)) return;
             if (Vector3.Distance(EyePos, point) > Cfg.RamRange + 2f) return;
 
@@ -561,7 +666,7 @@ namespace RockGame
                 if (stone) s.ServerDowngrade();
                 else s.ServerDamage(s.Health.Value + 1f);
             }
-            else if (no.TryGetComponent(out Container c) && !c.IsBag && c.Team.Value != Team.Value)
+            else if (no.TryGetComponent(out Container c) && c.Breakable && c.Team.Value != Team.Value)
             {
                 msg = "Smashed the chest open!";
                 c.ServerBreak();
@@ -583,6 +688,7 @@ namespace RockGame
         {
             if (Dead.Value || recipe < 0 || recipe >= Cfg.RecipeCount) return;
             if (InSuddenDeath || (NetGame.Instance != null && NetGame.Instance.S == GameState.GameOver)) return;
+            if (!NearMachine) { Notify("Craft at the alien machine in your base (E)"); return; }
             var r = Cfg.GetRecipe(recipe);
             if (Count(Item.Wood) < r.Wood || Count(Item.Stone) < r.Stone) { Notify($"Not enough resources for {r.Name}"); return; }
             int data = r.Output == Item.Ram ? Mathf.Clamp(Cfg.RamUses, 1, 255) : 0;
@@ -592,7 +698,10 @@ namespace RockGame
             InvOps.Remove(Inv, Item.Stone, r.Stone);
             ServerGive(r.Output, r.Count, data);
             CraftedRpc((byte)r.Output);
+            Fx.Server(FxKind.Craft, Cfg.MachinePos(Team.Value), new Vector3(Team.Value, 0, 0));
         }
+
+        public bool NearMachine => Vector3.Distance(EyePos, Cfg.MachinePos(Team.Value) + Vector3.up * 1.2f) <= Cfg.MachineRange + 1.5f;
 
         // ---------------- building ----------------
 
@@ -607,7 +716,7 @@ namespace RockGame
             var key = new PieceKey(BuildGrid.KindOf(t), i, j, l, t == PieceType.Stairs ? (d & 3) : (d & 1));
             if (key.L < 0 || key.L > Cfg.MaxLevel) return;
             if (!BuildGrid.InTeamBase(Team.Value, key)) { Notify("You can only build inside your own base area"); return; }
-            if (BuildGrid.OnUfo(key)) { Notify("You can't build on the crashed UFO or block its door"); return; }
+            if (BuildGrid.OnBedrock(key)) { Notify("The bedrock is already a foundation"); return; }
             BuildGrid.Pose(t, key, out var pos, out var rot);
             if (Vector3.Distance(pos, transform.position) > Cfg.BuildRange + 4f) { Notify("Too far away"); return; }
             if (BuildGrid.IsOccupied(key, BuildGrid.Registry.ContainsKey)) { Notify("Something is already built there"); return; }
@@ -638,6 +747,7 @@ namespace RockGame
             foreach (var h in hits)
             {
                 if (h.GetComponentInParent<GroundMarker>() != null) continue;
+                if (h.GetComponentInParent<PlayerNet>() != null) continue; // you can build right under yourself (you get lifted out)
                 var s = h.GetComponentInParent<Structure>();
                 if (s != null && s.HasKey) continue; // grid pieces are handled by the grid registry
                 return false;
@@ -649,6 +759,7 @@ namespace RockGame
         public void UpgradeRpc(NetworkObjectReference target)
         {
             if (Dead.Value || HeldItem != Item.BuildingPlan || InSuddenDeath) return;
+            if (Cfg.WoodMode) { Notify("Wood mode: no stone upgrades"); return; }
             if (Time.time < m_NextUpgrade) return;
             if (!target.TryGet(out var no) || !no.TryGetComponent(out Structure s)) return;
             if (s.Team.Value != Team.Value || !s.HasKey || !s.Upgradable) return;
@@ -660,12 +771,38 @@ namespace RockGame
             s.ServerUpgrade();
         }
 
+        /// <summary>Building plan + X: take down one of your own pieces (barriers and chests too) and get part of the wood back.</summary>
+        [Rpc(SendTo.Server)]
+        public void DemolishRpc(NetworkObjectReference target)
+        {
+            if (Dead.Value || HeldItem != Item.BuildingPlan || InSuddenDeath || !target.TryGet(out var no)) return;
+            if (Vector3.Distance(no.transform.position, transform.position) > Cfg.BuildRange + 5f) return;
+            if (no.TryGetComponent(out Structure s))
+            {
+                if (s.Team.Value != Team.Value) { Notify("You can only demolish your own buildings"); return; }
+                int wood = Mathf.FloorToInt((s.PType == PieceType.Barrier ? Cfg.BarrierWood : Cfg.PieceWood(s.PType)) * Cfg.DemolishRefund);
+                int stone = s.Tier.Value == 1 ? Mathf.FloorToInt(Cfg.PieceUpgradeStone(s.PType) * Cfg.DemolishRefund) : 0;
+                Fx.Server(FxKind.Break, s.transform.position + Vector3.up * 1.2f, Vector3.up);
+                s.NetworkObject.Despawn(true);
+                if (NetGame.Instance != null) NetGame.Instance.ServerCollapseCheck();
+                if (wood > 0) ServerGive(Item.Wood, wood);
+                if (stone > 0) ServerGive(Cfg.WoodMode ? Item.Wood : Item.Stone, stone);
+            }
+            else if (no.TryGetComponent(out Container c) && c.Breakable)
+            {
+                if (c.Team.Value != Team.Value) { Notify("You can only demolish your own chests"); return; }
+                c.ServerBreak();
+                int wood = Mathf.FloorToInt(Cfg.ChestWood * Cfg.DemolishRefund);
+                if (wood > 0) ServerGive(Item.Wood, wood);
+            }
+        }
+
         /// <summary>Client-side and server-side placement rules for chests and barriers. Returns null if OK, else the reason.</summary>
         public static string DeployProblem(Item kind, int team, Vector3 pos, float yaw)
         {
             int baseTeam = Cfg.BaseTeamAt(pos);
             if (kind == Item.Chest && baseTeam != team) return "Chests go inside your own base";
-            if (Cfg.PointBlocked(pos)) return "Not on the crashed UFO or in front of its door";
+            if (Cfg.PointBlocked(pos)) return "Not on the bedrock";
             if (kind == Item.Barrier && baseTeam >= 0 && baseTeam != team) return "You can't put barriers in the enemy base";
             var rot = Quaternion.Euler(0, yaw, 0);
             Vector3 c, half;
@@ -673,7 +810,7 @@ namespace RockGame
             else { c = new Vector3(0, 0.8f, 0); half = new Vector3(1.15f, 0.65f, 0.15f); }
             foreach (var h in Physics.OverlapBox(pos + rot * c, half, rot, ~0, QueryTriggerInteraction.Ignore))
             {
-                if (h.GetComponentInParent<GroundMarker>() != null) continue;
+                if (h.GetComponentInParent<GroundMarker>() != null || h.GetComponentInParent<PlayerNet>() != null) continue;
                 var s = h.GetComponentInParent<Structure>();
                 if (s != null && (s.PType == PieceType.Foundation || s.PType == PieceType.Floor)) continue;
                 return "Not enough room here";
@@ -761,6 +898,84 @@ namespace RockGame
             Health.Value = Mathf.Min(Cfg.MaxHealth, Health.Value + Cfg.BerryHeal);
         }
 
+        /// <summary>Put on a helmet (the old one goes back in your inventory) or drink an invisibility potion.</summary>
+        [Rpc(SendTo.Server)]
+        public void UseItemRpc()
+        {
+            if (Dead.Value || CarryingBall || Time.time < m_NextEat) return;
+            var st = HeldStack;
+            if (st.Id == Item.Helmet)
+            {
+                m_NextEat = Time.time + 0.5f;
+                int old = HelmetHp.Value;
+                HelmetHp.Value = (byte)Mathf.Clamp(st.Data > 0 ? st.Data : Cfg.HelmetHp, 1, 255);
+                ServerClearSlot(HeldSlot.Value);
+                if (old > 0) ServerGive(Item.Helmet, 1, old);
+                Notify($"Helmet on: {HelmetHp.Value} extra head health");
+            }
+            else if (st.Id == Item.InvisPotion)
+            {
+                m_NextEat = Time.time + 0.8f;
+                ServerConsumeHeld();
+                InvisUntil.Value = Now + Cfg.InvisTime;
+                RevealUntil.Value = -1;
+                Fx.Server(FxKind.Drink, transform.position, Vector3.up, OwnerClientId);
+                Notify($"You're invisible for {Cfg.InvisTime:0} seconds (attacking shows you)");
+            }
+        }
+
+        /// <summary>C4 thrown: lands where the thrower's client reports (like spears), then goes off after the fuse.</summary>
+        [Rpc(SendTo.Server)]
+        public void ThrowC4Rpc(Vector3 origin, Vector3 velocity)
+        {
+            if (Dead.Value || CarryingBall || InSuddenDeath || HeldItem != Item.C4 || Time.time < m_NextThrow) return;
+            m_NextThrow = Time.time + 0.5f;
+            Reveal();
+            ServerConsumeHeld();
+            m_PendingC4 = Mathf.Min(m_PendingC4 + 1, 5);
+            C4VisualRpc(origin, velocity);
+        }
+
+        [Rpc(SendTo.Server)]
+        public void C4LandRpc(Vector3 point, Vector3 normal)
+        {
+            if (m_PendingC4 <= 0 || NetGame.Instance == null) return;
+            m_PendingC4--;
+            if (Vector3.Distance(point, transform.position) > 200f) point = transform.position + transform.forward;
+            NetGame.Instance.ServerArmC4(point, normal, this);
+        }
+
+        /// <summary>Death wand: one bolt along the aim. Anyone it passes close to, or who is near where it hits, dies instantly.</summary>
+        [Rpc(SendTo.Server)]
+        public void WandRpc(Vector3 dir)
+        {
+            if (Dead.Value || CarryingBall || InSuddenDeath || HeldItem != Item.DeathWand || Time.time < m_NextWand || dir.sqrMagnitude < 0.01f) return;
+            m_NextWand = Time.time + 0.5f;
+            Reveal();
+            ServerConsumeHeld();
+            dir.Normalize();
+            var eye = EyePos;
+            float dist = Cfg.WandRange;
+            foreach (var h in Physics.RaycastAll(eye, dir, Cfg.WandRange, ~(1 << HitboxLayer), QueryTriggerInteraction.Ignore))
+                if (!h.collider.transform.IsChildOf(transform) && h.collider.GetComponentInParent<PlayerNet>() == null && h.distance < dist) dist = h.distance;
+            var end = eye + dir * dist;
+            Fx.Server(FxKind.WandBeam, eye + dir * 0.6f - Vector3.up * 0.2f, end);
+            foreach (var p in All)
+            {
+                if (p == this || p.Dead.Value) continue;
+                var c = p.transform.position + Vector3.up * 1f;
+                float t = Mathf.Clamp(Vector3.Dot(c - eye, dir), 0f, dist);
+                float off = Vector3.Distance(eye + dir * t, c);
+                bool nearImpact = Vector3.Distance(end, c) <= Cfg.WandRadius;
+                if (off <= Cfg.WandRadius * 0.5f || nearImpact)
+                {
+                    p.ServerDamage(99999f, this);
+                    Fx.Server(FxKind.BloodHead, c, dir);
+                    if (p.Dead.Value) KillConfirmRpc();
+                }
+            }
+        }
+
         // ---------------- interaction ----------------
 
         [Rpc(SendTo.Server)]
@@ -781,6 +996,15 @@ namespace RockGame
             if (Vector3.Distance(b.transform.position, EyePos) > Cfg.InteractRange + 2f) return;
             if (b.ServerPickup(this) && NetGame.Instance != null)
                 NetGame.Instance.Broadcast($"{Cfg.TeamName[Team.Value]} picked up the ball!");
+        }
+
+        /// <summary>E at your own machine while carrying the ball: put it in the socket.</summary>
+        [Rpc(SendTo.Server)]
+        public void InsertBallRpc()
+        {
+            if (Dead.Value || !CarryingBall) return;
+            if (Vector3.Distance(EyePos, Cfg.SocketPos(Team.Value)) > Cfg.MachineRange + 1.5f) return;
+            Ball.Instance.ServerSocket(Team.Value);
         }
 
         /// <summary>LMB while carrying: the ball flies straight out from where it is held (lower middle of the screen) along the aim.</summary>
@@ -842,6 +1066,13 @@ namespace RockGame
         {
             ArrowProjectile.Spawn(origin, velocity, this, false);
             Sfx.Play(Sfx.Twang, origin, 0.6f);
+        }
+
+        [Rpc(SendTo.NotOwner)]
+        public void C4VisualRpc(Vector3 origin, Vector3 velocity)
+        {
+            ArrowProjectile.SpawnC4(origin, velocity, this, false);
+            Sfx.Play(Sfx.Throw, origin, 0.6f);
         }
 
         [Rpc(SendTo.NotOwner)]

@@ -9,6 +9,11 @@ namespace RockGame
     {
         struct Msg { public string Text; public float Time; }
         static readonly List<Msg> s_Msgs = new List<Msg>();
+        /// <summary>Bottom-right feed of what just went into your inventory ("+30 Wood").</summary>
+        struct Gain { public Item Id; public int Amount; public float Time; }
+        static readonly List<Gain> s_Gains = new List<Gain>();
+        readonly Dictionary<Item, int> m_LastCounts = new Dictionary<Item, int>();
+        PlayerNet m_CountsFor;
         static float s_HitTime = -10f, s_BannerTime = -10f, s_WakeTime = -10f;
         static bool s_HitKill, s_HitHead;
         static string s_BannerTitle, s_BannerSub;
@@ -42,13 +47,35 @@ namespace RockGame
         }
         public static void Wake() => s_WakeTime = Time.time;
         public static void Banner(string title, string sub) { s_BannerTitle = title; s_BannerSub = sub; s_BannerTime = Time.time; }
-        public static void Clear() { s_Msgs.Clear(); s_BannerTime = -10f; Fx.Numbers.Clear(); }
+        public static void Clear() { s_Msgs.Clear(); s_Gains.Clear(); s_BannerTime = -10f; Fx.Numbers.Clear(); }
+
+        /// <summary>Compare the inventory with last frame: anything that went up gets a "+N item" line.</summary>
+        void TrackGains(PlayerNet me)
+        {
+            if (me != m_CountsFor) { m_CountsFor = me; m_LastCounts.Clear(); }
+            if (me == null || !me.IsSpawned || me.Inv.Count == 0) return;
+            foreach (Item id in System.Enum.GetValues(typeof(Item)))
+            {
+                if (id == Item.None) continue;
+                int n = me.Count(id);
+                bool known = m_LastCounts.TryGetValue(id, out var before);
+                m_LastCounts[id] = n;
+                if (!known || n <= before) continue;
+                int add = n - before;
+                // stack onto a recent line for the same item
+                int idx = s_Gains.FindIndex(g => g.Id == id && Time.time - g.Time < 2.5f);
+                if (idx >= 0) { var g = s_Gains[idx]; g.Amount += add; g.Time = Time.time; s_Gains[idx] = g; }
+                else s_Gains.Add(new Gain { Id = id, Amount = add, Time = Time.time });
+                if (s_Gains.Count > 6) s_Gains.RemoveAt(0);
+            }
+        }
 
         void Update()
         {
             if (Time.frameCount > 3) ItemIcons.EnsureRendered();
             if (Input.GetKeyDown(KeyCode.F1)) m_ShowHelp = !m_ShowHelp;
             var me = PlayerNet.Local;
+            TrackGains(me);
             if (me != null)
             {
                 if (me.Health.Value < m_LastHealth - 0.5f) m_DamageFlash = 0.5f;
@@ -118,7 +145,7 @@ namespace RockGame
         void DrawMainMenu(Bootstrap boot)
         {
             if (m_ShowSettings) { DrawSettings(); return; }
-            float w = 460 * m_Scale, h = 610 * m_Scale;
+            float w = 460 * m_Scale, h = 650 * m_Scale;
             var r = new Rect((Screen.width - w) / 2, (Screen.height - h) / 2, w, h);
             Fill(r, new Color(0, 0, 0, 0.65f));
             GUILayout.BeginArea(new Rect(r.x + 20, r.y + 15, r.width - 40, r.height - 30));
@@ -137,16 +164,23 @@ namespace RockGame
             GUILayout.BeginHorizontal();
             GUILayout.Label("Map", m_Label, GUILayout.Width(90 * m_Scale));
             int key = Bootstrap.MapChoice;
-            bool small = (key & 16) != 0;
+            int flags = key & ~15;
+            bool small = (key & Cfg.SmallBit) != 0, wood = (key & Cfg.WoodBit) != 0;
             var kind = (MapKind)(key & 15);
-            if (GUILayout.Toggle(kind == MapKind.Plains, " Plains", m_Button, GUILayout.Height(30 * m_Scale)) && kind != MapKind.Plains) boot.SetMapChoice((int)MapKind.Plains | (small ? 16 : 0));
-            if (GUILayout.Toggle(kind == MapKind.Highlands, " Highlands", m_Button, GUILayout.Height(30 * m_Scale)) && kind != MapKind.Highlands) boot.SetMapChoice((int)MapKind.Highlands | (small ? 16 : 0));
+            if (GUILayout.Toggle(kind == MapKind.Plains, " Plains", m_Button, GUILayout.Height(30 * m_Scale)) && kind != MapKind.Plains) boot.SetMapChoice((int)MapKind.Plains | flags);
+            if (GUILayout.Toggle(kind == MapKind.Highlands, " Highlands (wild)", m_Button, GUILayout.Height(30 * m_Scale)) && kind != MapKind.Highlands) boot.SetMapChoice((int)MapKind.Highlands | flags);
             GUILayout.EndHorizontal();
             GUILayout.BeginHorizontal();
             GUILayout.Label("Size", m_Label, GUILayout.Width(90 * m_Scale));
-            if (GUILayout.Toggle(!small, " Big", m_Button, GUILayout.Height(30 * m_Scale)) && small) boot.SetMapChoice((int)kind);
-            if (GUILayout.Toggle(small, " Small", m_Button, GUILayout.Height(30 * m_Scale)) && !small) boot.SetMapChoice((int)kind | 16);
+            if (GUILayout.Toggle(!small, " Big", m_Button, GUILayout.Height(30 * m_Scale)) && small) boot.SetMapChoice(key & ~Cfg.SmallBit);
+            if (GUILayout.Toggle(small, " Small", m_Button, GUILayout.Height(30 * m_Scale)) && !small) boot.SetMapChoice(key | Cfg.SmallBit);
             GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Mode", m_Label, GUILayout.Width(90 * m_Scale));
+            if (GUILayout.Toggle(!wood, " Normal", m_Button, GUILayout.Height(30 * m_Scale)) && wood) boot.SetMapChoice(key & ~Cfg.WoodBit);
+            if (GUILayout.Toggle(wood, " Wood mode", m_Button, GUILayout.Height(30 * m_Scale)) && !wood) boot.SetMapChoice(key | Cfg.WoodBit);
+            GUILayout.EndHorizontal();
+            if (wood) GUILayout.Label("<color=#d9a066>Wood only: no stone, no pickaxe, everything costs wood.</color>", m_Small);
             GUILayout.Space(6 * m_Scale);
             Bootstrap.Solo = GUILayout.Toggle(Bootstrap.Solo, " Solo test (start without an opponent)", m_Label);
             Bootstrap.Fast = GUILayout.Toggle(Bootstrap.Fast, $" Fast timers ({Cfg.FastBallDropDelay:0}s ball drop, {Cfg.FastMatchLength:0}s match)", m_Label);
@@ -250,7 +284,7 @@ namespace RockGame
             {
                 float a = Mathf.Clamp01(1f - wake / 1.6f);
                 Fill(new Rect(0, 0, sw, sh), new Color(0.75f, 0.95f, 1f, a * a * 0.95f));
-                if (wake < 1.1f) Shadowed(new Rect(0, sh * 0.42f, sw, 40 * k), "<color=#12506a>REVIVED IN THE CRYO CHAMBER</color>", m_Center);
+                if (wake < 1.1f) Shadowed(new Rect(0, sh * 0.42f, sw, 40 * k), "<color=#12506a>RESPAWNED</color>", m_Center);
             }
 
             // ---- top centre: phase & timer ----
@@ -264,8 +298,8 @@ namespace RockGame
                         sub = boot.IsHost ? "Tell your friend to join your IP. (Enable 'Solo test' in the menu to play alone)" : "";
                         break;
                     case GameState.PreBall:
-                        phase = "Ball drops in " + Clock(game.TimeLeft);
-                        sub = "Gather wood & stone, build your base";
+                        phase = "Wall drops in " + Clock(game.TimeLeft);
+                        sub = Cfg.WoodMode ? "Gather wood and build your base (craft at your machine)" : "Gather wood & stone, build your base (craft at your machine)";
                         break;
                     case GameState.BallLive:
                         phase = "Time left  " + Clock(game.TimeLeft);
@@ -290,9 +324,16 @@ namespace RockGame
             Shadowed(new Rect(18, 12, 230 * k, 28 * k), $"<b>YOU ARE {Cfg.TeamName[team]}</b>", m_Label);
             if (game == null || game.S != GameState.SuddenDeath)
             {
-                Shadowed(new Rect(12, 44 * k, 400 * k, 24 * k), $"Your base: {Direction(me.transform, Cfg.BaseCenter[team])}", m_Small);
+                Shadowed(new Rect(12, 44 * k, 400 * k, 24 * k), $"Your machine: {Direction(me.transform, Cfg.MachinePos(team))}", m_Small);
                 var ball = Ball.Instance;
                 if (ball != null) Shadowed(new Rect(12, 64 * k, 400 * k, 24 * k), $"Ball: {Direction(me.transform, ball.transform.position)}", m_Small);
+                if (game != null)
+                {
+                    var drop = game.ActiveDrop;
+                    bool incoming = game.DropStart.Value >= 0 && me.NetworkManager.ServerTime.Time - game.DropStart.Value < NetGame.DropLand;
+                    if (drop != null || incoming)
+                        Shadowed(new Rect(12, 84 * k, 400 * k, 24 * k), $"<color=#c98bff>Airdrop{(incoming ? " (incoming)" : "")}: {Direction(me.transform, drop != null ? drop.transform.position : game.DropPos.Value)}</color>", m_Small);
+                }
             }
 
             // ---- messages (top right) ----
@@ -364,6 +405,22 @@ namespace RockGame
             float hp = Mathf.Clamp01(me.Health.Value / Mathf.Max(1f, Cfg.MaxHealth));
             Fill(new Rect(hr.x + 3, hr.y + 3, (hr.width - 6) * hp, hr.height - 6), Color.Lerp(new Color(0.85f, 0.15f, 0.1f), new Color(0.3f, 0.85f, 0.3f), hp));
             Shadowed(new Rect(hr.x + 8, hr.y + 2, hr.width, hr.height), $"<b>HP {me.Health.Value:0}</b>", m_Label);
+            float statY = hr.y - 26 * k;
+            if (me.HelmetHp.Value > 0)
+            {
+                var hb = new Rect(hr.x, statY, hw * 0.6f, 20 * k);
+                Fill(hb, new Color(0, 0, 0, 0.55f));
+                Fill(new Rect(hb.x + 2, hb.y + 2, (hb.width - 4) * Mathf.Clamp01(me.HelmetHp.Value / (float)Mathf.Max(1, Cfg.HelmetHp)), hb.height - 4), new Color(0.55f, 0.65f, 0.8f));
+                Shadowed(new Rect(hb.x + 6, hb.y, hb.width, hb.height), $"HELMET {me.HelmetHp.Value}", m_Small);
+                statY -= 24 * k;
+            }
+            if (me.Invisible)
+            {
+                float left = (float)(me.InvisUntil.Value - me.NetworkManager.ServerTime.Time);
+                Shadowed(new Rect(hr.x, statY, 400 * k, 22 * k), me.Hidden ? $"<color=#c98bff><b>INVISIBLE</b> {Mathf.CeilToInt(left)}s</color>" : $"<color=#ff9f5a><b>VISIBLE (attacking)</b></color> <color=#c98bff>{Mathf.CeilToInt(left)}s</color>", m_Label);
+            }
+
+            DrawGains(k);
 
             // ---- help ----
             if (m_ShowHelp && !pc.MenuOpen)
@@ -373,10 +430,11 @@ namespace RockGame
                     "WASD move · Shift sprint · Space jump · Ctrl/C crouch\n" +
                     "LMB attack / gather / place · hold LMB: draw bow / ram\n" +
                     "Spear: hold RMB + LMB to throw · Berries: RMB to eat\n" +
-                    "1-7 / scroll: hotbar · TAB: inventory & crafting\n" +
-                    "E: use what you look at (ball, door, chest, bush, items)\n" +
-                    "Ball: LMB throws it · Esc: pause";
-                var hrct = new Rect(12, 92 * k, 440 * k, 150 * k);
+                    "1-7 / scroll: hotbar · TAB: inventory (you can still move)\n" +
+                    "E: machine (craft), ball, door, chest, bush, items\n" +
+                    "Plan: X demolishes your own pieces\n" +
+                    "Ball: LMB throws it · E at your machine to put it in · Esc: pause";
+                var hrct = new Rect(12, 112 * k, 460 * k, 170 * k);
                 Fill(hrct, new Color(0, 0, 0, 0.35f));
                 GUI.Label(new Rect(hrct.x + 8, hrct.y + 4, hrct.width - 10, hrct.height), help, m_Small);
             }
@@ -400,7 +458,21 @@ namespace RockGame
                 Fill(new Rect(0, 0, sw, sh), new Color(0.3f, 0, 0, 0.35f));
                 float t = Mathf.Max(0, (float)(me.RespawnAt.Value - me.NetworkManager.ServerTime.Time));
                 Shadowed(new Rect(0, sh * 0.4f, sw, 60 * k), "YOU DIED", m_Big);
-                Shadowed(new Rect(0, sh * 0.4f + 60 * k, sw, 30 * k), $"Your stuff spilled out where you died. Reviving in your UFO in {Mathf.CeilToInt(t)}", m_Center);
+                bool home = game == null || game.WallUp;
+                if (me.ChoosingRespawn)
+                {
+                    Shadowed(new Rect(0, sh * 0.4f + 60 * k, sw, 30 * k), "Your stuff spilled out where you died. Where do you want to respawn?", m_Center);
+                    float bw = 260 * k, bh = 50 * k, by2 = sh * 0.4f + 100 * k;
+                    var r1 = new Rect(cx - bw - 10 * k, by2, bw, bh);
+                    var r2 = new Rect(cx + 10 * k, by2, bw, bh);
+                    if (r1.Contains(Event.current.mousePosition) || r2.Contains(Event.current.mousePosition)) MouseOverUI = true;
+                    if (GUI.Button(r1, "[1]  RESPAWN IN BASE", m_Button)) pc.ChooseRespawn(false);
+                    if (GUI.Button(r2, "[2]  RESPAWN IN THE WILD", m_Button)) pc.ChooseRespawn(true);
+                    Shadowed(new Rect(0, by2 + bh + 6 * k, sw, 26 * k), "<color=#bbbbbb>The wild drops you somewhere random in the enemy's half of the map</color>", m_Center);
+                }
+                else Shadowed(new Rect(0, sh * 0.4f + 60 * k, sw, 30 * k), home
+                    ? $"Your stuff spilled out where you died. Respawning on your bedrock in {Mathf.CeilToInt(t)}"
+                    : $"Your stuff spilled out where you died. Respawn in {Mathf.CeilToInt(t)}", m_Center);
             }
 
             if (pc.MenuOpen) DrawInventory(me, pc);
@@ -421,13 +493,18 @@ namespace RockGame
             var s = me.HeldStack;
             switch (s.Id)
             {
-                case Item.BuildingPlan: return $"<b>{Cfg.PieceName(pc.BuildPiece)}</b>  ({Cfg.PieceWood(pc.BuildPiece)} wood)    RMB: next piece   R: rotate stairs   F: upgrade to stone";
+                case Item.BuildingPlan: return $"<b>{Cfg.PieceName(pc.BuildPiece)}</b>  ({Cfg.PieceWood(pc.BuildPiece)} wood)    RMB: next piece   R: rotate stairs   " + (Cfg.WoodMode ? "" : "F: upgrade to stone   ") + "X: demolish yours";
                 case Item.Ram: return $"<b>Battering Ram</b> ({s.Data} hits left)    hold LMB at an enemy piece: wood breaks instantly, stone drops to wood";
                 case Item.Spear: return "<b>Spear</b>    LMB: stab    hold RMB + LMB: throw    E: pick thrown spears back up";
                 case Item.Bow: return $"<b>Bow</b>  ({me.Count(Item.Arrow)} arrows)    hold LMB to draw, release to fire";
                 case Item.Chest: return "<b>Storage Chest</b>    LMB: place it inside your base";
                 case Item.Barrier: return $"<b>Wooden Barrier</b> x{s.Count}    LMB: place it anywhere (not in the enemy base)";
                 case Item.Berry: return $"<b>Berries</b> x{s.Count}    RMB: eat (+{Cfg.BerryHeal:0} HP)";
+                case Item.C4: return "<b>C4</b>    LMB: throw it at enemy buildings - it blows up everything nearby";
+                case Item.DeathWand: return "<b>Death Wand</b> (1 shot)    LMB: fire - anyone it passes close to dies";
+                case Item.Helmet: return $"<b>Alien Helmet</b> ({s.Data} HP)    LMB: put it on";
+                case Item.InvisPotion: return $"<b>Invisibility Potion</b>    LMB: drink ({Cfg.InvisTime:0}s, attacking shows you)";
+                case Item.Chainsaw: return $"<b>Chainsaw</b> ({s.Data} uses left)    hold LMB: cuts wood and stone fast";
                 default: return "";
             }
         }
@@ -470,9 +547,9 @@ namespace RockGame
             string count = s.Count > 1 ? s.Count.ToString() : s.Id == Item.Bow && me != null ? me.Count(Item.Arrow) + "a" : "";
             if (count != "")
                 Shadowed(new Rect(r.x, r.yMax - 22 * m_Scale, r.width - 5, 20 * m_Scale), count, new GUIStyle(m_Small) { alignment = TextAnchor.LowerRight });
-            if (s.Id == Item.Ram)
+            if (Cfg.MaxData(s.Id) > 0)
             {
-                float d = Mathf.Clamp01(s.Data / (float)Mathf.Max(1, Cfg.RamUses));
+                float d = Mathf.Clamp01(s.Data / (float)Mathf.Max(1, Cfg.MaxData(s.Id)));
                 Fill(new Rect(r.x + 4, r.yMax - 6, (r.width - 8), 3), new Color(0, 0, 0, 0.6f));
                 Fill(new Rect(r.x + 4, r.yMax - 6, (r.width - 8) * d, 3), new Color(0.4f, 0.9f, 0.4f));
             }
@@ -520,6 +597,8 @@ namespace RockGame
             switch (s.Id)
             {
                 case Item.Ram: return $"  ({s.Data} hits left)";
+                case Item.Chainsaw: return $"  ({s.Data} uses left)";
+                case Item.Helmet: return $"  ({s.Data} HP)";
                 case Item.Berry: return $"  (RMB to eat, +{Cfg.BerryHeal:0} HP)";
                 default: return s.Count > 1 ? $"  x{s.Count}" : "";
             }
@@ -551,9 +630,10 @@ namespace RockGame
             float sw = Screen.width, sh = Screen.height, k = m_Scale;
             MouseOverUI = true;
             m_HoverName = "";
-            Fill(new Rect(0, 0, sw, sh), new Color(0, 0, 0, 0.55f));
+            Fill(new Rect(0, 0, sw, sh), new Color(0, 0, 0, 0.4f));
             float slot = Mathf.Min(64 * k, (sw - 120) / 24f), gap = 6 * k;
             float gridW = 7 * slot + 6 * gap;
+            bool craft = pc.CraftOpen;
             float craftW = 330 * k;
             bool loot = pc.LootTarget != null;
             float lootW = loot ? gridW : 0;
@@ -597,9 +677,18 @@ namespace RockGame
 
             // ---- crafting (right) ----
             float cxp = invX + gridW + 30 * k;
-            Shadowed(new Rect(cxp, top - 34 * k, craftW, 30 * k), $"<b>CRAFTING</b>   <color=#d9a066>{me.Count(Item.Wood)} wood</color>  <color=#c8c8d0>{me.Count(Item.Stone)} stone</color>", m_Label);
+            string mats = $"<color=#d9a066>{me.Count(Item.Wood)} wood</color>" + (Cfg.WoodMode ? "" : $"  <color=#c8c8d0>{me.Count(Item.Stone)} stone</color>");
+            Shadowed(new Rect(cxp, top - 34 * k, craftW, 30 * k), $"<b>{(craft ? "ALIEN MACHINE" : "CRAFTING")}</b>   {mats}", m_Label);
             float row = 50 * k;
-            for (int i = 0; i < Cfg.RecipeCount; i++)
+            if (!craft)
+            {
+                var nr = new Rect(cxp, top, craftW, 110 * k);
+                Fill(nr, new Color(0, 0, 0, 0.45f));
+                GUI.Label(new Rect(nr.x + 10, nr.y + 8, nr.width - 20, nr.height - 16),
+                    "Crafting happens at the <b><color=#7dff9a>alien machine</color></b> on the bedrock in the middle of your base.\nWalk up to it and press <b>E</b>.", new GUIStyle(m_Label) { wordWrap = true });
+                Shadowed(new Rect(cxp, nr.yMax + 6, craftW, 24 * k), "TAB / Esc to close", m_Small);
+            }
+            for (int i = 0; craft && i < Cfg.RecipeCount; i++)
             {
                 var rec = Cfg.GetRecipe(i);
                 var rr = new Rect(cxp, top + i * (row + 4 * k), craftW, row);
@@ -613,7 +702,7 @@ namespace RockGame
                 if (GUI.Button(new Rect(rr.xMax - 90 * k, rr.y + 8 * k, 84 * k, row - 16 * k), "Craft", m_Button)) me.CraftRpc(i);
                 GUI.enabled = true;
             }
-            Shadowed(new Rect(cxp, top + Cfg.RecipeCount * (row + 4 * k) + 6, craftW, 24 * k), "TAB / Esc to close", m_Small);
+            if (craft) Shadowed(new Rect(cxp, top + Cfg.RecipeCount * (row + 4 * k) + 6, craftW, 24 * k), "TAB / Esc to close", m_Small);
 
             // ---- drag visual ----
             var e = Event.current;
@@ -647,6 +736,34 @@ namespace RockGame
             }
         }
 
+        /// <summary>Bottom right, above the corner: "+30 Wood" with the item icon, fading out.</summary>
+        void DrawGains(float k)
+        {
+            float sw = Screen.width, sh = Screen.height;
+            float rowH = 34 * k, w = 230 * k;
+            float y = sh - 20 * k - rowH;
+            for (int i = s_Gains.Count - 1; i >= 0; i--)
+            {
+                var g = s_Gains[i];
+                float age = Time.time - g.Time;
+                if (age > 4f) { s_Gains.RemoveAt(i); continue; }
+                float a = Mathf.Clamp01((4f - age) * 1.5f);
+                float slide = Mathf.Max(0f, 0.15f - age) / 0.15f * 40f * k;
+                var r = new Rect(sw - w - 16 * k + slide, y, w, rowH - 4 * k);
+                Fill(r, new Color(0.1f, 0.25f, 0.1f, 0.55f * a));
+                Fill(new Rect(r.x, r.y, 4 * k, r.height), new Color(0.45f, 0.95f, 0.45f, a));
+                var icon = ItemIcons.Get(g.Id);
+                var old = GUI.color;
+                GUI.color = new Color(1, 1, 1, a);
+                if (icon != null) GUI.DrawTexture(new Rect(r.xMax - r.height - 4 * k, r.y, r.height, r.height), icon, ScaleMode.ScaleToFit, true);
+                GUI.color = old;
+                var st = new GUIStyle(m_Label) { alignment = TextAnchor.MiddleLeft };
+                st.normal.textColor = new Color(1, 1, 1, a);
+                GUI.Label(new Rect(r.x + 12 * k, r.y, r.width - r.height - 20 * k, r.height), $"<b><color=#9dff9d>+{g.Amount}</color></b>  {Cfg.ItemName(g.Id)}", st);
+                y -= rowH;
+            }
+        }
+
         // ------------------------------------------------------------------ misc
 
         string BallStatus(int myTeam)
@@ -657,11 +774,14 @@ namespace RockGame
             {
                 var c = b.Carrier;
                 if (c == null) return "Ball is being carried";
-                return c.IsOwner ? "<color=#ffdd55>You have the ball - throw it (LMB) into your base!</color>" : $"<color=#ff7777>{Cfg.TeamName[c.Team.Value]} has the ball!</color>";
+                return c.IsOwner ? "<color=#ffdd55>You have the ball - put it in your machine (E) or throw it (LMB)!</color>" : $"<color=#ff7777>{Cfg.TeamName[c.Team.Value]} has the ball!</color>";
             }
+            int sock = b.SocketTeam.Value;
+            if (sock >= 0)
+                return sock == myTeam ? "<color=#77ff77>The ball is in YOUR machine - defend it!</color>" : $"<color=#ff7777>The ball is in the {Cfg.TeamName[sock]} machine - raid them and take it!</color>";
             int t = b.BaseTeam.Value;
-            if (t < 0) return "The ball is loose - bring it to your base!";
-            return t == myTeam ? "<color=#77ff77>The ball is in YOUR base - defend it!</color>" : $"<color=#ff7777>The ball is in the {Cfg.TeamName[t]} base - raid them!</color>";
+            if (t < 0) return "The ball is loose - put it in your machine!";
+            return t == myTeam ? "<color=#ffdd55>The ball is in your base but NOT in the machine - it only counts in the socket!</color>" : $"<color=#ff7777>The ball is in the {Cfg.TeamName[t]} base (not in their machine yet)</color>";
         }
 
         static string Direction(Transform me, Vector3 target)

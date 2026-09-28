@@ -4,15 +4,15 @@ using UnityEngine;
 namespace RockGame
 {
     /// <summary>
-    /// Locally simulated ballistic arrow or thrown spear. The shooter's copy reports hits to the server (client-side hit detection);
-    /// everyone else's copy is purely visual.
+    /// Locally simulated ballistic arrow, thrown spear or thrown C4. The shooter's copy reports hits to the server
+    /// (client-side hit detection); everyone else's copy is purely visual. Arrows that miss stay in the world as items.
     /// </summary>
     public class ArrowProjectile : MonoBehaviour
     {
         Vector3 m_Vel;
         PlayerNet m_Shooter;
         Transform m_ShooterRoot;
-        bool m_Report, m_Stuck, m_Spear;
+        bool m_Report, m_Stuck, m_Spear, m_C4;
         float m_Life = 6f;
         float m_Gravity = Cfg.ArrowGravity;
         float m_Power = 1f;
@@ -51,14 +51,33 @@ namespace RockGame
             a.m_Power = Mathf.Clamp01(vel.magnitude / Mathf.Max(1f, Cfg.SpearThrowSpeed));
         }
 
+        /// <summary>Thrown C4: flies in an arc and sticks to whatever it hits (the server arms it there).</summary>
+        public static void SpawnC4(Vector3 pos, Vector3 vel, PlayerNet shooter, bool report)
+        {
+            var go = new GameObject("ThrownC4");
+            go.transform.SetPositionAndRotation(pos, Quaternion.LookRotation(vel));
+            ItemModels.Create(Item.C4, go.transform);
+            var a = go.AddComponent<ArrowProjectile>();
+            a.m_Vel = vel;
+            a.m_Shooter = shooter;
+            a.m_ShooterRoot = shooter != null ? shooter.transform : null;
+            a.m_Report = report;
+            a.m_C4 = true;
+            a.m_Gravity = 9.81f;
+            a.m_Life = 8f;
+        }
+
         void Update()
         {
             m_Life -= Time.deltaTime;
             if (m_Life <= 0)
             {
-                // spear flew for ages without hitting anything: let the server drop it where it is
-                if (m_Spear && !m_Stuck && m_Report && m_Shooter != null && m_Shooter.IsSpawned)
-                    m_Shooter.SpearLandRpc(false, default, transform.position, m_Vel.normalized);
+                // spear / C4 flew for ages without hitting anything: let the server drop it where it is
+                if (!m_Stuck && m_Report && m_Shooter != null && m_Shooter.IsSpawned)
+                {
+                    if (m_Spear) m_Shooter.SpearLandRpc(false, default, transform.position, m_Vel.normalized);
+                    else if (m_C4) m_Shooter.C4LandRpc(transform.position, Vector3.up);
+                }
                 Destroy(gameObject);
                 return;
             }
@@ -101,7 +120,8 @@ namespace RockGame
                 }
             }
             transform.position = pos + step;
-            if (m_Vel.sqrMagnitude > 0.01f) transform.rotation = Quaternion.LookRotation(m_Vel);
+            if (m_C4) transform.Rotate(400f * Time.deltaTime, 0, 0, Space.Self); // tumbles
+            else if (m_Vel.sqrMagnitude > 0.01f) transform.rotation = Quaternion.LookRotation(m_Vel);
         }
 
         void OnHit(RaycastHit h)
@@ -109,6 +129,12 @@ namespace RockGame
             var no = h.collider.GetComponentInParent<NetworkObject>();
             var dir = m_Vel.normalized;
             bool reporter = m_Report && m_Shooter != null && m_Shooter.IsSpawned;
+            if (m_C4)
+            {
+                if (reporter) m_Shooter.C4LandRpc(h.point + h.normal * 0.03f, h.normal);
+                Destroy(gameObject);
+                return;
+            }
             if (reporter) PredictHit(no, h, dir);
 
             if (m_Spear)
@@ -122,11 +148,17 @@ namespace RockGame
                 return;
             }
             m_Stuck = true;
-            m_Life = 5f;
+            bool player = no != null && no.GetComponent<PlayerNet>() != null;
+            // an arrow in a player stays in them a while; anywhere else the server leaves a pick-up-able arrow item there
+            m_Life = player ? 5f : 0.4f;
             transform.position = h.point - transform.forward * 0.1f;
             if (no != null) transform.SetParent(no.transform, true);
-            if (no == null || no.GetComponent<PlayerNet>() == null) Sfx.Play(Sfx.Thud, h.point, 0.4f);
-            if (reporter && no != null) m_Shooter.ArrowHitRpc(no, h.point, dir);
+            if (!player) Sfx.Play(Sfx.Thud, h.point, 0.4f);
+            if (reporter)
+            {
+                if (no != null) m_Shooter.ArrowHitRpc(no, h.point, dir);
+                else m_Shooter.ArrowLandRpc(h.point, dir);
+            }
         }
 
         /// <summary>Shooter-side instant feedback (the server confirms kills).</summary>

@@ -92,11 +92,16 @@ namespace RockGame
         {
             switch (i)
             {
-                case Item.Spear: case Item.Arrow: case Item.Hatchet: case Item.Pickaxe:
+                case Item.Spear: case Item.Arrow: case Item.Hatchet: case Item.Pickaxe: case Item.DeathWand:
                     t.localRotation = Quaternion.Euler(0, 0, -40); break;
                 case Item.Bow:
                     t.localRotation = Quaternion.Euler(0, 90, -35); break;
+                case Item.C4:
+                    t.localRotation = Quaternion.Euler(-30, 30, 0); break;
+                case Item.Helmet:
+                    t.localRotation = Quaternion.Euler(0, 150, 0); break;
                 case Item.Ram:
+                case Item.Chainsaw:
                     t.localRotation = Quaternion.Euler(0, 55, 0); break;
                 case Item.BuildingPlan:
                     t.localRotation = Quaternion.Euler(20, 0, 0); break;

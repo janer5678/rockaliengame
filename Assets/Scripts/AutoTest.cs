@@ -38,10 +38,12 @@ namespace RockGame
             Log($"local player spawned: team={Cfg.TeamName[me.Team.Value]} host={nm.IsHost} nodes={FindObjectsByType<ResourceNode>(FindObjectsSortMode.None).Length}");
             Check(Cfg.BaseTeamAt(me.transform.position) == me.Team.Value, $"spawned inside own base ({me.transform.position})");
             Check(me.Count(Item.Rock) == 1 && me.HeldItem == Item.Rock, "start with a rock in hand");
-            Check(Vector3.Distance(me.transform.position, Cfg.ChamberPos(me.Team.Value)) < 1.5f, $"spawned in the UFO cryo chamber on {Cfg.MapLabel} (seed {Cfg.MapSeed})");
+            Check(Vector3.Distance(me.transform.position, Cfg.SpawnPos(me.Team.Value)) < 1.5f, $"spawned on the bedrock on {Cfg.MapLabel} (seed {Cfg.MapSeed})");
             Check(NetGame.Instance != null && NetGame.Instance.MapKey.Value == Cfg.MapKey && NetGame.Instance.MapSeed.Value == Cfg.MapSeed, "map + seed synced from the host");
-            var ufoCell = new PieceKey(PieceKey.KFoundation, Cfg.UfoI[me.Team.Value], Cfg.UfoJ[me.Team.Value], 0, 0);
-            Check(BuildGrid.OnUfo(ufoCell), "can't build on the UFO");
+            var bc = Cfg.BedrockCenter(me.Team.Value);
+            var rockCell = new PieceKey(PieceKey.KFoundation, BuildGrid.CellOf(bc.x + 0.1f), BuildGrid.CellOf(bc.z + 0.1f), 0, 0);
+            Check(BuildGrid.OnBedrock(rockCell), "can't build a foundation on the bedrock");
+            Check(BuildGrid.IsSupported(new PieceKey(PieceKey.KEdge, rockCell.I, rockCell.J, 0, 1), k => false), "walls stand on the bedrock without a foundation");
             StartCoroutine(Watch());
             if (m_Mode == "shots") yield return ShotsRoutine(me, pc);
             else if (nm.IsHost) yield return HostRoutine(me, pc);
@@ -102,14 +104,26 @@ namespace RockGame
 
             // ---- gather ----
             yield return Gather(me, pc, ResourceNode.Tree, 52, baseC);
-            yield return Gather(me, pc, ResourceNode.Boulder, 6, baseC);
+            if (Cfg.WoodMode)
+            {
+                bool stone = false;
+                foreach (var n in FindObjectsByType<ResourceNode>(FindObjectsSortMode.None)) if (n.Kind.Value == ResourceNode.Boulder) stone = true;
+                Check(!stone && Cfg.RecipeIndex(Item.Pickaxe) < 0 && Cfg.GetRecipe(Cfg.RecipeIndex(Item.Bow)).Stone == 0, "wood mode: no stone nodes, no pickaxe, recipes cost wood only");
+            }
+            else yield return Gather(me, pc, ResourceNode.Boulder, 6, baseC);
             Log($"gathered wood={me.Count(Item.Wood)} stone={me.Count(Item.Stone)}");
             Check(me.Count(Item.Wood) >= 180, "gathered enough wood (as inventory items)");
 
-            Vector3 stand = baseC + new Vector3(-4, 0.1f, team == 1 ? -3 : 3);
-            pc.LocalTeleport(stand, 0);
+            // ---- crafting only works at the machine ----
+            pc.LocalTeleport(baseC + new Vector3(-12, 0.1f, 0), 0);
+            yield return new WaitForSeconds(0.3f);
+            me.CraftRpc(Cfg.RecipeIndex(Item.BuildingPlan));
+            yield return new WaitForSeconds(0.6f);
+            Check(me.Count(Item.BuildingPlan) == 0, "can't craft away from the machine");
+            pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
+            yield return new WaitForSeconds(0.3f);
 
-            // ---- craft building plan (anywhere) & build ----
+            // ---- craft building plan at the machine & build ----
             me.CraftRpc(Cfg.RecipeIndex(Item.BuildingPlan));
             yield return new WaitForSeconds(0.6f);
             Check(me.Count(Item.BuildingPlan) == 1, "crafted building plan");
@@ -146,7 +160,16 @@ namespace RockGame
             yield return new WaitForSeconds(0.5f);
             me.ThrowBallRpc(Vector3.down);
             yield return new WaitForSeconds(3f);
-            Check(!me.CarryingBall && ball.BaseTeam.Value == team, $"threw the ball into own base (BaseTeam={ball.BaseTeam.Value})");
+            Check(!me.CarryingBall && ball.BaseTeam.Value == team && ball.SocketTeam.Value < 0, $"ball lying in own base does not count yet (BaseTeam={ball.BaseTeam.Value}, Socket={ball.SocketTeam.Value})");
+            pc.LocalTeleport(ball.transform.position + new Vector3(1.5f, 0.1f, 0), 270f);
+            yield return new WaitForSeconds(0.5f);
+            me.PickupBallRpc();
+            yield return new WaitForSeconds(0.6f);
+            pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team) + 180f);
+            yield return new WaitForSeconds(0.5f);
+            me.InsertBallRpc();
+            yield return new WaitForSeconds(0.6f);
+            Check(!me.CarryingBall && ball.SocketTeam.Value == team, $"put the ball in own machine (Socket={ball.SocketTeam.Value})");
         }
 
         IEnumerator HostRoutine(PlayerNet me, PlayerController pc)
@@ -161,6 +184,7 @@ namespace RockGame
             Check(Mathf.Abs(me.transform.position.z - Cfg.ArenaCenter.z) < 30f, "host was teleported to the arena");
             Check(Mathf.Abs(other.transform.position.z - Cfg.ArenaCenter.z) < 30f, "client was teleported to the arena");
             Check(me.HeldItem == Item.Rock, "rock forced in sudden death");
+            other.ServerGive(Item.Wood, 50); // something to spill (the raid test may already have killed them once)
             int itemsBefore = NetGame.Instance.Items.Count;
             while (NetGame.Instance != null && NetGame.Instance.S == GameState.SuddenDeath)
             {
@@ -184,7 +208,8 @@ namespace RockGame
             me.ServerGive(Item.Wood, 3000);
             me.ServerGive(Item.Stone, 2000);
 
-            pc.LocalTeleport(baseC + new Vector3(-4, 0.1f, 3), 0);
+            pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
+            yield return new WaitForSeconds(0.3f);
             foreach (var it in new[] { Item.BuildingPlan, Item.Hatchet, Item.Pickaxe, Item.Spear, Item.Bow, Item.Arrow, Item.Ram, Item.Chest, Item.Barrier })
             {
                 me.CraftRpc(Cfg.RecipeIndex(it));
@@ -192,7 +217,7 @@ namespace RockGame
             }
             Check(me.Count(Item.BuildingPlan) == 1 && me.Count(Item.Hatchet) == 1 && me.Count(Item.Pickaxe) == 1 && me.Count(Item.Spear) == 1 && me.Count(Item.Bow) == 1
                   && me.Count(Item.Arrow) == Cfg.ArrowsPerCraft && RamHits(me) == Cfg.RamUses && me.Count(Item.Chest) == 1 && me.Count(Item.Barrier) == 1,
-                  "host crafted every item into the inventory (no table)");
+                  "host crafted every item at the machine");
             Check(me.Count(Item.Wood) == 3000 - (Cfg.PlanWood + Cfg.HatchetWood + Cfg.PickaxeWood + Cfg.SpearWood + Cfg.BowWood + Cfg.ArrowWood + Cfg.RamWood + Cfg.ChestWood + Cfg.BarrierWood),
                   $"crafting consumed wood items (left {me.Count(Item.Wood)})");
 
@@ -241,7 +266,7 @@ namespace RockGame
             me.PlaceDeployableRpc((byte)Item.Chest, chestPos, 180f);
             yield return new WaitForSeconds(0.6f);
             Container chest = null;
-            foreach (var c in Container.All) if (!c.IsBag) chest = c;
+            foreach (var c in Container.All) if (c.Breakable) chest = c;
             Check(chest != null && chest.Slots.Count == Cfg.ChestSlots && me.Count(Item.Chest) == 0, "chest placed in base");
             if (chest != null)
             {
@@ -382,6 +407,96 @@ namespace RockGame
                 wall.ServerDowngrade();
                 Check(wall.Tier.Value == 0 && Mathf.Approximately(wall.Health.Value, Cfg.PieceHp(PieceType.Wall, 0)), "stone downgrades to full-health wood");
             }
+            // demolish one of your own pieces with the building plan (part of the wood comes back)
+            if (floor != null && floor.IsSpawned)
+            {
+                yield return Hold(me, Item.BuildingPlan);
+                pc.LocalTeleport(floor.transform.position + new Vector3(-4f, -3.9f, 0), 90f);
+                yield return new WaitForSeconds(0.3f);
+                int woodBefore2 = me.Count(Item.Wood);
+                me.DemolishRpc(floor.NetworkObject);
+                yield return new WaitForSeconds(0.5f);
+                Check(!floor.IsSpawned && me.Count(Item.Wood) == woodBefore2 + Mathf.FloorToInt(Cfg.FloorWood * Cfg.DemolishRefund), "demolished own floor with the plan (wood refunded)");
+            }
+
+            // helmet soaks up a headshot
+            other.Health.Value = 500f;
+            other.HelmetHp.Value = 100;
+            yield return Hold(me, Item.Bow);
+            me.FireArrowRpc(me.EyePos, Vector3.forward * Cfg.ArrowSpeed);
+            yield return new WaitForSeconds(0.1f);
+            me.ArrowHitRpc(other.NetworkObject, other.transform.position + Vector3.up * 1.6f, Vector3.forward);
+            yield return new WaitForSeconds(0.5f);
+            Check(other.HelmetHp.Value == 0 && Mathf.Abs(other.Health.Value - 500f) < 0.5f, $"helmet absorbed a {Cfg.ArrowPlayerDamage * Cfg.HeadshotMul:0} headshot and broke (hp {other.Health.Value:0})");
+            other.Health.Value = Cfg.MaxHealth;
+            me.ServerGive(Item.Helmet, 1, 60);
+            yield return new WaitForSeconds(0.2f);
+            yield return Hold(me, Item.Helmet);
+            me.UseItemRpc();
+            yield return new WaitForSeconds(0.9f);
+            Check(me.HelmetHp.Value == 60 && me.Count(Item.Helmet) == 0, "put on a found helmet with its remaining health");
+            me.HelmetHp.Value = 0;
+
+            // C4 on the opponent's foundation
+            Structure enemyFoundation = null;
+            foreach (var s in Structure.All) if (s.Team.Value != team && s.PType == PieceType.Foundation) enemyFoundation = s;
+            if (enemyFoundation != null)
+            {
+                me.ServerGive(Item.C4, 1);
+                yield return new WaitForSeconds(0.2f);
+                yield return Hold(me, Item.C4);
+                var fp = enemyFoundation.transform.position;
+                pc.LocalTeleport(new Vector3(fp.x, 0.1f, fp.z + 6f), 180f);
+                yield return new WaitForSeconds(0.9f);
+                me.ThrowC4Rpc(me.EyePos, Vector3.back * 10f);
+                yield return new WaitForSeconds(0.1f);
+                me.C4LandRpc(fp + Vector3.up * 1.03f, Vector3.up);
+                yield return new WaitForSeconds(Cfg.C4Fuse + 0.8f);
+                Check(!enemyFoundation.IsSpawned && me.Count(Item.C4) == 0, "C4 blew up the enemy foundation");
+            }
+            else Check(false, "C4: no enemy foundation to blow up");
+
+            // respawn in the wild lands in the enemy half
+            other.ServerRespawn(true);
+            yield return new WaitForSeconds(0.8f);
+            var ec = Cfg.BaseCenter[team];
+            Check(Mathf.Sign(other.transform.position.z) == Mathf.Sign(ec.z) && Cfg.BaseTeamAt(other.transform.position) < 0, $"wild respawn puts you in the enemy half, outside their base ({other.transform.position})");
+
+            // death wand: one shot, instant kill
+            me.ServerGive(Item.DeathWand, 1);
+            yield return new WaitForSeconds(0.2f);
+            yield return Hold(me, Item.DeathWand);
+            var op = other.transform.position;
+            pc.LocalTeleport(op + new Vector3(0, 1.5f, -8f), 0f);
+            yield return new WaitForSeconds(0.9f);
+            other.Health.Value = Cfg.MaxHealth;
+            me.WandRpc(((op + Vector3.up * 1.4f) - me.EyePos + new Vector3(1.2f, 0, 0)).normalized); // a near miss still kills
+            yield return new WaitForSeconds(0.5f);
+            Check(other.Dead.Value && me.Count(Item.DeathWand) == 0, "death wand near miss killed instantly");
+
+            // airdrop: wait for one to land, open it and take the item
+            float dropWait = Time.time + 45f;
+            Container drop = null;
+            while (drop == null && Time.time < dropWait && NetGame.Instance.S == GameState.BallLive)
+            {
+                drop = NetGame.Instance.ActiveDrop;
+                yield return new WaitForSeconds(0.5f);
+            }
+            Check(drop != null, "an airdrop was beamed down");
+            if (drop != null)
+            {
+                var dp = drop.transform.position;
+                Check(Mathf.Max(Mathf.Abs(dp.x - Cfg.BaseCenter[0].x), Mathf.Abs(dp.z - Cfg.BaseCenter[0].z)) - Cfg.BaseHalf >= Cfg.AirdropBaseDistance - 0.5f
+                      && Mathf.Max(Mathf.Abs(dp.x - Cfg.BaseCenter[1].x), Mathf.Abs(dp.z - Cfg.BaseCenter[1].z)) - Cfg.BaseHalf >= Cfg.AirdropBaseDistance - 0.5f, $"airdrop not next to a base ({dp})");
+                var loot = drop.Slots[0];
+                pc.LocalTeleport(dp + new Vector3(0, 0.1f, -2f), 0f);
+                yield return new WaitForSeconds(0.4f);
+                int had = me.Count(loot.Id);
+                me.MoveItemRpc(1, 0, 0, 255, 0, drop.NetworkObject);
+                yield return new WaitForSeconds(1.2f);
+                Check(me.Count(loot.Id) == had + loot.Count && !drop.IsSpawned, $"took the airdrop's {Cfg.ItemName(loot.Id)} x{loot.Count}, crate disappeared");
+            }
+
             pc.LocalTeleport(baseC + new Vector3(-4, 0.1f, 3), 0);
             yield return Hold(me, Item.Rock);
         }
@@ -402,27 +517,27 @@ namespace RockGame
             }
             int team = me.Team.Value;
 
-            // 1: waking up in the cryo chamber
+            // 1: spawning on the bedrock
             yield return new WaitForSeconds(0.2f);
             NetGame.SpawnPoint(team, false, out var cp, out var cy);
             pc.LocalTeleport(cp, cy);
             pc.SetLook(cy, 8f);
-            pc.SendMessage("WakeUp", SendMessageOptions.DontRequireReceiver);
-            yield return new WaitForSeconds(0.9f);
-            Snap("01_wake_in_chamber");
-            yield return new WaitForSeconds(0.5f);
+            yield return Shot("01_spawn_on_bedrock");
 
-            // 2: the crashed UFO from outside
-            var fwd = Cfg.UfoForward(team);
-            var outside = Cfg.UfoCenter(team) + fwd * 11f + Vector3.Cross(Vector3.up, fwd) * 4f + Vector3.up * 0.1f;
-            var look = Cfg.UfoCenter(team) + Vector3.up * 1.5f - outside;
-            pc.LocalTeleport(outside, Quaternion.LookRotation(new Vector3(look.x, 0, look.z)).eulerAngles.y);
-            pc.SetLook(Quaternion.LookRotation(new Vector3(look.x, 0, look.z)).eulerAngles.y, 4f);
-            yield return Shot("02_ufo_outside");
-            var above = Cfg.UfoCenter(team) + fwd * 13f + Vector3.up * 8f;
-            pc.LocalTeleport(above, Quaternion.LookRotation(-fwd).eulerAngles.y);
-            pc.SetLook(Quaternion.LookRotation(-fwd).eulerAngles.y, 28f);
-            yield return Shot("02b_ufo_above");
+            // 2: the bedrock and the alien machine from the front, and the glass wall
+            var back = Cfg.BackDir(team);
+            var front = Cfg.BedrockCenter(team) - back * 7f + Vector3.Cross(Vector3.up, back) * 3f + Vector3.up * 0.1f;
+            var look = Cfg.MachinePos(team) + Vector3.up * 1.2f - front;
+            pc.LocalTeleport(front, Quaternion.LookRotation(new Vector3(look.x, 0, look.z)).eulerAngles.y);
+            pc.SetLook(Quaternion.LookRotation(new Vector3(look.x, 0, look.z)).eulerAngles.y, 6f);
+            yield return Shot("02_machine");
+            var above = Cfg.BedrockCenter(team) - back * 9f + Vector3.up * 8f;
+            pc.LocalTeleport(above, Quaternion.LookRotation(back).eulerAngles.y);
+            pc.SetLook(Quaternion.LookRotation(back).eulerAngles.y, 30f);
+            yield return Shot("02b_bedrock_above");
+            pc.LocalTeleport(new Vector3(8f, 0.1f, -6f * Mathf.Sign(-back.z)), Quaternion.LookRotation(-back).eulerAngles.y + 20f);
+            pc.SetLook(Quaternion.LookRotation(-back).eulerAngles.y + 20f, -5f);
+            yield return Shot("02d_glass_wall");
             pc.LocalTeleport(new Vector3(Cfg.MapHalf * 0.55f, 45f, Cfg.BaseCenter[team].z - 10f), 0f);
             pc.SetLook(-30f, 32f);
             yield return Shot("02c_map_overview");
@@ -430,6 +545,8 @@ namespace RockGame
             while (NetGame.Instance == null || NetGame.Instance.S == GameState.Waiting) yield return null;
             me.ServerGive(Item.Wood, 3000);
             me.ServerGive(Item.Stone, 1000);
+            pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
+            yield return new WaitForSeconds(0.3f);
             foreach (var it in new[] { Item.BuildingPlan, Item.Bow, Item.Arrow, Item.Hatchet, Item.Spear, Item.Chest })
             {
                 me.CraftRpc(Cfg.RecipeIndex(it));
@@ -528,10 +645,28 @@ namespace RockGame
             Snap("13_rig_walk_sprint_crouch_jump_swing");
             yield return new WaitForSeconds(0.3f);
 
-            // 7: inventory
+            // 7: inventory, and crafting at the machine
             pc.MenuOpen = true;
             yield return Shot("14_inventory");
-            pc.MenuOpen = false;
+            pc.CloseMenu();
+            pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
+            yield return new WaitForSeconds(0.3f);
+            pc.MenuOpen = pc.CraftOpen = true;
+            yield return Shot("15_machine_crafting");
+            pc.CloseMenu();
+
+            // 8: airdrop loot in hand
+            foreach (var it in new[] { Item.C4, Item.DeathWand, Item.InvisPotion })
+            {
+                me.ServerGive(it, 1);
+                yield return new WaitForSeconds(0.2f);
+                yield return Hold(me, it);
+                yield return Shot("16_" + it);
+            }
+            me.ServerGive(Item.Chainsaw, 1, Cfg.ChainsawUses);
+            yield return new WaitForSeconds(0.2f);
+            yield return Hold(me, Item.Chainsaw);
+            yield return Shot("16_Chainsaw");
             Application.Quit(0);
         }
 

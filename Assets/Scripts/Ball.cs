@@ -3,7 +3,10 @@ using UnityEngine;
 
 namespace RockGame
 {
-    /// <summary>The objective ball. Server simulates physics; carrying is server-driven.</summary>
+    /// <summary>
+    /// The objective ball. Server simulates physics; carrying is server-driven.
+    /// To win it has to sit in the socket of your base's alien machine (thrown or rolled in, or put in with E).
+    /// </summary>
     public class Ball : NetworkBehaviour
     {
         public const ulong NoCarrier = ulong.MaxValue;
@@ -11,6 +14,8 @@ namespace RockGame
 
         public readonly NetworkVariable<ulong> CarrierId = new NetworkVariable<ulong>(NoCarrier);
         public readonly NetworkVariable<sbyte> BaseTeam = new NetworkVariable<sbyte>(-1);
+        /// <summary>Team whose machine socket the ball sits in (-1 = none). This is what wins the game.</summary>
+        public readonly NetworkVariable<sbyte> SocketTeam = new NetworkVariable<sbyte>(-1);
 
         Rigidbody m_Rb;
         Collider m_Col;
@@ -59,18 +64,24 @@ namespace RockGame
             var pillar = Art.Part(m_Beacon.transform, Art.Cylinder, Color.white, new Vector3(0, 150, 0), new Vector3(1.4f, 150, 1.4f), default, false, Art.Ghost(new Color(1, 1, 1, 0.35f)), "pillar");
             pillar.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             m_BeaconRenderer = pillar.GetComponent<MeshRenderer>();
-            BaseTeam.OnValueChanged += OnBaseTeamChanged;
-            OnBaseTeamChanged(-1, BaseTeam.Value);
+            SocketTeam.OnValueChanged += OnSocketChanged;
+            OnSocketChanged(-1, SocketTeam.Value);
         }
 
         public override void OnNetworkDespawn()
         {
-            BaseTeam.OnValueChanged -= OnBaseTeamChanged;
+            SocketTeam.OnValueChanged -= OnSocketChanged;
             if (Instance == this) Instance = null;
         }
 
-        void OnBaseTeamChanged(sbyte prev, sbyte cur)
+        /// <summary>The beacon only shoots up while the ball sits in a machine socket.</summary>
+        void OnSocketChanged(sbyte prev, sbyte cur)
         {
+            if (cur >= 0 && prev != cur)
+            {
+                Sfx.Play(Sfx.Zap, transform.position, 1f);
+                Sfx.Play(Sfx.Ding, transform.position, 0.8f);
+            }
             m_Beacon.SetActive(cur >= 0);
             if (cur >= 0)
             {
@@ -138,6 +149,21 @@ namespace RockGame
             }
 
             var p = transform.position;
+            if (!IsCarried && SocketTeam.Value < 0)
+            {
+                // rolled or thrown into a machine's socket: it locks in
+                for (int t = 0; t < 2; t++)
+                {
+                    var sp = Cfg.SocketPos(t);
+                    var d = p - sp;
+                    if (new Vector2(d.x, d.z).magnitude < 0.75f && d.y < 0.8f && d.y > -0.5f && m_Rb.linearVelocity.magnitude < 9f)
+                    {
+                        ServerSocket(t);
+                        p = transform.position;
+                        break;
+                    }
+                }
+            }
             if (p.y < -20f || Mathf.Abs(p.x) > Cfg.MapHalf + 5 || Mathf.Abs(p.z) > Cfg.MapHalf + 5)
             {
                 ServerReset();
@@ -152,8 +178,19 @@ namespace RockGame
         public static Vector3 CarryPoint(PlayerNet p) =>
             p.transform.position + p.transform.forward * 0.6f + Vector3.up * (p.Crouch.Value ? 0.8f : 1.15f);
 
+        /// <summary>Lock the ball into a team's machine socket.</summary>
+        public void ServerSocket(int team)
+        {
+            CarrierId.Value = NoCarrier;
+            m_Rb.isKinematic = true;
+            transform.SetPositionAndRotation(Cfg.SocketPos(team), Quaternion.identity);
+            SocketTeam.Value = (sbyte)team;
+            if (NetGame.Instance != null) NetGame.Instance.Broadcast($"The ball is in the {Cfg.TeamName[team]} machine!");
+        }
+
         public void ServerReset()
         {
+            SocketTeam.Value = -1;
             CarrierId.Value = NoCarrier;
             m_Rb.isKinematic = false;
             transform.position = Cfg.BallDropPoint;
@@ -164,6 +201,7 @@ namespace RockGame
         public bool ServerPickup(PlayerNet p)
         {
             if (IsCarried) return false;
+            SocketTeam.Value = -1;
             CarrierId.Value = p.NetworkObjectId;
             m_Rb.isKinematic = true;
             return true;
@@ -182,6 +220,7 @@ namespace RockGame
 
         public void ServerDrop(Vector3 pos, Vector3 vel)
         {
+            SocketTeam.Value = -1;
             CarrierId.Value = NoCarrier;
             transform.position = pos;
             m_Rb.isKinematic = false;

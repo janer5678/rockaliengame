@@ -33,6 +33,8 @@ namespace RockGame
             Rebuild();
             m_Rise = 0f;
             Tier.OnValueChanged += OnTierChanged;
+            // placed right where someone stands: pop them out on top instead of trapping them inside
+            if (PlayerController.Local != null) PlayerController.Local.ResolveOverlap(transform);
         }
 
         public override void OnNetworkDespawn()
@@ -60,7 +62,7 @@ namespace RockGame
         {
             if (m_Visual && m_Rise < 1f)
             {
-                m_Rise = Mathf.Min(1f, m_Rise + Time.deltaTime / 0.9f);
+                m_Rise = Mathf.Min(1f, m_Rise + Time.deltaTime / 0.25f);
                 float e = 1f - (1f - m_Rise) * (1f - m_Rise);
                 m_Visual.localScale = new Vector3(1f, Mathf.Lerp(0.05f, 1f, e), 1f);
             }

@@ -11,6 +11,8 @@ namespace RockGame
         public static PlayerController Local;
 
         public bool MenuOpen, Paused;
+        /// <summary>Inventory opened at your alien machine (E): the crafting panel is shown.</summary>
+        public bool CraftOpen;
         public Container LootTarget;
         public PieceType BuildPiece = PieceType.Foundation;
         public string AimText = "", BuildHint = "";
@@ -29,7 +31,8 @@ namespace RockGame
         ViewModel m_VM;
 
         float m_Yaw, m_Pitch, m_VelY, m_Bob, m_Eye = Cfg.EyeHeight, m_LastStep, m_Speed;
-        float m_NextSwing, m_ImpactAt = -1f, m_NextBuild, m_NextUpgrade, m_DrawStart = -1f, m_NextEat, m_NextBallThrow, m_LastHealth;
+        float m_NextSwing, m_ImpactAt = -1f, m_NextUpgrade, m_DrawStart = -1f, m_NextEat, m_NextBallThrow, m_LastHealth, m_NextSaw;
+        bool m_Grounded = true, m_Sprinting;
         Item m_ImpactItem;
         int m_RotOffset;
         bool m_WasDead, m_Placed;
@@ -58,7 +61,7 @@ namespace RockGame
             TryPlace();
         }
 
-        /// <summary>Put the player in their cryo chamber once the host's map is built here.</summary>
+        /// <summary>Put the player on their bedrock once the host's map is built here.</summary>
         void TryPlace()
         {
             var game = NetGame.Instance;
@@ -70,12 +73,11 @@ namespace RockGame
             if (!sd) WakeUp();
         }
 
-        /// <summary>Bioshock-style: the chamber glass slides up in a burst of steam and you step out.</summary>
+        /// <summary>(Re)spawned: a quick flash, and the rock back in your hands.</summary>
         void WakeUp()
         {
-            Cryo.Open(m_Net.Team.Value);
             Hud.Wake();
-            m_InputLockUntil = Time.time + 0.6f;
+            m_InputLockUntil = Time.time + 0.3f;
             SelectSlotOf(Item.Rock);
         }
 
@@ -118,7 +120,60 @@ namespace RockGame
         public void CloseMenu()
         {
             MenuOpen = false;
+            CraftOpen = false;
             LootTarget = null;
+        }
+
+        /// <summary>Death screen choice (after the wall is down): back to your bedrock, or a random spot in the enemy's half.</summary>
+        public void ChooseRespawn(bool wild)
+        {
+            if (m_Net.ChoosingRespawn) m_Net.RespawnChoiceRpc(wild);
+        }
+
+        /// <summary>A building piece or chest just appeared: if we're standing inside it, pop out on top of it (or to the side of a wall).</summary>
+        public void ResolveOverlap(Transform piece)
+        {
+            if (m_CC == null || !m_CC.enabled || m_Net.Dead.Value) return;
+            var cols = piece.GetComponentsInChildren<Collider>();
+            if (cols.Length == 0) return;
+            Physics.SyncTransforms();
+            var pos = transform.position;
+            float top = float.MinValue;
+            bool any = false;
+            foreach (var c in cols)
+            {
+                if (c.isTrigger || !c.enabled) continue;
+                if (!Physics.ComputePenetration(m_CC, pos, transform.rotation, c, c.transform.position, c.transform.rotation, out _, out _)) continue;
+                any = true;
+                top = Mathf.Max(top, c.bounds.max.y);
+            }
+            if (!any) return;
+            // standing on/inside it with our feet below its top: step up onto it if that's not too far, otherwise get pushed out sideways
+            if (top - pos.y < 2.2f) pos.y = top + 0.02f;
+            else
+            {
+                for (int i = 0; i < 4; i++)
+                {
+                    bool moved = false;
+                    foreach (var c in cols)
+                    {
+                        if (c.isTrigger || !c.enabled) continue;
+                        if (!Physics.ComputePenetration(m_CC, pos, transform.rotation, c, c.transform.position, c.transform.rotation, out var dir, out var dist)) continue;
+                        dir.y = 0;
+                        if (dir.sqrMagnitude < 0.001f) dir = -transform.forward;
+                        pos += dir.normalized * (dist + 0.05f);
+                        moved = true;
+                    }
+                    if (!moved) break;
+                }
+            }
+            bool was = m_CC.enabled;
+            m_CC.enabled = false;
+            transform.position = pos;
+            if (m_NT != null && m_NT.IsSpawned) m_NT.Teleport(pos, transform.rotation, transform.localScale);
+            m_CC.enabled = was;
+            m_VelY = 0;
+            Physics.SyncTransforms();
         }
 
         void Update()
@@ -144,12 +199,22 @@ namespace RockGame
             }
             if (sd || dead) CloseMenu();
             if (LootTarget != null && (!LootTarget.IsSpawned || !LootTarget.InReach(m_Net.EyePos))) LootTarget = null;
+            if (CraftOpen && !m_Net.NearMachine) CraftOpen = false;
             if (Paused && Input.GetMouseButtonDown(0) && !Hud.MouseOverUI) Paused = false;
 
-            bool cursorFree = MenuOpen || Paused || gameOver;
+            bool choosing = m_Net.ChoosingRespawn;
+            if (choosing && !Paused)
+            {
+                if (Input.GetKeyDown(KeyCode.Alpha1)) ChooseRespawn(false);
+                else if (Input.GetKeyDown(KeyCode.Alpha2)) ChooseRespawn(true);
+            }
+
+            bool cursorFree = MenuOpen || Paused || gameOver || choosing;
             Cursor.lockState = cursorFree ? CursorLockMode.None : CursorLockMode.Locked;
             Cursor.visible = cursorFree;
             bool input = !cursorFree && !dead;
+            // you can keep walking, jumping and crouching with the inventory open
+            bool move = !dead && !Paused && !gameOver;
             bool locked = Time.time < m_InputLockUntil;
 
             // ---- damage / respawn feedback ----
@@ -177,7 +242,7 @@ namespace RockGame
             var held = SelectItem(input, sd);
 
             // ---- crouch ----
-            bool wantCrouch = input && (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.C));
+            bool wantCrouch = move && (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.C));
             if (!wantCrouch && Crouching && !HeadroomToStand()) wantCrouch = true;
             if (dead) wantCrouch = false;
             if (wantCrouch != Crouching)
@@ -192,14 +257,14 @@ namespace RockGame
             {
                 Vector3 wish = Vector3.zero;
                 float fwdInput = 0;
-                if (input)
+                if (move)
                 {
                     float h = (Input.GetKey(KeyCode.D) ? 1 : 0) - (Input.GetKey(KeyCode.A) ? 1 : 0);
                     fwdInput = (Input.GetKey(KeyCode.W) ? 1 : 0) - (Input.GetKey(KeyCode.S) ? 1 : 0);
                     wish = transform.right * h + transform.forward * fwdInput;
                     if (wish.sqrMagnitude > 1f) wish.Normalize();
                 }
-                bool sprint = input && Input.GetKey(KeyCode.LeftShift) && fwdInput > 0 && m_DrawStart < 0 && RamCharge <= 0 && !Crouching;
+                bool sprint = move && Input.GetKey(KeyCode.LeftShift) && fwdInput > 0 && m_DrawStart < 0 && RamCharge <= 0 && !Crouching;
                 float speed = Crouching ? Cfg.CrouchSpeed : sprint ? Cfg.SprintSpeed : Cfg.WalkSpeed;
                 if (carrying) speed *= Cfg.BallCarrySpeedMul;
                 if (m_DrawStart >= 0) speed *= 0.6f;
@@ -209,8 +274,10 @@ namespace RockGame
                 if (grounded)
                 {
                     if (m_VelY < 0) m_VelY = -2f;
-                    if (input && Input.GetKeyDown(KeyCode.Space) && !Crouching) m_VelY = Cfg.JumpSpeed;
+                    if (move && Input.GetKeyDown(KeyCode.Space) && !Crouching) m_VelY = Cfg.JumpSpeed;
                 }
+                m_Grounded = grounded;
+                m_Sprinting = sprint && wish.sqrMagnitude > 0.1f;
                 m_VelY -= Cfg.Gravity * Time.deltaTime;
                 var flags = m_CC.Move((wish * speed + Vector3.up * m_VelY) * Time.deltaTime);
                 if ((flags & CollisionFlags.Above) != 0 && m_VelY > 0) m_VelY = 0;
@@ -245,6 +312,10 @@ namespace RockGame
                         case Item.Chest:
                         case Item.Barrier: HandleDeploy(held); break;
                         case Item.Berry: HandleBerry(); break;
+                        case Item.C4: HandleC4(); break;
+                        case Item.DeathWand: HandleWand(); break;
+                        case Item.Helmet:
+                        case Item.InvisPotion: HandleUseItem(held); break;
                         default: if (Cfg.IsMelee(held)) HandleMelee(held); break;
                     }
                 }
@@ -272,6 +343,10 @@ namespace RockGame
 
             m_VM.Update(new ViewModel.State
             {
+                Firing = m_Net.HeldItem == Item.Chainsaw && Input.GetMouseButton(0) && !MenuOpen && !Paused,
+                Sprint = m_Sprinting,
+                Grounded = m_Grounded,
+                VelY = m_VelY,
                 Item = m_Net.HeldItem,
                 Ball = m_Net.CarryingBall,
                 Visible = !m_Net.Dead.Value,
@@ -386,6 +461,14 @@ namespace RockGame
             if (!Input.GetMouseButton(0) || Time.time < m_NextSwing) return;
             var st = Cfg.Melee(held);
             m_NextSwing = Time.time + st.Cooldown;
+            if (held == Item.Chainsaw)
+            {
+                // continuous: no wind-up, the cut lands right away
+                if (Time.time >= m_NextSaw) { m_NextSaw = Time.time + 0.18f; Sfx.Play2D(Sfx.Saw, 0.35f, 0.05f); }
+                m_ImpactItem = held;
+                DoImpact();
+                return;
+            }
             m_VM.Swing(st.Cooldown);
             Sfx.Play2D(Sfx.Swing, 0.35f, 0.15f);
             m_ImpactAt = Time.time + ViewModel.ImpactTime;
@@ -398,14 +481,15 @@ namespace RockGame
             if (m_Net.HeldItem != m_ImpactItem || m_Net.CarryingBall || m_Net.Dead.Value) return;
             var st = Cfg.Melee(m_ImpactItem);
             var ray = CenterRay();
-            Fx.Kick(0.8f);
+            bool saw = m_ImpactItem == Item.Chainsaw;
+            Fx.Kick(saw ? 0.15f : 0.8f);
             if (!AimWithAssist(ray, st.Range, Cfg.MeleeAssist, out var hit))
             {
-                m_VM.Impact(false);
+                if (!saw) m_VM.Impact(false);
                 m_Net.MeleeRpc(false, default, Vector3.zero, false);
                 return;
             }
-            m_VM.Impact(true);
+            if (!saw) m_VM.Impact(true);
 
             var no = hit.collider.GetComponentInParent<NetworkObject>();
             bool weak = false;
@@ -505,7 +589,7 @@ namespace RockGame
                 var no = hit.collider.GetComponentInParent<NetworkObject>();
                 var s = no != null ? no.GetComponent<Structure>() : null;
                 var c = no != null ? no.GetComponent<Container>() : null;
-                int team = s != null ? s.Team.Value : c != null && !c.IsBag ? c.Team.Value : -1;
+                int team = s != null ? s.Team.Value : c != null && c.Breakable ? c.Team.Value : -1;
                 if (team >= 0 && team != m_Net.Team.Value)
                 {
                     m_Net.RamStrikeRpc(no, hit.point);
@@ -540,6 +624,39 @@ namespace RockGame
             Sfx.Play2D(Sfx.Eat, 0.7f);
         }
 
+        void HandleC4()
+        {
+            if (!Input.GetMouseButtonDown(0) || Time.time < m_NextSwing) return;
+            m_NextSwing = Time.time + 0.6f;
+            var ray = CenterRay();
+            Vector3 origin = ray.origin + ray.direction * 0.7f;
+            Vector3 vel = ray.direction * 16f + Vector3.up * 2.5f;
+            ArrowProjectile.SpawnC4(origin, vel, m_Net, true);
+            m_Net.ThrowC4Rpc(origin, vel);
+            m_VM.Throw();
+            Sfx.Play2D(Sfx.Throw, 0.6f);
+        }
+
+        void HandleWand()
+        {
+            if (!Input.GetMouseButtonDown(0) || Time.time < m_NextSwing) return;
+            m_NextSwing = Time.time + 0.6f;
+            m_Net.WandRpc(CenterRay().direction);
+            m_VM.Use();
+            Fx.Kick(3f);
+            Fx.Shake(0.2f);
+        }
+
+        /// <summary>Helmet: LMB/RMB puts it on. Potion: LMB/RMB drinks it.</summary>
+        void HandleUseItem(Item held)
+        {
+            if (!(Input.GetMouseButtonDown(0) || Input.GetMouseButtonDown(1)) || Time.time < m_NextEat) return;
+            m_NextEat = Time.time + 0.8f;
+            m_Net.UseItemRpc();
+            if (held == Item.InvisPotion) { m_VM.Eat(); Sfx.Play2D(Sfx.Eat, 0.6f); }
+            else { m_VM.Use(); Sfx.Play2D(Sfx.Clink, 0.6f); }
+        }
+
         void HandleDeploy(Item held)
         {
             if (!Input.GetMouseButtonDown(0)) return;
@@ -563,10 +680,8 @@ namespace RockGame
 
             if (Input.GetMouseButtonDown(0))
             {
-                if (Time.time < m_NextBuild) Hud.Push("Building... wait a moment");
-                else if (m_GhostOk)
+                if (m_GhostOk)
                 {
-                    m_NextBuild = Time.time + Cfg.BuildCooldown;
                     m_Net.PlaceRpc((byte)BuildPiece, m_GhostKey.I, m_GhostKey.J, m_GhostKey.L, m_GhostKey.D);
                     m_VM.Use();
                     BuildGrid.Pose(BuildPiece, m_GhostKey, out var pos, out _);
@@ -575,7 +690,23 @@ namespace RockGame
                 else if (!string.IsNullOrEmpty(BuildHint)) Hud.Push(BuildHint);
             }
 
-            if (Input.GetKeyDown(KeyCode.F) && Time.time >= m_NextUpgrade)
+            // X: demolish one of your own pieces (barriers and chests too)
+            if (Input.GetKeyDown(KeyCode.X) && Aim(CenterRay(), Cfg.BuildRange, out var dh))
+            {
+                var no = dh.collider.GetComponentInParent<NetworkObject>();
+                var s = no != null ? no.GetComponent<Structure>() : null;
+                var c = no != null ? no.GetComponent<Container>() : null;
+                int team = s != null ? s.Team.Value : c != null && c.Breakable ? c.Team.Value : -1;
+                if (team == m_Net.Team.Value)
+                {
+                    m_Net.DemolishRpc(no);
+                    m_VM.Use();
+                    Fx.Play(FxKind.Break, dh.point, dh.normal);
+                }
+                else if (team >= 0) Hud.Push("You can only demolish your own buildings");
+            }
+
+            if (Input.GetKeyDown(KeyCode.F) && Time.time >= m_NextUpgrade && !Cfg.WoodMode)
             {
                 if (Aim(CenterRay(), Cfg.BuildRange, out var hit))
                 {
@@ -593,7 +724,7 @@ namespace RockGame
 
         // ------------------------------------------------------------------ interaction (whatever you're looking at)
 
-        public enum TargetKind { None, Ball, Door, Container, Bush, PlayerSpear, WorldItem, SelfSpear }
+        public enum TargetKind { None, Ball, Door, Container, Bush, PlayerSpear, WorldItem, SelfSpear, Machine }
 
         public struct Interactable
         {
@@ -601,6 +732,7 @@ namespace RockGame
             public NetworkObject Obj;
             public int ItemId;
             public ItemStack Stack;
+            public int MachineTeam;
         }
 
         Interactable FindInteract()
@@ -608,7 +740,7 @@ namespace RockGame
             var result = new Interactable();
             if (m_Cam == null || m_Net.Dead.Value) return result;
             var ray = CenterRay();
-            float range = Cfg.InteractRange + 0.5f;
+            float range = Cfg.InteractRange + 2f;
             float found = range;
 
             var hits = Physics.RaycastAll(ray, range, ~0, QueryTriggerInteraction.Collide);
@@ -616,8 +748,16 @@ namespace RockGame
             foreach (var h in hits)
             {
                 if (h.collider.transform.IsChildOf(transform)) continue;
+                var machine = h.collider.GetComponentInParent<Machine>();
+                if (machine != null && h.distance <= Cfg.InteractRange + 1.5f)
+                {
+                    result.Kind = TargetKind.Machine;
+                    result.MachineTeam = machine.Team;
+                    found = h.distance;
+                    break;
+                }
                 var kind = Classify(h.collider, out var obj);
-                if (kind != TargetKind.None) { result.Kind = kind; result.Obj = obj; found = h.distance; break; }
+                if (kind != TargetKind.None && h.distance <= Cfg.InteractRange + 0.5f) { result.Kind = kind; result.Obj = obj; found = h.distance; break; }
                 if (!h.collider.isTrigger) { found = h.distance; break; } // walls block interaction
             }
 
@@ -630,7 +770,7 @@ namespace RockGame
                 {
                     var mid = it.Center;
                     float t = Vector3.Dot(mid - ray.origin, ray.direction);
-                    if (t < 0 || t > found + 0.4f || t > range + 0.5f) continue;
+                    if (t < 0 || t > found + 0.4f || t > Cfg.InteractRange + 1f) continue;
                     float perp = Vector3.Distance(ray.origin + ray.direction * t, mid);
                     if (perp < bestPerp) { bestPerp = perp; result = new Interactable { Kind = TargetKind.WorldItem, ItemId = it.Id, Stack = it.Stack }; }
                 }
@@ -642,7 +782,7 @@ namespace RockGame
             {
                 var bp = ball.transform.position;
                 float t = Vector3.Dot(bp - ray.origin, ray.direction);
-                if (t > 0 && t < found + 0.5f && t < range && Vector3.Distance(ray.origin + ray.direction * t, bp) < 0.9f)
+                if (t > 0 && t < found + 0.5f && t < Cfg.InteractRange + 0.5f && Vector3.Distance(ray.origin + ray.direction * t, bp) < 0.9f)
                     result = new Interactable { Kind = TargetKind.Ball, Obj = ball.NetworkObject };
             }
 
@@ -665,7 +805,7 @@ namespace RockGame
         void HandleInteract(Interactable t, bool carrying)
         {
             if (!Input.GetKeyDown(KeyCode.E)) return;
-            if (carrying && t.Kind != TargetKind.Door) return; // hands are full
+            if (carrying && t.Kind != TargetKind.Door && t.Kind != TargetKind.Machine) return; // hands are full
             switch (t.Kind)
             {
                 case TargetKind.Ball: m_Net.PickupBallRpc(); Sfx.Play2D(Sfx.Pop, 0.5f); break;
@@ -679,6 +819,15 @@ namespace RockGame
                 case TargetKind.PlayerSpear: m_Net.PullSpearRpc(t.Obj); m_VM.Use(); break;
                 case TargetKind.WorldItem: m_Net.PickupItemRpc(t.ItemId); m_VM.Use(); break;
                 case TargetKind.SelfSpear: m_Net.PullSpearRpc(m_Net.NetworkObject); Sfx.Play2D(Sfx.Flesh, 0.6f); break;
+                case TargetKind.Machine:
+                    if (t.MachineTeam != m_Net.Team.Value) { Hud.Push(carrying ? "Put the ball in YOUR machine to win" : "That's the enemy's machine"); break; }
+                    if (carrying) { m_Net.InsertBallRpc(); m_VM.Throw(); Sfx.Play2D(Sfx.Place, 0.6f); break; }
+                    MenuOpen = true;
+                    CraftOpen = true;
+                    LootTarget = null;
+                    Paused = false;
+                    Sfx.Play2D(Sfx.Zap, 0.35f);
+                    break;
             }
         }
 
@@ -740,7 +889,7 @@ namespace RockGame
                     m_Ghost.transform.SetPositionAndRotation(pos, prot);
                     RefreshClientKeys();
                     if (!BuildGrid.InTeamBase(team, m_GhostKey)) reason = "You can only build inside your base area";
-                    else if (BuildGrid.OnUfo(m_GhostKey)) reason = "You can't build on the crashed UFO or block its door";
+                    else if (BuildGrid.OnBedrock(m_GhostKey)) reason = "The bedrock is already a foundation";
                     else if (BuildGrid.IsOccupied(m_GhostKey, m_ClientKeys.Contains)) reason = "Something is already built there";
                     else if (!BuildGrid.IsSupported(m_GhostKey, m_ClientKeys.Contains))
                         reason = t == PieceType.Floor ? "Floors need a wall below or a floor next to them" : "Needs a foundation or floor underneath";
@@ -768,7 +917,13 @@ namespace RockGame
         {
             AimText = "";
             if (m_Net.Dead.Value) return;
-            if (m_Net.CarryingBall) { AimText = "Carrying the ball!  LMB: throw it where you're looking"; return; }
+            if (m_Net.CarryingBall)
+            {
+                AimText = t.Kind == TargetKind.Machine && t.MachineTeam == m_Net.Team.Value
+                    ? "<color=#77ff77>E: put the ball in the machine!</color>"
+                    : "Carrying the ball!  LMB: throw it  ·  E at your machine: put it in the socket";
+                return;
+            }
             switch (t.Kind)
             {
                 case TargetKind.Ball: AimText = "E: pick up the ball"; return;
@@ -781,9 +936,16 @@ namespace RockGame
                 case TargetKind.Container:
                 {
                     var c = t.Obj.GetComponent<Container>();
-                    AimText = $"Storage Chest ({Cfg.TeamName[c.Team.Value]})  {c.Health.Value:0}/{Cfg.ChestHp:0}   E: open";
+                    if (c.IsAirdrop) AimText = "<color=#c98bff>Alien Airdrop</color>   E: open";
+                    else if (c.IsBag) AimText = $"{c.DisplayName}   E: open";
+                    else AimText = $"Storage Chest ({Cfg.TeamLabel(c.Team.Value)})  {c.Health.Value:0}/{Cfg.ChestHp:0}   E: open"
+                        + (m_Net.HeldItem == Item.BuildingPlan && c.Team.Value == m_Net.Team.Value ? "   X: demolish" : "");
                     return;
                 }
+                case TargetKind.Machine:
+                    if (t.MachineTeam != m_Net.Team.Value) AimText = $"{Cfg.TeamName[t.MachineTeam]} alien machine";
+                    else AimText = "Your alien machine   E: craft" + (Ball.Instance != null && Ball.Instance.SocketTeam.Value == m_Net.Team.Value ? "   <color=#77ff77>(the ball is in!)</color>" : "");
+                    return;
                 case TargetKind.Bush: AimText = "Berry Bush   E: pick berries"; return;
                 case TargetKind.PlayerSpear: AimText = "E: pull the spear out"; return;
                 case TargetKind.WorldItem: AimText = $"E: pick up {Cfg.ItemName(t.Stack.Id)}" + (t.Stack.Count > 1 ? $" x{t.Stack.Count}" : ""); return;
@@ -796,8 +958,11 @@ namespace RockGame
             if (no.TryGetComponent(out Structure st))
             {
                 AimText = $"{st.DisplayName} ({Cfg.TeamName[st.Team.Value]})  {st.Health.Value:0}/{st.MaxHp:0}";
-                if (m_Net.HeldItem == Item.BuildingPlan && st.Team.Value == m_Net.Team.Value && st.Tier.Value == 0 && st.Upgradable)
-                    AimText += $"   F: upgrade to stone ({Cfg.PieceUpgradeStone(st.PType)} stone)";
+                if (m_Net.HeldItem == Item.BuildingPlan && st.Team.Value == m_Net.Team.Value)
+                {
+                    if (st.Tier.Value == 0 && st.Upgradable && !Cfg.WoodMode) AimText += $"   F: upgrade to stone ({Cfg.PieceUpgradeStone(st.PType)} stone)";
+                    AimText += "   X: demolish";
+                }
                 if (m_Net.HeldItem == Item.Ram && st.Team.Value != m_Net.Team.Value && hit.distance <= Cfg.RamRange)
                     AimText += st.Tier.Value == 1 ? "   hold LMB: ram down to wood" : "   hold LMB: ram to smash";
             }
