@@ -317,7 +317,6 @@ MonoBehaviour:
   netGamePrefab: {fileID: 6361076501204360577, guid: 2ee2e89dda4932148ac881a4ba7904cf, type: 3}
   structurePrefab: {fileID: 2095076544528049118, guid: 930e3ca8ef492934c85df354da16b09a, type: 3}
   nodePrefab: {fileID: 126430234597009383, guid: 076a2d0802f47844d9819667a4d46dbf, type: 3}
-  ramPrefab: {fileID: 6189248158570184982, guid: b4c73d9033aa7f94bb8de619fa91bed3, type: 3}
   ballPrefab: {fileID: 1586711424444867887, guid: c99d19f482dfc084aaa7943a5e81fb0a, type: 3}
   baseMaterial: {fileID: 2100000, guid: 2968485d95d7eb14ea05a3f59d9d1a45, type: 2}
   ghostMaterial: {fileID: 2100000, guid: e1d0e856fb54f2d4f9bfb86a4e539a83, type: 2}

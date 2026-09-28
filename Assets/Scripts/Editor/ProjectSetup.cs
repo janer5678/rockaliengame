@@ -65,16 +65,6 @@ namespace RockGame.EditorTools
                 go.AddComponent<NetworkObject>();
                 go.AddComponent<ResourceNode>();
             });
-            var ram = MakePrefab("Ram", go =>
-            {
-                go.AddComponent<NetworkObject>();
-                var nt = go.AddComponent<NetworkTransform>();
-                nt.AuthorityMode = NetworkTransform.AuthorityModes.Server;
-                nt.SyncRotAngleX = false;
-                nt.SyncRotAngleZ = false;
-                nt.SyncScaleX = nt.SyncScaleY = nt.SyncScaleZ = false;
-                go.AddComponent<Ram>();
-            });
             var ball = MakePrefab("Ball", go =>
             {
                 go.AddComponent<NetworkObject>();
@@ -91,10 +81,10 @@ namespace RockGame.EditorTools
                 go.AddComponent<Ball>();
             });
 
-            var prefabs = new[] { player, netGame, structure, node, ram, ball };
+            var prefabs = new[] { player, netGame, structure, node, ball };
             RefreshNetworkHashes(prefabs);
 
-            BuildScene(player, netGame, structure, node, ram, ball, baseMat, ghostMat);
+            BuildScene(player, netGame, structure, node, ball, baseMat, ghostMat);
 
             PlayerSettings.productName = "Rock Base Brawl";
             PlayerSettings.companyName = "RockGame";
@@ -195,7 +185,7 @@ namespace RockGame.EditorTools
             AssetDatabase.SaveAssets();
         }
 
-        static void BuildScene(GameObject player, GameObject netGame, GameObject structure, GameObject node, GameObject ram, GameObject ball, Material baseMat, Material ghostMat)
+        static void BuildScene(GameObject player, GameObject netGame, GameObject structure, GameObject node, GameObject ball, Material baseMat, Material ghostMat)
         {
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
@@ -238,7 +228,6 @@ namespace RockGame.EditorTools
             boot.netGamePrefab = netGame;
             boot.structurePrefab = structure;
             boot.nodePrefab = node;
-            boot.ramPrefab = ram;
             boot.ballPrefab = ball;
             boot.baseMaterial = baseMat;
             boot.ghostMaterial = ghostMat;

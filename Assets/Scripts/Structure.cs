@@ -5,7 +5,7 @@ using UnityEngine;
 
 namespace RockGame
 {
-    /// <summary>A building piece (foundation, wall, doorway, floor, stairs) or a crafting table.</summary>
+    /// <summary>A building piece (foundation, wall, doorway, floor, stairs).</summary>
     public class Structure : NetworkBehaviour
     {
         public static readonly List<Structure> All = new List<Structure>();
@@ -24,7 +24,7 @@ namespace RockGame
 
         public PieceType PType => (PieceType)Type.Value;
         public float MaxHp => Cfg.PieceHp(PType, Tier.Value);
-        public string DisplayName => (PType == PieceType.CraftingTable ? "" : (Tier.Value == 1 ? "Stone " : "Wooden ")) + Cfg.PieceName(PType);
+        public string DisplayName => (Tier.Value == 1 ? "Stone " : "Wooden ") + Cfg.PieceName(PType);
 
         public override void OnNetworkSpawn()
         {
@@ -100,6 +100,13 @@ namespace RockGame
             Health.Value = MaxHp;
         }
 
+        /// <summary>Battering ram hit on stone: knocked back down to a full-health wooden piece.</summary>
+        public void ServerDowngrade()
+        {
+            Tier.Value = 0;
+            Health.Value = MaxHp;
+        }
+
         // ---------------- Visuals (also used for placement ghosts) ----------------
 
         public static GameObject CreateVisual(PieceType t, int tier, Transform parent, bool colliders, Material ghost, out Transform hinge)
@@ -163,21 +170,6 @@ namespace RockGame
                     }
                     break;
                 }
-                case PieceType.CraftingTable:
-                    Art.Box(tr, Art.Wood, new Vector3(0, 0.85f, 0), new Vector3(1.6f, 0.15f, 0.9f));
-                    for (int sx = -1; sx <= 1; sx += 2)
-                    for (int sz = -1; sz <= 1; sz += 2)
-                        Art.Box(tr, Art.DarkWood, new Vector3(sx * 0.7f, 0.4f, sz * 0.35f), new Vector3(0.12f, 0.8f, 0.12f));
-                    Art.Box(tr, Art.Metal, new Vector3(0.4f, 0.98f, 0), new Vector3(0.5f, 0.1f, 0.3f));
-                    Art.Box(tr, Art.Stone, new Vector3(-0.45f, 1.02f, 0.1f), new Vector3(0.3f, 0.2f, 0.3f), new Vector3(0, 30, 0));
-                    Art.Box(tr, Art.DarkWood, new Vector3(0, 0.25f, 0), new Vector3(1.4f, 0.06f, 0.7f));
-                    if (col)
-                    {
-                        var bc = root.AddComponent<BoxCollider>();
-                        bc.center = new Vector3(0, 0.55f, 0);
-                        bc.size = new Vector3(1.6f, 1.1f, 0.9f);
-                    }
-                    break;
             }
 
             if (ghost != null)

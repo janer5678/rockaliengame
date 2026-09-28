@@ -5,6 +5,14 @@ using UnityEngine;
 
 namespace RockGame
 {
+    /// <summary>A thrown spear lying on the ground or stuck in a wall, waiting to be picked up.</summary>
+    public struct DroppedSpear : INetworkSerializeByMemcpy, System.IEquatable<DroppedSpear>
+    {
+        public int Id;
+        public Vector3 Pos, Dir; // Pos = tip, Dir = direction the spear points
+        public bool Equals(DroppedSpear o) => Id == o.Id && Pos == o.Pos && Dir == o.Dir;
+    }
+
     /// <summary>Server-driven match flow: waiting -> gather (ball drop countdown) -> ball live (5 min) -> win or sudden death.</summary>
     public class NetGame : NetworkBehaviour
     {
@@ -15,7 +23,14 @@ namespace RockGame
         public readonly NetworkVariable<sbyte> Winner = new NetworkVariable<sbyte>(-1);
         public readonly NetworkVariable<FixedString128Bytes> EndReason = new NetworkVariable<FixedString128Bytes>();
 
+        public readonly NetworkList<DroppedSpear> Spears = new NetworkList<DroppedSpear>();
+
         public const float SuddenDeathLength = 180f;
+
+        int m_NextSpearId = 1;
+        float m_NextSpearCheck;
+        readonly Dictionary<int, GameObject> m_SpearVisuals = new Dictionary<int, GameObject>();
+        readonly HashSet<int> m_SeenSpears = new HashSet<int>();
 
         public GameState S => (GameState)State.Value;
         public float TimeLeft => IsSpawned ? Mathf.Max(0f, (float)(PhaseEnd.Value - NetworkManager.ServerTime.Time)) : 0f;
@@ -37,13 +52,15 @@ namespace RockGame
             State.OnValueChanged -= OnStateChanged;
             if (IsServer && NetworkManager != null) NetworkManager.OnClientDisconnectCallback -= OnClientDisconnect;
             if (Instance == this) Instance = null;
+            foreach (var v in m_SpearVisuals.Values) if (v) Destroy(v);
+            m_SpearVisuals.Clear();
         }
 
         void OnStateChanged(byte prev, byte cur)
         {
             switch ((GameState)cur)
             {
-                case GameState.PreBall: Hud.Banner("GATHER & BUILD", "Get wood and stone. Craft a Crafting Table first (TAB)."); break;
+                case GameState.PreBall: Hud.Banner("GATHER & BUILD", "Get wood and stone. Craft anywhere with TAB."); break;
                 case GameState.BallLive: Hud.Banner("THE BALL HAS DROPPED", "Grab it from the middle and bring it to your base!"); break;
                 case GameState.SuddenDeath: Hud.Banner("SUDDEN DEATH", "Rocks only. First kill wins."); break;
             }
@@ -51,7 +68,9 @@ namespace RockGame
 
         void Update()
         {
+            SyncSpearVisuals();
             if (!IsServer) return;
+            if (Time.time >= m_NextSpearCheck) { m_NextSpearCheck = Time.time + 0.5f; ServerSettleSpears(); }
             double now = NetworkManager.ServerTime.Time;
             int players = PlayerNet.All.Count;
             bool fast = Bootstrap.Fast;
@@ -133,6 +152,78 @@ namespace RockGame
             var unsupported = BuildGrid.FindUnsupported();
             foreach (var s in unsupported)
                 if (s != null && s.IsSpawned) s.NetworkObject.Despawn(true);
+        }
+
+        // ------------------------------------------------------------------ dropped spears
+
+        public void ServerDropSpear(Vector3 tip, Vector3 dir)
+        {
+            if (dir.sqrMagnitude < 0.01f) dir = Vector3.down;
+            Spears.Add(new DroppedSpear { Id = m_NextSpearId++, Pos = tip, Dir = dir.normalized });
+        }
+
+        /// <summary>Removes the spear if it exists and is within range of <paramref name="from"/>.</summary>
+        public bool ServerTakeSpear(int id, Vector3 from, float range)
+        {
+            for (int i = 0; i < Spears.Count; i++)
+            {
+                if (Spears[i].Id != id) continue;
+                if (Vector3.Distance(Spears[i].Pos, from) > range) return false;
+                Spears.RemoveAt(i);
+                return true;
+            }
+            return false;
+        }
+
+        public bool TryNearestSpear(Vector3 from, float range, out DroppedSpear best)
+        {
+            best = default;
+            float bd = range;
+            bool found = false;
+            foreach (var sp in Spears)
+            {
+                float d = Vector3.Distance(sp.Pos - sp.Dir * 0.6f, from); // measure to the middle of the shaft
+                if (d < bd) { bd = d; best = sp; found = true; }
+            }
+            return found;
+        }
+
+        /// <summary>Spears stuck in something that got destroyed fall to the ground.</summary>
+        void ServerSettleSpears()
+        {
+            for (int i = 0; i < Spears.Count; i++)
+            {
+                var sp = Spears[i];
+                if (Physics.CheckSphere(sp.Pos, 0.25f, ~0, QueryTriggerInteraction.Ignore)) continue;
+                Vector3 p = sp.Pos;
+                if (Physics.Raycast(p + Vector3.up * 0.3f, Vector3.down, out var hit, 200f, ~0, QueryTriggerInteraction.Ignore)) p = hit.point;
+                else p.y = 0;
+                var flat = new Vector3(sp.Dir.x, 0, sp.Dir.z);
+                if (flat.sqrMagnitude < 0.01f) flat = Vector3.forward;
+                sp.Pos = p + Vector3.up * 0.05f;
+                sp.Dir = (flat.normalized + Vector3.down * 0.15f).normalized;
+                Spears[i] = sp;
+            }
+        }
+
+        void SyncSpearVisuals()
+        {
+            m_SeenSpears.Clear();
+            foreach (var sp in Spears)
+            {
+                m_SeenSpears.Add(sp.Id);
+                if (!m_SpearVisuals.TryGetValue(sp.Id, out var go) || !go)
+                {
+                    go = new GameObject("DroppedSpear");
+                    ItemModels.CreateSpearTipForward(go.transform);
+                    m_SpearVisuals[sp.Id] = go;
+                }
+                go.transform.SetPositionAndRotation(sp.Pos, Quaternion.LookRotation(sp.Dir));
+            }
+            if (m_SpearVisuals.Count == m_SeenSpears.Count) return;
+            var gone = new List<int>();
+            foreach (var kv in m_SpearVisuals) if (!m_SeenSpears.Contains(kv.Key)) gone.Add(kv.Key);
+            foreach (var id in gone) { if (m_SpearVisuals[id]) Destroy(m_SpearVisuals[id]); m_SpearVisuals.Remove(id); }
         }
 
         public void Broadcast(string msg) => BroadcastRpc(new FixedString128Bytes(msg.Length > 120 ? msg.Substring(0, 120) : msg));

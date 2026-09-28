@@ -4,7 +4,7 @@ using UnityEngine;
 namespace RockGame
 {
     /// <summary>
-    /// Locally simulated ballistic arrow. The shooter's copy reports hits to the server (client-side hit detection);
+    /// Locally simulated ballistic arrow or thrown spear. The shooter's copy reports hits to the server (client-side hit detection);
     /// everyone else's copy is purely visual.
     /// </summary>
     public class ArrowProjectile : MonoBehaviour
@@ -12,8 +12,9 @@ namespace RockGame
         Vector3 m_Vel;
         PlayerNet m_Shooter;
         Transform m_ShooterRoot;
-        bool m_Report, m_Stuck;
+        bool m_Report, m_Stuck, m_Spear;
         float m_Life = 6f;
+        float m_Gravity = Cfg.ArrowGravity;
 
         public static void Spawn(Vector3 pos, Vector3 vel, PlayerNet shooter, bool report)
         {
@@ -30,16 +31,40 @@ namespace RockGame
             a.m_Report = report;
         }
 
+        /// <summary>Thrown spear. The shooter's copy reports where it landed / who it hit; the networked dropped
+        /// spear (or the spear stuck in the victim) then replaces this local copy.</summary>
+        public static void SpawnSpear(Vector3 pos, Vector3 vel, PlayerNet shooter, bool report)
+        {
+            var go = new GameObject("ThrownSpear");
+            go.transform.SetPositionAndRotation(pos, Quaternion.LookRotation(vel));
+            ItemModels.CreateSpearTipForward(go.transform);
+            var a = go.AddComponent<ArrowProjectile>();
+            a.m_Vel = vel;
+            a.m_Shooter = shooter;
+            a.m_ShooterRoot = shooter != null ? shooter.transform : null;
+            a.m_Report = report;
+            a.m_Spear = true;
+            a.m_Gravity = Cfg.SpearGravity;
+            a.m_Life = 8f;
+        }
+
         void Update()
         {
             m_Life -= Time.deltaTime;
-            if (m_Life <= 0) { Destroy(gameObject); return; }
+            if (m_Life <= 0)
+            {
+                // spear flew for ages without hitting anything: let the server drop it where it is
+                if (m_Spear && !m_Stuck && m_Report && m_Shooter != null && m_Shooter.IsSpawned)
+                    m_Shooter.SpearLandRpc(false, default, transform.position, m_Vel.normalized, false);
+                Destroy(gameObject);
+                return;
+            }
             if (m_Stuck) return;
 
             float dt = Time.deltaTime;
             Vector3 pos = transform.position;
             Vector3 step = m_Vel * dt;
-            m_Vel += Vector3.down * Cfg.ArrowGravity * dt;
+            m_Vel += Vector3.down * m_Gravity * dt;
             float dist = step.magnitude;
             if (dist > 0.0001f)
             {
@@ -59,6 +84,19 @@ namespace RockGame
 
         void OnHit(RaycastHit h)
         {
+            if (m_Spear)
+            {
+                if (m_Report && m_Shooter != null && m_Shooter.IsSpawned)
+                {
+                    var sno = h.collider.GetComponentInParent<NetworkObject>();
+                    bool shead = false;
+                    if (sno != null && sno.TryGetComponent(out PlayerNet sp)) shead = h.point.y > sp.transform.position.y + 1.4f;
+                    if (sno != null) m_Shooter.SpearLandRpc(true, sno, h.point, m_Vel.normalized, shead);
+                    else m_Shooter.SpearLandRpc(false, default, h.point, m_Vel.normalized, false);
+                }
+                Destroy(gameObject);
+                return;
+            }
             m_Stuck = true;
             m_Life = 5f;
             transform.position = h.point - transform.forward * 0.1f;

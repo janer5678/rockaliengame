@@ -208,10 +208,11 @@ namespace RockGame
                 var hc = s_HitKill ? new Color(1, 0.2f, 0.2f) : Color.white;
                 GUI.Label(new Rect(cx - 20, cy - 20, 40, 40), s_HitKill ? "<b><size=30>X</size></b>" : "<b><size=24>x</size></b>", new GUIStyle(m_Center) { normal = { textColor = hc } });
             }
-            if (pc.DrawAmount > 0)
+            float charge = Mathf.Max(pc.DrawAmount, pc.RamCharge);
+            if (charge > 0)
             {
                 Fill(new Rect(cx - 50 * k, cy + 30 * k, 100 * k, 8 * k), new Color(0, 0, 0, 0.5f));
-                Fill(new Rect(cx - 50 * k, cy + 30 * k, 100 * k * pc.DrawAmount, 8 * k), pc.DrawAmount >= 1f ? new Color(1f, 0.85f, 0.2f) : Color.white);
+                Fill(new Rect(cx - 50 * k, cy + 30 * k, 100 * k * charge, 8 * k), charge >= 1f ? new Color(1f, 0.85f, 0.2f) : Color.white);
             }
 
             // ---- aim info / build info ----
@@ -223,16 +224,16 @@ namespace RockGame
                 Shadowed(new Rect(0, by - 52 * k, sw, 26 * k), $"<b>{Cfg.PieceName(p)}</b>  ({Cfg.PieceWood(p)} wood)    RMB: next piece   R: rotate stairs   F: upgrade to stone", m_Center);
                 if (!string.IsNullOrEmpty(pc.BuildHint)) Shadowed(new Rect(0, by - 28 * k, sw, 26 * k), "<color=#ff8888>" + pc.BuildHint + "</color>", m_Center);
             }
-            else if (me.HeldItem == Item.CraftingTable || me.HeldItem == Item.Ram)
-            {
-                Shadowed(new Rect(0, by - 52 * k, sw, 26 * k), "LMB: place " + Cfg.ItemName(me.HeldItem), m_Center);
-                if (!string.IsNullOrEmpty(pc.BuildHint)) Shadowed(new Rect(0, by - 28 * k, sw, 26 * k), "<color=#ff8888>" + pc.BuildHint + "</color>", m_Center);
-            }
+            else if (me.HeldItem == Item.Ram && !me.CarryingBall)
+                Shadowed(new Rect(0, by - 52 * k, sw, 26 * k), $"<b>Battering Ram</b> ({me.RamCharges.Value} hits left)    hold LMB at an enemy piece: wood breaks instantly, stone drops to wood", m_Center);
+            else if (me.HeldItem == Item.Spear && !me.CarryingBall)
+                Shadowed(new Rect(0, by - 52 * k, sw, 26 * k), $"<b>Spear</b> x{me.Spears.Value}    LMB: stab    hold RMB + LMB: throw    E: pick thrown spears back up", m_Center);
 
             // ---- hotbar ----
             float slot = 70 * k, gap = 6 * k;
-            float hx = cx - (8 * slot + 7 * gap) / 2, hy = sh - slot - 14 * k;
-            for (int i = 0; i < 8; i++)
+            int n = Cfg.ItemCount;
+            float hx = cx - (n * slot + (n - 1) * gap) / 2, hy = sh - slot - 14 * k;
+            for (int i = 0; i < n; i++)
             {
                 var it = (Item)i;
                 bool owned = me.Owns(it);
@@ -240,7 +241,7 @@ namespace RockGame
                 var r = new Rect(hx + i * (slot + gap), hy, slot, slot);
                 Fill(r, sel ? new Color(1f, 0.85f, 0.3f, 0.6f) : new Color(0, 0, 0, owned ? 0.5f : 0.2f));
                 string label = ShortName(it);
-                string count = it == Item.Bow ? me.Arrows.Value + " arr" : it == Item.CraftingTable ? "x" + me.Tables.Value : it == Item.Ram ? "x" + me.Rams.Value : "";
+                string count = it == Item.Bow ? me.Arrows.Value + " arr" : it == Item.Spear ? "x" + me.Spears.Value : it == Item.Ram ? me.RamCharges.Value + " hit" : "";
                 var st = new GUIStyle(m_Small) { alignment = TextAnchor.MiddleCenter, wordWrap = true };
                 st.normal.textColor = owned ? Color.white : new Color(1, 1, 1, 0.3f);
                 GUI.Label(r, label, st);
@@ -269,11 +270,12 @@ namespace RockGame
                 string help =
                     "<b>CONTROLS</b>  (F1 hide)\n" +
                     "WASD move · Shift sprint · Space jump\n" +
-                    "LMB attack / gather / place · hold LMB = draw bow\n" +
-                    "1-8 / scroll: switch item\n" +
-                    "TAB: crafting · E: use / pick up / push ram\n" +
+                    "LMB attack / gather / place · hold LMB = draw bow / ram\n" +
+                    "Spear: hold RMB + LMB to throw\n" +
+                    "1-7 / scroll: switch item · TAB: craft anywhere\n" +
+                    "E: use / pick up / pull out spears\n" +
                     "G: throw ball · Esc: pause";
-                var hrct = new Rect(12, 92 * k, 380 * k, 140 * k);
+                var hrct = new Rect(12, 92 * k, 380 * k, 160 * k);
                 Fill(hrct, new Color(0, 0, 0, 0.35f));
                 GUI.Label(new Rect(hrct.x + 8, hrct.y + 4, hrct.width - 10, hrct.height), help, m_Small);
             }
@@ -344,7 +346,6 @@ namespace RockGame
             switch (i)
             {
                 case Item.BuildingPlan: return "Build Plan";
-                case Item.CraftingTable: return "Craft Table";
                 case Item.Hatchet: return "Hatchet";
                 case Item.Pickaxe: return "Pickaxe";
                 default: return i.ToString();
@@ -358,16 +359,15 @@ namespace RockGame
             var r = new Rect((Screen.width - w) / 2, (Screen.height - h) / 2, w, h);
             if (r.Contains(Event.current.mousePosition)) MouseOverUI = true;
             Fill(r, new Color(0.08f, 0.07f, 0.06f, 0.92f));
-            bool near = NearOwnTable(me);
             GUILayout.BeginArea(new Rect(r.x + 16, r.y + 12, r.width - 32, r.height - 24));
             GUILayout.Label("<b><size=" + Mathf.RoundToInt(26 * k) + ">CRAFTING</size></b>", m_Label);
-            GUILayout.Label(near ? "<color=#77ff77>Next to your crafting table</color>" : "<color=#ffaa55>Not near your crafting table - only the table itself can be crafted</color>", m_Small);
+            GUILayout.Label("<color=#bbbbbb>Craft anywhere - no table needed</color>", m_Small);
             GUILayout.Space(8 * k);
             for (int i = 0; i < Cfg.Recipes.Length; i++)
             {
                 var rec = Cfg.Recipes[i];
                 bool afford = me.Wood.Value >= rec.Wood && me.Stone.Value >= rec.Stone;
-                bool can = afford && (!rec.NeedsTable || near);
+                bool can = afford;
                 GUILayout.BeginHorizontal();
                 string cost = rec.Wood + " wood" + (rec.Stone > 0 ? ", " + rec.Stone + " stone" : "");
                 GUILayout.Label($"<b>{rec.Name}</b>\n<size={Mathf.RoundToInt(12 * k)}><color={(afford ? "#bbbbbb" : "#ff7777")}>{cost}</color></size>", m_Label, GUILayout.Width(330 * k));
@@ -379,15 +379,6 @@ namespace RockGame
             GUILayout.FlexibleSpace();
             GUILayout.Label("TAB / Esc to close", m_Small);
             GUILayout.EndArea();
-        }
-
-        static bool NearOwnTable(PlayerNet me)
-        {
-            foreach (var s in Structure.All)
-                if (s.PType == PieceType.CraftingTable && s.Team.Value == me.Team.Value &&
-                    Vector3.Distance(s.transform.position, me.transform.position) <= Cfg.CraftTableRange)
-                    return true;
-            return false;
         }
 
         void DrawGameOver(Bootstrap boot, NetGame game, int myTeam)

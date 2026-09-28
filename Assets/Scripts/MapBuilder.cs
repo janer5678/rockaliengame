@@ -130,4 +130,7 @@ namespace RockGame
             }
         }
     }
+
+    /// <summary>Marks static ground colliders so placement/overlap tests can ignore them.</summary>
+    public class GroundMarker : MonoBehaviour { }
 }

@@ -23,8 +23,9 @@ namespace RockGame
         public readonly NetworkVariable<int> Stone = new NetworkVariable<int>();
         public readonly NetworkVariable<int> Arrows = new NetworkVariable<int>();
         public readonly NetworkVariable<int> OwnedMask = new NetworkVariable<int>();
-        public readonly NetworkVariable<int> Tables = new NetworkVariable<int>();
-        public readonly NetworkVariable<int> Rams = new NetworkVariable<int>();
+        public readonly NetworkVariable<int> Spears = new NetworkVariable<int>();
+        public readonly NetworkVariable<int> RamCharges = new NetworkVariable<int>();  // strikes left on the ram
+        public readonly NetworkVariable<int> StuckSpears = new NetworkVariable<int>(); // thrown spears stuck in this player
 
         // ---- owner-written state ----
         public readonly NetworkVariable<byte> Held = new NetworkVariable<byte>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
@@ -39,8 +40,8 @@ namespace RockGame
             switch (i)
             {
                 case Item.Rock: return true;
-                case Item.CraftingTable: return Tables.Value > 0;
-                case Item.Ram: return Rams.Value > 0;
+                case Item.Spear: return Spears.Value > 0;
+                case Item.Ram: return RamCharges.Value > 0;
                 default: return (OwnedMask.Value & (1 << (int)i)) != 0;
             }
         }
@@ -50,6 +51,8 @@ namespace RockGame
         Transform m_VisualRoot, m_Head, m_Hand;
         GameObject m_HandItem;
         readonly List<Renderer> m_TeamRenderers = new List<Renderer>();
+        readonly List<Material> m_TeamMats = new List<Material>();
+        readonly List<GameObject> m_StuckVisuals = new List<GameObject>();
         float m_Swing;
 
         public override void OnNetworkSpawn()
@@ -85,29 +88,91 @@ namespace RockGame
         {
             m_VisualRoot = new GameObject("body").transform;
             m_VisualRoot.SetParent(transform, false);
-            var torso = Art.Part(m_VisualRoot, Art.Capsule, Color.white, new Vector3(0, 0.85f, 0), new Vector3(0.75f, 0.8f, 0.6f));
-            m_TeamRenderers.Add(torso.GetComponent<Renderer>());
-            Art.Box(m_VisualRoot, new Color(0.25f, 0.2f, 0.18f), new Vector3(0, 0.95f, 0), new Vector3(0.78f, 0.12f, 0.64f)); // belt
             m_Head = new GameObject("head").transform;
             m_Head.SetParent(m_VisualRoot, false);
             m_Head.localPosition = new Vector3(0, 1.6f, 0);
+            if (!BuildAlien()) BuildBlockBody();
+            m_Hand = new GameObject("hand").transform;
+            m_Hand.SetParent(m_VisualRoot, false);
+            m_Hand.localPosition = new Vector3(0.45f, 0.85f, 0.15f); // the alien's right hand
+            Recolor();
+            RebuildHandItem();
+        }
+
+        /// <summary>PSX grey alien (Assets/Game/Resources/Alien, CC0 by surt). Body tinted in the team colour.</summary>
+        bool BuildAlien()
+        {
+            var prefab = Resources.Load<GameObject>("Alien/Alien");
+            if (prefab == null) return false;
+            var model = Instantiate(prefab, m_VisualRoot, false);
+            model.name = "alien";
+            var bodyTex = Resources.Load<Texture2D>("Alien/Alien_Body");
+            var headTex = Resources.Load<Texture2D>("Alien/Alien_Head");
+            foreach (var r in model.GetComponentsInChildren<Renderer>())
+            {
+                var mats = r.sharedMaterials;
+                for (int i = 0; i < mats.Length; i++)
+                {
+                    bool head = mats[i] != null && mats[i].name.Contains("Head");
+                    var m = new Material(Art.Mat(Color.white));
+                    var tex = head ? headTex : bodyTex;
+                    if (tex != null)
+                    {
+                        tex.filterMode = FilterMode.Point;
+                        m.SetTexture("_BaseMap", tex);
+                        m.mainTexture = tex;
+                    }
+                    if (!head) m_TeamMats.Add(m);
+                    mats[i] = m;
+                }
+                r.sharedMaterials = mats;
+            }
+            return true;
+        }
+
+        void BuildBlockBody()
+        {
+            var torso = Art.Part(m_VisualRoot, Art.Capsule, Color.white, new Vector3(0, 0.85f, 0), new Vector3(0.75f, 0.8f, 0.6f));
+            m_TeamRenderers.Add(torso.GetComponent<Renderer>());
+            Art.Box(m_VisualRoot, new Color(0.25f, 0.2f, 0.18f), new Vector3(0, 0.95f, 0), new Vector3(0.78f, 0.12f, 0.64f)); // belt
             Art.Box(m_Head, new Color(0.93f, 0.76f, 0.6f), Vector3.zero, new Vector3(0.42f, 0.42f, 0.42f));
             Art.Box(m_Head, Color.black, new Vector3(-0.09f, 0.05f, 0.21f), new Vector3(0.07f, 0.07f, 0.02f));
             Art.Box(m_Head, Color.black, new Vector3(0.09f, 0.05f, 0.21f), new Vector3(0.07f, 0.07f, 0.02f));
             var band = Art.Box(m_Head, Color.white, new Vector3(0, 0.17f, 0), new Vector3(0.45f, 0.1f, 0.45f));
             m_TeamRenderers.Add(band.GetComponent<Renderer>());
-            m_Hand = new GameObject("hand").transform;
-            m_Hand.SetParent(m_VisualRoot, false);
-            m_Hand.localPosition = new Vector3(0.42f, 1.1f, 0.3f);
-            Art.Box(m_Hand, new Color(0.93f, 0.76f, 0.6f), Vector3.zero, new Vector3(0.14f, 0.14f, 0.14f));
-            Recolor();
-            RebuildHandItem();
         }
 
         void Recolor()
         {
             var c = Cfg.TeamColor[Mathf.Clamp(Team.Value, 0, 1)];
             foreach (var r in m_TeamRenderers) r.sharedMaterial = Art.Mat(c);
+            var tint = Color.Lerp(Color.white, c, 0.6f);
+            foreach (var m in m_TeamMats)
+            {
+                m.SetColor("_BaseColor", tint);
+                m.color = tint;
+            }
+        }
+
+        static readonly Vector3[] k_StuckPos = { new Vector3(0.1f, 1.15f, 0.05f), new Vector3(-0.15f, 0.9f, 0.05f), new Vector3(0.05f, 1.35f, -0.05f), new Vector3(-0.05f, 0.7f, 0f) };
+        static readonly Vector3[] k_StuckDir = { new Vector3(0.1f, -0.3f, -1f), new Vector3(-0.3f, -0.1f, -1f), new Vector3(0.2f, -0.5f, 1f), new Vector3(-0.1f, 0.2f, -1f) };
+
+        void RebuildStuckSpears()
+        {
+            foreach (var g in m_StuckVisuals) if (g) Destroy(g);
+            m_StuckVisuals.Clear();
+            int n = Mathf.Min(StuckSpears.Value, k_StuckPos.Length);
+            for (int i = 0; i < n; i++)
+            {
+                var go = new GameObject("stuckSpear");
+                go.transform.SetParent(m_VisualRoot, false);
+                // tip sits inside the body, the shaft sticks out the way it came from
+                go.transform.localPosition = k_StuckPos[i];
+                go.transform.localRotation = Quaternion.LookRotation(k_StuckDir[i]);
+                ItemModels.CreateSpearTipForward(go.transform);
+                if (IsOwner) Art.SetLayerShadowsOnly(go);
+                m_StuckVisuals.Add(go);
+            }
         }
 
         void RebuildHandItem()
@@ -123,6 +188,7 @@ namespace RockGame
             bool alive = !Dead.Value;
             if (m_VisualRoot.gameObject.activeSelf != alive) m_VisualRoot.gameObject.SetActive(alive);
             if (m_CC.enabled != alive) m_CC.enabled = alive;
+            if (m_StuckVisuals.Count != Mathf.Min(StuckSpears.Value, k_StuckPos.Length)) RebuildStuckSpears();
             if (!IsOwner) m_Head.localRotation = Quaternion.Euler(Pitch.Value * 0.6f, 0, 0);
             if (m_Swing > 0)
             {
@@ -141,8 +207,9 @@ namespace RockGame
         // Server-side logic
         // =====================================================================
 
-        float m_NextMelee, m_NextShot, m_NextBuild, m_NextUpgrade;
+        float m_NextMelee, m_NextShot, m_NextBuild, m_NextUpgrade, m_NextThrow, m_NextRam;
         readonly Queue<float> m_PendingArrows = new Queue<float>();
+        readonly Queue<float> m_PendingSpears = new Queue<float>();
 
         bool GameAllowsCombat => NetGame.Instance == null || NetGame.Instance.S != GameState.GameOver;
         bool InSuddenDeath => NetGame.Instance != null && NetGame.Instance.S == GameState.SuddenDeath;
@@ -158,6 +225,7 @@ namespace RockGame
         {
             Dead.Value = true;
             Health.Value = 0;
+            ServerDropStuckSpears();
             if (CarryingBall) Ball.Instance.ServerDrop(transform.position + Vector3.up * 1.5f, Vector3.up * 3f);
             RespawnAt.Value = NetworkManager.ServerTime.Time + Cfg.RespawnTime;
             var victimName = Cfg.TeamName[Team.Value];
@@ -179,6 +247,7 @@ namespace RockGame
         public void ServerEnterArena()
         {
             if (CarryingBall) Ball.Instance.ServerDrop(transform.position, Vector3.zero);
+            ServerDropStuckSpears();
             Health.Value = Cfg.MaxHealth;
             Dead.Value = false;
             NetGame.SpawnPoint(Team.Value, true, out var pos, out var yaw);
@@ -187,13 +256,17 @@ namespace RockGame
 
         void Notify(string msg) => NotifyRpc(new FixedString128Bytes(msg));
 
-        bool NearOwnTable()
+        /// <summary>Spears stuck in this player fall out onto the ground (death / arena teleport).</summary>
+        void ServerDropStuckSpears()
         {
-            foreach (var s in Structure.All)
-                if (s.PType == PieceType.CraftingTable && s.Team.Value == Team.Value &&
-                    Vector3.Distance(s.transform.position, transform.position) <= Cfg.CraftTableRange + 1f)
-                    return true;
-            return false;
+            var g = NetGame.Instance;
+            for (int i = 0; i < StuckSpears.Value && g != null; i++)
+            {
+                float a = i * 2.1f;
+                var tip = transform.position + new Vector3(Mathf.Cos(a) * 0.6f, 0.05f, Mathf.Sin(a) * 0.6f);
+                g.ServerDropSpear(tip, new Vector3(-Mathf.Sin(a), -0.15f, Mathf.Cos(a)));
+            }
+            StuckSpears.Value = 0;
         }
 
         // ---------------- combat ----------------
@@ -232,12 +305,6 @@ namespace RockGame
                 s.ServerDamage(dmg);
                 HitMarkerRpc(false);
             }
-            else if (no.TryGetComponent(out Ram r))
-            {
-                if (r.Team.Value == Team.Value) return;
-                r.ServerDamage(st.RamDamage);
-                HitMarkerRpc(false);
-            }
         }
 
         [Rpc(SendTo.Server)]
@@ -270,12 +337,90 @@ namespace RockGame
                 if (s.Team.Value == Team.Value || s.Tier.Value == 1) return;
                 s.ServerDamage(Cfg.ArrowWoodStructureDamage);
             }
-            else if (no.TryGetComponent(out Ram r))
+        }
+
+        // ---------------- spear throwing ----------------
+
+        [Rpc(SendTo.Server)]
+        public void ThrowSpearRpc(Vector3 origin, Vector3 velocity)
+        {
+            if (Dead.Value || CarryingBall || InSuddenDeath || HeldItem != Item.Spear || Spears.Value <= 0) return;
+            if (Time.time < m_NextThrow) return;
+            m_NextThrow = Time.time + 0.5f;
+            Spears.Value--;
+            m_PendingSpears.Enqueue(Mathf.Clamp01(velocity.magnitude / Cfg.SpearThrowSpeed));
+            while (m_PendingSpears.Count > 6) m_PendingSpears.Dequeue();
+            SpearVisualRpc(origin, velocity);
+        }
+
+        /// <summary>Reported by the thrower's client when its spear hits something (client-side hit detection, like arrows).</summary>
+        [Rpc(SendTo.Server)]
+        public void SpearLandRpc(bool hasTarget, NetworkObjectReference target, Vector3 point, Vector3 dir, bool head)
+        {
+            if (m_PendingSpears.Count == 0) return;
+            float power = m_PendingSpears.Dequeue();
+            var game = NetGame.Instance;
+            if (game == null) return;
+            if (Vector3.Distance(point, transform.position) > 250f) point = transform.position + Vector3.up; // nonsense report
+            if (dir.sqrMagnitude < 0.01f) dir = transform.forward;
+
+            if (hasTarget && target.TryGet(out var no) && GameAllowsCombat)
             {
-                if (r.Team.Value == Team.Value) return;
-                r.ServerDamage(Cfg.ArrowRamDamage * power);
-                HitMarkerRpc(false);
+                if (no.TryGetComponent(out PlayerNet p) && p != this && !p.Dead.Value)
+                {
+                    p.StuckSpears.Value++; // stuck first so it drops with the body if this kills them
+                    p.ServerDamage(Cfg.SpearThrowDamage * power * (head ? Cfg.HeadshotMul : 1f), this);
+                    HitMarkerRpc(p.Dead.Value);
+                    if (!p.Dead.Value) p.Notify("A spear is stuck in you! Press E to pull it out");
+                    return;
+                }
+                if (no.TryGetComponent(out Structure s) && s.Team.Value != Team.Value && s.Tier.Value == 0)
+                    s.ServerDamage(Cfg.SpearThrowStructureDamage);
             }
+            game.ServerDropSpear(point, dir);
+        }
+
+        [Rpc(SendTo.Server)]
+        public void PickupSpearRpc(int id)
+        {
+            if (Dead.Value || NetGame.Instance == null) return;
+            if (NetGame.Instance.ServerTakeSpear(id, transform.position + Vector3.up, Cfg.SpearPickupRange + 2f)) Spears.Value++;
+        }
+
+        /// <summary>Pull a stuck spear out of a player (yourself or someone else) and keep it.</summary>
+        [Rpc(SendTo.Server)]
+        public void PullSpearRpc(NetworkObjectReference target)
+        {
+            if (Dead.Value || !target.TryGet(out var no) || !no.TryGetComponent(out PlayerNet p)) return;
+            if (p.Dead.Value || p.StuckSpears.Value <= 0) return;
+            if (p != this && Vector3.Distance(p.transform.position, transform.position) > Cfg.InteractRange + 1.5f) return;
+            p.StuckSpears.Value--;
+            Spears.Value++;
+            if (p != this) p.Notify($"{Cfg.TeamName[Team.Value]} pulled a spear out of you");
+        }
+
+        // ---------------- battering ram ----------------
+
+        /// <summary>Hand-held ram strike after a full wind-up: destroys a wooden piece, knocks a stone piece down to wood.</summary>
+        [Rpc(SendTo.Server)]
+        public void RamStrikeRpc(NetworkObjectReference target, Vector3 point)
+        {
+            if (Dead.Value || CarryingBall || InSuddenDeath || HeldItem != Item.Ram || RamCharges.Value <= 0 || !GameAllowsCombat) return;
+            if (Time.time < m_NextRam) return;
+            m_NextRam = Time.time + Cfg.RamWindup * 0.85f;
+            SwingRpc();
+            if (!target.TryGet(out var no) || !no.TryGetComponent(out Structure s)) return;
+            if (s.Team.Value == Team.Value) return;
+            if (Vector3.Distance(EyePos, point) > Cfg.RamRange + 2f) return;
+
+            bool stone = s.Tier.Value == 1;
+            string name = s.DisplayName;
+            if (stone) s.ServerDowngrade();
+            else s.ServerDamage(s.Health.Value + 1f);
+            RamCharges.Value--;
+            HitMarkerRpc(false);
+            Notify((stone ? $"Smashed the {name} down to wood" : $"Smashed the {name}!") +
+                   (RamCharges.Value > 0 ? $"  ({RamCharges.Value} ram hits left)" : "  - your ram broke"));
         }
 
         // ---------------- crafting ----------------
@@ -287,7 +432,6 @@ namespace RockGame
             if (InSuddenDeath || (NetGame.Instance != null && NetGame.Instance.S == GameState.GameOver)) return;
             var r = Cfg.Recipes[recipe];
             var id = (Cfg.R)recipe;
-            if (r.NeedsTable && !NearOwnTable()) { Notify("You must stand next to your Crafting Table"); return; }
 
             Item unique = Item.Rock;
             switch (id)
@@ -295,7 +439,6 @@ namespace RockGame
                 case Cfg.R.BuildingPlan: unique = Item.BuildingPlan; break;
                 case Cfg.R.Hatchet: unique = Item.Hatchet; break;
                 case Cfg.R.Pickaxe: unique = Item.Pickaxe; break;
-                case Cfg.R.Spear: unique = Item.Spear; break;
                 case Cfg.R.Bow: unique = Item.Bow; break;
             }
             if (unique != Item.Rock && Owns(unique)) { Notify($"You already have a {Cfg.ItemName(unique)}"); return; }
@@ -304,9 +447,9 @@ namespace RockGame
             Wood.Value -= r.Wood;
             Stone.Value -= r.Stone;
             if (unique != Item.Rock) OwnedMask.Value |= 1 << (int)unique;
-            else if (id == Cfg.R.CraftingTable) Tables.Value++;
+            else if (id == Cfg.R.Spear) Spears.Value++;
             else if (id == Cfg.R.Arrows) Arrows.Value += Cfg.ArrowsPerCraft;
-            else if (id == Cfg.R.Ram) Rams.Value++;
+            else if (id == Cfg.R.Ram) RamCharges.Value += Cfg.RamUses;
             Notify($"Crafted {r.Name}");
         }
 
@@ -316,7 +459,7 @@ namespace RockGame
         public void PlaceRpc(byte type, int i, int j, int l, int d)
         {
             var t = (PieceType)type;
-            if (t == PieceType.CraftingTable || type > (byte)PieceType.CraftingTable) return;
+            if (type > (byte)PieceType.Stairs) return;
             if (Dead.Value || CarryingBall || !Owns(Item.BuildingPlan) || HeldItem != Item.BuildingPlan || InSuddenDeath) return;
             if (Time.time < m_NextBuild) return;
 
@@ -362,29 +505,6 @@ namespace RockGame
         }
 
         [Rpc(SendTo.Server)]
-        public void PlaceTableRpc(Vector3 pos, float yaw)
-        {
-            if (Dead.Value || CarryingBall || Tables.Value <= 0 || HeldItem != Item.CraftingTable || InSuddenDeath) return;
-            if (Cfg.BaseTeamAt(pos) != Team.Value) { Notify("The crafting table must go inside your base"); return; }
-            if (Vector3.Distance(pos, transform.position) > 7f) return;
-            var rot = Quaternion.Euler(0, yaw, 0);
-            var hits = Physics.OverlapBox(pos + Vector3.up * 0.6f, new Vector3(0.7f, 0.45f, 0.35f), rot, ~0, QueryTriggerInteraction.Ignore);
-            foreach (var h in hits)
-            {
-                if (h.GetComponentInParent<GroundMarker>() != null) continue;
-                var s = h.GetComponentInParent<Structure>();
-                if (s != null && (s.PType == PieceType.Foundation || s.PType == PieceType.Floor)) continue;
-                Notify("Placement blocked");
-                return;
-            }
-            Tables.Value--;
-            var go = Instantiate(Bootstrap.I.structurePrefab, pos, rot);
-            go.GetComponent<Structure>().ServerInit(PieceType.CraftingTable, Team.Value, default, false);
-            go.GetComponent<NetworkObject>().Spawn(true);
-            Notify("Crafting table placed - press TAB near it to craft");
-        }
-
-        [Rpc(SendTo.Server)]
         public void UpgradeRpc(NetworkObjectReference target)
         {
             if (Dead.Value || !Owns(Item.BuildingPlan) || HeldItem != Item.BuildingPlan || InSuddenDeath) return;
@@ -398,22 +518,6 @@ namespace RockGame
             Stone.Value -= cost;
             m_NextUpgrade = Time.time + Cfg.UpgradeCooldown * 0.85f;
             s.ServerUpgrade();
-        }
-
-        [Rpc(SendTo.Server)]
-        public void PlaceRamRpc(Vector3 pos, float yaw)
-        {
-            if (Dead.Value || CarryingBall || Rams.Value <= 0 || HeldItem != Item.Ram || InSuddenDeath) return;
-            if (Vector3.Distance(pos, transform.position) > 9f) return;
-            var rot = Quaternion.Euler(0, yaw, 0);
-            var hits = Physics.OverlapBox(pos + Vector3.up * (Ram.HalfExtents.y + 0.3f), Ram.HalfExtents - Vector3.one * 0.1f, rot, ~0, QueryTriggerInteraction.Ignore);
-            foreach (var h in hits)
-                if (h.GetComponentInParent<GroundMarker>() == null) { Notify("Not enough room for the ram"); return; }
-            Rams.Value--;
-            var go = Instantiate(Bootstrap.I.ramPrefab, pos, rot);
-            go.GetComponent<Ram>().ServerInit(Team.Value);
-            go.GetComponent<NetworkObject>().Spawn(true);
-            Notify("Ram placed - hold E next to it to push. It smashes enemy walls in front of it.");
         }
 
         // ---------------- interaction ----------------
@@ -445,13 +549,6 @@ namespace RockGame
             Ball.Instance.ServerDrop(transform.position + Vector3.up * 2.4f, velocity);
         }
 
-        [Rpc(SendTo.Server)]
-        public void PushRamRpc(NetworkObjectReference target, Vector3 dir)
-        {
-            if (Dead.Value || !target.TryGet(out var no) || !no.TryGetComponent(out Ram r)) return;
-            if (Vector3.Distance(r.transform.position, transform.position) > 4.5f) return;
-            r.ServerPush(dir);
-        }
 
         // =====================================================================
         // Server -> client
@@ -475,5 +572,8 @@ namespace RockGame
 
         [Rpc(SendTo.NotOwner)]
         public void ArrowVisualRpc(Vector3 origin, Vector3 velocity) => ArrowProjectile.Spawn(origin, velocity, this, false);
+
+        [Rpc(SendTo.NotOwner)]
+        public void SpearVisualRpc(Vector3 origin, Vector3 velocity) => ArrowProjectile.SpawnSpear(origin, velocity, this, false);
     }
 }

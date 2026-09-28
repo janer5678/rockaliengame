@@ -6,7 +6,7 @@ namespace RockGame
 {
     /// <summary>
     /// Headless end-to-end test driver. Inactive unless launched with "-autotest ball" or "-autotest sd".
-    /// Drives real RPCs through the network: gather -> craft -> place table -> build -> (ball capture | sudden death kill).
+    /// Drives real RPCs through the network: gather -> craft -> build -> (ball capture | sudden death kill).
     /// </summary>
     public class AutoTest : MonoBehaviour
     {
@@ -75,19 +75,10 @@ namespace RockGame
             Log($"gathered wood={me.Wood.Value} stone={me.Stone.Value}");
             Check(me.Wood.Value >= 180, "gathered enough wood");
 
-            // ---- craft + place crafting table ----
-            me.CraftRpc((int)Cfg.R.CraftingTable);
-            yield return new WaitForSeconds(0.6f);
-            Check(me.Tables.Value == 1, "crafted crafting table");
             Vector3 stand = baseC + new Vector3(-4, 0.1f, team == 1 ? -3 : 3);
             pc.LocalTeleport(stand, 0);
-            me.Held.Value = (byte)Item.CraftingTable;
-            yield return new WaitForSeconds(0.4f);
-            me.PlaceTableRpc(baseC + new Vector3(-6, 0, team == 1 ? 1 : -1), 0);
-            yield return new WaitForSeconds(0.6f);
-            Check(CountStructures(PieceType.CraftingTable, team) == 1, "crafting table placed");
 
-            // ---- craft building plan & build ----
+            // ---- craft building plan (anywhere) & build ----
             me.CraftRpc((int)Cfg.R.BuildingPlan);
             yield return new WaitForSeconds(0.6f);
             Check(me.Owns(Item.BuildingPlan), "crafted building plan");
@@ -161,19 +152,13 @@ namespace RockGame
             me.Stone.Value = 2000;
 
             pc.LocalTeleport(baseC + new Vector3(-4, 0.1f, 3), 0);
-            me.CraftRpc((int)Cfg.R.CraftingTable);
-            yield return new WaitForSeconds(0.4f);
-            me.Held.Value = (byte)Item.CraftingTable;
-            yield return new WaitForSeconds(0.4f);
-            me.PlaceTableRpc(baseC + new Vector3(-6, 0, -1), 0);
-            yield return new WaitForSeconds(0.5f);
             foreach (var r in new[] { Cfg.R.BuildingPlan, Cfg.R.Hatchet, Cfg.R.Pickaxe, Cfg.R.Spear, Cfg.R.Bow, Cfg.R.Arrows, Cfg.R.Ram })
             {
                 me.CraftRpc((int)r);
                 yield return new WaitForSeconds(0.3f);
             }
             Check(me.Owns(Item.BuildingPlan) && me.Owns(Item.Hatchet) && me.Owns(Item.Pickaxe) && me.Owns(Item.Spear) && me.Owns(Item.Bow)
-                  && me.Arrows.Value == Cfg.ArrowsPerCraft && me.Rams.Value == 1, "host crafted all tools, arrows and a ram");
+                  && me.Arrows.Value == Cfg.ArrowsPerCraft && me.Spears.Value == 1 && me.RamCharges.Value == Cfg.RamUses, "host crafted all tools, arrows, a spear and a ram (no table)");
 
             // build + upgrade + door
             me.Held.Value = (byte)Item.BuildingPlan;
@@ -226,8 +211,41 @@ namespace RockGame
             me.ArrowHitRpc(other.NetworkObject, other.transform.position + Vector3.up, false);
             yield return new WaitForSeconds(0.5f);
             Check(other.Health.Value < hpBefore - 40f && me.Arrows.Value == Cfg.ArrowsPerCraft - 1, $"arrow hit opponent (hp {hpBefore:0} -> {other.Health.Value:0})");
+            other.Health.Value = Cfg.MaxHealth; // keep the client alive so it can keep gathering/building
 
-            // ram raid on the opponent's wall
+            // thrown spear sticks in the opponent, then gets pulled out
+            me.Held.Value = (byte)Item.Spear;
+            yield return new WaitForSeconds(0.4f);
+            hpBefore = other.Health.Value;
+            me.ThrowSpearRpc(me.EyePos, Vector3.forward * Cfg.SpearThrowSpeed);
+            yield return new WaitForSeconds(0.1f);
+            me.SpearLandRpc(true, other.NetworkObject, other.transform.position + Vector3.up, Vector3.forward, false);
+            yield return new WaitForSeconds(0.5f);
+            Check(me.Spears.Value == 0 && other.StuckSpears.Value == 1 && other.Health.Value < hpBefore, $"thrown spear stuck in opponent (hp {hpBefore:0} -> {other.Health.Value:0})");
+            pc.LocalTeleport(other.transform.position + new Vector3(1.5f, 0, 0), 270f);
+            yield return new WaitForSeconds(0.4f);
+            me.PullSpearRpc(other.NetworkObject);
+            yield return new WaitForSeconds(0.5f);
+            Check(me.Spears.Value == 1 && other.StuckSpears.Value == 0, "pulled the spear out of the opponent");
+            other.Health.Value = Cfg.MaxHealth;
+            me.Held.Value = (byte)Item.Spear; // we auto-switched to the rock when the last spear left our hand
+            yield return new WaitForSeconds(0.4f);
+            me.ThrowSpearRpc(me.EyePos, Vector3.forward * Cfg.SpearThrowSpeed);
+            yield return new WaitForSeconds(0.1f);
+            var landAt = me.transform.position + new Vector3(0, 0.05f, 4f);
+            me.SpearLandRpc(false, default, landAt, Vector3.down, false);
+            yield return new WaitForSeconds(0.5f);
+            Check(NetGame.Instance.Spears.Count == 1 && me.Spears.Value == 0, $"thrown spear landed on the ground (dropped={NetGame.Instance.Spears.Count}, held={me.Spears.Value})");
+            if (NetGame.Instance.Spears.Count == 1)
+            {
+                pc.LocalTeleport(landAt + new Vector3(0, 0.05f, -1f), 0);
+                yield return new WaitForSeconds(0.4f);
+                me.PickupSpearRpc(NetGame.Instance.Spears[0].Id);
+                yield return new WaitForSeconds(0.5f);
+                Check(NetGame.Instance.Spears.Count == 0 && me.Spears.Value == 1, "picked the spear back up");
+            }
+
+            // hand-held ram on the opponent's wall
             float waitUntil = Time.time + 60f;
             Structure enemyWall = null;
             while (enemyWall == null && Time.time < waitUntil)
@@ -237,25 +255,20 @@ namespace RockGame
             }
             Check(enemyWall != null, "opponent built a wall to raid");
             if (enemyWall == null) yield break;
+            yield return new WaitForSeconds(4f); // let the client verify its wall before we smash it
             var wp = enemyWall.transform.position;
             me.Held.Value = (byte)Item.Ram;
-            pc.LocalTeleport(new Vector3(wp.x, 0.1f, wp.z + 9f), 180f);
-            yield return new WaitForSeconds(0.5f);
-            me.PlaceRamRpc(new Vector3(wp.x, 0f, wp.z + 5f), 180f);
+            pc.LocalTeleport(new Vector3(wp.x, 0.1f, wp.z + 1.5f), 180f);
+            yield return new WaitForSeconds(Cfg.RamWindup);
+            me.RamStrikeRpc(enemyWall.NetworkObject, wp + Vector3.up * 1.5f);
             yield return new WaitForSeconds(0.6f);
-            Check(Ram.All.Count == 1 && me.Rams.Value == 0, "ram placed");
-            if (Ram.All.Count == 0) yield break;
-            var ram = Ram.All[0];
-            float ramStart = ram.transform.position.z;
-            float end = Time.time + 25f;
-            while (enemyWall != null && enemyWall.IsSpawned && Time.time < end)
+            Check(!enemyWall.IsSpawned && me.RamCharges.Value == Cfg.RamUses - 1, "ram smashed the wooden wall in one hit");
+            if (wall != null && wall.IsSpawned)
             {
-                pc.LocalTeleport(ram.transform.position + new Vector3(0, 0.1f, 2.6f), 180f);
-                me.PushRamRpc(ram.NetworkObject, Vector3.back);
-                yield return new WaitForSeconds(0.1f);
+                // the ram can't hit your own walls, so exercise the stone -> wood path directly on ours
+                wall.ServerDowngrade();
+                Check(wall.Tier.Value == 0 && Mathf.Approximately(wall.Health.Value, Cfg.PieceHp(PieceType.Wall, 0)), "stone downgrades to full-health wood");
             }
-            Log($"ram moved {ramStart - ram.transform.position.z:0.0}m, strikes={ram.Strikes.Value}");
-            Check(enemyWall == null || !enemyWall.IsSpawned, "battering ram destroyed the enemy wall");
             pc.LocalTeleport(baseC + new Vector3(-4, 0.1f, 3), 0);
         }
 
@@ -278,12 +291,6 @@ namespace RockGame
             me.Wood.Value = 9000;
             me.Stone.Value = 3000;
             pc.LocalTeleport(new Vector3(0, 0.1f, -81f), 0);
-            me.CraftRpc((int)Cfg.R.CraftingTable);
-            yield return new WaitForSeconds(0.3f);
-            me.Held.Value = (byte)Item.CraftingTable;
-            yield return new WaitForSeconds(0.3f);
-            me.PlaceTableRpc(new Vector3(-3, 0, -83), 20);
-            yield return new WaitForSeconds(0.3f);
             foreach (var r in new[] { Cfg.R.BuildingPlan, Cfg.R.Bow, Cfg.R.Arrows, Cfg.R.Ram, Cfg.R.Spear })
             {
                 me.CraftRpc((int)r);
@@ -316,16 +323,13 @@ namespace RockGame
             pc.BuildPiece = PieceType.Foundation;
             yield return Shot("01_base_and_ghost");
 
-            // 2: ram + crafting table
+            // 2: ram + spear
             me.Held.Value = (byte)Item.Ram;
-            yield return new WaitForSeconds(0.3f);
-            pc.LocalTeleport(new Vector3(10, 0.1f, -92f), 0);
-            me.PlaceRamRpc(new Vector3(10, 0, -86f), -30f);
-            yield return new WaitForSeconds(0.5f);
-            me.Held.Value = (byte)Item.Spear;
             pc.LocalTeleport(new Vector3(14, 0.1f, -92f), 0);
             pc.SetLook(-40f, 12f);
-            yield return Shot("02_ram_and_spear");
+            yield return Shot("02_ram");
+            me.Held.Value = (byte)Item.Spear;
+            yield return Shot("02b_spear");
 
             // 3: ball
             while (Ball.Instance == null) yield return null;
@@ -358,6 +362,16 @@ namespace RockGame
             pc.SetLook(60f, 5f);
             me.Held.Value = (byte)Item.Rock;
             yield return Shot("06_nodes");
+
+            // 7: the other player's alien model (only when a client joined instead of -solo)
+            foreach (var p in PlayerNet.All)
+            {
+                if (p == me) continue;
+                var fwd = p.transform.forward;
+                pc.LocalTeleport(p.transform.position + fwd * 3f + Vector3.up * 0.1f, Quaternion.LookRotation(-fwd).eulerAngles.y);
+                pc.SetLook(Quaternion.LookRotation(-fwd).eulerAngles.y, 8f);
+                yield return Shot("07_alien");
+            }
             Application.Quit(0);
         }
 

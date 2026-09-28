@@ -40,16 +40,27 @@ namespace RockGame
                     Art.Box(t, Art.Wood, new Vector3(0, -0.2f, 0.06f), new Vector3(0.04f, 0.4f, 0.04f), new Vector3(20, 0, 0));
                     Art.Box(t, new Color(0.9f, 0.9f, 0.85f), new Vector3(0, 0, -0.02f), new Vector3(0.01f, 0.75f, 0.01f));
                     break;
-                case Item.CraftingTable:
-                    Art.Box(t, Art.Wood, new Vector3(0, 0.1f, 0.05f), new Vector3(0.3f, 0.06f, 0.2f));
-                    Art.Box(t, Art.DarkWood, new Vector3(0, 0.0f, 0.05f), new Vector3(0.26f, 0.14f, 0.16f));
-                    break;
                 case Item.Ram:
-                    Art.Part(t, Art.Cylinder, Art.Wood, new Vector3(0, 0.1f, 0.1f), new Vector3(0.12f, 0.25f, 0.12f), new Vector3(90, 0, 0));
-                    Art.Box(t, Art.Metal, new Vector3(0, 0.1f, 0.36f), new Vector3(0.14f, 0.14f, 0.05f));
+                    // a heavy log carried under the arm, iron-capped at the front (+Z)
+                    Art.Part(t, Art.Cylinder, Art.Wood, new Vector3(0, 0, 0.1f), new Vector3(0.24f, 0.6f, 0.24f), new Vector3(90, 0, 0));
+                    Art.Part(t, Art.Cylinder, Art.Metal, new Vector3(0, 0, 0.68f), new Vector3(0.28f, 0.06f, 0.28f), new Vector3(90, 0, 0));
+                    Art.Box(t, Art.Metal, new Vector3(0, 0, 0.76f), new Vector3(0.2f, 0.2f, 0.1f));
+                    Art.Part(t, Art.Cylinder, Art.Metal, new Vector3(0, 0, 0.3f), new Vector3(0.26f, 0.03f, 0.26f), new Vector3(90, 0, 0));
+                    Art.Part(t, Art.Cylinder, Art.Metal, new Vector3(0, 0, -0.2f), new Vector3(0.26f, 0.03f, 0.26f), new Vector3(90, 0, 0));
+                    Art.Box(t, Art.DarkWood, new Vector3(0, 0.15f, -0.05f), new Vector3(0.04f, 0.1f, 0.04f));
+                    Art.Box(t, Art.DarkWood, new Vector3(0, 0.15f, 0.25f), new Vector3(0.04f, 0.1f, 0.04f));
                     break;
             }
             return root;
+        }
+
+        /// <summary>Spear model with its tip at the local origin, pointing along +Z (thrown, dropped and stuck spears).</summary>
+        public static GameObject CreateSpearTipForward(Transform parent)
+        {
+            var go = Create(Item.Spear, parent);
+            go.transform.localRotation = Quaternion.Euler(90, 0, 0);
+            go.transform.localPosition = new Vector3(0, 0, -1.28f);
+            return go;
         }
     }
 }

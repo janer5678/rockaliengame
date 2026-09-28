@@ -13,7 +13,8 @@ namespace RockGame
         public bool MenuOpen, Paused;
         public PieceType BuildPiece = PieceType.Foundation;
         public string AimText = "", BuildHint = "";
-        public float DrawAmount { get; private set; }
+        public float DrawAmount { get; private set; } // bow draw / spear wind-up, 0..1
+        public float RamCharge { get; private set; }  // ram wind-up, 0..1
 
         const float k_Sensitivity = 2f;
         static readonly PieceType[] k_Pieces = { PieceType.Foundation, PieceType.Wall, PieceType.Doorway, PieceType.Floor, PieceType.Stairs };
@@ -25,7 +26,7 @@ namespace RockGame
         Camera m_Cam;
 
         float m_Yaw, m_Pitch, m_VelY, m_Bob;
-        float m_NextSwing, m_SwingDur = 0.6f, m_ViewSwing, m_NextBuild, m_NextUpgrade, m_NextPush, m_DrawStart = -1f;
+        float m_NextSwing, m_SwingDur = 0.6f, m_ViewSwing, m_NextBuild, m_NextUpgrade, m_DrawStart = -1f;
         int m_RotOffset;
 
         Transform m_ViewRoot;
@@ -37,8 +38,6 @@ namespace RockGame
         bool m_GhostOk;
         readonly List<MeshRenderer> m_GhostRenderers = new List<MeshRenderer>();
         PieceKey m_GhostKey;
-        Vector3 m_GhostPos;
-        float m_GhostYaw;
         readonly HashSet<PieceKey> m_ClientKeys = new HashSet<PieceKey>();
 
         public override void OnNetworkSpawn()
@@ -133,10 +132,11 @@ namespace RockGame
                     wish = transform.right * h + transform.forward * fwdInput;
                     if (wish.sqrMagnitude > 1f) wish.Normalize();
                 }
-                bool sprint = input && Input.GetKey(KeyCode.LeftShift) && fwdInput > 0 && m_DrawStart < 0;
+                bool sprint = input && Input.GetKey(KeyCode.LeftShift) && fwdInput > 0 && m_DrawStart < 0 && RamCharge <= 0;
                 float speed = sprint ? Cfg.SprintSpeed : Cfg.WalkSpeed;
                 if (carrying) speed *= Cfg.BallCarrySpeedMul;
                 if (m_DrawStart >= 0) speed *= 0.6f;
+                if (m_Net.HeldItem == Item.Ram) speed *= Cfg.RamMoveMul;
 
                 if (m_CC.isGrounded)
                 {
@@ -161,20 +161,17 @@ namespace RockGame
             // ---- actions ----
             if (input && !carrying && !gameOver)
             {
-                if (Cfg.IsMelee(held)) HandleMelee(held);
+                if (held == Item.Spear) HandleSpear();
+                else if (Cfg.IsMelee(held)) HandleMelee(held);
                 else if (held == Item.Bow) HandleBow();
                 else if (held == Item.BuildingPlan) HandleBuildInput();
-                else if (held == Item.CraftingTable || held == Item.Ram)
-                {
-                    if (Input.GetMouseButtonDown(0) && m_GhostOk)
-                    {
-                        if (held == Item.CraftingTable) m_Net.PlaceTableRpc(m_GhostPos, m_GhostYaw);
-                        else m_Net.PlaceRamRpc(m_GhostPos, m_GhostYaw);
-                    }
-                }
+                else if (held == Item.Ram) HandleRam();
             }
-            if (held != Item.Bow || !input) m_DrawStart = -1f;
-            DrawAmount = m_DrawStart >= 0 ? Mathf.Clamp01((Time.time - m_DrawStart) / Cfg.BowDrawTime) : 0f;
+            bool drawing = input && !carrying && !gameOver && (held == Item.Bow || held == Item.Spear);
+            if (!drawing) m_DrawStart = -1f;
+            float drawTime = held == Item.Spear ? Cfg.SpearDrawTime : Cfg.BowDrawTime;
+            DrawAmount = m_DrawStart >= 0 ? Mathf.Clamp01((Time.time - m_DrawStart) / drawTime) : 0f;
+            if (!input || carrying || gameOver || held != Item.Ram || !Input.GetMouseButton(0)) RamCharge = 0f;
 
             HandleInteract(input, carrying);
             UpdateGhost(input && !carrying && !gameOver ? held : Item.Rock);
@@ -197,16 +194,16 @@ namespace RockGame
             Item want = cur;
             if (input)
             {
-                for (int k = 0; k < 8; k++)
+                for (int k = 0; k < Cfg.ItemCount; k++)
                     if (Input.GetKeyDown(KeyCode.Alpha1 + k) && m_Net.Owns((Item)k)) want = (Item)k;
                 float scroll = Input.mouseScrollDelta.y;
                 if (scroll != 0)
                 {
                     int dir = scroll < 0 ? 1 : -1;
                     int idx = (int)want;
-                    for (int n = 0; n < 8; n++)
+                    for (int n = 0; n < Cfg.ItemCount; n++)
                     {
-                        idx = (idx + dir + 8) % 8;
+                        idx = (idx + dir + Cfg.ItemCount) % Cfg.ItemCount;
                         if (m_Net.Owns((Item)idx)) { want = (Item)idx; break; }
                     }
                 }
@@ -255,7 +252,7 @@ namespace RockGame
             if (Input.GetMouseButtonDown(0))
             {
                 if (m_Net.Arrows.Value > 0) m_DrawStart = Time.time;
-                else Hud.Push("No arrows - craft some at your crafting table");
+                else Hud.Push("No arrows - craft some (TAB)");
             }
             if (Input.GetMouseButtonDown(1)) m_DrawStart = -1f;
             if (Input.GetMouseButtonUp(0) && m_DrawStart >= 0)
@@ -270,6 +267,49 @@ namespace RockGame
                 ArrowProjectile.Spawn(origin, vel, m_Net, true);
                 m_Net.FireArrowRpc(origin, vel);
             }
+        }
+
+        /// <summary>Rust style: LMB stabs; hold RMB to wind up, then LMB throws. Releasing RMB cancels.</summary>
+        void HandleSpear()
+        {
+            if (Input.GetMouseButtonDown(1)) m_DrawStart = Time.time;
+            if (!Input.GetMouseButton(1)) m_DrawStart = -1f;
+            if (m_DrawStart < 0) { HandleMelee(Item.Spear); return; }
+
+            if (Input.GetMouseButtonDown(0) && Time.time >= m_NextSwing)
+            {
+                float t = Time.time - m_DrawStart;
+                if (t < Cfg.SpearMinDraw) return;
+                float power = Mathf.Lerp(0.4f, 1f, Mathf.Clamp01(t / Cfg.SpearDrawTime));
+                var ray = CenterRay();
+                Vector3 origin = ray.origin + ray.direction * 0.8f;
+                Vector3 vel = ray.direction * Cfg.SpearThrowSpeed * power;
+                ArrowProjectile.SpawnSpear(origin, vel, m_Net, true);
+                m_Net.ThrowSpearRpc(origin, vel);
+                m_DrawStart = -1f;
+                m_NextSwing = Time.time + 0.6f;
+                m_SwingDur = 0.4f;
+                m_ViewSwing = 1f;
+            }
+        }
+
+        /// <summary>Hold LMB to wind the ram up; at full charge it slams the enemy piece you're looking at.</summary>
+        void HandleRam()
+        {
+            if (!Input.GetMouseButton(0)) return;
+            RamCharge = Mathf.Min(1f, RamCharge + Time.deltaTime / Cfg.RamWindup);
+            if (RamCharge < 1f) return;
+
+            RamCharge = 0f;
+            m_SwingDur = 0.5f;
+            m_ViewSwing = 1f;
+            if (Aim(CenterRay(), Cfg.RamRange, out var hit))
+            {
+                var s = hit.collider.GetComponentInParent<Structure>();
+                if (s != null && s.Team.Value != m_Net.Team.Value) { m_Net.RamStrikeRpc(s.NetworkObject, hit.point); return; }
+                if (s != null) { Hud.Push("That's your own building"); return; }
+            }
+            Hud.Push("The ram only works on enemy buildings - get right up to one");
         }
 
         void HandleBuildInput()
@@ -297,7 +337,7 @@ namespace RockGame
                 if (Aim(CenterRay(), Cfg.BuildRange, out var hit))
                 {
                     var s = hit.collider.GetComponentInParent<Structure>();
-                    if (s != null && s.PType != PieceType.CraftingTable)
+                    if (s != null)
                     {
                         m_NextUpgrade = Time.time + Cfg.UpgradeCooldown;
                         m_Net.UpgradeRpc(s.NetworkObject);
@@ -315,43 +355,30 @@ namespace RockGame
                 m_Net.DropBallRpc(CenterRay().direction * 10f + Vector3.up * 3f);
                 return;
             }
-            if (Input.GetKeyDown(KeyCode.E))
+            if (!Input.GetKeyDown(KeyCode.E)) return;
+            if (carrying) { m_Net.DropBallRpc(CenterRay().direction * 3f + Vector3.up * 1f); return; }
+            if (ball != null && !ball.IsCarried && Vector3.Distance(ball.transform.position, transform.position + Vector3.up) < Cfg.InteractRange + 0.5f)
             {
-                if (carrying) { m_Net.DropBallRpc(CenterRay().direction * 3f + Vector3.up * 1f); return; }
-                if (ball != null && !ball.IsCarried && Vector3.Distance(ball.transform.position, transform.position + Vector3.up) < Cfg.InteractRange + 0.5f)
+                m_Net.PickupBallRpc();
+                return;
+            }
+            if (NetGame.Instance != null && NetGame.Instance.TryNearestSpear(transform.position + Vector3.up, Cfg.SpearPickupRange, out var sp))
+            {
+                m_Net.PickupSpearRpc(sp.Id);
+                return;
+            }
+            if (Aim(CenterRay(), Cfg.InteractRange + 1f, out var hit))
+            {
+                var no = hit.collider.GetComponentInParent<NetworkObject>();
+                if (no != null && no.TryGetComponent(out PlayerNet p) && p.StuckSpears.Value > 0)
                 {
-                    m_Net.PickupBallRpc();
+                    m_Net.PullSpearRpc(p.NetworkObject);
                     return;
                 }
-                if (Aim(CenterRay(), Cfg.InteractRange, out var hit))
-                {
-                    var s = hit.collider.GetComponentInParent<Structure>();
-                    if (s != null && s.PType == PieceType.Doorway) m_Net.ToggleDoorRpc(s.NetworkObject);
-                }
+                var s = hit.collider.GetComponentInParent<Structure>();
+                if (s != null && s.PType == PieceType.Doorway && hit.distance <= Cfg.InteractRange) { m_Net.ToggleDoorRpc(s.NetworkObject); return; }
             }
-            if (Input.GetKey(KeyCode.E) && !carrying && Time.time >= m_NextPush)
-            {
-                var ram = NearestRam(3.8f);
-                if (ram != null)
-                {
-                    m_NextPush = Time.time + 0.1f;
-                    var f = m_Cam.transform.forward;
-                    f.y = 0;
-                    m_Net.PushRamRpc(ram.NetworkObject, f.normalized);
-                }
-            }
-        }
-
-        Ram NearestRam(float range)
-        {
-            Ram best = null;
-            float bd = range;
-            foreach (var r in Ram.All)
-            {
-                float d = Vector3.Distance(r.transform.position, transform.position);
-                if (d < bd) { bd = d; best = r; }
-            }
-            return best;
+            if (m_Net.StuckSpears.Value > 0) m_Net.PullSpearRpc(m_Net.NetworkObject);
         }
 
         // ------------------------------------------------------------------ ghosts
@@ -360,8 +387,6 @@ namespace RockGame
         {
             int want = -1;
             if (held == Item.BuildingPlan) want = (int)BuildPiece;
-            else if (held == Item.CraftingTable) want = (int)PieceType.CraftingTable;
-            else if (held == Item.Ram) want = 100;
 
             if (want != m_GhostId)
             {
@@ -372,8 +397,7 @@ namespace RockGame
                 if (want >= 0)
                 {
                     m_Ghost = new GameObject("Ghost");
-                    if (want == 100) Ram.CreateVisual(m_Ghost.transform, Art.Ghost(k_GhostOk), out _);
-                    else Structure.CreateVisual((PieceType)want, 0, m_Ghost.transform, false, Art.Ghost(k_GhostOk), out _);
+                    Structure.CreateVisual((PieceType)want, 0, m_Ghost.transform, false, Art.Ghost(k_GhostOk), out _);
                     m_Ghost.GetComponentsInChildren(m_GhostRenderers);
                 }
             }
@@ -387,37 +411,20 @@ namespace RockGame
             string reason = null;
             int team = m_Net.Team.Value;
 
-            if (want == 100 || want == (int)PieceType.CraftingTable)
-            {
-                float range = want == 100 ? 8f : 5f;
-                visible = hasHit && hit.distance <= range && hit.normal.y > 0.7f;
-                if (!visible) reason = "Aim at flat ground nearby";
-                else
-                {
-                    m_GhostPos = hit.point;
-                    m_GhostYaw = want == 100 ? m_Yaw : m_Yaw + 180f;
-                    if (want == (int)PieceType.CraftingTable && Cfg.BaseTeamAt(hit.point) != team) reason = "The crafting table must go inside your base";
-                    else if (want == 100 && !ClearForRam(m_GhostPos, Quaternion.Euler(0, m_GhostYaw, 0))) reason = "Not enough room for the ram";
-                }
-                if (visible) m_Ghost.transform.SetPositionAndRotation(m_GhostPos, Quaternion.Euler(0, m_GhostYaw, 0));
-            }
+            var t = (PieceType)want;
+            int rot = (Mathf.RoundToInt(m_Yaw / 90f) + m_RotOffset) & 3;
+            visible = BuildGrid.ComputePlacement(t, ray, hit, hasHit, transform.position.y, rot, out m_GhostKey);
+            if (!visible) reason = t == PieceType.Floor ? "Look up at where the floor/ceiling should go" : "Aim at the ground or your building";
             else
             {
-                var t = (PieceType)want;
-                int rot = (Mathf.RoundToInt(m_Yaw / 90f) + m_RotOffset) & 3;
-                visible = BuildGrid.ComputePlacement(t, ray, hit, hasHit, transform.position.y, rot, out m_GhostKey);
-                if (!visible) reason = t == PieceType.Floor ? "Look up at where the floor/ceiling should go" : "Aim at the ground or your building";
-                else
-                {
-                    BuildGrid.Pose(t, m_GhostKey, out var pos, out var prot);
-                    m_Ghost.transform.SetPositionAndRotation(pos, prot);
-                    RefreshClientKeys();
-                    if (!BuildGrid.InTeamBase(team, m_GhostKey)) reason = "You can only build inside your base area";
-                    else if (BuildGrid.IsOccupied(m_GhostKey, m_ClientKeys.Contains)) reason = "Something is already built there";
-                    else if (!BuildGrid.IsSupported(m_GhostKey, m_ClientKeys.Contains))
-                        reason = t == PieceType.Floor ? "Floors need a wall below or a floor next to them" : "Needs a foundation or floor underneath";
-                    else if (m_Net.Wood.Value < Cfg.PieceWood(t)) reason = $"Need {Cfg.PieceWood(t)} wood";
-                }
+                BuildGrid.Pose(t, m_GhostKey, out var pos, out var prot);
+                m_Ghost.transform.SetPositionAndRotation(pos, prot);
+                RefreshClientKeys();
+                if (!BuildGrid.InTeamBase(team, m_GhostKey)) reason = "You can only build inside your base area";
+                else if (BuildGrid.IsOccupied(m_GhostKey, m_ClientKeys.Contains)) reason = "Something is already built there";
+                else if (!BuildGrid.IsSupported(m_GhostKey, m_ClientKeys.Contains))
+                    reason = t == PieceType.Floor ? "Floors need a wall below or a floor next to them" : "Needs a foundation or floor underneath";
+                else if (m_Net.Wood.Value < Cfg.PieceWood(t)) reason = $"Need {Cfg.PieceWood(t)} wood";
             }
 
             m_GhostOk = visible && reason == null;
@@ -432,17 +439,6 @@ namespace RockGame
             m_ClientKeys.Clear();
             foreach (var s in Structure.All)
                 if (BuildGrid.TryKeyFromTransform(s.PType, s.transform, out var k)) m_ClientKeys.Add(k);
-        }
-
-        bool ClearForRam(Vector3 pos, Quaternion rot)
-        {
-            var hits = Physics.OverlapBox(pos + Vector3.up * (Ram.HalfExtents.y + 0.3f), Ram.HalfExtents - Vector3.one * 0.1f, rot, ~0, QueryTriggerInteraction.Ignore);
-            foreach (var h in hits)
-            {
-                if (h.GetComponentInParent<GroundMarker>() != null) continue;
-                return false;
-            }
-            return true;
         }
 
         // ------------------------------------------------------------------ viewmodel & HUD info
@@ -470,16 +466,27 @@ namespace RockGame
             switch (held)
             {
                 case Item.Spear:
-                    pos = new Vector3(0.3f, -0.35f, 0.3f + s * 0.6f);
-                    rot = Quaternion.Euler(80f, -5f, 0);
+                    if (m_DrawStart >= 0)
+                    {
+                        // wound up over the shoulder, pulled back as the throw charges
+                        pos = new Vector3(0.32f, 0.02f, 0.05f - DrawAmount * 0.3f);
+                        rot = Quaternion.Euler(88f, -4f, 0);
+                    }
+                    else
+                    {
+                        pos = new Vector3(0.3f, -0.35f, 0.3f + s * 0.6f);
+                        rot = Quaternion.Euler(80f, -5f, 0);
+                    }
+                    break;
+                case Item.Ram:
+                    pos = new Vector3(0.4f, -0.45f, 0.75f - RamCharge * 0.3f + s * 0.7f);
+                    rot = Quaternion.Euler(-4f + RamCharge * 6f, -10f, 0);
                     break;
                 case Item.Bow:
                     pos = new Vector3(0.22f - DrawAmount * 0.12f, -0.18f, 0.55f);
                     rot = Quaternion.Euler(0, -5f, -15f + DrawAmount * 10f);
                     break;
                 case Item.BuildingPlan:
-                case Item.CraftingTable:
-                case Item.Ram:
                     pos = new Vector3(0.3f, -0.32f, 0.5f);
                     rot = Quaternion.Euler(-10f, -15f, 0);
                     break;
@@ -488,7 +495,7 @@ namespace RockGame
                     rot = Quaternion.Euler(35f + s * 75f, -12f, s * -10f);
                     break;
             }
-            float scale = held == Item.BuildingPlan ? 0.55f : held == Item.Bow ? 0.7f : 1f;
+            float scale = held == Item.BuildingPlan ? 0.55f : held == Item.Bow ? 0.7f : held == Item.Ram ? 0.75f : 1f;
             if (held == Item.Bow) pos += new Vector3(0.08f, -0.02f, 0.05f);
             if (held == Item.BuildingPlan) pos += new Vector3(0.05f, -0.02f, 0.05f);
             m_ViewModel.transform.localPosition = pos + bob;
@@ -507,23 +514,34 @@ namespace RockGame
                 AimText = "E: pick up the ball";
                 return;
             }
-            var ram = NearestRam(3.8f);
-            if (ram != null) { AimText = $"Battering Ram  {ram.Health.Value:0}/{Cfg.RamHp:0}  -  hold E to push"; return; }
+            if (NetGame.Instance != null && NetGame.Instance.TryNearestSpear(transform.position + Vector3.up, Cfg.SpearPickupRange, out _))
+            {
+                AimText = "E: pick up the spear";
+                return;
+            }
+            string self = m_Net.StuckSpears.Value > 0 ? $"<color=#ff8888>{m_Net.StuckSpears.Value} spear(s) stuck in you - E: pull out</color>" : "";
+            AimText = self;
             if (!Aim(CenterRay(), 6f, out var hit)) return;
             var no = hit.collider.GetComponentInParent<NetworkObject>();
             if (no == null) return;
+            AimText = "";
             if (no.TryGetComponent(out Structure s))
             {
                 AimText = $"{s.DisplayName} ({Cfg.TeamName[s.Team.Value]})  {s.Health.Value:0}/{s.MaxHp:0}";
                 if (s.PType == PieceType.Doorway && s.Team.Value == m_Net.Team.Value) AimText += "   E: open/close";
-                if (m_Net.HeldItem == Item.BuildingPlan && s.Team.Value == m_Net.Team.Value && s.Tier.Value == 0 && s.PType != PieceType.CraftingTable)
+                if (m_Net.HeldItem == Item.BuildingPlan && s.Team.Value == m_Net.Team.Value && s.Tier.Value == 0)
                     AimText += $"   F: upgrade to stone ({Cfg.PieceUpgradeStone(s.PType)} stone)";
-                if (s.PType == PieceType.CraftingTable && s.Team.Value == m_Net.Team.Value) AimText += "   TAB: craft";
+                if (m_Net.HeldItem == Item.Ram && s.Team.Value != m_Net.Team.Value && hit.distance <= Cfg.RamRange)
+                    AimText += s.Tier.Value == 1 ? "   hold LMB: ram down to wood" : "   hold LMB: ram to smash";
             }
             else if (no.TryGetComponent(out ResourceNode n))
                 AimText = $"{n.DisplayName}  ({n.Amount.Value} {(n.Kind.Value == ResourceNode.Tree ? "wood" : "stone")} left)";
             else if (no.TryGetComponent(out PlayerNet p) && p != m_Net)
+            {
                 AimText = $"{Cfg.TeamName[p.Team.Value]} player";
+                if (p.StuckSpears.Value > 0 && hit.distance <= Cfg.InteractRange + 1f) AimText += "   E: pull out spear";
+            }
+            if (AimText == "") AimText = self;
         }
     }
 }

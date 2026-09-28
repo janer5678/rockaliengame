@@ -1,0 +1,11 @@
+Low-spec Reticulans (alien "grey" character)
+Author:  surt (OpenGameArt.org)
+Source:  https://opengameart.org/content/low-spec-reticulans
+Original file: https://opengameart.org/sites/default/files/reticulans.blend
+License: CC0 1.0 Universal (Public Domain Dedication)
+         https://creativecommons.org/publicdomain/zero/1.0/
+         No attribution required (credit to "surt" appreciated).
+
+Modifications: converted from .blend to FBX with Blender 4.2; mirror modifiers applied;
+body + eyed head joined into a single mesh; rescaled to 1.8 m tall with pivot at the feet;
+textures unpacked and renamed (Alien_Body.png, Alien_Body_Suited.png, Alien_Head.png).
