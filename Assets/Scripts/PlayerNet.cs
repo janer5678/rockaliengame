@@ -281,7 +281,8 @@ namespace RockGame
         void RebuildTree(bool on)
         {
             if (m_Tree) { Destroy(m_Tree); m_Tree = null; }
-            if (!on || IsOwner) { if (on && IsOwner) m_Tree = new GameObject("camo(owner)"); return; }
+            if (!on) return;
+            // everyone sees the tree - you too, from the third-person view you get while holding it
             m_Tree = new GameObject("treeCamo");
             m_Tree.transform.SetParent(transform, false);
             ResourceNode.BuildTreeVisual(m_Tree.transform, (int)(NetworkObjectId * 7919 % 100000), false);
@@ -345,7 +346,7 @@ namespace RockGame
             // tree camo: everyone else sees a tree where you stand
             bool tree = TreeCamo;
             if (tree != (m_Tree != null)) RebuildTree(tree);
-            if (tree && !IsOwner) showBody = false;
+            if (tree) showBody = false;
             if (m_VisualRoot.gameObject.activeSelf != showBody) m_VisualRoot.gameObject.SetActive(showBody);
             bool cc = !dead && !Riding;
             if (m_CC.enabled != cc) m_CC.enabled = cc;

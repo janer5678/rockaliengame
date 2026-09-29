@@ -137,7 +137,7 @@ namespace RockGame
                 // frozen: push every deadline back by the time that passed
                 double dt = Time.deltaTime;
                 if (S == GameState.PreBall || S == GameState.BallLive || S == GameState.SuddenDeath) PhaseEnd.Value += dt;
-                if (m_MatchStart >= 0) m_MatchStart += dt;
+                if (m_BallStart >= 0) m_BallStart += dt;
             }
             ServerTickC4(now);
             ServerTickAirstrikes(now);
@@ -151,20 +151,19 @@ namespace RockGame
                     {
                         float delay = fast ? Cfg.FastBallDropDelay : Cfg.BallDropDelay;
                         SetPhase(GameState.PreBall, delay);
-                        m_MatchStart = now;
-                        m_DropsDone = 0;
                         // out of the waiting stadium and into your base
                         foreach (var p in PlayerNet.All) p.ServerSendHome();
                         Broadcast($"Match started! The glass wall drops (and the ball with it) in {Clock(delay)}");
                     }
                     break;
                 case GameState.PreBall:
-                    ServerTickScheduledDrops(now);
                     ServerTickAirdrop(now);
                     if (now >= PhaseEnd.Value)
                     {
                         SpawnBall();
                         SetPhase(GameState.BallLive, fast ? Cfg.FastMatchLength : Cfg.MatchLength);
+                        m_BallStart = now;
+                        m_DropsDone = 0;
                         Broadcast("The glass wall is down and the BALL has dropped in the middle!");
                     }
                     break;
@@ -521,23 +520,23 @@ namespace RockGame
             public Container Crate;
         }
         readonly DropLane[] m_Lanes = new DropLane[LaneTotal];
-        int WorldLaneCount => Cfg.AirdropSides ? Cfg.TeamCount : 1;
+        int WorldLaneCount => Cfg.AirdropSides && !Cfg.AirdropCenter ? Cfg.TeamCount : 1;
 
         public double LaneStartAt(int i) => i < Lanes.Count ? Lanes[i].Start : -1;
         public Vector3 LanePosAt(int i) => i < Lanes.Count ? Lanes[i].Pos : Vector3.zero;
 
         void SetLane(int i, double start, Vector3 pos) => Lanes[i] = new DropLaneState { Start = start, Pos = pos };
 
-        double m_MatchStart = -1;
+        double m_BallStart = -1;
         int m_DropsDone;
         readonly List<Container> m_OldCrates = new List<Container>();
 
-        /// <summary>Seconds from the match start (wall going up) to the end of the ball phase.</summary>
-        static float MatchTotal => Bootstrap.Fast ? Cfg.FastBallDropDelay + Cfg.FastMatchLength : Cfg.BallDropDelay + Cfg.MatchLength;
+        /// <summary>Length of the ball phase (from the wall dropping to the end of the match).</summary>
+        static float BallPhase => Bootstrap.Fast ? Cfg.FastMatchLength : Cfg.MatchLength;
 
         /// <summary>
-        /// Mode options: N airdrops per match, evenly spaced over the whole match (1 = half way through, 2 = at a third and
-        /// two thirds...). While the glass wall is still up nobody can cross, so every side gets its own.
+        /// Mode options: N airdrops per match, evenly spaced over the time after the wall drops (1 = half way through,
+        /// 2 = at a third and two thirds...). Anywhere: one per drop; one per side: every side gets one; middle: one in the centre.
         /// </summary>
         void ServerTickScheduledDrops(double now)
         {
@@ -549,9 +548,9 @@ namespace RockGame
                 m_OldCrates.RemoveAt(i);
             }
             int n = Mathf.Clamp(Cfg.AirdropCount, 0, 20);
-            if (m_MatchStart < 0 || m_DropsDone >= n) return;
-            if (now < m_MatchStart + (m_DropsDone + 1) * (double)MatchTotal / (n + 1)) return;
-            bool split = Cfg.AirdropSides || WallUp;
+            if (m_BallStart < 0 || m_DropsDone >= n) return;
+            if (now < m_BallStart + (m_DropsDone + 1) * (double)BallPhase / (n + 1)) return;
+            bool split = Cfg.AirdropSides && !Cfg.AirdropCenter;
             int lanes = split ? Cfg.TeamCount : 1;
             for (int i = 0; i < lanes; i++) if (m_Lanes[i].Incoming) return; // one still on its way: right after it lands
             m_DropsDone++;
@@ -562,8 +561,23 @@ namespace RockGame
                 if (lane.Crate != null && lane.Crate.IsSpawned) m_OldCrates.Add(lane.Crate);
                 lane.Crate = null;
                 lane.Region = split ? i : -1;
-                ServerLaunchDrop(i, now, PickDropSpot(lane.Region));
+                ServerLaunchDrop(i, now, Cfg.AirdropCenter ? PickCenterSpot() : PickDropSpot(lane.Region));
             }
+        }
+
+        /// <summary>"Airdrops in the middle": a free spot right by the centre (next to the ball drop zone, not on the ball).</summary>
+        static Vector3 PickCenterSpot()
+        {
+            for (int tries = 0; tries < 40; tries++)
+            {
+                var off = Random.insideUnitCircle * (tries < 10 ? 4f : 8f);
+                var p = new Vector3(off.x, 0, off.y);
+                p.y = MapBuilder.Height(p.x, p.z);
+                if (Ball.Instance != null && Vector3.Distance(Ball.Instance.transform.position, p + Vector3.up * 0.5f) < 2.5f) continue;
+                if (Blocked(p + Vector3.up * 1.4f, new Vector3(1f, 0.9f, 1f))) continue;
+                return p;
+            }
+            return new Vector3(3f, MapBuilder.Height(3f, 0f), 0f);
         }
 
         void ServerTickAirdrop(double now)
@@ -606,7 +620,7 @@ namespace RockGame
             var lane = m_Lanes[i];
             SetLane(i, now, pos);
             lane.Incoming = true;
-            string where = lane.Signal ? $"{Cfg.TeamLabel(i - SignalLane0)} called one in with a signal!" : lane.Region < 0 ? "Look for the purple beam" : $"On the {Cfg.TeamLabel(lane.Region)} side - look for the purple beam";
+            string where = lane.Signal ? $"{Cfg.TeamLabel(i - SignalLane0)} called one in with a signal!" : lane.Region < 0 ? (Cfg.AirdropCenter ? "In the middle of the map!" : "Look for the purple beam") : $"On the {Cfg.TeamLabel(lane.Region)} side - look for the purple beam";
             BannerRpc(new FixedString64Bytes("AIRDROP INCOMING"), new FixedString128Bytes(where));
             Broadcast("An alien AIRDROP is beaming down! " + where);
         }
@@ -712,8 +726,8 @@ namespace RockGame
                 if (lane.Incoming) continue;
                 if (lane.Crate != null && lane.Crate.IsSpawned) lane.Crate.NetworkObject.Despawn(true);
                 lane.Crate = null;
-                lane.Region = Cfg.AirdropSides ? i : -1;
-                ServerLaunchDrop(i, now, PickDropSpot(lane.Region));
+                lane.Region = WorldLaneCount > 1 ? i : -1;
+                ServerLaunchDrop(i, now, Cfg.AirdropCenter ? PickCenterSpot() : PickDropSpot(lane.Region));
             }
         }
 

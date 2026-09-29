@@ -15,7 +15,10 @@ namespace RockGame
         public bool CraftOpen => m_Net != null && m_Net.CanCraftHere;
         /// <summary>Eating berries: 0..1 while it's being eaten.</summary>
         public float EatProgress => m_EatStart >= 0 ? Mathf.Clamp01((Time.time - m_EatStart) / Mathf.Max(0.1f, Cfg.BerryEatTime)) : 0f;
-        float m_EatStart = -1f;
+        float m_EatStart = -1f, m_Third;
+        static float Smooth01(float t) => t * t * (3f - 2f * t);
+        /// <summary>The camera is behind you (tree camo).</summary>
+        public bool ThirdPerson => m_Third > 0.5f;
         bool m_EatHalf;
         public Container LootTarget;
         public PieceType BuildPiece = PieceType.Foundation;
@@ -28,9 +31,10 @@ namespace RockGame
         /// <summary>The build wheel's slices, clockwise from the top (demolish sits at the bottom, like Rust).</summary>
         public static readonly (string Label, PieceType Piece, bool Demolish, bool Upgrade)[] WheelOptions =
         {
-            ("Foundation", PieceType.Foundation, false, false), ("Wall", PieceType.Wall, false, false), ("Doorway", PieceType.Doorway, false, false),
+            // clockwise from the top: the wall sits on the right, demolish at the bottom
+            ("Foundation", PieceType.Foundation, false, false), ("Ceiling", PieceType.Floor, false, false), ("Wall", PieceType.Wall, false, false),
             ("Window", PieceType.Window, false, false), ("Demolish", PieceType.Wall, true, false), ("Stairs", PieceType.Stairs, false, false),
-            ("Floor", PieceType.Floor, false, false), ("Upgrade", PieceType.Wall, false, true),
+            ("Doorway", PieceType.Doorway, false, false), ("Upgrade", PieceType.Wall, false, true),
         };
         public string AimText = "", BuildHint = "";
         public float DrawAmount { get; private set; } // bow draw / spear wind-up, 0..1
@@ -409,7 +413,25 @@ namespace RockGame
             float eye = rv != null ? (rv.IsHorse ? Cfg.EyeHeight + 0.75f : Cfg.EyeHeight - 0.35f) : m_Net.EyeHeight; // high up on a horse so you can see ahead
             m_Eye = Mathf.Lerp(m_Eye, eye, Time.deltaTime * 12f);
             var rot = Quaternion.Euler(m_Pitch, m_Yaw, 0) * Quaternion.Euler(Fx.ShakeEuler());
-            m_Cam.transform.SetPositionAndRotation(transform.position + Vector3.up * m_Eye, rot);
+            // holding the tree camo: the camera pulls back behind you so you can see the tree you've become
+            m_Third = Mathf.MoveTowards(m_Third, m_Net.TreeCamo ? 1f : 0f, Time.deltaTime * 4f);
+            var camPos = transform.position + Vector3.up * m_Eye;
+            if (m_Third > 0f)
+            {
+                var eyePos = camPos;
+                // up high and well back, so the camera clears things behind you and you see the whole tree
+                var back = (Quaternion.Euler(0, m_Yaw, 0) * new Vector3(0.6f, 0f, -7f) + Vector3.up * 3.2f + rot * Vector3.back * 1.5f) * Smooth01(m_Third);
+                float len = back.magnitude;
+                if (len > 0.01f)
+                {
+                    var dir = back / len;
+                    if (Physics.SphereCast(eyePos, 0.25f, dir, out var hit, len, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore)
+                        && !hit.collider.transform.IsChildOf(transform))
+                        len = Mathf.Max(0.2f, hit.distance - 0.1f);
+                    camPos = eyePos + dir * len;
+                }
+            }
+            m_Cam.transform.SetPositionAndRotation(camPos, rot);
             float fov = 70f - DrawAmount * 18f + Fx.FovPunch;
             if (CrossbowAiming) fov = Cfg.CrossbowZoomFov + Fx.FovPunch;
             if (Scoped) fov = 15f;
@@ -424,7 +446,7 @@ namespace RockGame
                 VelY = m_VelY,
                 Item = m_Net.HeldItem,
                 Ball = m_Net.CarryingBall,
-                Visible = !m_Net.Dead.Value,
+                Visible = !m_Net.Dead.Value && m_Third < 0.5f,
                 SpearAim = (m_DrawStart >= 0 || DebugDraw >= 0) && m_Net.HeldItem == Item.Spear,
                 HasArrow = m_Net.Count(Item.Arrow) > 0,
                 Draw = DebugDraw >= 0 ? DebugDraw : DrawAmount,

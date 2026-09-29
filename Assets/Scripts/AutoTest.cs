@@ -120,14 +120,18 @@ namespace RockGame
         IEnumerator Batch5Routine(PlayerNet me, PlayerController pc)
         {
             var g = NetGame.Instance;
-            double start = g.NetworkManager.ServerTime.Time - 1.3;
-            // mode options: 3 airdrops (at 25 s, 50 s, 75 s of the 100 s fast match), C4 only; keep the wall up until 40 s
+            // mode options: 3 airdrops after the wall drops (at 22.5 s, 45 s, 67.5 s of the 90 s fast ball phase), C4 only
             Cfg.AirdropCount = 3;
             Cfg.AirdropItemMask = 1;
-            g.DevAddTime(30f);
             int team = me.Team.Value;
+            bool onGrid = true;
+            for (int t = 0; t < Cfg.TeamCount; t++)
+                onGrid &= Mathf.Abs(Mathf.Repeat(Cfg.BaseCenter[t].x + 0.001f, Cfg.Cell)) < 0.01f && Mathf.Abs(Mathf.Repeat(Cfg.BaseCenter[t].z + 0.001f, Cfg.Cell)) < 0.01f;
+            Check(onGrid, $"bases sit on the 3 m building grid ({Cfg.BaseCenter[team]})");
+            Check(Cfg.RecipeIndex(Item.BuildingPlan) == Cfg.RecipeIndex(Item.Spear) + 1 && Cfg.GetRecipe(Cfg.RecipeIndex(Item.Hatchet)).Wood == 50 && Cfg.GetRecipe(Cfg.RecipeIndex(Item.Hatchet)).Stone == 0,
+                  "building plan right below the spear; hatchet costs 50 wood");
             Log($"map {Cfg.MapLabel}: half {Cfg.MapHalf}, base at {Cfg.BaseCenter[team]}, {FindObjectsByType<ResourceNode>(FindObjectsSortMode.None).Length} nodes, {Vehicle.All.Count} horses");
-            Check(Cfg.HeadshotMul == 2f && Cfg.MatchLength + Cfg.BallDropDelay == 900f && Cfg.BerryHeal == 25f, "headshots x2, 15 minute match, berries heal 25");
+            Check(Cfg.HeadshotMul == 2f && Cfg.MatchLength == 900f && Cfg.BerryHeal == 25f, "headshots x2, 15 minutes after the wall drops, berries heal 25");
             if (Camera.main != null && Stadium.Instance != null)
             {
                 yield return null;
@@ -190,20 +194,42 @@ namespace RockGame
             }
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
 
-            // airdrops: the first one comes while the wall is still up, so one lands on each side
-            while (g.NetworkManager.ServerTime.Time < start + 25 + NetGame.DropLand + 1.5) yield return null;
+            // tree camo: third person while you hold it, and you see the tree
+            me.ServerGive(Item.TreeCamo, 1);
+            yield return Hold(me, Item.TreeCamo);
+            yield return new WaitForSeconds(1f);
+            var cam = Camera.main;
+            float camBack = cam != null ? Vector3.Distance(cam.transform.position, me.transform.position + Vector3.up * me.EyeHeight) : 0f;
+            Check(pc.ThirdPerson && camBack > 2f && me.transform.Find("treeCamo") != null, $"holding the tree camo: third person ({camBack:0.0} m back) and you can see your tree");
+            yield return Hold(me, Item.Spear);
+            yield return new WaitForSeconds(1f);
+            Check(!pc.ThirdPerson && me.transform.Find("treeCamo") == null, "put it away: back to first person");
+
+            // airdrops only start after the wall drops, spread over the ball phase
             var drops = new System.Collections.Generic.List<Container>();
-            foreach (var c in Container.All) if (c.IsAirdrop) drops.Add(c);
-            bool sides = drops.Count == Cfg.TeamCount;
-            if (sides && Cfg.TeamCount == 2) sides = Cfg.RegionOf(drops[0].transform.position) != Cfg.RegionOf(drops[1].transform.position);
-            Check(g.WallUp && sides, $"first of 3 airdrops at a quarter of the match, one per side while the wall is up ({drops.Count} crates)");
+            int Crates() { drops.Clear(); foreach (var c in Container.All) if (c.IsAirdrop) drops.Add(c); return drops.Count; }
+            while (g.S != GameState.BallLive) yield return null;
+            float phase = Cfg.FastMatchLength;
+            double t0 = g.PhaseEnd.Value - phase; // when the wall dropped
+            while (g.NetworkManager.ServerTime.Time < t0 + phase / 4 - 1) yield return null;
+            Check(Crates() == 0, $"no airdrops from the match start until a quarter of the way after the wall drops");
+            while (g.NetworkManager.ServerTime.Time < t0 + phase / 4 + NetGame.DropLand + 1.5) yield return null;
+            Check(Crates() == 1, $"first of 3 airdrops a quarter of the way after the wall drops; 'anywhere' drops just one ({drops.Count} crates)");
             bool c4 = drops.Count > 0;
             foreach (var c in drops) c4 &= c.Slots.Count > 0 && c.Slots[0].Id == Item.C4;
             Check(c4, "airdrops only have the picked items (C4 only)");
-            while (g.NetworkManager.ServerTime.Time < start + 50 + NetGame.DropLand + 1.5) yield return null;
-            int n = 0;
-            foreach (var c in Container.All) if (c.IsAirdrop) n++;
-            Check(!g.WallUp && n == Cfg.TeamCount + 1, $"second airdrop half way through: a single one now the wall is down ({n} crates in all)");
+            // "one per side" for the second, "middle of the map" for the third
+            Cfg.AirdropSides = true;
+            while (g.NetworkManager.ServerTime.Time < t0 + phase / 2 + NetGame.DropLand + 1.5) yield return null;
+            int n = Crates();
+            var regions = new System.Collections.Generic.HashSet<int>();
+            for (int i = 1; i < drops.Count; i++) regions.Add(Cfg.RegionOf(drops[i].transform.position));
+            Check(n == 1 + Cfg.TeamCount && regions.Count == Cfg.TeamCount, $"second airdrop half way: one per side ({n} crates in all)");
+            Cfg.AirdropCenter = true;
+            while (g.NetworkManager.ServerTime.Time < t0 + phase * 3 / 4 + NetGame.DropLand + 1.5) yield return null;
+            n = Crates();
+            var last = drops[drops.Count - 1].transform.position;
+            Check(n == 2 + Cfg.TeamCount && new Vector2(last.x, last.z).magnitude < 9f, $"third airdrop: in the middle of the map ({last}, {n} crates in all)");
             g.EndGame(team, "batch 5 test done");
         }
 
@@ -1167,11 +1193,18 @@ namespace RockGame
             yield return new WaitForSeconds(0.2f);
             yield return Hold(me, Item.Crossbow);
             yield return Shot("17_crossbow");
+            if (me.Count(Item.BuildingPlan) == 0) me.ServerGive(Item.BuildingPlan, 1);
+            yield return new WaitForSeconds(0.2f);
             yield return Hold(me, Item.BuildingPlan);
             pc.WheelOpen = true;
             Hud.WheelOpened();
             yield return Shot("18_build_wheel");
             pc.WheelOpen = false;
+            me.ServerGive(Item.TreeCamo, 1);
+            yield return Hold(me, Item.TreeCamo);
+            yield return new WaitForSeconds(1f);
+            yield return Shot("18b_tree_camo_third_person");
+            yield return Hold(me, Item.BuildingPlan);
             pc.Paused = true;
             yield return Shot("19_pause_menu");
             pc.Paused = false;

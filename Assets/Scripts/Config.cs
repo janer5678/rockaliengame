@@ -61,12 +61,14 @@ namespace RockGame
         public static float MapHalf => SmallMap ? 62f : 100f * SizeScale;
         public const float BaseHalf = 18f; // bases are 36x36m, aligned to the 3m build grid
         public static readonly Vector3[] BaseCenter = { new Vector3(0, 0, -75), new Vector3(0, 0, 75), new Vector3(75, 0, 0), new Vector3(-75, 0, 0) };
-        public static string MapLabel => ModeLabel + ", " + SizeLabel(Size).ToLower() + " " + Map + (WoodMode ? " (Wood mode)" : "") + (AirdropSides ? " (airdrops on both sides)" : "") + (RespawnLoot ? " (respawn loot)" : "");
+        public static string MapLabel => ModeLabel + ", " + SizeLabel(Size).ToLower() + " " + Map + (WoodMode ? " (Wood mode)" : "") + (AirdropCenter ? " (airdrops in the middle)" : AirdropSides ? " (airdrops on both sides)" : "") + (RespawnLoot ? " (respawn loot)" : "");
         /// <summary>Airdrops come down on both sides (one in each half, each on its own timer) instead of anywhere.</summary>
         public static bool AirdropSides;
+        /// <summary>Airdrops always come down in the middle of the map.</summary>
+        public static bool AirdropCenter;
         /// <summary>Game option: every time you respawn you get a random airdrop item.</summary>
         public static bool RespawnLoot;
-        public const int SmallBit = 16, WoodBit = 32, SidesBit = 64, RespawnLootBit = 128, ModeShift = 8, ModeMask = 7, SizeShift = 12;
+        public const int SmallBit = 16, WoodBit = 32, SidesBit = 64, RespawnLootBit = 128, ModeShift = 8, ModeMask = 7, SizeShift = 12, CenterBit = 1 << 14;
         public static GameMode Mode = GameMode.Duel;
         /// <summary>Players needed to start (and the most that can join).</summary>
         public static int PlayersNeeded => ModeTeams(Mode) * ModeTeamSize(Mode);
@@ -95,7 +97,7 @@ namespace RockGame
         public static bool FourWay => TeamCount > 2;
         public static string ModeLabel => ModeName(Mode);
         /// <summary>Packs the map/mode choice for syncing; the seed is sent separately.</summary>
-        public static int MapKey => (int)Map | ((int)Size << SizeShift) | (WoodMode ? WoodBit : 0) | (AirdropSides ? SidesBit : 0) | (RespawnLoot ? RespawnLootBit : 0) | ((int)Mode << ModeShift);
+        public static int MapKey => (int)Map | ((int)Size << SizeShift) | (WoodMode ? WoodBit : 0) | (AirdropSides ? SidesBit : 0) | (AirdropCenter ? CenterBit : 0) | (RespawnLoot ? RespawnLootBit : 0) | ((int)Mode << ModeShift);
 
         /// <summary>Watch towers on the Highlands map (world positions of their feet), point-mirrored between the halves.</summary>
         public static readonly List<Vector3> Towers = new List<Vector3>();
@@ -107,11 +109,13 @@ namespace RockGame
             if ((key & SmallBit) != 0) Size = MapSize.Small; // older saved menu choice
             WoodMode = (key & WoodBit) != 0;
             AirdropSides = (key & SidesBit) != 0;
+            AirdropCenter = (key & CenterBit) != 0;
             RespawnLoot = (key & RespawnLootBit) != 0;
             Mode = (GameMode)((key >> ModeShift) & ModeMask);
             TeamCount = ModeTeams(Mode);
             MapSeed = seed;
-            float d = SmallMap ? 42f : 75f * SizeScale;
+            // on the 3 m building grid, or the grid wouldn't line up with the base area
+            float d = SmallMap ? 42f : Mathf.Round(75f * SizeScale / Cell) * Cell;
             // blue south, red north, green east, yellow west
             BaseCenter[0] = new Vector3(0, 0, -d);
             BaseCenter[1] = new Vector3(0, 0, d);
@@ -200,7 +204,7 @@ namespace RockGame
 
         // ---------- Match ----------
         [Tune("Match")] public static float BallDropDelay = 300f;   // 5 min behind the glass wall to gather and build
-        [Tune("Match")] public static float MatchLength = 600f;     // + 10 min with the ball (15 min in all)
+        [Tune("Match")] public static float MatchLength = 900f;     // + 15 min with the ball
         [Tune("Match")] public static float SuddenDeathLength = 180f;
         [Tune("Match")] public static float FastBallDropDelay = 10f;
         [Tune("Match")] public static float FastMatchLength = 90f;
@@ -208,7 +212,7 @@ namespace RockGame
         [Tune("Match")] public static float ItemDespawnTime = 300f;
 
         // ---------- Airdrops (after the wall drops) ----------
-        /// <summary>Mode options: how many airdrops come in a match, evenly spaced (1 = half way through, 2 = at the thirds...).</summary>
+        /// <summary>Mode options: how many airdrops come after the wall drops, evenly spaced (1 = half way through, 2 = at the thirds...).</summary>
         [Tune("Mode options")] public static int AirdropCount = 3;
         /// <summary>Mode options: which airdrop items are in the pool (bit i = AirdropChoices[i]).</summary>
         [Tune("Mode options")] public static int AirdropItemMask = 511;
@@ -274,7 +278,7 @@ namespace RockGame
 
         // ---------- Crafting (at the alien machine) ----------
         [Tune("Crafting")] public static int PlanWood = 5;
-        [Tune("Crafting")] public static int HatchetWood = 30, HatchetStone = 10, PickaxeWood = 30, PickaxeStone = 10;
+        [Tune("Crafting")] public static int HatchetWood = 50, HatchetStone = 0, PickaxeWood = 30, PickaxeStone = 10;
         [Tune("Crafting")] public static int SpearWood = 75, SpearStone = 0, BowWood = 100, BowStone = 15;
         [Tune("Crafting")] public static int ArrowWood = 10, ArrowStone = 0, ArrowsPerCraft = 1;
         [Tune("Crafting")] public static int RamWood = 125, RamStone = 50;
@@ -442,14 +446,14 @@ namespace RockGame
         }
 
         // ---------- Crafting ----------
-        static readonly Item[] k_Recipes = { Item.BuildingPlan, Item.Hatchet, Item.Pickaxe, Item.Spear, Item.Bow, Item.Arrow, Item.Crossbow, Item.Armor, Item.Chainsaw, Item.Ram, Item.Chest, Item.Barrier, Item.Saddle, Item.AirdropSignal };
+        static readonly Item[] k_Recipes = { Item.Hatchet, Item.Pickaxe, Item.Spear, Item.BuildingPlan, Item.Bow, Item.Arrow, Item.Crossbow, Item.Armor, Item.Chainsaw, Item.Ram, Item.Chest, Item.Barrier, Item.Saddle, Item.AirdropSignal };
 
         /// <summary>Recipes available in this mode (wood mode has no pickaxe).</summary>
         public static int RecipeCount => WoodMode ? k_Recipes.Length - 1 : k_Recipes.Length;
 
         public static Recipe GetRecipe(int i)
         {
-            if (WoodMode && i >= 2) i++; // skip the pickaxe
+            if (WoodMode && i >= 1) i++; // skip the pickaxe (second in the list)
             Recipe r;
             switch (k_Recipes[Mathf.Clamp(i, 0, k_Recipes.Length - 1)])
             {

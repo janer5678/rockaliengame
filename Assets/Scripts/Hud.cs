@@ -255,7 +255,7 @@ namespace RockGame
         {
             int n = Mathf.Clamp(Cfg.AirdropCount, 0, 20);
             int items = Cfg.AirdropLoot.Count;
-            return (n == 0 ? "No airdrops" : $"{n} airdrop{(n == 1 ? "" : "s")} a match ({((key & Cfg.SidesBit) != 0 ? "one per side" : "anywhere")}, {items} item{(items == 1 ? "" : "s")})")
+            return (n == 0 ? "No airdrops" : $"{n} airdrop{(n == 1 ? "" : "s")} a match ({((key & Cfg.CenterBit) != 0 ? "in the middle" : (key & Cfg.SidesBit) != 0 ? "one per side" : "anywhere")}, {items} item{(items == 1 ? "" : "s")})")
                 + ((key & Cfg.RespawnLootBit) != 0 ? " · respawn with an airdrop item" : "");
         }
 
@@ -280,21 +280,24 @@ namespace RockGame
             if (GUILayout.Button("+", m_Button, GUILayout.Width(50 * k), GUILayout.Height(bh)) && n < 20) { Cfg.AirdropCount = n + 1; Cfg.SavePrefs(); }
             GUILayout.EndHorizontal();
             n = Mathf.Clamp(Cfg.AirdropCount, 0, 20);
-            float total = Cfg.BallDropDelay + Cfg.MatchLength;
+            float total = Cfg.MatchLength;
             var times = new System.Text.StringBuilder();
             for (int i = 1; i <= n && i <= 8; i++) times.Append(i > 1 ? ", " : "").Append(Clock(total * i / (n + 1)));
             if (n > 8) times.Append(", ...");
             GUILayout.Label(n == 0 ? "<color=#bbbbbb>No airdrops this match.</color>"
-                : $"<color=#bbbbbb>Evenly spaced over the {Clock(total)} match (1 = half way through, 2 = at the thirds...). Lands at {times}. " +
-                  "One that comes while the glass wall is still up drops on every side.</color>", new GUIStyle(m_Small) { wordWrap = true });
+                : $"<color=#bbbbbb>Evenly spaced over the {Clock(total)} after the glass wall drops (1 = half way through, 2 = at the thirds...). " +
+                  $"They land {times} after the wall drops.</color>", new GUIStyle(m_Small) { wordWrap = true });
 
             GUILayout.Space(8 * k);
-            bool sides = (key & Cfg.SidesBit) != 0;
+            bool center = (key & Cfg.CenterBit) != 0, sides = !center && (key & Cfg.SidesBit) != 0, anywhere = !center && !sides;
+            int noWhere = key & ~Cfg.SidesBit & ~Cfg.CenterBit;
             GUILayout.BeginHorizontal();
             GUILayout.Label("Where", m_Label, GUILayout.Width(90 * k));
-            if (GUILayout.Toggle(!sides, " Anywhere", m_Button, GUILayout.Height(bh)) && sides) boot.SetMapChoice(key & ~Cfg.SidesBit);
-            if (GUILayout.Toggle(sides, " One per side", m_Button, GUILayout.Height(bh)) && !sides) boot.SetMapChoice(key | Cfg.SidesBit);
+            if (GUILayout.Toggle(anywhere, " Anywhere", m_Button, GUILayout.Height(bh)) && !anywhere) boot.SetMapChoice(noWhere);
+            if (GUILayout.Toggle(sides, " One per side", m_Button, GUILayout.Height(bh)) && !sides) boot.SetMapChoice(noWhere | Cfg.SidesBit);
+            if (GUILayout.Toggle(center, " Middle of the map", m_Button, GUILayout.Height(bh)) && !center) boot.SetMapChoice(noWhere | Cfg.CenterBit);
             GUILayout.EndHorizontal();
+            GUILayout.Label($"<color=#bbbbbb>{(center ? "Every airdrop comes down in the middle of the map." : sides ? "Every side of the map gets its own airdrop each time." : "One airdrop each time, at a random spot.")}</color>", m_Small);
 
             GUILayout.Space(10 * k);
             GUILayout.BeginHorizontal();
@@ -691,7 +694,7 @@ namespace RockGame
                 case Item.GiantStaff: return "<b>Staff of the Giant</b>    LMB: turn your nearest enemy into a giant";
                 case Item.RocketLauncher: return "<b>Rocket Launcher</b> (1 rocket)    LMB: fire - wrecks enemy buildings";
                 case Item.BombBush: return "<b>Fake Bomb Bush</b>    LMB: throw it - whoever picks it blows up";
-                case Item.TreeCamo: return "<b>Tree Camo</b>    while you hold it, everyone else sees a tree";
+                case Item.TreeCamo: return "<b>Tree Camo</b>    while you hold it you're a tree (the camera pulls back so you can see it)";
                 case Item.Airstrike: return "<b>Airstrike</b>    LMB: pick a spot on the map - everything there gets flattened";
                 case Item.Wallhack: return "<b>Wallhack Glasses</b>    hold them to see your enemies through walls";
                 case Item.InvisPotion: return $"<b>Invisibility Potion</b>    LMB: drink ({Cfg.InvisTime:0}s, attacking shows you)";
@@ -1008,7 +1011,7 @@ namespace RockGame
             {
                 bool hover = i == WheelHover;
                 bool disabled = opts[i].Upgrade && Cfg.WoodMode;
-                GUI.color = hover ? new Color(0.85f, 0.55f, 0.2f, 0.92f) : opts[i].Demolish ? new Color(0.35f, 0.1f, 0.08f, 0.75f) : new Color(0.1f, 0.25f, 0.6f, 0.8f);
+                GUI.color = hover ? new Color(0.85f, 0.55f, 0.2f, 0.92f) : opts[i].Demolish ? new Color(0.35f, 0.1f, 0.08f, 0.75f) : new Color(0.38f, 0.62f, 0.95f, 0.82f);
                 GUI.DrawTexture(area, s_Wedges[i]);
                 float a = i * (360f / opts.Length) * Mathf.Deg2Rad;
                 var p = c + new Vector2(Mathf.Sin(a), -Mathf.Cos(a)) * R * 0.67f;
@@ -1019,7 +1022,7 @@ namespace RockGame
                 else GUI.Label(new Rect(p.x - 50, p.y - 12, 100, 24), opts[i].Label, m_Center);
             }
             // centre: name and cost
-            GUI.color = new Color(0.05f, 0.12f, 0.32f, 0.88f);
+            GUI.color = new Color(0.22f, 0.45f, 0.8f, 0.9f);
             GUI.DrawTexture(new Rect(c.x - R * 0.32f, c.y - R * 0.32f, R * 0.64f, R * 0.64f), s_Disc);
             GUI.color = old;
             var o = opts[Mathf.Clamp(WheelHover, 0, opts.Length - 1)];

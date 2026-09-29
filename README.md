@@ -20,12 +20,12 @@ Both players start with a rock, gather wood and stone, build a Rust-style base, 
 - **Game**: red vs blue in *1v1*, *2v2*, *3v3* or *4v4*; or the X-shaped map with 3 or 4 bases (glass walls in an X, the map laid out four ways round): *FFA 3* / *FFA 4* (free for all, one player per base), *2v2v2* or *2v2v2v2* (teams of two). Sudden death is last team standing.
 - While waiting for everyone to join, players brawl with rocks in the stadium; when the lobby is full everyone is sent to their base and the match starts.
 - **Solo test**: the match starts without an opponent, so you can try everything alone.
-- **Fast timers**: 10s wall/ball drop and a 90s match instead of 5 min and 10 min (15 min in all).
+- **Fast timers**: 10s wall/ball drop and a 90s match instead of 5 min behind the wall and then 15 min.
 - **Map**: *Plains* (flat) or *Highlands* (the wild map: random hilly terrain with minable rocks and watch towers, new every match), each in **Small**, **Big**, **Big x1.5** or **Big x2** (the bigger maps get more trees, rocks, bushes, horses and towers). Picked by the host; the client builds the same map from the synced seed.
 - **Mode**: *Normal* or *Wood mode* (no stone anywhere, every rock is a tree, everything costs wood only, no pickaxe, no stone upgrades).
 - **MODE OPTIONS** (button on the main menu):
-  - **Airdrops per match** (0-20): evenly spaced over the whole match - 1 comes half way through, 2 at a third and two thirds, and so on. One that comes while the glass wall is still up lands on every side.
-  - **Where**: *Anywhere* (random spot) or *One per side* (every side gets its own).
+  - **Airdrops per match** (0-20): evenly spaced over the time after the glass wall drops - 1 comes half way through (7:30 after the wall drops), 2 at a third and two thirds, and so on. None come while the wall is up.
+  - **Where**: *Anywhere* (one at a random spot), *One per side* (every side gets its own) or *Middle of the map* (always right by the centre).
   - **Airdrop items**: tick which items airdrops can have: C4, Death Wand, Portal Gun, Rocket Launcher, Tree Camo, Invisibility Potion, Jetpack, Wallhack Glasses, Fake Bomb Bush.
   - **Respawn**: *Normal* or *With an airdrop item* (every time you respawn you get a random one of the picked airdrop items).
 
@@ -71,7 +71,7 @@ Once the wall is down, a giant alien ship comes down from very high up and **bea
 | Staff of the Giant | Your nearest enemy becomes a giant for 30 s: huge and easy to spot, same small hitbox, and you look tiny to them. |
 | Rocket Launcher | One rocket. Wrecks enemy buildings in a small radius and hurts players. |
 | Fake Bomb Bush | Thrown: looks exactly like a berry bush. Whoever picks it blows up. |
-| Tree Camo | While it's in your hand, everyone else sees a tree where you stand. |
+| Tree Camo | While it's in your hand you're a tree to everyone, and your camera pulls back to third person so you can see it. |
 | Airstrike | Opens a map: click a spot and a few seconds later everything there (players, buildings, trees, rocks) is flattened. |
 | Wallhack Glasses | While you hold them, enemies glow red through walls. |
 
@@ -90,7 +90,7 @@ Once the wall is down, a giant alien ship comes down from very high up and **bea
 | 1-7, mouse wheel | hotbar slot |
 | TAB | inventory (21 slots + 7 hotbar) |
 | E | use whatever you're looking at: your machine (put the ball in), ball, door, chest, airdrop, berry bush, dropped items and arrows, horse or car (E again to get off), a spear stuck in someone (or in you) |
-| Building plan | **hold RMB: building wheel** (Rust style, with a picture of each piece: Foundation, Wall, Doorway, Window, Demolish at the bottom, Stairs, Floor, Upgrade) · R rotate stairs · F upgrade to stone · X demolish your own piece (half the wood back) |
+| Building plan | **hold RMB: building wheel** (Rust style, light blue, with a picture of each piece; clockwise from the top: Foundation, Ceiling, Wall (right), Window, Demolish (trash can, bottom), Stairs, Doorway, Upgrade) · R rotate stairs · F upgrade to stone · X demolish your own piece (half the wood back) |
 | Crossbow | LMB fire · hold RMB aim · reloads itself (uses an arrow) |
 | Helmet / armour / potion | LMB (or RMB) to put on / drink |
 | C4 / fort tower | LMB throws it |
@@ -110,10 +110,10 @@ Once the wall is down, a giant alien ship comes down from very high up and **bea
 ## Crafting (anywhere in your base, TAB)
 | Item | Cost |
 |---|---|
-| Building Plan | 5 wood |
-| Stone Hatchet (fast wood) | 30 wood, 10 stone |
+| Stone Hatchet (fast wood) | 50 wood |
 | Stone Pickaxe (fast stone) | 30 wood, 10 stone |
 | Spear | 75 wood |
+| Building Plan | 5 wood |
 | Bow | 100 wood, 15 stone |
 | Arrow | 10 wood |
 | Crossbow (55 damage, flat and fast) | 500 wood |
@@ -175,6 +175,6 @@ In wood mode the stone part is added to the wood cost and there's no pickaxe.
 - `Vehicle.cs`: horses and the car (a networked prefab owned by whoever drives it). `VoiceChat.cs`: proximity voice chat and the sound/mic settings. `PlayerNet.Extras.cs`: crossbow, fort tower, riding, dev settings and voice RPCs.
 - Player model: PSX-style grey alien "Low-spec Reticulans" by surt, CC0 ([OpenGameArt](https://opengameart.org/content/low-spec-reticulans)), in `Assets/Game/Resources/Alien/`. `AlienRigged.fbx` is the same mesh skinned to a humanoid skeleton (Hips, Spine, Chest, Neck, Head, Left/Right UpperArm/LowerArm/Hand/UpperLeg/LowerLeg/Foot) and animated procedurally in `BodyAnimator.cs`. It is tinted in the team colour.
 - `AutoTest.cs`: headless end-to-end test (`-autotest ball` or `-autotest sd` on a host + client build; `-autotest shots` takes screenshots).
-- Sound effects are synthesised procedurally at startup in `Fx.cs`. Item icons are rendered from the 3D models at startup (`ItemIcons.cs`); first-person hands and animations are in `ViewModel.cs`.
+- Sound effects are synthesised procedurally at startup in `Fx.cs`. Hand-drawn item icons in `Assets/Game/Resources/Icons/<item>.png` (e.g. `hatchet.png`) replace the rendered ones. Item icons are rendered from the 3D models at startup (`ItemIcons.cs`); first-person hands and animations are in `ViewModel.cs`.
 
 Networking: movement is owner-authoritative (NetworkTransform in Owner mode). Resources, crafting, building, damage, the ball and its socket, inventories, chests, airdrops, dropped items and match flow are server-authoritative. Melee, arrow, thrown-spear and C4 hits use client-side hit detection that the server validates; the death wand is resolved on the server.

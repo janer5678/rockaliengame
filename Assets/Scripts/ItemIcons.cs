@@ -79,20 +79,21 @@ namespace RockGame
                 var tex = Snap(model, item.ToString());
                 if (tex != null) s_Icons[item] = tex;
             }
+            // hand-drawn icons in Resources/Icons replace the rendered ones (e.g. "hatchet.png")
+            foreach (Item item in System.Enum.GetValues(typeof(Item)))
+            {
+                var drawn = Resources.Load<Texture2D>("Icons/" + item.ToString().ToLowerInvariant());
+                if (drawn != null) s_Icons[item] = drawn;
+            }
 
-            // build wheel: each piece as it looks in the world, plus demolish (a broken wall) and upgrade (a stone wall)
+            // build wheel: each piece as it looks in the world, plus demolish (a trash can) and upgrade (a stone wall)
             var opts = PlayerController.WheelOptions;
             for (int i = 0; i < opts.Length; i++)
             {
                 var holder = new GameObject("piece");
                 holder.transform.SetParent(rig.transform, false);
                 var o = opts[i];
-                if (o.Demolish)
-                {
-                    Structure.CreateVisual(PieceType.Wall, 0, holder.transform, false, null, out _);
-                    Art.Box(holder.transform, new Color(0.9f, 0.15f, 0.1f), new Vector3(0, 1.5f, -0.3f), new Vector3(3.2f, 0.4f, 0.1f), new Vector3(0, 0, 45));
-                    Art.Box(holder.transform, new Color(0.9f, 0.15f, 0.1f), new Vector3(0, 1.5f, -0.3f), new Vector3(3.2f, 0.4f, 0.1f), new Vector3(0, 0, -45));
-                }
+                if (o.Demolish) BuildTrashCan(holder.transform);
                 else Structure.CreateVisual(o.Piece, o.Upgrade ? 1 : 0, holder.transform, false, null, out _);
                 holder.transform.localRotation = Quaternion.Euler(0, o.Piece == PieceType.Stairs ? 140f : 20f, 0);
                 var tex = Snap(holder, o.Label);
@@ -101,6 +102,24 @@ namespace RockGame
             cam.targetTexture = null;
             rt.Release();
             Object.DestroyImmediate(rig);
+        }
+
+        /// <summary>A metal bin with a lid and ribs (the demolish icon).</summary>
+        static void BuildTrashCan(Transform t)
+        {
+            var metal = new Color(0.72f, 0.74f, 0.78f);
+            var dark = new Color(0.45f, 0.47f, 0.5f);
+            Art.Part(t, Art.Cylinder, metal, new Vector3(0, 0.6f, 0), new Vector3(0.9f, 0.6f, 0.9f));        // body
+            for (int i = 0; i < 8; i++)
+            {
+                float a = i * 45f * Mathf.Deg2Rad;
+                Art.Box(t, dark, new Vector3(Mathf.Sin(a) * 0.455f, 0.6f, Mathf.Cos(a) * 0.455f), new Vector3(0.06f, 1.05f, 0.04f), new Vector3(0, i * 45f, 0)); // ribs
+            }
+            Art.Part(t, Art.Cylinder, dark, new Vector3(0, 1.22f, 0), new Vector3(1.02f, 0.05f, 1.02f));    // lid
+            Art.Part(t, Art.Cylinder, metal, new Vector3(0, 1.3f, 0), new Vector3(0.9f, 0.04f, 0.9f));
+            Art.Box(t, dark, new Vector3(0, 1.42f, 0), new Vector3(0.4f, 0.08f, 0.1f));                   // handle
+            Art.Box(t, dark, new Vector3(-0.17f, 1.37f, 0), new Vector3(0.06f, 0.12f, 0.1f));
+            Art.Box(t, dark, new Vector3(0.17f, 1.37f, 0), new Vector3(0.06f, 0.12f, 0.1f));
         }
 
         static bool Render(Camera cam, RenderTexture rt)
