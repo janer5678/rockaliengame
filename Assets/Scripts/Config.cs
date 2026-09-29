@@ -8,9 +8,9 @@ using UnityEngine;
 namespace RockGame
 {
     // new items go at the end so the byte values of the old ones never change
-    public enum Item : byte { None, Rock, BuildingPlan, Hatchet, Pickaxe, Spear, Bow, Ram, Chest, Barrier, Wood, Stone, Arrow, Berry, C4, DeathWand, Helmet, InvisPotion, Chainsaw }
+    public enum Item : byte { None, Rock, BuildingPlan, Hatchet, Pickaxe, Spear, Bow, Ram, Chest, Barrier, Wood, Stone, Arrow, Berry, C4, DeathWand, Helmet, InvisPotion, Chainsaw, Crossbow, Armor, FortTower, Car, Saddle }
 
-    public enum PieceType : byte { Foundation, Wall, Doorway, Floor, Stairs, Barrier }
+    public enum PieceType : byte { Foundation, Wall, Doorway, Floor, Stairs, Barrier, Window, Tower }
 
     public enum GameState : byte { Waiting, PreBall, BallLive, SuddenDeath, GameOver }
 
@@ -48,10 +48,12 @@ namespace RockGame
         public static float MapHalf => SmallMap ? 62f : 100f;
         public const float BaseHalf = 18f; // bases are 36x36m, aligned to the 3m build grid
         public static readonly Vector3[] BaseCenter = { new Vector3(0, 0, -75), new Vector3(0, 0, 75) };
-        public static string MapLabel => (SmallMap ? "Small " : "Big ") + Map + (WoodMode ? " (Wood mode)" : "");
-        public const int SmallBit = 16, WoodBit = 32;
+        public static string MapLabel => (SmallMap ? "Small " : "Big ") + Map + (WoodMode ? " (Wood mode)" : "") + (AirdropSides ? " (airdrops on both sides)" : "");
+        /// <summary>Airdrops come down on both sides (one in each half, each on its own timer) instead of anywhere.</summary>
+        public static bool AirdropSides;
+        public const int SmallBit = 16, WoodBit = 32, SidesBit = 64;
         /// <summary>Packs the map/mode choice for syncing; the seed is sent separately.</summary>
-        public static int MapKey => (int)Map | (SmallMap ? SmallBit : 0) | (WoodMode ? WoodBit : 0);
+        public static int MapKey => (int)Map | (SmallMap ? SmallBit : 0) | (WoodMode ? WoodBit : 0) | (AirdropSides ? SidesBit : 0);
 
         /// <summary>Watch towers on the Highlands map (world positions of their feet), point-mirrored between the halves.</summary>
         public static readonly List<Vector3> Towers = new List<Vector3>();
@@ -61,6 +63,7 @@ namespace RockGame
             Map = (MapKind)(key & 15);
             SmallMap = (key & SmallBit) != 0;
             WoodMode = (key & WoodBit) != 0;
+            AirdropSides = (key & SidesBit) != 0;
             MapSeed = seed;
             float d = SmallMap ? 42f : 75f;
             BaseCenter[0] = new Vector3(0, 0, -d);
@@ -76,9 +79,10 @@ namespace RockGame
         /// <summary>Direction from a base's centre to the back of its bedrock (away from the middle of the map).</summary>
         public static Vector3 BackDir(int team) => team == 0 ? Vector3.back : Vector3.forward;
         public static Vector3 BedrockCenter(int team) => BaseCenter[team];
-        public static Vector3 MachinePos(int team) => BaseCenter[team] + BackDir(team) * 2.35f + Vector3.up * BaseY;
+        // the machine stands clear of the bedrock's back edge so walls fit behind it
+        public static Vector3 MachinePos(int team) => BaseCenter[team] + BackDir(team) * 2.0f + Vector3.up * BaseY;
         /// <summary>Centre of the ball when it sits in the machine's socket.</summary>
-        public static Vector3 SocketPos(int team) => BaseCenter[team] + BackDir(team) * 0.95f + Vector3.up * (BaseY + 0.64f);
+        public static Vector3 SocketPos(int team) => BaseCenter[team] + BackDir(team) * 0.35f + Vector3.up * (BaseY + 0.64f);
         /// <summary>Where you (re)spawn: on the front half of your bedrock, facing the middle of the map.</summary>
         public static Vector3 SpawnPos(int team) => BaseCenter[team] - BackDir(team) * 1.7f + Vector3.up * (BaseY + 0.05f);
         public static float SpawnYaw(int team) => Quaternion.LookRotation(-BackDir(team)).eulerAngles.y;
@@ -93,7 +97,7 @@ namespace RockGame
             return false;
         }
 
-        /// <summary>Cells covered by the bedrock can't take foundations, stairs, chests or barriers.</summary>
+        /// <summary>Cells covered by the bedrock can't take foundations, stairs or barriers (chests are fine).</summary>
         public static bool CellBlocked(int i, int j) => IsBedrockCell(i, j);
         public static bool PointBlocked(Vector3 p) => CellBlocked(Mathf.FloorToInt(p.x / Cell), Mathf.FloorToInt(p.z / Cell));
 
@@ -131,9 +135,8 @@ namespace RockGame
         [Tune("Airdrop")] public static float AirdropBaseDistance = 25f; // never this close to a base
         [Tune("Airdrop")] public static float C4Fuse = 3f, C4Radius = 5f, C4PlayerDamage = 80f;
         [Tune("Airdrop")] public static float WandRange = 90f, WandRadius = 3f;
-        [Tune("Airdrop")] public static int HelmetHp = 100;               // max 255
         [Tune("Airdrop")] public static float InvisTime = 30f, InvisRevealTime = 1.2f;
-        [Tune("Airdrop")] public static int ChainsawUses = 200, AirdropResources = 1000;
+        [Tune("Airdrop")] public static int ChainsawUses = 67, AirdropResources = 1000;
 
         // ---------- Player ----------
         [Tune("Player")] public static float MaxHealth = 100f;
@@ -144,7 +147,8 @@ namespace RockGame
         [Tune("Player")] public static float Gravity = 20f;
         [Tune("Player")] public static float BallCarrySpeedMul = 1f;
         [Tune("Player")] public static float BallThrowSpeed = 16f;
-        [Tune("Player")] public static float BerryHeal = 15f;
+        [Tune("Player")] public static float BerryHeal = 30f;
+        [Tune("Player")] public static int ArmorHp = 100;              // wooden armour: a second health bar, used up first (max 255)
         [Tune("Player")] public static float HeadshotMul = 2f;
         [Tune("Player")] public static float ModelWidth = 1.3f;       // alien model width scale
         [Tune("Player")] public static float HitboxRadius = 0.52f;
@@ -152,16 +156,17 @@ namespace RockGame
         [Tune("Player")] public static float ProjectileAssist = 0.15f; // same for arrows / thrown spears
 
         // ---------- Melee ----------
-        [Tune("Rock")] public static float RockCooldown = 0.6f, RockRange = 2.3f, RockPlayerDamage = 12f, RockWoodGather = 5f, RockStoneGather = 4f, RockStructureDamage = 3f;
-        [Tune("Hatchet")] public static float HatchetCooldown = 0.7f, HatchetRange = 2.5f, HatchetPlayerDamage = 14f, HatchetWoodGather = 15f, HatchetStoneGather = 2f, HatchetStructureDamage = 6f;
-        [Tune("Pickaxe")] public static float PickaxeCooldown = 0.8f, PickaxeRange = 2.5f, PickaxePlayerDamage = 14f, PickaxeWoodGather = 3f, PickaxeStoneGather = 12f, PickaxeStructureDamage = 6f;
-        [Tune("Spear")] public static float SpearCooldown = 0.9f, SpearRange = 3.4f, SpearPlayerDamage = 35f, SpearWoodGather = 2f, SpearStoneGather = 1f, SpearStructureDamage = 5f;
-        [Tune("Spear")] public static float SpearDrawTime = 0.6f, SpearThrowSpeed = 30f, SpearThrowDamage = 60f, SpearThrowStructureDamage = 4f;
-        [Tune("Chainsaw")] public static float ChainsawCooldown = 0.15f, ChainsawRange = 2.4f, ChainsawPlayerDamage = 8f, ChainsawWoodGather = 12f, ChainsawStoneGather = 10f, ChainsawStructureDamage = 6f;
+        [Tune("Rock")] public static float RockCooldown = 0.6f, RockRange = 2.3f, RockPlayerDamage = 12f, RockWoodGather = 5f, RockStoneGather = 4f, RockStructureDamage = 6f;
+        [Tune("Hatchet")] public static float HatchetCooldown = 0.7f, HatchetRange = 2.5f, HatchetPlayerDamage = 14f, HatchetWoodGather = 15f, HatchetStoneGather = 2f, HatchetStructureDamage = 12f;
+        [Tune("Pickaxe")] public static float PickaxeCooldown = 0.8f, PickaxeRange = 2.5f, PickaxePlayerDamage = 14f, PickaxeWoodGather = 3f, PickaxeStoneGather = 12f, PickaxeStructureDamage = 12f;
+        [Tune("Spear")] public static float SpearCooldown = 0.9f, SpearRange = 3.4f, SpearPlayerDamage = 35f, SpearWoodGather = 2f, SpearStoneGather = 1f, SpearStructureDamage = 10f;
+        [Tune("Spear")] public static float SpearDrawTime = 0.6f, SpearThrowSpeed = 30f, SpearThrowDamage = 60f, SpearThrowStructureDamage = 8f;
+        [Tune("Chainsaw")] public static float ChainsawCooldown = 0.15f, ChainsawRange = 2.4f, ChainsawPlayerDamage = 8f, ChainsawWoodGather = 12f, ChainsawStoneGather = 10f, ChainsawStructureDamage = 12f;
         [Tune("Melee")] public static float StoneStructureMeleeMul = 0.2f; // stone is very hard to melee - bring a ram
 
         // ---------- Bow ----------
-        [Tune("Bow")] public static float BowDrawTime = 0.8f, ArrowSpeed = 55f, ArrowGravity = 9.81f, ArrowPlayerDamage = 50f, ArrowWoodStructureDamage = 2f;
+        [Tune("Bow")] public static float BowDrawTime = 0.8f, ArrowSpeed = 55f, ArrowGravity = 9.81f, ArrowPlayerDamage = 50f, ArrowWoodStructureDamage = 4f;
+        [Tune("Crossbow")] public static float CrossbowDamage = 65f, CrossbowSpeed = 90f, CrossbowReload = 1.6f, CrossbowZoomFov = 45f;
         [Tune("Spear")] public static float SpearGravity = 9.81f;
 
         // ---------- Battering ram (hand held) ----------
@@ -171,24 +176,30 @@ namespace RockGame
         [Tune("Ram")] public static int RamUses = 3;
 
         // ---------- Resources ----------
-        [Tune("Resources")] public static int TreeAmount = 300, StoneAmount = 250, BushBerries = 1, BerriesPerPick = 1;
+        [Tune("Resources")] public static int TreeAmount = 300, StoneAmount = 250;
         [Tune("Resources")] public static float WeakSpotMul = 2f, NodeRespawnTime = 60f, BushRespawnTime = 45f;
 
         // ---------- Building ----------
         [Tune("Building")] public static float BuildCooldown = 0f, UpgradeCooldown = 0f, DemolishRefund = 0.5f;
-        [Tune("Building")] public static int FoundationWood = 15, WallWood = 15, DoorwayWood = 20, FloorWood = 12, StairsWood = 20;
-        [Tune("Building")] public static int FoundationStone = 50, WallStone = 50, DoorwayStone = 40, FloorStone = 30, StairsStone = 30;
-        [Tune("Building HP")] public static float FoundationHp = 500, WallHp = 400, DoorwayHp = 350, FloorHp = 300, StairsHp = 300;
-        [Tune("Building HP")] public static float FoundationStoneHp = 1800, WallStoneHp = 1500, DoorwayStoneHp = 1200, FloorStoneHp = 1000, StairsStoneHp = 1000;
-        [Tune("Building HP")] public static float BarrierHp = 250, ChestHp = 300;
+        [Tune("Building")] public static int FoundationWood = 15, WallWood = 15, DoorwayWood = 20, WindowWood = 15, FloorWood = 12, StairsWood = 20;
+        [Tune("Building")] public static int FoundationStone = 50, WallStone = 50, DoorwayStone = 40, WindowStone = 45, FloorStone = 30, StairsStone = 30;
+        [Tune("Building HP")] public static float FoundationHp = 500, WallHp = 400, DoorwayHp = 350, WindowHp = 350, FloorHp = 300, StairsHp = 300;
+        [Tune("Building HP")] public static float FoundationStoneHp = 1800, WallStoneHp = 1500, DoorwayStoneHp = 1200, WindowStoneHp = 1300, FloorStoneHp = 1000, StairsStoneHp = 1000;
+        [Tune("Building HP")] public static float BarrierHp = 250, ChestHp = 300, TowerHp = 800;
 
         // ---------- Crafting (at the alien machine) ----------
         [Tune("Crafting")] public static int PlanWood = 5;
         [Tune("Crafting")] public static int HatchetWood = 30, HatchetStone = 10, PickaxeWood = 30, PickaxeStone = 10;
         [Tune("Crafting")] public static int SpearWood = 75, SpearStone = 0, BowWood = 100, BowStone = 15;
-        [Tune("Crafting")] public static int ArrowWood = 15, ArrowStone = 5, ArrowsPerCraft = 10;
+        [Tune("Crafting")] public static int ArrowWood = 10, ArrowStone = 0, ArrowsPerCraft = 1;
         [Tune("Crafting")] public static int RamWood = 125, RamStone = 50;
         [Tune("Crafting")] public static int ChestWood = 50, BarrierWood = 20;
+        [Tune("Crafting")] public static int CrossbowWood = 500, ArmorWood = 500, FortTowerWood = 1000, CarWood = 2000, SaddleWood = 1000;
+
+        // ---------- Vehicles ----------
+        [Tune("Vehicles")] public static float CarSpeed = 17f, CarReverseSpeed = 6f, CarAccel = 9f, CarTurn = 95f, CarHitDamage = 30f, CarKnockback = 11f;
+        [Tune("Vehicles")] public static float HorseWalk = 4.5f, HorseSprint = 11f, HorseJump = 8.5f;
+        [Tune("Vehicles")] public static int HorsesPerSide = 3;
 
         // ---------- Items ----------
         public static string ItemName(Item i)
@@ -209,6 +220,11 @@ namespace RockGame
                 case Item.Helmet: return "Alien Helmet";
                 case Item.InvisPotion: return "Invisibility Potion";
                 case Item.Chainsaw: return "Chainsaw";
+                case Item.Crossbow: return "Crossbow";
+                case Item.Armor: return "Wooden Armour";
+                case Item.FortTower: return "Fort Tower";
+                case Item.Car: return "Wooden Car";
+                case Item.Saddle: return "Saddle";
                 case Item.None: return "";
                 default: return i.ToString();
             }
@@ -227,11 +243,11 @@ namespace RockGame
             }
         }
 
-        /// <summary>Tools & weapons land on the hotbar first; materials fill the main inventory first.</summary>
-        public static bool PrefersHotbar(Item i) => i != Item.Wood && i != Item.Stone && i != Item.Arrow;
+        /// <summary>Materials: they stack onto what you already have, otherwise fill the hotbar from slot 7 backwards.</summary>
+        public static bool IsMat(Item i) => i == Item.Wood || i == Item.Stone || i == Item.Arrow;
 
         /// <summary>Items whose Data byte is a durability / health counter (shown as a bar).</summary>
-        public static int MaxData(Item i) => i == Item.Ram ? RamUses : i == Item.Chainsaw ? ChainsawUses : i == Item.Helmet ? HelmetHp : 0;
+        public static int MaxData(Item i) => i == Item.Ram ? RamUses : i == Item.Chainsaw ? ChainsawUses : i == Item.Armor ? ArmorHp : 0;
 
         public static MeleeStats Melee(Item i)
         {
@@ -248,7 +264,9 @@ namespace RockGame
         public static bool IsMelee(Item i) => i == Item.Rock || i == Item.Hatchet || i == Item.Pickaxe || i == Item.Spear || i == Item.Chainsaw;
 
         // ---------- Building ----------
-        public static string PieceName(PieceType t) => t.ToString();
+        public static string PieceName(PieceType t) => t == PieceType.Tower ? "Fort Tower" : t.ToString();
+        /// <summary>Pieces that sit on the 3 m building grid (placed with the building plan).</summary>
+        public static bool IsGridPiece(PieceType t) => t != PieceType.Barrier && t != PieceType.Tower;
 
         public static int PieceWood(PieceType t)
         {
@@ -257,6 +275,7 @@ namespace RockGame
                 case PieceType.Foundation: return FoundationWood;
                 case PieceType.Wall: return WallWood;
                 case PieceType.Doorway: return DoorwayWood;
+                case PieceType.Window: return WindowWood;
                 case PieceType.Floor: return FloorWood;
                 case PieceType.Stairs: return StairsWood;
                 default: return 0;
@@ -269,6 +288,7 @@ namespace RockGame
                 case PieceType.Foundation: return FoundationStone;
                 case PieceType.Wall: return WallStone;
                 case PieceType.Doorway: return DoorwayStone;
+                case PieceType.Window: return WindowStone;
                 case PieceType.Floor: return FloorStone;
                 case PieceType.Stairs: return StairsStone;
                 default: return 0;
@@ -282,6 +302,8 @@ namespace RockGame
                 case PieceType.Foundation: return stone ? FoundationStoneHp : FoundationHp;
                 case PieceType.Wall: return stone ? WallStoneHp : WallHp;
                 case PieceType.Doorway: return stone ? DoorwayStoneHp : DoorwayHp;
+                case PieceType.Window: return stone ? WindowStoneHp : WindowHp;
+                case PieceType.Tower: return TowerHp;
                 case PieceType.Floor: return stone ? FloorStoneHp : FloorHp;
                 case PieceType.Stairs: return stone ? StairsStoneHp : StairsHp;
                 case PieceType.Barrier: return BarrierHp;
@@ -290,7 +312,7 @@ namespace RockGame
         }
 
         // ---------- Crafting ----------
-        static readonly Item[] k_Recipes = { Item.BuildingPlan, Item.Hatchet, Item.Pickaxe, Item.Spear, Item.Bow, Item.Arrow, Item.Ram, Item.Chest, Item.Barrier };
+        static readonly Item[] k_Recipes = { Item.BuildingPlan, Item.Hatchet, Item.Pickaxe, Item.Spear, Item.Bow, Item.Arrow, Item.Crossbow, Item.Ram, Item.Chest, Item.Barrier, Item.Armor, Item.FortTower, Item.Saddle, Item.Car };
 
         /// <summary>Recipes available in this mode (wood mode has no pickaxe).</summary>
         public static int RecipeCount => WoodMode ? k_Recipes.Length - 1 : k_Recipes.Length;
@@ -309,6 +331,11 @@ namespace RockGame
                 case Item.Arrow: r = new Recipe { Output = Item.Arrow, Count = Mathf.Max(1, ArrowsPerCraft), Wood = ArrowWood, Stone = ArrowStone }; break;
                 case Item.Ram: r = new Recipe { Output = Item.Ram, Count = 1, Wood = RamWood, Stone = RamStone }; break;
                 case Item.Chest: r = new Recipe { Output = Item.Chest, Count = 1, Wood = ChestWood }; break;
+                case Item.Crossbow: r = new Recipe { Output = Item.Crossbow, Count = 1, Wood = CrossbowWood }; break;
+                case Item.Armor: r = new Recipe { Output = Item.Armor, Count = 1, Wood = ArmorWood }; break;
+                case Item.FortTower: r = new Recipe { Output = Item.FortTower, Count = 1, Wood = FortTowerWood }; break;
+                case Item.Saddle: r = new Recipe { Output = Item.Saddle, Count = 1, Wood = SaddleWood }; break;
+                case Item.Car: r = new Recipe { Output = Item.Car, Count = 1, Wood = CarWood }; break;
                 default: r = new Recipe { Output = Item.Barrier, Count = 1, Wood = BarrierWood }; break;
             }
             if (WoodMode) { r.Wood += r.Stone; r.Stone = 0; } // everything costs wood only
@@ -328,6 +355,9 @@ namespace RockGame
                     return t;
             return -1;
         }
+
+        /// <summary>Crafting works anywhere inside your own base.</summary>
+        public static bool CanCraftAt(int team, Vector3 p) => BaseTeamAt(p) == team;
 
         /// <summary>Raw base membership of a grid cell.</summary>
         public static bool CellInBase(int team, int i, int j)

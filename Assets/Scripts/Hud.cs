@@ -20,7 +20,11 @@ namespace RockGame
         public static bool MouseOverUI;
         static readonly System.Text.RegularExpressions.Regex s_ColorTag = new System.Text.RegularExpressions.Regex("</?color[^>]*>");
 
-        bool m_ShowHelp = true, m_ShowSettings;
+        bool m_ShowHelp = true, m_ShowSettings, m_ShowDev;
+        /// <summary>Build wheel: which slice the mouse is over (-1 = none).</summary>
+        public static int WheelHover = -1;
+        static Vector2 s_WheelCenter;
+        public static void WheelOpened() { s_WheelCenter = new Vector2(Screen.width / 2f, Screen.height / 2f); WheelHover = -1; }
         float m_LastHealth = 100f, m_DamageFlash;
         GUIStyle m_Label, m_Center, m_Big, m_Small, m_Button, m_Box, m_Field;
         float m_Scale = 1f;
@@ -49,6 +53,16 @@ namespace RockGame
         public static void Banner(string title, string sub) { s_BannerTitle = title; s_BannerSub = sub; s_BannerTime = Time.time; }
         public static void Clear() { s_Msgs.Clear(); s_Gains.Clear(); s_BannerTime = -10f; Fx.Numbers.Clear(); }
 
+        /// <summary>Materials spent (building, crafting): a red "-15 Wood" line in the same feed.</summary>
+        public static void Loss(Item id, int amount)
+        {
+            if (amount <= 0) return;
+            int idx = s_Gains.FindIndex(g => g.Id == id && g.Amount < 0 && Time.time - g.Time < 2.5f);
+            if (idx >= 0) { var g = s_Gains[idx]; g.Amount -= amount; g.Time = Time.time; s_Gains[idx] = g; }
+            else s_Gains.Add(new Gain { Id = id, Amount = -amount, Time = Time.time });
+            if (s_Gains.Count > 7) s_Gains.RemoveAt(0);
+        }
+
         /// <summary>Compare the inventory with last frame: anything that went up gets a "+N item" line.</summary>
         void TrackGains(PlayerNet me)
         {
@@ -63,7 +77,7 @@ namespace RockGame
                 if (!known || n <= before) continue;
                 int add = n - before;
                 // stack onto a recent line for the same item
-                int idx = s_Gains.FindIndex(g => g.Id == id && Time.time - g.Time < 2.5f);
+                int idx = s_Gains.FindIndex(g => g.Id == id && g.Amount > 0 && Time.time - g.Time < 2.5f);
                 if (idx >= 0) { var g = s_Gains[idx]; g.Amount += add; g.Time = Time.time; s_Gains[idx] = g; }
                 else s_Gains.Add(new Gain { Id = id, Amount = add, Time = Time.time });
                 if (s_Gains.Count > 6) s_Gains.RemoveAt(0);
@@ -145,7 +159,7 @@ namespace RockGame
         void DrawMainMenu(Bootstrap boot)
         {
             if (m_ShowSettings) { DrawSettings(); return; }
-            float w = 460 * m_Scale, h = 650 * m_Scale;
+            float w = 460 * m_Scale, h = 690 * m_Scale;
             var r = new Rect((Screen.width - w) / 2, (Screen.height - h) / 2, w, h);
             Fill(r, new Color(0, 0, 0, 0.65f));
             GUILayout.BeginArea(new Rect(r.x + 20, r.y + 15, r.width - 40, r.height - 30));
@@ -181,6 +195,12 @@ namespace RockGame
             if (GUILayout.Toggle(wood, " Wood mode", m_Button, GUILayout.Height(30 * m_Scale)) && !wood) boot.SetMapChoice(key | Cfg.WoodBit);
             GUILayout.EndHorizontal();
             if (wood) GUILayout.Label("<color=#d9a066>Wood only: no stone, no pickaxe, everything costs wood.</color>", m_Small);
+            bool sides = (key & Cfg.SidesBit) != 0;
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Airdrops", m_Label, GUILayout.Width(90 * m_Scale));
+            if (GUILayout.Toggle(!sides, " Anywhere", m_Button, GUILayout.Height(30 * m_Scale)) && sides) boot.SetMapChoice(key & ~Cfg.SidesBit);
+            if (GUILayout.Toggle(sides, " One per side", m_Button, GUILayout.Height(30 * m_Scale)) && !sides) boot.SetMapChoice(key | Cfg.SidesBit);
+            GUILayout.EndHorizontal();
             GUILayout.Space(6 * m_Scale);
             Bootstrap.Solo = GUILayout.Toggle(Bootstrap.Solo, " Solo test (start without an opponent)", m_Label);
             Bootstrap.Fast = GUILayout.Toggle(Bootstrap.Fast, $" Fast timers ({Cfg.FastBallDropDelay:0}s ball drop, {Cfg.FastMatchLength:0}s match)", m_Label);
@@ -329,10 +349,20 @@ namespace RockGame
                 if (ball != null) Shadowed(new Rect(12, 64 * k, 400 * k, 24 * k), $"Ball: {Direction(me.transform, ball.transform.position)}", m_Small);
                 if (game != null)
                 {
-                    var drop = game.ActiveDrop;
-                    bool incoming = game.DropStart.Value >= 0 && me.NetworkManager.ServerTime.Time - game.DropStart.Value < NetGame.DropLand;
-                    if (drop != null || incoming)
-                        Shadowed(new Rect(12, 84 * k, 400 * k, 24 * k), $"<color=#c98bff>Airdrop{(incoming ? " (incoming)" : "")}: {Direction(me.transform, drop != null ? drop.transform.position : game.DropPos.Value)}</color>", m_Small);
+                    float ly = 84 * k;
+                    foreach (var c in Container.All)
+                    {
+                        if (!c.IsAirdrop) continue;
+                        Shadowed(new Rect(12, ly, 400 * k, 24 * k), $"<color=#c98bff>Airdrop: {Direction(me.transform, c.transform.position)}</color>", m_Small);
+                        ly += 20 * k;
+                    }
+                    for (int i = 0; i < 2; i++)
+                    {
+                        double st0 = game.LaneStart(i).Value;
+                        if (st0 < 0 || me.NetworkManager.ServerTime.Time - st0 >= NetGame.DropLand) continue;
+                        Shadowed(new Rect(12, ly, 400 * k, 24 * k), $"<color=#c98bff>Airdrop incoming: {Direction(me.transform, game.LanePos(i).Value)}</color>", m_Small);
+                        ly += 20 * k;
+                    }
                 }
             }
 
@@ -394,6 +424,7 @@ namespace RockGame
                     var r = new Rect(hx + i * (slot + gap), hy, slot, slot);
                     bool sel = me.HeldSlot.Value == i && !me.CarryingBall;
                     DrawSlotVisual(r, me.SlotAt(i), sel, me);
+                    if (sel && me.SlotAt(i).Empty) DrawRockGhost(r);
                     GUI.Label(new Rect(r.x + 4, r.y + 2, 20, 20), (i + 1).ToString(), m_Small);
                 }
             }
@@ -406,13 +437,24 @@ namespace RockGame
             Fill(new Rect(hr.x + 3, hr.y + 3, (hr.width - 6) * hp, hr.height - 6), Color.Lerp(new Color(0.85f, 0.15f, 0.1f), new Color(0.3f, 0.85f, 0.3f), hp));
             Shadowed(new Rect(hr.x + 8, hr.y + 2, hr.width, hr.height), $"<b>HP {me.Health.Value:0}</b>", m_Label);
             float statY = hr.y - 26 * k;
+            if (me.ArmorHp.Value > 0)
+            {
+                // second health bar, used up first
+                var ab = new Rect(hr.x, statY, hw, 22 * k);
+                Fill(ab, new Color(0, 0, 0, 0.55f));
+                Fill(new Rect(ab.x + 2, ab.y + 2, (ab.width - 4) * Mathf.Clamp01(me.ArmorHp.Value / (float)Mathf.Max(1, Cfg.ArmorHp)), ab.height - 4), new Color(0.75f, 0.55f, 0.3f));
+                Shadowed(new Rect(ab.x + 6, ab.y, ab.width, ab.height), $"<b>ARMOUR {me.ArmorHp.Value}</b>", m_Small);
+                statY -= 26 * k;
+            }
             if (me.HelmetHp.Value > 0)
             {
-                var hb = new Rect(hr.x, statY, hw * 0.6f, 20 * k);
-                Fill(hb, new Color(0, 0, 0, 0.55f));
-                Fill(new Rect(hb.x + 2, hb.y + 2, (hb.width - 4) * Mathf.Clamp01(me.HelmetHp.Value / (float)Mathf.Max(1, Cfg.HelmetHp)), hb.height - 4), new Color(0.55f, 0.65f, 0.8f));
-                Shadowed(new Rect(hb.x + 6, hb.y, hb.width, hb.height), $"HELMET {me.HelmetHp.Value}", m_Small);
-                statY -= 24 * k;
+                Shadowed(new Rect(hr.x, statY, 400 * k, 22 * k), "<color=#a8c4e0><b>HELMET</b> (stops one headshot)</color>", m_Small);
+                statY -= 22 * k;
+            }
+            if (VoiceChat.Transmitting)
+            {
+                Shadowed(new Rect(hr.x, statY, 400 * k, 22 * k), "<color=#7dff9a><b>● MIC ON</b></color>", m_Small);
+                statY -= 22 * k;
             }
             if (me.Invisible)
             {
@@ -430,11 +472,12 @@ namespace RockGame
                     "WASD move · Shift sprint · Space jump · Ctrl/C crouch\n" +
                     "LMB attack / gather / place · hold LMB: draw bow / ram\n" +
                     "Spear: hold RMB + LMB to throw · Berries: RMB to eat\n" +
-                    "1-7 / scroll: hotbar · TAB: inventory (you can still move)\n" +
-                    "E: machine (craft), ball, door, chest, bush, items\n" +
-                    "Plan: X demolishes your own pieces\n" +
-                    "Ball: LMB throws it · E at your machine to put it in · Esc: pause";
-                var hrct = new Rect(12, 112 * k, 460 * k, 170 * k);
+                    "1-7 / scroll: hotbar (empty slot = rock) · TAB: inventory + crafting in base\n" +
+                    "E: ball, door, chest, bush, items, horse/car (E again to get off)\n" +
+                    "Plan: hold RMB for the building wheel · X demolishes your own pieces\n" +
+                    "Ball: LMB throws it · E at your machine to put it in\n" +
+                    $"{(GameSettings.VoiceMode == GameSettings.VoicePushToTalk ? "V: push to talk · " : "")}Esc: pause, sound, mic & dev settings";
+                var hrct = new Rect(12, 130 * k, 500 * k, 185 * k);
                 Fill(hrct, new Color(0, 0, 0, 0.35f));
                 GUI.Label(new Rect(hrct.x + 8, hrct.y + 4, hrct.width - 10, hrct.height), help, m_Small);
             }
@@ -476,14 +519,14 @@ namespace RockGame
             }
 
             if (pc.MenuOpen) DrawInventory(me, pc);
+            if (pc.WheelOpen) DrawWheel(pc);
 
             if (pc.Paused && (game == null || game.S != GameState.GameOver))
             {
-                Fill(new Rect(0, 0, sw, sh), new Color(0, 0, 0, 0.5f));
-                Shadowed(new Rect(0, sh * 0.35f, sw, 60 * k), "PAUSED", m_Big);
-                Shadowed(new Rect(0, sh * 0.35f + 60 * k, sw, 30 * k), "Click anywhere to resume (the match keeps running!)", m_Center);
-                DrawLeaveButton(boot, new Rect(cx - 100 * k, sh * 0.35f + 110 * k, 200 * k, 44 * k));
+                if (m_ShowDev) DrawDevMenu(me, game);
+                else DrawPauseMenu(boot, pc);
             }
+            else m_ShowDev = false;
 
             if (game != null && game.S == GameState.GameOver) DrawGameOver(boot, game, team);
         }
@@ -493,7 +536,9 @@ namespace RockGame
             var s = me.HeldStack;
             switch (s.Id)
             {
-                case Item.BuildingPlan: return $"<b>{Cfg.PieceName(pc.BuildPiece)}</b>  ({Cfg.PieceWood(pc.BuildPiece)} wood)    RMB: next piece   R: rotate stairs   " + (Cfg.WoodMode ? "" : "F: upgrade to stone   ") + "X: demolish yours";
+                case Item.BuildingPlan:
+                    if (pc.DemolishMode) return "<b>Demolish</b>    LMB: take down your own piece (half the wood back)    hold RMB: building wheel";
+                    return $"<b>{Cfg.PieceName(pc.BuildPiece)}</b>  ({Cfg.PieceWood(pc.BuildPiece)} wood)    hold RMB: building wheel   R: rotate stairs   " + (Cfg.WoodMode ? "" : "F: upgrade to stone   ") + "X: demolish yours";
                 case Item.Ram: return $"<b>Battering Ram</b> ({s.Data} hits left)    hold LMB at an enemy piece: wood breaks instantly, stone drops to wood";
                 case Item.Spear: return "<b>Spear</b>    LMB: stab    hold RMB + LMB: throw    E: pick thrown spears back up";
                 case Item.Bow: return $"<b>Bow</b>  ({me.Count(Item.Arrow)} arrows)    hold LMB to draw, release to fire";
@@ -502,7 +547,12 @@ namespace RockGame
                 case Item.Berry: return $"<b>Berries</b> x{s.Count}    RMB: eat (+{Cfg.BerryHeal:0} HP)";
                 case Item.C4: return "<b>C4</b>    LMB: throw it at enemy buildings - it blows up everything nearby";
                 case Item.DeathWand: return "<b>Death Wand</b> (1 shot)    LMB: fire - anyone it passes close to dies";
-                case Item.Helmet: return $"<b>Alien Helmet</b> ({s.Data} HP)    LMB: put it on";
+                case Item.Helmet: return "<b>Alien Helmet</b>    LMB: put it on - the next headshot does no damage and breaks it";
+                case Item.Armor: return $"<b>Wooden Armour</b> ({(s.Data > 0 ? s.Data : Cfg.ArmorHp)} HP)    LMB: put it on - a second health bar that goes first";
+                case Item.Crossbow: return $"<b>Crossbow</b>  ({(s.Data > 0 ? "loaded" : "empty")}, {me.Count(Item.Arrow)} arrows)    LMB: fire   hold RMB: aim   reloads by itself";
+                case Item.FortTower: return "<b>Fort Tower</b>    LMB: throw it - a lookout tower with a ladder pops up where it lands";
+                case Item.Car: return "<b>Wooden Car</b>    LMB: put it down, then E to drive";
+                case Item.Saddle: return "<b>Saddle</b>    walk up to a wild horse and press E to saddle and ride it";
                 case Item.InvisPotion: return $"<b>Invisibility Potion</b>    LMB: drink ({Cfg.InvisTime:0}s, attacking shows you)";
                 case Item.Chainsaw: return $"<b>Chainsaw</b> ({s.Data} uses left)    hold LMB: cuts wood and stone fast";
                 default: return "";
@@ -534,6 +584,17 @@ namespace RockGame
         }
 
         // ------------------------------------------------------------------ slots
+
+        /// <summary>An empty slot in your hand = your rock, shown faded.</summary>
+        void DrawRockGhost(Rect r)
+        {
+            var icon = ItemIcons.Get(Item.Rock);
+            if (icon == null) return;
+            var old = GUI.color;
+            GUI.color = new Color(1, 1, 1, 0.5f);
+            GUI.DrawTexture(new Rect(r.x + r.width * 0.15f, r.y + r.height * 0.12f, r.width * 0.7f, r.height * 0.7f), icon, ScaleMode.ScaleToFit, true);
+            GUI.color = old;
+        }
 
         void DrawSlotVisual(Rect r, ItemStack s, bool selected, PlayerNet me)
         {
@@ -598,7 +659,8 @@ namespace RockGame
             {
                 case Item.Ram: return $"  ({s.Data} hits left)";
                 case Item.Chainsaw: return $"  ({s.Data} uses left)";
-                case Item.Helmet: return $"  ({s.Data} HP)";
+                case Item.Armor: return $"  ({(s.Data > 0 ? s.Data : Cfg.ArmorHp)} armour HP)";
+                case Item.Crossbow: return s.Data > 0 ? "  (loaded)" : "  (empty)";
                 case Item.Berry: return $"  (RMB to eat, +{Cfg.BerryHeal:0} HP)";
                 default: return s.Count > 1 ? $"  x{s.Count}" : "";
             }
@@ -637,23 +699,23 @@ namespace RockGame
             float craftW = 330 * k;
             bool loot = pc.LootTarget != null;
             float lootW = loot ? gridW : 0;
-            float total = lootW + gridW + craftW + (loot ? 60 * k : 30 * k);
+            float total = gridW + 30 * k + (loot ? lootW : craftW);
             float x0 = Mathf.Max(10, (sw - total) / 2);
             float top = sh * 0.14f;
-
-            // ---- loot container (left) ----
             float invX = x0;
+            float lootX = invX + gridW + 30 * k;
+
+            // ---- loot container (right of the inventory) ----
             if (loot)
             {
                 var c = pc.LootTarget;
-                Shadowed(new Rect(x0, top - 34 * k, lootW, 30 * k), $"<b>{c.DisplayName.ToUpper()}</b>" + (c.TakeOnly ? "  <color=#bbbbbb>(take only)</color>" : ""), m_Label);
+                Shadowed(new Rect(lootX, top - 34 * k, lootW, 30 * k), $"<b>{c.DisplayName.ToUpper()}</b>" + (c.TakeOnly ? "  <color=#bbbbbb>(take only)</color>" : ""), m_Label);
                 int n = c.Slots.Count;
                 for (int i = 0; i < n; i++)
                 {
-                    var r = new Rect(x0 + (i % 7) * (slot + gap), top + (i / 7) * (slot + gap), slot, slot);
+                    var r = new Rect(lootX + (i % 7) * (slot + gap), top + (i / 7) * (slot + gap), slot, slot);
                     DrawSlot(r, c.Slots[i], 1, i, false, me, pc);
                 }
-                invX = x0 + lootW + 30 * k;
             }
 
             // ---- my inventory (21 slots) + hotbar ----
@@ -675,20 +737,20 @@ namespace RockGame
             float infoY = hotY + slot + 10 * k;
             Shadowed(new Rect(invX, infoY, gridW + 200, 24 * k), m_HoverName != "" ? m_HoverName : "Drag to move · right-drag splits a stack · shift-click quick-moves · drag outside to drop", m_Small);
 
-            // ---- crafting (right) ----
+            // ---- crafting (right, when not looting) ----
             float cxp = invX + gridW + 30 * k;
             string mats = $"<color=#d9a066>{me.Count(Item.Wood)} wood</color>" + (Cfg.WoodMode ? "" : $"  <color=#c8c8d0>{me.Count(Item.Stone)} stone</color>");
-            Shadowed(new Rect(cxp, top - 34 * k, craftW, 30 * k), $"<b>{(craft ? "ALIEN MACHINE" : "CRAFTING")}</b>   {mats}", m_Label);
-            float row = 50 * k;
-            if (!craft)
+            if (!loot) Shadowed(new Rect(cxp, top - 34 * k, craftW, 30 * k), $"<b>CRAFTING</b>   {mats}", m_Label);
+            float row = Mathf.Min(50 * k, (sh * 0.84f - top) / Mathf.Max(1, Cfg.RecipeCount) - 4 * k);
+            if (!craft && !loot)
             {
-                var nr = new Rect(cxp, top, craftW, 110 * k);
+                var nr = new Rect(cxp, top, craftW, 90 * k);
                 Fill(nr, new Color(0, 0, 0, 0.45f));
                 GUI.Label(new Rect(nr.x + 10, nr.y + 8, nr.width - 20, nr.height - 16),
-                    "Crafting happens at the <b><color=#7dff9a>alien machine</color></b> on the bedrock in the middle of your base.\nWalk up to it and press <b>E</b>.", new GUIStyle(m_Label) { wordWrap = true });
+                    "You can craft anywhere <b><color=#7dff9a>inside your own base</color></b>. Head home to craft.", new GUIStyle(m_Label) { wordWrap = true });
                 Shadowed(new Rect(cxp, nr.yMax + 6, craftW, 24 * k), "TAB / Esc to close", m_Small);
             }
-            for (int i = 0; craft && i < Cfg.RecipeCount; i++)
+            for (int i = 0; craft && !loot && i < Cfg.RecipeCount; i++)
             {
                 var rec = Cfg.GetRecipe(i);
                 var rr = new Rect(cxp, top + i * (row + 4 * k), craftW, row);
@@ -702,7 +764,7 @@ namespace RockGame
                 if (GUI.Button(new Rect(rr.xMax - 90 * k, rr.y + 8 * k, 84 * k, row - 16 * k), "Craft", m_Button)) me.CraftRpc(i);
                 GUI.enabled = true;
             }
-            if (craft) Shadowed(new Rect(cxp, top + Cfg.RecipeCount * (row + 4 * k) + 6, craftW, 24 * k), "TAB / Esc to close", m_Small);
+            if (craft && !loot) Shadowed(new Rect(cxp, top + Cfg.RecipeCount * (row + 4 * k) + 6, craftW, 24 * k), "TAB / Esc to close", m_Small);
 
             // ---- drag visual ----
             var e = Event.current;
@@ -712,15 +774,14 @@ namespace RockGame
                 {
                     // released outside the item grids: throw it on the ground (the rock stays with you)
                     var invRect = new Rect(invX - 10, top - 10, gridW + 20, hotY + slot - top + 20);
-                    var lootRect = new Rect(x0 - 10, top - 10, lootW + 20, 5 * (slot + gap) + 20);
+                    var lootRect = new Rect(lootX - 10, top - 10, lootW + 20, 5 * (slot + gap) + 20);
                     bool outside = !invRect.Contains(e.mousePosition) && !(loot && lootRect.Contains(e.mousePosition));
-                    if (outside && m_DragStack.Id != Item.Rock)
+                    if (outside)
                     {
                         int amount = m_DragHalf ? Mathf.Max(1, m_DragStack.Count / 2) : m_DragStack.Count;
                         me.DropItemRpc(m_DragFrom.Kind, (byte)m_DragFrom.Index, (ushort)amount, LootRef(pc));
                         Sfx.Play2D(Sfx.Throw, 0.4f);
                     }
-                    else if (outside) Push("You can't throw your rock away");
                     m_Dragging = false;
                     e.Use();
                 }
@@ -734,6 +795,165 @@ namespace RockGame
                     if (amt > 1) Shadowed(new Rect(dr.x, dr.yMax - 16, dr.width, 18), amt.ToString(), new GUIStyle(m_Small) { alignment = TextAnchor.LowerRight });
                 }
             }
+        }
+
+        // ------------------------------------------------------------------ build wheel
+
+        /// <summary>Rust-style radial menu while RMB is held with the building plan: move the mouse onto a slice and let go.</summary>
+        void DrawWheel(PlayerController pc)
+        {
+            float k = m_Scale;
+            var opts = PlayerController.WheelOptions;
+            var c = s_WheelCenter;
+            var mouse = Event.current.mousePosition;
+            var d = mouse - c;
+            WheelHover = -1;
+            if (d.magnitude > 45f * k)
+            {
+                float ang = Mathf.Atan2(d.x, -d.y) * Mathf.Rad2Deg; // 0 = up, clockwise
+                if (ang < 0) ang += 360f;
+                WheelHover = Mathf.RoundToInt(ang / (360f / opts.Length)) % opts.Length;
+            }
+            Fill(new Rect(0, 0, Screen.width, Screen.height), new Color(0, 0, 0, 0.25f));
+            float rad = 150f * k, bw = 120f * k, bh = 62f * k;
+            for (int i = 0; i < opts.Length; i++)
+            {
+                float a = i * (360f / opts.Length) * Mathf.Deg2Rad;
+                var p = c + new Vector2(Mathf.Sin(a), -Mathf.Cos(a)) * rad;
+                var r = new Rect(p.x - bw / 2, p.y - bh / 2, bw, bh);
+                bool hover = i == WheelHover;
+                bool current = opts[i].Demolish ? pc.DemolishMode : !pc.DemolishMode && pc.BuildPiece == opts[i].Piece;
+                Fill(r, hover ? new Color(1f, 0.8f, 0.3f, 0.85f) : current ? new Color(0.3f, 0.6f, 1f, 0.7f) : new Color(0, 0, 0, 0.7f));
+                string cost = opts[i].Demolish ? "your pieces" : $"{Cfg.PieceWood(opts[i].Piece)} wood";
+                var st = new GUIStyle(m_Center) { fontStyle = FontStyle.Bold };
+                st.normal.textColor = opts[i].Demolish ? new Color(1f, 0.55f, 0.45f) : Color.white;
+                GUI.Label(new Rect(r.x, r.y + 6 * k, r.width, 26 * k), opts[i].Label, st);
+                GUI.Label(new Rect(r.x, r.y + 30 * k, r.width, 22 * k), $"<size={Mathf.RoundToInt(12 * k)}>{cost}</size>", m_Center);
+            }
+            Fill(new Rect(c.x - 40 * k, c.y - 40 * k, 80 * k, 80 * k), new Color(0, 0, 0, 0.5f));
+            GUI.Label(new Rect(c.x - 60 * k, c.y - 12 * k, 120 * k, 24 * k), WheelHover >= 0 ? opts[WheelHover].Label : "release RMB", m_Center);
+            Fill(new Rect(mouse.x - 3, mouse.y - 3, 6, 6), Color.white);
+        }
+
+        // ------------------------------------------------------------------ pause: sound, mic, leave, dev
+
+        static float Slider(string label, float v, float min, float max, float scale, GUIStyle style, string shown)
+        {
+            GUILayout.BeginHorizontal();
+            GUILayout.Label(label, style, GUILayout.Width(170 * scale));
+            float nv = GUILayout.HorizontalSlider(v, min, max, GUILayout.Width(220 * scale));
+            GUILayout.Label(shown, style, GUILayout.Width(70 * scale));
+            GUILayout.EndHorizontal();
+            return nv;
+        }
+
+        void DrawPauseMenu(Bootstrap boot, PlayerController pc)
+        {
+            float k = m_Scale, sw = Screen.width, sh = Screen.height;
+            Fill(new Rect(0, 0, sw, sh), new Color(0, 0, 0, 0.55f));
+            float w = 560 * k, h = Mathf.Min(sh - 40, 640 * k);
+            var r = new Rect((sw - w) / 2, (sh - h) / 2, w, h);
+            if (r.Contains(Event.current.mousePosition)) MouseOverUI = true;
+            Fill(r, new Color(0.06f, 0.06f, 0.08f, 0.94f));
+            GUILayout.BeginArea(new Rect(r.x + 20, r.y + 14, r.width - 40, r.height - 28));
+            GUILayout.Label("<b>PAUSED</b>", m_Big);
+            GUILayout.Label("<color=#bbbbbb>The match keeps running!</color>", m_Center);
+            GUILayout.Space(8 * k);
+            if (GUILayout.Button("Resume", m_Button, GUILayout.Height(36 * k))) pc.Paused = false;
+            GUILayout.Space(10 * k);
+
+            bool changed = false;
+            GUILayout.Label("<b><color=#ffd27a>SOUND</color></b>", m_Label);
+            float v = Slider("Master volume", GameSettings.MasterVolume, 0f, 1f, k, m_Small, $"{GameSettings.MasterVolume * 100:0}%");
+            if (!Mathf.Approximately(v, GameSettings.MasterVolume)) { GameSettings.MasterVolume = v; changed = true; }
+            v = Slider("Voice chat volume", GameSettings.VoiceVolume, 0f, 2f, k, m_Small, $"{GameSettings.VoiceVolume * 100:0}%");
+            if (!Mathf.Approximately(v, GameSettings.VoiceVolume)) { GameSettings.VoiceVolume = v; changed = true; }
+
+            GUILayout.Space(8 * k);
+            GUILayout.Label("<b><color=#ffd27a>PROXIMITY VOICE CHAT</color></b>  <color=#bbbbbb>(people hear you when they're near you)</color>", m_Small);
+            GUILayout.BeginHorizontal();
+            string[] modes = { "Off", "Open mic", $"Push to talk ({GameSettings.PushToTalkKey})" };
+            for (int i = 0; i < 3; i++)
+                if (GUILayout.Toggle(GameSettings.VoiceMode == i, modes[i], m_Button, GUILayout.Height(30 * k)) && GameSettings.VoiceMode != i) { GameSettings.VoiceMode = i; changed = true; }
+            GUILayout.EndHorizontal();
+            var devs = Microphone.devices;
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Microphone", m_Small, GUILayout.Width(170 * k));
+            if (devs.Length == 0) GUILayout.Label("<color=#ff8888>no microphone found</color>", m_Small);
+            else
+            {
+                int cur = System.Array.IndexOf(devs, GameSettings.MicDevice);
+                if (cur < 0) cur = 0;
+                if (GUILayout.Button("<", m_Button, GUILayout.Width(34 * k))) { GameSettings.MicDevice = devs[(cur + devs.Length - 1) % devs.Length]; changed = true; }
+                string name = devs[cur];
+                GUILayout.Label(name.Length > 34 ? name.Substring(0, 34) + "..." : name, m_Small, GUILayout.Width(260 * k));
+                if (GUILayout.Button(">", m_Button, GUILayout.Width(34 * k))) { GameSettings.MicDevice = devs[(cur + 1) % devs.Length]; changed = true; }
+            }
+            GUILayout.EndHorizontal();
+            v = Slider("Mic volume", GameSettings.MicGain, 0.2f, 4f, k, m_Small, $"{GameSettings.MicGain * 100:0}%");
+            if (!Mathf.Approximately(v, GameSettings.MicGain)) { GameSettings.MicGain = v; changed = true; }
+            if (GameSettings.VoiceMode == GameSettings.VoiceOpen)
+            {
+                v = Slider("Open mic sensitivity", 0.1f - GameSettings.MicThreshold, 0f, 0.1f, k, m_Small, $"{(0.1f - GameSettings.MicThreshold) * 1000:0}");
+                if (!Mathf.Approximately(0.1f - v, GameSettings.MicThreshold)) { GameSettings.MicThreshold = 0.1f - v; changed = true; }
+            }
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Mic level", m_Small, GUILayout.Width(170 * k));
+            var lr = GUILayoutUtility.GetRect(220 * k, 14 * k, GUILayout.Width(220 * k));
+            Fill(lr, new Color(0, 0, 0, 0.6f));
+            Fill(new Rect(lr.x, lr.y, lr.width * Mathf.Clamp01(VoiceChat.Level), lr.height), VoiceChat.Transmitting ? new Color(0.4f, 1f, 0.5f) : new Color(0.6f, 0.6f, 0.6f));
+            if (GameSettings.VoiceMode == GameSettings.VoiceOpen) Fill(new Rect(lr.x + lr.width * Mathf.Clamp01(GameSettings.MicThreshold * 3f), lr.y - 2, 2, lr.height + 4), new Color(1f, 0.8f, 0.3f));
+            GUILayout.Label(VoiceChat.Transmitting ? "<color=#7dff9a>sending</color>" : "", m_Small);
+            GUILayout.EndHorizontal();
+            if (changed) GameSettings.Save();
+
+            GUILayout.FlexibleSpace();
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Dev settings", m_Button, GUILayout.Height(40 * k))) m_ShowDev = true;
+            if (GUILayout.Button("Leave game", m_Button, GUILayout.Height(40 * k))) boot.Leave();
+            GUILayout.EndHorizontal();
+            GUILayout.EndArea();
+        }
+
+        void DrawDevMenu(PlayerNet me, NetGame game)
+        {
+            float k = m_Scale, sw = Screen.width, sh = Screen.height;
+            Fill(new Rect(0, 0, sw, sh), new Color(0, 0, 0, 0.55f));
+            float w = Mathf.Min(sw - 40, 760 * k), h = Mathf.Min(sh - 40, 620 * k);
+            var r = new Rect((sw - w) / 2, (sh - h) / 2, w, h);
+            MouseOverUI = true;
+            Fill(r, new Color(0.08f, 0.05f, 0.05f, 0.95f));
+            GUILayout.BeginArea(new Rect(r.x + 20, r.y + 14, r.width - 40, r.height - 28));
+            GUILayout.BeginHorizontal();
+            GUILayout.Label($"<b><size={Mathf.RoundToInt(26 * k)}>DEV SETTINGS</size></b>", m_Label);
+            GUILayout.FlexibleSpace();
+            if (GUILayout.Button("Back", m_Button, GUILayout.Width(120 * k), GUILayout.Height(34 * k))) m_ShowDev = false;
+            GUILayout.EndHorizontal();
+            GUILayout.Label("<color=#bbbbbb>For testing. Everyone in the match is told when you use one.</color>", m_Small);
+            string timer = game == null ? "" : $"{game.S}  ·  {Clock(game.TimeLeft)} left" + (game.TimerPaused.Value ? "  <color=#ffcc66>(PAUSED)</color>" : "");
+            GUILayout.Label(timer, m_Label);
+
+            void Section(string title) { GUILayout.Space(6 * k); GUILayout.Label($"<b><color=#ffd27a>{title}</color></b>", m_Label); }
+            void Row(params (string label, DevCmd cmd)[] buttons)
+            {
+                GUILayout.BeginHorizontal();
+                foreach (var (label, cmd) in buttons)
+                    if (GUILayout.Button(label, m_Button, GUILayout.Height(32 * k))) me.DevRpc(cmd);
+                GUILayout.EndHorizontal();
+            }
+            Section("MATCH");
+            Row(("Drop the wall now", DevCmd.DropWallNow), (game != null && game.TimerPaused.Value ? "Resume timer" : "Pause timer", DevCmd.TogglePauseTimer), ("Timer to 10s", DevCmd.TimerTo10s));
+            Row(("+1 minute", DevCmd.AddMinute), ("-1 minute", DevCmd.SubMinute), ("Start sudden death", DevCmd.StartSuddenDeath), ("Win now", DevCmd.WinNow));
+            Section("WORLD");
+            Row(("Spawn airdrop now", DevCmd.SpawnAirdrop), ("Ball to me", DevCmd.BallToMe), ("Ball to middle", DevCmd.BallToMiddle), ("Regrow nodes", DevCmd.RegrowNodes));
+            Row(("Spawn horse", DevCmd.SpawnHorse), ("Spawn car", DevCmd.SpawnCar));
+            Section("ME");
+            Row(("+1000 wood", DevCmd.GiveWood), ("+1000 stone", DevCmd.GiveStone), ("+50 arrows", DevCmd.GiveArrows));
+            Row(("All airdrop items", DevCmd.GiveOpItems), ("One of every craftable", DevCmd.GiveCraftables), ("Clear inventory", DevCmd.ClearInventory));
+            Row(("Heal", DevCmd.HealFull), ("God mode on/off", DevCmd.ToggleGod), ("Kill me", DevCmd.KillMe));
+            Section("TELEPORT");
+            Row(("My base", DevCmd.TpMyBase), ("Enemy base", DevCmd.TpEnemyBase), ("The ball", DevCmd.TpBall), ("The airdrop", DevCmd.TpAirdrop));
+            GUILayout.EndArea();
         }
 
         /// <summary>Bottom right, above the corner: "+30 Wood" with the item icon, fading out.</summary>
@@ -750,8 +970,9 @@ namespace RockGame
                 float a = Mathf.Clamp01((4f - age) * 1.5f);
                 float slide = Mathf.Max(0f, 0.15f - age) / 0.15f * 40f * k;
                 var r = new Rect(sw - w - 16 * k + slide, y, w, rowH - 4 * k);
-                Fill(r, new Color(0.1f, 0.25f, 0.1f, 0.55f * a));
-                Fill(new Rect(r.x, r.y, 4 * k, r.height), new Color(0.45f, 0.95f, 0.45f, a));
+                bool lost = g.Amount < 0;
+                Fill(r, lost ? new Color(0.3f, 0.08f, 0.08f, 0.55f * a) : new Color(0.1f, 0.25f, 0.1f, 0.55f * a));
+                Fill(new Rect(r.x, r.y, 4 * k, r.height), lost ? new Color(1f, 0.35f, 0.3f, a) : new Color(0.45f, 0.95f, 0.45f, a));
                 var icon = ItemIcons.Get(g.Id);
                 var old = GUI.color;
                 GUI.color = new Color(1, 1, 1, a);
@@ -759,7 +980,7 @@ namespace RockGame
                 GUI.color = old;
                 var st = new GUIStyle(m_Label) { alignment = TextAnchor.MiddleLeft };
                 st.normal.textColor = new Color(1, 1, 1, a);
-                GUI.Label(new Rect(r.x + 12 * k, r.y, r.width - r.height - 20 * k, r.height), $"<b><color=#9dff9d>+{g.Amount}</color></b>  {Cfg.ItemName(g.Id)}", st);
+                GUI.Label(new Rect(r.x + 12 * k, r.y, r.width - r.height - 20 * k, r.height), lost ? $"<b><color=#ff7a70>{g.Amount}</color></b>  {Cfg.ItemName(g.Id)}" : $"<b><color=#9dff9d>+{g.Amount}</color></b>  {Cfg.ItemName(g.Id)}", st);
                 y -= rowH;
             }
         }

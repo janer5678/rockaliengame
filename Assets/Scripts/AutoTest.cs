@@ -37,7 +37,7 @@ namespace RockGame
             yield return new WaitForSeconds(0.5f);
             Log($"local player spawned: team={Cfg.TeamName[me.Team.Value]} host={nm.IsHost} nodes={FindObjectsByType<ResourceNode>(FindObjectsSortMode.None).Length}");
             Check(Cfg.BaseTeamAt(me.transform.position) == me.Team.Value, $"spawned inside own base ({me.transform.position})");
-            Check(me.Count(Item.Rock) == 1 && me.HeldItem == Item.Rock, "start with a rock in hand");
+            Check(me.Count(Item.Rock) == 0 && me.HeldItem == Item.Rock, "empty hand = holding the rock (no rock item)");
             Check(Vector3.Distance(me.transform.position, Cfg.SpawnPos(me.Team.Value)) < 1.5f, $"spawned on the bedrock on {Cfg.MapLabel} (seed {Cfg.MapSeed})");
             Check(NetGame.Instance != null && NetGame.Instance.MapKey.Value == Cfg.MapKey && NetGame.Instance.MapSeed.Value == Cfg.MapSeed, "map + seed synced from the host");
             var bc = Cfg.BedrockCenter(me.Team.Value);
@@ -74,6 +74,13 @@ namespace RockGame
         /// <summary>Put the item in hand, dragging it onto the last hotbar slot first if it's in the main inventory.</summary>
         static IEnumerator Hold(PlayerNet me, Item id)
         {
+            if (id == Item.Rock)
+            {
+                // the rock = any empty hotbar slot
+                for (int i = 0; i < Cfg.HotbarSize; i++) if (me.SlotAt(i).Empty) { me.HeldSlot.Value = (byte)i; break; }
+                yield return new WaitForSeconds(0.3f);
+                yield break;
+            }
             int s = me.HotbarSlotOf(id);
             if (s < 0)
             {
@@ -92,8 +99,8 @@ namespace RockGame
 
         static int RamHits(PlayerNet me)
         {
-            int s = me.HotbarSlotOf(Item.Ram);
-            return s < 0 ? 0 : me.SlotAt(s).Data;
+            for (int i = 0; i < Cfg.PlayerSlots; i++) if (me.SlotAt(i).Id == Item.Ram) return me.SlotAt(i).Data;
+            return 0;
         }
 
         IEnumerator ClientRoutine(PlayerNet me, PlayerController pc)
@@ -115,11 +122,11 @@ namespace RockGame
             Check(me.Count(Item.Wood) >= 180, "gathered enough wood (as inventory items)");
 
             // ---- crafting only works at the machine ----
-            pc.LocalTeleport(baseC + new Vector3(-12, 0.1f, 0), 0);
+            pc.LocalTeleport(baseC + new Vector3(Cfg.BaseHalf + 6f, 0.1f, 0), 0);
             yield return new WaitForSeconds(0.3f);
             me.CraftRpc(Cfg.RecipeIndex(Item.BuildingPlan));
             yield return new WaitForSeconds(0.6f);
-            Check(me.Count(Item.BuildingPlan) == 0, "can't craft away from the machine");
+            Check(me.Count(Item.BuildingPlan) == 0, "can't craft outside your base");
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
             yield return new WaitForSeconds(0.3f);
 
@@ -196,7 +203,7 @@ namespace RockGame
                 me.MeleeRpc(true, other.NetworkObject, tp + Vector3.up * 1.0f, false);
                 yield return new WaitForSeconds(0.65f);
             }
-            Check(NetGame.Instance.Items.Count > itemsBefore && other.Count(Item.Rock) == 1 && other.Count(Item.Wood) == 0, $"killed player's items spilled out of the body ({NetGame.Instance.Items.Count - itemsBefore} piles), rock kept");
+            Check(NetGame.Instance.Items.Count > itemsBefore && other.Count(Item.Wood) == 0, $"killed player's items spilled out of the body ({NetGame.Instance.Items.Count - itemsBefore} piles)");
         }
 
         /// <summary>Host-only (the server may write its own inventory directly): crafting, building, chest, bag, berries, barrier, bow, spear, ram.</summary>
@@ -205,8 +212,12 @@ namespace RockGame
             while (NetGame.Instance == null || NetGame.Instance.S == GameState.Waiting) yield return null;
             int team = me.Team.Value;
             Vector3 baseC = Cfg.BaseCenter[team];
+            yield return Hold(me, Item.Rock);
             me.ServerGive(Item.Wood, 3000);
             me.ServerGive(Item.Stone, 2000);
+            yield return new WaitForSeconds(0.3f);
+            Check(me.SlotAt(6).Id == Item.Wood && me.SlotAt(5).Id == Item.Wood && me.SlotAt(4).Id == Item.Wood && me.SlotAt(3).Id == Item.Stone && me.SlotAt(me.HeldSlot.Value).Empty,
+                  "materials fill the hotbar from slot 7 backwards and keep clear of the rock slot");
 
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
             yield return new WaitForSeconds(0.3f);
@@ -217,7 +228,12 @@ namespace RockGame
             }
             Check(me.Count(Item.BuildingPlan) == 1 && me.Count(Item.Hatchet) == 1 && me.Count(Item.Pickaxe) == 1 && me.Count(Item.Spear) == 1 && me.Count(Item.Bow) == 1
                   && me.Count(Item.Arrow) == Cfg.ArrowsPerCraft && RamHits(me) == Cfg.RamUses && me.Count(Item.Chest) == 1 && me.Count(Item.Barrier) == 1,
-                  "host crafted every item at the machine");
+                  "host crafted every item in base");
+            {
+                var sb = new System.Text.StringBuilder("inventory after crafting: ");
+                for (int i = 0; i < Cfg.PlayerSlots; i++) if (!me.SlotAt(i).Empty) sb.Append($"[{i}]{me.SlotAt(i).Id}x{me.SlotAt(i).Count}/{me.SlotAt(i).Data} ");
+                Log(sb.ToString());
+            }
             Check(me.Count(Item.Wood) == 3000 - (Cfg.PlanWood + Cfg.HatchetWood + Cfg.PickaxeWood + Cfg.SpearWood + Cfg.BowWood + Cfg.ArrowWood + Cfg.RamWood + Cfg.ChestWood + Cfg.BarrierWood),
                   $"crafting consumed wood items (left {me.Count(Item.Wood)})");
 
@@ -247,7 +263,7 @@ namespace RockGame
             {
                 me.UpgradeRpc(wall.NetworkObject);
                 yield return new WaitForSeconds(0.6f);
-                Check(wall.Tier.Value == 1 && Mathf.Approximately(wall.Health.Value, Cfg.PieceHp(PieceType.Wall, 1)), "wall upgraded to stone");
+                Check(wall.Tier.Value == 1 && Mathf.Approximately(wall.Health.Value, Cfg.PieceHp(PieceType.Wall, 1)), $"wall upgraded to stone (tier {wall.Tier.Value}, hp {wall.Health.Value}, held {me.HeldItem}, stone {me.Count(Item.Stone)})");
             }
             if (door != null)
             {
@@ -279,12 +295,11 @@ namespace RockGame
                 me.MoveItemRpc(1, 3, 0, 255, 0, chest.NetworkObject);
                 yield return new WaitForSeconds(0.4f);
                 Check(chest.Slots[3].Empty && me.Count(Item.Stone) == before, "shift-click took it back out");
-                me.MoveItemRpc(0, (byte)me.HotbarSlotOf(Item.Rock), 1, 0, 1, chest.NetworkObject);
-                yield return new WaitForSeconds(0.4f);
-                Check(chest.Slots[0].Empty && me.Count(Item.Rock) == 1, "the rock can't be put in a chest");
             }
             var farPos = new Vector3(0, 0.1f, 0);
             Check(PlayerNet.DeployProblem(Item.Chest, team, Cfg.BaseCenter[1 - team], 0) != null && PlayerNet.DeployProblem(Item.Chest, team, farPos, 0) != null, "chests only allowed in own base");
+            var onRock = Cfg.BedrockCenter(team) + new Vector3(2.3f, Cfg.BaseY, 0);
+            Check(PlayerNet.DeployProblem(Item.Chest, team, onRock, 0) == null && PlayerNet.DeployProblem(Item.Chest, team, Cfg.SpawnPos(team), 0) != null, "chests can go on the bedrock by the machine (not on the spawn spot)");
 
             // barrier out in the field
             var barrierPos = new Vector3(20f, 0f, -30f);
@@ -304,12 +319,12 @@ namespace RockGame
                 yield return new WaitForSeconds(0.4f);
                 me.PickBerriesRpc(bush.NetworkObject);
                 yield return new WaitForSeconds(0.5f);
-                Check(me.Count(Item.Berry) == Cfg.BerriesPerPick, "picked berries from a bush");
+                Check(me.Count(Item.Berry) == 1 && !bush.IsSpawned, "picked the whole berry bush (it's gone)");
                 me.Health.Value = 50f;
                 yield return Hold(me, Item.Berry);
                 me.EatRpc();
                 yield return new WaitForSeconds(0.5f);
-                Check(Mathf.Approximately(me.Health.Value, 50f + Cfg.BerryHeal) && me.Count(Item.Berry) == Cfg.BerriesPerPick - 1, "ate a berry to heal");
+                Check(Mathf.Approximately(me.Health.Value, 50f + Cfg.BerryHeal) && me.Count(Item.Berry) == 0, $"ate the berries to heal {Cfg.BerryHeal:0}");
                 me.Health.Value = Cfg.MaxHealth;
             }
 
@@ -320,13 +335,15 @@ namespace RockGame
                 foreach (var p in PlayerNet.All) if (p != me) other = p;
                 yield return null;
             }
+            me.ServerGive(Item.Arrow, 10);
+            int arrowsBefore = me.Count(Item.Arrow) + 1;
             yield return Hold(me, Item.Bow);
             float hpBefore = other.Health.Value;
             me.FireArrowRpc(me.EyePos, Vector3.forward * Cfg.ArrowSpeed);
             yield return new WaitForSeconds(0.1f);
             me.ArrowHitRpc(other.NetworkObject, other.transform.position + Vector3.up, Vector3.forward);
             yield return new WaitForSeconds(0.5f);
-            Check(other.Health.Value < hpBefore - 40f && me.Count(Item.Arrow) == Cfg.ArrowsPerCraft - 1, $"arrow hit opponent (hp {hpBefore:0} -> {other.Health.Value:0})");
+            Check(other.Health.Value < hpBefore - 40f && me.Count(Item.Arrow) == arrowsBefore - 2, $"arrow hit opponent (hp {hpBefore:0} -> {other.Health.Value:0})");
             other.Health.Value = 500f; // padded so the headshot can't kill the client mid-routine
             me.FireArrowRpc(me.EyePos, Vector3.forward * Cfg.ArrowSpeed);
             yield return new WaitForSeconds(0.1f);
@@ -377,11 +394,6 @@ namespace RockGame
             me.PickupItemRpc(woodItem);
             yield return new WaitForSeconds(0.5f);
             Check(me.Count(Item.Wood) == woodBefore && FindWorldItem(Item.Wood) < 0, "picked the wood back up");
-            int rockSlot = me.HotbarSlotOf(Item.Rock);
-            me.DropItemRpc(0, (byte)rockSlot, 1, default);
-            me.MoveItemRpc(0, (byte)rockSlot, 0, (byte)(Cfg.PlayerSlots - 1), 1, default);
-            yield return new WaitForSeconds(0.5f);
-            Check(me.HotbarSlotOf(Item.Rock) == rockSlot && FindWorldItem(Item.Rock) < 0, "the rock can't be dropped or moved off the hotbar");
 
             // hand-held ram on the opponent's wall
             float waitUntil = Time.time + 60f;
@@ -419,23 +431,138 @@ namespace RockGame
                 Check(!floor.IsSpawned && me.Count(Item.Wood) == woodBefore2 + Mathf.FloorToInt(Cfg.FloorWood * Cfg.DemolishRefund), "demolished own floor with the plan (wood refunded)");
             }
 
-            // helmet soaks up a headshot
+            // the helmet stops one headshot completely and breaks
             other.Health.Value = 500f;
-            other.HelmetHp.Value = 100;
+            other.HelmetHp.Value = 1;
             yield return Hold(me, Item.Bow);
             me.FireArrowRpc(me.EyePos, Vector3.forward * Cfg.ArrowSpeed);
             yield return new WaitForSeconds(0.1f);
             me.ArrowHitRpc(other.NetworkObject, other.transform.position + Vector3.up * 1.6f, Vector3.forward);
             yield return new WaitForSeconds(0.5f);
-            Check(other.HelmetHp.Value == 0 && Mathf.Abs(other.Health.Value - 500f) < 0.5f, $"helmet absorbed a {Cfg.ArrowPlayerDamage * Cfg.HeadshotMul:0} headshot and broke (hp {other.Health.Value:0})");
+            Check(other.HelmetHp.Value == 0 && Mathf.Abs(other.Health.Value - 500f) < 0.5f, $"helmet stopped a headshot completely and broke (hp {other.Health.Value:0})");
             other.Health.Value = Cfg.MaxHealth;
-            me.ServerGive(Item.Helmet, 1, 60);
+            me.ServerGive(Item.Helmet, 1, 1);
             yield return new WaitForSeconds(0.2f);
             yield return Hold(me, Item.Helmet);
             me.UseItemRpc();
             yield return new WaitForSeconds(0.9f);
-            Check(me.HelmetHp.Value == 60 && me.Count(Item.Helmet) == 0, "put on a found helmet with its remaining health");
+            Check(me.HelmetHp.Value == 1 && me.Count(Item.Helmet) == 0, "put on a found helmet");
             me.HelmetHp.Value = 0;
+
+            // wooden armour: a second bar that takes the damage first
+            other.ArmorHp.Value = 50;
+            other.Health.Value = Cfg.MaxHealth;
+            other.ServerDamage(80f, me);
+            Check(other.ArmorHp.Value == 0 && Mathf.Abs(other.Health.Value - (Cfg.MaxHealth - 30f)) < 0.5f, $"armour soaked up the first 50 of 80 damage (hp {other.Health.Value:0})");
+            other.Health.Value = Cfg.MaxHealth;
+            me.ServerGive(Item.Armor, 1, Cfg.ArmorHp);
+            yield return new WaitForSeconds(0.2f);
+            yield return Hold(me, Item.Armor);
+            me.UseItemRpc();
+            yield return new WaitForSeconds(0.9f);
+            Check(me.ArmorHp.Value == Cfg.ArmorHp && me.Count(Item.Armor) == 0, "put the armour on");
+            me.ArmorHp.Value = 0;
+
+            // crossbow: loads a bolt (uses an arrow), fires one hard hit
+            me.ServerGive(Item.Crossbow, 1);
+            yield return new WaitForSeconds(0.2f);
+            yield return Hold(me, Item.Crossbow);
+            int arrowsNow = me.Count(Item.Arrow);
+            me.ReloadCrossbowRpc();
+            yield return new WaitForSeconds(0.4f);
+            Check(me.HeldStack.Data == 1 && me.Count(Item.Arrow) == arrowsNow - 1, "crossbow loaded a bolt");
+            other.Health.Value = 500f;
+            me.FireCrossbowRpc(me.EyePos, Vector3.forward * Cfg.CrossbowSpeed);
+            yield return new WaitForSeconds(0.1f);
+            me.ArrowHitRpc(other.NetworkObject, other.transform.position + Vector3.up, Vector3.forward);
+            yield return new WaitForSeconds(0.5f);
+            Check(Mathf.Abs(other.Health.Value - (500f - Cfg.CrossbowDamage)) < 0.5f, $"crossbow bolt did {Cfg.CrossbowDamage:0} (500 -> {other.Health.Value:0})");
+            other.Health.Value = Cfg.MaxHealth;
+
+            // a window, and walls behind the machine
+            yield return Hold(me, Item.BuildingPlan);
+            FreeCell(team, 2, out int wi, out int wj);
+            pc.LocalTeleport(BuildGrid.CellCenter(wi, wj) + new Vector3(-4f, 0.1f, -1.5f), 0);
+            yield return new WaitForSeconds(0.3f);
+            me.PlaceRpc((byte)PieceType.Foundation, wi, wj, 0, 0);
+            yield return new WaitForSeconds(0.3f);
+            me.PlaceRpc((byte)PieceType.Window, wi - 1, wj, 0, 0);
+            yield return new WaitForSeconds(0.5f);
+            Check(CountStructures(PieceType.Window, team) == 1, "built a window");
+            pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
+            yield return new WaitForSeconds(0.3f);
+            int bi = Mathf.RoundToInt(Cfg.BedrockCenter(team).x / Cfg.Cell), bj = Mathf.RoundToInt(Cfg.BedrockCenter(team).z / Cfg.Cell);
+            int backJ = Cfg.BackDir(team).z < 0 ? bj - 2 : bj; // edge on the far side of the bedrock
+            int wallsBefore = CountStructures(PieceType.Wall, team);
+            me.PlaceRpc((byte)PieceType.Wall, bi - 1, backJ, 0, 1);
+            yield return new WaitForSeconds(0.3f);
+            me.PlaceRpc((byte)PieceType.Wall, bi, backJ, 0, 1);
+            yield return new WaitForSeconds(0.5f);
+            Check(CountStructures(PieceType.Wall, team) == wallsBefore + 2, "walls fit behind the machine on the bedrock's back edge");
+
+            // fort tower
+            me.ServerGive(Item.FortTower, 1);
+            yield return new WaitForSeconds(0.2f);
+            yield return Hold(me, Item.FortTower);
+            var fortAt = new Vector3(-20f, 0f, baseC.z > 0 ? 35f : -35f);
+            pc.LocalTeleport(fortAt + new Vector3(0, 1f, -6f), 0);
+            yield return new WaitForSeconds(0.9f);
+            me.ThrowFortRpc(me.EyePos, Vector3.forward * 10f);
+            yield return new WaitForSeconds(0.1f);
+            me.FortLandRpc(fortAt + Vector3.up * 0.5f);
+            yield return new WaitForSeconds(0.6f);
+            Check(CountStructures(PieceType.Tower, team) == 1 && me.Count(Item.FortTower) == 0, "threw a fort tower and it went up");
+
+            // wooden car: place it, get in, get out
+            me.ServerGive(Item.Car, 1);
+            yield return new WaitForSeconds(0.2f);
+            yield return Hold(me, Item.Car);
+            var carAt = Vector3.zero;
+            for (float cx2 = 10f; cx2 < 80f; cx2 += 4f)
+            {
+                carAt = new Vector3(cx2, 0f, baseC.z > 0 ? 35f : -35f);
+                carAt.y = MapBuilder.Height(carAt.x, carAt.z);
+                if (PlayerNet.DeployProblem(Item.Car, team, carAt, 0f) == null) break;
+            }
+            pc.LocalTeleport(carAt + new Vector3(0, 0.3f, -3.5f), 0);
+            yield return new WaitForSeconds(0.9f);
+            me.PlaceDeployableRpc((byte)Item.Car, carAt, 0f);
+            yield return new WaitForSeconds(0.6f);
+            Vehicle car = null;
+            foreach (var v in Vehicle.All) if (!v.IsHorse) car = v;
+            Check(car != null && me.Count(Item.Car) == 0, "placed the wooden car");
+            if (car != null)
+            {
+                me.MountRpc(car.NetworkObject);
+                yield return new WaitForSeconds(0.6f);
+                Check(me.Riding && car.HasDriver, "got in the car");
+                me.DismountRpc();
+                yield return new WaitForSeconds(0.6f);
+                Check(!me.Riding && !car.HasDriver, "got out of the car");
+            }
+
+            // horses: need a saddle
+            int horses = 0;
+            Vehicle horse = null;
+            foreach (var v in Vehicle.All) if (v.IsHorse) { horses++; if (horse == null || (v.transform.position - me.transform.position).sqrMagnitude < (horse.transform.position - me.transform.position).sqrMagnitude) horse = v; }
+            Check(horses == Cfg.HorsesPerSide * 2, $"wild horses roam the map ({horses})");
+            if (horse != null)
+            {
+                pc.LocalTeleport(horse.transform.position + new Vector3(1.8f, 0.5f, 0), 270f);
+                yield return new WaitForSeconds(0.6f);
+                me.MountRpc(horse.NetworkObject);
+                yield return new WaitForSeconds(0.5f);
+                Check(!me.Riding, "can't ride a wild horse without a saddle");
+                me.ServerGive(Item.Saddle, 1);
+                yield return new WaitForSeconds(0.2f);
+                pc.LocalTeleport(horse.transform.position + new Vector3(1.8f, 0.5f, 0), 270f);
+                yield return new WaitForSeconds(0.4f);
+                me.MountRpc(horse.NetworkObject);
+                yield return new WaitForSeconds(0.6f);
+                Check(me.Riding && horse.Saddled.Value && me.Count(Item.Saddle) == 0, "saddled the horse and got on");
+                me.DismountRpc();
+                yield return new WaitForSeconds(0.5f);
+            }
 
             // C4 on the opponent's foundation
             Structure enemyFoundation = null;
@@ -606,7 +733,7 @@ namespace RockGame
             for (int i = Cfg.PlayerSlots - 1; i >= 0; i--)
             {
                 var st = me.SlotAt(i);
-                if (st.Empty || st.Id == Item.Rock || st.Id == Item.Arrow) continue;
+                if (st.Empty || st.Id == Item.Arrow) continue;
                 me.DropItemRpc(0, (byte)i, (ushort)Mathf.Min(st.Count, 200), default);
                 yield return new WaitForSeconds(0.12f);
             }
@@ -651,7 +778,7 @@ namespace RockGame
             pc.CloseMenu();
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
             yield return new WaitForSeconds(0.3f);
-            pc.MenuOpen = pc.CraftOpen = true;
+            pc.MenuOpen = true;
             yield return Shot("15_machine_crafting");
             pc.CloseMenu();
 
@@ -667,6 +794,39 @@ namespace RockGame
             yield return new WaitForSeconds(0.2f);
             yield return Hold(me, Item.Chainsaw);
             yield return Shot("16_Chainsaw");
+
+            // 9: crossbow, building wheel, pause menu
+            me.ServerGive(Item.Crossbow, 1, 1);
+            yield return new WaitForSeconds(0.2f);
+            yield return Hold(me, Item.Crossbow);
+            yield return Shot("17_crossbow");
+            yield return Hold(me, Item.BuildingPlan);
+            pc.WheelOpen = true;
+            Hud.WheelOpened();
+            yield return Shot("18_build_wheel");
+            pc.WheelOpen = false;
+            pc.Paused = true;
+            yield return Shot("19_pause_menu");
+            pc.Paused = false;
+
+            // 10: car, horse and a fort tower
+            yield return Hold(me, Item.Rock);
+            var spot = me.transform.position;
+            me.DevRpc(DevCmd.SpawnCar);
+            me.DevRpc(DevCmd.SpawnHorse);
+            yield return new WaitForSeconds(1.5f);
+            pc.LocalTeleport(spot + me.transform.forward * -3f + Vector3.up * 0.2f, me.transform.eulerAngles.y);
+            pc.SetLook(me.transform.eulerAngles.y, 12f);
+            yield return Shot("20_car_and_horse");
+            me.ServerGive(Item.FortTower, 1);
+            yield return new WaitForSeconds(0.2f);
+            yield return Hold(me, Item.FortTower);
+            var fwd2 = me.transform.forward;
+            me.ThrowFortRpc(me.EyePos, fwd2 * 8f);
+            yield return new WaitForSeconds(0.1f);
+            me.FortLandRpc(spot + Quaternion.Euler(0, 50, 0) * fwd2 * 9f + Vector3.up);
+            yield return new WaitForSeconds(1.2f);
+            yield return Shot("21_fort_tower");
             Application.Quit(0);
         }
 

@@ -100,8 +100,12 @@ namespace RockGame
                     t.localRotation = Quaternion.Euler(-30, 30, 0); break;
                 case Item.Helmet:
                     t.localRotation = Quaternion.Euler(0, 150, 0); break;
+                case Item.Car:
+                case Item.Saddle:
+                    t.localRotation = Quaternion.Euler(0, 140, 0); break;
                 case Item.Ram:
                 case Item.Chainsaw:
+                case Item.Crossbow:
                     t.localRotation = Quaternion.Euler(0, 55, 0); break;
                 case Item.BuildingPlan:
                     t.localRotation = Quaternion.Euler(20, 0, 0); break;

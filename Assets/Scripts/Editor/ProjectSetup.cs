@@ -86,10 +86,20 @@ namespace RockGame.EditorTools
                 go.AddComponent<Ball>();
             });
 
-            var prefabs = new[] { player, netGame, structure, node, ball, container };
+            // cars and horses: whoever drives owns it and moves it
+            var vehicle = MakePrefab("Vehicle", go =>
+            {
+                go.AddComponent<NetworkObject>();
+                var nt = go.AddComponent<NetworkTransform>();
+                nt.AuthorityMode = NetworkTransform.AuthorityModes.Owner;
+                nt.SyncScaleX = nt.SyncScaleY = nt.SyncScaleZ = false;
+                go.AddComponent<Vehicle>();
+            });
+
+            var prefabs = new[] { player, netGame, structure, node, ball, container, vehicle };
             RefreshNetworkHashes(prefabs);
 
-            BuildScene(player, netGame, structure, node, ball, container, baseMat, ghostMat);
+            BuildScene(player, netGame, structure, node, ball, container, vehicle, baseMat, ghostMat);
 
             PlayerSettings.productName = "Rock Base Brawl";
             PlayerSettings.companyName = "RockGame";
@@ -190,7 +200,7 @@ namespace RockGame.EditorTools
             AssetDatabase.SaveAssets();
         }
 
-        static void BuildScene(GameObject player, GameObject netGame, GameObject structure, GameObject node, GameObject ball, GameObject container, Material baseMat, Material ghostMat)
+        static void BuildScene(GameObject player, GameObject netGame, GameObject structure, GameObject node, GameObject ball, GameObject container, GameObject vehicle, Material baseMat, Material ghostMat)
         {
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
@@ -235,6 +245,7 @@ namespace RockGame.EditorTools
             boot.nodePrefab = node;
             boot.ballPrefab = ball;
             boot.containerPrefab = container;
+            boot.vehiclePrefab = vehicle;
             boot.baseMaterial = baseMat;
             boot.ghostMaterial = ghostMat;
             net.AddComponent<Hud>();

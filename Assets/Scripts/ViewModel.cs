@@ -18,8 +18,8 @@ namespace RockGame
         public struct State
         {
             public Item Item;
-            public bool Ball, Visible, SpearAim, Crouch, HasArrow, Sprint, Grounded, Firing;
-            public float Draw, RamCharge, Bob, Speed, VelY;
+            public bool Ball, Visible, SpearAim, Crouch, HasArrow, Sprint, Grounded, Firing, Loaded, Aim;
+            public float Draw, RamCharge, Bob, Speed, VelY, Reload;
             public Vector2 Look;
         }
 
@@ -31,14 +31,14 @@ namespace RockGame
         }
 
         readonly Transform m_Root, m_R, m_L, m_ItemHolder;
-        GameObject m_Item, m_Arrow, m_Ball;
+        GameObject m_Item, m_Arrow, m_Ball, m_StringA, m_StringB;
         Item m_ItemId = (Item)255;
         bool m_WasBall;
         float m_SwingStart = -10f, m_SwingDur = 0.6f, m_ThrowStart = -10f, m_EatStart = -10f, m_UseStart = -10f, m_EquipStart = -10f;
         bool m_Hit, m_ImpactKnown;
         float m_FreezeUntil = -10f, m_FreezeE;
         Vector2 m_Sway;
-        float m_CrouchK, m_SprintK, m_Land, m_AirVel, m_Jump, m_BobPhase;
+        float m_CrouchK, m_SprintK, m_Land, m_AirVel, m_Jump, m_BobPhase, m_AimK;
         bool m_WasGrounded = true;
 
         public ViewModel(Transform cam, Color team)
@@ -112,6 +112,21 @@ namespace RockGame
                 m_ItemId = want;
                 m_WasBall = s.Ball;
             }
+            bool wantString = !s.Ball && s.Item == Item.Bow;
+            if (wantString != (m_StringA != null))
+            {
+                if (m_StringA) { Object.Destroy(m_StringA); Object.Destroy(m_StringB); m_StringA = m_StringB = null; }
+                else
+                {
+                    // our own bowstring (two segments) so it can be pulled back to the nock
+                    var sc = new Color(0.9f, 0.9f, 0.85f);
+                    m_StringA = Art.Box(m_Root, sc, Vector3.zero, Vector3.one);
+                    m_StringB = Art.Box(m_Root, sc, Vector3.zero, Vector3.one);
+                    m_StringA.GetComponent<Renderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                    m_StringB.GetComponent<Renderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                    if (m_Item && m_Item.transform.childCount > 3) m_Item.transform.GetChild(3).gameObject.SetActive(false);
+                }
+            }
             bool wantArrow = !s.Ball && s.Item == Item.Bow && s.HasArrow;
             if (wantArrow != (m_Arrow != null))
             {
@@ -130,7 +145,7 @@ namespace RockGame
 
             float swingE = Time.time < m_FreezeUntil ? m_FreezeE : Time.time - m_SwingStart;
             bool swinging = swingE >= 0 && swingE < Mathf.Max(0.45f, m_SwingDur * 0.9f);
-            bool busy = swinging || s.Draw > 0f || s.RamCharge > 0f || s.Firing || s.SpearAim;
+            bool busy = swinging || s.Draw > 0f || s.RamCharge > 0f || s.Firing || s.SpearAim || s.Aim || s.Reload >= 0f;
 
             // sprint: lower the item and tilt it in (not while attacking)
             m_SprintK = Mathf.MoveTowards(m_SprintK, s.Sprint && !busy ? 1f : 0f, dt * 6f);
@@ -165,6 +180,7 @@ namespace RockGame
                 case Item.Bow: PoseBow(s, shared, sharedRot); break;
                 case Item.Ram: PoseRam(s, shared, sharedRot); break;
                 case Item.Chainsaw: PoseChainsaw(s, shared, sharedRot); break;
+                case Item.Crossbow: PoseCrossbow(s, shared, sharedRot); break;
                 case Item.None: HideLeft(); Set(m_R, new Vector3(0.3f, -0.9f, 0.2f), Quaternion.identity); break;
                 default: PoseHeld(s.Item, shared, sharedRot); break;
             }
@@ -280,25 +296,95 @@ namespace RockGame
             m_L.localRotation = sharedRot * Quaternion.Euler(-30f, 22f, 15f);
         }
 
-        /// <summary>Rust hunting bow: gripped in the right hand right of centre, arrow resting on the grip, nock pulled back towards the lower right.</summary>
+        /// <summary>
+        /// Rust hunting bow (copied from Rust footage): the LEFT arm comes in from the lower left and holds the bow right of
+        /// centre, tilted clockwise, with the arrow nocked and the right hand on the string at the lower right. Drawing
+        /// brings the grip in to just below/right of the crosshair, the string hand back to your face, and the arrow
+        /// lines up to point straight at the crosshair.
+        /// </summary>
         void PoseBow(State s, Vector3 shared, Quaternion sharedRot)
         {
-            var bowPos = shared + new Vector3(0.12f - s.Draw * 0.03f, -0.06f + s.Draw * 0.03f, 0.56f);
-            var bowRot = sharedRot * Quaternion.Euler(0, -8f, 6f - s.Draw * 4f);
-            AttachItemToRoot(bowPos, bowRot, 1.05f);
-            m_R.localPosition = bowPos + new Vector3(0.0f, -0.02f, -0.04f);
-            m_R.localRotation = sharedRot * Quaternion.Euler(-30f, 22f, -8f);
-            HideLeft(); // the drawing hand is off-screen at the lower right
+            float e = Smooth(s.Draw);
+            if (m_Item && m_Item.transform.childCount > 3) m_Item.transform.GetChild(3).gameObject.SetActive(false); // we draw the string ourselves
+            var grip = shared + Vector3.Lerp(new Vector3(0.2f, -0.22f, 0.62f), new Vector3(0.045f, -0.12f, 0.6f), e);
+            var bowRot = sharedRot * Quaternion.Euler(Mathf.Lerp(-6f, 0f, e), Mathf.Lerp(-12f, -4f, e), Mathf.Lerp(-14f, -26f, e));
+            AttachItemToRoot(grip, bowRot, 1f);
+
+            // bow hand: fist on the grip, forearm reaching back to the lower left
+            var shoulder = new Vector3(-0.3f, -0.55f, -0.1f);
+            var armDir = (grip - shoulder).normalized;
+            m_L.localPosition = grip + armDir * -0.02f + bowRot * new Vector3(-0.01f, -0.01f, 0f);
+            m_L.localRotation = Quaternion.LookRotation(armDir, bowRot * Vector3.up) * Quaternion.Euler(0, 0, 70f);
+
+            // arrow: rests on the grip. Idle it points ahead and a bit left; drawn it runs straight along the view, so it
+            // lines up with the crosshair and the shaft reaches from the grip down towards the bottom of the screen
+            var tipIdle = grip + bowRot * new Vector3(-0.02f, 0.01f, 0.28f);
+            var dirIdle = (bowRot * new Vector3(-0.08f, 0.06f, 1f)).normalized;
+            var tipDrawn = grip + new Vector3(-0.02f, 0.065f, 0.07f); // rests on top of the fist; the fletching ends up by your face, out of view
+            var dir = Vector3.Slerp(dirIdle, Vector3.forward, e).normalized;
+            var tip = Vector3.Lerp(tipIdle, tipDrawn, e);
+            const float arrowLen = 0.72f;
+            var nock = tip - dir * arrowLen;
             if (m_Arrow)
             {
-                var grip = m_ItemHolder.TransformPoint(new Vector3(-0.02f, 0.02f, 0.02f));
-                var nock = m_Root.TransformPoint(shared + new Vector3(0.3f, -0.34f, 0.3f - s.Draw * 0.18f));
-                var dir = (grip - nock).normalized;
-                m_Arrow.transform.position = nock;
-                m_Arrow.transform.rotation = Quaternion.LookRotation(dir) * Quaternion.Euler(90f, 0, 0);
-                // arrow model runs along +Y from ~-0.15 (fletching) to 0.6 (tip): shift so the fletching sits on the string
-                m_Arrow.transform.position += dir * 0.15f;
+                // the arrow model runs along +Y from -0.15 (fletching) to 0.6 (tip)
+                m_Arrow.transform.localRotation = Quaternion.LookRotation(dir) * Quaternion.Euler(90f, 0, 0);
+                m_Arrow.transform.localPosition = tip - dir * 0.6f;
             }
+
+            // string hand holds the nock at the lower right; drawn, it's back by your face (out of view)
+            var stringRest = grip + bowRot * new Vector3(0, 0, -0.03f);
+            var pull = Vector3.Lerp(m_Arrow ? nock : stringRest, grip + new Vector3(0.015f, -0.015f, -0.47f), e);
+            pull.z = Mathf.Max(pull.z, 0.12f); // keep the string in front of the camera
+            m_R.localPosition = Vector3.Lerp(pull + new Vector3(0.015f, -0.03f, -0.03f), new Vector3(0.3f, -0.5f, -0.3f), e);
+            m_R.localRotation = Quaternion.LookRotation(dir, Vector3.up) * Quaternion.Euler(-10f, 0, -80f);
+
+            // the string runs from both limb tips to the nock
+            if (m_StringA && m_Item)
+            {
+                var top = m_Root.InverseTransformPoint(m_Item.transform.TransformPoint(new Vector3(0, 0.375f, -0.02f)));
+                var bottom = m_Root.InverseTransformPoint(m_Item.transform.TransformPoint(new Vector3(0, -0.375f, -0.02f)));
+                var mid = Vector3.Lerp(stringRest, pull, Mathf.Max(e, 0.05f));
+                mid.z = Mathf.Max(mid.z, 0.12f);
+                SetString(m_StringA.transform, top, mid);
+                SetString(m_StringB.transform, bottom, mid);
+            }
+        }
+
+        static void SetString(Transform t, Vector3 a, Vector3 b)
+        {
+            var d = b - a;
+            t.localPosition = (a + b) * 0.5f;
+            t.localRotation = d.sqrMagnitude > 1e-6f ? Quaternion.LookRotation(d) : Quaternion.identity;
+            t.localScale = new Vector3(0.004f, 0.004f, d.magnitude);
+        }
+
+        /// <summary>Rust crossbow: held like a rifle at the hip, RMB brings it up to the eye, and after a shot it's cranked back for the next bolt.</summary>
+        void PoseCrossbow(State s, Vector3 shared, Quaternion sharedRot)
+        {
+            float aim = m_AimK = Mathf.MoveTowards(m_AimK, s.Aim ? 1f : 0f, Time.deltaTime * 7f);
+            float kick = Mathf.Clamp01(1f - (Time.time - m_UseStart) / 0.25f);
+            var pos = shared + Vector3.Lerp(new Vector3(0.2f, -0.2f, 0.42f), new Vector3(0f, -0.075f, 0.3f), Smooth(aim)) + new Vector3(0, 0.02f, -0.07f) * kick;
+            var rot = sharedRot * Quaternion.Euler(Mathf.Lerp(0f, 0f, aim) - kick * 8f, Mathf.Lerp(-6f, 0f, aim), 0);
+            float r = s.Reload >= 0f ? Mathf.Sin(Mathf.Clamp01(s.Reload) * Mathf.PI) : 0f;
+            if (r > 0f)
+            {
+                // tip it down and pull the string back with the left hand
+                pos += new Vector3(-0.05f, -0.08f, 0) * r;
+                rot *= Quaternion.Euler(35f * r, 10f * r, -15f * r);
+            }
+            AttachItemToRoot(pos, rot, 1f);
+            if (m_Item)
+            {
+                var bolt = m_Item.transform.Find("bolt");
+                if (bolt) bolt.gameObject.SetActive(s.Loaded);
+            }
+            m_R.localPosition = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(0.02f, -0.1f, -0.06f)));
+            m_R.localRotation = rot * Quaternion.Euler(-10f, -10f, -80f);
+            var leftHold = new Vector3(-0.02f, -0.05f, 0.2f);
+            var leftPull = new Vector3(-0.04f, 0.04f, -0.05f);
+            m_L.localPosition = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(Vector3.Lerp(leftHold, leftPull, r)));
+            m_L.localRotation = rot * Quaternion.Euler(-20f - 40f * r, 20f, 70f);
         }
 
         void PoseRam(State s, Vector3 shared, Quaternion sharedRot)
@@ -363,6 +449,10 @@ namespace RockGame
                 case Item.DeathWand: AttachItemToRight(new Vector3(0, 0.0f, 0.03f), new Vector3(35, 0, 0), 1f); break;
                 case Item.Helmet: AttachItemToRight(new Vector3(0, 0.1f, 0.1f), new Vector3(0, 180, 0), 0.8f); break;
                 case Item.InvisPotion: AttachItemToRight(new Vector3(0, 0.03f, 0.05f), new Vector3(toMouth * -70f, 0, 0), 1.1f); break;
+                case Item.Armor: AttachItemToRight(new Vector3(0, 0.02f, 0.08f), new Vector3(0, 160, 0), 0.8f); break;
+                case Item.FortTower: AttachItemToRight(new Vector3(0, 0.02f, 0.06f), new Vector3(0, 20, 0), 1f); break;
+                case Item.Car: AttachItemToRight(new Vector3(0, 0.02f, 0.08f), new Vector3(0, 20, 0), 0.9f); break;
+                case Item.Saddle: AttachItemToRight(new Vector3(0, 0.02f, 0.06f), new Vector3(0, 20, 0), 0.9f); break;
                 case Item.BuildingPlan: AttachItemToRight(new Vector3(0, 0.03f, 0.05f), Vector3.zero, 0.55f); break;
                 case Item.Chest: AttachItemToRight(new Vector3(0, 0.06f, 0.08f), new Vector3(0, 20, 0), 0.9f); break;
                 case Item.Barrier: AttachItemToRight(new Vector3(0, 0.04f, 0.06f), new Vector3(0, 20, 0), 0.8f); break;

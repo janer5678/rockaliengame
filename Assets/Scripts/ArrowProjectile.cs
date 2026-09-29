@@ -12,12 +12,15 @@ namespace RockGame
         Vector3 m_Vel;
         PlayerNet m_Shooter;
         Transform m_ShooterRoot;
-        bool m_Report, m_Stuck, m_Spear, m_C4;
+        bool m_Report, m_Stuck, m_Spear;
+        Item m_Thrown; // C4 or fort tower (None for arrows / spears)
+        float m_Damage = -1f;
         float m_Life = 6f;
         float m_Gravity = Cfg.ArrowGravity;
         float m_Power = 1f;
 
-        public static void Spawn(Vector3 pos, Vector3 vel, PlayerNet shooter, bool report)
+        /// <summary>Arrow or crossbow bolt. `damage` overrides the bow's draw-based damage (crossbow).</summary>
+        public static void Spawn(Vector3 pos, Vector3 vel, PlayerNet shooter, bool report, float damage = -1f)
         {
             var go = new GameObject("Arrow");
             go.transform.SetPositionAndRotation(pos, Quaternion.LookRotation(vel));
@@ -31,6 +34,7 @@ namespace RockGame
             a.m_ShooterRoot = shooter != null ? shooter.transform : null;
             a.m_Report = report;
             a.m_Power = Mathf.Clamp01(vel.magnitude / Mathf.Max(1f, Cfg.ArrowSpeed));
+            a.m_Damage = damage;
         }
 
         /// <summary>Thrown spear. The shooter's copy reports where it landed / who it hit; the networked dropped
@@ -51,20 +55,28 @@ namespace RockGame
             a.m_Power = Mathf.Clamp01(vel.magnitude / Mathf.Max(1f, Cfg.SpearThrowSpeed));
         }
 
-        /// <summary>Thrown C4: flies in an arc and sticks to whatever it hits (the server arms it there).</summary>
-        public static void SpawnC4(Vector3 pos, Vector3 vel, PlayerNet shooter, bool report)
+        /// <summary>Thrown C4 (sticks where it hits; the server arms it there) or fort tower (a tower grows where it lands).</summary>
+        public static void SpawnThrown(Item kind, Vector3 pos, Vector3 vel, PlayerNet shooter, bool report)
         {
-            var go = new GameObject("ThrownC4");
+            var go = new GameObject("Thrown" + kind);
             go.transform.SetPositionAndRotation(pos, Quaternion.LookRotation(vel));
-            ItemModels.Create(Item.C4, go.transform);
+            ItemModels.Create(kind, go.transform);
             var a = go.AddComponent<ArrowProjectile>();
             a.m_Vel = vel;
             a.m_Shooter = shooter;
             a.m_ShooterRoot = shooter != null ? shooter.transform : null;
             a.m_Report = report;
-            a.m_C4 = true;
+            a.m_Thrown = kind;
             a.m_Gravity = 9.81f;
             a.m_Life = 8f;
+        }
+
+        public static void SpawnC4(Vector3 pos, Vector3 vel, PlayerNet shooter, bool report) => SpawnThrown(Item.C4, pos, vel, shooter, report);
+
+        void ReportThrownLanded(Vector3 point, Vector3 normal)
+        {
+            if (m_Thrown == Item.C4) m_Shooter.C4LandRpc(point, normal);
+            else if (m_Thrown == Item.FortTower) m_Shooter.FortLandRpc(point);
         }
 
         void Update()
@@ -76,7 +88,7 @@ namespace RockGame
                 if (!m_Stuck && m_Report && m_Shooter != null && m_Shooter.IsSpawned)
                 {
                     if (m_Spear) m_Shooter.SpearLandRpc(false, default, transform.position, m_Vel.normalized);
-                    else if (m_C4) m_Shooter.C4LandRpc(transform.position, Vector3.up);
+                    else if (m_Thrown != Item.None) ReportThrownLanded(transform.position, Vector3.up);
                 }
                 Destroy(gameObject);
                 return;
@@ -120,7 +132,7 @@ namespace RockGame
                 }
             }
             transform.position = pos + step;
-            if (m_C4) transform.Rotate(400f * Time.deltaTime, 0, 0, Space.Self); // tumbles
+            if (m_Thrown != Item.None) transform.Rotate(400f * Time.deltaTime, 0, 0, Space.Self); // tumbles
             else if (m_Vel.sqrMagnitude > 0.01f) transform.rotation = Quaternion.LookRotation(m_Vel);
         }
 
@@ -129,9 +141,9 @@ namespace RockGame
             var no = h.collider.GetComponentInParent<NetworkObject>();
             var dir = m_Vel.normalized;
             bool reporter = m_Report && m_Shooter != null && m_Shooter.IsSpawned;
-            if (m_C4)
+            if (m_Thrown != Item.None)
             {
-                if (reporter) m_Shooter.C4LandRpc(h.point + h.normal * 0.03f, h.normal);
+                if (reporter) ReportThrownLanded(h.point + h.normal * 0.03f, h.normal);
                 Destroy(gameObject);
                 return;
             }
@@ -166,7 +178,8 @@ namespace RockGame
         {
             if (no == null || !no.TryGetComponent(out PlayerNet p) || p == m_Shooter || p.Dead.Value) return;
             bool head = p.IsHeadshot(h.point);
-            float dmg = (m_Spear ? Cfg.SpearThrowDamage : Cfg.ArrowPlayerDamage) * m_Power * (head ? Cfg.HeadshotMul : 1f);
+            float dmg = (m_Damage >= 0f ? m_Damage : (m_Spear ? Cfg.SpearThrowDamage : Cfg.ArrowPlayerDamage) * m_Power) * (head ? Cfg.HeadshotMul : 1f);
+            if (p.HelmetHp.Value > 0 && head) dmg = 0f;
             Fx.Blood(h.point, dir, head);
             Fx.DamageNumber(h.point, dmg, head);
             Hud.HitMarker(false, head);

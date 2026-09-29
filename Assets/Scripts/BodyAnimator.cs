@@ -14,7 +14,7 @@ namespace RockGame
     {
         public struct Pose
         {
-            public bool Crouch, Dead, Carrying, TwoHanded, Holding;
+            public bool Crouch, Dead, Carrying, TwoHanded, Holding, Riding;
             public float Pitch, Swing, DeadTime;
         }
 
@@ -30,6 +30,7 @@ namespace RockGame
         public Transform RightHand => m_RHand;
         public Transform LeftHand => m_LHand;
         public Transform HeadBone => m_Head;
+        public Transform ChestBone => m_Chest != null ? m_Chest : m_Spine;
 
         public static BodyAnimator TryCreate(Transform visualRoot, float width, out GameObject model)
         {
@@ -197,6 +198,16 @@ namespace RockGame
             // hands: loose and swinging when empty, gripping when holding
             Rot(m_LHand, new Vector3(-10f * move + sb * 8f * move, 0, 0));
             Rot(m_RHand, new Vector3((-10f * move + s * 8f * move) * (1f - m_Hold), 0, 0));
+
+            // ---- sitting on a horse / in a car: thighs forward and apart, knees bent, no walk cycle ----
+            if (p.Riding)
+            {
+                Rot(m_LUp, new Vector3(-75f, 0, -18f));
+                Rot(m_RUp, new Vector3(-75f, 0, 18f));
+                Rot(m_LLo, new Vector3(80f, 0, 0));
+                Rot(m_RLo, new Vector3(80f, 0, 0));
+                m_Model.localPosition = m_ModelBase + new Vector3(0, -0.45f, 0);
+            }
 
             // ---- death: topple backwards ----
             float d = p.Dead ? Smooth(p.DeadTime / 0.5f) : 0f;

@@ -5,7 +5,7 @@ using UnityEngine;
 
 namespace RockGame
 {
-    /// <summary>A building piece (foundation, wall, doorway, floor, stairs) or a free-standing barrier.</summary>
+    /// <summary>A building piece (foundation, wall, doorway, window, floor, stairs), a free-standing barrier or a thrown fort tower.</summary>
     public class Structure : NetworkBehaviour
     {
         public static readonly List<Structure> All = new List<Structure>();
@@ -24,8 +24,8 @@ namespace RockGame
 
         public PieceType PType => (PieceType)Type.Value;
         public float MaxHp => Cfg.PieceHp(PType, Tier.Value);
-        public string DisplayName => (Tier.Value == 1 ? "Stone " : "Wooden ") + Cfg.PieceName(PType);
-        public bool Upgradable => PType != PieceType.Barrier;
+        public string DisplayName => PType == PieceType.Tower ? "Fort Tower" : (Tier.Value == 1 ? "Stone " : "Wooden ") + Cfg.PieceName(PType);
+        public bool Upgradable => Cfg.IsGridPiece(PType);
 
         public override void OnNetworkSpawn()
         {
@@ -62,7 +62,7 @@ namespace RockGame
         {
             if (m_Visual && m_Rise < 1f)
             {
-                m_Rise = Mathf.Min(1f, m_Rise + Time.deltaTime / 0.25f);
+                m_Rise = Mathf.Min(1f, m_Rise + Time.deltaTime / (PType == PieceType.Tower ? 0.8f : 0.25f));
                 float e = 1f - (1f - m_Rise) * (1f - m_Rise);
                 m_Visual.localScale = new Vector3(1f, Mathf.Lerp(0.05f, 1f, e), 1f);
             }
@@ -155,6 +155,25 @@ namespace RockGame
                     hinge = h;
                     break;
                 }
+                case PieceType.Window:
+                    // a wall with a square opening at chest height, crossed by two bars (like Rust)
+                    Art.Box(tr, c, new Vector3(-0.975f, 1.5f, 0), new Vector3(1.05f, 3, 0.3f), default, col);
+                    Art.Box(tr, c, new Vector3(0.975f, 1.5f, 0), new Vector3(1.05f, 3, 0.3f), default, col);
+                    Art.Box(tr, c, new Vector3(0, 0.55f, 0), new Vector3(0.9f, 1.1f, 0.3f), default, col);
+                    Art.Box(tr, c, new Vector3(0, 2.55f, 0), new Vector3(0.9f, 0.9f, 0.3f), default, col);
+                    Art.Box(tr, trim, new Vector3(0, 1.12f, 0), new Vector3(1.0f, 0.08f, 0.36f));
+                    Art.Box(tr, trim, new Vector3(0, 2.08f, 0), new Vector3(1.0f, 0.08f, 0.36f));
+                    Art.Box(tr, stone ? Art.Metal : trim, new Vector3(-0.2f, 1.6f, 0), new Vector3(0.05f, 0.95f, 0.05f));
+                    Art.Box(tr, stone ? Art.Metal : trim, new Vector3(0.2f, 1.6f, 0), new Vector3(0.05f, 0.95f, 0.05f));
+                    if (!stone)
+                    {
+                        Art.Box(tr, trim, new Vector3(-1.2f, 1.5f, 0), new Vector3(0.12f, 2.95f, 0.36f));
+                        Art.Box(tr, trim, new Vector3(1.2f, 1.5f, 0), new Vector3(0.12f, 2.95f, 0.36f));
+                    }
+                    break;
+                case PieceType.Tower:
+                    BuildTower(tr, col);
+                    break;
                 case PieceType.Floor:
                     Art.Box(tr, c, new Vector3(0, -0.125f, 0), new Vector3(3, 0.25f, 3), default, col);
                     Art.Box(tr, trim, new Vector3(0, -0.2f, 0), new Vector3(3.02f, 0.1f, 0.2f));
@@ -197,6 +216,7 @@ namespace RockGame
 
             if (ghost != null)
             {
+                foreach (var l in root.GetComponentsInChildren<Ladder>()) Destroy(l.gameObject);
                 foreach (var r in root.GetComponentsInChildren<MeshRenderer>())
                 {
                     r.sharedMaterial = ghost;
@@ -205,5 +225,51 @@ namespace RockGame
             }
             return root;
         }
+
+        /// <summary>Fort tower: a straight wooden tower with a ladder up to a lookout with railings and a little roof.</summary>
+        static void BuildTower(Transform tr, bool col)
+        {
+            const float h = 4.5f, r = 1.1f;
+            for (int x = -1; x <= 1; x += 2)
+            for (int z = -1; z <= 1; z += 2)
+                Art.Box(tr, Art.DarkWood, new Vector3(x * r, (h + 2.4f) * 0.5f - 0.3f, z * r), new Vector3(0.25f, h + 2.7f, 0.25f), default, col);
+            for (int k = 0; k < 2; k++)
+            {
+                float y = 1.2f + k * 1.8f;
+                Art.Box(tr, Art.Wood, new Vector3(r, y, 0), new Vector3(0.1f, 0.1f, 2f * r), default, col);
+                Art.Box(tr, Art.Wood, new Vector3(-r, y, 0), new Vector3(0.1f, 0.1f, 2f * r), default, col);
+                Art.Box(tr, Art.Wood, new Vector3(0, y, r), new Vector3(2f * r, 0.1f, 0.1f), default, col);
+            }
+            // lookout platform with a hatch hole over the ladder
+            Art.Box(tr, Art.Wood, new Vector3(0, h - 0.1f, 0.45f), new Vector3(2f * r + 0.3f, 0.2f, 1.6f), default, col);
+            Art.Box(tr, Art.Wood, new Vector3(0.8f, h - 0.1f, -0.825f), new Vector3(0.9f, 0.2f, 0.95f), default, col);
+            Art.Box(tr, Art.Wood, new Vector3(-0.9f, h - 0.1f, -0.825f), new Vector3(0.7f, 0.2f, 0.95f), default, col);
+            // railings all round
+            Art.Box(tr, Art.Wood, new Vector3(0, h + 0.5f, r + 0.1f), new Vector3(2f * r + 0.3f, 1f, 0.08f), default, col);
+            Art.Box(tr, Art.Wood, new Vector3(0, h + 0.5f, -r - 0.1f), new Vector3(2f * r + 0.3f, 1f, 0.08f), default, col);
+            Art.Box(tr, Art.Wood, new Vector3(r + 0.1f, h + 0.5f, 0), new Vector3(0.08f, 1f, 2f * r + 0.3f), default, col);
+            Art.Box(tr, Art.Wood, new Vector3(-r - 0.1f, h + 0.5f, 0), new Vector3(0.08f, 1f, 2f * r + 0.3f), default, col);
+            // roof
+            Art.Part(tr, Art.Cone, new Color(0.45f, 0.28f, 0.14f), new Vector3(0, h + 2.4f, 0), new Vector3(2f * r + 1.4f, 1.2f, 2f * r + 1.4f), new Vector3(0, 45f, 0));
+            // ladder up the inside of the -z side, through the hatch
+            float lz = -r + 0.25f, lx = -0.1f;
+            Art.Box(tr, Art.DarkWood, new Vector3(lx - 0.28f, (h + 1f) * 0.5f, lz), new Vector3(0.07f, h + 1f, 0.07f));
+            Art.Box(tr, Art.DarkWood, new Vector3(lx + 0.28f, (h + 1f) * 0.5f, lz), new Vector3(0.07f, h + 1f, 0.07f));
+            for (float y = 0.3f; y < h + 0.8f; y += 0.35f)
+                Art.Box(tr, Art.Wood, new Vector3(lx, y, lz), new Vector3(0.56f, 0.05f, 0.05f));
+            if (col)
+            {
+                var lg = new GameObject("ladder");
+                lg.transform.SetParent(tr, false);
+                lg.transform.localPosition = new Vector3(lx, (h + 1.2f) * 0.5f, lz + 0.25f);
+                var bc = lg.AddComponent<BoxCollider>();
+                bc.isTrigger = true;
+                bc.size = new Vector3(0.8f, h + 1.2f, 0.7f);
+                lg.AddComponent<Ladder>();
+            }
+        }
     }
+
+    /// <summary>A climbable ladder volume: walk into it and hold W (or look up and walk) to climb.</summary>
+    public class Ladder : MonoBehaviour { }
 }

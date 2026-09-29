@@ -8,17 +8,23 @@ namespace RockGame
     /// it drops out of the sky, hovers high above the drop spot, beams the crate down, then flies off.
     /// The server spawns the real (networked) crate when the beam reaches the ground.
     /// </summary>
-    public static class AirdropShip
+    public class AirdropShip
     {
         const float Arrive = 4f, Hover = 45f, Leave = 6f;
         static readonly Color k_Glow = new Color(0.75f, 0.35f, 1f);
-        static GameObject s_Ship, s_Beam, s_Crate;
-        static Transform s_Rim;
-        static Light s_GroundLight;
-        static Material s_BeamMat;
-        static double s_Start = -2;
+        GameObject s_Ship, s_Beam, s_Crate;
+        Transform s_Rim;
+        Light s_GroundLight;
+        Material s_BeamMat;
+        double s_Start = -2;
+        static readonly AirdropShip[] s_Lanes = { new AirdropShip(), new AirdropShip() };
 
         public static void Clear()
+        {
+            foreach (var l in s_Lanes) l.ClearLane();
+        }
+
+        void ClearLane()
         {
             if (s_Ship) Object.Destroy(s_Ship);
             if (s_Beam) Object.Destroy(s_Beam);
@@ -31,17 +37,20 @@ namespace RockGame
 
         public static void Tick(NetGame g)
         {
-            double start = g.DropStart.Value;
+            for (int i = 0; i < 2; i++) s_Lanes[i].TickLane(g, g.LaneStart(i).Value, g.LanePos(i).Value);
+        }
+
+        void TickLane(NetGame g, double start, Vector3 ground)
+        {
             float e = start < 0 ? -1f : (float)(g.NetworkManager.ServerTime.Time - start);
             if (e < 0f || e > NetGame.DropLand + Leave)
             {
-                if (s_Ship) Clear();
+                if (s_Ship) ClearLane();
                 return;
             }
-            var ground = g.DropPos.Value;
             if (s_Ship == null || s_Start != start)
             {
-                Clear();
+                ClearLane();
                 s_Start = start;
                 Build(ground);
                 Sfx.Play2D(Sfx.Hum, 0.35f, 0f);
@@ -90,7 +99,7 @@ namespace RockGame
             }
         }
 
-        static void Build(Vector3 ground)
+        void Build(Vector3 ground)
         {
             var metal = new Color(0.42f, 0.45f, 0.5f);
             s_Ship = new GameObject("AirdropShip");

@@ -66,8 +66,12 @@ namespace RockGame
             return space;
         }
 
-        /// <summary>Adds items (topping up stacks first, then empty slots). Returns how many did NOT fit.</summary>
-        public static int Add(NetworkList<ItemStack> list, Item id, int count, int data = 0, bool playerInv = false)
+        /// <summary>
+        /// Adds items (topping up existing stacks anywhere first, then empty slots). Returns how many did NOT fit.
+        /// Player inventory: materials go to the hotbar from slot 7 backwards (skipping `avoidSlot`, the empty slot you're
+        /// holding your rock in), tools to the hotbar from slot 1; then the main inventory.
+        /// </summary>
+        public static int Add(NetworkList<ItemStack> list, Item id, int count, int data = 0, bool playerInv = false, int avoidSlot = -1)
         {
             if (id == Item.None || count <= 0) return 0;
             int max = Cfg.MaxStack(id);
@@ -80,23 +84,26 @@ namespace RockGame
                 count -= put;
             }
             if (count <= 0) return 0;
-            // empty slots: tools prefer the hotbar, materials prefer the main inventory
-            bool hotbarFirst = !playerInv || Cfg.PrefersHotbar(id);
-            for (int pass = 0; pass < 2 && count > 0; pass++)
+            bool mat = Cfg.IsMat(id);
+            for (int k = 0; k < list.Count && count > 0; k++)
             {
-                for (int i = 0; i < list.Count && count > 0; i++)
+                int i = k;
+                if (playerInv && k < Cfg.HotbarSize)
                 {
-                    if (playerInv)
-                    {
-                        bool hot = i < Cfg.HotbarSize;
-                        if ((pass == 0) != (hot == hotbarFirst)) continue;
-                    }
-                    else if (pass == 1) break;
-                    if (!list[i].Empty) continue;
-                    int put = Mathf.Min(count, max);
-                    list[i] = ItemStack.Of(id, put, data);
-                    count -= put;
+                    if (mat) i = Cfg.HotbarSize - 1 - k;
+                    if (i == avoidSlot) continue;
                 }
+                if (!list[i].Empty) continue;
+                int put = Mathf.Min(count, max);
+                list[i] = ItemStack.Of(id, put, data);
+                count -= put;
+            }
+            // last resort: the slot we tried to keep free
+            if (count > 0 && avoidSlot >= 0 && avoidSlot < list.Count && list[avoidSlot].Empty)
+            {
+                int put = Mathf.Min(count, max);
+                list[avoidSlot] = ItemStack.Of(id, put, data);
+                count -= put;
             }
             return count;
         }

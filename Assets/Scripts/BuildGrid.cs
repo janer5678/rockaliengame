@@ -34,7 +34,8 @@ namespace RockGame
             {
                 case PieceType.Foundation: return PieceKey.KFoundation;
                 case PieceType.Wall:
-                case PieceType.Doorway: return PieceKey.KEdge;
+                case PieceType.Doorway:
+                case PieceType.Window: return PieceKey.KEdge;
                 case PieceType.Floor: return PieceKey.KFloor;
                 default: return PieceKey.KStairs;
             }
@@ -51,6 +52,7 @@ namespace RockGame
                     pos = CellCenter(k.I, k.J); rot = Quaternion.identity; break;
                 case PieceType.Wall:
                 case PieceType.Doorway:
+                case PieceType.Window:
                     if (k.D == 0) { pos = new Vector3((k.I + 1) * Cfg.Cell, LevelY(k.L), (k.J + 0.5f) * Cfg.Cell); rot = Quaternion.Euler(0, 90, 0); }
                     else { pos = new Vector3((k.I + 0.5f) * Cfg.Cell, LevelY(k.L), (k.J + 1) * Cfg.Cell); rot = Quaternion.identity; }
                     break;
@@ -69,6 +71,7 @@ namespace RockGame
                 case PieceType.Foundation: center = new Vector3(0, 0.5f, 0); size = new Vector3(3, 1, 3); break;
                 case PieceType.Wall: center = new Vector3(0, 1.5f, 0); size = new Vector3(3, 3, 0.3f); break;
                 case PieceType.Doorway: center = new Vector3(0, 1.5f, 0); size = new Vector3(3, 3, 0.3f); break;
+                case PieceType.Window: center = new Vector3(0, 1.5f, 0); size = new Vector3(3, 3, 0.3f); break;
                 case PieceType.Floor: center = new Vector3(0, -0.125f, 0); size = new Vector3(3, 0.25f, 3); break;
                 case PieceType.Stairs: center = new Vector3(0, 1.5f, 0); size = new Vector3(3, 3, 3); break;
                 default: center = new Vector3(0, 0.5f, 0); size = new Vector3(1.6f, 1f, 0.9f); break;
@@ -111,6 +114,7 @@ namespace RockGame
                     return true;
                 case PieceType.Wall:
                 case PieceType.Doorway:
+                case PieceType.Window:
                 {
                     int l = LevelOf(q.y);
                     float fx = q.x - i * Cfg.Cell, fz = q.z - j * Cfg.Cell;
@@ -127,6 +131,26 @@ namespace RockGame
                     return true;
             }
             return false;
+        }
+
+        /// <summary>The edge of cell (i, j) nearest to p (walls, doorways, windows).</summary>
+        public static PieceKey NearestEdge(Vector3 p, int level)
+        {
+            int i = CellOf(p.x), j = CellOf(p.z);
+            float fx = p.x - i * Cfg.Cell, fz = p.z - j * Cfg.Cell;
+            float dxm = fx, dxp = Cfg.Cell - fx, dzm = fz, dzp = Cfg.Cell - fz;
+            float m = Mathf.Min(Mathf.Min(dxm, dxp), Mathf.Min(dzm, dzp));
+            if (m == dxp) return new PieceKey(PieceKey.KEdge, i, j, level, 0);
+            if (m == dxm) return new PieceKey(PieceKey.KEdge, i - 1, j, level, 0);
+            if (m == dzp) return new PieceKey(PieceKey.KEdge, i, j, level, 1);
+            return new PieceKey(PieceKey.KEdge, i, j - 1, level, 1);
+        }
+
+        /// <summary>How far p is from the line of an edge key (in the ground plane).</summary>
+        public static float DistToEdge(Vector3 p, PieceKey k)
+        {
+            if (k.D == 0) return Mathf.Abs(p.x - (k.I + 1) * Cfg.Cell);
+            return Mathf.Abs(p.z - (k.J + 1) * Cfg.Cell);
         }
 
         public static bool InTeamBase(int team, PieceKey k)
@@ -218,6 +242,7 @@ namespace RockGame
                     return true;
                 case PieceType.Wall:
                 case PieceType.Doorway:
+                case PieceType.Window:
                 {
                     bool alongZ = Mathf.Abs(Mathf.DeltaAngle(tr.eulerAngles.y, 90f)) < 45f || Mathf.Abs(Mathf.DeltaAngle(tr.eulerAngles.y, 270f)) < 45f;
                     if (alongZ) k = new PieceKey(PieceKey.KEdge, Mathf.RoundToInt(p.x / Cfg.Cell) - 1, CellOf(p.z), l, 0);

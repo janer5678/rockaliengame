@@ -7,7 +7,7 @@ namespace RockGame
     /// <summary>
     /// Lives on the NetworkManager object. Holds prefab/material references, builds the world,
     /// and starts/stops hosting or joining.
-    /// Command line: -host | -client [ip] | -port N | -solo | -fast | -map plains|highlands | -small | -big | -wood | -seed N
+    /// Command line: -host | -client [ip] | -port N | -solo | -fast | -map plains|highlands | -small | -big | -wood | -normal | -sides | -anywhere | -seed N
     /// </summary>
     [RequireComponent(typeof(NetworkManager))]
     public class Bootstrap : MonoBehaviour
@@ -18,7 +18,7 @@ namespace RockGame
         public static int MapChoice;
         static int s_SeedOverride = -1;
 
-        public GameObject playerPrefab, netGamePrefab, structurePrefab, nodePrefab, ballPrefab, containerPrefab;
+        public GameObject playerPrefab, netGamePrefab, structurePrefab, nodePrefab, ballPrefab, containerPrefab, vehiclePrefab;
         public Material baseMaterial, ghostMaterial;
 
         [HideInInspector] public string Ip = "127.0.0.1", Port = "7777", Status = "";
@@ -34,6 +34,8 @@ namespace RockGame
         {
             I = this;
             Cfg.LoadPrefs();
+            GameSettings.Load();
+            if (GetComponent<VoiceChat>() == null) gameObject.AddComponent<VoiceChat>();
             Application.targetFrameRate = 144;
             Application.runInBackground = true;
             MapChoice = PlayerPrefs.GetInt("RockGame.Map", 0);
@@ -46,7 +48,7 @@ namespace RockGame
         {
             m_Nm = GetComponent<NetworkManager>();
             m_Ut = GetComponent<UnityTransport>();
-            foreach (var p in new[] { playerPrefab, netGamePrefab, structurePrefab, nodePrefab, ballPrefab, containerPrefab })
+            foreach (var p in new[] { playerPrefab, netGamePrefab, structurePrefab, nodePrefab, ballPrefab, containerPrefab, vehiclePrefab })
                 if (p != null && !m_Nm.NetworkConfig.Prefabs.Contains(p)) m_Nm.AddNetworkPrefab(p);
 
             m_Nm.NetworkConfig.ConnectionApproval = true;
@@ -87,6 +89,9 @@ namespace RockGame
                     case "-small": MapChoice |= Cfg.SmallBit; break;
                     case "-big": MapChoice &= ~Cfg.SmallBit; break;
                     case "-wood": MapChoice |= Cfg.WoodBit; break;
+                    case "-normal": MapChoice &= ~Cfg.WoodBit; break;
+                    case "-sides": MapChoice |= Cfg.SidesBit; break;
+                    case "-anywhere": MapChoice &= ~Cfg.SidesBit; break;
                     case "-seed": if (i + 1 < args.Length && int.TryParse(args[i + 1], out var sd)) s_SeedOverride = sd; break;
                 }
             }

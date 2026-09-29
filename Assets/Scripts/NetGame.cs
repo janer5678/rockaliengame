@@ -40,6 +40,10 @@ namespace RockGame
         /// <summary>Airdrop ship: server time it started beaming in (-1 = none) and where the crate lands.</summary>
         public readonly NetworkVariable<double> DropStart = new NetworkVariable<double>(-1);
         public readonly NetworkVariable<Vector3> DropPos = new NetworkVariable<Vector3>();
+        public readonly NetworkVariable<double> DropStart2 = new NetworkVariable<double>(-1); // second lane (airdrops on both sides)
+        public readonly NetworkVariable<Vector3> DropPos2 = new NetworkVariable<Vector3>();
+        /// <summary>Dev setting: the match timer (and the airdrop timers) are frozen.</summary>
+        public readonly NetworkVariable<bool> TimerPaused = new NetworkVariable<bool>();
 
         int m_NextItemId = 1;
         float m_NextItemCheck;
@@ -104,7 +108,7 @@ namespace RockGame
         {
             switch ((GameState)cur)
             {
-                case GameState.PreBall: Hud.Banner("GATHER & BUILD", $"A glass wall splits the map for {Clock(Bootstrap.Fast ? Cfg.FastBallDropDelay : Cfg.BallDropDelay)}. Craft at the alien machine on your bedrock (E)."); break;
+                case GameState.PreBall: Hud.Banner("GATHER & BUILD", $"A glass wall splits the map for {Clock(Bootstrap.Fast ? Cfg.FastBallDropDelay : Cfg.BallDropDelay)}. Craft anywhere inside your base (TAB)."); break;
                 case GameState.BallLive: Hud.Banner("THE WALL IS DOWN", "Grab the ball from the middle and put it in YOUR machine's socket!"); break;
                 case GameState.SuddenDeath: Hud.Banner("SUDDEN DEATH", "Rocks only. First kill wins."); break;
             }
@@ -124,7 +128,15 @@ namespace RockGame
             if (!IsServer) return;
             if (Time.time >= m_NextItemCheck) { m_NextItemCheck = Time.time + 0.5f; ServerSettleItems(); }
             double now = NetworkManager.ServerTime.Time;
+            if (TimerPaused.Value)
+            {
+                // frozen: push every deadline back by the time that passed
+                double dt = Time.deltaTime;
+                if (S == GameState.PreBall || S == GameState.BallLive || S == GameState.SuddenDeath) PhaseEnd.Value += dt;
+                for (int i = 0; i < 2; i++) if (m_Lanes[i].NextAt < double.MaxValue) m_Lanes[i].NextAt += dt;
+            }
             ServerTickC4(now);
+            ServerTickBushes(now);
             int players = PlayerNet.All.Count;
             bool fast = Bootstrap.Fast;
             switch (S)
@@ -143,7 +155,7 @@ namespace RockGame
                         SpawnBall();
                         SetPhase(GameState.BallLive, fast ? Cfg.FastMatchLength : Cfg.MatchLength);
                         Broadcast("The glass wall is down and the BALL has dropped in the middle!");
-                        m_NextDropAt = now + Cfg.AirdropInterval;
+                        ServerStartAirdropTimers(now);
                     }
                     break;
                 case GameState.BallLive:
@@ -348,6 +360,7 @@ namespace RockGame
             var rng = new System.Random(1337 + Cfg.MapSeed);
             float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
             var placed = new List<Vector3>();
+            float half0 = Cfg.MapHalf;
             // wood mode has no stone at all: every rock becomes a tree
             byte rockKind = Cfg.WoodMode ? ResourceNode.Tree : ResourceNode.Boulder;
             bool NearTower(Vector3 p)
@@ -367,6 +380,25 @@ namespace RockGame
                 SpawnNode(rockKind, p, seed);
                 SpawnNode(rockKind, new Vector3(-p.x, 0, -p.z), seed);
             }
+            // wild horses, the same number in each half
+            if (Bootstrap.I.vehiclePrefab != null)
+                for (int h = 0; h < Cfg.HorsesPerSide; h++)
+                {
+                    for (int attempt = 0; attempt < 40; attempt++)
+                    {
+                        var p = new Vector3(R(-half0 + 10, half0 - 10), 0, R(-half0 + 10, -8f));
+                        if (Mathf.Abs(p.x - Cfg.BaseCenter[0].x) < Cfg.BaseHalf + 6 && Mathf.Abs(p.z - Cfg.BaseCenter[0].z) < Cfg.BaseHalf + 6) continue;
+                        if (NearTower(p)) continue;
+                        float yaw = R(0, 360);
+                        for (int m = 0; m < 2; m++)
+                        {
+                            var q = m == 0 ? p : new Vector3(-p.x, 0, -p.z);
+                            q.y = MapBuilder.Height(q.x, q.z) + 0.2f;
+                            Vehicle.ServerSpawn(Vehicle.Horse, q, yaw + m * 180f);
+                        }
+                        break;
+                    }
+                }
             float area = Mathf.Clamp01(Cfg.MapHalf / 100f);
             area *= area;
             int trees = Mathf.Max(8, Mathf.RoundToInt(24 * area)), stones = Mathf.Max(6, Mathf.RoundToInt(18 * area)), bushes = Mathf.Max(5, Mathf.RoundToInt(10 * area));
@@ -438,43 +470,81 @@ namespace RockGame
         const float DropArrive = 4f, DropBeam = 4f;
         /// <summary>Seconds after DropStart when the crate touches down (the ship arrives, then beams it down).</summary>
         public const float DropLand = DropArrive + DropBeam;
-        double m_NextDropAt = double.MaxValue;
-        Container m_Drop;
-        bool m_DropIncoming;
+
+        /// <summary>
+        /// One airdrop "lane": a timer, the ship on its way and the crate on the ground. Normally there's one lane for the
+        /// whole map; with "airdrops on both sides" there's one per half, each with its own one-at-a-time timer.
+        /// </summary>
+        class DropLane
+        {
+            public int Side; // 0 = anywhere, -1 / +1 = that half of the map
+            public double NextAt = double.MaxValue;
+            public bool Incoming;
+            public Container Crate;
+        }
+        readonly DropLane[] m_Lanes = { new DropLane { Side = 0 }, new DropLane { Side = 0 } };
+        int LaneCount => Cfg.AirdropSides ? 2 : 1;
+
+        public NetworkVariable<double> LaneStart(int i) => i == 0 ? DropStart : DropStart2;
+        public NetworkVariable<Vector3> LanePos(int i) => i == 0 ? DropPos : DropPos2;
+
+        void ServerStartAirdropTimers(double now)
+        {
+            for (int i = 0; i < 2; i++)
+            {
+                m_Lanes[i].Side = Cfg.AirdropSides ? (i == 0 ? -1 : 1) : 0;
+                m_Lanes[i].NextAt = now + Cfg.AirdropInterval;
+            }
+        }
 
         void ServerTickAirdrop(double now)
         {
-            if (m_DropIncoming)
+            for (int i = 0; i < LaneCount; i++) ServerTickLane(i, now);
+        }
+
+        void ServerTickLane(int i, double now)
+        {
+            var lane = m_Lanes[i];
+            if (lane.Incoming)
             {
-                if (now < DropStart.Value + DropLand) return;
-                m_DropIncoming = false;
-                var go = Instantiate(Bootstrap.I.containerPrefab, DropPos.Value, Quaternion.Euler(0, Random.Range(0f, 360f), 0));
-                m_Drop = go.GetComponent<Container>();
-                m_Drop.ServerInit(Container.Airdrop, 2, 1, new List<ItemStack> { RollAirdropLoot() });
+                if (now < LaneStart(i).Value + DropLand) return;
+                lane.Incoming = false;
+                var pos = LanePos(i).Value;
+                var go = Instantiate(Bootstrap.I.containerPrefab, pos, Quaternion.Euler(0, Random.Range(0f, 360f), 0));
+                lane.Crate = go.GetComponent<Container>();
+                lane.Crate.ServerInit(Container.Airdrop, 2, 1, new List<ItemStack> { RollAirdropLoot() });
                 go.GetComponent<NetworkObject>().Spawn(true);
-                Fx.Server(FxKind.Spawn, DropPos.Value, Vector3.up);
+                Fx.Server(FxKind.Spawn, pos, Vector3.up);
                 return;
             }
-            if (m_Drop != null)
+            if (lane.Crate != null)
             {
                 // taken: the next one comes a minute after the last one was emptied
-                if (!m_Drop.IsSpawned || m_Drop.Empty)
+                if (!lane.Crate.IsSpawned || lane.Crate.Empty)
                 {
-                    if (m_Drop.IsSpawned)
+                    if (lane.Crate.IsSpawned)
                     {
-                        Fx.Server(FxKind.Break, m_Drop.transform.position + Vector3.up * 0.6f, Vector3.up);
-                        m_Drop.NetworkObject.Despawn(true);
+                        Fx.Server(FxKind.Break, lane.Crate.transform.position + Vector3.up * 0.6f, Vector3.up);
+                        lane.Crate.NetworkObject.Despawn(true);
                     }
-                    m_Drop = null;
-                    m_NextDropAt = now + Cfg.AirdropInterval;
+                    lane.Crate = null;
+                    lane.NextAt = now + Cfg.AirdropInterval;
                 }
                 return;
             }
-            if (now < m_NextDropAt) return;
-            DropPos.Value = PickDropSpot();
-            DropStart.Value = now;
-            m_DropIncoming = true;
-            Broadcast("An alien AIRDROP is beaming down! Look for the purple beam");
+            if (now < lane.NextAt) return;
+            ServerLaunchDrop(i, now);
+        }
+
+        void ServerLaunchDrop(int i, double now)
+        {
+            var lane = m_Lanes[i];
+            LanePos(i).Value = PickDropSpot(lane.Side);
+            LaneStart(i).Value = now;
+            lane.Incoming = true;
+            string where = lane.Side == 0 ? "Look for the purple beam" : lane.Side < 0 ? $"In the {Cfg.TeamName[Cfg.BaseCenter[0].z < 0 ? 0 : 1]} half - look for the purple beam" : $"In the {Cfg.TeamName[Cfg.BaseCenter[0].z > 0 ? 0 : 1]} half - look for the purple beam";
+            BannerRpc(new FixedString64Bytes("AIRDROP INCOMING"), new FixedString128Bytes(where));
+            Broadcast("An alien AIRDROP is beaming down! " + where);
         }
 
         /// <summary>One random OP item.</summary>
@@ -484,22 +554,23 @@ namespace RockGame
             {
                 case 0: return ItemStack.Of(Item.C4, 1);
                 case 1: return ItemStack.Of(Item.DeathWand, 1);
-                case 2: return ItemStack.Of(Item.Helmet, 1, Mathf.Clamp(Cfg.HelmetHp, 1, 255));
+                case 2: return ItemStack.Of(Item.Helmet, 1, 1);
                 case 3: return ItemStack.Of(Cfg.WoodMode || Random.value < 0.5f ? Item.Wood : Item.Stone, Mathf.Clamp(Cfg.AirdropResources, 1, 1000));
                 case 4: return ItemStack.Of(Item.InvisPotion, 1);
                 default: return ItemStack.Of(Item.Chainsaw, 1, Mathf.Clamp(Cfg.ChainsawUses, 1, 255));
             }
         }
 
-        /// <summary>Random open spot on the map, never close to either base.</summary>
-        static Vector3 PickDropSpot()
+        /// <summary>Random open spot, never close to either base (side: 0 anywhere, -1/+1 only that half).</summary>
+        static Vector3 PickDropSpot(int side)
         {
             float half = Cfg.MapHalf;
             Vector3 best = Vector3.zero;
             float bestD = -1f;
             for (int tries = 0; tries < 80; tries++)
             {
-                var p = new Vector3(Random.Range(-half + 12f, half - 12f), 0, Random.Range(-half + 12f, half - 12f));
+                float z = side == 0 ? Random.Range(-half + 12f, half - 12f) : side * Random.Range(8f, half - 12f);
+                var p = new Vector3(Random.Range(-half + 12f, half - 12f), 0, z);
                 float d = float.MaxValue;
                 for (int t = 0; t < 2; t++)
                 {
@@ -514,13 +585,92 @@ namespace RockGame
             return best;
         }
 
-        /// <summary>The crate on the ground right now (null if none).</summary>
+        /// <summary>A crate on the ground right now (null if none).</summary>
         public Container ActiveDrop
         {
             get
             {
                 foreach (var c in Container.All) if (c.IsAirdrop) return c;
                 return null;
+            }
+        }
+
+        [Rpc(SendTo.ClientsAndHost)]
+        void BannerRpc(FixedString64Bytes title, FixedString128Bytes sub)
+        {
+            Hud.Banner(title.ToString(), sub.ToString());
+            Sfx.Play2D(Sfx.Hum, 0.4f, 0f);
+        }
+
+        // ------------------------------------------------------------------ dev settings (pause menu)
+
+        public void DevSkipPhase(GameState from)
+        {
+            if (S == from) PhaseEnd.Value = NetworkManager.ServerTime.Time;
+        }
+
+        public void DevAddTime(float seconds)
+        {
+            if (S == GameState.PreBall || S == GameState.BallLive || S == GameState.SuddenDeath)
+                PhaseEnd.Value = System.Math.Max(NetworkManager.ServerTime.Time + 1, PhaseEnd.Value + seconds);
+        }
+
+        public void DevSetTimeLeft(float seconds)
+        {
+            if (S == GameState.PreBall || S == GameState.BallLive || S == GameState.SuddenDeath)
+                PhaseEnd.Value = NetworkManager.ServerTime.Time + seconds;
+        }
+
+        public void DevSpawnAirdrop()
+        {
+            double now = NetworkManager.ServerTime.Time;
+            for (int i = 0; i < LaneCount; i++)
+            {
+                var lane = m_Lanes[i];
+                if (lane.Incoming) continue;
+                if (lane.Crate != null && lane.Crate.IsSpawned) lane.Crate.NetworkObject.Despawn(true);
+                lane.Crate = null;
+                lane.Side = Cfg.AirdropSides ? (i == 0 ? -1 : 1) : 0;
+                ServerLaunchDrop(i, now);
+            }
+        }
+
+        public void DevStartSuddenDeath()
+        {
+            if (S == GameState.PreBall || S == GameState.BallLive) StartSuddenDeath();
+        }
+
+        public void DevRegrowNodes()
+        {
+            foreach (var n in FindObjectsByType<ResourceNode>(FindObjectsSortMode.None))
+                if (!n.IsBush) n.ServerRegrow();
+        }
+
+        // ------------------------------------------------------------------ berry bushes
+
+        readonly List<(double at, int side)> m_BushQueue = new List<(double, int)>();
+
+        /// <summary>A bush was picked: a new one grows back later somewhere else in the same half.</summary>
+        public void ServerScheduleBush(int side) => m_BushQueue.Add((NetworkManager.ServerTime.Time + Cfg.BushRespawnTime, side));
+
+        void ServerTickBushes(double now)
+        {
+            for (int i = m_BushQueue.Count - 1; i >= 0; i--)
+            {
+                if (now < m_BushQueue[i].at) continue;
+                int side = m_BushQueue[i].side;
+                m_BushQueue.RemoveAt(i);
+                float half = Cfg.MapHalf;
+                for (int tries = 0; tries < 40; tries++)
+                {
+                    var p = new Vector3(Random.Range(-half + 8f, half - 8f), 0, side * Random.Range(6f, half - 8f));
+                    var bc = Cfg.BaseCenter[side < 0 ? (Cfg.BaseCenter[0].z < 0 ? 0 : 1) : (Cfg.BaseCenter[0].z > 0 ? 0 : 1)];
+                    if (Mathf.Abs(p.x - bc.x) < Cfg.BaseHalf + 3 && Mathf.Abs(p.z - bc.z) < Cfg.BaseHalf + 3) continue;
+                    p.y = MapBuilder.Height(p.x, p.z);
+                    if (Physics.CheckSphere(p + Vector3.up * 1.2f, 1.2f, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore)) continue;
+                    SpawnNode(ResourceNode.Bush, p, Random.Range(0, 1 << 30));
+                    break;
+                }
             }
         }
 
