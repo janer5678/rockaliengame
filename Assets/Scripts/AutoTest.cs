@@ -18,6 +18,9 @@ namespace RockGame
             for (int i = 0; i < args.Length - 1; i++)
                 if (args[i] == "-autotest") m_Mode = args[i + 1];
             if (m_Mode == null) { enabled = false; return; }
+            // test runs make no sound
+            GameSettings.Muted = true;
+            GameSettings.Apply();
             if (m_Mode == "menushot") { StartCoroutine(MenuShots()); return; }
             StartCoroutine(Run());
         }

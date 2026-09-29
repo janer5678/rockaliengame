@@ -40,7 +40,9 @@ namespace RockGame
             Apply();
         }
 
-        public static void Apply() => AudioListener.volume = Mathf.Clamp01(MasterVolume);
+        /// <summary>Automated test runs (-autotest) and -mute are silent.</summary>
+        public static bool Muted;
+        public static void Apply() => AudioListener.volume = Muted ? 0f : Mathf.Clamp01(MasterVolume);
     }
 
     /// <summary>

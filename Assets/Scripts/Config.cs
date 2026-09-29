@@ -20,8 +20,11 @@ namespace RockGame
     /// <summary>Map size: Big (the original), Small, and 1.5x / 2x versions of Big.</summary>
     public enum MapSize : byte { Big, Small, Large, Huge }
 
-    /// <summary>1v1 and 2v2: red vs blue. Free for all: 3 or 4 players, each with their own base (glass walls in an X).</summary>
-    public enum GameMode : byte { Duel, Teams, Ffa3, Ffa4 }
+    /// <summary>
+    /// 1v1 / 2v2 / 3v3 / 4v4: red vs blue. Free for all: 3 or 4 players, each with their own base (glass walls in an X).
+    /// 2v2v2 / 2v2v2v2: 3 or 4 teams of two on the same X-shaped map. (Values are synced in 3 bits: never reorder.)
+    /// </summary>
+    public enum GameMode : byte { Duel, Teams, Ffa3, Ffa4, Teams3, Teams4, Trio, Quad }
 
     public struct MeleeStats
     {
@@ -66,11 +69,31 @@ namespace RockGame
         public const int SmallBit = 16, WoodBit = 32, SidesBit = 64, RespawnLootBit = 128, ModeShift = 8, ModeMask = 7, SizeShift = 12;
         public static GameMode Mode = GameMode.Duel;
         /// <summary>Players needed to start (and the most that can join).</summary>
-        public static int PlayersNeeded => Mode == GameMode.Teams ? 4 : Mode == GameMode.Ffa3 ? 3 : Mode == GameMode.Ffa4 ? 4 : 2;
+        public static int PlayersNeeded => ModeTeams(Mode) * ModeTeamSize(Mode);
         public static bool FreeForAll => Mode == GameMode.Ffa3 || Mode == GameMode.Ffa4;
+        /// <summary>How many teams (bases) a mode has.</summary>
+        public static int ModeTeams(GameMode m) => m == GameMode.Ffa3 || m == GameMode.Trio ? 3 : m == GameMode.Ffa4 || m == GameMode.Quad ? 4 : 2;
+        /// <summary>Players per team.</summary>
+        public static int ModeTeamSize(GameMode m) => m == GameMode.Teams || m == GameMode.Trio || m == GameMode.Quad ? 2 : m == GameMode.Teams3 ? 3 : m == GameMode.Teams4 ? 4 : 1;
+        public static string ModeName(GameMode m)
+        {
+            switch (m)
+            {
+                case GameMode.Teams: return "2v2";
+                case GameMode.Teams3: return "3v3";
+                case GameMode.Teams4: return "4v4";
+                case GameMode.Ffa3: return "Free for all (3)";
+                case GameMode.Ffa4: return "Free for all (4)";
+                case GameMode.Trio: return "2v2v2";
+                case GameMode.Quad: return "2v2v2v2";
+                default: return "1v1";
+            }
+        }
+        /// <summary>Teammates stand side by side: 0 in the middle, then right, left, further right...</summary>
+        public static float SlotOffset(int slot, float step) => slot == 0 ? 0f : ((slot + 1) / 2) * step * (slot % 2 == 1 ? 1f : -1f);
         /// <summary>More than two bases: the map is laid out four ways round with the glass walls in an X.</summary>
-        public static bool FourWay => FreeForAll;
-        public static string ModeLabel => Mode == GameMode.Teams ? "2v2" : Mode == GameMode.Ffa3 ? "Free for all (3)" : Mode == GameMode.Ffa4 ? "Free for all (4)" : "1v1";
+        public static bool FourWay => TeamCount > 2;
+        public static string ModeLabel => ModeName(Mode);
         /// <summary>Packs the map/mode choice for syncing; the seed is sent separately.</summary>
         public static int MapKey => (int)Map | ((int)Size << SizeShift) | (WoodMode ? WoodBit : 0) | (AirdropSides ? SidesBit : 0) | (RespawnLoot ? RespawnLootBit : 0) | ((int)Mode << ModeShift);
 
@@ -86,7 +109,7 @@ namespace RockGame
             AirdropSides = (key & SidesBit) != 0;
             RespawnLoot = (key & RespawnLootBit) != 0;
             Mode = (GameMode)((key >> ModeShift) & ModeMask);
-            TeamCount = Mode == GameMode.Ffa3 ? 3 : Mode == GameMode.Ffa4 ? 4 : 2;
+            TeamCount = ModeTeams(Mode);
             MapSeed = seed;
             float d = SmallMap ? 42f : 75f * SizeScale;
             // blue south, red north, green east, yellow west
@@ -110,7 +133,7 @@ namespace RockGame
         /// <summary>Centre of the ball when it sits in the machine's socket.</summary>
         public static Vector3 SocketPos(int team) => BaseCenter[team] + BackDir(team) * 0.35f + Vector3.up * (BaseY + 0.64f);
         /// <summary>Where you (re)spawn: on the front half of your bedrock, facing the middle of the map.</summary>
-        public static Vector3 SpawnPos(int team, int slot = 0) => BaseCenter[team] - BackDir(team) * 1.7f + Vector3.Cross(Vector3.up, BackDir(team)) * (slot == 0 ? 0f : slot % 2 == 1 ? 1.4f : -1.4f) + Vector3.up * (BaseY + 0.05f);
+        public static Vector3 SpawnPos(int team, int slot = 0) => BaseCenter[team] - BackDir(team) * 1.7f + Vector3.Cross(Vector3.up, BackDir(team)) * SlotOffset(slot, 1.3f) + Vector3.up * (BaseY + 0.05f);
 
         /// <summary>Rotate a point about the map centre by 90 degrees `quarter` times (four-way symmetric layouts).</summary>
         public static Vector3 Rotate(Vector3 p, int quarter) => Quaternion.Euler(0, 90f * quarter, 0) * p;

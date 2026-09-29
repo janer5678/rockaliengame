@@ -96,7 +96,7 @@ namespace RockGame
                         if (i + 1 < args.Length)
                         {
                             string m = args[i + 1].ToLowerInvariant();
-                            int mode = m == "2v2" ? 1 : m == "ffa3" ? 2 : m == "ffa4" ? 3 : 0;
+                            int mode = m == "2v2" ? 1 : m == "ffa3" ? 2 : m == "ffa4" ? 3 : m == "3v3" ? 4 : m == "4v4" ? 5 : m == "2v2v2" ? 6 : m == "2v2v2v2" ? 7 : 0;
                             MapChoice = (MapChoice & ~(Cfg.ModeMask << Cfg.ModeShift)) | (mode << Cfg.ModeShift);
                         }
                         break;

@@ -17,7 +17,7 @@ Both players start with a rock, gather wood and stone, build a Rust-style base, 
    You can also press Play in the editor and host or join from there against a build.
 
 ### Menu options (set by the host)
-- **Game**: *1v1*, *2v2* (red vs blue, two players each), *FFA 3* or *FFA 4* (free for all: every player has their own base; the map is laid out four ways round with the glass walls in an X, and FFA 3 leaves one quarter without a base). Sudden death is last team standing.
+- **Game**: red vs blue in *1v1*, *2v2*, *3v3* or *4v4*; or the X-shaped map with 3 or 4 bases (glass walls in an X, the map laid out four ways round): *FFA 3* / *FFA 4* (free for all, one player per base), *2v2v2* or *2v2v2v2* (teams of two). Sudden death is last team standing.
 - While waiting for everyone to join, players brawl with rocks in the stadium; when the lobby is full everyone is sent to their base and the match starts.
 - **Solo test**: the match starts without an opponent, so you can try everything alone.
 - **Fast timers**: 10s wall/ball drop and a 90s match instead of 5 min and 10 min (15 min in all).
@@ -29,7 +29,7 @@ Both players start with a rock, gather wood and stone, build a Rust-style base, 
   - **Airdrop items**: tick which items airdrops can have: C4, Death Wand, Portal Gun, Rocket Launcher, Tree Camo, Invisibility Potion, Jetpack, Wallhack Glasses, Fake Bomb Bush.
   - **Respawn**: *Normal* or *With an airdrop item* (every time you respawn you get a random one of the picked airdrop items).
 
-Command line: `-host`, `-client <ip>`, `-port <n>`, `-solo`, `-fast`, `-map plains|highlands`, `-small`, `-big`, `-wood`, `-normal`, `-sides`, `-anywhere`, `-seed <n>`, `-mode 1v1|2v2|ffa3|ffa4`.
+Command line: `-host`, `-client <ip>`, `-port <n>`, `-solo`, `-fast`, `-map plains|highlands`, `-small`, `-big`, `-wood`, `-normal`, `-sides`, `-anywhere`, `-seed <n>`, `-mode 1v1|2v2|3v3|4v4|ffa3|ffa4|2v2v2|2v2v2v2`, `-large` (Big x1.5), `-huge` (Big x2).
 
 ## Pause menu (Esc)
 - **Sound**: master volume, hit sounds volume (hit markers, flesh hits, kills) and voice chat volume.

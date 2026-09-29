@@ -162,7 +162,7 @@ namespace RockGame
             if (m_ShowSettings) { DrawSettings(); return; }
             if (OpenModeOptions) { OpenModeOptions = false; m_ShowModeOptions = true; }
             if (m_ShowModeOptions) { DrawModeOptions(boot); return; }
-            float w = 500 * m_Scale, h = 790 * m_Scale;
+            float w = 500 * m_Scale, h = 800 * m_Scale;
             var r = new Rect((Screen.width - w) / 2, (Screen.height - h) / 2, w, h);
             Fill(r, new Color(0, 0, 0, 0.65f));
             GUILayout.BeginArea(new Rect(r.x + 20, r.y + 15, r.width - 40, r.height - 30));
@@ -181,15 +181,30 @@ namespace RockGame
             {
                 int mk = Bootstrap.MapChoice;
                 var mode = (GameMode)((mk >> Cfg.ModeShift) & Cfg.ModeMask);
-                GUILayout.BeginHorizontal();
-                GUILayout.Label("Game", m_Label, GUILayout.Width(90 * m_Scale));
-                string[] names = { "1v1", "2v2", "FFA 3", "FFA 4" };
-                for (int i = 0; i < 4; i++)
-                    if (GUILayout.Toggle((int)mode == i, " " + names[i], m_Button, GUILayout.Height(30 * m_Scale)) && (int)mode != i)
-                        boot.SetMapChoice((mk & ~(Cfg.ModeMask << Cfg.ModeShift)) | (i << Cfg.ModeShift));
-                GUILayout.EndHorizontal();
-                if (mode == GameMode.Teams) GUILayout.Label("<color=#bbbbbb>Red vs blue, two players each (4 players).</color>", m_Small);
-                else if (mode != GameMode.Duel) GUILayout.Label($"<color=#bbbbbb>Everyone for themselves: {(mode == GameMode.Ffa3 ? 3 : 4)} bases, glass walls in an X.</color>", m_Small);
+                // two rows: red vs blue, then the X-shaped maps with 3 or 4 bases
+                var rows = new[]
+                {
+                    new[] { GameMode.Duel, GameMode.Teams, GameMode.Teams3, GameMode.Teams4 },
+                    new[] { GameMode.Ffa3, GameMode.Ffa4, GameMode.Trio, GameMode.Quad },
+                };
+                for (int row = 0; row < rows.Length; row++)
+                {
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Label(row == 0 ? "Game" : "", m_Label, GUILayout.Width(90 * m_Scale));
+                    foreach (var gm in rows[row])
+                    {
+                        string name = gm == GameMode.Ffa3 ? "FFA 3" : gm == GameMode.Ffa4 ? "FFA 4" : Cfg.ModeName(gm);
+                        if (GUILayout.Toggle(mode == gm, " " + name, m_Button, GUILayout.Height(30 * m_Scale)) && mode != gm)
+                            boot.SetMapChoice((mk & ~(Cfg.ModeMask << Cfg.ModeShift)) | ((int)gm << Cfg.ModeShift));
+                    }
+                    GUILayout.EndHorizontal();
+                }
+                int teams = Cfg.ModeTeams(mode), per = Cfg.ModeTeamSize(mode);
+                string desc = teams == 2
+                    ? (per == 1 ? "Red vs blue, one on one." : $"Red vs blue, {per} players each ({teams * per} players).")
+                    : per == 1 ? $"Everyone for themselves: {teams} bases, glass walls in an X."
+                    : $"{teams} teams of {per} ({teams * per} players): {teams} bases, glass walls in an X.";
+                GUILayout.Label($"<color=#bbbbbb>{desc}</color>", m_Small);
             }
             GUILayout.BeginHorizontal();
             GUILayout.Label("Map", m_Label, GUILayout.Width(90 * m_Scale));

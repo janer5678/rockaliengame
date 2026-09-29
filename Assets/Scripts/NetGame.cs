@@ -476,7 +476,7 @@ namespace RockGame
             {
                 // on your team's spot around the stadium pit, facing the middle
                 var dir = Quaternion.Euler(0, team * 360f / Mathf.Max(2, Cfg.TeamCount), 0) * Vector3.back;
-                pos = Cfg.ArenaCenter + dir * 14f + Vector3.Cross(Vector3.up, dir) * (slot == 0 ? 0f : slot % 2 == 1 ? 1.6f : -1.6f) + Vector3.up * 0.1f;
+                pos = Cfg.ArenaCenter + dir * 14f + Vector3.Cross(Vector3.up, dir) * Cfg.SlotOffset(slot, 1.5f) + Vector3.up * 0.1f;
                 yaw = Quaternion.LookRotation(-dir).eulerAngles.y;
                 return;
             }
