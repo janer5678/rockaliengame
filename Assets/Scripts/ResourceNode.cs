@@ -20,6 +20,9 @@ namespace RockGame
         public readonly NetworkVariable<int> Amount = new NetworkVariable<int>();
         public readonly NetworkVariable<int> Seed = new NetworkVariable<int>();
         public readonly NetworkVariable<byte> Spot = new NetworkVariable<byte>();
+        /// <summary>Fake bomb bush: the team that threw it (NoTrap = a real bush). Looks exactly the same.</summary>
+        public readonly NetworkVariable<byte> TrapTeam = new NetworkVariable<byte>(NoTrap);
+        public const byte NoTrap = 255;
 
         GameObject m_Visual;
         Transform m_Marker;
@@ -88,16 +91,8 @@ namespace RockGame
             var tr = m_Visual.transform;
             if (Kind.Value == Tree)
             {
-                float h = 4.5f + r() * 2.5f;
-                var trunk = Art.Part(tr, Art.Cylinder, Art.DarkWood, new Vector3(0, h * 0.5f, 0), new Vector3(0.6f, h * 0.5f, 0.6f), default, true, null, "trunk");
+                var trunk = BuildTreeVisual(tr, Seed.Value, true);
                 m_SpotCollider = trunk.GetComponent<Collider>();
-                Color leaf = Color.Lerp(Art.Leaves, new Color(0.3f, 0.55f, 0.2f), r());
-                for (int k = 0; k < 3; k++)
-                {
-                    float y = h * 0.45f + k * 1.4f;
-                    float w = 3.6f - k * 0.9f;
-                    Art.Part(tr, Art.Cone, leaf, new Vector3(0, y, 0), new Vector3(w, 2.4f, w), new Vector3(0, r() * 60f, 0));
-                }
                 // the X
                 m_Marker = new GameObject("x").transform;
                 m_Marker.SetParent(tr, false);
@@ -146,6 +141,32 @@ namespace RockGame
                 sc.radius = 0.8f;
             }
             m_VisualBase = tr.localPosition;
+        }
+
+        /// <summary>A tree exactly like the map's trees (also used for the tree camo costume). Returns the trunk.</summary>
+        public static GameObject BuildTreeVisual(Transform tr, int seed, bool collider)
+        {
+            var rng = new System.Random(seed);
+            float r() => (float)rng.NextDouble();
+            float h = 4.5f + r() * 2.5f;
+            var trunk = Art.Part(tr, Art.Cylinder, Art.DarkWood, new Vector3(0, h * 0.5f, 0), new Vector3(0.6f, h * 0.5f, 0.6f), default, collider, null, "trunk");
+            Color leaf = Color.Lerp(Art.Leaves, new Color(0.3f, 0.55f, 0.2f), r());
+            for (int k = 0; k < 3; k++)
+            {
+                float y = h * 0.45f + k * 1.4f;
+                float w = 3.6f - k * 0.9f;
+                Art.Part(tr, Art.Cone, leaf, new Vector3(0, y, 0), new Vector3(w, 2.4f, w), new Vector3(0, r() * 60f, 0));
+            }
+            return trunk;
+        }
+
+        /// <summary>Airstrike: flattened, regrows later like any empty node.</summary>
+        public void ServerDeplete()
+        {
+            if (IsBush) { NetworkObject.Despawn(true); return; }
+            if (Amount.Value <= 0) return;
+            Amount.Value = 0;
+            m_RespawnAt = Time.time + Cfg.NodeRespawnTime;
         }
 
         /// <summary>Local-space direction and height of weak spot `i` (a ring around the trunk / rock).</summary>
@@ -255,7 +276,7 @@ namespace RockGame
             if (IsBush && Amount.Value <= 0)
             {
                 // a new bush grows somewhere else in this half of the map later
-                if (NetGame.Instance != null) NetGame.Instance.ServerScheduleBush(transform.position.z < 0 ? -1 : 1);
+                if (NetGame.Instance != null && TrapTeam.Value == NoTrap) NetGame.Instance.ServerScheduleBush(transform.position);
                 NetworkObject.Despawn(true);
                 return got;
             }

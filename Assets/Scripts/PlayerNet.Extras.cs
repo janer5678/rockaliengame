@@ -89,13 +89,18 @@ namespace RockGame
         [Rpc(SendTo.Server)]
         public void MountRpc(NetworkObjectReference target)
         {
-            if (Dead.Value || Riding || CarryingBall || InSuddenDeath || !target.TryGet(out var no) || !no.TryGetComponent(out Vehicle v)) return;
+            if (Dead.Value || Riding || CarryingBall || InSuddenDeath || !target.TryGet(out var no) || !no.TryGetComponent(out Vehicle v) || !v.Rideable) return;
             if (Vector3.Distance(v.transform.position, transform.position) > Cfg.InteractRange + 3f) return;
             if (v.HasDriver) { Notify("Someone is already riding that"); return; }
             if (v.IsHorse && !v.Saddled.Value)
             {
-                if (!InvOps.Remove(Inv, Item.Saddle, 1)) { Notify("You need a saddle to ride this horse (craft one in your base)"); return; }
+                int slot = -1;
+                for (int i = 0; i < Inv.Count && slot < 0; i++) if (Inv[i].Id == Item.Saddle) slot = i;
+                if (slot < 0) { Notify("You need a saddle to ride this horse (craft one in your base)"); return; }
+                int saddleTeam = Inv[slot].Data > 0 ? Inv[slot].Data - 1 : Team.Value;
+                Inv[slot] = default;
                 v.Saddled.Value = true;
+                v.SaddleTeam.Value = (byte)saddleTeam;
                 SpentRpc((byte)Item.Saddle, 1);
             }
             v.ServerSetDriver(this);

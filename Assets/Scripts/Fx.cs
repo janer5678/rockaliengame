@@ -3,7 +3,7 @@ using UnityEngine;
 
 namespace RockGame
 {
-    public enum FxKind : byte { Blood, BloodHead, WoodChips, StoneChips, WeakSpot, Break, Smash, StructureHit, Spawn, C4Placed, Explosion, WandBeam, HelmetBreak, Craft, Drink }
+    public enum FxKind : byte { Blood, BloodHead, WoodChips, StoneChips, WeakSpot, Break, Smash, StructureHit, Spawn, C4Placed, Explosion, WandBeam, HelmetBreak, Craft, Drink, AirstrikeWarn, SniperTracer, PortalOpen, Timber }
 
     /// <summary>
     /// Game feel: particles (blood, chips, sparks), camera shake/kick, floating damage numbers and sounds.
@@ -74,6 +74,14 @@ namespace RockGame
                 case FxKind.WandBeam: WandBeam(pos, dir); break;
                 case FxKind.HelmetBreak: Chips(pos, Vector3.up, new Color(0.55f, 0.6f, 0.65f), 18, 4f); Sfx.Play(Sfx.Clink, pos, 1f, 0.2f); break;
                 case FxKind.Craft: Machine.Pulse(Mathf.RoundToInt(dir.x)); break;
+                case FxKind.AirstrikeWarn: AirstrikeZone.Spawn(pos, dir.x, dir.y); break;
+                case FxKind.SniperTracer: Tracer(pos, dir); break;
+                case FxKind.PortalOpen: Sparks(pos, dir, 25); Sfx.Play(Sfx.Portal, pos, 0.9f); break;
+                case FxKind.Timber:
+                    Chips(pos, Vector3.up, Art.Wood, 40, 6f);
+                    Chips(pos + Vector3.up * 2f, Vector3.up, Art.Leaves, 30, 5f);
+                    Sfx.Play(Sfx.Smash, pos, 1f);
+                    break;
                 case FxKind.Drink:
                     for (int i = 0; i < 8; i++) FxParticle.Puff(pos + Random.insideUnitSphere * 0.6f + Vector3.up, new Color(0.7f, 0.4f, 1f, 0.5f), Random.Range(0.4f, 0.8f));
                     Sfx.Play(Sfx.Zap, pos, 0.5f);
@@ -105,6 +113,19 @@ namespace RockGame
             l.range = 18f;
             l.intensity = 8f;
             Object.Destroy(lg, 0.25f);
+        }
+
+        /// <summary>Sniper shot: a thin bright line that fades fast.</summary>
+        public static void Tracer(Vector3 from, Vector3 to)
+        {
+            var d = to - from;
+            if (d.magnitude < 0.1f) return;
+            var mat = new Material(Art.Ghost(new Color(1f, 0.95f, 0.6f, 0.9f)));
+            var go = Art.Part(null, Art.Cube, Color.white, from + d * 0.5f, new Vector3(0.03f, 0.03f, d.magnitude), Quaternion.LookRotation(d).eulerAngles, false, mat);
+            go.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            go.AddComponent<FadeOut>().Init(mat, 0.3f);
+            Sfx.Play(Sfx.Sniper, from, 1f, 0.03f);
+            Sparks(to, -d, 10);
         }
 
         /// <summary>Death wand bolt from `from` to `to`.</summary>
@@ -183,6 +204,92 @@ namespace RockGame
         void OnDestroy()
         {
             if (m_Mat) Destroy(m_Mat);
+        }
+    }
+
+    /// <summary>Airstrike warning: a pulsing red zone on the ground and a siren until the bombs fall.</summary>
+    public class AirstrikeZone : MonoBehaviour
+    {
+        float m_End, m_NextBeep;
+        Material m_Mat;
+
+        public static void Spawn(Vector3 pos, float radius, float seconds)
+        {
+            var go = new GameObject("AirstrikeZone");
+            go.transform.position = pos + Vector3.up * 0.2f;
+            var z = go.AddComponent<AirstrikeZone>();
+            z.m_Mat = new Material(Art.Ghost(new Color(1f, 0.1f, 0.05f, 0.35f)));
+            var disc = Art.Part(go.transform, Art.Cylinder, Color.white, Vector3.zero, new Vector3(radius * 2f, 0.05f, radius * 2f), default, false, z.m_Mat);
+            disc.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            var col = Art.Part(go.transform, Art.Cylinder, Color.white, Vector3.up * 30f, new Vector3(0.6f, 30f, 0.6f), default, false, Art.Ghost(new Color(1f, 0.2f, 0.1f, 0.3f)));
+            col.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            z.m_End = Time.time + seconds;
+            Destroy(go, seconds + 0.2f);
+        }
+
+        void Update()
+        {
+            var c = new Color(1f, 0.1f, 0.05f, 0.2f + 0.25f * Mathf.Abs(Mathf.Sin(Time.time * 6f)));
+            m_Mat.SetColor("_BaseColor", c);
+            if (Time.time >= m_NextBeep)
+            {
+                m_NextBeep = Time.time + 0.5f;
+                Sfx.Play(Sfx.Beep, transform.position + Vector3.up * 2f, 1f, 0f);
+            }
+        }
+
+        void OnDestroy()
+        {
+            if (m_Mat) Destroy(m_Mat);
+        }
+    }
+
+    /// <summary>Draws every portal in NetGame.Portals as a glowing coloured oval on its surface.</summary>
+    public static class PortalFx
+    {
+        static readonly List<GameObject> s_Shown = new List<GameObject>();
+
+        public static void Sync(NetGame g)
+        {
+            int n = g.Portals.Count;
+            while (s_Shown.Count > n) { if (s_Shown[s_Shown.Count - 1]) Object.Destroy(s_Shown[s_Shown.Count - 1]); s_Shown.RemoveAt(s_Shown.Count - 1); }
+            for (int i = 0; i < n; i++)
+            {
+                if (i < s_Shown.Count && s_Shown[i] != null) { Animate(s_Shown[i], i); continue; }
+                var p = g.Portals[i];
+                var go = new GameObject("Portal");
+                go.transform.SetPositionAndRotation(p.Pos, Quaternion.LookRotation(p.Normal.sqrMagnitude > 0.01f ? p.Normal : Vector3.up));
+                var c = p.Color;
+                // ring + glowing inside, 1.3 m wide and 2 m tall (flat along the surface)
+                for (int k = 0; k < 16; k++)
+                {
+                    float a = k * Mathf.PI * 2f / 16f;
+                    Art.Box(go.transform, c, new Vector3(Mathf.Cos(a) * 0.65f, Mathf.Sin(a) * 1.0f, 0), new Vector3(0.28f, 0.28f, 0.06f), new Vector3(0, 0, a * Mathf.Rad2Deg));
+                }
+                var inner = Art.Part(go.transform, Art.Cylinder, Color.white, Vector3.zero, new Vector3(1.3f, 0.02f, 2f), new Vector3(90, 0, 0), false, Art.Ghost(new Color(c.r, c.g, c.b, 0.55f)), "inner");
+                inner.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                var lg = new GameObject("light");
+                lg.transform.SetParent(go.transform, false);
+                lg.transform.localPosition = new Vector3(0, 0, 0.4f);
+                var l = lg.AddComponent<Light>();
+                l.type = LightType.Point;
+                l.color = c;
+                l.range = 5f;
+                l.intensity = 2f;
+                if (i < s_Shown.Count) s_Shown[i] = go; else s_Shown.Add(go);
+            }
+        }
+
+        static void Animate(GameObject go, int i)
+        {
+            var inner = go.transform.Find("inner");
+            if (inner) inner.localScale = new Vector3(1.3f, 0.02f, 2f) * (0.92f + 0.08f * Mathf.Sin(Time.time * 3f + i));
+        }
+
+        public static void Clear()
+        {
+            foreach (var g in s_Shown) if (g) Object.Destroy(g);
+            s_Shown.Clear();
         }
     }
 
@@ -288,14 +395,24 @@ namespace RockGame
         }
     }
 
-    /// <summary>Procedurally synthesised sound effects (the project has no audio assets).</summary>
+    /// <summary>
+    /// Sound effects: recorded CC0 sounds by Kenney (www.kenney.nl) in Resources/Sfx ("name_0.ogg", "name_1.ogg", ... are
+    /// variations picked at random), with procedurally synthesised stand-ins for anything missing.
+    /// </summary>
     public static class Sfx
     {
-        public static AudioClip Swing, Flesh, Headshot, Chop, Clink, Thud, Ding, Smash, Twang, Throw, Pop, Eat, Place, Hurt, Kill, Step, Hiss, Boom, Beep, Zap, Saw, Hum;
+        public static AudioClip Swing, Flesh, Headshot, Chop, Clink, Thud, Ding, Smash, Twang, Throw, Pop, Eat, Place, Hurt, Kill, Step, Hiss, Boom, Beep, Zap, Saw, Hum,
+            Hit, Rocket, Sniper, Portal, Jet, Glass, Door, Click, Crowd;
+        static readonly Dictionary<AudioClip, AudioClip[]> s_Variants = new Dictionary<AudioClip, AudioClip[]>();
+        static readonly HashSet<AudioClip> s_HitSounds = new HashSet<AudioClip>();
         const int Rate = 44100;
 
         // runs on first access to any clip, so Sfx.Play(Sfx.Chop, ...) always gets a built clip
-        static Sfx() => Build();
+        static Sfx()
+        {
+            Build();
+            LoadRecorded();
+        }
 
         static void Build()
         {
@@ -325,8 +442,47 @@ namespace RockGame
             Zap = Make("zap", 0.3f, (t, d) => (Mathf.Sin(t * 2 * Mathf.PI * Mathf.Lerp(1400, 200, t / d)) * 0.5f + N() * 0.3f) * Env(t, 0.2f));
             Saw = Make("saw", 0.2f, (t, d) => (Mathf.Sign(Mathf.Sin(t * 2 * Mathf.PI * 95)) * 0.3f + N() * 0.25f) * (0.7f + 0.3f * Mathf.Sin(t * 2 * Mathf.PI * 25)), lowpass: 0.35f);
             Hum = Make("hum", 1.5f, (t, d) => (Mathf.Sin(t * 2 * Mathf.PI * 55) * 0.5f + Mathf.Sin(t * 2 * Mathf.PI * 110.5f) * 0.3f) * Mathf.Sin(t / d * Mathf.PI), lowpass: 0.5f);
+            Hit = Make("hit", 0.05f, (t, d) => Mathf.Sin(t * 2 * Mathf.PI * 2400) * Env(t, 0.03f) * 0.4f);
+            Rocket = Make("rocket", 0.6f, (t, d) => N() * Env(t, 0.4f) * 0.6f, lowpass: 0.2f);
+            Sniper = Make("sniper", 0.5f, (t, d) => N() * Env(t, 0.15f) + Mathf.Sin(t * 2 * Mathf.PI * 70) * Env(t, 0.3f), lowpass: 0.3f);
+            Portal = Make("portal", 0.5f, (t, d) => Mathf.Sin(t * 2 * Mathf.PI * Mathf.Lerp(300, 900, t / d)) * Env(t, 0.4f) * 0.4f);
+            Jet = Make("jet", 0.3f, (t, d) => N() * 0.4f, lowpass: 0.25f);
+            Glass = Make("glass", 0.4f, (t, d) => N() * Env(t, 0.2f) * 0.6f);
+            Door = Make("door", 0.3f, (t, d) => Mathf.Sin(t * 2 * Mathf.PI * 120) * Env(t, 0.2f), lowpass: 0.3f);
+            // stadium crowd: layered swelling noise (loops)
+            Crowd = Make("crowd", 4f, (t, d) => N() * (0.35f + 0.15f * Mathf.Sin(t * 1.3f) + 0.1f * Mathf.Sin(t * 3.7f + 1f)) * Mathf.Min(1f, Mathf.Min(t, d - t) * 4f + 0.6f), lowpass: 0.08f);
+            Click = Make("click", 0.03f, (t, d) => N() * Env(t, 0.01f));
             Step = Make("step", 0.08f, (t, d) => N() * Env(t, 0.03f) * 0.25f, lowpass: 0.15f);
         }
+
+        /// <summary>Swap each synthesised clip for the recorded ones in Resources/Sfx when they exist.</summary>
+        static void LoadRecorded()
+        {
+            var all = Resources.LoadAll<AudioClip>("Sfx");
+            var groups = new Dictionary<string, List<AudioClip>>();
+            foreach (var c in all)
+            {
+                int us = c.name.LastIndexOf('_');
+                string key = us > 0 ? c.name.Substring(0, us) : c.name;
+                if (!groups.TryGetValue(key, out var l)) groups[key] = l = new List<AudioClip>();
+                l.Add(c);
+            }
+            foreach (var f in typeof(Sfx).GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static))
+            {
+                if (f.FieldType != typeof(AudioClip)) continue;
+                if (!groups.TryGetValue(f.Name.ToLowerInvariant(), out var l) || l.Count == 0) continue;
+                l.Sort((a, b) => string.CompareOrdinal(a.name, b.name));
+                f.SetValue(null, l[0]);
+                s_Variants[l[0]] = l.ToArray();
+            }
+            s_HitSounds.Clear();
+            foreach (var c in new[] { Flesh, Headshot, Kill, Hit }) if (c != null) s_HitSounds.Add(c);
+        }
+
+        static AudioClip Pick(AudioClip clip) => s_Variants.TryGetValue(clip, out var v) ? v[Random.Range(0, v.Length)] : clip;
+
+        /// <summary>Hit sounds (flesh, headshot, kill, hit marker) follow their own volume slider.</summary>
+        static float Vol(AudioClip clip, float v) => s_HitSounds.Contains(clip) ? v * GameSettings.HitVolume : v;
 
         static float Env(float t, float decay) => Mathf.Exp(-t / Mathf.Max(0.001f, decay) * 3f);
 
@@ -352,6 +508,8 @@ namespace RockGame
         public static void Play(AudioClip clip, Vector3 pos, float volume = 0.7f, float pitchVar = 0.08f)
         {
             if (clip == null) return;
+            volume = Vol(clip, volume);
+            clip = Pick(clip);
             var go = new GameObject("sfx");
             go.transform.position = pos;
             var src = go.AddComponent<AudioSource>();
@@ -370,6 +528,8 @@ namespace RockGame
         public static void Play2D(AudioClip clip, float volume = 0.6f, float pitchVar = 0.06f)
         {
             if (clip == null) return;
+            volume = Vol(clip, volume);
+            clip = Pick(clip);
             var go = new GameObject("sfx2d");
             var src = go.AddComponent<AudioSource>();
             src.clip = clip;

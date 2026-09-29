@@ -18,7 +18,7 @@ namespace RockGame
         public struct State
         {
             public Item Item;
-            public bool Ball, Visible, SpearAim, Crouch, HasArrow, Sprint, Grounded, Firing, Loaded, Aim;
+            public bool Ball, Visible, SpearAim, Crouch, HasArrow, Sprint, Grounded, Firing, Loaded, Aim, Visible2;
             public float Draw, RamCharge, Bob, Speed, VelY, Reload;
             public Vector2 Look;
         }
@@ -93,7 +93,7 @@ namespace RockGame
         public void Update(State s)
         {
             float dt = Time.deltaTime;
-            bool vis = s.Visible;
+            bool vis = s.Visible && s.Visible2; // hidden while looking through the sniper scope
             if (m_Root.gameObject.activeSelf != vis) m_Root.gameObject.SetActive(vis);
             if (!vis) return;
 
@@ -104,7 +104,7 @@ namespace RockGame
                 if (m_Item) Object.Destroy(m_Item);
                 if (m_Ball) Object.Destroy(m_Ball);
                 m_Item = null; m_Ball = null;
-                if (s.Ball) m_Ball = ItemModels.CreateBall(m_Root, 0.9f);
+                if (s.Ball) m_Ball = ItemModels.CreateBall(m_Root, 1.3f);
                 else if (s.Item != Item.None) m_Item = ItemModels.Create(s.Item, m_ItemHolder);
                 foreach (var r in m_Root.GetComponentsInChildren<Renderer>()) r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
                 // after throwing the ball the hands come back up a moment later instead of instantly
@@ -180,7 +180,10 @@ namespace RockGame
                 case Item.Bow: PoseBow(s, shared, sharedRot); break;
                 case Item.Ram: PoseRam(s, shared, sharedRot); break;
                 case Item.Chainsaw: PoseChainsaw(s, shared, sharedRot); break;
-                case Item.Crossbow: PoseCrossbow(s, shared, sharedRot); break;
+                case Item.Crossbow:
+                case Item.Sniper:
+                case Item.PortalGun:
+                case Item.RocketLauncher: PoseCrossbow(s, shared, sharedRot); break;
                 case Item.None: HideLeft(); Set(m_R, new Vector3(0.3f, -0.9f, 0.2f), Quaternion.identity); break;
                 default: PoseHeld(s.Item, shared, sharedRot); break;
             }
@@ -373,8 +376,8 @@ namespace RockGame
                 pos += new Vector3(-0.05f, -0.08f, 0) * r;
                 rot *= Quaternion.Euler(35f * r, 10f * r, -15f * r);
             }
-            AttachItemToRoot(pos, rot, 1f);
-            if (m_Item)
+            AttachItemToRoot(pos, rot, s.Item == Item.Sniper ? 0.75f : 1f);
+            if (m_Item && s.Item == Item.Crossbow)
             {
                 var bolt = m_Item.transform.Find("bolt");
                 if (bolt) bolt.gameObject.SetActive(s.Loaded);
@@ -413,12 +416,12 @@ namespace RockGame
             m_L.localRotation = rot * Quaternion.Euler(-60f, 20f, 70f);
         }
 
-        /// <summary>The ball, big, in both hands: fills the lower part of the screen (~30%).</summary>
+        /// <summary>The ball, huge, in both hands: fills the bottom half of the screen, its top reaching the middle.</summary>
         void PoseBall(Vector3 shared, Quaternion sharedRot)
         {
             float throwK = Mathf.Clamp01((Time.time - m_ThrowStart) / 0.3f);
             bool throwing = throwK < 1f;
-            var ballPos = shared + new Vector3(0, -0.47f, 0.7f);
+            var ballPos = shared + new Vector3(0, -0.62f, 0.75f);
             if (throwing) ballPos += new Vector3(0, 0.25f, 0.9f) * Smooth(throwK);
             if (m_Ball)
             {
@@ -427,8 +430,8 @@ namespace RockGame
                 m_Ball.SetActive(!throwing || throwK < 0.5f);
             }
             float push = throwing ? Smooth(Mathf.Min(1f, throwK * 2f)) * 0.3f : 0f;
-            Set(m_R, ballPos + new Vector3(0.44f, 0.02f, -0.1f + push), sharedRot * Quaternion.Euler(-10f, -40f, -80f));
-            Set(m_L, ballPos + new Vector3(-0.44f, 0.02f, -0.1f + push), sharedRot * Quaternion.Euler(-10f, 40f, 80f));
+            Set(m_R, ballPos + new Vector3(0.62f, 0.05f, -0.15f + push), sharedRot * Quaternion.Euler(-10f, -40f, -80f));
+            Set(m_L, ballPos + new Vector3(-0.62f, 0.05f, -0.15f + push), sharedRot * Quaternion.Euler(-10f, 40f, 80f));
         }
 
         void PoseHeld(Item item, Vector3 shared, Quaternion sharedRot)

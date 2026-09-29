@@ -9,6 +9,10 @@ namespace RockGame
     {
         const int Size = 128, Layer = 31;
         static readonly Dictionary<Item, Texture2D> s_Icons = new Dictionary<Item, Texture2D>();
+        static readonly Dictionary<int, Texture2D> s_Wheel = new Dictionary<int, Texture2D>();
+
+        /// <summary>Icon for a build wheel slice (see PlayerController.WheelOptions).</summary>
+        public static Texture2D Wheel(int option) => s_Wheel.TryGetValue(option, out var t) ? t : null;
         static bool s_Tried;
 
         public static Texture2D Get(Item i) => s_Icons.TryGetValue(i, out var t) ? t : null;
@@ -43,32 +47,56 @@ namespace RockGame
             var rt = new RenderTexture(Size, Size, 24, RenderTextureFormat.ARGB32) { antiAliasing = 4 };
             cam.targetTexture = rt;
 
-            foreach (Item item in System.Enum.GetValues(typeof(Item)))
+            Texture2D Snap(GameObject model, string name)
             {
-                if (item == Item.None) continue;
-                var model = ItemModels.Create(item, rig.transform);
-                PoseForIcon(item, model.transform);
                 var rends = model.GetComponentsInChildren<Renderer>();
-                if (rends.Length == 0) { Object.DestroyImmediate(model); continue; }
+                if (rends.Length == 0) { Object.DestroyImmediate(model); return null; }
                 foreach (var r in rends) { r.gameObject.layer = Layer; r.shadowCastingMode = ShadowCastingMode.Off; }
                 var b = rends[0].bounds;
                 foreach (var r in rends) b.Encapsulate(r.bounds);
-
                 float radius = b.extents.magnitude;
                 float dist = radius / Mathf.Sin(cam.fieldOfView * 0.5f * Mathf.Deg2Rad) * 0.95f;
                 var dir = new Vector3(0.35f, 0.3f, -1f).normalized;
                 camGo.transform.position = b.center - dir * dist;
                 camGo.transform.rotation = Quaternion.LookRotation(dir);
-
-                if (!Render(cam, rt)) { Object.DestroyImmediate(model); break; }
+                cam.farClipPlane = dist + radius * 2f + 1f;
+                Render(cam, rt);
                 var prev = RenderTexture.active;
                 RenderTexture.active = rt;
-                var tex = new Texture2D(Size, Size, TextureFormat.RGBA32, false) { name = "icon_" + item };
+                var tex = new Texture2D(Size, Size, TextureFormat.RGBA32, false) { name = "icon_" + name };
                 tex.ReadPixels(new Rect(0, 0, Size, Size), 0, 0);
                 tex.Apply();
                 RenderTexture.active = prev;
-                s_Icons[item] = tex;
                 Object.DestroyImmediate(model);
+                return tex;
+            }
+
+            foreach (Item item in System.Enum.GetValues(typeof(Item)))
+            {
+                if (item == Item.None) continue;
+                var model = ItemModels.Create(item, rig.transform);
+                PoseForIcon(item, model.transform);
+                var tex = Snap(model, item.ToString());
+                if (tex != null) s_Icons[item] = tex;
+            }
+
+            // build wheel: each piece as it looks in the world, plus demolish (a broken wall) and upgrade (a stone wall)
+            var opts = PlayerController.WheelOptions;
+            for (int i = 0; i < opts.Length; i++)
+            {
+                var holder = new GameObject("piece");
+                holder.transform.SetParent(rig.transform, false);
+                var o = opts[i];
+                if (o.Demolish)
+                {
+                    Structure.CreateVisual(PieceType.Wall, 0, holder.transform, false, null, out _);
+                    Art.Box(holder.transform, new Color(0.9f, 0.15f, 0.1f), new Vector3(0, 1.5f, -0.3f), new Vector3(3.2f, 0.4f, 0.1f), new Vector3(0, 0, 45));
+                    Art.Box(holder.transform, new Color(0.9f, 0.15f, 0.1f), new Vector3(0, 1.5f, -0.3f), new Vector3(3.2f, 0.4f, 0.1f), new Vector3(0, 0, -45));
+                }
+                else Structure.CreateVisual(o.Piece, o.Upgrade ? 1 : 0, holder.transform, false, null, out _);
+                holder.transform.localRotation = Quaternion.Euler(0, o.Piece == PieceType.Stairs ? 140f : 20f, 0);
+                var tex = Snap(holder, o.Label);
+                if (tex != null) s_Wheel[i] = tex;
             }
             cam.targetTexture = null;
             rt.Release();
@@ -92,7 +120,7 @@ namespace RockGame
         {
             switch (i)
             {
-                case Item.Spear: case Item.Arrow: case Item.Hatchet: case Item.Pickaxe: case Item.DeathWand:
+                case Item.Spear: case Item.Arrow: case Item.Hatchet: case Item.Pickaxe: case Item.DeathWand: case Item.GiantStaff:
                     t.localRotation = Quaternion.Euler(0, 0, -40); break;
                 case Item.Bow:
                     t.localRotation = Quaternion.Euler(0, 90, -35); break;
@@ -102,10 +130,15 @@ namespace RockGame
                     t.localRotation = Quaternion.Euler(0, 150, 0); break;
                 case Item.Car:
                 case Item.Saddle:
+                case Item.Wallhack:
+                case Item.Jetpack:
                     t.localRotation = Quaternion.Euler(0, 140, 0); break;
                 case Item.Ram:
                 case Item.Chainsaw:
                 case Item.Crossbow:
+                case Item.Sniper:
+                case Item.PortalGun:
+                case Item.RocketLauncher:
                     t.localRotation = Quaternion.Euler(0, 55, 0); break;
                 case Item.BuildingPlan:
                     t.localRotation = Quaternion.Euler(20, 0, 0); break;

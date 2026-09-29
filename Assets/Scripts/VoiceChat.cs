@@ -7,7 +7,7 @@ namespace RockGame
     public static class GameSettings
     {
         public const int VoiceOff = 0, VoiceOpen = 1, VoicePushToTalk = 2;
-        public static float MasterVolume = 0.8f, VoiceVolume = 1f, MicGain = 1.5f, MicThreshold = 0.02f;
+        public static float MasterVolume = 0.8f, VoiceVolume = 1f, MicGain = 1.5f, MicThreshold = 0.02f, HitVolume = 1f;
         public static int VoiceMode = VoicePushToTalk;
         public static string MicDevice = "";
         public static KeyCode PushToTalkKey = KeyCode.V;
@@ -19,6 +19,7 @@ namespace RockGame
             s_Loaded = true;
             MasterVolume = PlayerPrefs.GetFloat("RockGame.Volume", 0.8f);
             VoiceVolume = PlayerPrefs.GetFloat("RockGame.VoiceVolume", 1f);
+            HitVolume = PlayerPrefs.GetFloat("RockGame.HitVolume", 1f);
             MicGain = PlayerPrefs.GetFloat("RockGame.MicGain", 1.5f);
             MicThreshold = PlayerPrefs.GetFloat("RockGame.MicThreshold", 0.02f);
             VoiceMode = PlayerPrefs.GetInt("RockGame.VoiceMode", VoicePushToTalk);
@@ -30,6 +31,7 @@ namespace RockGame
         {
             PlayerPrefs.SetFloat("RockGame.Volume", MasterVolume);
             PlayerPrefs.SetFloat("RockGame.VoiceVolume", VoiceVolume);
+            PlayerPrefs.SetFloat("RockGame.HitVolume", HitVolume);
             PlayerPrefs.SetFloat("RockGame.MicGain", MicGain);
             PlayerPrefs.SetFloat("RockGame.MicThreshold", MicThreshold);
             PlayerPrefs.SetInt("RockGame.VoiceMode", VoiceMode);

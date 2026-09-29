@@ -9,20 +9,27 @@ namespace RockGame
     /// Something you can ride: a Bad-Piggies-style wooden car (placed from the inventory, arcade driving, runs people over)
     /// or a horse (wanders the map; needs a saddle, then rides like a Minecraft horse: goes where you look, space jumps).
     /// Whoever drives owns it (NetworkTransform in Owner mode); nobody driving = the server owns it.
+    /// Also used for Slenderman (hatched from an egg): a server-driven creature that hunts the nearest enemy.
+    /// Horses and Slenderman can be killed; a horse drops meat (and its saddle).
     /// </summary>
     public class Vehicle : NetworkBehaviour
     {
-        public const byte Car = 0, Horse = 1;
+        public const byte Car = 0, Horse = 1, Slender = 2;
         const ulong NoDriver = ulong.MaxValue;
         public static readonly List<Vehicle> All = new List<Vehicle>();
 
         public readonly NetworkVariable<byte> Kind = new NetworkVariable<byte>();
         public readonly NetworkVariable<ulong> DriverId = new NetworkVariable<ulong>(NoDriver);
         public readonly NetworkVariable<bool> Saddled = new NetworkVariable<bool>();
+        public readonly NetworkVariable<byte> SaddleTeam = new NetworkVariable<byte>();   // saddle colour
+        public readonly NetworkVariable<float> Hp = new NetworkVariable<float>(100f);
+        public readonly NetworkVariable<byte> OwnerTeam = new NetworkVariable<byte>();    // Slenderman: who hatched it
 
         public bool IsHorse => Kind.Value == Horse;
+        public bool IsSlender => Kind.Value == Slender;
+        public bool Rideable => Kind.Value != Slender;
         public bool HasDriver => DriverId.Value != NoDriver;
-        public string DisplayName => IsHorse ? (Saddled.Value ? "Saddled Horse" : "Wild Horse") : "Wooden Car";
+        public string DisplayName => IsSlender ? "Slenderman" : IsHorse ? (Saddled.Value ? "Saddled Horse" : "Wild Horse") : "Wooden Car";
         /// <summary>Where the rider's feet go (local space).</summary>
         public Vector3 SeatLocal => IsHorse ? new Vector3(0, 0.95f, -0.1f) : new Vector3(0, 0.3f, -0.25f);
         public Vector3 SeatWorld => transform.TransformPoint(SeatLocal);
@@ -40,8 +47,45 @@ namespace RockGame
             var go = Instantiate(Bootstrap.I.vehiclePrefab, pos, Quaternion.Euler(0, yaw, 0));
             var v = go.GetComponent<Vehicle>();
             v.Kind.Value = kind;
+            v.Hp.Value = kind == Slender ? Cfg.SlenderHp : Cfg.HorseHp;
             go.GetComponent<NetworkObject>().Spawn(true);
             return v;
+        }
+
+        public static Vehicle ServerSpawnSlender(Vector3 pos, int team)
+        {
+            var go = Instantiate(Bootstrap.I.vehiclePrefab, pos, Quaternion.identity);
+            var v = go.GetComponent<Vehicle>();
+            v.Kind.Value = Slender;
+            v.Hp.Value = Cfg.SlenderHp;
+            v.OwnerTeam.Value = (byte)team;
+            v.m_DieAt = Time.time + Cfg.SlenderLife;
+            go.GetComponent<NetworkObject>().Spawn(true);
+            Fx.Server(FxKind.Spawn, pos, Vector3.up);
+            return v;
+        }
+
+        float m_DieAt = float.MaxValue, m_NextBlink;
+
+        /// <summary>Hurt a horse / Slenderman. A dead horse drops meat (and its saddle); the rider falls off.</summary>
+        public void ServerDamage(float dmg, PlayerNet attacker)
+        {
+            if (!IsServer || !IsSpawned || Kind.Value == Car || dmg <= 0) return;
+            Hp.Value = Mathf.Max(0f, Hp.Value - dmg);
+            if (Hp.Value > 0) return;
+            var d = Driver;
+            if (d != null) d.ServerDismount();
+            var g = NetGame.Instance;
+            var at = transform.position + Vector3.up * 0.8f;
+            if (IsHorse && g != null)
+            {
+                var drops = new List<ItemStack> { ItemStack.Of(Item.Meat, 1) };
+                if (Saddled.Value) drops.Add(ItemStack.Of(Item.Saddle, 1, SaddleTeam.Value + 1));
+                g.ServerScatter(drops, at);
+            }
+            Fx.Server(IsSlender ? FxKind.Drink : FxKind.Blood, at, Vector3.up);
+            if (IsSlender && g != null) g.Broadcast("Slenderman was destroyed!");
+            NetworkObject.Despawn(true);
         }
 
         public override void OnNetworkSpawn()
@@ -53,7 +97,10 @@ namespace RockGame
             m_CC.stepOffset = 0.45f;
             m_CC.slopeLimit = 50f;
             m_CC.skinWidth = 0.06f;
+            if (IsSlender) { m_CC.radius = 0.4f; m_CC.height = 2.6f; m_CC.center = new Vector3(0, 1.3f, 0); }
             m_Visual = CreateVisual(Kind.Value, transform, null, out m_Saddle, out m_Fan, out m_Head, out m_Tail, m_Wheels, m_Legs).transform;
+            SaddleTeam.OnValueChanged += (a, b) => ColourSaddle();
+            ColourSaddle();
             m_Yaw = transform.eulerAngles.y;
             m_LastPos = transform.position;
             m_NextWander = Time.time + Random.Range(1f, 4f);
@@ -88,10 +135,24 @@ namespace RockGame
             m_Planar = Vector3.zero;
         }
 
+        /// <summary>Saddles are in the colour of the team that put them on.</summary>
+        void ColourSaddle()
+        {
+            if (m_Saddle == null) return;
+            var blanket = m_Saddle.Find("blanket");
+            if (blanket) blanket.GetComponent<Renderer>().sharedMaterial = Art.Mat(Cfg.TeamColor[Mathf.Clamp(SaddleTeam.Value, 0, Cfg.TeamColor.Length - 1)]);
+        }
+
         void Update()
         {
             float dt = Time.deltaTime;
             if (dt <= 0f) return;
+            if (IsSlender)
+            {
+                if (IsServer) Hunt(dt);
+                AnimateSlender();
+                return;
+            }
             if (m_Saddle && m_Saddle.gameObject.activeSelf != Saddled.Value) m_Saddle.gameObject.SetActive(Saddled.Value);
 
             if (IsOwner)
@@ -235,6 +296,67 @@ namespace RockGame
             }
         }
 
+        // ---------------- Slenderman (server) ----------------
+
+        /// <summary>Stalks the nearest enemy of whoever hatched it, blinking closer now and then; touching them kills them.</summary>
+        void Hunt(float dt)
+        {
+            if (Time.time >= m_DieAt)
+            {
+                Fx.Server(FxKind.Drink, transform.position + Vector3.up, Vector3.up);
+                NetworkObject.Despawn(true);
+                return;
+            }
+            PlayerNet target = null;
+            float best = float.MaxValue;
+            foreach (var p in PlayerNet.All)
+            {
+                if (p.Dead.Value || p.Team.Value == OwnerTeam.Value) continue;
+                float d = Vector3.Distance(p.transform.position, transform.position);
+                if (d < best) { best = d; target = p; }
+            }
+            bool grounded = m_CC.isGrounded;
+            if (grounded && m_VelY < 0) m_VelY = -2f;
+            m_VelY -= Cfg.Gravity * dt;
+            var move = Vector3.zero;
+            if (target != null)
+            {
+                var to = target.transform.position - transform.position;
+                to.y = 0;
+                if (best < 1.4f)
+                {
+                    target.ServerKill(null);
+                    NetGame.Instance?.Broadcast($"Slenderman got {Cfg.TeamLabel(target.Team.Value)}!");
+                    NetworkObject.Despawn(true);
+                    return;
+                }
+                m_Yaw = Quaternion.LookRotation(to).eulerAngles.y;
+                move = to.normalized * Cfg.SlenderSpeed;
+                // every few seconds it blinks a chunk of the way towards you
+                if (Time.time >= m_NextBlink && best > 8f)
+                {
+                    m_NextBlink = Time.time + Random.Range(4f, 7f);
+                    m_CC.enabled = false;
+                    var p = transform.position + to.normalized * Mathf.Min(6f, best - 4f);
+                    p.y = MapBuilder.Height(p.x, p.z) + 0.2f;
+                    if (Physics.Raycast(p + Vector3.up * 5f, Vector3.down, out var hit, 20f, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore)) p.y = hit.point.y + 0.05f;
+                    transform.position = p;
+                    m_CC.enabled = true;
+                    Fx.Server(FxKind.Spawn, p, Vector3.up);
+                }
+            }
+            var flags = m_CC.Move((move + Vector3.up * m_VelY) * dt);
+            if ((flags & CollisionFlags.Sides) != 0 && grounded) m_VelY = 6f; // climb over things
+            transform.rotation = Quaternion.Euler(0, m_Yaw, 0);
+        }
+
+        void AnimateSlender()
+        {
+            m_Anim += Time.deltaTime;
+            if (m_Head) m_Head.localRotation = Quaternion.Euler(Mathf.Sin(m_Anim * 7f) * 6f, Mathf.Sin(m_Anim * 3.3f) * 12f, Mathf.Sin(m_Anim * 11f) * 4f);
+            for (int i = 0; i < m_Legs.Count; i++) m_Legs[i].localRotation = Quaternion.Euler(Mathf.Sin(m_Anim * 2f + i * 1.3f) * 25f, 0, (i % 2 == 0 ? 1 : -1) * (20f + Mathf.Sin(m_Anim * 3f + i) * 10f));
+        }
+
         // ---------------- visuals ----------------
 
         void Animate(float dt)
@@ -310,7 +432,7 @@ namespace RockGame
                     wheels?.Add(w);
                 }
             }
-            else
+            else if (kind == Horse)
             {
                 var coat = new Color(0.45f, 0.3f, 0.18f);
                 var mane = new Color(0.18f, 0.12f, 0.08f);
@@ -347,8 +469,43 @@ namespace RockGame
                 sd.SetParent(t, false);
                 Art.Box(sd, new Color(0.35f, 0.18f, 0.08f), new Vector3(0, 1.47f, -0.05f), new Vector3(0.64f, 0.08f, 0.55f));
                 Art.Box(sd, new Color(0.35f, 0.18f, 0.08f), new Vector3(0, 1.55f, 0.2f), new Vector3(0.3f, 0.12f, 0.08f));
-                Art.Box(sd, new Color(0.8f, 0.2f, 0.15f), new Vector3(0, 1.2f, -0.05f), new Vector3(0.66f, 0.5f, 0.45f));
+                var blanket = Art.Box(sd, new Color(0.8f, 0.2f, 0.15f), new Vector3(0, 1.2f, -0.05f), new Vector3(0.66f, 0.5f, 0.45f));
+                blanket.name = "blanket";
                 saddle = sd;
+            }
+            else if (kind == Slender)
+            {
+                // tall, thin, black suit, blank white face, tendrils on its back
+                var suit = new Color(0.05f, 0.05f, 0.06f);
+                var skin = new Color(0.93f, 0.93f, 0.95f);
+                Art.Box(t, suit, new Vector3(0.1f, 0.65f, 0), new Vector3(0.14f, 1.3f, 0.16f));
+                Art.Box(t, suit, new Vector3(-0.1f, 0.65f, 0), new Vector3(0.14f, 1.3f, 0.16f));
+                Art.Box(t, suit, new Vector3(0, 1.75f, 0), new Vector3(0.46f, 0.95f, 0.26f));
+                Art.Box(t, Color.white, new Vector3(0, 2.05f, 0.14f), new Vector3(0.1f, 0.3f, 0.02f));
+                Art.Box(t, new Color(0.6f, 0.05f, 0.05f), new Vector3(0, 1.95f, 0.15f), new Vector3(0.05f, 0.28f, 0.02f));
+                var hd = new GameObject("head").transform;
+                hd.SetParent(t, false);
+                hd.localPosition = new Vector3(0, 2.3f, 0);
+                Art.Part(hd, Art.Sphere, skin, new Vector3(0, 0.16f, 0), new Vector3(0.3f, 0.4f, 0.32f));
+                head = hd;
+                for (int k = -1; k <= 1; k += 2)
+                {
+                    var arm = new GameObject("arm").transform;
+                    arm.SetParent(t, false);
+                    arm.localPosition = new Vector3(k * 0.3f, 2.15f, 0);
+                    Art.Box(arm, suit, new Vector3(0, -0.6f, 0), new Vector3(0.1f, 1.2f, 0.1f));
+                    Art.Box(arm, skin, new Vector3(0, -1.28f, 0), new Vector3(0.08f, 0.2f, 0.06f));
+                    legs?.Add(arm);
+                }
+                for (int k = 0; k < 4; k++)
+                {
+                    var ten = new GameObject("tendril").transform;
+                    ten.SetParent(t, false);
+                    ten.localPosition = new Vector3((k - 1.5f) * 0.12f, 2.0f, -0.15f);
+                    ten.localRotation = Quaternion.Euler(-40f - k * 8f, (k - 1.5f) * 25f, 0);
+                    Art.Box(ten, suit, new Vector3(0, 0.5f, 0), new Vector3(0.05f, 1f, 0.05f));
+                    legs?.Add(ten);
+                }
             }
             if (ghost != null)
                 foreach (var r in root.GetComponentsInChildren<MeshRenderer>())

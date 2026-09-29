@@ -28,6 +28,7 @@ namespace RockGame
         public readonly NetworkVariable<byte> HelmetHp = new NetworkVariable<byte>();  // 1 = wearing the headshot helmet
         public readonly NetworkVariable<byte> ArmorHp = new NetworkVariable<byte>();   // wooden armour: second health bar
         public readonly NetworkVariable<ulong> RidingId = new NetworkVariable<ulong>(); // vehicle / horse we sit on (0 = none)
+        public readonly NetworkVariable<double> GiantUntil = new NetworkVariable<double>(-1); // staff of the giant
         public readonly NetworkVariable<double> InvisUntil = new NetworkVariable<double>(-1);
         public readonly NetworkVariable<double> RevealUntil = new NetworkVariable<double>(-1); // attacking shows you for a moment
         public readonly NetworkList<ItemStack> Inv = new NetworkList<ItemStack>();
@@ -36,6 +37,7 @@ namespace RockGame
         public readonly NetworkVariable<byte> HeldSlot = new NetworkVariable<byte>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
         public readonly NetworkVariable<float> Pitch = new NetworkVariable<float>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
         public readonly NetworkVariable<bool> Crouch = new NetworkVariable<bool>(false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
+        public readonly NetworkVariable<bool> Jetting = new NetworkVariable<bool>(false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
 
         public ItemStack SlotAt(int i) => i >= 0 && i < Inv.Count ? Inv[i] : default;
         public ItemStack HeldStack => SlotAt(HeldSlot.Value);
@@ -52,7 +54,11 @@ namespace RockGame
         public bool Riding => RidingId.Value != 0;
         public int Count(Item id) => Inv.Count > 0 ? InvOps.Count(Inv, id) : 0;
         public bool CarryingBall => Ball.Instance != null && Ball.Instance.CarrierId.Value == NetworkObjectId;
-        public float EyeHeight => Crouch.Value ? Cfg.CrouchEyeHeight : Cfg.EyeHeight;
+        public bool Giant => GiantUntil.Value > (NetworkManager != null ? NetworkManager.ServerTime.Time : 0);
+        /// <summary>Visual size (giants are huge but keep a normal-size hitbox).</summary>
+        public float Scale => Giant ? Cfg.GiantScale : 1f;
+        public float EyeHeight => (Crouch.Value ? Cfg.CrouchEyeHeight : Cfg.EyeHeight) * Scale;
+        public bool TreeCamo => HeldItem == Item.TreeCamo && !Dead.Value && !CarryingBall && !Riding;
         public Vector3 EyePos => transform.position + Vector3.up * EyeHeight;
         public bool IsHeadshot(Vector3 point) => point.y > transform.position.y + (Crouch.Value ? 0.88f : 1.24f);
         double Now => NetworkManager != null ? NetworkManager.ServerTime.Time : 0;
@@ -72,7 +78,10 @@ namespace RockGame
         // ---- visuals ----
         CharacterController m_CC;
         Transform m_VisualRoot, m_Head, m_Hand;
-        GameObject m_HandItem, m_Helmet, m_Armor;
+        GameObject m_HandItem, m_Helmet, m_Armor, m_Tree, m_Flame;
+        bool m_Esp;
+        float m_VisScale = 1f;
+        static Material s_EspMat;
         Item m_HandItemId = (Item)255;
         BodyAnimator m_Anim;
         CapsuleCollider m_Hitbox;
@@ -259,6 +268,52 @@ namespace RockGame
             if (IsOwner) Art.SetLayerShadowsOnly(m_Armor);
         }
 
+        void RebuildTree(bool on)
+        {
+            if (m_Tree) { Destroy(m_Tree); m_Tree = null; }
+            if (!on || IsOwner) { if (on && IsOwner) m_Tree = new GameObject("camo(owner)"); return; }
+            m_Tree = new GameObject("treeCamo");
+            m_Tree.transform.SetParent(transform, false);
+            ResourceNode.BuildTreeVisual(m_Tree.transform, (int)(NetworkObjectId * 7919 % 100000), false);
+        }
+
+        /// <summary>Wallhack glasses: an extra always-on-top red pass on this player's renderers.</summary>
+        void SetEsp(bool on)
+        {
+            m_Esp = on;
+            if (s_EspMat == null)
+            {
+                s_EspMat = new Material(Shader.Find("Hidden/Internal-Colored"));
+                s_EspMat.SetInt("_ZTest", (int)UnityEngine.Rendering.CompareFunction.Always);
+                s_EspMat.SetInt("_ZWrite", 0);
+                s_EspMat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+                s_EspMat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+                s_EspMat.SetInt("_Cull", (int)UnityEngine.Rendering.CullMode.Off);
+                s_EspMat.color = new Color(1f, 0.15f, 0.1f, 0.45f);
+                s_EspMat.renderQueue = 4000;
+            }
+            foreach (var r in m_VisualRoot.GetComponentsInChildren<Renderer>(true))
+            {
+                var mats = new List<Material>(r.sharedMaterials);
+                mats.RemoveAll(m => m == s_EspMat);
+                if (on) mats.Add(s_EspMat);
+                r.sharedMaterials = mats.ToArray();
+            }
+        }
+
+        void RebuildFlame(bool on)
+        {
+            if (m_Flame) { Destroy(m_Flame); m_Flame = null; }
+            if (!on) return;
+            m_Flame = new GameObject("jetFlame");
+            m_Flame.transform.SetParent(m_VisualRoot, false);
+            m_Flame.transform.localPosition = new Vector3(0, 0.75f, -0.35f);
+            Art.Box(m_Flame.transform, new Color(0.3f, 0.3f, 0.32f), new Vector3(0, 0.3f, 0), new Vector3(0.45f, 0.5f, 0.2f));
+            Art.Part(m_Flame.transform, Art.Cone, Color.white, new Vector3(0.12f, 0f, 0), new Vector3(0.14f, -0.5f, 0.14f), default, false, Art.Ghost(new Color(1f, 0.6f, 0.1f, 0.8f)));
+            Art.Part(m_Flame.transform, Art.Cone, Color.white, new Vector3(-0.12f, 0f, 0), new Vector3(0.14f, -0.5f, 0.14f), default, false, Art.Ghost(new Color(1f, 0.6f, 0.1f, 0.8f)));
+            if (IsOwner) Art.SetLayerShadowsOnly(m_Flame);
+        }
+
         void RebuildHandItem(Item item)
         {
             if (m_HandItem) Destroy(m_HandItem);
@@ -277,6 +332,10 @@ namespace RockGame
             // the body topples over and stays a moment before disappearing
             bool showBody = !dead || Time.time - m_DeadSince < 2.5f;
             if (!IsOwner && Hidden && !dead) showBody = false; // invisibility potion
+            // tree camo: everyone else sees a tree where you stand
+            bool tree = TreeCamo;
+            if (tree != (m_Tree != null)) RebuildTree(tree);
+            if (tree && !IsOwner) showBody = false;
             if (m_VisualRoot.gameObject.activeSelf != showBody) m_VisualRoot.gameObject.SetActive(showBody);
             bool cc = !dead && !Riding;
             if (m_CC.enabled != cc) m_CC.enabled = cc;
@@ -298,11 +357,22 @@ namespace RockGame
                 m_VisualRoot.localScale = new Vector3(1f, Mathf.Lerp(1f, 0.68f, m_CrouchVis), 1f);
             }
 
-            var held = CarryingBall || dead ? Item.None : HeldItem;
+            var held = CarryingBall || dead || tree ? Item.None : HeldItem;
             if (held != m_HandItemId) RebuildHandItem(held);
             if (m_StuckVisuals.Count != Mathf.Min(StuckSpears.Value, k_StuckPos.Length)) RebuildStuckSpears();
             if ((HelmetHp.Value > 0) != (m_Helmet != null)) RebuildHelmet();
             if ((ArmorHp.Value > 0) != (m_Armor != null)) RebuildArmor();
+            // staff of the giant: grow (the hitbox stays normal size)
+            m_VisScale = Mathf.MoveTowards(m_VisScale, Scale, Time.deltaTime * 3f);
+            m_VisualRoot.localScale = Vector3.one * m_VisScale;
+            // wallhack glasses: enemies glow through walls while you hold them
+            var local = Local;
+            bool esp = !IsOwner && local != null && local.HeldItem == Item.Wallhack && !local.Dead.Value && local.Team.Value != Team.Value && !dead;
+            if (esp != m_Esp) SetEsp(esp);
+            // jetpack flame
+            bool flame = Jetting.Value && !dead;
+            if (flame != (m_Flame != null)) RebuildFlame(flame);
+            if (m_Flame) m_Flame.transform.localScale = new Vector3(1f, 0.8f + Random.value * 0.5f, 1f);
             if (m_Swing > 0) m_Swing = Mathf.Max(0, m_Swing - Time.deltaTime / 0.55f);
             if (m_Anim == null && !IsOwner) m_Head.localRotation = Quaternion.Euler(Pitch.Value * 0.6f, 0, 0);
             if (m_Anim == null && m_Swing > 0) m_Hand.localRotation = Quaternion.Euler(Mathf.Sin(m_Swing * Mathf.PI) * 80f, 0, 0);
@@ -381,6 +451,14 @@ namespace RockGame
 
         public void NotifyPublic(string msg) => Notify(msg);
 
+        /// <summary>Instant death (sniper, airstrike, C4 right on top of you): armour doesn't help.</summary>
+        public void ServerKill(PlayerNet attacker)
+        {
+            if (Dead.Value || !GameAllowsCombat || m_God) return;
+            ArmorHp.Value = 0;
+            ServerDamage(Health.Value + 1f, attacker);
+        }
+
         public void ServerDamage(float dmg, PlayerNet attacker)
         {
             if (Dead.Value || !GameAllowsCombat || m_God) return;
@@ -441,6 +519,13 @@ namespace RockGame
             TeleportRpc(pos, yaw);
             Dead.Value = false;
             Fx.Server(FxKind.Spawn, pos, Vector3.up);
+            // game option: come back with a random airdrop item
+            if (Cfg.RespawnLoot)
+            {
+                var loot = NetGame.RollAirdropLoot();
+                ServerGive(loot.Id, loot.Count, loot.Data);
+                Notify($"Respawn loot: {Cfg.ItemName(loot.Id)}");
+            }
         }
 
         [Rpc(SendTo.Server)]
@@ -457,10 +542,12 @@ namespace RockGame
             if (CarryingBall) Ball.Instance.ServerDrop(transform.position, Vector3.zero);
             if (StuckSpears.Value > 0) { ServerGive(Item.Spear, StuckSpears.Value); StuckSpears.Value = 0; }
             ServerDismount();
-            // a fair duel: full health, all armour and helmets taken off, rocks only
+            // a fair duel: full health, empty pockets, all armour and helmets taken off, rocks only
             Health.Value = Cfg.MaxHealth;
             HelmetHp.Value = 0;
             ArmorHp.Value = 0;
+            GiantUntil.Value = -1;
+            for (int i = 0; i < Inv.Count; i++) Inv[i] = default;
             Dead.Value = false;
             InvisUntil.Value = -1;
             NetGame.SpawnPoint(Team.Value, true, out var pos, out var yaw);
@@ -512,6 +599,11 @@ namespace RockGame
                 if (p == this || p.Dead.Value || !GameAllowsCombat) return;
                 ServerHitPlayer(p, st.PlayerDamage, point, dir);
             }
+            else if (no.TryGetComponent(out Vehicle v))
+            {
+                v.ServerDamage(st.PlayerDamage, this);
+                Fx.Server(FxKind.Blood, point, dir, OwnerClientId);
+            }
             else if (no.TryGetComponent(out ResourceNode n))
             {
                 if (n.IsBush) return;
@@ -519,6 +611,13 @@ namespace RockGame
                 bool tree = n.Kind.Value == ResourceNode.Tree;
                 int got = n.ServerHarvest(Mathf.RoundToInt(tree ? st.WoodGather : st.StoneGather), weak, transform.position);
                 if (got > 0) ServerGive(n.Yield, got);
+                if (got > 0 && tree && n.Amount.Value <= 0 && Cfg.TreeFellBonus > 0)
+                {
+                    // felling the whole tree pays out a bonus
+                    ServerGive(Item.Wood, Cfg.TreeFellBonus);
+                    TimberRpc(Cfg.TreeFellBonus);
+                    Fx.Server(FxKind.Timber, n.transform.position + Vector3.up * 2f, Vector3.up);
+                }
                 Fx.Server(tree ? FxKind.WoodChips : FxKind.StoneChips, point, -dir, OwnerClientId);
                 if (weak) Fx.Server(FxKind.WeakSpot, point, -dir, OwnerClientId);
             }
@@ -577,6 +676,7 @@ namespace RockGame
                 ServerHitPlayer(p, damage, point, dir);
                 return; // arrows that hit someone are gone
             }
+            if (no.TryGetComponent(out Vehicle v)) { v.ServerDamage(damage, this); return; }
             if (no.TryGetComponent(out Structure s) && s.Team.Value != Team.Value && s.Tier.Value == 0)
                 s.ServerDamage(Cfg.ArrowWoodStructureDamage);
             DropSpentArrow(point, dir);
@@ -635,6 +735,7 @@ namespace RockGame
                 }
                 if (no.TryGetComponent(out Structure s) && s.Team.Value != Team.Value && s.Tier.Value == 0)
                     s.ServerDamage(Cfg.SpearThrowStructureDamage);
+                if (no.TryGetComponent(out Vehicle v)) v.ServerDamage(Cfg.SpearThrowDamage * power, this);
             }
             game.ServerDropItem(ItemStack.Of(Item.Spear, 1), point, dir, point, true);
         }
@@ -736,7 +837,7 @@ namespace RockGame
             if (!CanCraftHere) { Notify("You can only craft inside your own base"); return; }
             var r = Cfg.GetRecipe(recipe);
             if (Count(Item.Wood) < r.Wood || Count(Item.Stone) < r.Stone) { Notify($"Not enough resources for {r.Name}"); return; }
-            int data = Mathf.Clamp(Cfg.MaxData(r.Output), 0, 255);
+            int data = r.Output == Item.Saddle ? Team.Value + 1 : Mathf.Clamp(Cfg.MaxData(r.Output), 0, 255); // saddles are in your team colour
             if (InvOps.Space(Inv, r.Output, data) < r.Count && !InvOps.HasEmpty(Inv)) { Notify("Inventory full!"); return; }
 
             InvOps.Remove(Inv, Item.Wood, r.Wood);
@@ -935,18 +1036,29 @@ namespace RockGame
             if (Dead.Value || !bushRef.TryGet(out var no) || !no.TryGetComponent(out ResourceNode n) || !n.IsBush) return;
             if (Vector3.Distance(n.transform.position, transform.position) > Cfg.InteractRange + 2f) return;
             if (InvOps.Space(Inv, Item.Berry) < 1) { Notify("Inventory full!"); return; }
-            // you pick the whole bush: it's gone, and a new one grows somewhere else in this half later
+            if (n.TrapTeam.Value != ResourceNode.NoTrap)
+            {
+                // fake bomb bush!
+                var at = n.transform.position + Vector3.up * 0.6f;
+                n.NetworkObject.Despawn(true);
+                Notify("It was a fake bomb bush!");
+                if (NetGame.Instance != null) NetGame.Instance.ServerBlast(at, 3f, -2, Cfg.BombBushDamage * 0.4f, 0f, 0f, null, false);
+                ServerDamage(Cfg.BombBushDamage, null); // the one who picked it takes the full blast
+                return;
+            }
+            // you pick the whole bush: it's gone, and a new one grows somewhere else on this side later
             if (n.ServerHarvest(1, false, transform.position) > 0) ServerGive(Item.Berry, 1);
         }
 
         [Rpc(SendTo.Server)]
         public void EatRpc()
         {
-            if (Dead.Value || HeldItem != Item.Berry || Time.time < m_NextEat) return;
+            var food = HeldItem;
+            if (Dead.Value || (food != Item.Berry && food != Item.Meat) || Time.time < m_NextEat) return;
             if (Health.Value >= Cfg.MaxHealth) { Notify("You're already at full health"); return; }
             m_NextEat = Time.time + 0.8f;
             ServerConsumeHeld();
-            Health.Value = Mathf.Min(Cfg.MaxHealth, Health.Value + Cfg.BerryHeal);
+            Health.Value = food == Item.Meat ? Cfg.MaxHealth : Mathf.Min(Cfg.MaxHealth, Health.Value + Cfg.BerryHeal); // meat heals you fully
         }
 
         /// <summary>Put on a helmet (the old one goes back in your inventory) or drink an invisibility potion.</summary>
@@ -1109,6 +1221,13 @@ namespace RockGame
         /// <summary>Materials spent on building / crafting: shown in red in the pickup feed.</summary>
         [Rpc(SendTo.Owner)]
         public void SpentRpc(byte item, int amount) => Hud.Loss((Item)item, amount);
+
+        [Rpc(SendTo.Owner)]
+        void TimberRpc(int bonus)
+        {
+            Hud.Banner("TIMBER!", $"+{bonus} bonus wood for felling the whole tree");
+            Sfx.Play2D(Sfx.Smash, 0.8f);
+        }
 
         [Rpc(SendTo.Owner)]
         public void CraftedRpc(byte item)

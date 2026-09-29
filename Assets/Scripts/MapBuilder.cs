@@ -475,44 +475,196 @@ namespace RockGame
 
         // =====================================================================
 
+        /// <summary>
+        /// Sudden death: a massive round stadium. Sand floor, a padded wall, tiered stands packed with cheering spectators,
+        /// floodlight towers and jumbotrons showing the countdown and the clock.
+        /// </summary>
         static void BuildArena(Transform root)
         {
             var c = Cfg.ArenaCenter;
-            float s = Cfg.ArenaHalf;
-            var sand = new Color(0.78f, 0.68f, 0.5f);
-            var floor = Art.Box(root, sand, c + new Vector3(0, -0.5f, 0), new Vector3(2 * s + 4, 1, 2 * s + 4), default, true);
-            floor.name = "ArenaFloor";
+            float r = Cfg.ArenaHalf;
+            var go = new GameObject("Stadium");
+            go.transform.SetParent(root, false);
+            go.transform.position = c;
+            var t = go.transform;
+            var sand = new Color(0.8f, 0.7f, 0.52f);
+            var floor = Art.Part(t, Art.Cylinder, sand, new Vector3(0, -0.5f, 0), new Vector3(2 * r + 70f, 0.5f, 2 * r + 70f), default, false, null, "ArenaFloor");
+            var fc = floor.AddComponent<BoxCollider>();
+            fc.size = new Vector3(1f, 2f, 1f);
             floor.AddComponent<GroundMarker>();
-            Art.Part(root, Art.Cylinder, new Color(0.7f, 0.3f, 0.25f), c + new Vector3(0, 0.02f, 0), new Vector3(10f, 0.02f, 10f));
-            Art.Box(root, Cfg.TeamColor[0], c + new Vector3(0, 0.02f, -14f), new Vector3(4, 0.02f, 4));
-            Art.Box(root, Cfg.TeamColor[1], c + new Vector3(0, 0.02f, 14f), new Vector3(4, 0.02f, 4));
-
-            var wallC = new Color(0.5f, 0.4f, 0.32f);
-            Art.Box(root, wallC, c + new Vector3(0, 3f, s + 1), new Vector3(2 * s + 4, 6, 2), default, true);
-            Art.Box(root, wallC, c + new Vector3(0, 3f, -s - 1), new Vector3(2 * s + 4, 6, 2), default, true);
-            Art.Box(root, wallC, c + new Vector3(s + 1, 3f, 0), new Vector3(2, 6, 2 * s + 4), default, true);
-            Art.Box(root, wallC, c + new Vector3(-s - 1, 3f, 0), new Vector3(2, 6, 2 * s + 4), default, true);
-
-            var pillar = new Color(0.6f, 0.55f, 0.5f);
-            Vector3[] ps = { new Vector3(-7, 0, -5), new Vector3(7, 0, 5), new Vector3(-7, 0, 6), new Vector3(7, 0, -6) };
-            foreach (var p in ps)
-                Art.Box(root, pillar, c + p + Vector3.up * 2f, new Vector3(2f, 4f, 2f), new Vector3(0, 20, 0), true);
+            // centre logo and team spots
+            Art.Part(t, Art.Cylinder, new Color(0.7f, 0.25f, 0.2f), new Vector3(0, 0.02f, 0), new Vector3(12f, 0.02f, 12f));
+            Art.Part(t, Art.Cylinder, sand * 1.08f, new Vector3(0, 0.03f, 0), new Vector3(9f, 0.02f, 9f));
+            Art.Part(t, Art.Ico, new Color(1f, 0.85f, 0.15f), new Vector3(0, 0.05f, 0), new Vector3(1.8f, 0.05f, 1.8f));
+            for (int team = 0; team < Cfg.TeamCount; team++)
+            {
+                var d = Quaternion.Euler(0, team * 360f / Mathf.Max(2, Cfg.TeamCount), 0) * Vector3.back;
+                Art.Part(t, Art.Cylinder, Cfg.TeamColor[team], d * 14f + Vector3.up * 0.02f, new Vector3(4f, 0.02f, 4f));
+            }
+            // padded wall around the pit (with an invisible barrier going up high)
+            const int segs = 40;
+            float wallR = r + 0.8f;
+            for (int i = 0; i < segs; i++)
+            {
+                float a = i * 360f / segs;
+                var dir = Quaternion.Euler(0, a, 0) * Vector3.forward;
+                float w = 2f * Mathf.PI * wallR / segs + 0.15f;
+                Art.Box(t, i % 2 == 0 ? new Color(0.2f, 0.25f, 0.55f) : new Color(0.75f, 0.2f, 0.2f), dir * wallR + Vector3.up * 1.6f, new Vector3(w, 3.2f, 0.8f), new Vector3(0, a, 0), true);
+                var inv = new GameObject("barrier");
+                inv.transform.SetParent(t, false);
+                inv.transform.localPosition = dir * (wallR + 0.2f) + Vector3.up * 12f;
+                inv.transform.localRotation = Quaternion.Euler(0, a, 0);
+                inv.AddComponent<BoxCollider>().size = new Vector3(w, 20f, 0.6f);
+            }
+            // tiered stands with the crowd
+            var stadium = go.AddComponent<Stadium>();
+            var rng = new System.Random(4242);
+            float R() => (float)rng.NextDouble();
+            var concrete = new Color(0.55f, 0.55f, 0.58f);
+            const int tiers = 7, seats = 44;
+            for (int tier = 0; tier < tiers; tier++)
+            {
+                float tr = wallR + 2f + tier * 2.2f, ty = 3.2f + tier * 1.3f;
+                for (int i = 0; i < seats; i++)
+                {
+                    float a = (i + (tier % 2) * 0.5f) * 360f / seats;
+                    var dir = Quaternion.Euler(0, a, 0) * Vector3.forward;
+                    float w = 2f * Mathf.PI * tr / seats + 0.2f;
+                    var step = Art.Box(t, concrete * (0.9f + 0.1f * (tier % 2)), dir * tr + Vector3.up * (ty - 0.65f), new Vector3(w, 1.3f + tier * 0.02f, 2.3f), new Vector3(0, a, 0));
+                    step.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
+                    if (R() < 0.12f) continue; // a few empty seats
+                    // a spectator: body, head, arms up when cheering
+                    var fan = new GameObject("fan").transform;
+                    fan.SetParent(t, false);
+                    fan.localPosition = dir * (tr - 0.2f) + Vector3.up * ty;
+                    fan.localRotation = Quaternion.LookRotation(-dir);
+                    var shirt = R() < 0.5f ? Cfg.TeamColor[rng.Next(4)] : Color.HSVToRGB(R(), 0.5f, 0.85f);
+                    var skin = Color.Lerp(new Color(0.55f, 0.6f, 0.52f), new Color(0.75f, 0.78f, 0.7f), R()); // they're aliens too
+                    Art.Box(fan, shirt, new Vector3(0, 0.45f, 0), new Vector3(0.45f, 0.6f, 0.3f));
+                    Art.Part(fan, Art.Sphere, skin, new Vector3(0, 0.95f, 0), new Vector3(0.36f, 0.42f, 0.36f));
+                    Art.Box(fan, Color.black, new Vector3(0.08f, 0.98f, 0.16f), new Vector3(0.09f, 0.06f, 0.02f));
+                    Art.Box(fan, Color.black, new Vector3(-0.08f, 0.98f, 0.16f), new Vector3(0.09f, 0.06f, 0.02f));
+                    var arms = new GameObject("arms").transform;
+                    arms.SetParent(fan, false);
+                    arms.localPosition = new Vector3(0, 0.7f, 0);
+                    Art.Box(arms, skin, new Vector3(0.28f, 0.25f, 0), new Vector3(0.1f, 0.5f, 0.1f), new Vector3(0, 0, -15));
+                    Art.Box(arms, skin, new Vector3(-0.28f, 0.25f, 0), new Vector3(0.1f, 0.5f, 0.1f), new Vector3(0, 0, 15));
+                    if (R() < 0.15f) Art.Box(arms, Cfg.TeamColor[rng.Next(4)], new Vector3(0.35f, 0.65f, 0), new Vector3(0.5f, 0.3f, 0.02f)); // a flag
+                    foreach (var mr in fan.GetComponentsInChildren<MeshRenderer>()) mr.shadowCastingMode = ShadowCastingMode.Off;
+                    stadium.AddFan(fan, arms, R() * 10f);
+                }
+            }
+            // floodlights
             for (int i = 0; i < 4; i++)
             {
-                var lg = new GameObject("arenaLight");
-                lg.transform.SetParent(root, false);
-                lg.transform.position = c + new Vector3(i < 2 ? -s + 1 : s - 1, 5f, i % 2 == 0 ? -s + 1 : s - 1);
+                float a = (45f + i * 90f);
+                var dir = Quaternion.Euler(0, a, 0) * Vector3.forward;
+                var pole = dir * (wallR + 2f + tiers * 2.2f + 2f);
+                Art.Box(t, Art.Metal, pole + Vector3.up * 14f, new Vector3(0.6f, 28f, 0.6f));
+                Art.Box(t, new Color(1f, 1f, 0.85f), pole + Vector3.up * 28f - dir * 0.4f, new Vector3(4f, 2.5f, 0.4f), new Vector3(0, a, 0));
+                var lg = new GameObject("flood");
+                lg.transform.SetParent(t, false);
+                lg.transform.localPosition = pole + Vector3.up * 27f;
+                lg.transform.LookAt(c);
                 var l = lg.AddComponent<Light>();
-                l.type = LightType.Point;
-                l.color = new Color(1f, 0.55f, 0.25f);
-                l.range = 25f;
-                l.intensity = 2f;
+                l.type = LightType.Spot;
+                l.spotAngle = 70f;
+                l.range = 80f;
+                l.intensity = 6f;
+                l.color = new Color(1f, 0.97f, 0.9f);
+            }
+            // jumbotrons: big countdown / clock
+            for (int i = 0; i < 4; i++)
+            {
+                float a = i * 90f;
+                var dir = Quaternion.Euler(0, a, 0) * Vector3.forward;
+                var pos = dir * (wallR + 2f + tiers * 2.2f + 1f) + Vector3.up * (3.2f + tiers * 1.3f + 5f);
+                var screen = new GameObject("jumbotron").transform;
+                screen.SetParent(t, false);
+                screen.localPosition = pos;
+                screen.localRotation = Quaternion.LookRotation(dir); // faces outward, so its back (-z) faces the pit
+                Art.Box(screen, new Color(0.08f, 0.08f, 0.1f), Vector3.zero, new Vector3(10f, 5.5f, 0.5f));
+                Art.Box(screen, Art.Metal, new Vector3(0, -5f, 0.3f), new Vector3(0.6f, 5f, 0.6f));
+                var txt = new GameObject("text");
+                txt.transform.SetParent(screen, false);
+                txt.transform.localPosition = new Vector3(0, 0, -0.3f);
+                txt.transform.localRotation = Quaternion.identity; // readable from the pit side
+                var tm = txt.AddComponent<TextMesh>();
+                tm.anchor = TextAnchor.MiddleCenter;
+                tm.alignment = TextAlignment.Center;
+                tm.characterSize = 0.35f;
+                tm.fontSize = 64;
+                tm.color = new Color(1f, 0.85f, 0.2f);
+                tm.text = "ROCK BRAWL";
+                stadium.AddScreen(tm);
             }
         }
     }
 
     /// <summary>Marks static ground colliders so placement/overlap tests can ignore them.</summary>
     public class GroundMarker : MonoBehaviour { }
+
+    /// <summary>Sudden death stadium: the crowd cheers (and goes wild on the countdown and kills); jumbotrons show the clock.</summary>
+    public class Stadium : MonoBehaviour
+    {
+        public static Stadium Instance;
+        readonly List<(Transform body, Transform arms, float phase)> m_Fans = new List<(Transform, Transform, float)>();
+        readonly List<TextMesh> m_Screens = new List<TextMesh>();
+        readonly List<Vector3> m_Base = new List<Vector3>();
+        AudioSource m_Crowd;
+        float m_Hype;
+
+        void Awake() => Instance = this;
+        void OnDestroy() { if (Instance == this) Instance = null; }
+
+        public void AddFan(Transform body, Transform arms, float phase) { m_Fans.Add((body, arms, phase)); m_Base.Add(body.localPosition); }
+        public void AddScreen(TextMesh tm) => m_Screens.Add(tm);
+
+        /// <summary>Someone scored a kill / the fight started: the crowd goes wild for a moment.</summary>
+        public static void Roar() { if (Instance != null) Instance.m_Hype = 1f; }
+
+        void Update()
+        {
+            var g = NetGame.Instance;
+            bool live = g != null && g.IsSpawned && g.S == GameState.SuddenDeath;
+            var me = PlayerNet.Local;
+            bool near = Camera.main != null && Vector3.Distance(Camera.main.transform.position, transform.position) < 120f;
+            if (!near) { if (m_Crowd) m_Crowd.volume = 0f; return; }
+            m_Hype = Mathf.MoveTowards(m_Hype, 0f, Time.deltaTime * 0.3f);
+            float excite = 0.35f + (live ? 0.3f : 0f) + m_Hype * 0.7f;
+            float t = Time.time;
+            for (int i = 0; i < m_Fans.Count; i++)
+            {
+                var (body, arms, ph) = m_Fans[i];
+                float jump = Mathf.Max(0f, Mathf.Sin(t * (4f + excite * 3f) + ph)) * 0.25f * excite;
+                body.localPosition = m_Base[i] + Vector3.up * jump;
+                arms.localRotation = Quaternion.Euler(0, 0, Mathf.Sin(t * 5f + ph) * 25f * excite);
+            }
+            if (m_Crowd == null)
+            {
+                m_Crowd = gameObject.AddComponent<AudioSource>();
+                m_Crowd.clip = Sfx.Crowd;
+                m_Crowd.loop = true;
+                m_Crowd.spatialBlend = 0f;
+                m_Crowd.Play();
+            }
+            m_Crowd.volume = 0.12f + excite * 0.25f;
+            string text = "ROCK BRAWL";
+            if (g != null && g.IsSpawned)
+            {
+                if (g.S == GameState.SuddenDeath)
+                {
+                    double left = g.FightAt.Value - g.NetworkManager.ServerTime.Time;
+                    if (left > 0) text = Mathf.CeilToInt((float)left).ToString();
+                    else if (left > -1.5) text = "FIGHT!";
+                    else { int s = Mathf.CeilToInt(g.TimeLeft); text = $"SUDDEN DEATH\n{s / 60}:{s % 60:00}"; }
+                }
+                else if (g.S == GameState.Waiting) text = "WAITING FOR\nPLAYERS";
+                else if (g.S == GameState.GameOver) text = g.Winner.Value >= 0 ? $"{Cfg.TeamLabel(g.Winner.Value)}\nWINS!" : "DRAW";
+            }
+            foreach (var s in m_Screens) if (s.text != text) s.text = text;
+        }
+    }
 
     /// <summary>
     /// The alien machine on a base's bedrock: press E on it to craft; its socket is where the ball has to sit to win.

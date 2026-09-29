@@ -8,9 +8,10 @@ using UnityEngine;
 namespace RockGame
 {
     // new items go at the end so the byte values of the old ones never change
-    public enum Item : byte { None, Rock, BuildingPlan, Hatchet, Pickaxe, Spear, Bow, Ram, Chest, Barrier, Wood, Stone, Arrow, Berry, C4, DeathWand, Helmet, InvisPotion, Chainsaw, Crossbow, Armor, FortTower, Car, Saddle }
+    public enum Item : byte { None, Rock, BuildingPlan, Hatchet, Pickaxe, Spear, Bow, Ram, Chest, Barrier, Wood, Stone, Arrow, Berry, C4, DeathWand, Helmet, InvisPotion, Chainsaw, Crossbow, Armor, FortTower, Car, Saddle,
+        Meat, AirdropSignal, Sniper, PortalGun, Jetpack, SlenderEgg, BuildEgg, GiantStaff, RocketLauncher, BombBush, TreeCamo, Airstrike, Wallhack }
 
-    public enum PieceType : byte { Foundation, Wall, Doorway, Floor, Stairs, Barrier, Window, Tower }
+    public enum PieceType : byte { Foundation, Wall, Doorway, Floor, Stairs, Barrier, Window, Tower, EggBlock }
 
     public enum GameState : byte { Waiting, PreBall, BallLive, SuddenDeath, GameOver }
 
@@ -48,12 +49,14 @@ namespace RockGame
         public static float MapHalf => SmallMap ? 62f : 100f;
         public const float BaseHalf = 18f; // bases are 36x36m, aligned to the 3m build grid
         public static readonly Vector3[] BaseCenter = { new Vector3(0, 0, -75), new Vector3(0, 0, 75) };
-        public static string MapLabel => (SmallMap ? "Small " : "Big ") + Map + (WoodMode ? " (Wood mode)" : "") + (AirdropSides ? " (airdrops on both sides)" : "");
+        public static string MapLabel => (SmallMap ? "Small " : "Big ") + Map + (WoodMode ? " (Wood mode)" : "") + (AirdropSides ? " (airdrops on both sides)" : "") + (RespawnLoot ? " (respawn loot)" : "");
         /// <summary>Airdrops come down on both sides (one in each half, each on its own timer) instead of anywhere.</summary>
         public static bool AirdropSides;
-        public const int SmallBit = 16, WoodBit = 32, SidesBit = 64;
+        /// <summary>Game option: every time you respawn you get a random airdrop item.</summary>
+        public static bool RespawnLoot;
+        public const int SmallBit = 16, WoodBit = 32, SidesBit = 64, RespawnLootBit = 128;
         /// <summary>Packs the map/mode choice for syncing; the seed is sent separately.</summary>
-        public static int MapKey => (int)Map | (SmallMap ? SmallBit : 0) | (WoodMode ? WoodBit : 0) | (AirdropSides ? SidesBit : 0);
+        public static int MapKey => (int)Map | (SmallMap ? SmallBit : 0) | (WoodMode ? WoodBit : 0) | (AirdropSides ? SidesBit : 0) | (RespawnLoot ? RespawnLootBit : 0);
 
         /// <summary>Watch towers on the Highlands map (world positions of their feet), point-mirrored between the halves.</summary>
         public static readonly List<Vector3> Towers = new List<Vector3>();
@@ -64,6 +67,7 @@ namespace RockGame
             SmallMap = (key & SmallBit) != 0;
             WoodMode = (key & WoodBit) != 0;
             AirdropSides = (key & SidesBit) != 0;
+            RespawnLoot = (key & RespawnLootBit) != 0;
             MapSeed = seed;
             float d = SmallMap ? 42f : 75f;
             BaseCenter[0] = new Vector3(0, 0, -d);
@@ -101,11 +105,29 @@ namespace RockGame
         public static bool CellBlocked(int i, int j) => IsBedrockCell(i, j);
         public static bool PointBlocked(Vector3 p) => CellBlocked(Mathf.FloorToInt(p.x / Cell), Mathf.FloorToInt(p.z / Cell));
 
-        public static readonly Color[] TeamColor = { new Color(0.25f, 0.5f, 1f), new Color(1f, 0.3f, 0.25f) };
-        public static readonly string[] TeamName = { "BLUE", "RED" };
-        public static string TeamLabel(int t) => t >= 0 && t < 2 ? TeamName[t] : "ALIEN";
+        public static readonly Color[] TeamColor = { new Color(0.25f, 0.5f, 1f), new Color(1f, 0.3f, 0.25f), new Color(0.3f, 0.85f, 0.3f), new Color(1f, 0.85f, 0.2f) };
+        public static readonly string[] TeamName = { "BLUE", "RED", "GREEN", "YELLOW" };
+        public static string TeamLabel(int t) => t >= 0 && t < TeamName.Length ? TeamName[t] : "ALIEN";
+        /// <summary>How many teams (bases) there are in this match.</summary>
+        public static int TeamCount = 2;
+
+        /// <summary>Which team's side of the map a point is on (the base it's most in the direction of).</summary>
+        public static int RegionOf(Vector3 p)
+        {
+            var d = new Vector2(p.x, p.z);
+            if (d.sqrMagnitude < 0.01f) return 0;
+            int best = 0;
+            float bd = float.MinValue;
+            for (int t = 0; t < TeamCount; t++)
+            {
+                var c = new Vector2(BaseCenter[t].x, BaseCenter[t].z).normalized;
+                float dot = Vector2.Dot(d.normalized, c);
+                if (dot > bd) { bd = dot; best = t; }
+            }
+            return best;
+        }
         public static readonly Vector3 ArenaCenter = new Vector3(0, 0, 1000);
-        public const float ArenaHalf = 20f;
+        public const float ArenaHalf = 22f; // radius of the stadium pit
         public static readonly Vector3 BallDropPoint = new Vector3(0, 40, 0);
 
         // ---------- Inventory (not tunable) ----------
@@ -133,7 +155,12 @@ namespace RockGame
         // ---------- Airdrops (after the wall drops) ----------
         [Tune("Airdrop")] public static float AirdropInterval = 60f;     // after the last one was emptied
         [Tune("Airdrop")] public static float AirdropBaseDistance = 25f; // never this close to a base
-        [Tune("Airdrop")] public static float C4Fuse = 3f, C4Radius = 5f, C4PlayerDamage = 80f;
+        [Tune("Airdrop")] public static float C4Fuse = 3f, C4Radius = 5f, C4PlayerDamage = 150f, C4KillRadius = 1.6f;
+        [Tune("Airdrop")] public static int SniperAmmo = 3, JetpackFuel = 100, PortalShots = 2, AirdropSignalWood = 2000;
+        [Tune("Airdrop")] public static float JetpackSeconds = 8f, JetpackThrust = 9f, GiantTime = 30f, GiantScale = 3f;
+        [Tune("Airdrop")] public static float SlenderSpeed = 4.6f, SlenderHp = 150f, SlenderLife = 60f;
+        [Tune("Airdrop")] public static float RocketSpeed = 32f, RocketRadius = 3.5f, RocketStructureDamage = 900f, RocketPlayerDamage = 70f;
+        [Tune("Airdrop")] public static float BombBushDamage = 150f, AirstrikeRadius = 14f, AirstrikeDelay = 4f, EggBlockHp = 60f;
         [Tune("Airdrop")] public static float WandRange = 90f, WandRadius = 3f;
         [Tune("Airdrop")] public static float InvisTime = 30f, InvisRevealTime = 1.2f;
         [Tune("Airdrop")] public static int ChainsawUses = 67, AirdropResources = 1000;
@@ -149,7 +176,7 @@ namespace RockGame
         [Tune("Player")] public static float BallThrowSpeed = 16f;
         [Tune("Player")] public static float BerryHeal = 30f;
         [Tune("Player")] public static int ArmorHp = 100;              // wooden armour: a second health bar, used up first (max 255)
-        [Tune("Player")] public static float HeadshotMul = 2f;
+        [Tune("Player")] public static float HeadshotMul = 1.5f;
         [Tune("Player")] public static float ModelWidth = 1.3f;       // alien model width scale
         [Tune("Player")] public static float HitboxRadius = 0.52f;
         [Tune("Player")] public static float MeleeAssist = 0.35f;     // melee counts as a hit if it passes this close (m)
@@ -166,7 +193,7 @@ namespace RockGame
 
         // ---------- Bow ----------
         [Tune("Bow")] public static float BowDrawTime = 0.8f, ArrowSpeed = 55f, ArrowGravity = 9.81f, ArrowPlayerDamage = 50f, ArrowWoodStructureDamage = 4f;
-        [Tune("Crossbow")] public static float CrossbowDamage = 65f, CrossbowSpeed = 90f, CrossbowReload = 1.6f, CrossbowZoomFov = 45f;
+        [Tune("Crossbow")] public static float CrossbowDamage = 55f, CrossbowSpeed = 90f, CrossbowReload = 1.6f, CrossbowZoomFov = 45f;
         [Tune("Spear")] public static float SpearGravity = 9.81f;
 
         // ---------- Battering ram (hand held) ----------
@@ -176,7 +203,7 @@ namespace RockGame
         [Tune("Ram")] public static int RamUses = 3;
 
         // ---------- Resources ----------
-        [Tune("Resources")] public static int TreeAmount = 300, StoneAmount = 250;
+        [Tune("Resources")] public static int TreeAmount = 300, StoneAmount = 250, TreeFellBonus = 100;
         [Tune("Resources")] public static float WeakSpotMul = 2f, NodeRespawnTime = 60f, BushRespawnTime = 45f;
 
         // ---------- Building ----------
@@ -194,11 +221,12 @@ namespace RockGame
         [Tune("Crafting")] public static int ArrowWood = 10, ArrowStone = 0, ArrowsPerCraft = 1;
         [Tune("Crafting")] public static int RamWood = 125, RamStone = 50;
         [Tune("Crafting")] public static int ChestWood = 50, BarrierWood = 20;
-        [Tune("Crafting")] public static int CrossbowWood = 500, ArmorWood = 500, FortTowerWood = 1000, CarWood = 2000, SaddleWood = 1000;
+        [Tune("Crafting")] public static int CrossbowWood = 500, SaddleWood = 1000;
+        public static int FortTowerWood = 1000; // only used for the demolish refund (the fort is an airdrop item now)
 
         // ---------- Vehicles ----------
         [Tune("Vehicles")] public static float CarSpeed = 17f, CarReverseSpeed = 6f, CarAccel = 9f, CarTurn = 95f, CarHitDamage = 30f, CarKnockback = 11f;
-        [Tune("Vehicles")] public static float HorseWalk = 4.5f, HorseSprint = 11f, HorseJump = 8.5f;
+        [Tune("Vehicles")] public static float HorseWalk = 4.5f, HorseSprint = 11f, HorseJump = 8.5f, HorseHp = 120f;
         [Tune("Vehicles")] public static int HorsesPerSide = 3;
 
         // ---------- Items ----------
@@ -221,10 +249,23 @@ namespace RockGame
                 case Item.InvisPotion: return "Invisibility Potion";
                 case Item.Chainsaw: return "Chainsaw";
                 case Item.Crossbow: return "Crossbow";
-                case Item.Armor: return "Wooden Armour";
+                case Item.Armor: return "Armour";
                 case Item.FortTower: return "Fort Tower";
                 case Item.Car: return "Wooden Car";
                 case Item.Saddle: return "Saddle";
+                case Item.Meat: return "Horse Meat";
+                case Item.AirdropSignal: return "Airdrop Signal";
+                case Item.Sniper: return "Sniper Rifle";
+                case Item.PortalGun: return "Portal Gun";
+                case Item.Jetpack: return "Jetpack";
+                case Item.SlenderEgg: return "Slenderman Egg";
+                case Item.BuildEgg: return "Build Egg";
+                case Item.GiantStaff: return "Staff of the Giant";
+                case Item.RocketLauncher: return "Rocket Launcher";
+                case Item.BombBush: return "Fake Bomb Bush";
+                case Item.TreeCamo: return "Tree Camo";
+                case Item.Airstrike: return "Airstrike";
+                case Item.Wallhack: return "Wallhack Glasses";
                 case Item.None: return "";
                 default: return i.ToString();
             }
@@ -247,7 +288,27 @@ namespace RockGame
         public static bool IsMat(Item i) => i == Item.Wood || i == Item.Stone || i == Item.Arrow;
 
         /// <summary>Items whose Data byte is a durability / health counter (shown as a bar).</summary>
-        public static int MaxData(Item i) => i == Item.Ram ? RamUses : i == Item.Chainsaw ? ChainsawUses : i == Item.Armor ? ArmorHp : 0;
+        public static int MaxData(Item i)
+        {
+            switch (i)
+            {
+                case Item.Ram: return RamUses;
+                case Item.Chainsaw: return ChainsawUses;
+                case Item.Armor: return ArmorHp;
+                case Item.Sniper: return SniperAmmo;
+                case Item.Jetpack: return JetpackFuel;
+                case Item.PortalGun: return PortalShots;
+                default: return 0;
+            }
+        }
+
+        /// <summary>Everything an airdrop (or the respawn-loot option) can give you.</summary>
+        public static readonly Item[] AirdropLoot =
+        {
+            Item.C4, Item.DeathWand, Item.Helmet, Item.Wood, Item.InvisPotion, Item.Chainsaw, Item.Armor, Item.FortTower,
+            Item.Sniper, Item.PortalGun, Item.Jetpack, Item.SlenderEgg, Item.BuildEgg, Item.GiantStaff, Item.RocketLauncher,
+            Item.BombBush, Item.TreeCamo, Item.Airstrike, Item.Wallhack,
+        };
 
         public static MeleeStats Melee(Item i)
         {
@@ -266,7 +327,7 @@ namespace RockGame
         // ---------- Building ----------
         public static string PieceName(PieceType t) => t == PieceType.Tower ? "Fort Tower" : t.ToString();
         /// <summary>Pieces that sit on the 3 m building grid (placed with the building plan).</summary>
-        public static bool IsGridPiece(PieceType t) => t != PieceType.Barrier && t != PieceType.Tower;
+        public static bool IsGridPiece(PieceType t) => t != PieceType.Barrier && t != PieceType.Tower && t != PieceType.EggBlock;
 
         public static int PieceWood(PieceType t)
         {
@@ -304,6 +365,7 @@ namespace RockGame
                 case PieceType.Doorway: return stone ? DoorwayStoneHp : DoorwayHp;
                 case PieceType.Window: return stone ? WindowStoneHp : WindowHp;
                 case PieceType.Tower: return TowerHp;
+                case PieceType.EggBlock: return EggBlockHp;
                 case PieceType.Floor: return stone ? FloorStoneHp : FloorHp;
                 case PieceType.Stairs: return stone ? StairsStoneHp : StairsHp;
                 case PieceType.Barrier: return BarrierHp;
@@ -312,7 +374,7 @@ namespace RockGame
         }
 
         // ---------- Crafting ----------
-        static readonly Item[] k_Recipes = { Item.BuildingPlan, Item.Hatchet, Item.Pickaxe, Item.Spear, Item.Bow, Item.Arrow, Item.Crossbow, Item.Ram, Item.Chest, Item.Barrier, Item.Armor, Item.FortTower, Item.Saddle, Item.Car };
+        static readonly Item[] k_Recipes = { Item.BuildingPlan, Item.Hatchet, Item.Pickaxe, Item.Spear, Item.Bow, Item.Arrow, Item.Crossbow, Item.Ram, Item.Chest, Item.Barrier, Item.Saddle, Item.AirdropSignal };
 
         /// <summary>Recipes available in this mode (wood mode has no pickaxe).</summary>
         public static int RecipeCount => WoodMode ? k_Recipes.Length - 1 : k_Recipes.Length;
@@ -332,10 +394,8 @@ namespace RockGame
                 case Item.Ram: r = new Recipe { Output = Item.Ram, Count = 1, Wood = RamWood, Stone = RamStone }; break;
                 case Item.Chest: r = new Recipe { Output = Item.Chest, Count = 1, Wood = ChestWood }; break;
                 case Item.Crossbow: r = new Recipe { Output = Item.Crossbow, Count = 1, Wood = CrossbowWood }; break;
-                case Item.Armor: r = new Recipe { Output = Item.Armor, Count = 1, Wood = ArmorWood }; break;
-                case Item.FortTower: r = new Recipe { Output = Item.FortTower, Count = 1, Wood = FortTowerWood }; break;
                 case Item.Saddle: r = new Recipe { Output = Item.Saddle, Count = 1, Wood = SaddleWood }; break;
-                case Item.Car: r = new Recipe { Output = Item.Car, Count = 1, Wood = CarWood }; break;
+                case Item.AirdropSignal: r = new Recipe { Output = Item.AirdropSignal, Count = 1, Wood = AirdropSignalWood }; break;
                 default: r = new Recipe { Output = Item.Barrier, Count = 1, Wood = BarrierWood }; break;
             }
             if (WoodMode) { r.Wood += r.Stone; r.Stone = 0; } // everything costs wood only

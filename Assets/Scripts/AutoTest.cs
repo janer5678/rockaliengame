@@ -174,9 +174,9 @@ namespace RockGame
             yield return new WaitForSeconds(0.6f);
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team) + 180f);
             yield return new WaitForSeconds(0.5f);
-            me.InsertBallRpc();
-            yield return new WaitForSeconds(0.6f);
-            Check(!me.CarryingBall && ball.SocketTeam.Value == team, $"put the ball in own machine (Socket={ball.SocketTeam.Value})");
+            me.ThrowBallRpc((Cfg.SocketPos(team) - me.EyePos).normalized);
+            yield return new WaitForSeconds(2f);
+            Check(!me.CarryingBall && ball.SocketTeam.Value == team, $"threw the ball into own machine's socket and it snapped in (Socket={ball.SocketTeam.Value})");
         }
 
         IEnumerator HostRoutine(PlayerNet me, PlayerController pc)
@@ -191,6 +191,10 @@ namespace RockGame
             Check(Mathf.Abs(me.transform.position.z - Cfg.ArenaCenter.z) < 30f, "host was teleported to the arena");
             Check(Mathf.Abs(other.transform.position.z - Cfg.ArenaCenter.z) < 30f, "client was teleported to the arena");
             Check(me.HeldItem == Item.Rock, "rock forced in sudden death");
+            int stuff = 0;
+            for (int i = 0; i < Cfg.PlayerSlots; i++) if (!me.SlotAt(i).Empty) stuff++;
+            Check(stuff == 0 && me.ArmorHp.Value == 0 && me.HelmetHp.Value == 0, "inventory, armour and helmet cleared for sudden death");
+            Check(NetGame.Instance.FightFrozen, "sudden death starts with the stadium countdown");
             other.ServerGive(Item.Wood, 50); // something to spill (the raid test may already have killed them once)
             int itemsBefore = NetGame.Instance.Items.Count;
             while (NetGame.Instance != null && NetGame.Instance.S == GameState.SuddenDeath)
@@ -601,12 +605,17 @@ namespace RockGame
             yield return new WaitForSeconds(0.5f);
             Check(other.Dead.Value && me.Count(Item.DeathWand) == 0, "death wand near miss killed instantly");
 
-            // airdrop: wait for one to land, open it and take the item
-            float dropWait = Time.time + 45f;
+            // ---------------- airdrop items ----------------
+            NetGame.Instance.TimerPaused.Value = true; // plenty of time for these
+            yield return LootTests(me, pc, other, team, baseC);
+
+            // airdrop: call one in, open it and take the item
+            NetGame.Instance.DevSpawnAirdrop();
+            float dropWait = Time.time + 20f;
             Container drop = null;
             while (drop == null && Time.time < dropWait && NetGame.Instance.S == GameState.BallLive)
             {
-                drop = NetGame.Instance.ActiveDrop;
+                foreach (var c in Container.All) if (c.IsAirdrop && Cfg.BaseTeamAt(c.transform.position) < 0) drop = c;
                 yield return new WaitForSeconds(0.5f);
             }
             Check(drop != null, "an airdrop was beamed down");
@@ -624,8 +633,209 @@ namespace RockGame
                 Check(me.Count(loot.Id) == had + loot.Count && !drop.IsSpawned, $"took the airdrop's {Cfg.ItemName(loot.Id)} x{loot.Count}, crate disappeared");
             }
 
+            NetGame.Instance.TimerPaused.Value = false;
+            NetGame.Instance.DevSetTimeLeft(3f);
             pc.LocalTeleport(baseC + new Vector3(-4, 0.1f, 3), 0);
             yield return Hold(me, Item.Rock);
+        }
+
+        IEnumerator LootTests(PlayerNet me, PlayerController pc, PlayerNet other, int team, Vector3 baseC)
+        {
+            var g = NetGame.Instance;
+            void Revive(PlayerNet p) { if (p.Dead.Value) p.ServerRespawn(false); p.Health.Value = Cfg.MaxHealth; p.ArmorHp.Value = 0; }
+            var field = new Vector3(-30f, 0f, baseC.z > 0 ? 30f : -30f);
+            field.y = MapBuilder.Height(field.x, field.z);
+
+            // sniper: one shot kills, a helmet stops a headshot
+            Revive(other);
+            me.ServerGive(Item.Sniper, 1, Cfg.SniperAmmo);
+            yield return new WaitForSeconds(0.2f);
+            yield return Hold(me, Item.Sniper);
+            other.HelmetHp.Value = 1;
+            me.SniperFireRpc(true, other.NetworkObject, other.transform.position + Vector3.up * 1.6f, Vector3.forward);
+            yield return new WaitForSeconds(0.4f);
+            Check(!other.Dead.Value && other.HelmetHp.Value == 0, "a helmet stopped a sniper headshot");
+            yield return new WaitForSeconds(1.2f);
+            other.ArmorHp.Value = 100;
+            me.SniperFireRpc(true, other.NetworkObject, other.transform.position + Vector3.up * 1f, Vector3.forward);
+            yield return new WaitForSeconds(0.4f);
+            Check(other.Dead.Value && me.HeldStack.Data == Cfg.SniperAmmo - 2, "sniper body shot killed through armour");
+            Revive(other);
+            yield return new WaitForSeconds(0.5f);
+
+            // portal gun: two shots = one linked pair, then it's used up
+            me.ServerGive(Item.PortalGun, 1, Cfg.PortalShots);
+            yield return new WaitForSeconds(0.2f);
+            yield return Hold(me, Item.PortalGun);
+            int portals = g.Portals.Count;
+            me.PortalRpc(field + new Vector3(0, 0.05f, 0), Vector3.up);
+            yield return new WaitForSeconds(0.5f);
+            me.PortalRpc(field + new Vector3(12f, 0.05f, 0), Vector3.up);
+            yield return new WaitForSeconds(0.5f);
+            Check(g.Portals.Count == portals + 2 && g.Portals[portals].Pair == g.Portals[portals + 1].Pair && me.Count(Item.PortalGun) == 0, "portal gun made a linked pair of portals and was used up");
+
+            // jetpack burns fuel and runs out
+            me.ServerGive(Item.Jetpack, 1, Cfg.JetpackFuel);
+            yield return new WaitForSeconds(0.2f);
+            yield return Hold(me, Item.Jetpack);
+            me.JetFuelRpc(Cfg.JetpackSeconds * 0.25f);
+            me.JetFuelRpc(Cfg.JetpackSeconds * 0.25f);
+            yield return new WaitForSeconds(0.3f);
+            int fuel = me.HeldStack.Data;
+            me.JetFuelRpc(2f); me.JetFuelRpc(2f); me.JetFuelRpc(2f); me.JetFuelRpc(2f);
+            yield return new WaitForSeconds(0.4f);
+            Check(fuel > 30 && fuel < 70 && me.Count(Item.Jetpack) == 0, $"jetpack used fuel ({fuel}%) and ran out");
+
+            // rocket wrecks an enemy barrier
+            var bar = Object.Instantiate(Bootstrap.I.structurePrefab, field + new Vector3(0, 0, 6f), Quaternion.identity);
+            bar.GetComponent<Structure>().ServerInit(PieceType.Barrier, 1 - team, default, false);
+            bar.GetComponent<Unity.Netcode.NetworkObject>().Spawn(true);
+            var barS = bar.GetComponent<Structure>();
+            me.ServerGive(Item.RocketLauncher, 1);
+            yield return new WaitForSeconds(0.2f);
+            yield return Hold(me, Item.RocketLauncher);
+            pc.LocalTeleport(field + new Vector3(0, 0.3f, -4f), 0);
+            yield return new WaitForSeconds(0.6f);
+            me.ThrowItemRpc(Item.RocketLauncher, me.EyePos, Vector3.forward * Cfg.RocketSpeed);
+            yield return new WaitForSeconds(0.1f);
+            me.ThrownLandRpc(Item.RocketLauncher, barS.transform.position + Vector3.up * 0.7f, Vector3.back);
+            yield return new WaitForSeconds(0.5f);
+            Check(!barS.IsSpawned && me.Count(Item.RocketLauncher) == 0, "rocket destroyed an enemy barrier");
+
+            // build egg lays a path of blocks
+            int blocks = 0;
+            me.ServerGive(Item.BuildEgg, 1);
+            yield return new WaitForSeconds(0.2f);
+            yield return Hold(me, Item.BuildEgg);
+            me.ThrowItemRpc(Item.BuildEgg, me.EyePos + Vector3.up, new Vector3(1f, 0.5f, 0.3f).normalized * 16f);
+            yield return new WaitForSeconds(2.5f);
+            foreach (var st in Structure.All) if (st.PType == PieceType.EggBlock) blocks++;
+            Check(blocks >= 4, $"build egg laid a path of {blocks} blocks");
+
+            // slenderman hatches (and can be killed)
+            me.ServerGive(Item.SlenderEgg, 1);
+            yield return new WaitForSeconds(0.2f);
+            yield return Hold(me, Item.SlenderEgg);
+            me.ThrowItemRpc(Item.SlenderEgg, me.EyePos, Vector3.forward * 10f);
+            yield return new WaitForSeconds(0.1f);
+            me.ThrownLandRpc(Item.SlenderEgg, field + new Vector3(-8f, 0.2f, 0), Vector3.up);
+            yield return new WaitForSeconds(0.5f);
+            Vehicle slender = null;
+            foreach (var v in Vehicle.All) if (v.IsSlender) slender = v;
+            Check(slender != null, "Slenderman hatched from the egg");
+            if (slender != null)
+            {
+                slender.ServerDamage(9999f, me);
+                yield return new WaitForSeconds(0.4f);
+                Check(!slender.IsSpawned, "Slenderman can be killed");
+            }
+
+            // staff of the giant
+            me.ServerGive(Item.GiantStaff, 1);
+            yield return new WaitForSeconds(0.2f);
+            yield return Hold(me, Item.GiantStaff);
+            me.GiantStaffRpc();
+            yield return new WaitForSeconds(0.4f);
+            Check(other.Giant && me.Count(Item.GiantStaff) == 0, "staff of the giant turned the opponent into a giant");
+            other.GiantUntil.Value = -1;
+
+            // C4 right on top of someone kills them
+            Revive(other);
+            other.ArmorHp.Value = 100;
+            g.ServerArmC4(other.transform.position + Vector3.up * 0.5f, Vector3.up, me);
+            yield return new WaitForSeconds(Cfg.C4Fuse + 0.5f);
+            Check(other.Dead.Value, "C4 right on top of someone kills them (even with armour)");
+            Revive(other);
+
+            // horse: killing it drops meat and its (team coloured) saddle; meat heals you fully
+            Vehicle horse = null;
+            foreach (var v in Vehicle.All) if (v.IsHorse && v.Saddled.Value) horse = v;
+            if (horse == null) foreach (var v in Vehicle.All) if (v.IsHorse) horse = v;
+            if (horse != null)
+            {
+                bool hadSaddle = horse.Saddled.Value;
+                int saddleTeam = horse.SaddleTeam.Value;
+                var hp = horse.transform.position;
+                horse.ServerDamage(9999f, me);
+                yield return new WaitForSeconds(0.5f);
+                int meat = FindWorldItem(Item.Meat), saddle = FindWorldItem(Item.Saddle);
+                Check(!horse.IsSpawned && meat >= 0 && (!hadSaddle || saddle >= 0), "killed a horse: it dropped meat" + (hadSaddle ? " and its saddle" : ""));
+                if (hadSaddle && saddle >= 0)
+                    foreach (var it in g.Items) if (it.Id == saddle) Check(it.Stack.Data == saddleTeam + 1 && saddleTeam == team, "the saddle is in the team colour of whoever saddled it");
+                pc.LocalTeleport(hp + new Vector3(0, 0.5f, -1.5f), 0);
+                yield return new WaitForSeconds(0.5f);
+                me.PickupItemRpc(meat);
+                yield return new WaitForSeconds(0.4f);
+                me.Health.Value = 20f;
+                yield return Hold(me, Item.Meat);
+                me.EatRpc();
+                yield return new WaitForSeconds(0.4f);
+                Check(Mathf.Approximately(me.Health.Value, Cfg.MaxHealth), "horse meat healed fully");
+            }
+            else Check(false, "no horse to test");
+
+            // felling a whole tree pays a bonus
+            ResourceNode tree = null;
+            foreach (var n in Object.FindObjectsByType<ResourceNode>(FindObjectsSortMode.None)) if (n.Kind.Value == ResourceNode.Tree && n.Amount.Value > 0 && Cfg.BaseTeamAt(n.transform.position) < 0) { tree = n; break; }
+            if (tree != null)
+            {
+                yield return Hold(me, Item.Rock);
+                tree.Amount.Value = 3;
+                var tp = tree.transform.position;
+                pc.LocalTeleport(tp + new Vector3(0, 0.2f, -2f), 0);
+                yield return new WaitForSeconds(0.7f);
+                int wood = me.Count(Item.Wood);
+                me.MeleeRpc(true, tree.NetworkObject, tp + Vector3.up * 1.2f, false);
+                yield return new WaitForSeconds(0.5f);
+                Check(me.Count(Item.Wood) == wood + 3 + Cfg.TreeFellBonus, $"felling the whole tree gave the {Cfg.TreeFellBonus} bonus");
+            }
+
+            // airstrike flattens the zone (trees too)
+            ResourceNode victim = null;
+            foreach (var n in Object.FindObjectsByType<ResourceNode>(FindObjectsSortMode.None)) if (!n.IsBush && n.Amount.Value > 0 && Cfg.BaseTeamAt(n.transform.position) < 0 && Vector3.Distance(n.transform.position, other.transform.position) > 30f && Vector3.Distance(n.transform.position, me.transform.position) > 30f) { victim = n; break; }
+            if (victim != null)
+            {
+                me.ServerGive(Item.Airstrike, 1);
+                yield return new WaitForSeconds(0.2f);
+                yield return Hold(me, Item.Airstrike);
+                me.AirstrikeRpc(victim.transform.position);
+                yield return new WaitForSeconds(Cfg.AirstrikeDelay + 0.8f);
+                Check(victim.Amount.Value == 0 && me.Count(Item.Airstrike) == 0, "airstrike flattened the trees/rocks in its zone");
+            }
+
+            // fake bomb bush: whoever picks it blows up
+            me.ServerGive(Item.BombBush, 1);
+            yield return new WaitForSeconds(0.2f);
+            yield return Hold(me, Item.BombBush);
+            me.ThrowItemRpc(Item.BombBush, me.EyePos, Vector3.forward * 8f);
+            yield return new WaitForSeconds(0.1f);
+            var bushAt = me.transform.position + me.transform.forward * 3f;
+            me.ThrownLandRpc(Item.BombBush, bushAt, Vector3.up);
+            yield return new WaitForSeconds(0.6f);
+            ResourceNode trap = null;
+            foreach (var n in Object.FindObjectsByType<ResourceNode>(FindObjectsSortMode.None)) if (n.IsBush && n.TrapTeam.Value != ResourceNode.NoTrap) trap = n;
+            Check(trap != null, "fake bomb bush planted");
+            if (trap != null)
+            {
+                me.Health.Value = Cfg.MaxHealth;
+                pc.LocalTeleport(trap.transform.position + new Vector3(0, 0.3f, -1.5f), 0);
+                yield return new WaitForSeconds(0.5f);
+                me.PickBerriesRpc(trap.NetworkObject);
+                yield return new WaitForSeconds(0.5f);
+                Check(me.Dead.Value && !trap.IsSpawned, "picking the fake bomb bush blew us up");
+                Revive(me);
+                yield return new WaitForSeconds(0.5f);
+            }
+
+            // airdrop signal: an airdrop beams straight onto our bedrock
+            me.ServerGive(Item.AirdropSignal, 1);
+            yield return new WaitForSeconds(0.2f);
+            yield return Hold(me, Item.AirdropSignal);
+            me.UseSignalRpc();
+            yield return new WaitForSeconds(NetGame.DropLand + 1f);
+            bool home = false;
+            foreach (var c in Container.All) if (c.IsAirdrop && Cfg.BaseTeamAt(c.transform.position) == team) home = true;
+            Check(home && me.Count(Item.AirdropSignal) == 0, "airdrop signal beamed a crate into our base");
         }
 
         /// <summary>Visual check: capture screenshots of the new features. Run windowed with -host -fast (optionally with a client).</summary>
@@ -827,6 +1037,33 @@ namespace RockGame
             me.FortLandRpc(spot + Quaternion.Euler(0, 50, 0) * fwd2 * 9f + Vector3.up);
             yield return new WaitForSeconds(1.2f);
             yield return Shot("21_fort_tower");
+
+            // 11: new airdrop items, the airstrike map, then the sudden death stadium
+            foreach (var it in new[] { Item.Sniper, Item.PortalGun, Item.RocketLauncher, Item.GiantStaff })
+            {
+                me.ServerGive(it, 1, Mathf.Clamp(Cfg.MaxData(it), 0, 255));
+                yield return new WaitForSeconds(0.2f);
+                yield return Hold(me, it);
+                yield return Shot("22_" + it);
+            }
+            me.ServerGive(Item.Airstrike, 1);
+            yield return new WaitForSeconds(0.2f);
+            yield return Hold(me, Item.Airstrike);
+            pc.OpenAirstrikeMap();
+            yield return Shot("23_airstrike_map");
+            pc.CloseAirstrikeMap();
+            NetGame.Instance.DevSetTimeLeft(9.5f);
+            yield return new WaitForSeconds(2f);
+            Snap("24_last_seconds_countdown");
+            while (NetGame.Instance.S != GameState.SuddenDeath) yield return null;
+            yield return new WaitForSeconds(1.5f);
+            Snap("25_stadium_countdown");
+            yield return new WaitForSeconds(4.2f);
+            Snap("26_stadium_fight");
+            pc.SetLook(0f, -8f);
+            yield return new WaitForSeconds(1.5f);
+            Snap("27_stadium_crowd");
+            yield return new WaitForSeconds(0.5f);
             Application.Quit(0);
         }
 

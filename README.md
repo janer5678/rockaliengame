@@ -22,11 +22,12 @@ Both players start with a rock, gather wood and stone, build a Rust-style base, 
 - **Map**: *Plains* (flat) or *Highlands* (the wild map: random hilly terrain with minable rocks and watch towers, new every match), each in **Big** or **Small**. Picked by the host; the client builds the same map from the synced seed.
 - **Mode**: *Normal* or *Wood mode* (no stone anywhere, every rock is a tree, everything costs wood only, no pickaxe, no stone upgrades).
 - **Airdrops**: *Anywhere* (one at a time, random spot) or *One per side* (each half of the map gets its own airdrop at a random spot, each on its own timer).
+- **Respawn**: *Normal* or *With an airdrop item* (every time you respawn you get a random airdrop item).
 
 Command line: `-host`, `-client <ip>`, `-port <n>`, `-solo`, `-fast`, `-map plains|highlands`, `-small`, `-big`, `-wood`, `-normal`, `-sides`, `-anywhere`, `-seed <n>`.
 
 ## Pause menu (Esc)
-- **Sound**: master volume and voice chat volume.
+- **Sound**: master volume, hit sounds volume (hit markers, flesh hits, kills) and voice chat volume.
 - **Proximity voice chat**: Off / Open mic / Push to talk (V), pick the microphone, mic volume, open-mic sensitivity and a live mic level meter. You only hear people near you (3D, fades out by ~45 m).
 - **Dev settings**: drop the wall now, pause/resume the timer, +/- 1 minute, timer to 10 s, start sudden death, win now, spawn an airdrop, ball to me / to the middle, regrow nodes, spawn a horse or car, +1000 wood/stone, +50 arrows, all airdrop items, one of every craftable, clear inventory, heal, god mode, kill me, and teleports (my base, enemy base, ball, airdrop). Everyone is told when someone uses one.
 - **Leave game**.
@@ -36,24 +37,38 @@ Command line: `-host`, `-client <ip>`, `-port <n>`, `-solo`, `-fast`, `-map plai
 - On the bedrock stands your **alien machine** (with room to build walls behind it, and room for chests around it). It has a **socket** (the glowing cradle under the arch) where the ball has to sit.
 - **Crafting works anywhere inside your own base** (TAB).
 - A **big glass wall** splits the map in half for the first **5 minutes**. When it drops, the **ball** drops in the middle and a **7:00** timer starts (12 minutes in total).
-- Pick the ball up (E) and **throw it with LMB**, or press **E at your machine** while carrying it to put it in the socket. A ball thrown or rolled into a socket locks in too. A beacon of light shoots into the sky while it sits in a socket. Enemies can take it back out with E.
+- Pick the ball up (E) and **throw it with LMB**. When it gets close to a machine's socket it snaps in. While you carry it, it fills the bottom half of your screen. A beacon of light shoots into the sky while it sits in a socket. Enemies can take it back out with E.
 - When the timer hits 0, whoever has the ball **in their machine's socket wins**. Lying somewhere in your base doesn't count.
-- If the ball is in no socket, both players are teleported to the **sudden death arena**. It's rocks only, everyone is healed and all armour and helmets are taken off, and the first kill wins.
+- The last 10 seconds before the end count down huge in the middle of the screen with a pulsing red edge and ticks.
+- If the ball is in no socket, both players are teleported to the **sudden death stadium**: a huge round arena with tiered stands full of cheering alien spectators, floodlights and jumbotrons. Everyone is healed, inventories are emptied and all armour and helmets are taken off, then a big 5-4-3-2-1-FIGHT countdown. Rocks only, first kill wins.
 - There is no rock item: whenever your selected hotbar slot is empty, you're holding your rock.
 - When you die **all your items burst out of your body** onto the ground, including armour and a helmet you were wearing. Anyone can pick them up with E. Items on the ground disappear after 5 minutes.
 - Respawning: while the glass wall is up you always come back on your bedrock. After that you choose: **respawn in base** or **respawn in the wild** (a random spot in the enemy's half of the map).
 
 ## Airdrops
-Once the wall is down, a giant alien ship comes down from very high up and **beams an airdrop crate** to a random spot (never close to a base; follow the purple beam, the HUD shows the direction). Only one exists at a time; the next one comes **1 minute after the last one was emptied**. Each crate holds one random OP item:
+Once the wall is down, a giant alien ship comes down from very high up and **beams an airdrop crate** to a random spot (never close to a base; follow the purple beam; a big "AIRDROP INCOMING" shows in the middle of the screen). Only one exists at a time; the next one comes **1 minute after the last one was emptied**. An **Airdrop Signal** (craft it in your base for 2000 wood) beams one straight onto your bedrock. Each crate holds one random item:
 
 | Item | What it does |
 |---|---|
-| C4 | LMB throws it. After a 3s fuse it destroys every enemy building piece, barrier and chest within 5 m (any tier) and hurts players nearby. |
+| C4 | Thrown. After 3 s it destroys every enemy building piece, barrier and chest within 5 m and hurts players nearby; right on top of it you die. |
 | Death Wand | One shot. Anyone the bolt passes close to, or who is near where it hits, dies instantly. |
-| Alien Helmet | LMB puts it on. The next headshot does **no damage** and breaks it. If you're killed with it still on, it drops and the killer can wear it. |
+| Alien Helmet | Put it on: the next headshot does no damage and breaks it. Drops if you die wearing it. |
+| Armour | Put it on: 100 extra health in a second bar, used up first. Drops with the health it had left. |
 | 1000 wood or stone | (always wood in wood mode) |
 | Invisibility Potion | 30 s of invisibility. Attacking shows you for a moment. |
 | Chainsaw | Hold LMB: cuts wood and stone very fast. Breaks after 67 hits. |
+| Fort Tower | Thrown: an enclosed lookout tower pops up where it lands (doorway facing you, ladder inside). |
+| Sniper Rifle | 3 shots. RMB scope. Anything it hits dies, unless it's a headshot on someone with a helmet (the helmet breaks). |
+| Portal Gun | 2 shots = one linked pair of portals on any surface (ground too). Every portal has its own colour, starting with Portal's blue and orange. They last the whole game. Walk in one, come out the other; you can't bounce straight back. |
+| Jetpack | Hold it and hold Space to fly up. Limited fuel. |
+| Slenderman Egg | Thrown: Slenderman hatches and hunts your enemy. It kills on touch. Kill it (150 HP) or wait 60 s for it to vanish. |
+| Build Egg | Thrown: slabs appear under its flight path - a staircase you can walk along (Bedwars style). |
+| Staff of the Giant | Your nearest enemy becomes a giant for 30 s: huge and easy to spot, same small hitbox, and you look tiny to them. |
+| Rocket Launcher | One rocket. Wrecks enemy buildings in a small radius and hurts players. |
+| Fake Bomb Bush | Thrown: looks exactly like a berry bush. Whoever picks it blows up. |
+| Tree Camo | While it's in your hand, everyone else sees a tree where you stand. |
+| Airstrike | Opens a map: click a spot and a few seconds later everything there (players, buildings, trees, rocks) is flattened. |
+| Wallhack Glasses | While you hold them, enemies glow red through walls. |
 
 ## Game settings
 **GAME SETTINGS** on the main menu lists every stat: timings, airdrops, player HP and speeds, damage and gather rate for every tool, node HP, building costs and HP, crafting costs and more. Only the values you change are saved on your PC (so new defaults still reach you). When you host, your values are sent to your opponent and used for the whole match.
@@ -70,7 +85,7 @@ Once the wall is down, a giant alien ship comes down from very high up and **bea
 | 1-7, mouse wheel | hotbar slot |
 | TAB | inventory (21 slots + 7 hotbar) |
 | E | use whatever you're looking at: your machine (put the ball in), ball, door, chest, airdrop, berry bush, dropped items and arrows, horse or car (E again to get off), a spear stuck in someone (or in you) |
-| Building plan | **hold RMB: building wheel** (Foundation, Wall, Doorway, Window, Floor, Stairs, Demolish) · R rotate stairs · F upgrade to stone · X demolish your own piece (half the wood back) |
+| Building plan | **hold RMB: building wheel** (Rust style, with a picture of each piece: Foundation, Wall, Doorway, Window, Demolish at the bottom, Stairs, Floor, Upgrade) · R rotate stairs · F upgrade to stone · X demolish your own piece (half the wood back) |
 | Crossbow | LMB fire · hold RMB aim · reloads itself (uses an arrow) |
 | Helmet / armour / potion | LMB (or RMB) to put on / drink |
 | C4 / fort tower | LMB throws it |
@@ -96,18 +111,17 @@ Once the wall is down, a giant alien ship comes down from very high up and **bea
 | Spear | 75 wood |
 | Bow | 100 wood, 15 stone |
 | Arrow | 10 wood |
-| Crossbow (65 damage, flat and fast) | 500 wood |
+| Crossbow (55 damage, flat and fast) | 500 wood |
 | Battering Ram (3 hits) | 125 wood, 50 stone |
 | Storage Chest | 50 wood |
 | Wooden Barrier | 20 wood |
-| Wooden Armour (100 extra health, used up first; drops with its health left) | 500 wood |
-| Fort Tower (throw it: a lookout tower with a ladder pops up) | 1000 wood |
-| Saddle (ride a wild horse) | 1000 wood |
-| Wooden Car | 2000 wood |
+| Saddle (ride a wild horse; in your team's colour) | 1000 wood |
+| Airdrop Signal (an airdrop beams onto your bedrock) | 2000 wood |
 
 In wood mode the stone part is added to the wood cost and there's no pickaxe.
 
 ## Gathering
+- Felling a whole tree gives a +100 wood bonus ("TIMBER!").
 - The first hit on a tree or rock reveals its weak spot: an orange **X** on trees, a sparkling **star** on rocks. Hitting it gives double resources, and it jumps to a new spot facing you.
 - On the Highlands map every rock on the hills is a minable stone node.
 - **Berry bushes** are loaded with berries: press E to pick the whole bush (it disappears), hold the berries and press RMB to eat (+30 HP). A new bush grows up out of the ground somewhere else in the same half a while later.
@@ -120,14 +134,15 @@ In wood mode the stone part is added to the wood cost and there's no pickaxe.
 ## Building
 - You can only build inside your own base (the tinted square with the grid). Pieces snap to a 3 m grid. There's no delay between placements, and you can place pieces right where you stand (you get lifted on top).
 - Pieces: Foundation (15 wood), Wall (15), Doorway with a lockable door (20), Window (15), Floor (12), Stairs (20).
-- You don't have to aim at the bottom edge: look along where you want the wall (eye height or above works) and it snaps to the nearest spot where it can actually go.
+- You don't have to aim at the bottom edge: look along where you want the wall (eye height or above works) and it goes to the farthest spot along your aim where it can actually go (so it lands where you're pointing).
 - **Wooden barriers** (250 HP) are small free-standing walls you can place anywhere except the enemy base.
 - Rust-style support: walls and stairs need a foundation or floor, and floors need a wall below or a neighbouring floor. Destroying support collapses what's on it.
 - Upgrade to stone (30-50 stone) for 3-4x HP. Melee does only 20% damage to stone, so bring a ram.
 
 ## Horses and the car
-- **Wild horses** wander each half of the map. Craft a **saddle**, walk up to one and press E to saddle it and get on. It rides like a Minecraft horse: it goes where you look, Shift gallops, Space jumps.
-- The **wooden car** (a Bad Piggies style crate on wheels) is placed from your inventory. E to drive: W/S gas and brake/reverse, A/D steer. Running someone over damages them and throws them back.
+- **Wild horses** wander each half of the map. Craft a **saddle** (it's in your team colour), walk up to one and press E to saddle it and get on. It rides like a Minecraft horse: it goes where you look, Shift gallops, Space jumps. Your view sits high up so you can see ahead.
+- Horses can be killed: they drop **horse meat** (eat it to heal fully) and their saddle.
+- (The wooden car is switched off for now.)
 
 ## Combat & raid balance
 | | Wood HP | Stone HP |
@@ -137,7 +152,7 @@ In wood mode the stone part is added to the wood cost and there's no pickaxe.
 | Foundation | 500 | 1800 |
 
 - **Ram**: a hand-held log. Hold LMB for 1.5 s next to an enemy piece: **wooden pieces and chests break instantly**, **stone pieces are knocked back down to full-HP wood**. 3 hits per ram. You move 25% slower while holding it.
-- Player damage: rock 12, hatchet/pickaxe 14, spear 35 (stab) / 60 (thrown), arrow up to 50 at full draw, crossbow 65. **Headshots do x2** for everything.
+- Player damage: rock 12, hatchet/pickaxe 14, spear 35 (stab) / 60 (thrown), arrow up to 50 at full draw, crossbow 55. **Headshots do x1.5** for everything.
 - Weapons do double damage to buildings compared to before.
 - You can't shoot through the glass wall by standing right up against it.
 - The bow shoots slower arrows with more drop (55 m/s, normal gravity), like the original bow. It's held like Rust's hunting bow: left arm in from the lower left, and when drawn the arrow lines up with the crosshair.
@@ -153,6 +168,6 @@ In wood mode the stone part is added to the wood cost and there's no pickaxe.
 - `Vehicle.cs`: horses and the car (a networked prefab owned by whoever drives it). `VoiceChat.cs`: proximity voice chat and the sound/mic settings. `PlayerNet.Extras.cs`: crossbow, fort tower, riding, dev settings and voice RPCs.
 - Player model: PSX-style grey alien "Low-spec Reticulans" by surt, CC0 ([OpenGameArt](https://opengameart.org/content/low-spec-reticulans)), in `Assets/Game/Resources/Alien/`. `AlienRigged.fbx` is the same mesh skinned to a humanoid skeleton (Hips, Spine, Chest, Neck, Head, Left/Right UpperArm/LowerArm/Hand/UpperLeg/LowerLeg/Foot) and animated procedurally in `BodyAnimator.cs`. It is tinted in the team colour.
 - `AutoTest.cs`: headless end-to-end test (`-autotest ball` or `-autotest sd` on a host + client build; `-autotest shots` takes screenshots).
-- Sounds are synthesised in code (`Fx.cs`); item icons are rendered from the 3D models at startup (`ItemIcons.cs`); first-person hands and animations are in `ViewModel.cs`.
+- Sound effects are CC0 recordings by Kenney (www.kenney.nl) in `Assets/Game/Resources/Sfx` (several variations each, picked at random); anything missing falls back to sounds synthesised in `Fx.cs`. Item icons are rendered from the 3D models at startup (`ItemIcons.cs`); first-person hands and animations are in `ViewModel.cs`.
 
 Networking: movement is owner-authoritative (NetworkTransform in Owner mode). Resources, crafting, building, damage, the ball and its socket, inventories, chests, airdrops, dropped items and match flow are server-authoritative. Melee, arrow, thrown-spear and C4 hits use client-side hit detection that the server validates; the death wand is resolved on the server.

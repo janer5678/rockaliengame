@@ -17,7 +17,14 @@ namespace RockGame
         Light s_GroundLight;
         Material s_BeamMat;
         double s_Start = -2;
-        static readonly AirdropShip[] s_Lanes = { new AirdropShip(), new AirdropShip() };
+        static readonly AirdropShip[] s_Lanes = MakeLanes();
+
+        static AirdropShip[] MakeLanes()
+        {
+            var a = new AirdropShip[NetGame.LaneTotal];
+            for (int i = 0; i < a.Length; i++) a[i] = new AirdropShip();
+            return a;
+        }
 
         public static void Clear()
         {
@@ -37,7 +44,7 @@ namespace RockGame
 
         public static void Tick(NetGame g)
         {
-            for (int i = 0; i < 2; i++) s_Lanes[i].TickLane(g, g.LaneStart(i).Value, g.LanePos(i).Value);
+            for (int i = 0; i < s_Lanes.Length; i++) s_Lanes[i].TickLane(g, g.LaneStartAt(i), g.LanePosAt(i));
         }
 
         void TickLane(NetGame g, double start, Vector3 ground)

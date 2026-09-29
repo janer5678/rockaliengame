@@ -37,11 +37,12 @@ namespace RockGame
         public readonly NetworkVariable<int> MapSeed = new NetworkVariable<int>();
         /// <summary>The host's game settings (Cfg tunables), applied on the client.</summary>
         public readonly NetworkVariable<FixedString4096Bytes> Tunables = new NetworkVariable<FixedString4096Bytes>();
-        /// <summary>Airdrop ship: server time it started beaming in (-1 = none) and where the crate lands.</summary>
-        public readonly NetworkVariable<double> DropStart = new NetworkVariable<double>(-1);
-        public readonly NetworkVariable<Vector3> DropPos = new NetworkVariable<Vector3>();
-        public readonly NetworkVariable<double> DropStart2 = new NetworkVariable<double>(-1); // second lane (airdrops on both sides)
-        public readonly NetworkVariable<Vector3> DropPos2 = new NetworkVariable<Vector3>();
+        /// <summary>Airdrop ships: when each lane started beaming one in (-1 = none) and where its crate lands.</summary>
+        public readonly NetworkList<DropLaneState> Lanes = new NetworkList<DropLaneState>();
+        /// <summary>Every portal shot this game (they stay until the end).</summary>
+        public readonly NetworkList<PortalInfo> Portals = new NetworkList<PortalInfo>();
+        /// <summary>Sudden death: nobody can move or fight until this server time (the big countdown).</summary>
+        public readonly NetworkVariable<double> FightAt = new NetworkVariable<double>(-1);
         /// <summary>Dev setting: the match timer (and the airdrop timers) are frozen.</summary>
         public readonly NetworkVariable<bool> TimerPaused = new NetworkVariable<bool>();
 
@@ -76,6 +77,7 @@ namespace RockGame
                 if (System.Text.Encoding.UTF8.GetByteCount(data) < 4000) Tunables.Value = new FixedString4096Bytes(data);
                 else Debug.LogError("[RockGame] Settings too large to sync: " + data.Length);
                 BuildGrid.Registry.Clear();
+                for (int i = 0; i < LaneTotal; i++) { Lanes.Add(new DropLaneState { Start = -1 }); m_Lanes[i] = new DropLane(); }
                 SpawnNodes();
                 NetworkManager.OnClientDisconnectCallback += OnClientDisconnect;
             }
@@ -88,6 +90,7 @@ namespace RockGame
             if (IsServer && NetworkManager != null) NetworkManager.OnClientDisconnectCallback -= OnClientDisconnect;
             if (Instance == this) Instance = null;
             AirdropShip.Clear();
+            PortalFx.Clear();
             foreach (var v in m_ItemVisuals.Values) if (v) Destroy(v);
             m_ItemVisuals.Clear();
         }
@@ -110,7 +113,7 @@ namespace RockGame
             {
                 case GameState.PreBall: Hud.Banner("GATHER & BUILD", $"A glass wall splits the map for {Clock(Bootstrap.Fast ? Cfg.FastBallDropDelay : Cfg.BallDropDelay)}. Craft anywhere inside your base (TAB)."); break;
                 case GameState.BallLive: Hud.Banner("THE WALL IS DOWN", "Grab the ball from the middle and put it in YOUR machine's socket!"); break;
-                case GameState.SuddenDeath: Hud.Banner("SUDDEN DEATH", "Rocks only. First kill wins."); break;
+                case GameState.SuddenDeath: Hud.Banner("SUDDEN DEATH", "Welcome to the stadium. Rocks only. First kill wins."); break;
             }
         }
 
@@ -125,6 +128,7 @@ namespace RockGame
             SyncItemVisuals();
             MapBuilder.SetGlassWall(WallUp);
             AirdropShip.Tick(this);
+            PortalFx.Sync(this);
             if (!IsServer) return;
             if (Time.time >= m_NextItemCheck) { m_NextItemCheck = Time.time + 0.5f; ServerSettleItems(); }
             double now = NetworkManager.ServerTime.Time;
@@ -133,9 +137,10 @@ namespace RockGame
                 // frozen: push every deadline back by the time that passed
                 double dt = Time.deltaTime;
                 if (S == GameState.PreBall || S == GameState.BallLive || S == GameState.SuddenDeath) PhaseEnd.Value += dt;
-                for (int i = 0; i < 2; i++) if (m_Lanes[i].NextAt < double.MaxValue) m_Lanes[i].NextAt += dt;
+                for (int i = 0; i < LaneTotal; i++) if (m_Lanes[i] != null && m_Lanes[i].NextAt < double.MaxValue) m_Lanes[i].NextAt += dt;
             }
             ServerTickC4(now);
+            ServerTickAirstrikes(now);
             ServerTickBushes(now);
             int players = PlayerNet.All.Count;
             bool fast = Bootstrap.Fast;
@@ -183,10 +188,15 @@ namespace RockGame
             State.Value = (byte)s;
         }
 
+        public const float FightCountdown = 5f;
+        public bool FightFrozen => S == GameState.SuddenDeath && IsSpawned && NetworkManager.ServerTime.Time < FightAt.Value;
+
         void StartSuddenDeath()
         {
             if (Ball.Instance != null && Ball.Instance.IsSpawned) Ball.Instance.NetworkObject.Despawn(true);
-            SetPhase(GameState.SuddenDeath, Cfg.SuddenDeathLength);
+            // everybody into the stadium, then a big 5 second countdown before the duel
+            FightAt.Value = NetworkManager.ServerTime.Time + FightCountdown;
+            SetPhase(GameState.SuddenDeath, Cfg.SuddenDeathLength + FightCountdown);
             foreach (var p in PlayerNet.All) p.ServerEnterArena();
             Broadcast("Nobody had the ball in their base - SUDDEN DEATH!");
         }
@@ -437,8 +447,10 @@ namespace RockGame
             team = Mathf.Clamp(team, 0, 1);
             if (arena)
             {
-                yaw = team == 0 ? 0f : 180f;
-                pos = Cfg.ArenaCenter + new Vector3(0, 0.1f, team == 0 ? -14f : 14f);
+                // on your team's spot around the stadium pit, facing the middle
+                var dir = Quaternion.Euler(0, team * 360f / Mathf.Max(2, Cfg.TeamCount), 0) * Vector3.back;
+                pos = Cfg.ArenaCenter + dir * 14f + Vector3.up * 0.1f;
+                yaw = Quaternion.LookRotation(-dir).eulerAngles.y;
                 return;
             }
             pos = Cfg.SpawnPos(team);
@@ -457,7 +469,7 @@ namespace RockGame
                 var p = new Vector3(Random.Range(-half + 8f, half - 8f), 0, side * Random.Range(8f, half - 8f));
                 if (Mathf.Abs(p.x - ec.x) < Cfg.BaseHalf + 6f && Mathf.Abs(p.z - ec.z) < Cfg.BaseHalf + 6f) continue;
                 p.y = MapBuilder.Height(p.x, p.z) + 0.1f;
-                if (Physics.CheckCapsule(p + Vector3.up * 0.5f, p + Vector3.up * 1.5f, 0.45f, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore)) continue;
+                if (Blocked(p + Vector3.up * 1.1f, new Vector3(0.45f, 0.6f, 0.45f))) continue;
                 pos = p;
                 yaw = Random.Range(0f, 360f);
                 return;
@@ -468,38 +480,39 @@ namespace RockGame
         // ------------------------------------------------------------------ airdrops
 
         const float DropArrive = 4f, DropBeam = 4f;
-        /// <summary>Seconds after DropStart when the crate touches down (the ship arrives, then beams it down).</summary>
+        /// <summary>Seconds after a lane's start when the crate touches down (the ship arrives, then beams it down).</summary>
         public const float DropLand = DropArrive + DropBeam;
+        /// <summary>Lanes 0-3: the world airdrops (one for the whole map, or one per team's side). Lanes 4-7: a team's airdrop signal.</summary>
+        public const int LaneTotal = 8, SignalLane0 = 4;
 
-        /// <summary>
-        /// One airdrop "lane": a timer, the ship on its way and the crate on the ground. Normally there's one lane for the
-        /// whole map; with "airdrops on both sides" there's one per half, each with its own one-at-a-time timer.
-        /// </summary>
+        /// <summary>A lane's timer, the ship on its way and the crate on the ground (server side).</summary>
         class DropLane
         {
-            public int Side; // 0 = anywhere, -1 / +1 = that half of the map
+            public int Region = -1; // -1 = anywhere, else that team's side of the map
             public double NextAt = double.MaxValue;
-            public bool Incoming;
+            public bool Incoming, Signal;
             public Container Crate;
         }
-        readonly DropLane[] m_Lanes = { new DropLane { Side = 0 }, new DropLane { Side = 0 } };
-        int LaneCount => Cfg.AirdropSides ? 2 : 1;
+        readonly DropLane[] m_Lanes = new DropLane[LaneTotal];
+        int WorldLaneCount => Cfg.AirdropSides ? Cfg.TeamCount : 1;
 
-        public NetworkVariable<double> LaneStart(int i) => i == 0 ? DropStart : DropStart2;
-        public NetworkVariable<Vector3> LanePos(int i) => i == 0 ? DropPos : DropPos2;
+        public double LaneStartAt(int i) => i < Lanes.Count ? Lanes[i].Start : -1;
+        public Vector3 LanePosAt(int i) => i < Lanes.Count ? Lanes[i].Pos : Vector3.zero;
+
+        void SetLane(int i, double start, Vector3 pos) => Lanes[i] = new DropLaneState { Start = start, Pos = pos };
 
         void ServerStartAirdropTimers(double now)
         {
-            for (int i = 0; i < 2; i++)
+            for (int i = 0; i < SignalLane0; i++)
             {
-                m_Lanes[i].Side = Cfg.AirdropSides ? (i == 0 ? -1 : 1) : 0;
-                m_Lanes[i].NextAt = now + Cfg.AirdropInterval;
+                m_Lanes[i].Region = Cfg.AirdropSides ? i : -1;
+                m_Lanes[i].NextAt = i < WorldLaneCount ? now + Cfg.AirdropInterval : double.MaxValue;
             }
         }
 
         void ServerTickAirdrop(double now)
         {
-            for (int i = 0; i < LaneCount; i++) ServerTickLane(i, now);
+            for (int i = 0; i < LaneTotal; i++) ServerTickLane(i, now);
         }
 
         void ServerTickLane(int i, double now)
@@ -507,12 +520,12 @@ namespace RockGame
             var lane = m_Lanes[i];
             if (lane.Incoming)
             {
-                if (now < LaneStart(i).Value + DropLand) return;
+                if (now < LaneStartAt(i) + DropLand) return;
                 lane.Incoming = false;
-                var pos = LanePos(i).Value;
+                var pos = LanePosAt(i);
                 var go = Instantiate(Bootstrap.I.containerPrefab, pos, Quaternion.Euler(0, Random.Range(0f, 360f), 0));
                 lane.Crate = go.GetComponent<Container>();
-                lane.Crate.ServerInit(Container.Airdrop, 2, 1, new List<ItemStack> { RollAirdropLoot() });
+                lane.Crate.ServerInit(Container.Airdrop, 7, 1, new List<ItemStack> { RollAirdropLoot() });
                 go.GetComponent<NetworkObject>().Spawn(true);
                 Fx.Server(FxKind.Spawn, pos, Vector3.up);
                 return;
@@ -528,61 +541,77 @@ namespace RockGame
                         lane.Crate.NetworkObject.Despawn(true);
                     }
                     lane.Crate = null;
-                    lane.NextAt = now + Cfg.AirdropInterval;
+                    lane.NextAt = lane.Signal ? double.MaxValue : now + Cfg.AirdropInterval;
                 }
                 return;
             }
-            if (now < lane.NextAt) return;
-            ServerLaunchDrop(i, now);
+            if (lane.Signal || now < lane.NextAt || S != GameState.BallLive) return;
+            ServerLaunchDrop(i, now, PickDropSpot(lane.Region));
         }
 
-        void ServerLaunchDrop(int i, double now)
+        void ServerLaunchDrop(int i, double now, Vector3 pos)
         {
             var lane = m_Lanes[i];
-            LanePos(i).Value = PickDropSpot(lane.Side);
-            LaneStart(i).Value = now;
+            SetLane(i, now, pos);
             lane.Incoming = true;
-            string where = lane.Side == 0 ? "Look for the purple beam" : lane.Side < 0 ? $"In the {Cfg.TeamName[Cfg.BaseCenter[0].z < 0 ? 0 : 1]} half - look for the purple beam" : $"In the {Cfg.TeamName[Cfg.BaseCenter[0].z > 0 ? 0 : 1]} half - look for the purple beam";
+            string where = lane.Signal ? $"{Cfg.TeamLabel(i - SignalLane0)} called one in with a signal!" : lane.Region < 0 ? "Look for the purple beam" : $"On the {Cfg.TeamLabel(lane.Region)} side - look for the purple beam";
             BannerRpc(new FixedString64Bytes("AIRDROP INCOMING"), new FixedString128Bytes(where));
             Broadcast("An alien AIRDROP is beaming down! " + where);
         }
 
-        /// <summary>One random OP item.</summary>
-        static ItemStack RollAirdropLoot()
+        /// <summary>Airdrop signal: an airdrop beams straight down onto your bedrock next to the machine.</summary>
+        public bool ServerSignalDrop(int team)
         {
-            switch (Random.Range(0, 6))
-            {
-                case 0: return ItemStack.Of(Item.C4, 1);
-                case 1: return ItemStack.Of(Item.DeathWand, 1);
-                case 2: return ItemStack.Of(Item.Helmet, 1, 1);
-                case 3: return ItemStack.Of(Cfg.WoodMode || Random.value < 0.5f ? Item.Wood : Item.Stone, Mathf.Clamp(Cfg.AirdropResources, 1, 1000));
-                case 4: return ItemStack.Of(Item.InvisPotion, 1);
-                default: return ItemStack.Of(Item.Chainsaw, 1, Mathf.Clamp(Cfg.ChainsawUses, 1, 255));
-            }
+            int i = SignalLane0 + Mathf.Clamp(team, 0, 3);
+            var lane = m_Lanes[i];
+            if (lane.Incoming || (lane.Crate != null && lane.Crate.IsSpawned && !lane.Crate.Empty)) return false;
+            if (lane.Crate != null && lane.Crate.IsSpawned) lane.Crate.NetworkObject.Despawn(true);
+            lane.Crate = null;
+            lane.Signal = true;
+            var side = Vector3.Cross(Vector3.up, Cfg.BackDir(team)).normalized;
+            ServerLaunchDrop(i, NetworkManager.ServerTime.Time, Cfg.BedrockCenter(team) + side * 1.9f + Cfg.BackDir(team) * 1.2f + Vector3.up * Cfg.BaseY);
+            return true;
         }
 
-        /// <summary>Random open spot, never close to either base (side: 0 anywhere, -1/+1 only that half).</summary>
-        static Vector3 PickDropSpot(int side)
+        /// <summary>One random OP item.</summary>
+        public static ItemStack RollAirdropLoot()
+        {
+            var id = Cfg.AirdropLoot[Random.Range(0, Cfg.AirdropLoot.Length)];
+            if (id == Item.Wood) return ItemStack.Of(Cfg.WoodMode || Random.value < 0.5f ? Item.Wood : Item.Stone, Mathf.Clamp(Cfg.AirdropResources, 1, 1000));
+            if (id == Item.Helmet) return ItemStack.Of(Item.Helmet, 1, 1);
+            return ItemStack.Of(id, 1, Mathf.Clamp(Cfg.MaxData(id), 0, 255));
+        }
+
+        /// <summary>Random open spot, never close to any base (region: -1 anywhere, else only that team's side).</summary>
+        static Vector3 PickDropSpot(int region)
         {
             float half = Cfg.MapHalf;
             Vector3 best = Vector3.zero;
             float bestD = -1f;
-            for (int tries = 0; tries < 80; tries++)
+            for (int tries = 0; tries < 120; tries++)
             {
-                float z = side == 0 ? Random.Range(-half + 12f, half - 12f) : side * Random.Range(8f, half - 12f);
-                var p = new Vector3(Random.Range(-half + 12f, half - 12f), 0, z);
+                var p = new Vector3(Random.Range(-half + 12f, half - 12f), 0, Random.Range(-half + 12f, half - 12f));
+                if (region >= 0 && Cfg.RegionOf(p) != region) continue;
                 float d = float.MaxValue;
-                for (int t = 0; t < 2; t++)
+                for (int t = 0; t < Cfg.TeamCount; t++)
                 {
                     var c = Cfg.BaseCenter[t];
                     d = Mathf.Min(d, Mathf.Max(Mathf.Abs(p.x - c.x), Mathf.Abs(p.z - c.z)) - Cfg.BaseHalf);
                 }
                 p.y = MapBuilder.Height(p.x, p.z);
-                if (Physics.CheckBox(p + Vector3.up * 1.2f, new Vector3(1f, 1f, 1f), Quaternion.identity, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore)) continue;
+                if (Blocked(p + Vector3.up * 1.4f, new Vector3(1f, 0.9f, 1f))) continue;
                 if (d >= Cfg.AirdropBaseDistance) return p;
                 if (d > bestD) { bestD = d; best = p; }
             }
             return best;
+        }
+
+        /// <summary>Something other than the ground (a tree, rock, building...) in this box.</summary>
+        static bool Blocked(Vector3 c, Vector3 half)
+        {
+            foreach (var h in Physics.OverlapBox(c, half, Quaternion.identity, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore))
+                if (h.GetComponentInParent<GroundMarker>() == null) return true;
+            return false;
         }
 
         /// <summary>A crate on the ground right now (null if none).</summary>
@@ -624,14 +653,14 @@ namespace RockGame
         public void DevSpawnAirdrop()
         {
             double now = NetworkManager.ServerTime.Time;
-            for (int i = 0; i < LaneCount; i++)
+            for (int i = 0; i < WorldLaneCount; i++)
             {
                 var lane = m_Lanes[i];
                 if (lane.Incoming) continue;
                 if (lane.Crate != null && lane.Crate.IsSpawned) lane.Crate.NetworkObject.Despawn(true);
                 lane.Crate = null;
-                lane.Side = Cfg.AirdropSides ? (i == 0 ? -1 : 1) : 0;
-                ServerLaunchDrop(i, now);
+                lane.Region = Cfg.AirdropSides ? i : -1;
+                ServerLaunchDrop(i, now, PickDropSpot(lane.Region));
             }
         }
 
@@ -648,33 +677,44 @@ namespace RockGame
 
         // ------------------------------------------------------------------ berry bushes
 
-        readonly List<(double at, int side)> m_BushQueue = new List<(double, int)>();
+        readonly List<(double at, int region)> m_BushQueue = new List<(double, int)>();
 
-        /// <summary>A bush was picked: a new one grows back later somewhere else in the same half.</summary>
-        public void ServerScheduleBush(int side) => m_BushQueue.Add((NetworkManager.ServerTime.Time + Cfg.BushRespawnTime, side));
+        /// <summary>A bush was picked: a new one grows back later somewhere else on the same side.</summary>
+        public void ServerScheduleBush(Vector3 where) => m_BushQueue.Add((NetworkManager.ServerTime.Time + Cfg.BushRespawnTime, Cfg.RegionOf(where)));
 
         void ServerTickBushes(double now)
         {
             for (int i = m_BushQueue.Count - 1; i >= 0; i--)
             {
                 if (now < m_BushQueue[i].at) continue;
-                int side = m_BushQueue[i].side;
+                int region = m_BushQueue[i].region;
                 m_BushQueue.RemoveAt(i);
                 float half = Cfg.MapHalf;
-                for (int tries = 0; tries < 40; tries++)
+                for (int tries = 0; tries < 60; tries++)
                 {
-                    var p = new Vector3(Random.Range(-half + 8f, half - 8f), 0, side * Random.Range(6f, half - 8f));
-                    var bc = Cfg.BaseCenter[side < 0 ? (Cfg.BaseCenter[0].z < 0 ? 0 : 1) : (Cfg.BaseCenter[0].z > 0 ? 0 : 1)];
-                    if (Mathf.Abs(p.x - bc.x) < Cfg.BaseHalf + 3 && Mathf.Abs(p.z - bc.z) < Cfg.BaseHalf + 3) continue;
+                    var p = new Vector3(Random.Range(-half + 8f, half - 8f), 0, Random.Range(-half + 8f, half - 8f));
+                    if (Cfg.RegionOf(p) != region || Cfg.BaseTeamAt(p) >= 0 || new Vector2(p.x, p.z).magnitude < 8f) continue;
                     p.y = MapBuilder.Height(p.x, p.z);
-                    if (Physics.CheckSphere(p + Vector3.up * 1.2f, 1.2f, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore)) continue;
+                    if (Blocked(p + Vector3.up * 1.3f, new Vector3(1f, 0.9f, 1f))) continue;
                     SpawnNode(ResourceNode.Bush, p, Random.Range(0, 1 << 30));
                     break;
                 }
             }
         }
 
-        // ------------------------------------------------------------------ C4
+        /// <summary>Fake bomb bush: looks just like a berry bush; whoever picks it gets blown up.</summary>
+        public void ServerSpawnBombBush(Vector3 pos, int team)
+        {
+            pos.y = MapBuilder.Height(pos.x, pos.z);
+            if (Physics.Raycast(pos + Vector3.up * 3f, Vector3.down, out var hit, 10f, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore)) pos = hit.point;
+            var go = Instantiate(Bootstrap.I.nodePrefab, pos - Vector3.up * 0.1f, Quaternion.Euler(0, Random.Range(0, 360), 0));
+            var n = go.GetComponent<ResourceNode>();
+            n.ServerInit(ResourceNode.Bush, Random.Range(0, 1 << 30));
+            n.TrapTeam.Value = (byte)team;
+            go.GetComponent<NetworkObject>().Spawn(true);
+        }
+
+        // ------------------------------------------------------------------ explosions (C4, rockets, bomb bush, airstrike)
 
         struct PendingC4 { public Vector3 Pos; public int Team; public PlayerNet Thrower; public double At; }
         readonly List<PendingC4> m_C4 = new List<PendingC4>();
@@ -692,34 +732,181 @@ namespace RockGame
                 if (now < m_C4[i].At) continue;
                 var c = m_C4[i];
                 m_C4.RemoveAt(i);
-                ServerExplode(c.Pos, c.Team, c.Thrower);
+                int n = ServerBlast(c.Pos, Cfg.C4Radius, c.Team, Cfg.C4PlayerDamage, -1f, Cfg.C4KillRadius, c.Thrower, false);
+                if (c.Thrower != null && n > 0) c.Thrower.NotifyPublic($"Your C4 destroyed {n} enemy piece{(n == 1 ? "" : "s")}!");
             }
         }
 
-        /// <summary>C4 goes off: every enemy building piece, barrier and chest in range is destroyed outright; players nearby get hurt.</summary>
-        void ServerExplode(Vector3 pos, int team, PlayerNet thrower)
+        public void ServerRocket(Vector3 pos, PlayerNet shooter)
+        {
+            int n = ServerBlast(pos, Cfg.RocketRadius, shooter != null ? shooter.Team.Value : -1, Cfg.RocketPlayerDamage, Cfg.RocketStructureDamage, 0.8f, shooter, false);
+            if (shooter != null && n > 0) shooter.NotifyPublic($"Your rocket destroyed {n} enemy piece{(n == 1 ? "" : "s")}!");
+        }
+
+        /// <summary>
+        /// An explosion. `team`: that team's own buildings are spared (-1 = nothing is spared, -2 = buildings are not hurt at all).
+        /// structureDamage &lt; 0 destroys pieces outright. Players take damage falling off with distance; inside killRadius they die.
+        /// Returns how many building pieces were destroyed.
+        /// </summary>
+        public int ServerBlast(Vector3 pos, float radius, int team, float playerDamage, float structureDamage, float killRadius, PlayerNet attacker, bool nodes)
         {
             Fx.Server(FxKind.Explosion, pos, Vector3.up);
             var structures = new HashSet<Structure>();
             var chests = new HashSet<Container>();
-            foreach (var h in Physics.OverlapSphere(pos, Cfg.C4Radius, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore))
+            var creatures = new HashSet<Vehicle>();
+            var hitNodes = new HashSet<ResourceNode>();
+            foreach (var h in Physics.OverlapSphere(pos, radius, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Collide))
             {
                 var s = h.GetComponentInParent<Structure>();
-                if (s != null && s.IsSpawned && s.Team.Value != team) structures.Add(s);
+                if (s != null && s.IsSpawned && team != -2 && s.Team.Value != team) structures.Add(s);
                 var c = h.GetComponentInParent<Container>();
-                if (c != null && c.IsSpawned && c.Breakable && c.Team.Value != team) chests.Add(c);
+                if (c != null && c.IsSpawned && c.Breakable && team != -2 && c.Team.Value != team) chests.Add(c);
+                var v = h.GetComponentInParent<Vehicle>();
+                if (v != null && v.IsSpawned) creatures.Add(v);
+                var n = h.GetComponentInParent<ResourceNode>();
+                if (n != null && n.IsSpawned && nodes) hitNodes.Add(n);
             }
             foreach (var c in chests) if (c.IsSpawned) c.ServerBreak();
-            foreach (var s in structures) if (s.IsSpawned) s.NetworkObject.Despawn(true);
+            int destroyed = 0;
+            foreach (var s in structures)
+            {
+                if (!s.IsSpawned) continue;
+                float d = structureDamage < 0 ? s.Health.Value + 1f : structureDamage * Mathf.Lerp(1f, 0.5f, Vector3.Distance(s.transform.position, pos) / radius);
+                if (d >= s.Health.Value) destroyed++;
+                s.ServerDamage(d, false);
+            }
             if (structures.Count > 0) ServerCollapseCheck();
-            foreach (var p in PlayerNet.All)
+            foreach (var v in creatures) if (v.IsSpawned) v.ServerDamage(playerDamage * 2f, attacker);
+            foreach (var n in hitNodes) if (n.IsSpawned) n.ServerDeplete();
+            foreach (var p in PlayerNet.All.ToArray())
             {
                 if (p.Dead.Value) continue;
                 float d = Vector3.Distance(p.transform.position + Vector3.up, pos);
-                if (d > Cfg.C4Radius) continue;
-                p.ServerDamage(Cfg.C4PlayerDamage * Mathf.Lerp(1f, 0.3f, d / Cfg.C4Radius), thrower);
+                if (d > radius) continue;
+                if (d <= killRadius) p.ServerKill(attacker);
+                else p.ServerDamage(playerDamage * Mathf.Lerp(1f, 0.3f, d / radius), attacker);
             }
-            if (thrower != null && structures.Count > 0) thrower.NotifyPublic($"Your C4 destroyed {structures.Count} enemy piece{(structures.Count == 1 ? "" : "s")}!");
+            return destroyed;
         }
+
+        // ------------------------------------------------------------------ airstrike
+
+        readonly List<(Vector3 pos, double at, PlayerNet by)> m_Strikes = new List<(Vector3, double, PlayerNet)>();
+
+        public void ServerAirstrike(Vector3 pos, PlayerNet by)
+        {
+            pos.y = MapBuilder.Height(pos.x, pos.z);
+            m_Strikes.Add((pos, NetworkManager.ServerTime.Time + Cfg.AirstrikeDelay, by));
+            Fx.Server(FxKind.AirstrikeWarn, pos, new Vector3(Cfg.AirstrikeRadius, Cfg.AirstrikeDelay, 0));
+            BannerRpc(new FixedString64Bytes("AIRSTRIKE INBOUND"), new FixedString128Bytes($"{(by != null ? Cfg.TeamLabel(by.Team.Value) : "Someone")} called an airstrike - get out of the red zone!"));
+        }
+
+        void ServerTickAirstrikes(double now)
+        {
+            for (int i = m_Strikes.Count - 1; i >= 0; i--)
+            {
+                if (now < m_Strikes[i].at) continue;
+                var (pos, _, by) = m_Strikes[i];
+                m_Strikes.RemoveAt(i);
+                // a carpet of bombs, then everything in the zone is flattened
+                for (int k = 0; k < 7; k++)
+                {
+                    var off = Random.insideUnitCircle * Cfg.AirstrikeRadius * 0.8f;
+                    Fx.Server(FxKind.Explosion, pos + new Vector3(off.x, 0.5f, off.y), Vector3.up);
+                }
+                ServerBlast(pos, Cfg.AirstrikeRadius, -1, 9999f, -1f, Cfg.AirstrikeRadius, by, true);
+            }
+        }
+
+        // ------------------------------------------------------------------ build egg
+
+        /// <summary>Build egg: blocks appear under its flight path as it flies, making a staircase you can walk along.</summary>
+        public void ServerBuildEgg(Vector3 origin, Vector3 vel, int team) => StartCoroutine(BuildEggRoutine(origin, vel, team));
+
+        System.Collections.IEnumerator BuildEggRoutine(Vector3 pos, Vector3 vel, int team)
+        {
+            const float dt = 0.02f, spacing = 0.75f, stepH = 0.4f;
+            float travelled = spacing, t = 0f;
+            int blocks = 0;
+            float lastY = float.NaN;
+            var flat = new Vector3(vel.x, 0, vel.z).normalized;
+            if (flat.sqrMagnitude < 0.01f) flat = Vector3.forward;
+            var rot = Quaternion.LookRotation(flat);
+            while (blocks < 40 && t < 6f)
+            {
+                var step = vel * dt;
+                vel += Vector3.down * 9.81f * dt;
+                if (Physics.Raycast(pos, step.normalized, step.magnitude + 0.2f, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore)) break;
+                pos += step;
+                t += dt;
+                travelled += new Vector2(step.x, step.z).magnitude;
+                if (travelled >= spacing)
+                {
+                    travelled = 0f;
+                    // a slab just under the egg's path, snapped to walkable step heights
+                    float y = Mathf.Round((pos.y - 1.1f) / stepH) * stepH;
+                    if (!float.IsNaN(lastY)) y = Mathf.Clamp(y, lastY - stepH * 3, lastY + stepH);
+                    lastY = y;
+                    var bp = new Vector3(pos.x, y, pos.z);
+                    if (bp.y < MapBuilder.Height(bp.x, bp.z) - 0.3f) break;
+                    if (!Physics.CheckBox(bp + Vector3.up * 0.2f, new Vector3(0.55f, 0.18f, 0.35f), rot, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore))
+                    {
+                        var go = Instantiate(Bootstrap.I.structurePrefab, bp, rot);
+                        go.GetComponent<Structure>().ServerInit(PieceType.EggBlock, team, default, false);
+                        go.GetComponent<NetworkObject>().Spawn(true);
+                        blocks++;
+                    }
+                }
+                yield return new WaitForSeconds(dt);
+            }
+            Fx.Server(FxKind.Spawn, pos, Vector3.up);
+        }
+
+        // ------------------------------------------------------------------ portals
+
+        /// <summary>Portal gun: each gun makes one linked pair (2 shots). Portals stay for the whole game, every one a different colour.</summary>
+        public void ServerAddPortal(Vector3 pos, Vector3 normal, int pair)
+        {
+            int index = 0;
+            foreach (var p in Portals) if (p.Pair == pair) index++;
+            Portals.Add(new PortalInfo { Pos = pos, Normal = normal.normalized, Pair = (short)pair, Index = (byte)index });
+            Fx.Server(FxKind.PortalOpen, pos, normal);
+        }
+
+        public int ServerNewPortalPair() => m_NextPortalPair++;
+        int m_NextPortalPair;
+
+        /// <summary>The other portal of this one's pair, if it exists.</summary>
+        public bool TryPartner(int i, out PortalInfo partner)
+        {
+            partner = default;
+            var me = Portals[i];
+            for (int k = 0; k < Portals.Count; k++)
+                if (k != i && Portals[k].Pair == me.Pair) { partner = Portals[k]; return true; }
+            return false;
+        }
+    }
+
+    public struct DropLaneState : INetworkSerializeByMemcpy, System.IEquatable<DropLaneState>
+    {
+        public double Start;
+        public Vector3 Pos;
+        public bool Equals(DropLaneState o) => Start == o.Start && Pos == o.Pos;
+    }
+
+    public struct PortalInfo : INetworkSerializeByMemcpy, System.IEquatable<PortalInfo>
+    {
+        public Vector3 Pos, Normal;
+        public short Pair;
+        public byte Index;
+        public bool Equals(PortalInfo o) => Pos == o.Pos && Normal == o.Normal && Pair == o.Pair && Index == o.Index;
+        /// <summary>Every portal gets its own colour: the first pair is Portal's blue and orange.</summary>
+        public Color Color => Palette[(Pair * 2 + Index) % Palette.Length];
+        static readonly Color[] Palette =
+        {
+            new Color(0.15f, 0.55f, 1f), new Color(1f, 0.55f, 0.1f), new Color(0.6f, 0.2f, 1f), new Color(0.4f, 1f, 0.2f),
+            new Color(1f, 0.2f, 0.7f), new Color(0.1f, 1f, 0.9f), new Color(1f, 0.15f, 0.15f), new Color(1f, 0.95f, 0.2f),
+            new Color(1f, 1f, 1f), new Color(0.55f, 0.35f, 0.15f),
+        };
     }
 }

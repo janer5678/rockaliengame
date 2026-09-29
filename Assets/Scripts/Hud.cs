@@ -24,7 +24,7 @@ namespace RockGame
         /// <summary>Build wheel: which slice the mouse is over (-1 = none).</summary>
         public static int WheelHover = -1;
         static Vector2 s_WheelCenter;
-        public static void WheelOpened() { s_WheelCenter = new Vector2(Screen.width / 2f, Screen.height / 2f); WheelHover = -1; }
+        public static void WheelOpened() { s_WheelCenter = new Vector2(Screen.width / 2f, Screen.height / 2f); WheelHover = PlayerController.Local != null ? PlayerController.Local.WheelIndex : 0; }
         float m_LastHealth = 100f, m_DamageFlash;
         GUIStyle m_Label, m_Center, m_Big, m_Small, m_Button, m_Box, m_Field;
         float m_Scale = 1f;
@@ -46,6 +46,7 @@ namespace RockGame
         }
         public static void HitMarker(bool kill, bool head)
         {
+            if (!kill) Sfx.Play2D(Sfx.Hit, head ? 0.7f : 0.5f, 0.05f);
             if (kill || Time.time - s_HitTime > 0.05f || !s_HitKill) { s_HitKill = kill; s_HitHead = head; }
             s_HitTime = Time.time;
         }
@@ -159,7 +160,7 @@ namespace RockGame
         void DrawMainMenu(Bootstrap boot)
         {
             if (m_ShowSettings) { DrawSettings(); return; }
-            float w = 460 * m_Scale, h = 690 * m_Scale;
+            float w = 480 * m_Scale, h = 730 * m_Scale;
             var r = new Rect((Screen.width - w) / 2, (Screen.height - h) / 2, w, h);
             Fill(r, new Color(0, 0, 0, 0.65f));
             GUILayout.BeginArea(new Rect(r.x + 20, r.y + 15, r.width - 40, r.height - 30));
@@ -195,6 +196,12 @@ namespace RockGame
             if (GUILayout.Toggle(wood, " Wood mode", m_Button, GUILayout.Height(30 * m_Scale)) && !wood) boot.SetMapChoice(key | Cfg.WoodBit);
             GUILayout.EndHorizontal();
             if (wood) GUILayout.Label("<color=#d9a066>Wood only: no stone, no pickaxe, everything costs wood.</color>", m_Small);
+            bool loot = (key & Cfg.RespawnLootBit) != 0;
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Respawn", m_Label, GUILayout.Width(90 * m_Scale));
+            if (GUILayout.Toggle(!loot, " Normal", m_Button, GUILayout.Height(30 * m_Scale)) && loot) boot.SetMapChoice(key & ~Cfg.RespawnLootBit);
+            if (GUILayout.Toggle(loot, " With an airdrop item", m_Button, GUILayout.Height(30 * m_Scale)) && !loot) boot.SetMapChoice(key | Cfg.RespawnLootBit);
+            GUILayout.EndHorizontal();
             bool sides = (key & Cfg.SidesBit) != 0;
             GUILayout.BeginHorizontal();
             GUILayout.Label("Airdrops", m_Label, GUILayout.Width(90 * m_Scale));
@@ -356,11 +363,11 @@ namespace RockGame
                         Shadowed(new Rect(12, ly, 400 * k, 24 * k), $"<color=#c98bff>Airdrop: {Direction(me.transform, c.transform.position)}</color>", m_Small);
                         ly += 20 * k;
                     }
-                    for (int i = 0; i < 2; i++)
+                    for (int i = 0; i < NetGame.LaneTotal; i++)
                     {
-                        double st0 = game.LaneStart(i).Value;
+                        double st0 = game.LaneStartAt(i);
                         if (st0 < 0 || me.NetworkManager.ServerTime.Time - st0 >= NetGame.DropLand) continue;
-                        Shadowed(new Rect(12, ly, 400 * k, 24 * k), $"<color=#c98bff>Airdrop incoming: {Direction(me.transform, game.LanePos(i).Value)}</color>", m_Small);
+                        Shadowed(new Rect(12, ly, 400 * k, 24 * k), $"<color=#c98bff>Airdrop incoming: {Direction(me.transform, game.LanePosAt(i))}</color>", m_Small);
                         ly += 20 * k;
                     }
                 }
@@ -395,6 +402,7 @@ namespace RockGame
                 st.normal.textColor = new Color(hc.r, hc.g, hc.b, Mathf.Clamp01((0.3f - hitAge) * 5f));
                 GUI.Label(new Rect(cx - 50, cy - 50, 100, 100), "X", st);
             }
+            if (pc.Scoped) DrawScope();
             float charge = Mathf.Max(pc.DrawAmount, pc.RamCharge);
             if (charge > 0)
             {
@@ -456,6 +464,11 @@ namespace RockGame
                 Shadowed(new Rect(hr.x, statY, 400 * k, 22 * k), "<color=#7dff9a><b>● MIC ON</b></color>", m_Small);
                 statY -= 22 * k;
             }
+            if (me.Giant)
+            {
+                Shadowed(new Rect(hr.x, statY, 400 * k, 22 * k), $"<color=#ffcc55><b>GIANT</b> {Mathf.CeilToInt((float)(me.GiantUntil.Value - me.NetworkManager.ServerTime.Time))}s</color>", m_Small);
+                statY -= 22 * k;
+            }
             if (me.Invisible)
             {
                 float left = (float)(me.InvisUntil.Value - me.NetworkManager.ServerTime.Time);
@@ -482,9 +495,11 @@ namespace RockGame
                 GUI.Label(new Rect(hrct.x + 8, hrct.y + 4, hrct.width - 10, hrct.height), help, m_Small);
             }
 
+            DrawCountdowns(game, team);
+
             // ---- banner ----
             float bage = Time.time - s_BannerTime;
-            if (bage < 4f && game != null && game.S != GameState.GameOver)
+            if (bage < 4f && game != null && game.S != GameState.GameOver && !game.FightFrozen)
             {
                 float a = Mathf.Clamp01(4f - bage);
                 var st = new GUIStyle(m_Big);
@@ -520,6 +535,7 @@ namespace RockGame
 
             if (pc.MenuOpen) DrawInventory(me, pc);
             if (pc.WheelOpen) DrawWheel(pc);
+            if (pc.AirstrikeMapOpen) DrawAirstrikeMap(me, pc);
 
             if (pc.Paused && (game == null || game.S != GameState.GameOver))
             {
@@ -552,7 +568,20 @@ namespace RockGame
                 case Item.Crossbow: return $"<b>Crossbow</b>  ({(s.Data > 0 ? "loaded" : "empty")}, {me.Count(Item.Arrow)} arrows)    LMB: fire   hold RMB: aim   reloads by itself";
                 case Item.FortTower: return "<b>Fort Tower</b>    LMB: throw it - a lookout tower with a ladder pops up where it lands";
                 case Item.Car: return "<b>Wooden Car</b>    LMB: put it down, then E to drive";
-                case Item.Saddle: return "<b>Saddle</b>    walk up to a wild horse and press E to saddle and ride it";
+                case Item.Saddle: return $"<b>Saddle</b> ({Cfg.TeamLabel(s.Data > 0 ? s.Data - 1 : me.Team.Value)})    walk up to a wild horse and press E to saddle and ride it";
+                case Item.Meat: return "<b>Horse Meat</b>    RMB: eat (heals you fully)";
+                case Item.AirdropSignal: return "<b>Airdrop Signal</b>    LMB: call an airdrop straight onto your bedrock";
+                case Item.Sniper: return $"<b>Sniper Rifle</b> ({s.Data} shots)    hold RMB: scope   LMB: fire - one hit kills (a helmet stops a headshot)";
+                case Item.PortalGun: return $"<b>Portal Gun</b> ({s.Data} portal{(s.Data == 1 ? "" : "s")} left)    LMB: shoot a portal onto any surface";
+                case Item.Jetpack: return $"<b>Jetpack</b> (fuel {s.Data}%)    hold Space to fly";
+                case Item.SlenderEgg: return "<b>Slenderman Egg</b>    LMB: throw it - Slenderman hatches and hunts your enemy";
+                case Item.BuildEgg: return "<b>Build Egg</b>    LMB: throw it - blocks appear along its path to walk on";
+                case Item.GiantStaff: return "<b>Staff of the Giant</b>    LMB: turn your nearest enemy into a giant";
+                case Item.RocketLauncher: return "<b>Rocket Launcher</b> (1 rocket)    LMB: fire - wrecks enemy buildings";
+                case Item.BombBush: return "<b>Fake Bomb Bush</b>    LMB: throw it - whoever picks it blows up";
+                case Item.TreeCamo: return "<b>Tree Camo</b>    while you hold it, everyone else sees a tree";
+                case Item.Airstrike: return "<b>Airstrike</b>    LMB: pick a spot on the map - everything there gets flattened";
+                case Item.Wallhack: return "<b>Wallhack Glasses</b>    hold them to see your enemies through walls";
                 case Item.InvisPotion: return $"<b>Invisibility Potion</b>    LMB: drink ({Cfg.InvisTime:0}s, attacking shows you)";
                 case Item.Chainsaw: return $"<b>Chainsaw</b> ({s.Data} uses left)    hold LMB: cuts wood and stone fast";
                 default: return "";
@@ -799,40 +828,239 @@ namespace RockGame
 
         // ------------------------------------------------------------------ build wheel
 
-        /// <summary>Rust-style radial menu while RMB is held with the building plan: move the mouse onto a slice and let go.</summary>
+        static Texture2D[] s_Wedges;
+        static Texture2D s_Disc, s_Scope;
+
+        /// <summary>Donut slices for the wheel (one texture per slice), a filled circle, and the sniper scope mask.</summary>
+        static void EnsureWheelTextures(int n)
+        {
+            if (s_Wedges != null && s_Wedges.Length == n) return;
+            const int S = 256;
+            s_Wedges = new Texture2D[n];
+            for (int i = 0; i < n; i++)
+            {
+                var tex = new Texture2D(S, S, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
+                var px = new Color32[S * S];
+                float centre = i * 360f / n, half = 180f / n - 1.2f;
+                for (int y = 0; y < S; y++)
+                for (int x = 0; x < S; x++)
+                {
+                    float dx = (x + 0.5f) / S * 2f - 1f, dy = -((y + 0.5f) / S * 2f - 1f);
+                    float r = Mathf.Sqrt(dx * dx + dy * dy);
+                    float ang = Mathf.Atan2(dx, dy) * Mathf.Rad2Deg; // 0 = up, clockwise (texture y is flipped by GUI)
+                    float da = Mathf.Abs(Mathf.DeltaAngle(ang, centre));
+                    float a = Mathf.Clamp01((r - 0.34f) * 60f) * Mathf.Clamp01((0.99f - r) * 60f) * Mathf.Clamp01((half - da) * 1.5f);
+                    px[(S - 1 - y) * S + x] = new Color32(255, 255, 255, (byte)(a * 255));
+                }
+                tex.SetPixels32(px);
+                tex.Apply();
+                s_Wedges[i] = tex;
+            }
+            if (s_Disc == null)
+            {
+                s_Disc = new Texture2D(S, S, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
+                var px = new Color32[S * S];
+                for (int y = 0; y < S; y++)
+                for (int x = 0; x < S; x++)
+                {
+                    float dx = (x + 0.5f) / S * 2f - 1f, dy = (y + 0.5f) / S * 2f - 1f;
+                    float a = Mathf.Clamp01((1f - Mathf.Sqrt(dx * dx + dy * dy)) * 60f);
+                    px[y * S + x] = new Color32(255, 255, 255, (byte)(a * 255));
+                }
+                s_Disc.SetPixels32(px);
+                s_Disc.Apply();
+            }
+        }
+
+        /// <summary>
+        /// Rust-style building wheel while RMB is held with the building plan: dark slices with the piece icons, the one the
+        /// mouse points at lights up, and the name and cost show in the middle. There's always a slice selected.
+        /// </summary>
         void DrawWheel(PlayerController pc)
         {
             float k = m_Scale;
             var opts = PlayerController.WheelOptions;
+            EnsureWheelTextures(opts.Length);
             var c = s_WheelCenter;
             var mouse = Event.current.mousePosition;
             var d = mouse - c;
-            WheelHover = -1;
-            if (d.magnitude > 45f * k)
+            // always snapped to a slice: the one in the mouse's direction, or the current one while the mouse is still in the middle
+            if (d.magnitude > 18f * k)
             {
-                float ang = Mathf.Atan2(d.x, -d.y) * Mathf.Rad2Deg; // 0 = up, clockwise
+                float ang = Mathf.Atan2(d.x, -d.y) * Mathf.Rad2Deg;
                 if (ang < 0) ang += 360f;
                 WheelHover = Mathf.RoundToInt(ang / (360f / opts.Length)) % opts.Length;
             }
-            Fill(new Rect(0, 0, Screen.width, Screen.height), new Color(0, 0, 0, 0.25f));
-            float rad = 150f * k, bw = 120f * k, bh = 62f * k;
+            else if (WheelHover < 0) WheelHover = pc.WheelIndex;
+            float R = 190f * k;
+            var area = new Rect(c.x - R, c.y - R, 2 * R, 2 * R);
+            var old = GUI.color;
             for (int i = 0; i < opts.Length; i++)
             {
-                float a = i * (360f / opts.Length) * Mathf.Deg2Rad;
-                var p = c + new Vector2(Mathf.Sin(a), -Mathf.Cos(a)) * rad;
-                var r = new Rect(p.x - bw / 2, p.y - bh / 2, bw, bh);
                 bool hover = i == WheelHover;
-                bool current = opts[i].Demolish ? pc.DemolishMode : !pc.DemolishMode && pc.BuildPiece == opts[i].Piece;
-                Fill(r, hover ? new Color(1f, 0.8f, 0.3f, 0.85f) : current ? new Color(0.3f, 0.6f, 1f, 0.7f) : new Color(0, 0, 0, 0.7f));
-                string cost = opts[i].Demolish ? "your pieces" : $"{Cfg.PieceWood(opts[i].Piece)} wood";
-                var st = new GUIStyle(m_Center) { fontStyle = FontStyle.Bold };
-                st.normal.textColor = opts[i].Demolish ? new Color(1f, 0.55f, 0.45f) : Color.white;
-                GUI.Label(new Rect(r.x, r.y + 6 * k, r.width, 26 * k), opts[i].Label, st);
-                GUI.Label(new Rect(r.x, r.y + 30 * k, r.width, 22 * k), $"<size={Mathf.RoundToInt(12 * k)}>{cost}</size>", m_Center);
+                bool disabled = opts[i].Upgrade && Cfg.WoodMode;
+                GUI.color = hover ? new Color(0.85f, 0.55f, 0.2f, 0.92f) : opts[i].Demolish ? new Color(0.35f, 0.1f, 0.08f, 0.75f) : new Color(0.12f, 0.12f, 0.12f, 0.78f);
+                GUI.DrawTexture(area, s_Wedges[i]);
+                float a = i * (360f / opts.Length) * Mathf.Deg2Rad;
+                var p = c + new Vector2(Mathf.Sin(a), -Mathf.Cos(a)) * R * 0.67f;
+                float isz = 78f * k;
+                GUI.color = disabled ? new Color(1, 1, 1, 0.25f) : Color.white;
+                var icon = ItemIcons.Wheel(i);
+                if (icon != null) GUI.DrawTexture(new Rect(p.x - isz / 2, p.y - isz / 2, isz, isz), icon, ScaleMode.ScaleToFit, true);
+                else GUI.Label(new Rect(p.x - 50, p.y - 12, 100, 24), opts[i].Label, m_Center);
             }
-            Fill(new Rect(c.x - 40 * k, c.y - 40 * k, 80 * k, 80 * k), new Color(0, 0, 0, 0.5f));
-            GUI.Label(new Rect(c.x - 60 * k, c.y - 12 * k, 120 * k, 24 * k), WheelHover >= 0 ? opts[WheelHover].Label : "release RMB", m_Center);
+            // centre: name and cost
+            GUI.color = new Color(0.08f, 0.08f, 0.08f, 0.85f);
+            GUI.DrawTexture(new Rect(c.x - R * 0.32f, c.y - R * 0.32f, R * 0.64f, R * 0.64f), s_Disc);
+            GUI.color = old;
+            var o = opts[Mathf.Clamp(WheelHover, 0, opts.Length - 1)];
+            string cost = o.Demolish ? "your own pieces\nhalf the wood back" : o.Upgrade ? (Cfg.WoodMode ? "not in wood mode" : "to stone\nLMB on your piece") : $"{Cfg.PieceWood(o.Piece)} wood";
+            var title = new GUIStyle(m_Center) { fontStyle = FontStyle.Bold, fontSize = Mathf.RoundToInt(20 * k) };
+            title.normal.textColor = o.Demolish ? new Color(1f, 0.5f, 0.4f) : Color.white;
+            GUI.Label(new Rect(c.x - 100 * k, c.y - 28 * k, 200 * k, 26 * k), o.Label.ToUpper(), title);
+            GUI.Label(new Rect(c.x - 100 * k, c.y - 2 * k, 200 * k, 44 * k), $"<size={Mathf.RoundToInt(13 * k)}><color=#cccccc>{cost}</color></size>", m_Center);
             Fill(new Rect(mouse.x - 3, mouse.y - 3, 6, 6), Color.white);
+        }
+
+        // ------------------------------------------------------------------ airstrike map
+
+        /// <summary>Top-down map: click where the airstrike should land.</summary>
+        void DrawAirstrikeMap(PlayerNet me, PlayerController pc)
+        {
+            float sw = Screen.width, sh = Screen.height, k = m_Scale;
+            MouseOverUI = true;
+            Fill(new Rect(0, 0, sw, sh), new Color(0, 0, 0, 0.75f));
+            float size = Mathf.Min(sw, sh) * 0.8f;
+            var map = new Rect((sw - size) / 2, (sh - size) / 2 + 14 * k, size, size);
+            float half = Cfg.MapHalf;
+            Vector2 ToMap(Vector3 w) => new Vector2(map.center.x + w.x / (2 * half) * size, map.center.y - w.z / (2 * half) * size);
+            Fill(map, new Color(0.3f, 0.5f, 0.27f));
+            for (int t = 0; t < Cfg.TeamCount; t++)
+            {
+                var bc = Cfg.BaseCenter[t];
+                var a = ToMap(bc + new Vector3(-Cfg.BaseHalf, 0, Cfg.BaseHalf));
+                float bs = Cfg.BaseHalf * 2 / (2 * half) * size;
+                var col = Cfg.TeamColor[t];
+                Fill(new Rect(a.x, a.y, bs, bs), new Color(col.r, col.g, col.b, 0.55f));
+                GUI.Label(new Rect(a.x, a.y + bs / 2 - 12, bs, 24), $"<b>{Cfg.TeamName[t]}</b>", m_Center);
+            }
+            foreach (var tw in Cfg.Towers) { var q = ToMap(tw); Fill(new Rect(q.x - 3, q.y - 3, 6, 6), new Color(0.5f, 0.3f, 0.15f)); }
+            foreach (var c in Container.All) if (c.IsAirdrop) { var q = ToMap(c.transform.position); Fill(new Rect(q.x - 5, q.y - 5, 10, 10), new Color(0.75f, 0.35f, 1f)); }
+            if (Ball.Instance != null) { var q = ToMap(Ball.Instance.transform.position); Fill(new Rect(q.x - 5, q.y - 5, 10, 10), new Color(1f, 0.85f, 0.15f)); }
+            foreach (var p in PlayerNet.All)
+            {
+                if (p.Dead.Value || (p != me && p.Team.Value != me.Team.Value)) continue; // you only know where your own side is
+                var q = ToMap(p.transform.position);
+                Fill(new Rect(q.x - 4, q.y - 4, 8, 8), p == me ? Color.white : Cfg.TeamColor[p.Team.Value]);
+            }
+            Shadowed(new Rect(0, map.y - 34 * k, sw, 30 * k), "<b>AIRSTRIKE</b> - click where it should hit  ·  RMB / Esc to cancel", m_Center);
+            var e = Event.current;
+            var m = e.mousePosition;
+            if (map.Contains(m))
+            {
+                float rr = Cfg.AirstrikeRadius / (2 * half) * size;
+                var old = GUI.color;
+                GUI.color = new Color(1f, 0.15f, 0.1f, 0.45f);
+                EnsureWheelTextures(PlayerController.WheelOptions.Length);
+                GUI.DrawTexture(new Rect(m.x - rr, m.y - rr, rr * 2, rr * 2), s_Disc);
+                GUI.color = old;
+                if (e.type == EventType.MouseDown && e.button == 0)
+                {
+                    var world = new Vector3((m.x - map.center.x) / size * 2 * half, 0, -(m.y - map.center.y) / size * 2 * half);
+                    pc.ConfirmAirstrike(world);
+                    e.Use();
+                }
+            }
+            if (e.type == EventType.MouseDown && e.button == 1) { pc.CloseAirstrikeMap(); e.Use(); }
+        }
+
+        // ------------------------------------------------------------------ countdowns and the sniper scope
+
+        int m_LastCount = -1;
+
+        /// <summary>The last 10 seconds before sudden death (or the win), and the stadium's 3-2-1-FIGHT.</summary>
+        void DrawCountdowns(NetGame game, int myTeam)
+        {
+            float sw = Screen.width, sh = Screen.height, k = m_Scale;
+            if (game == null) return;
+            double now = game.NetworkManager.ServerTime.Time;
+            if (game.S == GameState.BallLive && game.TimeLeft <= 10f && game.TimeLeft > 0f)
+            {
+                int n = Mathf.CeilToInt(game.TimeLeft);
+                float frac = game.TimeLeft - Mathf.Floor(game.TimeLeft);
+                if (n != m_LastCount) { m_LastCount = n; Sfx.Play2D(n <= 3 ? Sfx.Ding : Sfx.Beep, n <= 3 ? 0.9f : 0.6f, 0f); Fx.Shake(0.08f + (10 - n) * 0.02f); }
+                int sock = Ball.Instance != null ? Ball.Instance.SocketTeam.Value : -1;
+                // a red heartbeat around the edge of the screen that gets stronger
+                float pulse = (1f - frac) * (0.25f + (10 - n) * 0.05f);
+                var edge = sock < 0 ? new Color(0.9f, 0f, 0f, pulse) : new Color(Cfg.TeamColor[sock].r, Cfg.TeamColor[sock].g, Cfg.TeamColor[sock].b, pulse);
+                float b = 60f * k;
+                Fill(new Rect(0, 0, sw, b), edge); Fill(new Rect(0, sh - b, sw, b), edge);
+                Fill(new Rect(0, 0, b, sh), edge); Fill(new Rect(sw - b, 0, b, sh), edge);
+                string label = sock < 0 ? "SUDDEN DEATH IN" : sock == myTeam ? "YOU WIN IN" : $"{Cfg.TeamName[sock]} WINS IN";
+                var st = new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt(30 * k) };
+                st.normal.textColor = new Color(1f, 0.9f, 0.85f, 0.95f);
+                GUI.Label(new Rect(0, sh * 0.2f, sw, 40 * k), label, st);
+                var big = new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt((150f + (1f - frac) * 60f) * k) };
+                big.normal.textColor = sock < 0 ? new Color(1f, 0.2f, 0.15f, 0.55f + frac * 0.4f) : new Color(1f, 0.9f, 0.3f, 0.55f + frac * 0.4f);
+                GUI.Label(new Rect(0, sh * 0.24f, sw, 220 * k), n.ToString(), big);
+                return;
+            }
+            if (game.S == GameState.SuddenDeath && game.FightAt.Value > 0)
+            {
+                double left = game.FightAt.Value - now;
+                if (left > 0)
+                {
+                    int n = Mathf.CeilToInt((float)left);
+                    if (n != m_LastCount) { m_LastCount = n; Sfx.Play2D(Sfx.Ding, 1f, 0f); Fx.Shake(0.2f); Stadium.Roar(); }
+                    float frac = (float)(left - System.Math.Floor(left));
+                    Fill(new Rect(0, 0, sw, sh), new Color(0, 0, 0, 0.25f));
+                    var st = new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt(34 * k) };
+                    st.normal.textColor = new Color(1f, 0.9f, 0.4f);
+                    GUI.Label(new Rect(0, sh * 0.2f, sw, 44 * k), "SUDDEN DEATH  ·  GET READY", st);
+                    var big = new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt((180f + frac * 90f) * k) };
+                    big.normal.textColor = new Color(1f, 1f, 1f, 0.5f + frac * 0.5f);
+                    GUI.Label(new Rect(0, sh * 0.26f, sw, 260 * k), n.ToString(), big);
+                }
+                else if (left > -1.2)
+                {
+                    if (m_LastCount != 0) { m_LastCount = 0; Sfx.Play2D(Sfx.Boom, 0.7f, 0f); Stadium.Roar(); Fx.Shake(0.5f); }
+                    var big = new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt(170f * k) };
+                    big.normal.textColor = new Color(1f, 0.25f, 0.15f, (float)(1.2 + left) / 1.2f);
+                    GUI.Label(new Rect(0, sh * 0.26f, sw, 260 * k), "FIGHT!", big);
+                }
+                return;
+            }
+            m_LastCount = -1;
+        }
+
+        void DrawScope()
+        {
+            float sw = Screen.width, sh = Screen.height;
+            EnsureWheelTextures(PlayerController.WheelOptions.Length);
+            float d = sh * 0.92f;
+            var r = new Rect((sw - d) / 2, (sh - d) / 2, d, d);
+            // black everywhere except the round lens, with a thin crosshair
+            Fill(new Rect(0, 0, r.x + 1, sh), Color.black);
+            Fill(new Rect(r.xMax - 1, 0, sw - r.xMax + 1, sh), Color.black);
+            if (s_Scope == null)
+            {
+                const int S = 256;
+                s_Scope = new Texture2D(S, S, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
+                var px = new Color32[S * S];
+                for (int y = 0; y < S; y++)
+                for (int x = 0; x < S; x++)
+                {
+                    float dx = (x + 0.5f) / S * 2f - 1f, dy = (y + 0.5f) / S * 2f - 1f;
+                    float a = Mathf.Clamp01((Mathf.Sqrt(dx * dx + dy * dy) - 0.97f) * 60f);
+                    px[y * S + x] = new Color32(0, 0, 0, (byte)(a * 255));
+                }
+                s_Scope.SetPixels32(px);
+                s_Scope.Apply();
+            }
+            GUI.DrawTexture(r, s_Scope);
+            Fill(new Rect(sw / 2 - 0.5f, r.y, 1, d), new Color(0, 0, 0, 0.8f));
+            Fill(new Rect(r.x, sh / 2 - 0.5f, d, 1), new Color(0, 0, 0, 0.8f));
+            Fill(new Rect(sw / 2 - 2, sh / 2 - 2, 4, 4), new Color(1f, 0.2f, 0.1f));
         }
 
         // ------------------------------------------------------------------ pause: sound, mic, leave, dev
@@ -866,6 +1094,8 @@ namespace RockGame
             GUILayout.Label("<b><color=#ffd27a>SOUND</color></b>", m_Label);
             float v = Slider("Master volume", GameSettings.MasterVolume, 0f, 1f, k, m_Small, $"{GameSettings.MasterVolume * 100:0}%");
             if (!Mathf.Approximately(v, GameSettings.MasterVolume)) { GameSettings.MasterVolume = v; changed = true; }
+            v = Slider("Hit sounds volume", GameSettings.HitVolume, 0f, 1.5f, k, m_Small, $"{GameSettings.HitVolume * 100:0}%");
+            if (!Mathf.Approximately(v, GameSettings.HitVolume)) { GameSettings.HitVolume = v; changed = true; }
             v = Slider("Voice chat volume", GameSettings.VoiceVolume, 0f, 2f, k, m_Small, $"{GameSettings.VoiceVolume * 100:0}%");
             if (!Mathf.Approximately(v, GameSettings.VoiceVolume)) { GameSettings.VoiceVolume = v; changed = true; }
 
@@ -946,7 +1176,7 @@ namespace RockGame
             Row(("+1 minute", DevCmd.AddMinute), ("-1 minute", DevCmd.SubMinute), ("Start sudden death", DevCmd.StartSuddenDeath), ("Win now", DevCmd.WinNow));
             Section("WORLD");
             Row(("Spawn airdrop now", DevCmd.SpawnAirdrop), ("Ball to me", DevCmd.BallToMe), ("Ball to middle", DevCmd.BallToMiddle), ("Regrow nodes", DevCmd.RegrowNodes));
-            Row(("Spawn horse", DevCmd.SpawnHorse), ("Spawn car", DevCmd.SpawnCar));
+            Row(("Spawn horse", DevCmd.SpawnHorse));
             Section("ME");
             Row(("+1000 wood", DevCmd.GiveWood), ("+1000 stone", DevCmd.GiveStone), ("+50 arrows", DevCmd.GiveArrows));
             Row(("All airdrop items", DevCmd.GiveOpItems), ("One of every craftable", DevCmd.GiveCraftables), ("Clear inventory", DevCmd.ClearInventory));
@@ -995,7 +1225,7 @@ namespace RockGame
             {
                 var c = b.Carrier;
                 if (c == null) return "Ball is being carried";
-                return c.IsOwner ? "<color=#ffdd55>You have the ball - put it in your machine (E) or throw it (LMB)!</color>" : $"<color=#ff7777>{Cfg.TeamName[c.Team.Value]} has the ball!</color>";
+                return c.IsOwner ? "<color=#ffdd55>You have the ball - throw it (LMB) into your machine's socket!</color>" : $"<color=#ff7777>{Cfg.TeamName[c.Team.Value]} has the ball!</color>";
             }
             int sock = b.SocketTeam.Value;
             if (sock >= 0)

@@ -5,7 +5,7 @@ namespace RockGame
 {
     /// <summary>
     /// The objective ball. Server simulates physics; carrying is server-driven.
-    /// To win it has to sit in the socket of your base's alien machine (thrown or rolled in, or put in with E).
+    /// To win it has to sit in the socket of your base's alien machine: throw it (LMB) near the socket and it snaps in.
     /// </summary>
     public class Ball : NetworkBehaviour
     {
@@ -156,7 +156,7 @@ namespace RockGame
                 {
                     var sp = Cfg.SocketPos(t);
                     var d = p - sp;
-                    if (new Vector2(d.x, d.z).magnitude < 0.75f && d.y < 0.8f && d.y > -0.5f && m_Rb.linearVelocity.magnitude < 9f)
+                    if (new Vector2(d.x, d.z).magnitude < 1.4f && d.y < 1.6f && d.y > -0.7f && m_Rb.linearVelocity.magnitude < 22f)
                     {
                         ServerSocket(t);
                         p = transform.position;

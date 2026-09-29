@@ -60,15 +60,17 @@ namespace RockGame
         {
             var go = new GameObject("Thrown" + kind);
             go.transform.SetPositionAndRotation(pos, Quaternion.LookRotation(vel));
-            ItemModels.Create(kind, go.transform);
+            if (kind == Item.RocketLauncher) ItemModels.CreateRocket(go.transform);
+            else ItemModels.Create(kind, go.transform);
             var a = go.AddComponent<ArrowProjectile>();
             a.m_Vel = vel;
             a.m_Shooter = shooter;
             a.m_ShooterRoot = shooter != null ? shooter.transform : null;
             a.m_Report = report;
             a.m_Thrown = kind;
-            a.m_Gravity = 9.81f;
+            a.m_Gravity = kind == Item.RocketLauncher ? 1.5f : 9.81f;
             a.m_Life = 8f;
+            if (kind == Item.RocketLauncher) Sfx.Play(Sfx.Rocket, pos, 0.9f);
         }
 
         public static void SpawnC4(Vector3 pos, Vector3 vel, PlayerNet shooter, bool report) => SpawnThrown(Item.C4, pos, vel, shooter, report);
@@ -77,6 +79,7 @@ namespace RockGame
         {
             if (m_Thrown == Item.C4) m_Shooter.C4LandRpc(point, normal);
             else if (m_Thrown == Item.FortTower) m_Shooter.FortLandRpc(point);
+            else if (m_Thrown != Item.BuildEgg) m_Shooter.ThrownLandRpc(m_Thrown, point, normal);
         }
 
         void Update()
@@ -132,7 +135,12 @@ namespace RockGame
                 }
             }
             transform.position = pos + step;
-            if (m_Thrown != Item.None) transform.Rotate(400f * Time.deltaTime, 0, 0, Space.Self); // tumbles
+            if (m_Thrown == Item.RocketLauncher)
+            {
+                if (m_Vel.sqrMagnitude > 0.01f) transform.rotation = Quaternion.LookRotation(m_Vel);
+                if (Random.value < 0.6f) FxParticle.Puff(transform.position - m_Vel.normalized * 0.4f, new Color(0.8f, 0.8f, 0.8f, 0.5f), Random.Range(0.3f, 0.6f));
+            }
+            else if (m_Thrown != Item.None) transform.Rotate(400f * Time.deltaTime, 0, 0, Space.Self); // tumbles
             else if (m_Vel.sqrMagnitude > 0.01f) transform.rotation = Quaternion.LookRotation(m_Vel);
         }
 

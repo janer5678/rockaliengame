@@ -6,7 +6,7 @@ using UnityEngine;
 namespace RockGame
 {
     /// <summary>Local (owner-only) input, first-person camera, movement, item use, interaction and placement ghosts.</summary>
-    public class PlayerController : NetworkBehaviour
+    public partial class PlayerController : NetworkBehaviour
     {
         public static PlayerController Local;
 
@@ -16,15 +16,17 @@ namespace RockGame
         public Container LootTarget;
         public PieceType BuildPiece = PieceType.Foundation;
         /// <summary>Building plan: the Rust-style wheel (hold RMB) is open, and demolish mode picked on it.</summary>
-        public bool WheelOpen, DemolishMode;
+        public bool WheelOpen, DemolishMode, UpgradeMode;
+        /// <summary>The build wheel slice that's selected (always one; the foundation to start with).</summary>
+        public int WheelIndex;
         public bool CrossbowAiming { get; private set; }
 
-        /// <summary>The build wheel's slices, clockwise from the top.</summary>
-        public static readonly (string Label, PieceType Piece, bool Demolish)[] WheelOptions =
+        /// <summary>The build wheel's slices, clockwise from the top (demolish sits at the bottom, like Rust).</summary>
+        public static readonly (string Label, PieceType Piece, bool Demolish, bool Upgrade)[] WheelOptions =
         {
-            ("Foundation", PieceType.Foundation, false), ("Wall", PieceType.Wall, false), ("Doorway", PieceType.Doorway, false),
-            ("Window", PieceType.Window, false), ("Floor", PieceType.Floor, false), ("Stairs", PieceType.Stairs, false),
-            ("Demolish", PieceType.Foundation, true),
+            ("Foundation", PieceType.Foundation, false, false), ("Wall", PieceType.Wall, false, false), ("Doorway", PieceType.Doorway, false, false),
+            ("Window", PieceType.Window, false, false), ("Demolish", PieceType.Wall, true, false), ("Stairs", PieceType.Stairs, false, false),
+            ("Floor", PieceType.Floor, false, false), ("Upgrade", PieceType.Wall, false, true),
         };
         public string AimText = "", BuildHint = "";
         public float DrawAmount { get; private set; } // bow draw / spear wind-up, 0..1
@@ -201,6 +203,7 @@ namespace RockGame
             if (Input.GetKeyDown(KeyCode.Escape))
             {
                 if (WheelOpen) WheelOpen = false;
+                else if (AirstrikeMapOpen) CloseAirstrikeMap();
                 else if (MenuOpen) CloseMenu();
                 else Paused = !Paused;
             }
@@ -213,6 +216,7 @@ namespace RockGame
             if (sd || dead) CloseMenu();
             if (LootTarget != null && (!LootTarget.IsSpawned || !LootTarget.InReach(m_Net.EyePos))) LootTarget = null;
             if (Paused || MenuOpen || dead) WheelOpen = false;
+            if (dead || m_Net.HeldItem != Item.Airstrike) AirstrikeMapOpen = false;
 
             bool choosing = m_Net.ChoosingRespawn;
             if (choosing && !Paused)
@@ -221,12 +225,13 @@ namespace RockGame
                 else if (Input.GetKeyDown(KeyCode.Alpha2)) ChooseRespawn(true);
             }
 
-            bool cursorFree = MenuOpen || Paused || gameOver || choosing || WheelOpen;
+            bool cursorFree = MenuOpen || Paused || gameOver || choosing || WheelOpen || AirstrikeMapOpen;
             Cursor.lockState = cursorFree ? CursorLockMode.None : CursorLockMode.Locked;
             Cursor.visible = cursorFree && !WheelOpen;
             bool input = !cursorFree && !dead;
             // you can keep walking, jumping and crouching with the inventory open
-            bool move = !dead && !Paused && !gameOver;
+            bool frozen = game != null && game.FightFrozen;
+            bool move = !dead && !Paused && !gameOver && !frozen && !AirstrikeMapOpen;
             bool locked = Time.time < m_InputLockUntil;
 
             // ---- damage / respawn feedback ----
@@ -304,7 +309,11 @@ namespace RockGame
                 if (ladder)
                 {
                     // climb: W up, S down, nothing = hang on
-                    m_VelY = move ? fwdInput * 3.6f : 0f;
+                    bool up = move && (fwdInput > 0 || Input.GetKey(KeyCode.Space));
+                    m_VelY = up ? 3.6f : move && fwdInput < 0 ? -3.6f : 0f;
+                    // at the top: step off forwards onto the floor
+                    var ld = CurrentLadder;
+                    if (ld != null && transform.position.y > ld.TopWorldY - 0.15f && up) { m_Push = ld.ExitDir * 3f; m_VelY = Mathf.Max(m_VelY, 1.5f); }
                     if (move && Input.GetKeyDown(KeyCode.Space)) { m_VelY = 4f; m_Push = -transform.forward * 3f; }
                 }
                 else m_VelY -= Cfg.Gravity * Time.deltaTime;
@@ -332,7 +341,9 @@ namespace RockGame
             // ---- actions ----
             if (m_ImpactAt >= 0 && Time.time >= m_ImpactAt) DoImpact();
             TickCrossbowReload(held);
-            if (input && !gameOver && !locked)
+            TickPortals(dead);
+            TickJetpack(held, move && !dead);
+            if (input && !gameOver && !locked && !frozen)
             {
                 if (carrying) HandleBall();
                 else
@@ -347,7 +358,17 @@ namespace RockGame
                         case Item.Chest:
                         case Item.Barrier:
                         case Item.Car: HandleDeploy(held); break;
-                        case Item.Berry: HandleBerry(); break;
+                        case Item.Berry:
+                        case Item.Meat: HandleBerry(); break;
+                        case Item.Sniper: HandleSniper(); break;
+                        case Item.PortalGun: HandlePortalGun(); break;
+                        case Item.SlenderEgg:
+                        case Item.BuildEgg:
+                        case Item.BombBush:
+                        case Item.RocketLauncher: HandleLootThrow(held); break;
+                        case Item.GiantStaff: HandleOnce(held, () => m_Net.GiantStaffRpc()); break;
+                        case Item.AirdropSignal: HandleOnce(held, () => m_Net.UseSignalRpc()); break;
+                        case Item.Airstrike: if (Input.GetMouseButtonDown(0)) OpenAirstrikeMap(); break;
                         case Item.C4: HandleThrow(Item.C4); break;
                         case Item.FortTower: HandleThrow(Item.FortTower); break;
                         case Item.DeathWand: HandleWand(); break;
@@ -365,10 +386,11 @@ namespace RockGame
             DrawAmount = m_DrawStart >= 0 ? Mathf.Clamp01((Time.time - m_DrawStart) / Mathf.Max(0.05f, drawTime)) : 0f;
             if (!input || carrying || gameOver || held != Item.Ram || !Input.GetMouseButton(0)) RamCharge = 0f;
             CrossbowAiming = input && !carrying && held == Item.Crossbow && Input.GetMouseButton(1) && m_ReloadStart < 0;
+            Scoped = input && !carrying && held == Item.Sniper && Input.GetMouseButton(1);
 
             var target = FindInteract();
             if (input) HandleInteract(target, carrying);
-            UpdateGhost(input && !carrying && !gameOver && !riding && !DemolishMode ? held : Item.None);
+            UpdateGhost(input && !carrying && !gameOver && !riding && !DemolishMode && !UpgradeMode ? held : Item.None);
             UpdateAimText(target);
         }
 
@@ -377,11 +399,14 @@ namespace RockGame
             if (!IsSpawned || !IsOwner || m_Cam == null) return;
             if (m_Net.Riding) FollowSeat();
             Fx.TickCamera(Time.deltaTime);
-            m_Eye = Mathf.Lerp(m_Eye, m_Net.Riding ? Cfg.EyeHeight - 0.35f : m_Net.EyeHeight, Time.deltaTime * 12f);
+            var rv = m_Net.Riding ? RidingVehicle : null;
+            float eye = rv != null ? (rv.IsHorse ? Cfg.EyeHeight + 0.75f : Cfg.EyeHeight - 0.35f) : m_Net.EyeHeight; // high up on a horse so you can see ahead
+            m_Eye = Mathf.Lerp(m_Eye, eye, Time.deltaTime * 12f);
             var rot = Quaternion.Euler(m_Pitch, m_Yaw, 0) * Quaternion.Euler(Fx.ShakeEuler());
             m_Cam.transform.SetPositionAndRotation(transform.position + Vector3.up * m_Eye, rot);
             float fov = 70f - DrawAmount * 18f + Fx.FovPunch;
             if (CrossbowAiming) fov = Cfg.CrossbowZoomFov + Fx.FovPunch;
+            if (Scoped) fov = 15f;
             m_Cam.fieldOfView = Mathf.Lerp(m_Cam.fieldOfView, fov, Time.deltaTime * 12f);
 
             var hs = m_Net.HeldStack;
@@ -398,8 +423,9 @@ namespace RockGame
                 HasArrow = m_Net.Count(Item.Arrow) > 0,
                 Draw = DebugDraw >= 0 ? DebugDraw : DrawAmount,
                 RamCharge = RamCharge,
-                Loaded = hs.Id == Item.Crossbow && hs.Data > 0,
-                Aim = CrossbowAiming,
+                Loaded = (hs.Id == Item.Crossbow || hs.Id == Item.Sniper || hs.Id == Item.PortalGun) && hs.Data > 0,
+                Aim = CrossbowAiming || Scoped,
+                Visible2 = !Scoped,
                 Reload = m_ReloadStart >= 0 ? (Time.time - m_ReloadStart) / Mathf.Max(0.1f, Cfg.CrossbowReload) : -1f,
                 Bob = m_Bob,
                 Speed = m_Speed,
@@ -440,11 +466,14 @@ namespace RockGame
             sprint = Input.GetKey(KeyCode.LeftShift);
         }
 
+        Ladder CurrentLadder;
+
         bool OnLadder()
         {
             var p = transform.position;
-            foreach (var c in Physics.OverlapCapsule(p + Vector3.up * 0.4f, p + Vector3.up * 1.4f, 0.4f, ~0, QueryTriggerInteraction.Collide))
-                if (c.isTrigger && c.GetComponent<Ladder>() != null) return true;
+            CurrentLadder = null;
+            foreach (var c in Physics.OverlapCapsule(p + Vector3.up * 0.3f, p + Vector3.up * 1.4f, 0.45f, ~0, QueryTriggerInteraction.Collide))
+                if (c.isTrigger && c.TryGetComponent(out Ladder l)) { CurrentLadder = l; return true; }
             return false;
         }
 
@@ -799,11 +828,28 @@ namespace RockGame
         void CloseWheel()
         {
             WheelOpen = false;
-            int i = Hud.WheelHover;
-            if (i < 0 || i >= WheelOptions.Length) return;
-            DemolishMode = WheelOptions[i].Demolish;
-            if (!DemolishMode) BuildPiece = WheelOptions[i].Piece;
+            SelectWheel(Hud.WheelHover >= 0 ? Hud.WheelHover : WheelIndex);
             Sfx.Play2D(Sfx.Pop, 0.4f);
+        }
+
+        public void SelectWheel(int i)
+        {
+            WheelIndex = Mathf.Clamp(i, 0, WheelOptions.Length - 1);
+            var o = WheelOptions[WheelIndex];
+            DemolishMode = o.Demolish;
+            UpgradeMode = o.Upgrade;
+            if (!o.Demolish && !o.Upgrade) BuildPiece = o.Piece;
+        }
+
+        void TryUpgrade()
+        {
+            if (Cfg.WoodMode) { Hud.Push("Wood mode: no stone upgrades"); return; }
+            if (!Aim(CenterRay(), Cfg.BuildRange, out var hit)) return;
+            var s = hit.collider.GetComponentInParent<Structure>();
+            if (s == null || !s.Upgradable || s.Team.Value != m_Net.Team.Value) return;
+            m_Net.UpgradeRpc(s.NetworkObject);
+            m_VM.Use();
+            Sfx.Play(Sfx.Clink, hit.point, 0.8f);
         }
 
         void TryDemolish()
@@ -830,6 +876,7 @@ namespace RockGame
             if (Input.GetKeyDown(KeyCode.R)) m_RotOffset = (m_RotOffset + 1) & 3;
 
             if (Input.GetMouseButtonDown(0) && DemolishMode) { TryDemolish(); return; }
+            if (Input.GetMouseButtonDown(0) && UpgradeMode) { TryUpgrade(); return; }
             if (Input.GetMouseButtonDown(0))
             {
                 if (m_GhostOk)
@@ -962,8 +1009,7 @@ namespace RockGame
                 case TargetKind.SelfSpear: m_Net.PullSpearRpc(m_Net.NetworkObject); Sfx.Play2D(Sfx.Flesh, 0.6f); break;
                 case TargetKind.Machine:
                     if (t.MachineTeam != m_Net.Team.Value) { Hud.Push(carrying ? "Put the ball in YOUR machine to win" : "That's the enemy's machine"); break; }
-                    if (carrying) { m_Net.InsertBallRpc(); m_VM.Throw(); Sfx.Play2D(Sfx.Place, 0.6f); break; }
-                    Hud.Push("Bring the ball here and press E to put it in. (Craft anywhere in your base with TAB)");
+                    Hud.Push(carrying ? "Throw the ball (LMB) into the socket - it snaps in when it gets close" : "Throw the ball into this socket to win. (Craft anywhere in your base with TAB)");
                     break;
                 case TargetKind.Vehicle:
                     m_Net.MountRpc(t.Obj);
@@ -1063,14 +1109,15 @@ namespace RockGame
             return null;
         }
 
-        /// <summary>Walk along the aim ray and take the first spot where the piece fits: for walls, the first cell edge the
-        /// ray passes over (at the level of that point), for foundations the cell under the ray.</summary>
+        /// <summary>Walk back along the aim ray from where you're looking and take the first spot where the piece fits:
+        /// so it goes where you're pointing (the farthest valid spot), not right next to you. For walls: cell edges the ray
+        /// passes over, at the level of that point; for foundations: the cell under the ray.</summary>
         bool FindSmartPlacement(PieceType t, Ray ray, float maxDist, out PieceKey key)
         {
             key = default;
             maxDist = Mathf.Min(maxDist + 0.3f, Cfg.BuildRange);
             var tried = new HashSet<PieceKey>();
-            for (float d = 0.6f; d <= maxDist; d += 0.15f)
+            for (float d = maxDist; d >= 0.6f; d -= 0.15f)
             {
                 var p = ray.GetPoint(d);
                 PieceKey k;
@@ -1107,8 +1154,8 @@ namespace RockGame
             if (m_Net.CarryingBall)
             {
                 AimText = t.Kind == TargetKind.Machine && t.MachineTeam == m_Net.Team.Value
-                    ? "<color=#77ff77>E: put the ball in the machine!</color>"
-                    : "Carrying the ball!  LMB: throw it  ·  E at your machine: put it in the socket";
+                    ? "<color=#77ff77>LMB: throw it into the socket!</color>"
+                    : "Carrying the ball!  LMB: throw it - it snaps into your machine's socket when it gets close";
                 return;
             }
             switch (t.Kind)
