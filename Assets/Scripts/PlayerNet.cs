@@ -21,6 +21,7 @@ namespace RockGame
 
         // ---- server-written state ----
         public readonly NetworkVariable<byte> Team = new NetworkVariable<byte>();
+        public readonly NetworkVariable<byte> Slot = new NetworkVariable<byte>(); // which of the team's players (2v2: 0 or 1)
         public readonly NetworkVariable<float> Health = new NetworkVariable<float>(Cfg.MaxHealth);
         public readonly NetworkVariable<bool> Dead = new NetworkVariable<bool>();
         public readonly NetworkVariable<double> RespawnAt = new NetworkVariable<double>();
@@ -46,7 +47,7 @@ namespace RockGame
         {
             get
             {
-                if (NetGame.Instance != null && NetGame.Instance.S == GameState.SuddenDeath) return Item.Rock;
+                if (NetGame.Instance != null && (NetGame.Instance.S == GameState.SuddenDeath || NetGame.Instance.S == GameState.Waiting)) return Item.Rock;
                 var s = HeldStack;
                 return s.Empty ? Item.Rock : s.Id;
             }
@@ -106,7 +107,16 @@ namespace RockGame
             m_Hitbox = hb.AddComponent<CapsuleCollider>();
             if (IsServer)
             {
-                Team.Value = (byte)(OwnerClientId == NetworkManager.ServerClientId ? 0 : 1);
+                // join the team with the fewest players (1v1 and free for all: everyone gets their own; 2v2: two each)
+                int best = 0, bestCount = int.MaxValue;
+                for (int t = 0; t < Cfg.TeamCount; t++)
+                {
+                    int n = 0;
+                    foreach (var p in All) if (p != this && p.Team.Value == t) n++;
+                    if (n < bestCount) { bestCount = n; best = t; }
+                }
+                Team.Value = (byte)best;
+                Slot.Value = (byte)bestCount;
                 Health.Value = Cfg.MaxHealth;
                 for (int i = 0; i < Cfg.PlayerSlots; i++) Inv.Add(default);
                 Fx.Server(FxKind.Spawn, Cfg.SpawnPos(Team.Value), Vector3.up);
@@ -199,7 +209,7 @@ namespace RockGame
 
         void Recolor()
         {
-            var c = Cfg.TeamColor[Mathf.Clamp(Team.Value, 0, 1)];
+            var c = Cfg.TeamColor[Mathf.Clamp(Team.Value, 0, 3)];
             foreach (var r in m_TeamRenderers) r.sharedMaterial = Art.Mat(c);
             var tint = Color.Lerp(Color.white, c, 0.6f);
             foreach (var m in m_TeamMats)
@@ -381,7 +391,7 @@ namespace RockGame
             if (IsServer && Dead.Value && NetGame.Instance != null && NetworkManager.ServerTime.Time >= RespawnAt.Value)
             {
                 var s = NetGame.Instance.S;
-                if (s == GameState.Waiting || s == GameState.PreBall) ServerRespawn(false);
+                if (s == GameState.Waiting || s == GameState.PreBall) ServerRespawn(false); // the waiting stadium brings you straight back into the brawl
             }
         }
 
@@ -422,7 +432,19 @@ namespace RockGame
         }
 
         bool GameAllowsCombat => NetGame.Instance == null || NetGame.Instance.S != GameState.GameOver;
-        bool InSuddenDeath => NetGame.Instance != null && NetGame.Instance.S == GameState.SuddenDeath;
+        /// <summary>Sudden death, or rock-brawling in the stadium while waiting for players: rocks only.</summary>
+        bool InSuddenDeath => NetGame.Instance != null && (NetGame.Instance.S == GameState.SuddenDeath || NetGame.Instance.S == GameState.Waiting);
+        bool InWaitingArena => NetGame.Instance != null && NetGame.Instance.S == GameState.Waiting;
+
+        /// <summary>The match is starting: out of the waiting stadium and onto your bedrock.</summary>
+        public void ServerSendHome()
+        {
+            Health.Value = Cfg.MaxHealth;
+            Dead.Value = false;
+            NetGame.SpawnPoint(Team.Value, false, Slot.Value, out var pos, out var yaw);
+            TeleportRpc(pos, yaw);
+            Fx.Server(FxKind.Spawn, pos, Vector3.up);
+        }
 
         /// <summary>Server: give items; returns how many didn't fit. Materials keep clear of the empty slot your rock is in.</summary>
         public int ServerGive(Item id, int count, int data = 0)
@@ -515,12 +537,12 @@ namespace RockGame
             Vector3 pos;
             float yaw;
             if (wild) NetGame.WildSpawnPoint(Team.Value, out pos, out yaw);
-            else NetGame.SpawnPoint(Team.Value, false, out pos, out yaw);
+            else NetGame.SpawnPoint(Team.Value, InWaitingArena, Slot.Value, out pos, out yaw);
             TeleportRpc(pos, yaw);
             Dead.Value = false;
             Fx.Server(FxKind.Spawn, pos, Vector3.up);
             // game option: come back with a random airdrop item
-            if (Cfg.RespawnLoot)
+            if (Cfg.RespawnLoot && !InWaitingArena)
             {
                 var loot = NetGame.RollAirdropLoot();
                 ServerGive(loot.Id, loot.Count, loot.Data);
@@ -550,7 +572,7 @@ namespace RockGame
             for (int i = 0; i < Inv.Count; i++) Inv[i] = default;
             Dead.Value = false;
             InvisUntil.Value = -1;
-            NetGame.SpawnPoint(Team.Value, true, out var pos, out var yaw);
+            NetGame.SpawnPoint(Team.Value, true, Slot.Value, out var pos, out var yaw);
             TeleportRpc(pos, yaw);
         }
 

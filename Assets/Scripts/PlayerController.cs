@@ -70,7 +70,7 @@ namespace RockGame
             if (!IsOwner) { enabled = false; return; }
             Local = this;
             m_Cam = Camera.main;
-            m_VM = new ViewModel(m_Cam.transform, Cfg.TeamColor[Mathf.Clamp(m_Net.Team.Value, 0, 1)]);
+            m_VM = new ViewModel(m_Cam.transform, Cfg.TeamColor[Mathf.Clamp(m_Net.Team.Value, 0, 3)]);
             m_LastHealth = m_Net.Health.Value;
             TryPlace();
         }
@@ -81,10 +81,11 @@ namespace RockGame
             var game = NetGame.Instance;
             if (game == null || !game.IsSpawned || !MapBuilder.IsBuilt(game.MapKey.Value, game.MapSeed.Value)) return;
             m_Placed = true;
-            bool sd = game.S == GameState.SuddenDeath;
-            NetGame.SpawnPoint(m_Net.Team.Value, sd, out var pos, out var yaw);
+            // while waiting for players you're in the stadium, brawling with rocks
+            bool arena = game.S == GameState.SuddenDeath || game.S == GameState.Waiting;
+            NetGame.SpawnPoint(m_Net.Team.Value, arena, m_Net.Slot.Value, out var pos, out var yaw);
             LocalTeleport(pos, yaw);
-            if (!sd) WakeUp();
+            if (!arena) WakeUp();
         }
 
         /// <summary>(Re)spawned: a quick flash, and the rock back in your hands.</summary>
@@ -333,7 +334,7 @@ namespace RockGame
 
                 if (transform.position.y < -30f)
                 {
-                    NetGame.SpawnPoint(m_Net.Team.Value, sd, out var p, out var y);
+                    NetGame.SpawnPoint(m_Net.Team.Value, sd || (game != null && game.S == GameState.Waiting), m_Net.Slot.Value, out var p, out var y);
                     LocalTeleport(p, y);
                 }
             }

@@ -152,7 +152,7 @@ namespace RockGame
             if (!IsCarried && SocketTeam.Value < 0)
             {
                 // rolled or thrown into a machine's socket: it locks in
-                for (int t = 0; t < 2; t++)
+                for (int t = 0; t < Cfg.TeamCount; t++)
                 {
                     var sp = Cfg.SocketPos(t);
                     var d = p - sp;

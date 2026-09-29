@@ -281,7 +281,7 @@ namespace RockGame
                 var fwd = Quaternion.Euler(0, m_Yaw, 0) * Vector3.forward;
                 var ahead = transform.position + fwd * 3f;
                 float half = Cfg.MapHalf - 8f;
-                if (m_WanderSpeed > 0 && (Cfg.BaseTeamAt(ahead) >= 0 || Mathf.Abs(ahead.x) > half || Mathf.Abs(ahead.z) > half || Mathf.Sign(ahead.z) != Mathf.Sign(transform.position.z) || Mathf.Abs(ahead.z) < 4f))
+                if (m_WanderSpeed > 0 && (Cfg.BaseTeamAt(ahead) >= 0 || Mathf.Abs(ahead.x) > half || Mathf.Abs(ahead.z) > half || Cfg.RegionOf(ahead) != Cfg.RegionOf(transform.position) || new Vector2(ahead.x, ahead.z).magnitude < 5f))
                     m_Yaw += 180f;
                 move = Quaternion.Euler(0, m_Yaw, 0) * Vector3.forward * m_WanderSpeed;
             }

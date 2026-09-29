@@ -17,6 +17,9 @@ namespace RockGame
 
     public enum MapKind : byte { Plains, Highlands }
 
+    /// <summary>1v1 and 2v2: red vs blue. Free for all: 3 or 4 players, each with their own base (glass walls in an X).</summary>
+    public enum GameMode : byte { Duel, Teams, Ffa3, Ffa4 }
+
     public struct MeleeStats
     {
         public float Cooldown, Range, PlayerDamage, WoodGather, StoneGather, StructureDamage;
@@ -48,15 +51,22 @@ namespace RockGame
         public static int MapSeed;
         public static float MapHalf => SmallMap ? 62f : 100f;
         public const float BaseHalf = 18f; // bases are 36x36m, aligned to the 3m build grid
-        public static readonly Vector3[] BaseCenter = { new Vector3(0, 0, -75), new Vector3(0, 0, 75) };
-        public static string MapLabel => (SmallMap ? "Small " : "Big ") + Map + (WoodMode ? " (Wood mode)" : "") + (AirdropSides ? " (airdrops on both sides)" : "") + (RespawnLoot ? " (respawn loot)" : "");
+        public static readonly Vector3[] BaseCenter = { new Vector3(0, 0, -75), new Vector3(0, 0, 75), new Vector3(75, 0, 0), new Vector3(-75, 0, 0) };
+        public static string MapLabel => ModeLabel + ", " + (SmallMap ? "small " : "big ") + Map + (WoodMode ? " (Wood mode)" : "") + (AirdropSides ? " (airdrops on both sides)" : "") + (RespawnLoot ? " (respawn loot)" : "");
         /// <summary>Airdrops come down on both sides (one in each half, each on its own timer) instead of anywhere.</summary>
         public static bool AirdropSides;
         /// <summary>Game option: every time you respawn you get a random airdrop item.</summary>
         public static bool RespawnLoot;
-        public const int SmallBit = 16, WoodBit = 32, SidesBit = 64, RespawnLootBit = 128;
+        public const int SmallBit = 16, WoodBit = 32, SidesBit = 64, RespawnLootBit = 128, ModeShift = 8;
+        public static GameMode Mode = GameMode.Duel;
+        /// <summary>Players needed to start (and the most that can join).</summary>
+        public static int PlayersNeeded => Mode == GameMode.Teams ? 4 : Mode == GameMode.Ffa3 ? 3 : Mode == GameMode.Ffa4 ? 4 : 2;
+        public static bool FreeForAll => Mode == GameMode.Ffa3 || Mode == GameMode.Ffa4;
+        /// <summary>More than two bases: the map is laid out four ways round with the glass walls in an X.</summary>
+        public static bool FourWay => FreeForAll;
+        public static string ModeLabel => Mode == GameMode.Teams ? "2v2" : Mode == GameMode.Ffa3 ? "Free for all (3)" : Mode == GameMode.Ffa4 ? "Free for all (4)" : "1v1";
         /// <summary>Packs the map/mode choice for syncing; the seed is sent separately.</summary>
-        public static int MapKey => (int)Map | (SmallMap ? SmallBit : 0) | (WoodMode ? WoodBit : 0) | (AirdropSides ? SidesBit : 0) | (RespawnLoot ? RespawnLootBit : 0);
+        public static int MapKey => (int)Map | (SmallMap ? SmallBit : 0) | (WoodMode ? WoodBit : 0) | (AirdropSides ? SidesBit : 0) | (RespawnLoot ? RespawnLootBit : 0) | ((int)Mode << ModeShift);
 
         /// <summary>Watch towers on the Highlands map (world positions of their feet), point-mirrored between the halves.</summary>
         public static readonly List<Vector3> Towers = new List<Vector3>();
@@ -68,10 +78,15 @@ namespace RockGame
             WoodMode = (key & WoodBit) != 0;
             AirdropSides = (key & SidesBit) != 0;
             RespawnLoot = (key & RespawnLootBit) != 0;
+            Mode = (GameMode)((key >> ModeShift) & 3);
+            TeamCount = Mode == GameMode.Ffa3 ? 3 : Mode == GameMode.Ffa4 ? 4 : 2;
             MapSeed = seed;
             float d = SmallMap ? 42f : 75f;
+            // blue south, red north, green east, yellow west
             BaseCenter[0] = new Vector3(0, 0, -d);
             BaseCenter[1] = new Vector3(0, 0, d);
+            BaseCenter[2] = new Vector3(d, 0, 0);
+            BaseCenter[3] = new Vector3(-d, 0, 0);
             Towers.Clear();
         }
 
@@ -81,19 +96,29 @@ namespace RockGame
         public const float BedrockHalf = 3f;
 
         /// <summary>Direction from a base's centre to the back of its bedrock (away from the middle of the map).</summary>
-        public static Vector3 BackDir(int team) => team == 0 ? Vector3.back : Vector3.forward;
+        public static Vector3 BackDir(int team) => new Vector3(BaseCenter[team].x, 0, BaseCenter[team].z).normalized;
         public static Vector3 BedrockCenter(int team) => BaseCenter[team];
         // the machine stands clear of the bedrock's back edge so walls fit behind it
         public static Vector3 MachinePos(int team) => BaseCenter[team] + BackDir(team) * 2.0f + Vector3.up * BaseY;
         /// <summary>Centre of the ball when it sits in the machine's socket.</summary>
         public static Vector3 SocketPos(int team) => BaseCenter[team] + BackDir(team) * 0.35f + Vector3.up * (BaseY + 0.64f);
         /// <summary>Where you (re)spawn: on the front half of your bedrock, facing the middle of the map.</summary>
-        public static Vector3 SpawnPos(int team) => BaseCenter[team] - BackDir(team) * 1.7f + Vector3.up * (BaseY + 0.05f);
+        public static Vector3 SpawnPos(int team, int slot = 0) => BaseCenter[team] - BackDir(team) * 1.7f + Vector3.Cross(Vector3.up, BackDir(team)) * (slot == 0 ? 0f : slot % 2 == 1 ? 1.4f : -1.4f) + Vector3.up * (BaseY + 0.05f);
+
+        /// <summary>Rotate a point about the map centre by 90 degrees `quarter` times (four-way symmetric layouts).</summary>
+        public static Vector3 Rotate(Vector3 p, int quarter) => Quaternion.Euler(0, 90f * quarter, 0) * p;
+
+        /// <summary>How many symmetric copies of everything the map has (2 = point mirror, 4 = four ways round).</summary>
+        public static int Copies => FourWay ? 4 : 2;
+        /// <summary>The k-th symmetric copy of a point laid out in the first (blue) sector.</summary>
+        public static Vector3 Copy(Vector3 p, int k) => Rotate(p, k * (4 / Copies));
+        /// <summary>Points are generated in blue's sector and then copied round: the south half, or the south quarter (between the X walls).</summary>
+        public static bool InFirstSector(Vector3 p, float margin) => FourWay ? p.z < -margin && Mathf.Abs(p.x) < -p.z - margin : p.z < -margin;
         public static float SpawnYaw(int team) => Quaternion.LookRotation(-BackDir(team)).eulerAngles.y;
 
         public static bool IsBedrockCell(int i, int j)
         {
-            for (int t = 0; t < 2; t++)
+            for (int t = 0; t < TeamCount; t++)
             {
                 int ci = Mathf.RoundToInt(BaseCenter[t].x / Cell), cj = Mathf.RoundToInt(BaseCenter[t].z / Cell);
                 if ((i == ci - 1 || i == ci) && (j == cj - 1 || j == cj)) return true;
@@ -410,7 +435,7 @@ namespace RockGame
         // ---------- Areas ----------
         public static int BaseTeamAt(Vector3 p)
         {
-            for (int t = 0; t < 2; t++)
+            for (int t = 0; t < TeamCount; t++)
                 if (Mathf.Abs(p.x - BaseCenter[t].x) <= BaseHalf && Mathf.Abs(p.z - BaseCenter[t].z) <= BaseHalf)
                     return t;
             return -1;

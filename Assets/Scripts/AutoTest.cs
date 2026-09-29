@@ -35,19 +35,59 @@ namespace RockGame
             var pc = PlayerController.Local;
             var nm = NetworkManager.Singleton;
             yield return new WaitForSeconds(0.5f);
-            Log($"local player spawned: team={Cfg.TeamName[me.Team.Value]} host={nm.IsHost} nodes={FindObjectsByType<ResourceNode>(FindObjectsSortMode.None).Length}");
+            StartCoroutine(Watch());
+            Log($"local player spawned: team={Cfg.TeamName[me.Team.Value]} host={nm.IsHost} mode={Cfg.ModeLabel} nodes={FindObjectsByType<ResourceNode>(FindObjectsSortMode.None).Length}");
+            if (NetGame.Instance.S == GameState.Waiting)
+                Check(Vector3.Distance(me.transform.position, Cfg.ArenaCenter) < 30f && me.HeldItem == Item.Rock, "waiting for players in the stadium with a rock");
+            while (NetGame.Instance.S == GameState.Waiting) yield return null;
+            yield return new WaitForSeconds(0.8f);
+            if (m_Mode == "teams") { yield return TeamsRoutine(me); yield break; }
             Check(Cfg.BaseTeamAt(me.transform.position) == me.Team.Value, $"spawned inside own base ({me.transform.position})");
             Check(me.Count(Item.Rock) == 0 && me.HeldItem == Item.Rock, "empty hand = holding the rock (no rock item)");
-            Check(Vector3.Distance(me.transform.position, Cfg.SpawnPos(me.Team.Value)) < 1.5f, $"spawned on the bedrock on {Cfg.MapLabel} (seed {Cfg.MapSeed})");
+            Check(Vector3.Distance(me.transform.position, Cfg.SpawnPos(me.Team.Value, me.Slot.Value)) < 1.5f, $"sent home to the bedrock when the match started on {Cfg.MapLabel} (seed {Cfg.MapSeed})");
             Check(NetGame.Instance != null && NetGame.Instance.MapKey.Value == Cfg.MapKey && NetGame.Instance.MapSeed.Value == Cfg.MapSeed, "map + seed synced from the host");
             var bc = Cfg.BedrockCenter(me.Team.Value);
             var rockCell = new PieceKey(PieceKey.KFoundation, BuildGrid.CellOf(bc.x + 0.1f), BuildGrid.CellOf(bc.z + 0.1f), 0, 0);
             Check(BuildGrid.OnBedrock(rockCell), "can't build a foundation on the bedrock");
             Check(BuildGrid.IsSupported(new PieceKey(PieceKey.KEdge, rockCell.I, rockCell.J, 0, 1), k => false), "walls stand on the bedrock without a foundation");
-            StartCoroutine(Watch());
             if (m_Mode == "shots") yield return ShotsRoutine(me, pc);
             else if (nm.IsHost) yield return HostRoutine(me, pc);
             else yield return ClientRoutine(me, pc);
+        }
+
+        /// <summary>2v2 / free for all: every player checks where they ended up; the host checks the teams and quits the match.</summary>
+        IEnumerator TeamsRoutine(PlayerNet me)
+        {
+            Check(Cfg.BaseTeamAt(me.transform.position) == me.Team.Value && Vector3.Distance(me.transform.position, Cfg.SpawnPos(me.Team.Value, me.Slot.Value)) < 1.5f,
+                  $"{Cfg.TeamName[me.Team.Value]} (slot {me.Slot.Value}) sent home to its own base in {Cfg.ModeLabel} (at {me.transform.position}, spawn {Cfg.SpawnPos(me.Team.Value, me.Slot.Value)})");
+            Check(Machine.ByTeam[me.Team.Value] != null, "our base has its machine");
+            yield return new WaitForSeconds(3f);
+            if (NetworkManager.Singleton.IsHost)
+            {
+                var perTeam = new int[4];
+                foreach (var p in PlayerNet.All) perTeam[p.Team.Value]++;
+                bool ok = true;
+                for (int t = 0; t < Cfg.TeamCount; t++) ok &= perTeam[t] == Cfg.PlayersNeeded / Cfg.TeamCount;
+                Check(ok && PlayerNet.All.Count == Cfg.PlayersNeeded, $"{Cfg.ModeLabel}: {PlayerNet.All.Count} players split {perTeam[0]}/{perTeam[1]}/{perTeam[2]}/{perTeam[3]} over {Cfg.TeamCount} teams");
+                int bases = 0;
+                for (int t = 0; t < 4; t++) if (Machine.ByTeam[t] != null) bases++;
+                Check(bases == Cfg.TeamCount, $"{bases} bases built");
+                // the wild respawn goes into an enemy's side
+                me.ServerRespawn(true);
+                yield return new WaitForSeconds(0.8f);
+                int region = Cfg.RegionOf(me.transform.position);
+                Check(region != me.Team.Value && Cfg.BaseTeamAt(me.transform.position) < 0, $"wild respawn landed on {Cfg.TeamName[region]}'s side");
+                // sudden death is last team standing
+                NetGame.Instance.DevStartSuddenDeath();
+                yield return new WaitForSeconds(1f);
+                foreach (var p in PlayerNet.All) if (p.Team.Value != me.Team.Value) p.ServerKill(me);
+                yield return new WaitForSeconds(1f);
+                Check(NetGame.Instance.S == GameState.GameOver && NetGame.Instance.Winner.Value == me.Team.Value, $"last team standing won ({NetGame.Instance.EndReason.Value})");
+            }
+            else
+            {
+                while (NetGame.Instance != null && NetGame.Instance.S != GameState.GameOver) yield return null;
+            }
         }
 
         IEnumerator Watch()

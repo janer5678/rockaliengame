@@ -160,7 +160,7 @@ namespace RockGame
         void DrawMainMenu(Bootstrap boot)
         {
             if (m_ShowSettings) { DrawSettings(); return; }
-            float w = 480 * m_Scale, h = 730 * m_Scale;
+            float w = 500 * m_Scale, h = 790 * m_Scale;
             var r = new Rect((Screen.width - w) / 2, (Screen.height - h) / 2, w, h);
             Fill(r, new Color(0, 0, 0, 0.65f));
             GUILayout.BeginArea(new Rect(r.x + 20, r.y + 15, r.width - 40, r.height - 30));
@@ -176,6 +176,19 @@ namespace RockGame
             boot.Port = GUILayout.TextField(boot.Port, new GUIStyle(GUI.skin.textField) { fontSize = m_Label.fontSize });
             GUILayout.EndHorizontal();
             GUILayout.Space(10 * m_Scale);
+            {
+                int mk = Bootstrap.MapChoice;
+                var mode = (GameMode)((mk >> Cfg.ModeShift) & 3);
+                GUILayout.BeginHorizontal();
+                GUILayout.Label("Game", m_Label, GUILayout.Width(90 * m_Scale));
+                string[] names = { "1v1", "2v2", "FFA 3", "FFA 4" };
+                for (int i = 0; i < 4; i++)
+                    if (GUILayout.Toggle((int)mode == i, " " + names[i], m_Button, GUILayout.Height(30 * m_Scale)) && (int)mode != i)
+                        boot.SetMapChoice((mk & ~(3 << Cfg.ModeShift)) | (i << Cfg.ModeShift));
+                GUILayout.EndHorizontal();
+                if (mode == GameMode.Teams) GUILayout.Label("<color=#bbbbbb>Red vs blue, two players each (4 players).</color>", m_Small);
+                else if (mode != GameMode.Duel) GUILayout.Label($"<color=#bbbbbb>Everyone for themselves: {(mode == GameMode.Ffa3 ? 3 : 4)} bases, glass walls in an X.</color>", m_Small);
+            }
             GUILayout.BeginHorizontal();
             GUILayout.Label("Map", m_Label, GUILayout.Width(90 * m_Scale));
             int key = Bootstrap.MapChoice;
@@ -321,8 +334,8 @@ namespace RockGame
                 switch (game.S)
                 {
                     case GameState.Waiting:
-                        phase = "Waiting for an opponent to join...";
-                        sub = boot.IsHost ? "Tell your friend to join your IP. (Enable 'Solo test' in the menu to play alone)" : "";
+                        phase = $"Waiting for players  {PlayerNet.All.Count}/{Cfg.PlayersNeeded}  ({Cfg.ModeLabel})";
+                        sub = "Rock brawl in the stadium while you wait!" + (boot.IsHost && PlayerNet.All.Count < 2 ? "  Friends join your IP." : "");
                         break;
                     case GameState.PreBall:
                         phase = "Wall drops in " + Clock(game.TimeLeft);

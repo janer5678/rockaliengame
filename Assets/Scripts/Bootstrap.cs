@@ -7,7 +7,7 @@ namespace RockGame
     /// <summary>
     /// Lives on the NetworkManager object. Holds prefab/material references, builds the world,
     /// and starts/stops hosting or joining.
-    /// Command line: -host | -client [ip] | -port N | -solo | -fast | -map plains|highlands | -small | -big | -wood | -normal | -sides | -anywhere | -seed N
+    /// Command line: -host | -client [ip] | -port N | -solo | -fast | -map plains|highlands | -small | -big | -wood | -normal | -sides | -anywhere | -mode 1v1|2v2|ffa3|ffa4 | -seed N
     /// </summary>
     [RequireComponent(typeof(NetworkManager))]
     public class Bootstrap : MonoBehaviour
@@ -90,6 +90,14 @@ namespace RockGame
                     case "-big": MapChoice &= ~Cfg.SmallBit; break;
                     case "-wood": MapChoice |= Cfg.WoodBit; break;
                     case "-normal": MapChoice &= ~Cfg.WoodBit; break;
+                    case "-mode":
+                        if (i + 1 < args.Length)
+                        {
+                            string m = args[i + 1].ToLowerInvariant();
+                            int mode = m == "2v2" ? 1 : m == "ffa3" ? 2 : m == "ffa4" ? 3 : 0;
+                            MapChoice = (MapChoice & ~(3 << Cfg.ModeShift)) | (mode << Cfg.ModeShift);
+                        }
+                        break;
                     case "-sides": MapChoice |= Cfg.SidesBit; break;
                     case "-anywhere": MapChoice &= ~Cfg.SidesBit; break;
                     case "-seed": if (i + 1 < args.Length && int.TryParse(args[i + 1], out var sd)) s_SeedOverride = sd; break;
@@ -146,14 +154,13 @@ namespace RockGame
             bool isHost = req.ClientNetworkId == NetworkManager.ServerClientId;
             int count = m_Nm.ConnectedClientsIds.Count;
             bool waiting = NetGame.Instance == null || NetGame.Instance.S == GameState.Waiting;
-            bool ok = isHost || (count < 2 && waiting);
+            bool ok = isHost || (count < Cfg.PlayersNeeded && waiting);
             resp.Approved = ok;
             resp.CreatePlayerObject = ok;
-            int team = isHost ? 0 : 1;
-            NetGame.SpawnPoint(team, false, out var pos, out var yaw);
-            resp.Position = pos;
-            resp.Rotation = Quaternion.Euler(0, yaw, 0);
-            if (!ok) resp.Reason = count >= 2 ? "Game is full (1v1)" : "Match already in progress";
+            // everyone starts in the stadium (waiting area); the player places itself properly once it's spawned
+            resp.Position = Cfg.ArenaCenter + new Vector3(Random.Range(-6f, 6f), 0.1f, Random.Range(-6f, 6f));
+            resp.Rotation = Quaternion.identity;
+            if (!ok) resp.Reason = count >= Cfg.PlayersNeeded ? $"Game is full ({Cfg.ModeLabel})" : "Match already in progress";
         }
 
         void OnServerStarted()

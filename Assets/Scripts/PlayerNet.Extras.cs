@@ -196,7 +196,7 @@ namespace RockGame
                     TeleportRpc(d.transform.position + new Vector3(0, 0.2f, -2.5f), 0f);
                     break;
                 }
-                case DevCmd.TpEnemyBase: NetGame.SpawnPoint(1 - Team.Value, false, out var ep, out var ey); TeleportRpc(ep, ey); break;
+                case DevCmd.TpEnemyBase: NetGame.SpawnPoint((Team.Value + 1) % Cfg.TeamCount, false, out var ep, out var ey); TeleportRpc(ep, ey); break;
                 case DevCmd.TpMyBase: NetGame.SpawnPoint(Team.Value, false, out var mp, out var my); TeleportRpc(mp, my); break;
                 case DevCmd.TpBall:
                     if (Ball.Instance == null) { Notify("The ball hasn't dropped yet"); return; }

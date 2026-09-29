@@ -147,10 +147,12 @@ namespace RockGame
             switch (S)
             {
                 case GameState.Waiting:
-                    if (players >= 2 || (Bootstrap.Solo && players >= 1))
+                    if (players >= Cfg.PlayersNeeded || (Bootstrap.Solo && players >= 1))
                     {
                         float delay = fast ? Cfg.FastBallDropDelay : Cfg.BallDropDelay;
                         SetPhase(GameState.PreBall, delay);
+                        // out of the waiting stadium and into your base
+                        foreach (var p in PlayerNet.All) p.ServerSendHome();
                         Broadcast($"Match started! The glass wall drops (and the ball with it) in {Clock(delay)}");
                     }
                     break;
@@ -174,8 +176,8 @@ namespace RockGame
                     }
                     break;
                 case GameState.SuddenDeath:
-                    if (players == 1 && !Bootstrap.Solo)
-                        EndGame(PlayerNet.All[0].Team.Value, "The opponent left during sudden death");
+                    if (!Bootstrap.Solo && AliveTeams(out int last) <= 1)
+                        EndGame(last, last >= 0 ? $"{Cfg.TeamName[last]} is the last one standing!" : "Nobody survived sudden death - DRAW");
                     else if (now >= PhaseEnd.Value)
                         EndGame(-1, "Nobody won the sudden death duel in time - DRAW");
                     break;
@@ -209,20 +211,37 @@ namespace RockGame
             State.Value = (byte)GameState.GameOver;
         }
 
+        /// <summary>How many teams still have someone alive (and one of them).</summary>
+        public int AliveTeams(out int anyTeam)
+        {
+            anyTeam = -1;
+            var teams = new HashSet<int>();
+            foreach (var p in PlayerNet.All) if (!p.Dead.Value) teams.Add(p.Team.Value);
+            foreach (var t in teams) anyTeam = t;
+            return teams.Count;
+        }
+
         public void ServerOnPlayerKilled(PlayerNet victim, PlayerNet killer)
         {
-            if (S == GameState.SuddenDeath)
-            {
-                int w = 1 - victim.Team.Value;
-                EndGame(w, $"{Cfg.TeamName[w]} won the sudden death duel!");
-            }
+            if (S != GameState.SuddenDeath) return;
+            // sudden death: no respawns; the last team with someone standing wins
+            if (AliveTeams(out int w) <= 1 && !Bootstrap.Solo)
+                EndGame(w, w < 0 ? "Everyone died in sudden death - DRAW" : PlayerNet.All.Count <= 2 ? $"{Cfg.TeamName[w]} won the sudden death duel!" : $"{Cfg.TeamName[w]} is the last one standing!");
         }
 
         void OnClientDisconnect(ulong clientId)
         {
             if (clientId == NetworkManager.ServerClientId) return;
-            if (S == GameState.PreBall || S == GameState.BallLive || S == GameState.SuddenDeath)
-                EndGame(0, $"{Cfg.TeamName[1]} left the game");
+            if (S != GameState.PreBall && S != GameState.BallLive && S != GameState.SuddenDeath) return;
+            // whoever is left: if only one team still has players, they win
+            var teams = new HashSet<int>();
+            foreach (var p in PlayerNet.All) if (p.OwnerClientId != clientId) teams.Add(p.Team.Value);
+            if (teams.Count <= 1)
+            {
+                int w = -1;
+                foreach (var t in teams) w = t;
+                EndGame(w < 0 ? 0 : w, "Everyone else left the game");
+            }
         }
 
         public void ServerCollapseCheck()
@@ -387,8 +406,7 @@ namespace RockGame
                 if (close) continue;
                 placed.Add(p);
                 int seed = rng.Next();
-                SpawnNode(rockKind, p, seed);
-                SpawnNode(rockKind, new Vector3(-p.x, 0, -p.z), seed);
+                for (int m = 0; m < Cfg.Copies; m++) SpawnNode(rockKind, Cfg.Copy(p, m), seed);
             }
             // wild horses, the same number in each half
             if (Bootstrap.I.vehiclePrefab != null)
@@ -397,21 +415,23 @@ namespace RockGame
                     for (int attempt = 0; attempt < 40; attempt++)
                     {
                         var p = new Vector3(R(-half0 + 10, half0 - 10), 0, R(-half0 + 10, -8f));
+                        if (!Cfg.InFirstSector(p, 6f)) continue;
                         if (Mathf.Abs(p.x - Cfg.BaseCenter[0].x) < Cfg.BaseHalf + 6 && Mathf.Abs(p.z - Cfg.BaseCenter[0].z) < Cfg.BaseHalf + 6) continue;
                         if (NearTower(p)) continue;
                         float yaw = R(0, 360);
-                        for (int m = 0; m < 2; m++)
+                        for (int m = 0; m < Cfg.Copies; m++)
                         {
-                            var q = m == 0 ? p : new Vector3(-p.x, 0, -p.z);
+                            var q = Cfg.Copy(p, m);
                             q.y = MapBuilder.Height(q.x, q.z) + 0.2f;
-                            Vehicle.ServerSpawn(Vehicle.Horse, q, yaw + m * 180f);
+                            Vehicle.ServerSpawn(Vehicle.Horse, q, yaw + m * 360f / Cfg.Copies);
                         }
                         break;
                     }
                 }
             float area = Mathf.Clamp01(Cfg.MapHalf / 100f);
             area *= area;
-            int trees = Mathf.Max(8, Mathf.RoundToInt(24 * area)), stones = Mathf.Max(6, Mathf.RoundToInt(18 * area)), bushes = Mathf.Max(5, Mathf.RoundToInt(10 * area));
+            area *= 2f / Cfg.Copies; // a quarter of the map per team in free for all
+            int trees = Mathf.Max(6, Mathf.RoundToInt(24 * area)), stones = Mathf.Max(4, Mathf.RoundToInt(18 * area)), bushes = Mathf.Max(3, Mathf.RoundToInt(10 * area));
             float half = Cfg.MapHalf;
             for (int n = 0; n < trees + stones + bushes; n++)
             {
@@ -419,6 +439,7 @@ namespace RockGame
                 for (int attempt = 0; attempt < 60; attempt++)
                 {
                     var p = new Vector3(R(-half + 8, half - 8), 0, R(-half + 8, -5f));
+                    if (!Cfg.InFirstSector(p, 4f)) continue;
                     if (Mathf.Abs(p.x - Cfg.BaseCenter[0].x) < Cfg.BaseHalf + 3 && Mathf.Abs(p.z - Cfg.BaseCenter[0].z) < Cfg.BaseHalf + 3) continue;
                     if (new Vector2(p.x, p.z).magnitude < 12f || NearTower(p)) continue;
                     bool close = false;
@@ -426,8 +447,7 @@ namespace RockGame
                     if (close) continue;
                     placed.Add(p);
                     int seed = rng.Next();
-                    SpawnNode(kind, p, seed);
-                    SpawnNode(kind, new Vector3(-p.x, 0, -p.z), seed); // point-mirrored so both teams get the same layout
+                    for (int m = 0; m < Cfg.Copies; m++) SpawnNode(kind, Cfg.Copy(p, m), seed); // copied round so every team gets the same layout
                     break;
                 }
             }
@@ -442,18 +462,21 @@ namespace RockGame
         }
 
         /// <summary>Where a team spawns: on its bedrock, facing the middle of the map (or the arena in sudden death).</summary>
-        public static void SpawnPoint(int team, bool arena, out Vector3 pos, out float yaw)
+        public static void SpawnPoint(int team, bool arena, out Vector3 pos, out float yaw) => SpawnPoint(team, arena, 0, out pos, out yaw);
+
+        /// <summary>slot: which of the team's players (teammates stand side by side).</summary>
+        public static void SpawnPoint(int team, bool arena, int slot, out Vector3 pos, out float yaw)
         {
-            team = Mathf.Clamp(team, 0, 1);
+            team = Mathf.Clamp(team, 0, 3);
             if (arena)
             {
                 // on your team's spot around the stadium pit, facing the middle
                 var dir = Quaternion.Euler(0, team * 360f / Mathf.Max(2, Cfg.TeamCount), 0) * Vector3.back;
-                pos = Cfg.ArenaCenter + dir * 14f + Vector3.up * 0.1f;
+                pos = Cfg.ArenaCenter + dir * 14f + Vector3.Cross(Vector3.up, dir) * (slot == 0 ? 0f : slot % 2 == 1 ? 1.6f : -1.6f) + Vector3.up * 0.1f;
                 yaw = Quaternion.LookRotation(-dir).eulerAngles.y;
                 return;
             }
-            pos = Cfg.SpawnPos(team);
+            pos = Cfg.SpawnPos(team, slot);
             yaw = Cfg.SpawnYaw(team);
         }
 
@@ -461,12 +484,13 @@ namespace RockGame
         public static void WildSpawnPoint(int team, out Vector3 pos, out float yaw)
         {
             float half = Cfg.MapHalf;
-            int enemy = 1 - Mathf.Clamp(team, 0, 1);
-            float side = Cfg.BaseCenter[enemy].z > 0 ? 1f : -1f;
+            // a random enemy's side of the map
+            int enemy = (team + 1 + Random.Range(0, Mathf.Max(1, Cfg.TeamCount - 1))) % Cfg.TeamCount;
             var ec = Cfg.BaseCenter[enemy];
-            for (int tries = 0; tries < 60; tries++)
+            for (int tries = 0; tries < 120; tries++)
             {
-                var p = new Vector3(Random.Range(-half + 8f, half - 8f), 0, side * Random.Range(8f, half - 8f));
+                var p = new Vector3(Random.Range(-half + 8f, half - 8f), 0, Random.Range(-half + 8f, half - 8f));
+                if (Cfg.RegionOf(p) != enemy || new Vector2(p.x, p.z).magnitude < 8f) continue;
                 if (Mathf.Abs(p.x - ec.x) < Cfg.BaseHalf + 6f && Mathf.Abs(p.z - ec.z) < Cfg.BaseHalf + 6f) continue;
                 p.y = MapBuilder.Height(p.x, p.z) + 0.1f;
                 if (Blocked(p + Vector3.up * 1.1f, new Vector3(0.45f, 0.6f, 0.45f))) continue;

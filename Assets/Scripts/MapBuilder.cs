@@ -53,7 +53,7 @@ namespace RockGame
             }
 
             // ---------- bases ----------
-            for (int t = 0; t < 2; t++)
+            for (int t = 0; t < Cfg.TeamCount; t++)
             {
                 var c = Cfg.BaseCenter[t];
                 var team = Cfg.TeamColor[t];
@@ -150,9 +150,10 @@ namespace RockGame
         public static float Height(float x, float z)
         {
             if (Cfg.Map != MapKind.Highlands) return 0f;
-            float h = 0.5f * (Raw(x, z) + Raw(-x, -z)); // point-symmetric: both teams get the same terrain
+            // symmetric: every team gets the same terrain (point mirror, or four ways round)
+            float h = Cfg.FourWay ? 0.25f * (Raw(x, z) + Raw(-z, x) + Raw(-x, -z) + Raw(z, -x)) : 0.5f * (Raw(x, z) + Raw(-x, -z));
             float dBase = float.MaxValue;
-            for (int t = 0; t < 2; t++)
+            for (int t = 0; t < Cfg.TeamCount; t++)
             {
                 var c = Cfg.BaseCenter[t];
                 float dx = Mathf.Max(0, Mathf.Abs(x - c.x) - Cfg.BaseHalf), dz = Mathf.Max(0, Mathf.Abs(z - c.z) - Cfg.BaseHalf);
@@ -218,7 +219,7 @@ namespace RockGame
             for (int k = 0; k < count; k++)
             {
                 var p = new Vector3(R(-Cfg.MapHalf + 10, Cfg.MapHalf - 10), 0, R(-Cfg.MapHalf + 10, -12));
-                if (Height(p.x, p.z) < 2f) continue;
+                if (!Cfg.InFirstSector(p, 8f) || Height(p.x, p.z) < 2f) continue;
                 WildRocks.Add(p);
             }
         }
@@ -342,7 +343,23 @@ namespace RockGame
         {
             s_Glass = new GameObject("GlassWall");
             s_Glass.transform.SetParent(root, false);
-            var t = s_Glass.transform;
+            if (Cfg.FourWay)
+            {
+                // free for all: two diagonal walls in an X, one quarter of the map each
+                for (int k = 0; k < 2; k++)
+                {
+                    var arm = new GameObject("glass" + k).transform;
+                    arm.SetParent(s_Glass.transform, false);
+                    arm.localRotation = Quaternion.Euler(0, 45f + 90f * k, 0);
+                    BuildGlassPanel(arm, half * 1.415f);
+                }
+                return;
+            }
+            BuildGlassPanel(s_Glass.transform, half);
+        }
+
+        static void BuildGlassPanel(Transform t, float half)
+        {
             var glass = Art.Part(t, Art.Cube, Color.white, new Vector3(0, 30f, 0), new Vector3(2 * half + 4, 100f, 0.3f), default, true, Art.Ghost(new Color(0.6f, 0.9f, 1f, 0.16f)), "glass");
             glass.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
             var line = Art.Ghost(new Color(0.75f, 0.95f, 1f, 0.45f));
@@ -394,11 +411,12 @@ namespace RockGame
             for (int tries = 0; tries < 300 && mine.Count < want; tries++)
             {
                 var p = new Vector3(R(-half + 16, half - 16), 0, R(-half + 16, -14));
+                if (!Cfg.InFirstSector(p, 10f)) continue;
                 var bc = Cfg.BaseCenter[0];
                 if (Mathf.Max(Mathf.Abs(p.x - bc.x), Mathf.Abs(p.z - bc.z)) < Cfg.BaseHalf + 12f) continue;
                 if (new Vector2(p.x, p.z).magnitude < 24f) continue;
                 bool close = false;
-                foreach (var q in mine) if ((q.p - p).magnitude < 35f || (q.p + p).magnitude < 35f) close = true;
+                foreach (var q in mine) for (int m = 0; m < Cfg.Copies; m++) if ((Cfg.Copy(q.p, m) - p).magnitude < 35f) close = true;
                 if (close) continue;
                 float yaw = Mathf.Floor(R(0, 3.99f)) * 90f;
                 var foot = p + Quaternion.Euler(0, yaw, 0) * Vector3.back * (1.9f + RampRun);
@@ -414,12 +432,12 @@ namespace RockGame
             }
             foreach (var (p, yaw) in mine)
             {
-                for (int m = 0; m < 2; m++)
+                for (int m = 0; m < Cfg.Copies; m++)
                 {
-                    var q = m == 0 ? p : -p;
+                    var q = Cfg.Copy(p, m);
                     q.y = Height(q.x, q.z);
                     Cfg.Towers.Add(q);
-                    BuildTower(root, q, yaw + m * 180f);
+                    BuildTower(root, q, yaw + m * 360f / Cfg.Copies);
                 }
             }
         }
@@ -672,7 +690,7 @@ namespace RockGame
     /// </summary>
     public class Machine : MonoBehaviour
     {
-        public static readonly Machine[] ByTeam = new Machine[2];
+        public static readonly Machine[] ByTeam = new Machine[4];
         public int Team;
         Transform m_Rings, m_Orb;
         Light m_Light;

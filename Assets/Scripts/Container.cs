@@ -24,7 +24,7 @@ namespace RockGame
         /// <summary>Chests can be damaged and rammed; bags and airdrops can't.</summary>
         public bool Breakable => Kind.Value == Chest;
         public bool TakeOnly => IsBag || IsAirdrop;
-        public string DisplayName => IsBag ? $"{Cfg.TeamName[Mathf.Clamp(Team.Value, 0, 1)]}'s loot bag" : IsAirdrop ? "Alien Airdrop" : "Storage Chest";
+        public string DisplayName => IsBag ? $"{Cfg.TeamName[Mathf.Clamp(Team.Value, 0, 3)]}'s loot bag" : IsAirdrop ? "Alien Airdrop" : "Storage Chest";
         public Vector3 Center => transform.position + Vector3.up * (IsBag ? 0.3f : IsAirdrop ? 0.6f : 0.4f);
         public bool Empty
         {
@@ -78,7 +78,7 @@ namespace RockGame
                 var sack = new Color(0.45f, 0.36f, 0.24f);
                 Art.Part(t, Art.Sphere, sack, new Vector3(0, 0.28f, 0), new Vector3(0.7f, 0.55f, 0.62f));
                 Art.Part(t, Art.Sphere, sack * 0.9f, new Vector3(0, 0.55f, 0), new Vector3(0.28f, 0.22f, 0.28f));
-                Art.Part(t, Art.Cylinder, Cfg.TeamColor[Mathf.Clamp(team, 0, 1)], new Vector3(0, 0.5f, 0), new Vector3(0.24f, 0.03f, 0.24f));
+                Art.Part(t, Art.Cylinder, Cfg.TeamColor[Mathf.Clamp(team, 0, 3)], new Vector3(0, 0.5f, 0), new Vector3(0.24f, 0.03f, 0.24f));
             }
             else if (kind == Airdrop)
             {
