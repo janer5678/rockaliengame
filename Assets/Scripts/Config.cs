@@ -17,6 +17,9 @@ namespace RockGame
 
     public enum MapKind : byte { Plains, Highlands }
 
+    /// <summary>Map size: Big (the original), Small, and 1.5x / 2x versions of Big.</summary>
+    public enum MapSize : byte { Big, Small, Large, Huge }
+
     /// <summary>1v1 and 2v2: red vs blue. Free for all: 3 or 4 players, each with their own base (glass walls in an X).</summary>
     public enum GameMode : byte { Duel, Teams, Ffa3, Ffa4 }
 
@@ -45,19 +48,22 @@ namespace RockGame
     {
         // ---------- Map (chosen by the host in the menu) ----------
         public static MapKind Map = MapKind.Plains;
-        public static bool SmallMap;
+        public static MapSize Size = MapSize.Big;
+        public static bool SmallMap => Size == MapSize.Small;
+        public static float SizeScale => Size == MapSize.Large ? 1.5f : Size == MapSize.Huge ? 2f : 1f;
+        public static string SizeLabel(MapSize s) => s == MapSize.Small ? "Small" : s == MapSize.Large ? "Big x1.5" : s == MapSize.Huge ? "Big x2" : "Big";
         /// <summary>Wood mode: no stone anywhere, everything costs wood, no pickaxe, no stone upgrades.</summary>
         public static bool WoodMode;
         public static int MapSeed;
-        public static float MapHalf => SmallMap ? 62f : 100f;
+        public static float MapHalf => SmallMap ? 62f : 100f * SizeScale;
         public const float BaseHalf = 18f; // bases are 36x36m, aligned to the 3m build grid
         public static readonly Vector3[] BaseCenter = { new Vector3(0, 0, -75), new Vector3(0, 0, 75), new Vector3(75, 0, 0), new Vector3(-75, 0, 0) };
-        public static string MapLabel => ModeLabel + ", " + (SmallMap ? "small " : "big ") + Map + (WoodMode ? " (Wood mode)" : "") + (AirdropSides ? " (airdrops on both sides)" : "") + (RespawnLoot ? " (respawn loot)" : "");
+        public static string MapLabel => ModeLabel + ", " + SizeLabel(Size).ToLower() + " " + Map + (WoodMode ? " (Wood mode)" : "") + (AirdropSides ? " (airdrops on both sides)" : "") + (RespawnLoot ? " (respawn loot)" : "");
         /// <summary>Airdrops come down on both sides (one in each half, each on its own timer) instead of anywhere.</summary>
         public static bool AirdropSides;
         /// <summary>Game option: every time you respawn you get a random airdrop item.</summary>
         public static bool RespawnLoot;
-        public const int SmallBit = 16, WoodBit = 32, SidesBit = 64, RespawnLootBit = 128, ModeShift = 8;
+        public const int SmallBit = 16, WoodBit = 32, SidesBit = 64, RespawnLootBit = 128, ModeShift = 8, ModeMask = 7, SizeShift = 12;
         public static GameMode Mode = GameMode.Duel;
         /// <summary>Players needed to start (and the most that can join).</summary>
         public static int PlayersNeeded => Mode == GameMode.Teams ? 4 : Mode == GameMode.Ffa3 ? 3 : Mode == GameMode.Ffa4 ? 4 : 2;
@@ -66,7 +72,7 @@ namespace RockGame
         public static bool FourWay => FreeForAll;
         public static string ModeLabel => Mode == GameMode.Teams ? "2v2" : Mode == GameMode.Ffa3 ? "Free for all (3)" : Mode == GameMode.Ffa4 ? "Free for all (4)" : "1v1";
         /// <summary>Packs the map/mode choice for syncing; the seed is sent separately.</summary>
-        public static int MapKey => (int)Map | (SmallMap ? SmallBit : 0) | (WoodMode ? WoodBit : 0) | (AirdropSides ? SidesBit : 0) | (RespawnLoot ? RespawnLootBit : 0) | ((int)Mode << ModeShift);
+        public static int MapKey => (int)Map | ((int)Size << SizeShift) | (WoodMode ? WoodBit : 0) | (AirdropSides ? SidesBit : 0) | (RespawnLoot ? RespawnLootBit : 0) | ((int)Mode << ModeShift);
 
         /// <summary>Watch towers on the Highlands map (world positions of their feet), point-mirrored between the halves.</summary>
         public static readonly List<Vector3> Towers = new List<Vector3>();
@@ -74,14 +80,15 @@ namespace RockGame
         public static void SetMap(int key, int seed)
         {
             Map = (MapKind)(key & 15);
-            SmallMap = (key & SmallBit) != 0;
+            Size = (MapSize)((key >> SizeShift) & 3);
+            if ((key & SmallBit) != 0) Size = MapSize.Small; // older saved menu choice
             WoodMode = (key & WoodBit) != 0;
             AirdropSides = (key & SidesBit) != 0;
             RespawnLoot = (key & RespawnLootBit) != 0;
-            Mode = (GameMode)((key >> ModeShift) & 3);
+            Mode = (GameMode)((key >> ModeShift) & ModeMask);
             TeamCount = Mode == GameMode.Ffa3 ? 3 : Mode == GameMode.Ffa4 ? 4 : 2;
             MapSeed = seed;
-            float d = SmallMap ? 42f : 75f;
+            float d = SmallMap ? 42f : 75f * SizeScale;
             // blue south, red north, green east, yellow west
             BaseCenter[0] = new Vector3(0, 0, -d);
             BaseCenter[1] = new Vector3(0, 0, d);
@@ -170,7 +177,7 @@ namespace RockGame
 
         // ---------- Match ----------
         [Tune("Match")] public static float BallDropDelay = 300f;   // 5 min behind the glass wall to gather and build
-        [Tune("Match")] public static float MatchLength = 420f;     // + 7 min with the ball
+        [Tune("Match")] public static float MatchLength = 600f;     // + 10 min with the ball (15 min in all)
         [Tune("Match")] public static float SuddenDeathLength = 180f;
         [Tune("Match")] public static float FastBallDropDelay = 10f;
         [Tune("Match")] public static float FastMatchLength = 90f;
@@ -178,7 +185,10 @@ namespace RockGame
         [Tune("Match")] public static float ItemDespawnTime = 300f;
 
         // ---------- Airdrops (after the wall drops) ----------
-        [Tune("Airdrop")] public static float AirdropInterval = 60f;     // after the last one was emptied
+        /// <summary>Mode options: how many airdrops come in a match, evenly spaced (1 = half way through, 2 = at the thirds...).</summary>
+        [Tune("Mode options")] public static int AirdropCount = 3;
+        /// <summary>Mode options: which airdrop items are in the pool (bit i = AirdropChoices[i]).</summary>
+        [Tune("Mode options")] public static int AirdropItemMask = 511;
         [Tune("Airdrop")] public static float AirdropBaseDistance = 25f; // never this close to a base
         [Tune("Airdrop")] public static float C4Fuse = 3f, C4Radius = 5f, C4PlayerDamage = 150f, C4KillRadius = 1.6f;
         [Tune("Airdrop")] public static int SniperAmmo = 3, JetpackFuel = 100, PortalShots = 2, AirdropSignalWood = 2000;
@@ -199,9 +209,9 @@ namespace RockGame
         [Tune("Player")] public static float Gravity = 20f;
         [Tune("Player")] public static float BallCarrySpeedMul = 1f;
         [Tune("Player")] public static float BallThrowSpeed = 16f;
-        [Tune("Player")] public static float BerryHeal = 30f;
+        [Tune("Player")] public static float BerryHeal = 25f, BerryEatTime = 1.5f;
         [Tune("Player")] public static int ArmorHp = 100;              // wooden armour: a second health bar, used up first (max 255)
-        [Tune("Player")] public static float HeadshotMul = 1.5f;
+        [Tune("Player")] public static float HeadshotMul = 2f;
         [Tune("Player")] public static float ModelWidth = 1.3f;       // alien model width scale
         [Tune("Player")] public static float HitboxRadius = 0.52f;
         [Tune("Player")] public static float MeleeAssist = 0.35f;     // melee counts as a hit if it passes this close (m)
@@ -229,7 +239,7 @@ namespace RockGame
 
         // ---------- Resources ----------
         [Tune("Resources")] public static int TreeAmount = 300, StoneAmount = 250, TreeFellBonus = 100;
-        [Tune("Resources")] public static float WeakSpotMul = 2f, NodeRespawnTime = 60f, BushRespawnTime = 45f;
+        [Tune("Resources")] public static float WeakSpotMul = 2f, NodeRespawnTime = 60f, BushRespawnTime = 150f;
 
         // ---------- Building ----------
         [Tune("Building")] public static float BuildCooldown = 0f, UpgradeCooldown = 0f, DemolishRefund = 0.5f;
@@ -246,7 +256,7 @@ namespace RockGame
         [Tune("Crafting")] public static int ArrowWood = 10, ArrowStone = 0, ArrowsPerCraft = 1;
         [Tune("Crafting")] public static int RamWood = 125, RamStone = 50;
         [Tune("Crafting")] public static int ChestWood = 50, BarrierWood = 20;
-        [Tune("Crafting")] public static int CrossbowWood = 500, SaddleWood = 1000;
+        [Tune("Crafting")] public static int CrossbowWood = 500, SaddleWood = 1000, ArmorWood = 500, ChainsawWood = 500;
         public static int FortTowerWood = 1000; // only used for the demolish refund (the fort is an airdrop item now)
 
         // ---------- Vehicles ----------
@@ -327,13 +337,23 @@ namespace RockGame
             }
         }
 
-        /// <summary>Everything an airdrop (or the respawn-loot option) can give you.</summary>
-        public static readonly Item[] AirdropLoot =
+        /// <summary>The airdrop items the host can pick from in the mode options (the others are unused for now).</summary>
+        public static readonly Item[] AirdropChoices =
         {
-            Item.C4, Item.DeathWand, Item.Helmet, Item.Wood, Item.InvisPotion, Item.Chainsaw, Item.Armor, Item.FortTower,
-            Item.Sniper, Item.PortalGun, Item.Jetpack, Item.SlenderEgg, Item.BuildEgg, Item.GiantStaff, Item.RocketLauncher,
-            Item.BombBush, Item.TreeCamo, Item.Airstrike, Item.Wallhack,
+            Item.C4, Item.DeathWand, Item.PortalGun, Item.RocketLauncher, Item.TreeCamo, Item.InvisPotion, Item.Jetpack, Item.Wallhack, Item.BombBush,
         };
+
+        /// <summary>Everything an airdrop (or the respawn-loot option) can give you: the picked items (all of them if none are picked).</summary>
+        public static List<Item> AirdropLoot
+        {
+            get
+            {
+                var l = new List<Item>();
+                for (int i = 0; i < AirdropChoices.Length; i++) if ((AirdropItemMask & (1 << i)) != 0) l.Add(AirdropChoices[i]);
+                if (l.Count == 0) l.AddRange(AirdropChoices);
+                return l;
+            }
+        }
 
         public static MeleeStats Melee(Item i)
         {
@@ -399,7 +419,7 @@ namespace RockGame
         }
 
         // ---------- Crafting ----------
-        static readonly Item[] k_Recipes = { Item.BuildingPlan, Item.Hatchet, Item.Pickaxe, Item.Spear, Item.Bow, Item.Arrow, Item.Crossbow, Item.Ram, Item.Chest, Item.Barrier, Item.Saddle, Item.AirdropSignal };
+        static readonly Item[] k_Recipes = { Item.BuildingPlan, Item.Hatchet, Item.Pickaxe, Item.Spear, Item.Bow, Item.Arrow, Item.Crossbow, Item.Armor, Item.Chainsaw, Item.Ram, Item.Chest, Item.Barrier, Item.Saddle, Item.AirdropSignal };
 
         /// <summary>Recipes available in this mode (wood mode has no pickaxe).</summary>
         public static int RecipeCount => WoodMode ? k_Recipes.Length - 1 : k_Recipes.Length;
@@ -420,6 +440,8 @@ namespace RockGame
                 case Item.Chest: r = new Recipe { Output = Item.Chest, Count = 1, Wood = ChestWood }; break;
                 case Item.Crossbow: r = new Recipe { Output = Item.Crossbow, Count = 1, Wood = CrossbowWood }; break;
                 case Item.Saddle: r = new Recipe { Output = Item.Saddle, Count = 1, Wood = SaddleWood }; break;
+                case Item.Armor: r = new Recipe { Output = Item.Armor, Count = 1, Wood = ArmorWood }; break;
+                case Item.Chainsaw: r = new Recipe { Output = Item.Chainsaw, Count = 1, Wood = ChainsawWood }; break;
                 case Item.AirdropSignal: r = new Recipe { Output = Item.AirdropSignal, Count = 1, Wood = AirdropSignalWood }; break;
                 default: r = new Recipe { Output = Item.Barrier, Count = 1, Wood = BarrierWood }; break;
             }
@@ -441,8 +463,10 @@ namespace RockGame
             return -1;
         }
 
-        /// <summary>Crafting works anywhere inside your own base.</summary>
+        /// <summary>Spears and hatchets can be crafted anywhere; everything else only inside your own base.</summary>
+        public static bool CraftAnywhere(Item i) => i == Item.Spear || i == Item.Hatchet;
         public static bool CanCraftAt(int team, Vector3 p) => BaseTeamAt(p) == team;
+        public static bool CanCraftAt(int team, Vector3 p, Item i) => CraftAnywhere(i) || CanCraftAt(team, p);
 
         /// <summary>Raw base membership of a grid cell.</summary>
         public static bool CellInBase(int team, int i, int j)

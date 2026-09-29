@@ -624,7 +624,7 @@ namespace RockGame
             else if (no.TryGetComponent(out Vehicle v))
             {
                 v.ServerDamage(st.PlayerDamage, this);
-                Fx.Server(FxKind.Blood, point, dir, OwnerClientId);
+                if (!v.IsHorse) Fx.Server(FxKind.Blood, point, dir, OwnerClientId);
             }
             else if (no.TryGetComponent(out ResourceNode n))
             {
@@ -856,17 +856,24 @@ namespace RockGame
         {
             if (Dead.Value || recipe < 0 || recipe >= Cfg.RecipeCount) return;
             if (InSuddenDeath || (NetGame.Instance != null && NetGame.Instance.S == GameState.GameOver)) return;
-            if (!CanCraftHere) { Notify("You can only craft inside your own base"); return; }
             var r = Cfg.GetRecipe(recipe);
+            if (!Cfg.CanCraftAt(Team.Value, transform.position, r.Output)) { Notify($"{r.Name} can only be crafted inside your own base"); return; }
+            if (r.Output == Item.Armor && ArmorHp.Value >= Cfg.ArmorHp) { Notify("You're already wearing full armour"); return; }
             if (Count(Item.Wood) < r.Wood || Count(Item.Stone) < r.Stone) { Notify($"Not enough resources for {r.Name}"); return; }
             int data = r.Output == Item.Saddle ? Team.Value + 1 : Mathf.Clamp(Cfg.MaxData(r.Output), 0, 255); // saddles are in your team colour
-            if (InvOps.Space(Inv, r.Output, data) < r.Count && !InvOps.HasEmpty(Inv)) { Notify("Inventory full!"); return; }
+            bool wear = r.Output == Item.Armor; // armour goes straight on
+            if (!wear && InvOps.Space(Inv, r.Output, data) < r.Count && !InvOps.HasEmpty(Inv)) { Notify("Inventory full!"); return; }
 
             InvOps.Remove(Inv, Item.Wood, r.Wood);
             InvOps.Remove(Inv, Item.Stone, r.Stone);
             if (r.Wood > 0) SpentRpc((byte)Item.Wood, r.Wood);
             if (r.Stone > 0) SpentRpc((byte)Item.Stone, r.Stone);
-            ServerGive(r.Output, r.Count, data);
+            if (wear)
+            {
+                ArmorHp.Value = (byte)Mathf.Clamp(Cfg.ArmorHp, 1, 255);
+                Notify($"Armour on: {ArmorHp.Value} extra health, used up before your own");
+            }
+            else ServerGive(r.Output, r.Count, data);
             CraftedRpc((byte)r.Output);
             Fx.Server(FxKind.Craft, Cfg.MachinePos(Team.Value), new Vector3(Team.Value, 0, 0));
         }
@@ -1078,7 +1085,8 @@ namespace RockGame
             var food = HeldItem;
             if (Dead.Value || (food != Item.Berry && food != Item.Meat) || Time.time < m_NextEat) return;
             if (Health.Value >= Cfg.MaxHealth) { Notify("You're already at full health"); return; }
-            m_NextEat = Time.time + 0.8f;
+            // berries take a while to eat (the client plays it out first)
+            m_NextEat = Time.time + (food == Item.Berry ? Mathf.Max(0.8f, Cfg.BerryEatTime - 0.2f) : 0.8f);
             ServerConsumeHeld();
             Health.Value = food == Item.Meat ? Cfg.MaxHealth : Mathf.Min(Cfg.MaxHealth, Health.Value + Cfg.BerryHeal); // meat heals you fully
         }
@@ -1247,7 +1255,6 @@ namespace RockGame
         [Rpc(SendTo.Owner)]
         void TimberRpc(int bonus)
         {
-            Hud.Banner("TIMBER!", $"+{bonus} bonus wood for felling the whole tree");
             Sfx.Play2D(Sfx.Smash, 0.8f);
         }
 

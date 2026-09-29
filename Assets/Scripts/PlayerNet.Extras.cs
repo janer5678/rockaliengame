@@ -173,8 +173,7 @@ namespace RockGame
                 case DevCmd.GiveStone: ServerGive(Item.Stone, 1000); break;
                 case DevCmd.GiveArrows: ServerGive(Item.Arrow, 50); break;
                 case DevCmd.GiveOpItems:
-                    ServerGive(Item.C4, 1); ServerGive(Item.DeathWand, 1); ServerGive(Item.Helmet, 1, 1);
-                    ServerGive(Item.InvisPotion, 1); ServerGive(Item.Chainsaw, 1, Mathf.Clamp(Cfg.ChainsawUses, 1, 255));
+                    foreach (var it in Cfg.AirdropChoices) ServerGive(it, 1, Mathf.Clamp(Cfg.MaxData(it), 0, 255));
                     break;
                 case DevCmd.GiveCraftables:
                     for (int i = 0; i < Cfg.RecipeCount; i++)

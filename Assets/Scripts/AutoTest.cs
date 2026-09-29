@@ -18,10 +18,29 @@ namespace RockGame
             for (int i = 0; i < args.Length - 1; i++)
                 if (args[i] == "-autotest") m_Mode = args[i + 1];
             if (m_Mode == null) { enabled = false; return; }
+            if (m_Mode == "menushot") { StartCoroutine(MenuShots()); return; }
             StartCoroutine(Run());
         }
 
         static void Log(string s) => Debug.Log("[AUTOTEST] " + s);
+
+        /// <summary>Screenshots of the main menu and the mode options panel.</summary>
+        IEnumerator MenuShots()
+        {
+            string dir = "shots";
+            var args = System.Environment.GetCommandLineArgs();
+            for (int i = 0; i < args.Length - 1; i++) if (args[i] == "-shotdir") dir = args[i + 1];
+            System.IO.Directory.CreateDirectory(dir);
+            yield return new WaitForSeconds(3f);
+            ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(dir, "menu_main.png"));
+            yield return new WaitForSeconds(0.5f);
+            Hud.OpenModeOptions = true;
+            yield return new WaitForSeconds(1f);
+            ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(dir, "menu_mode_options.png"));
+            yield return new WaitForSeconds(1f);
+            Log("menu shots done");
+            Application.Quit(0);
+        }
 
         IEnumerator Run()
         {
@@ -42,6 +61,7 @@ namespace RockGame
             while (NetGame.Instance.S == GameState.Waiting) yield return null;
             yield return new WaitForSeconds(0.8f);
             if (m_Mode == "teams") { yield return TeamsRoutine(me); yield break; }
+            if (m_Mode == "batch5") { yield return Batch5Routine(me, pc); yield break; }
             Check(Cfg.BaseTeamAt(me.transform.position) == me.Team.Value, $"spawned inside own base ({me.transform.position})");
             Check(me.Count(Item.Rock) == 0 && me.HeldItem == Item.Rock, "empty hand = holding the rock (no rock item)");
             Check(Vector3.Distance(me.transform.position, Cfg.SpawnPos(me.Team.Value, me.Slot.Value)) < 1.5f, $"sent home to the bedrock when the match started on {Cfg.MapLabel} (seed {Cfg.MapSeed})");
@@ -88,6 +108,100 @@ namespace RockGame
             {
                 while (NetGame.Instance != null && NetGame.Instance.S != GameState.GameOver) yield return null;
             }
+        }
+
+        /// <summary>
+        /// Solo host, fast timers: crafting anywhere vs in base, armour going straight on, the chainsaw recipe, slow berries,
+        /// horses bleeding and fleeing, the hidden stadium, and the airdrop schedule (split while the wall is up).
+        /// </summary>
+        IEnumerator Batch5Routine(PlayerNet me, PlayerController pc)
+        {
+            var g = NetGame.Instance;
+            double start = g.NetworkManager.ServerTime.Time - 1.3;
+            // mode options: 3 airdrops (at 25 s, 50 s, 75 s of the 100 s fast match), C4 only; keep the wall up until 40 s
+            Cfg.AirdropCount = 3;
+            Cfg.AirdropItemMask = 1;
+            g.DevAddTime(30f);
+            int team = me.Team.Value;
+            Log($"map {Cfg.MapLabel}: half {Cfg.MapHalf}, base at {Cfg.BaseCenter[team]}, {FindObjectsByType<ResourceNode>(FindObjectsSortMode.None).Length} nodes, {Vehicle.All.Count} horses");
+            Check(Cfg.HeadshotMul == 2f && Cfg.MatchLength + Cfg.BallDropDelay == 900f && Cfg.BerryHeal == 25f, "headshots x2, 15 minute match, berries heal 25");
+            if (Camera.main != null && Stadium.Instance != null)
+            {
+                yield return null;
+                var tr = Stadium.Instance.GetComponentInChildren<TextMesh>().GetComponent<Renderer>();
+                Check(!tr.enabled, "the far-away stadium isn't drawn from the map");
+            }
+
+            // crafting: spears and hatchets anywhere, the rest only in base
+            me.ServerGive(Item.Wood, 3000);
+            me.ServerGive(Item.Stone, 200);
+            var outside = Cfg.BaseCenter[team] - Cfg.BackDir(team) * (Cfg.BaseHalf + 10f);
+            outside.y = MapBuilder.Height(outside.x, outside.z) + 0.2f;
+            pc.LocalTeleport(outside, 0f);
+            yield return new WaitForSeconds(0.4f);
+            foreach (var it in new[] { Item.Spear, Item.Hatchet, Item.Bow, Item.Armor })
+            {
+                me.CraftRpc(Cfg.RecipeIndex(it));
+                yield return new WaitForSeconds(0.3f);
+            }
+            Check(me.Count(Item.Spear) == 1 && me.Count(Item.Hatchet) == 1 && me.Count(Item.Bow) == 0 && me.ArmorHp.Value == 0, "outside the base: spear and hatchet craft, bow and armour don't");
+            pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
+            yield return new WaitForSeconds(0.4f);
+            int wood = me.Count(Item.Wood);
+            me.CraftRpc(Cfg.RecipeIndex(Item.Armor));
+            yield return new WaitForSeconds(0.3f);
+            me.CraftRpc(Cfg.RecipeIndex(Item.Chainsaw));
+            yield return new WaitForSeconds(0.3f);
+            Check(me.ArmorHp.Value == Cfg.ArmorHp && me.Count(Item.Armor) == 0, "crafted armour goes straight on");
+            Check(me.Count(Item.Chainsaw) == 1 && me.Count(Item.Wood) == wood - Cfg.ArmorWood - Cfg.ChainsawWood, $"chainsaw crafted for {Cfg.ChainsawWood} wood");
+
+            // berries: one per eat time
+            me.ServerGive(Item.Berry, 3);
+            yield return Hold(me, Item.Berry);
+            me.Health.Value = 40f;
+            me.EatRpc();
+            me.EatRpc();
+            yield return new WaitForSeconds(0.3f);
+            Check(Mathf.Approximately(me.Health.Value, 65f), $"can't eat berries back to back (health {me.Health.Value:0})");
+            yield return new WaitForSeconds(Cfg.BerryEatTime);
+            me.EatRpc();
+            yield return new WaitForSeconds(0.3f);
+            Check(Mathf.Approximately(me.Health.Value, 90f), $"ate again after {Cfg.BerryEatTime}s (health {me.Health.Value:0})");
+
+            // horses: hit one, it bleeds and runs off
+            Vehicle horse = null;
+            foreach (var v in Vehicle.All) if (v.IsHorse && !v.HasDriver) { horse = v; break; }
+            if (horse == null) Check(false, "there's a wild horse");
+            else
+            {
+                var hp = horse.transform.position;
+                var dir = (hp - Cfg.ArenaCenter).normalized;
+                pc.LocalTeleport(hp + new Vector3(2f, 0.5f, 0f), 0f);
+                yield return new WaitForSeconds(0.4f);
+                float d0 = Vector3.Distance(horse.transform.position, me.transform.position);
+                horse.ServerDamage(20f, me);
+                yield return new WaitForSeconds(2f);
+                float d1 = Vector3.Distance(horse.transform.position, me.transform.position);
+                Check(Mathf.Approximately(horse.Hp.Value, Cfg.HorseHp - 20f) && horse.MaxHp == Cfg.HorseHp, $"horse has health ({horse.Hp.Value:0}/{horse.MaxHp:0})");
+                Check(d1 > d0 + 8f, $"hurt horse fled ({d0:0.0} m -> {d1:0.0} m)");
+            }
+            pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
+
+            // airdrops: the first one comes while the wall is still up, so one lands on each side
+            while (g.NetworkManager.ServerTime.Time < start + 25 + NetGame.DropLand + 1.5) yield return null;
+            var drops = new System.Collections.Generic.List<Container>();
+            foreach (var c in Container.All) if (c.IsAirdrop) drops.Add(c);
+            bool sides = drops.Count == Cfg.TeamCount;
+            if (sides && Cfg.TeamCount == 2) sides = Cfg.RegionOf(drops[0].transform.position) != Cfg.RegionOf(drops[1].transform.position);
+            Check(g.WallUp && sides, $"first of 3 airdrops at a quarter of the match, one per side while the wall is up ({drops.Count} crates)");
+            bool c4 = drops.Count > 0;
+            foreach (var c in drops) c4 &= c.Slots.Count > 0 && c.Slots[0].Id == Item.C4;
+            Check(c4, "airdrops only have the picked items (C4 only)");
+            while (g.NetworkManager.ServerTime.Time < start + 50 + NetGame.DropLand + 1.5) yield return null;
+            int n = 0;
+            foreach (var c in Container.All) if (c.IsAirdrop) n++;
+            Check(!g.WallUp && n == Cfg.TeamCount + 1, $"second airdrop half way through: a single one now the wall is down ({n} crates in all)");
+            g.EndGame(team, "batch 5 test done");
         }
 
         IEnumerator Watch()

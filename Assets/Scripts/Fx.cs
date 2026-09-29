@@ -58,7 +58,7 @@ namespace RockGame
             {
                 case FxKind.Blood: Blood(pos, dir, false); break;
                 case FxKind.BloodHead: Blood(pos, dir, true); break;
-                case FxKind.WoodChips: Chips(pos, dir, Art.Wood, 8); Sfx.Play(Sfx.Chop, pos); break;
+                case FxKind.WoodChips: Chips(pos, dir, Art.Wood, 8); Sfx.Play(Sfx.Chop, pos, 0.3f); break;
                 case FxKind.StoneChips: Chips(pos, dir, Art.Stone, 8); Sparks(pos, dir, 5); Sfx.Play(Sfx.Clink, pos); break;
                 case FxKind.WeakSpot: Sparks(pos, dir, 16); Sfx.Play(Sfx.Ding, pos, 0.8f); break;
                 case FxKind.StructureHit: Chips(pos, dir, Art.DarkWood, 6); Sfx.Play(Sfx.Thud, pos); break;
@@ -396,8 +396,8 @@ namespace RockGame
     }
 
     /// <summary>
-    /// Sound effects: recorded CC0 sounds by Kenney (www.kenney.nl) in Resources/Sfx ("name_0.ogg", "name_1.ogg", ... are
-    /// variations picked at random), with procedurally synthesised stand-ins for anything missing.
+    /// Sound effects, all synthesised procedurally at startup. Recorded clips dropped in Resources/Sfx ("name_0.ogg",
+    /// "name_1.ogg", ... are variations picked at random) would replace them.
     /// </summary>
     public static class Sfx
     {

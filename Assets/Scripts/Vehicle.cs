@@ -27,6 +27,8 @@ namespace RockGame
 
         public bool IsHorse => Kind.Value == Horse;
         public bool IsSlender => Kind.Value == Slender;
+        public bool IsCar => Kind.Value == Car;
+        public float MaxHp => IsSlender ? Cfg.SlenderHp : Cfg.HorseHp;
         public bool Rideable => Kind.Value != Slender;
         public bool HasDriver => DriverId.Value != NoDriver;
         public string DisplayName => IsSlender ? "Slenderman" : IsHorse ? (Saddled.Value ? "Saddled Horse" : "Wild Horse") : "Wooden Car";
@@ -65,13 +67,22 @@ namespace RockGame
             return v;
         }
 
-        float m_DieAt = float.MaxValue, m_NextBlink;
+        float m_DieAt = float.MaxValue, m_NextBlink, m_FleeUntil = -1f;
+        Vector3 m_FleeFrom;
 
         /// <summary>Hurt a horse / Slenderman. A dead horse drops meat (and its saddle); the rider falls off.</summary>
         public void ServerDamage(float dmg, PlayerNet attacker)
         {
             if (!IsServer || !IsSpawned || Kind.Value == Car || dmg <= 0) return;
             Hp.Value = Mathf.Max(0f, Hp.Value - dmg);
+            if (IsHorse)
+            {
+                // it bleeds, and a wild horse bolts away from whoever hurt it
+                var from = attacker != null ? attacker.transform.position : transform.position - transform.forward;
+                Fx.Server(FxKind.Blood, transform.position + Vector3.up * 1.2f, (transform.position - from).normalized);
+                m_FleeUntil = Time.time + 7f;
+                m_FleeFrom = from;
+            }
             if (Hp.Value > 0) return;
             var d = Driver;
             if (d != null) d.ServerDismount();
@@ -269,7 +280,25 @@ namespace RockGame
             if (grounded && m_VelY < 0) m_VelY = -2f;
             m_VelY -= Cfg.Gravity * dt;
             Vector3 move = Vector3.zero;
-            if (IsHorse)
+            if (IsHorse && Time.time < m_FleeUntil)
+            {
+                // fleeing: gallop away from the attacker, steering round the bases and the map edge
+                var away = transform.position - m_FleeFrom;
+                away.y = 0;
+                if (away.sqrMagnitude < 0.01f) away = transform.forward;
+                float want = Quaternion.LookRotation(away).eulerAngles.y;
+                float half = Cfg.MapHalf - 8f;
+                for (int k = 0; k < 8; k++)
+                {
+                    float tryYaw = want + (k % 2 == 0 ? 1 : -1) * ((k + 1) / 2) * 40f;
+                    var ahead = transform.position + Quaternion.Euler(0, tryYaw, 0) * Vector3.forward * 4f;
+                    if (Cfg.BaseTeamAt(ahead) < 0 && Mathf.Abs(ahead.x) < half && Mathf.Abs(ahead.z) < half) { want = tryYaw; break; }
+                }
+                m_Yaw = Mathf.MoveTowardsAngle(m_Yaw, want, 360f * dt);
+                move = Quaternion.Euler(0, m_Yaw, 0) * Vector3.forward * Cfg.HorseSprint * 0.85f;
+                m_WanderSpeed = 0f;
+            }
+            else if (IsHorse)
             {
                 // wander about, grazing now and then, staying in its own half and out of the bases
                 if (Time.time >= m_NextWander)

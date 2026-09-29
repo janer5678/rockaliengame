@@ -160,6 +160,8 @@ namespace RockGame
         void DrawMainMenu(Bootstrap boot)
         {
             if (m_ShowSettings) { DrawSettings(); return; }
+            if (OpenModeOptions) { OpenModeOptions = false; m_ShowModeOptions = true; }
+            if (m_ShowModeOptions) { DrawModeOptions(boot); return; }
             float w = 500 * m_Scale, h = 790 * m_Scale;
             var r = new Rect((Screen.width - w) / 2, (Screen.height - h) / 2, w, h);
             Fill(r, new Color(0, 0, 0, 0.65f));
@@ -178,13 +180,13 @@ namespace RockGame
             GUILayout.Space(10 * m_Scale);
             {
                 int mk = Bootstrap.MapChoice;
-                var mode = (GameMode)((mk >> Cfg.ModeShift) & 3);
+                var mode = (GameMode)((mk >> Cfg.ModeShift) & Cfg.ModeMask);
                 GUILayout.BeginHorizontal();
                 GUILayout.Label("Game", m_Label, GUILayout.Width(90 * m_Scale));
                 string[] names = { "1v1", "2v2", "FFA 3", "FFA 4" };
                 for (int i = 0; i < 4; i++)
                     if (GUILayout.Toggle((int)mode == i, " " + names[i], m_Button, GUILayout.Height(30 * m_Scale)) && (int)mode != i)
-                        boot.SetMapChoice((mk & ~(3 << Cfg.ModeShift)) | (i << Cfg.ModeShift));
+                        boot.SetMapChoice((mk & ~(Cfg.ModeMask << Cfg.ModeShift)) | (i << Cfg.ModeShift));
                 GUILayout.EndHorizontal();
                 if (mode == GameMode.Teams) GUILayout.Label("<color=#bbbbbb>Red vs blue, two players each (4 players).</color>", m_Small);
                 else if (mode != GameMode.Duel) GUILayout.Label($"<color=#bbbbbb>Everyone for themselves: {(mode == GameMode.Ffa3 ? 3 : 4)} bases, glass walls in an X.</color>", m_Small);
@@ -193,15 +195,17 @@ namespace RockGame
             GUILayout.Label("Map", m_Label, GUILayout.Width(90 * m_Scale));
             int key = Bootstrap.MapChoice;
             int flags = key & ~15;
-            bool small = (key & Cfg.SmallBit) != 0, wood = (key & Cfg.WoodBit) != 0;
+            bool wood = (key & Cfg.WoodBit) != 0;
+            var size = (key & Cfg.SmallBit) != 0 ? MapSize.Small : (MapSize)((key >> Cfg.SizeShift) & 3);
             var kind = (MapKind)(key & 15);
             if (GUILayout.Toggle(kind == MapKind.Plains, " Plains", m_Button, GUILayout.Height(30 * m_Scale)) && kind != MapKind.Plains) boot.SetMapChoice((int)MapKind.Plains | flags);
             if (GUILayout.Toggle(kind == MapKind.Highlands, " Highlands (wild)", m_Button, GUILayout.Height(30 * m_Scale)) && kind != MapKind.Highlands) boot.SetMapChoice((int)MapKind.Highlands | flags);
             GUILayout.EndHorizontal();
             GUILayout.BeginHorizontal();
             GUILayout.Label("Size", m_Label, GUILayout.Width(90 * m_Scale));
-            if (GUILayout.Toggle(!small, " Big", m_Button, GUILayout.Height(30 * m_Scale)) && small) boot.SetMapChoice(key & ~Cfg.SmallBit);
-            if (GUILayout.Toggle(small, " Small", m_Button, GUILayout.Height(30 * m_Scale)) && !small) boot.SetMapChoice(key | Cfg.SmallBit);
+            foreach (var sz in new[] { MapSize.Small, MapSize.Big, MapSize.Large, MapSize.Huge })
+                if (GUILayout.Toggle(size == sz, " " + Cfg.SizeLabel(sz), m_Button, GUILayout.Height(30 * m_Scale)) && size != sz)
+                    boot.SetMapChoice((key & ~Cfg.SmallBit & ~(3 << Cfg.SizeShift)) | ((int)sz << Cfg.SizeShift));
             GUILayout.EndHorizontal();
             GUILayout.BeginHorizontal();
             GUILayout.Label("Mode", m_Label, GUILayout.Width(90 * m_Scale));
@@ -209,18 +213,9 @@ namespace RockGame
             if (GUILayout.Toggle(wood, " Wood mode", m_Button, GUILayout.Height(30 * m_Scale)) && !wood) boot.SetMapChoice(key | Cfg.WoodBit);
             GUILayout.EndHorizontal();
             if (wood) GUILayout.Label("<color=#d9a066>Wood only: no stone, no pickaxe, everything costs wood.</color>", m_Small);
-            bool loot = (key & Cfg.RespawnLootBit) != 0;
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("Respawn", m_Label, GUILayout.Width(90 * m_Scale));
-            if (GUILayout.Toggle(!loot, " Normal", m_Button, GUILayout.Height(30 * m_Scale)) && loot) boot.SetMapChoice(key & ~Cfg.RespawnLootBit);
-            if (GUILayout.Toggle(loot, " With an airdrop item", m_Button, GUILayout.Height(30 * m_Scale)) && !loot) boot.SetMapChoice(key | Cfg.RespawnLootBit);
-            GUILayout.EndHorizontal();
-            bool sides = (key & Cfg.SidesBit) != 0;
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("Airdrops", m_Label, GUILayout.Width(90 * m_Scale));
-            if (GUILayout.Toggle(!sides, " Anywhere", m_Button, GUILayout.Height(30 * m_Scale)) && sides) boot.SetMapChoice(key & ~Cfg.SidesBit);
-            if (GUILayout.Toggle(sides, " One per side", m_Button, GUILayout.Height(30 * m_Scale)) && !sides) boot.SetMapChoice(key | Cfg.SidesBit);
-            GUILayout.EndHorizontal();
+            GUILayout.Space(4 * m_Scale);
+            if (GUILayout.Button("MODE OPTIONS  (airdrops, respawn)", m_Button, GUILayout.Height(34 * m_Scale))) m_ShowModeOptions = true;
+            GUILayout.Label($"<color=#bbbbbb>{ModeOptionsSummary(key)}</color>", m_Small);
             GUILayout.Space(6 * m_Scale);
             Bootstrap.Solo = GUILayout.Toggle(Bootstrap.Solo, " Solo test (start without an opponent)", m_Label);
             Bootstrap.Fast = GUILayout.Toggle(Bootstrap.Fast, $" Fast timers ({Cfg.FastBallDropDelay:0}s ball drop, {Cfg.FastMatchLength:0}s match)", m_Label);
@@ -234,6 +229,94 @@ namespace RockGame
             if (!string.IsNullOrEmpty(boot.Status)) GUILayout.Label("<color=#ffcc66>" + boot.Status + "</color>", m_Center);
             GUILayout.FlexibleSpace();
             GUILayout.Label("Host picks the options and settings. Your friend joins with your IP (port 7777 UDP).", m_Small);
+            GUILayout.EndArea();
+        }
+
+        bool m_ShowModeOptions;
+        /// <summary>Opens the mode options panel from code (screenshot test).</summary>
+        public static bool OpenModeOptions;
+
+        static string ModeOptionsSummary(int key)
+        {
+            int n = Mathf.Clamp(Cfg.AirdropCount, 0, 20);
+            int items = Cfg.AirdropLoot.Count;
+            return (n == 0 ? "No airdrops" : $"{n} airdrop{(n == 1 ? "" : "s")} a match ({((key & Cfg.SidesBit) != 0 ? "one per side" : "anywhere")}, {items} item{(items == 1 ? "" : "s")})")
+                + ((key & Cfg.RespawnLootBit) != 0 ? " · respawn with an airdrop item" : "");
+        }
+
+        /// <summary>Mode options: how many airdrops, where they land, which items they can have, and the respawn option.</summary>
+        void DrawModeOptions(Bootstrap boot)
+        {
+            float k = m_Scale;
+            float w = 620 * k, h = 700 * k;
+            var r = new Rect((Screen.width - w) / 2, Mathf.Max(10, (Screen.height - h) / 2), w, Mathf.Min(h, Screen.height - 20));
+            Fill(r, new Color(0.05f, 0.05f, 0.06f, 0.92f));
+            GUILayout.BeginArea(new Rect(r.x + 20, r.y + 15, r.width - 40, r.height - 30));
+            GUILayout.Label("<b>MODE OPTIONS</b>", m_Big);
+            int key = Bootstrap.MapChoice;
+            float bh = 32 * k;
+
+            GUILayout.Space(8 * k);
+            GUILayout.Label("<b><color=#ffd27a>AIRDROPS PER MATCH</color></b>", m_Label);
+            int n = Mathf.Clamp(Cfg.AirdropCount, 0, 20);
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("-", m_Button, GUILayout.Width(50 * k), GUILayout.Height(bh)) && n > 0) { Cfg.AirdropCount = n - 1; Cfg.SavePrefs(); }
+            GUILayout.Label($"<b><size={Mathf.RoundToInt(24 * k)}>{n}</size></b>", m_Center, GUILayout.Width(70 * k), GUILayout.Height(bh));
+            if (GUILayout.Button("+", m_Button, GUILayout.Width(50 * k), GUILayout.Height(bh)) && n < 20) { Cfg.AirdropCount = n + 1; Cfg.SavePrefs(); }
+            GUILayout.EndHorizontal();
+            n = Mathf.Clamp(Cfg.AirdropCount, 0, 20);
+            float total = Cfg.BallDropDelay + Cfg.MatchLength;
+            var times = new System.Text.StringBuilder();
+            for (int i = 1; i <= n && i <= 8; i++) times.Append(i > 1 ? ", " : "").Append(Clock(total * i / (n + 1)));
+            if (n > 8) times.Append(", ...");
+            GUILayout.Label(n == 0 ? "<color=#bbbbbb>No airdrops this match.</color>"
+                : $"<color=#bbbbbb>Evenly spaced over the {Clock(total)} match (1 = half way through, 2 = at the thirds...). Lands at {times}. " +
+                  "One that comes while the glass wall is still up drops on every side.</color>", new GUIStyle(m_Small) { wordWrap = true });
+
+            GUILayout.Space(8 * k);
+            bool sides = (key & Cfg.SidesBit) != 0;
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Where", m_Label, GUILayout.Width(90 * k));
+            if (GUILayout.Toggle(!sides, " Anywhere", m_Button, GUILayout.Height(bh)) && sides) boot.SetMapChoice(key & ~Cfg.SidesBit);
+            if (GUILayout.Toggle(sides, " One per side", m_Button, GUILayout.Height(bh)) && !sides) boot.SetMapChoice(key | Cfg.SidesBit);
+            GUILayout.EndHorizontal();
+
+            GUILayout.Space(10 * k);
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("<b><color=#ffd27a>AIRDROP ITEMS</color></b>", m_Label);
+            GUILayout.FlexibleSpace();
+            if (GUILayout.Button("All", m_Button, GUILayout.Width(70 * k), GUILayout.Height(26 * k))) { Cfg.AirdropItemMask = (1 << Cfg.AirdropChoices.Length) - 1; Cfg.SavePrefs(); }
+            if (GUILayout.Button("None", m_Button, GUILayout.Width(70 * k), GUILayout.Height(26 * k))) { Cfg.AirdropItemMask = 0; Cfg.SavePrefs(); }
+            GUILayout.EndHorizontal();
+            const int cols = 3;
+            for (int i = 0; i < Cfg.AirdropChoices.Length; i++)
+            {
+                if (i % cols == 0) GUILayout.BeginHorizontal();
+                var it = Cfg.AirdropChoices[i];
+                bool on = (Cfg.AirdropItemMask & (1 << i)) != 0;
+                var cell = GUILayoutUtility.GetRect((r.width - 40) / cols - 6 * k, 46 * k, GUILayout.Width((r.width - 40) / cols - 6 * k));
+                Fill(cell, on ? new Color(0.2f, 0.45f, 0.25f, 0.8f) : new Color(0.2f, 0.2f, 0.2f, 0.6f));
+                var icon = ItemIcons.Get(it);
+                if (icon != null) GUI.DrawTexture(new Rect(cell.x + 4, cell.y + 3, 40 * k, 40 * k), icon, ScaleMode.ScaleToFit, true);
+                string label = it == Item.BombBush ? "Bomb Bush" : it == Item.RocketLauncher ? "Rocket" : Cfg.ItemName(it);
+                GUI.Label(new Rect(cell.x + 48 * k, cell.y, cell.width - 48 * k, cell.height), (on ? "<b>" : "<color=#888888>") + label + (on ? "</b>" : "</color>"), new GUIStyle(m_Small) { alignment = TextAnchor.MiddleLeft, wordWrap = true });
+                if (GUI.Button(cell, "", GUIStyle.none)) { Cfg.AirdropItemMask ^= 1 << i; Cfg.SavePrefs(); }
+                GUILayout.Space(6 * k);
+                if (i % cols == cols - 1 || i == Cfg.AirdropChoices.Length - 1) { GUILayout.EndHorizontal(); GUILayout.Space(5 * k); }
+            }
+            if ((Cfg.AirdropItemMask & ((1 << Cfg.AirdropChoices.Length) - 1)) == 0)
+                GUILayout.Label("<color=#ffcc66>Nothing picked: airdrops will have any of these.</color>", m_Small);
+
+            GUILayout.Space(10 * k);
+            bool loot = (key & Cfg.RespawnLootBit) != 0;
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Respawn", m_Label, GUILayout.Width(90 * k));
+            if (GUILayout.Toggle(!loot, " Normal", m_Button, GUILayout.Height(bh)) && loot) boot.SetMapChoice(key & ~Cfg.RespawnLootBit);
+            if (GUILayout.Toggle(loot, " With an airdrop item", m_Button, GUILayout.Height(bh)) && !loot) boot.SetMapChoice(key | Cfg.RespawnLootBit);
+            GUILayout.EndHorizontal();
+
+            GUILayout.FlexibleSpace();
+            if (GUILayout.Button("Done", m_Button, GUILayout.Height(40 * k))) m_ShowModeOptions = false;
             GUILayout.EndArea();
         }
 
@@ -277,6 +360,7 @@ namespace RockGame
             foreach (var f in Cfg.TuneFields)
             {
                 var sec = Cfg.SectionOf(f);
+                if (sec == "Mode options") continue;
                 if (sec != section)
                 {
                     if (section != null && col != 0) GUILayout.EndHorizontal();
@@ -339,7 +423,7 @@ namespace RockGame
                         break;
                     case GameState.PreBall:
                         phase = "Wall drops in " + Clock(game.TimeLeft);
-                        sub = Cfg.WoodMode ? "Gather wood and build your base (craft at your machine)" : "Gather wood & stone, build your base (craft at your machine)";
+                        sub = Cfg.WoodMode ? "Gather wood and build your base (craft in your base)" : "Gather wood & stone, build your base (craft in your base)";
                         break;
                     case GameState.BallLive:
                         phase = "Time left  " + Clock(game.TimeLeft);
@@ -416,7 +500,7 @@ namespace RockGame
                 GUI.Label(new Rect(cx - 50, cy - 50, 100, 100), "X", st);
             }
             if (pc.Scoped) DrawScope();
-            float charge = Mathf.Max(pc.DrawAmount, pc.RamCharge);
+            float charge = Mathf.Max(pc.DrawAmount, pc.RamCharge, pc.EatProgress);
             if (charge > 0)
             {
                 Fill(new Rect(cx - 50 * k, cy + 30 * k, 100 * k, 8 * k), new Color(0, 0, 0, 0.5f));
@@ -573,7 +657,7 @@ namespace RockGame
                 case Item.Bow: return $"<b>Bow</b>  ({me.Count(Item.Arrow)} arrows)    hold LMB to draw, release to fire";
                 case Item.Chest: return "<b>Storage Chest</b>    LMB: place it inside your base";
                 case Item.Barrier: return $"<b>Wooden Barrier</b> x{s.Count}    LMB: place it anywhere (not in the enemy base)";
-                case Item.Berry: return $"<b>Berries</b> x{s.Count}    RMB: eat (+{Cfg.BerryHeal:0} HP)";
+                case Item.Berry: return $"<b>Berries</b> x{s.Count}    RMB: eat ({Cfg.BerryEatTime:0.#}s, +{Cfg.BerryHeal:0} HP)";
                 case Item.C4: return "<b>C4</b>    LMB: throw it at enemy buildings - it blows up everything nearby";
                 case Item.DeathWand: return "<b>Death Wand</b> (1 shot)    LMB: fire - anyone it passes close to dies";
                 case Item.Helmet: return "<b>Alien Helmet</b>    LMB: put it on - the next headshot does no damage and breaks it";
@@ -784,29 +868,26 @@ namespace RockGame
             string mats = $"<color=#d9a066>{me.Count(Item.Wood)} wood</color>" + (Cfg.WoodMode ? "" : $"  <color=#c8c8d0>{me.Count(Item.Stone)} stone</color>");
             if (!loot) Shadowed(new Rect(cxp, top - 34 * k, craftW, 30 * k), $"<b>CRAFTING</b>   {mats}", m_Label);
             float row = Mathf.Min(50 * k, (sh * 0.84f - top) / Mathf.Max(1, Cfg.RecipeCount) - 4 * k);
-            if (!craft && !loot)
-            {
-                var nr = new Rect(cxp, top, craftW, 90 * k);
-                Fill(nr, new Color(0, 0, 0, 0.45f));
-                GUI.Label(new Rect(nr.x + 10, nr.y + 8, nr.width - 20, nr.height - 16),
-                    "You can craft anywhere <b><color=#7dff9a>inside your own base</color></b>. Head home to craft.", new GUIStyle(m_Label) { wordWrap = true });
-                Shadowed(new Rect(cxp, nr.yMax + 6, craftW, 24 * k), "TAB / Esc to close", m_Small);
-            }
-            for (int i = 0; craft && !loot && i < Cfg.RecipeCount; i++)
+            for (int i = 0; !loot && i < Cfg.RecipeCount; i++)
             {
                 var rec = Cfg.GetRecipe(i);
                 var rr = new Rect(cxp, top + i * (row + 4 * k), craftW, row);
+                bool here = craft || Cfg.CraftAnywhere(rec.Output);
                 bool afford = me.Count(Item.Wood) >= rec.Wood && me.Count(Item.Stone) >= rec.Stone;
-                Fill(rr, new Color(0, 0, 0, 0.45f));
+                Fill(rr, new Color(0, 0, 0, here ? 0.45f : 0.25f));
                 var icon = ItemIcons.Get(rec.Output);
+                var oldC = GUI.color;
+                if (!here) GUI.color = new Color(1, 1, 1, 0.4f);
                 if (icon != null) GUI.DrawTexture(new Rect(rr.x + 4, rr.y + 3, row - 6, row - 6), icon, ScaleMode.ScaleToFit, true);
-                string cost = rec.Wood + " wood" + (rec.Stone > 0 ? ", " + rec.Stone + " stone" : "");
-                GUI.Label(new Rect(rr.x + row + 4, rr.y + 2, craftW - row - 100 * k, row), $"<b>{rec.Name}</b>\n<size={Mathf.RoundToInt(12 * k)}><color={(afford ? "#bbbbbb" : "#ff7777")}>{cost}</color></size>", m_Label);
-                GUI.enabled = afford;
+                GUI.color = oldC;
+                string cost = rec.Wood + " wood" + (rec.Stone > 0 ? ", " + rec.Stone + " stone" : "") + (rec.Output == Item.Armor ? " · put on right away" : "");
+                if (!here) cost = "<color=#8fb8ff>in your base</color>  " + cost;
+                GUI.Label(new Rect(rr.x + row + 4, rr.y + 2, craftW - row - 100 * k, row), $"<b>{(here ? "" : "<color=#999999>")}{rec.Name}{(here ? "" : "</color>")}</b>\n<size={Mathf.RoundToInt(12 * k)}><color={(afford ? "#bbbbbb" : "#ff7777")}>{cost}</color></size>", m_Label);
+                GUI.enabled = afford && here;
                 if (GUI.Button(new Rect(rr.xMax - 90 * k, rr.y + 8 * k, 84 * k, row - 16 * k), "Craft", m_Button)) me.CraftRpc(i);
                 GUI.enabled = true;
             }
-            if (craft && !loot) Shadowed(new Rect(cxp, top + Cfg.RecipeCount * (row + 4 * k) + 6, craftW, 24 * k), "TAB / Esc to close", m_Small);
+            if (!loot) Shadowed(new Rect(cxp, top + Cfg.RecipeCount * (row + 4 * k) + 6, craftW, 24 * k), craft ? "TAB / Esc to close" : "Spears and hatchets anywhere · the rest inside your base · TAB / Esc to close", m_Small);
 
             // ---- drag visual ----
             var e = Event.current;
@@ -912,7 +993,7 @@ namespace RockGame
             {
                 bool hover = i == WheelHover;
                 bool disabled = opts[i].Upgrade && Cfg.WoodMode;
-                GUI.color = hover ? new Color(0.85f, 0.55f, 0.2f, 0.92f) : opts[i].Demolish ? new Color(0.35f, 0.1f, 0.08f, 0.75f) : new Color(0.12f, 0.12f, 0.12f, 0.78f);
+                GUI.color = hover ? new Color(0.85f, 0.55f, 0.2f, 0.92f) : opts[i].Demolish ? new Color(0.35f, 0.1f, 0.08f, 0.75f) : new Color(0.1f, 0.25f, 0.6f, 0.8f);
                 GUI.DrawTexture(area, s_Wedges[i]);
                 float a = i * (360f / opts.Length) * Mathf.Deg2Rad;
                 var p = c + new Vector2(Mathf.Sin(a), -Mathf.Cos(a)) * R * 0.67f;
@@ -923,7 +1004,7 @@ namespace RockGame
                 else GUI.Label(new Rect(p.x - 50, p.y - 12, 100, 24), opts[i].Label, m_Center);
             }
             // centre: name and cost
-            GUI.color = new Color(0.08f, 0.08f, 0.08f, 0.85f);
+            GUI.color = new Color(0.05f, 0.12f, 0.32f, 0.88f);
             GUI.DrawTexture(new Rect(c.x - R * 0.32f, c.y - R * 0.32f, R * 0.64f, R * 0.64f), s_Disc);
             GUI.color = old;
             var o = opts[Mathf.Clamp(WheelHover, 0, opts.Length - 1)];

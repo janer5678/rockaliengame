@@ -13,6 +13,10 @@ namespace RockGame
         public bool MenuOpen, Paused;
         /// <summary>Crafting is available anywhere inside your own base.</summary>
         public bool CraftOpen => m_Net != null && m_Net.CanCraftHere;
+        /// <summary>Eating berries: 0..1 while it's being eaten.</summary>
+        public float EatProgress => m_EatStart >= 0 ? Mathf.Clamp01((Time.time - m_EatStart) / Mathf.Max(0.1f, Cfg.BerryEatTime)) : 0f;
+        float m_EatStart = -1f;
+        bool m_EatHalf;
         public Container LootTarget;
         public PieceType BuildPiece = PieceType.Foundation;
         /// <summary>Building plan: the Rust-style wheel (hold RMB) is open, and demolish mode picked on it.</summary>
@@ -383,6 +387,7 @@ namespace RockGame
             if (held == Item.BuildingPlan && WheelOpen && !Input.GetMouseButton(1)) CloseWheel();
             bool drawing = input && !carrying && !gameOver && (held == Item.Bow || held == Item.Spear);
             if (!drawing) m_DrawStart = -1f;
+            if (held != Item.Berry || m_Net.Dead.Value || !input) m_EatStart = -1f;
             float drawTime = held == Item.Spear ? Cfg.SpearDrawTime : Cfg.BowDrawTime;
             DrawAmount = m_DrawStart >= 0 ? Mathf.Clamp01((Time.time - m_DrawStart) / Mathf.Max(0.05f, drawTime)) : 0f;
             if (!input || carrying || gameOver || held != Item.Ram || !Input.GetMouseButton(0)) RamCharge = 0f;
@@ -732,12 +737,23 @@ namespace RockGame
 
         void HandleBerry()
         {
+            bool berry = m_Net.HeldItem == Item.Berry;
+            if (berry && m_EatStart >= 0)
+            {
+                // berries take a moment to eat; switching away cancels it
+                if (!m_EatHalf && EatProgress >= 0.5f) { m_EatHalf = true; m_VM.Eat(); Sfx.Play2D(Sfx.Eat, 0.7f); }
+                if (EatProgress < 1f) return;
+                m_EatStart = -1f;
+                m_Net.EatRpc();
+                return;
+            }
             if (!Input.GetMouseButtonDown(1) || Time.time < m_NextEat) return;
             if (m_Net.Health.Value >= Cfg.MaxHealth) { Hud.Push("You're already at full health"); return; }
             m_NextEat = Time.time + 0.8f;
-            m_Net.EatRpc();
             m_VM.Eat();
             Sfx.Play2D(Sfx.Eat, 0.7f);
+            if (berry) { m_EatStart = Time.time; m_EatHalf = false; m_NextEat = Time.time + Cfg.BerryEatTime + 0.1f; return; }
+            m_Net.EatRpc();
         }
 
         /// <summary>C4 or the fort tower: LMB lobs it where you look.</summary>
@@ -1184,7 +1200,7 @@ namespace RockGame
                 case TargetKind.Vehicle:
                 {
                     var v = t.Obj.GetComponent<Vehicle>();
-                    AimText = v.IsHorse ? (v.Saddled.Value ? "Horse   E: ride" : $"Wild horse   E: saddle and ride ({(m_Net.Count(Item.Saddle) > 0 ? "uses your saddle" : "<color=#ff8888>needs a saddle</color>")})") : "Wooden car   E: drive";
+                    AimText = v.IsHorse ? (v.Saddled.Value ? $"Horse  {v.Hp.Value:0}/{v.MaxHp:0} HP   E: ride" : $"Wild horse  {v.Hp.Value:0}/{v.MaxHp:0} HP   E: saddle and ride ({(m_Net.Count(Item.Saddle) > 0 ? "uses your saddle" : "<color=#ff8888>needs a saddle</color>")})") : "Wooden car   E: drive";
                     return;
                 }
                 case TargetKind.Bush: AimText = "Berry Bush   E: pick it"; return;
@@ -1218,6 +1234,8 @@ namespace RockGame
                 AimText = n.IsBush ? "Berry Bush (empty)" : $"{n.DisplayName}  ({n.Amount.Value} {(n.Kind.Value == ResourceNode.Tree ? "wood" : "stone")} left)";
             else if (no.TryGetComponent(out PlayerNet p) && p != m_Net)
                 AimText = $"{Cfg.TeamName[p.Team.Value]} player";
+            else if (no.TryGetComponent(out Vehicle hv) && !hv.IsCar)
+                AimText = $"{hv.DisplayName}  {hv.Hp.Value:0}/{hv.MaxHp:0} HP";
             if (AimText == "") AimText = self;
         }
     }

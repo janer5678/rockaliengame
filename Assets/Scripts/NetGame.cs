@@ -137,7 +137,7 @@ namespace RockGame
                 // frozen: push every deadline back by the time that passed
                 double dt = Time.deltaTime;
                 if (S == GameState.PreBall || S == GameState.BallLive || S == GameState.SuddenDeath) PhaseEnd.Value += dt;
-                for (int i = 0; i < LaneTotal; i++) if (m_Lanes[i] != null && m_Lanes[i].NextAt < double.MaxValue) m_Lanes[i].NextAt += dt;
+                if (m_MatchStart >= 0) m_MatchStart += dt;
             }
             ServerTickC4(now);
             ServerTickAirstrikes(now);
@@ -151,21 +151,25 @@ namespace RockGame
                     {
                         float delay = fast ? Cfg.FastBallDropDelay : Cfg.BallDropDelay;
                         SetPhase(GameState.PreBall, delay);
+                        m_MatchStart = now;
+                        m_DropsDone = 0;
                         // out of the waiting stadium and into your base
                         foreach (var p in PlayerNet.All) p.ServerSendHome();
                         Broadcast($"Match started! The glass wall drops (and the ball with it) in {Clock(delay)}");
                     }
                     break;
                 case GameState.PreBall:
+                    ServerTickScheduledDrops(now);
+                    ServerTickAirdrop(now);
                     if (now >= PhaseEnd.Value)
                     {
                         SpawnBall();
                         SetPhase(GameState.BallLive, fast ? Cfg.FastMatchLength : Cfg.MatchLength);
                         Broadcast("The glass wall is down and the BALL has dropped in the middle!");
-                        ServerStartAirdropTimers(now);
                     }
                     break;
                 case GameState.BallLive:
+                    ServerTickScheduledDrops(now);
                     ServerTickAirdrop(now);
                     if (now >= PhaseEnd.Value)
                     {
@@ -410,7 +414,7 @@ namespace RockGame
             }
             // wild horses, the same number in each half
             if (Bootstrap.I.vehiclePrefab != null)
-                for (int h = 0; h < Cfg.HorsesPerSide; h++)
+                for (int h = 0; h < Mathf.Max(Cfg.HorsesPerSide, Mathf.RoundToInt(Cfg.HorsesPerSide * Cfg.MapHalf / 100f)); h++)
                 {
                     for (int attempt = 0; attempt < 40; attempt++)
                     {
@@ -428,10 +432,10 @@ namespace RockGame
                         break;
                     }
                 }
-            float area = Mathf.Clamp01(Cfg.MapHalf / 100f);
+            float area = Cfg.MapHalf / 100f; // bigger maps get more of everything
             area *= area;
             area *= 2f / Cfg.Copies; // a quarter of the map per team in free for all
-            int trees = Mathf.Max(6, Mathf.RoundToInt(24 * area)), stones = Mathf.Max(4, Mathf.RoundToInt(18 * area)), bushes = Mathf.Max(3, Mathf.RoundToInt(10 * area));
+            int trees = Mathf.Max(6, Mathf.RoundToInt(24 * area)), stones = Mathf.Max(4, Mathf.RoundToInt(18 * area)), bushes = Mathf.Max(2, Mathf.RoundToInt(5 * area));
             float half = Cfg.MapHalf;
             for (int n = 0; n < trees + stones + bushes; n++)
             {
@@ -513,7 +517,6 @@ namespace RockGame
         class DropLane
         {
             public int Region = -1; // -1 = anywhere, else that team's side of the map
-            public double NextAt = double.MaxValue;
             public bool Incoming, Signal;
             public Container Crate;
         }
@@ -525,12 +528,41 @@ namespace RockGame
 
         void SetLane(int i, double start, Vector3 pos) => Lanes[i] = new DropLaneState { Start = start, Pos = pos };
 
-        void ServerStartAirdropTimers(double now)
+        double m_MatchStart = -1;
+        int m_DropsDone;
+        readonly List<Container> m_OldCrates = new List<Container>();
+
+        /// <summary>Seconds from the match start (wall going up) to the end of the ball phase.</summary>
+        static float MatchTotal => Bootstrap.Fast ? Cfg.FastBallDropDelay + Cfg.FastMatchLength : Cfg.BallDropDelay + Cfg.MatchLength;
+
+        /// <summary>
+        /// Mode options: N airdrops per match, evenly spaced over the whole match (1 = half way through, 2 = at a third and
+        /// two thirds...). While the glass wall is still up nobody can cross, so every side gets its own.
+        /// </summary>
+        void ServerTickScheduledDrops(double now)
         {
-            for (int i = 0; i < SignalLane0; i++)
+            for (int i = m_OldCrates.Count - 1; i >= 0; i--)
             {
-                m_Lanes[i].Region = Cfg.AirdropSides ? i : -1;
-                m_Lanes[i].NextAt = i < WorldLaneCount ? now + Cfg.AirdropInterval : double.MaxValue;
+                var c = m_OldCrates[i];
+                if (c != null && c.IsSpawned && !c.Empty) continue;
+                if (c != null && c.IsSpawned) c.NetworkObject.Despawn(true);
+                m_OldCrates.RemoveAt(i);
+            }
+            int n = Mathf.Clamp(Cfg.AirdropCount, 0, 20);
+            if (m_MatchStart < 0 || m_DropsDone >= n) return;
+            if (now < m_MatchStart + (m_DropsDone + 1) * (double)MatchTotal / (n + 1)) return;
+            bool split = Cfg.AirdropSides || WallUp;
+            int lanes = split ? Cfg.TeamCount : 1;
+            for (int i = 0; i < lanes; i++) if (m_Lanes[i].Incoming) return; // one still on its way: right after it lands
+            m_DropsDone++;
+            for (int i = 0; i < lanes; i++)
+            {
+                var lane = m_Lanes[i];
+                // a crate nobody emptied stays where it is
+                if (lane.Crate != null && lane.Crate.IsSpawned) m_OldCrates.Add(lane.Crate);
+                lane.Crate = null;
+                lane.Region = split ? i : -1;
+                ServerLaunchDrop(i, now, PickDropSpot(lane.Region));
             }
         }
 
@@ -565,12 +597,8 @@ namespace RockGame
                         lane.Crate.NetworkObject.Despawn(true);
                     }
                     lane.Crate = null;
-                    lane.NextAt = lane.Signal ? double.MaxValue : now + Cfg.AirdropInterval;
                 }
-                return;
             }
-            if (lane.Signal || now < lane.NextAt || S != GameState.BallLive) return;
-            ServerLaunchDrop(i, now, PickDropSpot(lane.Region));
         }
 
         void ServerLaunchDrop(int i, double now, Vector3 pos)
@@ -600,7 +628,8 @@ namespace RockGame
         /// <summary>One random OP item.</summary>
         public static ItemStack RollAirdropLoot()
         {
-            var id = Cfg.AirdropLoot[Random.Range(0, Cfg.AirdropLoot.Length)];
+            var pool = Cfg.AirdropLoot;
+            var id = pool[Random.Range(0, pool.Count)];
             if (id == Item.Wood) return ItemStack.Of(Cfg.WoodMode || Random.value < 0.5f ? Item.Wood : Item.Stone, Mathf.Clamp(Cfg.AirdropResources, 1, 1000));
             if (id == Item.Helmet) return ItemStack.Of(Item.Helmet, 1, 1);
             return ItemStack.Of(id, 1, Mathf.Clamp(Cfg.MaxData(id), 0, 255));

@@ -406,7 +406,7 @@ namespace RockGame
             var rng = new System.Random(Cfg.MapSeed * 7 + 11);
             float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
             float half = Cfg.MapHalf;
-            int want = Cfg.SmallMap ? 1 : 2;
+            int want = Cfg.SmallMap ? 1 : Mathf.RoundToInt(2 * Cfg.SizeScale);
             var mine = new List<(Vector3 p, float yaw)>();
             for (int tries = 0; tries < 300 && mine.Count < want; tries++)
             {
@@ -631,6 +631,18 @@ namespace RockGame
         readonly List<Vector3> m_Base = new List<Vector3>();
         AudioSource m_Crowd;
         float m_Hype;
+        Renderer[] m_Renderers;
+        bool m_Shown = true;
+
+        /// <summary>The stadium is far off the edge of the map: only draw it when you're near it (it showed up on the horizon).</summary>
+        void ShowStadium(bool show)
+        {
+            if (m_Renderers == null) m_Renderers = GetComponentsInChildren<Renderer>(true);
+            if (show == m_Shown) return;
+            m_Shown = show;
+            foreach (var r in m_Renderers) if (r) r.enabled = show;
+            foreach (var l in GetComponentsInChildren<Light>(true)) l.enabled = show;
+        }
 
         void Awake() => Instance = this;
         void OnDestroy() { if (Instance == this) Instance = null; }
@@ -646,7 +658,9 @@ namespace RockGame
             var g = NetGame.Instance;
             bool live = g != null && g.IsSpawned && g.S == GameState.SuddenDeath;
             var me = PlayerNet.Local;
-            bool near = Camera.main != null && Vector3.Distance(Camera.main.transform.position, transform.position) < 120f;
+            float camDist = Camera.main != null ? Vector3.Distance(Camera.main.transform.position, transform.position) : float.MaxValue;
+            ShowStadium(camDist < 300f);
+            bool near = camDist < 120f;
             if (!near) { if (m_Crowd) m_Crowd.volume = 0f; return; }
             m_Hype = Mathf.MoveTowards(m_Hype, 0f, Time.deltaTime * 0.3f);
             float excite = 0.35f + (live ? 0.3f : 0f) + m_Hype * 0.7f;

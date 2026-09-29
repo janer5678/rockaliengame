@@ -86,8 +86,10 @@ namespace RockGame
                     case "-map":
                         if (i + 1 < args.Length) MapChoice = (MapChoice & ~15) | (args[i + 1].ToLowerInvariant().StartsWith("h") ? (int)MapKind.Highlands : (int)MapKind.Plains);
                         break;
-                    case "-small": MapChoice |= Cfg.SmallBit; break;
-                    case "-big": MapChoice &= ~Cfg.SmallBit; break;
+                    case "-small": MapChoice = SetSize(MapChoice, MapSize.Small); break;
+                    case "-big": MapChoice = SetSize(MapChoice, MapSize.Big); break;
+                    case "-large": MapChoice = SetSize(MapChoice, MapSize.Large); break;
+                    case "-huge": MapChoice = SetSize(MapChoice, MapSize.Huge); break;
                     case "-wood": MapChoice |= Cfg.WoodBit; break;
                     case "-normal": MapChoice &= ~Cfg.WoodBit; break;
                     case "-mode":
@@ -95,7 +97,7 @@ namespace RockGame
                         {
                             string m = args[i + 1].ToLowerInvariant();
                             int mode = m == "2v2" ? 1 : m == "ffa3" ? 2 : m == "ffa4" ? 3 : 0;
-                            MapChoice = (MapChoice & ~(3 << Cfg.ModeShift)) | (mode << Cfg.ModeShift);
+                            MapChoice = (MapChoice & ~(Cfg.ModeMask << Cfg.ModeShift)) | (mode << Cfg.ModeShift);
                         }
                         break;
                     case "-sides": MapChoice |= Cfg.SidesBit; break;
@@ -104,6 +106,8 @@ namespace RockGame
                 }
             }
         }
+
+        static int SetSize(int key, MapSize s) => (key & ~Cfg.SmallBit & ~(3 << Cfg.SizeShift)) | ((int)s << Cfg.SizeShift);
 
         /// <summary>Menu: pick the map (rebuilds the background preview).</summary>
         public void SetMapChoice(int key)
