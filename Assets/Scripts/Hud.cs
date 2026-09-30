@@ -456,7 +456,7 @@ namespace RockGame
                 case Item.InvisPotion: return $"<b>Invisibility Potion</b>    LMB: drink ({Cfg.InvisTime:0}s, attacking shows you)";
                 case Item.Chainsaw: return $"<b>Chainsaw</b> ({s.Data} uses left)    hold LMB: cuts wood and stone fast";
                 case Item.EnderPearl: return "<b>Ender Pearl</b>    LMB: throw it - you teleport to wherever it lands";
-                case Item.Pistol: return $"<b>Pistol</b>  ({s.Data}/{Cfg.PistolMag}, {me.Count(Item.PistolAmmo)} spare ammo)    LMB: shoot   R: reload";
+                case Item.Pistol: return $"<b>Pistol</b>  ({s.Data} shot{(s.Data == 1 ? "" : "s")} left)    LMB: shoot" + (me.Count(Item.PistolAmmo) > 0 ? $"   R: reload ({me.Count(Item.PistolAmmo)} spare ammo)" : "");
                 case Item.PistolAmmo: return "<b>Pistol Ammo</b>    the pistol reloads from this";
                 case Item.HeavyArmor: return $"<b>Heavy Armour</b> ({Cfg.HeavyArmorHp} HP)    LMB: put it on (replaces wooden armour)";
                 case Item.TreeCracker: return $"<b>Tree Cracker</b> ({s.Data} uses left)    LMB: fells a whole tree in one hit";

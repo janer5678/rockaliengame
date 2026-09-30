@@ -330,9 +330,9 @@ namespace RockGame
         // ---------- Game modes ----------
         /// <summary>Arsenal / Builder: normal prices, except the crossbow is cheaper.</summary>
         [Tune("Arsenal and Builder")] public static int ModesCrossbowWood = 350;
-        [Tune("Arsenal and Builder")] public static int FortifyWood = 3500, PistolWood = 3000, PistolAmmoWood = 2000, PistolAmmoPerCraft = 30, C4Wood = 3000;
+        [Tune("Arsenal and Builder")] public static int FortifyWood = 10000, PistolWood = 10000;
         [Tune("Arsenal and Builder")] public static float PistolDamage = 34f, PistolSpeed = 160f, PistolFireRate = 0.22f, PistolReload = 1.3f;
-        [Tune("Arsenal and Builder")] public static int PistolMag = 8, HeavyArmorHp = 200, TreeCrackerUses = 40;
+        [Tune("Arsenal and Builder")] public static int PistolMag = 5, HeavyArmorHp = 200, TreeCrackerUses = 40;
         /// <summary>Builder: every craft takes a while (seconds per 100 wood of its price, between the min and max).</summary>
         [Tune("Arsenal and Builder")] public static float BuilderCraftSecsPer100 = 0.6f, BuilderCraftMin = 2f, BuilderCraftMax = 20f;
         [Tune("Fun modes")] public static float FunItemInterval = 9f;
@@ -586,7 +586,7 @@ namespace RockGame
         }
 
         // ---------- Arsenal / Builder: the powerful items menu ----------
-        static readonly Item[] k_Power = { Item.Pistol, Item.PistolAmmo, Item.C4, Item.FortifyBuff };
+        static readonly Item[] k_Power = { Item.Pistol, Item.FortifyBuff };
         /// <summary>Power recipes are numbered from here in CraftRpc.</summary>
         public const int PowerBase = 100;
         public static int PowerCount => PowerMenu ? k_Power.Length : 0;
@@ -597,8 +597,6 @@ namespace RockGame
             switch (id)
             {
                 case Item.Pistol: return new Recipe { Output = id, Count = 1, Wood = PistolWood };
-                case Item.PistolAmmo: return new Recipe { Output = id, Count = Mathf.Max(1, PistolAmmoPerCraft), Wood = PistolAmmoWood };
-                case Item.C4: return new Recipe { Output = id, Count = 1, Wood = C4Wood };
                 default: return new Recipe { Output = Item.FortifyBuff, Count = 1, Wood = FortifyWood };
             }
         }
@@ -608,9 +606,7 @@ namespace RockGame
         {
             switch (id)
             {
-                case Item.Pistol: return $"{PistolMag} shots, {PistolDamage:0} dmg, fast - reloads from ammo";
-                case Item.PistolAmmo: return $"{PistolAmmoPerCraft} rounds for the pistol";
-                case Item.C4: return "blows up enemy buildings";
+                case Item.Pistol: return $"{PistolMag} shots, {PistolDamage:0} dmg each - no reloads, make them count";
                 default: return "turns all your team's wooden pieces to stone";
             }
         }

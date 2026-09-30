@@ -118,7 +118,7 @@ namespace RockGame
             if (want <= 0) return;
             int have = Count(Item.PistolAmmo);
             int take = Mathf.Min(want, have);
-            if (take <= 0) { Notify("No pistol ammo (buy some in the power items menu)"); return; }
+            if (take <= 0) { Notify("The pistol is out of shots"); return; }
             InvOps.Remove(Inv, Item.PistolAmmo, take);
             Inv[HeldSlot.Value] = ItemStack.Of(Item.Pistol, 1, st.Data + take);
             SpentRpc((byte)Item.PistolAmmo, take);

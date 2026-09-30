@@ -31,7 +31,7 @@ namespace RockGame
 
         void StartPistolReload()
         {
-            if (m_Net.Count(Item.PistolAmmo) <= 0) { Hud.Push("No pistol ammo - buy some in the power items menu (TAB)"); return; }
+            if (m_Net.Count(Item.PistolAmmo) <= 0) { Hud.Push("The pistol is out of shots"); return; }
             m_PistolReloadStart = Time.time;
             Sfx.Play2D(Sfx.Clink, 0.4f);
         }

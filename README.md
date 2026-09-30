@@ -46,10 +46,8 @@ Bought with wood from the POWER ITEMS column next to crafting (in your base; any
 
 | Item | Wood | What it does |
 |---|---|---|
-| Pistol | 3000 | 8-round magazine, 34 damage a shot, fast and flat - better than the crossbow. LMB shoots, R reloads (it also reloads by itself when empty). |
-| Pistol Ammo x30 | 2000 | Rounds for the pistol. |
-| C4 | 3000 | The airdrop C4, now buyable. |
-| Fortify All Walls | 3500 | Every wooden piece your team has placed turns to stone at full health. |
+| Pistol | 10000 | 5 shots, 34 damage each, fast and flat. No ammo to buy - when the 5 are gone, it's empty. |
+| Fortify All Walls | 10000 | Every wooden piece your team has placed turns to stone at full health. |
 
 All these numbers are in CHANGE VALUES under "Arsenal and Builder" (and "Fun modes" for the 9 s).
 

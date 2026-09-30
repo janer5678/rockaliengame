@@ -48,22 +48,19 @@ namespace RockGame
         {
             var hat = Cfg.GetRecipe(Cfg.RecipeIndex(Item.Hatchet));
             var xbow = Cfg.GetRecipe(Cfg.RecipeIndex(Item.Crossbow));
-            Check(Cfg.PowerMenu && Cfg.PowerCount == 4 && hat.Wood == Cfg.HatchetWood && xbow.Wood == 350, $"Arsenal: power menu (4 items), normal prices (hatchet {hat.Wood} wood), crossbow {xbow.Wood} wood");
+            Check(Cfg.PowerMenu && Cfg.PowerCount == 2 && hat.Wood == Cfg.HatchetWood && xbow.Wood == 350, $"Arsenal: power menu (2 items), normal prices (hatchet {hat.Wood} wood), crossbow {xbow.Wood} wood");
             Check(Cfg.PieceWood(PieceType.Wall) == Cfg.WallWood, $"building pieces at their normal price (wall {Cfg.PieceWood(PieceType.Wall)} wood)");
-            for (int i = 0; i < 20; i++) me.ServerGive(Item.Wood, 1000);
+            for (int i = 0; i < 24; i++) me.ServerGive(Item.Wood, 1000);
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
             yield return new WaitForSeconds(0.4f);
             int w0 = me.Count(Item.Wood);
 
-            // pistol + ammo
+            // the pistol (5 shots, no ammo to buy)
             me.CraftRpc(Cfg.PowerBase + 0);
             yield return new WaitForSeconds(0.3f);
-            me.CraftRpc(Cfg.PowerBase + 1);
-            yield return new WaitForSeconds(0.3f);
-            Check(me.Count(Item.Pistol) == 1 && me.Count(Item.PistolAmmo) == Cfg.PistolAmmoPerCraft && w0 - me.Count(Item.Wood) == Cfg.PistolWood + Cfg.PistolAmmoWood,
-                $"bought a pistol and {me.Count(Item.PistolAmmo)} rounds ({w0 - me.Count(Item.Wood)} wood)");
+            Check(me.Count(Item.Pistol) == 1 && w0 - me.Count(Item.Wood) == 10000, $"bought a pistol ({w0 - me.Count(Item.Wood)} wood)");
             yield return Hold(me, Item.Pistol);
-            Check(me.HeldStack.Data == Cfg.PistolMag, $"the pistol comes loaded ({me.HeldStack.Data})");
+            Check(me.HeldStack.Data == 5, $"the pistol has 5 shots ({me.HeldStack.Data})");
             yield return Snap("arsenal_pistol");
             var fwd = me.transform.forward;
             me.FirePistolRpc(me.EyePos, fwd * Cfg.PistolSpeed);
@@ -73,12 +70,7 @@ namespace RockGame
             Check(me.HeldStack.Data == Cfg.PistolMag - 1 && FindWorldItem(Item.Arrow) < 0, $"a shot uses a round ({me.HeldStack.Data} left) and leaves no arrow behind");
             me.ReloadPistolRpc();
             yield return new WaitForSeconds(0.4f);
-            Check(me.HeldStack.Data == Cfg.PistolMag && me.Count(Item.PistolAmmo) == Cfg.PistolAmmoPerCraft - 1, "reload fills the magazine from the ammo");
-
-            // C4 is buyable
-            me.CraftRpc(Cfg.PowerBase + 2);
-            yield return new WaitForSeconds(0.4f);
-            Check(me.Count(Item.C4) == 1, "bought C4");
+            Check(me.HeldStack.Data == Cfg.PistolMag - 1, "no reloading without ammo");
 
             // fortify: a foundation and a wall, then every wooden piece turns to stone
             me.CraftRpc(Cfg.RecipeIndex(Item.BuildingPlan));
@@ -95,7 +87,7 @@ namespace RockGame
             foreach (var s in Structure.All) if (s.Team.Value == team && s.Upgradable && s.Tier.Value == 0) wood++;
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
             yield return new WaitForSeconds(0.3f);
-            me.CraftRpc(Cfg.PowerBase + 3);
+            me.CraftRpc(Cfg.PowerBase + 1);
             yield return new WaitForSeconds(0.5f);
             int stone = 0, still = 0;
             foreach (var s in Structure.All) if (s.Team.Value == team && s.Upgradable) { if (s.Tier.Value == 1) stone++; else still++; }
