@@ -5,7 +5,7 @@ using UnityEngine;
 namespace RockGame
 {
     /// <summary>Immediate-mode (OnGUI) main menu + settings, HUD, inventory/crafting/loot screen, pause and end screens.</summary>
-    public class Hud : MonoBehaviour
+    public partial class Hud : MonoBehaviour
     {
         struct Msg { public string Text; public float Time; }
         static readonly List<Msg> s_Msgs = new List<Msg>();
@@ -20,7 +20,6 @@ namespace RockGame
         public static bool MouseOverUI;
         static readonly System.Text.RegularExpressions.Regex s_ColorTag = new System.Text.RegularExpressions.Regex("</?color[^>]*>");
 
-        bool m_ShowHelp = true, m_ShowSettings, m_ShowDev;
         /// <summary>Build wheel: which slice the mouse is over (-1 = none).</summary>
         public static int WheelHover = -1;
         static Vector2 s_WheelCenter;
@@ -28,8 +27,6 @@ namespace RockGame
         float m_LastHealth = 100f, m_DamageFlash;
         GUIStyle m_Label, m_Center, m_Big, m_Small, m_Button, m_Box, m_Field;
         float m_Scale = 1f;
-        Vector2 m_SettingsScroll;
-        readonly Dictionary<string, string> m_EditBuffers = new Dictionary<string, string>();
 
         // drag & drop
         struct SlotRef { public byte Kind; public int Index; }
@@ -88,7 +85,7 @@ namespace RockGame
         void Update()
         {
             if (Time.frameCount > 3) ItemIcons.EnsureRendered();
-            if (Input.GetKeyDown(KeyCode.F1)) m_ShowHelp = !m_ShowHelp;
+            MenuUpdate();
             var me = PlayerNet.Local;
             TrackGains(me);
             if (me != null)
@@ -111,6 +108,7 @@ namespace RockGame
             m_Button = new GUIStyle(GUI.skin.button) { fontSize = fs };
             m_Box = new GUIStyle(GUI.skin.box);
             m_Field = new GUIStyle(GUI.skin.textField) { fontSize = Mathf.RoundToInt(14 * m_Scale) };
+            UiStyles();
         }
 
         static void Fill(Rect r, Color c)
@@ -140,7 +138,14 @@ namespace RockGame
         void OnGUI()
         {
             Styles();
+            BeginHoverFrame();
             MouseOverUI = false;
+            DrawAll();
+            EndHoverFrame();
+        }
+
+        void DrawAll()
+        {
             var boot = Bootstrap.I;
             if (boot == null) return;
             if (!boot.InSession) { DrawMainMenu(boot); return; }
@@ -155,261 +160,10 @@ namespace RockGame
             DrawGame(boot, me, pc);
         }
 
-        // ------------------------------------------------------------------ main menu
-
-        void DrawMainMenu(Bootstrap boot)
-        {
-            if (m_ShowSettings) { DrawSettings(); return; }
-            if (OpenModeOptions) { OpenModeOptions = false; m_ShowModeOptions = true; }
-            if (m_ShowModeOptions) { DrawModeOptions(boot); return; }
-            float w = 500 * m_Scale, h = 800 * m_Scale;
-            var r = new Rect((Screen.width - w) / 2, (Screen.height - h) / 2, w, h);
-            Fill(r, new Color(0, 0, 0, 0.65f));
-            GUILayout.BeginArea(new Rect(r.x + 20, r.y + 15, r.width - 40, r.height - 30));
-            GUILayout.Label("<b>ROCK BASE BRAWL</b>", m_Big);
-            GUILayout.Label("1v1 · gather · build · raid · steal the ball", m_Center);
-            GUILayout.Space(15 * m_Scale);
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("Host IP", m_Label, GUILayout.Width(90 * m_Scale));
-            boot.Ip = GUILayout.TextField(boot.Ip, new GUIStyle(GUI.skin.textField) { fontSize = m_Label.fontSize });
-            GUILayout.EndHorizontal();
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("Port", m_Label, GUILayout.Width(90 * m_Scale));
-            boot.Port = GUILayout.TextField(boot.Port, new GUIStyle(GUI.skin.textField) { fontSize = m_Label.fontSize });
-            GUILayout.EndHorizontal();
-            GUILayout.Space(10 * m_Scale);
-            {
-                int mk = Bootstrap.MapChoice;
-                var mode = (GameMode)((mk >> Cfg.ModeShift) & Cfg.ModeMask);
-                // two rows: red vs blue, then the X-shaped maps with 3 or 4 bases
-                var rows = new[]
-                {
-                    new[] { GameMode.Duel, GameMode.Teams, GameMode.Teams3, GameMode.Teams4 },
-                    new[] { GameMode.Ffa3, GameMode.Ffa4, GameMode.Trio, GameMode.Quad },
-                };
-                for (int row = 0; row < rows.Length; row++)
-                {
-                    GUILayout.BeginHorizontal();
-                    GUILayout.Label(row == 0 ? "Game" : "", m_Label, GUILayout.Width(90 * m_Scale));
-                    foreach (var gm in rows[row])
-                    {
-                        string name = gm == GameMode.Ffa3 ? "FFA 3" : gm == GameMode.Ffa4 ? "FFA 4" : Cfg.ModeName(gm);
-                        if (GUILayout.Toggle(mode == gm, " " + name, m_Button, GUILayout.Height(30 * m_Scale)) && mode != gm)
-                            boot.SetMapChoice((mk & ~(Cfg.ModeMask << Cfg.ModeShift)) | ((int)gm << Cfg.ModeShift));
-                    }
-                    GUILayout.EndHorizontal();
-                }
-                int teams = Cfg.ModeTeams(mode), per = Cfg.ModeTeamSize(mode);
-                string desc = teams == 2
-                    ? (per == 1 ? "Red vs blue, one on one." : $"Red vs blue, {per} players each ({teams * per} players).")
-                    : per == 1 ? $"Everyone for themselves: {teams} bases, glass walls in an X."
-                    : $"{teams} teams of {per} ({teams * per} players): {teams} bases, glass walls in an X.";
-                GUILayout.Label($"<color=#bbbbbb>{desc}</color>", m_Small);
-            }
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("Map", m_Label, GUILayout.Width(90 * m_Scale));
-            int key = Bootstrap.MapChoice;
-            int flags = key & ~15;
-            bool wood = (key & Cfg.WoodBit) != 0;
-            var size = (key & Cfg.SmallBit) != 0 ? MapSize.Small : (MapSize)((key >> Cfg.SizeShift) & 3);
-            var kind = (MapKind)(key & 15);
-            if (GUILayout.Toggle(kind == MapKind.Plains, " Plains", m_Button, GUILayout.Height(30 * m_Scale)) && kind != MapKind.Plains) boot.SetMapChoice((int)MapKind.Plains | flags);
-            if (GUILayout.Toggle(kind == MapKind.Highlands, " Highlands (wild)", m_Button, GUILayout.Height(30 * m_Scale)) && kind != MapKind.Highlands) boot.SetMapChoice((int)MapKind.Highlands | flags);
-            GUILayout.EndHorizontal();
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("Size", m_Label, GUILayout.Width(90 * m_Scale));
-            foreach (var sz in new[] { MapSize.Small, MapSize.Big, MapSize.Large, MapSize.Huge })
-                if (GUILayout.Toggle(size == sz, " " + Cfg.SizeLabel(sz), m_Button, GUILayout.Height(30 * m_Scale)) && size != sz)
-                    boot.SetMapChoice((key & ~Cfg.SmallBit & ~(3 << Cfg.SizeShift)) | ((int)sz << Cfg.SizeShift));
-            GUILayout.EndHorizontal();
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("Mode", m_Label, GUILayout.Width(90 * m_Scale));
-            if (GUILayout.Toggle(!wood, " Normal", m_Button, GUILayout.Height(30 * m_Scale)) && wood) boot.SetMapChoice(key & ~Cfg.WoodBit);
-            if (GUILayout.Toggle(wood, " Wood mode", m_Button, GUILayout.Height(30 * m_Scale)) && !wood) boot.SetMapChoice(key | Cfg.WoodBit);
-            GUILayout.EndHorizontal();
-            if (wood) GUILayout.Label("<color=#d9a066>Wood only: no stone, no pickaxe, everything costs wood.</color>", m_Small);
-            GUILayout.Space(4 * m_Scale);
-            if (GUILayout.Button("MODE OPTIONS  (airdrops, respawn)", m_Button, GUILayout.Height(34 * m_Scale))) m_ShowModeOptions = true;
-            GUILayout.Label($"<color=#bbbbbb>{ModeOptionsSummary(key)}</color>", m_Small);
-            GUILayout.Space(6 * m_Scale);
-            Bootstrap.Solo = GUILayout.Toggle(Bootstrap.Solo, " Solo test (start without an opponent)", m_Label);
-            Bootstrap.Fast = GUILayout.Toggle(Bootstrap.Fast, $" Fast timers ({Cfg.FastBallDropDelay:0}s ball drop, {Cfg.FastMatchLength:0}s match)", m_Label);
-            GUILayout.Space(12 * m_Scale);
-            if (GUILayout.Button("HOST GAME", m_Button, GUILayout.Height(44 * m_Scale))) boot.Host();
-            GUILayout.Space(6 * m_Scale);
-            if (GUILayout.Button("JOIN GAME", m_Button, GUILayout.Height(44 * m_Scale))) boot.Join();
-            GUILayout.Space(6 * m_Scale);
-            if (GUILayout.Button("GAME SETTINGS", m_Button, GUILayout.Height(36 * m_Scale))) m_ShowSettings = true;
-            GUILayout.Space(8 * m_Scale);
-            if (!string.IsNullOrEmpty(boot.Status)) GUILayout.Label("<color=#ffcc66>" + boot.Status + "</color>", m_Center);
-            GUILayout.FlexibleSpace();
-            GUILayout.Label("Host picks the options and settings. Your friend joins with your IP (port 7777 UDP).", m_Small);
-            GUILayout.EndArea();
-        }
-
-        bool m_ShowModeOptions;
-        /// <summary>Opens the mode options panel from code (screenshot test).</summary>
-        public static bool OpenModeOptions;
-
-        static string ModeOptionsSummary(int key)
-        {
-            int n = Mathf.Clamp(Cfg.AirdropCount, 0, 20);
-            int items = Cfg.AirdropLoot.Count;
-            return (n == 0 ? "No airdrops" : $"{n} airdrop{(n == 1 ? "" : "s")} a match ({((key & Cfg.CenterBit) != 0 ? "in the middle" : (key & Cfg.SidesBit) != 0 ? "one per side" : "anywhere")}, {items} item{(items == 1 ? "" : "s")})")
-                + ((key & Cfg.RespawnLootBit) != 0 ? " · respawn with an airdrop item" : "");
-        }
-
-        /// <summary>Mode options: how many airdrops, where they land, which items they can have, and the respawn option.</summary>
-        void DrawModeOptions(Bootstrap boot)
-        {
-            float k = m_Scale;
-            float w = 620 * k, h = 700 * k;
-            var r = new Rect((Screen.width - w) / 2, Mathf.Max(10, (Screen.height - h) / 2), w, Mathf.Min(h, Screen.height - 20));
-            Fill(r, new Color(0.05f, 0.05f, 0.06f, 0.92f));
-            GUILayout.BeginArea(new Rect(r.x + 20, r.y + 15, r.width - 40, r.height - 30));
-            GUILayout.Label("<b>MODE OPTIONS</b>", m_Big);
-            int key = Bootstrap.MapChoice;
-            float bh = 32 * k;
-
-            GUILayout.Space(8 * k);
-            GUILayout.Label("<b><color=#ffd27a>AIRDROPS PER MATCH</color></b>", m_Label);
-            int n = Mathf.Clamp(Cfg.AirdropCount, 0, 20);
-            GUILayout.BeginHorizontal();
-            if (GUILayout.Button("-", m_Button, GUILayout.Width(50 * k), GUILayout.Height(bh)) && n > 0) { Cfg.AirdropCount = n - 1; Cfg.SavePrefs(); }
-            GUILayout.Label($"<b><size={Mathf.RoundToInt(24 * k)}>{n}</size></b>", m_Center, GUILayout.Width(70 * k), GUILayout.Height(bh));
-            if (GUILayout.Button("+", m_Button, GUILayout.Width(50 * k), GUILayout.Height(bh)) && n < 20) { Cfg.AirdropCount = n + 1; Cfg.SavePrefs(); }
-            GUILayout.EndHorizontal();
-            n = Mathf.Clamp(Cfg.AirdropCount, 0, 20);
-            float total = Cfg.MatchLength;
-            var times = new System.Text.StringBuilder();
-            for (int i = 1; i <= n && i <= 8; i++) times.Append(i > 1 ? ", " : "").Append(Clock(total * i / (n + 1)));
-            if (n > 8) times.Append(", ...");
-            GUILayout.Label(n == 0 ? "<color=#bbbbbb>No airdrops this match.</color>"
-                : $"<color=#bbbbbb>Evenly spaced over the {Clock(total)} after the glass wall drops (1 = half way through, 2 = at the thirds...). " +
-                  $"They land {times} after the wall drops.</color>", new GUIStyle(m_Small) { wordWrap = true });
-
-            GUILayout.Space(8 * k);
-            bool center = (key & Cfg.CenterBit) != 0, sides = !center && (key & Cfg.SidesBit) != 0, anywhere = !center && !sides;
-            int noWhere = key & ~Cfg.SidesBit & ~Cfg.CenterBit;
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("Where", m_Label, GUILayout.Width(90 * k));
-            if (GUILayout.Toggle(anywhere, " Anywhere", m_Button, GUILayout.Height(bh)) && !anywhere) boot.SetMapChoice(noWhere);
-            if (GUILayout.Toggle(sides, " One per side", m_Button, GUILayout.Height(bh)) && !sides) boot.SetMapChoice(noWhere | Cfg.SidesBit);
-            if (GUILayout.Toggle(center, " Middle of the map", m_Button, GUILayout.Height(bh)) && !center) boot.SetMapChoice(noWhere | Cfg.CenterBit);
-            GUILayout.EndHorizontal();
-            GUILayout.Label($"<color=#bbbbbb>{(center ? "Every airdrop comes down in the middle of the map." : sides ? "Every side of the map gets its own airdrop each time." : "One airdrop each time, at a random spot.")}</color>", m_Small);
-
-            GUILayout.Space(10 * k);
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("<b><color=#ffd27a>AIRDROP ITEMS</color></b>", m_Label);
-            GUILayout.FlexibleSpace();
-            if (GUILayout.Button("All", m_Button, GUILayout.Width(70 * k), GUILayout.Height(26 * k))) { Cfg.AirdropItemMask = (1 << Cfg.AirdropChoices.Length) - 1; Cfg.SavePrefs(); }
-            if (GUILayout.Button("None", m_Button, GUILayout.Width(70 * k), GUILayout.Height(26 * k))) { Cfg.AirdropItemMask = 0; Cfg.SavePrefs(); }
-            GUILayout.EndHorizontal();
-            const int cols = 3;
-            for (int i = 0; i < Cfg.AirdropChoices.Length; i++)
-            {
-                if (i % cols == 0) GUILayout.BeginHorizontal();
-                var it = Cfg.AirdropChoices[i];
-                bool on = (Cfg.AirdropItemMask & (1 << i)) != 0;
-                var cell = GUILayoutUtility.GetRect((r.width - 40) / cols - 6 * k, 46 * k, GUILayout.Width((r.width - 40) / cols - 6 * k));
-                Fill(cell, on ? new Color(0.2f, 0.45f, 0.25f, 0.8f) : new Color(0.2f, 0.2f, 0.2f, 0.6f));
-                var icon = ItemIcons.Get(it);
-                if (icon != null) GUI.DrawTexture(new Rect(cell.x + 4, cell.y + 3, 40 * k, 40 * k), icon, ScaleMode.ScaleToFit, true);
-                string label = it == Item.BombBush ? "Bomb Bush" : it == Item.RocketLauncher ? "Rocket" : Cfg.ItemName(it);
-                GUI.Label(new Rect(cell.x + 48 * k, cell.y, cell.width - 48 * k, cell.height), (on ? "<b>" : "<color=#888888>") + label + (on ? "</b>" : "</color>"), new GUIStyle(m_Small) { alignment = TextAnchor.MiddleLeft, wordWrap = true });
-                if (GUI.Button(cell, "", GUIStyle.none)) { Cfg.AirdropItemMask ^= 1 << i; Cfg.SavePrefs(); }
-                GUILayout.Space(6 * k);
-                if (i % cols == cols - 1 || i == Cfg.AirdropChoices.Length - 1) { GUILayout.EndHorizontal(); GUILayout.Space(5 * k); }
-            }
-            if ((Cfg.AirdropItemMask & ((1 << Cfg.AirdropChoices.Length) - 1)) == 0)
-                GUILayout.Label("<color=#ffcc66>Nothing picked: airdrops will have any of these.</color>", m_Small);
-
-            GUILayout.Space(10 * k);
-            bool loot = (key & Cfg.RespawnLootBit) != 0;
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("Respawn", m_Label, GUILayout.Width(90 * k));
-            if (GUILayout.Toggle(!loot, " Normal", m_Button, GUILayout.Height(bh)) && loot) boot.SetMapChoice(key & ~Cfg.RespawnLootBit);
-            if (GUILayout.Toggle(loot, " With an airdrop item", m_Button, GUILayout.Height(bh)) && !loot) boot.SetMapChoice(key | Cfg.RespawnLootBit);
-            GUILayout.EndHorizontal();
-
-            GUILayout.FlexibleSpace();
-            if (GUILayout.Button("Done", m_Button, GUILayout.Height(40 * k))) m_ShowModeOptions = false;
-            GUILayout.EndArea();
-        }
-
-        static string Pretty(string field)
-        {
-            var sb = new System.Text.StringBuilder();
-            for (int i = 0; i < field.Length; i++)
-            {
-                if (i > 0 && char.IsUpper(field[i]) && !char.IsUpper(field[i - 1])) sb.Append(' ');
-                sb.Append(field[i]);
-            }
-            return sb.ToString().Replace("Hp", "HP");
-        }
-
-        /// <summary>Every [Tune] stat in Cfg, editable. Saved on this PC; the host's values are used in a match.</summary>
-        void DrawSettings()
-        {
-            float k = m_Scale;
-            float w = Mathf.Min(Screen.width - 40, 900 * k), h = Screen.height - 40;
-            var r = new Rect((Screen.width - w) / 2, 20, w, h);
-            Fill(r, new Color(0.05f, 0.05f, 0.06f, 0.92f));
-            GUILayout.BeginArea(new Rect(r.x + 16, r.y + 12, r.width - 32, r.height - 24));
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("<b><size=" + Mathf.RoundToInt(28 * k) + ">GAME SETTINGS</size></b>", m_Label);
-            GUILayout.FlexibleSpace();
-            if (GUILayout.Button("Reset all to defaults", m_Button, GUILayout.Width(220 * k), GUILayout.Height(34 * k)))
-            {
-                Cfg.ResetDefaults();
-                Cfg.SavePrefs();
-                m_EditBuffers.Clear();
-            }
-            if (GUILayout.Button("Done", m_Button, GUILayout.Width(120 * k), GUILayout.Height(34 * k))) m_ShowSettings = false;
-            GUILayout.EndHorizontal();
-            GUILayout.Label("When you host, these values are used for the whole match (they're sent to your opponent). Times are in seconds, speeds in m/s. Changed values are highlighted.", m_Small);
-            GUILayout.Space(6 * k);
-
-            m_SettingsScroll = GUILayout.BeginScrollView(m_SettingsScroll);
-            string section = null;
-            int col = 0;
-            const int cols = 2;
-            foreach (var f in Cfg.TuneFields)
-            {
-                var sec = Cfg.SectionOf(f);
-                if (sec == "Mode options") continue;
-                if (sec != section)
-                {
-                    if (section != null && col != 0) GUILayout.EndHorizontal();
-                    col = 0;
-                    section = sec;
-                    GUILayout.Space(8 * k);
-                    GUILayout.Label($"<b><color=#ffd27a>{sec.ToUpper()}</color></b>", m_Label);
-                }
-                if (col == 0) GUILayout.BeginHorizontal();
-                bool changed = !Cfg.IsDefault(f);
-                GUILayout.Label((changed ? "<color=#8fe38f>" : "") + Pretty(f.Name) + (changed ? "</color>" : ""), m_Small, GUILayout.Width(w * 0.3f));
-                if (!m_EditBuffers.TryGetValue(f.Name, out var text)) text = Cfg.Format(f);
-                var edited = GUILayout.TextField(text, m_Field, GUILayout.Width(w * 0.13f));
-                if (edited != text)
-                {
-                    m_EditBuffers[f.Name] = edited;
-                    if (Cfg.TrySet(f, edited)) Cfg.SavePrefs();
-                }
-                GUILayout.Space(20 * k);
-                col++;
-                if (col == cols) { GUILayout.EndHorizontal(); col = 0; }
-            }
-            if (col != 0) GUILayout.EndHorizontal();
-            GUILayout.EndScrollView();
-            GUILayout.EndArea();
-        }
-
         void DrawLeaveButton(Bootstrap boot, Rect r)
         {
             if (r.Contains(Event.current.mousePosition)) MouseOverUI = true;
-            if (GUI.Button(r, "Leave game", m_Button)) boot.Leave();
+            if (BtnAt(r, "Leave game", m_Button)) boot.Leave();
         }
 
         // ------------------------------------------------------------------ in-game HUD
@@ -548,7 +302,7 @@ namespace RockGame
                     bool sel = me.HeldSlot.Value == i && !me.CarryingBall;
                     DrawSlotVisual(r, me.SlotAt(i), sel, me);
                     if (sel && me.SlotAt(i).Empty) DrawRockGhost(r);
-                    GUI.Label(new Rect(r.x + 4, r.y + 2, 20, 20), (i + 1).ToString(), m_Small);
+                    GUI.Label(new Rect(r.x + 4 * k, r.y + 1, 34 * k, 22 * k), Binds.Short(Bind.Hotbar1 + i), m_SmallNoClip);
                 }
             }
 
@@ -592,24 +346,6 @@ namespace RockGame
 
             DrawGains(k);
 
-            // ---- help ----
-            if (m_ShowHelp && !pc.MenuOpen)
-            {
-                string help =
-                    "<b>CONTROLS</b>  (F1 hide)\n" +
-                    "WASD move · Shift sprint · Space jump · Ctrl/C crouch\n" +
-                    "LMB attack / gather / place · hold LMB: draw bow / ram\n" +
-                    "Spear: hold RMB + LMB to throw · Berries: RMB to eat\n" +
-                    "1-7 / scroll: hotbar (empty slot = rock) · TAB: inventory + crafting in base\n" +
-                    "E: ball, door, chest, bush, items, horse/car (E again to get off)\n" +
-                    "Plan: hold RMB for the building wheel · X demolishes your own pieces\n" +
-                    "Ball: LMB throws it · E at your machine to put it in\n" +
-                    $"{(GameSettings.VoiceMode == GameSettings.VoicePushToTalk ? "V: push to talk · " : "")}Esc: pause, sound, mic & dev settings";
-                var hrct = new Rect(12, 130 * k, 500 * k, 185 * k);
-                Fill(hrct, new Color(0, 0, 0, 0.35f));
-                GUI.Label(new Rect(hrct.x + 8, hrct.y + 4, hrct.width - 10, hrct.height), help, m_Small);
-            }
-
             DrawCountdowns(game, team);
 
             // ---- banner ----
@@ -639,8 +375,8 @@ namespace RockGame
                     var r1 = new Rect(cx - bw - 10 * k, by2, bw, bh);
                     var r2 = new Rect(cx + 10 * k, by2, bw, bh);
                     if (r1.Contains(Event.current.mousePosition) || r2.Contains(Event.current.mousePosition)) MouseOverUI = true;
-                    if (GUI.Button(r1, "[1]  RESPAWN IN BASE", m_Button)) pc.ChooseRespawn(false);
-                    if (GUI.Button(r2, "[2]  RESPAWN IN THE WILD", m_Button)) pc.ChooseRespawn(true);
+                    if (BtnAt(r1, "[1]  RESPAWN IN BASE", m_Button)) pc.ChooseRespawn(false);
+                    if (BtnAt(r2, "[2]  RESPAWN IN THE WILD", m_Button)) pc.ChooseRespawn(true);
                     Shadowed(new Rect(0, by2 + bh + 6 * k, sw, 26 * k), "<color=#bbbbbb>The wild drops you somewhere random in the enemy's half of the map</color>", m_Center);
                 }
                 else Shadowed(new Rect(0, sh * 0.4f + 60 * k, sw, 30 * k), home
@@ -652,12 +388,8 @@ namespace RockGame
             if (pc.WheelOpen) DrawWheel(pc);
             if (pc.AirstrikeMapOpen) DrawAirstrikeMap(me, pc);
 
-            if (pc.Paused && (game == null || game.S != GameState.GameOver))
-            {
-                if (m_ShowDev) DrawDevMenu(me, game);
-                else DrawPauseMenu(boot, pc);
-            }
-            else m_ShowDev = false;
+            if (pc.Paused && (game == null || game.S != GameState.GameOver)) DrawPause(boot, me, pc, game);
+            else m_PausePage = PausePage.Root;
 
             if (game != null && game.S == GameState.GameOver) DrawGameOver(boot, game, team);
         }
@@ -684,7 +416,7 @@ namespace RockGame
                 case Item.FortTower: return "<b>Fort Tower</b>    LMB: throw it - a lookout tower with a ladder pops up where it lands";
                 case Item.Car: return "<b>Wooden Car</b>    LMB: put it down, then E to drive";
                 case Item.Saddle: return $"<b>Saddle</b> ({Cfg.TeamLabel(s.Data > 0 ? s.Data - 1 : me.Team.Value)})    walk up to a wild horse and press E to saddle and ride it";
-                case Item.Meat: return "<b>Horse Meat</b>    RMB: eat (heals you fully)";
+                case Item.Meat: return $"<b>Horse Meat</b>    RMB: eat ({Cfg.MeatEatTime:0.#}s, heals you fully)";
                 case Item.AirdropSignal: return "<b>Airdrop Signal</b>    LMB: call an airdrop straight onto your bedrock";
                 case Item.Sniper: return $"<b>Sniper Rifle</b> ({s.Data} shots)    hold RMB: scope   LMB: fire - one hit kills (a helmet stops a headshot)";
                 case Item.PortalGun: return $"<b>Portal Gun</b> ({s.Data} portal{(s.Data == 1 ? "" : "s")} left)    LMB: shoot a portal onto any surface";
@@ -876,7 +608,7 @@ namespace RockGame
             {
                 var r = new Rect(invX + i * (slot + gap), hotY, slot, slot);
                 DrawSlot(r, me.SlotAt(i), 0, i, me.HeldSlot.Value == i, me, pc);
-                GUI.Label(new Rect(r.x + 4, r.y + 2, 20, 20), (i + 1).ToString(), m_Small);
+                GUI.Label(new Rect(r.x + 4 * k, r.y + 1, 34 * k, 22 * k), Binds.Short(Bind.Hotbar1 + i), m_SmallNoClip);
             }
             float infoY = hotY + slot + 10 * k;
             Shadowed(new Rect(invX, infoY, gridW + 200, 24 * k), m_HoverName != "" ? m_HoverName : "Drag to move · right-drag splits a stack · shift-click quick-moves · drag outside to drop", m_Small);
@@ -902,10 +634,10 @@ namespace RockGame
                 if (!here) cost = "<color=#8fb8ff>in your base</color>  " + cost;
                 GUI.Label(new Rect(rr.x + row + 4, rr.y + 2, craftW - row - 100 * k, row), $"<b>{(here ? "" : "<color=#999999>")}{rec.Name}{(here ? "" : "</color>")}</b>\n<size={Mathf.RoundToInt(12 * k)}><color={(afford ? "#bbbbbb" : "#ff7777")}>{cost}</color></size>", m_Label);
                 GUI.enabled = afford && here;
-                if (GUI.Button(new Rect(rr.xMax - 90 * k, rr.y + 8 * k, 84 * k, row - 16 * k), "Craft", m_Button)) me.CraftRpc(i);
+                if (BtnAt(new Rect(rr.xMax - 90 * k, rr.y + 8 * k, 84 * k, row - 16 * k), "Craft", m_Button)) me.CraftRpc(i);
                 GUI.enabled = true;
             }
-            if (!loot) Shadowed(new Rect(cxp, top + Cfg.RecipeCount * (row + 4 * k) + 6, craftW, 24 * k), craft ? "TAB / Esc to close" : "Spears and hatchets anywhere · the rest inside your base · TAB / Esc to close", m_Small);
+            if (!loot) Shadowed(new Rect(cxp, top + Cfg.RecipeCount * (row + 4 * k) + 6, craftW, 60 * k), craft ? $"{Binds.Name(Bind.Inventory)} / Esc to close" : $"Spears and hatchets can be crafted anywhere.\nEverything else: inside your base.   {Binds.Name(Bind.Inventory)} / Esc to close", m_SmallWrap);
 
             // ---- drag visual ----
             var e = Event.current;
@@ -1173,129 +905,6 @@ namespace RockGame
             Fill(new Rect(sw / 2 - 0.5f, r.y, 1, d), new Color(0, 0, 0, 0.8f));
             Fill(new Rect(r.x, sh / 2 - 0.5f, d, 1), new Color(0, 0, 0, 0.8f));
             Fill(new Rect(sw / 2 - 2, sh / 2 - 2, 4, 4), new Color(1f, 0.2f, 0.1f));
-        }
-
-        // ------------------------------------------------------------------ pause: sound, mic, leave, dev
-
-        static float Slider(string label, float v, float min, float max, float scale, GUIStyle style, string shown)
-        {
-            GUILayout.BeginHorizontal();
-            GUILayout.Label(label, style, GUILayout.Width(170 * scale));
-            float nv = GUILayout.HorizontalSlider(v, min, max, GUILayout.Width(220 * scale));
-            GUILayout.Label(shown, style, GUILayout.Width(70 * scale));
-            GUILayout.EndHorizontal();
-            return nv;
-        }
-
-        void DrawPauseMenu(Bootstrap boot, PlayerController pc)
-        {
-            float k = m_Scale, sw = Screen.width, sh = Screen.height;
-            Fill(new Rect(0, 0, sw, sh), new Color(0, 0, 0, 0.55f));
-            float w = 560 * k, h = Mathf.Min(sh - 40, 640 * k);
-            var r = new Rect((sw - w) / 2, (sh - h) / 2, w, h);
-            if (r.Contains(Event.current.mousePosition)) MouseOverUI = true;
-            Fill(r, new Color(0.06f, 0.06f, 0.08f, 0.94f));
-            GUILayout.BeginArea(new Rect(r.x + 20, r.y + 14, r.width - 40, r.height - 28));
-            GUILayout.Label("<b>PAUSED</b>", m_Big);
-            GUILayout.Label("<color=#bbbbbb>The match keeps running!</color>", m_Center);
-            GUILayout.Space(8 * k);
-            if (GUILayout.Button("Resume", m_Button, GUILayout.Height(36 * k))) pc.Paused = false;
-            GUILayout.Space(10 * k);
-
-            bool changed = false;
-            GUILayout.Label("<b><color=#ffd27a>SOUND</color></b>", m_Label);
-            float v = Slider("Master volume", GameSettings.MasterVolume, 0f, 1f, k, m_Small, $"{GameSettings.MasterVolume * 100:0}%");
-            if (!Mathf.Approximately(v, GameSettings.MasterVolume)) { GameSettings.MasterVolume = v; changed = true; }
-            v = Slider("Hit sounds volume", GameSettings.HitVolume, 0f, 1.5f, k, m_Small, $"{GameSettings.HitVolume * 100:0}%");
-            if (!Mathf.Approximately(v, GameSettings.HitVolume)) { GameSettings.HitVolume = v; changed = true; }
-            v = Slider("Voice chat volume", GameSettings.VoiceVolume, 0f, 2f, k, m_Small, $"{GameSettings.VoiceVolume * 100:0}%");
-            if (!Mathf.Approximately(v, GameSettings.VoiceVolume)) { GameSettings.VoiceVolume = v; changed = true; }
-
-            GUILayout.Space(8 * k);
-            GUILayout.Label("<b><color=#ffd27a>PROXIMITY VOICE CHAT</color></b>  <color=#bbbbbb>(people hear you when they're near you)</color>", m_Small);
-            GUILayout.BeginHorizontal();
-            string[] modes = { "Off", "Open mic", $"Push to talk ({GameSettings.PushToTalkKey})" };
-            for (int i = 0; i < 3; i++)
-                if (GUILayout.Toggle(GameSettings.VoiceMode == i, modes[i], m_Button, GUILayout.Height(30 * k)) && GameSettings.VoiceMode != i) { GameSettings.VoiceMode = i; changed = true; }
-            GUILayout.EndHorizontal();
-            var devs = Microphone.devices;
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("Microphone", m_Small, GUILayout.Width(170 * k));
-            if (devs.Length == 0) GUILayout.Label("<color=#ff8888>no microphone found</color>", m_Small);
-            else
-            {
-                int cur = System.Array.IndexOf(devs, GameSettings.MicDevice);
-                if (cur < 0) cur = 0;
-                if (GUILayout.Button("<", m_Button, GUILayout.Width(34 * k))) { GameSettings.MicDevice = devs[(cur + devs.Length - 1) % devs.Length]; changed = true; }
-                string name = devs[cur];
-                GUILayout.Label(name.Length > 34 ? name.Substring(0, 34) + "..." : name, m_Small, GUILayout.Width(260 * k));
-                if (GUILayout.Button(">", m_Button, GUILayout.Width(34 * k))) { GameSettings.MicDevice = devs[(cur + 1) % devs.Length]; changed = true; }
-            }
-            GUILayout.EndHorizontal();
-            v = Slider("Mic volume", GameSettings.MicGain, 0.2f, 4f, k, m_Small, $"{GameSettings.MicGain * 100:0}%");
-            if (!Mathf.Approximately(v, GameSettings.MicGain)) { GameSettings.MicGain = v; changed = true; }
-            if (GameSettings.VoiceMode == GameSettings.VoiceOpen)
-            {
-                v = Slider("Open mic sensitivity", 0.1f - GameSettings.MicThreshold, 0f, 0.1f, k, m_Small, $"{(0.1f - GameSettings.MicThreshold) * 1000:0}");
-                if (!Mathf.Approximately(0.1f - v, GameSettings.MicThreshold)) { GameSettings.MicThreshold = 0.1f - v; changed = true; }
-            }
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("Mic level", m_Small, GUILayout.Width(170 * k));
-            var lr = GUILayoutUtility.GetRect(220 * k, 14 * k, GUILayout.Width(220 * k));
-            Fill(lr, new Color(0, 0, 0, 0.6f));
-            Fill(new Rect(lr.x, lr.y, lr.width * Mathf.Clamp01(VoiceChat.Level), lr.height), VoiceChat.Transmitting ? new Color(0.4f, 1f, 0.5f) : new Color(0.6f, 0.6f, 0.6f));
-            if (GameSettings.VoiceMode == GameSettings.VoiceOpen) Fill(new Rect(lr.x + lr.width * Mathf.Clamp01(GameSettings.MicThreshold * 3f), lr.y - 2, 2, lr.height + 4), new Color(1f, 0.8f, 0.3f));
-            GUILayout.Label(VoiceChat.Transmitting ? "<color=#7dff9a>sending</color>" : "", m_Small);
-            GUILayout.EndHorizontal();
-            if (changed) GameSettings.Save();
-
-            GUILayout.FlexibleSpace();
-            GUILayout.BeginHorizontal();
-            if (GUILayout.Button("Dev settings", m_Button, GUILayout.Height(40 * k))) m_ShowDev = true;
-            if (GUILayout.Button("Leave game", m_Button, GUILayout.Height(40 * k))) boot.Leave();
-            GUILayout.EndHorizontal();
-            GUILayout.EndArea();
-        }
-
-        void DrawDevMenu(PlayerNet me, NetGame game)
-        {
-            float k = m_Scale, sw = Screen.width, sh = Screen.height;
-            Fill(new Rect(0, 0, sw, sh), new Color(0, 0, 0, 0.55f));
-            float w = Mathf.Min(sw - 40, 760 * k), h = Mathf.Min(sh - 40, 620 * k);
-            var r = new Rect((sw - w) / 2, (sh - h) / 2, w, h);
-            MouseOverUI = true;
-            Fill(r, new Color(0.08f, 0.05f, 0.05f, 0.95f));
-            GUILayout.BeginArea(new Rect(r.x + 20, r.y + 14, r.width - 40, r.height - 28));
-            GUILayout.BeginHorizontal();
-            GUILayout.Label($"<b><size={Mathf.RoundToInt(26 * k)}>DEV SETTINGS</size></b>", m_Label);
-            GUILayout.FlexibleSpace();
-            if (GUILayout.Button("Back", m_Button, GUILayout.Width(120 * k), GUILayout.Height(34 * k))) m_ShowDev = false;
-            GUILayout.EndHorizontal();
-            GUILayout.Label("<color=#bbbbbb>For testing. Everyone in the match is told when you use one.</color>", m_Small);
-            string timer = game == null ? "" : $"{game.S}  ·  {Clock(game.TimeLeft)} left" + (game.TimerPaused.Value ? "  <color=#ffcc66>(PAUSED)</color>" : "");
-            GUILayout.Label(timer, m_Label);
-
-            void Section(string title) { GUILayout.Space(6 * k); GUILayout.Label($"<b><color=#ffd27a>{title}</color></b>", m_Label); }
-            void Row(params (string label, DevCmd cmd)[] buttons)
-            {
-                GUILayout.BeginHorizontal();
-                foreach (var (label, cmd) in buttons)
-                    if (GUILayout.Button(label, m_Button, GUILayout.Height(32 * k))) me.DevRpc(cmd);
-                GUILayout.EndHorizontal();
-            }
-            Section("MATCH");
-            Row(("Drop the wall now", DevCmd.DropWallNow), (game != null && game.TimerPaused.Value ? "Resume timer" : "Pause timer", DevCmd.TogglePauseTimer), ("Timer to 10s", DevCmd.TimerTo10s));
-            Row(("+1 minute", DevCmd.AddMinute), ("-1 minute", DevCmd.SubMinute), ("Start sudden death", DevCmd.StartSuddenDeath), ("Win now", DevCmd.WinNow));
-            Section("WORLD");
-            Row(("Spawn airdrop now", DevCmd.SpawnAirdrop), ("Ball to me", DevCmd.BallToMe), ("Ball to middle", DevCmd.BallToMiddle), ("Regrow nodes", DevCmd.RegrowNodes));
-            Row(("Spawn horse", DevCmd.SpawnHorse));
-            Section("ME");
-            Row(("+1000 wood", DevCmd.GiveWood), ("+1000 stone", DevCmd.GiveStone), ("+50 arrows", DevCmd.GiveArrows));
-            Row(("All airdrop items", DevCmd.GiveOpItems), ("One of every craftable", DevCmd.GiveCraftables), ("Clear inventory", DevCmd.ClearInventory));
-            Row(("Heal", DevCmd.HealFull), ("God mode on/off", DevCmd.ToggleGod), ("Kill me", DevCmd.KillMe));
-            Section("TELEPORT");
-            Row(("My base", DevCmd.TpMyBase), ("Enemy base", DevCmd.TpEnemyBase), ("The ball", DevCmd.TpBall), ("The airdrop", DevCmd.TpAirdrop));
-            GUILayout.EndArea();
         }
 
         /// <summary>Bottom right, above the corner: "+30 Wood" with the item icon, fading out.</summary>

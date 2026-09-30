@@ -14,12 +14,14 @@ namespace RockGame
         /// <summary>Crafting is available anywhere inside your own base.</summary>
         public bool CraftOpen => m_Net != null && m_Net.CanCraftHere;
         /// <summary>Eating berries: 0..1 while it's being eaten.</summary>
-        public float EatProgress => m_EatStart >= 0 ? Mathf.Clamp01((Time.time - m_EatStart) / Mathf.Max(0.1f, Cfg.BerryEatTime)) : 0f;
+        public float EatProgress => m_EatStart >= 0 ? Mathf.Clamp01((Time.time - m_EatStart) / Mathf.Max(0.1f, EatTime)) : 0f;
+        /// <summary>Berries are quick, horse meat takes a while (it heals you fully).</summary>
+        float EatTime => m_Net != null && m_Net.HeldItem == Item.Meat ? Cfg.MeatEatTime : Cfg.BerryEatTime;
         float m_EatStart = -1f, m_Third;
         static float Smooth01(float t) => t * t * (3f - 2f * t);
         /// <summary>The camera is behind you (tree camo).</summary>
         public bool ThirdPerson => m_Third > 0.5f;
-        bool m_EatHalf;
+        int m_EatBites;
         public Container LootTarget;
         public PieceType BuildPiece = PieceType.Foundation;
         /// <summary>Building plan: the Rust-style wheel (hold RMB) is open, and demolish mode picked on it.</summary>
@@ -41,7 +43,6 @@ namespace RockGame
         public float RamCharge { get; private set; }  // ram wind-up, 0..1
         public bool Crouching { get; private set; }
 
-        const float k_Sensitivity = 2f;
         static readonly Color k_GhostOk = new Color(0.3f, 1f, 0.45f, 0.4f), k_GhostBad = new Color(1f, 0.3f, 0.3f, 0.4f);
 
         PlayerNet m_Net;
@@ -209,14 +210,14 @@ namespace RockGame
             bool riding = m_Net.Riding;
 
             // ---- menus ----
-            if (Input.GetKeyDown(KeyCode.Escape))
+            if (Input.GetKeyDown(KeyCode.Escape) && !Hud.BackOut())
             {
                 if (WheelOpen) WheelOpen = false;
                 else if (AirstrikeMapOpen) CloseAirstrikeMap();
                 else if (MenuOpen) CloseMenu();
                 else Paused = !Paused;
             }
-            if (Input.GetKeyDown(KeyCode.Tab) && !dead && !gameOver && !sd)
+            if (Binds.Down(Bind.Inventory) && !dead && !gameOver && !sd && !Hud.Rebinding)
             {
                 if (MenuOpen) CloseMenu(); else MenuOpen = true;
                 Paused = false;
@@ -237,7 +238,7 @@ namespace RockGame
             bool cursorFree = MenuOpen || Paused || gameOver || choosing || WheelOpen || AirstrikeMapOpen;
             Cursor.lockState = cursorFree ? CursorLockMode.None : CursorLockMode.Locked;
             Cursor.visible = cursorFree && !WheelOpen;
-            bool input = !cursorFree && !dead;
+            bool input = !cursorFree && !dead && !Hud.Rebinding;
             // you can keep walking, jumping and crouching with the inventory open
             bool frozen = game != null && game.FightFrozen;
             bool move = !dead && !Paused && !gameOver && !frozen && !AirstrikeMapOpen;
@@ -258,7 +259,7 @@ namespace RockGame
             m_LookDelta = Vector2.zero;
             if (input)
             {
-                m_LookDelta = new Vector2(Input.GetAxisRaw("Mouse X"), Input.GetAxisRaw("Mouse Y")) * k_Sensitivity * (CrossbowAiming ? 0.6f : 1f);
+                m_LookDelta = new Vector2(Input.GetAxisRaw("Mouse X"), Input.GetAxisRaw("Mouse Y")) * GameSettings.MouseSensitivity * (CrossbowAiming ? 0.6f : 1f) * (Scoped ? 0.35f : 1f);
                 m_Yaw += m_LookDelta.x;
                 m_Pitch = Mathf.Clamp(m_Pitch - m_LookDelta.y, -89f, 89f);
             }
@@ -268,7 +269,7 @@ namespace RockGame
             var held = SelectItem(input);
 
             // ---- crouch ----
-            bool wantCrouch = move && !riding && (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.C));
+            bool wantCrouch = move && !riding && Binds.Held(Bind.Crouch);
             if (!wantCrouch && Crouching && !riding && !HeadroomToStand()) wantCrouch = true;
             if (dead) wantCrouch = false;
             if (wantCrouch != Crouching)
@@ -300,12 +301,12 @@ namespace RockGame
                 float fwdInput = 0;
                 if (move)
                 {
-                    float h = (Input.GetKey(KeyCode.D) ? 1 : 0) - (Input.GetKey(KeyCode.A) ? 1 : 0);
-                    fwdInput = (Input.GetKey(KeyCode.W) ? 1 : 0) - (Input.GetKey(KeyCode.S) ? 1 : 0);
+                    float h = Binds.Axis(Bind.Right, Bind.Left);
+                    fwdInput = Binds.Axis(Bind.Forward, Bind.Back);
                     wish = transform.right * h + transform.forward * fwdInput;
                     if (wish.sqrMagnitude > 1f) wish.Normalize();
                 }
-                bool sprint = move && Input.GetKey(KeyCode.LeftShift) && fwdInput > 0 && m_DrawStart < 0 && RamCharge <= 0 && !Crouching && !CrossbowAiming;
+                bool sprint = move && Binds.Held(Bind.Sprint) && fwdInput > 0 && m_DrawStart < 0 && RamCharge <= 0 && !Crouching && !CrossbowAiming;
                 float speed = Crouching ? Cfg.CrouchSpeed : sprint ? Cfg.SprintSpeed : Cfg.WalkSpeed;
                 if (carrying) speed *= Cfg.BallCarrySpeedMul;
                 if (m_DrawStart >= 0 || CrossbowAiming) speed *= 0.6f;
@@ -317,17 +318,17 @@ namespace RockGame
                 {
                     if (m_VelY < 0) m_VelY = -2f;
                     // you can jump out of a slide and keep all that speed
-                    if (move && Input.GetKeyDown(KeyCode.Space) && (!Crouching || m_SlideOn)) m_VelY = Cfg.JumpSpeed;
+                    if (move && Binds.Down(Bind.Jump) && (!Crouching || m_SlideOn)) m_VelY = Cfg.JumpSpeed;
                 }
                 if (ladder)
                 {
                     // climb: W up, S down, nothing = hang on
-                    bool up = move && (fwdInput > 0 || Input.GetKey(KeyCode.Space));
+                    bool up = move && (fwdInput > 0 || Binds.Held(Bind.Jump));
                     m_VelY = up ? 3.6f : move && fwdInput < 0 ? -3.6f : 0f;
                     // at the top: step off forwards onto the floor
                     var ld = CurrentLadder;
                     if (ld != null && transform.position.y > ld.TopWorldY - 0.15f && up) { m_Push = ld.ExitDir * 3f; m_VelY = Mathf.Max(m_VelY, 1.5f); }
-                    if (move && Input.GetKeyDown(KeyCode.Space)) { m_VelY = 4f; m_Push = -transform.forward * 3f; }
+                    if (move && Binds.Down(Bind.Jump)) { m_VelY = 4f; m_Push = -transform.forward * 3f; }
                 }
                 else m_VelY -= Cfg.Gravity * Time.deltaTime;
                 m_Grounded = grounded || ladder;
@@ -391,7 +392,7 @@ namespace RockGame
                         case Item.RocketLauncher: HandleLootThrow(held); break;
                         case Item.GiantStaff: HandleOnce(held, () => m_Net.GiantStaffRpc()); break;
                         case Item.AirdropSignal: HandleOnce(held, () => m_Net.UseSignalRpc()); break;
-                        case Item.Airstrike: if (Input.GetMouseButtonDown(0)) OpenAirstrikeMap(); break;
+                        case Item.Airstrike: if (Binds.Down(Bind.Attack)) OpenAirstrikeMap(); break;
                         case Item.C4: HandleThrow(Item.C4); break;
                         case Item.FortTower: HandleThrow(Item.FortTower); break;
                         case Item.DeathWand: HandleWand(); break;
@@ -402,15 +403,15 @@ namespace RockGame
                     }
                 }
             }
-            if (held == Item.BuildingPlan && WheelOpen && !Input.GetMouseButton(1)) CloseWheel();
+            if (held == Item.BuildingPlan && WheelOpen && !Binds.Held(Bind.Aim)) CloseWheel();
             bool drawing = input && !carrying && !gameOver && (held == Item.Bow || held == Item.Spear);
             if (!drawing) m_DrawStart = -1f;
-            if (held != Item.Berry || m_Net.Dead.Value || !input) m_EatStart = -1f;
+            if ((held != Item.Berry && held != Item.Meat) || m_Net.Dead.Value || !input) m_EatStart = -1f;
             float drawTime = held == Item.Spear ? Cfg.SpearDrawTime : Cfg.BowDrawTime;
             DrawAmount = m_DrawStart >= 0 ? Mathf.Clamp01((Time.time - m_DrawStart) / Mathf.Max(0.05f, drawTime)) : 0f;
-            if (!input || carrying || gameOver || held != Item.Ram || !Input.GetMouseButton(0)) RamCharge = 0f;
-            CrossbowAiming = input && !carrying && held == Item.Crossbow && Input.GetMouseButton(1) && m_ReloadStart < 0;
-            Scoped = input && !carrying && held == Item.Sniper && Input.GetMouseButton(1);
+            if (!input || carrying || gameOver || held != Item.Ram || !Binds.Held(Bind.Attack)) RamCharge = 0f;
+            CrossbowAiming = input && !carrying && held == Item.Crossbow && Binds.Held(Bind.Aim) && m_ReloadStart < 0;
+            Scoped = input && !carrying && held == Item.Sniper && Binds.Held(Bind.Aim);
 
             PublishAction(held, dead, carrying);
 
@@ -456,7 +457,7 @@ namespace RockGame
             var hs = m_Net.HeldStack;
             m_VM.Update(new ViewModel.State
             {
-                Firing = m_Net.HeldItem == Item.Chainsaw && Input.GetMouseButton(0) && !MenuOpen && !Paused,
+                Firing = m_Net.HeldItem == Item.Chainsaw && Binds.Held(Bind.Attack) && !MenuOpen && !Paused,
                 Sprint = m_Sprinting,
                 Grounded = m_Grounded,
                 VelY = m_VelY,
@@ -504,10 +505,10 @@ namespace RockGame
             jump = sprint = false;
             lookYaw = m_Yaw;
             if (MenuOpen || Paused || WheelOpen || m_Net.Dead.Value) return;
-            fwd = (Input.GetKey(KeyCode.W) ? 1 : 0) - (Input.GetKey(KeyCode.S) ? 1 : 0);
-            side = (Input.GetKey(KeyCode.D) ? 1 : 0) - (Input.GetKey(KeyCode.A) ? 1 : 0);
-            jump = Input.GetKeyDown(KeyCode.Space);
-            sprint = Input.GetKey(KeyCode.LeftShift);
+            fwd = Binds.Axis(Bind.Forward, Bind.Back);
+            side = Binds.Axis(Bind.Right, Bind.Left);
+            jump = Binds.Down(Bind.Jump);
+            sprint = Binds.Held(Bind.Sprint);
         }
 
         Ladder CurrentLadder;
@@ -551,7 +552,7 @@ namespace RockGame
                 else if (CrossbowAiming || Scoped) a = BodyAnimator.Act.Aim;
                 else if (m_EatStart >= 0 || Time.time < m_EatFlashUntil) a = BodyAnimator.Act.Eat;
                 else if (RamCharge > 0f) a = BodyAnimator.Act.Ram;
-                else if (held == Item.Chainsaw && Input.GetMouseButton(0) && !MenuOpen && !Paused) a = BodyAnimator.Act.Saw;
+                else if (held == Item.Chainsaw && Binds.Held(Bind.Attack) && !MenuOpen && !Paused) a = BodyAnimator.Act.Saw;
             }
             if (m_Net.Action.Value != (byte)a) m_Net.Action.Value = (byte)a;
         }
@@ -576,13 +577,13 @@ namespace RockGame
             float slip = Mathf.Clamp(Cfg.SlideSlipperiness, 0f, 10f) / 10f;
             if (grounded)
             {
-                float friction = Mathf.Lerp(22f, 0.35f, Mathf.Pow(slip, 0.8f));
+                float friction = Mathf.Lerp(16f, 0.2f, Mathf.Pow(slip, 0.7f)); // default 7.5: about 3 m/s² - a long, glidey slide
                 // downhill pulls you along, uphill holds you back
                 if (Physics.Raycast(transform.position + Vector3.up * 0.3f, Vector3.down, out var gh, 1.2f, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore))
                 {
                     var along = Vector3.ProjectOnPlane(Vector3.down * Cfg.Gravity, gh.normal);
                     along.y = 0;
-                    m_SlideVel += along * 0.8f * dt;
+                    m_SlideVel += along * 1.2f * dt;
                 }
                 float sp = Mathf.MoveTowards(m_SlideVel.magnitude, 0f, friction * dt);
                 m_SlideVel = m_SlideVel.sqrMagnitude > 0.0001f ? m_SlideVel.normalized * sp : Vector3.zero;
@@ -601,12 +602,12 @@ namespace RockGame
             m_SlideOn = false;
             m_NextSlide = Time.time + 0.35f;
             // what's left of the speed fades out instead of stopping dead
-            m_Push += m_SlideVel * 0.5f;
+            m_Push += m_SlideVel * 0.7f;
         }
 
         void TickSlideSound()
         {
-            float want = m_SlideOn && m_Grounded ? Mathf.Clamp01(m_SlideVel.magnitude / 10f) * 0.5f : 0f;
+            float want = m_SlideOn && m_Grounded ? Mathf.Clamp01(m_SlideVel.magnitude / 10f) * 0.5f * GameSettings.SfxVolume : 0f;
             if (m_SlideSound == null)
             {
                 if (want <= 0f) return;
@@ -638,7 +639,7 @@ namespace RockGame
             if (input && !WheelOpen)
             {
                 for (int k = 0; k < Cfg.HotbarSize; k++)
-                    if (Input.GetKeyDown(KeyCode.Alpha1 + k)) want = k;
+                    if (Binds.Down(Bind.Hotbar1 + k)) want = k;
                 float scroll = Input.mouseScrollDelta.y;
                 if (scroll != 0) want = ((want + (scroll < 0 ? 1 : -1)) % Cfg.HotbarSize + Cfg.HotbarSize) % Cfg.HotbarSize;
             }
@@ -708,7 +709,7 @@ namespace RockGame
 
         void HandleMelee(Item held)
         {
-            if (!Input.GetMouseButton(0) || Time.time < m_NextSwing) return;
+            if (!Binds.Held(Bind.Attack) || Time.time < m_NextSwing) return;
             var st = Cfg.Melee(held);
             m_NextSwing = Time.time + st.Cooldown;
             if (held == Item.Chainsaw)
@@ -778,11 +779,11 @@ namespace RockGame
         /// <summary>Rust style: LMB stabs; hold RMB to wind up, then LMB throws. Releasing RMB cancels.</summary>
         void HandleSpear()
         {
-            if (Input.GetMouseButtonDown(1)) m_DrawStart = Time.time;
-            if (!Input.GetMouseButton(1)) m_DrawStart = -1f;
+            if (Binds.Down(Bind.Aim)) m_DrawStart = Time.time;
+            if (!Binds.Held(Bind.Aim)) m_DrawStart = -1f;
             if (m_DrawStart < 0) { HandleMelee(Item.Spear); return; }
 
-            if (Input.GetMouseButtonDown(0) && Time.time >= m_NextSwing)
+            if (Binds.Down(Bind.Attack) && Time.time >= m_NextSwing)
             {
                 float t = Time.time - m_DrawStart;
                 if (t < Cfg.SpearMinDraw) return;
@@ -802,13 +803,13 @@ namespace RockGame
 
         void HandleBow()
         {
-            if (Input.GetMouseButtonDown(0))
+            if (Binds.Down(Bind.Attack))
             {
                 if (m_Net.Count(Item.Arrow) > 0) m_DrawStart = Time.time;
                 else Hud.Push("No arrows - craft some in your base (TAB)");
             }
-            if (Input.GetMouseButtonDown(1)) m_DrawStart = -1f;
-            if (Input.GetMouseButtonUp(0) && m_DrawStart >= 0)
+            if (Binds.Down(Bind.Aim)) m_DrawStart = -1f;
+            if (Binds.Up(Bind.Attack) && m_DrawStart >= 0)
             {
                 float t = Time.time - m_DrawStart;
                 m_DrawStart = -1f;
@@ -827,7 +828,7 @@ namespace RockGame
         /// <summary>Hold LMB to wind the ram up; at full charge it slams the enemy piece you're looking at.</summary>
         void HandleRam()
         {
-            if (!Input.GetMouseButton(0)) return;
+            if (!Binds.Held(Bind.Attack)) return;
             RamCharge = Mathf.Min(1f, RamCharge + Time.deltaTime / Mathf.Max(0.05f, Cfg.RamWindup));
             if (RamCharge < 1f) return;
 
@@ -855,12 +856,15 @@ namespace RockGame
 
         void HandleBall()
         {
-            if (!Input.GetMouseButtonDown(0) || Time.time < m_NextBallThrow) return;
+            if (!Binds.Down(Bind.Attack) || Time.time < m_NextBallThrow) return;
             m_NextBallThrow = Time.time + 0.5f;
             m_NextSwing = Time.time + 0.7f; // no instant swing with whatever comes back into your hands
             var rv = m_Net.Riding ? RidingVehicle : null;
-            var rcc = rv != null ? rv.GetComponent<CharacterController>() : null;
-            m_Net.ThrowBallRpc(CenterRay().direction, rcc != null ? rcc.velocity : Vector3.zero);
+            var rcc = rv != null ? rv.GetComponent<CharacterController>() : m_CC;
+            var ray = CenterRay();
+            m_Net.ThrowBallRpc(ray.origin, ray.direction, rcc != null && rcc.enabled ? rcc.velocity : Vector3.zero);
+            // on our own screen the ball mustn't bump into us (or our horse) on its way out either
+            if (Ball.Instance != null) Ball.Instance.IgnoreLocal(m_CC, rcc != m_CC ? rcc : null, 1f);
             m_VM.Throw();
             Sfx.Play2D(Sfx.Throw, 0.7f);
             Fx.Kick(2.5f);
@@ -868,30 +872,29 @@ namespace RockGame
 
         void HandleBerry()
         {
-            bool berry = m_Net.HeldItem == Item.Berry;
-            if (berry && m_EatStart >= 0)
+            if (m_EatStart >= 0)
             {
-                // berries take a moment to eat; switching away cancels it
-                if (!m_EatHalf && EatProgress >= 0.5f) { m_EatHalf = true; m_VM.Eat(); Sfx.Play2D(Sfx.Eat, 0.7f); }
+                // food takes a moment to eat (berries 1.5 s, horse meat 3 s), a bite every ~0.75 s; switching away cancels it
+                int bites = Mathf.FloorToInt(EatProgress * EatTime / 0.75f);
+                if (bites > m_EatBites && EatProgress < 1f) { m_EatBites = bites; m_VM.Eat(); Sfx.Play2D(Sfx.Eat, 0.7f); }
                 if (EatProgress < 1f) return;
                 m_EatStart = -1f;
                 m_Net.EatRpc();
                 return;
             }
-            if (!Input.GetMouseButtonDown(1) || Time.time < m_NextEat) return;
+            if (!Binds.Down(Bind.Aim) || Time.time < m_NextEat) return;
             if (m_Net.Health.Value >= Cfg.MaxHealth) { Hud.Push("You're already at full health"); return; }
-            m_NextEat = Time.time + 0.8f;
             m_VM.Eat();
             Sfx.Play2D(Sfx.Eat, 0.7f);
-            if (berry) { m_EatStart = Time.time; m_EatHalf = false; m_NextEat = Time.time + Cfg.BerryEatTime + 0.1f; return; }
-            m_EatFlashUntil = Time.time + 0.9f;
-            m_Net.EatRpc();
+            m_EatStart = Time.time;
+            m_EatBites = 0;
+            m_NextEat = Time.time + EatTime + 0.1f;
         }
 
         /// <summary>C4 or the fort tower: LMB lobs it where you look.</summary>
         void HandleThrow(Item kind)
         {
-            if (!Input.GetMouseButtonDown(0) || Time.time < m_NextSwing) return;
+            if (!Binds.Down(Bind.Attack) || Time.time < m_NextSwing) return;
             m_NextSwing = Time.time + 0.6f;
             var ray = CenterRay();
             Vector3 origin = SafeOrigin(ray, 0.7f);
@@ -907,7 +910,7 @@ namespace RockGame
         /// and it reloads by itself afterwards if you have an arrow.</summary>
         void HandleCrossbow()
         {
-            if (!Input.GetMouseButtonDown(0) || m_ReloadStart >= 0) return;
+            if (!Binds.Down(Bind.Attack) || m_ReloadStart >= 0) return;
             var st = m_Net.HeldStack;
             if (st.Data == 0)
             {
@@ -943,7 +946,7 @@ namespace RockGame
 
         void HandleWand()
         {
-            if (!Input.GetMouseButtonDown(0) || Time.time < m_NextSwing) return;
+            if (!Binds.Down(Bind.Attack) || Time.time < m_NextSwing) return;
             m_NextSwing = Time.time + 0.6f;
             m_Net.WandRpc(CenterRay().direction);
             m_VM.Use();
@@ -954,7 +957,7 @@ namespace RockGame
         /// <summary>Helmet / armour: LMB/RMB puts it on. Potion: LMB/RMB drinks it.</summary>
         void HandleUseItem(Item held)
         {
-            if (!(Input.GetMouseButtonDown(0) || Input.GetMouseButtonDown(1)) || Time.time < m_NextEat) return;
+            if (!(Binds.Down(Bind.Attack) || Binds.Down(Bind.Aim)) || Time.time < m_NextEat) return;
             m_NextEat = Time.time + 0.8f;
             m_Net.UseItemRpc();
             if (held == Item.InvisPotion) { m_VM.Eat(); Sfx.Play2D(Sfx.Eat, 0.6f); m_EatFlashUntil = Time.time + 0.9f; }
@@ -963,7 +966,7 @@ namespace RockGame
 
         void HandleDeploy(Item held)
         {
-            if (!Input.GetMouseButtonDown(0)) return;
+            if (!Binds.Down(Bind.Attack)) return;
             if (m_GhostOk)
             {
                 m_Net.PlaceDeployableRpc((byte)held, m_GhostPos, m_GhostYaw);
@@ -1020,13 +1023,13 @@ namespace RockGame
         void HandleBuildInput()
         {
             // hold RMB: Rust-style wheel of building pieces (+ demolish); let go over the one you want
-            if (Input.GetMouseButtonDown(1)) { WheelOpen = true; Hud.WheelOpened(); }
+            if (Binds.Down(Bind.Aim)) { WheelOpen = true; Hud.WheelOpened(); }
             if (WheelOpen) return;
-            if (Input.GetKeyDown(KeyCode.R)) m_RotOffset = (m_RotOffset + 1) & 3;
+            if (Binds.Down(Bind.Rotate)) m_RotOffset = (m_RotOffset + 1) & 3;
 
-            if (Input.GetMouseButtonDown(0) && DemolishMode) { TryDemolish(); return; }
-            if (Input.GetMouseButtonDown(0) && UpgradeMode) { TryUpgrade(); return; }
-            if (Input.GetMouseButtonDown(0))
+            if (Binds.Down(Bind.Attack) && DemolishMode) { TryDemolish(); return; }
+            if (Binds.Down(Bind.Attack) && UpgradeMode) { TryUpgrade(); return; }
+            if (Binds.Down(Bind.Attack))
             {
                 if (m_GhostOk)
                 {
@@ -1039,9 +1042,9 @@ namespace RockGame
             }
 
             // X: demolish one of your own pieces (barriers and chests too)
-            if (Input.GetKeyDown(KeyCode.X)) TryDemolish();
+            if (Binds.Down(Bind.Demolish)) TryDemolish();
 
-            if (Input.GetKeyDown(KeyCode.F) && Time.time >= m_NextUpgrade && !Cfg.WoodMode)
+            if (Binds.Down(Bind.Upgrade) && Time.time >= m_NextUpgrade && !Cfg.WoodMode)
             {
                 if (Aim(CenterRay(), Cfg.BuildRange, out var hit))
                 {
@@ -1144,7 +1147,7 @@ namespace RockGame
 
         void HandleInteract(Interactable t, bool carrying)
         {
-            if (!Input.GetKeyDown(KeyCode.E)) return;
+            if (!Binds.Down(Bind.Interact)) return;
             // on a horse, E picks up the ball if you're looking at it; otherwise it gets you off
             if (m_Net.Riding && !(t.Kind == TargetKind.Ball && !carrying)) { m_Net.DismountRpc(); Sfx.Play2D(Sfx.Pop, 0.4f); return; }
             if (carrying && t.Kind != TargetKind.Door && t.Kind != TargetKind.Machine) return; // hands are full
@@ -1337,7 +1340,10 @@ namespace RockGame
                 case TargetKind.Vehicle:
                 {
                     var v = t.Obj.GetComponent<Vehicle>();
-                    AimText = v.IsHorse ? (v.Saddled.Value ? $"Horse  {v.Hp.Value:0}/{v.MaxHp:0} HP   E: ride" : $"Wild horse  {v.Hp.Value:0}/{v.MaxHp:0} HP   E: saddle and ride ({(m_Net.Count(Item.Saddle) > 0 ? "uses your saddle" : "<color=#ff8888>needs a saddle</color>")})") : "Wooden car   E: drive";
+                    // a horse's HP only shows once it has been hurt
+                    string hp = v.Hp.Value < v.MaxHp - 0.5f ? $"  {v.Hp.Value:0}/{v.MaxHp:0} HP" : "";
+                    string e = Binds.Name(Bind.Interact);
+                    AimText = v.IsHorse ? (v.Saddled.Value ? $"Horse{hp}   {e}: ride" : $"Wild horse{hp}   {e}: saddle and ride ({(m_Net.Count(Item.Saddle) > 0 ? "uses your saddle" : "<color=#ff8888>needs a saddle</color>")})") : $"Wooden car   {e}: drive";
                     return;
                 }
                 case TargetKind.Bush: AimText = "Berry Bush   E: pick it"; return;
@@ -1372,7 +1378,7 @@ namespace RockGame
             else if (no.TryGetComponent(out PlayerNet p) && p != m_Net)
                 AimText = $"{Cfg.TeamName[p.Team.Value]} player";
             else if (no.TryGetComponent(out Vehicle hv) && !hv.IsCar)
-                AimText = $"{hv.DisplayName}  {hv.Hp.Value:0}/{hv.MaxHp:0} HP";
+                AimText = hv.Hp.Value < hv.MaxHp - 0.5f || hv.IsSlender ? $"{hv.DisplayName}  {hv.Hp.Value:0}/{hv.MaxHp:0} HP" : hv.DisplayName;
             if (AimText == "") AimText = self;
         }
     }

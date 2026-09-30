@@ -27,20 +27,42 @@ namespace RockGame
 
         static void Log(string s) => Debug.Log("[AUTOTEST] " + s);
 
-        /// <summary>Screenshots of the main menu and the mode options panel.</summary>
+        /// <summary>Screenshots of the main menu, mode options, CHANGE VALUES and every settings tab; checks the settings export.</summary>
         IEnumerator MenuShots()
         {
             string dir = "shots";
             var args = System.Environment.GetCommandLineArgs();
             for (int i = 0; i < args.Length - 1; i++) if (args[i] == "-shotdir") dir = args[i + 1];
             System.IO.Directory.CreateDirectory(dir);
-            yield return new WaitForSeconds(3f);
-            ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(dir, "menu_main.png"));
-            yield return new WaitForSeconds(0.5f);
+            IEnumerator Shot(string name)
+            {
+                yield return new WaitForSeconds(0.8f);
+                ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(dir, name + ".png"));
+                yield return new WaitForEndOfFrame();
+                yield return null;
+            }
+            yield return new WaitForSeconds(2.2f);
+            yield return Shot("menu_main");
             Hud.OpenModeOptions = true;
-            yield return new WaitForSeconds(1f);
-            ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(dir, "menu_mode_options.png"));
-            yield return new WaitForSeconds(1f);
+            yield return Shot("menu_mode_options");
+            Hud.OpenValues = true;
+            yield return Shot("menu_values");
+            for (int tab = 0; tab < 4; tab++)
+            {
+                Hud.OpenSettingsTab = tab;
+                yield return Shot("menu_settings_" + tab);
+            }
+            // CHANGE VALUES > Export writes every value to a file next to the game; Import reads them back
+            float before = Cfg.WalkSpeed;
+            Cfg.WalkSpeed = 6.5f;
+            var path = SettingsFile.Export();
+            Check(path != null && System.IO.File.Exists(path) && System.IO.File.ReadAllText(path).Contains("WalkSpeed = 6.5    # CHANGED (default 5)"), $"settings exported to {path}");
+            Cfg.WalkSpeed = before;
+            int n = SettingsFile.Import(out var err);
+            Check(err == null && n == Cfg.TuneFields.Count && Mathf.Approximately(Cfg.WalkSpeed, 6.5f), $"settings imported back ({n} values, walk speed {Cfg.WalkSpeed})");
+            Cfg.WalkSpeed = before;
+            Cfg.SavePrefs();
+            System.IO.File.Delete(path);
             Log("menu shots done");
             Application.Quit(0);
         }
@@ -349,7 +371,7 @@ namespace RockGame
             Check(me.CarryingBall, "picked up ball");
             pc.LocalTeleport(baseC + new Vector3(6, 0.1f, 5), 0);
             yield return new WaitForSeconds(0.5f);
-            me.ThrowBallRpc(Vector3.down, Vector3.zero);
+            me.ThrowBallRpc(me.EyePos, Vector3.down, Vector3.zero);
             yield return new WaitForSeconds(3f);
             Check(!me.CarryingBall && ball.BaseTeam.Value == team && ball.SocketTeam.Value < 0, $"ball lying in own base does not count yet (BaseTeam={ball.BaseTeam.Value}, Socket={ball.SocketTeam.Value})");
             pc.LocalTeleport(ball.transform.position + new Vector3(1.5f, 0.1f, 0), 270f);
@@ -358,7 +380,7 @@ namespace RockGame
             yield return new WaitForSeconds(0.6f);
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team) + 180f);
             yield return new WaitForSeconds(0.5f);
-            me.ThrowBallRpc((Cfg.SocketPos(team) - me.EyePos).normalized, Vector3.zero);
+            me.ThrowBallRpc(me.EyePos, (Cfg.SocketPos(team) - me.EyePos).normalized, Vector3.zero);
             yield return new WaitForSeconds(2f);
             Check(!me.CarryingBall && ball.SocketTeam.Value == team, $"threw the ball into own machine's socket and it snapped in (Socket={ball.SocketTeam.Value})");
         }
@@ -772,15 +794,20 @@ namespace RockGame
                 if (ball != null && !ball.IsCarried)
                 {
                     var ballWas = ball.transform.position;
-                    var side = horse.transform.position + horse.transform.right * 1.3f;
-                    side.y = MapBuilder.Height(side.x, side.z) + 0.7f;
-                    ball.ServerDrop(side, Vector3.zero);
-                    yield return new WaitForSeconds(0.5f);
+                    // drop it on the ground beside the horse (clear of its body, or it can get knocked away)
+                    for (int attempt = 0; attempt < 3; attempt++)
+                    {
+                        var side = horse.transform.position + horse.transform.right * 1.8f;
+                        side.y = MapBuilder.Height(side.x, side.z) + 0.7f;
+                        ball.ServerDrop(side, Vector3.zero);
+                        yield return new WaitForSeconds(0.5f);
+                        if (Vector3.Distance(ball.transform.position, me.EyePos) < Cfg.InteractRange + 1.5f) break;
+                    }
                     Log($"horse + ball: ball at {ball.transform.position} carried={ball.IsCarried} socket={ball.SocketTeam.Value}, eye at {me.EyePos} (distance {Vector3.Distance(ball.transform.position, me.EyePos):0.0}), riding={me.Riding}, state={NetGame.Instance.S}");
                     me.PickupBallRpc();
                     yield return new WaitForSeconds(0.3f);
                     Check(me.Riding && me.CarryingBall, "picked the ball up without getting off the horse");
-                    me.ThrowBallRpc(me.transform.forward, me.transform.forward * 8f);
+                    me.ThrowBallRpc(me.EyePos, me.transform.forward, me.transform.forward * 8f);
                     yield return new WaitForSeconds(0.1f);
                     Check(me.Riding && !me.CarryingBall, "threw the ball from the horse");
                     ball.ServerDrop(ballWas, Vector3.zero);
@@ -1188,6 +1215,27 @@ namespace RockGame
                 foreach (var dm in demos) dm.root.rotation = Quaternion.Euler(0, 180f, 0);
             }
             s_LateTick = null;
+            foreach (var dm in demos) Object.Destroy(dm.root.gameObject);
+            // the in-game screens: crafting, the pause menu and its controls page
+            pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
+            me.ServerGive(Item.Wood, 120);
+            me.ServerGive(Item.Meat, 1);
+            yield return new WaitForSeconds(0.4f);
+            pc.MenuOpen = true;
+            yield return new WaitForSeconds(0.6f);
+            Snap("ui_crafting");
+            yield return new WaitForEndOfFrame();
+            pc.MenuOpen = false;
+            pc.Paused = true;
+            Hud.OpenPause = 0;
+            yield return new WaitForSeconds(0.6f);
+            Snap("ui_pause");
+            yield return new WaitForEndOfFrame();
+            Hud.OpenPause = 1;
+            yield return new WaitForSeconds(0.6f);
+            Snap("ui_controls");
+            yield return new WaitForEndOfFrame();
+            pc.Paused = false;
             Log("rig shots done");
             Application.Quit(0);
         }
@@ -1286,7 +1334,7 @@ namespace RockGame
             yield return new WaitForSeconds(0.5f);
             pc.SetLook(0f, 3f);
             yield return Shot("09_ball_in_hands");
-            me.ThrowBallRpc(Vector3.forward + Vector3.up * 0.3f, Vector3.zero);
+            me.ThrowBallRpc(me.EyePos, Vector3.forward + Vector3.up * 0.3f, Vector3.zero);
             yield return new WaitForSeconds(0.25f);
             Snap("10_ball_thrown");
             yield return new WaitForSeconds(0.6f);

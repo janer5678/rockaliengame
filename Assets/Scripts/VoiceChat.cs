@@ -3,14 +3,14 @@ using UnityEngine;
 
 namespace RockGame
 {
-    /// <summary>Per-PC sound and mic settings (pause menu), saved in PlayerPrefs.</summary>
+    /// <summary>Per-PC settings (sound, mouse, display, mic), saved in PlayerPrefs.</summary>
     public static class GameSettings
     {
         public const int VoiceOff = 0, VoiceOpen = 1, VoicePushToTalk = 2;
-        public static float MasterVolume = 0.8f, VoiceVolume = 1f, MicGain = 1.5f, MicThreshold = 0.02f, HitVolume = 1f;
+        public static float MasterVolume = 0.8f, SfxVolume = 1f, VoiceVolume = 1f, MicGain = 1.5f, MicThreshold = 0.02f;
+        public static float MouseSensitivity = 2f;
         public static int VoiceMode = VoicePushToTalk;
         public static string MicDevice = "";
-        public static KeyCode PushToTalkKey = KeyCode.V;
         static bool s_Loaded;
 
         public static void Load()
@@ -18,8 +18,9 @@ namespace RockGame
             if (s_Loaded) return;
             s_Loaded = true;
             MasterVolume = PlayerPrefs.GetFloat("RockGame.Volume", 0.8f);
+            SfxVolume = PlayerPrefs.GetFloat("RockGame.SfxVolume", 1f);
             VoiceVolume = PlayerPrefs.GetFloat("RockGame.VoiceVolume", 1f);
-            HitVolume = PlayerPrefs.GetFloat("RockGame.HitVolume", 1f);
+            MouseSensitivity = PlayerPrefs.GetFloat("RockGame.MouseSensitivity", 2f);
             MicGain = PlayerPrefs.GetFloat("RockGame.MicGain", 1.5f);
             MicThreshold = PlayerPrefs.GetFloat("RockGame.MicThreshold", 0.02f);
             VoiceMode = PlayerPrefs.GetInt("RockGame.VoiceMode", VoicePushToTalk);
@@ -30,8 +31,9 @@ namespace RockGame
         public static void Save()
         {
             PlayerPrefs.SetFloat("RockGame.Volume", MasterVolume);
+            PlayerPrefs.SetFloat("RockGame.SfxVolume", SfxVolume);
             PlayerPrefs.SetFloat("RockGame.VoiceVolume", VoiceVolume);
-            PlayerPrefs.SetFloat("RockGame.HitVolume", HitVolume);
+            PlayerPrefs.SetFloat("RockGame.MouseSensitivity", MouseSensitivity);
             PlayerPrefs.SetFloat("RockGame.MicGain", MicGain);
             PlayerPrefs.SetFloat("RockGame.MicThreshold", MicThreshold);
             PlayerPrefs.SetInt("RockGame.VoiceMode", VoiceMode);
@@ -43,6 +45,84 @@ namespace RockGame
         /// <summary>Automated test runs (-autotest) and -mute are silent.</summary>
         public static bool Muted;
         public static void Apply() => AudioListener.volume = Muted ? 0f : Mathf.Clamp01(MasterVolume);
+
+        // ------------------------------------------------------------------ display
+
+        public enum WindowMode { Fullscreen, Borderless, Windowed }
+
+        /// <summary>Screen sizes this monitor supports (largest first), one entry per size.</summary>
+        public static List<Vector2Int> Resolutions()
+        {
+            var l = new List<Vector2Int>();
+            foreach (var r in Screen.resolutions)
+            {
+                var v = new Vector2Int(r.width, r.height);
+                if (!l.Contains(v)) l.Add(v);
+            }
+            var cur = new Vector2Int(Screen.currentResolution.width, Screen.currentResolution.height);
+            if (!l.Contains(cur)) l.Add(cur);
+            var now = CurrentSize;
+            if (!l.Contains(now)) l.Add(now);
+            l.Sort((a, b) => b.x * b.y != a.x * a.y ? (b.x * b.y).CompareTo(a.x * a.y) : b.x.CompareTo(a.x));
+            return l;
+        }
+
+        /// <summary>Refresh rates (highest first) the monitor has at a screen size.</summary>
+        public static List<RefreshRate> RefreshRates(Vector2Int size)
+        {
+            var l = new List<RefreshRate>();
+            foreach (var r in Screen.resolutions)
+                if (r.width == size.x && r.height == size.y && !l.Exists(x => System.Math.Abs(x.value - r.refreshRateRatio.value) < 0.5)) l.Add(r.refreshRateRatio);
+            if (l.Count == 0)
+                foreach (var r in Screen.resolutions)
+                    if (!l.Exists(x => System.Math.Abs(x.value - r.refreshRateRatio.value) < 0.5)) l.Add(r.refreshRateRatio);
+            if (l.Count == 0) l.Add(Screen.currentResolution.refreshRateRatio);
+            l.Sort((a, b) => b.value.CompareTo(a.value));
+            return l;
+        }
+
+        public static WindowMode CurrentMode => Screen.fullScreenMode == FullScreenMode.Windowed || Screen.fullScreenMode == FullScreenMode.MaximizedWindow ? WindowMode.Windowed
+            : Screen.fullScreenMode == FullScreenMode.ExclusiveFullScreen ? WindowMode.Fullscreen : WindowMode.Borderless;
+
+        public static Vector2Int CurrentSize => new Vector2Int(Screen.width, Screen.height);
+
+        /// <summary>The refresh rate we run at (the highest the screen can do unless another one was picked).</summary>
+        public static RefreshRate ChosenRate;
+
+        public static void SetDisplay(Vector2Int size, WindowMode mode, RefreshRate rate)
+        {
+            var fs = mode == WindowMode.Fullscreen ? FullScreenMode.ExclusiveFullScreen : mode == WindowMode.Borderless ? FullScreenMode.FullScreenWindow : FullScreenMode.Windowed;
+            ChosenRate = rate;
+            Screen.SetResolution(size.x, size.y, fs, rate);
+            Application.targetFrameRate = Mathf.Max(60, Mathf.RoundToInt((float)rate.value));
+            PlayerPrefs.SetInt("RockGame.ScreenW", size.x);
+            PlayerPrefs.SetInt("RockGame.ScreenH", size.y);
+            PlayerPrefs.SetInt("RockGame.ScreenMode", (int)mode);
+            PlayerPrefs.SetInt("RockGame.RefreshNum", (int)rate.numerator);
+            PlayerPrefs.SetInt("RockGame.RefreshDen", (int)rate.denominator);
+            PlayerPrefs.Save();
+        }
+
+        /// <summary>
+        /// At startup: the display settings picked last time; otherwise keep the window as it is and run at the highest
+        /// refresh rate the monitor has. keepWindow: test runs and the editor never touch the window.
+        /// </summary>
+        public static void ApplyDisplayAtStartup(bool keepWindow)
+        {
+            var rates = RefreshRates(new Vector2Int(Screen.currentResolution.width, Screen.currentResolution.height));
+            ChosenRate = rates[0];
+            Application.targetFrameRate = Mathf.Max(60, Mathf.RoundToInt((float)ChosenRate.value));
+            if (keepWindow || Application.isEditor) return;
+            if (PlayerPrefs.HasKey("RockGame.ScreenW"))
+            {
+                var size = new Vector2Int(PlayerPrefs.GetInt("RockGame.ScreenW"), PlayerPrefs.GetInt("RockGame.ScreenH"));
+                var mode = (WindowMode)PlayerPrefs.GetInt("RockGame.ScreenMode", (int)CurrentMode);
+                var want = new RefreshRate { numerator = (uint)PlayerPrefs.GetInt("RockGame.RefreshNum", (int)ChosenRate.numerator), denominator = (uint)Mathf.Max(1, PlayerPrefs.GetInt("RockGame.RefreshDen", (int)ChosenRate.denominator)) };
+                SetDisplay(size, mode, want);
+                return;
+            }
+            if (Screen.fullScreenMode != FullScreenMode.Windowed) Screen.SetResolution(Screen.width, Screen.height, Screen.fullScreenMode, ChosenRate);
+        }
     }
 
     /// <summary>
@@ -138,7 +218,7 @@ namespace RockGame
             Level = Mathf.Max(rms * 3f, Level - Time.deltaTime);
 
             bool talk;
-            if (GameSettings.VoiceMode == GameSettings.VoicePushToTalk) talk = Input.GetKey(GameSettings.PushToTalkKey);
+            if (GameSettings.VoiceMode == GameSettings.VoicePushToTalk) talk = Binds.Held(Bind.PushToTalk);
             else
             {
                 if (rms > GameSettings.MicThreshold) m_Hang = 0.4f;

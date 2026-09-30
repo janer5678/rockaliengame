@@ -36,7 +36,9 @@ namespace RockGame
             Cfg.LoadPrefs();
             GameSettings.Load();
             if (GetComponent<VoiceChat>() == null) gameObject.AddComponent<VoiceChat>();
-            Application.targetFrameRate = 144;
+            // the refresh rate: the highest the screen has (or what was picked in Settings > Display)
+            bool test = System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-autotest") >= 0;
+            GameSettings.ApplyDisplayAtStartup(test);
             Application.runInBackground = true;
             MapChoice = PlayerPrefs.GetInt("RockGame.Map", 0);
             ParseMapArgs();

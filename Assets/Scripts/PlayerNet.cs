@@ -357,7 +357,7 @@ namespace RockGame
             bool sliding = grounded && Crouch.Value && speed > Cfg.CrouchSpeed * 1.4f;
             float slideVol = sliding ? Mathf.Clamp01(speed / 10f) * 0.9f : 0f;
             if (m_SlideSound == null && sliding) m_SlideSound = Sfx.Loop(Sfx.Slide, transform, 0f, 1f, 45f);
-            if (m_SlideSound != null) m_SlideSound.volume = Mathf.MoveTowards(m_SlideSound.volume, slideVol, dt * 4f);
+            if (m_SlideSound != null) m_SlideSound.volume = Mathf.MoveTowards(m_SlideSound.volume, slideVol * GameSettings.SfxVolume, dt * 4f);
             if (!grounded || Crouch.Value || speed < 1.5f) return;
             m_FootDist += dist;
             bool sprint = speed > Cfg.WalkSpeed * 1.2f;
@@ -1122,7 +1122,7 @@ namespace RockGame
             if (Dead.Value || (food != Item.Berry && food != Item.Meat) || Time.time < m_NextEat) return;
             if (Health.Value >= Cfg.MaxHealth) { Notify("You're already at full health"); return; }
             // berries take a while to eat (the client plays it out first)
-            m_NextEat = Time.time + (food == Item.Berry ? Mathf.Max(0.8f, Cfg.BerryEatTime - 0.2f) : 0.8f);
+            m_NextEat = Time.time + Mathf.Max(0.8f, (food == Item.Berry ? Cfg.BerryEatTime : Cfg.MeatEatTime) - 0.2f);
             ServerConsumeHeld();
             Health.Value = food == Item.Meat ? Cfg.MaxHealth : Mathf.Min(Cfg.MaxHealth, Health.Value + Cfg.BerryHeal); // meat heals you fully
         }
@@ -1246,26 +1246,29 @@ namespace RockGame
 
         /// <summary>LMB while carrying: the ball flies straight out from where it is held (lower middle of the screen) along the aim.</summary>
         [Rpc(SendTo.Server)]
-        public void ThrowBallRpc(Vector3 dir, Vector3 mountVel)
+        public void ThrowBallRpc(Vector3 eye, Vector3 dir, Vector3 runVel)
         {
             if (!CarryingBall || dir.sqrMagnitude < 0.01f) return;
             dir.Normalize();
-            var eye = EyePos;
+            // the thrower's own eye position: the server's copy of a running player lags behind, so a ball placed from
+            // it came out behind them (they ran into it and got launched forward). Trust it if it's close to ours.
+            if ((eye - EyePos).sqrMagnitude > 5f * 5f) eye = EyePos;
             var right = Vector3.Cross(Vector3.up, dir).normalized;
             if (right.sqrMagnitude < 0.01f) right = transform.right;
             var camUp = Vector3.Cross(dir, right);
-            var pos = eye + dir * 0.75f - camUp * 0.35f;
+            var pos = eye + dir * 1.05f - camUp * 0.3f;
             if (Physics.Linecast(eye, pos, out var hit, ~(1 << HitboxLayer), QueryTriggerInteraction.Ignore) && !hit.collider.transform.IsChildOf(transform))
                 pos = hit.point - dir * 0.7f;
+            // it keeps the thrower's running (or galloping) speed, so it always leaves in front of them
+            runVel.y = 0;
             var vel = dir * Cfg.BallThrowSpeed + Vector3.up * 1f;
             Collider mount = null;
             if (Riding && NetworkManager.SpawnManager.SpawnedObjects.TryGetValue(RidingId.Value, out var vno) && vno.TryGetComponent(out Vehicle horse))
             {
-                // thrown from a galloping horse it keeps the horse's speed (the rider sends it: they move the horse)
                 mount = horse.GetComponent<CharacterController>();
-                mountVel.y = 0;
-                vel += Vector3.ClampMagnitude(mountVel, Cfg.HorseSprint * 1.3f);
+                vel += Vector3.ClampMagnitude(runVel, Cfg.HorseSprint * 1.3f);
             }
+            else vel += Vector3.ClampMagnitude(runVel, Cfg.SprintSpeed * 1.6f);
             Ball.Instance.ServerThrow(this, pos, vel, mount);
             ThrowAnimRpc();
         }

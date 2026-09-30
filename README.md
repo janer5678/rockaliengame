@@ -16,12 +16,14 @@ Both players start with a rock, gather wood and stone, build a Rust-style base, 
    Port 7777/UDP must be reachable; allow the Windows firewall prompt.
    You can also press Play in the editor and host or join from there against a build.
 
-### Menu options (set by the host)
-- **Game**: red vs blue in *1v1*, *2v2*, *3v3* or *4v4*; or the X-shaped map with 3 or 4 bases (glass walls in an X, the map laid out four ways round): *FFA 3* / *FFA 4* (free for all, one player per base), *2v2v2* or *2v2v2v2* (teams of two). Sudden death is last team standing.
+### Main menu
+Laid out top to bottom: **MATCH SETUP** (what the host picks), then **PLAY** (host, or type the host's IP and join; the **port ▼** button next to the IP folds out the port if you need to change it), then **SETTINGS** and **QUIT**. The option you've picked shows pressed in with gold text. Buttons blip when you point at them and click when you press them; sliders tick as they move.
+
+### Match setup (set by the host)
+- **Players** (one button that folds open the eight choices): red vs blue in *1v1*, *2v2*, *3v3* or *4v4*; or the X-shaped map with 3 or 4 bases (glass walls in an X, the map laid out four ways round): *FFA 3* / *FFA 4* (free for all, one player per base), *2v2v2* or *2v2v2v2* (teams of two). Sudden death is last team standing.
 - While waiting for everyone to join, players brawl with rocks in the stadium; when the lobby is full everyone is sent to their base and the match starts.
-- **Solo test**: the match starts without an opponent, so you can try everything alone.
-- **Fast timers**: 10s wall/ball drop and a 90s match instead of 5 min behind the wall and then 15 min.
-- **Map**: *Plains* (flat) or *Highlands* (the wild map: random hilly terrain with minable rocks and watch towers, new every match), each in **Small**, **Big**, **Big x1.5** or **Big x2** (the bigger maps get more trees, rocks, bushes, horses and towers). Picked by the host; the client builds the same map from the synced seed.
+- **Testing** (on/off buttons): **Solo test** - the match starts without an opponent, so you can try everything alone. **Fast timers** - 10s wall/ball drop and a 90s match instead of 5 min behind the wall and then 15 min.
+- **Map**: *Plains* (flat) or *Highlands* (the wild map: random hilly terrain with minable rocks and watch towers, new every match), each in **Small**, **Medium**, **Large** (1.5x) or **Huge** (2x) (the bigger maps get more trees, rocks, bushes, horses and towers). Picked by the host; the client builds the same map from the synced seed.
 - **Mode**: *Normal* or *Wood mode* (no stone anywhere, every rock is a tree, everything costs wood only, no pickaxe, no stone upgrades).
 - **MODE OPTIONS** (button on the main menu):
   - **Airdrops per match** (0-20): evenly spaced over the time after the glass wall drops - 1 comes half way through (7:30 after the wall drops), 2 at a third and two thirds, and so on. None come while the wall is up.
@@ -29,13 +31,16 @@ Both players start with a rock, gather wood and stone, build a Rust-style base, 
   - **Airdrop items**: tick which items airdrops can have: C4, Death Wand, Portal Gun, Rocket Launcher, Tree Camo, Invisibility Potion, Jetpack, Wallhack Glasses, Fake Bomb Bush.
   - **Respawn**: *Normal* or *With an airdrop item* (every time you respawn you get a random one of the picked airdrop items).
 
-Command line: `-host`, `-client <ip>`, `-port <n>`, `-solo`, `-fast`, `-map plains|highlands`, `-small`, `-big`, `-wood`, `-normal`, `-sides`, `-anywhere`, `-seed <n>`, `-mode 1v1|2v2|3v3|4v4|ffa3|ffa4|2v2v2|2v2v2v2`, `-large` (Big x1.5), `-huge` (Big x2).
+Command line: `-host`, `-client <ip>`, `-port <n>`, `-solo`, `-fast`, `-map plains|highlands`, `-small`, `-big` (medium), `-wood`, `-normal`, `-sides`, `-anywhere`, `-seed <n>`, `-mode 1v1|2v2|3v3|4v4|ffa3|ffa4|2v2v2|2v2v2v2`, `-large`, `-huge`.
 
 ## Pause menu (Esc)
-- **Sound**: master volume, hit sounds volume (hit markers, flesh hits, kills) and voice chat volume.
-- **Proximity voice chat**: Off / Open mic / Push to talk (V), pick the microphone, mic volume, open-mic sensitivity and a live mic level meter. You only hear people near you (3D, fades out by ~45 m).
+- **Resume**, **Settings**, **Controls**, **Dev settings**, **Leave game**. Esc goes back a page.
+- **Settings** (also on the main menu), in tabs:
+  - **Sound**: Master, Sound effects (every game and menu sound) and Voice chat volume.
+  - **Controls**: mouse sensitivity, and every key laid out by what it does (movement, actions, building, voice, hotbar) with a note on what each is for. Click a key and press the new key or mouse button to rebind it; every action has a main and a second key. Esc cancels, Backspace clears, **Reset controls** puts the defaults back.
+  - **Display**: Fullscreen / Borderless window / Windowed, resolution and refresh rate. The game runs at your screen's highest refresh rate unless you pick another; **Use my screen's best** picks your screen's resolution and highest refresh rate; **Apply** switches.
+  - **Voice chat** (proximity): Off / Open mic / Push to talk, the microphone, mic volume, open-mic sensitivity and a live mic level meter. You only hear people near you (3D, fades out by ~45 m).
 - **Dev settings**: drop the wall now, pause/resume the timer, +/- 1 minute, timer to 10 s, start sudden death, win now, spawn an airdrop, ball to me / to the middle, regrow nodes, spawn a horse or car, +1000 wood/stone, +50 arrows, all airdrop items, one of every craftable, clear inventory, heal, god mode, kill me, and teleports (my base, enemy base, ball, airdrop). Everyone is told when someone uses one.
-- **Leave game**.
 
 ## Rules
 - In the middle of each base is an unbreakable silver **bedrock** (2x2 cells). You spawn on it. It counts as a foundation (walls and stairs can stand on it) but nothing can be placed on it.
@@ -75,14 +80,17 @@ Once the wall is down, a giant alien ship comes down from very high up and **bea
 | Airstrike | Opens a map: click a spot and a few seconds later everything there (players, buildings, trees, rocks) is flattened. |
 | Wallhack Glasses | While you hold them, enemies glow red through walls. |
 
-## Game settings
-**GAME SETTINGS** on the main menu lists every stat: timings, airdrops, player HP and speeds, damage and gather rate for every tool, node HP, building costs and HP, crafting costs and more. Only the values you change are saved on your PC (so new defaults still reach you). When you host, your values are sent to your opponent and used for the whole match.
+## Game settings (CHANGE VALUES)
+**CHANGE VALUES** on the main menu lists every stat: timings, airdrops, player HP and speeds, damage and gather rate for every tool, node HP, building costs and HP, crafting costs and more. They're folded into sections: click a heading to open it (each shows how many values it has and how many you changed). Only the values you change are saved on your PC (so new defaults still reach you). When you host, your values are used for the whole match and sent to everyone.
+
+- **Export to a file** writes `RockBaseBrawl-settings.txt` next to the game (the project folder in the editor): every value, plus the main menu choices and mode options, with the changed ones marked. Send it over and say what it's for - new default settings, or the base of a new game mode.
+- **Import from the file** reads it back in; **Open the folder** shows where it is.
 
 ## Controls
 | Key | Action |
 |---|---|
 | WASD / Shift / Space / Ctrl or C | move / sprint / jump / crouch (also with the inventory open) |
-| Sprint, then Ctrl / C | **slide** (Crab Game style): you keep your speed, go faster downhill and slower uphill, steer a little, and can jump out of it without losing speed. Hold crouch to keep sliding; how slippery it is is **Slide Slipperiness** in GAME SETTINGS (0 = grippy, 10 = ice), along with Slide Boost, Slide Min Speed and Slide Steer |
+| Sprint, then Ctrl / C | **slide** (Crab Game style): you keep your speed, go faster downhill and slower uphill, steer a little, and can jump out of it without losing speed. Hold crouch to keep sliding; how slippery it is is **Slide Slipperiness** in CHANGE VALUES (0 = grippy, 10 = ice, default 7.5 - a long glide), along with Slide Boost, Slide Min Speed and Slide Steer |
 | Mouse / LMB | look / attack, gather, place |
 | Hold LMB (bow) | draw, release to fire (RMB cancels) |
 | Spear | LMB stab · **hold RMB** to wind up, then **LMB** to throw |
@@ -96,7 +104,7 @@ Once the wall is down, a giant alien ship comes down from very high up and **bea
 | Helmet / armour / potion | LMB (or RMB) to put on / drink |
 | C4 / fort tower | LMB throws it |
 | V | push to talk (proximity voice chat) |
-| F1 / Esc | toggle help / pause |
+| Esc | pause (the controls list is in the pause menu, and every key above can be rebound there) |
 
 ## Inventory
 - Wood, stone, arrows and berries are real items that take up slots. Tools and weapons go to the hotbar first.
@@ -150,7 +158,7 @@ In wood mode the stone part is added to the wood cost and there's no pickaxe.
 ## Horses and the car
 - **Wild horses** wander each half of the map. Craft a **saddle** (it's in your team colour), walk up to one and press E to saddle it and get on. It rides like a Minecraft horse: it goes where you look, Shift gallops, Space jumps. Your view sits high up so you can see ahead.
 - **The ball on horseback**: you can get on a horse while carrying the ball, and pick the ball up from the saddle (look at it and press E - E only gets you off when you're not looking at the ball). LMB throws it from the horse; it keeps the horse's speed. (Cars still can't carry the ball.)
-- Horses have 120 HP (shown when you look at them), bleed when hit and bolt away from whoever hurt them. They can be killed: they drop **horse meat** (eat it to heal fully) and their saddle.
+- Horses have 120 HP (shown when you look at one once it's been hurt), bleed when hit and bolt away from whoever hurt them. They can be killed: they drop **horse meat** (takes 3 s to eat, heals you fully) and their saddle.
 - (The wooden car is switched off for now.)
 
 ## Combat & raid balance
@@ -165,7 +173,7 @@ In wood mode the stone part is added to the wood cost and there's no pickaxe.
 - Weapons do double damage to buildings compared to before.
 - You can't shoot through the glass wall by standing right up against it.
 - The bow shoots slower arrows with more drop (55 m/s, normal gravity), like the original bow. It's held like Rust's hunting bow: left arm in from the lower left, and when drawn the arrow lines up with the crosshair.
-- Hitboxes (radius 0.52 m) wrap the alien, and there's hit assist like most games: a melee swing counts if it passes within 0.35 m of a player, arrows/spears within 0.15 m (both adjustable in GAME SETTINGS, as are the hitbox size, bow speed and arrow drop).
+- Hitboxes (radius 0.52 m) wrap the alien, and there's hit assist like most games: a melee swing counts if it passes within 0.35 m of a player, arrows/spears within 0.15 m (both adjustable in CHANGE VALUES, as are the hitbox size, bow speed and arrow drop).
 - Melee lands on the swing's impact frame. The rock is swung two-handed: a hit bounces your hands back up with a short hit-stop, a miss follows through down.
 - Other players are rigged (a skinned mesh, so the body really bends) and animated procedurally, and you see what they're doing: idle breathing, walk / run / sprint forwards, backwards and strafing, crouch walk, jump tuck and landing dip, **sliding** (low, leaning back, front leg out), holding each item, **drawing a bow** (bow arm out, string hand to the cheek), **winding up a spear** (cocked over the shoulder), **aiming the crossbow / sniper** (shouldered), **eating / drinking**, **charging the ram**, **running the chainsaw**, **throwing** (overhand), swings with one or two hands, carrying the ball, riding, and falling over on death. What each player is doing is synced (`PlayerNet.Action`), so it shows on every screen. `-autotest rig -host -solo` photographs every pose from the front and the side.
 - Hits show blood where they land, a hit marker (orange on headshots, red on kills), a damage number, and a bit of screen shake.

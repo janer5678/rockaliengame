@@ -680,7 +680,7 @@ namespace RockGame
                 m_Crowd.spatialBlend = 0f;
                 m_Crowd.Play();
             }
-            m_Crowd.volume = 0.12f + excite * 0.25f;
+            m_Crowd.volume = (0.12f + excite * 0.25f) * GameSettings.SfxVolume;
             string text = "ROCK BRAWL";
             if (g != null && g.IsSpawned)
             {

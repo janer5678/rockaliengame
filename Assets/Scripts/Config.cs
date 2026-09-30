@@ -54,7 +54,7 @@ namespace RockGame
         public static MapSize Size = MapSize.Big;
         public static bool SmallMap => Size == MapSize.Small;
         public static float SizeScale => Size == MapSize.Large ? 1.5f : Size == MapSize.Huge ? 2f : 1f;
-        public static string SizeLabel(MapSize s) => s == MapSize.Small ? "Small" : s == MapSize.Large ? "Big x1.5" : s == MapSize.Huge ? "Big x2" : "Big";
+        public static string SizeLabel(MapSize s) => s == MapSize.Small ? "Small" : s == MapSize.Large ? "Large" : s == MapSize.Huge ? "Huge" : "Medium";
         /// <summary>Wood mode: no stone anywhere, everything costs wood, no pickaxe, no stone upgrades.</summary>
         public static bool WoodMode;
         public static int MapSeed;
@@ -237,11 +237,11 @@ namespace RockGame
         [Tune("Player")] public static float BallCarrySpeedMul = 1f;
         [Tune("Player")] public static float BallThrowSpeed = 16f;
         // sliding (sprint, then crouch), like Crab Game: you keep your speed, pick up more going downhill, lose it uphill
-        [Tune("Player")] public static float SlideSlipperiness = 6f;  // 0 = stops almost at once, 10 = like ice
-        [Tune("Player")] public static float SlideBoost = 2.5f;       // extra speed when the slide starts
-        [Tune("Player")] public static float SlideMinSpeed = 3f;      // the slide ends when you're slower than this
+        [Tune("Player")] public static float SlideSlipperiness = 7.5f; // 0 = stops almost at once, 10 = like ice
+        [Tune("Player")] public static float SlideBoost = 3.5f;       // extra speed when the slide starts
+        [Tune("Player")] public static float SlideMinSpeed = 2f;      // the slide ends when you're slower than this
         [Tune("Player")] public static float SlideSteer = 70f;        // degrees per second you can turn while sliding
-        [Tune("Player")] public static float BerryHeal = 25f, BerryEatTime = 1.5f;
+        [Tune("Player")] public static float BerryHeal = 25f, BerryEatTime = 1.5f, MeatEatTime = 3f;
         [Tune("Player")] public static int ArmorHp = 100;              // wooden armour: a second health bar, used up first (max 255)
         [Tune("Player")] public static float HeadshotMul = 2f;
         [Tune("Player")] public static float ModelWidth = 1.3f;       // alien model width scale
@@ -538,6 +538,13 @@ namespace RockGame
             return v is float fl ? fl.ToString("0.###", CultureInfo.InvariantCulture) : Convert.ToString(v, CultureInfo.InvariantCulture);
         }
 
+        public static string FormatDefault(FieldInfo f)
+        {
+            _ = TuneFields;
+            var v = s_Defaults[f.Name];
+            return v is float fl ? fl.ToString("0.###", CultureInfo.InvariantCulture) : Convert.ToString(v, CultureInfo.InvariantCulture);
+        }
+
         public static bool TrySet(FieldInfo f, string text)
         {
             if (f.FieldType == typeof(float) && float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var fv)) { f.SetValue(null, fv); return true; }
@@ -571,6 +578,13 @@ namespace RockGame
                 if (eq <= 0) continue;
                 if (map.TryGetValue(pair.Substring(0, eq), out var f)) TrySet(f, pair.Substring(eq + 1));
             }
+        }
+
+        /// <summary>A client takes the host's settings: the defaults plus whatever the host changed.</summary>
+        public static void ApplyHost(string data)
+        {
+            ResetDefaults();
+            Apply(data);
         }
 
         public static void ResetDefaults()

@@ -402,9 +402,8 @@ namespace RockGame
     public static class Sfx
     {
         public static AudioClip Swing, Flesh, Headshot, Chop, Clink, Thud, Ding, Smash, Twang, Throw, Pop, Eat, Place, Hurt, Kill, Step, Hiss, Boom, Beep, Zap, Saw, Hum,
-            Hit, Rocket, Sniper, Portal, Jet, Glass, Door, Click, Crowd, Whiz, Slide, Hoof;
+            Hit, Rocket, Sniper, Portal, Jet, Glass, Door, Click, Crowd, Whiz, Slide, Hoof, UiHover, UiClick, UiSlide;
         static readonly Dictionary<AudioClip, AudioClip[]> s_Variants = new Dictionary<AudioClip, AudioClip[]>();
-        static readonly HashSet<AudioClip> s_HitSounds = new HashSet<AudioClip>();
         const int Rate = 44100;
 
         // runs on first access to any clip, so Sfx.Play(Sfx.Chop, ...) always gets a built clip
@@ -457,6 +456,10 @@ namespace RockGame
             Whiz = Make("whiz", 1f, (t, d) => (N() * 0.55f + Mathf.Sin(t * 2 * Mathf.PI * 880) * 0.18f + Mathf.Sin(t * 2 * Mathf.PI * 1310) * 0.08f) * (0.8f + 0.2f * Mathf.Sin(t * 2 * Mathf.PI * 9)), lowpass: 0.45f);
             // sliding: a gritty scrape (loops)
             Slide = Make("slide", 1f, (t, d) => N() * (0.5f + 0.25f * Mathf.Sin(t * 2 * Mathf.PI * 13) + 0.15f * Mathf.Sin(t * 2 * Mathf.PI * 31)), lowpass: 0.12f);
+            // menus: a soft blip when the mouse goes over a button, a crisp two-tone click, a tiny tick for sliders
+            UiHover = Make("uihover", 0.05f, (t, d) => Mathf.Sin(t * 2 * Mathf.PI * 1320) * Env(t, 0.03f) * 0.18f);
+            UiClick = Make("uiclick", 0.09f, (t, d) => (t < 0.03f ? Mathf.Sin(t * 2 * Mathf.PI * 880) : Mathf.Sin(t * 2 * Mathf.PI * 1760)) * Env(t < 0.03f ? t : t - 0.03f, 0.04f) * 0.35f + N() * Env(t, 0.004f) * 0.2f);
+            UiSlide = Make("uislide", 0.025f, (t, d) => Mathf.Sin(t * 2 * Mathf.PI * 2600) * Env(t, 0.012f) * 0.15f);
             // a hoof on the ground
             Hoof = Make("hoof", 0.09f, (t, d) => Mathf.Sin(t * 2 * Mathf.PI * Mathf.Lerp(520, 260, t / d)) * Env(t, 0.04f) * 0.8f + N() * Env(t, 0.01f) * 0.4f, lowpass: 0.5f);
         }
@@ -481,14 +484,12 @@ namespace RockGame
                 f.SetValue(null, l[0]);
                 s_Variants[l[0]] = l.ToArray();
             }
-            s_HitSounds.Clear();
-            foreach (var c in new[] { Flesh, Headshot, Kill, Hit }) if (c != null) s_HitSounds.Add(c);
         }
 
         static AudioClip Pick(AudioClip clip) => s_Variants.TryGetValue(clip, out var v) ? v[Random.Range(0, v.Length)] : clip;
 
-        /// <summary>Hit sounds (flesh, headshot, kill, hit marker) follow their own volume slider.</summary>
-        static float Vol(AudioClip clip, float v) => s_HitSounds.Contains(clip) ? v * GameSettings.HitVolume : v;
+        /// <summary>Every sound effect follows the SFX slider (the master slider is the listener volume).</summary>
+        static float Vol(AudioClip clip, float v) => v * GameSettings.SfxVolume;
 
         static float Env(float t, float decay) => Mathf.Exp(-t / Mathf.Max(0.001f, decay) * 3f);
 
@@ -562,12 +563,27 @@ namespace RockGame
             var src = parent.gameObject.AddComponent<AudioSource>();
             src.clip = clip;
             src.loop = true;
-            src.volume = volume;
+            src.volume = volume * GameSettings.SfxVolume;
             src.pitch = pitch;
             Spatial(src, range, doppler);
             src.time = Random.Range(0f, clip.length * 0.9f);
             src.Play();
             return src;
+        }
+
+        /// <summary>Menu sounds: a fixed pitch (sliders tick higher as they go up), never randomised.</summary>
+        public static void PlayUi(AudioClip clip, float volume, float pitch = 1f)
+        {
+            if (clip == null) return;
+            var go = new GameObject("sfxui");
+            var src = go.AddComponent<AudioSource>();
+            src.clip = clip;
+            src.volume = volume * GameSettings.SfxVolume;
+            src.pitch = pitch;
+            src.spatialBlend = 0f;
+            src.ignoreListenerPause = true;
+            src.Play();
+            Object.Destroy(go, clip.length / Mathf.Max(0.3f, pitch) + 0.1f);
         }
 
         /// <summary>Non-positional sound for the local player (UI, own swings).</summary>

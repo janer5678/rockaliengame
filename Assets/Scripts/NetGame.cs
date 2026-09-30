@@ -64,7 +64,7 @@ namespace RockGame
             Tunables.OnValueChanged += OnTunablesChanged;
             if (!IsServer)
             {
-                Cfg.Apply(Tunables.Value.ToString());
+                Cfg.ApplyHost(Tunables.Value.ToString());
                 // build the host's map (same map + seed = same terrain and UFO spots)
                 Cfg.SetMap(MapKey.Value, MapSeed.Value);
                 if (!MapBuilder.IsBuilt(MapKey.Value, MapSeed.Value)) MapBuilder.Build();
@@ -73,7 +73,7 @@ namespace RockGame
             {
                 MapKey.Value = Cfg.MapKey;
                 MapSeed.Value = Cfg.MapSeed;
-                var data = Cfg.Serialize();
+                var data = Cfg.Serialize(true); // only what the host changed (the client starts from the defaults)
                 if (System.Text.Encoding.UTF8.GetByteCount(data) < 4000) Tunables.Value = new FixedString4096Bytes(data);
                 else Debug.LogError("[RockGame] Settings too large to sync: " + data.Length);
                 BuildGrid.Registry.Clear();
@@ -97,7 +97,7 @@ namespace RockGame
 
         void OnTunablesChanged(FixedString4096Bytes prev, FixedString4096Bytes cur)
         {
-            if (!IsServer) Cfg.Apply(cur.ToString());
+            if (!IsServer) Cfg.ApplyHost(cur.ToString());
         }
 
         [Rpc(SendTo.ClientsAndHost)]

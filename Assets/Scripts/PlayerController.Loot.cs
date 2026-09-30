@@ -14,7 +14,7 @@ namespace RockGame
 
         void HandleOnce(Item held, Action act)
         {
-            if (!Input.GetMouseButtonDown(0) || Time.time < m_NextSwing) return;
+            if (!Binds.Down(Bind.Attack) || Time.time < m_NextSwing) return;
             m_NextSwing = Time.time + 0.8f;
             act();
             m_VM.Use();
@@ -24,7 +24,7 @@ namespace RockGame
         /// <summary>Sniper: RMB scope, LMB fires (3 shots). Anything it hits dies, except a helmet stops a headshot.</summary>
         void HandleSniper()
         {
-            if (!Input.GetMouseButtonDown(0) || Time.time < m_NextSwing) return;
+            if (!Binds.Down(Bind.Attack) || Time.time < m_NextSwing) return;
             if (m_Net.HeldStack.Data == 0) return;
             m_NextSwing = Time.time + 1.2f;
             var ray = CenterRay();
@@ -47,7 +47,7 @@ namespace RockGame
         /// <summary>Portal gun: LMB shoots a portal onto whatever surface you aim at (two shots, one linked pair).</summary>
         void HandlePortalGun()
         {
-            if (!Input.GetMouseButtonDown(0) || Time.time < m_NextSwing) return;
+            if (!Binds.Down(Bind.Attack) || Time.time < m_NextSwing) return;
             m_NextSwing = Time.time + 0.5f;
             var ray = CenterRay();
             RaycastHit best = default;
@@ -110,7 +110,7 @@ namespace RockGame
         /// <summary>Jetpack (held): hold Space to fly up while there's fuel.</summary>
         void TickJetpack(Item held, bool canMove)
         {
-            bool want = held == Item.Jetpack && canMove && Input.GetKey(KeyCode.Space) && m_Net.HeldStack.Data > 0 && !MenuOpen;
+            bool want = held == Item.Jetpack && canMove && Binds.Held(Bind.Jump) && m_Net.HeldStack.Data > 0 && !MenuOpen;
             if (want)
             {
                 m_VelY = Mathf.Min(m_VelY + (Cfg.Gravity + Cfg.JetpackThrust) * Time.deltaTime, 7f);
@@ -129,7 +129,7 @@ namespace RockGame
         /// <summary>Slenderman egg, build egg, fake bomb bush: thrown. Rocket launcher: fires its one rocket.</summary>
         void HandleLootThrow(Item kind)
         {
-            if (!Input.GetMouseButtonDown(0) || Time.time < m_NextSwing) return;
+            if (!Binds.Down(Bind.Attack) || Time.time < m_NextSwing) return;
             m_NextSwing = Time.time + 0.6f;
             var ray = CenterRay();
             Vector3 origin = SafeOrigin(ray, 0.7f);

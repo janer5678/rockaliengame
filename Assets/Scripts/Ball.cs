@@ -104,6 +104,13 @@ namespace RockGame
             // keep the beacon pointing straight up even while the ball rolls
             if (m_Beacon) m_Beacon.transform.rotation = Quaternion.identity;
             m_Col.enabled = !IsCarried;
+            // (on every peer: the server for the thrower, the thrower's own screen for itself)
+            if ((m_IgnoredCol != null || m_IgnoredMount != null) && Time.time > m_IgnoreUntil)
+            {
+                if (m_IgnoredCol != null) Physics.IgnoreCollision(m_Col, m_IgnoredCol, false);
+                if (m_IgnoredMount != null) Physics.IgnoreCollision(m_Col, m_IgnoredMount, false);
+                m_IgnoredCol = m_IgnoredMount = null;
+            }
 
             if (IsServer) ServerTick();
         }
@@ -129,12 +136,7 @@ namespace RockGame
 
         void ServerTick()
         {
-            if ((m_IgnoredCol != null || m_IgnoredMount != null) && Time.time > m_IgnoreUntil)
-            {
-                if (m_IgnoredCol != null) Physics.IgnoreCollision(m_Col, m_IgnoredCol, false);
-                if (m_IgnoredMount != null) Physics.IgnoreCollision(m_Col, m_IgnoredMount, false);
-                m_IgnoredCol = m_IgnoredMount = null;
-            }
+
             if (IsCarried)
             {
                 var c = Carrier;
@@ -194,7 +196,7 @@ namespace RockGame
             SocketTeam.Value = -1;
             CarrierId.Value = NoCarrier;
             m_Rb.isKinematic = false;
-            transform.position = Cfg.BallDropPoint;
+            MoveTo(Cfg.BallDropPoint);
             m_Rb.linearVelocity = Vector3.zero;
             m_Rb.angularVelocity = Vector3.zero;
         }
@@ -208,28 +210,48 @@ namespace RockGame
             return true;
         }
 
-        /// <summary>Thrown by a player: it passes through the thrower for a moment so it can't bounce off them.</summary>
-        /// <summary>`mount`: the horse the thrower is riding (the ball passes through it too).</summary>
+        /// <summary>
+        /// Thrown by a player: it passes through the thrower (and `mount`, the horse they ride) for a moment so it can't
+        /// bounce off them.
+        /// </summary>
         public void ServerThrow(PlayerNet thrower, Vector3 pos, Vector3 vel, Collider mount = null)
         {
-            if (m_IgnoredCol != null) Physics.IgnoreCollision(m_Col, m_IgnoredCol, false);
-            if (m_IgnoredMount != null) Physics.IgnoreCollision(m_Col, m_IgnoredMount, false);
-            m_IgnoredCol = thrower.GetComponent<CharacterController>();
-            if (m_IgnoredCol != null) Physics.IgnoreCollision(m_Col, m_IgnoredCol, true);
-            m_IgnoredMount = mount;
-            if (mount != null) Physics.IgnoreCollision(m_Col, mount, true);
-            m_IgnoreUntil = Time.time + 0.8f;
+            IgnoreLocal(thrower.GetComponent<CharacterController>(), mount, 1f);
             ServerDrop(pos, vel);
             m_Col.enabled = true;
+        }
+
+        /// <summary>The ball passes through the thrower (and their horse) for a moment.</summary>
+        public void IgnoreLocal(Collider thrower, Collider mount, float seconds)
+        {
+            if (m_Col == null) return;
+            if (m_IgnoredCol != null) Physics.IgnoreCollision(m_Col, m_IgnoredCol, false);
+            if (m_IgnoredMount != null) Physics.IgnoreCollision(m_Col, m_IgnoredMount, false);
+            m_IgnoredCol = thrower;
+            m_IgnoredMount = mount;
+            if (thrower != null) Physics.IgnoreCollision(m_Col, thrower, true);
+            if (mount != null) Physics.IgnoreCollision(m_Col, mount, true);
+            m_IgnoreUntil = Time.time + seconds;
         }
 
         public void ServerDrop(Vector3 pos, Vector3 vel)
         {
             SocketTeam.Value = -1;
             CarrierId.Value = NoCarrier;
-            transform.position = pos;
             m_Rb.isKinematic = false;
+            MoveTo(pos);
             m_Rb.linearVelocity = Vector3.ClampMagnitude(vel, 40f);
+        }
+
+        /// <summary>
+        /// Teleport the ball. The physics body is moved too: with interpolation on, setting only the transform of a loose
+        /// ball got overwritten by the physics step and it snapped back to where it was.
+        /// </summary>
+        void MoveTo(Vector3 pos)
+        {
+            transform.position = pos;
+            m_Rb.position = pos;
+            Physics.SyncTransforms();
         }
     }
 }
