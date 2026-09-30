@@ -8,7 +8,7 @@ namespace RockGame
     /// Headless end-to-end test driver. Inactive unless launched with "-autotest ball", "-autotest sd" or "-autotest shots".
     /// Drives real RPCs through the network: gather -> craft -> build -> chest/bag/berries/barrier -> (ball capture | sudden death kill).
     /// </summary>
-    public class AutoTest : MonoBehaviour
+    public partial class AutoTest : MonoBehaviour
     {
         string m_Mode;
 
@@ -87,6 +87,8 @@ namespace RockGame
             yield return new WaitForSeconds(0.8f);
             if (m_Mode == "teams") { yield return TeamsRoutine(me); yield break; }
             if (m_Mode == "batch5") { yield return Batch5Routine(me, pc); yield break; }
+            if (m_Mode == "modes") { yield return ModesRoutine(me, pc); yield break; }
+            if (m_Mode == "maps") { yield return MapsRoutine(me, pc); yield break; }
             Check(Cfg.BaseTeamAt(me.transform.position) == me.Team.Value, $"spawned inside own base ({me.transform.position})");
             Check(me.Count(Item.Rock) == 0 && me.HeldItem == Item.Rock, "empty hand = holding the rock (no rock item)");
             Check(Vector3.Distance(me.transform.position, Cfg.SpawnPos(me.Team.Value, me.Slot.Value)) < 1.5f, $"sent home to the bedrock when the match started on {Cfg.MapLabel} (seed {Cfg.MapSeed})");

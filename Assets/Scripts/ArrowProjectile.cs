@@ -12,7 +12,7 @@ namespace RockGame
         Vector3 m_Vel;
         PlayerNet m_Shooter;
         Transform m_ShooterRoot;
-        bool m_Report, m_Stuck, m_Spear;
+        bool m_Report, m_Stuck, m_Spear, m_Bullet;
         Item m_Thrown; // C4 or fort tower (None for arrows / spears)
         float m_Damage = -1f;
         float m_Life = 6f;
@@ -87,6 +87,24 @@ namespace RockGame
             else a.StartWhoosh(0.6f, 0.6f);
         }
 
+        /// <summary>Pistol round: a small glowing tracer, very fast and nearly flat. Gone as soon as it hits anything.</summary>
+        public static void SpawnBullet(Vector3 pos, Vector3 vel, PlayerNet shooter, bool report, float damage)
+        {
+            var go = new GameObject("Bullet");
+            go.transform.SetPositionAndRotation(pos, Quaternion.LookRotation(vel));
+            Art.Box(go.transform, new Color(1f, 0.85f, 0.3f), new Vector3(0, 0, -0.25f), new Vector3(0.04f, 0.04f, 0.5f));
+            var a = go.AddComponent<ArrowProjectile>();
+            a.m_Vel = vel;
+            a.m_Shooter = shooter;
+            a.m_ShooterRoot = shooter != null ? shooter.transform : null;
+            a.m_Report = report;
+            a.m_Bullet = true;
+            a.m_Damage = damage;
+            a.m_Gravity = 2f;
+            a.m_Life = 2.5f;
+            a.StartWhoosh(2f, 0.4f);
+        }
+
         public static void SpawnC4(Vector3 pos, Vector3 vel, PlayerNet shooter, bool report) => SpawnThrown(Item.C4, pos, vel, shooter, report);
 
         void ReportThrownLanded(Vector3 point, Vector3 normal)
@@ -105,6 +123,7 @@ namespace RockGame
                 if (!m_Stuck && m_Report && m_Shooter != null && m_Shooter.IsSpawned)
                 {
                     if (m_Spear) m_Shooter.SpearLandRpc(false, default, transform.position, m_Vel.normalized);
+                    else if (m_Bullet) m_Shooter.ArrowLandRpc(transform.position, m_Vel.normalized);
                     else if (m_Thrown != Item.None) ReportThrownLanded(transform.position, Vector3.up);
                 }
                 Destroy(gameObject);
@@ -171,6 +190,18 @@ namespace RockGame
                 return;
             }
             if (reporter) PredictHit(no, h, dir);
+
+            if (m_Bullet)
+            {
+                if (no == null || no.GetComponent<PlayerNet>() == null) FxParticle.Puff(h.point, new Color(0.8f, 0.75f, 0.6f, 0.7f), 0.25f);
+                if (reporter)
+                {
+                    if (no != null) m_Shooter.ArrowHitRpc(no, h.point, dir);
+                    else m_Shooter.ArrowLandRpc(h.point, dir);
+                }
+                Destroy(gameObject);
+                return;
+            }
 
             if (m_Spear)
             {

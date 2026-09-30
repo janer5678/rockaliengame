@@ -274,12 +274,16 @@ namespace RockGame
             if (dead) wantCrouch = false;
             if (wantCrouch != Crouching)
             {
-                // crouching while running fast on the ground: slide
-                if (wantCrouch && m_Grounded && !m_SlideOn && m_LastPlanar.magnitude >= Cfg.SprintSpeed * 0.8f && Time.time >= m_NextSlide) StartSlide();
+                // crouching while running (sprint held, or already moving fast): slide. Pressed in the air it waits for
+                // the landing (a short buffer), so it works every time.
+                bool running = (Binds.Held(Bind.Sprint) && Binds.Axis(Bind.Forward, Bind.Back) > 0f) || m_LastPlanar.magnitude > Cfg.WalkSpeed * 1.1f;
+                if (wantCrouch && !m_SlideOn && running) m_SlideQueued = Time.time + 0.35f;
                 Crouching = wantCrouch;
                 m_Net.Crouch.Value = wantCrouch;
             }
-            if (dead || riding) m_SlideOn = false;
+            if (dead || riding) { m_SlideOn = false; m_SlideQueued = -1f; }
+            // start it as soon as we're on (or only just left) the ground
+            if (m_SlideQueued > Time.time && !m_SlideOn && wantCrouch && Time.time - m_GroundedAt < 0.2f) { m_SlideQueued = -1f; StartSlide(); }
 
             // ---- move ----
             m_Speed = 0;
@@ -311,8 +315,10 @@ namespace RockGame
                 if (carrying) speed *= Cfg.BallCarrySpeedMul;
                 if (m_DrawStart >= 0 || CrossbowAiming) speed *= 0.6f;
                 if (held == Item.Ram && !carrying) speed *= Cfg.RamMoveMul;
+                speed *= ThemeMaps.SpeedMul(transform.position); // THEME MAPS
 
                 bool grounded = m_CC.isGrounded;
+                if (grounded) m_GroundedAt = Time.time;
                 bool ladder = OnLadder();
                 if (grounded)
                 {
@@ -337,6 +343,7 @@ namespace RockGame
                 m_Push = Vector3.MoveTowards(m_Push, Vector3.zero, (grounded ? 14f : 3f) * Time.deltaTime);
                 var planar = wish * speed;
                 if (m_SlideOn) planar = TickSlide(wish, grounded, move);
+                else planar = ThemeGround(planar, grounded); // THEME MAPS
                 var before = transform.position;
                 var flags = m_CC.Move((planar + m_Push + Vector3.up * m_VelY) * Time.deltaTime);
                 if ((flags & CollisionFlags.Above) != 0 && m_VelY > 0) m_VelY = 0;
@@ -365,6 +372,7 @@ namespace RockGame
             // ---- actions ----
             if (m_ImpactAt >= 0 && Time.time >= m_ImpactAt) DoImpact();
             TickCrossbowReload(held);
+            TickPistolReload(held);
             TickPortals(dead);
             TickJetpack(held, move && !dead);
             if (input && !gameOver && !locked && !frozen)
@@ -377,11 +385,13 @@ namespace RockGame
                         case Item.Spear: HandleSpear(); break;
                         case Item.Bow: HandleBow(); break;
                         case Item.Crossbow: HandleCrossbow(); break;
+                        case Item.Pistol: HandlePistol(); break;
                         case Item.BuildingPlan: HandleBuildInput(); break;
                         case Item.Ram: HandleRam(); break;
                         case Item.Chest:
                         case Item.Barrier:
-                        case Item.Car: HandleDeploy(held); break;
+                        case Item.Car:
+                        case Item.Boat: /* THEME MAPS */ HandleDeploy(held); break;
                         case Item.Berry:
                         case Item.Meat: HandleBerry(); break;
                         case Item.Sniper: HandleSniper(); break;
@@ -389,6 +399,7 @@ namespace RockGame
                         case Item.SlenderEgg:
                         case Item.BuildEgg:
                         case Item.BombBush:
+                        case Item.EnderPearl:
                         case Item.RocketLauncher: HandleLootThrow(held); break;
                         case Item.GiantStaff: HandleOnce(held, () => m_Net.GiantStaffRpc()); break;
                         case Item.AirdropSignal: HandleOnce(held, () => m_Net.UseSignalRpc()); break;
@@ -398,6 +409,7 @@ namespace RockGame
                         case Item.DeathWand: HandleWand(); break;
                         case Item.Helmet:
                         case Item.Armor:
+                        case Item.HeavyArmor:
                         case Item.InvisPotion: HandleUseItem(held); break;
                         default: if (Cfg.IsMelee(held)) HandleMelee(held); break;
                     }
@@ -557,10 +569,16 @@ namespace RockGame
             if (m_Net.Action.Value != (byte)a) m_Net.Action.Value = (byte)a;
         }
 
+        float m_SlideQueued = -1f, m_GroundedAt = -10f;
+
+        /// <summary>Always a boost forward (where you're looking): at least sprint speed, plus the slide boost.</summary>
         void StartSlide()
         {
-            var dir = m_LastPlanar.sqrMagnitude > 0.1f ? m_LastPlanar.normalized : transform.forward;
-            m_SlideVel = dir * (m_LastPlanar.magnitude + Cfg.SlideBoost);
+            var dir = transform.forward;
+            dir.y = 0;
+            dir.Normalize();
+            float along = Mathf.Max(0f, Vector3.Dot(m_LastPlanar, dir));
+            m_SlideVel = dir * (Mathf.Max(along, Cfg.SprintSpeed) + Cfg.SlideBoost);
             m_SlideOn = true;
             Fx.Punch(4f);
             Sfx.Play2D(Sfx.Throw, 0.4f, 0.1f);
@@ -779,15 +797,16 @@ namespace RockGame
         /// <summary>Rust style: LMB stabs; hold RMB to wind up, then LMB throws. Releasing RMB cancels.</summary>
         void HandleSpear()
         {
+            // hold RMB to wind up - or just tap it: the spear stays readied for a moment, and LMB throws it
             if (Binds.Down(Bind.Aim)) m_DrawStart = Time.time;
-            if (!Binds.Held(Bind.Aim)) m_DrawStart = -1f;
+            if (!Binds.Held(Bind.Aim) && m_DrawStart >= 0 && Time.time - m_DrawStart > Mathf.Max(1.5f, Cfg.SpearDrawTime + 0.5f)) m_DrawStart = -1f;
             if (m_DrawStart < 0) { HandleMelee(Item.Spear); return; }
 
             if (Binds.Down(Bind.Attack) && Time.time >= m_NextSwing)
             {
                 float t = Time.time - m_DrawStart;
-                if (t < Cfg.SpearMinDraw) return;
-                float power = Mathf.Lerp(0.4f, 1f, Mathf.Clamp01(t / Mathf.Max(0.05f, Cfg.SpearDrawTime)));
+                // a quick tap-and-throw still goes a good way; holding longer throws it harder
+                float power = Mathf.Lerp(0.65f, 1f, Mathf.Clamp01(t / Mathf.Max(0.05f, Cfg.SpearDrawTime)));
                 var ray = CenterRay();
                 Vector3 origin = SafeOrigin(ray, 0.8f);
                 Vector3 vel = ray.direction * Cfg.SpearThrowSpeed * power;
@@ -1184,6 +1203,7 @@ namespace RockGame
             else if (held == Item.Barrier) want = 100;
             else if (held == Item.Chest) want = 101;
             else if (held == Item.Car) want = 102;
+            else if (held == Item.Boat) want = 103; // THEME MAPS
 
             if (want != m_GhostId)
             {
@@ -1195,6 +1215,7 @@ namespace RockGame
                 {
                     m_Ghost = new GameObject("Ghost");
                     if (want == 101) Container.CreateVisual(Container.Chest, m_Net.Team.Value, m_Ghost.transform, Art.Ghost(k_GhostOk));
+                    else if (want == 103) Vehicle.CreateVisual(Vehicle.Boat, m_Ghost.transform, Art.Ghost(k_GhostOk), out _, out _, out _, out _, null, null); // THEME MAPS
                     else if (want == 102) Vehicle.CreateVisual(Vehicle.Car, m_Ghost.transform, Art.Ghost(k_GhostOk), out _, out _, out _, out _, null, null);
                     else Structure.CreateVisual(want == 100 ? PieceType.Barrier : (PieceType)want, 0, m_Ghost.transform, false, Art.Ghost(k_GhostOk), out _);
                     m_Ghost.GetComponentsInChildren(m_GhostRenderers);
@@ -1212,13 +1233,14 @@ namespace RockGame
 
             if (want >= 100)
             {
-                var kind = want == 100 ? Item.Barrier : want == 101 ? Item.Chest : Item.Car;
+                var kind = want == 100 ? Item.Barrier : want == 101 ? Item.Chest : want == 103 ? Item.Boat /* THEME MAPS */ : Item.Car;
                 visible = hasHit && hit.distance <= Cfg.DeployRange && hit.normal.y > 0.7f;
                 if (!visible) reason = "Aim at flat ground nearby";
                 else
                 {
                     m_GhostPos = hit.point;
                     m_GhostYaw = m_Yaw + (kind == Item.Chest ? 180f : 0f);
+                    if (kind == Item.Boat) m_GhostPos.y = ThemeMaps.WaterY - 0.1f; // THEME MAPS
                     reason = PlayerNet.DeployProblem(kind, team, m_GhostPos, m_GhostYaw);
                     m_Ghost.transform.SetPositionAndRotation(m_GhostPos, Quaternion.Euler(0, m_GhostYaw, 0));
                 }
@@ -1257,7 +1279,7 @@ namespace RockGame
         string PlacementProblem(PieceType t, PieceKey key)
         {
             int team = m_Net.Team.Value;
-            if (!BuildGrid.InTeamBase(team, key)) return "You can only build inside your base area";
+            if (!BuildGrid.CanBuildAt(team, key)) return Cfg.Builder ? "You can't build in the enemy base" : "You can only build inside your base area";
             if (BuildGrid.OnBedrock(key)) return "The bedrock is already a foundation";
             if (BuildGrid.IsOccupied(key, m_ClientKeys.Contains)) return "Something is already built there";
             if (!BuildGrid.IsSupported(key, m_ClientKeys.Contains))

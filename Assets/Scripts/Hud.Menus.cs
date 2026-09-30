@@ -125,6 +125,42 @@ namespace RockGame
             GUILayout.Label($"<color=#bbbbbb>{ModeDesc(mode)}</color>", m_SmallWrap);
             GUILayout.EndHorizontal();
 
+            // game mode: separate ways to play (they don't mix)
+            key = Bootstrap.MapChoice;
+            var rules = (GameRules)Mathf.Clamp((key >> Cfg.RulesShift) & Cfg.RulesMask, 0, (int)GameRules.FunRandom);
+            int noRules = key & ~(Cfg.RulesMask << Cfg.RulesShift);
+            GUILayout.BeginHorizontal();
+            RowLabel("Game mode");
+            foreach (var gr in new[] { GameRules.Classic, GameRules.Arsenal, GameRules.Builder })
+                if (Choice(rules == gr, Cfg.RulesName(gr), GUILayout.Height(30 * k))) boot.SetMapChoice(noRules | ((int)gr << Cfg.RulesShift));
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            GUILayout.Space(103 * k);
+            foreach (var gr in new[] { GameRules.Fun, GameRules.FunRandom })
+                if (Choice(rules == gr, Cfg.RulesName(gr).ToUpper() + " MODE", GUILayout.Height(30 * k))) boot.SetMapChoice(noRules | ((int)gr << Cfg.RulesShift));
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            GUILayout.Space(103 * k);
+            GUILayout.Label($"<color=#ffd24a>{Cfg.RulesDesc(rules)}</color>", m_SmallWrap);
+            GUILayout.EndHorizontal();
+
+            // game length: how long behind the glass wall, then how long with the ball
+            GUILayout.BeginHorizontal();
+            RowLabel("Game length");
+            float wallT = Cfg.BallDropDelay, matchT = Cfg.MatchLength;
+            if (Btn("-", GUILayout.Width(34 * k), GUILayout.Height(30 * k))) { Cfg.BallDropDelay = Mathf.Max(30f, wallT - 30f); Cfg.SavePrefs(); }
+            GUILayout.Label($"<b>{Clock(Cfg.BallDropDelay)}</b> <size={Mathf.RoundToInt(12 * k)}>build</size>", m_Center, GUILayout.Width(96 * k), GUILayout.Height(30 * k));
+            if (Btn("+", GUILayout.Width(34 * k), GUILayout.Height(30 * k))) { Cfg.BallDropDelay = Mathf.Min(1800f, wallT + 30f); Cfg.SavePrefs(); }
+            GUILayout.Space(8 * k);
+            if (Btn("-", GUILayout.Width(34 * k), GUILayout.Height(30 * k))) { Cfg.MatchLength = Mathf.Max(60f, matchT - 60f); Cfg.SavePrefs(); }
+            GUILayout.Label($"<b>{Clock(Cfg.MatchLength)}</b> <size={Mathf.RoundToInt(12 * k)}>ball</size>", m_Center, GUILayout.Width(96 * k), GUILayout.Height(30 * k));
+            if (Btn("+", GUILayout.Width(34 * k), GUILayout.Height(30 * k))) { Cfg.MatchLength = Mathf.Min(3600f, matchT + 60f); Cfg.SavePrefs(); }
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            GUILayout.Space(103 * k);
+            GUILayout.Label($"<color=#bbbbbb>{Clock(Cfg.BallDropDelay)} to gather and build behind the glass wall, then {Clock(Cfg.MatchLength)} with the ball - {Clock(Cfg.BallDropDelay + Cfg.MatchLength)} in all (plus sudden death).</color>", m_SmallWrap);
+            GUILayout.EndHorizontal();
+
             key = Bootstrap.MapChoice;
             int flags = key & ~15;
             GUILayout.BeginHorizontal();
@@ -132,6 +168,26 @@ namespace RockGame
             if (Choice(kind == MapKind.Plains, "Plains", GUILayout.Height(30 * k))) boot.SetMapChoice((int)MapKind.Plains | flags);
             if (Choice(kind == MapKind.Highlands, "Highlands (wild)", GUILayout.Height(30 * k))) boot.SetMapChoice((int)MapKind.Highlands | flags);
             GUILayout.EndHorizontal();
+            // THEME MAPS: the five extra maps
+            for (int tr = 0; tr < ThemeMaps.Kinds.Length; tr += 3)
+            {
+                GUILayout.BeginHorizontal();
+                GUILayout.Space(103 * k);
+                for (int ti = tr; ti < tr + 3 && ti < ThemeMaps.Kinds.Length; ti++)
+                {
+                    var tk = ThemeMaps.Kinds[ti];
+                    if (Choice(kind == tk, ThemeMaps.Label(tk), GUILayout.Height(30 * k))) boot.SetMapChoice((int)tk | flags);
+                }
+                GUILayout.EndHorizontal();
+            }
+            if (kind >= MapKind.Beach)
+            {
+                GUILayout.BeginHorizontal();
+                GUILayout.Space(103 * k);
+                GUILayout.Label($"<color=#bbbbbb>{ThemeMaps.Blurb(kind)}</color>", m_SmallWrap);
+                GUILayout.EndHorizontal();
+            }
+            // END THEME MAPS
 
             GUILayout.BeginHorizontal();
             RowLabel("Size");
@@ -141,7 +197,7 @@ namespace RockGame
             GUILayout.EndHorizontal();
 
             GUILayout.BeginHorizontal();
-            RowLabel("Mode");
+            RowLabel("Materials");
             if (Choice(!wood, "Normal", GUILayout.Height(30 * k))) boot.SetMapChoice(key & ~Cfg.WoodBit);
             if (Choice(wood, "Wood mode", GUILayout.Height(30 * k))) boot.SetMapChoice(key | Cfg.WoodBit);
             GUILayout.EndHorizontal();

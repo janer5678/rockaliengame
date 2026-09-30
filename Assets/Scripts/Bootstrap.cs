@@ -88,7 +88,11 @@ namespace RockGame
                 switch (args[i].ToLowerInvariant())
                 {
                     case "-map":
-                        if (i + 1 < args.Length) MapChoice = (MapChoice & ~15) | (args[i + 1].ToLowerInvariant().StartsWith("h") ? (int)MapKind.Highlands : (int)MapKind.Plains);
+                        if (i + 1 < args.Length)
+                        {
+                            MapChoice = (MapChoice & ~15) | (args[i + 1].ToLowerInvariant().StartsWith("h") ? (int)MapKind.Highlands : (int)MapKind.Plains);
+                            foreach (var tk in ThemeMaps.Kinds) if (args[i + 1].ToLowerInvariant() == tk.ToString().ToLowerInvariant()) MapChoice = (MapChoice & ~15) | (int)tk; // THEME MAPS
+                        }
                         break;
                     case "-small": MapChoice = SetSize(MapChoice, MapSize.Small); break;
                     case "-big": MapChoice = SetSize(MapChoice, MapSize.Big); break;
@@ -102,6 +106,14 @@ namespace RockGame
                             string m = args[i + 1].ToLowerInvariant();
                             int mode = m == "2v2" ? 1 : m == "ffa3" ? 2 : m == "ffa4" ? 3 : m == "3v3" ? 4 : m == "4v4" ? 5 : m == "2v2v2" ? 6 : m == "2v2v2v2" ? 7 : 0;
                             MapChoice = (MapChoice & ~(Cfg.ModeMask << Cfg.ModeShift)) | (mode << Cfg.ModeShift);
+                        }
+                        break;
+                    case "-rules":
+                        if (i + 1 < args.Length)
+                        {
+                            string rs = args[i + 1].ToLowerInvariant();
+                            int rv = rs == "arsenal" ? 1 : rs == "builder" ? 2 : rs == "fun" ? 3 : rs == "funrandom" ? 4 : 0;
+                            MapChoice = (MapChoice & ~(Cfg.RulesMask << Cfg.RulesShift)) | (rv << Cfg.RulesShift);
                         }
                         break;
                     case "-sides": MapChoice |= Cfg.SidesBit; break;

@@ -12,7 +12,7 @@ namespace RockGame
     /// Also used for Slenderman (hatched from an egg): a server-driven creature that hunts the nearest enemy.
     /// Horses and Slenderman can be killed; a horse drops meat (and its saddle).
     /// </summary>
-    public class Vehicle : NetworkBehaviour
+    public partial class Vehicle : NetworkBehaviour
     {
         public const byte Car = 0, Horse = 1, Slender = 2;
         const ulong NoDriver = ulong.MaxValue;
@@ -31,7 +31,7 @@ namespace RockGame
         public float MaxHp => IsSlender ? Cfg.SlenderHp : Cfg.HorseHp;
         public bool Rideable => Kind.Value != Slender;
         public bool HasDriver => DriverId.Value != NoDriver;
-        public string DisplayName => IsSlender ? "Slenderman" : IsHorse ? (Saddled.Value ? "Saddled Horse" : "Wild Horse") : "Wooden Car";
+        public string DisplayName => IsBoat ? "Boat" /* THEME MAPS */ : IsSlender ? "Slenderman" : IsHorse ? (Saddled.Value ? "Saddled Horse" : "Wild Horse") : "Wooden Car";
         /// <summary>Where the rider's feet go (local space).</summary>
         public Vector3 SeatLocal => IsHorse ? new Vector3(0, 0.95f, -0.1f) : new Vector3(0, 0.3f, -0.25f);
         public Vector3 SeatWorld => transform.TransformPoint(SeatLocal);
@@ -73,7 +73,7 @@ namespace RockGame
         /// <summary>Hurt a horse / Slenderman. A dead horse drops meat (and its saddle); the rider falls off.</summary>
         public void ServerDamage(float dmg, PlayerNet attacker)
         {
-            if (!IsServer || !IsSpawned || Kind.Value == Car || dmg <= 0) return;
+            if (!IsServer || !IsSpawned || Kind.Value == Car || IsBoat /* THEME MAPS */ || dmg <= 0) return;
             Hp.Value = Mathf.Max(0f, Hp.Value - dmg);
             if (IsHorse)
             {
@@ -212,6 +212,7 @@ namespace RockGame
 
         void Drive(float dt)
         {
+            if (IsBoat) { DriveBoat(dt); return; } // THEME MAPS
             var pc = PlayerController.Local;
             float f = 0, s = 0;
             bool jump = false, sprint = false;
@@ -301,6 +302,7 @@ namespace RockGame
 
         void Idle(float dt)
         {
+            if (IsBoat) { IdleBoat(dt); return; } // THEME MAPS
             bool grounded = m_CC.isGrounded;
             if (grounded && m_VelY < 0) m_VelY = -2f;
             m_VelY -= Cfg.Gravity * dt;
@@ -441,7 +443,8 @@ namespace RockGame
             var root = new GameObject("visual");
             root.transform.SetParent(parent, false);
             var t = root.transform;
-            if (kind == Car)
+            if (kind == Boat) fan = BuildBoat(t); // THEME MAPS
+            else if (kind == Car)
             {
                 var plank = Art.Wood;
                 // chassis: a frame of planks

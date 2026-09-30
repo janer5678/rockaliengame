@@ -313,6 +313,64 @@ namespace RockGame
                     }
                     break;
                 }
+                case Item.EnderPearl:
+                    // a dark teal marble with a glowing green heart
+                    Art.Part(t, Art.Sphere, new Color(0.05f, 0.3f, 0.3f), new Vector3(0, 0.08f, 0.03f), Vector3.one * 0.13f);
+                    Art.Part(t, Art.Sphere, new Color(0.3f, 0.95f, 0.7f), new Vector3(0, 0.08f, 0.03f), Vector3.one * 0.07f);
+                    break;
+                case Item.Pistol:
+                {
+                    // held like the crossbow: grip under the back, slide pointing forward (+Z)
+                    var gun = new Color(0.16f, 0.16f, 0.18f);
+                    Art.Box(t, gun, new Vector3(0, 0.03f, 0.08f), new Vector3(0.05f, 0.06f, 0.26f));
+                    Art.Box(t, gun * 1.6f, new Vector3(0, 0.065f, 0.08f), new Vector3(0.045f, 0.015f, 0.25f));
+                    Art.Box(t, new Color(0.35f, 0.22f, 0.12f), new Vector3(0, -0.06f, -0.01f), new Vector3(0.045f, 0.13f, 0.06f), new Vector3(-12, 0, 0));
+                    Art.Box(t, gun, new Vector3(0, -0.02f, 0.06f), new Vector3(0.01f, 0.04f, 0.05f));
+                    Art.Box(t, Color.black, new Vector3(0, 0.035f, 0.215f), new Vector3(0.02f, 0.02f, 0.01f));
+                    break;
+                }
+                case Item.PistolAmmo:
+                    // a little box of brass rounds
+                    Art.Box(t, new Color(0.3f, 0.35f, 0.25f), new Vector3(0, 0.05f, 0), new Vector3(0.18f, 0.1f, 0.12f));
+                    for (int k = 0; k < 4; k++)
+                        Art.Part(t, Art.Cylinder, new Color(0.85f, 0.65f, 0.25f), new Vector3(-0.06f + k * 0.04f, 0.12f, 0), new Vector3(0.025f, 0.03f, 0.025f));
+                    break;
+                case Item.HeavyArmor:
+                    // grey iron chest plate with rivets and shoulder guards
+                    Art.Box(t, new Color(0.5f, 0.52f, 0.56f), new Vector3(0, 0.15f, 0), new Vector3(0.36f, 0.38f, 0.08f));
+                    Art.Box(t, new Color(0.35f, 0.36f, 0.4f), new Vector3(0, 0.15f, 0.045f), new Vector3(0.06f, 0.36f, 0.02f));
+                    Art.Box(t, new Color(0.4f, 0.42f, 0.46f), new Vector3(0.16f, 0.35f, -0.03f), new Vector3(0.14f, 0.06f, 0.16f));
+                    Art.Box(t, new Color(0.4f, 0.42f, 0.46f), new Vector3(-0.16f, 0.35f, -0.03f), new Vector3(0.14f, 0.06f, 0.16f));
+                    for (int k = -1; k <= 1; k += 2) Art.Part(t, Art.Sphere, new Color(0.8f, 0.7f, 0.3f), new Vector3(k * 0.13f, 0.26f, 0.045f), Vector3.one * 0.025f);
+                    break;
+                case Item.TreeCracker:
+                {
+                    // a huge two-handed axe: long handle, massive iron head with a glowing edge
+                    var iron = new Color(0.36f, 0.36f, 0.4f);
+                    Art.Box(t, Art.DarkWood, new Vector3(0, 0.35f, 0), new Vector3(0.06f, 0.9f, 0.06f));
+                    Art.Box(t, new Color(0.7f, 0.15f, 0.1f), new Vector3(0, 0.0f, 0), new Vector3(0.07f, 0.16f, 0.07f));
+                    Art.Box(t, iron, new Vector3(0, 0.72f, 0.16f), new Vector3(0.05f, 0.34f, 0.3f));
+                    Art.Box(t, new Color(1f, 0.75f, 0.3f), new Vector3(0, 0.72f, 0.32f), new Vector3(0.04f, 0.38f, 0.04f));
+                    Art.Box(t, iron, new Vector3(0, 0.72f, -0.08f), new Vector3(0.05f, 0.12f, 0.12f));
+                    break;
+                }
+                case Item.FortifyBuff:
+                    // a stone brick with a gold star
+                    Art.Box(t, Art.Stone, new Vector3(0, 0.07f, 0), new Vector3(0.24f, 0.14f, 0.14f));
+                    Art.Part(t, Art.Ico, new Color(1f, 0.85f, 0.3f), new Vector3(0, 0.17f, 0), Vector3.one * 0.06f);
+                    break;
+                case Item.WoodGenBuff:
+                    // a log pile with a little cog
+                    for (int k = 0; k < 3; k++) Art.Part(t, Art.Cylinder, Art.Wood, new Vector3(-0.06f + k * 0.06f, 0.04f + (k == 1 ? 0.06f : 0f), 0), new Vector3(0.06f, 0.12f, 0.06f), new Vector3(90, 0, 0));
+                    Art.Part(t, Art.Cylinder, new Color(1f, 0.85f, 0.3f), new Vector3(0, 0.17f, 0), new Vector3(0.1f, 0.015f, 0.1f), new Vector3(90, 0, 0));
+                    break;
+                case Item.Boat:
+                    // a toy rowing boat
+                    Art.Box(t, new Color(0.55f, 0.38f, 0.22f), new Vector3(0, 0.04f, 0), new Vector3(0.16f, 0.04f, 0.34f));
+                    Art.Box(t, new Color(0.55f, 0.38f, 0.22f), new Vector3(0.08f, 0.08f, 0), new Vector3(0.02f, 0.06f, 0.34f));
+                    Art.Box(t, new Color(0.55f, 0.38f, 0.22f), new Vector3(-0.08f, 0.08f, 0), new Vector3(0.02f, 0.06f, 0.34f));
+                    Art.Box(t, new Color(0.2f, 0.2f, 0.22f), new Vector3(0, 0.1f, -0.18f), new Vector3(0.05f, 0.06f, 0.04f));
+                    break;
                 case Item.Chainsaw:
                 {
                     // held in both hands like the ram; the bar points forward (+Z)

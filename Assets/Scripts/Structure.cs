@@ -227,6 +227,10 @@ namespace RockGame
                 }
             }
 
+            // Builder: walls built straight on the ground (no foundation) reach down into it, so nothing rolls out underneath
+            if (Cfg.Builder && (t == PieceType.Wall || t == PieceType.Doorway || t == PieceType.Window) && parent.position.y < Cfg.BaseY + 0.5f)
+                Art.Box(tr, trim, new Vector3(0, -0.6f, 0), new Vector3(3f, 1.2f, 0.3f), default, col);
+
             if (ghost != null)
             {
                 foreach (var l in root.GetComponentsInChildren<Ladder>()) Destroy(l.gameObject);

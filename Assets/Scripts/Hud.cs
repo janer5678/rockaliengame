@@ -195,7 +195,8 @@ namespace RockGame
                         break;
                     case GameState.PreBall:
                         phase = "Wall drops in " + Clock(game.TimeLeft);
-                        sub = Cfg.WoodMode ? "Gather wood and build your base (craft in your base)" : "Gather wood & stone, build your base (craft in your base)";
+                        sub = Cfg.Builder ? "Gather, craft and build anywhere - then lock the ball inside your build"
+                            : Cfg.WoodMode ? "Gather wood and build your base (craft in your base)" : "Gather wood & stone, build your base (craft in your base)";
                         break;
                     case GameState.BallLive:
                         phase = "Time left  " + Clock(game.TimeLeft);
@@ -207,6 +208,8 @@ namespace RockGame
                         break;
                 }
             }
+            if (phase != "" && Cfg.Rules != GameRules.Classic)
+                phase += $"   <size={Mathf.RoundToInt(15 * k)}><color=#ffd24a>{Cfg.RulesName(Cfg.Rules).ToUpper()}</color></size>";
             if (phase != "")
             {
                 Fill(new Rect(sw / 2 - 260 * k, 8, 520 * k, 62 * k), new Color(0, 0, 0, 0.45f));
@@ -220,7 +223,7 @@ namespace RockGame
             Shadowed(new Rect(18, 12, 230 * k, 28 * k), $"<b>YOU ARE {Cfg.TeamName[team]}</b>", m_Label);
             if (game == null || game.S != GameState.SuddenDeath)
             {
-                Shadowed(new Rect(12, 44 * k, 400 * k, 24 * k), $"Your machine: {Direction(me.transform, Cfg.MachinePos(team))}", m_Small);
+                Shadowed(new Rect(12, 44 * k, 400 * k, 24 * k), Cfg.Builder ? $"Your base: {Direction(me.transform, Cfg.MachinePos(team))}" : $"Your machine: {Direction(me.transform, Cfg.MachinePos(team))}", m_Small);
                 var ball = Ball.Instance;
                 if (ball != null) Shadowed(new Rect(12, 64 * k, 400 * k, 24 * k), $"Ball: {Direction(me.transform, ball.transform.position)}", m_Small);
                 if (game != null)
@@ -230,6 +233,32 @@ namespace RockGame
                     {
                         if (!c.IsAirdrop) continue;
                         Shadowed(new Rect(12, ly, 400 * k, 24 * k), $"<color=#c98bff>Airdrop: {Direction(me.transform, c.transform.position)}</color>", m_Small);
+                        ly += 20 * k;
+                    }
+                    double srvNow = me.NetworkManager.ServerTime.Time;
+                    // Builder: what you're making
+                    if (me.CraftingItem.Value != 0 && me.CraftDoneAt.Value > 0)
+                    {
+                        Shadowed(new Rect(12, ly, 400 * k, 24 * k), $"<color=#ffd24a>Making {Cfg.ItemName((Item)me.CraftingItem.Value)}: {Mathf.Max(0f, (float)(me.CraftDoneAt.Value - srvNow)):0.0}s</color>", m_Small);
+                        ly += 20 * k;
+                    }
+                    // Fun modes: the next free item
+                    if (game.NextFunItem.Value > 0)
+                    {
+                        Shadowed(new Rect(12, ly, 400 * k, 24 * k), $"<color=#7dff9a><b>Free item in {Mathf.Max(0, Mathf.CeilToInt((float)(game.NextFunItem.Value - srvNow)))}</b></color>", m_Small);
+                        ly += 20 * k;
+                    }
+                    if (game.HasWoodGen(team))
+                    {
+                        Shadowed(new Rect(12, ly, 400 * k, 24 * k), $"<color=#d9a066>Auto wood gen: +{Cfg.WoodGenAmount} every {Cfg.WoodGenInterval:0}s</color>", m_Small);
+                        ly += 20 * k;
+                    }
+                    // the 20 second airdrop countdown
+                    double lands = game.NextDropLands.Value;
+                    float inS = (float)(lands - me.NetworkManager.ServerTime.Time);
+                    if (lands > 0 && inS > 0f)
+                    {
+                        Shadowed(new Rect(12, ly, 400 * k, 24 * k), $"<color=#c98bff><b>AIRDROP DROPPING IN {Mathf.CeilToInt(inS)}</b></color>", m_Small);
                         ly += 20 * k;
                     }
                     for (int i = 0; i < NetGame.LaneTotal; i++)
@@ -319,7 +348,7 @@ namespace RockGame
                 // second health bar, used up first
                 var ab = new Rect(hr.x, statY, hw, 22 * k);
                 Fill(ab, new Color(0, 0, 0, 0.55f));
-                Fill(new Rect(ab.x + 2, ab.y + 2, (ab.width - 4) * Mathf.Clamp01(me.ArmorHp.Value / (float)Mathf.Max(1, Cfg.ArmorHp)), ab.height - 4), new Color(0.75f, 0.55f, 0.3f));
+                Fill(new Rect(ab.x + 2, ab.y + 2, (ab.width - 4) * Mathf.Clamp01(me.ArmorHp.Value / (float)Mathf.Max(1, me.ArmorHp.Value > Cfg.ArmorHp ? Cfg.HeavyArmorHp : Cfg.ArmorHp)), ab.height - 4), new Color(0.75f, 0.55f, 0.3f));
                 Shadowed(new Rect(ab.x + 6, ab.y, ab.width, ab.height), $"<b>ARMOUR {me.ArmorHp.Value}</b>", m_Small);
                 statY -= 26 * k;
             }
@@ -431,6 +460,14 @@ namespace RockGame
                 case Item.Wallhack: return "<b>Wallhack Glasses</b>    hold them to see your enemies through walls";
                 case Item.InvisPotion: return $"<b>Invisibility Potion</b>    LMB: drink ({Cfg.InvisTime:0}s, attacking shows you)";
                 case Item.Chainsaw: return $"<b>Chainsaw</b> ({s.Data} uses left)    hold LMB: cuts wood and stone fast";
+                case Item.EnderPearl: return "<b>Ender Pearl</b>    LMB: throw it - you teleport to wherever it lands";
+                case Item.Pistol: return $"<b>Pistol</b>  ({s.Data}/{Cfg.PistolMag}, {me.Count(Item.PistolAmmo)} spare ammo)    LMB: shoot   R: reload";
+                case Item.PistolAmmo: return "<b>Pistol Ammo</b>    the pistol reloads from this";
+                case Item.HeavyArmor: return $"<b>Heavy Armour</b> ({Cfg.HeavyArmorHp} HP)    LMB: put it on (replaces wooden armour)";
+                case Item.TreeCracker: return $"<b>Tree Cracker</b> ({s.Data} uses left)    LMB: fells a whole tree in one hit";
+                case Item.Boat: return $"<b>Boat</b>    LMB on the water: put it in, then E to get in (only on maps with water)";
+                case Item.FortifyBuff:
+                case Item.WoodGenBuff: return $"<b>{Cfg.ItemName(s.Id)}</b>";
                 default: return "";
             }
         }
@@ -521,6 +558,8 @@ namespace RockGame
                     me.MoveItemRpc(m_DragFrom.Kind, (byte)m_DragFrom.Index, kind, (byte)index, (ushort)amount, LootRef(pc));
                     Sfx.Play2D(Sfx.Pop, 0.3f, 0.2f);
                 }
+                // a right-click (no drag) on an inventory item sends it down to the hotbar
+                else if (m_DragHalf && kind == 0 && index >= Cfg.HotbarSize) ToHotbar(index, me);
                 m_Dragging = false;
                 e.Use();
             }
@@ -534,12 +573,27 @@ namespace RockGame
             switch (s.Id)
             {
                 case Item.Ram: return $"  ({s.Data} hits left)";
-                case Item.Chainsaw: return $"  ({s.Data} uses left)";
+                case Item.Chainsaw:
+                case Item.TreeCracker: return $"  ({s.Data} uses left)";
+                case Item.Pistol: return $"  ({s.Data}/{Cfg.PistolMag})";
                 case Item.Armor: return $"  ({(s.Data > 0 ? s.Data : Cfg.ArmorHp)} armour HP)";
                 case Item.Crossbow: return s.Data > 0 ? "  (loaded)" : "  (empty)";
                 case Item.Berry: return $"  (RMB to eat, +{Cfg.BerryHeal:0} HP)";
                 default: return s.Count > 1 ? $"  x{s.Count}" : "";
             }
+        }
+
+        /// <summary>Right-click in the inventory: onto the hotbar (a stack of the same thing first, then an empty slot).</summary>
+        void ToHotbar(int index, PlayerNet me)
+        {
+            var s = me.SlotAt(index);
+            if (s.Empty) return;
+            int target = -1;
+            for (int i = 0; i < Cfg.HotbarSize && target < 0; i++) if (me.SlotAt(i).Id == s.Id && me.SlotAt(i).Count < Cfg.MaxStack(s.Id)) target = i;
+            for (int i = 0; i < Cfg.HotbarSize && target < 0; i++) if (me.SlotAt(i).Empty) target = i;
+            if (target < 0) { Push("Your hotbar is full"); Sfx.Play2D(Sfx.Click, 0.4f); return; }
+            me.MoveItemRpc(0, (byte)index, 0, (byte)target, s.Count, default);
+            Sfx.Play2D(Sfx.Pop, 0.3f, 0.2f);
         }
 
         /// <summary>Shift-click: to/from the open container, or between hotbar and main inventory.</summary>
@@ -575,7 +629,9 @@ namespace RockGame
             float craftW = 330 * k;
             bool loot = pc.LootTarget != null;
             float lootW = loot ? gridW : 0;
-            float total = gridW + 30 * k + (loot ? lootW : craftW);
+            bool power = Cfg.PowerMenu && !loot;
+            float powerW = 330 * k;
+            float total = gridW + 30 * k + (loot ? lootW : craftW) + (power ? powerW + 20 * k : 0);
             float x0 = Mathf.Max(10, (sw - total) / 2);
             float top = sh * 0.14f;
             float invX = x0;
@@ -611,7 +667,7 @@ namespace RockGame
                 GUI.Label(new Rect(r.x + 4 * k, r.y + 1, 34 * k, 22 * k), Binds.Short(Bind.Hotbar1 + i), m_SmallNoClip);
             }
             float infoY = hotY + slot + 10 * k;
-            Shadowed(new Rect(invX, infoY, gridW + 200, 24 * k), m_HoverName != "" ? m_HoverName : "Drag to move · right-drag splits a stack · shift-click quick-moves · drag outside to drop", m_Small);
+            Shadowed(new Rect(invX, infoY, gridW + 200, 24 * k), m_HoverName != "" ? m_HoverName : "Drag to move · right-click: to the hotbar · right-drag splits a stack · shift-click quick-moves · drag outside to drop", m_Small);
 
             // ---- crafting (right, when not looting) ----
             float cxp = invX + gridW + 30 * k;
@@ -631,13 +687,16 @@ namespace RockGame
                 if (icon != null) GUI.DrawTexture(new Rect(rr.x + 4, rr.y + 3, row - 6, row - 6), icon, ScaleMode.ScaleToFit, true);
                 GUI.color = oldC;
                 string cost = rec.Wood + " wood" + (rec.Stone > 0 ? ", " + rec.Stone + " stone" : "") + (rec.Output == Item.Armor ? " · put on right away" : "");
+                if (Cfg.Builder) cost += $" · {Cfg.CraftSeconds(rec):0}s";
                 if (!here) cost = "<color=#8fb8ff>in your base</color>  " + cost;
                 GUI.Label(new Rect(rr.x + row + 4, rr.y + 2, craftW - row - 100 * k, row), $"<b>{(here ? "" : "<color=#999999>")}{rec.Name}{(here ? "" : "</color>")}</b>\n<size={Mathf.RoundToInt(12 * k)}><color={(afford ? "#bbbbbb" : "#ff7777")}>{cost}</color></size>", m_Label);
                 GUI.enabled = afford && here;
                 if (BtnAt(new Rect(rr.xMax - 90 * k, rr.y + 8 * k, 84 * k, row - 16 * k), "Craft", m_Button)) me.CraftRpc(i);
                 GUI.enabled = true;
             }
-            if (!loot) Shadowed(new Rect(cxp, top + Cfg.RecipeCount * (row + 4 * k) + 6, craftW, 60 * k), craft ? $"{Binds.Name(Bind.Inventory)} / Esc to close" : $"Spears and hatchets can be crafted anywhere.\nEverything else: inside your base.   {Binds.Name(Bind.Inventory)} / Esc to close", m_SmallWrap);
+            if (power) DrawPowerMenu(me, craft, cxp + craftW + 20 * k, top, powerW, k);
+            if (!loot && Cfg.Builder) Shadowed(new Rect(cxp, top + Cfg.RecipeCount * (row + 4 * k) + 6, craftW, 60 * k), $"BUILDER: craft anywhere, one thing at a time - each takes a few seconds.   {Binds.Name(Bind.Inventory)} / Esc to close", m_SmallWrap);
+            else if (!loot) Shadowed(new Rect(cxp, top + Cfg.RecipeCount * (row + 4 * k) + 6, craftW, 60 * k), craft ? $"{Binds.Name(Bind.Inventory)} / Esc to close" : $"Spears and hatchets can be crafted anywhere.\nEverything else: inside your base.   {Binds.Name(Bind.Inventory)} / Esc to close", m_SmallWrap);
 
             // ---- drag visual ----
             var e = Event.current;
@@ -942,6 +1001,15 @@ namespace RockGame
         {
             var b = Ball.Instance;
             if (b == null) return "";
+            if (Cfg.Builder)
+            {
+                int enc = NetGame.Instance != null ? NetGame.Instance.BallEnclosedBy.Value : -1;
+                if (enc >= 0)
+                    return enc == myTeam ? "<color=#77ff77>The ball is locked in YOUR build - keep it there!</color>" : $"<color=#ff7777>The ball is locked in the {Cfg.TeamLabel(enc)} build - break in and take it!</color>";
+                if (b.IsCarried && b.Carrier != null && b.Carrier.IsOwner) return "<color=#ffdd55>You have the ball - put it somewhere and wall it in on every side!</color>";
+                if (b.IsCarried && b.Carrier != null) return $"<color=#ff7777>{Cfg.TeamLabel(b.Carrier.Team.Value)} has the ball!</color>";
+                return "The ball is loose - wall it in with your own build (4 sides, or 3 and a roof)!";
+            }
             if (b.IsCarried)
             {
                 var c = b.Carrier;
@@ -954,6 +1022,31 @@ namespace RockGame
             int t = b.BaseTeam.Value;
             if (t < 0) return "The ball is loose - put it in your machine!";
             return t == myTeam ? "<color=#ffdd55>The ball is in your base but NOT in the machine - it only counts in the socket!</color>" : $"<color=#ff7777>The ball is in the {Cfg.TeamName[t]} base (not in their machine yet)</color>";
+        }
+
+        /// <summary>Arsenal / Builder: the powerful items, to the right of crafting.</summary>
+        void DrawPowerMenu(PlayerNet me, bool here, float x, float top, float w, float k)
+        {
+            Shadowed(new Rect(x, top - 34 * k, w, 30 * k), "<b><color=#ffd24a>POWER ITEMS</color></b>", m_Label);
+            float row = 58 * k;
+            for (int i = 0; i < Cfg.PowerCount; i++)
+            {
+                var rec = Cfg.GetPowerRecipe(i);
+                var rr = new Rect(x, top + i * (row + 4 * k), w, row);
+                bool afford = me.Count(Item.Wood) >= rec.Wood && me.Count(Item.Stone) >= rec.Stone;
+                Fill(rr, new Color(0.25f, 0.18f, 0f, here ? 0.55f : 0.3f));
+                var icon = ItemIcons.Get(rec.Output);
+                var oldC = GUI.color;
+                if (!here) GUI.color = new Color(1, 1, 1, 0.4f);
+                if (icon != null) GUI.DrawTexture(new Rect(rr.x + 4, rr.y + 3, row - 6, row - 6), icon, ScaleMode.ScaleToFit, true);
+                GUI.color = oldC;
+                string cost = $"{rec.Wood} wood" + (Cfg.Builder ? $" · {Cfg.CraftSeconds(rec):0}s" : "");
+                if (!here) cost = "<color=#8fb8ff>in your base</color>  " + cost;
+                GUI.Label(new Rect(rr.x + row + 4, rr.y + 1, w - row - 96 * k, row), $"<b>{rec.Name}</b>  <size={Mathf.RoundToInt(12 * k)}><color={(afford ? "#ffd24a" : "#ff7777")}>{cost}</color>\n<color=#bbbbbb>{Cfg.PowerBlurb(rec.Output)}</color></size>", m_SmallWrap);
+                GUI.enabled = afford && here;
+                if (BtnAt(new Rect(rr.xMax - 84 * k, rr.y + 10 * k, 78 * k, row - 20 * k), "Buy", m_Button)) me.CraftRpc(Cfg.PowerBase + i);
+                GUI.enabled = true;
+            }
         }
 
         static string Direction(Transform me, Vector3 target)

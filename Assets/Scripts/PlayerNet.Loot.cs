@@ -11,7 +11,7 @@ namespace RockGame
         int m_PortalPair = -1;
         readonly Dictionary<Item, int> m_PendingThrows = new Dictionary<Item, int>();
 
-        static bool Throwable(Item i) => i == Item.SlenderEgg || i == Item.BuildEgg || i == Item.RocketLauncher || i == Item.BombBush;
+        static bool Throwable(Item i) => i == Item.SlenderEgg || i == Item.BuildEgg || i == Item.RocketLauncher || i == Item.BombBush || i == Item.EnderPearl;
 
         /// <summary>Airdrop signal: an airdrop beams straight down onto your bedrock.</summary>
         [Rpc(SendTo.Server)]
@@ -122,6 +122,7 @@ namespace RockGame
                     g.Broadcast($"{Cfg.TeamLabel(Team.Value)} hatched a SLENDERMAN - it's coming for you...");
                     break;
                 case Item.BombBush: g.ServerSpawnBombBush(point, Team.Value); break;
+                case Item.EnderPearl: ServerPearlLanded(point, normal); break;
             }
         }
 

@@ -23,7 +23,7 @@ namespace RockGame
     /// Server-driven match flow: waiting -> gather behind the glass wall (ball drop countdown) -> ball live (airdrops) ->
     /// win (ball in your machine's socket) or sudden death.
     /// </summary>
-    public class NetGame : NetworkBehaviour
+    public partial class NetGame : NetworkBehaviour
     {
         public static NetGame Instance;
 
@@ -45,6 +45,11 @@ namespace RockGame
         public readonly NetworkVariable<double> FightAt = new NetworkVariable<double>(-1);
         /// <summary>Dev setting: the match timer (and the airdrop timers) are frozen.</summary>
         public readonly NetworkVariable<bool> TimerPaused = new NetworkVariable<bool>();
+        /// <summary>When the next scheduled airdrop lands (server time), announced 20 s ahead; -1 when none is coming.</summary>
+        public readonly NetworkVariable<double> NextDropLands = new NetworkVariable<double>(-1);
+        /// <summary>Seconds of warning before an airdrop lands.</summary>
+        public const float DropWarning = 20f;
+        int m_DropsWarned;
 
         int m_NextItemId = 1;
         float m_NextItemCheck;
@@ -111,8 +116,8 @@ namespace RockGame
         {
             switch ((GameState)cur)
             {
-                case GameState.PreBall: Hud.Banner("GATHER & BUILD", $"A glass wall splits the map for {Clock(Bootstrap.Fast ? Cfg.FastBallDropDelay : Cfg.BallDropDelay)}. Craft anywhere inside your base (TAB)."); break;
-                case GameState.BallLive: Hud.Banner("THE WALL IS DOWN", "Grab the ball from the middle and put it in YOUR machine's socket!"); break;
+                case GameState.PreBall: Hud.Banner("GATHER & BUILD", $"A glass wall splits the map for {Clock(Bootstrap.Fast ? Cfg.FastBallDropDelay : Cfg.BallDropDelay)}. " + (Cfg.Builder ? "BUILDER: build and craft anywhere (TAB)." : "Craft anywhere inside your base (TAB).")); break;
+                case GameState.BallLive: Hud.Banner("THE WALL IS DOWN", Cfg.Builder ? "Grab the ball and lock it inside a structure YOU built - walls all round - when time runs out!" : "Grab the ball from the middle and put it in YOUR machine's socket!"); break;
                 case GameState.SuddenDeath: Hud.Banner("SUDDEN DEATH", "Welcome to the stadium. Rocks only. First kill wins."); break;
             }
         }
@@ -142,6 +147,8 @@ namespace RockGame
             ServerTickC4(now);
             ServerTickAirstrikes(now);
             ServerTickBushes(now);
+            ServerTickModes(now);
+            ThemeMaps.ServerTick(); // THEME MAPS
             int players = PlayerNet.All.Count;
             bool fast = Bootstrap.Fast;
             switch (S)
@@ -164,14 +171,24 @@ namespace RockGame
                         SetPhase(GameState.BallLive, fast ? Cfg.FastMatchLength : Cfg.MatchLength);
                         m_BallStart = now;
                         m_DropsDone = 0;
+                        m_DropsWarned = 0;
                         Broadcast("The glass wall is down and the BALL has dropped in the middle!");
                     }
                     break;
                 case GameState.BallLive:
                     ServerTickScheduledDrops(now);
+                    ServerTickDropWarning(now);
                     ServerTickAirdrop(now);
                     if (now >= PhaseEnd.Value)
                     {
+                        if (Cfg.Builder)
+                        {
+                            // Builder: the ball has to be shut inside a structure your team built
+                            int e = BallEnclosure();
+                            if (e >= 0) EndGame(e, $"{Cfg.TeamLabel(e)} had the ball locked inside their own build when time ran out!");
+                            else StartSuddenDeath();
+                            break;
+                        }
                         // only the machine socket counts - a ball lying around in your base doesn't win
                         int t = Ball.Instance != null ? Ball.Instance.SocketTeam.Value : -1;
                         if (t >= 0) EndGame(t, $"{Cfg.TeamName[t]} had the ball in their machine when time ran out!");
@@ -421,6 +438,7 @@ namespace RockGame
                         if (!Cfg.InFirstSector(p, 6f)) continue;
                         if (Mathf.Abs(p.x - Cfg.BaseCenter[0].x) < Cfg.BaseHalf + 6 && Mathf.Abs(p.z - Cfg.BaseCenter[0].z) < Cfg.BaseHalf + 6) continue;
                         if (NearTower(p)) continue;
+                        if (!ThemeMaps.SpotOk(p)) continue; // THEME MAPS
                         float yaw = R(0, 360);
                         for (int m = 0; m < Cfg.Copies; m++)
                         {
@@ -435,6 +453,8 @@ namespace RockGame
             area *= area;
             area *= 2f / Cfg.Copies; // a quarter of the map per team in free for all
             int trees = Mathf.Max(6, Mathf.RoundToInt(24 * area)), stones = Mathf.Max(4, Mathf.RoundToInt(18 * area)), bushes = Mathf.Max(2, Mathf.RoundToInt(5 * area));
+            // THEME MAPS: more or fewer of each to suit the map
+            trees = Mathf.RoundToInt(trees * ThemeMaps.NodeMul(ResourceNode.Tree)); stones = Mathf.RoundToInt(stones * ThemeMaps.NodeMul(ResourceNode.Boulder)); bushes = Mathf.RoundToInt(bushes * ThemeMaps.NodeMul(ResourceNode.Bush));
             float half = Cfg.MapHalf;
             for (int n = 0; n < trees + stones + bushes; n++)
             {
@@ -445,6 +465,7 @@ namespace RockGame
                     if (!Cfg.InFirstSector(p, 4f)) continue;
                     if (Mathf.Abs(p.x - Cfg.BaseCenter[0].x) < Cfg.BaseHalf + 3 && Mathf.Abs(p.z - Cfg.BaseCenter[0].z) < Cfg.BaseHalf + 3) continue;
                     if (new Vector2(p.x, p.z).magnitude < 12f || NearTower(p)) continue;
+                    if (!ThemeMaps.SpotOk(p)) continue; // THEME MAPS
                     bool close = false;
                     foreach (var q in placed) if ((q - p).sqrMagnitude < 7.5f * 7.5f) { close = true; break; }
                     if (close) continue;
@@ -549,7 +570,16 @@ namespace RockGame
             }
             int n = Mathf.Clamp(Cfg.AirdropCount, 0, 20);
             if (m_BallStart < 0 || m_DropsDone >= n) return;
-            if (now < m_BallStart + (m_DropsDone + 1) * (double)BallPhase / (n + 1)) return;
+            double launch = m_BallStart + (m_DropsDone + 1) * (double)BallPhase / (n + 1);
+            // 20 seconds before it lands: AIRDROP DROPPING IN 20 SECONDS (and a countdown on everyone's screen)
+            if (m_DropsWarned <= m_DropsDone && now >= launch + DropLand - DropWarning)
+            {
+                m_DropsWarned = m_DropsDone + 1;
+                NextDropLands.Value = launch + DropLand;
+                string where = Cfg.AirdropCenter ? "In the middle of the map" : Cfg.AirdropSides && !Cfg.AirdropCenter ? "One on every side of the map" : "Somewhere on the map - watch for the purple beam";
+                BannerRpc(new FixedString64Bytes($"AIRDROP DROPPING IN {Mathf.CeilToInt((float)(launch + DropLand - now))} SECONDS"), new FixedString128Bytes(where));
+            }
+            if (now < launch) return;
             bool split = Cfg.AirdropSides && !Cfg.AirdropCenter;
             int lanes = split ? Cfg.TeamCount : 1;
             for (int i = 0; i < lanes; i++) if (m_Lanes[i].Incoming) return; // one still on its way: right after it lands
@@ -563,6 +593,12 @@ namespace RockGame
                 lane.Region = split ? i : -1;
                 ServerLaunchDrop(i, now, Cfg.AirdropCenter ? PickCenterSpot() : PickDropSpot(lane.Region));
             }
+        }
+
+        /// <summary>Server: forget the countdown once that airdrop is down.</summary>
+        void ServerTickDropWarning(double now)
+        {
+            if (NextDropLands.Value > 0 && now > NextDropLands.Value + 1) NextDropLands.Value = -1;
         }
 
         /// <summary>"Airdrops in the middle": a free spot right by the centre (next to the ball drop zone, not on the ball).</summary>
@@ -666,6 +702,7 @@ namespace RockGame
                     d = Mathf.Min(d, Mathf.Max(Mathf.Abs(p.x - c.x), Mathf.Abs(p.z - c.z)) - Cfg.BaseHalf);
                 }
                 p.y = MapBuilder.Height(p.x, p.z);
+                if (!ThemeMaps.SpotOk(p)) continue; // THEME MAPS
                 if (Blocked(p + Vector3.up * 1.4f, new Vector3(1f, 0.9f, 1f))) continue;
                 if (d >= Cfg.AirdropBaseDistance) return p;
                 if (d > bestD) { bestD = d; best = p; }
@@ -806,7 +843,8 @@ namespace RockGame
 
         public void ServerRocket(Vector3 pos, PlayerNet shooter)
         {
-            int n = ServerBlast(pos, Cfg.RocketRadius, shooter != null ? shooter.Team.Value : -1, Cfg.RocketPlayerDamage, Cfg.RocketStructureDamage, 0.8f, shooter, false);
+            // rockets also blow up any trees in the blast (they fall and regrow like felled ones)
+            int n = ServerBlast(pos, Cfg.RocketRadius + 1f, shooter != null ? shooter.Team.Value : -1, Cfg.RocketPlayerDamage, Cfg.RocketStructureDamage, 0.8f, shooter, false, true);
             if (shooter != null && n > 0) shooter.NotifyPublic($"Your rocket destroyed {n} enemy piece{(n == 1 ? "" : "s")}!");
         }
 
@@ -815,7 +853,7 @@ namespace RockGame
         /// structureDamage &lt; 0 destroys pieces outright. Players take damage falling off with distance; inside killRadius they die.
         /// Returns how many building pieces were destroyed.
         /// </summary>
-        public int ServerBlast(Vector3 pos, float radius, int team, float playerDamage, float structureDamage, float killRadius, PlayerNet attacker, bool nodes)
+        public int ServerBlast(Vector3 pos, float radius, int team, float playerDamage, float structureDamage, float killRadius, PlayerNet attacker, bool nodes, bool trees = false)
         {
             Fx.Server(FxKind.Explosion, pos, Vector3.up);
             var structures = new HashSet<Structure>();
@@ -831,7 +869,7 @@ namespace RockGame
                 var v = h.GetComponentInParent<Vehicle>();
                 if (v != null && v.IsSpawned) creatures.Add(v);
                 var n = h.GetComponentInParent<ResourceNode>();
-                if (n != null && n.IsSpawned && nodes) hitNodes.Add(n);
+                if (n != null && n.IsSpawned && (nodes || (trees && n.Kind.Value == ResourceNode.Tree && n.Amount.Value > 0))) hitNodes.Add(n);
             }
             foreach (var c in chests) if (c.IsSpawned) c.ServerBreak();
             int destroyed = 0;
@@ -844,7 +882,12 @@ namespace RockGame
             }
             if (structures.Count > 0) ServerCollapseCheck();
             foreach (var v in creatures) if (v.IsSpawned) v.ServerDamage(playerDamage * 2f, attacker);
-            foreach (var n in hitNodes) if (n.IsSpawned) n.ServerDeplete();
+            foreach (var n in hitNodes)
+            {
+                if (!n.IsSpawned) continue;
+                if (trees && !nodes) Fx.Server(FxKind.Timber, n.transform.position + Vector3.up * 2f, Vector3.up);
+                n.ServerDeplete();
+            }
             foreach (var p in PlayerNet.All.ToArray())
             {
                 if (p.Dead.Value) continue;

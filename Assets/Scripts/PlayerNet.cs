@@ -372,6 +372,7 @@ namespace RockGame
         {
             bool dead = Dead.Value;
             if (!IsOwner) RemoteSounds(dead);
+            if (IsServer) ServerTickCraft();
             if (dead && !m_WasDead) m_DeadSince = Time.time;
             m_WasDead = dead;
             // the body topples over and stays a moment before disappearing
@@ -443,7 +444,7 @@ namespace RockGame
                 Carrying = CarryingBall,
                 Riding = Riding,
                 Holding = item != Item.None,
-                TwoHanded = item == Item.Rock || item == Item.Spear || item == Item.Ram || item == Item.Chainsaw || item == Item.Crossbow,
+                TwoHanded = item == Item.Rock || item == Item.Spear || item == Item.Ram || item == Item.Chainsaw || item == Item.Crossbow || item == Item.TreeCracker,
                 Pitch = Pitch.Value,
                 Swing = m_Swing,
                 Action = (BodyAnimator.Act)Action.Value,
@@ -650,7 +651,7 @@ namespace RockGame
             Reveal();
 
             if (!hasTarget || !target.TryGet(out var no)) return;
-            if (item == Item.Chainsaw) WearChainsaw();
+            if (item == Item.Chainsaw || item == Item.TreeCracker) WearChainsaw();
             if (Vector3.Distance(EyePos, point) > st.Range + 2f) return;
             var dir = (point - EyePos).normalized;
 
@@ -700,15 +701,15 @@ namespace RockGame
         void WearChainsaw()
         {
             var st = HeldStack;
-            if (st.Id != Item.Chainsaw) return;
+            if (st.Id != Item.Chainsaw && st.Id != Item.TreeCracker) return;
             int left = st.Data - 1;
             if (left <= 0)
             {
                 ServerClearSlot(HeldSlot.Value);
-                Notify("Your chainsaw broke!");
+                Notify($"Your {Cfg.ItemName(st.Id).ToLower()} broke!");
                 Fx.Server(FxKind.Break, transform.position + Vector3.up * 1.2f, Vector3.up);
             }
-            else Inv[HeldSlot.Value] = ItemStack.Of(Item.Chainsaw, 1, left);
+            else Inv[HeldSlot.Value] = ItemStack.Of(st.Id, 1, left);
         }
 
         [Rpc(SendTo.Server)]
@@ -729,6 +730,8 @@ namespace RockGame
         {
             if (m_PendingArrows.Count == 0) return;
             float damage = m_PendingArrows.Dequeue();
+            bool bullet = damage < 0f; // pistol rounds are queued negative: no arrow left behind
+            damage = Mathf.Abs(damage);
             if (!target.TryGet(out var no) || !GameAllowsCombat) return;
             if (no.TryGetComponent(out PlayerNet p))
             {
@@ -739,7 +742,7 @@ namespace RockGame
             if (no.TryGetComponent(out Vehicle v)) { v.ServerDamage(damage, this); return; }
             if (no.TryGetComponent(out Structure s) && s.Team.Value != Team.Value && s.Tier.Value == 0)
                 s.ServerDamage(Cfg.ArrowWoodStructureDamage);
-            DropSpentArrow(point, dir);
+            if (!bullet) DropSpentArrow(point, dir);
         }
 
         /// <summary>An arrow hit the ground or something static: it stays there and can be picked back up (E).</summary>
@@ -747,7 +750,7 @@ namespace RockGame
         public void ArrowLandRpc(Vector3 point, Vector3 dir)
         {
             if (m_PendingArrows.Count == 0) return;
-            m_PendingArrows.Dequeue();
+            if (m_PendingArrows.Dequeue() < 0f) return; // a bullet
             DropSpentArrow(point, dir);
         }
 
@@ -892,9 +895,11 @@ namespace RockGame
         [Rpc(SendTo.Server)]
         public void CraftRpc(int recipe)
         {
-            if (Dead.Value || recipe < 0 || recipe >= Cfg.RecipeCount) return;
+            bool power = recipe >= Cfg.PowerBase;
+            if (Dead.Value || recipe < 0 || (!power && recipe >= Cfg.RecipeCount) || (power && recipe - Cfg.PowerBase >= Cfg.PowerCount)) return;
             if (InSuddenDeath || (NetGame.Instance != null && NetGame.Instance.S == GameState.GameOver)) return;
-            var r = Cfg.GetRecipe(recipe);
+            var r = power ? Cfg.GetPowerRecipe(recipe - Cfg.PowerBase) : Cfg.GetRecipe(recipe);
+            if (power || Cfg.Builder) { ServerCraftModes(r); return; }
             if (!Cfg.CanCraftAt(Team.Value, transform.position, r.Output)) { Notify($"{r.Name} can only be crafted inside your own base"); return; }
             if (r.Output == Item.Armor && ArmorHp.Value >= Cfg.ArmorHp) { Notify("You're already wearing full armour"); return; }
             if (Count(Item.Wood) < r.Wood || Count(Item.Stone) < r.Stone) { Notify($"Not enough resources for {r.Name}"); return; }
@@ -931,7 +936,7 @@ namespace RockGame
 
             var key = new PieceKey(BuildGrid.KindOf(t), i, j, l, t == PieceType.Stairs ? (d & 3) : (d & 1));
             if (key.L < 0 || key.L > Cfg.MaxLevel) return;
-            if (!BuildGrid.InTeamBase(Team.Value, key)) { Notify("You can only build inside your own base area"); return; }
+            if (!BuildGrid.CanBuildAt(Team.Value, key)) { Notify(Cfg.Builder ? "You can't build in the enemy base" : "You can only build inside your own base area"); return; }
             if (BuildGrid.OnBedrock(key)) { Notify("The bedrock is already a foundation"); return; }
             BuildGrid.Pose(t, key, out var pos, out var rot);
             if (Vector3.Distance(pos, transform.position) > Cfg.BuildRange + 4f) { Notify("Too far away"); return; }
@@ -1020,6 +1025,7 @@ namespace RockGame
         public static string DeployProblem(Item kind, int team, Vector3 pos, float yaw)
         {
             int baseTeam = Cfg.BaseTeamAt(pos);
+            if (kind == Item.Boat) return ThemeMaps.WaterAt(pos.x, pos.z) ? null : "Boats go on open water"; // THEME MAPS
             if (kind == Item.Chest && baseTeam != team) return "Chests go inside your own base";
             // chests may go on the bedrock around the machine, just not on the spawn spot
             if (kind == Item.Chest && new Vector2(pos.x - Cfg.SpawnPos(team).x, pos.z - Cfg.SpawnPos(team).z).magnitude < 1.3f) return "Keep the spawn spot clear";
@@ -1044,7 +1050,7 @@ namespace RockGame
         public void PlaceDeployableRpc(byte kindByte, Vector3 pos, float yaw)
         {
             var kind = (Item)kindByte;
-            if (kind != Item.Chest && kind != Item.Barrier && kind != Item.Car) return;
+            if (kind != Item.Chest && kind != Item.Barrier && kind != Item.Car && kind != Item.Boat /* THEME MAPS */) return;
             if (Dead.Value || CarryingBall || HeldItem != kind || InSuddenDeath) return;
             if (Vector3.Distance(pos, transform.position) > Cfg.DeployRange + 3f) return;
             var problem = DeployProblem(kind, Team.Value, pos, yaw);
@@ -1058,6 +1064,7 @@ namespace RockGame
                 go.GetComponent<NetworkObject>().Spawn(true);
             }
             else if (kind == Item.Car) Vehicle.ServerSpawn(Vehicle.Car, pos + Vector3.up * 0.1f, yaw);
+            else if (kind == Item.Boat) Vehicle.ServerSpawn(Vehicle.Boat, new Vector3(pos.x, ThemeMaps.WaterY - 0.1f, pos.z), yaw); // THEME MAPS
             else
             {
                 var go = Instantiate(Bootstrap.I.structurePrefab, pos, rot);
@@ -1142,6 +1149,15 @@ namespace RockGame
                 HelmetHp.Value = 1;
                 ServerClearSlot(HeldSlot.Value);
                 Notify("Helmet on: it stops one headshot completely");
+            }
+            else if (st.Id == Item.HeavyArmor)
+            {
+                // heavy armour: a double-strength armour bar; any wooden armour you had on breaks off
+                m_NextEat = Time.time + 0.5f;
+                bool had = ArmorHp.Value > 0;
+                ArmorHp.Value = (byte)Mathf.Clamp(Cfg.HeavyArmorHp, 1, 255);
+                ServerClearSlot(HeldSlot.Value);
+                Notify($"Heavy armour on: {ArmorHp.Value} extra health" + (had ? " (your old armour broke off)" : ""));
             }
             else if (st.Id == Item.Armor)
             {
@@ -1241,7 +1257,7 @@ namespace RockGame
         [Rpc(SendTo.Server)]
         public void InsertBallRpc()
         {
-            if (Dead.Value || !CarryingBall) return;
+            if (Dead.Value || !CarryingBall || Cfg.Builder) return;
             if (Vector3.Distance(EyePos, Cfg.SocketPos(Team.Value)) > Cfg.MachineRange + 1.5f) return;
             Ball.Instance.ServerSocket(Team.Value);
         }

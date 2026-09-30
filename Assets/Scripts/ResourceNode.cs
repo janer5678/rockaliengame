@@ -186,9 +186,11 @@ namespace RockGame
             float h = 4.5f + r() * 2.5f;
             var trunk = Art.Part(tr, Art.Cylinder, Art.DarkWood, new Vector3(0, h * 0.5f, 0), new Vector3(0.6f, h * 0.5f, 0.6f), default, collider, null, "trunk");
             Color leaf = Color.Lerp(Art.Leaves, new Color(0.3f, 0.55f, 0.2f), r());
+            leaf = ThemeMaps.LeafTint(leaf); // THEME MAPS
             trunkRadius = 0.3f;
             bark = Art.Wood;
             leafColor = leaf;
+            if (ThemeMaps.BuildPalm(tr, seed, h, trunk)) return trunk; // THEME MAPS
             if (PsxArt.On && PsxArt.BuildTree(tr, seed, h * 0.45f + 5.2f + (r() - 0.5f) * 1.2f, out var pr, out var pb, out var pl))
             {
                 trunk.GetComponent<MeshRenderer>().enabled = false;

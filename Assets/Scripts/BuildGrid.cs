@@ -163,6 +163,15 @@ namespace RockGame
             return Cfg.CellInBase(team, k.I, k.J);
         }
 
+        /// <summary>Where a team may build: its own base - or, in Builder, anywhere except another team's base.</summary>
+        public static bool CanBuildAt(int team, PieceKey k)
+        {
+            if (!Cfg.Builder) return InTeamBase(team, k);
+            for (int t = 0; t < Cfg.TeamCount; t++)
+                if (t != team && InTeamBase(t, k)) return false;
+            return true;
+        }
+
         /// <summary>Foundations and ground-level stairs can't go on the bedrock (it already is a foundation, and you spawn there).</summary>
         public static bool OnBedrock(PieceKey k)
         {
@@ -178,6 +187,7 @@ namespace RockGame
         /// <summary>Rust-like support rules. exists() answers whether a (supported) piece is at a key.</summary>
         public static bool IsSupported(PieceKey k, Func<PieceKey, bool> exists)
         {
+            if (Cfg.Builder && LocksOn(k, exists)) return true;
             switch (k.Kind)
             {
                 case PieceKey.KFoundation:
@@ -208,6 +218,47 @@ namespace RockGame
             }
             return false;
         }
+
+        /// <summary>
+        /// Builder (Fortnite style): pieces lock on to each other. Anything at ground level stands on the ground; walls
+        /// hang off the walls they touch end to end; floors hold on to any wall around them (below or above) or stairs
+        /// under them; stairs hold on to walls or floors around them or stairs leading into them.
+        /// </summary>
+        static bool LocksOn(PieceKey k, Func<PieceKey, bool> exists)
+        {
+            switch (k.Kind)
+            {
+                case PieceKey.KEdge:
+                {
+                    if (k.L == 0) return true;
+                    int I = k.I, J = k.J, L = k.L;
+                    if (k.D == 0)
+                        return exists(new PieceKey(PieceKey.KEdge, I, J + 1, L, 0)) || exists(new PieceKey(PieceKey.KEdge, I, J - 1, L, 0))
+                            || exists(new PieceKey(PieceKey.KEdge, I, J, L, 1)) || exists(new PieceKey(PieceKey.KEdge, I + 1, J, L, 1))
+                            || exists(new PieceKey(PieceKey.KEdge, I, J - 1, L, 1)) || exists(new PieceKey(PieceKey.KEdge, I + 1, J - 1, L, 1))
+                            || AnyStairs(I, J, L - 1, exists) || AnyStairs(I + 1, J, L - 1, exists);
+                    return exists(new PieceKey(PieceKey.KEdge, I + 1, J, L, 1)) || exists(new PieceKey(PieceKey.KEdge, I - 1, J, L, 1))
+                        || exists(new PieceKey(PieceKey.KEdge, I, J, L, 0)) || exists(new PieceKey(PieceKey.KEdge, I, J + 1, L, 0))
+                        || exists(new PieceKey(PieceKey.KEdge, I - 1, J, L, 0)) || exists(new PieceKey(PieceKey.KEdge, I - 1, J + 1, L, 0))
+                        || AnyStairs(I, J, L - 1, exists) || AnyStairs(I, J + 1, L - 1, exists);
+                }
+                case PieceKey.KFloor:
+                    if (k.L < 1) return false;
+                    return AnyWallAround(k.I, k.J, k.L, exists) || AnyWallAround(k.I, k.J, k.L - 1, exists) || AnyStairs(k.I, k.J, k.L - 1, exists);
+                case PieceKey.KStairs:
+                    if (k.L == 0) return true;
+                    return exists(new PieceKey(PieceKey.KFloor, k.I, k.J, k.L, 0)) || AnyWallAround(k.I, k.J, k.L, exists) || AnyWallAround(k.I, k.J, k.L - 1, exists)
+                        || AnyStairs(k.I + 1, k.J, k.L - 1, exists) || AnyStairs(k.I - 1, k.J, k.L - 1, exists)
+                        || AnyStairs(k.I, k.J + 1, k.L - 1, exists) || AnyStairs(k.I, k.J - 1, k.L - 1, exists);
+            }
+            return false;
+        }
+
+        static bool AnyWallAround(int i, int j, int l, Func<PieceKey, bool> exists) =>
+            l >= 0 && (exists(new PieceKey(PieceKey.KEdge, i, j, l, 0)) || exists(new PieceKey(PieceKey.KEdge, i, j, l, 1))
+                || exists(new PieceKey(PieceKey.KEdge, i - 1, j, l, 0)) || exists(new PieceKey(PieceKey.KEdge, i, j - 1, l, 1)));
+
+        static bool AnyStairs(int i, int j, int l, Func<PieceKey, bool> exists) => l >= 0 && HasStairsAt(i, j, l, exists);
 
         static bool HasStairsAt(int i, int j, int l, Func<PieceKey, bool> has)
         {

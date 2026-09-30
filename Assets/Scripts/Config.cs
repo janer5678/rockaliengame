@@ -9,13 +9,25 @@ namespace RockGame
 {
     // new items go at the end so the byte values of the old ones never change
     public enum Item : byte { None, Rock, BuildingPlan, Hatchet, Pickaxe, Spear, Bow, Ram, Chest, Barrier, Wood, Stone, Arrow, Berry, C4, DeathWand, Helmet, InvisPotion, Chainsaw, Crossbow, Armor, FortTower, Car, Saddle,
-        Meat, AirdropSignal, Sniper, PortalGun, Jetpack, SlenderEgg, BuildEgg, GiantStaff, RocketLauncher, BombBush, TreeCamo, Airstrike, Wallhack }
+        Meat, AirdropSignal, Sniper, PortalGun, Jetpack, SlenderEgg, BuildEgg, GiantStaff, RocketLauncher, BombBush, TreeCamo, Airstrike, Wallhack,
+        EnderPearl, Pistol, PistolAmmo, HeavyArmor, TreeCracker, FortifyBuff, WoodGenBuff, Boat }
+
+    /// <summary>
+    /// The game mode (picked in the main menu, next to the players). They don't mix:
+    /// Classic - the original game. Arsenal - everything costs much less, plus a menu of powerful items (2-4k wood).
+    /// Builder - Arsenal's items, crafting anywhere with a wait while each item is made, build anywhere with pieces that lock
+    /// onto each other, and you win with the ball inside a fort your team built. Fun - every 9 s everyone gets the same random
+    /// item (any item in the game). Fun Random - every 9 s each player gets their own random airdrop item.
+    /// (Synced in 3 bits of the map key: never reorder.)
+    /// </summary>
+    public enum GameRules : byte { Classic, Arsenal, Builder, Fun, FunRandom }
 
     public enum PieceType : byte { Foundation, Wall, Doorway, Floor, Stairs, Barrier, Window, Tower, EggBlock }
 
     public enum GameState : byte { Waiting, PreBall, BallLive, SuddenDeath, GameOver }
 
-    public enum MapKind : byte { Plains, Highlands }
+    public enum MapKind : byte { Plains, Highlands,
+        Beach, Canyon, Frostlake, Volcano, Ruins } // THEME MAPS (the second line)
 
     /// <summary>Map size: Big (the original), Small, and 1.5x / 2x versions of Big.</summary>
     public enum MapSize : byte { Big, Small, Large, Huge }
@@ -61,15 +73,33 @@ namespace RockGame
         public static float MapHalf => SmallMap ? 62f : 100f * SizeScale;
         public const float BaseHalf = 18f; // bases are 36x36m, aligned to the 3m build grid
         public static readonly Vector3[] BaseCenter = { new Vector3(0, 0, -75), new Vector3(0, 0, 75), new Vector3(75, 0, 0), new Vector3(-75, 0, 0) };
-        public static string MapLabel => ModeLabel + ", " + SizeLabel(Size).ToLower() + " " + Map + (WoodMode ? " (Wood mode)" : "") + (AirdropCenter ? " (airdrops in the middle)" : AirdropSides ? " (airdrops on both sides)" : "") + (RespawnLoot ? " (respawn loot)" : "");
+        public static string MapLabel => ModeLabel + ", " + SizeLabel(Size).ToLower() + " " + (ThemeMaps.IsTheme ? ThemeMaps.Label(Map) : Map.ToString()) /* THEME MAPS */ + (WoodMode ? " (Wood mode)" : "") + (AirdropCenter ? " (airdrops in the middle)" : AirdropSides ? " (airdrops on both sides)" : "") + (RespawnLoot ? " (respawn loot)" : "");
         /// <summary>Airdrops come down on both sides (one in each half, each on its own timer) instead of anywhere.</summary>
         public static bool AirdropSides;
         /// <summary>Airdrops always come down in the middle of the map.</summary>
         public static bool AirdropCenter;
         /// <summary>Game option: every time you respawn you get a random airdrop item.</summary>
         public static bool RespawnLoot;
-        public const int SmallBit = 16, WoodBit = 32, SidesBit = 64, RespawnLootBit = 128, ModeShift = 8, ModeMask = 7, SizeShift = 12, CenterBit = 1 << 14;
+        public const int SmallBit = 16, WoodBit = 32, SidesBit = 64, RespawnLootBit = 128, ModeShift = 8, ModeMask = 7, SizeShift = 12, CenterBit = 1 << 14, RulesShift = 15, RulesMask = 7;
         public static GameMode Mode = GameMode.Duel;
+        public static GameRules Rules = GameRules.Classic;
+        /// <summary>Arsenal and Builder: cheap items and the powerful items menu.</summary>
+        public static bool PowerMenu => Rules == GameRules.Arsenal || Rules == GameRules.Builder;
+        /// <summary>Builder: craft anywhere (with a wait), build anywhere, win with the ball in your own fort.</summary>
+        public static bool Builder => Rules == GameRules.Builder;
+        public static bool FunRules => Rules == GameRules.Fun || Rules == GameRules.FunRandom;
+        public static string RulesName(GameRules r) => r == GameRules.Arsenal ? "Arsenal" : r == GameRules.Builder ? "Builder" : r == GameRules.Fun ? "Fun" : r == GameRules.FunRandom ? "Fun Random" : "Classic";
+        public static string RulesDesc(GameRules r)
+        {
+            switch (r)
+            {
+                case GameRules.Arsenal: return "Everything costs much less, and a POWER ITEMS menu next to crafting: pistol, heavy armour, tree cracker, C4, fortify all walls, auto wood.";
+                case GameRules.Builder: return "Arsenal's items, but each one takes a while to make. Craft and build anywhere - pieces lock onto each other. Win with the ball inside a fort your team built.";
+                case GameRules.Fun: return "The original game, but every 9 seconds everyone gets the same random item - any item in the game.";
+                case GameRules.FunRandom: return "The original game, but every 9 seconds each player gets their own random airdrop item.";
+                default: return "The original game: gather, build your base, craft in it, get the ball into your machine.";
+            }
+        }
         /// <summary>Players needed to start (and the most that can join).</summary>
         public static int PlayersNeeded => ModeTeams(Mode) * ModeTeamSize(Mode);
         public static bool FreeForAll => Mode == GameMode.Ffa3 || Mode == GameMode.Ffa4;
@@ -97,7 +127,7 @@ namespace RockGame
         public static bool FourWay => TeamCount > 2;
         public static string ModeLabel => ModeName(Mode);
         /// <summary>Packs the map/mode choice for syncing; the seed is sent separately.</summary>
-        public static int MapKey => (int)Map | ((int)Size << SizeShift) | (WoodMode ? WoodBit : 0) | (AirdropSides ? SidesBit : 0) | (AirdropCenter ? CenterBit : 0) | (RespawnLoot ? RespawnLootBit : 0) | ((int)Mode << ModeShift);
+        public static int MapKey => (int)Map | ((int)Size << SizeShift) | (WoodMode ? WoodBit : 0) | (AirdropSides ? SidesBit : 0) | (AirdropCenter ? CenterBit : 0) | (RespawnLoot ? RespawnLootBit : 0) | ((int)Mode << ModeShift) | ((int)Rules << RulesShift);
 
         /// <summary>Watch towers on the Highlands map (world positions of their feet), point-mirrored between the halves.</summary>
         public static readonly List<Vector3> Towers = new List<Vector3>();
@@ -112,6 +142,7 @@ namespace RockGame
             AirdropCenter = (key & CenterBit) != 0;
             RespawnLoot = (key & RespawnLootBit) != 0;
             Mode = (GameMode)((key >> ModeShift) & ModeMask);
+            Rules = (GameRules)Mathf.Clamp((key >> RulesShift) & RulesMask, 0, (int)GameRules.FunRandom);
             TeamCount = ModeTeams(Mode);
             MapSeed = seed;
             // on the 3 m building grid, or the grid wouldn't line up with the base area
@@ -215,7 +246,7 @@ namespace RockGame
         /// <summary>Mode options: how many airdrops come after the wall drops, evenly spaced (1 = half way through, 2 = at the thirds...).</summary>
         [Tune("Mode options")] public static int AirdropCount = 3;
         /// <summary>Mode options: which airdrop items are in the pool (bit i = AirdropChoices[i]).</summary>
-        [Tune("Mode options")] public static int AirdropItemMask = 511;
+        [Tune("Mode options")] public static int AirdropItemMask = 1023;
         [Tune("Airdrop")] public static float AirdropBaseDistance = 25f; // never this close to a base
         [Tune("Airdrop")] public static float C4Fuse = 3f, C4Radius = 5f, C4PlayerDamage = 150f, C4KillRadius = 1.6f;
         [Tune("Airdrop")] public static int SniperAmmo = 3, JetpackFuel = 100, PortalShots = 2, AirdropSignalWood = 2000;
@@ -296,6 +327,20 @@ namespace RockGame
         [Tune("Vehicles")] public static float HorseWalk = 4.5f, HorseSprint = 11f, HorseJump = 8.5f, HorseHp = 120f;
         [Tune("Vehicles")] public static int HorsesPerSide = 3;
 
+        // ---------- Game modes ----------
+        /// <summary>Arsenal / Builder: normal recipes cost this much of their usual price.</summary>
+        [Tune("Arsenal and Builder")] public static float CheapCostMul = 0.3f;
+        [Tune("Arsenal and Builder")] public static int FortifyWood = 3500, PistolWood = 3000, PistolAmmoWood = 2000, PistolAmmoPerCraft = 30, HeavyArmorWood = 3000,
+            WoodGenWood = 4000, TreeCrackerWood = 2500, C4Wood = 3000;
+        [Tune("Arsenal and Builder")] public static float PistolDamage = 34f, PistolSpeed = 160f, PistolFireRate = 0.22f, PistolReload = 1.3f;
+        [Tune("Arsenal and Builder")] public static int PistolMag = 8, HeavyArmorHp = 200, TreeCrackerUses = 40;
+        [Tune("Arsenal and Builder")] public static float WoodGenInterval = 10f;
+        [Tune("Arsenal and Builder")] public static int WoodGenAmount = 30;
+        /// <summary>Builder: every craft takes a while (seconds per 100 wood of its price, between the min and max).</summary>
+        [Tune("Arsenal and Builder")] public static float BuilderCraftSecsPer100 = 0.6f, BuilderCraftMin = 2f, BuilderCraftMax = 20f;
+        [Tune("Fun modes")] public static float FunItemInterval = 9f;
+        [Tune("Airdrop")] public static float EnderPearlSpeed = 24f;
+
         // ---------- Items ----------
         public static string ItemName(Item i)
         {
@@ -333,6 +378,14 @@ namespace RockGame
                 case Item.TreeCamo: return "Tree Camo";
                 case Item.Airstrike: return "Airstrike";
                 case Item.Wallhack: return "Wallhack Glasses";
+                case Item.EnderPearl: return "Ender Pearl";
+                case Item.Pistol: return "Pistol";
+                case Item.PistolAmmo: return "Pistol Ammo";
+                case Item.HeavyArmor: return "Heavy Armour";
+                case Item.TreeCracker: return "Tree Cracker";
+                case Item.FortifyBuff: return "Fortify All Walls";
+                case Item.WoodGenBuff: return "Auto Wood Gen";
+                case Item.Boat: return "Wooden Boat";
                 case Item.None: return "";
                 default: return i.ToString();
             }
@@ -344,6 +397,8 @@ namespace RockGame
             {
                 case Item.Wood: case Item.Stone: return 1000;
                 case Item.Arrow: return 64;
+                case Item.PistolAmmo: return 120;
+                case Item.EnderPearl: return 4;
                 case Item.Berry: return 20;
                 case Item.Barrier: return 5;
                 case Item.None: return 0;
@@ -365,6 +420,8 @@ namespace RockGame
                 case Item.Sniper: return SniperAmmo;
                 case Item.Jetpack: return JetpackFuel;
                 case Item.PortalGun: return PortalShots;
+                case Item.Pistol: return PistolMag;
+                case Item.TreeCracker: return TreeCrackerUses;
                 default: return 0;
             }
         }
@@ -372,8 +429,48 @@ namespace RockGame
         /// <summary>The airdrop items the host can pick from in the mode options (the others are unused for now).</summary>
         public static readonly Item[] AirdropChoices =
         {
-            Item.C4, Item.DeathWand, Item.PortalGun, Item.RocketLauncher, Item.TreeCamo, Item.InvisPotion, Item.Jetpack, Item.Wallhack, Item.BombBush,
+            Item.C4, Item.DeathWand, Item.PortalGun, Item.RocketLauncher, Item.TreeCamo, Item.InvisPotion, Item.Jetpack, Item.Wallhack, Item.BombBush, Item.EnderPearl,
         };
+
+        /// <summary>Fun Random: every airdrop item there is, the unused ones too.</summary>
+        public static readonly Item[] AllAirdropItems =
+        {
+            Item.C4, Item.DeathWand, Item.PortalGun, Item.RocketLauncher, Item.TreeCamo, Item.InvisPotion, Item.Jetpack, Item.Wallhack, Item.BombBush, Item.EnderPearl,
+            Item.Helmet, Item.Armor, Item.Chainsaw, Item.FortTower, Item.Sniper, Item.SlenderEgg, Item.BuildEgg, Item.GiantStaff, Item.Airstrike, Item.Wood,
+        };
+
+        /// <summary>Fun: every item in the game (tools, weapons, loot, the unused ones) - not the rock, materials or buffs.</summary>
+        public static List<Item> AllFunItems
+        {
+            get
+            {
+                var l = new List<Item>();
+                foreach (Item i in Enum.GetValues(typeof(Item)))
+                {
+                    if (i == Item.None || i == Item.Rock || i == Item.FortifyBuff || i == Item.WoodGenBuff) continue;
+                    if (i == Item.Boat && !ThemeMaps.HasWater) continue; // THEME MAPS
+                    l.Add(i);
+                }
+                return l;
+            }
+        }
+
+        /// <summary>A stack of an item as it's handed out (full durability, a sensible amount of materials / ammo).</summary>
+        public static ItemStack GiftStack(Item id)
+        {
+            switch (id)
+            {
+                case Item.Wood: return ItemStack.Of(WoodMode || UnityEngine.Random.value < 0.5f ? Item.Wood : Item.Stone, Mathf.Clamp(AirdropResources, 1, 1000));
+                case Item.Stone: return ItemStack.Of(WoodMode ? Item.Wood : Item.Stone, 300);
+                case Item.Arrow: return ItemStack.Of(Item.Arrow, 20);
+                case Item.Berry: return ItemStack.Of(Item.Berry, 5);
+                case Item.PistolAmmo: return ItemStack.Of(Item.PistolAmmo, 30);
+                case Item.Helmet: return ItemStack.Of(Item.Helmet, 1, 1);
+                case Item.Saddle: return ItemStack.Of(Item.Saddle, 1, 0);
+                case Item.Crossbow: return ItemStack.Of(Item.Crossbow, 1, 1);
+                default: return ItemStack.Of(id, 1, Mathf.Clamp(MaxData(id), 0, 255));
+            }
+        }
 
         /// <summary>Everything an airdrop (or the respawn-loot option) can give you: the picked items (all of them if none are picked).</summary>
         public static List<Item> AirdropLoot
@@ -396,17 +493,21 @@ namespace RockGame
                 case Item.Pickaxe: return new MeleeStats { Cooldown = PickaxeCooldown, Range = PickaxeRange, PlayerDamage = PickaxePlayerDamage, WoodGather = PickaxeWoodGather, StoneGather = PickaxeStoneGather, StructureDamage = PickaxeStructureDamage };
                 case Item.Spear:   return new MeleeStats { Cooldown = SpearCooldown, Range = SpearRange, PlayerDamage = SpearPlayerDamage, WoodGather = SpearWoodGather, StoneGather = SpearStoneGather, StructureDamage = SpearStructureDamage };
                 case Item.Chainsaw: return new MeleeStats { Cooldown = ChainsawCooldown, Range = ChainsawRange, PlayerDamage = ChainsawPlayerDamage, WoodGather = ChainsawWoodGather, StoneGather = ChainsawStoneGather, StructureDamage = ChainsawStructureDamage };
+                // a huge axe: slow, fells any tree in one hit (the server gives the whole tree)
+                case Item.TreeCracker: return new MeleeStats { Cooldown = 1.1f, Range = 2.8f, PlayerDamage = 30f, WoodGather = 9999f, StoneGather = 3f, StructureDamage = 20f };
                 default: return default;
             }
         }
-        public static bool IsMelee(Item i) => i == Item.Rock || i == Item.Hatchet || i == Item.Pickaxe || i == Item.Spear || i == Item.Chainsaw;
+        public static bool IsMelee(Item i) => i == Item.Rock || i == Item.Hatchet || i == Item.Pickaxe || i == Item.Spear || i == Item.Chainsaw || i == Item.TreeCracker;
 
         // ---------- Building ----------
         public static string PieceName(PieceType t) => t == PieceType.Tower ? "Fort Tower" : t.ToString();
         /// <summary>Pieces that sit on the 3 m building grid (placed with the building plan).</summary>
         public static bool IsGridPiece(PieceType t) => t != PieceType.Barrier && t != PieceType.Tower && t != PieceType.EggBlock;
 
-        public static int PieceWood(PieceType t)
+        public static int PieceWood(PieceType t) => PowerMenu ? Mathf.Max(1, Mathf.CeilToInt(PieceWoodBase(t) * CheapCostMul)) : PieceWoodBase(t);
+
+        public static int PieceWoodBase(PieceType t)
         {
             switch (t)
             {
@@ -419,7 +520,9 @@ namespace RockGame
                 default: return 0;
             }
         }
-        public static int PieceUpgradeStone(PieceType t)
+        public static int PieceUpgradeStone(PieceType t) => PowerMenu ? Mathf.Max(1, Mathf.CeilToInt(PieceUpgradeStoneBase(t) * CheapCostMul)) : PieceUpgradeStoneBase(t);
+
+        static int PieceUpgradeStoneBase(PieceType t)
         {
             switch (t)
             {
@@ -454,10 +557,12 @@ namespace RockGame
         static readonly Item[] k_Recipes = { Item.Hatchet, Item.Pickaxe, Item.Spear, Item.BuildingPlan, Item.Bow, Item.Arrow, Item.Crossbow, Item.Armor, Item.Chainsaw, Item.Ram, Item.Chest, Item.Barrier, Item.Saddle, Item.AirdropSignal };
 
         /// <summary>Recipes available in this mode (wood mode has no pickaxe).</summary>
-        public static int RecipeCount => WoodMode ? k_Recipes.Length - 1 : k_Recipes.Length;
+        public static int RecipeCount => (WoodMode ? k_Recipes.Length - 1 : k_Recipes.Length)
+            + (ThemeMaps.HasWater ? 1 : 0); // THEME MAPS (the boat)
 
         public static Recipe GetRecipe(int i)
         {
+            if (ThemeMaps.HasWater && i == RecipeCount - 1) return ThemeMaps.BoatRecipe; // THEME MAPS
             if (WoodMode && i >= 1) i++; // skip the pickaxe (second in the list)
             Recipe r;
             switch (k_Recipes[Mathf.Clamp(i, 0, k_Recipes.Length - 1)])
@@ -478,8 +583,56 @@ namespace RockGame
                 default: r = new Recipe { Output = Item.Barrier, Count = 1, Wood = BarrierWood }; break;
             }
             if (WoodMode) { r.Wood += r.Stone; r.Stone = 0; } // everything costs wood only
+            return Priced(r);
+        }
+        /// <summary>A recipe's price in this game mode (Arsenal / Builder: much cheaper).</summary>
+        public static Recipe Priced(Recipe r)
+        {
+            if (!PowerMenu) return r;
+            r.Wood = Mathf.CeilToInt(r.Wood * CheapCostMul / 5f) * 5;
+            r.Stone = Mathf.CeilToInt(r.Stone * CheapCostMul / 5f) * 5;
             return r;
         }
+
+        // ---------- Arsenal / Builder: the powerful items menu ----------
+        static readonly Item[] k_Power = { Item.Pistol, Item.PistolAmmo, Item.HeavyArmor, Item.TreeCracker, Item.C4, Item.FortifyBuff, Item.WoodGenBuff };
+        /// <summary>Power recipes are numbered from here in CraftRpc.</summary>
+        public const int PowerBase = 100;
+        public static int PowerCount => PowerMenu ? k_Power.Length : 0;
+
+        public static Recipe GetPowerRecipe(int i)
+        {
+            var id = k_Power[Mathf.Clamp(i, 0, k_Power.Length - 1)];
+            switch (id)
+            {
+                case Item.Pistol: return new Recipe { Output = id, Count = 1, Wood = PistolWood };
+                case Item.PistolAmmo: return new Recipe { Output = id, Count = Mathf.Max(1, PistolAmmoPerCraft), Wood = PistolAmmoWood };
+                case Item.HeavyArmor: return new Recipe { Output = id, Count = 1, Wood = HeavyArmorWood };
+                case Item.TreeCracker: return new Recipe { Output = id, Count = 1, Wood = TreeCrackerWood };
+                case Item.C4: return new Recipe { Output = id, Count = 1, Wood = C4Wood };
+                case Item.FortifyBuff: return new Recipe { Output = id, Count = 1, Wood = FortifyWood };
+                default: return new Recipe { Output = Item.WoodGenBuff, Count = 1, Wood = WoodGenWood };
+            }
+        }
+
+        /// <summary>A power item's one-line description in the menu.</summary>
+        public static string PowerBlurb(Item id)
+        {
+            switch (id)
+            {
+                case Item.Pistol: return $"{PistolMag} shots, {PistolDamage:0} dmg, fast - reloads from ammo";
+                case Item.PistolAmmo: return $"{PistolAmmoPerCraft} rounds for the pistol";
+                case Item.HeavyArmor: return $"{HeavyArmorHp} armour HP (replaces wooden armour)";
+                case Item.TreeCracker: return $"huge axe: fells a tree in one hit ({TreeCrackerUses} uses)";
+                case Item.C4: return "blows up enemy buildings";
+                case Item.FortifyBuff: return "turns all your team's wooden pieces to stone";
+                default: return $"your team gets +{WoodGenAmount} wood every {WoodGenInterval:0}s";
+            }
+        }
+
+        /// <summary>Builder: how long an item takes to make (by its price).</summary>
+        public static float CraftSeconds(Recipe r) => Builder ? Mathf.Clamp((r.Wood + r.Stone) / 100f * BuilderCraftSecsPer100, BuilderCraftMin, BuilderCraftMax) : 0f;
+
         public static int RecipeIndex(Item output)
         {
             for (int i = 0; i < RecipeCount; i++) if (GetRecipe(i).Output == output) return i;
@@ -497,7 +650,7 @@ namespace RockGame
 
         /// <summary>Spears and hatchets can be crafted anywhere; everything else only inside your own base.</summary>
         public static bool CraftAnywhere(Item i) => i == Item.Spear || i == Item.Hatchet;
-        public static bool CanCraftAt(int team, Vector3 p) => BaseTeamAt(p) == team;
+        public static bool CanCraftAt(int team, Vector3 p) => Builder || BaseTeamAt(p) == team;
         public static bool CanCraftAt(int team, Vector3 p, Item i) => CraftAnywhere(i) || CanCraftAt(team, p);
 
         /// <summary>Raw base membership of a grid cell.</summary>

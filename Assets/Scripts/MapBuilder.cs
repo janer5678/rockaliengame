@@ -37,6 +37,7 @@ namespace RockGame
 
             // ---------- ground ----------
             if (Cfg.Map == MapKind.Highlands) BuildTerrain(root);
+            else if (ThemeMaps.IsTheme) ThemeMaps.BuildGround(root); // THEME MAPS
             else
             {
                 float size = half * 2f + 60f;
@@ -96,6 +97,7 @@ namespace RockGame
 
             // ---------- watch towers (wild map) ----------
             if (Cfg.Map == MapKind.Highlands) PlaceTowers(root);
+            if (ThemeMaps.IsTheme) ThemeMaps.BuildProps(root); // THEME MAPS
 
             // ---------- centre ball drop zone ----------
             Art.Part(root, Art.Cylinder, new Color(0.85f, 0.75f, 0.3f), new Vector3(0, 0.02f, 0), new Vector3(12f, 0.02f, 12f));
@@ -104,7 +106,7 @@ namespace RockGame
 
             // ---------- map boundary ----------
             var wallC = new Color(0.45f, 0.43f, 0.4f);
-            float wh = Cfg.Map == MapKind.Highlands ? 40f : 5f;
+            float wh = Cfg.Map == MapKind.Highlands || ThemeMaps.IsTheme /* THEME MAPS */ ? 40f : 5f;
             Art.Box(root, wallC, new Vector3(0, wh / 2 - (wh > 5 ? 15 : 0), half + 1), new Vector3(2 * half + 4, wh, 2), default, true);
             Art.Box(root, wallC, new Vector3(0, wh / 2 - (wh > 5 ? 15 : 0), -half - 1), new Vector3(2 * half + 4, wh, 2), default, true);
             Art.Box(root, wallC, new Vector3(half + 1, wh / 2 - (wh > 5 ? 15 : 0), 0), new Vector3(2, wh, 2 * half + 4), default, true);
@@ -149,6 +151,7 @@ namespace RockGame
         /// <summary>Ground height at (x, z). Bases and the ball zone are flat (y = 0) so building and the drop work the same.</summary>
         public static float Height(float x, float z)
         {
+            if (ThemeMaps.IsTheme) return ThemeMaps.Height(x, z); // THEME MAPS
             if (Cfg.Map != MapKind.Highlands) return 0f;
             // symmetric: every team gets the same terrain (point mirror, or four ways round)
             float h = Cfg.FourWay ? 0.25f * (Raw(x, z) + Raw(-z, x) + Raw(-x, -z) + Raw(z, -x)) : 0.5f * (Raw(x, z) + Raw(-x, -z));

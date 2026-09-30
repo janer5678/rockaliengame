@@ -21,18 +21,43 @@ Laid out top to bottom: **MATCH SETUP** (what the host picks), then **PLAY** (ho
 
 ### Match setup (set by the host)
 - **Players** (one button that folds open the eight choices): red vs blue in *1v1*, *2v2*, *3v3* or *4v4*; or the X-shaped map with 3 or 4 bases (glass walls in an X, the map laid out four ways round): *FFA 3* / *FFA 4* (free for all, one player per base), *2v2v2* or *2v2v2v2* (teams of two). Sudden death is last team standing.
+- **Game mode** - separate ways to play; they don't mix:
+  - *Classic*: the original game.
+  - *Arsenal*: everything costs about a third as much (crafting and building), and a **POWER ITEMS** menu sits to the right of crafting (see below).
+  - *Builder*: Arsenal's items and prices, but every craft takes a few seconds (one at a time, shown top left), you can **craft and build anywhere** (not in the enemy base), pieces **lock on to each other** Fortnite style (walls hang off the walls they touch, floors and stairs hold on to walls around them, ground-level walls reach down into the ground), and you **win by having the ball shut inside a build your team made** when time runs out (walls on all 4 sides, or 3 and a roof). The machine socket doesn't count in Builder.
+  - *FUN MODE*: the classic game, but every 9 s everybody gets the **same** random item - any item in the game, the unused ones too.
+  - *FUN RANDOM MODE*: the same, but only airdrop items (the unused ones too) and everyone gets a **different** one.
+- **Game length**: - / + for the time behind the glass wall (building, 30 s steps) and the time with the ball (1 min steps). Saved on this PC; the host's are used.
 - While waiting for everyone to join, players brawl with rocks in the stadium; when the lobby is full everyone is sent to their base and the match starts.
 - **Graphics**: *Normal* or *PSX*. PSX swaps the 3D models for low-res PSX-style ones (trees so far, more to come); only the looks change - trees are the same size to hit, give the same wood and have the same weak spots, and everything else in the game works the same in both. Each player picks their own (also in Settings > Display, and it switches live). Normal is our own look, where new features get made first.
 - **Testing** (on/off buttons): **Solo test** - the match starts without an opponent, so you can try everything alone. **Fast timers** - 10s wall/ball drop and a 90s match instead of 5 min behind the wall and then 15 min.
-- **Map**: *Plains* (flat) or *Highlands* (the wild map: random hilly terrain with minable rocks and watch towers, new every match), each in **Small**, **Medium**, **Large** (1.5x) or **Huge** (2x) (the bigger maps get more trees, rocks, bushes, horses and towers). Picked by the host; the client builds the same map from the synced seed.
-- **Mode**: *Normal* or *Wood mode* (no stone anywhere, every rock is a tree, everything costs wood only, no pickaxe, no stone upgrades).
+- **Map**: *Plains* (flat), *Highlands* (the wild map: random hilly terrain with minable rocks and watch towers, new every match), or one of the five theme maps: *Beach* (palm island in the middle ringed by shallow water - wading is slow - with channels down the sides; craft a **Boat** for 1500 wood, put it on open water and E to drive it round), *Canyon* (red desert, tall mesas split the map into lanes, lots of stone), *Frostlake* (snowy hills round a frozen lake; the ice is slippery), *Volcano* (black ash, a broken ring of lava round the middle that burns you, a volcano smoking on the horizon), *Ruins* (broken walls and pillars for cover, extra stone). Each in **Small**, **Medium**, **Large** (1.5x) or **Huge** (2x) (the bigger maps get more trees, rocks, bushes, horses and towers). Picked by the host; the client builds the same map from the synced seed.
+- **Materials**: *Normal* or *Wood mode* (no stone anywhere, every rock is a tree, everything costs wood only, no pickaxe, no stone upgrades).
 - **MODE OPTIONS** (button on the main menu):
   - **Airdrops per match** (0-20): evenly spaced over the time after the glass wall drops - 1 comes half way through (7:30 after the wall drops), 2 at a third and two thirds, and so on. None come while the wall is up.
   - **Where**: *Anywhere* (one at a random spot), *One per side* (every side gets its own) or *Middle of the map* (always right by the centre).
   - **Airdrop items**: tick which items airdrops can have: C4, Death Wand, Portal Gun, Rocket Launcher, Tree Camo, Invisibility Potion, Jetpack, Wallhack Glasses, Fake Bomb Bush.
   - **Respawn**: *Normal* or *With an airdrop item* (every time you respawn you get a random one of the picked airdrop items).
 
-Command line: `-host`, `-client <ip>`, `-port <n>`, `-solo`, `-fast`, `-map plains|highlands`, `-small`, `-big` (medium), `-wood`, `-normal`, `-sides`, `-anywhere`, `-seed <n>`, `-mode 1v1|2v2|3v3|4v4|ffa3|ffa4|2v2v2|2v2v2v2`, `-large`, `-huge`.
+Command line: `-host`, `-client <ip>`, `-port <n>`, `-solo`, `-fast`, `-map plains|highlands`, `-small`, `-big` (medium), `-wood`, `-normal`, `-sides`, `-anywhere`, `-seed <n>`, `-mode 1v1|2v2|3v3|4v4|ffa3|ffa4|2v2v2|2v2v2v2`, `-large`, `-huge`, `-rules classic|arsenal|builder|fun|funrandom`, `-map beach|canyon|frostlake|volcano|ruins`.
+
+### Power items (Arsenal and Builder)
+Bought with wood from the POWER ITEMS column next to crafting (in your base; anywhere in Builder):
+
+| Item | Wood | What it does |
+|---|---|---|
+| Pistol | 3000 | 8-round magazine, 34 damage a shot, fast and flat - better than the crossbow. LMB shoots, R reloads (it also reloads by itself when empty). |
+| Pistol Ammo x30 | 2000 | Rounds for the pistol. |
+| Heavy Armour | 3000 | 200 armour HP, goes straight on (knocks wooden armour off). |
+| Tree Cracker | 2500 | A huge axe that fells a whole tree in one hit (40 uses). |
+| C4 | 3000 | The airdrop C4, now buyable. |
+| Fortify All Walls | 3500 | Every wooden piece your team has placed turns to stone at full health. |
+| Auto Wood Gen | 4000 | Your whole team gets +30 wood every 10 s for the rest of the match. |
+
+All these numbers are in CHANGE VALUES under "Arsenal and Builder" (and "Fun modes" for the 9 s).
+
+### Removing the theme maps
+Everything for the five theme maps is in `Assets/Scripts/ThemeMaps/` (terrain, props, palms, water/ice/lava, the boat). To remove them: delete that folder, then delete every line or block marked `// THEME MAPS` (search the scripts for it: Config, Bootstrap, MapBuilder, NetGame, ResourceNode, Vehicle, PlayerNet, PlayerController, Hud.Menus, AutoTest.Modes (the maps test), and the second line of the `MapKind` enum). The `Boat` item can stay in the `Item` enum (items are saved by number).
 
 ## Pause menu (Esc)
 - **Resume**, **Settings**, **Controls**, **Dev settings**, **Leave game**. Esc goes back a page.
@@ -57,7 +82,7 @@ Command line: `-host`, `-client <ip>`, `-port <n>`, `-solo`, `-fast`, `-map plai
 - Respawning: while the glass wall is up you always come back on your bedrock. After that you choose: **respawn in base** or **respawn in the wild** (a random spot in the enemy's half of the map).
 
 ## Airdrops
-Once the wall is down, a giant alien ship comes down from very high up and **beams an airdrop crate** to a random spot (never close to a base; follow the purple beam; a big "AIRDROP INCOMING" shows in the middle of the screen). How many come per match and which items they can have are set in **MODE OPTIONS**; a crate nobody emptied stays put. An **Airdrop Signal** (craft it in your base for 2000 wood) beams one straight onto your bedrock. Each crate holds one random item from the picked ones. The items in the game (only the first nine can be picked for now; the rest are unused):
+20 seconds before each airdrop lands, a banner says **AIRDROP DROPPING IN 20 SECONDS** and a countdown shows top left. Once the wall is down, a giant alien ship comes down from very high up and **beams an airdrop crate** to a random spot (never close to a base; follow the purple beam; a big "AIRDROP INCOMING" shows in the middle of the screen). How many come per match and which items they can have are set in **MODE OPTIONS**; a crate nobody emptied stays put. An **Airdrop Signal** (craft it in your base for 2000 wood) beams one straight onto your bedrock. Each crate holds one random item from the picked ones. The items in the game (only the first nine can be picked for now; the rest are unused):
 
 | Item | What it does |
 |---|---|
@@ -78,6 +103,7 @@ Once the wall is down, a giant alien ship comes down from very high up and **bea
 | Rocket Launcher | One rocket. Wrecks enemy buildings in a small radius and hurts players. |
 | Fake Bomb Bush | Thrown: looks exactly like a berry bush. Whoever picks it blows up. |
 | Tree Camo | While it's in your hand you're a tree to everyone, and your camera pulls back to third person so you can see it. |
+| Ender Pearl | Thrown: wherever it lands, you teleport there (5 damage). Pickable in MODE OPTIONS. |
 | Airstrike | Opens a map: click a spot and a few seconds later everything there (players, buildings, trees, rocks) is flattened. |
 | Wallhack Glasses | While you hold them, enemies glow red through walls. |
 
@@ -91,7 +117,7 @@ Once the wall is down, a giant alien ship comes down from very high up and **bea
 | Key | Action |
 |---|---|
 | WASD / Shift / Space / Ctrl or C | move / sprint / jump / crouch (also with the inventory open) |
-| Sprint, then Ctrl / C | **slide** (Crab Game style): you keep your speed, go faster downhill and slower uphill, steer a little, and can jump out of it without losing speed. Hold crouch to keep sliding; how slippery it is is **Slide Slipperiness** in CHANGE VALUES (0 = grippy, 10 = ice, default 7.5 - a long glide), along with Slide Boost, Slide Min Speed and Slide Steer |
+| Sprint, then Ctrl / C | **slide** (Crab Game style; works every time - pressed in the air it starts when you land - and always boosts you forward where you look): you keep your speed, go faster downhill and slower uphill, steer a little, and can jump out of it without losing speed. Hold crouch to keep sliding; how slippery it is is **Slide Slipperiness** in CHANGE VALUES (0 = grippy, 10 = ice, default 7.5 - a long glide), along with Slide Boost, Slide Min Speed and Slide Steer |
 | Mouse / LMB | look / attack, gather, place |
 | Hold LMB (bow) | draw, release to fire (RMB cancels) |
 | Spear | LMB stab · **hold RMB** to wind up, then **LMB** to throw |
@@ -145,6 +171,7 @@ In wood mode the stone part is added to the wood cost and there's no pickaxe.
 - Arrows that miss stay stuck where they land; press E to pick them back up.
 
 ## Spears
+- Hold RMB and click LMB to throw - or just tap RMB then LMB for a quick throw (a longer wind-up throws harder).
 - Thrown spears fly in an arc and stay in the world. Look at one and press **E** to pick it up.
 - A spear that hits a player (up to 60 damage at full wind-up) sticks in them. Anyone can press **E** on them to pull it out and keep it, including the victim. Spears stuck in you go into your loot bag if you die.
 

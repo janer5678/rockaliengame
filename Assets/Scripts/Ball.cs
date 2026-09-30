@@ -58,7 +58,7 @@ namespace RockGame
             m_Light.range = 8f;
             m_Light.intensity = 3f;
 
-            // Beacon: a tall translucent pillar of light that shoots to the sky when the ball sits in a base
+            // Beacon: a tall translucent pillar of light that always shoots up from the ball (gold loose, team colour when held / socketed)
             m_Beacon = new GameObject("beacon");
             m_Beacon.transform.SetParent(transform, false);
             var pillar = Art.Part(m_Beacon.transform, Art.Cylinder, Color.white, new Vector3(0, 150, 0), new Vector3(1.4f, 150, 1.4f), default, false, Art.Ghost(new Color(1, 1, 1, 0.35f)), "pillar");
@@ -74,7 +74,7 @@ namespace RockGame
             if (Instance == this) Instance = null;
         }
 
-        /// <summary>The beacon only shoots up while the ball sits in a machine socket.</summary>
+        /// <summary>The ball went into / out of a socket: the ding, and the light's colour and strength.</summary>
         void OnSocketChanged(sbyte prev, sbyte cur)
         {
             if (cur >= 0 && prev != cur)
@@ -82,11 +82,11 @@ namespace RockGame
                 Sfx.Play(Sfx.Zap, transform.position, 1f);
                 Sfx.Play(Sfx.Ding, transform.position, 0.8f);
             }
-            m_Beacon.SetActive(cur >= 0);
+            // the beacon is always on (so everyone can always find the ball); it takes the colour of the team that has it
+            m_Beacon.SetActive(true);
             if (cur >= 0)
             {
                 var c = Cfg.TeamColor[cur];
-                m_BeaconRenderer.sharedMaterial = Art.Ghost(new Color(c.r, c.g, c.b, 0.4f));
                 m_Light.color = c;
                 m_Light.range = 14f;
                 m_Light.intensity = 6f;
@@ -115,8 +115,25 @@ namespace RockGame
             if (IsServer) ServerTick();
         }
 
+        int m_BeaconTeam = -2;
+
+        /// <summary>Beacon colour: the socket's team, else the carrier's team, else gold (loose).</summary>
+        void TintBeacon()
+        {
+            int team = SocketTeam.Value >= 0 ? SocketTeam.Value : Carrier != null ? Carrier.Team.Value : -1;
+            if (team == m_BeaconTeam || m_BeaconRenderer == null) return;
+            m_BeaconTeam = team;
+            var c = team >= 0 ? Cfg.TeamColor[Mathf.Clamp(team, 0, 3)] : new Color(1f, 0.85f, 0.3f);
+            m_BeaconRenderer.sharedMaterial = Art.Ghost(new Color(c.r, c.g, c.b, team >= 0 ? 0.4f : 0.3f));
+        }
+
         void LateUpdate()
         {
+            TintBeacon();
+            // (whoever is carrying it doesn't get a pillar of light through their own view)
+            var holder = Carrier;
+            bool beacon = holder == null || !holder.IsOwner;
+            if (m_Beacon.activeSelf != beacon) m_Beacon.SetActive(beacon);
             // Clients: render the carried ball in the carrier's arms (avoids interpolation lag).
             // The carrier themselves sees it in their first-person hands instead.
             var carrier = Carrier;
@@ -152,7 +169,7 @@ namespace RockGame
             }
 
             var p = transform.position;
-            if (!IsCarried && SocketTeam.Value < 0)
+            if (!IsCarried && SocketTeam.Value < 0 && !Cfg.Builder) // Builder has no machine goal
             {
                 // rolled or thrown into a machine's socket: it locks in
                 for (int t = 0; t < Cfg.TeamCount; t++)

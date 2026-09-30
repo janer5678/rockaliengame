@@ -133,7 +133,9 @@ namespace RockGame
             m_NextSwing = Time.time + 0.6f;
             var ray = CenterRay();
             Vector3 origin = SafeOrigin(ray, 0.7f);
-            Vector3 vel = kind == Item.RocketLauncher ? ray.direction * Cfg.RocketSpeed : ray.direction * 16f + Vector3.up * 2.5f;
+            Vector3 vel = kind == Item.RocketLauncher ? ray.direction * Cfg.RocketSpeed
+                : kind == Item.EnderPearl ? ray.direction * Cfg.EnderPearlSpeed + Vector3.up * 1.5f
+                : ray.direction * 16f + Vector3.up * 2.5f;
             ArrowProjectile.SpawnThrown(kind, origin, vel, m_Net, kind != Item.BuildEgg);
             m_Net.ThrowItemRpc(kind, origin, vel);
             if (kind == Item.RocketLauncher) { m_VM.Use(); Fx.Kick(5f); Fx.Shake(0.3f); }

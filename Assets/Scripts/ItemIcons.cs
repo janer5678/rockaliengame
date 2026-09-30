@@ -139,7 +139,7 @@ namespace RockGame
         {
             switch (i)
             {
-                case Item.Spear: case Item.Arrow: case Item.Hatchet: case Item.Pickaxe: case Item.DeathWand: case Item.GiantStaff:
+                case Item.Spear: case Item.Arrow: case Item.Hatchet: case Item.Pickaxe: case Item.DeathWand: case Item.GiantStaff: case Item.TreeCracker:
                     t.localRotation = Quaternion.Euler(0, 0, -40); break;
                 case Item.Bow:
                     t.localRotation = Quaternion.Euler(0, 90, -35); break;
@@ -148,6 +148,7 @@ namespace RockGame
                 case Item.Helmet:
                     t.localRotation = Quaternion.Euler(0, 150, 0); break;
                 case Item.Car:
+                case Item.Boat:
                 case Item.Saddle:
                 case Item.Wallhack:
                 case Item.Jetpack:
@@ -156,6 +157,7 @@ namespace RockGame
                 case Item.Chainsaw:
                 case Item.Crossbow:
                 case Item.Sniper:
+                case Item.Pistol:
                 case Item.PortalGun:
                 case Item.RocketLauncher:
                     t.localRotation = Quaternion.Euler(0, 55, 0); break;

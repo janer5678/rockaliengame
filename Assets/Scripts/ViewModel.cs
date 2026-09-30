@@ -175,6 +175,7 @@ namespace RockGame
             {
                 case Item.Rock: PoseRock(shared, sharedRot, swinging, swingE); break;
                 case Item.Hatchet:
+                case Item.TreeCracker:
                 case Item.Pickaxe: PoseTool(shared, sharedRot, swinging, swingE); break;
                 case Item.Spear: PoseSpear(s, shared, sharedRot, swinging, swingE); break;
                 case Item.Bow: PoseBow(s, shared, sharedRot); break;
@@ -182,6 +183,7 @@ namespace RockGame
                 case Item.Chainsaw: PoseChainsaw(s, shared, sharedRot); break;
                 case Item.Crossbow:
                 case Item.Sniper:
+                case Item.Pistol:
                 case Item.PortalGun:
                 case Item.RocketLauncher: PoseCrossbow(s, shared, sharedRot); break;
                 case Item.None: HideLeft(); Set(m_R, new Vector3(0.3f, -0.9f, 0.2f), Quaternion.identity); break;
