@@ -49,7 +49,40 @@ namespace RockGame
             Check(Cfg.MapKey >> Cfg.RulesShift != 0 || Cfg.Rules == GameRules.Classic, "the game mode is in the map key (synced to clients)");
             switch (Cfg.Rules)
             {
-                case GameRules.Arsenal: yield return ArsenalTests(me, pc, g, team); break;
+                case GameRules.Arsenal: yield return ArsenalTests(me, pc, g, team); yield return BlastAndRamTests(me, pc, g, team); break;
+                case GameRules.Primitive:
+                case GameRules.FunRandomLimited:
+                case GameRules.BuildingPrimitive:
+                {
+                    var names = new System.Text.StringBuilder();
+                    bool only = Cfg.RecipeCount == 4;
+                    for (int i = 0; i < Cfg.RecipeCount; i++)
+                    {
+                        var o = Cfg.GetRecipe(i).Output;
+                        names.Append(o).Append(' ');
+                        only &= o == Item.Hatchet || o == Item.Spear || o == Item.BuildingPlan || o == Item.Ram;
+                    }
+                    Check(only && Cfg.PowerCount == 0, $"{Cfg.RulesName(Cfg.Rules)}: only {names}can be crafted");
+                    pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
+                    yield return new WaitForSeconds(0.3f);
+                    pc.MenuOpen = true;
+                    yield return Snap("mode_" + rn + "_crafting");
+                    pc.CloseMenu();
+                    if (Cfg.Rules == GameRules.FunRandomLimited) yield return FunTests(me, pc, g, team);
+                    else if (Cfg.Rules == GameRules.BuildingPrimitive)
+                    {
+                        Check(Cfg.Builder && !Cfg.PowerMenu && Machine.ByTeam[team] == null, "Building Primitive: Builder's rules (no bases), no power items");
+                        me.ServerGive(Item.Wood, 1000);
+                        yield return new WaitForSeconds(0.2f);
+                        me.CraftRpc(Cfg.RecipeIndex(Item.Spear));
+                        me.CraftRpc(Cfg.RecipeIndex(Item.Hatchet));
+                        yield return new WaitForSeconds(0.4f);
+                        Check(me.CraftingItem.Value == (byte)Item.Spear && me.CraftQueue.Count == 1, "crafting takes a while, with the queue");
+                        yield return Snap("mode_buildingprimitive_queue");
+                    }
+                    else Check(!Cfg.FunRules && NetGame.Instance.NextFunItem.Value < 0, "Primitive is the normal game otherwise (no free items)");
+                    break;
+                }
                 case GameRules.Builder: yield return BuilderTests(me, pc, g, team); break;
                 default: yield return FunTests(me, pc, g, team); break;
             }
@@ -72,16 +105,14 @@ namespace RockGame
             // the pistol (5 shots, no ammo to buy)
             me.CraftRpc(Cfg.PowerBase + 0);
             yield return new WaitForSeconds(0.3f);
-            Check(me.Count(Item.Pistol) == 1 && w0 - me.Count(Item.Wood) == 10000, $"bought a pistol ({w0 - me.Count(Item.Wood)} wood)");
+            Check(me.Count(Item.Pistol) == 1 && w0 - me.Count(Item.Wood) == Cfg.PistolWood, $"bought a pistol ({w0 - me.Count(Item.Wood)} wood)");
             yield return Hold(me, Item.Pistol);
             Check(me.HeldStack.Data == 5, $"the pistol has 5 shots ({me.HeldStack.Data})");
             yield return Snap("arsenal_pistol");
             var fwd = me.transform.forward;
-            me.FirePistolRpc(me.EyePos, fwd * Cfg.PistolSpeed);
-            yield return new WaitForSeconds(0.3f);
-            me.ArrowLandRpc(me.transform.position + fwd * 10f, fwd);
+            me.FirePistolRpc(false, default, me.EyePos + fwd * 30f, fwd);
             yield return new WaitForSeconds(0.4f);
-            Check(me.HeldStack.Data == Cfg.PistolMag - 1 && FindWorldItem(Item.Arrow) < 0, $"a shot uses a round ({me.HeldStack.Data} left) and leaves no arrow behind");
+            Check(me.HeldStack.Data == Cfg.PistolMag - 1 && FindWorldItem(Item.Arrow) < 0, $"a shot uses a round ({me.HeldStack.Data} left), hitscan with nothing left behind");
             me.ReloadPistolRpc();
             yield return new WaitForSeconds(0.4f);
             Check(me.HeldStack.Data == Cfg.PistolMag - 1, "no reloading without ammo");
@@ -137,8 +168,11 @@ namespace RockGame
             me.CraftRpc(Cfg.PowerBase + 1);
             yield return new WaitForSeconds(0.5f);
             int stone = 0, still = 0;
-            foreach (var s in Structure.All) if (s.Team.Value == team && s.Upgradable) { if (s.Tier.Value == 1) stone++; else still++; }
-            Check(wood >= 2 && stone >= wood && still == 0, $"fortify turned {stone} wooden pieces to stone");
+            foreach (var s in Structure.All) if (s.Team.Value == team && s.Upgradable) { if (s.Tier.Value == 2) stone++; else still++; }
+            Check(wood >= 2 && stone >= wood && still == 0, $"fortify turned {stone} pieces to metal");
+            var metalWall = Structure.All.Find(s => s.Team.Value == team && s.PType == PieceType.Wall);
+            Check(metalWall != null && metalWall.DisplayName == "Metal Wall" && Mathf.Approximately(metalWall.Health.Value, Cfg.PieceHp(PieceType.Wall, 1) * Cfg.MetalHpMul),
+                $"metal is tougher than stone ({(metalWall != null ? metalWall.Health.Value : 0):0} HP)");
 
             // tree cracker (a Fun mode item now) fells a tree in one hit
             me.ServerGive(Item.TreeCracker, 1, Cfg.TreeCrackerUses);
@@ -178,6 +212,54 @@ namespace RockGame
             pc.MenuOpen = true;
             yield return Snap("arsenal_power_menu");
             pc.CloseMenu();
+        }
+
+        /// <summary>Prices, arrows, your own C4 hitting your own base, and the ram going through a row of high external walls.</summary>
+        IEnumerator BlastAndRamTests(PlayerNet me, PlayerController pc, NetGame g, int team)
+        {
+            var arrows = Cfg.GetRecipe(Cfg.RecipeIndex(Item.Arrow));
+            Check(arrows.Wood == 50 && arrows.Count == 5, $"arrows: {arrows.Count} for {arrows.Wood} wood");
+            Check(Cfg.GetPowerRecipe(0).Wood == 5000 && Cfg.GetPowerRecipe(1).Wood == 5000, "pistol and fortify cost 5000");
+            Check(Cfg.PistolHeadDamage == 200f && Cfg.PistolBodyDamage == 95f, "pistol: 200 head, 95 body");
+
+            // our own C4 blows up our own high external wall and our own pieces
+            var bc = Cfg.BaseCenter[team];
+            var own = bc + new Vector3(-12f, 0, 12f * Mathf.Sign(-bc.z));
+            own.y = MapBuilder.Height(own.x, own.z);
+            var ogo = Instantiate(Bootstrap.I.structurePrefab, own, Quaternion.identity);
+            ogo.GetComponent<Structure>().ServerInit(PieceType.Barrier, team, default, false);
+            ogo.GetComponent<Unity.Netcode.NetworkObject>().Spawn(true);
+            var ownWall = ogo.GetComponent<Structure>();
+            g.ServerArmC4(own + new Vector3(0, 1f, -0.3f), Vector3.back, me);
+            pc.LocalTeleport(own + new Vector3(0, 0.1f, -14f), 0f);
+            yield return new WaitForSeconds(Cfg.C4Fuse + 0.8f);
+            Check(ownWall == null || !ownWall.IsSpawned, "our own C4 blew up our own high external wall");
+
+            // five enemy high external walls stacked one behind another, and two beside them: the ram takes the whole row
+            var row0 = bc + new Vector3(10f, 0, 6f * Mathf.Sign(-bc.z));
+            row0.y = MapBuilder.Height(row0.x, row0.z);
+            var rowWalls = new System.Collections.Generic.List<Structure>();
+            Structure Spawn(Vector3 at)
+            {
+                var go = Instantiate(Bootstrap.I.structurePrefab, at, Quaternion.identity);
+                go.GetComponent<Structure>().ServerInit(PieceType.Barrier, 1 - team, default, false);
+                go.GetComponent<Unity.Netcode.NetworkObject>().Spawn(true);
+                return go.GetComponent<Structure>();
+            }
+            for (int i = 0; i < 5; i++) rowWalls.Add(Spawn(row0 + new Vector3(0, 0, 0.6f * i)));
+            var besideA = Spawn(row0 + new Vector3(4.2f, 0, 0));
+            var besideB = Spawn(row0 + new Vector3(-4.2f, 0, 0.6f));
+            me.ServerGive(Item.Ram, 1, Cfg.MaxData(Item.Ram));
+            yield return new WaitForSeconds(0.2f);
+            yield return Hold(me, Item.Ram);
+            pc.LocalTeleport(row0 + new Vector3(0, 0.1f, -2f), 0f);
+            yield return new WaitForSeconds(Cfg.RamWindup + 0.3f);
+            me.RamStrikeRpc(rowWalls[0].NetworkObject, row0 + new Vector3(0, 1.5f, -0.2f));
+            yield return new WaitForSeconds(0.5f);
+            int gone = 0;
+            foreach (var w in rowWalls) if (w == null || !w.IsSpawned) gone++;
+            bool sidesOk = besideA != null && besideA.IsSpawned && besideB != null && besideB.IsSpawned;
+            Check(gone == 5 && sidesOk, $"the ram smashed {gone}/5 walls stacked in a row and left the ones beside them");
         }
 
         IEnumerator BuilderTests(PlayerNet me, PlayerController pc, NetGame g, int team)

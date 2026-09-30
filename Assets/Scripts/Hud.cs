@@ -208,7 +208,6 @@ namespace RockGame
                         break;
                 }
             }
-            DrawCraftCountdown(me, k);
             if (phase != "" && Cfg.Rules != GameRules.Classic)
                 phase += $"   <size={Mathf.RoundToInt(15 * k)}><color=#ffd24a>{Cfg.RulesName(Cfg.Rules).ToUpper()}</color></size>";
             if (phase != "")
@@ -261,8 +260,15 @@ namespace RockGame
                 }
             }
 
-            // ---- messages (top right) ----
-            float my = 10;
+            // ---- the pistol's rounds, big, top left ----
+            if (me.HeldItem == Item.Pistol && !me.Dead.Value)
+            {
+                var ps = me.HeldStack;
+                Shadowed(new Rect(14, 150 * k, 320 * k, 70 * k), $"<b><size={Mathf.RoundToInt(52 * k)}>{ps.Data}</size></b><size={Mathf.RoundToInt(22 * k)}> / {Cfg.PistolMag}  PISTOL</size>", m_Label);
+            }
+
+            // ---- Builder crafting timers, then messages (top right) ----
+            float my = 10 + DrawCraftStack(me, k, 10);
             for (int i = s_Msgs.Count - 1; i >= 0; i--)
             {
                 float age = Time.time - s_Msgs[i].Time;
@@ -1012,28 +1018,36 @@ namespace RockGame
             return t == myTeam ? "<color=#ffdd55>The ball is in your base but NOT in the machine - it only counts in the socket!</color>" : $"<color=#ff7777>The ball is in the {Cfg.TeamName[t]} base (not in their machine yet)</color>";
         }
 
-        /// <summary>Builder: a big countdown for what you're crafting, with a bar, and the queue behind it.</summary>
-        void DrawCraftCountdown(PlayerNet me, float k)
+        /// <summary>
+        /// Builder: small crafting timers in the top right, stacked. The top one is being made (its bar runs down); the
+        /// ones queued under it wait with a full bar, and move up and start running down when their turn comes.
+        /// Returns how much height it used.
+        /// </summary>
+        float DrawCraftStack(PlayerNet me, float k, float top)
         {
-            if (me.CraftingItem.Value == 0 || me.CraftDoneAt.Value < 0) return;
-            float sw = Screen.width;
+            if (me.CraftingItem.Value == 0 || me.CraftDoneAt.Value < 0) return 0f;
+            float sw = Screen.width, w = 190 * k, h = 22 * k, x = sw - w - 10;
             double now = me.NetworkManager.ServerTime.Time;
-            float left = Mathf.Max(0f, (float)(me.CraftDoneAt.Value - now));
-            float total = Mathf.Max(0.01f, (float)(me.CraftDoneAt.Value - me.CraftStartAt.Value));
-            float w = 360 * k, h = 58 * k, x = (sw - w) / 2, y = 78 * k;
-            Fill(new Rect(x, y, w, h), new Color(0, 0, 0, 0.55f));
-            var icon = ItemIcons.Get((Item)me.CraftingItem.Value);
-            if (icon != null) GUI.DrawTexture(new Rect(x + 6 * k, y + 5 * k, h - 10 * k, h - 10 * k), icon, ScaleMode.ScaleToFit, true);
-            Shadowed(new Rect(x + h, y + 2 * k, w - h - 8 * k, 28 * k), $"<b>Crafting {Cfg.ItemName((Item)me.CraftingItem.Value)}</b>   <color=#ffd24a><b>{left:0.0}s</b></color>", m_Label);
-            var bar = new Rect(x + h, y + 32 * k, w - h - 10 * k, 12 * k);
-            Fill(bar, new Color(1, 1, 1, 0.15f));
-            Fill(new Rect(bar.x, bar.y, bar.width * Mathf.Clamp01(1f - left / total), bar.height), new Color(1f, 0.82f, 0.3f));
-            if (me.CraftQueue.Count > 0)
+            float y = top;
+            void Row(Item id, float left, float total)
             {
-                var sb = new System.Text.StringBuilder("Queue: ");
-                for (int i = 0; i < me.CraftQueue.Count; i++) sb.Append(i > 0 ? ", " : "").Append(Cfg.ItemName((Item)me.CraftQueue[i]));
-                Shadowed(new Rect(x, y + h + 2 * k, w, 22 * k), sb.ToString(), m_Center);
+                Fill(new Rect(x, y, w, h), new Color(0, 0, 0, 0.5f));
+                Fill(new Rect(x, y + h - 4 * k, w * Mathf.Clamp01(left / Mathf.Max(0.01f, total)), 4 * k), new Color(1f, 0.82f, 0.3f));
+                var icon = ItemIcons.Get(id);
+                if (icon != null) GUI.DrawTexture(new Rect(x + 2, y + 1, h - 4 * k, h - 4 * k), icon, ScaleMode.ScaleToFit, true);
+                GUI.Label(new Rect(x + h, y - 1, w - h - 44 * k, h), Cfg.ItemName(id), m_Small);
+                GUI.Label(new Rect(x + w - 44 * k, y - 1, 40 * k, h), $"{left:0.0}s", new GUIStyle(m_Small) { alignment = TextAnchor.UpperRight });
+                y += h + 3 * k;
             }
+            float total0 = Mathf.Max(0.01f, (float)(me.CraftDoneAt.Value - me.CraftStartAt.Value));
+            Row((Item)me.CraftingItem.Value, Mathf.Max(0f, (float)(me.CraftDoneAt.Value - now)), total0);
+            for (int i = 0; i < me.CraftQueue.Count; i++)
+            {
+                var id = (Item)me.CraftQueue[i];
+                float t = Cfg.CraftSecondsOf(id);
+                Row(id, t, t);
+            }
+            return y - top + 4 * k;
         }
 
         /// <summary>Arsenal / Builder: the powerful items, to the right of crafting.</summary>

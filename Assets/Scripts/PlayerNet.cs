@@ -766,7 +766,7 @@ namespace RockGame
             else if (no.TryGetComponent(out Structure s))
             {
                 if (s.Team.Value == Team.Value || !GameAllowsCombat) return;
-                float dmg = st.StructureDamage * (s.Tier.Value == 1 ? Cfg.StoneStructureMeleeMul : 1f);
+                float dmg = st.StructureDamage * (s.Tier.Value >= 2 ? Cfg.MetalMeleeMul : s.Tier.Value == 1 ? Cfg.StoneStructureMeleeMul : 1f);
                 s.ServerDamage(dmg);
                 Fx.Server(FxKind.StructureHit, point, -dir, OwnerClientId);
             }
@@ -811,8 +811,6 @@ namespace RockGame
         {
             if (m_PendingArrows.Count == 0) return;
             float damage = m_PendingArrows.Dequeue();
-            bool bullet = damage < 0f; // pistol rounds are queued negative: no arrow left behind
-            damage = Mathf.Abs(damage);
             if (!target.TryGet(out var no) || !GameAllowsCombat) return;
             if (no.TryGetComponent(out PlayerNet p))
             {
@@ -823,7 +821,7 @@ namespace RockGame
             if (no.TryGetComponent(out Vehicle v)) { v.ServerDamage(damage, this); return; }
             if (no.TryGetComponent(out Structure s) && s.Team.Value != Team.Value && s.Tier.Value == 0)
                 s.ServerDamage(Cfg.ArrowWoodStructureDamage);
-            if (!bullet) DropSpentArrow(point, dir);
+            DropSpentArrow(point, dir);
         }
 
         /// <summary>An arrow hit the ground or something static: it stays there and can be picked back up (E).</summary>
@@ -831,7 +829,7 @@ namespace RockGame
         public void ArrowLandRpc(Vector3 point, Vector3 dir)
         {
             if (m_PendingArrows.Count == 0) return;
-            if (m_PendingArrows.Dequeue() < 0f) return; // a bullet
+            m_PendingArrows.Dequeue();
             DropSpentArrow(point, dir);
         }
 
@@ -935,6 +933,40 @@ namespace RockGame
 
         // ---------------- battering ram ----------------
 
+        /// <summary>
+        /// The ram through a high external wall also smashes the ones stacked right behind it (in line with the hit, not
+        /// the ones beside it) - up to 5 in all, so a row of spammed walls doesn't stop a ram. Returns how many went.
+        /// </summary>
+        int ServerRamBarrierChain(Structure first, Vector3 point)
+        {
+            var dir = first.transform.position - EyePos;
+            dir.y = 0;
+            dir = dir.sqrMagnitude > 0.01f ? dir.normalized : transform.forward;
+            var cur = first;
+            int n = 0;
+            while (cur != null && n < 5)
+            {
+                var at = cur.transform.position;
+                cur.ServerDamage(cur.Health.Value + 1f);
+                n++;
+                Structure next = null;
+                float best = float.MaxValue;
+                foreach (var s in Structure.All)
+                {
+                    if (s == null || !s.IsSpawned || s.PType != PieceType.Barrier || s.Team.Value == Team.Value) continue;
+                    var d = s.transform.position - at;
+                    d.y = 0;
+                    float along = Vector3.Dot(d, dir);
+                    float side = (d - dir * along).magnitude;
+                    if (along < 0.05f || along > 2.5f || side > 1.2f || along >= best) continue;
+                    best = along;
+                    next = s;
+                }
+                cur = next;
+            }
+            return n;
+        }
+
         /// <summary>Hand-held ram strike after a full wind-up: destroys a wooden piece / chest, knocks a stone piece down to wood.</summary>
         [Rpc(SendTo.Server)]
         public void RamStrikeRpc(NetworkObjectReference target, Vector3 point)
@@ -951,9 +983,14 @@ namespace RockGame
             if (no.TryGetComponent(out Structure s))
             {
                 if (s.Team.Value == Team.Value) return;
-                bool stone = s.Tier.Value == 1 && s.PType != PieceType.Barrier; // the high external wall always goes in one hit
-                msg = stone ? $"Smashed the {s.DisplayName} down to wood" : $"Smashed the {s.DisplayName}!";
-                if (stone) s.ServerDowngrade();
+                bool hard = s.Tier.Value >= 1 && s.PType != PieceType.Barrier; // the high external wall always goes in one hit
+                msg = hard ? $"Smashed the {s.DisplayName} down to {(s.Tier.Value >= 2 ? "stone" : "wood")}" : $"Smashed the {s.DisplayName}!";
+                if (s.PType == PieceType.Barrier)
+                {
+                    int chain = ServerRamBarrierChain(s, point);
+                    if (chain > 1) msg = $"Smashed {chain} high external walls in a row!";
+                }
+                else if (hard) s.ServerDowngrade();
                 else s.ServerDamage(s.Health.Value + 1f);
             }
             else if (no.TryGetComponent(out Container c) && c.Breakable && c.Team.Value != Team.Value)
@@ -1066,7 +1103,7 @@ namespace RockGame
             if (Time.time < m_NextUpgrade) return;
             if (!target.TryGet(out var no) || !no.TryGetComponent(out Structure s)) return;
             if (s.Team.Value != Team.Value || !s.HasKey || !s.Upgradable) return;
-            if (s.Tier.Value == 1) { Notify("Already stone"); return; }
+            if (s.Tier.Value >= 1) { Notify(s.Tier.Value >= 2 ? "Already metal" : "Already stone"); return; }
             if (Vector3.Distance(s.transform.position, transform.position) > Cfg.BuildRange + 4f) return;
             int cost = Cfg.PieceUpgradeStone(s.PType);
             if (!InvOps.Remove(Inv, Item.Stone, cost)) { Notify($"Need {cost} stone to upgrade"); return; }

@@ -1449,7 +1449,7 @@ namespace RockGame
                     AimText += "   X: demolish";
                 }
                 if (m_Net.HeldItem == Item.Ram && st.Team.Value != m_Net.Team.Value && hit.distance <= Cfg.RamRange)
-                    AimText += st.Tier.Value == 1 ? "   hold LMB: ram down to wood" : "   hold LMB: ram to smash";
+                    AimText += st.Tier.Value >= 2 && st.PType != PieceType.Barrier ? "   hold LMB: ram down to stone" : st.Tier.Value == 1 && st.PType != PieceType.Barrier ? "   hold LMB: ram down to wood" : "   hold LMB: ram to smash";
             }
             else if (no.TryGetComponent(out ResourceNode n))
                 AimText = n.IsBush ? "Berry Bush (empty)" : $"{n.DisplayName}  ({n.Amount.Value} {(n.Kind.Value == ResourceNode.Tree ? "wood" : "stone")} left)";

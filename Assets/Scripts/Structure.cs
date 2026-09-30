@@ -24,7 +24,7 @@ namespace RockGame
 
         public PieceType PType => (PieceType)Type.Value;
         public float MaxHp => Cfg.PieceHp(PType, Tier.Value);
-        public string DisplayName => PType == PieceType.Tower ? "Fort Tower" : PType == PieceType.Barrier ? "High External Wall" : PType == PieceType.EggBlock ? "Egg Block" : (Tier.Value == 1 ? "Stone " : "Wooden ") + Cfg.PieceName(PType);
+        public string DisplayName => PType == PieceType.Tower ? "Fort Tower" : PType == PieceType.Barrier ? "High External Wall" : PType == PieceType.EggBlock ? "Egg Block" : (Tier.Value >= 2 ? "Metal " : Tier.Value == 1 ? "Stone " : "Wooden ") + Cfg.PieceName(PType);
         public bool Upgradable => Cfg.IsGridPiece(PType);
 
         public override void OnNetworkSpawn()
@@ -102,16 +102,16 @@ namespace RockGame
             }
         }
 
-        public void ServerUpgrade()
+        public void ServerUpgrade(int tier = 1)
         {
-            Tier.Value = 1;
+            Tier.Value = (byte)tier;
             Health.Value = MaxHp;
         }
 
-        /// <summary>Battering ram hit on stone: knocked back down to a full-health wooden piece.</summary>
+        /// <summary>Battering ram hit: metal is knocked down to full-health stone, stone to full-health wood.</summary>
         public void ServerDowngrade()
         {
-            Tier.Value = 0;
+            Tier.Value = (byte)Mathf.Max(0, Tier.Value - 1);
             Health.Value = MaxHp;
         }
 
@@ -123,9 +123,10 @@ namespace RockGame
             var root = new GameObject("visual");
             root.transform.SetParent(parent, false);
             var tr = root.transform;
-            bool stone = tier == 1;
-            Color c = stone ? Art.Stone : Art.Wood;
-            Color trim = stone ? new Color(0.42f, 0.42f, 0.46f) : Art.DarkWood;
+            bool stone = tier >= 1;                 // stone and metal share their shapes
+            bool metal = tier >= 2;
+            Color c = metal ? new Color(0.55f, 0.58f, 0.62f) : stone ? Art.Stone : Art.Wood;
+            Color trim = metal ? new Color(0.3f, 0.32f, 0.36f) : stone ? new Color(0.42f, 0.42f, 0.46f) : Art.DarkWood;
             bool col = colliders;
 
             switch (t)

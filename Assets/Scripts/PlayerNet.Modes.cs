@@ -94,7 +94,7 @@ namespace RockGame
                     if (g != null)
                     {
                         int n = g.ServerFortify(Team.Value);
-                        g.Broadcast($"{Cfg.TeamLabel(Team.Value)} fortified all their walls - {n} piece{(n == 1 ? "" : "s")} turned to stone!");
+                        g.Broadcast($"{Cfg.TeamLabel(Team.Value)} fortified all their walls - {n} piece{(n == 1 ? "" : "s")} turned to METAL!");
                     }
                     break;
                 default:
@@ -114,9 +114,9 @@ namespace RockGame
 
         float m_NextPistol;
 
-        /// <summary>Pistol: a fast, hard-hitting round from the magazine (stack Data = rounds loaded).</summary>
+        /// <summary>Pistol: hitscan (the client says what its shot hit, like the sniper). 200 to the head, 95 to the body.</summary>
         [Rpc(SendTo.Server)]
-        public void FirePistolRpc(Vector3 origin, Vector3 velocity)
+        public void FirePistolRpc(bool hasTarget, NetworkObjectReference target, Vector3 point, Vector3 dir)
         {
             if (Dead.Value || CarryingBall || InSuddenDeath || HeldItem != Item.Pistol || Time.time < m_NextPistol) return;
             var st = HeldStack;
@@ -124,10 +124,26 @@ namespace RockGame
             Inv[HeldSlot.Value] = ItemStack.Of(Item.Pistol, 1, st.Data - 1);
             m_NextPistol = Time.time + Cfg.PistolFireRate * 0.8f;
             Reveal();
-            // negative = a bullet (it doesn't leave an arrow behind)
-            m_PendingArrows.Enqueue(-Cfg.PistolDamage);
-            while (m_PendingArrows.Count > 12) m_PendingArrows.Dequeue();
-            BulletVisualRpc(origin, velocity);
+            if (Vector3.Distance(point, EyePos) > 250f) point = EyePos + dir.normalized * 100f;
+            Fx.Server(FxKind.SniperTracer, EyePos + dir.normalized * 0.5f - Vector3.up * 0.15f, point);
+            if (!hasTarget || !target.TryGet(out var no) || !GameAllowsCombat) return;
+            if (no.TryGetComponent(out PlayerNet p) && p != this && !p.Dead.Value)
+            {
+                bool head = p.IsHeadshot(point);
+                if (head && p.HelmetHp.Value > 0)
+                {
+                    p.HelmetHp.Value = 0;
+                    Fx.Server(FxKind.HelmetBreak, p.EyePos, Vector3.up);
+                    p.Notify("Your helmet stopped a headshot and broke!");
+                    Notify("Their helmet stopped your headshot!");
+                    return;
+                }
+                p.ServerDamage(head ? Cfg.PistolHeadDamage : Cfg.PistolBodyDamage, this);
+                Fx.Server(head ? FxKind.BloodHead : FxKind.Blood, point, dir, OwnerClientId);
+                if (p.Dead.Value) KillConfirmRpc();
+            }
+            else if (no.TryGetComponent(out Vehicle v)) v.ServerDamage(Cfg.PistolBodyDamage, this);
+            else if (no.TryGetComponent(out Structure s) && s.Team.Value != Team.Value && s.Tier.Value == 0) s.ServerDamage(10f);
         }
 
         /// <summary>Fills the magazine from your pistol ammo.</summary>
@@ -144,13 +160,6 @@ namespace RockGame
             InvOps.Remove(Inv, Item.PistolAmmo, take);
             Inv[HeldSlot.Value] = ItemStack.Of(Item.Pistol, 1, st.Data + take);
             SpentRpc((byte)Item.PistolAmmo, take);
-        }
-
-        [Rpc(SendTo.NotOwner)]
-        void BulletVisualRpc(Vector3 origin, Vector3 velocity)
-        {
-            ArrowProjectile.SpawnBullet(origin, velocity, this, false, Cfg.PistolDamage);
-            Sfx.Play(Sfx.Sniper, origin, 0.55f, 0.1f, 120f);
         }
 
         // ---------------- ender pearl ----------------

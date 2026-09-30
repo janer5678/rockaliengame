@@ -127,11 +127,16 @@ namespace RockGame
 
             // game mode: separate ways to play (they don't mix)
             key = Bootstrap.MapChoice;
-            var rules = (GameRules)Mathf.Clamp((key >> Cfg.RulesShift) & Cfg.RulesMask, 0, (int)GameRules.FunRandom);
+            var rules = (GameRules)Mathf.Clamp((key >> Cfg.RulesShift) & Cfg.RulesMask, 0, (int)GameRules.BuildingPrimitive);
             int noRules = key & ~(Cfg.RulesMask << Cfg.RulesShift);
             GUILayout.BeginHorizontal();
             RowLabel("Game mode");
             foreach (var gr in new[] { GameRules.Classic, GameRules.Arsenal, GameRules.Builder })
+                if (Choice(rules == gr, Cfg.RulesName(gr), GUILayout.Height(30 * k))) boot.SetMapChoice(noRules | ((int)gr << Cfg.RulesShift));
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            GUILayout.Space(103 * k);
+            foreach (var gr in new[] { GameRules.Primitive, GameRules.BuildingPrimitive })
                 if (Choice(rules == gr, Cfg.RulesName(gr), GUILayout.Height(30 * k))) boot.SetMapChoice(noRules | ((int)gr << Cfg.RulesShift));
             GUILayout.EndHorizontal();
             GUILayout.BeginHorizontal();
@@ -141,11 +146,15 @@ namespace RockGame
             GUILayout.EndHorizontal();
             GUILayout.BeginHorizontal();
             GUILayout.Space(103 * k);
+            if (Choice(rules == GameRules.FunRandomLimited, "RANDOM FUN MODE LIMITED", GUILayout.Height(30 * k))) boot.SetMapChoice(noRules | ((int)GameRules.FunRandomLimited << Cfg.RulesShift));
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            GUILayout.Space(103 * k);
             GUILayout.Label($"<color=#ffd24a>{Cfg.RulesDesc(rules)}</color>", m_SmallWrap);
             GUILayout.EndHorizontal();
 
             // game length: how long behind the glass wall, then how long with the ball (fun modes: no wall, just the match)
-            bool funPick = rules == GameRules.Fun || rules == GameRules.FunRandom;
+            bool funPick = rules == GameRules.Fun || rules == GameRules.FunRandom || rules == GameRules.FunRandomLimited;
             GUILayout.BeginHorizontal();
             RowLabel("Game length");
             if (funPick)

@@ -843,16 +843,17 @@ namespace RockGame
                 if (now < m_C4[i].At) continue;
                 var c = m_C4[i];
                 m_C4.RemoveAt(i);
-                int n = ServerBlast(c.Pos, Cfg.C4Radius, c.Team, Cfg.C4PlayerDamage, -1f, Cfg.C4KillRadius, c.Thrower, false);
-                if (c.Thrower != null && n > 0) c.Thrower.NotifyPublic($"Your C4 destroyed {n} enemy piece{(n == 1 ? "" : "s")}!");
+                // (everyone's buildings - your own C4 blows up your own base too)
+                int n = ServerBlast(c.Pos, Cfg.C4Radius, -1, Cfg.C4PlayerDamage, -1f, Cfg.C4KillRadius, c.Thrower, false);
+                if (c.Thrower != null && n > 0) c.Thrower.NotifyPublic($"Your C4 destroyed {n} piece{(n == 1 ? "" : "s")}!");
             }
         }
 
         public void ServerRocket(Vector3 pos, PlayerNet shooter)
         {
             // rockets also blow up any trees in the blast (they fall and regrow like felled ones)
-            int n = ServerBlast(pos, Cfg.RocketRadius + 1f, shooter != null ? shooter.Team.Value : -1, Cfg.RocketPlayerDamage, Cfg.RocketStructureDamage, 0.8f, shooter, false, true);
-            if (shooter != null && n > 0) shooter.NotifyPublic($"Your rocket destroyed {n} enemy piece{(n == 1 ? "" : "s")}!");
+            int n = ServerBlast(pos, Cfg.RocketRadius + 1f, -1, Cfg.RocketPlayerDamage, Cfg.RocketStructureDamage, 0.8f, shooter, false, true); // your own base too
+            if (shooter != null && n > 0) shooter.NotifyPublic($"Your rocket destroyed {n} piece{(n == 1 ? "" : "s")}!");
         }
 
         /// <summary>

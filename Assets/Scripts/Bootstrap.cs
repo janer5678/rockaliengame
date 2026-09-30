@@ -113,7 +113,7 @@ namespace RockGame
                         if (i + 1 < args.Length)
                         {
                             string rs = args[i + 1].ToLowerInvariant();
-                            int rv = rs == "arsenal" ? 1 : rs == "builder" ? 2 : rs == "fun" ? 3 : rs == "funrandom" ? 4 : 0;
+                            int rv = rs == "arsenal" ? 1 : rs == "builder" ? 2 : rs == "fun" ? 3 : rs == "funrandom" ? 4 : rs == "funrandomlimited" ? 5 : rs == "primitive" ? 6 : rs == "buildingprimitive" ? 7 : 0;
                             MapChoice = (MapChoice & ~(Cfg.RulesMask << Cfg.RulesShift)) | (rv << Cfg.RulesShift);
                         }
                         break;

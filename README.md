@@ -24,9 +24,12 @@ Laid out top to bottom: **MATCH SETUP** (what the host picks), then **PLAY** (ho
 - **Game mode** - separate ways to play; they don't mix:
   - *Classic*: the original game.
   - *Arsenal*: normal prices (except the crossbow, 350 wood instead of 500), plus a **POWER ITEMS** menu to the right of crafting (see below).
-  - *Builder*: **no bases, no machines**. Arsenal's items and prices, but most crafts take a few seconds: a countdown with a progress bar shows at the top of the screen, and anything else you buy meanwhile goes in a **queue** under it (like Rust - one thing at a time, paid for up front). The building plan and Fortify All Walls are instant; you can **craft, build and put chests anywhere**; pieces **lock on to each other** Fortnite style (walls hang off the walls they touch, floors and stairs hold on to walls around them, ground-level walls reach down into the ground). **The ball** can't be thrown: anyone can pick it up, and **LMB (or E) puts it down** right in front of you - a block in your team's colour grows up under it and it's your team's ball. The ball always has a flag pointing at the sky (white when loose, the colour of whoever has it); set **Builder Flag Always Up** to Off in CHANGE VALUES to go back to a flag that only grows out while the ball is planted. When anyone picks the ball up, the block sinks away again. Whoever's ball it is (planted, not carried) when time runs out wins; otherwise it's sudden death.
+  - *Primitive*: the classic game, but the only things you can craft are the hatchet, spear, building plan and battering ram.
+  - *Building Primitive*: Builder's rules (below), but only those four primitive items and no power items.
+  - *Builder*: **no bases, no machines**. Arsenal's items and prices, but most crafts take a few seconds: small timers stack up in the top right: the top one is being made (its bar runs down), and anything else you buy meanwhile waits under it with a full bar, moving up and starting when its turn comes (like Rust - one thing at a time, paid for up front). The building plan and Fortify All Walls are instant; you can **craft, build and put chests anywhere**; pieces **lock on to each other** Fortnite style (walls hang off the walls they touch, floors and stairs hold on to walls around them, ground-level walls reach down into the ground). **The ball** can't be thrown: anyone can pick it up, and **LMB (or E) puts it down** right in front of you - a block in your team's colour grows up under it and it's your team's ball. The ball always has a flag pointing at the sky (white when loose, the colour of whoever has it); set **Builder Flag Always Up** to Off in CHANGE VALUES to go back to a flag that only grows out while the ball is planted. When anyone picks the ball up, the block sinks away again. Whoever's ball it is (planted, not carried) when time runs out wins; otherwise it's sudden death.
   - *FUN MODE*: no building phase - the wall is down and the ball is in from the start - and a 10 minute match. Everybody gets the **same** random item straight away and then every 45 s (any item in the game, the unused ones too). Free items land on the right of your hotbar, like wood does (then the inventory). No airdrops in the Fun modes.
   - *FUN RANDOM MODE*: the same, but only airdrop items (the unused ones too) and everyone gets a **different** one.
+  - *RANDOM FUN MODE LIMITED*: Fun Random, but you can only craft the hatchet, spear, building plan and battering ram.
   - In both Fun modes the **Game length** row changes to the match length and the free item interval (both - / +).
 - **Game length**: - / + for the time behind the glass wall (building, 30 s steps) and the time with the ball (1 min steps). Saved on this PC; the host's are used.
 - While waiting for everyone to join, players brawl with rocks in the stadium; when the lobby is full everyone is sent to their base and the match starts.
@@ -48,8 +51,8 @@ Bought with wood from the POWER ITEMS column next to crafting (in your base; any
 
 | Item | Wood | What it does |
 |---|---|---|
-| Pistol | 10000 | 5 shots, 34 damage each, fast and flat. No ammo to buy - when the 5 are gone, it's empty. |
-| Fortify All Walls | 10000 | Every wooden piece your team has placed turns to stone at full health. |
+| Pistol | 5000 | Hitscan. 5 shots: 200 to the head, 95 to the body. No ammo to buy. While you hold it, the rounds left show big in the top left. |
+| Fortify All Walls | 5000 | Every piece your team has placed (wood or stone) turns to **metal**: twice stone's HP, melee barely scratches it, a ram knocks it down to stone. |
 
 All these numbers are in CHANGE VALUES under "Arsenal and Builder" (and "Fun modes" for the item interval and Fun match length).
 
@@ -83,7 +86,7 @@ Everything for the five theme maps is in `Assets/Scripts/ThemeMaps/` (terrain, p
 
 | Item | What it does |
 |---|---|
-| C4 | Thrown. After 3 s it destroys every enemy building piece, barrier and chest within 5 m and hurts players nearby; right on top of it you die. |
+| C4 | Thrown. After 3 s it destroys every building piece, high external wall and chest within 5 m - yours too and hurts players nearby; right on top of it you die. |
 | Death Wand | One shot. Anyone the bolt passes close to, or who is near where it hits, dies instantly. |
 | Alien Helmet | Put it on: the next headshot does no damage and breaks it. Drops if you die wearing it. |
 | Armour | Put it on: 100 extra health in a second bar, used up first. Drops with the health it had left. |
@@ -149,7 +152,7 @@ Everything for the five theme maps is in `Assets/Scripts/ThemeMaps/` (terrain, p
 | Spear | 75 wood |
 | Building Plan | 5 wood |
 | Bow | 100 wood, 15 stone |
-| Arrow | 10 wood |
+| Arrows (5) | 50 wood |
 | Crossbow (55 damage, flat and fast) | 500 wood |
 | Armour (goes straight on: 100 extra health) | 500 wood |
 | Chainsaw (67 uses) | 500 wood |
@@ -194,7 +197,7 @@ In wood mode the stone part is added to the wood cost and there's no pickaxe.
 | Doorway | 350 | 1200 |
 | Foundation | 500 | 1800 |
 
-- **Ram**: a hand-held log. Hold LMB for 1.5 s next to an enemy piece: **wooden pieces, chests and high external walls break instantly** (in every mode), **stone pieces are knocked back down to full-HP wood**. 3 hits per ram. You move 25% slower while holding it.
+- **Ram**: a hand-held log. Hold LMB for 1.5 s next to an enemy piece: **wooden pieces, chests and high external walls break instantly** (in every mode) - and a high external wall takes the ones stacked right behind it with it (up to 5 in a row; not the ones beside it), **stone pieces are knocked back down to full-HP wood**. 3 hits per ram. You move 25% slower while holding it.
 - Player damage: rock 12, hatchet/pickaxe 14, spear 35 (stab) / 60 (thrown), arrow up to 50 at full draw, crossbow 55. **Headshots do x2** for everything.
 - Weapons do double damage to buildings compared to before.
 - You can't shoot through the glass wall by standing right up against it.

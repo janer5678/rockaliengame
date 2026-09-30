@@ -19,11 +19,20 @@ namespace RockGame
             if (!Binds.Down(Bind.Attack) || Time.time < m_NextPistolShot) return;
             if (st.Data <= 0) { StartPistolReload(); return; }
             m_NextPistolShot = Time.time + Cfg.PistolFireRate;
+            // hitscan: whatever the crosshair is on, right now
             var ray = CenterRay();
-            Vector3 origin = SafeOrigin(ray, 0.5f);
-            Vector3 vel = ray.direction * Cfg.PistolSpeed;
-            ArrowProjectile.SpawnBullet(origin, vel, m_Net, true, Cfg.PistolDamage);
-            m_Net.FirePistolRpc(origin, vel);
+            bool hit = AimWithAssist(ray, 250f, Cfg.ProjectileAssist, out var h);
+            var no = hit ? h.collider.GetComponentInParent<Unity.Netcode.NetworkObject>() : null;
+            var point = hit ? h.point : ray.GetPoint(250f);
+            if (no != null && no.TryGetComponent(out PlayerNet p) && p != m_Net && !p.Dead.Value)
+            {
+                bool head = p.IsHeadshot(point);
+                Fx.Blood(point, ray.direction, head);
+                Fx.DamageNumber(point, head ? Cfg.PistolHeadDamage : Cfg.PistolBodyDamage, head);
+                Hud.HitMarker(!(head && p.HelmetHp.Value > 0), head);
+            }
+            m_Net.FirePistolRpc(no != null, no != null ? new Unity.Netcode.NetworkObjectReference(no) : default, point, ray.direction);
+            Fx.Tracer(ray.origin + ray.direction * 0.5f - Vector3.up * 0.15f, point);
             m_VM.Use();
             Sfx.Play2D(Sfx.Sniper, 0.45f, 0.08f);
             Fx.Kick(2f);

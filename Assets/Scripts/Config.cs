@@ -20,7 +20,7 @@ namespace RockGame
     /// item (any item in the game). Fun Random - every 9 s each player gets their own random airdrop item.
     /// (Synced in 3 bits of the map key: never reorder.)
     /// </summary>
-    public enum GameRules : byte { Classic, Arsenal, Builder, Fun, FunRandom }
+    public enum GameRules : byte { Classic, Arsenal, Builder, Fun, FunRandom, FunRandomLimited, Primitive, BuildingPrimitive }
 
     public enum PieceType : byte { Foundation, Wall, Doorway, Floor, Stairs, Barrier, Window, Tower, EggBlock }
 
@@ -86,17 +86,23 @@ namespace RockGame
         /// <summary>Arsenal and Builder: cheap items and the powerful items menu.</summary>
         public static bool PowerMenu => Rules == GameRules.Arsenal || Rules == GameRules.Builder;
         /// <summary>Builder: craft anywhere (with a wait), build anywhere, win with the ball in your own fort.</summary>
-        public static bool Builder => Rules == GameRules.Builder;
-        public static bool FunRules => Rules == GameRules.Fun || Rules == GameRules.FunRandom;
-        public static string RulesName(GameRules r) => r == GameRules.Arsenal ? "Arsenal" : r == GameRules.Builder ? "Builder" : r == GameRules.Fun ? "Fun" : r == GameRules.FunRandom ? "Fun Random" : "Classic";
+        public static bool Builder => Rules == GameRules.Builder || Rules == GameRules.BuildingPrimitive;
+        public static bool FunRules => Rules == GameRules.Fun || Rules == GameRules.FunRandom || Rules == GameRules.FunRandomLimited;
+        /// <summary>Fun Random Limited and Primitive: only the hatchet, spear, building plan and ram can be crafted.</summary>
+        public static bool LimitedCrafting => Rules == GameRules.FunRandomLimited || Rules == GameRules.Primitive || Rules == GameRules.BuildingPrimitive;
+        public static string RulesName(GameRules r) => r == GameRules.Arsenal ? "Arsenal" : r == GameRules.Builder ? "Builder" : r == GameRules.Fun ? "Fun"
+            : r == GameRules.FunRandom ? "Fun Random" : r == GameRules.FunRandomLimited ? "Fun Random Limited" : r == GameRules.Primitive ? "Primitive" : r == GameRules.BuildingPrimitive ? "Building Primitive" : "Classic";
         public static string RulesDesc(GameRules r)
         {
             switch (r)
             {
-                case GameRules.Arsenal: return "Everything costs much less, and a POWER ITEMS menu next to crafting: pistol, heavy armour, tree cracker, C4, fortify all walls, auto wood.";
+                case GameRules.Arsenal: return "Normal prices (the crossbow is cheaper), plus a POWER ITEMS menu next to crafting: a 5-shot pistol and Fortify All Walls (turns your walls to metal).";
                 case GameRules.Builder: return "No bases. Arsenal's items, but each takes a while to make. Craft and build anywhere - pieces lock onto each other. Plant the ball anywhere (E): whoever's ball it is at the end wins.";
                 case GameRules.Fun: return "No building phase, a short match, and every so often everyone gets the same random item - any item in the game.";
                 case GameRules.FunRandom: return "No building phase, a short match, and every so often each player gets their own random airdrop item.";
+                case GameRules.FunRandomLimited: return "Fun Random, but the only things you can craft are the hatchet, spear, building plan and battering ram.";
+                case GameRules.Primitive: return "The original game, but the only things you can craft are the hatchet, spear, building plan and battering ram.";
+                case GameRules.BuildingPrimitive: return "Builder (no bases, build anywhere, plant the ball), but the only things you can craft are the hatchet, spear, building plan and battering ram - no power items.";
                 default: return "The original game: gather, build your base, craft in it, get the ball into your machine.";
             }
         }
@@ -142,7 +148,7 @@ namespace RockGame
             AirdropCenter = (key & CenterBit) != 0;
             RespawnLoot = (key & RespawnLootBit) != 0;
             Mode = (GameMode)((key >> ModeShift) & ModeMask);
-            Rules = (GameRules)Mathf.Clamp((key >> RulesShift) & RulesMask, 0, (int)GameRules.FunRandom);
+            Rules = (GameRules)Mathf.Clamp((key >> RulesShift) & RulesMask, 0, (int)GameRules.BuildingPrimitive);
             TeamCount = ModeTeams(Mode);
             MapSeed = seed;
             // on the 3 m building grid, or the grid wouldn't line up with the base area
@@ -316,7 +322,7 @@ namespace RockGame
         [Tune("Crafting")] public static int PlanWood = 5;
         [Tune("Crafting")] public static int HatchetWood = 50, HatchetStone = 0, PickaxeWood = 30, PickaxeStone = 10;
         [Tune("Crafting")] public static int SpearWood = 75, SpearStone = 0, BowWood = 100, BowStone = 15;
-        [Tune("Crafting")] public static int ArrowWood = 10, ArrowStone = 0, ArrowsPerCraft = 1;
+        [Tune("Crafting")] public static int ArrowWood = 50, ArrowStone = 0, ArrowsPerCraft = 5;
         [Tune("Crafting")] public static int RamWood = 125, RamStone = 50;
         [Tune("Crafting")] public static int ChestWood = 50, BarrierWood = 40;
         [Tune("Crafting")] public static int CrossbowWood = 500, SaddleWood = 1000, ArmorWood = 500, ChainsawWood = 500;
@@ -332,8 +338,12 @@ namespace RockGame
         [Tune("Arsenal and Builder")] public static int ModesCrossbowWood = 350;
         /// <summary>Builder: the ball always has a flag pointing at the sky (on), or only grows one while it's planted (off).</summary>
         [Tune("Arsenal and Builder")] public static bool BuilderFlagAlwaysUp = true;
-        [Tune("Arsenal and Builder")] public static int FortifyWood = 10000, PistolWood = 10000;
-        [Tune("Arsenal and Builder")] public static float PistolDamage = 34f, PistolSpeed = 160f, PistolFireRate = 0.22f, PistolReload = 1.3f;
+        [Tune("Arsenal and Builder")] public static int FortifyWood = 5000, PistolWood = 5000;
+        /// <summary>Pistol: hitscan, this much damage a shot (a headshot has its own number instead of the usual x2).</summary>
+        [Tune("Arsenal and Builder")] public static float PistolHeadDamage = 200f, PistolBodyDamage = 95f;
+        /// <summary>Metal (Fortify All Walls): this many times the stone HP; melee does this share of its damage.</summary>
+        [Tune("Building HP")] public static float MetalHpMul = 2f, MetalMeleeMul = 0.1f;
+        [Tune("Arsenal and Builder")] public static float PistolFireRate = 0.22f, PistolReload = 1.3f;
         [Tune("Arsenal and Builder")] public static int PistolMag = 5, HeavyArmorHp = 200, TreeCrackerUses = 40;
         /// <summary>Builder: every craft takes a while (seconds per 100 wood of its price, between the min and max).</summary>
         [Tune("Arsenal and Builder")] public static float BuilderCraftSecsPer100 = 0.6f, BuilderCraftMin = 2f, BuilderCraftMax = 20f;
@@ -538,6 +548,7 @@ namespace RockGame
         }
         public static float PieceHp(PieceType t, int tier)
         {
+            if (tier >= 2) return PieceHp(t, 1) * MetalHpMul; // metal
             bool stone = tier == 1;
             switch (t)
             {
@@ -557,16 +568,28 @@ namespace RockGame
         // ---------- Crafting ----------
         static readonly Item[] k_Recipes = { Item.Hatchet, Item.Pickaxe, Item.Spear, Item.BuildingPlan, Item.Bow, Item.Arrow, Item.Crossbow, Item.Armor, Item.Chainsaw, Item.Ram, Item.Chest, Item.Barrier, Item.Saddle };
 
-        /// <summary>Recipes available in this mode (wood mode has no pickaxe).</summary>
-        public static int RecipeCount => (WoodMode ? k_Recipes.Length - 1 : k_Recipes.Length)
-            + (ThemeMaps.HasWater ? 1 : 0); // THEME MAPS (the boat)
+        static readonly Item[] k_Limited = { Item.Hatchet, Item.Spear, Item.BuildingPlan, Item.Ram };
+        static readonly List<Item> s_Active = new List<Item>();
+
+        /// <summary>What can be crafted in this mode, in menu order (wood mode has no pickaxe; Primitive / Fun Random Limited only the basics).</summary>
+        static List<Item> ActiveRecipes()
+        {
+            s_Active.Clear();
+            if (LimitedCrafting) { s_Active.AddRange(k_Limited); return s_Active; }
+            foreach (var it in k_Recipes) if (!(WoodMode && it == Item.Pickaxe)) s_Active.Add(it);
+            if (ThemeMaps.HasWater) s_Active.Add(Item.Boat); // THEME MAPS (the boat)
+            return s_Active;
+        }
+
+        public static int RecipeCount => ActiveRecipes().Count;
 
         public static Recipe GetRecipe(int i)
         {
-            if (ThemeMaps.HasWater && i == RecipeCount - 1) return ThemeMaps.BoatRecipe; // THEME MAPS
-            if (WoodMode && i >= 1) i++; // skip the pickaxe (second in the list)
+            var list = ActiveRecipes();
+            var id = list[Mathf.Clamp(i, 0, list.Count - 1)];
+            if (id == Item.Boat) return ThemeMaps.BoatRecipe; // THEME MAPS
             Recipe r;
-            switch (k_Recipes[Mathf.Clamp(i, 0, k_Recipes.Length - 1)])
+            switch (id)
             {
                 case Item.BuildingPlan: r = new Recipe { Output = Item.BuildingPlan, Count = 1, Wood = PlanWood }; break;
                 case Item.Hatchet: r = new Recipe { Output = Item.Hatchet, Count = 1, Wood = HatchetWood, Stone = HatchetStone }; break;
@@ -613,9 +636,17 @@ namespace RockGame
         {
             switch (id)
             {
-                case Item.Pistol: return $"{PistolMag} shots, {PistolDamage:0} dmg each - no reloads, make them count";
-                default: return "turns all your team's wooden pieces to stone";
+                case Item.Pistol: return $"{PistolMag} shots, {PistolBodyDamage:0} body / {PistolHeadDamage:0} head - no reloads";
+                default: return "turns all your team's building pieces to metal";
             }
+        }
+
+        /// <summary>Builder: how long a queued item will take (from its recipe).</summary>
+        public static float CraftSecondsOf(Item id)
+        {
+            for (int i = 0; i < PowerCount; i++) if (GetPowerRecipe(i).Output == id) return CraftSeconds(GetPowerRecipe(i));
+            int k = RecipeIndex(id);
+            return k >= 0 ? CraftSeconds(GetRecipe(k)) : 0f;
         }
 
         /// <summary>Builder: how long an item takes to make (by its price).</summary>

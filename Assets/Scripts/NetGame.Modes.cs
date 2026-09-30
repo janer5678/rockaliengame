@@ -13,14 +13,14 @@ namespace RockGame
         public readonly NetworkVariable<double> NextFunItem = new NetworkVariable<double>(-1);
 
 
-        /// <summary>Fortify: every wooden grid piece the team has placed turns to stone at full health. Returns how many.</summary>
+        /// <summary>Fortify: every grid piece the team has placed (wood or stone) turns to metal at full health. Returns how many.</summary>
         public int ServerFortify(int team)
         {
             int n = 0;
             foreach (var s in Structure.All)
             {
-                if (s == null || !s.IsSpawned || s.Team.Value != team || s.Tier.Value != 0 || !s.Upgradable) continue;
-                s.ServerUpgrade();
+                if (s == null || !s.IsSpawned || s.Team.Value != team || s.Tier.Value >= 2 || !s.Upgradable) continue;
+                s.ServerUpgrade(2);
                 n++;
             }
             return n;
