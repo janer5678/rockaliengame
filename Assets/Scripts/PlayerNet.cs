@@ -39,6 +39,8 @@ namespace RockGame
         public readonly NetworkVariable<float> Pitch = new NetworkVariable<float>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
         public readonly NetworkVariable<bool> Crouch = new NetworkVariable<bool>(false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
         public readonly NetworkVariable<bool> Jetting = new NetworkVariable<bool>(false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
+        /// <summary>What the player is doing (sliding, drawing a bow, aiming, eating...) so everyone sees it on their body (BodyAnimator.Act).</summary>
+        public readonly NetworkVariable<byte> Action = new NetworkVariable<byte>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
 
         public ItemStack SlotAt(int i) => i >= 0 && i < Inv.Count ? Inv[i] : default;
         public ItemStack HeldStack => SlotAt(HeldSlot.Value);
@@ -91,7 +93,7 @@ namespace RockGame
         readonly List<Renderer> m_TeamRenderers = new List<Renderer>();
         readonly List<Material> m_TeamMats = new List<Material>();
         readonly List<GameObject> m_StuckVisuals = new List<GameObject>();
-        float m_Swing, m_CrouchVis;
+        float m_Swing, m_CrouchVis, m_Throw;
 
         public override void OnNetworkSpawn()
         {
@@ -415,6 +417,7 @@ namespace RockGame
             if (flame != (m_Flame != null)) RebuildFlame(flame);
             if (m_Flame) m_Flame.transform.localScale = new Vector3(1f, 0.8f + Random.value * 0.5f, 1f);
             if (m_Swing > 0) m_Swing = Mathf.Max(0, m_Swing - Time.deltaTime / 0.55f);
+            if (m_Throw > 0) m_Throw = Mathf.Max(0, m_Throw - Time.deltaTime / 0.5f);
             if (m_Anim == null && !IsOwner) m_Head.localRotation = Quaternion.Euler(Pitch.Value * 0.6f, 0, 0);
             if (m_Anim == null && m_Swing > 0) m_Hand.localRotation = Quaternion.Euler(Mathf.Sin(m_Swing * Mathf.PI) * 80f, 0, 0);
 
@@ -441,6 +444,8 @@ namespace RockGame
                 TwoHanded = item == Item.Rock || item == Item.Spear || item == Item.Ram || item == Item.Chainsaw || item == Item.Crossbow,
                 Pitch = Pitch.Value,
                 Swing = m_Swing,
+                Action = (BodyAnimator.Act)Action.Value,
+                Throw = m_Throw,
             }, Time.deltaTime);
             m_Anim.GripPose(out var gp, out var gr);
             m_Hand.SetPositionAndRotation(gp, gr);
@@ -1262,6 +1267,7 @@ namespace RockGame
                 vel += Vector3.ClampMagnitude(mountVel, Cfg.HorseSprint * 1.3f);
             }
             Ball.Instance.ServerThrow(this, pos, vel, mount);
+            ThrowAnimRpc();
         }
 
         // =====================================================================
@@ -1305,6 +1311,13 @@ namespace RockGame
             Sfx.Play2D(Sfx.Pop, 0.5f);
         }
 
+        /// <summary>Everyone else sees this player throw (the ball; spears and C4 do it in their own visual RPCs).</summary>
+        [Rpc(SendTo.NotOwner)]
+        public void ThrowAnimRpc() => m_Throw = 1f;
+
+        /// <summary>Owner side: the throw shows on your own body too (seen in third person / the tree camo view).</summary>
+        public void LocalThrowAnim() => m_Throw = 1f;
+
         [Rpc(SendTo.NotOwner)]
         public void SwingRpc()
         {
@@ -1323,6 +1336,7 @@ namespace RockGame
         public void C4VisualRpc(Vector3 origin, Vector3 velocity)
         {
             ArrowProjectile.SpawnC4(origin, velocity, this, false);
+            m_Throw = 1f;
             Sfx.Play(Sfx.Throw, origin, 0.9f, 0.08f, 90f);
         }
 
@@ -1330,6 +1344,7 @@ namespace RockGame
         public void SpearVisualRpc(Vector3 origin, Vector3 velocity)
         {
             ArrowProjectile.SpawnSpear(origin, velocity, this, false);
+            m_Throw = 1f;
             Sfx.Play(Sfx.Throw, origin, 1f, 0.05f, 100f);
             Sfx.Play(Sfx.Swing, origin, 0.8f, 0.05f, 60f);
         }

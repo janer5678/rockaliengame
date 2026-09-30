@@ -73,6 +73,7 @@ namespace RockGame
             var rockCell = new PieceKey(PieceKey.KFoundation, BuildGrid.CellOf(bc.x + 0.1f), BuildGrid.CellOf(bc.z + 0.1f), 0, 0);
             Check(BuildGrid.OnBedrock(rockCell), "can't build a foundation on the bedrock");
             Check(BuildGrid.IsSupported(new PieceKey(PieceKey.KEdge, rockCell.I, rockCell.J, 0, 1), k => false), "walls stand on the bedrock without a foundation");
+            if (m_Mode == "rig") { yield return RigShots(me, pc); yield break; }
             if (m_Mode == "shots") yield return ShotsRoutine(me, pc);
             else if (nm.IsHost) yield return HostRoutine(me, pc);
             else yield return ClientRoutine(me, pc);
@@ -1059,6 +1060,138 @@ namespace RockGame
             Check(home && me.Count(Item.AirdropSignal) == 0, "airdrop signal beamed a crate into our base");
         }
 
+        /// <summary>
+        /// Visual check of the body animations: a row of aliens in every pose (holding the real items), photographed from
+        /// the front and from the side. Run with -host -solo -fast.
+        /// </summary>
+        IEnumerator RigShots(PlayerNet me, PlayerController pc)
+        {
+            string dir = ".";
+            var args = System.Environment.GetCommandLineArgs();
+            for (int i = 0; i < args.Length - 1; i++) if (args[i] == "-shotdir") dir = args[i + 1];
+            System.IO.Directory.CreateDirectory(dir);
+            var A = BodyAnimator.Act.None;
+            var poses = new (string name, Item item, float speed, float height, float velY, bool crouch, BodyAnimator.Act act, bool swing, bool thrw, bool carry)[]
+            {
+                ("idle", Item.Hatchet, 0f, 0f, 0f, false, A, false, false, false),
+                ("walk", Item.None, 3f, 0f, 0f, false, A, false, false, false),
+                ("sprint", Item.None, 7.5f, 0f, 0f, false, A, false, false, false),
+                ("sprint + spear", Item.Spear, 7.5f, 0f, 0f, false, A, false, false, false),
+                ("crouch walk", Item.Pickaxe, 2.2f, 0f, 0f, true, A, false, false, false),
+                ("jump (up)", Item.None, 4f, 1.4f, 5f, false, A, false, false, false),
+                ("jump (down)", Item.None, 4f, 1.4f, -7f, false, A, false, false, false),
+                ("slide", Item.None, 9f, 0f, 0f, true, BodyAnimator.Act.Slide, false, false, false),
+                ("bow draw", Item.Bow, 0f, 0f, 0f, false, BodyAnimator.Act.BowDraw, false, false, false),
+                ("spear wind-up", Item.Spear, 0f, 0f, 0f, false, BodyAnimator.Act.SpearAim, false, false, false),
+                ("crossbow aim", Item.Crossbow, 0f, 0f, 0f, false, BodyAnimator.Act.Aim, false, false, false),
+                ("eat", Item.Berry, 0f, 0f, 0f, false, BodyAnimator.Act.Eat, false, false, false),
+                ("throw", Item.Spear, 0f, 0f, 0f, false, A, false, true, false),
+                ("rock swing", Item.Rock, 0f, 0f, 0f, false, A, true, false, false),
+                ("carry ball", Item.None, 4f, 0f, 0f, false, A, false, false, true),
+                ("ram", Item.Ram, 0f, 0f, 0f, false, BodyAnimator.Act.Ram, false, false, false),
+                ("riding", Item.None, 0f, 0.9f, 0f, false, A, false, false, false),
+                ("dead", Item.None, 0f, 0f, 0f, false, A, false, false, false),
+            };
+            // a flat, empty spot in our half
+            int team = me.Team.Value;
+            var bc = Cfg.BaseCenter[team];
+            var origin = new Vector3(0f, 0f, bc.z * 0.45f);
+            var demos = new System.Collections.Generic.List<(Transform root, BodyAnimator anim, Transform hand, int i)>();
+            for (int i = 0; i < poses.Length; i++)
+            {
+                var ps = poses[i];
+                var r = new GameObject("rig_" + ps.name).transform;
+                int row = i / 6, col = i % 6;
+                r.position = origin + new Vector3((col - 2.5f) * 2.1f, ps.height, row * 40f);
+                r.position = new Vector3(r.position.x, MapBuilder.Height(r.position.x, r.position.z) + ps.height, r.position.z);
+                r.rotation = Quaternion.Euler(0, 180f, 0); // facing the camera
+                var anim = BodyAnimator.TryCreate(r, Cfg.ModelWidth, out _);
+                if (anim == null) { Log("FAIL: rigged alien missing"); yield break; }
+                Transform hand = null;
+                if (ps.item != Item.None || ps.carry)
+                {
+                    hand = new GameObject("held").transform;
+                    if (ps.carry) ItemModels.CreateBall(hand, 1.24f);
+                    else ItemModels.Create(ps.item, hand);
+                }
+                var label = new GameObject("label");
+                label.transform.SetParent(r, false);
+                label.transform.localPosition = new Vector3(0, 2.25f - ps.height, 0);
+                label.transform.localRotation = Quaternion.Euler(0, 180f, 0);
+                var tm = label.AddComponent<TextMesh>();
+                tm.text = ps.name;
+                tm.anchor = TextAnchor.MiddleCenter;
+                tm.characterSize = 0.05f;
+                tm.fontSize = 48;
+                tm.color = Color.white;
+                demos.Add((r, anim, hand, i));
+                if (i == 0)
+                {
+                    foreach (var rend in r.GetComponentsInChildren<Renderer>())
+                    {
+                        var smr = rend as SkinnedMeshRenderer;
+                        Log($"rig renderer {rend.name} {rend.GetType().Name} bones={(smr != null ? smr.bones.Length : -1)} root={(smr != null && smr.rootBone ? smr.rootBone.name : "-")} mesh={(smr != null && smr.sharedMesh ? smr.sharedMesh.name + " bw=" + smr.sharedMesh.boneWeights.Length + " bind=" + smr.sharedMesh.bindposes.Length : "-")}");
+                        if (smr != null) foreach (var b in smr.bones) Log($"  bone {(b ? b.name : "null")}");
+                    }
+                    Log($"rig hand bone: {anim.RightHand.name} path parent {anim.RightHand.parent.name}");
+                }
+            }
+            void Pose(float t, float dt)
+            {
+                foreach (var (r, anim, hand, i) in demos)
+                {
+                    var ps = poses[i];
+                    var pose = new BodyAnimator.Pose
+                    {
+                        Crouch = ps.crouch, Holding = ps.item != Item.None, Carrying = ps.carry,
+                        TwoHanded = ps.item == Item.Rock || ps.item == Item.Spear || ps.item == Item.Ram || ps.item == Item.Chainsaw || ps.item == Item.Crossbow,
+                        Action = ps.act, Pitch = 0f,
+                        Riding = ps.name == "riding", Dead = ps.name == "dead", DeadTime = t,
+                        Swing = ps.swing ? Mathf.Clamp01(1f - (t % 0.9f) / 0.55f) : 0f,
+                        Throw = ps.thrw ? Mathf.Clamp01(1f - (t % 0.9f) / 0.5f) : 0f,
+                    };
+                    anim.TickWithVelocity(pose, dt, r.forward * ps.speed + Vector3.up * ps.velY);
+                    if (hand != null)
+                    {
+                        if (ps.carry) { hand.position = r.position + r.forward * 0.6f + Vector3.up * 1.15f; hand.rotation = r.rotation; }
+                        else { anim.GripPose(out var gp, out var gr); hand.SetPositionAndRotation(gp, gr); }
+                    }
+                }
+            }
+            // pose in LateUpdate, like the game does (the model's Animator would overwrite anything earlier in the frame)
+            float runFrom = 0f, runT0 = 0f;
+            s_LateTick = () => Pose(runFrom + Time.time - runT0, Time.deltaTime);
+            IEnumerator Run(float seconds, float from)
+            {
+                runFrom = from;
+                runT0 = Time.time;
+                yield return new WaitForSeconds(seconds);
+            }
+            void Snap(string name) { ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(dir, name + ".png")); Log("shot " + name); }
+            for (int row = 0; row < 3; row++)
+            {
+                var c = origin + new Vector3(0, 0, row * 40f);
+                // front: the camera 8 m in front of the row, looking back at them
+                pc.LocalTeleport(c + new Vector3(0, MapBuilder.Height(c.x, c.z - 6.5f) + 0.1f, -6.5f), 0f);
+                pc.SetLook(0f, 6f);
+                yield return Run(1.2f, 0f);
+                Snap($"rig_row{row}_front");
+                yield return Run(0.35f, 1.2f);
+                Snap($"rig_row{row}_front_b");
+                yield return new WaitForEndOfFrame();
+                // side: turn them all to face left
+                foreach (var dm in demos) dm.root.rotation = Quaternion.Euler(0, 270f, 0);
+                yield return Run(0.8f, 1.55f);
+                Snap($"rig_row{row}_side");
+                yield return new WaitForEndOfFrame();
+                yield return null;
+                foreach (var dm in demos) dm.root.rotation = Quaternion.Euler(0, 180f, 0);
+            }
+            s_LateTick = null;
+            Log("rig shots done");
+            Application.Quit(0);
+        }
+
         /// <summary>Visual check: capture screenshots of the new features. Run windowed with -host -fast (optionally with a client).</summary>
         IEnumerator ShotsRoutine(PlayerNet me, PlayerController pc)
         {
@@ -1360,6 +1493,9 @@ namespace RockGame
             foreach (var it in NetGame.Instance.Items) if (it.Stack.Id == id) return it.Id;
             return -1;
         }
+
+        static System.Action s_LateTick;
+        void LateUpdate() => s_LateTick?.Invoke();
 
         static void Check(bool ok, string what) => Log((ok ? "PASS: " : "FAIL: ") + what);
     }

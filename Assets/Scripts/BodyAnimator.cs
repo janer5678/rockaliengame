@@ -7,15 +7,23 @@ namespace RockGame
     /// Procedural animation of the rigged PSX alien (Resources/Alien/AlienRigged, humanoid bone names), in the style of
     /// the usual Mixamo locomotion set: idle breathing, walk / run / sprint forwards, backwards and strafing, crouch walk,
     /// jump (tuck on the way up, legs reaching down on the way down), landing dip, head look, item holding, weapon swings
-    /// (one or two handed), ball carrying and a death fall. Driven by the player's real movement; runs on every peer.
+    /// (one or two handed), ball carrying and a death fall, plus the actions other players need to see: sliding, drawing
+    /// a bow, winding up a spear, aiming a crossbow / sniper, eating, charging the ram, running the chainsaw and throwing.
+    /// Driven by the player's real movement and their synced action; runs on every peer.
     /// Rotations are given in character space (x right, y up, z forward); negative X swings a limb forward.
     /// </summary>
     public class BodyAnimator
     {
+        /// <summary>What the player is doing with their hands / body right now (synced, see PlayerNet.Action).</summary>
+        public enum Act : byte { None, Slide, BowDraw, SpearAim, Aim, Eat, Ram, Saw }
+
         public struct Pose
         {
             public bool Crouch, Dead, Carrying, TwoHanded, Holding, Riding;
             public float Pitch, Swing, DeadTime;
+            public Act Action;
+            /// <summary>1 right after a throw, falling to 0 (overhand throw).</summary>
+            public float Throw;
         }
 
         readonly Transform m_Root;   // character space (unscaled visual root)
@@ -25,6 +33,12 @@ namespace RockGame
         readonly Vector3 m_ModelBase;
         Vector3 m_LastPos;
         float m_Phase, m_Speed, m_Crouch, m_Air, m_VelY, m_Hold, m_Carry, m_Fwd = 1f, m_Side, m_Land, m_AirVel;
+        // each action blends in and out (0..1); m_Draw fills up while a bow / spear is held drawn
+        float m_Slide, m_Bow, m_SpearAim, m_Aim, m_Eat, m_Ram, m_Saw, m_Draw;
+        float m_SlideYaw;
+        // while aiming, the held item points where the player looks instead of along the forearm
+        float m_GripW;
+        Quaternion m_GripRot = Quaternion.identity;
         bool m_First = true;
 
         public Transform RightHand => m_RHand;
@@ -40,6 +54,8 @@ namespace RockGame
             model = Object.Instantiate(prefab, visualRoot, false);
             model.name = "alien";
             model.transform.localScale = new Vector3(width, 1f, width);
+            // the Generic rig import adds an Animator we don't use (the bones are posed in code)
+            foreach (var an in model.GetComponentsInChildren<Animator>(true)) Object.Destroy(an);
             var a = new BodyAnimator(visualRoot, model.transform);
             return a.m_Hips != null && a.m_RHand != null ? a : null;
         }
@@ -58,11 +74,33 @@ namespace RockGame
             m_RArm = B("RightUpperArm"); m_RFore = B("RightLowerArm"); m_RHand = B("RightHand");
             foreach (var b in new[] { m_Hips, m_Spine, m_Chest, m_Neck, m_Head, m_LUp, m_LLo, m_RUp, m_RLo, m_LArm, m_LFore, m_RArm, m_RFore, m_LHand, m_RHand })
                 if (b != null) m_Rest[b] = (b.localRotation, Quaternion.Inverse(root.rotation) * b.rotation);
+            // The model is modelled in an A-pose (arms out at an angle). Treat "arms hanging at the sides, legs straight
+            // down" as the rest pose instead, so every pose below means what it says (x swings a limb forward/back, z out).
+            Straighten(root, m_LArm, m_LFore, new Vector3(-0.1f, -1f, 0f), m_LFore, m_LHand);
+            Straighten(root, m_RArm, m_RFore, new Vector3(0.1f, -1f, 0f), m_RFore, m_RHand);
+            Straighten(root, m_LUp, m_LLo, new Vector3(-0.04f, -1f, 0f), m_LLo);
+            Straighten(root, m_RUp, m_RLo, new Vector3(0.04f, -1f, 0f), m_RLo);
             foreach (var r in model.GetComponentsInChildren<SkinnedMeshRenderer>())
             {
                 r.updateWhenOffscreen = true;
                 r.localBounds = new Bounds(new Vector3(0, 0.9f, 0), new Vector3(2.5f, 2.5f, 2.5f));
             }
+        }
+
+        /// <summary>
+        /// Re-bases a limb: its rest direction (bone -> child joint) is turned to `want`, and the bones below it come along
+        /// (their rest orientation is turned the same way, their local rest stays as it is).
+        /// </summary>
+        void Straighten(Transform root, Transform bone, Transform child, Vector3 want, params Transform[] below)
+        {
+            if (bone == null || child == null || !m_Rest.ContainsKey(bone)) return;
+            var dir = Quaternion.Inverse(root.rotation) * (child.position - bone.position);
+            if (dir.sqrMagnitude < 1e-6f) return;
+            var fix = Quaternion.FromToRotation(dir.normalized, want.normalized);
+            var r = m_Rest[bone];
+            m_Rest[bone] = (r.local, fix * r.rel);
+            foreach (var b in below)
+                if (b != null && m_Rest.TryGetValue(b, out var rb)) m_Rest[b] = (rb.local, fix * rb.rel);
         }
 
         void Rot(Transform b, Vector3 euler)
@@ -107,6 +145,15 @@ namespace RockGame
             m_Crouch = Mathf.MoveTowards(m_Crouch, p.Crouch ? 1f : 0f, dt * 6f);
             m_Hold = Mathf.MoveTowards(m_Hold, p.Holding ? 1f : 0f, dt * 5f);
             m_Carry = Mathf.MoveTowards(m_Carry, p.Carrying ? 1f : 0f, dt * 6f);
+            m_Slide = Mathf.MoveTowards(m_Slide, p.Action == Act.Slide ? 1f : 0f, dt * 9f);
+            m_Bow = Mathf.MoveTowards(m_Bow, p.Action == Act.BowDraw ? 1f : 0f, dt * 8f);
+            m_SpearAim = Mathf.MoveTowards(m_SpearAim, p.Action == Act.SpearAim ? 1f : 0f, dt * 8f);
+            m_Aim = Mathf.MoveTowards(m_Aim, p.Action == Act.Aim ? 1f : 0f, dt * 9f);
+            m_Eat = Mathf.MoveTowards(m_Eat, p.Action == Act.Eat ? 1f : 0f, dt * 7f);
+            m_Ram = Mathf.MoveTowards(m_Ram, p.Action == Act.Ram ? 1f : 0f, dt * 6f);
+            m_Saw = Mathf.MoveTowards(m_Saw, p.Action == Act.Saw ? 1f : 0f, dt * 10f);
+            bool drawing = p.Action == Act.BowDraw || p.Action == Act.SpearAim;
+            m_Draw = drawing ? Mathf.MoveTowards(m_Draw, 1f, dt / 0.7f) : 0f;
 
             // movement direction relative to where the body faces: forwards / backwards / strafing
             var local = Quaternion.Inverse(m_Root.rotation) * new Vector3(v.x, 0, v.z);
@@ -120,11 +167,11 @@ namespace RockGame
             float sprint = Mathf.Clamp01((m_Speed - 5.5f) / 2f);
             float crouchWalk = m_Crouch;
             m_Phase += dt * m_Speed / 1.15f * Mathf.PI * (crouchWalk > 0.5f ? 1.25f : 1f);
-            float move = Mathf.Clamp01(m_Speed / 2.5f) * (1f - m_Air);
+            float move = Mathf.Clamp01(m_Speed / 2.5f) * (1f - m_Air) * (1f - m_Slide);
             float amp = (32f + 18f * sprint - 10f * crouchWalk) * move;
             float s = Mathf.Sin(m_Phase), sb = Mathf.Sin(m_Phase + Mathf.PI);
             float fwd = Mathf.Clamp(m_Fwd, -1f, 1f), side = Mathf.Clamp(m_Side, -1f, 1f);
-            float lean = (14f * sprint * move) * Mathf.Max(0f, fwd) - 6f * move * Mathf.Max(0f, -fwd) + 28f * m_Crouch;
+            float lean = (14f * sprint * move) * Mathf.Max(0f, fwd) - 6f * move * Mathf.Max(0f, -fwd) + 28f * m_Crouch * (1f - m_Slide) + 22f * m_Ram;
 
             // crouch + landing squash
             float squash = Mathf.Max(m_Crouch, m_Land * 0.6f);
@@ -172,6 +219,82 @@ namespace RockGame
                 lFore = Vector3.Lerp(lFore, new Vector3(-60f, 0, 0), m_Hold);
             }
 
+            // ---- actions (the right hand holds the item; poses aim with the head's pitch) ----
+            float pitch = Mathf.Clamp(p.Pitch, -60f, 60f);
+            float torsoYaw = 0f;
+            if (m_Bow > 0f)
+            {
+                // bow: the bow arm straight out at the target, the other hand draws the string back to the cheek
+                float dr = Smooth(m_Draw);
+                rArm = Vector3.Lerp(rArm, new Vector3(-88f + pitch, 0, 6f), m_Bow);
+                rFore = Vector3.Lerp(rFore, new Vector3(-4f, 0, 0), m_Bow);
+                lArm = Vector3.Lerp(lArm, new Vector3(Mathf.Lerp(-80f, -70f, dr) + pitch, 0, Mathf.Lerp(-20f, 40f, dr)), m_Bow);
+                lFore = Vector3.Lerp(lFore, new Vector3(Mathf.Lerp(-40f, -140f, dr), 0, 0), m_Bow);
+                torsoYaw += -25f * m_Bow;
+            }
+            if (m_SpearAim > 0f)
+            {
+                // spear: cocked back over the shoulder, the free arm pointing where it'll go; pulls further back as it winds up
+                float dr = Smooth(m_Draw);
+                rArm = Vector3.Lerp(rArm, new Vector3(Mathf.Lerp(-150f, -170f, dr) + pitch * 0.3f, 0, 28f), m_SpearAim);
+                rFore = Vector3.Lerp(rFore, new Vector3(Mathf.Lerp(-55f, -95f, dr), 0, 0), m_SpearAim);
+                lArm = Vector3.Lerp(lArm, new Vector3(-75f + pitch * 0.6f, 0, -12f), m_SpearAim);
+                lFore = Vector3.Lerp(lFore, new Vector3(-10f, 0, 0), m_SpearAim);
+                torsoYaw += 28f * m_SpearAim * (0.6f + 0.4f * dr);
+            }
+            if (m_Aim > 0f)
+            {
+                // crossbow / sniper to the shoulder: both hands on it, looking down the sights
+                rArm = Vector3.Lerp(rArm, new Vector3(-72f + pitch, 0, 22f), m_Aim);
+                rFore = Vector3.Lerp(rFore, new Vector3(-95f, 0, 0), m_Aim);
+                lArm = Vector3.Lerp(lArm, new Vector3(-88f + pitch, 0, -28f), m_Aim);
+                lFore = Vector3.Lerp(lFore, new Vector3(-30f, 0, 0), m_Aim);
+                torsoYaw += -10f * m_Aim;
+            }
+            if (m_Eat > 0f)
+            {
+                // food up to the mouth, chewing
+                float chew = Mathf.Sin(Time.time * 14f) * 6f;
+                rArm = Vector3.Lerp(rArm, new Vector3(-55f + chew, 0, 32f), m_Eat);
+                rFore = Vector3.Lerp(rFore, new Vector3(-135f, 0, 0), m_Eat);
+            }
+            if (m_Ram > 0f)
+            {
+                // ram: both hands on the log, held low, leaning in and shaking as it winds up
+                float shake = Mathf.Sin(Time.time * 40f) * 3f * m_Ram;
+                rArm = Vector3.Lerp(rArm, new Vector3(-35f + shake, 0, 12f), m_Ram);
+                rFore = Vector3.Lerp(rFore, new Vector3(-55f, 0, 0), m_Ram);
+                lArm = Vector3.Lerp(lArm, new Vector3(-45f - shake, 0, -20f), m_Ram);
+                lFore = Vector3.Lerp(lFore, new Vector3(-65f, 0, 0), m_Ram);
+            }
+            if (m_Saw > 0f)
+            {
+                // chainsaw running: held out at waist height, buzzing
+                float buzz = Mathf.Sin(Time.time * 60f) * 2.5f * m_Saw;
+                rArm = Vector3.Lerp(rArm, new Vector3(-55f + buzz, 0, 14f), m_Saw);
+                rFore = Vector3.Lerp(rFore, new Vector3(-40f, 0, 0), m_Saw);
+                lArm = Vector3.Lerp(lArm, new Vector3(-60f - buzz, 0, -22f), m_Saw);
+                lFore = Vector3.Lerp(lFore, new Vector3(-55f, 0, 0), m_Saw);
+            }
+            if (p.Throw > 0f)
+            {
+                // overhand throw: whips from behind the head through to a follow-through across the body
+                float u = 1f - p.Throw;
+                float x = u < 0.3f ? Mathf.Lerp(-160f, -150f, u / 0.3f) : Mathf.Lerp(-150f, -15f, Smooth((u - 0.3f) / 0.35f));
+                float blend = Mathf.Clamp01(p.Throw * 3f);
+                rArm = Vector3.Lerp(rArm, new Vector3(x, 0, 18f), blend);
+                rFore = Vector3.Lerp(rFore, new Vector3(u < 0.35f ? -80f : -15f, 0, 0), blend);
+                lArm = Vector3.Lerp(lArm, new Vector3(-50f, 0, -20f), blend);
+                torsoYaw += Mathf.Lerp(30f, -25f, Smooth((u - 0.2f) / 0.5f)) * blend;
+            }
+            if (torsoYaw != 0f)
+            {
+                Rot(m_Spine, new Vector3(lean * 0.6f + breathe * 0.6f, -twist * 1.4f + torsoYaw * 0.6f, s * 2f * move));
+                Rot(m_Chest, new Vector3(lean * 0.4f + p.Pitch * 0.15f + breathe * 1.2f, -twist * 0.4f + torsoYaw * 0.4f, 0));
+                Rot(m_Neck, new Vector3(p.Pitch * 0.25f - lean * 0.3f, twist * 0.5f - torsoYaw * 0.5f, 0));
+                Rot(m_Head, new Vector3(p.Pitch * 0.45f - lean * 0.3f, twist * 0.5f - torsoYaw * 0.5f, 0));
+            }
+
             // swing: raise over the shoulder, slam down, recover (both arms for two-handed weapons)
             if (p.Swing > 0f)
             {
@@ -209,9 +332,44 @@ namespace RockGame
                 m_Model.localPosition = m_ModelBase + new Vector3(0, -0.45f, 0);
             }
 
+            // ---- slide: low, leaning back, the front leg stretched out, the back leg folded under, an arm out for balance ----
+            if (m_Slide > 0f && !p.Riding)
+            {
+                float k = Smooth(m_Slide);
+                // which way we're sliding relative to where the body faces (sliding sideways turns the legs into it)
+                if (hs > 0.5f) m_SlideYaw = Mathf.LerpAngle(m_SlideYaw, Mathf.Atan2(local.x, local.z) * Mathf.Rad2Deg, dt * 10f);
+                float yaw = Mathf.Clamp(m_SlideYaw, -70f, 70f) * k;
+                Rot(m_Hips, new Vector3(0, yaw, 0));
+                Rot(m_LUp, Vector3.Lerp(Vector3.zero, new Vector3(-72f, 0, -6f), k));
+                Rot(m_LLo, Vector3.Lerp(Vector3.zero, new Vector3(8f, 0, 0), k));
+                Rot(m_RUp, Vector3.Lerp(Vector3.zero, new Vector3(-10f, 0, 22f), k));
+                Rot(m_RLo, Vector3.Lerp(Vector3.zero, new Vector3(125f, 0, 0), k));
+                Rot(m_Spine, new Vector3(-18f * k, -yaw * 0.5f, 0));
+                Rot(m_Chest, new Vector3(-8f * k + p.Pitch * 0.15f, -yaw * 0.3f, 0));
+                Rot(m_Head, new Vector3(p.Pitch * 0.45f + 22f * k, -yaw * 0.2f, 0));
+                if (!p.Holding || !p.TwoHanded)
+                {
+                    // the free left arm trails out behind for balance
+                    Rot(m_LArm, Vector3.Lerp(lArm, new Vector3(25f, 0, -55f), k));
+                    Rot(m_LFore, Vector3.Lerp(lFore, new Vector3(-20f, 0, 0), k));
+                }
+                if (!p.Holding) { Rot(m_RArm, Vector3.Lerp(rArm, new Vector3(-40f, 0, 35f), k)); Rot(m_RFore, Vector3.Lerp(rFore, new Vector3(-30f, 0, 0), k)); }
+                m_Model.localPosition = m_ModelBase + new Vector3(0, -0.62f * k, 0);
+            }
+
+            // ---- held item aiming: a wound-up / thrown spear points ahead over the shoulder, a drawn bow stands upright
+            // facing the target, a crossbow / sniper / ram lines up with the look direction ----
+            var aimDir = Quaternion.Euler(Mathf.Clamp(p.Pitch, -60f, 60f), 0, 0) * Vector3.forward;
+            float wSpear = Mathf.Max(m_SpearAim, p.Throw > 0f && p.Holding ? Mathf.Clamp01(p.Throw * 2.5f) : 0f);
+            float wLine = Mathf.Max(m_Bow, Mathf.Max(m_Aim, m_Ram));
+            if (wSpear >= wLine && wSpear > 0f) m_GripRot = Quaternion.LookRotation(Vector3.up, aimDir);          // spear: +Y (the tip) forward
+            else if (wLine > 0f) m_GripRot = Quaternion.LookRotation(aimDir, Vector3.up);                           // bow / crossbow / ram: +Z forward
+            m_GripW = Mathf.Max(wSpear, wLine);
+
             // ---- death: topple backwards ----
             float d = p.Dead ? Smooth(p.DeadTime / 0.5f) : 0f;
-            m_Model.localRotation = Quaternion.Euler(-88f * d, 0, 0);
+            // leaning back into the slide (the whole body tips a little)
+            m_Model.localRotation = Quaternion.Euler(-88f * d - 12f * Smooth(m_Slide) * (1f - d), 0, 0);
             if (d > 0) m_Model.localPosition += new Vector3(0, 0.25f * d, -0.15f * d);
         }
 
@@ -222,6 +380,7 @@ namespace RockGame
             pos = m_RHand.position + down * 0.12f;
             // item +Z along the forearm, item +Y (the tool head) perpendicular to it in the swing plane
             rot = Quaternion.LookRotation(down, Vector3.Cross(down, m_Root.right));
+            if (m_GripW > 0f) rot = Quaternion.Slerp(rot, m_Root.rotation * m_GripRot, Smooth(m_GripW));
         }
     }
 }

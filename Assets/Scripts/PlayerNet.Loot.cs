@@ -126,7 +126,11 @@ namespace RockGame
         }
 
         [Rpc(SendTo.NotOwner)]
-        void ThrownVisualRpc(Item kind, Vector3 origin, Vector3 velocity) => ArrowProjectile.SpawnThrown(kind, origin, velocity, this, false);
+        void ThrownVisualRpc(Item kind, Vector3 origin, Vector3 velocity)
+        {
+            ArrowProjectile.SpawnThrown(kind, origin, velocity, this, false);
+            if (kind != Item.RocketLauncher) LocalThrowAnim(); // a rocket is fired, not thrown
+        }
 
         /// <summary>Staff of the giant: the nearest enemy becomes a giant for a while (huge and easy to see, but same hitbox).</summary>
         [Rpc(SendTo.Server)]

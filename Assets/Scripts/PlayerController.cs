@@ -412,6 +412,8 @@ namespace RockGame
             CrossbowAiming = input && !carrying && held == Item.Crossbow && Input.GetMouseButton(1) && m_ReloadStart < 0;
             Scoped = input && !carrying && held == Item.Sniper && Input.GetMouseButton(1);
 
+            PublishAction(held, dead, carrying);
+
             var target = FindInteract();
             if (input) HandleInteract(target, carrying);
             UpdateGhost(input && !carrying && !gameOver && !riding && !DemolishMode && !UpgradeMode ? held : Item.None);
@@ -533,6 +535,26 @@ namespace RockGame
         Vector3 m_SlideVel, m_LastPlanar;
         float m_NextSlide;
         AudioSource m_SlideSound;
+
+        /// <summary>Tell everyone what we're doing so our body shows it (BodyAnimator.Act).</summary>
+        float m_EatFlashUntil;
+
+        void PublishAction(Item held, bool dead, bool carrying)
+        {
+            var a = BodyAnimator.Act.None;
+            if (!dead && !m_Net.Riding)
+            {
+                if (m_SlideOn) a = BodyAnimator.Act.Slide;
+                else if (carrying) a = BodyAnimator.Act.None;
+                else if (m_DrawStart >= 0 && held == Item.Bow) a = BodyAnimator.Act.BowDraw;
+                else if (m_DrawStart >= 0 && held == Item.Spear) a = BodyAnimator.Act.SpearAim;
+                else if (CrossbowAiming || Scoped) a = BodyAnimator.Act.Aim;
+                else if (m_EatStart >= 0 || Time.time < m_EatFlashUntil) a = BodyAnimator.Act.Eat;
+                else if (RamCharge > 0f) a = BodyAnimator.Act.Ram;
+                else if (held == Item.Chainsaw && Input.GetMouseButton(0) && !MenuOpen && !Paused) a = BodyAnimator.Act.Saw;
+            }
+            if (m_Net.Action.Value != (byte)a) m_Net.Action.Value = (byte)a;
+        }
 
         void StartSlide()
         {
@@ -862,6 +884,7 @@ namespace RockGame
             m_VM.Eat();
             Sfx.Play2D(Sfx.Eat, 0.7f);
             if (berry) { m_EatStart = Time.time; m_EatHalf = false; m_NextEat = Time.time + Cfg.BerryEatTime + 0.1f; return; }
+            m_EatFlashUntil = Time.time + 0.9f;
             m_Net.EatRpc();
         }
 
@@ -934,7 +957,7 @@ namespace RockGame
             if (!(Input.GetMouseButtonDown(0) || Input.GetMouseButtonDown(1)) || Time.time < m_NextEat) return;
             m_NextEat = Time.time + 0.8f;
             m_Net.UseItemRpc();
-            if (held == Item.InvisPotion) { m_VM.Eat(); Sfx.Play2D(Sfx.Eat, 0.6f); }
+            if (held == Item.InvisPotion) { m_VM.Eat(); Sfx.Play2D(Sfx.Eat, 0.6f); m_EatFlashUntil = Time.time + 0.9f; }
             else { m_VM.Use(); Sfx.Play2D(Sfx.Clink, 0.6f); }
         }
 

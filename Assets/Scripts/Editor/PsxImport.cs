@@ -3,7 +3,11 @@ using UnityEngine;
 
 namespace RockGame.EditorTools
 {
-    /// <summary>Crunchy PSX import settings for the alien player model: point-filtered, uncompressed textures, no rig/animation (PlayerNet swaps in URP materials at runtime).</summary>
+    /// <summary>
+    /// Crunchy PSX import settings for the alien player model: point-filtered, uncompressed textures, no animation clips
+    /// (PlayerNet swaps in URP materials at runtime). The rigged alien keeps its skin as a Generic rig so the body bends
+    /// with the bones BodyAnimator moves (with no rig the skin is dropped and the mesh never deforms).
+    /// </summary>
     public class PsxImport : AssetPostprocessor
     {
         const string Folder = "Assets/Game/Resources/Alien/";
@@ -24,7 +28,13 @@ namespace RockGame.EditorTools
             mi.importCameras = false;
             mi.importLights = false;
             mi.importAnimation = false;
-            mi.animationType = ModelImporterAnimationType.None;
+            bool rigged = assetPath.Contains("Rigged");
+            mi.animationType = rigged ? ModelImporterAnimationType.Generic : ModelImporterAnimationType.None;
+            if (rigged)
+            {
+                mi.avatarSetup = ModelImporterAvatarSetup.NoAvatar;
+                mi.optimizeGameObjects = false; // BodyAnimator needs the bone transforms
+            }
         }
     }
 }

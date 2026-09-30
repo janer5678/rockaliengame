@@ -81,7 +81,9 @@ namespace RockGame
         }
 
         [Rpc(SendTo.NotOwner)]
-        public void FortVisualRpc(Vector3 origin, Vector3 velocity) => ArrowProjectile.SpawnThrown(Item.FortTower, origin, velocity, this, false);
+        public void FortVisualRpc(Vector3 origin, Vector3 velocity) { ArrowProjectile.SpawnThrown(Item.FortTower, origin, velocity, this, false); ThrowAnimLocal(); }
+
+        void ThrowAnimLocal() => LocalThrowAnim();
 
         // ---------------- riding ----------------
 
