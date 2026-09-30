@@ -194,6 +194,12 @@ namespace RockGame
         IEnumerator FunTests(PlayerNet me, PlayerController pc, NetGame g, int team)
         {
             Check(Cfg.FunRules && !Cfg.PowerMenu, $"{Cfg.RulesName(Cfg.Rules)}: no power menu, normal prices");
+            Check(g.S == GameState.BallLive && Ball.Instance != null && Mathf.Abs(g.TimeLeft - Cfg.FastMatchLength) < 15f, $"fun modes start with the wall down and the ball in ({g.S})");
+            int backItems = 0;
+            for (int i = Cfg.HotbarSize; i < Cfg.PlayerSlots; i++) if (!me.SlotAt(i).Empty) backItems++;
+            bool hotbarEmpty = true;
+            for (int i = 0; i < Cfg.HotbarSize; i++) if (!me.SlotAt(i).Empty) hotbarEmpty = false;
+            Check(backItems >= 1 && hotbarEmpty && !me.SlotAt(Cfg.PlayerSlots - 1).Empty, "the first free item came straight away, into the back of the inventory");
             Cfg.FunItemInterval = 2f;
             int Items()
             {
@@ -202,7 +208,7 @@ namespace RockGame
                 return n;
             }
             int before = Items();
-            yield return new WaitForSeconds(Mathf.Max(0f, (float)(g.NextFunItem.Value - me.NetworkManager.ServerTime.Time)) + 2.6f); // the first one was already due in 9 s
+            yield return new WaitForSeconds(Mathf.Max(0f, (float)(g.NextFunItem.Value - me.NetworkManager.ServerTime.Time)) + 2.6f); // the next one was already scheduled
             Check(Items() > before && g.NextFunItem.Value > 0, $"free items handed out ({before} -> {Items()} slots used)");
             pc.MenuOpen = true;
             yield return Snap("mode_" + Cfg.RulesName(Cfg.Rules).ToLower().Replace(" ", "") + "_inventory");

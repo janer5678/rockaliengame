@@ -116,7 +116,7 @@ namespace RockGame
         {
             switch ((GameState)cur)
             {
-                case GameState.PreBall: Hud.Banner("GATHER & BUILD", $"A glass wall splits the map for {Clock(Bootstrap.Fast ? Cfg.FastBallDropDelay : Cfg.BallDropDelay)}. " + (Cfg.Builder ? "BUILDER: build and craft anywhere (TAB)." : "Craft anywhere inside your base (TAB).")); break;
+                case GameState.PreBall: if (Cfg.FunRules) break; Hud.Banner("GATHER & BUILD", $"A glass wall splits the map for {Clock(Bootstrap.Fast ? Cfg.FastBallDropDelay : Cfg.BallDropDelay)}. " + (Cfg.Builder ? "BUILDER: build and craft anywhere (TAB)." : "Craft anywhere inside your base (TAB).")); break;
                 case GameState.BallLive: Hud.Banner("THE WALL IS DOWN", Cfg.Builder ? "Grab the ball and lock it inside a structure YOU built - walls all round - when time runs out!" : "Grab the ball from the middle and put it in YOUR machine's socket!"); break;
                 case GameState.SuddenDeath: Hud.Banner("SUDDEN DEATH", "Welcome to the stadium. Rocks only. First kill wins."); break;
             }
@@ -156,11 +156,11 @@ namespace RockGame
                 case GameState.Waiting:
                     if (players >= Cfg.PlayersNeeded || (Bootstrap.Solo && players >= 1))
                     {
-                        float delay = fast ? Cfg.FastBallDropDelay : Cfg.BallDropDelay;
+                        float delay = Cfg.FunRules ? 0f : fast ? Cfg.FastBallDropDelay : Cfg.BallDropDelay; // fun modes: wall down and ball in from the start
                         SetPhase(GameState.PreBall, delay);
                         // out of the waiting stadium and into your base
                         foreach (var p in PlayerNet.All) p.ServerSendHome();
-                        Broadcast($"Match started! The glass wall drops (and the ball with it) in {Clock(delay)}");
+                        Broadcast(Cfg.FunRules ? "Match started! The wall is down and the ball is in - free items on the way!" : $"Match started! The glass wall drops (and the ball with it) in {Clock(delay)}");
                     }
                     break;
                 case GameState.PreBall:
@@ -168,7 +168,7 @@ namespace RockGame
                     if (now >= PhaseEnd.Value)
                     {
                         SpawnBall();
-                        SetPhase(GameState.BallLive, fast ? Cfg.FastMatchLength : Cfg.MatchLength);
+                        SetPhase(GameState.BallLive, BallPhase);
                         m_BallStart = now;
                         m_DropsDone = 0;
                         m_DropsWarned = 0;
@@ -530,14 +530,14 @@ namespace RockGame
         const float DropArrive = 4f, DropBeam = 4f;
         /// <summary>Seconds after a lane's start when the crate touches down (the ship arrives, then beams it down).</summary>
         public const float DropLand = DropArrive + DropBeam;
-        /// <summary>Lanes 0-3: the world airdrops (one for the whole map, or one per team's side). Lanes 4-7: a team's airdrop signal.</summary>
-        public const int LaneTotal = 8, SignalLane0 = 4;
+        /// <summary>Lanes 0-3: the world airdrops (one for the whole map, or one per team's side).</summary>
+        public const int LaneTotal = 4;
 
         /// <summary>A lane's timer, the ship on its way and the crate on the ground (server side).</summary>
         class DropLane
         {
             public int Region = -1; // -1 = anywhere, else that team's side of the map
-            public bool Incoming, Signal;
+            public bool Incoming;
             public Container Crate;
         }
         readonly DropLane[] m_Lanes = new DropLane[LaneTotal];
@@ -553,7 +553,7 @@ namespace RockGame
         readonly List<Container> m_OldCrates = new List<Container>();
 
         /// <summary>Length of the ball phase (from the wall dropping to the end of the match).</summary>
-        static float BallPhase => Bootstrap.Fast ? Cfg.FastMatchLength : Cfg.MatchLength;
+        static float BallPhase => Bootstrap.Fast ? Cfg.FastMatchLength : Cfg.FunRules ? Cfg.FunMatchLength : Cfg.MatchLength;
 
         /// <summary>
         /// Mode options: N airdrops per match, evenly spaced over the time after the wall drops (1 = half way through,
@@ -656,23 +656,9 @@ namespace RockGame
             var lane = m_Lanes[i];
             SetLane(i, now, pos);
             lane.Incoming = true;
-            string where = lane.Signal ? $"{Cfg.TeamLabel(i - SignalLane0)} called one in with a signal!" : lane.Region < 0 ? (Cfg.AirdropCenter ? "In the middle of the map!" : "Look for the purple beam") : $"On the {Cfg.TeamLabel(lane.Region)} side - look for the purple beam";
+            string where = lane.Region < 0 ? (Cfg.AirdropCenter ? "In the middle of the map!" : "Look for the purple beam") : $"On the {Cfg.TeamLabel(lane.Region)} side - look for the purple beam";
             BannerRpc(new FixedString64Bytes("AIRDROP INCOMING"), new FixedString128Bytes(where));
             Broadcast("An alien AIRDROP is beaming down! " + where);
-        }
-
-        /// <summary>Airdrop signal: an airdrop beams straight down onto your bedrock next to the machine.</summary>
-        public bool ServerSignalDrop(int team)
-        {
-            int i = SignalLane0 + Mathf.Clamp(team, 0, 3);
-            var lane = m_Lanes[i];
-            if (lane.Incoming || (lane.Crate != null && lane.Crate.IsSpawned && !lane.Crate.Empty)) return false;
-            if (lane.Crate != null && lane.Crate.IsSpawned) lane.Crate.NetworkObject.Despawn(true);
-            lane.Crate = null;
-            lane.Signal = true;
-            var side = Vector3.Cross(Vector3.up, Cfg.BackDir(team)).normalized;
-            ServerLaunchDrop(i, NetworkManager.ServerTime.Time, Cfg.BedrockCenter(team) + side * 1.9f + Cfg.BackDir(team) * 1.2f + Vector3.up * Cfg.BaseY);
-            return true;
         }
 
         /// <summary>One random OP item.</summary>

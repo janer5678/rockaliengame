@@ -498,6 +498,14 @@ namespace RockGame
             return left;
         }
 
+        /// <summary>Server: give items into the back of the inventory (the last empty slots), not the hotbar. Returns how many didn't fit.</summary>
+        public int ServerGiveToBack(Item id, int count, int data = 0)
+        {
+            int left = InvOps.AddFromBack(Inv, id, count, data);
+            if (left > 0) Notify("Inventory full!");
+            return left;
+        }
+
         void ServerClearSlot(int i)
         {
             if (i >= 0 && i < Inv.Count) Inv[i] = default;

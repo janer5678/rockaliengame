@@ -37,8 +37,8 @@ namespace RockGame
             // Fun / Fun Random: a free item every few seconds
             if (Cfg.FunRules && playing)
             {
-                if (NextFunItem.Value < 0) NextFunItem.Value = now + Cfg.FunItemInterval;
-                else if (now >= NextFunItem.Value)
+                if (NextFunItem.Value < 0) NextFunItem.Value = now; // the first one straight away
+                if (now >= NextFunItem.Value)
                 {
                     NextFunItem.Value = now + Mathf.Max(1f, Cfg.FunItemInterval);
                     ServerGiveFunItems();
@@ -80,7 +80,7 @@ namespace RockGame
 
         void ServerGiftTo(PlayerNet p, ItemStack stack)
         {
-            int left = p.ServerGive(stack.Id, stack.Count, stack.Data);
+            int left = p.ServerGiveToBack(stack.Id, stack.Count, stack.Data);
             // no room: it lands at their feet
             if (left > 0) ServerDropItem(ItemStack.Of(stack.Id, left, stack.Data), p.transform.position + p.transform.forward, p.transform.forward, p.EyePos);
         }

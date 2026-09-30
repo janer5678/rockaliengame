@@ -25,8 +25,9 @@ Laid out top to bottom: **MATCH SETUP** (what the host picks), then **PLAY** (ho
   - *Classic*: the original game.
   - *Arsenal*: normal prices (except the crossbow, 350 wood instead of 500), plus a **POWER ITEMS** menu to the right of crafting (see below).
   - *Builder*: Arsenal's items and prices, but every craft takes a few seconds (one at a time, shown top left), you can **craft and build anywhere** (not in the enemy base), pieces **lock on to each other** Fortnite style (walls hang off the walls they touch, floors and stairs hold on to walls around them, ground-level walls reach down into the ground), and you **win by having the ball shut inside a build your team made** when time runs out (walls on all 4 sides, or 3 and a roof). The machine socket doesn't count in Builder.
-  - *FUN MODE*: the classic game, but every 9 s everybody gets the **same** random item - any item in the game, the unused ones too.
+  - *FUN MODE*: no building phase - the wall is down and the ball is in from the start - and a 10 minute match. Everybody gets the **same** random item straight away and then every 45 s (any item in the game, the unused ones too). Free items go into the back of your inventory, not the hotbar.
   - *FUN RANDOM MODE*: the same, but only airdrop items (the unused ones too) and everyone gets a **different** one.
+  - In both Fun modes the **Game length** row changes to the match length and the free item interval (both - / +).
 - **Game length**: - / + for the time behind the glass wall (building, 30 s steps) and the time with the ball (1 min steps). Saved on this PC; the host's are used.
 - While waiting for everyone to join, players brawl with rocks in the stadium; when the lobby is full everyone is sent to their base and the match starts.
 - **Graphics**: *Normal* or *PSX*. PSX swaps the 3D models for low-res PSX-style ones (trees so far, more to come); only the looks change - trees are the same size to hit, give the same wood and have the same weak spots, and everything else in the game works the same in both. Each player picks their own (also in Settings > Display, and it switches live). Normal is our own look, where new features get made first.
@@ -49,7 +50,7 @@ Bought with wood from the POWER ITEMS column next to crafting (in your base; any
 | Pistol | 10000 | 5 shots, 34 damage each, fast and flat. No ammo to buy - when the 5 are gone, it's empty. |
 | Fortify All Walls | 10000 | Every wooden piece your team has placed turns to stone at full health. |
 
-All these numbers are in CHANGE VALUES under "Arsenal and Builder" (and "Fun modes" for the 9 s).
+All these numbers are in CHANGE VALUES under "Arsenal and Builder" (and "Fun modes" for the item interval and Fun match length).
 
 ### Removing the theme maps
 Everything for the five theme maps is in `Assets/Scripts/ThemeMaps/` (terrain, props, palms, water/ice/lava, the boat). To remove them: delete that folder, then delete every line or block marked `// THEME MAPS` (search the scripts for it: Config, Bootstrap, MapBuilder, NetGame, ResourceNode, Vehicle, PlayerNet, PlayerController, Hud.Menus, AutoTest.Modes (the maps test), and the second line of the `MapKind` enum). The `Boat` item can stay in the `Item` enum (items are saved by number).
@@ -77,7 +78,7 @@ Everything for the five theme maps is in `Assets/Scripts/ThemeMaps/` (terrain, p
 - Respawning: while the glass wall is up you always come back on your bedrock. After that you choose: **respawn in base** or **respawn in the wild** (a random spot in the enemy's half of the map).
 
 ## Airdrops
-20 seconds before each airdrop lands, a banner says **AIRDROP DROPPING IN 20 SECONDS** and a countdown shows top left. Once the wall is down, a giant alien ship comes down from very high up and **beams an airdrop crate** to a random spot (never close to a base; follow the purple beam; a big "AIRDROP INCOMING" shows in the middle of the screen). How many come per match and which items they can have are set in **MODE OPTIONS**; a crate nobody emptied stays put. An **Airdrop Signal** (craft it in your base for 2000 wood) beams one straight onto your bedrock. Each crate holds one random item from the picked ones. The items in the game (only the first nine can be picked for now; the rest are unused):
+20 seconds before each airdrop lands, a banner says **AIRDROP DROPPING IN 20 SECONDS** and a countdown shows top left. Once the wall is down, a giant alien ship comes down from very high up and **beams an airdrop crate** to a random spot (never close to a base; follow the purple beam; a big "AIRDROP INCOMING" shows in the middle of the screen). How many come per match and which items they can have are set in **MODE OPTIONS**; a crate nobody emptied stays put. Each crate holds one random item from the picked ones. The items in the game (only the first nine can be picked for now; the rest are unused):
 
 | Item | What it does |
 |---|---|
@@ -154,7 +155,6 @@ Everything for the five theme maps is in `Assets/Scripts/ThemeMaps/` (terrain, p
 | Storage Chest | 50 wood |
 | High External Wall | 40 wood |
 | Saddle (ride a wild horse; in your team's colour) | 1000 wood |
-| Airdrop Signal (an airdrop beams onto your bedrock) | 2000 wood |
 
 In wood mode the stone part is added to the wood cost and there's no pickaxe.
 

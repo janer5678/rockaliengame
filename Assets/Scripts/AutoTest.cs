@@ -1081,15 +1081,6 @@ namespace RockGame
                 yield return new WaitForSeconds(0.5f);
             }
 
-            // airdrop signal: an airdrop beams straight onto our bedrock
-            me.ServerGive(Item.AirdropSignal, 1);
-            yield return new WaitForSeconds(0.2f);
-            yield return Hold(me, Item.AirdropSignal);
-            me.UseSignalRpc();
-            yield return new WaitForSeconds(NetGame.DropLand + 1f);
-            bool home = false;
-            foreach (var c in Container.All) if (c.IsAirdrop && Cfg.BaseTeamAt(c.transform.position) == team) home = true;
-            Check(home && me.Count(Item.AirdropSignal) == 0, "airdrop signal beamed a crate into our base");
         }
 
         /// <summary>

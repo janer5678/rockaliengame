@@ -220,13 +220,6 @@ namespace RockGame
                     Art.Box(t, new Color(0.95f, 0.92f, 0.85f), new Vector3(0, 0.05f, -0.1f), new Vector3(0.035f, 0.035f, 0.14f));
                     Art.Part(t, Art.Sphere, new Color(0.95f, 0.92f, 0.85f), new Vector3(0, 0.05f, -0.18f), Vector3.one * 0.05f);
                     break;
-                case Item.AirdropSignal:
-                    // a purple flare with a blinking cap
-                    Art.Part(t, Art.Cylinder, new Color(0.55f, 0.2f, 0.85f), new Vector3(0, 0.12f, 0), new Vector3(0.06f, 0.12f, 0.06f));
-                    Art.Part(t, Art.Cylinder, new Color(0.2f, 0.2f, 0.22f), new Vector3(0, 0.26f, 0), new Vector3(0.065f, 0.02f, 0.065f));
-                    Art.Part(t, Art.Ico, new Color(1f, 0.6f, 1f), new Vector3(0, 0.3f, 0), Vector3.one * 0.03f);
-                    Art.Box(t, Color.white, new Vector3(0, 0.14f, 0.031f), new Vector3(0.04f, 0.06f, 0.005f));
-                    break;
                 case Item.Sniper:
                 {
                     // long rifle held like the crossbow: stock back, long barrel forward, big scope on top

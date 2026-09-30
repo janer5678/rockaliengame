@@ -144,21 +144,39 @@ namespace RockGame
             GUILayout.Label($"<color=#ffd24a>{Cfg.RulesDesc(rules)}</color>", m_SmallWrap);
             GUILayout.EndHorizontal();
 
-            // game length: how long behind the glass wall, then how long with the ball
+            // game length: how long behind the glass wall, then how long with the ball (fun modes: no wall, just the match)
+            bool funPick = rules == GameRules.Fun || rules == GameRules.FunRandom;
             GUILayout.BeginHorizontal();
             RowLabel("Game length");
-            float wallT = Cfg.BallDropDelay, matchT = Cfg.MatchLength;
-            if (Btn("-", GUILayout.Width(34 * k), GUILayout.Height(30 * k))) { Cfg.BallDropDelay = Mathf.Max(30f, wallT - 30f); Cfg.SavePrefs(); }
-            GUILayout.Label($"<b>{Clock(Cfg.BallDropDelay)}</b> <size={Mathf.RoundToInt(12 * k)}>build</size>", m_Center, GUILayout.Width(96 * k), GUILayout.Height(30 * k));
-            if (Btn("+", GUILayout.Width(34 * k), GUILayout.Height(30 * k))) { Cfg.BallDropDelay = Mathf.Min(1800f, wallT + 30f); Cfg.SavePrefs(); }
-            GUILayout.Space(8 * k);
-            if (Btn("-", GUILayout.Width(34 * k), GUILayout.Height(30 * k))) { Cfg.MatchLength = Mathf.Max(60f, matchT - 60f); Cfg.SavePrefs(); }
-            GUILayout.Label($"<b>{Clock(Cfg.MatchLength)}</b> <size={Mathf.RoundToInt(12 * k)}>ball</size>", m_Center, GUILayout.Width(96 * k), GUILayout.Height(30 * k));
-            if (Btn("+", GUILayout.Width(34 * k), GUILayout.Height(30 * k))) { Cfg.MatchLength = Mathf.Min(3600f, matchT + 60f); Cfg.SavePrefs(); }
+            if (funPick)
+            {
+                float funT = Cfg.FunMatchLength;
+                if (Btn("-", GUILayout.Width(34 * k), GUILayout.Height(30 * k))) { Cfg.FunMatchLength = Mathf.Max(60f, funT - 60f); Cfg.SavePrefs(); }
+                GUILayout.Label($"<b>{Clock(Cfg.FunMatchLength)}</b>", m_Center, GUILayout.Width(70 * k), GUILayout.Height(30 * k));
+                if (Btn("+", GUILayout.Width(34 * k), GUILayout.Height(30 * k))) { Cfg.FunMatchLength = Mathf.Min(3600f, funT + 60f); Cfg.SavePrefs(); }
+                GUILayout.Label($"<size={Mathf.RoundToInt(12 * k)}>item every</size>", m_Center, GUILayout.Width(66 * k), GUILayout.Height(30 * k));
+                float every = Cfg.FunItemInterval;
+                if (Btn("-", GUILayout.Width(34 * k), GUILayout.Height(30 * k))) { Cfg.FunItemInterval = Mathf.Max(5f, every - 5f); Cfg.SavePrefs(); }
+                GUILayout.Label($"<b>{Cfg.FunItemInterval:0}s</b>", m_Center, GUILayout.Width(48 * k), GUILayout.Height(30 * k));
+                if (Btn("+", GUILayout.Width(34 * k), GUILayout.Height(30 * k))) { Cfg.FunItemInterval = Mathf.Min(600f, every + 5f); Cfg.SavePrefs(); }
+            }
+            else
+            {
+                float wallT = Cfg.BallDropDelay, matchT = Cfg.MatchLength;
+                if (Btn("-", GUILayout.Width(34 * k), GUILayout.Height(30 * k))) { Cfg.BallDropDelay = Mathf.Max(30f, wallT - 30f); Cfg.SavePrefs(); }
+                GUILayout.Label($"<b>{Clock(Cfg.BallDropDelay)}</b> <size={Mathf.RoundToInt(12 * k)}>build</size>", m_Center, GUILayout.Width(96 * k), GUILayout.Height(30 * k));
+                if (Btn("+", GUILayout.Width(34 * k), GUILayout.Height(30 * k))) { Cfg.BallDropDelay = Mathf.Min(1800f, wallT + 30f); Cfg.SavePrefs(); }
+                GUILayout.Space(8 * k);
+                if (Btn("-", GUILayout.Width(34 * k), GUILayout.Height(30 * k))) { Cfg.MatchLength = Mathf.Max(60f, matchT - 60f); Cfg.SavePrefs(); }
+                GUILayout.Label($"<b>{Clock(Cfg.MatchLength)}</b> <size={Mathf.RoundToInt(12 * k)}>ball</size>", m_Center, GUILayout.Width(96 * k), GUILayout.Height(30 * k));
+                if (Btn("+", GUILayout.Width(34 * k), GUILayout.Height(30 * k))) { Cfg.MatchLength = Mathf.Min(3600f, matchT + 60f); Cfg.SavePrefs(); }
+            }
             GUILayout.EndHorizontal();
             GUILayout.BeginHorizontal();
             GUILayout.Space(103 * k);
-            GUILayout.Label($"<color=#bbbbbb>{Clock(Cfg.BallDropDelay)} to gather and build behind the glass wall, then {Clock(Cfg.MatchLength)} with the ball - {Clock(Cfg.BallDropDelay + Cfg.MatchLength)} in all (plus sudden death).</color>", m_SmallWrap);
+            GUILayout.Label(funPick
+                ? $"<color=#bbbbbb>No building phase: the wall is down and the ball is in from the start. {Clock(Cfg.FunMatchLength)} match (plus sudden death), first free item straight away, then one every {Cfg.FunItemInterval:0}s (into the back of your inventory).</color>"
+                : $"<color=#bbbbbb>{Clock(Cfg.BallDropDelay)} to gather and build behind the glass wall, then {Clock(Cfg.MatchLength)} with the ball - {Clock(Cfg.BallDropDelay + Cfg.MatchLength)} in all (plus sudden death).</color>", m_SmallWrap);
             GUILayout.EndHorizontal();
 
             key = Bootstrap.MapChoice;

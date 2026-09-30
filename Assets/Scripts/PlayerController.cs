@@ -402,7 +402,6 @@ namespace RockGame
                         case Item.EnderPearl:
                         case Item.RocketLauncher: HandleLootThrow(held); break;
                         case Item.GiantStaff: HandleOnce(held, () => m_Net.GiantStaffRpc()); break;
-                        case Item.AirdropSignal: HandleOnce(held, () => m_Net.UseSignalRpc()); break;
                         case Item.Airstrike: if (Binds.Down(Bind.Attack)) OpenAirstrikeMap(); break;
                         case Item.C4: HandleThrow(Item.C4); break;
                         case Item.FortTower: HandleThrow(Item.FortTower); break;

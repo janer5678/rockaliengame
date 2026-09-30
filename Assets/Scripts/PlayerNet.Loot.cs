@@ -13,16 +13,6 @@ namespace RockGame
 
         static bool Throwable(Item i) => i == Item.SlenderEgg || i == Item.BuildEgg || i == Item.RocketLauncher || i == Item.BombBush || i == Item.EnderPearl;
 
-        /// <summary>Airdrop signal: an airdrop beams straight down onto your bedrock.</summary>
-        [Rpc(SendTo.Server)]
-        public void UseSignalRpc()
-        {
-            if (Dead.Value || HeldItem != Item.AirdropSignal || NetGame.Instance == null || Time.time < m_NextUse) return;
-            m_NextUse = Time.time + 1f;
-            if (!NetGame.Instance.ServerSignalDrop(Team.Value)) { Notify("Your last signal drop hasn't been emptied yet"); return; }
-            ServerConsumeHeld();
-        }
-
         /// <summary>Sniper: one shot kills, whatever it hits - unless it's a headshot on someone wearing a helmet (the helmet breaks).</summary>
         [Rpc(SendTo.Server)]
         public void SniperFireRpc(bool hasTarget, NetworkObjectReference target, Vector3 point, Vector3 dir)

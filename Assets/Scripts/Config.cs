@@ -95,8 +95,8 @@ namespace RockGame
             {
                 case GameRules.Arsenal: return "Everything costs much less, and a POWER ITEMS menu next to crafting: pistol, heavy armour, tree cracker, C4, fortify all walls, auto wood.";
                 case GameRules.Builder: return "Arsenal's items, but each one takes a while to make. Craft and build anywhere - pieces lock onto each other. Win with the ball inside a fort your team built.";
-                case GameRules.Fun: return "The original game, but every 9 seconds everyone gets the same random item - any item in the game.";
-                case GameRules.FunRandom: return "The original game, but every 9 seconds each player gets their own random airdrop item.";
+                case GameRules.Fun: return "No building phase, a short match, and every so often everyone gets the same random item - any item in the game.";
+                case GameRules.FunRandom: return "No building phase, a short match, and every so often each player gets their own random airdrop item.";
                 default: return "The original game: gather, build your base, craft in it, get the ball into your machine.";
             }
         }
@@ -249,7 +249,7 @@ namespace RockGame
         [Tune("Mode options")] public static int AirdropItemMask = 1023;
         [Tune("Airdrop")] public static float AirdropBaseDistance = 25f; // never this close to a base
         [Tune("Airdrop")] public static float C4Fuse = 3f, C4Radius = 5f, C4PlayerDamage = 150f, C4KillRadius = 1.6f;
-        [Tune("Airdrop")] public static int SniperAmmo = 3, JetpackFuel = 100, PortalShots = 2, AirdropSignalWood = 2000;
+        [Tune("Airdrop")] public static int SniperAmmo = 3, JetpackFuel = 100, PortalShots = 2;
         [Tune("Airdrop")] public static float JetpackSeconds = 8f, JetpackThrust = 9f, GiantTime = 30f, GiantScale = 3f;
         [Tune("Airdrop")] public static float SlenderSpeed = 4.6f, SlenderHp = 150f, SlenderLife = 60f;
         [Tune("Airdrop")] public static float RocketSpeed = 32f, RocketRadius = 3.5f, RocketStructureDamage = 900f, RocketPlayerDamage = 70f;
@@ -335,7 +335,9 @@ namespace RockGame
         [Tune("Arsenal and Builder")] public static int PistolMag = 5, HeavyArmorHp = 200, TreeCrackerUses = 40;
         /// <summary>Builder: every craft takes a while (seconds per 100 wood of its price, between the min and max).</summary>
         [Tune("Arsenal and Builder")] public static float BuilderCraftSecsPer100 = 0.6f, BuilderCraftMin = 2f, BuilderCraftMax = 20f;
-        [Tune("Fun modes")] public static float FunItemInterval = 9f;
+        [Tune("Fun modes")] public static float FunItemInterval = 45f;
+        /// <summary>Fun modes: no building phase (the wall is down and the ball in from the start), and a shorter match.</summary>
+        [Tune("Fun modes")] public static float FunMatchLength = 600f;
         [Tune("Airdrop")] public static float EnderPearlSpeed = 24f;
 
         // ---------- Items ----------
@@ -444,7 +446,7 @@ namespace RockGame
                 var l = new List<Item>();
                 foreach (Item i in Enum.GetValues(typeof(Item)))
                 {
-                    if (i == Item.None || i == Item.Rock || i == Item.FortifyBuff || i == Item.WoodGenBuff) continue;
+                    if (i == Item.None || i == Item.Rock || i == Item.FortifyBuff || i == Item.WoodGenBuff || i == Item.AirdropSignal) continue;
                     if (i == Item.Boat && !ThemeMaps.HasWater) continue; // THEME MAPS
                     l.Add(i);
                 }
@@ -547,7 +549,7 @@ namespace RockGame
         }
 
         // ---------- Crafting ----------
-        static readonly Item[] k_Recipes = { Item.Hatchet, Item.Pickaxe, Item.Spear, Item.BuildingPlan, Item.Bow, Item.Arrow, Item.Crossbow, Item.Armor, Item.Chainsaw, Item.Ram, Item.Chest, Item.Barrier, Item.Saddle, Item.AirdropSignal };
+        static readonly Item[] k_Recipes = { Item.Hatchet, Item.Pickaxe, Item.Spear, Item.BuildingPlan, Item.Bow, Item.Arrow, Item.Crossbow, Item.Armor, Item.Chainsaw, Item.Ram, Item.Chest, Item.Barrier, Item.Saddle };
 
         /// <summary>Recipes available in this mode (wood mode has no pickaxe).</summary>
         public static int RecipeCount => (WoodMode ? k_Recipes.Length - 1 : k_Recipes.Length)
@@ -572,7 +574,6 @@ namespace RockGame
                 case Item.Saddle: r = new Recipe { Output = Item.Saddle, Count = 1, Wood = SaddleWood }; break;
                 case Item.Armor: r = new Recipe { Output = Item.Armor, Count = 1, Wood = ArmorWood }; break;
                 case Item.Chainsaw: r = new Recipe { Output = Item.Chainsaw, Count = 1, Wood = ChainsawWood }; break;
-                case Item.AirdropSignal: r = new Recipe { Output = Item.AirdropSignal, Count = 1, Wood = AirdropSignalWood }; break;
                 default: r = new Recipe { Output = Item.Barrier, Count = 1, Wood = BarrierWood }; break;
             }
             if (WoodMode) { r.Wood += r.Stone; r.Stone = 0; } // everything costs wood only
