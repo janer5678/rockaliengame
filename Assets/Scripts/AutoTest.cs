@@ -100,6 +100,7 @@ namespace RockGame
             if (m_Mode == "rig") { yield return RigShots(me, pc); yield break; }
             if (m_Mode == "psx") { yield return PsxShots(me, pc); yield break; }
             if (m_Mode == "aipsx") { yield return AiPsxShots(me, pc); yield break; }
+            if (m_Mode == "outline") { yield return OutlineShots(me, pc); yield break; }
             if (m_Mode == "shots") yield return ShotsRoutine(me, pc);
             else if (nm.IsHost) yield return HostRoutine(me, pc);
             else yield return ClientRoutine(me, pc);

@@ -406,6 +406,7 @@ namespace RockGame
 
         void SpawnNodes()
         {
+            Physics.SyncTransforms(); // the map was only just built: its colliders have to be where they look
             var rng = new System.Random(1337 + Cfg.MapSeed);
             float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
             var placed = new List<Vector3>();
@@ -420,7 +421,7 @@ namespace RockGame
             // the rocks on the Highlands hills are real, minable stone nodes
             foreach (var p in MapBuilder.WildRocks)
             {
-                if (NearTower(p)) continue;
+                if (NearTower(p) || InsideScenery(p)) continue;
                 bool close = false;
                 foreach (var q in placed) if ((q - p).sqrMagnitude < 5f * 5f) { close = true; break; }
                 if (close) continue;
@@ -439,6 +440,7 @@ namespace RockGame
                         if (Mathf.Abs(p.x - Cfg.BaseCenter[0].x) < Cfg.BaseHalf + 6 && Mathf.Abs(p.z - Cfg.BaseCenter[0].z) < Cfg.BaseHalf + 6) continue;
                         if (NearTower(p)) continue;
                         if (!ThemeMaps.SpotOk(p)) continue; // THEME MAPS
+                        if (InsideScenery(p)) continue;
                         float yaw = R(0, 360);
                         for (int m = 0; m < Cfg.Copies; m++)
                         {
@@ -466,6 +468,7 @@ namespace RockGame
                     if (Mathf.Abs(p.x - Cfg.BaseCenter[0].x) < Cfg.BaseHalf + 3 && Mathf.Abs(p.z - Cfg.BaseCenter[0].z) < Cfg.BaseHalf + 3) continue;
                     if (new Vector2(p.x, p.z).magnitude < 12f || NearTower(p)) continue;
                     if (!ThemeMaps.SpotOk(p)) continue; // THEME MAPS
+                    if (InsideScenery(p)) continue;
                     bool close = false;
                     foreach (var q in placed) if ((q - p).sqrMagnitude < 7.5f * 7.5f) { close = true; break; }
                     if (close) continue;
@@ -475,6 +478,19 @@ namespace RockGame
                     break;
                 }
             }
+        }
+
+        /// <summary>Would something standing at p (a tree, rock, bush or horse) be inside the map's own scenery - towers, ruins, cacti, pillars...? Checked for every team's copy of the spot.</summary>
+        public static bool InsideScenery(Vector3 p)
+        {
+            for (int m = 0; m < Cfg.Copies; m++)
+            {
+                var q = Cfg.Copy(p, m);
+                q.y = MapBuilder.Height(q.x, q.z);
+                foreach (var h in Physics.OverlapCapsule(q + Vector3.up * 0.9f, q + Vector3.up * 4f, 1.6f, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore))
+                    if (h.GetComponentInParent<GroundMarker>() == null && h.GetComponentInParent<NetworkObject>() == null) return true;
+            }
+            return false;
         }
 
         void SpawnNode(byte kind, Vector3 pos, int seed)
@@ -565,6 +581,7 @@ namespace RockGame
         /// </summary>
         void ServerTickScheduledDrops(double now)
         {
+            if (Cfg.FunRules) return; // the fun modes hand out items instead
             for (int i = m_OldCrates.Count - 1; i >= 0; i--)
             {
                 var c = m_OldCrates[i];

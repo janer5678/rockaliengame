@@ -68,7 +68,7 @@ namespace RockGame
 
         void ServerGiftTo(PlayerNet p, ItemStack stack)
         {
-            int left = p.ServerGiveToBack(stack.Id, stack.Count, stack.Data);
+            int left = p.ServerGiveFromRight(stack.Id, stack.Count, stack.Data);
             // no room: it lands at their feet
             if (left > 0) ServerDropItem(ItemStack.Of(stack.Id, left, stack.Data), p.transform.position + p.transform.forward, p.transform.forward, p.EyePos);
         }

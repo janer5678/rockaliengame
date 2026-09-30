@@ -86,6 +86,7 @@ namespace RockGame
             yield return new WaitForSeconds(0.4f);
             Check(me.HeldStack.Data == Cfg.PistolMag - 1, "no reloading without ammo");
 
+            Check(Cfg.Melee(Item.Rock).Cooldown == Cfg.Melee(Item.Hatchet).Cooldown, $"the rock swings at the hatchet's speed ({Cfg.Melee(Item.Rock).Cooldown}s)");
             // fortify: a foundation and a wall, then every wooden piece turns to stone
             me.CraftRpc(Cfg.RecipeIndex(Item.BuildingPlan));
             yield return new WaitForSeconds(0.3f);
@@ -97,6 +98,38 @@ namespace RockGame
             yield return new WaitForSeconds(0.8f);
             me.PlaceRpc((byte)PieceType.Wall, ci, cj, 0, 0);
             yield return new WaitForSeconds(0.8f);
+            // a chest pushed right up against that wall: too tight at the exact spot, so it slides into the nearest free one
+            {
+                BuildGrid.Pose(PieceType.Wall, new PieceKey(PieceKey.KEdge, ci, cj, 0, 0), out var wallPos, out _);
+                var tight = new Vector3(wallPos.x - 0.35f, BuildGrid.LevelY(0), wallPos.z);
+                Physics.SyncTransforms();
+                bool raw = PlayerNet.DeployProblem(Item.Chest, team, tight, 90f) != null;
+                var spot = tight;
+                bool ok = PlayerNet.FindDeploySpot(Item.Chest, team, ref spot, 90f, out var why);
+                Check(raw && ok && Vector3.Distance(spot, tight) < 0.75f, $"a chest aimed right against a wall slides {Vector3.Distance(spot, tight):0.00} m to fit ({why ?? "placed"})");
+            }
+            // stairs, then from half way up them the ceiling next to the top already shows green
+            {
+                FreeCell(team, 2, out int si, out int sj);
+                pc.LocalTeleport(BuildGrid.CellCenter(si, sj) + new Vector3(-4f, 0.1f, -1.5f), 0);
+                yield return new WaitForSeconds(0.4f);
+                me.PlaceRpc((byte)PieceType.Foundation, si, sj, 0, 0);
+                yield return new WaitForSeconds(0.8f);
+                me.PlaceRpc((byte)PieceType.Stairs, si, sj, 0, 0);
+                yield return new WaitForSeconds(0.8f);
+                pc.BuildPiece = PieceType.Floor;
+                // a little way up the stairs, looking up at where the ceiling next to them goes
+                var mid = BuildGrid.CellCenter(si, sj) + Vector3.up * (BuildGrid.LevelY(0) + 0.5f);
+                var ceil = BuildGrid.CellCenter(si - 1, sj) + Vector3.up * BuildGrid.LevelY(1);
+                pc.LocalTeleport(mid, 270f);
+                yield return new WaitForSeconds(0.4f);
+                var look = Quaternion.LookRotation(ceil - me.EyePos).eulerAngles;
+                pc.SetLook(look.y, look.x > 180f ? look.x - 360f : look.x);
+                yield return new WaitForSeconds(0.2f);
+                Check(pc.GhostOk && pc.GhostKey.L == 1, $"from low on the stairs the ceiling shows green ({pc.GhostKey}, feet at {me.transform.position.y:0.0})");
+                yield return Snap("arsenal_ceiling_from_stairs");
+                pc.BuildPiece = PieceType.Foundation;
+            }
             int wood = 0;
             foreach (var s in Structure.All) if (s.Team.Value == team && s.Upgradable && s.Tier.Value == 0) wood++;
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
@@ -259,11 +292,8 @@ namespace RockGame
         {
             Check(Cfg.FunRules && !Cfg.PowerMenu, $"{Cfg.RulesName(Cfg.Rules)}: no power menu, normal prices");
             Check(g.S == GameState.BallLive && Ball.Instance != null && Mathf.Abs(g.TimeLeft - Cfg.FastMatchLength) < 15f, $"fun modes start with the wall down and the ball in ({g.S})");
-            int backItems = 0;
-            for (int i = Cfg.HotbarSize; i < Cfg.PlayerSlots; i++) if (!me.SlotAt(i).Empty) backItems++;
-            bool hotbarEmpty = true;
-            for (int i = 0; i < Cfg.HotbarSize; i++) if (!me.SlotAt(i).Empty) hotbarEmpty = false;
-            Check(backItems >= 1 && hotbarEmpty && !me.SlotAt(Cfg.PlayerSlots - 1).Empty, "the first free item came straight away, into the back of the inventory");
+            Check(!me.SlotAt(Cfg.HotbarSize - 1).Empty, $"the first free item came straight away, onto the right of the hotbar like wood ({me.SlotAt(Cfg.HotbarSize - 1).Id})");
+            Check(Cfg.AirdropCount == 0 || g.NextDropLands.Value < 0, "no airdrops in the fun modes");
             Cfg.FunItemInterval = 2f;
             int Items()
             {
@@ -274,6 +304,9 @@ namespace RockGame
             int before = Items();
             yield return new WaitForSeconds(Mathf.Max(0f, (float)(g.NextFunItem.Value - me.NetworkManager.ServerTime.Time)) + 2.6f); // the next one was already scheduled
             Check(Items() > before && g.NextFunItem.Value > 0, $"free items handed out ({before} -> {Items()} slots used)");
+            int lanes = 0;
+            for (int i = 0; i < NetGame.LaneTotal; i++) if (g.LaneStartAt(i) >= 0) lanes++;
+            Check(lanes == 0 && g.NextDropLands.Value < 0, "still no airdrops");
             pc.MenuOpen = true;
             yield return Snap("mode_" + Cfg.RulesName(Cfg.Rules).ToLower().Replace(" ", "") + "_inventory");
             pc.CloseMenu();
@@ -306,6 +339,14 @@ namespace RockGame
                 if (ThemeMaps.WaterAt(p.x, p.z) || ThemeMaps.LavaAt(p.x, p.z)) bad++;
             }
             Check(nodes > 10 && bad == 0, $"{nodes} resource nodes, none in water or lava");
+            int inside = 0;
+            foreach (var n in ResourceNode.All)
+            {
+                var p = n.transform.position;
+                foreach (var h in Physics.OverlapCapsule(p + Vector3.up * 0.9f, p + Vector3.up * 4f, 1.2f, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore))
+                    if (h.GetComponentInParent<GroundMarker>() == null && h.GetComponentInParent<Unity.Netcode.NetworkObject>() == null) { inside++; break; }
+            }
+            Check(inside == 0, $"no trees or rocks inside the map's scenery ({inside})");
 
             // views: from high up, and at ground level looking at the middle
             pc.LocalTeleport(new Vector3(Cfg.MapHalf * 0.55f, 45f, Cfg.BaseCenter[team].z - 10f), 0f);
@@ -476,6 +517,36 @@ namespace RockGame
             yield return new WaitForSeconds(0.5f);
             Check(CountAiPsx() >= skinned - 5, "switching back to AI PSX TEST re-skins everything");
             Log("aipsx shots done");
+            Application.Quit(0);
+        }
+
+        /// <summary>-autotest outline (host + client): the client turns the alien outlines on and photographs the host at a few strengths.</summary>
+        IEnumerator OutlineShots(PlayerNet me, PlayerController pc)
+        {
+            if (Unity.Netcode.NetworkManager.Singleton.IsHost) { yield return new WaitForSeconds(30f); Application.Quit(0); yield break; }
+            PlayerNet other = null;
+            foreach (var p in PlayerNet.All) if (p != me) other = p;
+            if (other == null) { Log("FAIL: nobody to look at"); Application.Quit(0); yield break; }
+            yield return new WaitForSeconds(2f);
+            var op = other.transform.position;
+            var eye = op + new Vector3(0, 0, 3.5f * (op.z > 0 ? -1f : 1f));
+            eye.y = MapBuilder.Height(eye.x, eye.z) + 0.1f;
+            float yaw = Quaternion.LookRotation(op - eye).eulerAngles.y;
+            foreach (var (on, st, w) in new[] { (false, 0.3f, 0.03f), (true, 0.3f, 0.03f), (true, 0.8f, 0.06f) })
+            {
+                Cfg.AlienOutlines = on;
+                Cfg.AlienOutlineStrength = st;
+                Cfg.AlienOutlineWidth = w;
+                pc.LocalTeleport(eye, yaw);
+                pc.SetLook(yaw, 8f);
+                yield return new WaitForSeconds(1.2f);
+                int glowing = 0;
+                foreach (var r in other.GetComponentsInChildren<Renderer>(true))
+                    foreach (var m in r.sharedMaterials) if (m != null && m.name == "alien outline") { glowing++; break; }
+                Check(on ? glowing > 0 : glowing == 0, $"outlines {(on ? "on" : "off")}: {glowing} glowing parts");
+                yield return Snap($"outline_{(on ? "on" : "off")}_{st * 100f:0}");
+            }
+            Log("outline shots done");
             Application.Quit(0);
         }
     }

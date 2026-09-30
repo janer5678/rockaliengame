@@ -66,35 +66,12 @@ namespace RockGame
             return space;
         }
 
-        /// <summary>Adds items: tops up matching stacks, then fills empty slots from the last one backwards (the hotbar last).</summary>
-        public static int AddFromBack(NetworkList<ItemStack> list, Item id, int count, int data = 0)
-        {
-            if (id == Item.None || count <= 0) return 0;
-            int max = Cfg.MaxStack(id);
-            for (int i = 0; i < list.Count && count > 0; i++)
-            {
-                var s = list[i];
-                if (s.Id != id || s.Data != data || s.Count >= max) continue;
-                int put = Mathf.Min(count, max - s.Count);
-                list[i] = s.WithCount(s.Count + put);
-                count -= put;
-            }
-            for (int i = list.Count - 1; i >= 0 && count > 0; i--)
-            {
-                if (!list[i].Empty) continue;
-                int put = Mathf.Min(count, max);
-                list[i] = ItemStack.Of(id, put, data);
-                count -= put;
-            }
-            return count;
-        }
-
         /// <summary>
         /// Adds items (topping up existing stacks anywhere first, then empty slots). Returns how many did NOT fit.
         /// Player inventory: materials go to the hotbar from slot 7 backwards (skipping `avoidSlot`, the empty slot you're
         /// holding your rock in), tools to the hotbar from slot 1; then the main inventory.
         /// </summary>
-        public static int Add(NetworkList<ItemStack> list, Item id, int count, int data = 0, bool playerInv = false, int avoidSlot = -1)
+        public static int Add(NetworkList<ItemStack> list, Item id, int count, int data = 0, bool playerInv = false, int avoidSlot = -1, bool fromRight = false)
         {
             if (id == Item.None || count <= 0) return 0;
             int max = Cfg.MaxStack(id);
@@ -107,7 +84,7 @@ namespace RockGame
                 count -= put;
             }
             if (count <= 0) return 0;
-            bool mat = Cfg.IsMat(id);
+            bool mat = Cfg.IsMat(id) || fromRight;
             for (int k = 0; k < list.Count && count > 0; k++)
             {
                 int i = k;

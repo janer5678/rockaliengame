@@ -234,7 +234,21 @@ namespace RockGame
             RowLabel("Testing");
             Bootstrap.Solo = ToggleBtn(Bootstrap.Solo, "Solo test", GUILayout.Height(30 * k));
             Bootstrap.Fast = ToggleBtn(Bootstrap.Fast, "Fast timers", GUILayout.Height(30 * k));
+            bool outl = ToggleBtn(Cfg.AlienOutlines, "Alien outlines", GUILayout.Height(30 * k));
+            if (outl != Cfg.AlienOutlines) { Cfg.AlienOutlines = outl; Cfg.SavePrefs(); }
             GUILayout.EndHorizontal();
+            if (Cfg.AlienOutlines)
+            {
+                GUILayout.Label("<color=#bbbbbb>Test (works in every mode): enemies have a faint glow in their team colour so they're easier to see.</color>", m_SmallWrap);
+                float st = SliderRow("Glow strength", Cfg.AlienOutlineStrength, 0.02f, 1f, $"{Cfg.AlienOutlineStrength * 100f:0}%");
+                float wd = SliderRow("Glow thickness", Cfg.AlienOutlineWidth, 0.005f, 0.12f, $"{Cfg.AlienOutlineWidth * 100f:0.0} cm");
+                if (!Mathf.Approximately(st, Cfg.AlienOutlineStrength) || !Mathf.Approximately(wd, Cfg.AlienOutlineWidth))
+                {
+                    Cfg.AlienOutlineStrength = st;
+                    Cfg.AlienOutlineWidth = wd;
+                    Cfg.SavePrefs();
+                }
+            }
             if (Bootstrap.Solo || Bootstrap.Fast)
                 GUILayout.Label("<color=#bbbbbb>" + (Bootstrap.Solo ? "Solo test: the match starts without an opponent. " : "") + (Bootstrap.Fast ? $"Fast timers: {Cfg.FastBallDropDelay:0}s ball drop, {Cfg.FastMatchLength:0}s match." : "") + "</color>", m_SmallWrap);
 

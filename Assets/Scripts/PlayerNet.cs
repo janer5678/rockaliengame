@@ -316,6 +316,69 @@ namespace RockGame
             }
         }
 
+        // ---------------- test: alien outlines ----------------
+
+        static readonly Material[] s_OutlineMats = new Material[4];
+        static Shader s_OutlineShader;
+        bool m_Outline;
+        float m_NextOutlineRefresh;
+
+        /// <summary>The team's glow material, kept in step with the strength / width settings.</summary>
+        static Material OutlineMat(int team)
+        {
+            team = Mathf.Clamp(team, 0, 3);
+            if (s_OutlineMats[team] == null)
+            {
+                if (s_OutlineShader == null) s_OutlineShader = Resources.Load<Shader>("AlienOutline");
+                if (s_OutlineShader == null || !s_OutlineShader.isSupported) return null;
+                s_OutlineMats[team] = new Material(s_OutlineShader) { name = "alien outline", renderQueue = 3100 };
+            }
+            var c = Color.Lerp(Cfg.TeamColor[team], Color.white, 0.2f);
+            c.a = Mathf.Clamp01(Cfg.AlienOutlineStrength);
+            s_OutlineMats[team].SetColor("_Color", c);
+            s_OutlineMats[team].SetFloat("_Width", Mathf.Clamp(Cfg.AlienOutlineWidth, 0.002f, 0.3f));
+            return s_OutlineMats[team];
+        }
+
+        readonly List<GameObject> m_OutlineCopies = new List<GameObject>();
+
+        /// <summary>
+        /// Single-part meshes get the glow as an extra material. Meshes made of several parts (the rigged alien body) get a
+        /// copy drawn with the glow on every part - an extra material would only cover the last part.
+        /// </summary>
+        void SetOutline(bool on)
+        {
+            m_Outline = on;
+            foreach (var c in m_OutlineCopies) if (c != null) Destroy(c);
+            m_OutlineCopies.Clear();
+            var mat = OutlineMat(Team.Value);
+            if (mat == null) return;
+            foreach (var r in m_VisualRoot.GetComponentsInChildren<Renderer>(true))
+            {
+                if (r is ParticleSystemRenderer || r is LineRenderer || r.name == "outline copy") continue;
+                var mats = new List<Material>(r.sharedMaterials);
+                mats.RemoveAll(m => m != null && m.name == "alien outline");
+                if (on && r is SkinnedMeshRenderer smr && smr.sharedMesh != null && smr.sharedMesh.subMeshCount > 1)
+                {
+                    var go = new GameObject("outline copy");
+                    go.transform.SetParent(smr.transform, false);
+                    var copy = go.AddComponent<SkinnedMeshRenderer>();
+                    copy.sharedMesh = smr.sharedMesh;
+                    copy.bones = smr.bones;
+                    copy.rootBone = smr.rootBone;
+                    copy.localBounds = smr.localBounds;
+                    copy.updateWhenOffscreen = smr.updateWhenOffscreen;
+                    copy.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                    var all = new Material[smr.sharedMesh.subMeshCount];
+                    for (int i = 0; i < all.Length; i++) all[i] = mat;
+                    copy.sharedMaterials = all;
+                    m_OutlineCopies.Add(go);
+                }
+                else if (on) mats.Add(mat);
+                r.sharedMaterials = mats.ToArray();
+            }
+        }
+
         void RebuildFlame(bool on)
         {
             if (m_Flame) { Destroy(m_Flame); m_Flame = null; }
@@ -415,6 +478,15 @@ namespace RockGame
             var local = Local;
             bool esp = !IsOwner && local != null && local.HeldItem == Item.Wallhack && !local.Dead.Value && local.Team.Value != Team.Value && !dead;
             if (esp != m_Esp) SetEsp(esp);
+            // test: alien outlines (enemies only, not while invisible)
+            bool outline = Cfg.AlienOutlines && !IsOwner && local != null && local.Team.Value != Team.Value && !dead && !Hidden;
+            if (outline != m_Outline) SetOutline(outline);
+            else if (outline)
+            {
+                OutlineMat(Team.Value); // follows the strength / thickness sliders live
+                // (held items and armour get swapped: give the new ones the glow too)
+                if (Time.time >= m_NextOutlineRefresh) { m_NextOutlineRefresh = Time.time + 1f; SetOutline(true); }
+            }
             // jetpack flame
             bool flame = Jetting.Value && !dead;
             if (flame != (m_Flame != null)) RebuildFlame(flame);
@@ -498,10 +570,11 @@ namespace RockGame
             return left;
         }
 
-        /// <summary>Server: give items into the back of the inventory (the last empty slots), not the hotbar. Returns how many didn't fit.</summary>
-        public int ServerGiveToBack(Item id, int count, int data = 0)
+        /// <summary>Server: give items that fill the hotbar from the right, like wood does (then the inventory). Returns how many didn't fit.</summary>
+        public int ServerGiveFromRight(Item id, int count, int data = 0)
         {
-            int left = InvOps.AddFromBack(Inv, id, count, data);
+            int avoid = HeldStack.Empty ? HeldSlot.Value : -1;
+            int left = InvOps.Add(Inv, id, count, data, true, avoid, true);
             if (left > 0) Notify("Inventory full!");
             return left;
         }
@@ -1055,6 +1128,30 @@ namespace RockGame
             return null;
         }
 
+        /// <summary>
+        /// Chests and walls go right up against things (your walls, the machine): if the exact spot is a bit too tight,
+        /// the nearest free spot within 0.7 m is used instead. Returns false (with the reason) if there's none.
+        /// </summary>
+        public static bool FindDeploySpot(Item kind, int team, ref Vector3 pos, float yaw, out string problem)
+        {
+            problem = DeployProblem(kind, team, pos, yaw);
+            if (problem == null) return true;
+            if (problem != "Not enough room here" || kind == Item.Boat) return false;
+            for (float r = 0.15f; r <= 0.71f; r += 0.14f)
+                for (int d = 0; d < 8; d++)
+                {
+                    var p = pos + Quaternion.Euler(0, d * 45f, 0) * Vector3.forward * r;
+                    // stand it on whatever is under the nudged spot
+                    if (!Physics.Raycast(p + Vector3.up * 0.8f, Vector3.down, out var hit, 1.6f, ~(1 << HitboxLayer), QueryTriggerInteraction.Ignore) || hit.normal.y < 0.7f) continue;
+                    p.y = hit.point.y;
+                    if (DeployProblem(kind, team, p, yaw) != null) continue;
+                    pos = p;
+                    problem = null;
+                    return true;
+                }
+            return false;
+        }
+
         [Rpc(SendTo.Server)]
         public void PlaceDeployableRpc(byte kindByte, Vector3 pos, float yaw)
         {
@@ -1062,8 +1159,7 @@ namespace RockGame
             if (kind != Item.Chest && kind != Item.Barrier && kind != Item.Car && kind != Item.Boat /* THEME MAPS */) return;
             if (Dead.Value || CarryingBall || HeldItem != kind || InSuddenDeath) return;
             if (Vector3.Distance(pos, transform.position) > Cfg.DeployRange + 3f) return;
-            var problem = DeployProblem(kind, Team.Value, pos, yaw);
-            if (problem != null) { Notify(problem); return; }
+            if (!FindDeploySpot(kind, Team.Value, ref pos, yaw, out var problem)) { Notify(problem); return; }
             ServerConsumeHeld();
             var rot = Quaternion.Euler(0, yaw, 0);
             if (kind == Item.Chest)

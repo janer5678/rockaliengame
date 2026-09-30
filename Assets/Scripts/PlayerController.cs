@@ -65,6 +65,9 @@ namespace RockGame
         GameObject m_Ghost;
         int m_GhostId = -1;
         bool m_GhostOk;
+        /// <summary>The building ghost is showing green (for tests).</summary>
+        public bool GhostOk => m_GhostOk;
+        public PieceKey GhostKey => m_GhostKey;
         readonly List<MeshRenderer> m_GhostRenderers = new List<MeshRenderer>();
         PieceKey m_GhostKey;
         Vector3 m_GhostPos;
@@ -796,15 +799,15 @@ namespace RockGame
         /// <summary>Rust style: LMB stabs; hold RMB to wind up, then LMB throws. Releasing RMB cancels.</summary>
         void HandleSpear()
         {
-            // hold RMB to wind up - or just tap it: the spear stays readied for a moment, and LMB throws it
+            // hold RMB to ready it (LMB throws); let go and it's a normal spear again
             if (Binds.Down(Bind.Aim)) m_DrawStart = Time.time;
-            if (!Binds.Held(Bind.Aim) && m_DrawStart >= 0 && Time.time - m_DrawStart > Mathf.Max(1.5f, Cfg.SpearDrawTime + 0.5f)) m_DrawStart = -1f;
+            if (!Binds.Held(Bind.Aim)) m_DrawStart = -1f;
             if (m_DrawStart < 0) { HandleMelee(Item.Spear); return; }
 
             if (Binds.Down(Bind.Attack) && Time.time >= m_NextSwing)
             {
                 float t = Time.time - m_DrawStart;
-                // a quick tap-and-throw still goes a good way; holding longer throws it harder
+                // a quick throw still goes a good way; holding longer throws it harder
                 float power = Mathf.Lerp(0.65f, 1f, Mathf.Clamp01(t / Mathf.Max(0.05f, Cfg.SpearDrawTime)));
                 var ray = CenterRay();
                 Vector3 origin = SafeOrigin(ray, 0.8f);
@@ -1262,7 +1265,7 @@ namespace RockGame
                     m_GhostPos = hit.point;
                     m_GhostYaw = m_Yaw + (kind == Item.Chest ? 180f : 0f);
                     if (kind == Item.Boat) m_GhostPos.y = ThemeMaps.WaterY - 0.1f; // THEME MAPS
-                    reason = PlayerNet.DeployProblem(kind, team, m_GhostPos, m_GhostYaw);
+                    PlayerNet.FindDeploySpot(kind, team, ref m_GhostPos, m_GhostYaw, out reason);
                     m_Ghost.transform.SetPositionAndRotation(m_GhostPos, Quaternion.Euler(0, m_GhostYaw, 0));
                 }
             }
@@ -1280,6 +1283,11 @@ namespace RockGame
                     m_GhostKey = smart;
                     visible = true;
                 }
+                if (t == PieceType.Floor && (!visible || PlacementProblem(t, m_GhostKey) != null) && FindFloorAnyLevel(ray, out var fk))
+                {
+                    m_GhostKey = fk;
+                    visible = true;
+                }
                 if (!visible) reason = t == PieceType.Floor ? "Look up at where the floor/ceiling should go" : "Aim at the ground or your building";
                 else
                 {
@@ -1294,6 +1302,28 @@ namespace RockGame
             if (m_Ghost.activeSelf != visible) m_Ghost.SetActive(visible);
             var mat = Art.Ghost(m_GhostOk ? k_GhostOk : k_GhostBad);
             foreach (var r in m_GhostRenderers) r.sharedMaterial = mat;
+        }
+
+        /// <summary>
+        /// Floors / ceilings: try every level the aim ray crosses within reach (not just the one your feet are on), so from
+        /// part way up the stairs you can already see the ceiling go green where you're pointing. Nearest valid one wins.
+        /// </summary>
+        bool FindFloorAnyLevel(Ray ray, out PieceKey key)
+        {
+            key = default;
+            float best = float.MaxValue;
+            if (Mathf.Abs(ray.direction.y) < 0.01f) return false;
+            for (int l = 1; l <= Cfg.MaxLevel; l++)
+            {
+                float d = (BuildGrid.LevelY(l) - ray.origin.y) / ray.direction.y;
+                if (d < 0.5f || d > Cfg.BuildRange + 1.5f || d >= best) continue;
+                var p = ray.origin + ray.direction * d;
+                var k = new PieceKey(PieceKey.KFloor, BuildGrid.CellOf(p.x), BuildGrid.CellOf(p.z), l, 0);
+                if (PlacementProblem(PieceType.Floor, k) != null) continue;
+                best = d;
+                key = k;
+            }
+            return best < float.MaxValue;
         }
 
         /// <summary>Why a grid piece can't go at `key` (null = it can), judged from what this client can see.</summary>

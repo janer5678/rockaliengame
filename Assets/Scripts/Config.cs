@@ -266,7 +266,7 @@ namespace RockGame
         [Tune("Player")] public static float JumpSpeed = 7.2f;
         [Tune("Player")] public static float Gravity = 20f;
         [Tune("Player")] public static float BallCarrySpeedMul = 1f;
-        [Tune("Player")] public static float BallThrowSpeed = 16f;
+        [Tune("Player")] public static float BallThrowSpeed = 11f;
         // sliding (sprint, then crouch), like Crab Game: you keep your speed, pick up more going downhill, lose it uphill
         [Tune("Player")] public static float SlideSlipperiness = 7.5f; // 0 = stops almost at once, 10 = like ice
         [Tune("Player")] public static float SlideBoost = 3.5f;       // extra speed when the slide starts
@@ -281,7 +281,7 @@ namespace RockGame
         [Tune("Player")] public static float ProjectileAssist = 0.15f; // same for arrows / thrown spears
 
         // ---------- Melee ----------
-        [Tune("Rock")] public static float RockCooldown = 0.6f, RockRange = 2.3f, RockPlayerDamage = 12f, RockWoodGather = 5f, RockStoneGather = 4f, RockStructureDamage = 6f;
+        [Tune("Rock")] public static float RockCooldown = 0.7f, RockRange = 2.3f, RockPlayerDamage = 12f, RockWoodGather = 5f, RockStoneGather = 4f, RockStructureDamage = 6f;
         [Tune("Hatchet")] public static float HatchetCooldown = 0.7f, HatchetRange = 2.5f, HatchetPlayerDamage = 14f, HatchetWoodGather = 15f, HatchetStoneGather = 2f, HatchetStructureDamage = 12f;
         [Tune("Pickaxe")] public static float PickaxeCooldown = 0.8f, PickaxeRange = 2.5f, PickaxePlayerDamage = 14f, PickaxeWoodGather = 3f, PickaxeStoneGather = 12f, PickaxeStructureDamage = 12f;
         [Tune("Spear")] public static float SpearCooldown = 0.9f, SpearRange = 3.4f, SpearPlayerDamage = 35f, SpearWoodGather = 2f, SpearStoneGather = 1f, SpearStructureDamage = 10f;
@@ -337,6 +337,10 @@ namespace RockGame
         [Tune("Arsenal and Builder")] public static int PistolMag = 5, HeavyArmorHp = 200, TreeCrackerUses = 40;
         /// <summary>Builder: every craft takes a while (seconds per 100 wood of its price, between the min and max).</summary>
         [Tune("Arsenal and Builder")] public static float BuilderCraftSecsPer100 = 0.6f, BuilderCraftMin = 2f, BuilderCraftMax = 20f;
+        /// <summary>Test (main menu > Testing, any mode): enemies have a faint glow in their team colour so they're easier to see.</summary>
+        [Tune("Test")] public static bool AlienOutlines = false;
+        /// <summary>How strong (0 = invisible, 1 = bright) and how thick (metres) the glow is.</summary>
+        [Tune("Test")] public static float AlienOutlineStrength = 0.3f, AlienOutlineWidth = 0.03f;
         [Tune("Fun modes")] public static float FunItemInterval = 45f;
         /// <summary>Fun modes: no building phase (the wall is down and the ball in from the start), and a shorter match.</summary>
         [Tune("Fun modes")] public static float FunMatchLength = 600f;

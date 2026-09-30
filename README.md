@@ -25,14 +25,14 @@ Laid out top to bottom: **MATCH SETUP** (what the host picks), then **PLAY** (ho
   - *Classic*: the original game.
   - *Arsenal*: normal prices (except the crossbow, 350 wood instead of 500), plus a **POWER ITEMS** menu to the right of crafting (see below).
   - *Builder*: **no bases, no machines**. Arsenal's items and prices, but most crafts take a few seconds: a countdown with a progress bar shows at the top of the screen, and anything else you buy meanwhile goes in a **queue** under it (like Rust - one thing at a time, paid for up front). The building plan and Fortify All Walls are instant; you can **craft, build and put chests anywhere**; pieces **lock on to each other** Fortnite style (walls hang off the walls they touch, floors and stairs hold on to walls around them, ground-level walls reach down into the ground). **The ball** can't be thrown: anyone can pick it up, and **LMB (or E) puts it down** right in front of you - a block in your team's colour grows up under it and it's your team's ball. The ball always has a flag pointing at the sky (white when loose, the colour of whoever has it); set **Builder Flag Always Up** to Off in CHANGE VALUES to go back to a flag that only grows out while the ball is planted. When anyone picks the ball up, the block sinks away again. Whoever's ball it is (planted, not carried) when time runs out wins; otherwise it's sudden death.
-  - *FUN MODE*: no building phase - the wall is down and the ball is in from the start - and a 10 minute match. Everybody gets the **same** random item straight away and then every 45 s (any item in the game, the unused ones too). Free items go into the back of your inventory, not the hotbar.
+  - *FUN MODE*: no building phase - the wall is down and the ball is in from the start - and a 10 minute match. Everybody gets the **same** random item straight away and then every 45 s (any item in the game, the unused ones too). Free items land on the right of your hotbar, like wood does (then the inventory). No airdrops in the Fun modes.
   - *FUN RANDOM MODE*: the same, but only airdrop items (the unused ones too) and everyone gets a **different** one.
   - In both Fun modes the **Game length** row changes to the match length and the free item interval (both - / +).
 - **Game length**: - / + for the time behind the glass wall (building, 30 s steps) and the time with the ball (1 min steps). Saved on this PC; the host's are used.
 - While waiting for everyone to join, players brawl with rocks in the stadium; when the lobby is full everyone is sent to their base and the match starts.
 - **Graphics**: *Normal*, *PSX* or *AI PSX TEST*. PSX swaps the 3D models for low-res PSX-style ones (trees so far, more to come); only the looks change - trees are the same size to hit, give the same wood and have the same weak spots, and everything else in the game works the same in both. Each player picks their own (also in Settings > Display, and it switches live). Normal is our own look, where new features get made first.
   - *AI PSX TEST* is a separate test mode (Normal and PSX are untouched by it): using the PSX trees as the reference, the whole wild map is redone in that style - the PSX trees, grass tufts made like their foliage cards, and every other model re-skinned with chunky 32x32 pixel textures generated in the game (grass, dirt, rock, bark, planks, brick, snow, sand, fur...) on a PS1-style shader (`Assets/Game/Resources/AiPsx/AiPsx.shader`: vertices snap to a coarse grid so they wobble, textures warp because they're mapped without perspective correction, lighting per vertex, 15-bit colour with dithering), rendered at half resolution with blocky upscaling, and distance fog. Code in `AiPsxArt.cs`. `-autotest aipsx -aipsx` takes pictures of it and checks Normal and PSX come back exactly as they were.
-- **Testing** (on/off buttons): **Solo test** - the match starts without an opponent, so you can try everything alone. **Fast timers** - 10s wall/ball drop and a 90s match instead of 5 min behind the wall and then 15 min.
+- **Testing** (on/off buttons): **Alien outlines** (test, any mode) - enemies get a faint glow in their team colour so they're easier to spot, with **Glow strength** and **Glow thickness** sliders (also in CHANGE VALUES > Test; the host's setting is used). **Solo test** - the match starts without an opponent, so you can try everything alone. **Fast timers** - 10s wall/ball drop and a 90s match instead of 5 min behind the wall and then 15 min.
 - **Map**: *Plains* (flat), *Highlands* (the wild map: random hilly terrain with minable rocks and watch towers, new every match), or one of the five theme maps: *Beach* (palm island in the middle ringed by shallow water - wading is slow - with channels down the sides; craft a **Boat** for 1500 wood, put it on open water and E to drive it round), *Canyon* (red desert, tall mesas split the map into lanes, lots of stone), *Frostlake* (snowy hills round a frozen lake; the ice is slippery), *Volcano* (black ash, a broken ring of lava round the middle that burns you, a volcano smoking on the horizon), *Ruins* (broken walls and pillars for cover, extra stone). Each in **Small**, **Medium**, **Large** (1.5x) or **Huge** (2x) (the bigger maps get more trees, rocks, bushes, horses and towers). Picked by the host; the client builds the same map from the synced seed.
 - **Materials**: *Normal* or *Wood mode* (no stone anywhere, every rock is a tree, everything costs wood only, no pickaxe, no stone upgrades).
 - **MODE OPTIONS** (button on the main menu):
@@ -134,6 +134,7 @@ Everything for the five theme maps is in `Assets/Scripts/ThemeMaps/` (terrain, p
 - Wood, stone, arrows and berries are real items that take up slots. Tools and weapons go to the hotbar first.
 - Materials stack onto what you already have; otherwise they go on the hotbar from **slot 7 backwards** (never into the empty slot you're holding your rock in), then the main inventory.
 - Everything that goes into your inventory pops up in the bottom right ("+30 Wood"); materials spent on building and crafting show up there in red ("-15 Wood").
+- Chests and high external walls can go right up against your walls and the machine: if the exact spot is a little too tight they slide into the nearest free spot (up to 0.7 m).
 - A chest you open shows up to the **right** of your inventory.
 - You always hold something: the hotbar only scrolls through slots that have an item. The rock stays on your hotbar - it can't be dropped or put in a chest.
 - **Drag an item outside the inventory** to throw it on the ground; look at it and press E to pick it up.
@@ -167,7 +168,7 @@ In wood mode the stone part is added to the wood cost and there's no pickaxe.
 - Arrows that miss stay stuck where they land; press E to pick them back up.
 
 ## Spears
-- Hold RMB and click LMB to throw - or just tap RMB then LMB for a quick throw (a longer wind-up throws harder).
+- Hold RMB to ready the spear and click LMB to throw (a longer wind-up throws harder). Let go of RMB and it's a normal spear again.
 - Thrown spears fly in an arc and stay in the world. Look at one and press **E** to pick it up.
 - A spear that hits a player (up to 60 damage at full wind-up) sticks in them. Anyone can press **E** on them to pull it out and keep it, including the victim. Spears stuck in you go into your loot bag if you die.
 
@@ -177,7 +178,7 @@ In wood mode the stone part is added to the wood cost and there's no pickaxe.
 - You don't have to aim at the bottom edge: look along where you want the wall (eye height or above works) and it goes to the farthest spot along your aim where it can actually go (so it lands where you're pointing).
 - **High external walls** (500 HP, like Rust's): a free-standing palisade of sharpened logs 4 m wide and about 5.5 m tall. Place them out on the map or inside your own base (not in the enemy base, not on the bedrock).
 - Rust-style support: walls and stairs need a foundation or floor, and floors need a wall below or a neighbouring floor. Destroying support collapses what's on it.
-- Floors (ceilings) can be built off the top of a ramp (stairs) in every mode.
+- Floors (ceilings) can be built off the top of a ramp (stairs) in every mode, and the floor ghost looks at every level your aim crosses - so from low on the stairs you already see the ceiling go green where you point.
 - Upgrade to stone (30-50 stone) for 3-4x HP. Melee does only 20% damage to stone, so bring a ram.
 
 ## Horses and the car
