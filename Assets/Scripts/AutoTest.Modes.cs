@@ -47,8 +47,9 @@ namespace RockGame
         IEnumerator ArsenalTests(PlayerNet me, PlayerController pc, NetGame g, int team)
         {
             var hat = Cfg.GetRecipe(Cfg.RecipeIndex(Item.Hatchet));
-            Check(Cfg.PowerMenu && Cfg.PowerCount == 7 && hat.Wood < 50, $"Arsenal: power menu (7 items) and cheap crafting (hatchet {hat.Wood} wood)");
-            Check(Cfg.PieceWood(PieceType.Wall) < Cfg.PieceWoodBase(PieceType.Wall), $"building pieces cheaper too (wall {Cfg.PieceWood(PieceType.Wall)} wood)");
+            var xbow = Cfg.GetRecipe(Cfg.RecipeIndex(Item.Crossbow));
+            Check(Cfg.PowerMenu && Cfg.PowerCount == 4 && hat.Wood == Cfg.HatchetWood && xbow.Wood == 350, $"Arsenal: power menu (4 items), normal prices (hatchet {hat.Wood} wood), crossbow {xbow.Wood} wood");
+            Check(Cfg.PieceWood(PieceType.Wall) == Cfg.WallWood, $"building pieces at their normal price (wall {Cfg.PieceWood(PieceType.Wall)} wood)");
             for (int i = 0; i < 20; i++) me.ServerGive(Item.Wood, 1000);
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
             yield return new WaitForSeconds(0.4f);
@@ -74,10 +75,10 @@ namespace RockGame
             yield return new WaitForSeconds(0.4f);
             Check(me.HeldStack.Data == Cfg.PistolMag && me.Count(Item.PistolAmmo) == Cfg.PistolAmmoPerCraft - 1, "reload fills the magazine from the ammo");
 
-            // heavy armour goes straight on
+            // C4 is buyable
             me.CraftRpc(Cfg.PowerBase + 2);
             yield return new WaitForSeconds(0.4f);
-            Check(me.ArmorHp.Value == Cfg.HeavyArmorHp, $"heavy armour on ({me.ArmorHp.Value} HP)");
+            Check(me.Count(Item.C4) == 1, "bought C4");
 
             // fortify: a foundation and a wall, then every wooden piece turns to stone
             me.CraftRpc(Cfg.RecipeIndex(Item.BuildingPlan));
@@ -94,22 +95,14 @@ namespace RockGame
             foreach (var s in Structure.All) if (s.Team.Value == team && s.Upgradable && s.Tier.Value == 0) wood++;
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
             yield return new WaitForSeconds(0.3f);
-            me.CraftRpc(Cfg.PowerBase + 5);
+            me.CraftRpc(Cfg.PowerBase + 3);
             yield return new WaitForSeconds(0.5f);
             int stone = 0, still = 0;
             foreach (var s in Structure.All) if (s.Team.Value == team && s.Upgradable) { if (s.Tier.Value == 1) stone++; else still++; }
             Check(wood >= 2 && stone >= wood && still == 0, $"fortify turned {stone} wooden pieces to stone");
 
-            // auto wood gen
-            Cfg.WoodGenInterval = 1f;
-            me.CraftRpc(Cfg.PowerBase + 6);
-            yield return new WaitForSeconds(0.5f);
-            int before = me.Count(Item.Wood);
-            yield return new WaitForSeconds(2.5f);
-            Check(g.HasWoodGen(team) && me.Count(Item.Wood) > before, $"auto wood gen: {before} -> {me.Count(Item.Wood)} wood");
-
-            // tree cracker fells a tree in one hit
-            me.CraftRpc(Cfg.PowerBase + 3);
+            // tree cracker (a Fun mode item now) fells a tree in one hit
+            me.ServerGive(Item.TreeCracker, 1, Cfg.TreeCrackerUses);
             yield return new WaitForSeconds(0.4f);
             yield return Hold(me, Item.TreeCracker);
             var tree = Nearest(ResourceNode.Tree, me.transform.position);

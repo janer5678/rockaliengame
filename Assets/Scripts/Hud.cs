@@ -248,11 +248,6 @@ namespace RockGame
                         Shadowed(new Rect(12, ly, 400 * k, 24 * k), $"<color=#7dff9a><b>Free item in {Mathf.Max(0, Mathf.CeilToInt((float)(game.NextFunItem.Value - srvNow)))}</b></color>", m_Small);
                         ly += 20 * k;
                     }
-                    if (game.HasWoodGen(team))
-                    {
-                        Shadowed(new Rect(12, ly, 400 * k, 24 * k), $"<color=#d9a066>Auto wood gen: +{Cfg.WoodGenAmount} every {Cfg.WoodGenInterval:0}s</color>", m_Small);
-                        ly += 20 * k;
-                    }
                     // the 20 second airdrop countdown
                     double lands = game.NextDropLands.Value;
                     float inS = (float)(lands - me.NetworkManager.ServerTime.Time);
@@ -466,8 +461,7 @@ namespace RockGame
                 case Item.HeavyArmor: return $"<b>Heavy Armour</b> ({Cfg.HeavyArmorHp} HP)    LMB: put it on (replaces wooden armour)";
                 case Item.TreeCracker: return $"<b>Tree Cracker</b> ({s.Data} uses left)    LMB: fells a whole tree in one hit";
                 case Item.Boat: return $"<b>Boat</b>    LMB on the water: put it in, then E to get in (only on maps with water)";
-                case Item.FortifyBuff:
-                case Item.WoodGenBuff: return $"<b>{Cfg.ItemName(s.Id)}</b>";
+                case Item.FortifyBuff: return $"<b>{Cfg.ItemName(s.Id)}</b>";
                 default: return "";
             }
         }

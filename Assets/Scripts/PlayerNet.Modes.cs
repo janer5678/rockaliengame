@@ -22,11 +22,10 @@ namespace RockGame
             if (!Cfg.CanCraftAt(Team.Value, transform.position, r.Output)) { Notify($"{r.Name} can only be crafted inside your own base"); return; }
             if (m_IsMaking) { Notify($"Still making {Cfg.ItemName((Item)CraftingItem.Value)} - wait for it"); return; }
             var g = NetGame.Instance;
-            if (r.Output == Item.WoodGenBuff && g != null && g.HasWoodGen(Team.Value)) { Notify("Your team already has the auto wood gen"); return; }
             if (r.Output == Item.Armor && ArmorHp.Value >= Cfg.ArmorHp) { Notify("You're already wearing full armour"); return; }
             if (r.Output == Item.HeavyArmor && ArmorHp.Value >= Cfg.HeavyArmorHp) { Notify("You're already wearing heavy armour"); return; }
             if (Count(Item.Wood) < r.Wood || Count(Item.Stone) < r.Stone) { Notify($"Not enough resources for {r.Name}"); return; }
-            bool noItem = r.Output == Item.Armor || r.Output == Item.HeavyArmor || r.Output == Item.FortifyBuff || r.Output == Item.WoodGenBuff;
+            bool noItem = r.Output == Item.Armor || r.Output == Item.HeavyArmor || r.Output == Item.FortifyBuff;
             int data = r.Output == Item.Saddle ? Team.Value + 1 : Mathf.Clamp(Cfg.MaxData(r.Output), 0, 255);
             if (!noItem && InvOps.Space(Inv, r.Output, data) < r.Count && !InvOps.HasEmpty(Inv)) { Notify("Inventory full!"); return; }
 
@@ -74,13 +73,6 @@ namespace RockGame
                     {
                         int n = g.ServerFortify(Team.Value);
                         g.Broadcast($"{Cfg.TeamLabel(Team.Value)} fortified all their walls - {n} piece{(n == 1 ? "" : "s")} turned to stone!");
-                    }
-                    break;
-                case Item.WoodGenBuff:
-                    if (g != null)
-                    {
-                        g.ServerWoodGen(Team.Value);
-                        g.Broadcast($"{Cfg.TeamLabel(Team.Value)} built an auto wood gen: +{Cfg.WoodGenAmount} wood every {Cfg.WoodGenInterval:0}s");
                     }
                     break;
                 default:

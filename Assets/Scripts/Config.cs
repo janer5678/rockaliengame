@@ -328,14 +328,11 @@ namespace RockGame
         [Tune("Vehicles")] public static int HorsesPerSide = 3;
 
         // ---------- Game modes ----------
-        /// <summary>Arsenal / Builder: normal recipes cost this much of their usual price.</summary>
-        [Tune("Arsenal and Builder")] public static float CheapCostMul = 0.3f;
-        [Tune("Arsenal and Builder")] public static int FortifyWood = 3500, PistolWood = 3000, PistolAmmoWood = 2000, PistolAmmoPerCraft = 30, HeavyArmorWood = 3000,
-            WoodGenWood = 4000, TreeCrackerWood = 2500, C4Wood = 3000;
+        /// <summary>Arsenal / Builder: normal prices, except the crossbow is cheaper.</summary>
+        [Tune("Arsenal and Builder")] public static int ModesCrossbowWood = 350;
+        [Tune("Arsenal and Builder")] public static int FortifyWood = 3500, PistolWood = 3000, PistolAmmoWood = 2000, PistolAmmoPerCraft = 30, C4Wood = 3000;
         [Tune("Arsenal and Builder")] public static float PistolDamage = 34f, PistolSpeed = 160f, PistolFireRate = 0.22f, PistolReload = 1.3f;
         [Tune("Arsenal and Builder")] public static int PistolMag = 8, HeavyArmorHp = 200, TreeCrackerUses = 40;
-        [Tune("Arsenal and Builder")] public static float WoodGenInterval = 10f;
-        [Tune("Arsenal and Builder")] public static int WoodGenAmount = 30;
         /// <summary>Builder: every craft takes a while (seconds per 100 wood of its price, between the min and max).</summary>
         [Tune("Arsenal and Builder")] public static float BuilderCraftSecsPer100 = 0.6f, BuilderCraftMin = 2f, BuilderCraftMax = 20f;
         [Tune("Fun modes")] public static float FunItemInterval = 9f;
@@ -505,9 +502,7 @@ namespace RockGame
         /// <summary>Pieces that sit on the 3 m building grid (placed with the building plan).</summary>
         public static bool IsGridPiece(PieceType t) => t != PieceType.Barrier && t != PieceType.Tower && t != PieceType.EggBlock;
 
-        public static int PieceWood(PieceType t) => PowerMenu ? Mathf.Max(1, Mathf.CeilToInt(PieceWoodBase(t) * CheapCostMul)) : PieceWoodBase(t);
-
-        public static int PieceWoodBase(PieceType t)
+        public static int PieceWood(PieceType t)
         {
             switch (t)
             {
@@ -520,9 +515,7 @@ namespace RockGame
                 default: return 0;
             }
         }
-        public static int PieceUpgradeStone(PieceType t) => PowerMenu ? Mathf.Max(1, Mathf.CeilToInt(PieceUpgradeStoneBase(t) * CheapCostMul)) : PieceUpgradeStoneBase(t);
-
-        static int PieceUpgradeStoneBase(PieceType t)
+        public static int PieceUpgradeStone(PieceType t)
         {
             switch (t)
             {
@@ -585,17 +578,15 @@ namespace RockGame
             if (WoodMode) { r.Wood += r.Stone; r.Stone = 0; } // everything costs wood only
             return Priced(r);
         }
-        /// <summary>A recipe's price in this game mode (Arsenal / Builder: much cheaper).</summary>
+        /// <summary>A recipe's price in this game mode (Arsenal / Builder: the crossbow is cheaper).</summary>
         public static Recipe Priced(Recipe r)
         {
-            if (!PowerMenu) return r;
-            r.Wood = Mathf.CeilToInt(r.Wood * CheapCostMul / 5f) * 5;
-            r.Stone = Mathf.CeilToInt(r.Stone * CheapCostMul / 5f) * 5;
+            if (PowerMenu && r.Output == Item.Crossbow) r.Wood = ModesCrossbowWood;
             return r;
         }
 
         // ---------- Arsenal / Builder: the powerful items menu ----------
-        static readonly Item[] k_Power = { Item.Pistol, Item.PistolAmmo, Item.HeavyArmor, Item.TreeCracker, Item.C4, Item.FortifyBuff, Item.WoodGenBuff };
+        static readonly Item[] k_Power = { Item.Pistol, Item.PistolAmmo, Item.C4, Item.FortifyBuff };
         /// <summary>Power recipes are numbered from here in CraftRpc.</summary>
         public const int PowerBase = 100;
         public static int PowerCount => PowerMenu ? k_Power.Length : 0;
@@ -607,11 +598,8 @@ namespace RockGame
             {
                 case Item.Pistol: return new Recipe { Output = id, Count = 1, Wood = PistolWood };
                 case Item.PistolAmmo: return new Recipe { Output = id, Count = Mathf.Max(1, PistolAmmoPerCraft), Wood = PistolAmmoWood };
-                case Item.HeavyArmor: return new Recipe { Output = id, Count = 1, Wood = HeavyArmorWood };
-                case Item.TreeCracker: return new Recipe { Output = id, Count = 1, Wood = TreeCrackerWood };
                 case Item.C4: return new Recipe { Output = id, Count = 1, Wood = C4Wood };
-                case Item.FortifyBuff: return new Recipe { Output = id, Count = 1, Wood = FortifyWood };
-                default: return new Recipe { Output = Item.WoodGenBuff, Count = 1, Wood = WoodGenWood };
+                default: return new Recipe { Output = Item.FortifyBuff, Count = 1, Wood = FortifyWood };
             }
         }
 
@@ -622,11 +610,8 @@ namespace RockGame
             {
                 case Item.Pistol: return $"{PistolMag} shots, {PistolDamage:0} dmg, fast - reloads from ammo";
                 case Item.PistolAmmo: return $"{PistolAmmoPerCraft} rounds for the pistol";
-                case Item.HeavyArmor: return $"{HeavyArmorHp} armour HP (replaces wooden armour)";
-                case Item.TreeCracker: return $"huge axe: fells a tree in one hit ({TreeCrackerUses} uses)";
                 case Item.C4: return "blows up enemy buildings";
-                case Item.FortifyBuff: return "turns all your team's wooden pieces to stone";
-                default: return $"your team gets +{WoodGenAmount} wood every {WoodGenInterval:0}s";
+                default: return "turns all your team's wooden pieces to stone";
             }
         }
 

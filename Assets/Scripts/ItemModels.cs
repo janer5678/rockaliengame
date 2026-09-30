@@ -359,11 +359,6 @@ namespace RockGame
                     Art.Box(t, Art.Stone, new Vector3(0, 0.07f, 0), new Vector3(0.24f, 0.14f, 0.14f));
                     Art.Part(t, Art.Ico, new Color(1f, 0.85f, 0.3f), new Vector3(0, 0.17f, 0), Vector3.one * 0.06f);
                     break;
-                case Item.WoodGenBuff:
-                    // a log pile with a little cog
-                    for (int k = 0; k < 3; k++) Art.Part(t, Art.Cylinder, Art.Wood, new Vector3(-0.06f + k * 0.06f, 0.04f + (k == 1 ? 0.06f : 0f), 0), new Vector3(0.06f, 0.12f, 0.06f), new Vector3(90, 0, 0));
-                    Art.Part(t, Art.Cylinder, new Color(1f, 0.85f, 0.3f), new Vector3(0, 0.17f, 0), new Vector3(0.1f, 0.015f, 0.1f), new Vector3(90, 0, 0));
-                    break;
                 case Item.Boat:
                     // a toy rowing boat
                     Art.Box(t, new Color(0.55f, 0.38f, 0.22f), new Vector3(0, 0.04f, 0), new Vector3(0.16f, 0.04f, 0.34f));

@@ -5,28 +5,17 @@ using UnityEngine;
 namespace RockGame
 {
     /// <summary>
-    /// The game modes' server rules: Arsenal / Builder power items (fortify, auto wood gen), Builder's "ball in your own
+    /// The game modes' server rules: Arsenal / Builder power items (fortify), Builder's "ball in your own
     /// structure" win, and Fun / Fun Random's free item every few seconds.
     /// </summary>
     public partial class NetGame
     {
-        /// <summary>Teams with an auto wood gen (bit per team).</summary>
-        public readonly NetworkVariable<byte> WoodGenTeams = new NetworkVariable<byte>();
         /// <summary>Builder: the team whose own structure the ball is shut inside right now (-1 = nobody's).</summary>
         public readonly NetworkVariable<sbyte> BallEnclosedBy = new NetworkVariable<sbyte>(-1);
         /// <summary>Fun modes: when everyone gets their next item (server time, -1 = not handing out).</summary>
         public readonly NetworkVariable<double> NextFunItem = new NetworkVariable<double>(-1);
 
-        double m_NextWoodGen;
         float m_NextEnclosureCheck;
-
-        public bool HasWoodGen(int team) => team >= 0 && team < 8 && (WoodGenTeams.Value & (1 << team)) != 0;
-
-        public void ServerWoodGen(int team)
-        {
-            if (team < 0 || team >= 8) return;
-            WoodGenTeams.Value = (byte)(WoodGenTeams.Value | (1 << team));
-        }
 
         /// <summary>Fortify: every wooden grid piece the team has placed turns to stone at full health. Returns how many.</summary>
         public int ServerFortify(int team)
@@ -44,14 +33,6 @@ namespace RockGame
         void ServerTickModes(double now)
         {
             bool playing = S == GameState.PreBall || S == GameState.BallLive;
-
-            // auto wood gen
-            if (playing && WoodGenTeams.Value != 0 && now >= m_NextWoodGen)
-            {
-                m_NextWoodGen = now + Mathf.Max(1f, Cfg.WoodGenInterval);
-                foreach (var p in PlayerNet.All)
-                    if (!p.Dead.Value && HasWoodGen(p.Team.Value)) p.ServerGive(Item.Wood, Cfg.WoodGenAmount);
-            }
 
             // Fun / Fun Random: a free item every few seconds
             if (Cfg.FunRules && playing)

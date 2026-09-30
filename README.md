@@ -23,7 +23,7 @@ Laid out top to bottom: **MATCH SETUP** (what the host picks), then **PLAY** (ho
 - **Players** (one button that folds open the eight choices): red vs blue in *1v1*, *2v2*, *3v3* or *4v4*; or the X-shaped map with 3 or 4 bases (glass walls in an X, the map laid out four ways round): *FFA 3* / *FFA 4* (free for all, one player per base), *2v2v2* or *2v2v2v2* (teams of two). Sudden death is last team standing.
 - **Game mode** - separate ways to play; they don't mix:
   - *Classic*: the original game.
-  - *Arsenal*: everything costs about a third as much (crafting and building), and a **POWER ITEMS** menu sits to the right of crafting (see below).
+  - *Arsenal*: normal prices (except the crossbow, 350 wood instead of 500), plus a **POWER ITEMS** menu to the right of crafting (see below).
   - *Builder*: Arsenal's items and prices, but every craft takes a few seconds (one at a time, shown top left), you can **craft and build anywhere** (not in the enemy base), pieces **lock on to each other** Fortnite style (walls hang off the walls they touch, floors and stairs hold on to walls around them, ground-level walls reach down into the ground), and you **win by having the ball shut inside a build your team made** when time runs out (walls on all 4 sides, or 3 and a roof). The machine socket doesn't count in Builder.
   - *FUN MODE*: the classic game, but every 9 s everybody gets the **same** random item - any item in the game, the unused ones too.
   - *FUN RANDOM MODE*: the same, but only airdrop items (the unused ones too) and everyone gets a **different** one.
@@ -48,11 +48,8 @@ Bought with wood from the POWER ITEMS column next to crafting (in your base; any
 |---|---|---|
 | Pistol | 3000 | 8-round magazine, 34 damage a shot, fast and flat - better than the crossbow. LMB shoots, R reloads (it also reloads by itself when empty). |
 | Pistol Ammo x30 | 2000 | Rounds for the pistol. |
-| Heavy Armour | 3000 | 200 armour HP, goes straight on (knocks wooden armour off). |
-| Tree Cracker | 2500 | A huge axe that fells a whole tree in one hit (40 uses). |
 | C4 | 3000 | The airdrop C4, now buyable. |
 | Fortify All Walls | 3500 | Every wooden piece your team has placed turns to stone at full health. |
-| Auto Wood Gen | 4000 | Your whole team gets +30 wood every 10 s for the rest of the match. |
 
 All these numbers are in CHANGE VALUES under "Arsenal and Builder" (and "Fun modes" for the 9 s).
 
