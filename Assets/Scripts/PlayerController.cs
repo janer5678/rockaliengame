@@ -273,9 +273,12 @@ namespace RockGame
             if (dead) wantCrouch = false;
             if (wantCrouch != Crouching)
             {
+                // crouching while running fast on the ground: slide
+                if (wantCrouch && m_Grounded && !m_SlideOn && m_LastPlanar.magnitude >= Cfg.SprintSpeed * 0.8f && Time.time >= m_NextSlide) StartSlide();
                 Crouching = wantCrouch;
                 m_Net.Crouch.Value = wantCrouch;
             }
+            if (dead || riding) m_SlideOn = false;
 
             // ---- move ----
             m_Speed = 0;
@@ -313,7 +316,8 @@ namespace RockGame
                 if (grounded)
                 {
                     if (m_VelY < 0) m_VelY = -2f;
-                    if (move && Input.GetKeyDown(KeyCode.Space) && !Crouching) m_VelY = Cfg.JumpSpeed;
+                    // you can jump out of a slide and keep all that speed
+                    if (move && Input.GetKeyDown(KeyCode.Space) && (!Crouching || m_SlideOn)) m_VelY = Cfg.JumpSpeed;
                 }
                 if (ladder)
                 {
@@ -330,9 +334,19 @@ namespace RockGame
                 m_Sprinting = sprint && wish.sqrMagnitude > 0.1f;
                 // knockback (hit by a car) fades out, faster on the ground
                 m_Push = Vector3.MoveTowards(m_Push, Vector3.zero, (grounded ? 14f : 3f) * Time.deltaTime);
-                var flags = m_CC.Move((wish * speed + m_Push + Vector3.up * m_VelY) * Time.deltaTime);
+                var planar = wish * speed;
+                if (m_SlideOn) planar = TickSlide(wish, grounded, move);
+                var before = transform.position;
+                var flags = m_CC.Move((planar + m_Push + Vector3.up * m_VelY) * Time.deltaTime);
                 if ((flags & CollisionFlags.Above) != 0 && m_VelY > 0) m_VelY = 0;
-                m_Speed = wish.magnitude * speed;
+                // how fast we really moved (walls stop a slide dead, and a slide needs a run-up)
+                var moved = transform.position - before;
+                moved.y = 0;
+                m_LastPlanar = moved / Mathf.Max(0.0001f, Time.deltaTime);
+                if (m_SlideOn && m_LastPlanar.magnitude < m_SlideVel.magnitude * 0.85f && (flags & CollisionFlags.Sides) != 0)
+                    m_SlideVel = m_SlideVel.normalized * m_LastPlanar.magnitude;
+                m_Speed = m_SlideOn ? 0f : wish.magnitude * speed;
+                TickSlideSound();
                 m_Bob += m_Speed * Time.deltaTime;
                 if (grounded && m_Speed > 0.5f && m_Bob - m_LastStep > (Crouching ? 2.6f : 1.9f))
                 {
@@ -511,6 +525,77 @@ namespace RockGame
             m_Push = new Vector3(v.x, 0, v.z);
             m_VelY = Mathf.Max(m_VelY, v.y);
             Fx.Shake(0.5f);
+        }
+
+        // ------------------------------------------------------------------ sliding (Crab Game style)
+
+        bool m_SlideOn;
+        Vector3 m_SlideVel, m_LastPlanar;
+        float m_NextSlide;
+        AudioSource m_SlideSound;
+
+        void StartSlide()
+        {
+            var dir = m_LastPlanar.sqrMagnitude > 0.1f ? m_LastPlanar.normalized : transform.forward;
+            m_SlideVel = dir * (m_LastPlanar.magnitude + Cfg.SlideBoost);
+            m_SlideOn = true;
+            Fx.Punch(4f);
+            Sfx.Play2D(Sfx.Throw, 0.4f, 0.1f);
+        }
+
+        /// <summary>
+        /// One frame of sliding: you keep your momentum and it bleeds away with friction (Slide Slipperiness 0 = grippy,
+        /// 10 = ice), slopes speed you up or slow you down, and you can steer a little. Jumping keeps the speed; landing
+        /// with crouch still held carries on the slide.
+        /// </summary>
+        Vector3 TickSlide(Vector3 wish, bool grounded, bool move)
+        {
+            float dt = Time.deltaTime;
+            float slip = Mathf.Clamp(Cfg.SlideSlipperiness, 0f, 10f) / 10f;
+            if (grounded)
+            {
+                float friction = Mathf.Lerp(22f, 0.35f, Mathf.Pow(slip, 0.8f));
+                // downhill pulls you along, uphill holds you back
+                if (Physics.Raycast(transform.position + Vector3.up * 0.3f, Vector3.down, out var gh, 1.2f, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore))
+                {
+                    var along = Vector3.ProjectOnPlane(Vector3.down * Cfg.Gravity, gh.normal);
+                    along.y = 0;
+                    m_SlideVel += along * 0.8f * dt;
+                }
+                float sp = Mathf.MoveTowards(m_SlideVel.magnitude, 0f, friction * dt);
+                m_SlideVel = m_SlideVel.sqrMagnitude > 0.0001f ? m_SlideVel.normalized * sp : Vector3.zero;
+                if (!Crouching || !move || sp < Cfg.SlideMinSpeed) { EndSlide(); return m_SlideVel; }
+            }
+            else m_SlideVel = Vector3.MoveTowards(m_SlideVel, Vector3.zero, 0.4f * dt); // a little air drag
+            // steer towards where you're pushing
+            if (wish.sqrMagnitude > 0.1f && m_SlideVel.sqrMagnitude > 0.01f)
+                m_SlideVel = Vector3.RotateTowards(m_SlideVel, wish.normalized * m_SlideVel.magnitude, Cfg.SlideSteer * Mathf.Deg2Rad * dt, 0f);
+            return m_SlideVel;
+        }
+
+        void EndSlide()
+        {
+            if (!m_SlideOn) return;
+            m_SlideOn = false;
+            m_NextSlide = Time.time + 0.35f;
+            // what's left of the speed fades out instead of stopping dead
+            m_Push += m_SlideVel * 0.5f;
+        }
+
+        void TickSlideSound()
+        {
+            float want = m_SlideOn && m_Grounded ? Mathf.Clamp01(m_SlideVel.magnitude / 10f) * 0.5f : 0f;
+            if (m_SlideSound == null)
+            {
+                if (want <= 0f) return;
+                m_SlideSound = gameObject.AddComponent<AudioSource>();
+                m_SlideSound.clip = Sfx.Slide;
+                m_SlideSound.loop = true;
+                m_SlideSound.spatialBlend = 0f;
+                m_SlideSound.volume = 0f;
+                m_SlideSound.Play();
+            }
+            m_SlideSound.volume = Mathf.MoveTowards(m_SlideSound.volume, want, Time.deltaTime * 3f);
         }
 
         bool HeadroomToStand()
@@ -751,7 +836,9 @@ namespace RockGame
             if (!Input.GetMouseButtonDown(0) || Time.time < m_NextBallThrow) return;
             m_NextBallThrow = Time.time + 0.5f;
             m_NextSwing = Time.time + 0.7f; // no instant swing with whatever comes back into your hands
-            m_Net.ThrowBallRpc(CenterRay().direction);
+            var rv = m_Net.Riding ? RidingVehicle : null;
+            var rcc = rv != null ? rv.GetComponent<CharacterController>() : null;
+            m_Net.ThrowBallRpc(CenterRay().direction, rcc != null ? rcc.velocity : Vector3.zero);
             m_VM.Throw();
             Sfx.Play2D(Sfx.Throw, 0.7f);
             Fx.Kick(2.5f);
@@ -970,9 +1057,11 @@ namespace RockGame
 
             var hits = Physics.RaycastAll(ray, range, ~0, QueryTriggerInteraction.Collide);
             System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+            var mount = m_Net.Riding ? RidingVehicle : null;
             foreach (var h in hits)
             {
                 if (h.collider.transform.IsChildOf(transform)) continue;
+                if (mount != null && h.collider.transform.IsChildOf(mount.transform)) continue; // the horse you're sitting on
                 var machine = h.collider.GetComponentInParent<Machine>();
                 if (machine != null && h.distance <= Cfg.InteractRange + 1.5f)
                 {
@@ -1005,9 +1094,11 @@ namespace RockGame
             var ball = Ball.Instance;
             if (result.Kind == TargetKind.None && ball != null && !ball.IsCarried)
             {
+                // from a horse you sit high up, so it's a bit more forgiving
+                bool up = mount != null;
                 var bp = ball.transform.position;
                 float t = Vector3.Dot(bp - ray.origin, ray.direction);
-                if (t > 0 && t < found + 0.5f && t < Cfg.InteractRange + 0.5f && Vector3.Distance(ray.origin + ray.direction * t, bp) < 0.9f)
+                if (t > 0 && t < found + 0.5f && t < Cfg.InteractRange + (up ? 1.8f : 0.5f) && Vector3.Distance(ray.origin + ray.direction * t, bp) < (up ? 1.4f : 0.9f))
                     result = new Interactable { Kind = TargetKind.Ball, Obj = ball.NetworkObject };
             }
 
@@ -1031,7 +1122,8 @@ namespace RockGame
         void HandleInteract(Interactable t, bool carrying)
         {
             if (!Input.GetKeyDown(KeyCode.E)) return;
-            if (m_Net.Riding) { m_Net.DismountRpc(); Sfx.Play2D(Sfx.Pop, 0.4f); return; }
+            // on a horse, E picks up the ball if you're looking at it; otherwise it gets you off
+            if (m_Net.Riding && !(t.Kind == TargetKind.Ball && !carrying)) { m_Net.DismountRpc(); Sfx.Play2D(Sfx.Pop, 0.4f); return; }
             if (carrying && t.Kind != TargetKind.Door && t.Kind != TargetKind.Machine) return; // hands are full
             switch (t.Kind)
             {

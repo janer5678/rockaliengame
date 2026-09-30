@@ -154,6 +154,30 @@ namespace RockGame
             if (blanket) blanket.GetComponent<Renderer>().sharedMaterial = Art.Mat(Cfg.TeamColor[Mathf.Clamp(SaddleTeam.Value, 0, Cfg.TeamColor.Length - 1)]);
         }
 
+        Vector3 m_LastHoofPos;
+        float m_HoofDist;
+        int m_HoofBeat;
+
+        /// <summary>Hooves on the ground, heard from where the horse is: a walk clops, a gallop drums (four beats a stride).</summary>
+        void Hooves(float dt)
+        {
+            var p = transform.position;
+            var d = p - m_LastHoofPos;
+            d.y = 0;
+            m_LastHoofPos = p;
+            float dist = d.magnitude;
+            if (dist > 3f || dist / dt < 0.8f) return; // standing still / teleported
+            float speed = dist / dt;
+            m_HoofDist += dist;
+            float every = speed > 7f ? 0.9f : 0.75f;
+            if (m_HoofDist < every) return;
+            m_HoofDist = 0f;
+            m_HoofBeat++;
+            bool gallop = speed > 7f;
+            Sfx.Play(Sfx.Hoof, p, gallop ? 0.9f : 0.55f, 0.12f, gallop ? 80f : 50f);
+            if (gallop && m_HoofBeat % 2 == 0) Sfx.Play(Sfx.Thud, p, 0.35f, 0.1f, 60f);
+        }
+
         void Update()
         {
             float dt = Time.deltaTime;
@@ -165,6 +189,7 @@ namespace RockGame
                 return;
             }
             if (m_Saddle && m_Saddle.gameObject.activeSelf != Saddled.Value) m_Saddle.gameObject.SetActive(Saddled.Value);
+            if (IsHorse) Hooves(dt);
 
             if (IsOwner)
             {

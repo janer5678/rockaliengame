@@ -348,7 +348,7 @@ namespace RockGame
             Check(me.CarryingBall, "picked up ball");
             pc.LocalTeleport(baseC + new Vector3(6, 0.1f, 5), 0);
             yield return new WaitForSeconds(0.5f);
-            me.ThrowBallRpc(Vector3.down);
+            me.ThrowBallRpc(Vector3.down, Vector3.zero);
             yield return new WaitForSeconds(3f);
             Check(!me.CarryingBall && ball.BaseTeam.Value == team && ball.SocketTeam.Value < 0, $"ball lying in own base does not count yet (BaseTeam={ball.BaseTeam.Value}, Socket={ball.SocketTeam.Value})");
             pc.LocalTeleport(ball.transform.position + new Vector3(1.5f, 0.1f, 0), 270f);
@@ -357,7 +357,7 @@ namespace RockGame
             yield return new WaitForSeconds(0.6f);
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team) + 180f);
             yield return new WaitForSeconds(0.5f);
-            me.ThrowBallRpc((Cfg.SocketPos(team) - me.EyePos).normalized);
+            me.ThrowBallRpc((Cfg.SocketPos(team) - me.EyePos).normalized, Vector3.zero);
             yield return new WaitForSeconds(2f);
             Check(!me.CarryingBall && ball.SocketTeam.Value == team, $"threw the ball into own machine's socket and it snapped in (Socket={ball.SocketTeam.Value})");
         }
@@ -488,13 +488,32 @@ namespace RockGame
             var onRock = Cfg.BedrockCenter(team) + new Vector3(2.3f, Cfg.BaseY, 0);
             Check(PlayerNet.DeployProblem(Item.Chest, team, onRock, 0) == null && PlayerNet.DeployProblem(Item.Chest, team, Cfg.SpawnPos(team), 0) != null, "chests can go on the bedrock by the machine (not on the spawn spot)");
 
-            // barrier out in the field
-            var barrierPos = new Vector3(20f, 0f, -30f);
+            // high external wall (the barrier) out in the field: find a spot with room for it
+            Vector3 FreeWallSpot(System.Func<Vector3, bool> where)
+            {
+                for (int tries = 0; tries < 400; tries++)
+                {
+                    var p = new Vector3(Random.Range(-Cfg.MapHalf + 10f, Cfg.MapHalf - 10f), 0f, Random.Range(-Cfg.MapHalf + 10f, Cfg.MapHalf - 10f));
+                    p.y = MapBuilder.Height(p.x, p.z);
+                    if (where(p) && PlayerNet.DeployProblem(Item.Barrier, team, p, 0f) == null) return p;
+                }
+                return new Vector3(20f, 0f, -30f);
+            }
+            var barrierPos = FreeWallSpot(p => Cfg.BaseTeamAt(p) < 0 && Mathf.Abs(p.z) > 6f);
             pc.LocalTeleport(barrierPos + new Vector3(0, 0.1f, -3f), 0);
             yield return Hold(me, Item.Barrier);
             me.PlaceDeployableRpc((byte)Item.Barrier, barrierPos, 0f);
             yield return new WaitForSeconds(0.6f);
-            Check(CountStructures(PieceType.Barrier, team) == 1 && me.Count(Item.Barrier) == 0, "barrier placed out on the map");
+            Check(CountStructures(PieceType.Barrier, team) == 1 && me.Count(Item.Barrier) == 0, "high external wall placed out on the map");
+            // ...and one inside our own base
+            me.ServerGive(Item.Barrier, 1);
+            yield return new WaitForSeconds(0.2f);
+            var inBase = FreeWallSpot(p => Cfg.BaseTeamAt(p) == team);
+            pc.LocalTeleport(inBase + new Vector3(0, 0.1f, -3f), 0);
+            yield return Hold(me, Item.Barrier);
+            me.PlaceDeployableRpc((byte)Item.Barrier, inBase, 0f);
+            yield return new WaitForSeconds(0.6f);
+            Check(CountStructures(PieceType.Barrier, team) == 2 && me.Count(Item.Barrier) == 0, $"high external wall placed inside our own base ({inBase})");
 
             // berries: pick and eat
             ResourceNode bush = null;
@@ -747,6 +766,25 @@ namespace RockGame
                 me.MountRpc(horse.NetworkObject);
                 yield return new WaitForSeconds(0.6f);
                 Check(me.Riding && horse.Saddled.Value && me.Count(Item.Saddle) == 0, "saddled the horse and got on");
+                // the ball on horseback: pick it up from the saddle and throw it
+                var ball = Ball.Instance;
+                if (ball != null && !ball.IsCarried)
+                {
+                    var ballWas = ball.transform.position;
+                    var side = horse.transform.position + horse.transform.right * 1.3f;
+                    side.y = MapBuilder.Height(side.x, side.z) + 0.7f;
+                    ball.ServerDrop(side, Vector3.zero);
+                    yield return new WaitForSeconds(0.5f);
+                    Log($"horse + ball: ball at {ball.transform.position} carried={ball.IsCarried} socket={ball.SocketTeam.Value}, eye at {me.EyePos} (distance {Vector3.Distance(ball.transform.position, me.EyePos):0.0}), riding={me.Riding}, state={NetGame.Instance.S}");
+                    me.PickupBallRpc();
+                    yield return new WaitForSeconds(0.3f);
+                    Check(me.Riding && me.CarryingBall, "picked the ball up without getting off the horse");
+                    me.ThrowBallRpc(me.transform.forward, me.transform.forward * 8f);
+                    yield return new WaitForSeconds(0.1f);
+                    Check(me.Riding && !me.CarryingBall, "threw the ball from the horse");
+                    ball.ServerDrop(ballWas, Vector3.zero);
+                }
+                else Log("horse + ball: no loose ball right now, skipped");
                 me.DismountRpc();
                 yield return new WaitForSeconds(0.5f);
             }
@@ -1115,7 +1153,7 @@ namespace RockGame
             yield return new WaitForSeconds(0.5f);
             pc.SetLook(0f, 3f);
             yield return Shot("09_ball_in_hands");
-            me.ThrowBallRpc(Vector3.forward + Vector3.up * 0.3f);
+            me.ThrowBallRpc(Vector3.forward + Vector3.up * 0.3f, Vector3.zero);
             yield return new WaitForSeconds(0.25f);
             Snap("10_ball_thrown");
             yield return new WaitForSeconds(0.6f);

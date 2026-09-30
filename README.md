@@ -82,6 +82,7 @@ Once the wall is down, a giant alien ship comes down from very high up and **bea
 | Key | Action |
 |---|---|
 | WASD / Shift / Space / Ctrl or C | move / sprint / jump / crouch (also with the inventory open) |
+| Sprint, then Ctrl / C | **slide** (Crab Game style): you keep your speed, go faster downhill and slower uphill, steer a little, and can jump out of it without losing speed. Hold crouch to keep sliding; how slippery it is is **Slide Slipperiness** in GAME SETTINGS (0 = grippy, 10 = ice), along with Slide Boost, Slide Min Speed and Slide Steer |
 | Mouse / LMB | look / attack, gather, place |
 | Hold LMB (bow) | draw, release to fire (RMB cancels) |
 | Spear | LMB stab · **hold RMB** to wind up, then **LMB** to throw |
@@ -121,7 +122,7 @@ Once the wall is down, a giant alien ship comes down from very high up and **bea
 | Chainsaw (67 uses) | 500 wood |
 | Battering Ram (3 hits) | 125 wood, 50 stone |
 | Storage Chest | 50 wood |
-| Wooden Barrier | 20 wood |
+| High External Wall | 40 wood |
 | Saddle (ride a wild horse; in your team's colour) | 1000 wood |
 | Airdrop Signal (an airdrop beams onto your bedrock) | 2000 wood |
 
@@ -142,12 +143,13 @@ In wood mode the stone part is added to the wood cost and there's no pickaxe.
 - You can only build inside your own base (the tinted square with the grid). Pieces snap to a 3 m grid. There's no delay between placements, and you can place pieces right where you stand (you get lifted on top).
 - Pieces: Foundation (15 wood), Wall (15), Doorway with a lockable door (20), Window (15), Floor (12), Stairs (20).
 - You don't have to aim at the bottom edge: look along where you want the wall (eye height or above works) and it goes to the farthest spot along your aim where it can actually go (so it lands where you're pointing).
-- **Wooden barriers** (250 HP) are small free-standing walls you can place anywhere except the enemy base.
+- **High external walls** (500 HP, like Rust's): a free-standing palisade of sharpened logs 4 m wide and about 5.5 m tall. Place them out on the map or inside your own base (not in the enemy base, not on the bedrock).
 - Rust-style support: walls and stairs need a foundation or floor, and floors need a wall below or a neighbouring floor. Destroying support collapses what's on it.
 - Upgrade to stone (30-50 stone) for 3-4x HP. Melee does only 20% damage to stone, so bring a ram.
 
 ## Horses and the car
 - **Wild horses** wander each half of the map. Craft a **saddle** (it's in your team colour), walk up to one and press E to saddle it and get on. It rides like a Minecraft horse: it goes where you look, Shift gallops, Space jumps. Your view sits high up so you can see ahead.
+- **The ball on horseback**: you can get on a horse while carrying the ball, and pick the ball up from the saddle (look at it and press E - E only gets you off when you're not looking at the ball). LMB throws it from the horse; it keeps the horse's speed. (Cars still can't carry the ball.)
 - Horses have 120 HP (shown when you look at them), bleed when hit and bolt away from whoever hurt them. They can be killed: they drop **horse meat** (eat it to heal fully) and their saddle.
 - (The wooden car is switched off for now.)
 
@@ -175,6 +177,6 @@ In wood mode the stone part is added to the wood cost and there's no pickaxe.
 - `Vehicle.cs`: horses and the car (a networked prefab owned by whoever drives it). `VoiceChat.cs`: proximity voice chat and the sound/mic settings. `PlayerNet.Extras.cs`: crossbow, fort tower, riding, dev settings and voice RPCs.
 - Player model: PSX-style grey alien "Low-spec Reticulans" by surt, CC0 ([OpenGameArt](https://opengameart.org/content/low-spec-reticulans)), in `Assets/Game/Resources/Alien/`. `AlienRigged.fbx` is the same mesh skinned to a humanoid skeleton (Hips, Spine, Chest, Neck, Head, Left/Right UpperArm/LowerArm/Hand/UpperLeg/LowerLeg/Foot) and animated procedurally in `BodyAnimator.cs`. It is tinted in the team colour.
 - `AutoTest.cs`: headless end-to-end test (`-autotest ball` or `-autotest sd` on a host + client build; `-autotest shots` takes screenshots).
-- Sound effects are synthesised procedurally at startup in `Fx.cs`. Hand-drawn item icons in `Assets/Game/Resources/Icons/<item>.png` (e.g. `hatchet.png`) replace the rendered ones. Item icons are rendered from the 3D models at startup (`ItemIcons.cs`); first-person hands and animations are in `ViewModel.cs`.
+- Sound effects are synthesised procedurally at startup in `Fx.cs`. Everything in the world is a 3D sound with no spread and a steep, realistic falloff, so you can tell where it is and how far: arrows, spears and thrown items whoosh while they fly (with doppler as they pass), bow shots, spear throws and impacts carry about 100 m, other players' footsteps and slides and horses' hooves can be heard from where they are (crouch-walking is silent), and explosions and sniper shots carry across the map. Hand-drawn item icons in `Assets/Game/Resources/Icons/<item>.png` (e.g. `hatchet.png`) replace the rendered ones. Item icons are rendered from the 3D models at startup (`ItemIcons.cs`); first-person hands and animations are in `ViewModel.cs`.
 
 Networking: movement is owner-authoritative (NetworkTransform in Owner mode). Resources, crafting, building, damage, the ball and its socket, inventories, chests, airdrops, dropped items and match flow are server-authoritative. Melee, arrow, thrown-spear and C4 hits use client-side hit detection that the server validates; the death wand is resolved on the server.

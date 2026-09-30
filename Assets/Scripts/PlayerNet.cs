@@ -335,9 +335,39 @@ namespace RockGame
             if (IsOwner) Art.SetLayerShadowsOnly(m_HandItem);
         }
 
+        Vector3 m_LastFootPos;
+        float m_FootDist;
+        AudioSource m_SlideSound;
+
+        /// <summary>
+        /// Other players are heard from where they are: footsteps (walking, louder sprinting, silent when crouch-walking)
+        /// and the scrape of a slide.
+        /// </summary>
+        void RemoteSounds(bool dead)
+        {
+            var p = transform.position;
+            var d = p - m_LastFootPos;
+            d.y = 0;
+            m_LastFootPos = p;
+            float dt = Mathf.Max(0.0001f, Time.deltaTime);
+            float dist = d.magnitude, speed = dist / dt;
+            bool grounded = !dead && !Riding && dist < 3f && Physics.Raycast(p + Vector3.up * 0.3f, Vector3.down, 0.6f, ~(1 << HitboxLayer), QueryTriggerInteraction.Ignore);
+            bool sliding = grounded && Crouch.Value && speed > Cfg.CrouchSpeed * 1.4f;
+            float slideVol = sliding ? Mathf.Clamp01(speed / 10f) * 0.9f : 0f;
+            if (m_SlideSound == null && sliding) m_SlideSound = Sfx.Loop(Sfx.Slide, transform, 0f, 1f, 45f);
+            if (m_SlideSound != null) m_SlideSound.volume = Mathf.MoveTowards(m_SlideSound.volume, slideVol, dt * 4f);
+            if (!grounded || Crouch.Value || speed < 1.5f) return;
+            m_FootDist += dist;
+            bool sprint = speed > Cfg.WalkSpeed * 1.2f;
+            if (m_FootDist < (sprint ? 2.2f : 1.8f)) return;
+            m_FootDist = 0f;
+            Sfx.Play(Sfx.Step, p, sprint ? 1f : 0.7f, 0.2f, sprint ? 45f : 30f);
+        }
+
         void Update()
         {
             bool dead = Dead.Value;
+            if (!IsOwner) RemoteSounds(dead);
             if (dead && !m_WasDead) m_DeadSince = Time.time;
             m_WasDead = dead;
             // the body topples over and stays a moment before disappearing
@@ -992,7 +1022,7 @@ namespace RockGame
             Vector3 c, half;
             if (kind == Item.Chest) { c = new Vector3(0, 0.36f, 0); half = new Vector3(0.5f, 0.3f, 0.27f); }
             else if (kind == Item.Car) { c = new Vector3(0, 0.8f, 0); half = new Vector3(0.8f, 0.55f, 1.3f); }
-            else { c = new Vector3(0, 0.8f, 0); half = new Vector3(1.15f, 0.65f, 0.15f); }
+            else { c = new Vector3(0, 2.7f, 0); half = new Vector3(1.95f, 2.45f, 0.2f); } // the high external wall
             foreach (var h in Physics.OverlapBox(pos + rot * c, half, rot, ~0, QueryTriggerInteraction.Ignore))
             {
                 if (h.GetComponentInParent<GroundMarker>() != null || h.GetComponentInParent<PlayerNet>() != null) continue;
@@ -1211,7 +1241,7 @@ namespace RockGame
 
         /// <summary>LMB while carrying: the ball flies straight out from where it is held (lower middle of the screen) along the aim.</summary>
         [Rpc(SendTo.Server)]
-        public void ThrowBallRpc(Vector3 dir)
+        public void ThrowBallRpc(Vector3 dir, Vector3 mountVel)
         {
             if (!CarryingBall || dir.sqrMagnitude < 0.01f) return;
             dir.Normalize();
@@ -1222,7 +1252,16 @@ namespace RockGame
             var pos = eye + dir * 0.75f - camUp * 0.35f;
             if (Physics.Linecast(eye, pos, out var hit, ~(1 << HitboxLayer), QueryTriggerInteraction.Ignore) && !hit.collider.transform.IsChildOf(transform))
                 pos = hit.point - dir * 0.7f;
-            Ball.Instance.ServerThrow(this, pos, dir * Cfg.BallThrowSpeed + Vector3.up * 1f);
+            var vel = dir * Cfg.BallThrowSpeed + Vector3.up * 1f;
+            Collider mount = null;
+            if (Riding && NetworkManager.SpawnManager.SpawnedObjects.TryGetValue(RidingId.Value, out var vno) && vno.TryGetComponent(out Vehicle horse))
+            {
+                // thrown from a galloping horse it keeps the horse's speed (the rider sends it: they move the horse)
+                mount = horse.GetComponent<CharacterController>();
+                mountVel.y = 0;
+                vel += Vector3.ClampMagnitude(mountVel, Cfg.HorseSprint * 1.3f);
+            }
+            Ball.Instance.ServerThrow(this, pos, vel, mount);
         }
 
         // =====================================================================
@@ -1270,28 +1309,29 @@ namespace RockGame
         public void SwingRpc()
         {
             m_Swing = 1f;
-            Sfx.Play(Sfx.Swing, transform.position + Vector3.up * 1.2f, 0.5f);
+            Sfx.Play(Sfx.Swing, transform.position + Vector3.up * 1.2f, 0.7f, 0.08f, 45f);
         }
 
         [Rpc(SendTo.NotOwner)]
         public void ArrowVisualRpc(Vector3 origin, Vector3 velocity)
         {
             ArrowProjectile.Spawn(origin, velocity, this, false);
-            Sfx.Play(Sfx.Twang, origin, 0.6f);
+            Sfx.Play(Sfx.Twang, origin, 0.9f, 0.05f, 110f);
         }
 
         [Rpc(SendTo.NotOwner)]
         public void C4VisualRpc(Vector3 origin, Vector3 velocity)
         {
             ArrowProjectile.SpawnC4(origin, velocity, this, false);
-            Sfx.Play(Sfx.Throw, origin, 0.6f);
+            Sfx.Play(Sfx.Throw, origin, 0.9f, 0.08f, 90f);
         }
 
         [Rpc(SendTo.NotOwner)]
         public void SpearVisualRpc(Vector3 origin, Vector3 velocity)
         {
             ArrowProjectile.SpawnSpear(origin, velocity, this, false);
-            Sfx.Play(Sfx.Throw, origin, 0.6f);
+            Sfx.Play(Sfx.Throw, origin, 1f, 0.05f, 100f);
+            Sfx.Play(Sfx.Swing, origin, 0.8f, 0.05f, 60f);
         }
     }
 }

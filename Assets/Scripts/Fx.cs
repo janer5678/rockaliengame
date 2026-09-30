@@ -91,7 +91,7 @@ namespace RockGame
 
         public static void Explosion(Vector3 pos)
         {
-            Sfx.Play(Sfx.Boom, pos, 1f, 0.05f);
+            Sfx.Play(Sfx.Boom, pos, 1f, 0.05f, 180f);
             for (int i = 0; i < 14; i++)
                 FxParticle.Puff(pos + Random.insideUnitSphere * 1.8f + Vector3.up * 0.6f, i % 3 == 0 ? new Color(1f, 0.85f, 0.3f, 0.8f) : new Color(1f, 0.45f, 0.1f, 0.7f), Random.Range(1.5f, 3.2f));
             for (int i = 0; i < 8; i++)
@@ -124,7 +124,7 @@ namespace RockGame
             var go = Art.Part(null, Art.Cube, Color.white, from + d * 0.5f, new Vector3(0.03f, 0.03f, d.magnitude), Quaternion.LookRotation(d).eulerAngles, false, mat);
             go.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             go.AddComponent<FadeOut>().Init(mat, 0.3f);
-            Sfx.Play(Sfx.Sniper, from, 1f, 0.03f);
+            Sfx.Play(Sfx.Sniper, from, 1f, 0.03f, 250f);
             Sparks(to, -d, 10);
         }
 
@@ -402,7 +402,7 @@ namespace RockGame
     public static class Sfx
     {
         public static AudioClip Swing, Flesh, Headshot, Chop, Clink, Thud, Ding, Smash, Twang, Throw, Pop, Eat, Place, Hurt, Kill, Step, Hiss, Boom, Beep, Zap, Saw, Hum,
-            Hit, Rocket, Sniper, Portal, Jet, Glass, Door, Click, Crowd;
+            Hit, Rocket, Sniper, Portal, Jet, Glass, Door, Click, Crowd, Whiz, Slide, Hoof;
         static readonly Dictionary<AudioClip, AudioClip[]> s_Variants = new Dictionary<AudioClip, AudioClip[]>();
         static readonly HashSet<AudioClip> s_HitSounds = new HashSet<AudioClip>();
         const int Rate = 44100;
@@ -453,6 +453,12 @@ namespace RockGame
             Crowd = Make("crowd", 4f, (t, d) => N() * (0.35f + 0.15f * Mathf.Sin(t * 1.3f) + 0.1f * Mathf.Sin(t * 3.7f + 1f)) * Mathf.Min(1f, Mathf.Min(t, d - t) * 4f + 0.6f), lowpass: 0.08f);
             Click = Make("click", 0.03f, (t, d) => N() * Env(t, 0.01f));
             Step = Make("step", 0.08f, (t, d) => N() * Env(t, 0.03f) * 0.25f, lowpass: 0.15f);
+            // an arrow / spear cutting through the air (loops while it flies, so you can hear where it is and where it's going)
+            Whiz = Make("whiz", 1f, (t, d) => (N() * 0.55f + Mathf.Sin(t * 2 * Mathf.PI * 880) * 0.18f + Mathf.Sin(t * 2 * Mathf.PI * 1310) * 0.08f) * (0.8f + 0.2f * Mathf.Sin(t * 2 * Mathf.PI * 9)), lowpass: 0.45f);
+            // sliding: a gritty scrape (loops)
+            Slide = Make("slide", 1f, (t, d) => N() * (0.5f + 0.25f * Mathf.Sin(t * 2 * Mathf.PI * 13) + 0.15f * Mathf.Sin(t * 2 * Mathf.PI * 31)), lowpass: 0.12f);
+            // a hoof on the ground
+            Hoof = Make("hoof", 0.09f, (t, d) => Mathf.Sin(t * 2 * Mathf.PI * Mathf.Lerp(520, 260, t / d)) * Env(t, 0.04f) * 0.8f + N() * Env(t, 0.01f) * 0.4f, lowpass: 0.5f);
         }
 
         /// <summary>Swap each synthesised clip for the recorded ones in Resources/Sfx when they exist.</summary>
@@ -504,8 +510,36 @@ namespace RockGame
             return clip;
         }
 
-        /// <summary>3D sound at a world position with a little pitch variation.</summary>
-        public static void Play(AudioClip clip, Vector3 pos, float volume = 0.7f, float pitchVar = 0.08f)
+        static readonly Dictionary<int, AnimationCurve> s_Curves = new Dictionary<int, AnimationCurve>();
+
+        /// <summary>
+        /// How loud a sound is with distance (0 = at the source, 1 = `range` away): full volume close by, dropping off
+        /// quickly like a real sound, then fading to silence at the range. Together with full 3D panning (no spread) it
+        /// makes it easy to tell where something is and roughly how far.
+        /// </summary>
+        static AnimationCurve Falloff()
+        {
+            if (s_Curves.TryGetValue(0, out var c)) return c;
+            c = new AnimationCurve(new Keyframe(0f, 1f), new Keyframe(0.04f, 0.9f), new Keyframe(0.12f, 0.55f), new Keyframe(0.3f, 0.25f), new Keyframe(0.55f, 0.1f), new Keyframe(1f, 0f));
+            for (int i = 0; i < c.length; i++) c.SmoothTangents(i, 0f);
+            s_Curves[0] = c;
+            return c;
+        }
+
+        /// <summary>Sets an AudioSource up as a clear positional sound audible out to `range` metres.</summary>
+        public static void Spatial(AudioSource src, float range, float doppler = 0f)
+        {
+            src.spatialBlend = 1f;
+            src.spread = 0f;
+            src.dopplerLevel = doppler;
+            src.minDistance = 1f;
+            src.maxDistance = Mathf.Max(5f, range);
+            src.rolloffMode = AudioRolloffMode.Custom;
+            src.SetCustomCurve(AudioSourceCurveType.CustomRolloff, Falloff());
+        }
+
+        /// <summary>3D sound at a world position with a little pitch variation. `range`: how far away it can be heard.</summary>
+        public static void Play(AudioClip clip, Vector3 pos, float volume = 0.7f, float pitchVar = 0.08f, float range = 70f)
         {
             if (clip == null) return;
             volume = Vol(clip, volume);
@@ -516,12 +550,24 @@ namespace RockGame
             src.clip = clip;
             src.volume = volume;
             src.pitch = 1f + Random.Range(-pitchVar, pitchVar);
-            src.spatialBlend = 1f;
-            src.minDistance = 3f;
-            src.maxDistance = 60f;
-            src.rolloffMode = AudioRolloffMode.Linear;
+            Spatial(src, range);
             src.Play();
             Object.Destroy(go, clip.length / Mathf.Max(0.5f, src.pitch) + 0.1f);
+        }
+
+        /// <summary>A looping 3D sound following `parent` (flying arrows, sliding players). Returns it so it can be faded.</summary>
+        public static AudioSource Loop(AudioClip clip, Transform parent, float volume, float pitch, float range, float doppler = 0f)
+        {
+            if (clip == null || parent == null) return null;
+            var src = parent.gameObject.AddComponent<AudioSource>();
+            src.clip = clip;
+            src.loop = true;
+            src.volume = volume;
+            src.pitch = pitch;
+            Spatial(src, range, doppler);
+            src.time = Random.Range(0f, clip.length * 0.9f);
+            src.Play();
+            return src;
         }
 
         /// <summary>Non-positional sound for the local player (UI, own swings).</summary>

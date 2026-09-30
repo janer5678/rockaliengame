@@ -18,6 +18,17 @@ namespace RockGame
         float m_Life = 6f;
         float m_Gravity = Cfg.ArrowGravity;
         float m_Power = 1f;
+        AudioSource m_Whoosh;
+
+        /// <summary>
+        /// The whoosh of it flying, as a looping 3D sound with doppler: you hear where it is, which way it's heading and
+        /// when it zips past. Your own shots are quieter.
+        /// </summary>
+        void StartWhoosh(float pitch, float volume)
+        {
+            bool mine = m_Shooter != null && m_Shooter.IsOwner;
+            m_Whoosh = Sfx.Loop(Sfx.Whiz, transform, volume * (mine ? 0.35f : 1f), pitch, 55f, 1f);
+        }
 
         /// <summary>Arrow or crossbow bolt. `damage` overrides the bow's draw-based damage (crossbow).</summary>
         public static void Spawn(Vector3 pos, Vector3 vel, PlayerNet shooter, bool report, float damage = -1f)
@@ -35,6 +46,7 @@ namespace RockGame
             a.m_Report = report;
             a.m_Power = Mathf.Clamp01(vel.magnitude / Mathf.Max(1f, Cfg.ArrowSpeed));
             a.m_Damage = damage;
+            a.StartWhoosh(1.35f, 0.75f);
         }
 
         /// <summary>Thrown spear. The shooter's copy reports where it landed / who it hit; the networked dropped
@@ -53,6 +65,7 @@ namespace RockGame
             a.m_Gravity = Cfg.SpearGravity;
             a.m_Life = 8f;
             a.m_Power = Mathf.Clamp01(vel.magnitude / Mathf.Max(1f, Cfg.SpearThrowSpeed));
+            a.StartWhoosh(0.8f, 0.9f);
         }
 
         /// <summary>Thrown C4 (sticks where it hits; the server arms it there) or fort tower (a tower grows where it lands).</summary>
@@ -70,7 +83,8 @@ namespace RockGame
             a.m_Thrown = kind;
             a.m_Gravity = kind == Item.RocketLauncher ? 1.5f : 9.81f;
             a.m_Life = 8f;
-            if (kind == Item.RocketLauncher) Sfx.Play(Sfx.Rocket, pos, 0.9f);
+            if (kind == Item.RocketLauncher) { Sfx.Play(Sfx.Rocket, pos, 1f, 0.05f, 150f); a.m_Whoosh = Sfx.Loop(Sfx.Jet, go.transform, 0.8f, 0.8f, 110f, 1f); }
+            else a.StartWhoosh(0.6f, 0.6f);
         }
 
         public static void SpawnC4(Vector3 pos, Vector3 vel, PlayerNet shooter, bool report) => SpawnThrown(Item.C4, pos, vel, shooter, report);
@@ -151,6 +165,7 @@ namespace RockGame
             bool reporter = m_Report && m_Shooter != null && m_Shooter.IsSpawned;
             if (m_Thrown != Item.None)
             {
+                if (m_Thrown != Item.RocketLauncher) Sfx.Play(Sfx.Thud, h.point, 0.8f, 0.1f, 70f);
                 if (reporter) ReportThrownLanded(h.point + h.normal * 0.03f, h.normal);
                 Destroy(gameObject);
                 return;
@@ -159,6 +174,7 @@ namespace RockGame
 
             if (m_Spear)
             {
+                if (no == null || no.GetComponent<PlayerNet>() == null) Sfx.Play(Sfx.Thud, h.point, 1f, 0.08f, 90f);
                 if (reporter)
                 {
                     if (no != null) m_Shooter.SpearLandRpc(true, no, h.point, dir);
@@ -168,12 +184,13 @@ namespace RockGame
                 return;
             }
             m_Stuck = true;
+            if (m_Whoosh) m_Whoosh.Stop();
             bool player = no != null && no.GetComponent<PlayerNet>() != null;
             // an arrow in a player stays in them a while; anywhere else the server leaves a pick-up-able arrow item there
             m_Life = player ? 5f : 0.4f;
             transform.position = h.point - transform.forward * 0.1f;
             if (no != null) transform.SetParent(no.transform, true);
-            if (!player) Sfx.Play(Sfx.Thud, h.point, 0.4f);
+            if (!player) Sfx.Play(Sfx.Thud, h.point, 0.8f, 0.1f, 80f);
             if (reporter)
             {
                 if (no != null) m_Shooter.ArrowHitRpc(no, h.point, dir);

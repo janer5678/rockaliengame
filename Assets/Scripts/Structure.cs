@@ -203,21 +203,25 @@ namespace RockGame
                 }
                 case PieceType.Barrier:
                 {
-                    // a short palisade of sharpened stakes, 2.4m wide and 1.5m tall
-                    for (int k = 0; k < 7; k++)
+                    // a high external wall like Rust's: a row of big sharpened logs, 4 m wide and about 5.5 m tall,
+                    // tied together with two cross beams and propped up by braces on the back
+                    const int logs = 10;
+                    for (int k = 0; k < logs; k++)
                     {
-                        float x = -1.05f + k * 0.35f;
-                        float h = 1.35f + ((k * 37) % 5) * 0.04f;
-                        Art.Box(tr, k % 2 == 0 ? Art.Wood : Art.DarkWood, new Vector3(x, h * 0.5f, 0), new Vector3(0.3f, h, 0.3f), new Vector3(0, k * 13f, 0));
-                        Art.Part(tr, Art.Cone, Art.Wood, new Vector3(x, h, 0), new Vector3(0.3f, 0.3f, 0.3f));
+                        float x = -1.8f + k * 0.4f;
+                        float h = 5f + ((k * 37) % 5) * 0.08f;
+                        Art.Box(tr, k % 2 == 0 ? Art.Wood : Art.Wood * 0.9f, new Vector3(x, h * 0.5f, 0), new Vector3(0.42f, h, 0.42f), new Vector3(0, k * 13f, 0));
+                        Art.Part(tr, Art.Cone, Art.Wood * 1.05f, new Vector3(x, h, 0), new Vector3(0.42f, 0.55f, 0.42f));
                     }
-                    Art.Box(tr, Art.DarkWood, new Vector3(0, 0.45f, 0.17f), new Vector3(2.5f, 0.12f, 0.06f));
-                    Art.Box(tr, Art.DarkWood, new Vector3(0, 1.05f, 0.17f), new Vector3(2.5f, 0.12f, 0.06f));
+                    for (int k = 0; k < 2; k++)
+                        Art.Box(tr, Art.DarkWood, new Vector3(0, 1.2f + k * 2.6f, 0.26f), new Vector3(4.1f, 0.22f, 0.12f));
+                    for (int k = -1; k <= 1; k += 2)
+                        Art.Box(tr, Art.DarkWood, new Vector3(k * 1.3f, 1.6f, 0.95f), new Vector3(0.18f, 3.6f, 0.18f), new Vector3(-28f, 0, 0));
                     if (col)
                     {
                         var bc = root.AddComponent<BoxCollider>();
-                        bc.center = new Vector3(0, 0.75f, 0);
-                        bc.size = new Vector3(2.4f, 1.5f, 0.35f);
+                        bc.center = new Vector3(0, 2.6f, 0);
+                        bc.size = new Vector3(4f, 5.2f, 0.45f);
                     }
                     break;
                 }

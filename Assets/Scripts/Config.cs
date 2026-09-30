@@ -236,6 +236,11 @@ namespace RockGame
         [Tune("Player")] public static float Gravity = 20f;
         [Tune("Player")] public static float BallCarrySpeedMul = 1f;
         [Tune("Player")] public static float BallThrowSpeed = 16f;
+        // sliding (sprint, then crouch), like Crab Game: you keep your speed, pick up more going downhill, lose it uphill
+        [Tune("Player")] public static float SlideSlipperiness = 6f;  // 0 = stops almost at once, 10 = like ice
+        [Tune("Player")] public static float SlideBoost = 2.5f;       // extra speed when the slide starts
+        [Tune("Player")] public static float SlideMinSpeed = 3f;      // the slide ends when you're slower than this
+        [Tune("Player")] public static float SlideSteer = 70f;        // degrees per second you can turn while sliding
         [Tune("Player")] public static float BerryHeal = 25f, BerryEatTime = 1.5f;
         [Tune("Player")] public static int ArmorHp = 100;              // wooden armour: a second health bar, used up first (max 255)
         [Tune("Player")] public static float HeadshotMul = 2f;
@@ -274,7 +279,7 @@ namespace RockGame
         [Tune("Building")] public static int FoundationStone = 50, WallStone = 50, DoorwayStone = 40, WindowStone = 45, FloorStone = 30, StairsStone = 30;
         [Tune("Building HP")] public static float FoundationHp = 500, WallHp = 400, DoorwayHp = 350, WindowHp = 350, FloorHp = 300, StairsHp = 300;
         [Tune("Building HP")] public static float FoundationStoneHp = 1800, WallStoneHp = 1500, DoorwayStoneHp = 1200, WindowStoneHp = 1300, FloorStoneHp = 1000, StairsStoneHp = 1000;
-        [Tune("Building HP")] public static float BarrierHp = 250, ChestHp = 300, TowerHp = 800;
+        [Tune("Building HP")] public static float BarrierHp = 500, ChestHp = 300, TowerHp = 800;
 
         // ---------- Crafting (at the alien machine) ----------
         [Tune("Crafting")] public static int PlanWood = 5;
@@ -282,7 +287,7 @@ namespace RockGame
         [Tune("Crafting")] public static int SpearWood = 75, SpearStone = 0, BowWood = 100, BowStone = 15;
         [Tune("Crafting")] public static int ArrowWood = 10, ArrowStone = 0, ArrowsPerCraft = 1;
         [Tune("Crafting")] public static int RamWood = 125, RamStone = 50;
-        [Tune("Crafting")] public static int ChestWood = 50, BarrierWood = 20;
+        [Tune("Crafting")] public static int ChestWood = 50, BarrierWood = 40;
         [Tune("Crafting")] public static int CrossbowWood = 500, SaddleWood = 1000, ArmorWood = 500, ChainsawWood = 500;
         public static int FortTowerWood = 1000; // only used for the demolish refund (the fort is an airdrop item now)
 
@@ -301,7 +306,7 @@ namespace RockGame
                 case Item.Pickaxe: return "Stone Pickaxe";
                 case Item.Ram: return "Battering Ram";
                 case Item.Chest: return "Storage Chest";
-                case Item.Barrier: return "Wooden Barrier";
+                case Item.Barrier: return "High External Wall";
                 case Item.Stone: return "Stone";
                 case Item.Arrow: return "Arrow";
                 case Item.Berry: return "Berries";

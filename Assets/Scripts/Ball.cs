@@ -24,7 +24,7 @@ namespace RockGame
         GameObject m_Beacon;
         Renderer m_BeaconRenderer;
         Light m_Light;
-        Collider m_IgnoredCol;
+        Collider m_IgnoredCol, m_IgnoredMount;
         float m_IgnoreUntil;
 
         public bool IsCarried => CarrierId.Value != NoCarrier;
@@ -129,10 +129,11 @@ namespace RockGame
 
         void ServerTick()
         {
-            if (m_IgnoredCol != null && Time.time > m_IgnoreUntil)
+            if ((m_IgnoredCol != null || m_IgnoredMount != null) && Time.time > m_IgnoreUntil)
             {
-                Physics.IgnoreCollision(m_Col, m_IgnoredCol, false);
-                m_IgnoredCol = null;
+                if (m_IgnoredCol != null) Physics.IgnoreCollision(m_Col, m_IgnoredCol, false);
+                if (m_IgnoredMount != null) Physics.IgnoreCollision(m_Col, m_IgnoredMount, false);
+                m_IgnoredCol = m_IgnoredMount = null;
             }
             if (IsCarried)
             {
@@ -208,11 +209,15 @@ namespace RockGame
         }
 
         /// <summary>Thrown by a player: it passes through the thrower for a moment so it can't bounce off them.</summary>
-        public void ServerThrow(PlayerNet thrower, Vector3 pos, Vector3 vel)
+        /// <summary>`mount`: the horse the thrower is riding (the ball passes through it too).</summary>
+        public void ServerThrow(PlayerNet thrower, Vector3 pos, Vector3 vel, Collider mount = null)
         {
             if (m_IgnoredCol != null) Physics.IgnoreCollision(m_Col, m_IgnoredCol, false);
+            if (m_IgnoredMount != null) Physics.IgnoreCollision(m_Col, m_IgnoredMount, false);
             m_IgnoredCol = thrower.GetComponent<CharacterController>();
             if (m_IgnoredCol != null) Physics.IgnoreCollision(m_Col, m_IgnoredCol, true);
+            m_IgnoredMount = mount;
+            if (mount != null) Physics.IgnoreCollision(m_Col, mount, true);
             m_IgnoreUntil = Time.time + 0.8f;
             ServerDrop(pos, vel);
             m_Col.enabled = true;
