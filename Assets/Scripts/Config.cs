@@ -94,7 +94,7 @@ namespace RockGame
             switch (r)
             {
                 case GameRules.Arsenal: return "Everything costs much less, and a POWER ITEMS menu next to crafting: pistol, heavy armour, tree cracker, C4, fortify all walls, auto wood.";
-                case GameRules.Builder: return "Arsenal's items, but each one takes a while to make. Craft and build anywhere - pieces lock onto each other. Win with the ball inside a fort your team built.";
+                case GameRules.Builder: return "No bases. Arsenal's items, but each takes a while to make. Craft and build anywhere - pieces lock onto each other. Plant the ball anywhere (E): whoever's ball it is at the end wins.";
                 case GameRules.Fun: return "No building phase, a short match, and every so often everyone gets the same random item - any item in the game.";
                 case GameRules.FunRandom: return "No building phase, a short match, and every so often each player gets their own random airdrop item.";
                 default: return "The original game: gather, build your base, craft in it, get the ball into your machine.";
@@ -192,7 +192,7 @@ namespace RockGame
         }
 
         /// <summary>Cells covered by the bedrock can't take foundations, stairs or barriers (chests are fine).</summary>
-        public static bool CellBlocked(int i, int j) => IsBedrockCell(i, j);
+        public static bool CellBlocked(int i, int j) => !Builder && IsBedrockCell(i, j); // Builder has no bases (no bedrock)
         public static bool PointBlocked(Vector3 p) => CellBlocked(Mathf.FloorToInt(p.x / Cell), Mathf.FloorToInt(p.z / Cell));
 
         public static readonly Color[] TeamColor = { new Color(0.25f, 0.5f, 1f), new Color(1f, 0.3f, 0.25f), new Color(0.3f, 0.85f, 0.3f), new Color(1f, 0.85f, 0.2f) };

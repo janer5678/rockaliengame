@@ -163,13 +163,10 @@ namespace RockGame
             return Cfg.CellInBase(team, k.I, k.J);
         }
 
-        /// <summary>Where a team may build: its own base - or, in Builder, anywhere except another team's base.</summary>
+        /// <summary>Where a team may build: its own base - or, in Builder, anywhere.</summary>
         public static bool CanBuildAt(int team, PieceKey k)
         {
-            if (!Cfg.Builder) return InTeamBase(team, k);
-            for (int t = 0; t < Cfg.TeamCount; t++)
-                if (t != team && InTeamBase(t, k)) return false;
-            return true;
+            return Cfg.Builder || InTeamBase(team, k); // Builder has no bases: anywhere
         }
 
         /// <summary>Foundations and ground-level stairs can't go on the bedrock (it already is a foundation, and you spawn there).</summary>

@@ -872,6 +872,24 @@ namespace RockGame
             Hud.Push("The ram only works on enemy buildings - get right up to one");
         }
 
+        /// <summary>Builder: put the ball down on whatever is just in front of you (ground, floor, a roof...).</summary>
+        void PlantBall()
+        {
+            var fwd = transform.forward;
+            fwd.y = 0;
+            var from = transform.position + fwd.normalized * 1.8f + Vector3.up * 2.2f;
+            var hits = Physics.RaycastAll(from, Vector3.down, 8f, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore);
+            System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+            foreach (var h in hits)
+            {
+                if (h.collider.GetComponentInParent<Ball>() != null || h.collider.transform.IsChildOf(transform)) continue;
+                m_Net.PlantBallRpc(h.point);
+                Sfx.Play2D(Sfx.Place, 0.7f);
+                return;
+            }
+            Hud.Push("No ground to put the ball down on here");
+        }
+
         void HandleBall()
         {
             if (!Binds.Down(Bind.Attack) || Time.time < m_NextBallThrow) return;
@@ -1166,6 +1184,8 @@ namespace RockGame
         void HandleInteract(Interactable t, bool carrying)
         {
             if (!Binds.Down(Bind.Interact)) return;
+            // Builder: E puts the ball down right in front of you - it's your team's until someone picks it up
+            if (carrying && Cfg.Builder) { PlantBall(); return; }
             // on a horse, E picks up the ball if you're looking at it; otherwise it gets you off
             if (m_Net.Riding && !(t.Kind == TargetKind.Ball && !carrying)) { m_Net.DismountRpc(); Sfx.Play2D(Sfx.Pop, 0.4f); return; }
             if (carrying && t.Kind != TargetKind.Door && t.Kind != TargetKind.Machine) return; // hands are full
@@ -1329,6 +1349,11 @@ namespace RockGame
         {
             AimText = "";
             if (m_Net.Dead.Value) return;
+            if (m_Net.CarryingBall && Cfg.Builder)
+            {
+                AimText = $"Carrying the ball!  {Binds.Name(Bind.Interact)}: put it down (it becomes your team's)   LMB: throw it";
+                return;
+            }
             if (m_Net.CarryingBall)
             {
                 AimText = t.Kind == TargetKind.Machine && t.MachineTeam == m_Net.Team.Value

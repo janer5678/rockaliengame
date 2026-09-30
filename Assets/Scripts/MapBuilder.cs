@@ -54,7 +54,7 @@ namespace RockGame
             }
 
             // ---------- bases ----------
-            for (int t = 0; t < Cfg.TeamCount; t++)
+            for (int t = 0; t < Cfg.TeamCount && !Cfg.Builder; t++) // Builder: no bases, no machines
             {
                 var c = Cfg.BaseCenter[t];
                 var team = Cfg.TeamColor[t];

@@ -878,7 +878,7 @@ namespace RockGame
             if (no.TryGetComponent(out Structure s))
             {
                 if (s.Team.Value == Team.Value) return;
-                bool stone = s.Tier.Value == 1;
+                bool stone = s.Tier.Value == 1 && s.PType != PieceType.Barrier; // the high external wall always goes in one hit
                 msg = stone ? $"Smashed the {s.DisplayName} down to wood" : $"Smashed the {s.DisplayName}!";
                 if (stone) s.ServerDowngrade();
                 else s.ServerDamage(s.Health.Value + 1f);
@@ -1034,9 +1034,10 @@ namespace RockGame
         {
             int baseTeam = Cfg.BaseTeamAt(pos);
             if (kind == Item.Boat) return ThemeMaps.WaterAt(pos.x, pos.z) ? null : "Boats go on open water"; // THEME MAPS
-            if (kind == Item.Chest && baseTeam != team) return "Chests go inside your own base";
+            if (Cfg.Builder) baseTeam = -1; // Builder: no bases - put it anywhere
+            if (kind == Item.Chest && baseTeam != team && !Cfg.Builder) return "Chests go inside your own base";
             // chests may go on the bedrock around the machine, just not on the spawn spot
-            if (kind == Item.Chest && new Vector2(pos.x - Cfg.SpawnPos(team).x, pos.z - Cfg.SpawnPos(team).z).magnitude < 1.3f) return "Keep the spawn spot clear";
+            if (kind == Item.Chest && !Cfg.Builder && new Vector2(pos.x - Cfg.SpawnPos(team).x, pos.z - Cfg.SpawnPos(team).z).magnitude < 1.3f) return "Keep the spawn spot clear";
             if (kind != Item.Chest && Cfg.PointBlocked(pos)) return "Not on the bedrock";
             if (kind != Item.Chest && baseTeam >= 0 && baseTeam != team) return "Not in the enemy base";
             var rot = Quaternion.Euler(0, yaw, 0);
@@ -1259,6 +1260,22 @@ namespace RockGame
             if (Vector3.Distance(b.transform.position, EyePos) > Cfg.InteractRange + 2f) return;
             if (b.ServerPickup(this) && NetGame.Instance != null)
                 NetGame.Instance.Broadcast($"{Cfg.TeamName[Team.Value]} picked up the ball!");
+        }
+
+        /// <summary>Builder: E while carrying the ball plants it on the ground in front of you - it's your team's ball then.</summary>
+        [Rpc(SendTo.Server)]
+        public void PlantBallRpc(Vector3 ground)
+        {
+            if (Dead.Value || !CarryingBall || !Cfg.Builder) return;
+            if (Vector3.Distance(ground, transform.position) > 4.5f) return;
+            // room for the block and the ball
+            foreach (var h in Physics.OverlapBox(ground + Vector3.up * (Ball.PlinthH * 0.5f + 0.1f), new Vector3(0.55f, Ball.PlinthH * 0.5f, 0.55f), Quaternion.identity, ~0, QueryTriggerInteraction.Ignore))
+            {
+                if (h.GetComponentInParent<GroundMarker>() != null || h.GetComponentInParent<PlayerNet>() != null || h.GetComponentInParent<Ball>() != null) continue;
+                Notify("No room to put the ball down there");
+                return;
+            }
+            Ball.Instance.ServerPlant(this, ground);
         }
 
         /// <summary>E at your own machine while carrying the ball: put it in the socket.</summary>

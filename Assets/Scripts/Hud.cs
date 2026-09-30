@@ -195,7 +195,7 @@ namespace RockGame
                         break;
                     case GameState.PreBall:
                         phase = "Wall drops in " + Clock(game.TimeLeft);
-                        sub = Cfg.Builder ? "Gather, craft and build anywhere - then lock the ball inside your build"
+                        sub = Cfg.Builder ? "Gather, craft and build anywhere - then plant the ball for your team"
                             : Cfg.WoodMode ? "Gather wood and build your base (craft in your base)" : "Gather wood & stone, build your base (craft in your base)";
                         break;
                     case GameState.BallLive:
@@ -223,7 +223,7 @@ namespace RockGame
             Shadowed(new Rect(18, 12, 230 * k, 28 * k), $"<b>YOU ARE {Cfg.TeamName[team]}</b>", m_Label);
             if (game == null || game.S != GameState.SuddenDeath)
             {
-                Shadowed(new Rect(12, 44 * k, 400 * k, 24 * k), Cfg.Builder ? $"Your base: {Direction(me.transform, Cfg.MachinePos(team))}" : $"Your machine: {Direction(me.transform, Cfg.MachinePos(team))}", m_Small);
+                if (!Cfg.Builder) Shadowed(new Rect(12, 44 * k, 400 * k, 24 * k), $"Your machine: {Direction(me.transform, Cfg.MachinePos(team))}", m_Small);
                 var ball = Ball.Instance;
                 if (ball != null) Shadowed(new Rect(12, 64 * k, 400 * k, 24 * k), $"Ball: {Direction(me.transform, ball.transform.position)}", m_Small);
                 if (game != null)
@@ -996,12 +996,12 @@ namespace RockGame
             if (b == null) return "";
             if (Cfg.Builder)
             {
-                int enc = NetGame.Instance != null ? NetGame.Instance.BallEnclosedBy.Value : -1;
-                if (enc >= 0)
-                    return enc == myTeam ? "<color=#77ff77>The ball is locked in YOUR build - keep it there!</color>" : $"<color=#ff7777>The ball is locked in the {Cfg.TeamLabel(enc)} build - break in and take it!</color>";
-                if (b.IsCarried && b.Carrier != null && b.Carrier.IsOwner) return "<color=#ffdd55>You have the ball - put it somewhere and wall it in on every side!</color>";
+                int own = b.IsCarried ? -1 : b.SocketTeam.Value;
+                if (own >= 0)
+                    return own == myTeam ? "<color=#77ff77>The ball is planted for YOUR team - don't let anyone pick it up!</color>" : $"<color=#ff7777>The ball is planted for {Cfg.TeamLabel(own)} - pick it up and plant it for your team!</color>";
+                if (b.IsCarried && b.Carrier != null && b.Carrier.IsOwner) return $"<color=#ffdd55>You have the ball - {Binds.Name(Bind.Interact)} to plant it anywhere (then it's your team's)</color>";
                 if (b.IsCarried && b.Carrier != null) return $"<color=#ff7777>{Cfg.TeamLabel(b.Carrier.Team.Value)} has the ball!</color>";
-                return "The ball is loose - wall it in with your own build (4 sides, or 3 and a roof)!";
+                return "The ball is loose - pick it up and plant it for your team!";
             }
             if (b.IsCarried)
             {

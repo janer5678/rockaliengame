@@ -5,17 +5,13 @@ using UnityEngine;
 namespace RockGame
 {
     /// <summary>
-    /// The game modes' server rules: Arsenal / Builder power items (fortify), Builder's "ball in your own
-    /// structure" win, and Fun / Fun Random's free item every few seconds.
+    /// The game modes' server rules: Arsenal / Builder power items (fortify), Builder's planted ball, and Fun / Fun Random's free item every few seconds.
     /// </summary>
     public partial class NetGame
     {
-        /// <summary>Builder: the team whose own structure the ball is shut inside right now (-1 = nobody's).</summary>
-        public readonly NetworkVariable<sbyte> BallEnclosedBy = new NetworkVariable<sbyte>(-1);
         /// <summary>Fun modes: when everyone gets their next item (server time, -1 = not handing out).</summary>
         public readonly NetworkVariable<double> NextFunItem = new NetworkVariable<double>(-1);
 
-        float m_NextEnclosureCheck;
 
         /// <summary>Fortify: every wooden grid piece the team has placed turns to stone at full health. Returns how many.</summary>
         public int ServerFortify(int team)
@@ -45,14 +41,6 @@ namespace RockGame
                 }
             }
             else if (NextFunItem.Value >= 0) NextFunItem.Value = -1;
-
-            // Builder: is the ball shut in somebody's own structure?
-            if (Cfg.Builder && Time.time >= m_NextEnclosureCheck)
-            {
-                m_NextEnclosureCheck = Time.time + 0.5f;
-                int t = S == GameState.BallLive ? BallEnclosure() : -1;
-                if (BallEnclosedBy.Value != t) BallEnclosedBy.Value = (sbyte)t;
-            }
         }
 
         void ServerGiveFunItems()
@@ -83,38 +71,6 @@ namespace RockGame
             int left = p.ServerGiveToBack(stack.Id, stack.Count, stack.Data);
             // no room: it lands at their feet
             if (left > 0) ServerDropItem(ItemStack.Of(stack.Id, left, stack.Data), p.transform.position + p.transform.forward, p.transform.forward, p.EyePos);
-        }
-
-        static readonly Vector3[] k_EncloseDirs = { Vector3.forward, Vector3.back, Vector3.left, Vector3.right, Vector3.up };
-
-        /// <summary>
-        /// Builder's win check: from the ball, look out in the four flat directions and up. If walls/floors/doors of one
-        /// team block at least 4 of those 5 ways (within 14 m), the ball counts as inside that team's structure.
-        /// </summary>
-        public int BallEnclosure()
-        {
-            var b = Ball.Instance;
-            if (b == null || !b.IsSpawned) return -1;
-            var from = b.transform.position + Vector3.up * 0.3f;
-            var counts = new Dictionary<int, int>();
-            foreach (var d in k_EncloseDirs)
-            {
-                var hits = Physics.RaycastAll(from, d, 14f, ~0, QueryTriggerInteraction.Ignore);
-                System.Array.Sort(hits, (x, y) => x.distance.CompareTo(y.distance));
-                foreach (var h in hits)
-                {
-                    if (h.collider.GetComponentInParent<Ball>() != null || h.collider.GetComponentInParent<PlayerNet>() != null) continue;
-                    var s = h.collider.GetComponentInParent<Structure>();
-                    if (s != null && s.IsSpawned)
-                    {
-                        counts.TryGetValue(s.Team.Value, out int c);
-                        counts[s.Team.Value] = c + 1;
-                    }
-                    break; // the first solid thing decides this direction
-                }
-            }
-            foreach (var kv in counts) if (kv.Value >= 4) return kv.Key;
-            return -1;
         }
     }
 }

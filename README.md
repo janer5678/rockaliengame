@@ -24,7 +24,7 @@ Laid out top to bottom: **MATCH SETUP** (what the host picks), then **PLAY** (ho
 - **Game mode** - separate ways to play; they don't mix:
   - *Classic*: the original game.
   - *Arsenal*: normal prices (except the crossbow, 350 wood instead of 500), plus a **POWER ITEMS** menu to the right of crafting (see below).
-  - *Builder*: Arsenal's items and prices, but every craft takes a few seconds (one at a time, shown top left), you can **craft and build anywhere** (not in the enemy base), pieces **lock on to each other** Fortnite style (walls hang off the walls they touch, floors and stairs hold on to walls around them, ground-level walls reach down into the ground), and you **win by having the ball shut inside a build your team made** when time runs out (walls on all 4 sides, or 3 and a roof). The machine socket doesn't count in Builder.
+  - *Builder*: **no bases, no machines**. Arsenal's items and prices, but every craft takes a few seconds (one at a time, shown top left); you can **craft, build and put chests anywhere**; pieces **lock on to each other** Fortnite style (walls hang off the walls they touch, floors and stairs hold on to walls around them, ground-level walls reach down into the ground). **The ball**: anyone can pick it up, and **E puts it down** right in front of you - a block in your team's colour grows up under it and a flag in your colour grows out of the top, and it's your team's ball. When anyone picks it up, the block and flag sink away again. Whoever's ball it is (planted, not carried) when time runs out wins; otherwise it's sudden death.
   - *FUN MODE*: no building phase - the wall is down and the ball is in from the start - and a 10 minute match. Everybody gets the **same** random item straight away and then every 45 s (any item in the game, the unused ones too). Free items go into the back of your inventory, not the hotbar.
   - *FUN RANDOM MODE*: the same, but only airdrop items (the unused ones too) and everyone gets a **different** one.
   - In both Fun modes the **Game length** row changes to the match length and the free item interval (both - / +).
@@ -191,7 +191,7 @@ In wood mode the stone part is added to the wood cost and there's no pickaxe.
 | Doorway | 350 | 1200 |
 | Foundation | 500 | 1800 |
 
-- **Ram**: a hand-held log. Hold LMB for 1.5 s next to an enemy piece: **wooden pieces and chests break instantly**, **stone pieces are knocked back down to full-HP wood**. 3 hits per ram. You move 25% slower while holding it.
+- **Ram**: a hand-held log. Hold LMB for 1.5 s next to an enemy piece: **wooden pieces, chests and high external walls break instantly** (in every mode), **stone pieces are knocked back down to full-HP wood**. 3 hits per ram. You move 25% slower while holding it.
 - Player damage: rock 12, hatchet/pickaxe 14, spear 35 (stab) / 60 (thrown), arrow up to 50 at full draw, crossbow 55. **Headshots do x2** for everything.
 - Weapons do double damage to buildings compared to before.
 - You can't shoot through the glass wall by standing right up against it.

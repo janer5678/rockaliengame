@@ -117,7 +117,7 @@ namespace RockGame
             switch ((GameState)cur)
             {
                 case GameState.PreBall: if (Cfg.FunRules) break; Hud.Banner("GATHER & BUILD", $"A glass wall splits the map for {Clock(Bootstrap.Fast ? Cfg.FastBallDropDelay : Cfg.BallDropDelay)}. " + (Cfg.Builder ? "BUILDER: build and craft anywhere (TAB)." : "Craft anywhere inside your base (TAB).")); break;
-                case GameState.BallLive: Hud.Banner("THE WALL IS DOWN", Cfg.Builder ? "Grab the ball and lock it inside a structure YOU built - walls all round - when time runs out!" : "Grab the ball from the middle and put it in YOUR machine's socket!"); break;
+                case GameState.BallLive: Hud.Banner("THE WALL IS DOWN", Cfg.Builder ? "Grab the ball and plant it anywhere (E) - whoever's ball it is when time runs out wins!" : "Grab the ball from the middle and put it in YOUR machine's socket!"); break;
                 case GameState.SuddenDeath: Hud.Banner("SUDDEN DEATH", "Welcome to the stadium. Rocks only. First kill wins."); break;
             }
         }
@@ -183,9 +183,9 @@ namespace RockGame
                     {
                         if (Cfg.Builder)
                         {
-                            // Builder: the ball has to be shut inside a structure your team built
-                            int e = BallEnclosure();
-                            if (e >= 0) EndGame(e, $"{Cfg.TeamLabel(e)} had the ball locked inside their own build when time ran out!");
+                            // Builder: whoever's ball it is (planted, not carried or loose) wins
+                            int pt = Ball.Instance != null && !Ball.Instance.IsCarried ? Ball.Instance.SocketTeam.Value : -1;
+                            if (pt >= 0) EndGame(pt, $"The ball was planted for {Cfg.TeamLabel(pt)} when time ran out!");
                             else StartSuddenDeath();
                             break;
                         }

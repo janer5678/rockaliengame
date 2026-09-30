@@ -24,7 +24,7 @@ namespace RockGame
 
         public PieceType PType => (PieceType)Type.Value;
         public float MaxHp => Cfg.PieceHp(PType, Tier.Value);
-        public string DisplayName => PType == PieceType.Tower ? "Fort Tower" : PType == PieceType.EggBlock ? "Egg Block" : (Tier.Value == 1 ? "Stone " : "Wooden ") + Cfg.PieceName(PType);
+        public string DisplayName => PType == PieceType.Tower ? "Fort Tower" : PType == PieceType.Barrier ? "High External Wall" : PType == PieceType.EggBlock ? "Egg Block" : (Tier.Value == 1 ? "Stone " : "Wooden ") + Cfg.PieceName(PType);
         public bool Upgradable => Cfg.IsGridPiece(PType);
 
         public override void OnNetworkSpawn()

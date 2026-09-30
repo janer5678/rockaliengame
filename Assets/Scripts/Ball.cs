@@ -16,6 +16,9 @@ namespace RockGame
         public readonly NetworkVariable<sbyte> BaseTeam = new NetworkVariable<sbyte>(-1);
         /// <summary>Team whose machine socket the ball sits in (-1 = none). This is what wins the game.</summary>
         public readonly NetworkVariable<sbyte> SocketTeam = new NetworkVariable<sbyte>(-1);
+        /// <summary>Builder: the ground under the ball's block while it's planted (SocketTeam = whose ball it is).</summary>
+        public readonly NetworkVariable<Vector3> PlantPos = new NetworkVariable<Vector3>();
+        public const float PlinthH = 1.2f, Radius = 0.62f;
 
         Rigidbody m_Rb;
         Collider m_Col;
@@ -70,6 +73,7 @@ namespace RockGame
 
         public override void OnNetworkDespawn()
         {
+            if (m_Plinth) Destroy(m_Plinth.gameObject);
             SocketTeam.OnValueChanged -= OnSocketChanged;
             if (Instance == this) Instance = null;
         }
@@ -149,6 +153,73 @@ namespace RockGame
             }
             bool show = carrier == null || !carrier.IsOwner;
             if (m_Mesh.activeSelf != show) m_Mesh.SetActive(show);
+            if (Cfg.Builder) AnimatePlant();
+        }
+
+        // ---------------- Builder: planting the ball ----------------
+
+        Transform m_Plinth, m_Flag;
+        BoxCollider m_PlinthCol;
+        MeshRenderer m_PlinthMesh, m_FlagCloth;
+        float m_PlantAmt;
+        int m_PlantTeam = -2;
+
+        /// <summary>Builder: whoever plants the ball owns it until someone picks it up.</summary>
+        public void ServerPlant(PlayerNet by, Vector3 ground)
+        {
+            CarrierId.Value = NoCarrier;
+            m_Rb.isKinematic = true;
+            PlantPos.Value = ground;
+            MoveTo(ground + Vector3.up * (PlinthH + Radius));
+            transform.rotation = Quaternion.identity;
+            SocketTeam.Value = (sbyte)by.Team.Value;
+            if (NetGame.Instance != null) NetGame.Instance.Broadcast($"{Cfg.TeamLabel(by.Team.Value)} planted the ball - it's theirs until someone picks it up!");
+        }
+
+        /// <summary>The block (in the owner's colour) that grows up under a planted ball, and the flag that grows out of its top.</summary>
+        void BuildPlantVisuals()
+        {
+            m_Plinth = new GameObject("ball block").transform;
+            var box = Art.Box(m_Plinth, Color.white, new Vector3(0, PlinthH * 0.5f, 0), new Vector3(PlinthH, PlinthH, PlinthH));
+            m_PlinthMesh = box.GetComponent<MeshRenderer>();
+            m_PlinthCol = box.AddComponent<BoxCollider>();
+            m_Flag = new GameObject("flag").transform;
+            m_Flag.SetParent(m_Visual, false);
+            m_Flag.localPosition = new Vector3(0, Radius - 0.05f, 0);
+            Art.Part(m_Flag, Art.Cylinder, new Color(0.85f, 0.85f, 0.8f), new Vector3(0, 0.9f, 0), new Vector3(0.07f, 0.9f, 0.07f));
+            var cloth = Art.Box(m_Flag, Color.white, new Vector3(0.45f, 1.5f, 0), new Vector3(0.85f, 0.55f, 0.04f));
+            m_FlagCloth = cloth.GetComponent<MeshRenderer>();
+            m_Plinth.gameObject.SetActive(false);
+            m_Flag.gameObject.SetActive(false);
+        }
+
+        void AnimatePlant()
+        {
+            if (m_Plinth == null) BuildPlantVisuals();
+            bool planted = SocketTeam.Value >= 0 && !IsCarried;
+            if (planted && m_PlantTeam != SocketTeam.Value)
+            {
+                m_PlantTeam = SocketTeam.Value;
+                var c = Cfg.TeamColor[Mathf.Clamp(m_PlantTeam, 0, 3)];
+                m_PlinthMesh.sharedMaterial = Art.Mat(c);
+                m_FlagCloth.sharedMaterial = Art.Mat(Color.Lerp(c, Color.white, 0.15f));
+                m_Plinth.position = PlantPos.Value;
+                m_Plinth.rotation = Quaternion.identity;
+                m_PlantAmt = 0f;
+            }
+            if (!planted) m_PlantTeam = -2;
+            // grows up in half a second when planted, sinks back when someone picks the ball up
+            m_PlantAmt = Mathf.MoveTowards(m_PlantAmt, planted ? 1f : 0f, Time.deltaTime * 2.2f);
+            float e = m_PlantAmt * m_PlantAmt * (3f - 2f * m_PlantAmt);
+            bool visible = m_PlantAmt > 0.001f;
+            if (m_Plinth.gameObject.activeSelf != visible) m_Plinth.gameObject.SetActive(visible);
+            if (m_Flag.gameObject.activeSelf != visible) m_Flag.gameObject.SetActive(visible);
+            m_Plinth.localScale = new Vector3(1f, Mathf.Max(0.001f, e), 1f);
+            m_Flag.localScale = Vector3.one * Mathf.Max(0.001f, e);
+            m_Flag.localRotation = Quaternion.Euler(0, Mathf.Sin(Time.time * 1.7f) * 12f, 0);
+            m_PlinthCol.enabled = planted && m_PlantAmt >= 1f;
+            // the ball rides up on top of its block
+            if (planted) m_Visual.localPosition = Vector3.down * PlinthH * (1f - e);
         }
 
         void ServerTick()

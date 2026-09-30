@@ -179,16 +179,56 @@ namespace RockGame
             }
             Check(placed == walls.Length, $"built {placed}/{walls.Length} walls out in the open, one hanging off another at the top");
 
-            // the ball inside the box counts as ours
-            Ball.Instance.ServerDrop(cc + Vector3.up * 1.5f, Vector3.zero);
-            yield return new WaitForSeconds(2f);
-            Check(g.BallEnclosedBy.Value == team, $"the ball is inside our build (enclosed by {g.BallEnclosedBy.Value})");
-            pc.LocalTeleport(cc + new Vector3(-9f, 7f, -9f), 45f);
-            pc.SetLook(45f, 30f);
-            yield return Snap("builder_ball_in_fort");
+            Check(Machine.ByTeam[team] == null && !Cfg.PointBlocked(Cfg.BaseCenter[team]), "no base, no machine and no bedrock in Builder");
+
+            // a chest goes down anywhere, even out in the open
+            Check(PlayerNet.DeployProblem(Item.Chest, team, cc + new Vector3(-6f, 0, -6f), 0f) == null, "a chest can go anywhere");
+
+            // the ram one-shots an enemy high external wall
+            var wallAt = cc + new Vector3(-10f, 0, -10f);
+            var bgo = Instantiate(Bootstrap.I.structurePrefab, wallAt, Quaternion.identity);
+            bgo.GetComponent<Structure>().ServerInit(PieceType.Barrier, 1 - team, default, false);
+            bgo.GetComponent<Unity.Netcode.NetworkObject>().Spawn(true);
+            var barrier = bgo.GetComponent<Structure>();
+            me.ServerGive(Item.Ram, 1, Cfg.MaxData(Item.Ram));
+            yield return new WaitForSeconds(0.2f);
+            yield return Hold(me, Item.Ram);
+            pc.LocalTeleport(wallAt + new Vector3(0, 0.1f, -2f), 0f);
+            yield return new WaitForSeconds(Cfg.RamWindup + 0.2f);
+            me.RamStrikeRpc(barrier.NetworkObject, wallAt + new Vector3(0, 1.5f, -0.2f));
+            yield return new WaitForSeconds(0.5f);
+            Check(barrier == null || !barrier.IsSpawned, "the ram smashed the high external wall in one hit");
+
+            // pick the ball up and plant it: a block and a flag in our colour, and it's ours
+            var bp = Ball.Instance.transform.position;
+            pc.LocalTeleport(bp + new Vector3(1.5f, 0.1f, 0), 270f);
+            yield return new WaitForSeconds(0.4f);
+            me.PickupBallRpc();
+            yield return new WaitForSeconds(0.4f);
+            Check(me.CarryingBall, "picked up the ball");
+            var ground = me.transform.position + me.transform.forward * 1.8f;
+            ground.y = MapBuilder.Height(ground.x, ground.z);
+            me.PlantBallRpc(ground);
+            yield return new WaitForSeconds(1f);
+            var ball = Ball.Instance;
+            var block = GameObject.Find("ball block");
+            Check(!ball.IsCarried && ball.SocketTeam.Value == team && block != null && block.activeInHierarchy && Mathf.Abs(ball.transform.position.y - (ground.y + Ball.PlinthH + Ball.Radius)) < 0.1f,
+                $"planted the ball: it sits on a block in our colour and it's ours ({ball.SocketTeam.Value})");
+            var eye = ground + new Vector3(3.5f, 1.2f, -3.5f);
+            pc.LocalTeleport(eye, Quaternion.LookRotation(ground - eye).eulerAngles.y);
+            pc.SetLook(Quaternion.LookRotation(ground - eye).eulerAngles.y, 5f);
+            yield return Snap("builder_ball_planted");
+            // anyone can take it: picking it up makes it nobody's again and the block sinks back
+            pc.LocalTeleport(ball.transform.position + new Vector3(1.5f, -Ball.PlinthH - Ball.Radius + 0.1f, 0), 270f);
+            yield return new WaitForSeconds(0.3f);
+            me.PickupBallRpc();
+            yield return new WaitForSeconds(1f);
+            Check(me.CarryingBall && ball.SocketTeam.Value == -1 && (block == null || !block.activeInHierarchy), "picking it up takes it back (the block and flag go away)");
+            me.PlantBallRpc(ground);
+            yield return new WaitForSeconds(0.8f);
             g.DevSetTimeLeft(1f);
             yield return new WaitForSeconds(2.5f);
-            Check(g.S == GameState.GameOver && g.Winner.Value == team, $"won with the ball in our own build ({g.EndReason.Value})");
+            Check(g.S == GameState.GameOver && g.Winner.Value == team, $"won with the ball planted for us ({g.EndReason.Value})");
         }
 
         IEnumerator FunTests(PlayerNet me, PlayerController pc, NetGame g, int team)
