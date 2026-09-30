@@ -100,7 +100,7 @@ Everything for the five theme maps is in `Assets/Scripts/ThemeMaps/` (terrain, p
 | Slenderman Egg | Thrown: Slenderman hatches and hunts your enemy. It kills on touch. Kill it (150 HP) or wait 60 s for it to vanish. |
 | Build Egg | Thrown: slabs appear under its flight path - a staircase you can walk along (Bedwars style). |
 | Staff of the Giant | Your nearest enemy becomes a giant for 30 s: huge and easy to spot, same small hitbox, and you look tiny to them. |
-| Rocket Launcher | One rocket. Wrecks enemy buildings in a small radius and hurts players. |
+| Rocket Launcher | One rocket. Wrecks buildings in a small radius (yours too) and hurts players. |
 | Fake Bomb Bush | Thrown: looks exactly like a berry bush. Whoever picks it blows up. |
 | Tree Camo | While it's in your hand you're a tree to everyone, and your camera pulls back to third person so you can see it. |
 | Ender Pearl | Thrown: wherever it lands, you teleport there (5 damage). Pickable in MODE OPTIONS. |
