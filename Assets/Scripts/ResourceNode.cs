@@ -96,7 +96,8 @@ namespace RockGame
         /// <summary>Normal / PSX graphics switched: rebuild the tree's looks (nothing else about it changes).</summary>
         void OnGraphicsChanged()
         {
-            if (Kind.Value != Tree || m_Visual == null) return;
+            if (m_Visual == null) return;
+            if (Kind.Value != Tree) { if (AiPsxArt.On) AiPsxArt.Apply(m_Visual.transform); return; }
             var old = m_Visual;
             old.SetActive(false);
             Destroy(old);
@@ -120,7 +121,7 @@ namespace RockGame
                 // the X (a chunky pixel-art one on PSX trees)
                 m_Marker = new GameObject("x").transform;
                 m_Marker.SetParent(tr, false);
-                if (PsxArt.On && trunk.GetComponent<MeshRenderer>() != null && !trunk.GetComponent<MeshRenderer>().enabled) PsxArt.PixelX(m_Marker);
+                if ((PsxArt.On || AiPsxArt.On) && trunk.GetComponent<MeshRenderer>() != null && !trunk.GetComponent<MeshRenderer>().enabled) PsxArt.PixelX(m_Marker);
                 else
                 {
                     var xc = new Color(1f, 0.45f, 0.1f);
@@ -169,6 +170,7 @@ namespace RockGame
                 sc.radius = 0.8f;
             }
             m_VisualBase = tr.localPosition;
+            if (AiPsxArt.On) AiPsxArt.Apply(tr);
         }
 
         /// <summary>A tree exactly like the map's trees (also used for the tree camo costume). Returns the trunk.</summary>
@@ -191,7 +193,7 @@ namespace RockGame
             bark = Art.Wood;
             leafColor = leaf;
             if (ThemeMaps.BuildPalm(tr, seed, h, trunk)) return trunk; // THEME MAPS
-            if (PsxArt.On && PsxArt.BuildTree(tr, seed, h * 0.45f + 5.2f + (r() - 0.5f) * 1.2f, out var pr, out var pb, out var pl))
+            if ((PsxArt.On || AiPsxArt.On) && PsxArt.BuildTree(tr, seed, h * 0.45f + 5.2f + (r() - 0.5f) * 1.2f, out var pr, out var pb, out var pl))
             {
                 trunk.GetComponent<MeshRenderer>().enabled = false;
                 trunkRadius = pr;

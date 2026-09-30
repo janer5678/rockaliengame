@@ -7,6 +7,8 @@ namespace RockGame
     public static class Art
     {
         static readonly Dictionary<Color, Material> s_Mats = new Dictionary<Color, Material>();
+        /// <summary>Every colour material Mat() made, with the exact colour it was made with (reading a colour back from a material isn't exact).</summary>
+        static readonly Dictionary<Material, Color> s_MatColors = new Dictionary<Material, Color>();
         static readonly Dictionary<Color, Material> s_Ghosts = new Dictionary<Color, Material>();
         static Mesh s_Cube, s_Cyl, s_Sphere, s_Capsule, s_Cone, s_Ico;
 
@@ -32,7 +34,15 @@ namespace RockGame
             m.color = c;
             if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.15f);
             s_Mats[c] = m;
+            s_MatColors[m] = c;
             return m;
+        }
+
+        /// <summary>A plain colour material made by Mat() (the AI PSX mode re-skins these).</summary>
+        public static bool IsArtMat(Material m, out Color c)
+        {
+            c = default;
+            return m != null && s_MatColors.TryGetValue(m, out c);
         }
 
         public static Material Ghost(Color c)

@@ -31,6 +31,20 @@ namespace RockGame
             var g = NetGame.Instance;
             int team = me.Team.Value;
             string rn = Cfg.RulesName(Cfg.Rules).ToLower().Replace(" ", "");
+            // every mode: a floor (ceiling) can hang off the top of a ramp
+            var ramp = new PieceKey(PieceKey.KStairs, 0, 0, 0, 0);
+            Check(BuildGrid.IsSupported(new PieceKey(PieceKey.KFloor, 1, 0, 1, 0), k => k.Equals(ramp)) && BuildGrid.IsSupported(new PieceKey(PieceKey.KFloor, 0, -1, 1, 0), k => k.Equals(ramp)),
+                "a ceiling can be built off a ramp");
+            // every mode: the wild respawn is anywhere out in the wild
+            var spots = new System.Collections.Generic.HashSet<int>();
+            bool allWild = true;
+            for (int i = 0; i < 40; i++)
+            {
+                NetGame.WildSpawnPoint(team, out var wp, out _);
+                allWild &= Cfg.BaseTeamAt(wp) < 0 && new Vector2(wp.x, wp.z).magnitude >= 14f;
+                spots.Add(Cfg.RegionOf(wp) * 1000 + Mathf.RoundToInt(wp.x / 10f) * 37 + Mathf.RoundToInt(wp.z / 10f));
+            }
+            Check(allWild && spots.Count >= 25, $"wild respawns are random ({spots.Count} different spots out of 40, none in a base)");
             Log($"game mode {Cfg.RulesName(Cfg.Rules)} on {Cfg.MapLabel}");
             Check(Cfg.MapKey >> Cfg.RulesShift != 0 || Cfg.Rules == GameRules.Classic, "the game mode is in the map key (synced to clients)");
             switch (Cfg.Rules)
@@ -143,16 +157,26 @@ namespace RockGame
             pc.LocalTeleport(outside, 0f);
             yield return new WaitForSeconds(0.4f);
             Check(Cfg.BaseTeamAt(me.transform.position) < 0 && pc.CraftOpen, "crafting works outside the base");
-            var plan = Cfg.GetRecipe(Cfg.RecipeIndex(Item.BuildingPlan));
-            float secs = Cfg.CraftSeconds(plan);
+            // the building plan (and fortify) are instant
             me.CraftRpc(Cfg.RecipeIndex(Item.BuildingPlan));
             yield return new WaitForSeconds(0.4f);
-            Check(me.CraftingItem.Value == (byte)Item.BuildingPlan && me.Count(Item.BuildingPlan) == 0 && secs > 0f, $"the building plan is being made ({secs:0.0}s)");
+            Check(me.Count(Item.BuildingPlan) == 1 && me.CraftingItem.Value == 0, "the building plan is instant");
+            Check(Cfg.CraftSeconds(Cfg.GetPowerRecipe(1)) == 0f && Cfg.GetPowerRecipe(1).Output == Item.FortifyBuff, "fortify all walls is instant");
+            // everything else takes a while, one at a time, with a queue like Rust
+            var spear = Cfg.GetRecipe(Cfg.RecipeIndex(Item.Spear));
+            var hatchet = Cfg.GetRecipe(Cfg.RecipeIndex(Item.Hatchet));
+            float s1 = Cfg.CraftSeconds(spear), s2 = Cfg.CraftSeconds(hatchet);
             me.CraftRpc(Cfg.RecipeIndex(Item.Spear));
             yield return new WaitForSeconds(0.2f);
-            yield return Snap("builder_crafting_wait");
-            yield return new WaitForSeconds(secs);
-            Check(me.Count(Item.BuildingPlan) == 1 && me.Count(Item.Spear) == 0 && me.CraftingItem.Value == 0, "done after the wait (one thing at a time)");
+            me.CraftRpc(Cfg.RecipeIndex(Item.Hatchet));
+            yield return new WaitForSeconds(0.4f);
+            Check(me.CraftingItem.Value == (byte)Item.Spear && me.CraftQueue.Count == 1 && me.CraftQueue[0] == (byte)Item.Hatchet && me.Count(Item.Spear) == 0,
+                $"the spear is being made ({s1:0.0}s) and the hatchet waits in the queue");
+            yield return Snap("builder_crafting_queue");
+            yield return new WaitForSeconds(s1);
+            Check(me.Count(Item.Spear) == 1 && me.CraftingItem.Value == (byte)Item.Hatchet && me.CraftQueue.Count == 0, "spear done, the hatchet started straight after");
+            yield return new WaitForSeconds(s2 + 0.3f);
+            Check(me.Count(Item.Hatchet) == 1 && me.CraftingItem.Value == 0, "the queue emptied (one thing at a time)");
 
             // wait for the ball
             while (g.S != GameState.BallLive) yield return null;
@@ -372,6 +396,86 @@ namespace RockGame
                 }
             }
             Log("maps test done");
+            Application.Quit(0);
+        }
+
+        // ------------------------------------------------------------------ AI PSX TEST graphics
+
+        static int CountAiPsx()
+        {
+            int n = 0;
+            foreach (var r in FindObjectsByType<MeshRenderer>(FindObjectsSortMode.None))
+                foreach (var m in r.sharedMaterials) if (m != null && m.name.StartsWith("aipsx")) { n++; break; }
+            return n;
+        }
+
+        /// <summary>-autotest aipsx -aipsx: pictures of the AI PSX TEST look, and Normal / PSX are exactly as before when switched back.</summary>
+        IEnumerator AiPsxShots(PlayerNet me, PlayerController pc)
+        {
+            int team = me.Team.Value;
+            Check(GameSettings.AiPsx && !GameSettings.PsxGraphics, "AI PSX TEST mode is on");
+            int skinned = CountAiPsx();
+            Check(skinned > 50, $"{skinned} things re-skinned in the PSX style");
+            var views = new[]
+            {
+                (new Vector3(Cfg.MapHalf * 0.55f, 45f, Cfg.BaseCenter[team].z - 10f), -30f, 32f),
+                (Cfg.BaseCenter[team] * 0.55f + new Vector3(8f, 0, 0), 0f, 4f),
+            };
+            ResourceNode tree = Nearest(ResourceNode.Tree, me.transform.position), rock = Nearest(ResourceNode.Boulder, me.transform.position);
+            IEnumerator Views(string mode)
+            {
+                for (int v = 0; v < views.Length; v++)
+                {
+                    var (pos, yaw, pitch) = views[v];
+                    if (v == 1)
+                    {
+                        pos.y = MapBuilder.Height(pos.x, pos.z) + 0.2f;
+                        yaw = Quaternion.LookRotation(-pos).eulerAngles.y;
+                    }
+                    pc.LocalTeleport(pos, yaw);
+                    pc.SetLook(yaw, pitch);
+                    yield return Snap($"aipsx_{mode}_{v + 1}");
+                }
+                foreach (var (n, name) in new[] { (tree, "tree"), (rock, "rock") })
+                {
+                    if (n == null) continue;
+                    var np = n.transform.position;
+                    var away = me.transform.position - np;
+                    away.y = 0;
+                    away = away.sqrMagnitude > 0.01f ? away.normalized : Vector3.forward;
+                    var eye = np + away * (name == "tree" ? 6f : 3.5f);
+                    eye.y = MapBuilder.Height(eye.x, eye.z) + 0.1f;
+                    float y2 = Quaternion.LookRotation(-away).eulerAngles.y;
+                    pc.LocalTeleport(eye, y2);
+                    pc.SetLook(y2, name == "tree" ? -12f : 12f);
+                    yield return Snap($"aipsx_{mode}_{name}");
+                }
+                Vehicle horse = null;
+                foreach (var h in Vehicle.All) if (h.IsHorse) { horse = h; break; }
+                if (horse != null)
+                {
+                    var hp = horse.transform.position;
+                    var eye = hp + new Vector3(3f, 0.2f, -3f);
+                    eye.y = MapBuilder.Height(eye.x, eye.z) + 0.1f;
+                    float y3 = Quaternion.LookRotation(hp - eye).eulerAngles.y;
+                    pc.LocalTeleport(eye, y3);
+                    pc.SetLook(y3, 8f);
+                    yield return Snap($"aipsx_{mode}_horse");
+                }
+            }
+            yield return Views("ai");
+            GameSettings.SetGraphics(0, false);
+            yield return new WaitForSeconds(0.5f);
+            Check(CountAiPsx() == 0 && !GameSettings.AiPsx, "switching to Normal puts every original look back");
+            yield return Views("normal");
+            GameSettings.SetGraphics(1, false);
+            yield return new WaitForSeconds(0.5f);
+            Check(CountAiPsx() == 0 && GameSettings.PsxGraphics, "PSX is untouched by the AI PSX mode");
+            yield return Views("psx");
+            GameSettings.SetGraphics(2, false);
+            yield return new WaitForSeconds(0.5f);
+            Check(CountAiPsx() >= skinned - 5, "switching back to AI PSX TEST re-skins everything");
+            Log("aipsx shots done");
             Application.Quit(0);
         }
     }

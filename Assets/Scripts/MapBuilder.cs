@@ -19,6 +19,8 @@ namespace RockGame
         /// <summary>Highlands: where the hill rocks go (one half; NetGame mirrors them). They are real stone nodes.</summary>
         public static readonly List<Vector3> WildRocks = new List<Vector3>();
 
+        public static Transform Root => s_Root;
+
         public static bool IsBuilt(int key, int seed) => s_Root != null && BuiltKey == key && BuiltSeed == seed;
 
         public static void Build()
@@ -124,6 +126,7 @@ namespace RockGame
             }
 
             BuildArena(root);
+            if (AiPsxArt.On) AiPsxArt.ApplyWorld(root);
         }
 
         // =====================================================================

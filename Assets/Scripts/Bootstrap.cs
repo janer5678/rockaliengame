@@ -73,6 +73,7 @@ namespace RockGame
                     case "-solo": Solo = true; break;
                     case "-fast": Fast = true; break;
                     case "-psx": GameSettings.SetPsx(true, false); break;
+                    case "-aipsx": GameSettings.SetGraphics(2, false); break;
                     case "-nopsx": GameSettings.SetPsx(false, false); break;
                 }
             }

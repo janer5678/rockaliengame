@@ -99,6 +99,7 @@ namespace RockGame
             Check(BuildGrid.IsSupported(new PieceKey(PieceKey.KEdge, rockCell.I, rockCell.J, 0, 1), k => false), "walls stand on the bedrock without a foundation");
             if (m_Mode == "rig") { yield return RigShots(me, pc); yield break; }
             if (m_Mode == "psx") { yield return PsxShots(me, pc); yield break; }
+            if (m_Mode == "aipsx") { yield return AiPsxShots(me, pc); yield break; }
             if (m_Mode == "shots") yield return ShotsRoutine(me, pc);
             else if (nm.IsHost) yield return HostRoutine(me, pc);
             else yield return ClientRoutine(me, pc);
@@ -125,7 +126,7 @@ namespace RockGame
                 me.ServerRespawn(true);
                 yield return new WaitForSeconds(0.8f);
                 int region = Cfg.RegionOf(me.transform.position);
-                Check(region != me.Team.Value && Cfg.BaseTeamAt(me.transform.position) < 0, $"wild respawn landed on {Cfg.TeamName[region]}'s side");
+                Check(Cfg.BaseTeamAt(me.transform.position) < 0, $"wild respawn landed out in the wild ({Cfg.TeamName[region]}'s side)");
                 // sudden death is last team standing
                 NetGame.Instance.DevStartSuddenDeath();
                 yield return new WaitForSeconds(1f);
@@ -841,11 +842,15 @@ namespace RockGame
             }
             else Check(false, "C4: no enemy foundation to blow up");
 
-            // respawn in the wild lands in the enemy half
+            // respawn in the wild lands anywhere out in the wild (never in a base)
             other.ServerRespawn(true);
             yield return new WaitForSeconds(0.8f);
-            var ec = Cfg.BaseCenter[team];
-            Check(Mathf.Sign(other.transform.position.z) == Mathf.Sign(ec.z) && Cfg.BaseTeamAt(other.transform.position) < 0, $"wild respawn puts you in the enemy half, outside their base ({other.transform.position})");
+            Check(Cfg.BaseTeamAt(other.transform.position) < 0, $"wild respawn puts you out in the wild, outside every base ({other.transform.position})");
+            // (it's random now, so put them somewhere open for the next tests)
+            var open = new Vector3(-30f, 0f, baseC.z > 0 ? 30f : -30f);
+            open.y = MapBuilder.Height(open.x, open.z) + 0.1f;
+            other.TeleportRpc(open, 0f);
+            yield return new WaitForSeconds(0.8f);
 
             // death wand: one shot, instant kill
             me.ServerGive(Item.DeathWand, 1);
@@ -922,6 +927,8 @@ namespace RockGame
             yield return new WaitForSeconds(0.2f);
             yield return Hold(me, Item.PortalGun);
             int portals = g.Portals.Count;
+            pc.LocalTeleport(field + new Vector3(6f, 0.1f, -4f), 0f); // portals have to be within reach
+            yield return new WaitForSeconds(0.4f);
             me.PortalRpc(field + new Vector3(0, 0.05f, 0), Vector3.up);
             yield return new WaitForSeconds(0.5f);
             me.PortalRpc(field + new Vector3(12f, 0.05f, 0), Vector3.up);

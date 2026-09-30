@@ -504,18 +504,22 @@ namespace RockGame
             yaw = Cfg.SpawnYaw(team);
         }
 
-        /// <summary>"Respawn in the wild": a random free spot in the enemy's half of the map (never inside their base).</summary>
+        /// <summary>"Respawn in the wild": a truly random free spot anywhere out in the wild (any side of the map, never in a base or the middle).</summary>
         public static void WildSpawnPoint(int team, out Vector3 pos, out float yaw)
         {
             float half = Cfg.MapHalf;
-            // a random enemy's side of the map
-            int enemy = (team + 1 + Random.Range(0, Mathf.Max(1, Cfg.TeamCount - 1))) % Cfg.TeamCount;
-            var ec = Cfg.BaseCenter[enemy];
-            for (int tries = 0; tries < 120; tries++)
+            for (int tries = 0; tries < 400; tries++)
             {
                 var p = new Vector3(Random.Range(-half + 8f, half - 8f), 0, Random.Range(-half + 8f, half - 8f));
-                if (Cfg.RegionOf(p) != enemy || new Vector2(p.x, p.z).magnitude < 8f) continue;
-                if (Mathf.Abs(p.x - ec.x) < Cfg.BaseHalf + 6f && Mathf.Abs(p.z - ec.z) < Cfg.BaseHalf + 6f) continue;
+                if (new Vector2(p.x, p.z).magnitude < 14f) continue;
+                bool inBase = false;
+                for (int t = 0; t < Cfg.TeamCount && !inBase; t++)
+                {
+                    var bc = Cfg.BaseCenter[t];
+                    inBase = Mathf.Abs(p.x - bc.x) < Cfg.BaseHalf + 6f && Mathf.Abs(p.z - bc.z) < Cfg.BaseHalf + 6f;
+                }
+                if (inBase) continue;
+                if (!ThemeMaps.SpotOk(p)) continue; // THEME MAPS (not in water, lava or up on a mesa)
                 p.y = MapBuilder.Height(p.x, p.z) + 0.1f;
                 if (Blocked(p + Vector3.up * 1.1f, new Vector3(0.45f, 0.6f, 0.45f))) continue;
                 pos = p;

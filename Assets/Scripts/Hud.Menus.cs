@@ -223,10 +223,12 @@ namespace RockGame
 
             GUILayout.BeginHorizontal();
             RowLabel("Graphics");
-            if (Choice(!GameSettings.PsxGraphics, "Normal", GUILayout.Height(30 * k))) GameSettings.SetPsx(false);
-            if (Choice(GameSettings.PsxGraphics, "PSX", GUILayout.Height(30 * k))) GameSettings.SetPsx(true);
+            if (Choice(GameSettings.GraphicsMode == 0, "Normal", GUILayout.Height(30 * k))) GameSettings.SetGraphics(0);
+            if (Choice(GameSettings.GraphicsMode == 1, "PSX", GUILayout.Height(30 * k))) GameSettings.SetGraphics(1);
+            if (Choice(GameSettings.GraphicsMode == 2, "AI PSX TEST", GUILayout.Height(30 * k))) GameSettings.SetGraphics(2);
             GUILayout.EndHorizontal();
             if (GameSettings.PsxGraphics) GUILayout.Label("<color=#bbbbbb>PSX: low-res PSX models (trees so far). Just the looks - everyone can pick their own.</color>", m_SmallWrap);
+            if (GameSettings.AiPsx) GUILayout.Label("<color=#bbbbbb>AI PSX TEST: the whole wild map redone in the PSX trees' style - pixel textures, wobbly vertices, warping textures, 15-bit colour, half resolution, fog. A test; Normal and PSX are untouched.</color>", m_SmallWrap);
 
             GUILayout.BeginHorizontal();
             RowLabel("Testing");
@@ -456,6 +458,13 @@ namespace RockGame
                         bool ch = !Cfg.IsDefault(f);
                         GUILayout.Space(12 * k);
                         GUILayout.Label((ch ? "<color=#8fe38f>" : "") + Pretty(f.Name) + (ch ? "</color>" : ""), m_Small, GUILayout.Width(colW * 0.62f), GUILayout.Height(24 * k));
+                        if (f.FieldType == typeof(bool))
+                        {
+                            // on / off settings are a toggle button
+                            bool on = (bool)f.GetValue(null);
+                            if (ToggleBtn(on, on ? "On" : "Off", GUILayout.Width(colW * 0.3f), GUILayout.Height(24 * k)) != on) { f.SetValue(null, !on); Cfg.SavePrefs(); }
+                            continue;
+                        }
                         if (!m_EditBuffers.TryGetValue(f.Name, out var text)) text = Cfg.Format(f);
                         var edited = GUILayout.TextField(text, m_Field, GUILayout.Width(colW * 0.3f), GUILayout.Height(24 * k));
                         if (edited != text)
@@ -599,8 +608,9 @@ namespace RockGame
             Caption("GRAPHICS");
             GUILayout.BeginHorizontal();
             RowLabel("Style", 170 * k);
-            if (Choice(!GameSettings.PsxGraphics, "Normal", GUILayout.Height(30 * k))) GameSettings.SetPsx(false);
-            if (Choice(GameSettings.PsxGraphics, "PSX (trees so far)", GUILayout.Height(30 * k))) GameSettings.SetPsx(true);
+            if (Choice(GameSettings.GraphicsMode == 0, "Normal", GUILayout.Height(30 * k))) GameSettings.SetGraphics(0);
+            if (Choice(GameSettings.GraphicsMode == 1, "PSX (trees so far)", GUILayout.Height(30 * k))) GameSettings.SetGraphics(1);
+            if (Choice(GameSettings.GraphicsMode == 2, "AI PSX TEST", GUILayout.Height(30 * k))) GameSettings.SetGraphics(2);
             GUILayout.EndHorizontal();
             Caption("SCREEN");
             GUILayout.BeginHorizontal();

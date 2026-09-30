@@ -162,7 +162,7 @@ namespace RockGame
         BoxCollider m_PlinthCol;
         MeshRenderer m_PlinthMesh, m_FlagCloth;
         float m_PlantAmt;
-        int m_PlantTeam = -2;
+        int m_PlantTeam = -2, m_FlagTeam = -3;
 
         /// <summary>Builder: whoever plants the ball owns it until someone picks it up.</summary>
         public void ServerPlant(PlayerNet by, Vector3 ground)
@@ -203,6 +203,7 @@ namespace RockGame
                 var c = Cfg.TeamColor[Mathf.Clamp(m_PlantTeam, 0, 3)];
                 m_PlinthMesh.sharedMaterial = Art.Mat(c);
                 m_FlagCloth.sharedMaterial = Art.Mat(Color.Lerp(c, Color.white, 0.15f));
+                m_FlagTeam = m_PlantTeam;
                 m_Plinth.position = PlantPos.Value;
                 m_Plinth.rotation = Quaternion.identity;
                 m_PlantAmt = 0f;
@@ -213,10 +214,26 @@ namespace RockGame
             float e = m_PlantAmt * m_PlantAmt * (3f - 2f * m_PlantAmt);
             bool visible = m_PlantAmt > 0.001f;
             if (m_Plinth.gameObject.activeSelf != visible) m_Plinth.gameObject.SetActive(visible);
-            if (m_Flag.gameObject.activeSelf != visible) m_Flag.gameObject.SetActive(visible);
             m_Plinth.localScale = new Vector3(1f, Mathf.Max(0.001f, e), 1f);
-            m_Flag.localScale = Vector3.one * Mathf.Max(0.001f, e);
-            m_Flag.localRotation = Quaternion.Euler(0, Mathf.Sin(Time.time * 1.7f) * 12f, 0);
+            // the flag: always there pointing at the sky (in the colour of whoever has the ball, white when it's loose),
+            // or (Builder Flag Always Up off) only growing out while the ball is planted
+            var holder = Carrier;
+            bool always = Cfg.BuilderFlagAlwaysUp;
+            float flagAmt = always ? 1f : e;
+            bool flagOn = flagAmt > 0.001f && !(holder != null && holder.IsOwner);
+            if (m_Flag.gameObject.activeSelf != flagOn) m_Flag.gameObject.SetActive(flagOn);
+            m_Flag.localScale = Vector3.one * Mathf.Max(0.001f, flagAmt);
+            m_Flag.rotation = Quaternion.Euler(0, Mathf.Sin(Time.time * 1.7f) * 12f, 0);
+            m_Flag.position = m_Visual.position + Vector3.up * (Radius - 0.05f);
+            if (always)
+            {
+                int ft = planted ? SocketTeam.Value : holder != null ? holder.Team.Value : -1;
+                if (ft != m_FlagTeam)
+                {
+                    m_FlagTeam = ft;
+                    m_FlagCloth.sharedMaterial = Art.Mat(ft >= 0 ? Color.Lerp(Cfg.TeamColor[Mathf.Clamp(ft, 0, 3)], Color.white, 0.15f) : Color.white);
+                }
+            }
             m_PlinthCol.enabled = planted && m_PlantAmt >= 1f;
             // the ball rides up on top of its block
             if (planted) m_Visual.localPosition = Vector3.down * PlinthH * (1f - e);

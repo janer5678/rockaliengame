@@ -205,6 +205,10 @@ namespace RockGame
                     if (exists(new PieceKey(PieceKey.KEdge, k.I, k.J, l, 0)) || exists(new PieceKey(PieceKey.KEdge, k.I, k.J, l, 1))
                         || exists(new PieceKey(PieceKey.KEdge, k.I - 1, k.J, l, 0)) || exists(new PieceKey(PieceKey.KEdge, k.I, k.J - 1, l, 1)))
                         return true;
+                    // off a ramp: the top of stairs in this cell or the one next to it
+                    for (int di = -1; di <= 1; di++)
+                    for (int dj = -1; dj <= 1; dj++)
+                        if ((di == 0 || dj == 0) && HasStairsAt(k.I + di, k.J + dj, l, exists)) return true;
                     // cantilever from a neighbouring floor
                     return exists(new PieceKey(PieceKey.KFloor, k.I + 1, k.J, k.L, 0)) || exists(new PieceKey(PieceKey.KFloor, k.I - 1, k.J, k.L, 0))
                         || exists(new PieceKey(PieceKey.KFloor, k.I, k.J + 1, k.L, 0)) || exists(new PieceKey(PieceKey.KFloor, k.I, k.J - 1, k.L, 0));

@@ -330,6 +330,8 @@ namespace RockGame
         // ---------- Game modes ----------
         /// <summary>Arsenal / Builder: normal prices, except the crossbow is cheaper.</summary>
         [Tune("Arsenal and Builder")] public static int ModesCrossbowWood = 350;
+        /// <summary>Builder: the ball always has a flag pointing at the sky (on), or only grows one while it's planted (off).</summary>
+        [Tune("Arsenal and Builder")] public static bool BuilderFlagAlwaysUp = true;
         [Tune("Arsenal and Builder")] public static int FortifyWood = 10000, PistolWood = 10000;
         [Tune("Arsenal and Builder")] public static float PistolDamage = 34f, PistolSpeed = 160f, PistolFireRate = 0.22f, PistolReload = 1.3f;
         [Tune("Arsenal and Builder")] public static int PistolMag = 5, HeavyArmorHp = 200, TreeCrackerUses = 40;
@@ -613,7 +615,7 @@ namespace RockGame
         }
 
         /// <summary>Builder: how long an item takes to make (by its price).</summary>
-        public static float CraftSeconds(Recipe r) => Builder ? Mathf.Clamp((r.Wood + r.Stone) / 100f * BuilderCraftSecsPer100, BuilderCraftMin, BuilderCraftMax) : 0f;
+        public static float CraftSeconds(Recipe r) => !Builder || r.Output == Item.BuildingPlan || r.Output == Item.FortifyBuff ? 0f : Mathf.Clamp((r.Wood + r.Stone) / 100f * BuilderCraftSecsPer100, BuilderCraftMin, BuilderCraftMax);
 
         public static int RecipeIndex(Item output)
         {
@@ -684,6 +686,12 @@ namespace RockGame
         {
             if (f.FieldType == typeof(float) && float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var fv)) { f.SetValue(null, fv); return true; }
             if (f.FieldType == typeof(int) && int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var iv)) { f.SetValue(null, iv); return true; }
+            if (f.FieldType == typeof(bool))
+            {
+                string t = text.Trim().ToLowerInvariant();
+                if (t == "true" || t == "on" || t == "1" || t == "yes") { f.SetValue(null, true); return true; }
+                if (t == "false" || t == "off" || t == "0" || t == "no") { f.SetValue(null, false); return true; }
+            }
             return false;
         }
 

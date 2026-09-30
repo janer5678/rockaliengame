@@ -21,6 +21,27 @@ namespace RockGame
             if (save) { PlayerPrefs.SetInt("RockGame.PsxGraphics", on ? 1 : 0); PlayerPrefs.Save(); }
             GraphicsChanged?.Invoke();
         }
+        /// <summary>Graphics: the AI PSX TEST mode (its own look, separate from Normal and PSX - see AiPsxArt).</summary>
+        public static bool AiPsx;
+
+        public static void SetAiPsx(bool on, bool save = true)
+        {
+            if (AiPsx == on) return;
+            AiPsx = on;
+            if (save) { PlayerPrefs.SetInt("RockGame.AiPsx", on ? 1 : 0); PlayerPrefs.Save(); }
+            GraphicsChanged?.Invoke();
+        }
+
+        /// <summary>Pick one of the three graphics modes: 0 Normal, 1 PSX, 2 AI PSX TEST.</summary>
+        public static void SetGraphics(int mode, bool save = true)
+        {
+            if (mode != 2) SetAiPsx(false, save);
+            if (mode != 1) SetPsx(false, save);
+            if (mode == 1) SetPsx(true, save);
+            if (mode == 2) SetAiPsx(true, save);
+        }
+
+        public static int GraphicsMode => AiPsx ? 2 : PsxGraphics ? 1 : 0;
         public static int VoiceMode = VoicePushToTalk;
         public static string MicDevice = "";
         static bool s_Loaded;
@@ -34,6 +55,7 @@ namespace RockGame
             VoiceVolume = PlayerPrefs.GetFloat("RockGame.VoiceVolume", 1f);
             MouseSensitivity = PlayerPrefs.GetFloat("RockGame.MouseSensitivity", 2f);
             PsxGraphics = PlayerPrefs.GetInt("RockGame.PsxGraphics", 0) == 1;
+            AiPsx = !PsxGraphics && PlayerPrefs.GetInt("RockGame.AiPsx", 0) == 1;
             MicGain = PlayerPrefs.GetFloat("RockGame.MicGain", 1.5f);
             MicThreshold = PlayerPrefs.GetFloat("RockGame.MicThreshold", 0.02f);
             VoiceMode = PlayerPrefs.GetInt("RockGame.VoiceMode", VoicePushToTalk);

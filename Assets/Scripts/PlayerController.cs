@@ -893,6 +893,8 @@ namespace RockGame
         void HandleBall()
         {
             if (!Binds.Down(Bind.Attack) || Time.time < m_NextBallThrow) return;
+            // Builder: no throwing - LMB puts the ball down on its block instead
+            if (Cfg.Builder) { m_NextBallThrow = Time.time + 0.5f; PlantBall(); return; }
             m_NextBallThrow = Time.time + 0.5f;
             m_NextSwing = Time.time + 0.7f; // no instant swing with whatever comes back into your hands
             var rv = m_Net.Riding ? RidingVehicle : null;
@@ -1351,7 +1353,7 @@ namespace RockGame
             if (m_Net.Dead.Value) return;
             if (m_Net.CarryingBall && Cfg.Builder)
             {
-                AimText = $"Carrying the ball!  {Binds.Name(Bind.Interact)}: put it down (it becomes your team's)   LMB: throw it";
+                AimText = $"Carrying the ball!  LMB or {Binds.Name(Bind.Interact)}: put it down (it becomes your team's)";
                 return;
             }
             if (m_Net.CarryingBall)

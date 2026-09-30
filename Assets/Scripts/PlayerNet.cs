@@ -286,7 +286,7 @@ namespace RockGame
             if (m_Tree) { Destroy(m_Tree); m_Tree = null; }
             if (!on) return;
             // everyone sees the tree - you too, from the third-person view you get while holding it
-            m_TreePsx = GameSettings.PsxGraphics;
+            m_TreePsx = GameSettings.PsxGraphics || GameSettings.AiPsx;
             m_Tree = new GameObject("treeCamo");
             m_Tree.transform.SetParent(transform, false);
             ResourceNode.BuildTreeVisual(m_Tree.transform, (int)(NetworkObjectId * 7919 % 100000), false);
@@ -380,7 +380,7 @@ namespace RockGame
             if (!IsOwner && Hidden && !dead) showBody = false; // invisibility potion
             // tree camo: everyone else sees a tree where you stand
             bool tree = TreeCamo;
-            if (tree != (m_Tree != null) || (tree && m_TreePsx != GameSettings.PsxGraphics)) RebuildTree(tree);
+            if (tree != (m_Tree != null) || (tree && m_TreePsx != (GameSettings.PsxGraphics || GameSettings.AiPsx))) RebuildTree(tree);
             if (tree) showBody = false;
             if (m_VisualRoot.gameObject.activeSelf != showBody) m_VisualRoot.gameObject.SetActive(showBody);
             bool cc = !dead && !Riding;

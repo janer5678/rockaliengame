@@ -208,6 +208,7 @@ namespace RockGame
                         break;
                 }
             }
+            DrawCraftCountdown(me, k);
             if (phase != "" && Cfg.Rules != GameRules.Classic)
                 phase += $"   <size={Mathf.RoundToInt(15 * k)}><color=#ffd24a>{Cfg.RulesName(Cfg.Rules).ToUpper()}</color></size>";
             if (phase != "")
@@ -236,12 +237,6 @@ namespace RockGame
                         ly += 20 * k;
                     }
                     double srvNow = me.NetworkManager.ServerTime.Time;
-                    // Builder: what you're making
-                    if (me.CraftingItem.Value != 0 && me.CraftDoneAt.Value > 0)
-                    {
-                        Shadowed(new Rect(12, ly, 400 * k, 24 * k), $"<color=#ffd24a>Making {Cfg.ItemName((Item)me.CraftingItem.Value)}: {Mathf.Max(0f, (float)(me.CraftDoneAt.Value - srvNow)):0.0}s</color>", m_Small);
-                        ly += 20 * k;
-                    }
                     // Fun modes: the next free item
                     if (game.NextFunItem.Value > 0)
                     {
@@ -999,7 +994,7 @@ namespace RockGame
                 int own = b.IsCarried ? -1 : b.SocketTeam.Value;
                 if (own >= 0)
                     return own == myTeam ? "<color=#77ff77>The ball is planted for YOUR team - don't let anyone pick it up!</color>" : $"<color=#ff7777>The ball is planted for {Cfg.TeamLabel(own)} - pick it up and plant it for your team!</color>";
-                if (b.IsCarried && b.Carrier != null && b.Carrier.IsOwner) return $"<color=#ffdd55>You have the ball - {Binds.Name(Bind.Interact)} to plant it anywhere (then it's your team's)</color>";
+                if (b.IsCarried && b.Carrier != null && b.Carrier.IsOwner) return "<color=#ffdd55>You have the ball - LMB to plant it anywhere (then it's your team's)</color>";
                 if (b.IsCarried && b.Carrier != null) return $"<color=#ff7777>{Cfg.TeamLabel(b.Carrier.Team.Value)} has the ball!</color>";
                 return "The ball is loose - pick it up and plant it for your team!";
             }
@@ -1015,6 +1010,30 @@ namespace RockGame
             int t = b.BaseTeam.Value;
             if (t < 0) return "The ball is loose - put it in your machine!";
             return t == myTeam ? "<color=#ffdd55>The ball is in your base but NOT in the machine - it only counts in the socket!</color>" : $"<color=#ff7777>The ball is in the {Cfg.TeamName[t]} base (not in their machine yet)</color>";
+        }
+
+        /// <summary>Builder: a big countdown for what you're crafting, with a bar, and the queue behind it.</summary>
+        void DrawCraftCountdown(PlayerNet me, float k)
+        {
+            if (me.CraftingItem.Value == 0 || me.CraftDoneAt.Value < 0) return;
+            float sw = Screen.width;
+            double now = me.NetworkManager.ServerTime.Time;
+            float left = Mathf.Max(0f, (float)(me.CraftDoneAt.Value - now));
+            float total = Mathf.Max(0.01f, (float)(me.CraftDoneAt.Value - me.CraftStartAt.Value));
+            float w = 360 * k, h = 58 * k, x = (sw - w) / 2, y = 78 * k;
+            Fill(new Rect(x, y, w, h), new Color(0, 0, 0, 0.55f));
+            var icon = ItemIcons.Get((Item)me.CraftingItem.Value);
+            if (icon != null) GUI.DrawTexture(new Rect(x + 6 * k, y + 5 * k, h - 10 * k, h - 10 * k), icon, ScaleMode.ScaleToFit, true);
+            Shadowed(new Rect(x + h, y + 2 * k, w - h - 8 * k, 28 * k), $"<b>Crafting {Cfg.ItemName((Item)me.CraftingItem.Value)}</b>   <color=#ffd24a><b>{left:0.0}s</b></color>", m_Label);
+            var bar = new Rect(x + h, y + 32 * k, w - h - 10 * k, 12 * k);
+            Fill(bar, new Color(1, 1, 1, 0.15f));
+            Fill(new Rect(bar.x, bar.y, bar.width * Mathf.Clamp01(1f - left / total), bar.height), new Color(1f, 0.82f, 0.3f));
+            if (me.CraftQueue.Count > 0)
+            {
+                var sb = new System.Text.StringBuilder("Queue: ");
+                for (int i = 0; i < me.CraftQueue.Count; i++) sb.Append(i > 0 ? ", " : "").Append(Cfg.ItemName((Item)me.CraftQueue[i]));
+                Shadowed(new Rect(x, y + h + 2 * k, w, 22 * k), sb.ToString(), m_Center);
+            }
         }
 
         /// <summary>Arsenal / Builder: the powerful items, to the right of crafting.</summary>

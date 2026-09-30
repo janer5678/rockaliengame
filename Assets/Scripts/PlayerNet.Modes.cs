@@ -10,46 +10,68 @@ namespace RockGame
     /// </summary>
     public partial class PlayerNet
     {
-        /// <summary>Builder: the item being made right now (Item as a byte, 0 = nothing) and when it's ready (server time).</summary>
+        /// <summary>Builder: the item being made right now (Item as a byte, 0 = nothing), when it started and when it's ready (server time).</summary>
         public readonly NetworkVariable<byte> CraftingItem = new NetworkVariable<byte>();
+        public readonly NetworkVariable<double> CraftStartAt = new NetworkVariable<double>(-1);
         public readonly NetworkVariable<double> CraftDoneAt = new NetworkVariable<double>(-1);
+        /// <summary>Builder: what's queued up after it (like Rust: one thing at a time, the rest wait their turn).</summary>
+        public readonly NetworkList<byte> CraftQueue = new NetworkList<byte>();
+        public const int MaxCraftQueue = 8;
         Recipe m_Making;
-        bool m_IsMaking;
+        readonly System.Collections.Generic.List<Recipe> m_Queued = new System.Collections.Generic.List<Recipe>();
 
-        /// <summary>Power items (any mode that has them) and every craft in Builder: checks, pays, then makes it (right away, or after Builder's wait).</summary>
+        /// <summary>Power items (any mode that has them) and every craft in Builder: checks, pays, then makes it (right away, or queued up behind whatever is being made).</summary>
         void ServerCraftModes(Recipe r)
         {
             if (!Cfg.CanCraftAt(Team.Value, transform.position, r.Output)) { Notify($"{r.Name} can only be crafted inside your own base"); return; }
-            if (m_IsMaking) { Notify($"Still making {Cfg.ItemName((Item)CraftingItem.Value)} - wait for it"); return; }
-            var g = NetGame.Instance;
+            float secs = Cfg.CraftSeconds(r);
+            if (secs > 0f && m_Queued.Count >= MaxCraftQueue) { Notify("Your crafting queue is full"); return; }
             if (r.Output == Item.Armor && ArmorHp.Value >= Cfg.ArmorHp) { Notify("You're already wearing full armour"); return; }
             if (r.Output == Item.HeavyArmor && ArmorHp.Value >= Cfg.HeavyArmorHp) { Notify("You're already wearing heavy armour"); return; }
             if (Count(Item.Wood) < r.Wood || Count(Item.Stone) < r.Stone) { Notify($"Not enough resources for {r.Name}"); return; }
             bool noItem = r.Output == Item.Armor || r.Output == Item.HeavyArmor || r.Output == Item.FortifyBuff;
             int data = r.Output == Item.Saddle ? Team.Value + 1 : Mathf.Clamp(Cfg.MaxData(r.Output), 0, 255);
-            if (!noItem && InvOps.Space(Inv, r.Output, data) < r.Count && !InvOps.HasEmpty(Inv)) { Notify("Inventory full!"); return; }
+            if (!noItem && secs <= 0f && InvOps.Space(Inv, r.Output, data) < r.Count && !InvOps.HasEmpty(Inv)) { Notify("Inventory full!"); return; }
 
+            // paid up front (like Rust)
             InvOps.Remove(Inv, Item.Wood, r.Wood);
             InvOps.Remove(Inv, Item.Stone, r.Stone);
             if (r.Wood > 0) SpentRpc((byte)Item.Wood, r.Wood);
             if (r.Stone > 0) SpentRpc((byte)Item.Stone, r.Stone);
-            float secs = Cfg.CraftSeconds(r);
-            if (secs <= 0f) { ServerFinishCraft(r); return; }
-            // Builder: it takes a while
+            if (secs <= 0f) { ServerFinishCraft(r); return; } // instant (the building plan, fortify)
+            if (CraftingItem.Value == 0) ServerStartCraft(r);
+            else
+            {
+                m_Queued.Add(r);
+                CraftQueue.Add((byte)r.Output);
+                Notify($"{r.Name} queued ({m_Queued.Count} waiting)");
+            }
+        }
+
+        void ServerStartCraft(Recipe r)
+        {
+            double now = NetworkManager.ServerTime.Time;
             m_Making = r;
-            m_IsMaking = true;
             CraftingItem.Value = (byte)r.Output;
-            CraftDoneAt.Value = NetworkManager.ServerTime.Time + secs;
-            Notify($"Making {r.Name} ({secs:0} s)");
+            CraftStartAt.Value = now;
+            CraftDoneAt.Value = now + Cfg.CraftSeconds(r);
         }
 
         void ServerTickCraft()
         {
-            if (!m_IsMaking || NetworkManager.ServerTime.Time < CraftDoneAt.Value) return;
-            m_IsMaking = false;
+            if (CraftingItem.Value == 0 || NetworkManager.ServerTime.Time < CraftDoneAt.Value) return;
+            var done = m_Making;
             CraftingItem.Value = 0;
-            CraftDoneAt.Value = -1;
-            ServerFinishCraft(m_Making);
+            CraftStartAt.Value = CraftDoneAt.Value = -1;
+            ServerFinishCraft(done);
+            // the next one in the queue
+            if (m_Queued.Count > 0)
+            {
+                var next = m_Queued[0];
+                m_Queued.RemoveAt(0);
+                if (CraftQueue.Count > 0) CraftQueue.RemoveAt(0);
+                ServerStartCraft(next);
+            }
         }
 
         void ServerFinishCraft(Recipe r)
