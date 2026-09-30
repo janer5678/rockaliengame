@@ -96,6 +96,7 @@ namespace RockGame
             Check(BuildGrid.OnBedrock(rockCell), "can't build a foundation on the bedrock");
             Check(BuildGrid.IsSupported(new PieceKey(PieceKey.KEdge, rockCell.I, rockCell.J, 0, 1), k => false), "walls stand on the bedrock without a foundation");
             if (m_Mode == "rig") { yield return RigShots(me, pc); yield break; }
+            if (m_Mode == "psx") { yield return PsxShots(me, pc); yield break; }
             if (m_Mode == "shots") yield return ShotsRoutine(me, pc);
             else if (nm.IsHost) yield return HostRoutine(me, pc);
             else yield return ClientRoutine(me, pc);
@@ -143,9 +144,11 @@ namespace RockGame
         IEnumerator Batch5Routine(PlayerNet me, PlayerController pc)
         {
             var g = NetGame.Instance;
-            // mode options: 3 airdrops after the wall drops (at 22.5 s, 45 s, 67.5 s of the 90 s fast ball phase), C4 only
+            // mode options: 3 airdrops after the wall drops (at 22.5 s, 45 s, 67.5 s of the 90 s fast ball phase), C4 only,
+            // the first one "anywhere" (whatever was last picked in the menu on this PC)
             Cfg.AirdropCount = 3;
             Cfg.AirdropItemMask = 1;
+            Cfg.AirdropSides = Cfg.AirdropCenter = false;
             int team = me.Team.Value;
             bool onGrid = true;
             for (int t = 0; t < Cfg.TeamCount; t++)
@@ -1085,6 +1088,89 @@ namespace RockGame
             bool home = false;
             foreach (var c in Container.All) if (c.IsAirdrop && Cfg.BaseTeamAt(c.transform.position) == team) home = true;
             Check(home && me.Count(Item.AirdropSignal) == 0, "airdrop signal beamed a crate into our base");
+        }
+
+        /// <summary>
+        /// PSX graphics: a forest view, a tree close up with its X revealed, the hit particles, then the same views in normal
+        /// graphics. Checks the X sits on the visible trunk. Run with -host -solo -fast.
+        /// </summary>
+        IEnumerator PsxShots(PlayerNet me, PlayerController pc)
+        {
+            string dir = ".";
+            var args = System.Environment.GetCommandLineArgs();
+            for (int i = 0; i < args.Length - 1; i++) if (args[i] == "-shotdir") dir = args[i + 1];
+            System.IO.Directory.CreateDirectory(dir);
+            void Snap(string name) { ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(dir, name + ".png")); Log("shot " + name); }
+            Check(PsxArt.TreeCount >= 30, $"PSX tree models loaded ({PsxArt.TreeCount})");
+            // the tree nearest our base that has open ground in front of it
+            ResourceNode tree = null;
+            var home = me.transform.position;
+            foreach (var n in ResourceNode.All)
+                if (n.Kind.Value == ResourceNode.Tree && (tree == null || (n.transform.position - home).sqrMagnitude < (tree.transform.position - home).sqrMagnitude)) tree = n;
+            if (tree == null) { Log("FAIL: no tree"); yield break; }
+            var tp = tree.transform.position;
+            var away = (home - tp); away.y = 0; away = away.normalized;
+            // forest view
+            pc.LocalTeleport(tp + away * 14f + Vector3.up * 0.1f, Quaternion.LookRotation(-away).eulerAngles.y);
+            pc.SetLook(Quaternion.LookRotation(-away).eulerAngles.y, -6f);
+            yield return new WaitForSeconds(1f);
+            Snap("psx_1_forest");
+            yield return new WaitForEndOfFrame();
+            // reveal the X facing us, then look at it close up
+            tree.ServerHarvest(5, false, tp + away * 3f);
+            yield return new WaitForSeconds(0.4f);
+            Check(tree.TryGetSpot(out var spot, out _), "the weak spot X is showing");
+            var x = tree.GetComponentsInChildren<Transform>(true);
+            Transform marker = null;
+            foreach (var t in x) if (t.name == "x") marker = t;
+            var eye = spot + away * 2.6f;
+            eye.y = MapBuilder.Height(eye.x, eye.z);
+            pc.LocalTeleport(eye, Quaternion.LookRotation(-away).eulerAngles.y);
+            var look = Quaternion.LookRotation(spot - (eye + Vector3.up * 1.6f)).eulerAngles;
+            pc.SetLook(look.y, look.x > 180f ? look.x - 360f : look.x);
+            yield return new WaitForSeconds(0.8f);
+            Snap("psx_2_tree_x");
+            yield return new WaitForEndOfFrame();
+            // the X sits on the trunk you see: about as far from the middle of the tree as the PSX trunk is thick
+            if (marker != null)
+            {
+                var d = marker.position - tp;
+                float fromAxis = new Vector2(d.x, d.z).magnitude;
+                Log($"X {fromAxis:0.00} m from the middle of the trunk (the collider is 0.30)");
+                Check(fromAxis > 0.05f && fromAxis < 0.7f, $"the X sits on the visible trunk ({fromAxis:0.00} m from its middle)");
+            }
+            // the hit effects: chips in the bark colour, the X chime, a felled tree's burst
+            Fx.Play(FxKind.WoodChips, spot, away);
+            Fx.Play(FxKind.WeakSpotTree, spot, away);
+            yield return new WaitForSeconds(0.12f);
+            Snap("psx_3_hit_fx");
+            yield return new WaitForEndOfFrame();
+            Fx.Play(FxKind.Timber, tp + Vector3.up * 2f, Vector3.up);
+            yield return new WaitForSeconds(0.15f);
+            Snap("psx_4_timber_fx");
+            yield return new WaitForSeconds(1.2f);
+            // the same close-up in normal graphics (switched live)
+            GameSettings.SetPsx(false, false);
+            yield return new WaitForSeconds(0.5f);
+            Check(tree.TryGetSpot(out _, out _), "switching graphics keeps the tree and its X");
+            Snap("psx_5_normal_tree_x");
+            yield return new WaitForEndOfFrame();
+            pc.LocalTeleport(tp + away * 14f + Vector3.up * 0.1f, Quaternion.LookRotation(-away).eulerAngles.y);
+            pc.SetLook(Quaternion.LookRotation(-away).eulerAngles.y, -6f);
+            yield return new WaitForSeconds(0.8f);
+            Snap("psx_6_normal_forest");
+            yield return new WaitForEndOfFrame();
+            GameSettings.SetPsx(true, false);
+            yield return new WaitForSeconds(0.5f);
+            // tree camo in PSX mode
+            me.ServerGive(Item.TreeCamo, 1);
+            yield return new WaitForSeconds(0.3f);
+            yield return Hold(me, Item.TreeCamo);
+            yield return new WaitForSeconds(1f);
+            Snap("psx_7_tree_camo");
+            yield return new WaitForEndOfFrame();
+            Log("psx shots done");
+            Application.Quit(0);
         }
 
         /// <summary>

@@ -72,6 +72,8 @@ namespace RockGame
                     case "-port": if (i + 1 < args.Length) Port = args[i + 1]; break;
                     case "-solo": Solo = true; break;
                     case "-fast": Fast = true; break;
+                    case "-psx": GameSettings.SetPsx(true, false); break;
+                    case "-nopsx": GameSettings.SetPsx(false, false); break;
                 }
             }
             if (host) Host();

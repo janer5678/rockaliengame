@@ -148,6 +148,13 @@ namespace RockGame
             if (wood) GUILayout.Label("<color=#d9a066>Wood only: no stone, no pickaxe, everything costs wood.</color>", m_SmallWrap);
 
             GUILayout.BeginHorizontal();
+            RowLabel("Graphics");
+            if (Choice(!GameSettings.PsxGraphics, "Normal", GUILayout.Height(30 * k))) GameSettings.SetPsx(false);
+            if (Choice(GameSettings.PsxGraphics, "PSX", GUILayout.Height(30 * k))) GameSettings.SetPsx(true);
+            GUILayout.EndHorizontal();
+            if (GameSettings.PsxGraphics) GUILayout.Label("<color=#bbbbbb>PSX: low-res PSX models (trees so far). Just the looks - everyone can pick their own.</color>", m_SmallWrap);
+
+            GUILayout.BeginHorizontal();
             RowLabel("Testing");
             Bootstrap.Solo = ToggleBtn(Bootstrap.Solo, "Solo test", GUILayout.Height(30 * k));
             Bootstrap.Fast = ToggleBtn(Bootstrap.Fast, "Fast timers", GUILayout.Height(30 * k));
@@ -515,6 +522,12 @@ namespace RockGame
         {
             float k = m_Scale;
             if (m_ResList == null) OnTabOpened();
+            Caption("GRAPHICS");
+            GUILayout.BeginHorizontal();
+            RowLabel("Style", 170 * k);
+            if (Choice(!GameSettings.PsxGraphics, "Normal", GUILayout.Height(30 * k))) GameSettings.SetPsx(false);
+            if (Choice(GameSettings.PsxGraphics, "PSX (trees so far)", GUILayout.Height(30 * k))) GameSettings.SetPsx(true);
+            GUILayout.EndHorizontal();
             Caption("SCREEN");
             GUILayout.BeginHorizontal();
             RowLabel("Window", 170 * k);

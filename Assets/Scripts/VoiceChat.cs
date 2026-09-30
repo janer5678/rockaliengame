@@ -9,6 +9,18 @@ namespace RockGame
         public const int VoiceOff = 0, VoiceOpen = 1, VoicePushToTalk = 2;
         public static float MasterVolume = 0.8f, SfxVolume = 1f, VoiceVolume = 1f, MicGain = 1.5f, MicThreshold = 0.02f;
         public static float MouseSensitivity = 2f;
+        /// <summary>Graphics: false = normal (our own look), true = PSX (swapped-in PSX models; only the looks change).</summary>
+        public static bool PsxGraphics;
+        /// <summary>Fired when the graphics mode changes (trees rebuild their looks).</summary>
+        public static event System.Action GraphicsChanged;
+
+        public static void SetPsx(bool on, bool save = true)
+        {
+            if (PsxGraphics == on) return;
+            PsxGraphics = on;
+            if (save) { PlayerPrefs.SetInt("RockGame.PsxGraphics", on ? 1 : 0); PlayerPrefs.Save(); }
+            GraphicsChanged?.Invoke();
+        }
         public static int VoiceMode = VoicePushToTalk;
         public static string MicDevice = "";
         static bool s_Loaded;
@@ -21,6 +33,7 @@ namespace RockGame
             SfxVolume = PlayerPrefs.GetFloat("RockGame.SfxVolume", 1f);
             VoiceVolume = PlayerPrefs.GetFloat("RockGame.VoiceVolume", 1f);
             MouseSensitivity = PlayerPrefs.GetFloat("RockGame.MouseSensitivity", 2f);
+            PsxGraphics = PlayerPrefs.GetInt("RockGame.PsxGraphics", 0) == 1;
             MicGain = PlayerPrefs.GetFloat("RockGame.MicGain", 1.5f);
             MicThreshold = PlayerPrefs.GetFloat("RockGame.MicThreshold", 0.02f);
             VoiceMode = PlayerPrefs.GetInt("RockGame.VoiceMode", VoicePushToTalk);

@@ -758,7 +758,7 @@ namespace RockGame
             {
                 weak = n.IsWeakSpotHit(hit.point, 0.45f);
                 Fx.Play(n.Kind.Value == ResourceNode.Tree ? FxKind.WoodChips : FxKind.StoneChips, hit.point, hit.normal);
-                if (weak) { Fx.Play(FxKind.WeakSpot, hit.point, hit.normal); Fx.Punch(-1.5f); }
+                if (weak) { Fx.Play(n.Kind.Value == ResourceNode.Tree ? FxKind.WeakSpotTree : FxKind.WeakSpot, hit.point, hit.normal); Fx.Punch(-1.5f); }
                 Fx.Shake(0.08f);
             }
             else if (no != null && (no.GetComponent<Structure>() != null || no.GetComponent<Container>() != null))

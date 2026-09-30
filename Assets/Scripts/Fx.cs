@@ -3,7 +3,8 @@ using UnityEngine;
 
 namespace RockGame
 {
-    public enum FxKind : byte { Blood, BloodHead, WoodChips, StoneChips, WeakSpot, Break, Smash, StructureHit, Spawn, C4Placed, Explosion, WandBeam, HelmetBreak, Craft, Drink, AirstrikeWarn, SniperTracer, PortalOpen, Timber }
+    // new kinds go at the end (they're sent over the network as bytes)
+    public enum FxKind : byte { Blood, BloodHead, WoodChips, StoneChips, WeakSpot, Break, Smash, StructureHit, Spawn, C4Placed, Explosion, WandBeam, HelmetBreak, Craft, Drink, AirstrikeWarn, SniperTracer, PortalOpen, Timber, WeakSpotTree }
 
     /// <summary>
     /// Game feel: particles (blood, chips, sparks), camera shake/kick, floating damage numbers and sounds.
@@ -58,9 +59,10 @@ namespace RockGame
             {
                 case FxKind.Blood: Blood(pos, dir, false); break;
                 case FxKind.BloodHead: Blood(pos, dir, true); break;
-                case FxKind.WoodChips: Chips(pos, dir, Art.Wood, 8); Sfx.Play(Sfx.Chop, pos, 0.3f); break;
+                case FxKind.WoodChips: Chips(pos, dir, BarkAt(pos), 8); Sfx.Play(Sfx.Chop, pos, 0.3f); break;
                 case FxKind.StoneChips: Chips(pos, dir, Art.Stone, 8); Sparks(pos, dir, 5); Sfx.Play(Sfx.Clink, pos); break;
                 case FxKind.WeakSpot: Sparks(pos, dir, 16); Sfx.Play(Sfx.Ding, pos, 0.8f); break;
+                case FxKind.WeakSpotTree: Sparks(pos, dir, 16); Chips(pos, dir, BarkAt(pos), 6, 4.5f); TreeHitNote(pos); break;
                 case FxKind.StructureHit: Chips(pos, dir, Art.DarkWood, 6); Sfx.Play(Sfx.Thud, pos); break;
                 case FxKind.Break: Chips(pos, Vector3.up, Art.Wood, 26, 5f); Sfx.Play(Sfx.Smash, pos); break;
                 case FxKind.Smash: Chips(pos, dir, Art.Wood, 30, 7f); Chips(pos, dir, Art.Stone, 12, 6f); Sfx.Play(Sfx.Smash, pos, 1f); break;
@@ -78,8 +80,12 @@ namespace RockGame
                 case FxKind.SniperTracer: Tracer(pos, dir); break;
                 case FxKind.PortalOpen: Sparks(pos, dir, 25); Sfx.Play(Sfx.Portal, pos, 0.9f); break;
                 case FxKind.Timber:
-                    Chips(pos, Vector3.up, Art.Wood, 40, 6f);
-                    Chips(pos + Vector3.up * 2f, Vector3.up, Art.Leaves, 30, 5f);
+                {
+                    // a felled tree bursts into chips and leaves in its own colours (PSX trees too)
+                    var tree = ResourceNode.TreeNear(pos);
+                    Chips(pos, Vector3.up, tree != null ? tree.Bark : Art.Wood, 40, 6f);
+                    Chips(pos + Vector3.up * 2f, Vector3.up, tree != null ? tree.Leaf : Art.Leaves, 30, 5f);
+                }
                     Sfx.Play(Sfx.Smash, pos, 1f);
                     break;
                 case FxKind.Drink:
@@ -87,6 +93,38 @@ namespace RockGame
                     Sfx.Play(Sfx.Zap, pos, 0.5f);
                     break;
             }
+        }
+
+        /// <summary>Chip colour for a hit on a tree: that tree's bark (the plain wood colour if it's not a tree).</summary>
+        static Color BarkAt(Vector3 pos)
+        {
+            var t = ResourceNode.TreeNear(pos, 2.5f);
+            return t != null ? t.Bark : Art.Wood;
+        }
+
+        static AudioClip[] s_TreeNotes;
+        static int s_NoteStep;
+        static float s_LastNote = -10f;
+        static Vector3 s_LastNotePos;
+
+        /// <summary>
+        /// Hitting a tree's X: a chime (Resources/TreeHit, from the Samples pack). Hits in a row on the same tree climb up the
+        /// scale (C D E G A C), like a combo; a pause or another tree starts it again from the bottom.
+        /// </summary>
+        static void TreeHitNote(Vector3 pos)
+        {
+            if (s_TreeNotes == null)
+            {
+                var l = new List<AudioClip>(Resources.LoadAll<AudioClip>("TreeHit"));
+                l.Sort((a, b) => string.CompareOrdinal(a.name, b.name));
+                s_TreeNotes = l.ToArray();
+            }
+            if (s_TreeNotes.Length == 0) { Sfx.Play(Sfx.Ding, pos, 0.8f); return; }
+            if (Time.time - s_LastNote > 3f || (pos - s_LastNotePos).sqrMagnitude > 9f) s_NoteStep = 0;
+            s_LastNote = Time.time;
+            s_LastNotePos = pos;
+            Sfx.Play(s_TreeNotes[Mathf.Min(s_NoteStep, s_TreeNotes.Length - 1)], pos, 0.85f, 0f, 60f);
+            s_NoteStep++;
         }
 
         public static void Explosion(Vector3 pos)

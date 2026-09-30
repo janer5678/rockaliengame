@@ -24,8 +24,15 @@ namespace RockGame
         public readonly NetworkVariable<byte> TrapTeam = new NetworkVariable<byte>(NoTrap);
         public const byte NoTrap = 255;
 
+        /// <summary>Every node in the match (to find the tree a hit landed on, and to swap graphics modes).</summary>
+        public static readonly System.Collections.Generic.List<ResourceNode> All = new System.Collections.Generic.List<ResourceNode>();
+
         GameObject m_Visual;
         Transform m_Marker;
+        /// <summary>A PSX trunk can be thicker or thinner than the (unchanged) trunk collider: the X moves out / in by this much, onto the bark you see.</summary>
+        float m_MarkerOut;
+        /// <summary>This tree's bark and leaf colours (for the chips and leaves that fly off it).</summary>
+        public Color Bark = Art.Wood, Leaf = Art.Leaves;
         Collider m_SpotCollider;
         GameObject[] m_Berries;
         float m_RespawnAt, m_Shake, m_MarkerPop = 1f, m_Grow = 1f;
@@ -38,6 +45,8 @@ namespace RockGame
 
         public override void OnNetworkSpawn()
         {
+            All.Add(this);
+            GameSettings.GraphicsChanged += OnGraphicsChanged;
             BuildVisual();
             if (IsBush) m_Grow = 0f; // bushes come up out of the ground
             Amount.OnValueChanged += OnAmountChanged;
@@ -48,6 +57,8 @@ namespace RockGame
 
         public override void OnNetworkDespawn()
         {
+            All.Remove(this);
+            GameSettings.GraphicsChanged -= OnGraphicsChanged;
             Amount.OnValueChanged -= OnAmountChanged;
             Spot.OnValueChanged -= OnSpotChanged;
         }
@@ -82,6 +93,18 @@ namespace RockGame
             }
         }
 
+        /// <summary>Normal / PSX graphics switched: rebuild the tree's looks (nothing else about it changes).</summary>
+        void OnGraphicsChanged()
+        {
+            if (Kind.Value != Tree || m_Visual == null) return;
+            var old = m_Visual;
+            old.SetActive(false);
+            Destroy(old);
+            BuildVisual();
+            RefreshState();
+            PlaceMarker();
+        }
+
         void BuildVisual()
         {
             var rng = new System.Random(Seed.Value);
@@ -91,14 +114,19 @@ namespace RockGame
             var tr = m_Visual.transform;
             if (Kind.Value == Tree)
             {
-                var trunk = BuildTreeVisual(tr, Seed.Value, true);
+                var trunk = BuildTreeVisual(tr, Seed.Value, true, out float trunkR, out Bark, out Leaf);
                 m_SpotCollider = trunk.GetComponent<Collider>();
-                // the X
+                m_MarkerOut = trunkR - 0.3f; // can be negative: a thin PSX trunk has the X further in than the collider
+                // the X (a chunky pixel-art one on PSX trees)
                 m_Marker = new GameObject("x").transform;
                 m_Marker.SetParent(tr, false);
-                var xc = new Color(1f, 0.45f, 0.1f);
-                Art.Box(m_Marker, xc, Vector3.zero, new Vector3(0.34f, 0.06f, 0.02f), new Vector3(0, 0, 45));
-                Art.Box(m_Marker, xc, Vector3.zero, new Vector3(0.34f, 0.06f, 0.02f), new Vector3(0, 0, -45));
+                if (PsxArt.On && trunk.GetComponent<MeshRenderer>() != null && !trunk.GetComponent<MeshRenderer>().enabled) PsxArt.PixelX(m_Marker);
+                else
+                {
+                    var xc = new Color(1f, 0.45f, 0.1f);
+                    Art.Box(m_Marker, xc, Vector3.zero, new Vector3(0.34f, 0.06f, 0.02f), new Vector3(0, 0, 45));
+                    Art.Box(m_Marker, xc, Vector3.zero, new Vector3(0.34f, 0.06f, 0.02f), new Vector3(0, 0, -45));
+                }
             }
             else if (Kind.Value == Boulder)
             {
@@ -144,13 +172,31 @@ namespace RockGame
         }
 
         /// <summary>A tree exactly like the map's trees (also used for the tree camo costume). Returns the trunk.</summary>
-        public static GameObject BuildTreeVisual(Transform tr, int seed, bool collider)
+        public static GameObject BuildTreeVisual(Transform tr, int seed, bool collider) => BuildTreeVisual(tr, seed, collider, out _, out _, out _);
+
+        /// <summary>
+        /// The trunk (with the collider when asked) is always the same cylinder, so trees play the same in both graphics
+        /// modes. Normal mode draws it with cone leaves; PSX mode hides it and puts one of the PSX tree models there instead,
+        /// as tall as the normal tree. trunkRadius: how thick the visible trunk is where the weak spot goes.
+        /// </summary>
+        public static GameObject BuildTreeVisual(Transform tr, int seed, bool collider, out float trunkRadius, out Color bark, out Color leafColor)
         {
             var rng = new System.Random(seed);
             float r() => (float)rng.NextDouble();
             float h = 4.5f + r() * 2.5f;
             var trunk = Art.Part(tr, Art.Cylinder, Art.DarkWood, new Vector3(0, h * 0.5f, 0), new Vector3(0.6f, h * 0.5f, 0.6f), default, collider, null, "trunk");
             Color leaf = Color.Lerp(Art.Leaves, new Color(0.3f, 0.55f, 0.2f), r());
+            trunkRadius = 0.3f;
+            bark = Art.Wood;
+            leafColor = leaf;
+            if (PsxArt.On && PsxArt.BuildTree(tr, seed, h * 0.45f + 5.2f + (r() - 0.5f) * 1.2f, out var pr, out var pb, out var pl))
+            {
+                trunk.GetComponent<MeshRenderer>().enabled = false;
+                trunkRadius = pr;
+                bark = pb;
+                leafColor = pl;
+                return trunk;
+            }
             for (int k = 0; k < 3; k++)
             {
                 float y = h * 0.45f + k * 1.4f;
@@ -158,6 +204,21 @@ namespace RockGame
                 Art.Part(tr, Art.Cone, leaf, new Vector3(0, y, 0), new Vector3(w, 2.4f, w), new Vector3(0, r() * 60f, 0));
             }
             return trunk;
+        }
+
+        /// <summary>The tree a hit at `pos` landed on (for the chip colours), or null.</summary>
+        public static ResourceNode TreeNear(Vector3 pos, float range = 4f)
+        {
+            ResourceNode best = null;
+            float bd = range * range;
+            foreach (var n in All)
+            {
+                if (n == null || n.Kind.Value != Tree) continue;
+                var d = n.transform.position - pos;
+                d.y = 0;
+                if (d.sqrMagnitude < bd) { bd = d.sqrMagnitude; best = n; }
+            }
+            return best;
         }
 
         /// <summary>Airstrike: flattened, regrows later like any empty node.</summary>
@@ -202,7 +263,7 @@ namespace RockGame
             if (m_Marker == null) return;
             if (!TryGetSpot(out var p, out var n)) { m_Marker.gameObject.SetActive(false); return; }
             m_Marker.gameObject.SetActive(true);
-            m_Marker.position = p + n * 0.015f;
+            m_Marker.position = p + n * (0.015f + m_MarkerOut);
             m_Marker.rotation = Quaternion.LookRotation(-n);
         }
 

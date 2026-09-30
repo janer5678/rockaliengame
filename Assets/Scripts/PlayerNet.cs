@@ -82,6 +82,7 @@ namespace RockGame
         CharacterController m_CC;
         Transform m_VisualRoot, m_Head, m_Hand;
         GameObject m_HandItem, m_Helmet, m_Armor, m_Tree, m_Flame;
+        bool m_TreePsx;
         bool m_Esp;
         float m_VisScale = 1f;
         static Material s_EspMat;
@@ -285,6 +286,7 @@ namespace RockGame
             if (m_Tree) { Destroy(m_Tree); m_Tree = null; }
             if (!on) return;
             // everyone sees the tree - you too, from the third-person view you get while holding it
+            m_TreePsx = GameSettings.PsxGraphics;
             m_Tree = new GameObject("treeCamo");
             m_Tree.transform.SetParent(transform, false);
             ResourceNode.BuildTreeVisual(m_Tree.transform, (int)(NetworkObjectId * 7919 % 100000), false);
@@ -377,7 +379,7 @@ namespace RockGame
             if (!IsOwner && Hidden && !dead) showBody = false; // invisibility potion
             // tree camo: everyone else sees a tree where you stand
             bool tree = TreeCamo;
-            if (tree != (m_Tree != null)) RebuildTree(tree);
+            if (tree != (m_Tree != null) || (tree && m_TreePsx != GameSettings.PsxGraphics)) RebuildTree(tree);
             if (tree) showBody = false;
             if (m_VisualRoot.gameObject.activeSelf != showBody) m_VisualRoot.gameObject.SetActive(showBody);
             bool cc = !dead && !Riding;
@@ -677,7 +679,7 @@ namespace RockGame
                     Fx.Server(FxKind.Timber, n.transform.position + Vector3.up * 2f, Vector3.up);
                 }
                 Fx.Server(tree ? FxKind.WoodChips : FxKind.StoneChips, point, -dir, OwnerClientId);
-                if (weak) Fx.Server(FxKind.WeakSpot, point, -dir, OwnerClientId);
+                if (weak) Fx.Server(tree ? FxKind.WeakSpotTree : FxKind.WeakSpot, point, -dir, OwnerClientId);
             }
             else if (no.TryGetComponent(out Structure s))
             {
