@@ -57,6 +57,8 @@ namespace RockGame.EditorTools
             {
                 mi.avatarSetup = ModelImporterAvatarSetup.NoAvatar;
                 mi.optimizeGameObjects = false; // BodyAnimator needs the bone transforms
+                // body and head share one texture: keep the material names (PlayerNet.SkinAlien tints them differently)
+                mi.materialName = ModelImporterMaterialName.BasedOnMaterialName;
             }
         }
 

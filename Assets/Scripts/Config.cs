@@ -302,7 +302,7 @@ namespace RockGame
         [Tune("Player")] public static int ArmorHp = 50;               // wooden armour: a second health bar, used up first (max 255)
         [Tune("Player")] public static float HeadshotMul = 2f;
         [Tune("Player")] public static float ModelWidth = 1.3f;       // alien model width scale
-        [Tune("Player")] public static float HitboxRadius = 0.52f;
+        [Tune("Player")] public static float HitboxRadius = 0.45f;
         [Tune("Player")] public static float MeleeAssist = 0.35f;     // melee counts as a hit if it passes this close (m)
         [Tune("Player")] public static float ProjectileAssist = 0.15f; // same for arrows / thrown spears
 

@@ -1219,8 +1219,18 @@ namespace RockGame
                 r.position = origin + new Vector3((col - 2.5f) * 2.1f, ps.height, row * 40f);
                 r.position = new Vector3(r.position.x, MapBuilder.Height(r.position.x, r.position.z) + ps.height, r.position.z);
                 r.rotation = Quaternion.Euler(0, 180f, 0); // facing the camera
-                var anim = BodyAnimator.TryCreate(r, Cfg.ModelWidth, out _);
+                var anim = BodyAnimator.TryCreate(r, Cfg.ModelWidth, out var model);
                 if (anim == null) { Log("FAIL: rigged alien missing"); yield break; }
+                // skinned and tinted like the real players, cycling through the team colours
+                var tinted = new System.Collections.Generic.List<Material>();
+                PlayerNet.SkinAlien(model, tinted);
+                foreach (var m in tinted) { var c = PlayerNet.TeamTint(m, i % 4); m.SetColor("_BaseColor", c); m.color = c; }
+                if (i % 6 == 1)
+                {
+                    // a helmet like PlayerNet.RebuildHelmet puts on, to check it sits on the head
+                    var hm = ItemModels.Create(Item.Helmet, anim.HeadBone);
+                    PlayerNet.FitHelmet(hm, anim.HeadBone, r);
+                }
                 Transform hand = null;
                 if (ps.item != Item.None || ps.carry)
                 {
@@ -1248,6 +1258,7 @@ namespace RockGame
                         if (smr != null) foreach (var b in smr.bones) Log($"  bone {(b ? b.name : "null")}");
                     }
                     Log($"rig hand bone: {anim.RightHand.name} path parent {anim.RightHand.parent.name}");
+                    Log($"rig head bone at {anim.HeadBone.position.y - r.position.y:F3} m, lossyScale {anim.HeadBone.lossyScale}, chest at {anim.ChestBone.position.y - r.position.y:F3} m");
                 }
             }
             void Pose(float t, float dt)
@@ -1300,6 +1311,22 @@ namespace RockGame
                 yield return new WaitForEndOfFrame();
                 yield return null;
                 foreach (var dm in demos) dm.root.rotation = Quaternion.Euler(0, 180f, 0);
+                // close-ups of each half of the row, front and side
+                for (int half = 0; half < 2; half++)
+                {
+                    var cc = c + new Vector3(half == 0 ? -3.15f : 3.15f, 0, -3.6f);
+                    pc.LocalTeleport(cc + new Vector3(0, MapBuilder.Height(cc.x, cc.z) + 0.1f, 0), 0f);
+                    pc.SetLook(0f, 8f);
+                    yield return Run(0.3f, 1.2f);
+                    Snap($"rig_row{row}_close{half}");
+                    yield return new WaitForEndOfFrame();
+                    foreach (var dm in demos) dm.root.rotation = Quaternion.Euler(0, 270f, 0);
+                    yield return Run(0.3f, 1.55f);
+                    Snap($"rig_row{row}_close{half}_side");
+                    yield return new WaitForEndOfFrame();
+                    yield return null;
+                    foreach (var dm in demos) dm.root.rotation = Quaternion.Euler(0, 180f, 0);
+                }
             }
             s_LateTick = null;
             foreach (var dm in demos) Object.Destroy(dm.root.gameObject);
