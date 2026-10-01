@@ -111,7 +111,7 @@ namespace RockGame
                 case Item.FortifyBuff:
                     return "Every piece your team has placed - and every piece you build from now on - goes up a step: stone (2 ram hits), then sheet metal (3), then refined (4). Gets dearer each time.\n\n<color=#ffd24a>" + Cfg.PowerBlurb(id, team) + "</color>";
                 case Item.WoodGenBuff:
-                    return "Your base makes more wood a second, piling up beside the machine. Three levels, each dearer than the last.\n\n<color=#ffd24a>" + Cfg.PowerBlurb(id, team) + "</color>";
+                    return "Your base makes more wood a second, piling up beside the machine. Two upgrades, each dearer than the last.\n\n<color=#ffd24a>" + Cfg.PowerBlurb(id, team) + "</color>";
                 default: return Cfg.PowerIndex(id) >= 0 ? Cfg.PowerBlurb(id, team) : Cfg.ItemName(id) + ".";
             }
         }
