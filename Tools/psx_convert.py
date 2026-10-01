@@ -39,7 +39,7 @@ SPECS = {
     "spear": dict(src=A + "/ITEMS/SPEAR/source/x/model/model.dae", tex=A + "/ITEMS/SPEAR/source/x/model/textures/lambert1_albedo.jpg", orient="tool"),
     "bush": dict(src=A + "/NATURE/BERRY BUSH/source/Sketchfab_2023_02_24_14_06_22.blend", objs=["BIG PLANT"]),
     "skeleton": dict(src=A + "/PLAYER/DEAD MODEL/source/skeleton.fbx"),
-    "arms": dict(src=A + "/PLAYER/FIRST PERSON ARMS/source/x/arms_rig.fbx", tex=A + "/PLAYER/FIRST PERSON ARMS/source/x/arms_01.png", split="arms"),
+    # (the pack's FIRST PERSON ARMS are human: the first-person arms are the alien's own, below)
     # (the ripped horse texture is blank - it's a plain chestnut coat instead)
     "horse": dict(src=SRC + "/AaronMYoung/01- PS1.Style.Animal/96198883407f4301975bdcc5eb914df9_Textured.gltf", objs=["Horse_Horse_0"], colour="#8f5634"),
     # the fantasy weapon pack: picked out by the parts each weapon is made of
@@ -52,6 +52,10 @@ SPECS = {
     "deathwand": dict(src=W, objs=["_gltfNode_7", "_gltfNode_8"], orient="tool"),
     "giantstaff": dict(src=W, objs=["_gltfNode_5"], orient="tool"),
 }
+# first-person arms: the forearm and hand cut out of the alien player model itself (by bone weights), hand forward
+ALIEN = os.path.normpath(os.path.join(HERE, "..", "Assets", "Game", "Resources", "Alien"))
+for side, name in (("r", "Right"), ("l", "Left")):
+    SPECS[f"alienarm_{side}"] = dict(src=ALIEN + "/AlienRigged.fbx", vgroups=[name + "LowerArm", name + "Hand"], tex=ALIEN + "/Alien2.png", orient="tool", post=(-90, 0, 0))
 for i in range(1, 7):
     SPECS[f"rock{i}"] = dict(src=A + "/NATURE/ROCKS.blend", objs=[f"Rock{i}"])
 for i in range(6):
@@ -350,6 +354,19 @@ for key, spec in SPECS.items():
     if not meshes:
         print("  nothing to export"); continue
     ob = join(meshes)
+    if spec.get("vgroups"):
+        # keep only what those bones move most
+        idx = {g.index for g in ob.vertex_groups if g.name in spec["vgroups"]}
+        bm = bmesh.new(); bm.from_mesh(ob.data)
+        dl = bm.verts.layers.deform.active
+        drop = []
+        for v in bm.verts:
+            w = v[dl] if dl else {}
+            best = max(w.items(), key=lambda kv: kv[1])[0] if len(w) else -1
+            if best not in idx: drop.append(v)
+        bmesh.ops.delete(bm, geom=drop, context='VERTS')
+        bm.to_mesh(ob.data); bm.free()
+        ob.data.update()
     if spec.get("split") == "arms":
         left, right = split_arms(ob)
         for side, parts in (("arms_l", left), ("arms_r", right)):

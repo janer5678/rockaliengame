@@ -1,5 +1,5 @@
-arms_l|arms_l_0
-arms_r|arms_r_0
+alienarm_l|alienarm_l_0;alienarm_l_1
+alienarm_r|alienarm_r_0;alienarm_r_1
 arrow|arrow_0
 barrier|barrier_0;barrier_1
 bigrock0|bigrock0_0

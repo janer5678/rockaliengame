@@ -259,7 +259,7 @@ namespace RockGame
             if (t == PieceType.Barrier) { PsxModels.Replace(root.transform, "barrier", PsxModels.Fit.Stretch); return; }
             if (t == PieceType.EggBlock) return;
             if (hinge != null) PsxModels.Replace(hinge, "door", PsxModels.Fit.Stretch);
-            string body = tier >= 3 ? "metal_12" : tier == 2 ? "metal_21" : tier == 1 ? "cobble_21" : "wood_21";
+            string body = tier >= 3 ? "metal_12" : tier == 2 ? "metal_21" : tier == 1 ? "cobble_21" : "wood_11"; // (warm brown planks, like the Normal wood)
             string edge = tier >= 3 ? "metal_10" : tier == 2 ? "metal_01" : tier == 1 ? "cobble_20" : "wood_20";
             var rs = new List<Renderer>();
             foreach (var r in root.GetComponentsInChildren<Renderer>(true))

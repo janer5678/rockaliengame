@@ -59,6 +59,31 @@ namespace RockGame
                 yield return new WaitForSeconds(0.3f);
                 Destroy(holder);
             }
+            // the crossbow from the side (front to the left): Normal in the middle, the four ways the PSX one could be turned around it
+            {
+                var holder = new GameObject("crossbow check");
+                var eulers = new[] { Vector3.zero, new Vector3(0, 0, 180), new Vector3(0, 180, 0), new Vector3(0, 180, 180) };
+                for (int k = -1; k < 4; k++)
+                {
+                    var slot = new GameObject("x" + k).transform;
+                    slot.SetParent(holder.transform, false);
+                    slot.position = eye + rot * new Vector3(k < 0 ? 0f : (k % 2 == 0 ? -0.55f : 0.55f), k < 0 ? 0.05f : (k < 2 ? 0.45f : -0.3f), 1.8f);
+                    slot.rotation = rot * Quaternion.Euler(0, -90, 0);
+                    PsxModels.Suppress = true;
+                    var normal = ItemModels.Create(Item.Crossbow, slot);
+                    PsxModels.Suppress = false;
+                    if (k < 0) continue;
+                    PsxModels.LocalBounds(normal.transform, normal.transform, out var nb);
+                    var m = PsxModels.Spawn("crossbow", normal.transform);
+                    PsxModels.FitInto(m.transform, normal.transform, nb, PsxModels.Fit.Grip, eulers[k]);
+                    foreach (var r in normal.GetComponentsInChildren<Renderer>()) if (!r.name.StartsWith("psx")) r.enabled = false;
+                }
+                yield return new WaitForSeconds(0.5f);
+                ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(dir, "psxcrossbow_side.png"));
+                Log("crossbow variants: top-left (0,0,0), top-right (0,0,180), bottom-left (0,180,0), bottom-right (0,180,180)");
+                yield return new WaitForSeconds(0.3f);
+                Destroy(holder);
+            }
             yield return PsxWorldShots(me, pc, dir);
             Log("psxmodels done");
             Application.Quit(0);
@@ -145,10 +170,24 @@ namespace RockGame
                 yield return new WaitForSeconds(1f);
                 Shot("psxworld_tree");
                 yield return new WaitForEndOfFrame();
-                Look(tp + away * 3f + Vector3.up * 0.1f, tp + Vector3.up * 1.2f);
-                yield return new WaitForSeconds(0.8f);
-                Shot("psxworld_tree_x");
-                yield return new WaitForEndOfFrame();
+                int shots = 0;
+                foreach (var n in ResourceNode.All)
+                {
+                    if (n == null || n.Kind.Value != ResourceNode.Tree || shots >= 4) continue;
+                    var np = n.transform.position;
+                    var aw = (me.transform.position - np); aw.y = 0;
+                    if (aw.magnitude > 60f) continue;
+                    aw = Quaternion.Euler(0, shots * 37f, 0) * aw.normalized;
+                    n.ServerHarvest(5, false, np + aw * 3f);
+                    yield return new WaitForSeconds(0.3f);
+                    if (!n.TryGetSpot(out var sp, out var sn)) continue;
+                    Look(sp + sn * 2.4f - Vector3.up * 1.0f, sp);
+                    yield return new WaitForSeconds(0.8f);
+                    Shot("psxworld_tree_x" + shots);
+                    Log($"tree x{shots}: " + n.XDebug());
+                    yield return new WaitForEndOfFrame();
+                    shots++;
+                }
             }
             // a corpse and blood
             {
@@ -166,15 +205,26 @@ namespace RockGame
             // first person: the PSX arms holding things
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
             pc.SetLook(Cfg.SpawnYaw(team), 5f);
-            foreach (var it in new[] { Item.Sword, Item.Revolver, Item.Shotgun, Item.Bow })
+            var held = new List<Item>();
+            foreach (Item i in System.Enum.GetValues(typeof(Item))) if (PsxModels.ItemKey(i) != null && i != Item.Stone && i != Item.Rock) held.Add(i);
+            for (int i = 0; i < Cfg.PlayerSlots; i++) me.Inv[i] = default;
+            foreach (var it in held)
             {
-                me.ServerGive(it, 1, it == Item.Revolver ? 3 : 0);
+                for (int i = 0; i < Cfg.HotbarSize; i++) me.Inv[i] = default;
+                me.ServerGive(it, it == Item.Barrier ? 2 : 1, it == Item.Revolver ? 3 : 0);
                 yield return new WaitForSeconds(0.2f);
                 yield return Hold(me, it);
-                yield return new WaitForSeconds(0.8f);
+                GameSettings.SetGraphics(1, false);
+                yield return new WaitForSeconds(0.7f);
                 Shot("psxfp_" + it.ToString().ToLower());
                 yield return new WaitForEndOfFrame();
+                GameSettings.SetGraphics(0, false);
+                yield return new WaitForSeconds(0.5f);
+                Shot("nfp_" + it.ToString().ToLower());
+                yield return new WaitForEndOfFrame();
+                GameSettings.SetGraphics(1, false);
             }
+            for (int i = 0; i < Cfg.HotbarSize; i++) me.Inv[i] = default;
             me.HeldSlot.Value = 6; // empty: the rock
             yield return new WaitForSeconds(0.6f);
             Shot("psxfp_rock");

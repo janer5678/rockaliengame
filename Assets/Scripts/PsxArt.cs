@@ -70,6 +70,70 @@ namespace RockGame
                 if (Vector3.Dot(normal, worldDir) < 0f) normal = -normal; // facing back out along the ray
                 return true;
             }
+
+            /// <summary>The point of triangle abc nearest p (Ericson, Real-Time Collision Detection 5.1.5).</summary>
+            static Vector3 ClosestOnTriangle(Vector3 p, Vector3 a, Vector3 b, Vector3 c)
+            {
+                Vector3 ab = b - a, ac = c - a, ap = p - a;
+                float d1 = Vector3.Dot(ab, ap), d2 = Vector3.Dot(ac, ap);
+                if (d1 <= 0f && d2 <= 0f) return a;
+                Vector3 bp = p - b;
+                float d3 = Vector3.Dot(ab, bp), d4 = Vector3.Dot(ac, bp);
+                if (d3 >= 0f && d4 <= d3) return b;
+                float vc = d1 * d4 - d3 * d2;
+                if (vc <= 0f && d1 >= 0f && d3 <= 0f) return a + ab * (d1 / (d1 - d3));
+                Vector3 cp = p - c;
+                float d5 = Vector3.Dot(ab, cp), d6 = Vector3.Dot(ac, cp);
+                if (d6 >= 0f && d5 <= d6) return c;
+                float vb = d5 * d2 - d1 * d6;
+                if (vb <= 0f && d2 >= 0f && d6 <= 0f) return a + ac * (d2 / (d2 - d6));
+                float va = d3 * d6 - d5 * d4;
+                if (va <= 0f && (d4 - d3) >= 0f && (d5 - d6) >= 0f) return b + (c - b) * ((d4 - d3) / ((d4 - d3) + (d5 - d6)));
+                float denom = 1f / (va + vb + vc);
+                return a + ab * (vb * denom) + ac * (vc * denom);
+            }
+
+            /// <summary>
+            /// The X as a decal printed onto the trunk: the trunk's own triangles around `pos`, nudged out a hair, with the X
+            /// texture projected on them from the front - so it wraps round the bark instead of sticking out past it.
+            /// The mesh is in `into`'s space (its z points into the trunk).
+            /// </summary>
+            public Mesh Decal(Vector3 pos, Vector3 normal, float size, Transform into, Mesh reuse)
+            {
+                if (Model == null || Model.TrunkTris.Count < 3) return null;
+                var tris = Model.TrunkTris;
+                var vs = new List<Vector3>();
+                var uv = new List<Vector2>();
+                var ix = new List<int>();
+                float reach = size * 0.75f;
+                for (int i = 0; i + 2 < tris.Count; i += 3)
+                {
+                    Vector3 a = transform.TransformPoint(tris[i]), b = transform.TransformPoint(tris[i + 1]), c = transform.TransformPoint(tris[i + 2]);
+                    var n = Vector3.Cross(b - a, c - a);
+                    if (n.sqrMagnitude < 1e-10f) continue;
+                    n.Normalize();
+                    if (Vector3.Dot(n, normal) < 0f) n = -n;
+                    if (Vector3.Dot(n, normal) < 0.25f) continue; // the far side / edge-on faces
+                    // any part of it near the X (big triangles are kept whole; the X's clear border hides the rest)
+                    if (Vector3.Distance(ClosestOnTriangle(pos, a, b, c), pos) > reach) continue;
+                    foreach (var p in new[] { a, b, c })
+                    {
+                        var l = into.InverseTransformPoint(p + n * 0.012f);
+                        ix.Add(vs.Count);
+                        vs.Add(l);
+                        uv.Add(new Vector2(l.x / size + 0.5f, l.y / size + 0.5f));
+                    }
+                }
+                if (vs.Count == 0) return null;
+                var m = reuse != null ? reuse : new Mesh { name = "x decal" };
+                m.Clear();
+                m.SetVertices(vs);
+                m.SetUVs(0, uv);
+                m.SetTriangles(ix, 0);
+                m.RecalculateNormals();
+                m.RecalculateBounds();
+                return m;
+            }
         }
 
         static List<TreeModel> s_Trees;
@@ -163,6 +227,36 @@ namespace RockGame
                 if (uv.x < 0.22f && h > 0.05f && h < 0.35f) { r = Mathf.Max(r, new Vector2(p.x, p.z).magnitude); mid += p; nMid++; }
             }
             t.TrunkCenter = nMid > 0 ? mid / nMid : Vector3.zero;
+            // a model whose bark isn't in the usual strip of the texture: its trunk is whatever sits low and near the middle
+            if (t.TrunkTris.Count < 3)
+            {
+                var all3 = new List<Vector3>();
+                foreach (var mf in t.Prefab.GetComponentsInChildren<MeshFilter>())
+                {
+                    var mesh = mf.sharedMesh;
+                    if (mesh == null || !mesh.isReadable) continue;
+                    var toRoot = t.Prefab.transform.worldToLocalMatrix * mf.transform.localToWorldMatrix;
+                    mesh.GetVertices(verts);
+                    for (int sm = 0; sm < mesh.subMeshCount; sm++)
+                    {
+                        mesh.GetTriangles(tri, sm);
+                        for (int i = 0; i + 2 < tri.Count; i += 3)
+                        {
+                            Vector3 a = toRoot.MultiplyPoint3x4(verts[tri[i]]), b = toRoot.MultiplyPoint3x4(verts[tri[i + 1]]), c = toRoot.MultiplyPoint3x4(verts[tri[i + 2]]);
+                            float top = Mathf.Max(a.y, Mathf.Max(b.y, c.y));
+                            if ((top - minY) / t.Height > 0.4f) continue;
+                            all3.Add(a); all3.Add(b); all3.Add(c);
+                        }
+                    }
+                }
+                t.TrunkTris.AddRange(all3);
+                if (nMid == 0 && all3.Count > 0)
+                {
+                    var m = Vector3.zero;
+                    foreach (var p in all3) m += p;
+                    t.TrunkCenter = m / all3.Count;
+                }
+            }
             t.TrunkRadius = r > 0f ? r : t.Height * 0.04f;
             if (System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-psxdebug") >= 0)
             {
@@ -232,6 +326,16 @@ namespace RockGame
             return true;
         }
 
+        /// <summary>The material of the pixel-art X (also used for the decal printed on PSX trunks).</summary>
+        public static Material XMaterial
+        {
+            get
+            {
+                if (s_XMat == null) Object.Destroy(PixelX(null));
+                return s_XMat;
+            }
+        }
+
         /// <summary>The weak-spot X, PSX style: a chunky pixel-art X (16x16, orange with a dark outline) on a little card.</summary>
         public static GameObject PixelX(Transform parent)
         {
@@ -264,7 +368,7 @@ namespace RockGame
             Object.Destroy(q.GetComponent<Collider>());
             q.name = "pixelX";
             q.transform.SetParent(parent, false);
-            q.transform.localScale = Vector3.one * (On ? 0.84f : 0.42f); // PSX trees are twice the size, and so is their X
+            q.transform.localScale = Vector3.one * 0.42f;
             var mr = q.GetComponent<MeshRenderer>();
             if (s_XMat != null) mr.sharedMaterial = s_XMat;
             mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;

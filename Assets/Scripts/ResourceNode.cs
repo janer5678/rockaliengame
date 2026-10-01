@@ -32,6 +32,8 @@ namespace RockGame
         /// <summary>A PSX trunk can be thicker or thinner than the (unchanged) trunk collider: the X moves out / in by this much, onto the bark you see.</summary>
         float m_MarkerOut;
         PsxArt.Trunk m_PsxTrunk;
+        MeshFilter m_Decal;
+        float m_TrunkR = 0.3f;
         /// <summary>This tree's bark and leaf colours (for the chips and leaves that fly off it).</summary>
         public Color Bark = Art.Wood, Leaf = Art.Leaves;
         Collider m_SpotCollider;
@@ -120,6 +122,9 @@ namespace RockGame
                 m_SpotCollider = trunk.GetComponent<Collider>();
                 m_MarkerOut = trunkR - 0.3f; // can be negative: a thin PSX trunk has the X further in than the collider
                 m_PsxTrunk = tr.GetComponentInChildren<PsxArt.Trunk>();
+                if (PsxArt.On && m_PsxTrunk != null) m_MarkerOut = 0f; // (the trunk collider wraps the PSX trunk there)
+                m_TrunkR = trunkR;
+                m_Decal = null;
                 // the X (a chunky pixel-art one on PSX trees)
                 m_Marker = new GameObject("x").transform;
                 m_Marker.SetParent(tr, false);
@@ -278,6 +283,15 @@ namespace RockGame
             return true;
         }
 
+        /// <summary>For the tests: how the X is drawn on this tree.</summary>
+        public string XDebug()
+        {
+            var tris = m_PsxTrunk != null && m_PsxTrunk.Model != null ? m_PsxTrunk.Model.TrunkTris.Count / 3 : -1;
+            var dv = m_Decal != null && m_Decal.sharedMesh != null ? m_Decal.sharedMesh.vertexCount : -1;
+            TryGetSpot(out var p, out var n, out bool vis);
+            return $"model {(m_PsxTrunk != null && m_PsxTrunk.Model != null ? m_PsxTrunk.Model.Prefab.name : "none")} trunk tris {tris} onVisual {vis} decal verts {dv} decal active {(m_Decal != null && m_Decal.gameObject.activeInHierarchy)} marker active {(m_Marker != null && m_Marker.gameObject.activeInHierarchy)}";
+        }
+
         public bool IsWeakSpotHit(Vector3 point, float tolerance)
         {
             return TryGetSpot(out var p, out _) && Vector3.Distance(p, point) <= tolerance;
@@ -300,6 +314,27 @@ namespace RockGame
             m_Marker.gameObject.SetActive(true);
             m_Marker.position = p + n * (onVisual ? 0.03f : 0.015f + m_MarkerOut);
             m_Marker.rotation = Quaternion.LookRotation(-n);
+            // PSX trunks: the X is printed onto the bark (a decal following the trunk), not a card in front of it
+            if (onVisual && m_PsxTrunk != null)
+            {
+                m_Marker.position = p;
+                if (m_Decal == null)
+                {
+                    var dg = new GameObject("x decal");
+                    dg.transform.SetParent(m_Marker, false);
+                    dg.AddComponent<MeshFilter>();
+                    var dr = dg.AddComponent<MeshRenderer>();
+                    dr.sharedMaterial = PsxArt.XMaterial;
+                    dr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                    m_Decal = dg.GetComponent<MeshFilter>();
+                }
+                // as big as the trunk is wide (a big PSX tree gets a big X)
+                float size = Mathf.Clamp(m_TrunkR * 1.5f, 0.4f, 1.1f);
+                var mesh = m_PsxTrunk.Decal(p, n, size, m_Decal.transform, m_Decal.sharedMesh);
+                m_Decal.sharedMesh = mesh;
+                foreach (Transform c in m_Marker) if (c != m_Decal.transform) c.gameObject.SetActive(mesh == null);
+                m_Decal.gameObject.SetActive(mesh != null);
+            }
         }
 
         void Update()

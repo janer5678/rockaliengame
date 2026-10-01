@@ -52,6 +52,8 @@ namespace RockGame
             Stretch,    // fill the box exactly (each axis on its own), centred
             Ground,     // keep its shape; as wide / deep as the box (the larger), standing on the box's bottom
             GroundTall, // keep its shape; as tall as the box, standing on its bottom
+            Grip,       // keep its shape; the longest side matches, and the point the hand holds stays where it was
+                        // (wherever the old look's origin sat inside its box, the same spot of the new one goes there)
         }
 
         static Dictionary<string, string[]> s_Manifest;
@@ -132,12 +134,26 @@ namespace RockGame
             return go;
         }
 
-        /// <summary>Bounds of a transform's renderers, in `space`'s local coordinates (skips the ones listed).</summary>
-        public static bool LocalBounds(Transform root, Transform space, out Bounds b, ICollection<Renderer> skip = null, Transform keep = null)
+        /// <summary>Bounds of these renderers in `space`'s local coordinates.</summary>
+        public static bool LocalBoundsOf(List<Renderer> rs, Transform space, out Bounds b)
         {
             b = default;
             bool any = false;
-            foreach (var r in root.GetComponentsInChildren<Renderer>(true))
+            foreach (var r in rs)
+            {
+                if (r == null || !LocalBounds(r.transform, space, out var rb, null, null, true)) continue;
+                if (!any) { b = rb; any = true; }
+                else b.Encapsulate(rb);
+            }
+            return any;
+        }
+
+        /// <summary>Bounds of a transform's renderers, in `space`'s local coordinates (skips the ones listed).</summary>
+        public static bool LocalBounds(Transform root, Transform space, out Bounds b, ICollection<Renderer> skip = null, Transform keep = null, bool selfOnly = false)
+        {
+            b = default;
+            bool any = false;
+            foreach (var r in selfOnly ? root.GetComponents<Renderer>() : root.GetComponentsInChildren<Renderer>(true))
             {
                 if (r is ParticleSystemRenderer || r is LineRenderer || (skip != null && skip.Contains(r)) || (keep != null && r.transform.IsChildOf(keep))) continue;
                 var mf = r.GetComponent<MeshFilter>();
@@ -161,22 +177,24 @@ namespace RockGame
         /// space the old look took up (renderers under `keep` stay as they are). Colliders and everything else stay as they
         /// were. It follows the graphics setting from then on: switch to Normal and the old look comes back.
         /// </summary>
-        public static void Replace(Transform root, string key, Fit fit = Fit.Uniform, Vector3 euler = default, float scale = 1f, Transform keep = null)
+        public static void Replace(Transform root, string key, Fit fit = Fit.Uniform, Vector3 euler = default, float scale = 1f, Transform keep = null, System.Action<GameObject> onSpawn = null)
         {
             if (Suppress || root == null || !Has(key)) return;
             GameObject model = null;
             List<Renderer> hidden = null;
+            // what it looks like now is measured once, here: anything attached later (an item in a hand) isn't part of it
+            var old = new List<Renderer>();
+            foreach (var r in root.GetComponentsInChildren<Renderer>(true))
+                if (!(r is ParticleSystemRenderer) && !(r is LineRenderer) && !r.name.StartsWith("psx") && (keep == null || !r.transform.IsChildOf(keep))) old.Add(r);
+            if (!LocalBoundsOf(old, root, out var target)) return;
             Look(root.gameObject, () =>
             {
                 hidden = new List<Renderer>();
-                var old = new List<Renderer>();
-                foreach (var r in root.GetComponentsInChildren<Renderer>(true))
-                    if (!(r is ParticleSystemRenderer) && !(r is LineRenderer) && !r.name.StartsWith("psx") && (keep == null || !r.transform.IsChildOf(keep))) old.Add(r);
-                if (!LocalBounds(root, root, out var target, null, keep)) return;
                 model = Spawn(key, root);
                 if (model == null) return;
                 foreach (var r in old) if (r.enabled) { r.enabled = false; hidden.Add(r); }
                 FitInto(model.transform, root, target, fit, euler, scale);
+                onSpawn?.Invoke(model);
             }, () =>
             {
                 if (model != null) Object.Destroy(model);
@@ -274,6 +292,13 @@ namespace RockGame
             var want = target.center;
             if (fit == Fit.Ground || fit == Fit.GroundTall) want.y = target.min.y + have.extents.y;
             var delta = want - have.center;
+            if (fit == Fit.Grip)
+            {
+                // where `space`'s origin (the grip) sat in the old box, as a fraction of it, lands on the origin again
+                var ts0 = Vector3.Max(target.size, Vector3.one * 1e-4f);
+                var frac = new Vector3(Mathf.Clamp01(-target.min.x / ts0.x), Mathf.Clamp01(-target.min.y / ts0.y), Mathf.Clamp01(-target.min.z / ts0.z));
+                delta = -(have.min + Vector3.Scale(frac, have.size));
+            }
             // (the model is a child of `space`, or of something under it with no scale of its own in between)
             model.position += space.TransformVector(delta);
         }
@@ -308,6 +333,9 @@ namespace RockGame
         }
 
         /// <summary>Every model a PSX item is turned by, on top of the shared convention (most need nothing).</summary>
-        public static Vector3 ItemEuler(Item i) => Vector3.zero;
+        /// <summary>How an item's PSX model fills its space: boxy things keep the box, everything else is held by its grip.</summary>
+        public static Fit ItemFit(Item i) => i == Item.Chest || i == Item.C4 ? Fit.Stretch : Fit.Grip;
+
+        public static Vector3 ItemEuler(Item i) => i == Item.Crossbow ? new Vector3(0, 180, 0) : Vector3.zero; // (the pack's crossbow comes in facing backwards)
     }
 }

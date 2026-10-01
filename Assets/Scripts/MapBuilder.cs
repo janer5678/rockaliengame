@@ -55,7 +55,7 @@ namespace RockGame
                     patchRs.Add(Art.Box(root, c, new Vector3(R(-half + 5, half - 5), 0.005f, R(-half + 5, half - 5)), new Vector3(w, 0.01f, w * R(0.5f, 1.5f)), new Vector3(0, R(0, 90), 0)).GetComponent<Renderer>());
                 }
                 // PSX graphics: PSX grass, with darker patches of it
-                PsxModels.Retexture(ground, new[] { ground.GetComponent<Renderer>() }, r => "grass_20", 3f);
+                PsxModels.Retexture(ground, new[] { ground.GetComponent<Renderer>() }, r => "grass_21", 3f);
                 PsxModels.Retexture(ground, patchRs, r => "grass_10", 3f);
             }
 
@@ -234,7 +234,7 @@ namespace RockGame
             mr.sharedMaterials = new[] { Art.Mat(k_Grass), Art.Mat(k_Rock) };
             {
                 Material[] saved = null;
-                PsxModels.Look(go, () => { saved = mr.sharedMaterials; mr.sharedMaterials = new[] { PsxModels.Tiled("grass_20", 1f / 3f, 1f / 3f), PsxModels.Tiled("cobble_12", 1f / 3f, 1f / 3f) }; },
+                PsxModels.Look(go, () => { saved = mr.sharedMaterials; mr.sharedMaterials = new[] { PsxModels.Tiled("grass_21", 1f / 3f, 1f / 3f), PsxModels.Tiled("cobble_12", 1f / 3f, 1f / 3f) }; },
                     () => { if (saved != null) mr.sharedMaterials = saved; });
             }
             go.AddComponent<MeshCollider>().sharedMesh = mesh;

@@ -91,8 +91,17 @@ namespace RockGame
             Art.Box(hand, skin, new Vector3(-0.045f * side, 0.025f, 0.035f), new Vector3(0.03f, 0.03f, 0.065f), new Vector3(0, 20 * side, 0)); // thumb
             Art.Box(hand, team, new Vector3(0, 0, -0.075f), new Vector3(0.082f, 0.082f, 0.035f));               // wrist band
             Art.Box(hand, skin, new Vector3(0, 0, -0.32f), new Vector3(0.072f, 0.072f, 0.46f));                  // forearm
-            // PSX graphics: the PSX arms (hand forward along +Z, the arm reaching back to you)
-            PsxModels.Replace(hand, right ? "arms_r" : "arms_l", PsxModels.Fit.Uniform, right ? new Vector3(0, 90, 0) : Vector3.zero);
+            // PSX graphics: the alien's own forearms and clawed hands (cut from the player model), tinted in your team colour like your body
+            var tint = Color.Lerp(Color.white, team, 0.6f);
+            PsxModels.Replace(hand, right ? "alienarm_r" : "alienarm_l", PsxModels.Fit.Uniform, default, 1f, null, m =>
+            {
+                foreach (var r in m.GetComponentsInChildren<Renderer>())
+                {
+                    var mats = r.materials; // own copies, tinted
+                    foreach (var mt in mats) { mt.SetColor("_BaseColor", tint); mt.color = tint; }
+                    r.materials = mats;
+                }
+            });
             foreach (var r in hand.GetComponentsInChildren<Renderer>()) r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             return hand;
         }
