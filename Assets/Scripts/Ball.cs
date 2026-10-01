@@ -64,7 +64,7 @@ namespace RockGame
             // Beacon: a tall translucent pillar of light that always shoots up from the ball (gold loose, team colour when held / socketed)
             m_Beacon = new GameObject("beacon");
             m_Beacon.transform.SetParent(transform, false);
-            var pillar = Art.Part(m_Beacon.transform, Art.Cylinder, Color.white, new Vector3(0, 150, 0), new Vector3(1.4f, 150, 1.4f), default, false, Art.Ghost(new Color(1, 1, 1, 0.35f)), "pillar");
+            var pillar = Art.Part(m_Beacon.transform, Art.Cylinder, Color.white, new Vector3(0, 150.65f, 0), new Vector3(1.0f, 150, 1.0f), default, false, Art.Ghost(new Color(1, 1, 1, 0.35f)), "pillar"); // (starts at the top of the ball)
             pillar.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             m_BeaconRenderer = pillar.GetComponent<MeshRenderer>();
             SocketTeam.OnValueChanged += OnSocketChanged;
@@ -120,6 +120,8 @@ namespace RockGame
         }
 
         int m_BeaconTeam = -2;
+        Vector3 m_LastPos;
+        float m_StillSince;
 
         /// <summary>Beacon colour: the socket's team, else the carrier's team, else gold (loose).</summary>
         void TintBeacon()
@@ -134,9 +136,10 @@ namespace RockGame
         void LateUpdate()
         {
             TintBeacon();
-            // (whoever is carrying it doesn't get a pillar of light through their own view)
-            var holder = Carrier;
-            bool beacon = holder == null || !holder.IsOwner;
+            // the light shoots up only once the ball has sat still (not carried, not rolling) for 3 seconds
+            if (IsCarried || (transform.position - m_LastPos).sqrMagnitude > 0.0004f) m_StillSince = Time.time;
+            m_LastPos = transform.position;
+            bool beacon = !IsCarried && Time.time - m_StillSince >= 3f;
             if (m_Beacon.activeSelf != beacon) m_Beacon.SetActive(beacon);
             // Clients: render the carried ball in the carrier's arms (avoids interpolation lag).
             // The carrier themselves sees it in their first-person hands instead.

@@ -138,6 +138,7 @@ namespace RockGame
             }
 
             BuildArena(root);
+            if (Cfg.Map == MapKind.Plains || Cfg.Map == MapKind.Highlands) GrassField.Build(root); // tufts of grass (Normal graphics)
             if (AiPsxArt.On) AiPsxArt.ApplyWorld(root);
         }
 
@@ -285,6 +286,7 @@ namespace RockGame
             // PSX graphics: concrete
             PsxModels.Retexture(go, go.GetComponentsInChildren<Renderer>(), r => Art.IsArtMat(r.sharedMaterial, out var col) && (col == k_Silver || col == k_SilverDark) ? (col == k_Silver ? "concrete_00" : "concrete_10") : null, 2f);
             BuildMachine(root, team, glow);
+            if (Cfg.AutoWood) WoodMachine.Create(root, team); // Auto Wood: the wood machine, right of the alien machine
         }
 
         static void BuildMachine(Transform root, int team, Color glow)

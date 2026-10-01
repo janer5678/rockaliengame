@@ -277,7 +277,7 @@ namespace RockGame
         [Tune("Airdrop")] public static int SniperAmmo = 3, JetpackFuel = 100, PortalShots = 2;
         [Tune("Airdrop")] public static float JetpackSeconds = 8f, JetpackThrust = 9f, GiantTime = 30f, GiantScale = 3f;
         [Tune("Airdrop")] public static float SlenderSpeed = 4.6f, SlenderHp = 150f, SlenderLife = 60f;
-        [Tune("Airdrop")] public static float RocketSpeed = 32f, RocketRadius = 3.5f, RocketStructureDamage = 900f, RocketPlayerDamage = 70f;
+        [Tune("Airdrop")] public static float RocketSpeed = 32f, RocketRadius = 3.5f, RocketStructureDamage = 900f, RocketPlayerDamage = 140f;
         [Tune("Airdrop")] public static float BombBushDamage = 150f, AirstrikeRadius = 14f, AirstrikeDelay = 4f, EggBlockHp = 60f;
         [Tune("Airdrop")] public static float WandRange = 90f, WandRadius = 3f;
         [Tune("Airdrop")] public static float InvisTime = 30f, InvisRevealTime = 1.2f;
@@ -302,6 +302,10 @@ namespace RockGame
         [Tune("Player")] public static float SlideMaxSpeed = 11f;     // no slide goes faster than this (m/s)
         [Tune("Player")] public static float SlideSlopeAccel = 9f;    // how hard a slope pulls you along (m/s² on a 45° slope)
         [Tune("Player")] public static float SlideUphillMul = 1.8f;   // going up a slope slows you this many times harder
+        /// <summary>Standing in your own base heals you slowly (HP a second).</summary>
+        [Tune("Player")] public static float BaseRegen = 2f;
+        /// <summary>While your team's ball is in your base, everything you gather gives this much more.</summary>
+        [Tune("Player")] public static float BallGatherMul = 1.25f;
         [Tune("Player")] public static float BerryHeal = 25f, BerryEatTime = 1.5f, MeatEatTime = 3f;
         [Tune("Player")] public static int ArmorHp = 50;               // wooden armour: a second health bar, used up first (max 255)
         [Tune("Player")] public static float HeadshotMul = 2f;
@@ -361,7 +365,7 @@ namespace RockGame
 
         // ---------- Vehicles ----------
         [Tune("Vehicles")] public static float CarSpeed = 17f, CarReverseSpeed = 6f, CarAccel = 9f, CarTurn = 95f, CarHitDamage = 30f, CarKnockback = 11f;
-        [Tune("Vehicles")] public static float HorseWalk = 4.5f, HorseSprint = 11f, HorseJump = 8.5f, HorseHp = 120f;
+        [Tune("Vehicles")] public static float HorseWalk = 4.5f, HorseSprint = 11f, HorseJump = 8.5f, HorseHp = 60f;
         [Tune("Vehicles")] public static int HorsesPerSide = 3;
 
         // ---------- Game modes ----------
@@ -388,8 +392,9 @@ namespace RockGame
         /// <summary>Auto Wood: wood added to the pile at every base each second.</summary>
         [Tune("Auto Wood")] public static int AutoWoodPerSecond = 5;
         /// <summary>Auto Wood: the wood gen upgrade's three levels - wood a second at each, and what each costs.</summary>
-        [Tune("Auto Wood")] public static int AutoWoodLevel1 = 10, AutoWoodLevel2 = 16, AutoWoodLevel3 = 25;
-        [Tune("Auto Wood")] public static int WoodGen1Wood = 1000, WoodGen2Wood = 2000, WoodGen3Wood = 3000;
+        /// <summary>The wood gen upgrade has two levels: wood a second at each, and what each costs.</summary>
+        [Tune("Auto Wood")] public static int AutoWoodLevel1 = 12, AutoWoodLevel2 = 25;
+        [Tune("Auto Wood")] public static int WoodGen1Wood = 1000, WoodGen2Wood = 3000;
         /// <summary>Pistol: hitscan, this much damage a shot (a headshot has its own number instead of the usual x2).</summary>
         [Tune("Arsenal and Builder")] public static float PistolHeadDamage = 200f, PistolBodyDamage = 95f;
         /// <summary>Metal (Fortify All Walls): this many times the stone HP; melee does this share of its damage.</summary>
@@ -697,9 +702,13 @@ namespace RockGame
         static Item[] k_Power => AutoWood ? k_PowerAutoWood : k_PowerBase;
         /// <summary>Auto Wood: how many times a team has upgraded its wood gen (0-3), synced by NetGame.</summary>
         public static int WoodGenLevel(int team) => NetGame.Instance != null && team >= 0 && team < 4 ? NetGame.Instance.WoodGenLevelOf(team) : 0;
-        public const int MaxWoodGen = 3;
+        public const int MaxWoodGen = 2;
         /// <summary>Wood a second at each wood gen level.</summary>
-        public static int WoodGenRate(int level) => level >= 3 ? AutoWoodLevel3 : level == 2 ? AutoWoodLevel2 : level == 1 ? AutoWoodLevel1 : AutoWoodPerSecond;
+        public static int WoodGenRate(int level) => level >= 2 ? AutoWoodLevel2 : level == 1 ? AutoWoodLevel1 : AutoWoodPerSecond;
+        /// <summary>Auto Wood: the wood machine stands on the bedrock to the right of the alien machine (as you look at it from your spawn).</summary>
+        public static Vector3 WoodMachinePos(int team) => MachinePos(team) + Quaternion.LookRotation(-BackDir(team)) * new Vector3(-2.35f, 0, 0.1f);
+        /// <summary>Where the wood machine's pile of wood comes out: on the bedrock in front of its chute.</summary>
+        public static Vector3 WoodTrayPos(int team) => WoodMachinePos(team) + Quaternion.LookRotation(-BackDir(team)) * new Vector3(0, 0.3f, 0.95f);
         /// <summary>Power recipes are numbered from here in CraftRpc.</summary>
         public const int PowerBase = 100;
         /// <summary>Where an item is in the power menu (-1 if it isn't there).</summary>
@@ -726,7 +735,7 @@ namespace RockGame
                 case Item.WoodGenBuff:
                 {
                     int lvl = WoodGenLevel(team);
-                    return new Recipe { Output = id, Count = 1, Wood = lvl >= 2 ? WoodGen3Wood : lvl == 1 ? WoodGen2Wood : WoodGen1Wood };
+                    return new Recipe { Output = id, Count = 1, Wood = lvl >= 1 ? WoodGen2Wood : WoodGen1Wood };
                 }
                 default:
                 {
@@ -911,6 +920,7 @@ namespace RockGame
         {
             (1, new[] { "SpearWood", "ArmorWood", "ArmorHp", "SaddleWood", "RamUses", "CrossbowSpeed", "DropWarning" }),
             (2, new[] { "SlideSlipperiness", "SlideBoost", "SlideMaxSpeed", "SlideSlopeAccel", "AlienOutlines", "RevolverMag", "BowMinSpeed", "BowMinDamage" }),
+            (3, new[] { "RocketPlayerDamage", "HorseHp", "WoodGen1Wood", "WoodGen2Wood", "AutoWoodLevel1", "AutoWoodLevel2", "BaseRegen" }),
         };
         const string MigrateKey = "RockGame.Tunables.migrated";
 

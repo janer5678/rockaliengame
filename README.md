@@ -25,7 +25,7 @@ Laid out top to bottom: **MATCH SETUP** (what the host picks), then **PLAY** (ho
   - *Classic*: the original game.
   - *Tutorial* (**start here if you're new**): Primitive's rules, played alone with the clock stopped. A guide on the left walks you through the whole game in 26 steps - looking, walking, sprinting, sliding, chopping trees and hitting the weak spot, the inventory and crafting, the building plan and wheel (foundation, wall, doorway), mining stone, the spear (stab, throw, pick it back up), the battering ram, fighting and healing, and finally the glass wall dropping, grabbing the ball and putting it in your machine. Each step explains what's going on, has a goal that ticks itself off when you do it (then it moves on), and a pulsing marker points at what it's about (a tree, a boulder, your base, the machine, the ball). Enter reads on or skips a goal. While the inventory is open the goal shows along the bottom.
   - *Arsenal*: normal prices (except the crossbow, 350 wood instead of 500), plus a **POWER ITEMS** menu to the right of crafting (see below).
-  - *Auto Wood*: Arsenal, but **wood piles up at your base by itself**: 5 a second, in one growing stack on the bedrock beside the machine (Auto Wood Per Second in CHANGE VALUES). Walk up and press E to take the lot: the pile keeps stacking past 1000 and splits into 1000-stacks as it goes into your inventory. **Wood Gen upgrade** (power item, Auto Wood only): level 1 for 1000 wood (10 a second), level 2 for 2000 (16 a second), level 3 for 3000 (25 a second) - all in CHANGE VALUES > Auto Wood.
+  - *Auto Wood*: Arsenal, but **wood piles up at your base by itself**: a **wood machine** stands on the bedrock to the right of the alien machine (as you look at it from your spawn), sawing wood out of nothing and pushing it down its chute onto a growing pile in front of it - 5 a second. Walk up and press E to take the lot: the pile keeps stacking past 1000 and splits into 1000-stacks as it goes into your inventory. **Wood Gen upgrade** (power item, Auto Wood only), two levels: level 1 for 1000 wood (12 a second), level 2 for 3000 (25 a second) - all in CHANGE VALUES > Auto Wood. The wood machine changes in front of you with each one: a plank hopper with one saw, then iron bands, a bigger saw, a smoking chimney and a lamp, then a riveted steel housing in your team colour with twin saws, two chimneys, glowing gauges and a light on top (and lit pips on its front for the level).
   - *Primitive*: the classic game, but the only things you can craft are the hatchet, spear, building plan and battering ram.
   - *Building Primitive*: Builder's rules (below), but only those four primitive items and no power items.
   - *Builder*: **no bases, no machines**. Arsenal's items and prices, but most crafts take a few seconds: small timers stack up in the top right: the top one is being made (its bar runs down), and anything else you buy meanwhile waits under it with a full bar, moving up and starting when its turn comes (like Rust - one thing at a time, paid for up front). The building plan and Fortify All Walls are instant; you can **craft, build and put chests anywhere**; pieces **lock on to each other** Fortnite style (walls hang off the walls they touch, floors and stairs hold on to walls around them, ground-level walls reach down into the ground). **The ball** can't be thrown: anyone can pick it up, and **LMB (or E) puts it down** right in front of you - a block in your team's colour grows up under it and it's your team's ball. The ball always has a flag pointing at the sky (white when loose, the colour of whoever has it); set **Builder Flag Always Up** to Off in CHANGE VALUES to go back to a flag that only grows out while the ball is planted. When anyone picks the ball up, the block sinks away again. Whoever's ball it is (planted, not carried) when time runs out wins; otherwise it's sudden death.
@@ -79,7 +79,7 @@ All these numbers are in CHANGE VALUES under "Arsenal and Builder" (and "Fun mod
 Everything for the five theme maps is in `Assets/Scripts/ThemeMaps/` (terrain, props, palms, water/ice/lava, the boat). To remove them: delete that folder, then delete every line or block marked `// THEME MAPS` (search the scripts for it: Config, Bootstrap, MapBuilder, NetGame, ResourceNode, Vehicle, PlayerNet, PlayerController, Hud.Menus, AutoTest.Modes (the maps test), and the second line of the `MapKind` enum). The `Boat` item can stay in the `Item` enum (items are saved by number).
 
 ## Pause menu (Esc)
-- **Resume**, **Settings**, **Controls**, **Dev settings**, **Suicide** (click twice: you die, drop everything as usual and respawn), **Leave game**. Esc goes back a page.
+- **Resume**, **Settings**, **Controls**, **Dev settings**, **Suicide** (click twice: you die, drop everything as usual and respawn; once every 30 s - also `/kill` in the chat), **Leave game**. Esc goes back a page.
 - **Settings** (also on the main menu), in tabs:
   - **Sound**: Master, Sound effects (every game and menu sound) and Voice chat volume.
   - **Controls**: mouse sensitivity, and every key laid out by what it does (movement, actions, building, voice, hotbar) with a note on what each is for. Click a key and press the new key or mouse button to rebind it; every action has a main and a second key. Esc cancels, Backspace clears, **Reset controls** puts the defaults back.
@@ -92,13 +92,15 @@ Everything for the five theme maps is in `Assets/Scripts/ThemeMaps/` (terrain, p
 - On the bedrock stands your **alien machine** (with room to build walls behind it, and room for chests around it). It has a **socket** (the glowing cradle under the arch) where the ball has to sit.
 - **Spears and hatchets can be crafted anywhere; everything else only inside your own base** (TAB).
 - A **big glass wall** splits the map in half for the first **5 minutes**. When it drops, the **ball** drops in the middle and a **7:00** timer starts (12 minutes in total).
-- Pick the ball up (E) and **throw it with LMB**. When it gets close to a machine's socket it snaps in. While you carry it, it fills the bottom half of your screen. A beacon of light shoots into the sky while it sits in a socket. Enemies can take it back out with E.
+- Pick the ball up (E) and **throw it with LMB**. When it gets close to a machine's socket it snaps in. While you carry it, it fills the bottom half of your screen. A beam of light shoots up from the top of the ball once it's sat still for 3 seconds (not while it's carried or rolling). Enemies can take it back out with E.
 - When the timer hits 0, whoever has the ball **in their machine's socket wins**. Lying somewhere in your base doesn't count.
 - The last 10 seconds before the end count down huge in the middle of the screen with a pulsing red edge and ticks.
 - If the ball is in no socket, both players are teleported to the **sudden death stadium**: a huge round arena with tiered stands full of cheering alien spectators, floodlights and jumbotrons. Everyone is healed, inventories are emptied and all armour and helmets are taken off, then a big 5-4-3-2-1-FIGHT countdown. Rocks only, first kill wins.
 - There is no rock item: whenever your selected hotbar slot is empty, you're holding your rock.
 - When you die **all your items burst out of your body** onto the ground, including armour and a helmet you were wearing. Anyone can pick them up with E. Items on the ground disappear after 5 minutes.
 - Respawning: while the glass wall is up you always come back on your bedrock. After that you choose: **respawn in base** or **respawn in the wild** (a truly random spot anywhere out in the wild - any side of the map, never in a base, the middle, water or lava).
+- **Standing in your own base heals you** slowly (2 HP a second; Base Regen in CHANGE VALUES). Not in sudden death, and Builder has no bases.
+- **Ball buff**: while your team's ball is in your base (in your machine, or lying in your base; Builder: planted for your team) everything you gather gives 25% more (Ball Gather Mul). It shows bottom left, above the armour.
 
 ## Airdrops
 10 seconds before each airdrop lands, a banner says **AIRDROP DROPPING IN 10 SECONDS** and a countdown shows top left. Once the wall is down, a giant alien ship comes down from very high up and **beams an airdrop crate** to a random spot (never close to a base; follow the purple beam; a big "AIRDROP INCOMING" shows in the middle of the screen). How many come per match and which items they can have are set in **MODE OPTIONS**; a crate nobody emptied stays put. Each crate holds one random item from the picked ones. The items in the game (only the first nine can be picked for now; the rest are unused):
@@ -119,7 +121,7 @@ Everything for the five theme maps is in `Assets/Scripts/ThemeMaps/` (terrain, p
 | Slenderman Egg | Thrown: Slenderman hatches and hunts your enemy. It kills on touch. Kill it (150 HP) or wait 60 s for it to vanish. |
 | Build Egg | Thrown: slabs appear under its flight path - a staircase you can walk along (Bedwars style). |
 | Staff of the Giant | Your nearest enemy becomes a giant for 30 s: huge and easy to spot, same small hitbox, and you look tiny to them. |
-| Rocket Launcher | One rocket. Wrecks buildings in a small radius (yours too) and hurts players; a **direct hit on a player kills them**. |
+| Rocket Launcher | One rocket. Wrecks buildings in a small radius (yours too) and hurts players; a **direct hit on a player kills them**, and the blast hurts a lot more (140, falling off with distance). |
 | Fake Bomb Bush | Thrown: looks exactly like a berry bush. Whoever picks it blows up. |
 | Tree Camo | While it's in your hand you're a tree to everyone, and your camera pulls back to third person so you can see it. |
 | Ender Pearl | Thrown: wherever it lands, you teleport there (5 damage). Pickable in MODE OPTIONS. |
@@ -136,7 +138,7 @@ Everything for the five theme maps is in `Assets/Scripts/ThemeMaps/` (terrain, p
 | Key | Action |
 |---|---|
 | WASD / Shift / Space / Ctrl or C | move / sprint / jump / crouch (also with the inventory open) |
-| Sprint, then Ctrl / C | **slide** (like Apex / Titanfall; pressed in the air it starts when you land): you slide off where you look with the speed you had (at least sprint speed) plus a **boost - but only once every 1.5 s**, so spamming slide can't build up speed. Friction slows you on the flat (about a second of slide); **slopes pull you down them** and slow you going up - hard (Slide Uphill Mul); crouching while running down a slope starts a slide too. It starts **the moment you press crouch** while sprinting or running (no crouch first). You stick to the ground going downhill, steer a little, and can jump out of it keeping your speed. Nothing goes past **Slide Max Speed** (11 m/s). Tuning in CHANGE VALUES: Slide Slipperiness (0 = grippy, 10 = ice), Slide Boost, Slide Boost Cooldown, Slide Max Speed, Slide Slope Accel, Slide Uphill Mul, Slide Min Speed, Slide Steer |
+| Sprint (or run), then Ctrl / C | **slide** - **any way you're moving**: W, A, S, D or a mix (backwards too); (like Apex / Titanfall; pressed in the air it starts when you land): you slide off where you look with the speed you had (at least sprint speed) plus a **boost - but only once every 1.5 s**, so spamming slide can't build up speed. Friction slows you on the flat (about a second of slide); **slopes pull you down them** and slow you going up - hard (Slide Uphill Mul); crouching while running down a slope starts a slide too. It starts **the moment you press crouch** while sprinting or running (no crouch first). You stick to the ground going downhill, steer a little, and can jump out of it keeping your speed. Nothing goes past **Slide Max Speed** (11 m/s). Tuning in CHANGE VALUES: Slide Slipperiness (0 = grippy, 10 = ice), Slide Boost, Slide Boost Cooldown, Slide Max Speed, Slide Slope Accel, Slide Uphill Mul, Slide Min Speed, Slide Steer |
 | Mouse / LMB | look / attack, gather, place |
 | Hold LMB (bow) | draw, release to fire (RMB cancels). It fires the moment you let go, but a quick shot is weak and drops short (6 damage, 30% speed); the longer you hold, the faster and harder it flies, up to 50 at a full draw (the damage builds slowly at first and fastest near the end) |
 | Spear | LMB stab · **hold RMB** to wind up, then **LMB** to throw |
@@ -151,6 +153,7 @@ Everything for the five theme maps is in `Assets/Scripts/ThemeMaps/` (terrain, p
 | C4 / fort tower | LMB throws it |
 | V | push to talk (proximity voice chat) |
 | Esc | pause (the controls list is in the pause menu, and every key above can be rebound there) |
+| Enter | **text chat**: type and Enter to send to everyone (in your team colour), Esc cancels. `/kill` kills yourself (not again within 30 s, same as the pause menu's Suicide), `/help` lists commands |
 
 ## Inventory
 - Wood, stone, arrows and berries are real items that take up slots. Tools and weapons go to the hotbar first.
@@ -184,6 +187,7 @@ Everything for the five theme maps is in `Assets/Scripts/ThemeMaps/` (terrain, p
 In wood mode the stone part is added to the wood cost and there's no pickaxe.
 
 ## Gathering
+- Normal graphics: the grass is covered in little tufts of grass (crossed cards of pointed blades in three greens; not on bases or the ball drop zone, and not on steep rock in the Highlands).
 - Felling a whole tree gives a +100 wood bonus ("TIMBER!").
 - The first hit on a tree or rock reveals its weak spot: an orange **X** on trees (a chunky pixel-art X on PSX trees, sitting on the bark you see), a sparkling **star** on rocks. Hitting it gives double resources, and it jumps to a new spot facing you. Hitting a tree's X plays a chime; hits in a row on the same tree climb up the scale (C D E G A C).
 - On the Highlands map every rock on the hills is a minable stone node.
@@ -207,7 +211,7 @@ In wood mode the stone part is added to the wood cost and there's no pickaxe.
 ## Horses and the car
 - **Wild horses** wander each half of the map. Craft a **saddle** (it's in your team colour), walk up to one and press E to saddle it and get on. It rides like a Minecraft horse: it goes where you look, Shift gallops, Space jumps. Your view sits high up so you can see ahead.
 - **The ball on horseback**: you can get on a horse while carrying the ball, and pick the ball up from the saddle (look at it and press E - E only gets you off when you're not looking at the ball). LMB throws it from the horse; it keeps the horse's speed. (Cars still can't carry the ball.)
-- Horses have 120 HP (shown when you look at one once it's been hurt), bleed when hit and bolt away from whoever hurt them. They can be killed: they drop **horse meat** (takes 3 s to eat, heals you fully) and their saddle.
+- Horses have 60 HP, and a hit on the **head** does double damage (their HP shows when you look at one once it's been hurt), bleed when hit and bolt away from whoever hurt them. They can be killed: they drop **horse meat** (takes 3 s to eat, heals you fully) and their saddle.
 - (The wooden car is switched off for now.)
 
 ## Combat & raid balance

@@ -478,7 +478,7 @@ namespace RockGame
         {
             bool dead = Dead.Value;
             if (!IsOwner) RemoteSounds(dead);
-            if (IsServer) ServerTickCraft();
+            if (IsServer) { ServerTickCraft(); ServerTickBaseRegen(); }
             if (dead && !m_WasDead) m_DeadSince = Time.time;
             m_WasDead = dead;
             // the body topples over and stays a moment before disappearing
@@ -743,6 +743,33 @@ namespace RockGame
             TeleportRpc(pos, yaw);
         }
 
+        float m_RegenCarry;
+
+        /// <summary>Standing in your own base heals you slowly (not in sudden death; Builder has no bases).</summary>
+        void ServerTickBaseRegen()
+        {
+            if (Dead.Value || InSuddenDeath || Cfg.Builder || Health.Value >= Cfg.MaxHealth || Cfg.BaseRegen <= 0f) return;
+            if (Cfg.BaseTeamAt(transform.position) != Team.Value) { m_RegenCarry = 0f; return; }
+            m_RegenCarry += Cfg.BaseRegen * Time.deltaTime;
+            if (m_RegenCarry < 1f) return; // (whole HP at a time: fewer network updates)
+            float add = Mathf.Floor(m_RegenCarry);
+            m_RegenCarry -= add;
+            Health.Value = Mathf.Min(Cfg.MaxHealth, Health.Value + add);
+        }
+
+        /// <summary>Your team's ball is in your base (in your machine, planted for you, or lying there): gathering pays a bit more.</summary>
+        public bool BallBuff
+        {
+            get
+            {
+                var b = Ball.Instance;
+                if (b == null || !b.IsSpawned) return false;
+                if (b.SocketTeam.Value == Team.Value) return true;
+                if (b.IsCarried || Cfg.Builder) return false;
+                return Cfg.BaseTeamAt(b.transform.position) == Team.Value;
+            }
+        }
+
         void Notify(string msg) => NotifyRpc(new FixedString128Bytes(msg.Length > 120 ? msg.Substring(0, 120) : msg));
 
         // ---------------- combat ----------------
@@ -795,7 +822,7 @@ namespace RockGame
             }
             else if (no.TryGetComponent(out Vehicle v))
             {
-                v.ServerDamage(st.PlayerDamage, this);
+                v.ServerDamage(st.PlayerDamage * v.HeadMul(point), this);
                 if (!v.IsHorse) Fx.Server(FxKind.Blood, point, dir, OwnerClientId);
             }
             else if (no.TryGetComponent(out ResourceNode n))
@@ -803,7 +830,8 @@ namespace RockGame
                 if (n.IsBush) return;
                 weak = weak && n.IsWeakSpotHit(point, 0.8f);
                 bool tree = n.Kind.Value == ResourceNode.Tree;
-                int got = n.ServerHarvest(Mathf.RoundToInt(tree ? st.WoodGather : st.StoneGather), weak, transform.position);
+                // your team's ball in your base: everything you gather pays a bit more
+                int got = n.ServerHarvest(Mathf.RoundToInt((tree ? st.WoodGather : st.StoneGather) * (BallBuff ? Cfg.BallGatherMul : 1f)), weak, transform.position);
                 if (got > 0) ServerGive(n.Yield, got);
                 if (got > 0 && tree && n.Amount.Value <= 0 && Cfg.TreeFellBonus > 0)
                 {
@@ -870,7 +898,7 @@ namespace RockGame
                 ServerHitPlayer(p, damage, point, dir);
                 return; // arrows that hit someone are gone
             }
-            if (no.TryGetComponent(out Vehicle v)) { v.ServerDamage(damage, this); return; }
+            if (no.TryGetComponent(out Vehicle v)) { v.ServerDamage(damage * v.HeadMul(point), this); return; }
             if (no.TryGetComponent(out Structure s) && s.Team.Value != Team.Value && s.Tier.Value == 0)
                 s.ServerDamage(Cfg.ArrowWoodStructureDamage);
             DropSpentArrow(point, dir);
@@ -929,7 +957,7 @@ namespace RockGame
                 }
                 if (no.TryGetComponent(out Structure s) && s.Team.Value != Team.Value && s.Tier.Value == 0)
                     s.ServerDamage(Cfg.SpearThrowStructureDamage);
-                if (no.TryGetComponent(out Vehicle v)) v.ServerDamage(Cfg.SpearThrowDamage * power, this);
+                if (no.TryGetComponent(out Vehicle v)) v.ServerDamage(Cfg.SpearThrowDamage * power * v.HeadMul(point), this);
             }
             game.ServerDropItem(ItemStack.Of(Item.Spear, 1), point, dir, point, true);
         }

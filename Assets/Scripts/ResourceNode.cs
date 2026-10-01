@@ -145,7 +145,8 @@ namespace RockGame
                 mc.sharedMesh = mesh;
                 mc.convex = true;
                 m_SpotCollider = mc;
-                Art.Part(tr, Art.MakeRock(Seed.Value + 7, 0.3f), c * 0.9f, new Vector3(0.9f, 0.3f, 0.5f), Vector3.one * 0.6f, new Vector3(0, r() * 360, 0));
+                // (the little rock beside it is solid too - you used to be able to walk through it)
+                Art.Part(tr, Art.MakeRock(Seed.Value + 7, 0.3f), c * 0.9f, new Vector3(0.9f, 0.3f, 0.5f), Vector3.one * 0.6f, new Vector3(0, r() * 360, 0), true);
                 // the sparkle star
                 m_Marker = new GameObject("star").transform;
                 m_Marker.SetParent(tr, false);

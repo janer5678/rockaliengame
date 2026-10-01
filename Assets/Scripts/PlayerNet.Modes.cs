@@ -129,11 +129,16 @@ namespace RockGame
             if (action == 1 && g.S == GameState.PreBall) { g.TimerPaused.Value = true; g.PhaseEnd.Value = NetworkManager.ServerTime.Time - 1.0; }
         }
 
+        float m_NextSuicide;
+
         /// <summary>Pause menu: kill yourself (you drop everything, like any death, and respawn as normal).</summary>
         [Rpc(SendTo.Server)]
         public void SuicideRpc()
         {
             if (Dead.Value || !GameAllowsCombat) return;
+            // not again within 30 seconds
+            if (Time.time < m_NextSuicide) { Notify($"You can't kill yourself again for {Mathf.CeilToInt(m_NextSuicide - Time.time)} s"); return; }
+            m_NextSuicide = Time.time + 30f;
             ArmorHp.Value = 0;
             ServerDie(null);
             if (NetGame.Instance != null) NetGame.Instance.Broadcast($"{Cfg.TeamLabel(Team.Value)} took the easy way out");
@@ -173,7 +178,7 @@ namespace RockGame
                 Fx.Server(head ? FxKind.BloodHead : FxKind.Blood, point, dir, OwnerClientId);
                 if (p.Dead.Value) KillConfirmRpc();
             }
-            else if (no.TryGetComponent(out Vehicle v)) v.ServerDamage(Cfg.GunBody(gun), this);
+            else if (no.TryGetComponent(out Vehicle v)) v.ServerDamage(Cfg.GunBody(gun) * v.HeadMul(point), this);
             else if (no.TryGetComponent(out Structure s) && s.Team.Value != Team.Value && s.Tier.Value == 0) s.ServerDamage(10f);
         }
 

@@ -225,45 +225,6 @@ namespace RockGame
             var tc = Cfg.TeamColor[team];
             Fill(new Rect(10, 10, 230 * k, 30 * k), new Color(tc.r, tc.g, tc.b, 0.6f));
             Shadowed(new Rect(18, 12, 230 * k, 28 * k), $"<b>YOU ARE {Cfg.TeamName[team]}</b>", m_Label);
-            if (game == null || game.S != GameState.SuddenDeath)
-            {
-                if (!Cfg.Builder) Shadowed(new Rect(12, 44 * k, 400 * k, 24 * k), $"Your machine: {Direction(me.transform, Cfg.MachinePos(team))}", m_Small);
-                var ball = Ball.Instance;
-                if (ball != null) Shadowed(new Rect(12, 64 * k, 400 * k, 24 * k), $"Ball: {Direction(me.transform, ball.transform.position)}", m_Small);
-                if (game != null)
-                {
-                    float ly = 84 * k;
-                    foreach (var c in Container.All)
-                    {
-                        if (!c.IsAirdrop) continue;
-                        Shadowed(new Rect(12, ly, 400 * k, 24 * k), $"<color=#c98bff>Airdrop: {Direction(me.transform, c.transform.position)}</color>", m_Small);
-                        ly += 20 * k;
-                    }
-                    double srvNow = me.NetworkManager.ServerTime.Time;
-                    // Fun modes: the next free item
-                    if (game.NextFunItem.Value > 0)
-                    {
-                        Shadowed(new Rect(12, ly, 400 * k, 24 * k), $"<color=#7dff9a><b>Free item in {Mathf.Max(0, Mathf.CeilToInt((float)(game.NextFunItem.Value - srvNow)))}</b></color>", m_Small);
-                        ly += 20 * k;
-                    }
-                    // the 20 second airdrop countdown
-                    double lands = game.NextDropLands.Value;
-                    float inS = (float)(lands - me.NetworkManager.ServerTime.Time);
-                    if (lands > 0 && inS > 0f)
-                    {
-                        Shadowed(new Rect(12, ly, 400 * k, 24 * k), $"<color=#c98bff><b>AIRDROP DROPPING IN {Mathf.CeilToInt(inS)}</b></color>", m_Small);
-                        ly += 20 * k;
-                    }
-                    for (int i = 0; i < NetGame.LaneTotal; i++)
-                    {
-                        double st0 = game.LaneStartAt(i);
-                        if (st0 < 0 || me.NetworkManager.ServerTime.Time - st0 >= NetGame.DropLand) continue;
-                        Shadowed(new Rect(12, ly, 400 * k, 24 * k), $"<color=#c98bff>Airdrop incoming: {Direction(me.transform, game.LanePosAt(i))}</color>", m_Small);
-                        ly += 20 * k;
-                    }
-                }
-            }
-
             // ---- the gun's rounds, big, top left (pistol, revolver, shotgun) ----
             if ((Cfg.IsGun(me.HeldItem) || me.HeldItem == Item.Shotgun) && !me.Dead.Value)
             {
@@ -355,6 +316,15 @@ namespace RockGame
                 Shadowed(new Rect(ab.x + 6, ab.y, ab.width, ab.height), $"<b>ARMOUR {me.ArmorHp.Value}</b>", m_Small);
                 statY -= 26 * k;
             }
+            // the ball buff, just above the armour: your team's ball is in your base, so gathering pays more
+            if (me.BallBuff && (game == null || game.S != GameState.SuddenDeath))
+            {
+                var br = new Rect(hr.x, statY, hw, 22 * k);
+                Fill(br, new Color(0.3f, 0.22f, 0f, 0.65f));
+                Fill(new Rect(br.x, br.y, 4 * k, br.height), new Color(1f, 0.82f, 0.25f, 0.95f));
+                Shadowed(new Rect(br.x + 10 * k, br.y, br.width, br.height), $"<color=#ffd24a><b>BALL BUFF</b></color>  <color=#eeeeee>+{(Cfg.BallGatherMul - 1f) * 100f:0}% gathering</color>", m_Small);
+                statY -= 26 * k;
+            }
             if (me.HelmetHp.Value > 0)
             {
                 Shadowed(new Rect(hr.x, statY, 400 * k, 22 * k), "<color=#a8c4e0><b>HELMET</b> (stops one headshot)</color>", m_Small);
@@ -418,6 +388,7 @@ namespace RockGame
 
             if (pc.MenuOpen) DrawInventory(me, pc);
             Tutorial.Draw(k, m_Label, m_Small, Fill, Shadowed);
+            if (!pc.Paused) Chat.Draw(k, m_Small, Fill, Shadowed);
             if (pc.WheelOpen) DrawWheel(pc);
             if (pc.AirstrikeMapOpen) DrawAirstrikeMap(me, pc);
 

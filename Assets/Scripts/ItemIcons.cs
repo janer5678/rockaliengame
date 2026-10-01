@@ -147,7 +147,11 @@ namespace RockGame
         {
             switch (i)
             {
-                case Item.Spear: case Item.Arrow: case Item.Hatchet: case Item.Pickaxe: case Item.DeathWand: case Item.GiantStaff: case Item.TreeCracker: case Item.Sword:
+                case Item.Hatchet:
+                    // laid out like Rust's hatchet icon: the handle across from bottom left to top right, the head at the top
+                    // with its blade turned up and out to the side
+                    t.localRotation = Quaternion.Euler(0, 0, 42) * Quaternion.Euler(0, 90, 0); break;
+                case Item.Spear: case Item.Arrow: case Item.Pickaxe: case Item.DeathWand: case Item.GiantStaff: case Item.TreeCracker: case Item.Sword:
                     t.localRotation = Quaternion.Euler(0, 0, -40); break;
                 case Item.Bow:
                     t.localRotation = Quaternion.Euler(0, 90, -35); break;

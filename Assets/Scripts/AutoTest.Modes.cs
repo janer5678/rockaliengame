@@ -445,9 +445,22 @@ namespace RockGame
         IEnumerator SuicideTest(PlayerNet me)
         {
             if (me.Dead.Value) yield break;
+            // standing in your base heals you
+            me.Health.Value = 50f;
+            yield return new WaitForSeconds(2.2f);
+            Check(me.Health.Value > 52f, $"your base heals you slowly (50 -> {me.Health.Value:0})");
+            // chat
+            me.ChatRpc(new Unity.Collections.FixedString128Bytes("hello from the test"));
+            yield return new WaitForSeconds(0.4f);
             me.SuicideRpc();
             yield return new WaitForSeconds(0.5f);
             Check(me.Dead.Value, "suicide from the pause menu kills you");
+            yield return new WaitForSeconds(Cfg.RespawnTime + 1.5f);
+            if (me.Dead.Value) me.ServerRespawn(false);
+            yield return new WaitForSeconds(0.5f);
+            me.SuicideRpc();
+            yield return new WaitForSeconds(0.5f);
+            Check(!me.Dead.Value, "no second suicide within 30 seconds");
         }
 
         /// <summary>Auto Wood: Arsenal, plus a pile of wood that grows at your base by itself.</summary>
@@ -501,21 +514,32 @@ namespace RockGame
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
             yield return new WaitForSeconds(0.3f);
             int gi = Cfg.PowerIndex(Item.WoodGenBuff);
-            int[] cost = { 1000, 2000, 3000 };
-            for (int lvl = 0; lvl < 3; lvl++)
+            int[] cost = { 1000, 3000 };
+            var wm = FindAnyObjectByType<WoodMachine>();
+            Check(wm != null, "the wood machine stands next to the alien machine");
+            pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
+            {
+                var look = Quaternion.LookRotation(Cfg.WoodMachinePos(team) + Vector3.up * 0.8f - me.EyePos).eulerAngles;
+                pc.SetLook(look.y, look.x > 180f ? look.x - 360f : look.x);
+            }
+            yield return Snap("autowood_machine_0");
+            for (int lvl = 0; lvl < 2; lvl++)
             {
                 int before = me.Count(Item.Wood);
                 me.CraftRpc(Cfg.PowerBase + gi);
                 yield return new WaitForSeconds(0.4f);
                 Check(g.WoodGenLevelOf(team) == lvl + 1 && before - me.Count(Item.Wood) == cost[lvl] && Cfg.WoodGenRate(lvl + 1) > Cfg.WoodGenRate(lvl),
                     $"wood gen level {lvl + 1} for {before - me.Count(Item.Wood)} wood: {Cfg.WoodGenRate(lvl + 1)} a second");
+                yield return new WaitForSeconds(0.6f);
+                yield return Snap("autowood_machine_" + (lvl + 1));
             }
             {
                 int before = me.Count(Item.Wood);
                 me.CraftRpc(Cfg.PowerBase + gi);
                 yield return new WaitForSeconds(0.4f);
-                Check(me.Count(Item.Wood) == before && g.WoodGenLevelOf(team) == 3, "no fourth wood gen level");
+                Check(me.Count(Item.Wood) == before && g.WoodGenLevelOf(team) == 2, "only two wood gen levels");
             }
+            for (int i = 0; i < me.Inv.Count; i++) me.Inv[i] = default; // (room for the Arsenal tests that follow)
         }
 
         IEnumerator BuilderTests(PlayerNet me, PlayerController pc, NetGame g, int team)

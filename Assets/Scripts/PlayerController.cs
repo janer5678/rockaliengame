@@ -218,14 +218,16 @@ namespace RockGame
             Tutorial.Tick(this, m_Net);
 
             // ---- menus ----
-            if (Input.GetKeyDown(KeyCode.Escape) && !Hud.BackOut())
+            // Enter: type in the chat (Enter again sends it, Esc cancels)
+            if (!Chat.Open && !Paused && !MenuOpen && !Hud.Rebinding && (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))) Chat.Begin();
+            if (Input.GetKeyDown(KeyCode.Escape) && !Chat.Open && !Hud.BackOut())
             {
                 if (WheelOpen) WheelOpen = false;
                 else if (AirstrikeMapOpen) CloseAirstrikeMap();
                 else if (MenuOpen) CloseMenu();
                 else Paused = !Paused;
             }
-            if (Binds.Down(Bind.Inventory) && !dead && !gameOver && !sd && !Hud.Rebinding)
+            if (Binds.Down(Bind.Inventory) && !Chat.Open && !dead && !gameOver && !sd && !Hud.Rebinding)
             {
                 if (MenuOpen) CloseMenu(); else MenuOpen = true;
                 Paused = false;
@@ -246,10 +248,10 @@ namespace RockGame
             bool cursorFree = MenuOpen || Paused || gameOver || choosing || WheelOpen || AirstrikeMapOpen;
             Cursor.lockState = cursorFree ? CursorLockMode.None : CursorLockMode.Locked;
             Cursor.visible = cursorFree && !WheelOpen;
-            bool input = !cursorFree && !dead && !Hud.Rebinding;
+            bool input = !cursorFree && !dead && !Hud.Rebinding && !Chat.Open;
             // you can keep walking, jumping and crouching with the inventory open
             bool frozen = game != null && game.FightFrozen;
-            bool move = !dead && !Paused && !gameOver && !frozen && !AirstrikeMapOpen;
+            bool move = !dead && !Paused && !gameOver && !frozen && !AirstrikeMapOpen && !Chat.Open;
             bool locked = Time.time < m_InputLockUntil;
 
             // ---- damage / respawn feedback ----
@@ -613,7 +615,9 @@ namespace RockGame
         /// </summary>
         void StartSlide()
         {
-            var dir = transform.forward;
+            // the way you're pushing (W, A, S, D or a mix) - forward if you're not pushing any
+            var dir = transform.right * Binds.Axis(Bind.Right, Bind.Left) + transform.forward * Binds.Axis(Bind.Forward, Bind.Back);
+            if (dir.sqrMagnitude < 0.01f) dir = transform.forward;
             dir.y = 0;
             dir.Normalize();
             float along = Mathf.Max(0f, Vector3.Dot(m_LastPlanar, dir));
@@ -1270,7 +1274,7 @@ namespace RockGame
             if (carrying && Cfg.Builder) { PlantBall(); return; }
             // on a horse, E picks up the ball if you're looking at it; otherwise it gets you off
             if (m_Net.Riding && !(t.Kind == TargetKind.Ball && !carrying)) { m_Net.DismountRpc(); Sfx.Play2D(Sfx.Pop, 0.4f); return; }
-            if (carrying && t.Kind != TargetKind.Door && t.Kind != TargetKind.Machine) return; // hands are full
+            if (carrying && t.Kind != TargetKind.Door && t.Kind != TargetKind.Machine && t.Kind != TargetKind.Vehicle) return; // hands are full (but you can get on a horse)
             switch (t.Kind)
             {
                 case TargetKind.Ball: m_Net.PickupBallRpc(); Sfx.Play2D(Sfx.Pop, 0.5f); break;

@@ -71,6 +71,17 @@ namespace RockGame
         Vector3 m_FleeFrom;
 
         /// <summary>Hurt a horse / Slenderman. A dead horse drops meat (and its saddle); the rider falls off.</summary>
+        Collider m_HeadCol;
+
+        /// <summary>A hit on a horse's head does double damage.</summary>
+        public float HeadMul(Vector3 point)
+        {
+            if (!IsHorse || m_HeadCol == null) return 1f;
+            var b = m_HeadCol.bounds;
+            b.Expand(0.25f);
+            return b.Contains(point) ? 2f : 1f;
+        }
+
         public void ServerDamage(float dmg, PlayerNet attacker)
         {
             if (!IsServer || !IsSpawned || Kind.Value == Car || IsBoat /* THEME MAPS */ || dmg <= 0) return;
@@ -112,6 +123,9 @@ namespace RockGame
             m_Visual = CreateVisual(Kind.Value, transform, null, out m_Saddle, out m_Fan, out m_Head, out m_Tail, m_Wheels, m_Legs).transform;
             if (IsHorse && AiPsxArt.On) AiPsxArt.ApplyAnimal(m_Visual);
             if (IsHorse) PsxModels.Replace(m_Visual, "horse", PsxModels.Fit.Uniform); // PSX graphics: the PS1 horse
+            // the head hitbox moves with the head but never trips up the horse's own movement
+            foreach (var c in m_Visual.GetComponentsInChildren<Collider>())
+                if (c.name == "horse head") { m_HeadCol = c; if (m_CC != null) Physics.IgnoreCollision(m_CC, c); }
             SaddleTeam.OnValueChanged += (a, b) => ColourSaddle();
             ColourSaddle();
             m_Yaw = transform.eulerAngles.y;
@@ -502,7 +516,9 @@ namespace RockGame
                 neck.localPosition = new Vector3(0, 1.35f, 0.65f);
                 Art.Box(neck, coat, new Vector3(0, 0.3f, 0.12f), new Vector3(0.32f, 0.7f, 0.35f), new Vector3(25, 0, 0));
                 Art.Box(neck, mane, new Vector3(0, 0.35f, -0.02f), new Vector3(0.1f, 0.7f, 0.12f), new Vector3(25, 0, 0));
-                Art.Box(neck, coat, new Vector3(0, 0.62f, 0.42f), new Vector3(0.3f, 0.3f, 0.6f));
+                // the head has its own hitbox (a hit there does double damage)
+                var headBox = Art.Box(neck, coat, new Vector3(0, 0.62f, 0.42f), new Vector3(0.3f, 0.3f, 0.6f), default, ghost == null);
+                headBox.name = "horse head";
                 Art.Box(neck, mane * 1.5f, new Vector3(0, 0.56f, 0.7f), new Vector3(0.26f, 0.2f, 0.12f));
                 Art.Box(neck, Color.black, new Vector3(0.16f, 0.7f, 0.5f), new Vector3(0.02f, 0.06f, 0.06f));
                 Art.Box(neck, Color.black, new Vector3(-0.16f, 0.7f, 0.5f), new Vector3(0.02f, 0.06f, 0.06f));

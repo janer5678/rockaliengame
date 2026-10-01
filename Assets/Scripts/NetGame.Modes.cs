@@ -52,7 +52,7 @@ namespace RockGame
         double m_NextWoodTick = -1;
 
         /// <summary>Where a team's wood pile is: on the bedrock, beside the machine.</summary>
-        static Vector3 WoodPilePos(int team) => Cfg.BaseCenter[team] + Vector3.Cross(Vector3.up, Cfg.BackDir(team)) * 2.2f + Cfg.BackDir(team) * 0.8f + Vector3.up * (Cfg.BaseY + 0.3f);
+        static Vector3 WoodPilePos(int team) => Cfg.WoodTrayPos(team); // out of the wood machine's chute
 
         void ServerTickAutoWood(double now, bool playing)
         {

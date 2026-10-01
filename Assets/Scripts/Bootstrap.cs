@@ -170,6 +170,7 @@ namespace RockGame
             Cfg.LoadPrefs(); // drop the host's settings, back to our own
             GameSettings.RestoreGraphics(); // and our own graphics
             Tutorial.Reset();
+            Chat.Reset();
             Cfg.SetMap(MapChoice, 0);
             MapBuilder.Build();
         }
