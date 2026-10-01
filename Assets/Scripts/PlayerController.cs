@@ -215,6 +215,7 @@ namespace RockGame
             bool sd = game != null && game.S == GameState.SuddenDeath;
             bool carrying = m_Net.CarryingBall;
             bool riding = m_Net.Riding;
+            Tutorial.Tick(this, m_Net);
 
             // ---- menus ----
             if (Input.GetKeyDown(KeyCode.Escape) && !Hud.BackOut())
@@ -284,15 +285,18 @@ namespace RockGame
                 // crouching while running (sprint held, or already moving fast): slide. Pressed in the air it waits for
                 // the landing (a short buffer), so it works every time.
                 // Or crouching on a slope while moving: you slide down it (no boost), like Apex.
-                bool running = (Binds.Held(Bind.Sprint) && Binds.Axis(Bind.Forward, Bind.Back) > 0f) || m_LastPlanar.magnitude > Cfg.WalkSpeed * 1.1f;
+                // (any sprinting counts, or moving at about a run - so it starts the moment you press it, every time)
+                bool moving = Binds.Axis(Bind.Forward, Bind.Back) != 0f || Binds.Axis(Bind.Right, Bind.Left) != 0f;
+                bool running = (Binds.Held(Bind.Sprint) && moving) || m_LastPlanar.magnitude > Cfg.WalkSpeed * 0.9f;
                 bool downhill = m_LastPlanar.magnitude > 1f && SlopeDownhill(out var dh) && Vector3.Dot(dh, m_LastPlanar.normalized) > 0.3f;
-                if (wantCrouch && !m_SlideOn && (running || downhill)) m_SlideQueued = Time.time + 0.35f;
+                if (wantCrouch && !m_SlideOn && (running || downhill)) m_SlideQueued = Mathf.Max(Time.time, m_NextSlide) + 0.35f;
                 Crouching = wantCrouch;
                 m_Net.Crouch.Value = wantCrouch;
             }
             if (dead || riding) { m_SlideOn = false; m_SlideQueued = -1f; }
-            // start it as soon as we're on (or only just left) the ground
-            if (m_SlideQueued > Time.time && !m_SlideOn && wantCrouch && Time.time - m_GroundedAt < 0.2f && Time.time >= m_NextSlide) { m_SlideQueued = -1f; StartSlide(); }
+            // start it right away if we're on (or only just left) the ground; in the air it waits for the landing
+            bool onGround = m_CC.enabled && (m_CC.isGrounded || Time.time - m_GroundedAt < 0.2f);
+            if (m_SlideQueued > Time.time && !m_SlideOn && wantCrouch && onGround && Time.time >= m_NextSlide) { m_SlideQueued = -1f; StartSlide(); }
 
             // ---- move ----
             m_Speed = 0;
@@ -558,6 +562,9 @@ namespace RockGame
 
         bool m_SlideOn;
         Vector3 m_SlideVel, m_LastPlanar;
+        public bool Sliding => m_SlideOn;
+        public bool Sprinting => m_Sprinting;
+        public bool Grounded => m_Grounded;
         float m_NextSlide;
         AudioSource m_SlideSound;
 
@@ -638,8 +645,12 @@ namespace RockGame
                 if (slope && Vector3.Dot(dh, m_SlideVel) > 0f) friction *= Mathf.Clamp01(1f - steep * 3f);
                 float sp = Mathf.MoveTowards(m_SlideVel.magnitude, 0f, friction * dt);
                 m_SlideVel = m_SlideVel.sqrMagnitude > 0.0001f ? m_SlideVel.normalized * sp : Vector3.zero;
-                // downhill pulls you along, uphill holds you back (sin 45 deg = 0.71 gets the full Slide Slope Accel)
-                if (slope) m_SlideVel += dh * (steep / 0.71f) * Cfg.SlideSlopeAccel * dt;
+                // downhill pulls you along, uphill holds you back - harder (sin 45 deg = 0.71 gets the full Slide Slope Accel)
+                if (slope)
+                {
+                    bool up = Vector3.Dot(dh, m_SlideVel) < 0f;
+                    m_SlideVel += dh * (steep / 0.71f) * Cfg.SlideSlopeAccel * (up ? Cfg.SlideUphillMul : 1f) * dt;
+                }
                 if (!Crouching || !move || m_SlideVel.magnitude < Cfg.SlideMinSpeed) { EndSlide(); return m_SlideVel; }
             }
             else m_SlideVel = Vector3.MoveTowards(m_SlideVel, Vector3.zero, 0.4f * dt); // a little air drag
@@ -654,11 +665,11 @@ namespace RockGame
         {
             if (!m_SlideOn) return;
             m_SlideOn = false;
-            m_NextSlide = Time.time + 0.35f;
+            m_NextSlide = Time.time + 0.2f;
             // what's left of the speed above a run fades out instead of stopping dead (only the extra: so ending and
             // restarting a slide can't stack it up)
             float extra = Mathf.Max(0f, m_SlideVel.magnitude - Cfg.SprintSpeed);
-            if (extra > 0f) m_Push += m_SlideVel.normalized * Mathf.Min(extra, 4f) * 0.7f;
+            if (extra > 0f) m_Push += m_SlideVel.normalized * Mathf.Min(extra, 2.5f) * 0.6f;
         }
 
         void TickSlideSound()
@@ -816,7 +827,7 @@ namespace RockGame
             {
                 weak = n.IsWeakSpotAimed(ray, hit.point, 0.45f);
                 Fx.Play(n.Kind.Value == ResourceNode.Tree ? FxKind.WoodChips : FxKind.StoneChips, hit.point, hit.normal);
-                if (weak) { Fx.Play(n.Kind.Value == ResourceNode.Tree ? FxKind.WeakSpotTree : FxKind.WeakSpot, hit.point, hit.normal); Fx.Punch(-1.5f); }
+                if (weak) { Fx.Play(n.Kind.Value == ResourceNode.Tree ? FxKind.WeakSpotTree : FxKind.WeakSpot, hit.point, hit.normal); Fx.Punch(-1.5f); Tutorial.WeakHits++; }
                 Fx.Shake(0.08f);
             }
             else if (no != null && (no.GetComponent<Structure>() != null || no.GetComponent<Container>() != null))
@@ -852,6 +863,7 @@ namespace RockGame
                 Vector3 vel = ray.direction * Cfg.SpearThrowSpeed * power;
                 ArrowProjectile.SpawnSpear(origin, vel, m_Net, true);
                 m_Net.ThrowSpearRpc(origin, vel);
+                Tutorial.SpearThrows++;
                 m_DrawStart = -1f;
                 m_NextSwing = Time.time + 0.6f;
                 m_VM.Throw();
@@ -872,8 +884,9 @@ namespace RockGame
             {
                 float t = Time.time - m_DrawStart;
                 m_DrawStart = -1f;
-                if (t < Cfg.BowMinDraw || m_Net.Count(Item.Arrow) <= 0) return;
-                float power = Mathf.Lerp(0.35f, 1f, Mathf.Clamp01(t / Mathf.Max(0.05f, Cfg.BowDrawTime)));
+                if (m_Net.Count(Item.Arrow) <= 0) return;
+                // fires straight away; the longer the draw, the faster (further) and harder it flies
+                float power = Mathf.Lerp(Cfg.BowMinSpeed, 1f, Mathf.Clamp01(t / Mathf.Max(0.05f, Cfg.BowDrawTime)));
                 var ray = CenterRay();
                 Vector3 origin = SafeOrigin(ray, 0.6f);
                 Vector3 vel = ray.direction * Cfg.ArrowSpeed * power;

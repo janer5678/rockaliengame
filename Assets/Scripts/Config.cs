@@ -22,7 +22,7 @@ namespace RockGame
     /// Auto Wood - Arsenal, but wood piles up by itself at your base.
     /// (Synced in 4 bits of the map key: never reorder.)
     /// </summary>
-    public enum GameRules : byte { Classic, Arsenal, Builder, Fun, FunRandom, FunRandomLimited, Primitive, BuildingPrimitive, AutoWood }
+    public enum GameRules : byte { Classic, Arsenal, Builder, Fun, FunRandom, FunRandomLimited, Primitive, BuildingPrimitive, AutoWood, Tutorial }
 
     public enum PieceType : byte { Foundation, Wall, Doorway, Floor, Stairs, Barrier, Window, Tower, EggBlock }
 
@@ -95,14 +95,17 @@ namespace RockGame
         public static bool Builder => Rules == GameRules.Builder || Rules == GameRules.BuildingPrimitive;
         public static bool FunRules => Rules == GameRules.Fun || Rules == GameRules.FunRandom || Rules == GameRules.FunRandomLimited;
         /// <summary>Fun Random Limited and Primitive: only the hatchet, spear, building plan and ram can be crafted.</summary>
-        public static bool LimitedCrafting => Rules == GameRules.FunRandomLimited || Rules == GameRules.Primitive || Rules == GameRules.BuildingPrimitive;
+        public static bool LimitedCrafting => Rules == GameRules.FunRandomLimited || Rules == GameRules.Primitive || Rules == GameRules.BuildingPrimitive || Rules == GameRules.Tutorial;
+        /// <summary>Tutorial: Primitive's rules, played alone with the clock stopped, with a guide walking you through it.</summary>
+        public static bool Tutorial => Rules == GameRules.Tutorial;
         public static string RulesName(GameRules r) => r == GameRules.Arsenal ? "Arsenal" : r == GameRules.Builder ? "Builder" : r == GameRules.Fun ? "Fun"
-            : r == GameRules.FunRandom ? "Fun Random" : r == GameRules.FunRandomLimited ? "Fun Random Limited" : r == GameRules.Primitive ? "Primitive" : r == GameRules.BuildingPrimitive ? "Building Primitive" : r == GameRules.AutoWood ? "Auto Wood" : "Classic";
+            : r == GameRules.FunRandom ? "Fun Random" : r == GameRules.FunRandomLimited ? "Fun Random Limited" : r == GameRules.Primitive ? "Primitive" : r == GameRules.BuildingPrimitive ? "Building Primitive" : r == GameRules.AutoWood ? "Auto Wood" : r == GameRules.Tutorial ? "Tutorial" : "Classic";
         public static string RulesDesc(GameRules r)
         {
             switch (r)
             {
                 case GameRules.Arsenal: return "Normal prices (the crossbow is cheaper), plus a POWER ITEMS menu next to crafting: sword, shotgun, revolver, C4, headshot helmet and Fortify All Walls.";
+                case GameRules.Tutorial: return "New here? Start with this. A step-by-step guide through the whole game - moving, gathering, crafting, building, fighting and the ball - on your own, with the clock stopped. Just press HOST GAME.";
                 case GameRules.AutoWood: return "Arsenal, but wood piles up at your base by itself (5 a second) - go and pick it up.";
                 case GameRules.Builder: return "No bases. Arsenal's items, but each takes a while to make. Craft and build anywhere - pieces lock onto each other. Plant the ball anywhere (E): whoever's ball it is at the end wins.";
                 case GameRules.Fun: return "No building phase, a short match, and every so often everyone gets the same random item - any item in the game.";
@@ -163,7 +166,7 @@ namespace RockGame
             AirdropCenter = (key & CenterBit) != 0;
             RespawnLoot = (key & RespawnLootBit) != 0;
             Mode = (GameMode)((key >> ModeShift) & ModeMask);
-            Rules = (GameRules)Mathf.Clamp((key >> RulesShift) & RulesMask, 0, (int)GameRules.AutoWood);
+            Rules = (GameRules)Mathf.Clamp((key >> RulesShift) & RulesMask, 0, (int)GameRules.Tutorial);
             HostGraphics = Mathf.Clamp((key >> GraphicsShift) & GraphicsMask, 0, 2);
             TeamCount = ModeTeams(Mode);
             MapSeed = seed;
@@ -252,7 +255,7 @@ namespace RockGame
         public const float Cell = 3f, BaseY = 1f, LevelH = 3f;
         public const int MaxLevel = 4;
         public const float BuildRange = 7f, DeployRange = 5f;
-        public const float BowMinDraw = 0.2f, SpearMinDraw = 0.25f;
+        public const float SpearMinDraw = 0.25f;
         public const float SpearPickupRange = 3f;
 
         // ---------- Match ----------
@@ -291,13 +294,14 @@ namespace RockGame
         [Tune("Player")] public static float BallThrowSpeed = 11f;
         // sliding (sprint, then crouch), like Apex / Titanfall: a boost when it starts (only once the cooldown is over, so
         // spamming it gains nothing), friction slows you on the flat, slopes speed you up going down and slow you going up
-        [Tune("Player")] public static float SlideSlipperiness = 7.5f; // 0 = stops almost at once, 10 = like ice
-        [Tune("Player")] public static float SlideBoost = 3.5f;       // extra speed when the slide starts
+        [Tune("Player")] public static float SlideSlipperiness = 5f;  // 0 = stops almost at once, 10 = like ice (5: about a second on the flat)
+        [Tune("Player")] public static float SlideBoost = 2f;         // extra speed when the slide starts
         [Tune("Player")] public static float SlideMinSpeed = 2f;      // the slide ends when you're slower than this
         [Tune("Player")] public static float SlideSteer = 70f;        // degrees per second you can turn while sliding
         [Tune("Player")] public static float SlideBoostCooldown = 1.5f; // seconds before another slide boosts you again
-        [Tune("Player")] public static float SlideMaxSpeed = 16f;     // no slide goes faster than this (m/s)
-        [Tune("Player")] public static float SlideSlopeAccel = 14f;   // how hard a slope pulls you along (m/s² on a 45° slope)
+        [Tune("Player")] public static float SlideMaxSpeed = 11f;     // no slide goes faster than this (m/s)
+        [Tune("Player")] public static float SlideSlopeAccel = 9f;    // how hard a slope pulls you along (m/s² on a 45° slope)
+        [Tune("Player")] public static float SlideUphillMul = 1.8f;   // going up a slope slows you this many times harder
         [Tune("Player")] public static float BerryHeal = 25f, BerryEatTime = 1.5f, MeatEatTime = 3f;
         [Tune("Player")] public static int ArmorHp = 50;               // wooden armour: a second health bar, used up first (max 255)
         [Tune("Player")] public static float HeadshotMul = 2f;
@@ -317,6 +321,13 @@ namespace RockGame
 
         // ---------- Bow ----------
         [Tune("Bow")] public static float BowDrawTime = 0.8f, ArrowSpeed = 55f, ArrowGravity = 9.81f, ArrowPlayerDamage = 50f, ArrowWoodStructureDamage = 4f;
+        /// <summary>The bow fires the moment you let go, however short the draw: an instant shot flies at this share of full speed (so it drops
+        /// short) and does BowMinDamage; both grow the longer you hold it, the damage slowly at first and fastest near the full draw.</summary>
+        [Tune("Bow")] public static float BowMinSpeed = 0.3f, BowMinDamage = 6f;
+        /// <summary>How far drawn the bow was (0..1), from how fast the arrow left it (power = speed / ArrowSpeed).</summary>
+        public static float BowDrawFromPower(float power) => Mathf.Clamp01((power - BowMinSpeed) / Mathf.Max(0.01f, 1f - BowMinSpeed));
+        /// <summary>Arrow damage for a shot at this power.</summary>
+        public static float BowDamage(float power) { float d = BowDrawFromPower(power); return Mathf.Lerp(BowMinDamage, ArrowPlayerDamage, d * d); }
         [Tune("Crossbow")] public static float CrossbowDamage = 55f, CrossbowSpeed = 58f, CrossbowGravity = 11f, CrossbowReload = 1.6f, CrossbowZoomFov = 45f;
         [Tune("Spear")] public static float SpearGravity = 9.81f;
 
@@ -372,16 +383,22 @@ namespace RockGame
         /// <summary>Shotgun pellet damage share at this distance: full up close, down to FarMul at the range.</summary>
         public static float ShotgunFalloff(float dist) => dist <= ShotgunPointBlank ? 1f : dist >= ShotgunRange ? 0f : Mathf.Lerp(1f, ShotgunFarMul, (dist - ShotgunPointBlank) / Mathf.Max(0.1f, ShotgunRange - ShotgunPointBlank));
         /// <summary>Revolver: 6 rounds, its own head / body damage.</summary>
-        [Tune("Arsenal and Builder")] public static int RevolverMag = 6;
+        [Tune("Arsenal and Builder")] public static int RevolverMag = 3;
         [Tune("Arsenal and Builder")] public static float RevolverBodyDamage = 30f, RevolverHeadDamage = 50f, RevolverFireRate = 0.3f, RevolverReload = 2f;
         /// <summary>Auto Wood: wood added to the pile at every base each second.</summary>
         [Tune("Auto Wood")] public static int AutoWoodPerSecond = 5;
+        /// <summary>Auto Wood: the wood gen upgrade's three levels - wood a second at each, and what each costs.</summary>
+        [Tune("Auto Wood")] public static int AutoWoodLevel1 = 10, AutoWoodLevel2 = 16, AutoWoodLevel3 = 25;
+        [Tune("Auto Wood")] public static int WoodGen1Wood = 1000, WoodGen2Wood = 2000, WoodGen3Wood = 3000;
         /// <summary>Pistol: hitscan, this much damage a shot (a headshot has its own number instead of the usual x2).</summary>
         [Tune("Arsenal and Builder")] public static float PistolHeadDamage = 200f, PistolBodyDamage = 95f;
         /// <summary>Metal (Fortify All Walls): this many times the stone HP; melee does this share of its damage.</summary>
         [Tune("Building HP")] public static float MetalHpMul = 2f, MetalMeleeMul = 0.1f;
         /// <summary>Refined (the third fortify): this many times the stone HP; melee does this share of its damage.</summary>
         [Tune("Building HP")] public static float RefinedHpMul = 3f, RefinedMeleeMul = 0.05f;
+        /// <summary>Rockets: the share of their damage a piece of this tier takes (sheet metal and refined shrug most of it off).</summary>
+        [Tune("Building HP")] public static float MetalRocketMul = 0.45f, RefinedRocketMul = 0.2f;
+        public static float TierBlastMul(int tier) => tier >= 3 ? RefinedRocketMul : tier == 2 ? MetalRocketMul : 1f;
         /// <summary>The share of melee damage a piece of this tier takes.</summary>
         public static float TierMeleeMul(int tier) => tier >= 3 ? RefinedMeleeMul : tier == 2 ? MetalMeleeMul : tier == 1 ? StoneStructureMeleeMul : 1f;
         [Tune("Arsenal and Builder")] public static float PistolFireRate = 0.22f, PistolReload = 1.3f;
@@ -389,7 +406,7 @@ namespace RockGame
         /// <summary>Builder: every craft takes a while (seconds per 100 wood of its price, between the min and max).</summary>
         [Tune("Arsenal and Builder")] public static float BuilderCraftSecsPer100 = 0.6f, BuilderCraftMin = 2f, BuilderCraftMax = 20f;
         /// <summary>Test (main menu > Testing, any mode): enemies have a faint glow in their team colour so they're easier to see.</summary>
-        [Tune("Test")] public static bool AlienOutlines = false;
+        [Tune("Test")] public static bool AlienOutlines = true;
         /// <summary>How strong (0 = invisible, 1 = bright) and how thick (metres) the glow is.</summary>
         [Tune("Test")] public static float AlienOutlineStrength = 0.3f, AlienOutlineWidth = 0.03f;
         [Tune("Fun modes")] public static float FunItemInterval = 45f;
@@ -531,7 +548,8 @@ namespace RockGame
                 case Item.PistolAmmo: return ItemStack.Of(Item.PistolAmmo, 30);
                 case Item.ShotgunShell: return ItemStack.Of(Item.ShotgunShell, 8);
                 case Item.RevolverAmmo: return ItemStack.Of(Item.RevolverAmmo, 18);
-                case Item.Shotgun: return ItemStack.Of(Item.Shotgun, 1, 1);
+                case Item.Shotgun: return ItemStack.Of(Item.Shotgun, 1, 0);   // guns come empty: buy the ammo
+                case Item.Revolver: return ItemStack.Of(Item.Revolver, 1, 0);
                 case Item.Helmet: return ItemStack.Of(Item.Helmet, 1, 1);
                 case Item.Saddle: return ItemStack.Of(Item.Saddle, 1, 0);
                 case Item.Crossbow: return ItemStack.Of(Item.Crossbow, 1, 1);
@@ -673,7 +691,15 @@ namespace RockGame
         }
 
         // ---------- Arsenal / Builder / Auto Wood: the powerful items menu ----------
-        static readonly Item[] k_Power = { Item.Sword, Item.Shotgun, Item.ShotgunShell, Item.Revolver, Item.RevolverAmmo, Item.C4, Item.Helmet, Item.FortifyBuff };
+        static readonly Item[] k_PowerBase = { Item.Sword, Item.Shotgun, Item.ShotgunShell, Item.Revolver, Item.RevolverAmmo, Item.C4, Item.Helmet, Item.FortifyBuff };
+        static readonly Item[] k_PowerAutoWood = { Item.Sword, Item.Shotgun, Item.ShotgunShell, Item.Revolver, Item.RevolverAmmo, Item.C4, Item.Helmet, Item.FortifyBuff, Item.WoodGenBuff };
+        /// <summary>Auto Wood also sells the wood gen upgrade.</summary>
+        static Item[] k_Power => AutoWood ? k_PowerAutoWood : k_PowerBase;
+        /// <summary>Auto Wood: how many times a team has upgraded its wood gen (0-3), synced by NetGame.</summary>
+        public static int WoodGenLevel(int team) => NetGame.Instance != null && team >= 0 && team < 4 ? NetGame.Instance.WoodGenLevelOf(team) : 0;
+        public const int MaxWoodGen = 3;
+        /// <summary>Wood a second at each wood gen level.</summary>
+        public static int WoodGenRate(int level) => level >= 3 ? AutoWoodLevel3 : level == 2 ? AutoWoodLevel2 : level == 1 ? AutoWoodLevel1 : AutoWoodPerSecond;
         /// <summary>Power recipes are numbered from here in CraftRpc.</summary>
         public const int PowerBase = 100;
         /// <summary>Where an item is in the power menu (-1 if it isn't there).</summary>
@@ -697,6 +723,11 @@ namespace RockGame
                 case Item.RevolverAmmo: return new Recipe { Output = id, Count = 1, Wood = RevolverAmmoWood };
                 case Item.C4: return new Recipe { Output = id, Count = 1, Wood = C4Wood };
                 case Item.Helmet: return new Recipe { Output = id, Count = 1, Wood = HelmetWood };
+                case Item.WoodGenBuff:
+                {
+                    int lvl = WoodGenLevel(team);
+                    return new Recipe { Output = id, Count = 1, Wood = lvl >= 2 ? WoodGen3Wood : lvl == 1 ? WoodGen2Wood : WoodGen1Wood };
+                }
                 default:
                 {
                     int lvl = FortifyLevel(team);
@@ -717,6 +748,12 @@ namespace RockGame
                 case Item.RevolverAmmo: return "one bullet for the revolver";
                 case Item.C4: return "thrown: wrecks every building piece nearby";
                 case Item.Helmet: return "put it on: stops one headshot completely";
+                case Item.WoodGenBuff:
+                {
+                    int lvl = WoodGenLevel(team);
+                    if (lvl >= MaxWoodGen) return $"maxed out: {WoodGenRate(lvl)} wood a second";
+                    return $"level {lvl + 1}: your base makes {WoodGenRate(lvl + 1)} wood a second (now {WoodGenRate(lvl)})";
+                }
                 default:
                 {
                     int lvl = FortifyLevel(team);
@@ -735,7 +772,7 @@ namespace RockGame
         }
 
         /// <summary>Builder: how long an item takes to make (by its price).</summary>
-        public static float CraftSeconds(Recipe r) => !Builder || r.Output == Item.BuildingPlan || r.Output == Item.FortifyBuff || r.Output == Item.ShotgunShell || r.Output == Item.RevolverAmmo ? 0f : Mathf.Clamp((r.Wood + r.Stone) / 100f * BuilderCraftSecsPer100, BuilderCraftMin, BuilderCraftMax);
+        public static float CraftSeconds(Recipe r) => !Builder || r.Output == Item.BuildingPlan || r.Output == Item.FortifyBuff || r.Output == Item.WoodGenBuff || r.Output == Item.ShotgunShell || r.Output == Item.RevolverAmmo ? 0f : Mathf.Clamp((r.Wood + r.Stone) / 100f * BuilderCraftSecsPer100, BuilderCraftMin, BuilderCraftMax);
 
         public static int RecipeIndex(Item output)
         {
@@ -873,6 +910,7 @@ namespace RockGame
         static readonly (int version, string[] names)[] k_Reset =
         {
             (1, new[] { "SpearWood", "ArmorWood", "ArmorHp", "SaddleWood", "RamUses", "CrossbowSpeed", "DropWarning" }),
+            (2, new[] { "SlideSlipperiness", "SlideBoost", "SlideMaxSpeed", "SlideSlopeAccel", "AlienOutlines", "RevolverMag", "BowMinSpeed", "BowMinDamage" }),
         };
         const string MigrateKey = "RockGame.Tunables.migrated";
 

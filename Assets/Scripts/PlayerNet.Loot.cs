@@ -116,6 +116,23 @@ namespace RockGame
             }
         }
 
+        /// <summary>A rocket that hits a player square on kills them outright (then it explodes as usual).</summary>
+        [Rpc(SendTo.Server)]
+        public void RocketDirectHitRpc(NetworkObjectReference target, Vector3 point)
+        {
+            var g = NetGame.Instance;
+            if (g == null || !m_PendingThrows.TryGetValue(Item.RocketLauncher, out int n) || n <= 0) return;
+            m_PendingThrows[Item.RocketLauncher] = n - 1;
+            if (Vector3.Distance(point, transform.position) > 250f) return;
+            if (target.TryGet(out var no) && no.TryGetComponent(out PlayerNet p) && p != this && !p.Dead.Value && GameAllowsCombat
+                && Vector3.Distance(p.transform.position + Vector3.up, point) < 2.5f && !GlassBetween(transform.position, p.transform.position))
+            {
+                p.ServerKill(this);
+                Notify("Direct hit!");
+            }
+            g.ServerRocket(point, this);
+        }
+
         [Rpc(SendTo.NotOwner)]
         void ThrownVisualRpc(Item kind, Vector3 origin, Vector3 velocity)
         {

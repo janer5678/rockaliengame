@@ -167,7 +167,11 @@ namespace RockGame
             if (m_Thrown != Item.None)
             {
                 if (m_Thrown != Item.RocketLauncher) Sfx.Play(Sfx.Thud, h.point, 0.8f, 0.1f, 70f);
-                if (reporter) ReportThrownLanded(h.point + h.normal * 0.03f, h.normal);
+                // a rocket straight into someone kills them
+                var hitPlayer = no != null ? no.GetComponent<PlayerNet>() : null;
+                if (reporter && m_Thrown == Item.RocketLauncher && hitPlayer != null && hitPlayer != m_Shooter && !hitPlayer.Dead.Value)
+                    m_Shooter.RocketDirectHitRpc(no, h.point);
+                else if (reporter) ReportThrownLanded(h.point + h.normal * 0.03f, h.normal);
                 Destroy(gameObject);
                 return;
             }
@@ -204,7 +208,7 @@ namespace RockGame
         {
             if (no == null || !no.TryGetComponent(out PlayerNet p) || p == m_Shooter || p.Dead.Value) return;
             bool head = p.IsHeadshot(h.point);
-            float dmg = (m_Damage >= 0f ? m_Damage : (m_Spear ? Cfg.SpearThrowDamage : Cfg.ArrowPlayerDamage) * m_Power) * (head ? Cfg.HeadshotMul : 1f);
+            float dmg = (m_Damage >= 0f ? m_Damage : m_Spear ? Cfg.SpearThrowDamage * m_Power : Cfg.BowDamage(m_Power)) * (head ? Cfg.HeadshotMul : 1f);
             if (p.HelmetHp.Value > 0 && head) dmg = 0f;
             Fx.Blood(h.point, dir, head);
             Fx.DamageNumber(h.point, dmg, head);

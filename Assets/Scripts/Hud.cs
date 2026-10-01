@@ -193,6 +193,10 @@ namespace RockGame
                         phase = $"Waiting for players  {PlayerNet.All.Count}/{Cfg.PlayersNeeded}  ({Cfg.ModeLabel})";
                         sub = "Rock brawl in the stadium while you wait!" + (boot.IsHost && PlayerNet.All.Count < 2 ? "  Friends join your IP." : "");
                         break;
+                    case GameState.PreBall when Cfg.Tutorial:
+                        phase = "Tutorial";
+                        sub = "The clock is stopped - go at your own pace";
+                        break;
                     case GameState.PreBall:
                         phase = "Wall drops in " + Clock(game.TimeLeft);
                         sub = Cfg.Builder ? "Gather, craft and build anywhere - then plant the ball for your team"
@@ -413,6 +417,7 @@ namespace RockGame
             }
 
             if (pc.MenuOpen) DrawInventory(me, pc);
+            Tutorial.Draw(k, m_Label, m_Small, Fill, Shadowed);
             if (pc.WheelOpen) DrawWheel(pc);
             if (pc.AirstrikeMapOpen) DrawAirstrikeMap(me, pc);
 
@@ -1069,7 +1074,7 @@ namespace RockGame
             for (int i = 0; i < Cfg.PowerCount; i++)
             {
                 var rec = Cfg.GetPowerRecipe(i, team);
-                bool maxed = rec.Output == Item.FortifyBuff && Cfg.FortifyLevel(team) >= Cfg.MaxFortify;
+                bool maxed = (rec.Output == Item.FortifyBuff && Cfg.FortifyLevel(team) >= Cfg.MaxFortify) || (rec.Output == Item.WoodGenBuff && Cfg.WoodGenLevel(team) >= Cfg.MaxWoodGen);
                 var rr = new Rect(x, top + i * (row + 4 * k), w, row);
                 bool afford = me.Count(Item.Wood) >= rec.Wood && me.Count(Item.Stone) >= rec.Stone;
                 Fill(rr, new Color(0.25f, 0.18f, 0f, here ? 0.55f : 0.3f));

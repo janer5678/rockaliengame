@@ -65,6 +65,7 @@ namespace RockGame
         public override void OnNetworkSpawn()
         {
             Instance = this;
+            Tutorial.Reset();
             State.OnValueChanged += OnStateChanged;
             Tunables.OnValueChanged += OnTunablesChanged;
             if (!IsServer)
@@ -155,10 +156,11 @@ namespace RockGame
             switch (S)
             {
                 case GameState.Waiting:
-                    if (players >= Cfg.PlayersNeeded || (Bootstrap.Solo && players >= 1))
+                    if (players >= Cfg.PlayersNeeded || ((Bootstrap.Solo || Cfg.Tutorial) && players >= 1))
                     {
                         float delay = Cfg.FunRules ? 0f : fast ? Cfg.FastBallDropDelay : Cfg.BallDropDelay; // fun modes: wall down and ball in from the start
                         SetPhase(GameState.PreBall, delay);
+                        if (Cfg.Tutorial) TimerPaused.Value = true; // the tutorial goes at your pace
                         // out of the waiting stadium and into your base
                         foreach (var p in PlayerNet.All) p.ServerSendHome();
                         Broadcast(Cfg.FunRules ? "Match started! The wall is down and the ball is in - free items on the way!" : $"Match started! The glass wall drops (and the ball with it) in {Clock(delay)}");
@@ -197,7 +199,7 @@ namespace RockGame
                     }
                     break;
                 case GameState.SuddenDeath:
-                    if (!Bootstrap.Solo && AliveTeams(out int last) <= 1)
+                    if (!Bootstrap.Solo && !Cfg.Tutorial && AliveTeams(out int last) <= 1)
                         EndGame(last, last >= 0 ? $"{Cfg.TeamName[last]} is the last one standing!" : "Nobody survived sudden death - DRAW");
                     else if (now >= PhaseEnd.Value)
                         EndGame(-1, "Nobody won the sudden death duel in time - DRAW");
@@ -246,7 +248,7 @@ namespace RockGame
         {
             if (S != GameState.SuddenDeath) return;
             // sudden death: no respawns; the last team with someone standing wins
-            if (AliveTeams(out int w) <= 1 && !Bootstrap.Solo)
+            if (AliveTeams(out int w) <= 1 && !Bootstrap.Solo && !Cfg.Tutorial)
                 EndGame(w, w < 0 ? "Everyone died in sudden death - DRAW" : PlayerNet.All.Count <= 2 ? $"{Cfg.TeamName[w]} won the sudden death duel!" : $"{Cfg.TeamName[w]} is the last one standing!");
         }
 
@@ -829,14 +831,58 @@ namespace RockGame
 
         // ------------------------------------------------------------------ explosions (C4, rockets, bomb bush, airstrike)
 
-        struct PendingC4 { public Vector3 Pos; public int Team; public PlayerNet Thrower; public double At; }
+        struct PendingC4 { public Vector3 Pos, Normal; public int Team; public PlayerNet Thrower; public double At; public Structure On; }
         readonly List<PendingC4> m_C4 = new List<PendingC4>();
 
         public void ServerArmC4(Vector3 pos, Vector3 normal, PlayerNet thrower)
         {
-            m_C4.Add(new PendingC4 { Pos = pos, Team = thrower.Team.Value, Thrower = thrower, At = NetworkManager.ServerTime.Time + Cfg.C4Fuse });
+            // the piece it's stuck to (or the nearest one right next to it): refined and sheet metal only give way around that one
+            Structure on = null;
+            float best = 1.2f;
+            foreach (var h in Physics.OverlapSphere(pos, 1.2f, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore))
+            {
+                var s = h.GetComponentInParent<Structure>();
+                if (s == null || !s.IsSpawned) continue;
+                float d = Vector3.Distance(h.ClosestPoint(pos), pos);
+                if (d < best) { best = d; on = s; }
+            }
+            m_C4.Add(new PendingC4 { Pos = pos, Normal = normal.sqrMagnitude > 0.01f ? normal.normalized : Vector3.up, Team = thrower.Team.Value, Thrower = thrower, At = NetworkManager.ServerTime.Time + Cfg.C4Fuse, On = on });
             Fx.Server(FxKind.C4Placed, pos, normal);
         }
+
+        /// <summary>
+        /// What a blast does to a piece, by how far it's been fortified. C4: wood and stone go; sheet metal goes only in the
+        /// layer the C4 is on (the piece it's stuck to and the ones next to it on the same side - not the ones behind);
+        /// refined only the piece it's stuck to. Rockets do less to metal and refined. An airstrike flattens wood and stone
+        /// and knocks metal and refined down a step. Returns true if the piece was destroyed.
+        /// </summary>
+        bool ServerBlastPiece(Structure s, BlastKind kind, float structureDamage, Vector3 pos, float radius, Structure on, Vector3 normal)
+        {
+            int tier = s.Upgradable ? s.Tier.Value : 0;
+            if (kind == BlastKind.C4 && tier >= 2)
+            {
+                bool stuck = s == on;
+                bool layer = false;
+                if (on != null && on.IsSpawned && !stuck)
+                {
+                    var off = s.transform.position - on.transform.position;
+                    // same side of the wall (not behind it), and right next to it
+                    bool flatS = s.PType == PieceType.Floor || s.PType == PieceType.Foundation, flatOn = on.PType == PieceType.Floor || on.PType == PieceType.Foundation;
+                    layer = flatS == flatOn && Mathf.Abs(Vector3.Dot(off, normal)) < 0.8f && off.magnitude < 3.4f;
+                }
+                if (tier >= 3 ? !stuck : !(stuck || layer)) return false;
+                s.ServerDamage(s.Health.Value + 1f, false);
+                return true;
+            }
+            if (kind == BlastKind.Airstrike && tier >= 2) { s.ServerDowngrade(); return false; }
+            float d = structureDamage < 0 ? s.Health.Value + 1f : structureDamage * Mathf.Lerp(1f, 0.5f, Vector3.Distance(s.transform.position, pos) / radius);
+            if (kind == BlastKind.Rocket) d *= Cfg.TierBlastMul(tier);
+            bool gone = d >= s.Health.Value;
+            s.ServerDamage(d, false);
+            return gone;
+        }
+
+        public enum BlastKind { Other, C4, Rocket, Airstrike }
 
         void ServerTickC4(double now)
         {
@@ -846,7 +892,7 @@ namespace RockGame
                 var c = m_C4[i];
                 m_C4.RemoveAt(i);
                 // (everyone's buildings - your own C4 blows up your own base too)
-                int n = ServerBlast(c.Pos, Cfg.C4Radius, -1, Cfg.C4PlayerDamage, -1f, Cfg.C4KillRadius, c.Thrower, false);
+                int n = ServerBlast(c.Pos, Cfg.C4Radius, -1, Cfg.C4PlayerDamage, -1f, Cfg.C4KillRadius, c.Thrower, false, false, BlastKind.C4, c.On, c.Normal);
                 if (c.Thrower != null && n > 0) c.Thrower.NotifyPublic($"Your C4 destroyed {n} piece{(n == 1 ? "" : "s")}!");
             }
         }
@@ -854,7 +900,7 @@ namespace RockGame
         public void ServerRocket(Vector3 pos, PlayerNet shooter)
         {
             // rockets also blow up any trees in the blast (they fall and regrow like felled ones)
-            int n = ServerBlast(pos, Cfg.RocketRadius + 1f, -1, Cfg.RocketPlayerDamage, Cfg.RocketStructureDamage, 0.8f, shooter, false, true); // your own base too
+            int n = ServerBlast(pos, Cfg.RocketRadius + 1f, -1, Cfg.RocketPlayerDamage, Cfg.RocketStructureDamage, 0.8f, shooter, false, true, BlastKind.Rocket); // your own base too
             if (shooter != null && n > 0) shooter.NotifyPublic($"Your rocket destroyed {n} piece{(n == 1 ? "" : "s")}!");
         }
 
@@ -863,7 +909,8 @@ namespace RockGame
         /// structureDamage &lt; 0 destroys pieces outright. Players take damage falling off with distance; inside killRadius they die.
         /// Returns how many building pieces were destroyed.
         /// </summary>
-        public int ServerBlast(Vector3 pos, float radius, int team, float playerDamage, float structureDamage, float killRadius, PlayerNet attacker, bool nodes, bool trees = false)
+        public int ServerBlast(Vector3 pos, float radius, int team, float playerDamage, float structureDamage, float killRadius, PlayerNet attacker, bool nodes, bool trees = false,
+            BlastKind kind = BlastKind.Other, Structure on = null, Vector3 normal = default)
         {
             Fx.Server(FxKind.Explosion, pos, Vector3.up);
             var structures = new HashSet<Structure>();
@@ -883,13 +930,13 @@ namespace RockGame
             }
             foreach (var c in chests) if (c.IsSpawned) c.ServerBreak();
             int destroyed = 0;
+            // (the piece the C4 is stuck to goes last: the others are judged by where they are next to it)
             foreach (var s in structures)
             {
-                if (!s.IsSpawned) continue;
-                float d = structureDamage < 0 ? s.Health.Value + 1f : structureDamage * Mathf.Lerp(1f, 0.5f, Vector3.Distance(s.transform.position, pos) / radius);
-                if (d >= s.Health.Value) destroyed++;
-                s.ServerDamage(d, false);
+                if (!s.IsSpawned || s == on) continue;
+                if (ServerBlastPiece(s, kind, structureDamage, pos, radius, on, normal)) destroyed++;
             }
+            if (on != null && structures.Contains(on) && on.IsSpawned && ServerBlastPiece(on, kind, structureDamage, pos, radius, on, normal)) destroyed++;
             if (structures.Count > 0) ServerCollapseCheck();
             foreach (var v in creatures) if (v.IsSpawned) v.ServerDamage(playerDamage * 2f, attacker);
             foreach (var n in hitNodes)
@@ -934,7 +981,7 @@ namespace RockGame
                     var off = Random.insideUnitCircle * Cfg.AirstrikeRadius * 0.8f;
                     Fx.Server(FxKind.Explosion, pos + new Vector3(off.x, 0.5f, off.y), Vector3.up);
                 }
-                ServerBlast(pos, Cfg.AirstrikeRadius, -1, 9999f, -1f, Cfg.AirstrikeRadius, by, true);
+                ServerBlast(pos, Cfg.AirstrikeRadius, -1, 9999f, -1f, Cfg.AirstrikeRadius, by, true, false, BlastKind.Airstrike);
             }
         }
 

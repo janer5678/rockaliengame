@@ -126,8 +126,9 @@ namespace RockGame
             bool stone = tier >= 1;                 // stone and metal share their shapes
             bool metal = tier >= 2;
             bool refined = tier >= 3;               // Rust's armoured: dark plate with brass trim
-            Color c = refined ? new Color(0.27f, 0.29f, 0.34f) : metal ? new Color(0.55f, 0.58f, 0.62f) : stone ? Art.Stone : Art.Wood;
-            Color trim = refined ? new Color(0.8f, 0.64f, 0.28f) : metal ? new Color(0.3f, 0.32f, 0.36f) : stone ? new Color(0.42f, 0.42f, 0.46f) : Art.DarkWood;
+            bool sheet = metal && !refined;          // Rust's sheet metal: rusty corrugated sheets, nothing like the grey stone
+            Color c = refined ? new Color(0.27f, 0.29f, 0.34f) : sheet ? new Color(0.5f, 0.46f, 0.42f) : stone ? Art.Stone : Art.Wood;
+            Color trim = refined ? new Color(0.8f, 0.64f, 0.28f) : sheet ? new Color(0.42f, 0.24f, 0.13f) : stone ? new Color(0.42f, 0.42f, 0.46f) : Art.DarkWood;
             bool col = colliders;
 
             switch (t)
@@ -229,6 +230,8 @@ namespace RockGame
                 }
             }
 
+            if (sheet) RustSheets(tr, t, c, trim);
+
             // Builder: walls built straight on the ground (no foundation) reach down into it, so nothing rolls out underneath
             if (Cfg.Builder && (t == PieceType.Wall || t == PieceType.Doorway || t == PieceType.Window) && parent.position.y < Cfg.BaseY + 0.5f)
                 Art.Box(tr, trim, new Vector3(0, -0.6f, 0), new Vector3(3f, 1.2f, 0.3f), default, col);
@@ -243,6 +246,60 @@ namespace RockGame
                 }
             }
             return root;
+        }
+
+        /// <summary>Sheet metal: corrugated ridges on the walls and foundations, and rust patches and bolts on every piece.</summary>
+        static void RustSheets(Transform tr, PieceType t, Color c, Color trim)
+        {
+            var light = new Color(0.64f, 0.62f, 0.58f);   // weathered galvanised steel
+            var rust = new Color(0.6f, 0.28f, 0.1f);
+            var steel = new Color(0.5f, 0.48f, 0.45f);
+            bool wallish = t == PieceType.Wall || t == PieceType.Doorway || t == PieceType.Window;
+            if (t == PieceType.Wall)
+                for (int k = 0; k < 10; k++)
+                {
+                    float x = -1.35f + k * 0.3f;
+                    for (int s = -1; s <= 1; s += 2)
+                        Art.Box(tr, k % 2 == 0 ? light : c * 0.85f, new Vector3(x, 1.5f, s * 0.165f), new Vector3(0.1f, 2.96f, 0.03f));
+                }
+            if (t == PieceType.Foundation)
+                for (int k = 0; k < 10; k++)
+                {
+                    float x = -1.35f + k * 0.3f;
+                    for (int s = -1; s <= 1; s += 2)
+                    {
+                        Art.Box(tr, k % 2 == 0 ? light : c * 0.85f, new Vector3(x, 0.5f, s * 1.515f), new Vector3(0.1f, 0.96f, 0.03f));
+                        Art.Box(tr, k % 2 == 0 ? light : c * 0.85f, new Vector3(s * 1.515f, 0.5f, x), new Vector3(0.03f, 0.96f, 0.1f));
+                    }
+                }
+            if (t == PieceType.Wall)
+            {
+                // big rust blotches across both faces
+                var spots = new[] { new Vector3(-0.8f, 0.6f, 0.7f), new Vector3(0.5f, 1.9f, 0.5f), new Vector3(0.9f, 0.4f, 0.4f), new Vector3(-0.3f, 2.5f, 0.45f), new Vector3(0.1f, 1.1f, 0.3f) };
+                for (int side = -1; side <= 1; side += 2)
+                    foreach (var sp in spots)
+                    {
+                        Art.Box(tr, rust, new Vector3(sp.x * side, sp.y, side * 0.185f), new Vector3(sp.z, sp.z * 0.8f, 0.01f), new Vector3(0, 0, sp.x * 30f));
+                        Art.Box(tr, rust * 0.75f, new Vector3(sp.x * side + 0.05f, sp.y - sp.z * 0.5f, side * 0.188f), new Vector3(0.06f, sp.z * 0.9f, 0.01f)); // a streak running down
+                    }
+            }
+            if (wallish)
+            {
+                // rust streaks and bolts down the sides (clear of any doorway / window gap)
+                for (int s = -1; s <= 1; s += 2)
+                for (int side = -1; side <= 1; side += 2)
+                {
+                    Art.Box(tr, rust, new Vector3(s * 1.22f, 0.7f + (s + 1) * 0.35f, side * 0.185f), new Vector3(0.32f, 0.55f, 0.01f), new Vector3(0, 0, s * 8f));
+                    Art.Box(tr, rust * 1.2f, new Vector3(s * 1.1f, 2.3f - (s + 1) * 0.2f, side * 0.185f), new Vector3(0.2f, 0.35f, 0.01f));
+                    for (int b = 0; b < 3; b++)
+                        Art.Part(tr, Art.Sphere, steel, new Vector3(s * 1.42f, 0.4f + b * 1.1f, side * 0.19f), Vector3.one * 0.06f);
+                }
+            }
+            else if (t == PieceType.Floor || t == PieceType.Foundation)
+            {
+                Art.Box(tr, rust, new Vector3(0.6f, t == PieceType.Floor ? 0.01f : 1.01f, -0.4f), new Vector3(0.7f, 0.01f, 0.5f), new Vector3(0, 20f, 0));
+                Art.Box(tr, rust * 1.2f, new Vector3(-0.7f, t == PieceType.Floor ? 0.01f : 1.01f, 0.6f), new Vector3(0.45f, 0.01f, 0.6f), new Vector3(0, -15f, 0));
+            }
         }
 
         /// <summary>

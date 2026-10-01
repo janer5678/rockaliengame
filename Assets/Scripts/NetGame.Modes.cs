@@ -17,6 +17,17 @@ namespace RockGame
         public readonly NetworkVariable<int> FortifyLevels = new NetworkVariable<int>();
         public int FortifyLevelOf(int team) => (FortifyLevels.Value >> (team * 2)) & 3;
 
+        /// <summary>Auto Wood: each team's wood gen upgrade level (2 bits a team, 0-3).</summary>
+        public readonly NetworkVariable<int> WoodGenLevels = new NetworkVariable<int>();
+        public int WoodGenLevelOf(int team) => (WoodGenLevels.Value >> (team * 2)) & 3;
+
+        public int ServerWoodGenUp(int team)
+        {
+            int lvl = Mathf.Min(Cfg.MaxWoodGen, WoodGenLevelOf(team) + 1);
+            WoodGenLevels.Value = (WoodGenLevels.Value & ~(3 << (team * 2))) | (lvl << (team * 2));
+            return lvl;
+        }
+
         /// <summary>
         /// Fortify: each buy takes the team a step further - every grid piece they've placed goes up to stone, then metal,
         /// then refined (at full health). Returns how many pieces changed.
@@ -49,14 +60,15 @@ namespace RockGame
             if (m_NextWoodTick < 0) m_NextWoodTick = now + 1.0;
             if (now < m_NextWoodTick) return;
             m_NextWoodTick += 1.0;
-            int add = Mathf.Max(0, Cfg.AutoWoodPerSecond);
-            if (add == 0) return;
             for (int t = 0; t < Cfg.TeamCount; t++)
             {
-                // top up this base's pile (it stacks), or start a new one if it was picked up or is full
+                int add = Mathf.Max(0, Cfg.WoodGenRate(WoodGenLevelOf(t)));
+                if (add == 0) continue;
+                // top up this base's pile - it keeps stacking past 1000 (it splits into stacks when it's picked up) - or start
+                // a new one if it was picked up
                 int idx = -1;
                 for (int i = 0; i < Items.Count; i++) if (Items[i].Id == m_WoodPile[t]) { idx = i; break; }
-                if (idx >= 0 && Items[idx].Stack.Count + add <= Cfg.MaxStack(Item.Wood))
+                if (idx >= 0 && Items[idx].Stack.Count + add <= ushort.MaxValue)
                 {
                     var it = Items[idx];
                     it.Stack = it.Stack.WithCount(it.Stack.Count + add);

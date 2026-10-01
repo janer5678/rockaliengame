@@ -833,10 +833,10 @@ namespace RockGame
         {
             if (Dead.Value || CarryingBall || InSuddenDeath || HeldItem != Item.Bow) return;
             if (Time.time < m_NextShot || !InvOps.Remove(Inv, Item.Arrow, 1)) return;
-            m_NextShot = Time.time + 0.3f;
+            m_NextShot = Time.time + 0.25f;
             Reveal();
             float power = Mathf.Clamp01(velocity.magnitude / Cfg.ArrowSpeed);
-            m_PendingArrows.Enqueue(Cfg.ArrowPlayerDamage * power);
+            m_PendingArrows.Enqueue(Cfg.BowDamage(power));
             while (m_PendingArrows.Count > 6) m_PendingArrows.Dequeue();
             ArrowVisualRpc(origin, velocity, false);
         }
@@ -1111,6 +1111,9 @@ namespace RockGame
             s.ServerInit(t, Team.Value, key, true);
             BuildGrid.Registry[key] = s;
             go.GetComponent<NetworkObject>().Spawn(true);
+            // Fortify All Walls covers what you build afterwards too: new pieces come out at your team's fortify level
+            int fort = Cfg.FortifyLevel(Team.Value);
+            if (fort > 0 && s.Upgradable) s.ServerUpgrade(fort);
         }
 
         static bool AreaClear(PieceType t, Vector3 pos, Quaternion rot)

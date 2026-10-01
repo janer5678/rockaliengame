@@ -29,8 +29,9 @@ namespace RockGame
             if (r.Output == Item.Armor && ArmorHp.Value >= Cfg.ArmorHp) { Notify("You're already wearing full armour"); return; }
             if (r.Output == Item.HeavyArmor && ArmorHp.Value >= Cfg.HeavyArmorHp) { Notify("You're already wearing heavy armour"); return; }
             if (r.Output == Item.FortifyBuff && Cfg.FortifyLevel(Team.Value) >= Cfg.MaxFortify) { Notify("Your walls are already refined - fully fortified"); return; }
+            if (r.Output == Item.WoodGenBuff && Cfg.WoodGenLevel(Team.Value) >= Cfg.MaxWoodGen) { Notify("Your wood gen is already maxed out"); return; }
             if (Count(Item.Wood) < r.Wood || Count(Item.Stone) < r.Stone) { Notify($"Not enough resources for {r.Name}"); return; }
-            bool noItem = r.Output == Item.Armor || r.Output == Item.HeavyArmor || r.Output == Item.FortifyBuff;
+            bool noItem = r.Output == Item.Armor || r.Output == Item.HeavyArmor || r.Output == Item.FortifyBuff || r.Output == Item.WoodGenBuff;
             int data = r.Output == Item.Saddle ? Team.Value + 1 : Mathf.Clamp(Cfg.MaxData(r.Output), 0, 255);
             if (!noItem && secs <= 0f && InvOps.Space(Inv, r.Output, data) < r.Count && !InvOps.HasEmpty(Inv)) { Notify("Inventory full!"); return; }
 
@@ -91,6 +92,13 @@ namespace RockGame
                     Notify($"Heavy armour on: {ArmorHp.Value} extra health" + (had ? " (your old armour broke off)" : ""));
                     break;
                 }
+                case Item.WoodGenBuff:
+                    if (g != null)
+                    {
+                        int lvl = g.ServerWoodGenUp(Team.Value);
+                        g.Broadcast($"{Cfg.TeamLabel(Team.Value)} upgraded their wood gen to level {lvl}: {Cfg.WoodGenRate(lvl)} wood a second!");
+                    }
+                    break;
                 case Item.FortifyBuff:
                     if (g != null)
                     {
@@ -100,7 +108,8 @@ namespace RockGame
                     break;
                 default:
                 {
-                    int data = r.Output == Item.Saddle ? Team.Value + 1 : Mathf.Clamp(Cfg.MaxData(r.Output), 0, 255);
+                    // guns come empty: the revolver and shotgun need their ammo bought
+                    int data = r.Output == Item.Saddle ? Team.Value + 1 : r.Output == Item.Revolver ? 0 : Mathf.Clamp(Cfg.MaxData(r.Output), 0, 255);
                     int left = ServerGive(r.Output, r.Count, data);
                     // no room any more (the inventory filled up while it was being made): it drops at your feet
                     if (left > 0 && g != null) g.ServerDropItem(ItemStack.Of(r.Output, left, data), transform.position + transform.forward, transform.forward, EyePos);
@@ -109,6 +118,15 @@ namespace RockGame
             }
             CraftedRpc((byte)r.Output);
             Fx.Server(FxKind.Craft, Cfg.MachinePos(Team.Value), new Vector3(Team.Value, 0, 0));
+        }
+
+        /// <summary>Tutorial mode only: 1 = drop the glass wall now (the clock stays stopped).</summary>
+        [Rpc(SendTo.Server)]
+        public void TutorialRpc(byte action)
+        {
+            var g = NetGame.Instance;
+            if (!Cfg.Tutorial || g == null) return;
+            if (action == 1 && g.S == GameState.PreBall) { g.TimerPaused.Value = true; g.PhaseEnd.Value = NetworkManager.ServerTime.Time - 1.0; }
         }
 
         /// <summary>Pause menu: kill yourself (you drop everything, like any death, and respawn as normal).</summary>
