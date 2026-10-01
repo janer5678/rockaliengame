@@ -602,16 +602,14 @@ namespace RockGame
             float sw = Screen.width, sh = Screen.height, k = m_Scale;
             MouseOverUI = true;
             m_HoverName = "";
+            if (CraftViewFrame(pc)) { DrawCraftingView(me, pc); return; } // the Rust-style crafting screen (Hud.Crafting.cs)
             Fill(new Rect(0, 0, sw, sh), new Color(0, 0, 0, 0.4f));
             float slot = Mathf.Min(64 * k, (sw - 120) / 24f), gap = 6 * k;
             float gridW = 7 * slot + 6 * gap;
-            bool craft = pc.CraftOpen;
             float craftW = 330 * k;
             bool loot = pc.LootTarget != null;
             float lootW = loot ? gridW : 0;
-            bool power = Cfg.PowerMenu && !loot;
-            float powerW = 330 * k;
-            float total = gridW + 30 * k + (loot ? lootW : craftW) + (power ? powerW + 20 * k : 0);
+            float total = gridW + 30 * k + (loot ? lootW : craftW);
             float x0 = Mathf.Max(10, (sw - total) / 2);
             float top = sh * 0.14f;
             float invX = x0;
@@ -650,34 +648,9 @@ namespace RockGame
             float infoY = hotY + slot + 10 * k;
             Shadowed(new Rect(invX, infoY, gridW + 200, 24 * k), m_HoverName != "" ? m_HoverName : "Drag to move · right-click: to the hotbar · right-drag splits a stack · shift-click quick-moves · drag outside to drop", m_Small);
 
-            // ---- crafting (right, when not looting) ----
+            // ---- the CRAFTING button (right, when not looting): opens the crafting screen ----
             float cxp = invX + gridW + 30 * k;
-            string mats = Cfg.DnaRules ? $"<color=#7dffb0>{me.Count(Item.Dna)} DNA</color>" : $"<color=#d9a066>{me.Count(Item.Wood)} wood</color>" + (Cfg.WoodMode ? "" : $"  <color=#c8c8d0>{me.Count(Item.Stone)} stone</color>");
-            if (!loot) Shadowed(new Rect(cxp, top - 34 * k, craftW, 30 * k), $"<b>CRAFTING</b>   {mats}", m_Label);
-            float row = Mathf.Min(50 * k, (sh * 0.84f - top) / Mathf.Max(1, Cfg.RecipeCount) - 4 * k);
-            for (int i = 0; !loot && i < Cfg.RecipeCount; i++)
-            {
-                var rec = Cfg.GetRecipe(i);
-                var rr = new Rect(cxp, top + i * (row + 4 * k), craftW, row);
-                bool here = craft || Cfg.CraftAnywhere(rec.Output);
-                bool afford = me.CanAfford(rec);
-                Fill(rr, new Color(0, 0, 0, here ? 0.45f : 0.25f));
-                var icon = ItemIcons.Get(rec.Output);
-                var oldC = GUI.color;
-                if (!here) GUI.color = new Color(1, 1, 1, 0.4f);
-                if (icon != null) GUI.DrawTexture(new Rect(rr.x + 4, rr.y + 3, row - 6, row - 6), icon, ScaleMode.ScaleToFit, true);
-                GUI.color = oldC;
-                string cost = Cfg.CostText(rec) + (rec.Output == Item.Armor ? " · put on right away" : "");
-                if (Cfg.Builder) cost += $" · {Cfg.CraftSeconds(rec):0}s";
-                if (!here) cost = "<color=#8fb8ff>in your base</color>  " + cost;
-                GUI.Label(new Rect(rr.x + row + 4, rr.y + 2, craftW - row - 100 * k, row), $"<b>{(here ? "" : "<color=#999999>")}{rec.Name}{(here ? "" : "</color>")}</b>\n<size={Mathf.RoundToInt(12 * k)}><color={(afford ? "#bbbbbb" : "#ff7777")}>{cost}</color></size>", m_Label);
-                GUI.enabled = afford && here;
-                if (BtnAt(new Rect(rr.xMax - 90 * k, rr.y + 8 * k, 84 * k, row - 16 * k), "Craft", m_Button)) me.CraftRpc(i);
-                GUI.enabled = true;
-            }
-            if (power) DrawPowerMenu(me, craft, cxp + craftW + 20 * k, top, powerW, k);
-            if (!loot && Cfg.Builder) Shadowed(new Rect(cxp, top + Cfg.RecipeCount * (row + 4 * k) + 6, craftW, 60 * k), $"BUILDER: craft anywhere, one thing at a time - each takes a few seconds.   {Binds.Name(Bind.Inventory)} / Esc to close", m_SmallWrap);
-            else if (!loot) Shadowed(new Rect(cxp, top + Cfg.RecipeCount * (row + 4 * k) + 6, craftW, 60 * k), craft ? $"{Binds.Name(Bind.Inventory)} / Esc to close" : $"Spears and hatchets can be crafted anywhere.\nEverything else: inside your base.   {Binds.Name(Bind.Inventory)} / Esc to close", m_SmallWrap);
+            if (!loot) DrawCraftingButton(me, pc, new Rect(cxp, top, craftW, hotY + slot - top), k);
 
             // ---- drag visual ----
             var e = Event.current;

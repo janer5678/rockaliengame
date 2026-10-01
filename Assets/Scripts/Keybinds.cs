@@ -101,9 +101,11 @@ namespace RockGame
             PlayerPrefs.Save();
         }
 
-        public static bool Held(Bind b) { Ensure(); return Key(s_Main[(int)b]) || Key(s_Alt[(int)b]); }
-        public static bool Down(Bind b) { Ensure(); return KeyDown(s_Main[(int)b]) || KeyDown(s_Alt[(int)b]); }
-        public static bool Up(Bind b) { Ensure(); return KeyUp(s_Main[(int)b]) || KeyUp(s_Alt[(int)b]); }
+        public static bool Held(Bind b) { Ensure(); return !Muted(b) && (Key(s_Main[(int)b]) || Key(s_Alt[(int)b])); }
+        public static bool Down(Bind b) { Ensure(); return !Muted(b) && (KeyDown(s_Main[(int)b]) || KeyDown(s_Alt[(int)b])); }
+        public static bool Up(Bind b) { Ensure(); return !Muted(b) && (KeyUp(s_Main[(int)b]) || KeyUp(s_Alt[(int)b])); }
+        /// <summary>Typing in the crafting search box: only the inventory key still works.</summary>
+        static bool Muted(Bind b) => b != Bind.Inventory && Hud.CraftTyping;
         /// <summary>1 / 0 / -1 from two opposite actions (movement axes).</summary>
         public static float Axis(Bind plus, Bind minus) => (Held(plus) ? 1f : 0f) - (Held(minus) ? 1f : 0f);
 
