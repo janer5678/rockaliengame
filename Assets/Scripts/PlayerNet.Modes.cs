@@ -117,13 +117,15 @@ namespace RockGame
             Fx.Server(FxKind.Craft, Cfg.MachinePos(Team.Value), new Vector3(Team.Value, 0, 0));
         }
 
-        /// <summary>Tutorial mode only: 1 = drop the glass wall now (the clock stays stopped).</summary>
+        /// <summary>Tutorial: this player has walked up to the glass wall (the wall drops once everyone has - see Tutorial.ServerTick).</summary>
+        public readonly NetworkVariable<bool> TutAtWall = new NetworkVariable<bool>();
+
+        /// <summary>Tutorial mode only: 1 = I'm at the glass wall step (the server drops the wall once every player is).</summary>
         [Rpc(SendTo.Server)]
         public void TutorialRpc(byte action)
         {
-            var g = NetGame.Instance;
-            if (!Cfg.Tutorial || g == null) return;
-            if (action == 1 && g.S == GameState.PreBall) { g.TimerPaused.Value = true; g.PhaseEnd.Value = NetworkManager.ServerTime.Time - 1.0; }
+            if (!Cfg.Tutorial || NetGame.Instance == null) return;
+            if (action == 1) Tutorial.ServerAtWall(this);
         }
 
         float m_NextSuicide;

@@ -107,7 +107,7 @@ namespace RockGame
             {
                 case GameRules.Arsenal: return "Normal prices (the crossbow is cheaper), plus a POWER ITEMS menu next to crafting: sword, shotgun, revolver, C4, headshot helmet and Fortify All Walls.";
                 case GameRules.Dna: return DnaDesc;
-                case GameRules.Tutorial: return "New here? Start with this. A step-by-step guide through the whole game - moving, gathering, crafting, building, fighting and the ball - on your own, with the clock stopped. Just press HOST GAME.";
+                case GameRules.Tutorial: return "New here? Start with this. Short, simple steps teach you the whole game - you do each one to go on. The clock is stopped, friends can join any time, and it's always the small Plains map. Just press HOST GAME.";
                 case GameRules.AutoWood: return "Arsenal, but wood piles up at your base by itself (5 a second) - go and pick it up.";
                 case GameRules.Builder: return "No bases. Arsenal's items, but each takes a while to make. Craft and build anywhere - pieces lock onto each other. Plant the ball anywhere (E): whoever's ball it is at the end wins.";
                 case GameRules.Fun: return "No building phase, a short match, and every so often everyone gets the same random item - any item in the game.";
@@ -169,6 +169,13 @@ namespace RockGame
             RespawnLoot = (key & RespawnLootBit) != 0;
             Mode = (GameMode)((key >> ModeShift) & ModeMask);
             Rules = (GameRules)Mathf.Clamp((key >> RulesShift) & RulesMask, 0, (int)GameRules.Dna);
+            if (Rules == GameRules.Tutorial)
+            {
+                // the tutorial is always the small, flat Plains map with normal materials (whatever the menu says)
+                Map = MapKind.Plains;
+                Size = MapSize.Small;
+                WoodMode = AirdropSides = AirdropCenter = RespawnLoot = false;
+            }
             HostGraphics = Mathf.Clamp((key >> GraphicsShift) & GraphicsMask, 0, 2);
             TeamCount = ModeTeams(Mode);
             MapSeed = seed;

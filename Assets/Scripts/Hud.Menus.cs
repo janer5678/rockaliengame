@@ -190,6 +190,19 @@ namespace RockGame
 
             key = Bootstrap.MapChoice;
             int flags = key & ~15;
+            // the tutorial always plays on the small Plains map with normal materials: show that, and lock these rows
+            bool tutMap = rules == GameRules.Tutorial;
+            if (tutMap)
+            {
+                kind = MapKind.Plains;
+                size = MapSize.Small;
+                wood = false;
+                GUILayout.BeginHorizontal();
+                GUILayout.Space(103 * k);
+                GUILayout.Label("<color=#ffd24a>Tutorial: always the small, flat Plains map with normal materials.</color>", m_SmallWrap);
+                GUILayout.EndHorizontal();
+                GUI.enabled = false;
+            }
             GUILayout.BeginHorizontal();
             RowLabel("Map");
             if (Choice(kind == MapKind.Plains, "Plains", GUILayout.Height(30 * k))) boot.SetMapChoice((int)MapKind.Plains | flags);
@@ -229,6 +242,7 @@ namespace RockGame
             if (Choice(wood, "Wood mode", GUILayout.Height(30 * k))) boot.SetMapChoice(key | Cfg.WoodBit);
             GUILayout.EndHorizontal();
             if (wood) GUILayout.Label("<color=#d9a066>Wood only: no stone, no pickaxe, everything costs wood.</color>", m_SmallWrap);
+            if (tutMap) GUI.enabled = true;
 
             GUILayout.BeginHorizontal();
             RowLabel("Graphics");
