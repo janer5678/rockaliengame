@@ -196,6 +196,24 @@ namespace RockGame
             }
             FxParticle.Puff(pos, new Color(0.7f, 0.05f, 0.05f, 0.55f), head ? 0.7f : 0.45f);
             Sfx.Play(head ? Sfx.Headshot : Sfx.Flesh, pos, head ? 1f : 0.8f);
+            if (PsxModels.On) BloodDecal(pos, head);
+        }
+
+        /// <summary>PSX graphics: a splat of blood on the ground under a hit (the PSX blood decals), fading away after a while.</summary>
+        static void BloodDecal(Vector3 pos, bool head)
+        {
+            if (!Physics.Raycast(pos + Vector3.up * 0.2f, Vector3.down, out var hit, 4f, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore)) return;
+            if (hit.collider.GetComponentInParent<PlayerNet>() != null) return;
+            var q = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            Object.Destroy(q.GetComponent<Collider>());
+            q.name = "psx blood";
+            q.transform.position = hit.point + hit.normal * 0.02f + Random.insideUnitSphere * 0.15f;
+            q.transform.rotation = Quaternion.LookRotation(-hit.normal) * Quaternion.Euler(0, 0, Random.Range(0f, 360f));
+            q.transform.localScale = Vector3.one * Random.Range(0.5f, 0.8f) * (head ? 1.4f : 1f);
+            var mr = q.GetComponent<MeshRenderer>();
+            mr.sharedMaterial = PsxModels.Mat(Random.value < 0.5f ? "blood1" : "blood2");
+            mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            Object.Destroy(q, 30f);
         }
 
         public static void Chips(Vector3 pos, Vector3 dir, Color c, int n, float speed = 3.5f)

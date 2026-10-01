@@ -311,6 +311,19 @@ namespace RockGame
             if (IsOwner) Art.SetLayerShadowsOnly(m_Armor);
         }
 
+        GameObject m_Skeleton;
+
+        void SetSkeleton(bool on)
+        {
+            if (m_Skeleton) Destroy(m_Skeleton);
+            m_Skeleton = null;
+            if (!on) return;
+            m_Skeleton = PsxModels.Spawn("skeleton", transform);
+            if (m_Skeleton == null) return;
+            // lying on its back, head behind where they stood
+            PsxModels.FitInto(m_Skeleton.transform, transform, new Bounds(new Vector3(0, 0.15f, -0.45f), new Vector3(0.7f, 0.3f, 1.8f)), PsxModels.Fit.Uniform, new Vector3(-90, 0, 0));
+        }
+
         void RebuildTree(bool on)
         {
             if (m_Tree) { Destroy(m_Tree); m_Tree = null; }
@@ -475,6 +488,10 @@ namespace RockGame
             bool tree = TreeCamo;
             if (tree != (m_Tree != null) || (tree && m_TreePsx != (GameSettings.PsxGraphics || GameSettings.AiPsx))) RebuildTree(tree);
             if (tree) showBody = false;
+            // PSX graphics: the dead are a skeleton on the ground (the PSX dead model) instead of the alien falling over
+            bool bones = dead && showBody && PsxModels.On;
+            if (bones) showBody = false;
+            if (bones != (m_Skeleton != null)) SetSkeleton(bones);
             if (m_VisualRoot.gameObject.activeSelf != showBody) m_VisualRoot.gameObject.SetActive(showBody);
             bool cc = !dead && !Riding;
             if (m_CC.enabled != cc) m_CC.enabled = cc;

@@ -47,12 +47,16 @@ namespace RockGame
                 ground.name = "Ground";
                 ground.AddComponent<GroundMarker>();
                 int patches = Mathf.RoundToInt(70 * (half / 100f) * (half / 100f));
+                var patchRs = new List<Renderer>();
                 for (int i = 0; i < patches; i++)
                 {
                     var c = Color.Lerp(k_Grass, new Color(0.3f, 0.48f, 0.24f), R(0.3f, 1f));
                     float w = R(4f, 14f);
-                    Art.Box(root, c, new Vector3(R(-half + 5, half - 5), 0.005f, R(-half + 5, half - 5)), new Vector3(w, 0.01f, w * R(0.5f, 1.5f)), new Vector3(0, R(0, 90), 0));
+                    patchRs.Add(Art.Box(root, c, new Vector3(R(-half + 5, half - 5), 0.005f, R(-half + 5, half - 5)), new Vector3(w, 0.01f, w * R(0.5f, 1.5f)), new Vector3(0, R(0, 90), 0)).GetComponent<Renderer>());
                 }
+                // PSX graphics: PSX grass, with darker patches of it
+                PsxModels.Retexture(ground, new[] { ground.GetComponent<Renderer>() }, r => "grass_20", 3f);
+                PsxModels.Retexture(ground, patchRs, r => "grass_10", 3f);
             }
 
             // ---------- bases ----------
@@ -114,7 +118,14 @@ namespace RockGame
             Art.Box(root, wallC, new Vector3(half + 1, wh / 2 - (wh > 5 ? 15 : 0), 0), new Vector3(2, wh, 2 * half + 4), default, true);
             Art.Box(root, wallC, new Vector3(-half - 1, wh / 2 - (wh > 5 ? 15 : 0), 0), new Vector3(2, wh, 2 * half + 4), default, true);
 
-            // distant low-poly mountains for a horizon
+            // PSX graphics: the boundary walls are concrete
+            {
+                var walls = new List<Renderer>();
+                for (int k = root.childCount - 4; k < root.childCount; k++) walls.Add(root.GetChild(k).GetComponent<Renderer>());
+                PsxModels.Retexture(root.gameObject, walls, r => "concrete_01", 3f);
+            }
+
+            // distant low-poly mountains for a horizon (PSX graphics: the big PSX terrain rocks)
             for (int i = 0; i < 40; i++)
             {
                 float a = i / 40f * Mathf.PI * 2f + R(-0.05f, 0.05f);
@@ -123,6 +134,7 @@ namespace RockGame
                 var m = Art.Part(root, Art.MakeRock(i, 0.35f), Color.Lerp(new Color(0.42f, 0.45f, 0.42f), new Color(0.55f, 0.55f, 0.6f), R(0, 1)),
                     new Vector3(Mathf.Cos(a) * d, sc * 0.2f, Mathf.Sin(a) * d), new Vector3(sc, sc * R(0.6f, 1.1f), sc), new Vector3(0, R(0, 360), 0));
                 m.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
+                PsxModels.Replace(m.transform, "bigrock" + (i % 6), PsxModels.Fit.Uniform);
             }
 
             BuildArena(root);
@@ -213,8 +225,18 @@ namespace RockGame
 
             var go = new GameObject("Ground");
             go.transform.SetParent(root, false);
+            // world-space UVs (a metre each) for the PSX graphics' textures - Normal draws plain colours and ignores them
+            var uvs = new List<Vector2>(verts.Count);
+            foreach (var v in verts) uvs.Add(new Vector2(v.x, v.z));
+            mesh.SetUVs(0, uvs);
             go.AddComponent<MeshFilter>().sharedMesh = mesh;
-            go.AddComponent<MeshRenderer>().sharedMaterials = new[] { Art.Mat(k_Grass), Art.Mat(k_Rock) };
+            var mr = go.AddComponent<MeshRenderer>();
+            mr.sharedMaterials = new[] { Art.Mat(k_Grass), Art.Mat(k_Rock) };
+            {
+                Material[] saved = null;
+                PsxModels.Look(go, () => { saved = mr.sharedMaterials; mr.sharedMaterials = new[] { PsxModels.Tiled("grass_20", 1f / 3f, 1f / 3f), PsxModels.Tiled("cobble_12", 1f / 3f, 1f / 3f) }; },
+                    () => { if (saved != null) mr.sharedMaterials = saved; });
+            }
             go.AddComponent<MeshCollider>().sharedMesh = mesh;
             go.AddComponent<GroundMarker>();
 
@@ -260,6 +282,8 @@ namespace RockGame
             for (int x = -1; x <= 1; x += 2)
             for (int z = -1; z <= 1; z += 2)
                 Art.Part(t, Art.Cylinder, k_SilverDark, new Vector3(x * (Cfg.BedrockHalf - 0.25f), Cfg.BaseY + 0.01f, z * (Cfg.BedrockHalf - 0.25f)), new Vector3(0.22f, 0.02f, 0.22f));
+            // PSX graphics: concrete
+            PsxModels.Retexture(go, go.GetComponentsInChildren<Renderer>(), r => Art.IsArtMat(r.sharedMaterial, out var col) && (col == k_Silver || col == k_SilverDark) ? (col == k_Silver ? "concrete_00" : "concrete_10") : null, 2f);
             BuildMachine(root, team, glow);
         }
 
@@ -339,6 +363,8 @@ namespace RockGame
             l.intensity = 1.8f;
 
             go.AddComponent<Machine>().Init(team, rings, orb, l, beam);
+            // PSX graphics: the PSX alien machine stands where the machine was (the socket and its arch stay - that's where the ball goes)
+            PsxModels.Replace(t, "machine", PsxModels.Fit.GroundTall, default, 1.5f, socket); // (a big beast, towering over the socket)
         }
 
         // =====================================================================

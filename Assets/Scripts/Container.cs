@@ -59,6 +59,7 @@ namespace RockGame
                 for (int i = 0; i < m_PendingSize; i++) Slots.Add(i < m_Pending.Count ? m_Pending[i] : default);
             }
             m_Visual = CreateVisual(Kind.Value, Team.Value, transform, null).transform;
+            if (Kind.Value == Chest) PsxModels.Replace(m_Visual, "chest", PsxModels.Fit.Stretch); // PSX graphics: the cardboard box
             var bc = gameObject.AddComponent<BoxCollider>();
             if (IsBag) { bc.center = new Vector3(0, 0.3f, 0); bc.size = new Vector3(0.7f, 0.6f, 0.7f); }
             else if (IsAirdrop) { bc.center = new Vector3(0, 0.6f, 0); bc.size = new Vector3(1.4f, 1.2f, 1.4f); }

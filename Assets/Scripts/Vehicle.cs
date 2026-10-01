@@ -111,6 +111,7 @@ namespace RockGame
             if (IsSlender) { m_CC.radius = 0.4f; m_CC.height = 2.6f; m_CC.center = new Vector3(0, 1.3f, 0); }
             m_Visual = CreateVisual(Kind.Value, transform, null, out m_Saddle, out m_Fan, out m_Head, out m_Tail, m_Wheels, m_Legs).transform;
             if (IsHorse && AiPsxArt.On) AiPsxArt.ApplyAnimal(m_Visual);
+            if (IsHorse) PsxModels.Replace(m_Visual, "horse", PsxModels.Fit.Uniform); // PSX graphics: the PS1 horse
             SaddleTeam.OnValueChanged += (a, b) => ColourSaddle();
             ColourSaddle();
             m_Yaw = transform.eulerAngles.y;

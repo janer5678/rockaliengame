@@ -236,6 +236,8 @@ namespace RockGame
             if (Cfg.Builder && (t == PieceType.Wall || t == PieceType.Doorway || t == PieceType.Window) && parent.position.y < Cfg.BaseY + 0.5f)
                 Art.Box(tr, trim, new Vector3(0, -0.6f, 0), new Vector3(3f, 1.2f, 0.3f), default, col);
 
+            if (ghost == null) ApplyPsxLook(root, t, tier, c, trim, hinge);
+
             if (ghost != null)
             {
                 foreach (var l in root.GetComponentsInChildren<Ladder>()) Destroy(l.gameObject);
@@ -247,6 +249,30 @@ namespace RockGame
             }
             return root;
         }
+
+        /// <summary>
+        /// PSX graphics: the log wall and the door are the PSX models; everything else wears the PSX surfaces - planks for
+        /// wood, bricks for stone, rusty corrugated sheets for sheet metal, diamond plate for refined.
+        /// </summary>
+        static void ApplyPsxLook(GameObject root, PieceType t, int tier, Color main, Color trim, Transform hinge)
+        {
+            if (t == PieceType.Barrier) { PsxModels.Replace(root.transform, "barrier", PsxModels.Fit.Stretch); return; }
+            if (t == PieceType.EggBlock) return;
+            if (hinge != null) PsxModels.Replace(hinge, "door", PsxModels.Fit.Stretch);
+            string body = tier >= 3 ? "metal_12" : tier == 2 ? "metal_21" : tier == 1 ? "cobble_21" : "wood_21";
+            string edge = tier >= 3 ? "metal_10" : tier == 2 ? "metal_01" : tier == 1 ? "cobble_20" : "wood_20";
+            var rs = new List<Renderer>();
+            foreach (var r in root.GetComponentsInChildren<Renderer>(true))
+                if ((hinge == null || !r.transform.IsChildOf(hinge)) && r.GetComponentInParent<Ladder>() == null) rs.Add(r);
+            PsxModels.Retexture(root, rs, r =>
+            {
+                if (!Art.IsArtMat(r.sharedMaterial, out var col)) return null;
+                if (tier == 2 && r.transform.localScale.z < 0.035f && r.transform.localScale.x < 0.12f) return null; // (the sheet's own ridges and bolts)
+                return Near(col, trim) ? edge : body;
+            }, 1.5f);
+        }
+
+        static bool Near(Color a, Color b) => Mathf.Abs(a.r - b.r) + Mathf.Abs(a.g - b.g) + Mathf.Abs(a.b - b.b) < 0.06f;
 
         /// <summary>Sheet metal: corrugated ridges on the walls and foundations, and rust patches and bolts on every piece.</summary>
         static void RustSheets(Transform tr, PieceType t, Color c, Color trim)

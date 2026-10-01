@@ -264,7 +264,7 @@ namespace RockGame
             Object.Destroy(q.GetComponent<Collider>());
             q.name = "pixelX";
             q.transform.SetParent(parent, false);
-            q.transform.localScale = Vector3.one * 0.42f;
+            q.transform.localScale = Vector3.one * (On ? 0.84f : 0.42f); // PSX trees are twice the size, and so is their X
             var mr = q.GetComponent<MeshRenderer>();
             if (s_XMat != null) mr.sharedMaterial = s_XMat;
             mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;

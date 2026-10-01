@@ -14,14 +14,24 @@ namespace RockGame.EditorTools
     {
         const string Folder = "Assets/Game/Resources/Alien/";
         const string Trees = "Assets/Game/Resources/PsxTrees/";
+        /// <summary>The PSX graphics mode's models (Tools/psx_convert.py): materials are made at runtime (PsxModels).</summary>
+        const string Models = "Assets/Game/Resources/PsxModels/";
         public const string CutoutPath = Trees + "PsxCutout.mat";
 
         void OnPreprocessTexture()
         {
-            if (!assetPath.StartsWith(Folder) && !assetPath.StartsWith(Trees)) return;
+            if (!assetPath.StartsWith(Folder) && !assetPath.StartsWith(Trees) && !assetPath.StartsWith(Models)) return;
             var ti = (TextureImporter)assetImporter;
             ti.filterMode = FilterMode.Point;
             ti.textureCompression = TextureImporterCompression.Uncompressed;
+            if (assetPath.StartsWith(Models))
+            {
+                // crunchy, cut-out where there's alpha, and the surface tiles (tex_*) repeat
+                ti.alphaIsTransparency = true;
+                ti.mipmapEnabled = true;
+                ti.wrapMode = System.IO.Path.GetFileName(assetPath).StartsWith("tex_") ? TextureWrapMode.Repeat : TextureWrapMode.Clamp;
+                return;
+            }
             if (assetPath.StartsWith(Trees))
             {
                 // leaves are cut out of the alpha; mipmaps keep distant trees from shimmering
@@ -35,6 +45,17 @@ namespace RockGame.EditorTools
 
         void OnPreprocessModel()
         {
+            if (assetPath.StartsWith(Models))
+            {
+                var pm = (ModelImporter)assetImporter;
+                pm.importCameras = false;
+                pm.importLights = false;
+                pm.importAnimation = false;
+                pm.animationType = ModelImporterAnimationType.None;
+                pm.materialImportMode = ModelImporterMaterialImportMode.None;
+                pm.importNormals = ModelImporterNormals.Import;
+                return;
+            }
             if (assetPath.StartsWith(Trees))
             {
                 var tm = (ModelImporter)assetImporter;

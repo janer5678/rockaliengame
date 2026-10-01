@@ -23,6 +23,14 @@ namespace RockGame
             if (s_Tried) return;
             s_Tried = true;
             if (SystemInfo.graphicsDeviceType == GraphicsDeviceType.Null) return;
+            // icons always show the Normal look (they're made once, whatever the graphics)
+            PsxModels.Suppress = true;
+            try { RenderAll(); }
+            finally { PsxModels.Suppress = false; }
+        }
+
+        static void RenderAll()
+        {
 
             var rig = new GameObject("IconRig");
             rig.transform.position = new Vector3(0, -500, 0);

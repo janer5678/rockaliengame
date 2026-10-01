@@ -172,6 +172,8 @@ namespace RockGame
                 sc.radius = 0.8f;
             }
             m_VisualBase = tr.localPosition;
+            if (Kind.Value == Boulder) PsxModels.Replace(tr, "rock" + (1 + (Seed.Value & 0x7fffffff) % 6), PsxModels.Fit.Uniform, new Vector3(0, (Seed.Value % 360), 0), 1f, m_Marker);
+            else if (Kind.Value == Bush) PsxModels.Replace(tr, "bush", PsxModels.Fit.Ground, new Vector3(0, (Seed.Value % 360), 0));
             if (AiPsxArt.On) AiPsxArt.Apply(tr);
         }
 
@@ -195,12 +197,23 @@ namespace RockGame
             bark = Art.Wood;
             leafColor = leaf;
             if (ThemeMaps.BuildPalm(tr, seed, h, trunk)) return trunk; // THEME MAPS
-            if ((PsxArt.On || AiPsxArt.On) && PsxArt.BuildTree(tr, seed, h * 0.45f + 5.2f + (r() - 0.5f) * 1.2f, out var pr, out var pb, out var pl))
+            // (PSX graphics: the trees are twice the size; the AI PSX test keeps them as they were)
+            if ((PsxArt.On || AiPsxArt.On) && PsxArt.BuildTree(tr, seed, (h * 0.45f + 5.2f + (r() - 0.5f) * 1.2f) * (PsxArt.On ? 2f : 1f), out var pr, out var pb, out var pl))
             {
                 trunk.GetComponent<MeshRenderer>().enabled = false;
                 trunkRadius = pr;
                 bark = pb;
                 leafColor = pl;
+                // PSX: the bigger trunk is what you hit (and what stops you) - the collider wraps the trunk you see
+                var cap = trunk.GetComponent<CapsuleCollider>();
+                var model = tr.GetComponentInChildren<PsxArt.Trunk>();
+                if (PsxArt.On && cap != null && model != null && model.Model != null)
+                {
+                    var ts = trunk.transform.localScale;
+                    var mid = trunk.transform.InverseTransformPoint(model.transform.TransformPoint(model.Model.TrunkCenter));
+                    cap.radius = Mathf.Clamp(pr, 0.15f, 1.5f) / Mathf.Max(0.01f, ts.x);
+                    cap.center = new Vector3(mid.x, 0f, mid.z);
+                }
                 return trunk;
             }
             for (int k = 0; k < 3; k++)

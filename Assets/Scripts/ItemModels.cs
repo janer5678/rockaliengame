@@ -433,6 +433,9 @@ namespace RockGame
                     break;
                 }
             }
+            // PSX graphics: the PSX model takes the place of this one (same size, same grip)
+            var psx = PsxModels.ItemKey(item);
+            if (psx != null) PsxModels.Replace(t, psx, PsxModels.Fit.Uniform, PsxModels.ItemEuler(item));
             return root;
         }
 
