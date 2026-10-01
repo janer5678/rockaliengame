@@ -63,7 +63,7 @@ namespace RockGame
         public float EyeHeight => (Crouch.Value ? Cfg.CrouchEyeHeight : Cfg.EyeHeight) * Scale;
         public bool TreeCamo => HeldItem == Item.TreeCamo && !Dead.Value && !CarryingBall && !Riding;
         public Vector3 EyePos => transform.position + Vector3.up * EyeHeight;
-        public bool IsHeadshot(Vector3 point) => point.y > transform.position.y + (Crouch.Value ? 0.88f : 1.24f);
+        public bool IsHeadshot(Vector3 point) => point.y > transform.position.y + (Crouch.Value ? 1.09f : 1.45f); // above the alien's neck
         double Now => NetworkManager != null ? NetworkManager.ServerTime.Time : 0;
         public bool Invisible => InvisUntil.Value > Now;
         /// <summary>Invisible and not currently attacking: other players can't see you.</summary>
@@ -176,29 +176,50 @@ namespace RockGame
             return true;
         }
 
-        void SkinAlien(GameObject model)
+        void SkinAlien(GameObject model) => SkinAlien(model, m_TeamMats);
+
+        /// <summary>
+        /// URP materials for the alien model. The rigged alien (PS1 grey alien, materials "Alien2" / "Alien2_Head") is
+        /// tinted all over in the team colour (head a bit lighter, see TeamTint); the old fallback model only on its body.
+        /// </summary>
+        public static void SkinAlien(GameObject model, List<Material> teamMats)
         {
             var bodyTex = Resources.Load<Texture2D>("Alien/Alien_Body");
             var headTex = Resources.Load<Texture2D>("Alien/Alien_Head");
+            var alien2Tex = Resources.Load<Texture2D>("Alien/Alien2");
             foreach (var r in model.GetComponentsInChildren<Renderer>())
             {
                 var mats = r.sharedMaterials;
                 for (int i = 0; i < mats.Length; i++)
                 {
-                    bool head = mats[i] != null && mats[i].name.Contains("Head");
-                    var m = new Material(Art.Mat(Color.white));
-                    var tex = head ? headTex : bodyTex;
+                    string n = mats[i] != null ? mats[i].name : "";
+                    bool alien2 = n.Contains("Alien2"), head = n.Contains("Head");
+                    var m = new Material(Art.Mat(Color.white)) { name = n };
+                    var tex = alien2 ? alien2Tex : head ? headTex : bodyTex;
                     if (tex != null)
                     {
                         tex.filterMode = FilterMode.Point;
                         m.SetTexture("_BaseMap", tex);
                         m.mainTexture = tex;
                     }
-                    if (!head) m_TeamMats.Add(m);
+                    if (alien2) m.SetFloat("_Smoothness", 0f);
+                    if (alien2 || !head) teamMats.Add(m);
                     mats[i] = m;
                 }
                 r.sharedMaterials = mats;
             }
+        }
+
+        /// <summary>Material colour for a team-tinted alien material (the grey texture times a bright team colour).</summary>
+        public static Color TeamTint(Material m, int team)
+        {
+            var c = Cfg.TeamColor[Mathf.Clamp(team, 0, 3)];
+            if (!m.name.Contains("Alien2")) return Color.Lerp(Color.white, c, 0.6f);
+            // the PS1 alien's texture is a mid grey: push the colour above 1 so the body comes out a clear team colour
+            // with the texture's shading kept; the head stays closer to alien grey so the face still reads
+            var t = m.name.Contains("Head") ? Color.Lerp(Color.white, c, 0.55f) * 1.35f : c * 1.6f;
+            t.a = 1f;
+            return t;
         }
 
         void BuildBlockBody()
@@ -214,15 +235,15 @@ namespace RockGame
         {
             var c = Cfg.TeamColor[Mathf.Clamp(Team.Value, 0, 3)];
             foreach (var r in m_TeamRenderers) r.sharedMaterial = Art.Mat(c);
-            var tint = Color.Lerp(Color.white, c, 0.6f);
             foreach (var m in m_TeamMats)
             {
+                var tint = TeamTint(m, Team.Value);
                 m.SetColor("_BaseColor", tint);
                 m.color = tint;
             }
         }
 
-        static readonly Vector3[] k_StuckPos = { new Vector3(0.1f, 1.15f, 0.05f), new Vector3(-0.15f, 0.9f, 0.05f), new Vector3(0.05f, 1.35f, -0.05f), new Vector3(-0.05f, 0.7f, 0f) };
+        static readonly Vector3[] k_StuckPos = { new Vector3(0.1f, 1.15f, 0.05f), new Vector3(-0.15f, 0.9f, 0.05f), new Vector3(0.05f, 1.35f, -0.05f), new Vector3(-0.14f, 0.78f, 0f) };
         static readonly Vector3[] k_StuckDir = { new Vector3(0.1f, -0.3f, -1f), new Vector3(-0.3f, -0.1f, -1f), new Vector3(0.2f, -0.5f, 1f), new Vector3(-0.1f, 0.2f, -1f) };
 
         void RebuildStuckSpears()
@@ -249,15 +270,24 @@ namespace RockGame
             if (HelmetHp.Value == 0) return;
             var head = m_Anim != null && m_Anim.HeadBone != null ? m_Anim.HeadBone : m_Head;
             m_Helmet = ItemModels.Create(Item.Helmet, head);
-            if (m_Anim != null && m_Anim.HeadBone != null)
-            {
-                // sit it on the alien's big head, upright in character space
-                m_Helmet.transform.position = head.position + m_VisualRoot.up * 0.14f + m_VisualRoot.forward * 0.02f;
-                m_Helmet.transform.rotation = m_VisualRoot.rotation;
-                m_Helmet.transform.localScale = Vector3.one * (1.3f / Mathf.Max(0.01f, head.lossyScale.y));
-            }
+            if (m_Anim != null && m_Anim.HeadBone != null) FitHelmet(m_Helmet, head, m_VisualRoot);
             else m_Helmet.transform.localPosition = new Vector3(0, 0.1f, 0);
             if (IsOwner) Art.SetLayerShadowsOnly(m_Helmet);
+        }
+
+        /// <summary>Sits a helmet (child of the Head bone, which is at the jaw) over the alien's head, upright in character space.</summary>
+        public static void FitHelmet(GameObject helmet, Transform head, Transform root)
+        {
+            var t = helmet.transform;
+            t.rotation = Quaternion.identity;
+            t.localScale = Vector3.one;
+            // sized from what it really measures on the (scaled) skeleton: a bit bigger than the head
+            var b = new Bounds(t.position, Vector3.zero);
+            foreach (var r in helmet.GetComponentsInChildren<Renderer>()) b.Encapsulate(r.bounds);
+            float w = (b.size.x + b.size.z) * 0.5f;
+            if (w > 1e-4f) t.localScale = Vector3.one * (0.4f / w);
+            t.rotation = root.rotation;
+            t.position = head.position + root.up * 0.09f + root.forward * 0.02f;
         }
 
         void RebuildArmor()
@@ -267,7 +297,7 @@ namespace RockGame
             var chest = m_Anim != null && m_Anim.ChestBone != null ? m_Anim.ChestBone : m_VisualRoot;
             m_Armor = new GameObject("armour");
             m_Armor.transform.SetParent(chest, false);
-            m_Armor.transform.SetPositionAndRotation(m_Anim != null && m_Anim.ChestBone != null ? chest.position : m_VisualRoot.position + Vector3.up * 1.1f, m_VisualRoot.rotation);
+            m_Armor.transform.SetPositionAndRotation(m_Anim != null && m_Anim.ChestBone != null ? chest.position + m_VisualRoot.up * 0.07f : m_VisualRoot.position + Vector3.up * 1.1f, m_VisualRoot.rotation);
             m_Armor.transform.localScale = Vector3.one / Mathf.Max(0.01f, chest.lossyScale.y);
             var t = m_Armor.transform;
             float w = 0.34f * Cfg.ModelWidth;

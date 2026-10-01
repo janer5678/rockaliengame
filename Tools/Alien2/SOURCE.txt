@@ -1,0 +1,7 @@
+PS1 Low Poly Grey Alien
+Supplied by the user as ps1low-poly-grey-alien.zip (Sketchfab-style download: source/Alien2.zip + textures/).
+The archive contains no licence or author file; original files: Alien2.obj, Alien2.mtl, Alientexturedtry2.png
+(exported from Blender 4.0.2).
+
+Used for the player model: Tools/rig_alien2.py rigs it and writes Assets/Game/Resources/Alien/AlienRigged.fbx
+and Assets/Game/Resources/Alien/Alien2.png (an unchanged copy of Alientexturedtry2.png).
