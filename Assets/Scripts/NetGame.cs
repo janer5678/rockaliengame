@@ -120,7 +120,7 @@ namespace RockGame
             {
                 case GameState.PreBall: if (Cfg.FunRules) break; Hud.Banner("GATHER & BUILD", $"A glass wall splits the map for {Clock(Bootstrap.Fast ? Cfg.FastBallDropDelay : Cfg.BallDropDelay)}. " + (Cfg.Builder ? "BUILDER: build and craft anywhere (TAB)." : "Craft anywhere inside your base (TAB).")); break;
                 case GameState.BallLive: Hud.Banner("THE WALL IS DOWN", Cfg.Builder ? "Grab the ball and plant it anywhere (E) - whoever's ball it is when time runs out wins!" : "Grab the ball from the middle and put it in YOUR machine's socket!"); break;
-                case GameState.SuddenDeath: Hud.Banner("SUDDEN DEATH", "Welcome to the stadium. Rocks only. First kill wins."); break;
+                case GameState.SuddenDeath: Hud.Banner("SUDDEN DEATH", "Welcome to space. Rocks only. First kill wins - and don't fall off!"); break;
             }
         }
 
@@ -150,6 +150,7 @@ namespace RockGame
             ServerTickAirstrikes(now);
             ServerTickBushes(now);
             ServerTickModes(now);
+            SpaceArena.ServerTick(this); // sudden death: falling off the platform into space
             ThemeMaps.ServerTick(); // THEME MAPS
             int players = PlayerNet.All.Count;
             bool fast = Bootstrap.Fast;

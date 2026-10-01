@@ -83,6 +83,7 @@ namespace RockGame
             Log($"local player spawned: team={Cfg.TeamName[me.Team.Value]} host={nm.IsHost} mode={Cfg.ModeLabel} nodes={FindObjectsByType<ResourceNode>(FindObjectsSortMode.None).Length}");
             if (NetGame.Instance.S == GameState.Waiting)
                 Check(Vector3.Distance(me.transform.position, Cfg.ArenaCenter) < 30f && me.HeldItem == Item.Rock, "waiting for players in the stadium with a rock");
+            if (m_Mode == "arena") { yield return ArenaRoutine(me, pc); yield break; }
             while (NetGame.Instance.S == GameState.Waiting) yield return null;
             yield return new WaitForSeconds(0.8f);
             if (m_Mode == "teams") { yield return TeamsRoutine(me); yield break; }
