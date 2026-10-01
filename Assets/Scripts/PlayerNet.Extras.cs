@@ -14,6 +14,7 @@ namespace RockGame
     public partial class PlayerNet
     {
         bool m_God;
+        float m_XbowReadyAt;
         int m_PendingForts;
 
         // ---------------- crossbow ----------------
@@ -22,22 +23,24 @@ namespace RockGame
         [Rpc(SendTo.Server)]
         public void FireCrossbowRpc(Vector3 origin, Vector3 velocity)
         {
-            if (Dead.Value || CarryingBall || InSuddenDeath || HeldItem != Item.Crossbow || Time.time < m_NextShot) return;
+            if (Dead.Value || CarryingBall || InSuddenDeath || HeldItem != Item.Crossbow || Time.time < m_NextShot || Time.time < m_XbowReadyAt) return;
             var st = HeldStack;
             if (st.Data == 0) return;
             Inv[HeldSlot.Value] = ItemStack.Of(Item.Crossbow, 1, 0);
             m_NextShot = Time.time + 0.3f;
+            // every crossbow you have waits for the reload (no firing two loaded crossbows back to back)
+            m_XbowReadyAt = Time.time + Cfg.CrossbowReload * 0.8f;
             Reveal();
             m_PendingArrows.Enqueue(Cfg.CrossbowDamage);
             while (m_PendingArrows.Count > 6) m_PendingArrows.Dequeue();
-            ArrowVisualRpc(origin, velocity);
+            ArrowVisualRpc(origin, velocity, true);
         }
 
         /// <summary>Loading a bolt uses up one arrow.</summary>
         [Rpc(SendTo.Server)]
         public void ReloadCrossbowRpc()
         {
-            if (Dead.Value || HeldItem != Item.Crossbow || HeldStack.Data != 0) return;
+            if (Dead.Value || HeldItem != Item.Crossbow || HeldStack.Data != 0 || Time.time < m_XbowReadyAt) return;
             if (!InvOps.Remove(Inv, Item.Arrow, 1)) return;
             Inv[HeldSlot.Value] = ItemStack.Of(Item.Crossbow, 1, 1);
             SpentRpc((byte)Item.Arrow, 1);

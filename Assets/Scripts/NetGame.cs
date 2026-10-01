@@ -48,7 +48,7 @@ namespace RockGame
         /// <summary>When the next scheduled airdrop lands (server time), announced 20 s ahead; -1 when none is coming.</summary>
         public readonly NetworkVariable<double> NextDropLands = new NetworkVariable<double>(-1);
         /// <summary>Seconds of warning before an airdrop lands.</summary>
-        public const float DropWarning = 20f;
+        public const float DropWarning = 10f;
         int m_DropsWarned;
 
         int m_NextItemId = 1;
@@ -72,6 +72,7 @@ namespace RockGame
                 Cfg.ApplyHost(Tunables.Value.ToString());
                 // build the host's map (same map + seed = same terrain and UFO spots)
                 Cfg.SetMap(MapKey.Value, MapSeed.Value);
+                GameSettings.ApplyHostGraphics(Cfg.HostGraphics); // the host picks the graphics for everyone
                 if (!MapBuilder.IsBuilt(MapKey.Value, MapSeed.Value)) MapBuilder.Build();
             }
             if (IsServer)
@@ -274,15 +275,16 @@ namespace RockGame
         // ------------------------------------------------------------------ items in the world
 
         /// <summary>Server: put an item in the world. `stick` keeps it where it is (a spear in a wall); otherwise it lands on the ground below.</summary>
-        public void ServerDropItem(ItemStack stack, Vector3 at, Vector3 dir, Vector3 from, bool stick = false)
+        public int ServerDropItem(ItemStack stack, Vector3 at, Vector3 dir, Vector3 from, bool stick = false)
         {
-            if (stack.Empty || stack.Id == Item.Rock) return;
+            if (stack.Empty || stack.Id == Item.Rock) return -1;
             if (dir.sqrMagnitude < 0.01f) dir = Vector3.forward;
             var pos = stick ? at : Ground(at);
             if (!stick && (stack.Id == Item.Spear || stack.Id == Item.Arrow)) dir = Flat(dir);
             int id = m_NextItemId++;
             m_ItemBorn[id] = NetworkManager.ServerTime.Time;
             Items.Add(new DroppedItem { Id = id, Stack = stack, Pos = pos, Dir = dir.normalized, From = from });
+            return id;
         }
 
         /// <summary>Server: spill a pile of items around a point (death, broken chest).</summary>
@@ -592,7 +594,7 @@ namespace RockGame
             int n = Mathf.Clamp(Cfg.AirdropCount, 0, 20);
             if (m_BallStart < 0 || m_DropsDone >= n) return;
             double launch = m_BallStart + (m_DropsDone + 1) * (double)BallPhase / (n + 1);
-            // 20 seconds before it lands: AIRDROP DROPPING IN 20 SECONDS (and a countdown on everyone's screen)
+            // 10 seconds before it lands: AIRDROP DROPPING IN 10 SECONDS (and a countdown on everyone's screen)
             if (m_DropsWarned <= m_DropsDone && now >= launch + DropLand - DropWarning)
             {
                 m_DropsWarned = m_DropsDone + 1;

@@ -13,22 +13,70 @@ namespace RockGame
         public readonly NetworkVariable<double> NextFunItem = new NetworkVariable<double>(-1);
 
 
-        /// <summary>Fortify: every grid piece the team has placed (wood or stone) turns to metal at full health. Returns how many.</summary>
+        /// <summary>How many times each team has bought Fortify All Walls (2 bits a team: 0 never, 1 stone, 2 metal, 3 refined).</summary>
+        public readonly NetworkVariable<int> FortifyLevels = new NetworkVariable<int>();
+        public int FortifyLevelOf(int team) => (FortifyLevels.Value >> (team * 2)) & 3;
+
+        /// <summary>
+        /// Fortify: each buy takes the team a step further - every grid piece they've placed goes up to stone, then metal,
+        /// then refined (at full health). Returns how many pieces changed.
+        /// </summary>
         public int ServerFortify(int team)
         {
+            int tier = Mathf.Min(Cfg.MaxFortify, FortifyLevelOf(team) + 1);
+            FortifyLevels.Value = (FortifyLevels.Value & ~(3 << (team * 2))) | (tier << (team * 2));
             int n = 0;
             foreach (var s in Structure.All)
             {
-                if (s == null || !s.IsSpawned || s.Team.Value != team || s.Tier.Value >= 2 || !s.Upgradable) continue;
-                s.ServerUpgrade(2);
+                if (s == null || !s.IsSpawned || s.Team.Value != team || s.Tier.Value >= tier || !s.Upgradable) continue;
+                s.ServerUpgrade(tier);
                 n++;
             }
             return n;
         }
 
+        // ---------------- Auto Wood: a pile of wood grows at every base ----------------
+
+        readonly int[] m_WoodPile = { -1, -1, -1, -1 };
+        double m_NextWoodTick = -1;
+
+        /// <summary>Where a team's wood pile is: on the bedrock, beside the machine.</summary>
+        static Vector3 WoodPilePos(int team) => Cfg.BaseCenter[team] + Vector3.Cross(Vector3.up, Cfg.BackDir(team)) * 2.2f + Cfg.BackDir(team) * 0.8f + Vector3.up * (Cfg.BaseY + 0.3f);
+
+        void ServerTickAutoWood(double now, bool playing)
+        {
+            if (!Cfg.AutoWood || !playing) { m_NextWoodTick = -1; return; }
+            if (m_NextWoodTick < 0) m_NextWoodTick = now + 1.0;
+            if (now < m_NextWoodTick) return;
+            m_NextWoodTick += 1.0;
+            int add = Mathf.Max(0, Cfg.AutoWoodPerSecond);
+            if (add == 0) return;
+            for (int t = 0; t < Cfg.TeamCount; t++)
+            {
+                // top up this base's pile (it stacks), or start a new one if it was picked up or is full
+                int idx = -1;
+                for (int i = 0; i < Items.Count; i++) if (Items[i].Id == m_WoodPile[t]) { idx = i; break; }
+                if (idx >= 0 && Items[idx].Stack.Count + add <= Cfg.MaxStack(Item.Wood))
+                {
+                    var it = Items[idx];
+                    it.Stack = it.Stack.WithCount(it.Stack.Count + add);
+                    it.From = it.Pos; // no toss animation: it just grows
+                    Items[idx] = it;
+                    m_ItemBorn[it.Id] = now; // a growing pile never despawns
+                }
+                else
+                {
+                    var at = WoodPilePos(t);
+                    if (idx >= 0) at += Vector3.Cross(Vector3.up, Cfg.BackDir(t)) * 0.7f; // that one's full: the next one goes beside it
+                    m_WoodPile[t] = ServerDropItem(ItemStack.Of(Item.Wood, add), at, -Cfg.BackDir(t), at);
+                }
+            }
+        }
+
         void ServerTickModes(double now)
         {
             bool playing = S == GameState.PreBall || S == GameState.BallLive;
+            ServerTickAutoWood(now, playing);
 
             // Fun / Fun Random: a free item every few seconds
             if (Cfg.FunRules && playing)

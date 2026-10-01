@@ -28,6 +28,7 @@ namespace RockGame
             if (secs > 0f && m_Queued.Count >= MaxCraftQueue) { Notify("Your crafting queue is full"); return; }
             if (r.Output == Item.Armor && ArmorHp.Value >= Cfg.ArmorHp) { Notify("You're already wearing full armour"); return; }
             if (r.Output == Item.HeavyArmor && ArmorHp.Value >= Cfg.HeavyArmorHp) { Notify("You're already wearing heavy armour"); return; }
+            if (r.Output == Item.FortifyBuff && Cfg.FortifyLevel(Team.Value) >= Cfg.MaxFortify) { Notify("Your walls are already refined - fully fortified"); return; }
             if (Count(Item.Wood) < r.Wood || Count(Item.Stone) < r.Stone) { Notify($"Not enough resources for {r.Name}"); return; }
             bool noItem = r.Output == Item.Armor || r.Output == Item.HeavyArmor || r.Output == Item.FortifyBuff;
             int data = r.Output == Item.Saddle ? Team.Value + 1 : Mathf.Clamp(Cfg.MaxData(r.Output), 0, 255);
@@ -94,7 +95,7 @@ namespace RockGame
                     if (g != null)
                     {
                         int n = g.ServerFortify(Team.Value);
-                        g.Broadcast($"{Cfg.TeamLabel(Team.Value)} fortified all their walls - {n} piece{(n == 1 ? "" : "s")} turned to METAL!");
+                        g.Broadcast($"{Cfg.TeamLabel(Team.Value)} fortified all their walls - {n} piece{(n == 1 ? "" : "s")} turned to {Cfg.TierName(g.FortifyLevelOf(Team.Value)).ToUpper()}!");
                     }
                     break;
                 default:
@@ -110,25 +111,37 @@ namespace RockGame
             Fx.Server(FxKind.Craft, Cfg.MachinePos(Team.Value), new Vector3(Team.Value, 0, 0));
         }
 
+        /// <summary>Pause menu: kill yourself (you drop everything, like any death, and respawn as normal).</summary>
+        [Rpc(SendTo.Server)]
+        public void SuicideRpc()
+        {
+            if (Dead.Value || !GameAllowsCombat) return;
+            ArmorHp.Value = 0;
+            ServerDie(null);
+            if (NetGame.Instance != null) NetGame.Instance.Broadcast($"{Cfg.TeamLabel(Team.Value)} took the easy way out");
+        }
+
         // ---------------- pistol ----------------
 
         float m_NextPistol;
 
-        /// <summary>Pistol: hitscan (the client says what its shot hit, like the sniper). 200 to the head, 95 to the body.</summary>
+        /// <summary>Pistol / revolver: hitscan (the client says what its shot hit, like the sniper), each with its own head / body damage.</summary>
         [Rpc(SendTo.Server)]
         public void FirePistolRpc(bool hasTarget, NetworkObjectReference target, Vector3 point, Vector3 dir)
         {
-            if (Dead.Value || CarryingBall || InSuddenDeath || HeldItem != Item.Pistol || Time.time < m_NextPistol) return;
+            var gun = HeldItem;
+            if (Dead.Value || CarryingBall || InSuddenDeath || !Cfg.IsGun(gun) || Time.time < m_NextPistol) return;
             var st = HeldStack;
             if (st.Data <= 0) return;
-            Inv[HeldSlot.Value] = ItemStack.Of(Item.Pistol, 1, st.Data - 1);
-            m_NextPistol = Time.time + Cfg.PistolFireRate * 0.8f;
+            Inv[HeldSlot.Value] = ItemStack.Of(gun, 1, st.Data - 1);
+            m_NextPistol = Time.time + Cfg.GunFireRate(gun) * 0.8f;
             Reveal();
             if (Vector3.Distance(point, EyePos) > 250f) point = EyePos + dir.normalized * 100f;
             Fx.Server(FxKind.SniperTracer, EyePos + dir.normalized * 0.5f - Vector3.up * 0.15f, point);
             if (!hasTarget || !target.TryGet(out var no) || !GameAllowsCombat) return;
             if (no.TryGetComponent(out PlayerNet p) && p != this && !p.Dead.Value)
             {
+                if (GlassBetween(transform.position, p.transform.position)) return;
                 bool head = p.IsHeadshot(point);
                 if (head && p.HelmetHp.Value > 0)
                 {
@@ -138,28 +151,99 @@ namespace RockGame
                     Notify("Their helmet stopped your headshot!");
                     return;
                 }
-                p.ServerDamage(head ? Cfg.PistolHeadDamage : Cfg.PistolBodyDamage, this);
+                p.ServerDamage(head ? Cfg.GunHead(gun) : Cfg.GunBody(gun), this);
                 Fx.Server(head ? FxKind.BloodHead : FxKind.Blood, point, dir, OwnerClientId);
                 if (p.Dead.Value) KillConfirmRpc();
             }
-            else if (no.TryGetComponent(out Vehicle v)) v.ServerDamage(Cfg.PistolBodyDamage, this);
+            else if (no.TryGetComponent(out Vehicle v)) v.ServerDamage(Cfg.GunBody(gun), this);
             else if (no.TryGetComponent(out Structure s) && s.Team.Value != Team.Value && s.Tier.Value == 0) s.ServerDamage(10f);
         }
 
-        /// <summary>Fills the magazine from your pistol ammo.</summary>
+        /// <summary>Fills the pistol's / revolver's magazine from its ammo.</summary>
         [Rpc(SendTo.Server)]
         public void ReloadPistolRpc()
         {
-            if (Dead.Value || HeldItem != Item.Pistol) return;
+            var gun = HeldItem;
+            if (Dead.Value || !Cfg.IsGun(gun)) return;
             var st = HeldStack;
-            int want = Cfg.PistolMag - st.Data;
+            int want = Cfg.GunMag(gun) - st.Data;
             if (want <= 0) return;
-            int have = Count(Item.PistolAmmo);
-            int take = Mathf.Min(want, have);
-            if (take <= 0) { Notify("The pistol is out of shots"); return; }
-            InvOps.Remove(Inv, Item.PistolAmmo, take);
-            Inv[HeldSlot.Value] = ItemStack.Of(Item.Pistol, 1, st.Data + take);
-            SpentRpc((byte)Item.PistolAmmo, take);
+            var ammo = Cfg.GunAmmo(gun);
+            int take = Mathf.Min(want, Count(ammo));
+            if (take <= 0) { Notify($"The {Cfg.ItemName(gun).ToLower()} is out of ammo"); return; }
+            InvOps.Remove(Inv, ammo, take);
+            Inv[HeldSlot.Value] = ItemStack.Of(gun, 1, st.Data + take);
+            SpentRpc((byte)ammo, take);
+        }
+
+        // ---------------- waterpipe shotgun ----------------
+
+        float m_NextShotgunShot, m_ShotgunShotAt = -10f;
+        int m_ShotgunPelletsLeft;
+        Vector3 m_ShotgunFrom;
+
+        /// <summary>Fires the loaded shell. The shooter then reports which players its pellets hit (ShotgunHitRpc).</summary>
+        [Rpc(SendTo.Server)]
+        public void FireShotgunRpc(Vector3 dir)
+        {
+            if (Dead.Value || CarryingBall || InSuddenDeath || HeldItem != Item.Shotgun || Time.time < m_NextShotgunShot) return;
+            var st = HeldStack;
+            if (st.Data == 0) return;
+            Inv[HeldSlot.Value] = ItemStack.Of(Item.Shotgun, 1, 0);
+            m_NextShotgunShot = Time.time + 0.3f;
+            m_ShotgunShotAt = Time.time;
+            m_ShotgunPelletsLeft = Mathf.Clamp(Cfg.ShotgunPellets, 1, 30);
+            m_ShotgunFrom = EyePos;
+            Reveal();
+            Fx.Server(FxKind.SniperTracer, EyePos + dir.normalized * 0.5f - Vector3.up * 0.15f, EyePos + dir.normalized * Mathf.Min(Cfg.ShotgunRange, 30f));
+        }
+
+        /// <summary>Pellets from the last shot that hit a player: the server works out the damage from how far away they were.</summary>
+        [Rpc(SendTo.Server)]
+        public void ShotgunHitRpc(NetworkObjectReference target, Vector3 point, byte body, byte head)
+        {
+            if (Dead.Value || Time.time - m_ShotgunShotAt > 1f || !GameAllowsCombat) return;
+            int n = Mathf.Min(body + head, m_ShotgunPelletsLeft);
+            if (n <= 0) return;
+            m_ShotgunPelletsLeft -= n;
+            head = (byte)Mathf.Min(head, n);
+            body = (byte)(n - head);
+            if (!target.TryGet(out var no)) return;
+            if (no.TryGetComponent(out PlayerNet p) && p != this && !p.Dead.Value)
+            {
+                if (GlassBetween(transform.position, p.transform.position)) return;
+                float dist = Vector3.Distance(m_ShotgunFrom, p.transform.position + Vector3.up * 1.1f);
+                if (dist > Cfg.ShotgunRange + 2f) return;
+                float per = Cfg.ShotgunPelletDamage * Cfg.ShotgunFalloff(Mathf.Max(0f, dist - 0.4f));
+                float dmg = per * body;
+                if (head > 0)
+                {
+                    if (p.HelmetHp.Value > 0)
+                    {
+                        // the helmet takes the head pellets and breaks
+                        p.HelmetHp.Value = 0;
+                        Fx.Server(FxKind.HelmetBreak, p.EyePos, Vector3.up);
+                        p.Notify("Your helmet stopped a headshot and broke!");
+                        Notify("Their helmet stopped your headshot!");
+                    }
+                    else dmg += per * Cfg.ShotgunHeadMul * head;
+                }
+                if (dmg <= 0f) return;
+                p.ServerDamage(dmg, this);
+                Fx.Server(head > 0 ? FxKind.BloodHead : FxKind.Blood, point, (point - m_ShotgunFrom).normalized, OwnerClientId);
+                if (p.Dead.Value) KillConfirmRpc();
+            }
+            else if (no.TryGetComponent(out Vehicle v)) v.ServerDamage(Cfg.ShotgunPelletDamage * n * Cfg.ShotgunFalloff(Vector3.Distance(m_ShotgunFrom, v.transform.position)), this);
+        }
+
+        /// <summary>Loads one shell.</summary>
+        [Rpc(SendTo.Server)]
+        public void ReloadShotgunRpc()
+        {
+            if (Dead.Value || HeldItem != Item.Shotgun || HeldStack.Data != 0) return;
+            if (!InvOps.Remove(Inv, Item.ShotgunShell, 1)) return;
+            Inv[HeldSlot.Value] = ItemStack.Of(Item.Shotgun, 1, 1);
+            SpentRpc((byte)Item.ShotgunShell, 1);
         }
 
         // ---------------- ender pearl ----------------

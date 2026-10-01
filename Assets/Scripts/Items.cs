@@ -140,6 +140,57 @@ namespace RockGame
             return true;
         }
 
+        /// <summary>Chest sorting: resources, then ammo, weapons, tools, things you place, armour, food, then everything else.</summary>
+        static int SortGroup(Item i)
+        {
+            switch (i)
+            {
+                case Item.Wood: case Item.Stone: return 0;
+                case Item.Arrow: case Item.ShotgunShell: case Item.RevolverAmmo: case Item.PistolAmmo: return 1;
+                case Item.Sword: case Item.Spear: case Item.Bow: case Item.Crossbow: case Item.Shotgun: case Item.Revolver: case Item.Pistol:
+                case Item.Sniper: case Item.RocketLauncher: case Item.DeathWand: case Item.C4: case Item.PortalGun: return 2;
+                case Item.Hatchet: case Item.Pickaxe: case Item.Chainsaw: case Item.TreeCracker: case Item.Ram: case Item.BuildingPlan: return 3;
+                case Item.Chest: case Item.Barrier: case Item.Saddle: case Item.Boat: case Item.FortTower: case Item.Car: return 4;
+                case Item.Helmet: case Item.Armor: case Item.HeavyArmor: return 5;
+                case Item.Berry: case Item.Meat: return 6;
+                default: return 7;
+            }
+        }
+
+        /// <summary>Tidies a chest: tops up stacks of the same thing and puts everything in a sensible order from the first slot.</summary>
+        public static void Sort(NetworkList<ItemStack> list)
+        {
+            var items = new System.Collections.Generic.List<ItemStack>();
+            for (int i = 0; i < list.Count; i++)
+            {
+                var s = list[i];
+                if (s.Empty) continue;
+                int max = Cfg.MaxStack(s.Id);
+                // merge into a stack of the same thing that has room
+                for (int k = 0; k < items.Count && s.Count > 0; k++)
+                {
+                    var t = items[k];
+                    if (t.Id != s.Id || t.Data != s.Data || t.Count >= max) continue;
+                    int put = Mathf.Min(s.Count, max - t.Count);
+                    items[k] = t.WithCount(t.Count + put);
+                    s = s.WithCount(s.Count - put);
+                }
+                if (!s.Empty) items.Add(s);
+            }
+            items.Sort((a, b) =>
+            {
+                int g = SortGroup(a.Id).CompareTo(SortGroup(b.Id));
+                if (g != 0) return g;
+                int id = ((int)a.Id).CompareTo((int)b.Id);
+                return id != 0 ? id : b.Count.CompareTo(a.Count);
+            });
+            for (int i = 0; i < list.Count; i++)
+            {
+                var want = i < items.Count ? items[i] : default;
+                if (!list[i].Equals(want)) list[i] = want;
+            }
+        }
+
         /// <summary>Shift-click: move a whole stack into the other container wherever it fits.</summary>
         public static bool QuickMove(NetworkList<ItemStack> src, int si, NetworkList<ItemStack> dst, bool dstIsPlayer)
         {

@@ -21,6 +21,55 @@ namespace RockGame
             public float Height, Bottom;       // model space
             public float TrunkRadius;          // model space, at weak-spot height
             public Color Bark, Leaf;
+            /// <summary>The trunk's triangles (model space, three points each) and its middle around weak-spot height.</summary>
+            public readonly List<Vector3> TrunkTris = new List<Vector3>();
+            public Vector3 TrunkCenter;
+        }
+
+        /// <summary>
+        /// On a placed PSX tree: lets the weak spot X sit exactly on the trunk you see (a ray against the trunk's own
+        /// triangles), instead of on the plain cylinder the game uses for hits.
+        /// </summary>
+        public class Trunk : MonoBehaviour
+        {
+            public TreeModel Model;
+
+            /// <summary>Where a ray from outside, aimed at the trunk's middle at `worldY` from direction `worldDir`, meets the trunk.</summary>
+            public bool Hit(float worldY, Vector3 worldDir, out Vector3 pos, out Vector3 normal)
+            {
+                pos = normal = default;
+                if (Model == null || Model.TrunkTris.Count < 3) return false;
+                var c = transform.TransformPoint(Model.TrunkCenter);
+                c.y = worldY;
+                var o = transform.InverseTransformPoint(c + worldDir.normalized * 4f);
+                var d = transform.InverseTransformDirection(-worldDir.normalized);
+                var tris = Model.TrunkTris;
+                float best = float.MaxValue;
+                Vector3 bn = default;
+                for (int i = 0; i + 2 < tris.Count; i += 3)
+                {
+                    Vector3 a = tris[i], e1 = tris[i + 1] - a, e2 = tris[i + 2] - a;
+                    var pv = Vector3.Cross(d, e2);
+                    float det = Vector3.Dot(e1, pv);
+                    if (Mathf.Abs(det) < 1e-9f) continue;
+                    float inv = 1f / det;
+                    var tv = o - a;
+                    float u = Vector3.Dot(tv, pv) * inv;
+                    if (u < 0f || u > 1f) continue;
+                    var qv = Vector3.Cross(tv, e1);
+                    float v = Vector3.Dot(d, qv) * inv;
+                    if (v < 0f || u + v > 1f) continue;
+                    float t = Vector3.Dot(e2, qv) * inv;
+                    if (t <= 0f || t >= best) continue;
+                    best = t;
+                    bn = Vector3.Cross(e1, e2);
+                }
+                if (best == float.MaxValue) return false;
+                pos = transform.TransformPoint(o + d * best);
+                normal = transform.TransformDirection(bn).normalized;
+                if (Vector3.Dot(normal, worldDir) < 0f) normal = -normal; // facing back out along the ray
+                return true;
+            }
         }
 
         static List<TreeModel> s_Trees;
@@ -71,6 +120,7 @@ namespace RockGame
             var verts = new List<Vector3>();
             var uvs = new List<Vector2>();
             var all = new List<(Vector3 p, Vector2 uv)>();
+            var tri = new List<int>();
             foreach (var mf in t.Prefab.GetComponentsInChildren<MeshFilter>())
             {
                 var mesh = mf.sharedMesh;
@@ -78,24 +128,41 @@ namespace RockGame
                 mesh.GetVertices(verts);
                 mesh.GetUVs(0, uvs);
                 var toRoot = t.Prefab.transform.worldToLocalMatrix * mf.transform.localToWorldMatrix;
+                var pts = new Vector3[verts.Count];
                 for (int i = 0; i < verts.Count; i++)
                 {
                     var p = toRoot.MultiplyPoint3x4(verts[i]);
+                    pts[i] = p;
                     minY = Mathf.Min(minY, p.y);
                     maxY = Mathf.Max(maxY, p.y);
                     all.Add((p, i < uvs.Count ? uvs[i] : Vector2.one));
+                }
+                // the trunk's triangles: the ones textured from the trunk strip (the left of the texture)
+                for (int sm = 0; sm < mesh.subMeshCount; sm++)
+                {
+                    mesh.GetTriangles(tri, sm);
+                    for (int i = 0; i + 2 < tri.Count; i += 3)
+                    {
+                        int a = tri[i], b = tri[i + 1], c = tri[i + 2];
+                        if (a >= uvs.Count || b >= uvs.Count || c >= uvs.Count) continue;
+                        if (uvs[a].x >= 0.22f || uvs[b].x >= 0.22f || uvs[c].x >= 0.22f) continue;
+                        t.TrunkTris.Add(pts[a]); t.TrunkTris.Add(pts[b]); t.TrunkTris.Add(pts[c]);
+                    }
                 }
             }
             if (all.Count == 0) { t.Height = 1f; t.TrunkRadius = 0.1f; t.Bark = Art.DarkWood; t.Leaf = Art.Leaves; return; }
             t.Bottom = minY;
             t.Height = Mathf.Max(0.1f, maxY - minY);
             float r = 0f;
+            Vector3 mid = Vector3.zero;
+            int nMid = 0;
             foreach (var (p, uv) in all)
             {
                 float h = (p.y - minY) / t.Height;
                 // the trunk strip is u 0.05-0.2; the foliage cards start at u 0.27
-                if (uv.x < 0.22f && h > 0.05f && h < 0.35f) r = Mathf.Max(r, new Vector2(p.x, p.z).magnitude);
+                if (uv.x < 0.22f && h > 0.05f && h < 0.35f) { r = Mathf.Max(r, new Vector2(p.x, p.z).magnitude); mid += p; nMid++; }
             }
+            t.TrunkCenter = nMid > 0 ? mid / nMid : Vector3.zero;
             t.TrunkRadius = r > 0f ? r : t.Height * 0.04f;
             if (System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-psxdebug") >= 0)
             {
@@ -136,6 +203,7 @@ namespace RockGame
         public static bool BuildTree(Transform parent, int seed, float height, out float trunkRadius, out Color bark, out Color leaf)
         {
             trunkRadius = 0f;
+            Trunk trunk = null;
             bark = Art.DarkWood;
             leaf = Art.Leaves;
             var trees = Trees;
@@ -156,6 +224,8 @@ namespace RockGame
                 r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
             }
             foreach (var c in go.GetComponentsInChildren<Collider>()) Object.Destroy(c);
+            trunk = go.AddComponent<Trunk>();
+            trunk.Model = t;
             trunkRadius = t.TrunkRadius * scale;
             bark = t.Bark;
             leaf = t.Leaf;

@@ -516,7 +516,7 @@ namespace RockGame
                 Carrying = CarryingBall,
                 Riding = Riding,
                 Holding = item != Item.None,
-                TwoHanded = item == Item.Rock || item == Item.Spear || item == Item.Ram || item == Item.Chainsaw || item == Item.Crossbow || item == Item.TreeCracker,
+                TwoHanded = item == Item.Rock || item == Item.Spear || item == Item.Ram || item == Item.Chainsaw || item == Item.Crossbow || item == Item.Shotgun || item == Item.TreeCracker,
                 Pitch = Pitch.Value,
                 Swing = m_Swing,
                 Action = (BodyAnimator.Act)Action.Value,
@@ -700,10 +700,15 @@ namespace RockGame
 
         // ---------------- combat ----------------
 
-        void ServerHitPlayer(PlayerNet p, float baseDamage, Vector3 point, Vector3 dir)
+        /// <summary>While the glass wall is up nobody can hurt anyone on the other side of it (hitboxes poke through the glass).</summary>
+        public static bool GlassBetween(Vector3 a, Vector3 b) => MapBuilder.GlassUp && Cfg.RegionOf(a) != Cfg.RegionOf(b);
+
+        /// <summary>headDamage: a weapon's own headshot number (sword, guns); otherwise a headshot does the usual x2.</summary>
+        void ServerHitPlayer(PlayerNet p, float baseDamage, Vector3 point, Vector3 dir, float headDamage = -1f)
         {
+            if (GlassBetween(transform.position, p.transform.position)) return;
             bool head = p.IsHeadshot(point);
-            float dmg = baseDamage * (head ? Cfg.HeadshotMul : 1f);
+            float dmg = head ? (headDamage >= 0f ? headDamage : baseDamage * Cfg.HeadshotMul) : baseDamage;
             if (head && p.HelmetHp.Value > 0)
             {
                 // the headshot helmet: it breaks on the first headshot, and that shot does no damage at all
@@ -739,7 +744,7 @@ namespace RockGame
             if (no.TryGetComponent(out PlayerNet p))
             {
                 if (p == this || p.Dead.Value || !GameAllowsCombat) return;
-                ServerHitPlayer(p, st.PlayerDamage, point, dir);
+                ServerHitPlayer(p, st.PlayerDamage, point, dir, item == Item.Sword ? Cfg.SwordHeadDamage : -1f);
             }
             else if (no.TryGetComponent(out Vehicle v))
             {
@@ -766,7 +771,7 @@ namespace RockGame
             else if (no.TryGetComponent(out Structure s))
             {
                 if (s.Team.Value == Team.Value || !GameAllowsCombat) return;
-                float dmg = st.StructureDamage * (s.Tier.Value >= 2 ? Cfg.MetalMeleeMul : s.Tier.Value == 1 ? Cfg.StoneStructureMeleeMul : 1f);
+                float dmg = st.StructureDamage * Cfg.TierMeleeMul(s.Tier.Value);
                 s.ServerDamage(dmg);
                 Fx.Server(FxKind.StructureHit, point, -dir, OwnerClientId);
             }
@@ -803,7 +808,7 @@ namespace RockGame
             float power = Mathf.Clamp01(velocity.magnitude / Cfg.ArrowSpeed);
             m_PendingArrows.Enqueue(Cfg.ArrowPlayerDamage * power);
             while (m_PendingArrows.Count > 6) m_PendingArrows.Dequeue();
-            ArrowVisualRpc(origin, velocity);
+            ArrowVisualRpc(origin, velocity, false);
         }
 
         [Rpc(SendTo.Server)]
@@ -984,7 +989,7 @@ namespace RockGame
             {
                 if (s.Team.Value == Team.Value) return;
                 bool hard = s.Tier.Value >= 1 && s.PType != PieceType.Barrier; // the high external wall always goes in one hit
-                msg = hard ? $"Smashed the {s.DisplayName} down to {(s.Tier.Value >= 2 ? "stone" : "wood")}" : $"Smashed the {s.DisplayName}!";
+                msg = hard ? $"Smashed the {s.DisplayName} down to {Cfg.TierName(s.Tier.Value - 1).ToLower()}" : $"Smashed the {s.DisplayName}!";
                 if (s.PType == PieceType.Barrier)
                 {
                     int chain = ServerRamBarrierChain(s, point);
@@ -1016,7 +1021,7 @@ namespace RockGame
             bool power = recipe >= Cfg.PowerBase;
             if (Dead.Value || recipe < 0 || (!power && recipe >= Cfg.RecipeCount) || (power && recipe - Cfg.PowerBase >= Cfg.PowerCount)) return;
             if (InSuddenDeath || (NetGame.Instance != null && NetGame.Instance.S == GameState.GameOver)) return;
-            var r = power ? Cfg.GetPowerRecipe(recipe - Cfg.PowerBase) : Cfg.GetRecipe(recipe);
+            var r = power ? Cfg.GetPowerRecipe(recipe - Cfg.PowerBase, Team.Value) : Cfg.GetRecipe(recipe);
             if (power || Cfg.Builder) { ServerCraftModes(r); return; }
             if (!Cfg.CanCraftAt(Team.Value, transform.position, r.Output)) { Notify($"{r.Name} can only be crafted inside your own base"); return; }
             if (r.Output == Item.Armor && ArmorHp.Value >= Cfg.ArmorHp) { Notify("You're already wearing full armour"); return; }
@@ -1103,7 +1108,7 @@ namespace RockGame
             if (Time.time < m_NextUpgrade) return;
             if (!target.TryGet(out var no) || !no.TryGetComponent(out Structure s)) return;
             if (s.Team.Value != Team.Value || !s.HasKey || !s.Upgradable) return;
-            if (s.Tier.Value >= 1) { Notify(s.Tier.Value >= 2 ? "Already metal" : "Already stone"); return; }
+            if (s.Tier.Value >= 1) { Notify($"Already {Cfg.TierName(s.Tier.Value).ToLower()}"); return; }
             if (Vector3.Distance(s.transform.position, transform.position) > Cfg.BuildRange + 4f) return;
             int cost = Cfg.PieceUpgradeStone(s.PType);
             if (!InvOps.Remove(Inv, Item.Stone, cost)) { Notify($"Need {cost} stone to upgrade"); return; }
@@ -1123,7 +1128,7 @@ namespace RockGame
                 if (s.Team.Value != Team.Value) { Notify("You can only demolish your own buildings"); return; }
                 int full = s.PType == PieceType.Barrier ? Cfg.BarrierWood : s.PType == PieceType.Tower ? Cfg.FortTowerWood : Cfg.PieceWood(s.PType);
                 int wood = Mathf.FloorToInt(full * Cfg.DemolishRefund);
-                int stone = s.Tier.Value == 1 ? Mathf.FloorToInt(Cfg.PieceUpgradeStone(s.PType) * Cfg.DemolishRefund) : 0;
+                int stone = s.Tier.Value >= 1 ? Mathf.FloorToInt(Cfg.PieceUpgradeStone(s.PType) * Cfg.DemolishRefund) : 0;
                 Fx.Server(FxKind.Break, s.transform.position + Vector3.up * 1.2f, Vector3.up);
                 s.NetworkObject.Despawn(true);
                 if (NetGame.Instance != null) NetGame.Instance.ServerCollapseCheck();
@@ -1151,6 +1156,23 @@ namespace RockGame
             if (kind != Item.Chest && Cfg.PointBlocked(pos)) return "Not on the bedrock";
             if (kind != Item.Chest && baseTeam >= 0 && baseTeam != team) return "Not in the enemy base";
             var rot = Quaternion.Euler(0, yaw, 0);
+            if (kind == Item.Barrier)
+            {
+                // the whole 4 m wall stays out of the enemy base (not just its middle)...
+                if (!Cfg.Builder)
+                    for (int e = -1; e <= 1; e += 2)
+                    {
+                        int bt = Cfg.BaseTeamAt(pos + rot * new Vector3(e * 2.1f, 0, 0));
+                        if (bt >= 0 && bt != team) return "Not in the enemy base";
+                    }
+                // ...and away from the enemy's buildings, in every mode (no walling them in on their own foundations)
+                foreach (var s in Structure.All)
+                {
+                    if (s == null || !s.IsSpawned || s.Team.Value == team || !Cfg.IsGridPiece(s.PType)) continue;
+                    var d = s.transform.position - pos;
+                    if (Mathf.Abs(d.y) < 8f && new Vector2(d.x, d.z).magnitude < 4.5f) return "Not on the enemy base";
+                }
+            }
             Vector3 c, half;
             if (kind == Item.Chest) { c = new Vector3(0, 0.36f, 0); half = new Vector3(0.5f, 0.3f, 0.27f); }
             else if (kind == Item.Car) { c = new Vector3(0, 0.8f, 0); half = new Vector3(0.8f, 0.55f, 1.3f); }
@@ -1238,7 +1260,8 @@ namespace RockGame
                 if (c == null) return;
                 var other = srcKind == 1 ? Inv : c.Slots;
                 if (other == c.Slots && c.TakeOnly) return;
-                InvOps.QuickMove(src, srcIdx, other, other == Inv);
+                // shift-clicked into a chest: it sorts itself as things go in
+                if (InvOps.QuickMove(src, srcIdx, other, other == Inv) && other == c.Slots && !c.IsAirdrop) InvOps.Sort(c.Slots);
                 return;
             }
             var dst = dstKind == 1 ? c.Slots : Inv;
@@ -1505,9 +1528,9 @@ namespace RockGame
         }
 
         [Rpc(SendTo.NotOwner)]
-        public void ArrowVisualRpc(Vector3 origin, Vector3 velocity)
+        public void ArrowVisualRpc(Vector3 origin, Vector3 velocity, bool bolt)
         {
-            ArrowProjectile.Spawn(origin, velocity, this, false);
+            ArrowProjectile.Spawn(origin, velocity, this, false, bolt ? Cfg.CrossbowDamage : -1f);
             Sfx.Play(Sfx.Twang, origin, 0.9f, 0.05f, 110f);
         }
 

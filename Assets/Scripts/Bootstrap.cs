@@ -113,7 +113,7 @@ namespace RockGame
                         if (i + 1 < args.Length)
                         {
                             string rs = args[i + 1].ToLowerInvariant();
-                            int rv = rs == "arsenal" ? 1 : rs == "builder" ? 2 : rs == "fun" ? 3 : rs == "funrandom" ? 4 : rs == "funrandomlimited" ? 5 : rs == "primitive" ? 6 : rs == "buildingprimitive" ? 7 : 0;
+                            int rv = rs == "arsenal" ? 1 : rs == "builder" ? 2 : rs == "fun" ? 3 : rs == "funrandom" ? 4 : rs == "funrandomlimited" ? 5 : rs == "primitive" ? 6 : rs == "buildingprimitive" ? 7 : rs == "autowood" ? 8 : 0;
                             MapChoice = (MapChoice & ~(Cfg.RulesMask << Cfg.RulesShift)) | (rv << Cfg.RulesShift);
                         }
                         break;
@@ -140,6 +140,8 @@ namespace RockGame
         public void Host()
         {
             Status = "";
+            // the host's graphics are everyone's graphics for the match
+            MapChoice = (MapChoice & ~(Cfg.GraphicsMask << Cfg.GraphicsShift)) | (GameSettings.GraphicsMode << Cfg.GraphicsShift);
             Cfg.SetMap(MapChoice, s_SeedOverride >= 0 ? s_SeedOverride : Random.Range(1, 999999));
             MapBuilder.Build();
             m_Ut.SetConnectionData("127.0.0.1", ParsedPort, "0.0.0.0");
@@ -166,6 +168,7 @@ namespace RockGame
             AirdropShip.Clear();
             Hud.Clear();
             Cfg.LoadPrefs(); // drop the host's settings, back to our own
+            GameSettings.RestoreGraphics(); // and our own graphics
             Cfg.SetMap(MapChoice, 0);
             MapBuilder.Build();
         }

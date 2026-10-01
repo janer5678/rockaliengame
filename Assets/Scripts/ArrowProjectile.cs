@@ -46,6 +46,7 @@ namespace RockGame
             a.m_Report = report;
             a.m_Power = Mathf.Clamp01(vel.magnitude / Mathf.Max(1f, Cfg.ArrowSpeed));
             a.m_Damage = damage;
+            if (damage >= 0f) a.m_Gravity = Cfg.CrossbowGravity; // crossbow bolt
             a.StartWhoosh(1.35f, 0.75f);
         }
 

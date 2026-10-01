@@ -11,7 +11,7 @@ namespace RockGame
         public static readonly List<Structure> All = new List<Structure>();
 
         public readonly NetworkVariable<byte> Type = new NetworkVariable<byte>();
-        public readonly NetworkVariable<byte> Tier = new NetworkVariable<byte>();   // 0 wood, 1 stone
+        public readonly NetworkVariable<byte> Tier = new NetworkVariable<byte>();   // 0 wood, 1 stone, 2 metal, 3 refined
         public readonly NetworkVariable<byte> Team = new NetworkVariable<byte>();
         public readonly NetworkVariable<float> Health = new NetworkVariable<float>();
         public readonly NetworkVariable<bool> DoorOpen = new NetworkVariable<bool>();
@@ -24,7 +24,7 @@ namespace RockGame
 
         public PieceType PType => (PieceType)Type.Value;
         public float MaxHp => Cfg.PieceHp(PType, Tier.Value);
-        public string DisplayName => PType == PieceType.Tower ? "Fort Tower" : PType == PieceType.Barrier ? "High External Wall" : PType == PieceType.EggBlock ? "Egg Block" : (Tier.Value >= 2 ? "Metal " : Tier.Value == 1 ? "Stone " : "Wooden ") + Cfg.PieceName(PType);
+        public string DisplayName => PType == PieceType.Tower ? "Fort Tower" : PType == PieceType.Barrier ? "High External Wall" : PType == PieceType.EggBlock ? "Egg Block" : Cfg.TierName(Tier.Value) + " " + Cfg.PieceName(PType);
         public bool Upgradable => Cfg.IsGridPiece(PType);
 
         public override void OnNetworkSpawn()
@@ -108,7 +108,7 @@ namespace RockGame
             Health.Value = MaxHp;
         }
 
-        /// <summary>Battering ram hit: metal is knocked down to full-health stone, stone to full-health wood.</summary>
+        /// <summary>Battering ram hit: one tier down at full health (refined to metal, metal to stone, stone to wood).</summary>
         public void ServerDowngrade()
         {
             Tier.Value = (byte)Mathf.Max(0, Tier.Value - 1);
@@ -125,8 +125,9 @@ namespace RockGame
             var tr = root.transform;
             bool stone = tier >= 1;                 // stone and metal share their shapes
             bool metal = tier >= 2;
-            Color c = metal ? new Color(0.55f, 0.58f, 0.62f) : stone ? Art.Stone : Art.Wood;
-            Color trim = metal ? new Color(0.3f, 0.32f, 0.36f) : stone ? new Color(0.42f, 0.42f, 0.46f) : Art.DarkWood;
+            bool refined = tier >= 3;               // Rust's armoured: dark plate with brass trim
+            Color c = refined ? new Color(0.27f, 0.29f, 0.34f) : metal ? new Color(0.55f, 0.58f, 0.62f) : stone ? Art.Stone : Art.Wood;
+            Color trim = refined ? new Color(0.8f, 0.64f, 0.28f) : metal ? new Color(0.3f, 0.32f, 0.36f) : stone ? new Color(0.42f, 0.42f, 0.46f) : Art.DarkWood;
             bool col = colliders;
 
             switch (t)

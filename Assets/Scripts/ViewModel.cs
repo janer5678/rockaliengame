@@ -58,7 +58,14 @@ namespace RockGame
             if (m_Root) Object.Destroy(m_Root.gameObject);
         }
 
-        public void Swing(float cooldown) { m_SwingStart = Time.time; m_SwingDur = Mathf.Max(0.35f, cooldown); m_ImpactKnown = false; m_Hit = false; }
+        public void Swing(float cooldown, float impact = ImpactTime)
+        {
+            m_SwingStart = Time.time; m_SwingDur = Mathf.Max(0.35f, cooldown); m_ImpactKnown = false; m_Hit = false;
+            // a slower weapon (the sword) winds up for longer before it comes down
+            m_Down = Mathf.Max(0.14f, impact + 0.01f);
+            m_Up = m_Down * 0.57f;
+        }
+        float m_Up = 0.08f, m_Down = 0.14f;
         /// <summary>Called at the impact frame: a hit bounces the swing back up (with hit-stop), a miss follows through.</summary>
         public void Impact(bool hit)
         {
@@ -175,6 +182,7 @@ namespace RockGame
             {
                 case Item.Rock: PoseRock(shared, sharedRot, swinging, swingE); break;
                 case Item.Hatchet:
+                case Item.Sword:
                 case Item.TreeCracker:
                 case Item.Pickaxe: PoseTool(shared, sharedRot, swinging, swingE); break;
                 case Item.Spear: PoseSpear(s, shared, sharedRot, swinging, swingE); break;
@@ -184,6 +192,8 @@ namespace RockGame
                 case Item.Crossbow:
                 case Item.Sniper:
                 case Item.Pistol:
+                case Item.Revolver:
+                case Item.Shotgun:
                 case Item.PortalGun:
                 case Item.RocketLauncher: PoseCrossbow(s, shared, sharedRot); break;
                 case Item.None: HideLeft(); Set(m_R, new Vector3(0.3f, -0.9f, 0.2f), Quaternion.identity); break;
@@ -220,7 +230,7 @@ namespace RockGame
         KP Chop(KP idle, KP raised, KP slam, KP recoil, KP follow, bool swinging, float e)
         {
             if (!swinging) return idle;
-            const float up = 0.08f, down = 0.14f;
+            float up = m_Up, down = m_Down;
             float end = Mathf.Max(0.45f, m_SwingDur * 0.9f);
             if (e < up) return KP.Lerp(idle, raised, Smooth(e / up));
             if (e < down) return KP.Lerp(raised, slam, Smooth((e - up) / (down - up)));

@@ -127,7 +127,7 @@ namespace RockGame
 
             // game mode: separate ways to play (they don't mix)
             key = Bootstrap.MapChoice;
-            var rules = (GameRules)Mathf.Clamp((key >> Cfg.RulesShift) & Cfg.RulesMask, 0, (int)GameRules.BuildingPrimitive);
+            var rules = (GameRules)Mathf.Clamp((key >> Cfg.RulesShift) & Cfg.RulesMask, 0, (int)GameRules.AutoWood);
             int noRules = key & ~(Cfg.RulesMask << Cfg.RulesShift);
             GUILayout.BeginHorizontal();
             RowLabel("Game mode");
@@ -136,7 +136,7 @@ namespace RockGame
             GUILayout.EndHorizontal();
             GUILayout.BeginHorizontal();
             GUILayout.Space(103 * k);
-            foreach (var gr in new[] { GameRules.Primitive, GameRules.BuildingPrimitive })
+            foreach (var gr in new[] { GameRules.AutoWood, GameRules.Primitive, GameRules.BuildingPrimitive })
                 if (Choice(rules == gr, Cfg.RulesName(gr), GUILayout.Height(30 * k))) boot.SetMapChoice(noRules | ((int)gr << Cfg.RulesShift));
             GUILayout.EndHorizontal();
             GUILayout.BeginHorizontal();
@@ -236,7 +236,7 @@ namespace RockGame
             if (Choice(GameSettings.GraphicsMode == 1, "PSX", GUILayout.Height(30 * k))) GameSettings.SetGraphics(1);
             if (Choice(GameSettings.GraphicsMode == 2, "AI PSX TEST", GUILayout.Height(30 * k))) GameSettings.SetGraphics(2);
             GUILayout.EndHorizontal();
-            if (GameSettings.PsxGraphics) GUILayout.Label("<color=#bbbbbb>PSX: low-res PSX models (trees so far). Just the looks - everyone can pick their own.</color>", m_SmallWrap);
+            if (GameSettings.PsxGraphics) GUILayout.Label("<color=#bbbbbb>PSX: low-res PSX models (trees so far). Just the looks. When you host, everyone in the match plays with your graphics.</color>", m_SmallWrap);
             if (GameSettings.AiPsx) GUILayout.Label("<color=#bbbbbb>AI PSX TEST: the whole wild map redone in the PSX trees' style - pixel textures, wobbly vertices, warping textures, 15-bit colour, half resolution, fog. A test; Normal and PSX are untouched.</color>", m_SmallWrap);
 
             GUILayout.BeginHorizontal();
@@ -631,10 +631,15 @@ namespace RockGame
             Caption("GRAPHICS");
             GUILayout.BeginHorizontal();
             RowLabel("Style", 170 * k);
+            // in a match the host's graphics are used by everyone
+            bool inMatch = NetGame.Instance != null && NetGame.Instance.IsSpawned;
+            GUI.enabled = !inMatch;
             if (Choice(GameSettings.GraphicsMode == 0, "Normal", GUILayout.Height(30 * k))) GameSettings.SetGraphics(0);
             if (Choice(GameSettings.GraphicsMode == 1, "PSX (trees so far)", GUILayout.Height(30 * k))) GameSettings.SetGraphics(1);
             if (Choice(GameSettings.GraphicsMode == 2, "AI PSX TEST", GUILayout.Height(30 * k))) GameSettings.SetGraphics(2);
+            GUI.enabled = true;
             GUILayout.EndHorizontal();
+            if (inMatch) GUILayout.Label("<color=#bbbbbb>Picked by the host for everyone in this match.</color>", m_SmallWrap);
             Caption("SCREEN");
             GUILayout.BeginHorizontal();
             RowLabel("Window", 170 * k);
@@ -742,10 +747,21 @@ namespace RockGame
             if (Btn("Settings", GUILayout.Height(38 * k))) { m_PausePage = PausePage.Settings; m_Tab = SettingsTab.Sound; OnTabOpened(); }
             if (Btn("Controls", GUILayout.Height(38 * k))) { m_PausePage = PausePage.Settings; m_Tab = SettingsTab.Controls; OnTabOpened(); }
             if (Btn("Dev settings", GUILayout.Height(38 * k))) m_PausePage = PausePage.Dev;
+            // suicide: click, then click again within 3 s to be sure
+            bool armed = Time.unscaledTime < m_SuicideArmedUntil;
+            GUI.enabled = me != null && !me.Dead.Value && (game == null || game.S != GameState.GameOver);
+            if (Btn(armed ? "<color=#ff6666>Click again to kill yourself</color>" : "Suicide", GUILayout.Height(38 * k)))
+            {
+                if (armed) { me.SuicideRpc(); m_SuicideArmedUntil = 0f; pc.Paused = false; }
+                else m_SuicideArmedUntil = Time.unscaledTime + 3f;
+            }
+            GUI.enabled = true;
             GUILayout.FlexibleSpace();
             if (Btn("Leave game", GUILayout.Height(38 * k))) boot.Leave();
             GUILayout.EndArea();
         }
+
+        float m_SuicideArmedUntil;
 
         void DrawDevMenu(PlayerNet me, NetGame game)
         {

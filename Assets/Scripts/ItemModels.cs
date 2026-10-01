@@ -322,6 +322,58 @@ namespace RockGame
                     Art.Box(t, Color.black, new Vector3(0, 0.035f, 0.215f), new Vector3(0.02f, 0.02f, 0.01f));
                     break;
                 }
+                case Item.Sword:
+                {
+                    // a long steel blade up from a leather grip (held like the hatchet), brass crossguard and pommel
+                    var steel = new Color(0.78f, 0.8f, 0.84f);
+                    Art.Box(t, new Color(0.3f, 0.18f, 0.1f), new Vector3(0, 0.06f, 0), new Vector3(0.045f, 0.2f, 0.045f));
+                    Art.Part(t, Art.Sphere, new Color(0.8f, 0.64f, 0.28f), new Vector3(0, -0.05f, 0), Vector3.one * 0.06f);
+                    Art.Box(t, new Color(0.8f, 0.64f, 0.28f), new Vector3(0, 0.17f, 0), new Vector3(0.06f, 0.04f, 0.24f));
+                    Art.Box(t, steel, new Vector3(0, 0.58f, 0), new Vector3(0.02f, 0.78f, 0.075f));
+                    Art.Box(t, steel * 0.8f, new Vector3(0, 0.58f, 0), new Vector3(0.024f, 0.74f, 0.012f)); // the fuller down the middle
+                    Art.Part(t, Art.Cone, steel, new Vector3(0, 1.0f, 0), new Vector3(0.075f, 0.07f, 0.02f));
+                    break;
+                }
+                case Item.Shotgun:
+                {
+                    // Rust's waterpipe: a length of pipe taped onto a rough plank stock, a hinged breech at the back
+                    var pipe = new Color(0.32f, 0.33f, 0.35f);
+                    var tape = new Color(0.12f, 0.12f, 0.13f);
+                    Art.Part(t, Art.Cylinder, pipe, new Vector3(0, 0.04f, 0.2f), new Vector3(0.06f, 0.3f, 0.06f), new Vector3(90, 0, 0));
+                    Art.Part(t, Art.Cylinder, pipe * 1.2f, new Vector3(0, 0.04f, 0.5f), new Vector3(0.075f, 0.02f, 0.075f), new Vector3(90, 0, 0));
+                    Art.Part(t, Art.Cylinder, Color.black, new Vector3(0, 0.04f, 0.515f), new Vector3(0.04f, 0.01f, 0.04f), new Vector3(90, 0, 0));
+                    Art.Box(t, new Color(0.5f, 0.36f, 0.22f), new Vector3(0, -0.01f, 0.08f), new Vector3(0.05f, 0.04f, 0.42f));
+                    Art.Box(t, new Color(0.5f, 0.36f, 0.22f), new Vector3(0, -0.05f, -0.2f), new Vector3(0.055f, 0.12f, 0.24f), new Vector3(10, 0, 0));
+                    Art.Box(t, new Color(0.4f, 0.28f, 0.16f), new Vector3(0, -0.08f, -0.02f), new Vector3(0.045f, 0.12f, 0.05f), new Vector3(-15, 0, 0));
+                    Art.Box(t, pipe * 0.8f, new Vector3(0, 0.04f, -0.06f), new Vector3(0.075f, 0.075f, 0.08f));
+                    for (int k = 0; k < 2; k++) Art.Box(t, tape, new Vector3(0, 0.02f, 0.12f + k * 0.18f), new Vector3(0.08f, 0.1f, 0.04f));
+                    break;
+                }
+                case Item.Revolver:
+                {
+                    // a six-shooter: long barrel, the drum, a wooden grip (held like the pistol)
+                    var gun = new Color(0.22f, 0.22f, 0.25f);
+                    Art.Part(t, Art.Cylinder, gun, new Vector3(0, 0.05f, 0.15f), new Vector3(0.035f, 0.11f, 0.035f), new Vector3(90, 0, 0));
+                    Art.Box(t, gun, new Vector3(0, 0.075f, 0.15f), new Vector3(0.015f, 0.02f, 0.22f));
+                    Art.Part(t, Art.Cylinder, gun * 1.5f, new Vector3(0, 0.035f, 0.01f), new Vector3(0.07f, 0.04f, 0.07f), new Vector3(90, 0, 0));
+                    Art.Box(t, gun, new Vector3(0, 0.03f, -0.05f), new Vector3(0.04f, 0.06f, 0.06f));
+                    Art.Box(t, new Color(0.45f, 0.28f, 0.14f), new Vector3(0, -0.05f, -0.07f), new Vector3(0.04f, 0.12f, 0.055f), new Vector3(-18, 0, 0));
+                    Art.Box(t, gun, new Vector3(0, -0.015f, -0.01f), new Vector3(0.01f, 0.035f, 0.04f));
+                    break;
+                }
+                case Item.ShotgunShell:
+                    // a red plastic shell with a brass base
+                    Art.Part(t, Art.Cylinder, new Color(0.8f, 0.15f, 0.12f), new Vector3(0, 0.08f, 0), new Vector3(0.07f, 0.06f, 0.07f));
+                    Art.Part(t, Art.Cylinder, new Color(0.85f, 0.65f, 0.25f), new Vector3(0, 0.02f, 0), new Vector3(0.075f, 0.02f, 0.075f));
+                    break;
+                case Item.RevolverAmmo:
+                    // a few brass bullets
+                    for (int k = 0; k < 3; k++)
+                    {
+                        Art.Part(t, Art.Cylinder, new Color(0.85f, 0.65f, 0.25f), new Vector3(-0.04f + k * 0.04f, 0.04f, 0), new Vector3(0.03f, 0.04f, 0.03f));
+                        Art.Part(t, Art.Sphere, new Color(0.6f, 0.45f, 0.3f), new Vector3(-0.04f + k * 0.04f, 0.085f, 0), Vector3.one * 0.03f);
+                    }
+                    break;
                 case Item.PistolAmmo:
                     // a little box of brass rounds
                     Art.Box(t, new Color(0.3f, 0.35f, 0.25f), new Vector3(0, 0.05f, 0), new Vector3(0.18f, 0.1f, 0.12f));

@@ -54,7 +54,11 @@ namespace RockGame
         float m_Yaw, m_Pitch, m_VelY, m_Bob, m_Eye = Cfg.EyeHeight, m_LastStep, m_Speed;
         float m_NextSwing, m_ImpactAt = -1f, m_NextUpgrade, m_DrawStart = -1f, m_NextEat, m_NextBallThrow, m_LastHealth, m_NextSaw;
         bool m_Grounded = true, m_Sprinting;
-        float m_ReloadStart = -1f;
+        // crossbow: one shared crank for all your crossbows (fire one and every crossbow waits for the reload), and what we
+        // last told the server, so a reload or shot isn't done twice while the server's inventory update is on its way
+        float m_XbowBusyUntil = -1f, m_XbowSentLoad = -1f, m_XbowSentFire = -1f;
+        int m_XbowSentSlot = -1;
+        bool m_XbowLoading;
         Vector3 m_Push;
         Item m_ImpactItem;
         int m_RotOffset;
@@ -279,14 +283,16 @@ namespace RockGame
             {
                 // crouching while running (sprint held, or already moving fast): slide. Pressed in the air it waits for
                 // the landing (a short buffer), so it works every time.
+                // Or crouching on a slope while moving: you slide down it (no boost), like Apex.
                 bool running = (Binds.Held(Bind.Sprint) && Binds.Axis(Bind.Forward, Bind.Back) > 0f) || m_LastPlanar.magnitude > Cfg.WalkSpeed * 1.1f;
-                if (wantCrouch && !m_SlideOn && running) m_SlideQueued = Time.time + 0.35f;
+                bool downhill = m_LastPlanar.magnitude > 1f && SlopeDownhill(out var dh) && Vector3.Dot(dh, m_LastPlanar.normalized) > 0.3f;
+                if (wantCrouch && !m_SlideOn && (running || downhill)) m_SlideQueued = Time.time + 0.35f;
                 Crouching = wantCrouch;
                 m_Net.Crouch.Value = wantCrouch;
             }
             if (dead || riding) { m_SlideOn = false; m_SlideQueued = -1f; }
             // start it as soon as we're on (or only just left) the ground
-            if (m_SlideQueued > Time.time && !m_SlideOn && wantCrouch && Time.time - m_GroundedAt < 0.2f) { m_SlideQueued = -1f; StartSlide(); }
+            if (m_SlideQueued > Time.time && !m_SlideOn && wantCrouch && Time.time - m_GroundedAt < 0.2f && Time.time >= m_NextSlide) { m_SlideQueued = -1f; StartSlide(); }
 
             // ---- move ----
             m_Speed = 0;
@@ -325,7 +331,8 @@ namespace RockGame
                 bool ladder = OnLadder();
                 if (grounded)
                 {
-                    if (m_VelY < 0) m_VelY = -2f;
+                    // sliding: hug the ground going downhill instead of skipping off it
+                    if (m_VelY < 0) m_VelY = m_SlideOn ? -(2f + m_SlideVel.magnitude * 0.8f) : -2f;
                     // you can jump out of a slide and keep all that speed
                     if (move && Binds.Down(Bind.Jump) && (!Crouching || m_SlideOn)) m_VelY = Cfg.JumpSpeed;
                 }
@@ -376,6 +383,7 @@ namespace RockGame
             if (m_ImpactAt >= 0 && Time.time >= m_ImpactAt) DoImpact();
             TickCrossbowReload(held);
             TickPistolReload(held);
+            TickShotgunReload(held);
             TickPortals(dead);
             TickJetpack(held, move && !dead);
             if (input && !gameOver && !locked && !frozen)
@@ -388,7 +396,9 @@ namespace RockGame
                         case Item.Spear: HandleSpear(); break;
                         case Item.Bow: HandleBow(); break;
                         case Item.Crossbow: HandleCrossbow(); break;
-                        case Item.Pistol: HandlePistol(); break;
+                        case Item.Pistol:
+                        case Item.Revolver: HandlePistol(held); break;
+                        case Item.Shotgun: HandleShotgun(); break;
                         case Item.BuildingPlan: HandleBuildInput(); break;
                         case Item.Ram: HandleRam(); break;
                         case Item.Chest:
@@ -424,7 +434,7 @@ namespace RockGame
             float drawTime = held == Item.Spear ? Cfg.SpearDrawTime : Cfg.BowDrawTime;
             DrawAmount = m_DrawStart >= 0 ? Mathf.Clamp01((Time.time - m_DrawStart) / Mathf.Max(0.05f, drawTime)) : 0f;
             if (!input || carrying || gameOver || held != Item.Ram || !Binds.Held(Bind.Attack)) RamCharge = 0f;
-            CrossbowAiming = input && !carrying && held == Item.Crossbow && Binds.Held(Bind.Aim) && m_ReloadStart < 0;
+            CrossbowAiming = input && !carrying && held == Item.Crossbow && Binds.Held(Bind.Aim) && Time.time >= m_XbowBusyUntil;
             Scoped = input && !carrying && held == Item.Sniper && Binds.Held(Bind.Aim);
 
             PublishAction(held, dead, carrying);
@@ -482,10 +492,10 @@ namespace RockGame
                 HasArrow = m_Net.Count(Item.Arrow) > 0,
                 Draw = DebugDraw >= 0 ? DebugDraw : DrawAmount,
                 RamCharge = RamCharge,
-                Loaded = (hs.Id == Item.Crossbow || hs.Id == Item.Sniper || hs.Id == Item.PortalGun) && hs.Data > 0,
+                Loaded = hs.Id == Item.Crossbow ? XbowLoaded(hs) : hs.Id == Item.Shotgun ? hs.Data > 0 : (hs.Id == Item.Sniper || hs.Id == Item.PortalGun) && hs.Data > 0,
                 Aim = CrossbowAiming || Scoped,
                 Visible2 = !Scoped,
-                Reload = m_ReloadStart >= 0 ? (Time.time - m_ReloadStart) / Mathf.Max(0.1f, Cfg.CrossbowReload) : -1f,
+                Reload = hs.Id == Item.Crossbow && Time.time < m_XbowBusyUntil ? 1f - (m_XbowBusyUntil - Time.time) / Mathf.Max(0.1f, Cfg.CrossbowReload) : hs.Id == Item.Shotgun ? ShotgunReloadProgress : -1f,
                 Bob = m_Bob,
                 Speed = m_Speed,
                 Look = m_LookDelta,
@@ -544,7 +554,7 @@ namespace RockGame
             Fx.Shake(0.5f);
         }
 
-        // ------------------------------------------------------------------ sliding (Crab Game style)
+        // ------------------------------------------------------------------ sliding (Apex / Titanfall style)
 
         bool m_SlideOn;
         Vector3 m_SlideVel, m_LastPlanar;
@@ -571,25 +581,50 @@ namespace RockGame
             if (m_Net.Action.Value != (byte)a) m_Net.Action.Value = (byte)a;
         }
 
-        float m_SlideQueued = -1f, m_GroundedAt = -10f;
+        float m_SlideQueued = -1f, m_GroundedAt = -10f, m_NextSlideBoost;
 
-        /// <summary>Always a boost forward (where you're looking): at least sprint speed, plus the slide boost.</summary>
+        /// <summary>The ground under you: which way is downhill (flat, unit length) and how steep (sine of the slope).</summary>
+        bool SlopeDownhill(out Vector3 downhill) => SlopeDownhill(out downhill, out _);
+
+        bool SlopeDownhill(out Vector3 downhill, out float steep)
+        {
+            downhill = Vector3.zero;
+            steep = 0f;
+            if (!Physics.Raycast(transform.position + Vector3.up * 0.3f, Vector3.down, out var gh, 1.2f, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore)) return false;
+            var d = Vector3.ProjectOnPlane(Vector3.down, gh.normal); // length = sine of the slope
+            steep = d.magnitude;
+            d.y = 0;
+            if (steep < 0.08f || d.sqrMagnitude < 1e-6f) return false; // flat enough (under ~5 degrees)
+            downhill = d.normalized;
+            return true;
+        }
+
+        /// <summary>
+        /// Like Apex / Titanfall: you slide off with the speed you had (at least sprint speed) where you're looking, plus a
+        /// boost - but only once the boost cooldown is over, so spamming slide never adds speed. Nothing can push a slide
+        /// past Slide Max Speed.
+        /// </summary>
         void StartSlide()
         {
             var dir = transform.forward;
             dir.y = 0;
             dir.Normalize();
             float along = Mathf.Max(0f, Vector3.Dot(m_LastPlanar, dir));
-            m_SlideVel = dir * (Mathf.Max(along, Cfg.SprintSpeed) + Cfg.SlideBoost);
+            bool boost = Time.time >= m_NextSlideBoost;
+            bool onSlope = SlopeDownhill(out var dh) && Vector3.Dot(dh, dir) > 0.3f;
+            float start = Mathf.Max(along, onSlope && !Binds.Held(Bind.Sprint) ? along : Cfg.SprintSpeed);
+            if (boost) { start += Cfg.SlideBoost; m_NextSlideBoost = Time.time + Mathf.Max(0f, Cfg.SlideBoostCooldown); }
+            m_SlideVel = dir * Mathf.Min(start, Mathf.Max(Cfg.SprintSpeed, Cfg.SlideMaxSpeed));
             m_SlideOn = true;
-            Fx.Punch(4f);
-            Sfx.Play2D(Sfx.Throw, 0.4f, 0.1f);
+            Fx.Punch(boost ? 4f : 2f);
+            Sfx.Play2D(Sfx.Throw, boost ? 0.4f : 0.25f, 0.1f);
         }
 
         /// <summary>
-        /// One frame of sliding: you keep your momentum and it bleeds away with friction (Slide Slipperiness 0 = grippy,
-        /// 10 = ice), slopes speed you up or slow you down, and you can steer a little. Jumping keeps the speed; landing
-        /// with crouch still held carries on the slide.
+        /// One frame of sliding: you keep your momentum and friction bleeds it away on the flat (Slide Slipperiness 0 =
+        /// grippy, 10 = ice). Going down a slope speeds you up (Slide Slope Accel, more the steeper it is) and going up one
+        /// slows you down fast, and you can steer a little. Jumping keeps the speed; landing with crouch still held carries
+        /// on the slide. Capped at Slide Max Speed.
         /// </summary>
         Vector3 TickSlide(Vector3 wish, bool grounded, bool move)
         {
@@ -598,21 +633,20 @@ namespace RockGame
             if (grounded)
             {
                 float friction = Mathf.Lerp(16f, 0.2f, Mathf.Pow(slip, 0.7f)); // default 7.5: about 3 m/s² - a long, glidey slide
-                // downhill pulls you along, uphill holds you back
-                if (Physics.Raycast(transform.position + Vector3.up * 0.3f, Vector3.down, out var gh, 1.2f, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore))
-                {
-                    var along = Vector3.ProjectOnPlane(Vector3.down * Cfg.Gravity, gh.normal);
-                    along.y = 0;
-                    m_SlideVel += along * 1.2f * dt;
-                }
+                bool slope = SlopeDownhill(out var dh, out float steep);
+                // a steep enough slope cancels the friction going down it, so you keep sliding all the way down
+                if (slope && Vector3.Dot(dh, m_SlideVel) > 0f) friction *= Mathf.Clamp01(1f - steep * 3f);
                 float sp = Mathf.MoveTowards(m_SlideVel.magnitude, 0f, friction * dt);
                 m_SlideVel = m_SlideVel.sqrMagnitude > 0.0001f ? m_SlideVel.normalized * sp : Vector3.zero;
-                if (!Crouching || !move || sp < Cfg.SlideMinSpeed) { EndSlide(); return m_SlideVel; }
+                // downhill pulls you along, uphill holds you back (sin 45 deg = 0.71 gets the full Slide Slope Accel)
+                if (slope) m_SlideVel += dh * (steep / 0.71f) * Cfg.SlideSlopeAccel * dt;
+                if (!Crouching || !move || m_SlideVel.magnitude < Cfg.SlideMinSpeed) { EndSlide(); return m_SlideVel; }
             }
             else m_SlideVel = Vector3.MoveTowards(m_SlideVel, Vector3.zero, 0.4f * dt); // a little air drag
             // steer towards where you're pushing
             if (wish.sqrMagnitude > 0.1f && m_SlideVel.sqrMagnitude > 0.01f)
                 m_SlideVel = Vector3.RotateTowards(m_SlideVel, wish.normalized * m_SlideVel.magnitude, Cfg.SlideSteer * Mathf.Deg2Rad * dt, 0f);
+            m_SlideVel = Vector3.ClampMagnitude(m_SlideVel, Mathf.Max(Cfg.SprintSpeed, Cfg.SlideMaxSpeed));
             return m_SlideVel;
         }
 
@@ -621,8 +655,10 @@ namespace RockGame
             if (!m_SlideOn) return;
             m_SlideOn = false;
             m_NextSlide = Time.time + 0.35f;
-            // what's left of the speed fades out instead of stopping dead
-            m_Push += m_SlideVel * 0.7f;
+            // what's left of the speed above a run fades out instead of stopping dead (only the extra: so ending and
+            // restarting a slide can't stack it up)
+            float extra = Mathf.Max(0f, m_SlideVel.magnitude - Cfg.SprintSpeed);
+            if (extra > 0f) m_Push += m_SlideVel.normalized * Mathf.Min(extra, 4f) * 0.7f;
         }
 
         void TickSlideSound()
@@ -668,7 +704,6 @@ namespace RockGame
                 m_Net.HeldSlot.Value = (byte)want;
                 m_ImpactAt = -1f;
                 m_DrawStart = -1f;
-                m_ReloadStart = -1f;
                 RamCharge = 0f;
                 WheelOpen = false;
             }
@@ -693,7 +728,8 @@ namespace RockGame
         bool AimWithAssist(Ray ray, float range, float radius, out RaycastHit best)
         {
             bool exact = Aim(ray, range, out best);
-            if (exact && best.collider.GetComponentInParent<PlayerNet>() != null) return true;
+            var ep = exact ? best.collider.GetComponentInParent<PlayerNet>() : null;
+            if (ep != null) return !PlayerNet.GlassBetween(transform.position, ep.transform.position); // not through the glass wall
             if (radius <= 0f) return exact;
             float limit = exact ? best.distance + 0.05f : range;
             var hits = Physics.SphereCastAll(ray, radius, range, ~0, QueryTriggerInteraction.Ignore);
@@ -704,7 +740,7 @@ namespace RockGame
             {
                 if (h.collider.transform.IsChildOf(transform) || h.distance <= 0f) continue;
                 var p = h.collider.GetComponentInParent<PlayerNet>();
-                if (p == null || p.Dead.Value || h.distance > limit) continue;
+                if (p == null || p.Dead.Value || h.distance > limit || PlayerNet.GlassBetween(transform.position, p.transform.position)) continue;
                 if (h.distance < bd) { bd = h.distance; ph = h; found = true; }
             }
             if (found) { best = ph; return true; }
@@ -740,9 +776,11 @@ namespace RockGame
                 DoImpact();
                 return;
             }
-            m_VM.Swing(st.Cooldown);
+            // the sword winds up for longer (it scales with its swing time)
+            float impact = held == Item.Sword ? Mathf.Clamp(Cfg.SwordSwingTime * 0.3f, ViewModel.ImpactTime, 0.6f) : ViewModel.ImpactTime;
+            m_VM.Swing(st.Cooldown, impact);
             Sfx.Play2D(Sfx.Swing, 0.35f, 0.15f);
-            m_ImpactAt = Time.time + ViewModel.ImpactTime;
+            m_ImpactAt = Time.time + impact;
             m_ImpactItem = held;
         }
 
@@ -767,7 +805,7 @@ namespace RockGame
             if (no != null && no.TryGetComponent(out PlayerNet p) && p != m_Net && !p.Dead.Value)
             {
                 bool head = p.IsHeadshot(hit.point);
-                float dmg = st.PlayerDamage * (head ? Cfg.HeadshotMul : 1f);
+                float dmg = Cfg.MeleePlayerDamage(m_ImpactItem, head);
                 Fx.Blood(hit.point, ray.direction, head);
                 Fx.DamageNumber(hit.point, dmg, head);
                 Hud.HitMarker(false, head);
@@ -776,7 +814,7 @@ namespace RockGame
             }
             else if (no != null && no.TryGetComponent(out ResourceNode n) && !n.IsBush)
             {
-                weak = n.IsWeakSpotHit(hit.point, 0.45f);
+                weak = n.IsWeakSpotAimed(ray, hit.point, 0.45f);
                 Fx.Play(n.Kind.Value == ResourceNode.Tree ? FxKind.WoodChips : FxKind.StoneChips, hit.point, hit.normal);
                 if (weak) { Fx.Play(n.Kind.Value == ResourceNode.Tree ? FxKind.WeakSpotTree : FxKind.WeakSpot, hit.point, hit.normal); Fx.Punch(-1.5f); }
                 Fx.Shake(0.08f);
@@ -951,9 +989,9 @@ namespace RockGame
         /// and it reloads by itself afterwards if you have an arrow.</summary>
         void HandleCrossbow()
         {
-            if (!Binds.Down(Bind.Attack) || m_ReloadStart >= 0) return;
+            if (!Binds.Down(Bind.Attack) || Time.time < m_XbowBusyUntil) return;
             var st = m_Net.HeldStack;
-            if (st.Data == 0)
+            if (!XbowLoaded(st))
             {
                 if (m_Net.Count(Item.Arrow) == 0) Hud.Push("No arrows to load - craft some in your base (TAB)");
                 return;
@@ -963,26 +1001,52 @@ namespace RockGame
             Vector3 vel = ray.direction * Cfg.CrossbowSpeed;
             ArrowProjectile.Spawn(origin, vel, m_Net, true, Cfg.CrossbowDamage);
             m_Net.FireCrossbowRpc(origin, vel);
+            m_XbowSentFire = Time.time;
+            m_XbowSentSlot = m_Net.HeldSlot.Value;
+            m_XbowSentLoad = -1f;
+            // the crank starts now - and it's the same crank for every crossbow you have
+            m_XbowBusyUntil = Time.time + Cfg.CrossbowReload;
+            m_XbowLoading = true;
+            Sfx.Play2D(Sfx.Clink, 0.4f);
             m_VM.Use();
             Sfx.Play2D(Sfx.Twang, 0.8f, 0.02f);
             Fx.Kick(2.5f);
         }
 
+        /// <summary>The held crossbow is loaded, counting a load / shot we sent that the server hasn't confirmed yet.</summary>
+        bool XbowLoaded(ItemStack st)
+        {
+            bool sameSlot = m_XbowSentSlot == m_Net.HeldSlot.Value;
+            if (sameSlot && m_XbowSentFire >= 0 && Time.time - m_XbowSentFire < 1f && st.Data > 0) return false;
+            if (sameSlot && m_XbowSentLoad >= 0 && Time.time - m_XbowSentLoad < 1f && st.Data == 0) return true;
+            return st.Data > 0;
+        }
+
+        /// <summary>
+        /// The crossbow loads itself if you have an arrow. The reload is one crank shared by all your crossbows: swapping to
+        /// another crossbow doesn't skip it, and a second, loaded crossbow can't fire until it's done.
+        /// </summary>
         void TickCrossbowReload(Item held)
         {
+            if (m_Net.Dead.Value) { m_XbowBusyUntil = -1f; m_XbowLoading = false; return; }
+            if (held != Item.Crossbow) return; // the crank keeps going while you hold something else
             var st = m_Net.HeldStack;
-            if (held != Item.Crossbow || m_Net.Dead.Value) { m_ReloadStart = -1f; return; }
-            if (m_ReloadStart < 0)
+            if (XbowLoaded(st)) { if (Time.time >= m_XbowBusyUntil) m_XbowLoading = false; return; }
+            if (m_Net.Count(Item.Arrow) <= 0 || MenuOpen) return;
+            if (!m_XbowLoading)
             {
-                if (st.Data == 0 && m_Net.Count(Item.Arrow) > 0 && !MenuOpen) { m_ReloadStart = Time.time; Sfx.Play2D(Sfx.Clink, 0.4f); }
+                m_XbowLoading = true;
+                m_XbowBusyUntil = Time.time + Cfg.CrossbowReload;
+                Sfx.Play2D(Sfx.Clink, 0.4f);
                 return;
             }
-            if (Time.time - m_ReloadStart >= Cfg.CrossbowReload)
-            {
-                m_ReloadStart = -1f;
-                m_Net.ReloadCrossbowRpc();
-                Sfx.Play2D(Sfx.Clink, 0.6f);
-            }
+            if (Time.time < m_XbowBusyUntil) return;
+            m_XbowLoading = false;
+            m_XbowSentLoad = Time.time;
+            m_XbowSentFire = -1f;
+            m_XbowSentSlot = m_Net.HeldSlot.Value;
+            m_Net.ReloadCrossbowRpc();
+            Sfx.Play2D(Sfx.Clink, 0.6f);
         }
 
         void HandleWand()
@@ -1449,7 +1513,7 @@ namespace RockGame
                     AimText += "   X: demolish";
                 }
                 if (m_Net.HeldItem == Item.Ram && st.Team.Value != m_Net.Team.Value && hit.distance <= Cfg.RamRange)
-                    AimText += st.Tier.Value >= 2 && st.PType != PieceType.Barrier ? "   hold LMB: ram down to stone" : st.Tier.Value == 1 && st.PType != PieceType.Barrier ? "   hold LMB: ram down to wood" : "   hold LMB: ram to smash";
+                    AimText += st.Tier.Value >= 1 && st.PType != PieceType.Barrier ? $"   hold LMB: ram down to {Cfg.TierName(st.Tier.Value - 1).ToLower()}" : "   hold LMB: ram to smash";
             }
             else if (no.TryGetComponent(out ResourceNode n))
                 AimText = n.IsBush ? "Berry Bush (empty)" : $"{n.DisplayName}  ({n.Amount.Value} {(n.Kind.Value == ResourceNode.Tree ? "wood" : "stone")} left)";

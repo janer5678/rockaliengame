@@ -31,6 +31,7 @@ namespace RockGame
         Transform m_Marker;
         /// <summary>A PSX trunk can be thicker or thinner than the (unchanged) trunk collider: the X moves out / in by this much, onto the bark you see.</summary>
         float m_MarkerOut;
+        PsxArt.Trunk m_PsxTrunk;
         /// <summary>This tree's bark and leaf colours (for the chips and leaves that fly off it).</summary>
         public Color Bark = Art.Wood, Leaf = Art.Leaves;
         Collider m_SpotCollider;
@@ -118,6 +119,7 @@ namespace RockGame
                 var trunk = BuildTreeVisual(tr, Seed.Value, true, out float trunkR, out Bark, out Leaf);
                 m_SpotCollider = trunk.GetComponent<Collider>();
                 m_MarkerOut = trunkR - 0.3f; // can be negative: a thin PSX trunk has the X further in than the collider
+                m_PsxTrunk = tr.GetComponentInChildren<PsxArt.Trunk>();
                 // the X (a chunky pixel-art one on PSX trees)
                 m_Marker = new GameObject("x").transform;
                 m_Marker.SetParent(tr, false);
@@ -243,12 +245,18 @@ namespace RockGame
         }
 
         /// <summary>World position/normal of the current weak spot (on the actual surface).</summary>
-        public bool TryGetSpot(out Vector3 pos, out Vector3 normal)
+        public bool TryGetSpot(out Vector3 pos, out Vector3 normal) => TryGetSpot(out pos, out normal, out _);
+
+        /// <summary>onVisual: the point is on the PSX trunk you see (not the plain cylinder), so the X needs no extra offset.</summary>
+        bool TryGetSpot(out Vector3 pos, out Vector3 normal, out bool onVisual)
         {
             pos = normal = default;
+            onVisual = false;
             if (IsBush || m_SpotCollider == null || Amount.Value <= 0 || Spot.Value == NoSpot) return false;
             SpotDir(Kind.Value, Spot.Value, out var dir, out var y);
             var worldDir = transform.rotation * dir;
+            // PSX trees: right on the trunk model's surface (it can be thinner, thicker or off to one side of the cylinder)
+            if (m_PsxTrunk != null && m_PsxTrunk.Hit(transform.position.y + y, worldDir, out pos, out normal)) { onVisual = true; return true; }
             var center = transform.position + Vector3.up * (y * (Kind.Value == Boulder ? m_Visual.transform.localScale.y : 1f));
             var ray = new Ray(center + worldDir * 4f, -worldDir);
             if (!m_SpotCollider.Raycast(ray, out var hit, 8f)) return false;
@@ -262,12 +270,22 @@ namespace RockGame
             return TryGetSpot(out var p, out _) && Vector3.Distance(p, point) <= tolerance;
         }
 
+        /// <summary>A swing at this node counts on the X if it lands near it, or if you were aiming right at it (PSX trees: the X is on the trunk you see).</summary>
+        public bool IsWeakSpotAimed(Ray aim, Vector3 point, float tolerance)
+        {
+            if (!TryGetSpot(out var p, out _)) return false;
+            if (Vector3.Distance(p, point) <= tolerance) return true;
+            var to = p - aim.origin;
+            float along = Vector3.Dot(to, aim.direction);
+            return along > 0f && (to - aim.direction * along).magnitude <= 0.3f && Vector3.Distance(p, point) <= 0.75f;
+        }
+
         void PlaceMarker()
         {
             if (m_Marker == null) return;
-            if (!TryGetSpot(out var p, out var n)) { m_Marker.gameObject.SetActive(false); return; }
+            if (!TryGetSpot(out var p, out var n, out bool onVisual)) { m_Marker.gameObject.SetActive(false); return; }
             m_Marker.gameObject.SetActive(true);
-            m_Marker.position = p + n * (0.015f + m_MarkerOut);
+            m_Marker.position = p + n * (onVisual ? 0.03f : 0.015f + m_MarkerOut);
             m_Marker.rotation = Quaternion.LookRotation(-n);
         }
 

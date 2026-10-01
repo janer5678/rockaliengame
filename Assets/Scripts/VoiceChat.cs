@@ -42,6 +42,16 @@ namespace RockGame
         }
 
         public static int GraphicsMode => AiPsx ? 2 : PsxGraphics ? 1 : 0;
+
+        /// <summary>In a match the host picks the graphics for everyone (not saved: our own choice comes back after the match).</summary>
+        public static void ApplyHostGraphics(int mode) => SetGraphics(Mathf.Clamp(mode, 0, 2), false);
+
+        /// <summary>Back to this PC's own graphics choice.</summary>
+        public static void RestoreGraphics()
+        {
+            bool psx = PlayerPrefs.GetInt("RockGame.PsxGraphics", 0) == 1;
+            SetGraphics(psx ? 1 : PlayerPrefs.GetInt("RockGame.AiPsx", 0) == 1 ? 2 : 0, false);
+        }
         public static int VoiceMode = VoicePushToTalk;
         public static string MicDevice = "";
         static bool s_Loaded;

@@ -1,24 +1,26 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace RockGame
 {
-    /// <summary>Client side of the game-mode items: the pistol (fire, reload) and the ender pearl throw.</summary>
+    /// <summary>Client side of the game-mode guns: the pistol and revolver (fire, reload) and the waterpipe shotgun.</summary>
     public partial class PlayerController
     {
         float m_NextPistolShot, m_PistolReloadStart = -1f;
+        Item m_PistolReloadItem;
 
-        /// <summary>True while the pistol is being reloaded (for the HUD).</summary>
-        public float PistolReloadProgress => m_PistolReloadStart < 0 ? -1f : Mathf.Clamp01((Time.time - m_PistolReloadStart) / Mathf.Max(0.05f, Cfg.PistolReload));
+        /// <summary>How far the pistol / revolver reload is (0..1), -1 when not reloading (for the HUD).</summary>
+        public float PistolReloadProgress => m_PistolReloadStart < 0 ? -1f : Mathf.Clamp01((Time.time - m_PistolReloadStart) / Mathf.Max(0.05f, Cfg.GunReload(m_PistolReloadItem)));
 
-        /// <summary>Pistol: LMB fires (as fast as you click, up to its fire rate), R reloads; it reloads by itself when empty.</summary>
-        void HandlePistol()
+        /// <summary>Pistol / revolver: LMB fires (as fast as you click, up to its fire rate), R reloads; it reloads by itself when empty.</summary>
+        void HandlePistol(Item gun)
         {
             if (m_PistolReloadStart >= 0) return;
             var st = m_Net.HeldStack;
-            if (Binds.Down(Bind.Rotate) && st.Data < Cfg.PistolMag) { StartPistolReload(); return; }
+            if (Binds.Down(Bind.Rotate) && st.Data < Cfg.GunMag(gun)) { StartPistolReload(gun); return; }
             if (!Binds.Down(Bind.Attack) || Time.time < m_NextPistolShot) return;
-            if (st.Data <= 0) { StartPistolReload(); return; }
-            m_NextPistolShot = Time.time + Cfg.PistolFireRate;
+            if (st.Data <= 0) { StartPistolReload(gun); return; }
+            m_NextPistolShot = Time.time + Cfg.GunFireRate(gun);
             // hitscan: whatever the crosshair is on, right now
             var ray = CenterRay();
             bool hit = AimWithAssist(ray, 250f, Cfg.ProjectileAssist, out var h);
@@ -28,36 +30,144 @@ namespace RockGame
             {
                 bool head = p.IsHeadshot(point);
                 Fx.Blood(point, ray.direction, head);
-                Fx.DamageNumber(point, head ? Cfg.PistolHeadDamage : Cfg.PistolBodyDamage, head);
+                Fx.DamageNumber(point, head ? Cfg.GunHead(gun) : Cfg.GunBody(gun), head);
                 Hud.HitMarker(!(head && p.HelmetHp.Value > 0), head);
             }
             m_Net.FirePistolRpc(no != null, no != null ? new Unity.Netcode.NetworkObjectReference(no) : default, point, ray.direction);
             Fx.Tracer(ray.origin + ray.direction * 0.5f - Vector3.up * 0.15f, point);
             m_VM.Use();
-            Sfx.Play2D(Sfx.Sniper, 0.45f, 0.08f);
-            Fx.Kick(2f);
+            Sfx.Play2D(Sfx.Sniper, gun == Item.Revolver ? 0.55f : 0.45f, 0.08f);
+            Fx.Kick(gun == Item.Revolver ? 3f : 2f);
         }
 
-        void StartPistolReload()
+        void StartPistolReload(Item gun)
         {
-            if (m_Net.Count(Item.PistolAmmo) <= 0) { Hud.Push("The pistol is out of shots"); return; }
+            if (m_Net.Count(Cfg.GunAmmo(gun)) <= 0) { Hud.Push($"The {Cfg.ItemName(gun).ToLower()} is out of ammo"); return; }
             m_PistolReloadStart = Time.time;
+            m_PistolReloadItem = gun;
             Sfx.Play2D(Sfx.Clink, 0.4f);
         }
 
         void TickPistolReload(Item held)
         {
-            if (held != Item.Pistol || m_Net.Dead.Value) { m_PistolReloadStart = -1f; return; }
+            if (!Cfg.IsGun(held) || m_Net.Dead.Value || (m_PistolReloadStart >= 0 && held != m_PistolReloadItem)) { m_PistolReloadStart = -1f; return; }
             if (m_PistolReloadStart < 0)
             {
                 // empty and there's ammo: it reloads by itself
-                if (m_Net.HeldStack.Data == 0 && m_Net.Count(Item.PistolAmmo) > 0 && !MenuOpen) StartPistolReload();
+                if (m_Net.HeldStack.Data == 0 && m_Net.Count(Cfg.GunAmmo(held)) > 0 && !MenuOpen && Time.time > m_PistolReloadSent + 1f) StartPistolReload(held);
                 return;
             }
-            if (Time.time - m_PistolReloadStart >= Cfg.PistolReload)
+            if (Time.time - m_PistolReloadStart >= Cfg.GunReload(held))
             {
                 m_PistolReloadStart = -1f;
+                m_PistolReloadSent = Time.time; // don't start another while the server's answer is on its way
                 m_Net.ReloadPistolRpc();
+                Sfx.Play2D(Sfx.Clink, 0.6f);
+            }
+        }
+        float m_PistolReloadSent = -10f;
+
+        // ---------------- waterpipe shotgun ----------------
+
+        float m_ShotgunReloadStart = -1f, m_ShotgunSentLoad = -10f, m_ShotgunSentFire = -10f, m_NextShotgun;
+        int m_ShotgunSlot = -1;
+
+        public float ShotgunReloadProgress => m_ShotgunReloadStart < 0 ? -1f : Mathf.Clamp01((Time.time - m_ShotgunReloadStart) / Mathf.Max(0.1f, Cfg.ShotgunReload));
+
+        /// <summary>Loaded, counting a load / shot we sent that the server hasn't confirmed yet.</summary>
+        bool ShotgunLoaded(ItemStack st)
+        {
+            bool same = m_ShotgunSlot == m_Net.HeldSlot.Value;
+            if (same && Time.time - m_ShotgunSentFire < 1f && st.Data > 0) return false;
+            if (same && Time.time - m_ShotgunSentLoad < 1f && st.Data == 0) return true;
+            return st.Data > 0;
+        }
+
+        /// <summary>
+        /// One shell at a time, like Rust's waterpipe: LMB fires a spread of pellets (each one hits on its own, so up close
+        /// they all land), then it loads the next shell by itself if you have one (or R).
+        /// </summary>
+        void HandleShotgun()
+        {
+            if (m_ShotgunReloadStart >= 0) return;
+            var st = m_Net.HeldStack;
+            bool loaded = ShotgunLoaded(st);
+            if (Binds.Down(Bind.Rotate) && !loaded) { StartShotgunReload(); return; }
+            if (!Binds.Down(Bind.Attack) || Time.time < m_NextShotgun) return;
+            if (!loaded) { StartShotgunReload(); return; }
+            m_NextShotgun = Time.time + 0.4f;
+            m_ShotgunSentFire = Time.time;
+            m_ShotgunSentLoad = -10f;
+            m_ShotgunSlot = m_Net.HeldSlot.Value;
+            var ray = CenterRay();
+            m_Net.FireShotgunRpc(ray.direction);
+
+            // every pellet: its own ray inside the spread cone
+            var hits = new Dictionary<PlayerNet, (int body, int head, Vector3 point)>();
+            int n = Mathf.Clamp(Cfg.ShotgunPellets, 1, 30);
+            var rot = Quaternion.LookRotation(ray.direction);
+            float spread = Mathf.Tan(Cfg.ShotgunSpread * Mathf.Deg2Rad);
+            for (int i = 0; i < n; i++)
+            {
+                // spread evenly over the disc (golden angle), with a little jitter
+                float r = Mathf.Sqrt((i + 0.5f) / n) * spread * Random.Range(0.85f, 1.1f);
+                float a = i * 2.39996f + Random.Range(-0.2f, 0.2f);
+                var dir = (rot * new Vector3(Mathf.Cos(a) * r, Mathf.Sin(a) * r, 1f)).normalized;
+                var pr = new Ray(ray.origin, dir);
+                bool hit = AimWithAssist(pr, Cfg.ShotgunRange, 0.04f, out var h);
+                var end = hit ? h.point : pr.GetPoint(Cfg.ShotgunRange);
+                if (i % 2 == 0) Fx.Tracer(ray.origin + dir * 0.5f - Vector3.up * 0.15f, end);
+                if (!hit) continue;
+                var p = h.collider.GetComponentInParent<PlayerNet>();
+                if (p != null && p != m_Net && !p.Dead.Value)
+                {
+                    bool head = p.IsHeadshot(h.point);
+                    hits.TryGetValue(p, out var c);
+                    hits[p] = (c.body + (head ? 0 : 1), c.head + (head ? 1 : 0), h.point);
+                }
+                else Fx.Chips(h.point, h.normal, new Color(0.35f, 0.3f, 0.22f), 2, 1.5f);
+            }
+            foreach (var kv in hits)
+            {
+                var p = kv.Key;
+                var (body, head, point) = kv.Value;
+                float per = Cfg.ShotgunPelletDamage * Cfg.ShotgunFalloff(Vector3.Distance(ray.origin, point));
+                bool helmet = head > 0 && p.HelmetHp.Value > 0;
+                float dmg = per * body + (helmet ? 0f : per * Cfg.ShotgunHeadMul * head);
+                Fx.Blood(point, ray.direction, head > 0);
+                Fx.DamageNumber(point, dmg, head > 0);
+                Hud.HitMarker(false, head > 0);
+                m_Net.ShotgunHitRpc(new Unity.Netcode.NetworkObjectReference(p.NetworkObject), point, (byte)body, (byte)head);
+            }
+            m_VM.Use();
+            Sfx.Play2D(Sfx.Boom, 0.35f, 0.1f);
+            Fx.Kick(6f);
+            Fx.Shake(0.15f);
+        }
+
+        void StartShotgunReload()
+        {
+            if (m_Net.Count(Item.ShotgunShell) <= 0) { Hud.Push("No shotgun shells - buy them in POWER ITEMS (TAB)"); return; }
+            m_ShotgunReloadStart = Time.time;
+            Sfx.Play2D(Sfx.Clink, 0.4f);
+        }
+
+        void TickShotgunReload(Item held)
+        {
+            if (held != Item.Shotgun || m_Net.Dead.Value) { m_ShotgunReloadStart = -1f; return; }
+            if (m_ShotgunReloadStart < 0)
+            {
+                // fired and there's a shell: the next one goes in by itself
+                if (!ShotgunLoaded(m_Net.HeldStack) && m_Net.Count(Item.ShotgunShell) > 0 && !MenuOpen && Time.time > m_NextShotgun) StartShotgunReload();
+                return;
+            }
+            if (Time.time - m_ShotgunReloadStart >= Cfg.ShotgunReload)
+            {
+                m_ShotgunReloadStart = -1f;
+                m_ShotgunSentLoad = Time.time;
+                m_ShotgunSentFire = -10f;
+                m_ShotgunSlot = m_Net.HeldSlot.Value;
+                m_Net.ReloadShotgunRpc();
                 Sfx.Play2D(Sfx.Clink, 0.6f);
             }
         }

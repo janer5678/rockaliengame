@@ -47,9 +47,34 @@ namespace RockGame
             Check(allWild && spots.Count >= 25, $"wild respawns are random ({spots.Count} different spots out of 40, none in a base)");
             Log($"game mode {Cfg.RulesName(Cfg.Rules)} on {Cfg.MapLabel}");
             Check(Cfg.MapKey >> Cfg.RulesShift != 0 || Cfg.Rules == GameRules.Classic, "the game mode is in the map key (synced to clients)");
+            {
+                var k0 = Cfg.MapKey;
+                var rules0 = Cfg.Rules;
+                Cfg.SetMap(k0, Cfg.MapSeed);
+                Check(Cfg.Rules == rules0, "the game mode survives the map key round trip");
+            }
+            // prices and order asked for
+            Check(Cfg.SpearWood == 100 && Cfg.ArmorWood == 250 && Cfg.ArmorHp == 50 && Cfg.SaddleWood == 750 && Cfg.RamUses == 1,
+                $"spear 100, armour 250 (+50 HP), saddle 750, ram 1 hit ({Cfg.SpearWood}, {Cfg.ArmorWood}, {Cfg.ArmorHp}, {Cfg.SaddleWood}, {Cfg.RamUses})");
+            if (!Cfg.LimitedCrafting) Check(Cfg.RecipeIndex(Item.Chest) >= 0 && Cfg.RecipeIndex(Item.Chest) < Cfg.RecipeIndex(Item.Bow), "the storage chest is above the bow in crafting");
+            // the glass wall: nobody hurts anyone on the other side of it
+            if (MapBuilder.GlassUp)
+                Check(PlayerNet.GlassBetween(Cfg.BaseCenter[0], Cfg.BaseCenter[1]) && !PlayerNet.GlassBetween(Cfg.BaseCenter[0], Cfg.BaseCenter[0] + Vector3.right), "no hitting through the glass wall");
+            // high external walls stay out of the enemy base, even poking in from the edge
+            if (!Cfg.Builder)
+            {
+                var eb = Cfg.BaseCenter[1 - team];
+                var edge = eb + (Vector3.zero - eb).normalized * (Cfg.BaseHalf + 1.2f);
+                edge.y = MapBuilder.Height(edge.x, edge.z);
+                // the wall runs straight at the base: its middle is outside, its far end pokes 0.9 m in
+                float yaw = Quaternion.LookRotation((Vector3.zero - eb).normalized).eulerAngles.y + 90f;
+                var why = PlayerNet.DeployProblem(Item.Barrier, team, edge, yaw);
+                Check(why == "Not in the enemy base", $"a high external wall poking into the enemy base is refused ({why ?? "allowed"})");
+            }
             switch (Cfg.Rules)
             {
-                case GameRules.Arsenal: yield return ArsenalTests(me, pc, g, team); yield return BlastAndRamTests(me, pc, g, team); break;
+                case GameRules.Arsenal: yield return ArsenalTests(me, pc, g, team); yield return BlastAndRamTests(me, pc, g, team); yield return SuicideTest(me); break;
+                case GameRules.AutoWood: yield return AutoWoodTests(me, pc, g, team); yield return ArsenalTests(me, pc, g, team); break;
                 case GameRules.Primitive:
                 case GameRules.FunRandomLimited:
                 case GameRules.BuildingPrimitive:
@@ -95,27 +120,92 @@ namespace RockGame
         {
             var hat = Cfg.GetRecipe(Cfg.RecipeIndex(Item.Hatchet));
             var xbow = Cfg.GetRecipe(Cfg.RecipeIndex(Item.Crossbow));
-            Check(Cfg.PowerMenu && Cfg.PowerCount == 2 && hat.Wood == Cfg.HatchetWood && xbow.Wood == 350, $"Arsenal: power menu (2 items), normal prices (hatchet {hat.Wood} wood), crossbow {xbow.Wood} wood");
+            Check(Cfg.PowerMenu && Cfg.PowerCount == 8 && Cfg.PowerIndex(Item.Pistol) < 0 && hat.Wood == Cfg.HatchetWood && xbow.Wood == 350, $"{Cfg.RulesName(Cfg.Rules)}: power menu (8 items, no pistol), normal prices (hatchet {hat.Wood} wood), crossbow {xbow.Wood} wood");
+            Check(Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.Sword)).Wood == 500 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.C4)).Wood == 2500 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.Helmet)).Wood == 800
+                && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.Shotgun)).Wood == 2000 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.ShotgunShell)).Wood == 250
+                && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.Revolver)).Wood == 2500 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.RevolverAmmo)).Wood == 200,
+                "power prices: sword 500, C4 2500, helmet 800, shotgun 2000 + 250 a shell, revolver 2500 + 200 a bullet");
+            Check(Cfg.MeleePlayerDamage(Item.Sword, true) == 150f && Cfg.MeleePlayerDamage(Item.Sword, false) == 95f && Cfg.Melee(Item.Sword).Cooldown > Cfg.Melee(Item.Hatchet).Cooldown,
+                "sword: 150 head, 95 body, a slower swing");
+            Check(Mathf.Abs(Cfg.ShotgunPellets * Cfg.ShotgunPelletDamage * Cfg.ShotgunFalloff(0.9f) - 200f) < 0.5f && Cfg.ShotgunFalloff(10f) < 0.7f, "shotgun: 200 within a metre, less further out");
             Check(Cfg.PieceWood(PieceType.Wall) == Cfg.WallWood, $"building pieces at their normal price (wall {Cfg.PieceWood(PieceType.Wall)} wood)");
             for (int i = 0; i < 24; i++) me.ServerGive(Item.Wood, 1000);
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
             yield return new WaitForSeconds(0.4f);
             int w0 = me.Count(Item.Wood);
 
-            // the pistol (5 shots, no ammo to buy)
-            me.CraftRpc(Cfg.PowerBase + 0);
+            // the revolver (6 rounds, bullets bought one at a time)
+            me.CraftRpc(Cfg.PowerBase + Cfg.PowerIndex(Item.Revolver));
             yield return new WaitForSeconds(0.3f);
-            Check(me.Count(Item.Pistol) == 1 && w0 - me.Count(Item.Wood) == Cfg.PistolWood, $"bought a pistol ({w0 - me.Count(Item.Wood)} wood)");
-            yield return Hold(me, Item.Pistol);
-            Check(me.HeldStack.Data == 5, $"the pistol has 5 shots ({me.HeldStack.Data})");
-            yield return Snap("arsenal_pistol");
+            Check(me.Count(Item.Revolver) == 1 && w0 - me.Count(Item.Wood) == Cfg.RevolverWood, $"bought a revolver ({w0 - me.Count(Item.Wood)} wood)");
+            yield return Hold(me, Item.Revolver);
+            Check(me.HeldStack.Data == 6, $"the revolver has 6 rounds ({me.HeldStack.Data})");
+            yield return Snap("arsenal_revolver");
             var fwd = me.transform.forward;
             me.FirePistolRpc(false, default, me.EyePos + fwd * 30f, fwd);
             yield return new WaitForSeconds(0.4f);
-            Check(me.HeldStack.Data == Cfg.PistolMag - 1 && FindWorldItem(Item.Arrow) < 0, $"a shot uses a round ({me.HeldStack.Data} left), hitscan with nothing left behind");
+            Check(me.HeldStack.Data == Cfg.RevolverMag - 1 && FindWorldItem(Item.Arrow) < 0, $"a shot uses a round ({me.HeldStack.Data} left), hitscan with nothing left behind");
             me.ReloadPistolRpc();
             yield return new WaitForSeconds(0.4f);
-            Check(me.HeldStack.Data == Cfg.PistolMag - 1, "no reloading without ammo");
+            Check(me.HeldStack.Data == Cfg.RevolverMag - 1, "no reloading without bullets");
+            me.CraftRpc(Cfg.PowerBase + Cfg.PowerIndex(Item.RevolverAmmo));
+            yield return new WaitForSeconds(0.3f);
+            me.ReloadPistolRpc();
+            yield return new WaitForSeconds(0.4f);
+            Check(me.HeldStack.Data == Cfg.RevolverMag && me.Count(Item.RevolverAmmo) == 0, "bought a bullet and reloaded");
+
+            // the waterpipe shotgun: one shell at a time
+            me.CraftRpc(Cfg.PowerBase + Cfg.PowerIndex(Item.Shotgun));
+            me.CraftRpc(Cfg.PowerBase + Cfg.PowerIndex(Item.ShotgunShell));
+            me.CraftRpc(Cfg.PowerBase + Cfg.PowerIndex(Item.ShotgunShell));
+            yield return new WaitForSeconds(0.4f);
+            yield return Hold(me, Item.Shotgun);
+            Check(me.HeldStack.Data == 0 && me.Count(Item.ShotgunShell) == 2, "bought a shotgun (empty) and 2 shells");
+            me.ReloadShotgunRpc();
+            yield return new WaitForSeconds(0.3f);
+            me.ReloadShotgunRpc();
+            yield return new WaitForSeconds(0.3f);
+            Check(me.HeldStack.Data == 1 && me.Count(Item.ShotgunShell) == 1, "it takes one shell per reload");
+            me.FireShotgunRpc(me.transform.forward);
+            yield return new WaitForSeconds(0.4f);
+            Check(me.HeldStack.Data == 0, "fired the shell");
+            yield return Snap("arsenal_shotgun");
+
+            // the sword, C4 and the headshot helmet
+            me.CraftRpc(Cfg.PowerBase + Cfg.PowerIndex(Item.Sword));
+            me.CraftRpc(Cfg.PowerBase + Cfg.PowerIndex(Item.C4));
+            me.CraftRpc(Cfg.PowerBase + Cfg.PowerIndex(Item.Helmet));
+            yield return new WaitForSeconds(0.4f);
+            Check(me.Count(Item.Sword) == 1 && me.Count(Item.C4) == 1 && me.Count(Item.Helmet) == 1, "bought a sword, C4 and a helmet");
+            yield return Hold(me, Item.Sword);
+            yield return Snap("arsenal_sword");
+
+            // two loaded crossbows: firing one makes the other wait for the reload too
+            {
+                me.ServerGive(Item.Arrow, 5);
+                for (int i = 0; i < Cfg.HotbarSize; i++) if (me.Inv[i].Id != Item.Arrow) me.Inv[i] = default; // room on the hotbar
+                for (int i = 0; i < 2; i++) me.ServerGive(Item.Crossbow, 1, 1);
+                yield return new WaitForSeconds(0.3f);
+                int a = -1, b = -1;
+                for (int i = 0; i < Cfg.HotbarSize; i++) if (me.SlotAt(i).Id == Item.Crossbow) { if (a < 0) a = i; else if (b < 0) b = i; }
+                if (a >= 0 && b >= 0)
+                {
+                    me.HeldSlot.Value = (byte)a;
+                    yield return new WaitForSeconds(0.3f);
+                    me.FireCrossbowRpc(me.EyePos, me.transform.forward * Cfg.CrossbowSpeed);
+                    yield return new WaitForSeconds(0.35f);
+                    me.HeldSlot.Value = (byte)b;
+                    yield return new WaitForSeconds(0.2f);
+                    me.FireCrossbowRpc(me.EyePos, me.transform.forward * Cfg.CrossbowSpeed);
+                    yield return new WaitForSeconds(0.3f);
+                    Check(me.SlotAt(a).Data == 0 && me.SlotAt(b).Data == 1, "the second crossbow can't fire straight after the first (shared reload)");
+                    yield return new WaitForSeconds(Cfg.CrossbowReload);
+                    me.FireCrossbowRpc(me.EyePos, me.transform.forward * Cfg.CrossbowSpeed);
+                    yield return new WaitForSeconds(0.3f);
+                    Check(me.SlotAt(b).Data == 0, "after the reload time it fires");
+                }
+                else Log("FAIL: no room for two crossbows");
+            }
 
             Check(Cfg.Melee(Item.Rock).Cooldown == Cfg.Melee(Item.Hatchet).Cooldown, $"the rock swings at the hatchet's speed ({Cfg.Melee(Item.Rock).Cooldown}s)");
             // fortify: a foundation and a wall, then every wooden piece turns to stone
@@ -165,14 +255,38 @@ namespace RockGame
             foreach (var s in Structure.All) if (s.Team.Value == team && s.Upgradable && s.Tier.Value == 0) wood++;
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
             yield return new WaitForSeconds(0.3f);
-            me.CraftRpc(Cfg.PowerBase + 1);
-            yield return new WaitForSeconds(0.5f);
-            int stone = 0, still = 0;
-            foreach (var s in Structure.All) if (s.Team.Value == team && s.Upgradable) { if (s.Tier.Value == 2) stone++; else still++; }
-            Check(wood >= 2 && stone >= wood && still == 0, $"fortify turned {stone} pieces to metal");
-            var metalWall = Structure.All.Find(s => s.Team.Value == team && s.PType == PieceType.Wall);
-            Check(metalWall != null && metalWall.DisplayName == "Metal Wall" && Mathf.Approximately(metalWall.Health.Value, Cfg.PieceHp(PieceType.Wall, 1) * Cfg.MetalHpMul),
-                $"metal is tougher than stone ({(metalWall != null ? metalWall.Health.Value : 0):0} HP)");
+            // fortify goes up a step every time it's bought: stone 1000, metal 2000, refined 2500
+            int fi = Cfg.PowerIndex(Item.FortifyBuff);
+            int[] price = { 1000, 2000, 2500 };
+            string[] names = { "Stone Wall", "Metal Wall", "Refined Wall" };
+            for (int step = 0; step < 3; step++)
+            {
+                int before = me.Count(Item.Wood);
+                Check(Cfg.GetPowerRecipe(fi, team).Wood == price[step], $"fortify step {step + 1} costs {Cfg.GetPowerRecipe(fi, team).Wood}");
+                me.CraftRpc(Cfg.PowerBase + fi);
+                yield return new WaitForSeconds(0.5f);
+                int up = 0, still = 0;
+                foreach (var s in Structure.All) if (s.Team.Value == team && s.Upgradable) { if (s.Tier.Value == step + 1) up++; else still++; }
+                var w = Structure.All.Find(s => s.Team.Value == team && s.PType == PieceType.Wall);
+                Check(wood >= 2 && up >= wood && still == 0 && before - me.Count(Item.Wood) == price[step] && w != null && w.DisplayName == names[step] && Mathf.Approximately(w.Health.Value, Cfg.PieceHp(PieceType.Wall, step + 1)),
+                    $"fortify {step + 1}: {up} pieces to {names[step]} for {before - me.Count(Item.Wood)} wood ({(w != null ? w.Health.Value : 0):0} HP)");
+            }
+            {
+                int before = me.Count(Item.Wood);
+                me.CraftRpc(Cfg.PowerBase + fi);
+                yield return new WaitForSeconds(0.4f);
+                Check(me.Count(Item.Wood) == before, "a fourth fortify isn't sold (already refined)");
+            }
+            // a refined piece takes 4 ram hits: each knocks it down one step
+            {
+                var w = Structure.All.Find(s => s.Team.Value == team && s.PType == PieceType.Wall);
+                if (w != null)
+                {
+                    w.ServerDowngrade();
+                    Check(w.Tier.Value == 2 && w.DisplayName == "Metal Wall", "a ram hit knocks refined down to metal");
+                    w.ServerUpgrade(3);
+                }
+            }
 
             // tree cracker (a Fun mode item now) fells a tree in one hit
             me.ServerGive(Item.TreeCracker, 1, Cfg.TreeCrackerUses);
@@ -219,8 +333,7 @@ namespace RockGame
         {
             var arrows = Cfg.GetRecipe(Cfg.RecipeIndex(Item.Arrow));
             Check(arrows.Wood == 50 && arrows.Count == 5, $"arrows: {arrows.Count} for {arrows.Wood} wood");
-            Check(Cfg.GetPowerRecipe(0).Wood == 5000 && Cfg.GetPowerRecipe(1).Wood == 5000, "pistol and fortify cost 5000");
-            Check(Cfg.PistolHeadDamage == 200f && Cfg.PistolBodyDamage == 95f, "pistol: 200 head, 95 body");
+            Check(Cfg.RevolverHeadDamage == 50f && Cfg.RevolverBodyDamage == 30f && Cfg.RevolverMag == 6, "revolver: 6 rounds, 50 head, 30 body");
 
             // our own C4 blows up our own high external wall and our own pieces
             var bc = Cfg.BaseCenter[team];
@@ -262,6 +375,39 @@ namespace RockGame
             Check(gone == 5 && sidesOk, $"the ram smashed {gone}/5 walls stacked in a row and left the ones beside them");
         }
 
+        IEnumerator SuicideTest(PlayerNet me)
+        {
+            if (me.Dead.Value) yield break;
+            me.SuicideRpc();
+            yield return new WaitForSeconds(0.5f);
+            Check(me.Dead.Value, "suicide from the pause menu kills you");
+        }
+
+        /// <summary>Auto Wood: Arsenal, plus a pile of wood that grows at your base by itself.</summary>
+        IEnumerator AutoWoodTests(PlayerNet me, PlayerController pc, NetGame g, int team)
+        {
+            Check(Cfg.AutoWood && Cfg.PowerMenu, "Auto Wood: Arsenal's power menu");
+            while (g.S != GameState.PreBall && g.S != GameState.BallLive) yield return null;
+            yield return new WaitForSeconds(3.5f);
+            int best = -1, count = 0;
+            foreach (var it in g.Items)
+                if (it.Stack.Id == Item.Wood && Cfg.BaseTeamAt(it.Pos) == team && it.Stack.Count > count) { best = it.Id; count = it.Stack.Count; }
+            Check(best >= 0 && count >= Cfg.AutoWoodPerSecond * 2 && count % Cfg.AutoWoodPerSecond == 0, $"a wood pile grew at our base ({count} wood, one stack)");
+            yield return new WaitForSeconds(1.2f);
+            int now = 0;
+            foreach (var it in g.Items) if (it.Id == best) now = it.Stack.Count;
+            Check(now > count, $"it keeps stacking up ({count} -> {now})");
+            var pile = default(DroppedItem);
+            foreach (var it in g.Items) if (it.Id == best) pile = it;
+            pc.LocalTeleport(pile.Pos + Vector3.up * 0.1f - Cfg.BackDir(team) * 1.2f, Cfg.SpawnYaw(team));
+            yield return new WaitForSeconds(0.4f);
+            int w0 = me.Count(Item.Wood);
+            me.PickupItemRpc(best);
+            yield return new WaitForSeconds(0.4f);
+            Check(me.Count(Item.Wood) >= w0 + now, $"picked up the pile ({me.Count(Item.Wood) - w0} wood)");
+            yield return Snap("autowood_pile");
+        }
+
         IEnumerator BuilderTests(PlayerNet me, PlayerController pc, NetGame g, int team)
         {
             Check(Cfg.Builder && Cfg.PowerMenu, "Builder: power menu on");
@@ -276,7 +422,7 @@ namespace RockGame
             me.CraftRpc(Cfg.RecipeIndex(Item.BuildingPlan));
             yield return new WaitForSeconds(0.4f);
             Check(me.Count(Item.BuildingPlan) == 1 && me.CraftingItem.Value == 0, "the building plan is instant");
-            Check(Cfg.CraftSeconds(Cfg.GetPowerRecipe(1)) == 0f && Cfg.GetPowerRecipe(1).Output == Item.FortifyBuff, "fortify all walls is instant");
+            Check(Cfg.CraftSeconds(Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.FortifyBuff))) == 0f, "fortify all walls is instant");
             // everything else takes a while, one at a time, with a queue like Rust
             var spear = Cfg.GetRecipe(Cfg.RecipeIndex(Item.Spear));
             var hatchet = Cfg.GetRecipe(Cfg.RecipeIndex(Item.Hatchet));

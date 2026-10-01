@@ -24,6 +24,7 @@ Laid out top to bottom: **MATCH SETUP** (what the host picks), then **PLAY** (ho
 - **Game mode** - separate ways to play; they don't mix:
   - *Classic*: the original game.
   - *Arsenal*: normal prices (except the crossbow, 350 wood instead of 500), plus a **POWER ITEMS** menu to the right of crafting (see below).
+  - *Auto Wood*: Arsenal, but **wood piles up at your base by itself**: 5 a second, in one growing stack on the bedrock beside the machine (Auto Wood Per Second in CHANGE VALUES). Walk up and press E to take the lot; a full pile (1000) starts another one beside it.
   - *Primitive*: the classic game, but the only things you can craft are the hatchet, spear, building plan and battering ram.
   - *Building Primitive*: Builder's rules (below), but only those four primitive items and no power items.
   - *Builder*: **no bases, no machines**. Arsenal's items and prices, but most crafts take a few seconds: small timers stack up in the top right: the top one is being made (its bar runs down), and anything else you buy meanwhile waits under it with a full bar, moving up and starting when its turn comes (like Rust - one thing at a time, paid for up front). The building plan and Fortify All Walls are instant; you can **craft, build and put chests anywhere**; pieces **lock on to each other** Fortnite style (walls hang off the walls they touch, floors and stairs hold on to walls around them, ground-level walls reach down into the ground). **The ball** can't be thrown: anyone can pick it up, and **LMB (or E) puts it down** right in front of you - a block in your team's colour grows up under it and it's your team's ball. The ball always has a flag pointing at the sky (white when loose, the colour of whoever has it); set **Builder Flag Always Up** to Off in CHANGE VALUES to go back to a flag that only grows out while the ball is planted. When anyone picks the ball up, the block sinks away again. Whoever's ball it is (planted, not carried) when time runs out wins; otherwise it's sudden death.
@@ -33,7 +34,7 @@ Laid out top to bottom: **MATCH SETUP** (what the host picks), then **PLAY** (ho
   - In both Fun modes the **Game length** row changes to the match length and the free item interval (both - / +).
 - **Game length**: - / + for the time behind the glass wall (building, 30 s steps) and the time with the ball (1 min steps). Saved on this PC; the host's are used.
 - While waiting for everyone to join, players brawl with rocks in the stadium; when the lobby is full everyone is sent to their base and the match starts.
-- **Graphics**: *Normal*, *PSX* or *AI PSX TEST*. PSX swaps the 3D models for low-res PSX-style ones (trees so far, more to come); only the looks change - trees are the same size to hit, give the same wood and have the same weak spots, and everything else in the game works the same in both. Each player picks their own (also in Settings > Display, and it switches live). Normal is our own look, where new features get made first.
+- **Graphics**: *Normal*, *PSX* or *AI PSX TEST*. PSX swaps the 3D models for low-res PSX-style ones (trees so far, more to come); only the looks change - trees are the same size to hit, give the same wood and have the same weak spots, and everything else in the game works the same in both. **The host's graphics are used by everyone in the match** (a client's own choice comes back when they leave; Settings > Display can't change it during a match). Normal is our own look, where new features get made first. On PSX trees the weak spot X sits right on the trunk you see (it's placed by a ray against the PSX trunk's own triangles), and aiming at it counts.
   - *AI PSX TEST* is a separate test mode (Normal and PSX are untouched by it): using the PSX trees as the reference, the whole wild map is redone in that style - the PSX trees, grass tufts made like their foliage cards, and every other model re-skinned with chunky 32x32 pixel textures generated in the game (grass, dirt, rock, bark, planks, brick, snow, sand, fur...) on a PS1-style shader (`Assets/Game/Resources/AiPsx/AiPsx.shader`: vertices snap to a coarse grid so they wobble, textures warp because they're mapped without perspective correction, lighting per vertex, 15-bit colour with dithering), rendered at half resolution with blocky upscaling, and distance fog. Code in `AiPsxArt.cs`. `-autotest aipsx -aipsx` takes pictures of it and checks Normal and PSX come back exactly as they were.
 - **Testing** (on/off buttons): **Alien outlines** (test, any mode) - enemies get a faint glow in their team colour so they're easier to spot, with **Glow strength** and **Glow thickness** sliders (also in CHANGE VALUES > Test; the host's setting is used). **Solo test** - the match starts without an opponent, so you can try everything alone. **Fast timers** - 10s wall/ball drop and a 90s match instead of 5 min behind the wall and then 15 min.
 - **Map**: *Plains* (flat), *Highlands* (the wild map: random hilly terrain with minable rocks and watch towers, new every match), or one of the five theme maps: *Beach* (palm island in the middle ringed by shallow water - wading is slow - with channels down the sides; craft a **Boat** for 1500 wood, put it on open water and E to drive it round), *Canyon* (red desert, tall mesas split the map into lanes, lots of stone), *Frostlake* (snowy hills round a frozen lake; the ice is slippery), *Volcano* (black ash, a broken ring of lava round the middle that burns you, a volcano smoking on the horizon), *Ruins* (broken walls and pillars for cover, extra stone). Each in **Small**, **Medium**, **Large** (1.5x) or **Huge** (2x) (the bigger maps get more trees, rocks, bushes, horses and towers). Picked by the host; the client builds the same map from the synced seed.
@@ -44,15 +45,23 @@ Laid out top to bottom: **MATCH SETUP** (what the host picks), then **PLAY** (ho
   - **Airdrop items**: tick which items airdrops can have: C4, Death Wand, Portal Gun, Rocket Launcher, Tree Camo, Invisibility Potion, Jetpack, Wallhack Glasses, Fake Bomb Bush.
   - **Respawn**: *Normal* or *With an airdrop item* (every time you respawn you get a random one of the picked airdrop items).
 
-Command line: `-host`, `-client <ip>`, `-port <n>`, `-solo`, `-fast`, `-map plains|highlands`, `-small`, `-big` (medium), `-wood`, `-normal`, `-sides`, `-anywhere`, `-seed <n>`, `-mode 1v1|2v2|3v3|4v4|ffa3|ffa4|2v2v2|2v2v2v2`, `-large`, `-huge`, `-rules classic|arsenal|builder|fun|funrandom`, `-map beach|canyon|frostlake|volcano|ruins`.
+Command line: `-host`, `-client <ip>`, `-port <n>`, `-solo`, `-fast`, `-map plains|highlands`, `-small`, `-big` (medium), `-wood`, `-normal`, `-sides`, `-anywhere`, `-seed <n>`, `-mode 1v1|2v2|3v3|4v4|ffa3|ffa4|2v2v2|2v2v2v2`, `-large`, `-huge`, `-rules classic|arsenal|autowood|builder|fun|funrandom|funrandomlimited|primitive|buildingprimitive`, `-map beach|canyon|frostlake|volcano|ruins`.
 
-### Power items (Arsenal and Builder)
+### Power items (Arsenal, Auto Wood and Builder)
 Bought with wood from the POWER ITEMS column next to crafting (in your base; anywhere in Builder):
 
 | Item | Wood | What it does |
 |---|---|---|
-| Pistol | 5000 | Hitscan. 5 shots: 200 to the head, 95 to the body. No ammo to buy. While you hold it, the rounds left show big in the top left. |
-| Fortify All Walls | 5000 | Every piece your team has placed (wood or stone) turns to **metal**: twice stone's HP, melee barely scratches it, a ram knocks it down to stone. |
+| Sword | 500 | A slow, heavy swing (its wind-up and swing time are **Sword Swing Time** in CHANGE VALUES): 150 to the head, 95 to the body. |
+| Waterpipe Shotgun | 2000 | Like Rust's waterpipe: one shell at a time (loads the next by itself, or R). Fires 10 pellets that each hit on their own: within a metre they all land for **200**; further out the spread and falloff take most of it. Pellets in the head do x1.5 (a helmet stops them). |
+| Shotgun Shell | 250 each | |
+| Revolver | 2500 | Hitscan, 6 rounds: 30 to the body, 50 to the head. R reloads (from your bullets), and it reloads by itself when empty. |
+| Revolver Bullet | 200 each | |
+| C4 | 2500 | The same C4 as the airdrop one (thrown, wrecks everything nearby). |
+| Headshot Helmet | 800 | The alien helmet: put it on and the next headshot does no damage and breaks it. |
+| Fortify All Walls | 1000, then 2000, then 2500 | Goes up a step **every time your team buys it**: every piece your team has placed turns to **stone** (2 ram hits), then **metal** (3 ram hits, 2x stone's HP), then **refined** (4 ram hits, 3x stone's HP, dark plate with brass trim). Melee barely scratches metal and refined. Each ram hit knocks a piece down one step. |
+
+While you hold the revolver or the shotgun, the rounds loaded and your spare ammo show big in the top left. (The pistol isn't sold any more; it's still in the Fun mode item pool.)
 
 All these numbers are in CHANGE VALUES under "Arsenal and Builder" (and "Fun modes" for the item interval and Fun match length).
 
@@ -60,7 +69,7 @@ All these numbers are in CHANGE VALUES under "Arsenal and Builder" (and "Fun mod
 Everything for the five theme maps is in `Assets/Scripts/ThemeMaps/` (terrain, props, palms, water/ice/lava, the boat). To remove them: delete that folder, then delete every line or block marked `// THEME MAPS` (search the scripts for it: Config, Bootstrap, MapBuilder, NetGame, ResourceNode, Vehicle, PlayerNet, PlayerController, Hud.Menus, AutoTest.Modes (the maps test), and the second line of the `MapKind` enum). The `Boat` item can stay in the `Item` enum (items are saved by number).
 
 ## Pause menu (Esc)
-- **Resume**, **Settings**, **Controls**, **Dev settings**, **Leave game**. Esc goes back a page.
+- **Resume**, **Settings**, **Controls**, **Dev settings**, **Suicide** (click twice: you die, drop everything as usual and respawn), **Leave game**. Esc goes back a page.
 - **Settings** (also on the main menu), in tabs:
   - **Sound**: Master, Sound effects (every game and menu sound) and Voice chat volume.
   - **Controls**: mouse sensitivity, and every key laid out by what it does (movement, actions, building, voice, hotbar) with a note on what each is for. Click a key and press the new key or mouse button to rebind it; every action has a main and a second key. Esc cancels, Backspace clears, **Reset controls** puts the defaults back.
@@ -82,7 +91,7 @@ Everything for the five theme maps is in `Assets/Scripts/ThemeMaps/` (terrain, p
 - Respawning: while the glass wall is up you always come back on your bedrock. After that you choose: **respawn in base** or **respawn in the wild** (a truly random spot anywhere out in the wild - any side of the map, never in a base, the middle, water or lava).
 
 ## Airdrops
-20 seconds before each airdrop lands, a banner says **AIRDROP DROPPING IN 20 SECONDS** and a countdown shows top left. Once the wall is down, a giant alien ship comes down from very high up and **beams an airdrop crate** to a random spot (never close to a base; follow the purple beam; a big "AIRDROP INCOMING" shows in the middle of the screen). How many come per match and which items they can have are set in **MODE OPTIONS**; a crate nobody emptied stays put. Each crate holds one random item from the picked ones. The items in the game (only the first nine can be picked for now; the rest are unused):
+10 seconds before each airdrop lands, a banner says **AIRDROP DROPPING IN 10 SECONDS** and a countdown shows top left. Once the wall is down, a giant alien ship comes down from very high up and **beams an airdrop crate** to a random spot (never close to a base; follow the purple beam; a big "AIRDROP INCOMING" shows in the middle of the screen). How many come per match and which items they can have are set in **MODE OPTIONS**; a crate nobody emptied stays put. Each crate holds one random item from the picked ones. The items in the game (only the first nine can be picked for now; the rest are unused):
 
 | Item | What it does |
 |---|---|
@@ -117,7 +126,7 @@ Everything for the five theme maps is in `Assets/Scripts/ThemeMaps/` (terrain, p
 | Key | Action |
 |---|---|
 | WASD / Shift / Space / Ctrl or C | move / sprint / jump / crouch (also with the inventory open) |
-| Sprint, then Ctrl / C | **slide** (Crab Game style; works every time - pressed in the air it starts when you land - and always boosts you forward where you look): you keep your speed, go faster downhill and slower uphill, steer a little, and can jump out of it without losing speed. Hold crouch to keep sliding; how slippery it is is **Slide Slipperiness** in CHANGE VALUES (0 = grippy, 10 = ice, default 7.5 - a long glide), along with Slide Boost, Slide Min Speed and Slide Steer |
+| Sprint, then Ctrl / C | **slide** (like Apex / Titanfall; pressed in the air it starts when you land): you slide off where you look with the speed you had (at least sprint speed) plus a **boost - but only once every 1.5 s**, so spamming slide can't build up speed. Friction slows you on the flat; **slopes pull you down them** (steep ones cancel the friction, so you keep sliding to the bottom) and slow you going up; crouching while running down a slope starts a slide too. You stick to the ground going downhill, steer a little, and can jump out of it keeping your speed. Nothing goes past **Slide Max Speed** (16 m/s). Tuning in CHANGE VALUES: Slide Slipperiness (0 = grippy, 10 = ice), Slide Boost, Slide Boost Cooldown, Slide Max Speed, Slide Slope Accel, Slide Min Speed, Slide Steer |
 | Mouse / LMB | look / attack, gather, place |
 | Hold LMB (bow) | draw, release to fire (RMB cancels) |
 | Spear | LMB stab · **hold RMB** to wind up, then **LMB** to throw |
@@ -142,6 +151,7 @@ Everything for the five theme maps is in `Assets/Scripts/ThemeMaps/` (terrain, p
 - You always hold something: the hotbar only scrolls through slots that have an item. The rock stays on your hotbar - it can't be dropped or put in a chest.
 - **Drag an item outside the inventory** to throw it on the ground; look at it and press E to pick it up.
 - Drag to move or swap, **right-drag** to split a stack in half, **shift-click** to quick-move (between chest/bag and inventory, or hotbar and inventory).
+- **Shift-clicking things into a chest sorts it**: stacks of the same thing are topped up and everything is laid out in order - wood and stone, ammo, weapons, tools, things you place, armour, food, then the rest. (Dragging things in by hand leaves them where you put them.)
 - **Storage chest**: craft it, hold it and click to place it anywhere inside your base. Press E on it to open it next to your inventory (14 slots). Enemies who break in can loot it, and breaking it spills its contents into a bag.
 
 ## Crafting (anywhere in your base, TAB)
@@ -149,17 +159,17 @@ Everything for the five theme maps is in `Assets/Scripts/ThemeMaps/` (terrain, p
 |---|---|
 | Stone Hatchet (fast wood) | 50 wood |
 | Stone Pickaxe (fast stone) | 30 wood, 10 stone |
-| Spear | 75 wood |
+| Spear | 100 wood |
 | Building Plan | 5 wood |
+| Storage Chest | 50 wood |
 | Bow | 100 wood, 15 stone |
 | Arrows (5) | 50 wood |
-| Crossbow (55 damage, flat and fast) | 500 wood |
-| Armour (goes straight on: 100 extra health) | 500 wood |
+| Crossbow (55 damage, faster and flatter than the bow) | 500 wood |
+| Armour (goes straight on: 50 extra health) | 250 wood |
 | Chainsaw (67 uses) | 500 wood |
-| Battering Ram (3 hits) | 125 wood, 50 stone |
-| Storage Chest | 50 wood |
+| Battering Ram (1 hit) | 125 wood, 50 stone |
 | High External Wall | 40 wood |
-| Saddle (ride a wild horse; in your team's colour) | 1000 wood |
+| Saddle (ride a wild horse; in your team's colour) | 750 wood |
 
 In wood mode the stone part is added to the wood cost and there's no pickaxe.
 
@@ -179,7 +189,7 @@ In wood mode the stone part is added to the wood cost and there's no pickaxe.
 - You can only build inside your own base (the tinted square with the grid). Pieces snap to a 3 m grid. There's no delay between placements, and you can place pieces right where you stand (you get lifted on top).
 - Pieces: Foundation (15 wood), Wall (15), Doorway with a lockable door (20), Window (15), Floor (12), Stairs (20).
 - You don't have to aim at the bottom edge: look along where you want the wall (eye height or above works) and it goes to the farthest spot along your aim where it can actually go (so it lands where you're pointing).
-- **High external walls** (500 HP, like Rust's): a free-standing palisade of sharpened logs 4 m wide and about 5.5 m tall. Place them out on the map or inside your own base (not in the enemy base, not on the bedrock).
+- **High external walls** (500 HP, like Rust's): a free-standing palisade of sharpened logs 4 m wide and about 5.5 m tall. Place them out on the map or inside your own base - never in the enemy base (no end of the wall may poke into it) and never on or right next to the enemy's building pieces (in every mode, Builder too), and not on the bedrock.
 - Rust-style support: walls and stairs need a foundation or floor, and floors need a wall below or a neighbouring floor. Destroying support collapses what's on it.
 - Floors (ceilings) can be built off the top of a ramp (stairs) in every mode, and the floor ghost looks at every level your aim crosses - so from low on the stairs you already see the ceiling go green where you point.
 - Upgrade to stone (30-50 stone) for 3-4x HP. Melee does only 20% damage to stone, so bring a ram.
@@ -197,10 +207,11 @@ In wood mode the stone part is added to the wood cost and there's no pickaxe.
 | Doorway | 350 | 1200 |
 | Foundation | 500 | 1800 |
 
-- **Ram**: a hand-held log. Hold LMB for 1.5 s next to an enemy piece: **wooden pieces, chests and high external walls break instantly** (in every mode) - and a high external wall takes the ones stacked right behind it with it (up to 5 in a row; not the ones beside it), **stone pieces are knocked back down to full-HP wood**. 3 hits per ram. You move 25% slower while holding it.
-- Player damage: rock 12, hatchet/pickaxe 14, spear 35 (stab) / 60 (thrown), arrow up to 50 at full draw, crossbow 55. **Headshots do x2** for everything.
+- **Ram**: a hand-held log. Hold LMB for 1.5 s next to an enemy piece: **wooden pieces, chests and high external walls break instantly** (in every mode) - and a high external wall takes the ones stacked right behind it with it (up to 5 in a row; not the ones beside it), **stone, metal and refined pieces are knocked down one step at full HP** (refined to metal to stone to wood). 1 hit per ram. You move 25% slower while holding it.
+- Player damage: rock 12, hatchet/pickaxe 14, spear 35 (stab) / 60 (thrown), arrow up to 50 at full draw, crossbow 55. **Headshots do x2** for everything (the sword and guns have their own headshot numbers).
+- **Crossbow**: the bolt flies at 58 m/s with a bit more drop than an arrow (Crossbow Speed / Crossbow Gravity). It reloads by itself; the reload is **one crank for all your crossbows**: fire one and swap to another loaded crossbow and that one has to wait out the reload too, and swapping away mid-reload doesn't reset it. (Fixed: a client's crossbow used to reload twice before it would fire.)
 - Weapons do double damage to buildings compared to before.
-- You can't shoot through the glass wall by standing right up against it.
+- You can't shoot through the glass wall by standing right up against it, and while it's up **nothing hurts anyone on the other side of it** (hits are checked on the server, so hitboxes poking through the glass don't count).
 - The bow shoots slower arrows with more drop (55 m/s, normal gravity), like the original bow. It's held like Rust's hunting bow: left arm in from the lower left, and when drawn the arrow lines up with the crosshair.
 - Hitboxes (radius 0.52 m) wrap the alien, and there's hit assist like most games: a melee swing counts if it passes within 0.35 m of a player, arrows/spears within 0.15 m (both adjustable in CHANGE VALUES, as are the hitbox size, bow speed and arrow drop).
 - Melee lands on the swing's impact frame. The rock is swung two-handed: a hit bounces your hands back up with a short hit-stop, a miss follows through down.

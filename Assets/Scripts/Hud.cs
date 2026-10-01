@@ -260,11 +260,14 @@ namespace RockGame
                 }
             }
 
-            // ---- the pistol's rounds, big, top left ----
-            if (me.HeldItem == Item.Pistol && !me.Dead.Value)
+            // ---- the gun's rounds, big, top left (pistol, revolver, shotgun) ----
+            if ((Cfg.IsGun(me.HeldItem) || me.HeldItem == Item.Shotgun) && !me.Dead.Value)
             {
                 var ps = me.HeldStack;
-                Shadowed(new Rect(14, 150 * k, 320 * k, 70 * k), $"<b><size={Mathf.RoundToInt(52 * k)}>{ps.Data}</size></b><size={Mathf.RoundToInt(22 * k)}> / {Cfg.PistolMag}  PISTOL</size>", m_Label);
+                bool sg = ps.Id == Item.Shotgun;
+                int mag = sg ? 1 : Cfg.GunMag(ps.Id);
+                int spare = me.Count(sg ? Item.ShotgunShell : Cfg.GunAmmo(ps.Id));
+                Shadowed(new Rect(14, 150 * k, 420 * k, 70 * k), $"<b><size={Mathf.RoundToInt(52 * k)}>{ps.Data}</size></b><size={Mathf.RoundToInt(22 * k)}> / {mag}  {Cfg.ItemName(ps.Id).ToUpper()}   <color=#bbbbbb>{spare} spare</color></size>", m_Label);
             }
 
             // ---- Builder crafting timers, then messages (top right) ----
@@ -427,7 +430,7 @@ namespace RockGame
                 case Item.BuildingPlan:
                     if (pc.DemolishMode) return "<b>Demolish</b>    LMB: take down your own piece (half the wood back)    hold RMB: building wheel";
                     return $"<b>{Cfg.PieceName(pc.BuildPiece)}</b>  ({Cfg.PieceWood(pc.BuildPiece)} wood)    hold RMB: building wheel   R: rotate stairs   " + (Cfg.WoodMode ? "" : "F: upgrade to stone   ") + "X: demolish yours";
-                case Item.Ram: return $"<b>Battering Ram</b> ({s.Data} hits left)    hold LMB at an enemy piece: wood breaks instantly, stone drops to wood";
+                case Item.Ram: return $"<b>Battering Ram</b> ({s.Data} hit{(s.Data == 1 ? "" : "s")} left)    hold LMB at an enemy piece: wood breaks instantly, stone / metal / refined drop one step";
                 case Item.Spear: return "<b>Spear</b>    LMB: stab    hold RMB + LMB: throw    E: pick thrown spears back up";
                 case Item.Bow: return $"<b>Bow</b>  ({me.Count(Item.Arrow)} arrows)    hold LMB to draw, release to fire";
                 case Item.Chest: return "<b>Storage Chest</b>    LMB: place it inside your base";
@@ -437,7 +440,7 @@ namespace RockGame
                 case Item.DeathWand: return "<b>Death Wand</b> (1 shot)    LMB: fire - anyone it passes close to dies";
                 case Item.Helmet: return "<b>Alien Helmet</b>    LMB: put it on - the next headshot does no damage and breaks it";
                 case Item.Armor: return $"<b>Wooden Armour</b> ({(s.Data > 0 ? s.Data : Cfg.ArmorHp)} HP)    LMB: put it on - a second health bar that goes first";
-                case Item.Crossbow: return $"<b>Crossbow</b>  ({(s.Data > 0 ? "loaded" : "empty")}, {me.Count(Item.Arrow)} arrows)    LMB: fire   hold RMB: aim   reloads by itself";
+                case Item.Crossbow: return $"<b>Crossbow</b>  ({(s.Data > 0 ? "loaded" : "empty")}, {me.Count(Item.Arrow)} arrows)    LMB: fire   hold RMB: aim   reloads by itself (one reload for all your crossbows)";
                 case Item.FortTower: return "<b>Fort Tower</b>    LMB: throw it - a lookout tower with a ladder pops up where it lands";
                 case Item.Car: return "<b>Wooden Car</b>    LMB: put it down, then E to drive";
                 case Item.Saddle: return $"<b>Saddle</b> ({Cfg.TeamLabel(s.Data > 0 ? s.Data - 1 : me.Team.Value)})    walk up to a wild horse and press E to saddle and ride it";
@@ -458,6 +461,11 @@ namespace RockGame
                 case Item.EnderPearl: return "<b>Ender Pearl</b>    LMB: throw it - you teleport to wherever it lands";
                 case Item.Pistol: return $"<b>Pistol</b>  ({s.Data} shot{(s.Data == 1 ? "" : "s")} left)    LMB: shoot" + (me.Count(Item.PistolAmmo) > 0 ? $"   R: reload ({me.Count(Item.PistolAmmo)} spare ammo)" : "");
                 case Item.PistolAmmo: return "<b>Pistol Ammo</b>    the pistol reloads from this";
+                case Item.Revolver: return $"<b>Revolver</b>  ({s.Data}/{Cfg.RevolverMag})    LMB: shoot   R: reload ({me.Count(Item.RevolverAmmo)} bullets)";
+                case Item.RevolverAmmo: return $"<b>Revolver Bullets</b> x{s.Count}    the revolver reloads from these";
+                case Item.Shotgun: return $"<b>Waterpipe Shotgun</b>  ({(s.Data > 0 ? "loaded" : "empty")}, {me.Count(Item.ShotgunShell)} shells)    LMB: fire   loads the next shell by itself (or R)";
+                case Item.ShotgunShell: return $"<b>Shotgun Shells</b> x{s.Count}    one at a time into the waterpipe shotgun";
+                case Item.Sword: return $"<b>Sword</b>    LMB: a slow, heavy swing - {Cfg.SwordBodyDamage:0} to the body, {Cfg.SwordHeadDamage:0} to the head";
                 case Item.HeavyArmor: return $"<b>Heavy Armour</b> ({Cfg.HeavyArmorHp} HP)    LMB: put it on (replaces wooden armour)";
                 case Item.TreeCracker: return $"<b>Tree Cracker</b> ({s.Data} uses left)    LMB: fells a whole tree in one hit";
                 case Item.Boat: return $"<b>Boat</b>    LMB on the water: put it in, then E to get in (only on maps with water)";
@@ -570,6 +578,8 @@ namespace RockGame
                 case Item.Chainsaw:
                 case Item.TreeCracker: return $"  ({s.Data} uses left)";
                 case Item.Pistol: return $"  ({s.Data}/{Cfg.PistolMag})";
+                case Item.Revolver: return $"  ({s.Data}/{Cfg.RevolverMag})";
+                case Item.Shotgun: return s.Data > 0 ? "  (loaded)" : "  (empty)";
                 case Item.Armor: return $"  ({(s.Data > 0 ? s.Data : Cfg.ArmorHp)} armour HP)";
                 case Item.Crossbow: return s.Data > 0 ? "  (loaded)" : "  (empty)";
                 case Item.Berry: return $"  (RMB to eat, +{Cfg.BerryHeal:0} HP)";
@@ -1054,10 +1064,12 @@ namespace RockGame
         void DrawPowerMenu(PlayerNet me, bool here, float x, float top, float w, float k)
         {
             Shadowed(new Rect(x, top - 34 * k, w, 30 * k), "<b><color=#ffd24a>POWER ITEMS</color></b>", m_Label);
-            float row = 58 * k;
+            float row = Mathf.Min(58 * k, (Screen.height * 0.84f - top) / Mathf.Max(1, Cfg.PowerCount) - 4 * k);
+            int team = me.Team.Value;
             for (int i = 0; i < Cfg.PowerCount; i++)
             {
-                var rec = Cfg.GetPowerRecipe(i);
+                var rec = Cfg.GetPowerRecipe(i, team);
+                bool maxed = rec.Output == Item.FortifyBuff && Cfg.FortifyLevel(team) >= Cfg.MaxFortify;
                 var rr = new Rect(x, top + i * (row + 4 * k), w, row);
                 bool afford = me.Count(Item.Wood) >= rec.Wood && me.Count(Item.Stone) >= rec.Stone;
                 Fill(rr, new Color(0.25f, 0.18f, 0f, here ? 0.55f : 0.3f));
@@ -1068,8 +1080,8 @@ namespace RockGame
                 GUI.color = oldC;
                 string cost = $"{rec.Wood} wood" + (Cfg.Builder ? $" · {Cfg.CraftSeconds(rec):0}s" : "");
                 if (!here) cost = "<color=#8fb8ff>in your base</color>  " + cost;
-                GUI.Label(new Rect(rr.x + row + 4, rr.y + 1, w - row - 96 * k, row), $"<b>{rec.Name}</b>  <size={Mathf.RoundToInt(12 * k)}><color={(afford ? "#ffd24a" : "#ff7777")}>{cost}</color>\n<color=#bbbbbb>{Cfg.PowerBlurb(rec.Output)}</color></size>", m_SmallWrap);
-                GUI.enabled = afford && here;
+                GUI.Label(new Rect(rr.x + row + 4, rr.y + 1, w - row - 96 * k, row), $"<b>{rec.Name}</b>  <size={Mathf.RoundToInt(12 * k)}><color={(afford ? "#ffd24a" : "#ff7777")}>{(maxed ? "done" : cost)}</color>\n<color=#bbbbbb>{Cfg.PowerBlurb(rec.Output, team)}</color></size>", m_SmallWrap);
+                GUI.enabled = afford && here && !maxed;
                 if (BtnAt(new Rect(rr.xMax - 84 * k, rr.y + 10 * k, 78 * k, row - 20 * k), "Buy", m_Button)) me.CraftRpc(Cfg.PowerBase + i);
                 GUI.enabled = true;
             }
