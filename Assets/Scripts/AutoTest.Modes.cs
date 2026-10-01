@@ -76,6 +76,7 @@ namespace RockGame
                 case GameRules.Arsenal: yield return ArsenalTests(me, pc, g, team); yield return BlastAndRamTests(me, pc, g, team); yield return SuicideTest(me); break;
                 case GameRules.AutoWood: yield return AutoWoodTests(me, pc, g, team); yield return ArsenalTests(me, pc, g, team); break;
                 case GameRules.Tutorial: yield return TutorialTests(me, pc, g, team); break;
+                case GameRules.Dna: yield return DnaTests(me, pc, g, team); break;
                 case GameRules.Primitive:
                 case GameRules.FunRandomLimited:
                 case GameRules.BuildingPrimitive:

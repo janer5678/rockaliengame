@@ -175,8 +175,8 @@ namespace RockGame
                     if (Ball.Instance == null) { Notify("The ball hasn't dropped yet"); return; }
                     Ball.Instance.ServerDrop(cmd == DevCmd.BallToMe ? transform.position + transform.forward * 2f + Vector3.up * 1.5f : Cfg.BallDropPoint, Vector3.zero);
                     break;
-                case DevCmd.GiveWood: ServerGive(Item.Wood, 1000); break;
-                case DevCmd.GiveStone: ServerGive(Item.Stone, 1000); break;
+                case DevCmd.GiveWood: ServerGive(Cfg.GatherItem(Item.Wood), 1000); break;
+                case DevCmd.GiveStone: ServerGive(Cfg.GatherItem(Item.Stone), 1000); break;
                 case DevCmd.GiveArrows: ServerGive(Item.Arrow, 50); break;
                 case DevCmd.GiveOpItems:
                     foreach (var it in Cfg.AirdropChoices) ServerGive(it, 1, Mathf.Clamp(Cfg.MaxData(it), 0, 255));

@@ -86,6 +86,7 @@ namespace RockGame
                 BuildGrid.Registry.Clear();
                 for (int i = 0; i < LaneTotal; i++) { Lanes.Add(new DropLaneState { Start = -1 }); m_Lanes[i] = new DropLane(); }
                 SpawnNodes();
+                GambleMachine.ServerSpawnAll(); // DNA mode: a gambling machine in every base
                 NetworkManager.OnClientDisconnectCallback += OnClientDisconnect;
             }
         }
@@ -426,6 +427,7 @@ namespace RockGame
             foreach (var p in MapBuilder.WildRocks)
             {
                 if (NearTower(p) || InsideScenery(p)) continue;
+                if (Cfg.DnaRules && rng.NextDouble() > Cfg.DnaRockShare) continue; // DNA mode: rocks are rarer
                 bool close = false;
                 foreach (var q in placed) if ((q - p).sqrMagnitude < 5f * 5f) { close = true; break; }
                 if (close) continue;
@@ -461,6 +463,7 @@ namespace RockGame
             int trees = Mathf.Max(6, Mathf.RoundToInt(24 * area)), stones = Mathf.Max(4, Mathf.RoundToInt(18 * area)), bushes = Mathf.Max(2, Mathf.RoundToInt(5 * area));
             // THEME MAPS: more or fewer of each to suit the map
             trees = Mathf.RoundToInt(trees * ThemeMaps.NodeMul(ResourceNode.Tree)); stones = Mathf.RoundToInt(stones * ThemeMaps.NodeMul(ResourceNode.Boulder)); bushes = Mathf.RoundToInt(bushes * ThemeMaps.NodeMul(ResourceNode.Bush));
+            if (Cfg.DnaRules) stones = Mathf.Max(2, Mathf.RoundToInt(stones * Cfg.DnaRockShare)); // DNA mode: rocks are rarer
             float half = Cfg.MapHalf;
             for (int n = 0; n < trees + stones + bushes; n++)
             {
@@ -691,7 +694,7 @@ namespace RockGame
         {
             var pool = Cfg.AirdropLoot;
             var id = pool[Random.Range(0, pool.Count)];
-            if (id == Item.Wood) return ItemStack.Of(Cfg.WoodMode || Random.value < 0.5f ? Item.Wood : Item.Stone, Mathf.Clamp(Cfg.AirdropResources, 1, 1000));
+            if (id == Item.Wood) return Cfg.DnaSwap(ItemStack.Of(Cfg.WoodMode || Random.value < 0.5f ? Item.Wood : Item.Stone, Mathf.Clamp(Cfg.AirdropResources, 1, 1000)));
             if (id == Item.Helmet) return ItemStack.Of(Item.Helmet, 1, 1);
             return ItemStack.Of(id, 1, Mathf.Clamp(Cfg.MaxData(id), 0, 255));
         }

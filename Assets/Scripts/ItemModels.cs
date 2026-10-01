@@ -103,6 +103,7 @@ namespace RockGame
                     Art.Part(t, Art.MakeRock(12, 0.3f), Art.Stone * 0.85f, new Vector3(0.09f, 0.04f, 0.05f), new Vector3(0.07f, 0.06f, 0.07f));
                     Art.Part(t, Art.MakeRock(13, 0.3f), new Color(0.5f, 0.5f, 0.52f), new Vector3(-0.07f, 0.03f, 0.06f), new Vector3(0.06f, 0.05f, 0.06f));
                     break;
+                case Item.Dna: DnaArt.Helix(t, 0.34f); break;
                 case Item.Arrow:
                     // thin pale shaft, small dark tip, bright red and white fletching
                     Art.Box(t, new Color(0.85f, 0.75f, 0.55f), new Vector3(0, 0.2f, 0), new Vector3(0.018f, 0.7f, 0.018f));

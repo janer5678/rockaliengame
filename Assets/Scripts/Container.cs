@@ -11,7 +11,7 @@ namespace RockGame
     /// </summary>
     public class Container : NetworkBehaviour
     {
-        public const byte Chest = 0, Bag = 1, Airdrop = 2;
+        public const byte Chest = 0, Bag = 1, Airdrop = 2, Gamble = 3; // Gamble: DNA mode's gambling machine (GambleMachine.cs)
         public static readonly List<Container> All = new List<Container>();
 
         public readonly NetworkList<ItemStack> Slots = new NetworkList<ItemStack>();
@@ -21,11 +21,12 @@ namespace RockGame
 
         public bool IsBag => Kind.Value == Bag;
         public bool IsAirdrop => Kind.Value == Airdrop;
+        public bool IsGamble => Kind.Value == Gamble;
         /// <summary>Chests can be damaged and rammed; bags and airdrops can't.</summary>
         public bool Breakable => Kind.Value == Chest;
         public bool TakeOnly => IsBag || IsAirdrop;
-        public string DisplayName => IsBag ? $"{Cfg.TeamName[Mathf.Clamp(Team.Value, 0, 3)]}'s loot bag" : IsAirdrop ? "Alien Airdrop" : "Storage Chest";
-        public Vector3 Center => transform.position + Vector3.up * (IsBag ? 0.3f : IsAirdrop ? 0.6f : 0.4f);
+        public string DisplayName => IsGamble ? "Gambling Machine" : IsBag ? $"{Cfg.TeamName[Mathf.Clamp(Team.Value, 0, 3)]}'s loot bag" : IsAirdrop ? "Alien Airdrop" : "Storage Chest";
+        public Vector3 Center => transform.position + Vector3.up * (IsBag ? 0.3f : IsAirdrop ? 0.6f : IsGamble ? 1f : 0.4f);
         public bool Empty
         {
             get
@@ -63,6 +64,7 @@ namespace RockGame
             var bc = gameObject.AddComponent<BoxCollider>();
             if (IsBag) { bc.center = new Vector3(0, 0.3f, 0); bc.size = new Vector3(0.7f, 0.6f, 0.7f); }
             else if (IsAirdrop) { bc.center = new Vector3(0, 0.6f, 0); bc.size = new Vector3(1.4f, 1.2f, 1.4f); }
+            else if (IsGamble) GambleMachine.Setup(this, m_Visual, bc);
             else { bc.center = new Vector3(0, 0.33f, 0); bc.size = new Vector3(1.1f, 0.66f, 0.62f); }
             m_Pop = 0f;
         }
@@ -110,6 +112,7 @@ namespace RockGame
                     l.intensity = 3f;
                 }
             }
+            else if (kind == Gamble) { } // built by GambleMachine.Setup
             else
             {
                 Art.Box(t, Art.Wood, new Vector3(0, 0.25f, 0), new Vector3(1.05f, 0.5f, 0.58f));
