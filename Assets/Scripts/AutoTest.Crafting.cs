@@ -16,7 +16,7 @@ namespace RockGame
             string rn = Cfg.RulesName(Cfg.Rules).ToLower().Replace(" ", "");
             string P(string what) => $"craftui_{rn}_{Screen.width}_{what}";
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
-            for (int i = 0; i < 3; i++) me.ServerGive(Item.Wood, 1000);
+            for (int i = 0; i < 3; i++) me.ServerGive(Cfg.CurrencyItem, 1000);
             if (!Cfg.WoodMode) me.ServerGive(Item.Stone, 120);
             me.ServerGive(Item.Spear, 1);
             yield return new WaitForSeconds(0.5f);
@@ -47,7 +47,7 @@ namespace RockGame
             // crafting from it: 3 x arrows = 3 crafts
             if (!Cfg.LimitedCrafting)
             {
-                int a0 = me.Count(Item.Arrow), w0 = me.Count(Item.Wood);
+                int a0 = me.Count(Item.Arrow), w0 = me.Count(Cfg.CurrencyItem);
                 var arrows = Cfg.GetRecipe(Cfg.RecipeIndex(Item.Arrow));
                 string why = Hud.DebugCraftNow(Item.Arrow, 3);
                 if (Cfg.Builder)
@@ -58,8 +58,8 @@ namespace RockGame
                 }
                 float until = Time.time + (Cfg.Builder ? 3 * Cfg.CraftSeconds(arrows) + 3f : 1f);
                 while (Time.time < until && me.Count(Item.Arrow) < a0 + 3 * arrows.Count) yield return null;
-                Check(why == null && me.Count(Item.Arrow) == a0 + 3 * arrows.Count && me.Count(Item.Wood) == w0 - 3 * arrows.Wood,
-                    $"CRAFT x3 makes three lots of arrows ({why ?? "ok"}: {me.Count(Item.Arrow) - a0} arrows, {w0 - me.Count(Item.Wood)} wood)");
+                Check(why == null && me.Count(Item.Arrow) == a0 + 3 * arrows.Count && me.Count(Cfg.CurrencyItem) == w0 - 3 * arrows.Wood,
+                    $"CRAFT x3 makes three lots of arrows ({why ?? "ok"}: {me.Count(Item.Arrow) - a0} arrows, {w0 - me.Count(Cfg.CurrencyItem)} {Cfg.CurrencyName})");
                 // too many: refused before anything is sent
                 Check(Hud.DebugCraftNow(Item.Arrow, 999) != null, "can't craft more than you can afford");
             }

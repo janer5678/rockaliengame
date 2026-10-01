@@ -130,7 +130,7 @@ namespace RockGame
             if (!(pc.CraftOpen || Cfg.CraftAnywhere(r.Output))) { max = 0; return "Go back inside your base to craft this"; }
             if (r.Output == Item.Armor && me.ArmorHp.Value >= Cfg.ArmorHp) { max = 0; return "You're already wearing full armour"; }
             foreach (var (item, amount) in CostLines(r))
-                if (me.Count(item) < amount) { max = 0; return $"Not enough {Cfg.ItemName(item).ToLower()} - you need {amount - me.Count(item)} more"; }
+                if (me.Count(item) < amount) { max = 0; return $"Not enough {(item == Item.Dna ? "DNA" : Cfg.ItemName(item).ToLower())} - you need {amount - me.Count(item)} more"; }
             if (max <= 0) { max = 0; return "Your crafting queue is full"; }
             return null;
         }
