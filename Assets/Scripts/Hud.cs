@@ -200,7 +200,7 @@ namespace RockGame
                     case GameState.PreBall:
                         phase = "Wall drops in " + Clock(game.TimeLeft);
                         sub = Cfg.Builder ? "Gather, craft and build anywhere - then plant the ball for your team"
-                            : Cfg.WoodMode ? "Gather wood and build your base (craft in your base)" : "Gather wood & stone, build your base (craft in your base)";
+                            : Cfg.DnaRules ? "Mine trees and rocks for DNA, build your base (craft in your base)" : Cfg.WoodMode ? "Gather wood and build your base (craft in your base)" : "Gather wood & stone, build your base (craft in your base)";
                         break;
                     case GameState.BallLive:
                         phase = "Time left  " + Clock(game.TimeLeft);
@@ -405,7 +405,7 @@ namespace RockGame
             {
                 case Item.BuildingPlan:
                     if (pc.DemolishMode) return "<b>Demolish</b>    LMB: take down your own piece (half the wood back)    hold RMB: building wheel";
-                    return $"<b>{Cfg.PieceName(pc.BuildPiece)}</b>  ({Cfg.PieceWood(pc.BuildPiece)} wood)    hold RMB: building wheel   R: rotate stairs   " + (Cfg.WoodMode ? "" : "F: upgrade to stone   ") + "X: demolish yours";
+                    return $"<b>{Cfg.PieceName(pc.BuildPiece)}</b>  ({Cfg.PieceWood(pc.BuildPiece)} {Cfg.CurrencyName})    hold RMB: building wheel   R: rotate stairs   " + (Cfg.WoodMode ? "" : "F: upgrade to stone   ") + "X: demolish yours";
                 case Item.Ram: return $"<b>Battering Ram</b> ({s.Data} hit{(s.Data == 1 ? "" : "s")} left)    hold LMB at an enemy piece: wood breaks instantly, stone / metal / refined drop one step";
                 case Item.Spear: return "<b>Spear</b>    LMB: stab    hold RMB + LMB: throw    E: pick thrown spears back up";
                 case Item.Bow: return $"<b>Bow</b>  ({me.Count(Item.Arrow)} arrows)    hold LMB to draw, release to fire";
@@ -628,6 +628,7 @@ namespace RockGame
                     var r = new Rect(lootX + (i % 7) * (slot + gap), top + (i / 7) * (slot + gap), slot, slot);
                     DrawSlot(r, c.Slots[i], 1, i, false, me, pc);
                 }
+                if (c.IsGamble) DrawGamblePanel(c, me, pc, lootX, top + slot + gap, lootW, slot, k); // DNA mode: the GAMBLE button
             }
 
             // ---- my inventory (21 slots) + hotbar ----
@@ -651,7 +652,7 @@ namespace RockGame
 
             // ---- crafting (right, when not looting) ----
             float cxp = invX + gridW + 30 * k;
-            string mats = $"<color=#d9a066>{me.Count(Item.Wood)} wood</color>" + (Cfg.WoodMode ? "" : $"  <color=#c8c8d0>{me.Count(Item.Stone)} stone</color>");
+            string mats = Cfg.DnaRules ? $"<color=#7dffb0>{me.Count(Item.Dna)} DNA</color>" : $"<color=#d9a066>{me.Count(Item.Wood)} wood</color>" + (Cfg.WoodMode ? "" : $"  <color=#c8c8d0>{me.Count(Item.Stone)} stone</color>");
             if (!loot) Shadowed(new Rect(cxp, top - 34 * k, craftW, 30 * k), $"<b>CRAFTING</b>   {mats}", m_Label);
             float row = Mathf.Min(50 * k, (sh * 0.84f - top) / Mathf.Max(1, Cfg.RecipeCount) - 4 * k);
             for (int i = 0; !loot && i < Cfg.RecipeCount; i++)
@@ -659,14 +660,14 @@ namespace RockGame
                 var rec = Cfg.GetRecipe(i);
                 var rr = new Rect(cxp, top + i * (row + 4 * k), craftW, row);
                 bool here = craft || Cfg.CraftAnywhere(rec.Output);
-                bool afford = me.Count(Item.Wood) >= rec.Wood && me.Count(Item.Stone) >= rec.Stone;
+                bool afford = me.CanAfford(rec);
                 Fill(rr, new Color(0, 0, 0, here ? 0.45f : 0.25f));
                 var icon = ItemIcons.Get(rec.Output);
                 var oldC = GUI.color;
                 if (!here) GUI.color = new Color(1, 1, 1, 0.4f);
                 if (icon != null) GUI.DrawTexture(new Rect(rr.x + 4, rr.y + 3, row - 6, row - 6), icon, ScaleMode.ScaleToFit, true);
                 GUI.color = oldC;
-                string cost = rec.Wood + " wood" + (rec.Stone > 0 ? ", " + rec.Stone + " stone" : "") + (rec.Output == Item.Armor ? " · put on right away" : "");
+                string cost = Cfg.CostText(rec) + (rec.Output == Item.Armor ? " · put on right away" : "");
                 if (Cfg.Builder) cost += $" · {Cfg.CraftSeconds(rec):0}s";
                 if (!here) cost = "<color=#8fb8ff>in your base</color>  " + cost;
                 GUI.Label(new Rect(rr.x + row + 4, rr.y + 2, craftW - row - 100 * k, row), $"<b>{(here ? "" : "<color=#999999>")}{rec.Name}{(here ? "" : "</color>")}</b>\n<size={Mathf.RoundToInt(12 * k)}><color={(afford ? "#bbbbbb" : "#ff7777")}>{cost}</color></size>", m_Label);
@@ -797,7 +798,7 @@ namespace RockGame
             GUI.DrawTexture(new Rect(c.x - R * 0.32f, c.y - R * 0.32f, R * 0.64f, R * 0.64f), s_Disc);
             GUI.color = old;
             var o = opts[Mathf.Clamp(WheelHover, 0, opts.Length - 1)];
-            string cost = o.Demolish ? "your own pieces\nhalf the wood back" : o.Upgrade ? (Cfg.WoodMode ? "not in wood mode" : "to stone\nLMB on your piece") : $"{Cfg.PieceWood(o.Piece)} wood";
+            string cost = o.Demolish ? "your own pieces\nhalf the wood back" : o.Upgrade ? (Cfg.WoodMode ? "not in wood mode" : "to stone\nLMB on your piece") : $"{Cfg.PieceWood(o.Piece)} {Cfg.CurrencyName}";
             var title = new GUIStyle(m_Center) { fontStyle = FontStyle.Bold, fontSize = Mathf.RoundToInt(20 * k) };
             title.normal.textColor = o.Demolish ? new Color(1f, 0.5f, 0.4f) : Color.white;
             GUI.Label(new Rect(c.x - 100 * k, c.y - 28 * k, 200 * k, 26 * k), o.Label.ToUpper(), title);

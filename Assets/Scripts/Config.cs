@@ -11,7 +11,8 @@ namespace RockGame
     public enum Item : byte { None, Rock, BuildingPlan, Hatchet, Pickaxe, Spear, Bow, Ram, Chest, Barrier, Wood, Stone, Arrow, Berry, C4, DeathWand, Helmet, InvisPotion, Chainsaw, Crossbow, Armor, FortTower, Car, Saddle,
         Meat, AirdropSignal, Sniper, PortalGun, Jetpack, SlenderEgg, BuildEgg, GiantStaff, RocketLauncher, BombBush, TreeCamo, Airstrike, Wallhack,
         EnderPearl, Pistol, PistolAmmo, HeavyArmor, TreeCracker, FortifyBuff, WoodGenBuff, Boat,
-        Sword, Shotgun, ShotgunShell, Revolver, RevolverAmmo }
+        Sword, Shotgun, ShotgunShell, Revolver, RevolverAmmo,
+        Dna }
 
     /// <summary>
     /// The game mode (picked in the main menu, next to the players). They don't mix:
@@ -22,7 +23,7 @@ namespace RockGame
     /// Auto Wood - Arsenal, but wood piles up by itself at your base.
     /// (Synced in 4 bits of the map key: never reorder.)
     /// </summary>
-    public enum GameRules : byte { Classic, Arsenal, Builder, Fun, FunRandom, FunRandomLimited, Primitive, BuildingPrimitive, AutoWood, Tutorial }
+    public enum GameRules : byte { Classic, Arsenal, Builder, Fun, FunRandom, FunRandomLimited, Primitive, BuildingPrimitive, AutoWood, Tutorial, Dna }
 
     public enum PieceType : byte { Foundation, Wall, Doorway, Floor, Stairs, Barrier, Window, Tower, EggBlock }
 
@@ -61,7 +62,7 @@ namespace RockGame
     }
 
     /// <summary>All gameplay tuning lives here. Every [Tune] field is editable in the main menu settings.</summary>
-    public static class Cfg
+    public static partial class Cfg
     {
         // ---------- Map (chosen by the host in the menu) ----------
         public static MapKind Map = MapKind.Plains;
@@ -99,12 +100,13 @@ namespace RockGame
         /// <summary>Tutorial: Primitive's rules, played alone with the clock stopped, with a guide walking you through it.</summary>
         public static bool Tutorial => Rules == GameRules.Tutorial;
         public static string RulesName(GameRules r) => r == GameRules.Arsenal ? "Arsenal" : r == GameRules.Builder ? "Builder" : r == GameRules.Fun ? "Fun"
-            : r == GameRules.FunRandom ? "Fun Random" : r == GameRules.FunRandomLimited ? "Fun Random Limited" : r == GameRules.Primitive ? "Primitive" : r == GameRules.BuildingPrimitive ? "Building Primitive" : r == GameRules.AutoWood ? "Auto Wood" : r == GameRules.Tutorial ? "Tutorial" : "Classic";
+            : r == GameRules.FunRandom ? "Fun Random" : r == GameRules.FunRandomLimited ? "Fun Random Limited" : r == GameRules.Primitive ? "Primitive" : r == GameRules.BuildingPrimitive ? "Building Primitive" : r == GameRules.AutoWood ? "Auto Wood" : r == GameRules.Tutorial ? "Tutorial" : r == GameRules.Dna ? "DNA" : "Classic";
         public static string RulesDesc(GameRules r)
         {
             switch (r)
             {
                 case GameRules.Arsenal: return "Normal prices (the crossbow is cheaper), plus a POWER ITEMS menu next to crafting: sword, shotgun, revolver, C4, headshot helmet and Fortify All Walls.";
+                case GameRules.Dna: return DnaDesc;
                 case GameRules.Tutorial: return "New here? Start with this. A step-by-step guide through the whole game - moving, gathering, crafting, building, fighting and the ball - on your own, with the clock stopped. Just press HOST GAME.";
                 case GameRules.AutoWood: return "Arsenal, but wood piles up at your base by itself (5 a second) - go and pick it up.";
                 case GameRules.Builder: return "No bases. Arsenal's items, but each takes a while to make. Craft and build anywhere - pieces lock onto each other. Plant the ball anywhere (E): whoever's ball it is at the end wins.";
@@ -166,7 +168,7 @@ namespace RockGame
             AirdropCenter = (key & CenterBit) != 0;
             RespawnLoot = (key & RespawnLootBit) != 0;
             Mode = (GameMode)((key >> ModeShift) & ModeMask);
-            Rules = (GameRules)Mathf.Clamp((key >> RulesShift) & RulesMask, 0, (int)GameRules.Tutorial);
+            Rules = (GameRules)Mathf.Clamp((key >> RulesShift) & RulesMask, 0, (int)GameRules.Dna);
             HostGraphics = Mathf.Clamp((key >> GraphicsShift) & GraphicsMask, 0, 2);
             TeamCount = ModeTeams(Mode);
             MapSeed = seed;
@@ -469,6 +471,7 @@ namespace RockGame
                 case Item.ShotgunShell: return "Shotgun Shell";
                 case Item.Revolver: return "Revolver";
                 case Item.RevolverAmmo: return "Revolver Bullet";
+                case Item.Dna: return "DNA";
                 case Item.None: return "";
                 default: return i.ToString();
             }
@@ -478,7 +481,7 @@ namespace RockGame
         {
             switch (i)
             {
-                case Item.Wood: case Item.Stone: return 1000;
+                case Item.Wood: case Item.Stone: case Item.Dna: return 1000;
                 case Item.Arrow: return 64;
                 case Item.PistolAmmo: return 120;
                 case Item.ShotgunShell: return 64;
@@ -492,7 +495,7 @@ namespace RockGame
         }
 
         /// <summary>Materials: they stack onto what you already have, otherwise fill the hotbar from slot 7 backwards.</summary>
-        public static bool IsMat(Item i) => i == Item.Wood || i == Item.Stone || i == Item.Arrow || i == Item.ShotgunShell || i == Item.RevolverAmmo;
+        public static bool IsMat(Item i) => i == Item.Wood || i == Item.Stone || i == Item.Dna || i == Item.Arrow || i == Item.ShotgunShell || i == Item.RevolverAmmo;
 
         /// <summary>Items whose Data byte is a durability / health counter (shown as a bar).</summary>
         public static int MaxData(Item i)
@@ -546,8 +549,8 @@ namespace RockGame
         {
             switch (id)
             {
-                case Item.Wood: return ItemStack.Of(WoodMode || UnityEngine.Random.value < 0.5f ? Item.Wood : Item.Stone, Mathf.Clamp(AirdropResources, 1, 1000));
-                case Item.Stone: return ItemStack.Of(WoodMode ? Item.Wood : Item.Stone, 300);
+                case Item.Wood: return DnaSwap(ItemStack.Of(WoodMode || UnityEngine.Random.value < 0.5f ? Item.Wood : Item.Stone, Mathf.Clamp(AirdropResources, 1, 1000)));
+                case Item.Stone: return DnaSwap(ItemStack.Of(WoodMode ? Item.Wood : Item.Stone, 300));
                 case Item.Arrow: return ItemStack.Of(Item.Arrow, 20);
                 case Item.Berry: return ItemStack.Of(Item.Berry, 5);
                 case Item.PistolAmmo: return ItemStack.Of(Item.PistolAmmo, 30);
@@ -667,7 +670,7 @@ namespace RockGame
         {
             var list = ActiveRecipes();
             var id = list[Mathf.Clamp(i, 0, list.Count - 1)];
-            if (id == Item.Boat) return ThemeMaps.BoatRecipe; // THEME MAPS
+            if (id == Item.Boat) return DnaPriced(ThemeMaps.BoatRecipe); // THEME MAPS
             Recipe r;
             switch (id)
             {
@@ -686,7 +689,7 @@ namespace RockGame
                 default: r = new Recipe { Output = Item.Barrier, Count = 1, Wood = BarrierWood }; break;
             }
             if (WoodMode) { r.Wood += r.Stone; r.Stone = 0; } // everything costs wood only
-            return Priced(r);
+            return DnaPriced(Priced(r)); // DNA mode: the price in DNA
         }
         /// <summary>A recipe's price in this game mode (Arsenal / Builder: the crossbow is cheaper).</summary>
         public static Recipe Priced(Recipe r)

@@ -30,16 +30,13 @@ namespace RockGame
             if (r.Output == Item.HeavyArmor && ArmorHp.Value >= Cfg.HeavyArmorHp) { Notify("You're already wearing heavy armour"); return; }
             if (r.Output == Item.FortifyBuff && Cfg.FortifyLevel(Team.Value) >= Cfg.MaxFortify) { Notify("Your walls are already refined - fully fortified"); return; }
             if (r.Output == Item.WoodGenBuff && Cfg.WoodGenLevel(Team.Value) >= Cfg.MaxWoodGen) { Notify("Your wood gen is already maxed out"); return; }
-            if (Count(Item.Wood) < r.Wood || Count(Item.Stone) < r.Stone) { Notify($"Not enough resources for {r.Name}"); return; }
+            if (!CanAfford(r)) { Notify($"Not enough resources for {r.Name}"); return; }
             bool noItem = r.Output == Item.Armor || r.Output == Item.HeavyArmor || r.Output == Item.FortifyBuff || r.Output == Item.WoodGenBuff;
             int data = r.Output == Item.Saddle ? Team.Value + 1 : Mathf.Clamp(Cfg.MaxData(r.Output), 0, 255);
             if (!noItem && secs <= 0f && InvOps.Space(Inv, r.Output, data) < r.Count && !InvOps.HasEmpty(Inv)) { Notify("Inventory full!"); return; }
 
             // paid up front (like Rust)
-            InvOps.Remove(Inv, Item.Wood, r.Wood);
-            InvOps.Remove(Inv, Item.Stone, r.Stone);
-            if (r.Wood > 0) SpentRpc((byte)Item.Wood, r.Wood);
-            if (r.Stone > 0) SpentRpc((byte)Item.Stone, r.Stone);
+            ServerPay(r);
             if (secs <= 0f) { ServerFinishCraft(r); return; } // instant (the building plan, fortify)
             if (CraftingItem.Value == 0) ServerStartCraft(r);
             else

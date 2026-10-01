@@ -127,7 +127,7 @@ namespace RockGame
 
             // game mode: separate ways to play (they don't mix)
             key = Bootstrap.MapChoice;
-            var rules = (GameRules)Mathf.Clamp((key >> Cfg.RulesShift) & Cfg.RulesMask, 0, (int)GameRules.Tutorial);
+            var rules = (GameRules)Mathf.Clamp((key >> Cfg.RulesShift) & Cfg.RulesMask, 0, (int)GameRules.Dna);
             int noRules = key & ~(Cfg.RulesMask << Cfg.RulesShift);
             GUILayout.BeginHorizontal();
             RowLabel("Game mode");
@@ -136,7 +136,7 @@ namespace RockGame
             GUILayout.EndHorizontal();
             GUILayout.BeginHorizontal();
             GUILayout.Space(103 * k);
-            foreach (var gr in new[] { GameRules.AutoWood, GameRules.Primitive, GameRules.BuildingPrimitive })
+            foreach (var gr in new[] { GameRules.AutoWood, GameRules.Primitive, GameRules.BuildingPrimitive, GameRules.Dna })
                 if (Choice(rules == gr, Cfg.RulesName(gr), GUILayout.Height(30 * k))) boot.SetMapChoice(noRules | ((int)gr << Cfg.RulesShift));
             GUILayout.EndHorizontal();
             GUILayout.BeginHorizontal();

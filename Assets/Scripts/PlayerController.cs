@@ -1416,7 +1416,7 @@ namespace RockGame
             if (BuildGrid.IsOccupied(key, m_ClientKeys.Contains)) return "Something is already built there";
             if (!BuildGrid.IsSupported(key, m_ClientKeys.Contains))
                 return t == PieceType.Floor ? "Floors need a wall below or a floor next to them" : "Needs a foundation or floor underneath";
-            if (m_Net.Count(Item.Wood) < Cfg.PieceWood(t)) return $"Need {Cfg.PieceWood(t)} wood";
+            if (m_Net.Count(Cfg.CurrencyItem) < Cfg.PieceWood(t)) return $"Need {Cfg.PieceWood(t)} {Cfg.CurrencyName}";
             return null;
         }
 
@@ -1487,6 +1487,7 @@ namespace RockGame
                 {
                     var c = t.Obj.GetComponent<Container>();
                     if (c.IsAirdrop) AimText = "<color=#c98bff>Alien Airdrop</color>   E: open";
+                    else if (c.IsGamble) AimText = "<color=#7dffb0>Gambling Machine</color>   E: bet DNA - double it or lose it";
                     else if (c.IsBag) AimText = $"{c.DisplayName}   E: open";
                     else AimText = $"Storage Chest ({Cfg.TeamLabel(c.Team.Value)})  {c.Health.Value:0}/{Cfg.ChestHp:0}   E: open"
                         + (m_Net.HeldItem == Item.BuildingPlan && c.Team.Value == m_Net.Team.Value ? "   X: demolish" : "");
@@ -1526,7 +1527,7 @@ namespace RockGame
                 AimText = $"{st.DisplayName} ({Cfg.TeamName[st.Team.Value]})  {st.Health.Value:0}/{st.MaxHp:0}";
                 if (m_Net.HeldItem == Item.BuildingPlan && st.Team.Value == m_Net.Team.Value)
                 {
-                    if (st.Tier.Value == 0 && st.Upgradable && !Cfg.WoodMode) AimText += $"   F: upgrade to stone ({Cfg.PieceUpgradeStone(st.PType)} stone)";
+                    if (st.Tier.Value == 0 && st.Upgradable && !Cfg.WoodMode) AimText += $"   F: upgrade to stone ({Cfg.UpgradeCost(st.PType)} {Cfg.UpgradeName})";
                     AimText += "   X: demolish";
                 }
                 if (m_Net.HeldItem == Item.Ram && st.Team.Value != m_Net.Team.Value && hit.distance <= Cfg.RamRange)

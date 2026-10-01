@@ -830,13 +830,13 @@ namespace RockGame
                 if (n.IsBush) return;
                 weak = weak && n.IsWeakSpotHit(point, 0.8f);
                 bool tree = n.Kind.Value == ResourceNode.Tree;
-                // your team's ball in your base: everything you gather pays a bit more
+                // your team's ball in your base: everything you gather pays a bit more (DNA too)
                 int got = n.ServerHarvest(Mathf.RoundToInt((tree ? st.WoodGather : st.StoneGather) * (BallBuff ? Cfg.BallGatherMul : 1f)), weak, transform.position);
-                if (got > 0) ServerGive(n.Yield, got);
+                if (got > 0) ServerGive(Cfg.GatherItem(n.Yield), Cfg.GatherCount(n.Yield, got)); // DNA mode: DNA instead
                 if (got > 0 && tree && n.Amount.Value <= 0 && Cfg.TreeFellBonus > 0)
                 {
                     // felling the whole tree pays out a bonus
-                    ServerGive(Item.Wood, Cfg.TreeFellBonus);
+                    ServerGive(Cfg.GatherItem(Item.Wood), Cfg.TreeFellBonus);
                     TimberRpc(Cfg.TreeFellBonus);
                     Fx.Server(FxKind.Timber, n.transform.position + Vector3.up * 2f, Vector3.up);
                 }
@@ -1100,15 +1100,12 @@ namespace RockGame
             if (power || Cfg.Builder) { ServerCraftModes(r); return; }
             if (!Cfg.CanCraftAt(Team.Value, transform.position, r.Output)) { Notify($"{r.Name} can only be crafted inside your own base"); return; }
             if (r.Output == Item.Armor && ArmorHp.Value >= Cfg.ArmorHp) { Notify("You're already wearing full armour"); return; }
-            if (Count(Item.Wood) < r.Wood || Count(Item.Stone) < r.Stone) { Notify($"Not enough resources for {r.Name}"); return; }
+            if (!CanAfford(r)) { Notify($"Not enough resources for {r.Name}"); return; }
             int data = r.Output == Item.Saddle ? Team.Value + 1 : Mathf.Clamp(Cfg.MaxData(r.Output), 0, 255); // saddles are in your team colour
             bool wear = r.Output == Item.Armor; // armour goes straight on
             if (!wear && InvOps.Space(Inv, r.Output, data) < r.Count && !InvOps.HasEmpty(Inv)) { Notify("Inventory full!"); return; }
 
-            InvOps.Remove(Inv, Item.Wood, r.Wood);
-            InvOps.Remove(Inv, Item.Stone, r.Stone);
-            if (r.Wood > 0) SpentRpc((byte)Item.Wood, r.Wood);
-            if (r.Stone > 0) SpentRpc((byte)Item.Stone, r.Stone);
+            ServerPay(r);
             if (wear)
             {
                 ArmorHp.Value = (byte)Mathf.Clamp(Cfg.ArmorHp, 1, 255);
@@ -1147,8 +1144,8 @@ namespace RockGame
             }
             if (!AreaClear(t, pos, rot)) { Notify("Placement blocked"); return; }
             int cost = Cfg.PieceWood(t);
-            if (!InvOps.Remove(Inv, Item.Wood, cost)) { Notify($"Need {cost} wood"); return; }
-            SpentRpc((byte)Item.Wood, cost);
+            if (!InvOps.Remove(Inv, Cfg.CurrencyItem, cost)) { Notify($"Need {cost} {Cfg.CurrencyName}"); return; }
+            SpentRpc((byte)Cfg.CurrencyItem, cost);
 
             m_NextBuild = Time.time + Cfg.BuildCooldown * 0.85f;
             var go = Instantiate(Bootstrap.I.structurePrefab, pos, rot);
@@ -1188,9 +1185,9 @@ namespace RockGame
             if (s.Team.Value != Team.Value || !s.HasKey || !s.Upgradable) return;
             if (s.Tier.Value >= 1) { Notify($"Already {Cfg.TierName(s.Tier.Value).ToLower()}"); return; }
             if (Vector3.Distance(s.transform.position, transform.position) > Cfg.BuildRange + 4f) return;
-            int cost = Cfg.PieceUpgradeStone(s.PType);
-            if (!InvOps.Remove(Inv, Item.Stone, cost)) { Notify($"Need {cost} stone to upgrade"); return; }
-            SpentRpc((byte)Item.Stone, cost);
+            int cost = Cfg.UpgradeCost(s.PType);
+            if (!InvOps.Remove(Inv, Cfg.UpgradeItem, cost)) { Notify($"Need {cost} {Cfg.UpgradeName} to upgrade"); return; }
+            SpentRpc((byte)Cfg.UpgradeItem, cost);
             m_NextUpgrade = Time.time + Cfg.UpgradeCooldown * 0.85f;
             s.ServerUpgrade();
         }
@@ -1206,19 +1203,19 @@ namespace RockGame
                 if (s.Team.Value != Team.Value) { Notify("You can only demolish your own buildings"); return; }
                 int full = s.PType == PieceType.Barrier ? Cfg.BarrierWood : s.PType == PieceType.Tower ? Cfg.FortTowerWood : Cfg.PieceWood(s.PType);
                 int wood = Mathf.FloorToInt(full * Cfg.DemolishRefund);
-                int stone = s.Tier.Value >= 1 ? Mathf.FloorToInt(Cfg.PieceUpgradeStone(s.PType) * Cfg.DemolishRefund) : 0;
+                int stone = s.Tier.Value >= 1 ? Mathf.FloorToInt(Cfg.UpgradeCost(s.PType) * Cfg.DemolishRefund) : 0;
                 Fx.Server(FxKind.Break, s.transform.position + Vector3.up * 1.2f, Vector3.up);
                 s.NetworkObject.Despawn(true);
                 if (NetGame.Instance != null) NetGame.Instance.ServerCollapseCheck();
-                if (wood > 0) ServerGive(Item.Wood, wood);
-                if (stone > 0) ServerGive(Cfg.WoodMode ? Item.Wood : Item.Stone, stone);
+                if (wood > 0) ServerGive(Cfg.CurrencyItem, wood);
+                if (stone > 0) ServerGive(Cfg.WoodMode ? Item.Wood : Cfg.UpgradeItem, stone);
             }
             else if (no.TryGetComponent(out Container c) && c.Breakable)
             {
                 if (c.Team.Value != Team.Value) { Notify("You can only demolish your own chests"); return; }
                 c.ServerBreak();
                 int wood = Mathf.FloorToInt(Cfg.ChestWood * Cfg.DemolishRefund);
-                if (wood > 0) ServerGive(Item.Wood, wood);
+                if (wood > 0) ServerGive(Cfg.CurrencyItem, wood);
             }
         }
 
@@ -1333,6 +1330,7 @@ namespace RockGame
             }
             var src = srcKind == 1 ? c.Slots : Inv;
             if (srcIdx >= src.Count) return;
+            if (c != null && c.IsGamble && !GambleMachine.ServerMoveOk(c, src, srcIdx, srcKind == 1 ? Inv : c.Slots, dstIdx)) { Notify("The gambling machine only takes DNA"); return; }
             if (dstIdx == 255)
             {
                 if (c == null) return;
