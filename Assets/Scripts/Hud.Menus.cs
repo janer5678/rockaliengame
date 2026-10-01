@@ -63,6 +63,7 @@ namespace RockGame
             if (s_I == null) return false;
             if (s_I.m_Rebinding || s_I.m_RebindFrame == Time.frameCount) { s_I.m_Rebinding = false; return true; }
             if (s_I.m_PausePage != PausePage.Root) { s_I.m_PausePage = PausePage.Root; ClickSound(); return true; }
+            if (CraftBackOut()) return true;
             return false;
         }
 

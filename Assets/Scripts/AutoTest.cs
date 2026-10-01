@@ -88,6 +88,7 @@ namespace RockGame
             if (m_Mode == "teams") { yield return TeamsRoutine(me); yield break; }
             if (m_Mode == "batch5") { yield return Batch5Routine(me, pc); yield break; }
             if (m_Mode == "modes") { yield return ModesRoutine(me, pc); yield break; }
+            if (m_Mode == "craftui") { yield return CraftUiRoutine(me, pc); yield break; }
             if (m_Mode == "maps") { yield return MapsRoutine(me, pc); yield break; }
             Check(Cfg.BaseTeamAt(me.transform.position) == me.Team.Value, $"spawned inside own base ({me.transform.position})");
             Check(me.Count(Item.Rock) == 0 && me.HeldItem == Item.Rock, "empty hand = holding the rock (no rock item)");

@@ -24,7 +24,7 @@ Laid out top to bottom: **MATCH SETUP** (what the host picks), then **PLAY** (ho
 - **Game mode** - separate ways to play; they don't mix:
   - *Classic*: the original game.
   - *Tutorial* (**start here if you're new**): Primitive's rules, played alone with the clock stopped. A guide on the left walks you through the whole game in 26 steps - looking, walking, sprinting, sliding, chopping trees and hitting the weak spot, the inventory and crafting, the building plan and wheel (foundation, wall, doorway), mining stone, the spear (stab, throw, pick it back up), the battering ram, fighting and healing, and finally the glass wall dropping, grabbing the ball and putting it in your machine. Each step explains what's going on, has a goal that ticks itself off when you do it (then it moves on), and a pulsing marker points at what it's about (a tree, a boulder, your base, the machine, the ball). Enter reads on or skips a goal. While the inventory is open the goal shows along the bottom.
-  - *Arsenal*: normal prices (except the crossbow, 350 wood instead of 500), plus a **POWER ITEMS** menu to the right of crafting (see below).
+  - *Arsenal*: normal prices (except the crossbow, 350 wood instead of 500), plus **POWER ITEMS** (a POWER category in the crafting screen, see below).
   - *Auto Wood*: Arsenal, but **wood piles up at your base by itself**: 5 a second, in one growing stack on the bedrock beside the machine (Auto Wood Per Second in CHANGE VALUES). Walk up and press E to take the lot: the pile keeps stacking past 1000 and splits into 1000-stacks as it goes into your inventory. **Wood Gen upgrade** (power item, Auto Wood only): level 1 for 1000 wood (10 a second), level 2 for 2000 (16 a second), level 3 for 3000 (25 a second) - all in CHANGE VALUES > Auto Wood.
   - *Primitive*: the classic game, but the only things you can craft are the hatchet, spear, building plan and battering ram.
   - *Building Primitive*: Builder's rules (below), but only those four primitive items and no power items.
@@ -56,7 +56,7 @@ Laid out top to bottom: **MATCH SETUP** (what the host picks), then **PLAY** (ho
 Command line: `-host`, `-client <ip>`, `-port <n>`, `-solo`, `-fast`, `-map plains|highlands`, `-small`, `-big` (medium), `-wood`, `-normal`, `-sides`, `-anywhere`, `-seed <n>`, `-mode 1v1|2v2|3v3|4v4|ffa3|ffa4|2v2v2|2v2v2v2`, `-large`, `-huge`, `-rules tutorial|classic|arsenal|autowood|builder|fun|funrandom|funrandomlimited|primitive|buildingprimitive`, `-map beach|canyon|frostlake|volcano|ruins`.
 
 ### Power items (Arsenal, Auto Wood and Builder)
-Bought with wood from the POWER ITEMS column next to crafting (in your base; anywhere in Builder):
+Bought with wood from the **POWER** category of the crafting screen (in your base; anywhere in Builder). Fortify and Wood Gen show their next step's price:
 
 | Item | Wood | What it does |
 |---|---|---|
@@ -143,7 +143,7 @@ Everything for the five theme maps is in `Assets/Scripts/ThemeMaps/` (terrain, p
 | Hold LMB (ram) | wind up and slam the enemy piece you're looking at |
 | RMB (berries) | eat (+15 HP) |
 | 1-7, mouse wheel | hotbar slot |
-| TAB | inventory (21 slots + 7 hotbar) |
+| TAB | inventory (21 slots + 7 hotbar) and the CRAFTING button |
 | E | use whatever you're looking at: your machine (put the ball in), ball, door, chest, airdrop, berry bush, dropped items and arrows, horse or car (E again to get off), a spear stuck in someone (or in you) |
 | Building plan | **hold RMB: building wheel** (Rust style, light blue, with a picture of each piece; clockwise from the top: Foundation, Ceiling, Wall (right), Window, Demolish (trash can, bottom), Stairs, Doorway, Upgrade) · R rotate stairs · F upgrade to stone · X demolish your own piece (half the wood back) |
 | Crossbow | LMB fire · hold RMB aim · reloads itself (uses an arrow) |
@@ -165,6 +165,13 @@ Everything for the five theme maps is in `Assets/Scripts/ThemeMaps/` (terrain, p
 - **Storage chest**: craft it, hold it and click to place it anywhere inside your base. Press E on it to open it next to your inventory (14 slots). Enemies who break in can loot it, and breaking it spills its contents into a bag.
 
 ## Crafting (anywhere in your base, TAB)
+TAB shows your inventory with a big **CRAFTING** button on its right (a chest you're looting shows there instead). The button opens a Rust-style crafting screen:
+- **◄ INVENTORY** tab at the top goes back (so does Esc; TAB closes everything).
+- **Categories** down the left with how many items each has: COMMON (everything), CONSTRUCTION (chest, high external wall, fortify, wood gen), ITEMS (armour, saddle, boat, helmet), TOOLS (hatchet, pickaxe, chainsaw, building plan, ram), WEAPONS, AMMO, and POWER in the modes that have power items.
+- An **icon grid** (greyed out when you can't make it right now; hover for the name; a gold dot marks power items) with a **Search** box under it (searches every category; game keys are off while you type, Enter or Esc leaves the box), and the **crafting queue** under that (Builder's timers).
+- The picked item's **details**: name, a badge for where it can be made (green *CRAFT ANYWHERE* / *IN YOUR BASE*, red *CRAFT IN YOUR BASE* when you're out of it), a description, the craft time (Builder) and how many one craft makes, a cost table (AMOUNT / ITEM TYPE / TOTAL / HAVE - HAVE goes red when you're short), why you can't craft it if you can't, then **- [n] + ►|** (►| = as many as you can afford; the mouse wheel works too) and **CRAFT**, which crafts that many.
+- `-autotest craftui -host -solo -fast -rules <mode> -shotdir DIR` photographs it (inventory, categories, search, power items, out of base) and checks crafting several at once.
+
 | Item | Cost |
 |---|---|
 | Stone Hatchet (fast wood) | 50 wood |
