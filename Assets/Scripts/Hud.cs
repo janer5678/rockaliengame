@@ -208,7 +208,7 @@ namespace RockGame
                         break;
                     case GameState.SuddenDeath:
                         phase = "<color=#ff5555>SUDDEN DEATH</color>  " + Clock(game.TimeLeft);
-                        sub = "Rocks only - first kill wins";
+                        sub = "Rocks only - first kill wins - don't fall into space";
                         break;
                 }
             }
@@ -851,8 +851,11 @@ namespace RockGame
                 float pulse = (1f - frac) * (0.25f + (10 - n) * 0.05f);
                 var edge = sock < 0 ? new Color(0.9f, 0f, 0f, pulse) : new Color(Cfg.TeamColor[sock].r, Cfg.TeamColor[sock].g, Cfg.TeamColor[sock].b, pulse);
                 float b = 60f * k;
-                Fill(new Rect(0, 0, sw, b), edge); Fill(new Rect(0, sh - b, sw, b), edge);
-                Fill(new Rect(0, 0, b, sh), edge); Fill(new Rect(sw - b, 0, b, sh), edge);
+                if (sock >= 0) // (no red border on the sudden death countdown)
+                {
+                    Fill(new Rect(0, 0, sw, b), edge); Fill(new Rect(0, sh - b, sw, b), edge);
+                    Fill(new Rect(0, 0, b, sh), edge); Fill(new Rect(sw - b, 0, b, sh), edge);
+                }
                 string label = sock < 0 ? "SUDDEN DEATH IN" : sock == myTeam ? "YOU WIN IN" : $"{Cfg.TeamName[sock]} WINS IN";
                 var st = new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt(30 * k) };
                 st.normal.textColor = new Color(1f, 0.9f, 0.85f, 0.95f);

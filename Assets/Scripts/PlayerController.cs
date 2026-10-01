@@ -378,7 +378,8 @@ namespace RockGame
                     Sfx.Play2D(Sfx.Step, Crouching ? 0.12f : 0.3f, 0.2f);
                 }
 
-                if (transform.position.y < -30f)
+                // (sudden death: falling off the platform is a death - the server sees it; this is only a safety net)
+                if (transform.position.y < (sd ? Cfg.ArenaCenter.y - 150f : -30f))
                 {
                     NetGame.SpawnPoint(m_Net.Team.Value, sd || (game != null && game.S == GameState.Waiting), m_Net.Slot.Value, out var p, out var y);
                     LocalTeleport(p, y);
