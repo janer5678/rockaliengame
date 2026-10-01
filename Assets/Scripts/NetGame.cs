@@ -118,7 +118,7 @@ namespace RockGame
         {
             switch ((GameState)cur)
             {
-                case GameState.PreBall: if (Cfg.FunRules) break; Hud.Banner("GATHER & BUILD", $"A glass wall splits the map for {Clock(Bootstrap.Fast ? Cfg.FastBallDropDelay : Cfg.BallDropDelay)}. " + (Cfg.Builder ? "BUILDER: build and craft anywhere (TAB)." : "Craft anywhere inside your base (TAB).")); break;
+                case GameState.PreBall: if (Cfg.FunRules) break; if (Cfg.Tutorial) { Hud.Banner("TUTORIAL", "Do each step on the left. The clock is stopped."); break; } Hud.Banner("GATHER & BUILD", $"A glass wall splits the map for {Clock(Bootstrap.Fast ? Cfg.FastBallDropDelay : Cfg.BallDropDelay)}. " + (Cfg.Builder ? "BUILDER: build and craft anywhere (TAB)." : "Craft anywhere inside your base (TAB).")); break;
                 case GameState.BallLive: Hud.Banner("THE WALL IS DOWN", Cfg.Builder ? "Grab the ball and plant it anywhere (E) - whoever's ball it is when time runs out wins!" : "Grab the ball from the middle and put it in YOUR machine's socket!"); break;
                 case GameState.SuddenDeath: Hud.Banner("SUDDEN DEATH", "Welcome to the stadium. Rocks only. First kill wins."); break;
             }
@@ -150,6 +150,7 @@ namespace RockGame
             ServerTickAirstrikes(now);
             ServerTickBushes(now);
             ServerTickModes(now);
+            Tutorial.ServerTick(this); // tutorial: clock stopped, late joiners in, the wall drops once everyone reaches it
             ThemeMaps.ServerTick(); // THEME MAPS
             int players = PlayerNet.All.Count;
             bool fast = Bootstrap.Fast;
@@ -163,7 +164,7 @@ namespace RockGame
                         if (Cfg.Tutorial) TimerPaused.Value = true; // the tutorial goes at your pace
                         // out of the waiting stadium and into your base
                         foreach (var p in PlayerNet.All) p.ServerSendHome();
-                        Broadcast(Cfg.FunRules ? "Match started! The wall is down and the ball is in - free items on the way!" : $"Match started! The glass wall drops (and the ball with it) in {Clock(delay)}");
+                        Broadcast(Cfg.Tutorial ? "Tutorial started! Do each step on the left - the wall drops when everyone reaches it" : Cfg.FunRules ? "Match started! The wall is down and the ball is in - free items on the way!" : $"Match started! The glass wall drops (and the ball with it) in {Clock(delay)}");
                     }
                     break;
                 case GameState.PreBall:
@@ -255,6 +256,7 @@ namespace RockGame
         void OnClientDisconnect(ulong clientId)
         {
             if (clientId == NetworkManager.ServerClientId) return;
+            if (Cfg.Tutorial) return; // nobody wins a tutorial by the others leaving
             if (S != GameState.PreBall && S != GameState.BallLive && S != GameState.SuddenDeath) return;
             // whoever is left: if only one team still has players, they win
             var teams = new HashSet<int>();

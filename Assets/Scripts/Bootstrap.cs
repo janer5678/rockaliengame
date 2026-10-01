@@ -179,7 +179,7 @@ namespace RockGame
             bool isHost = req.ClientNetworkId == NetworkManager.ServerClientId;
             int count = m_Nm.ConnectedClientsIds.Count;
             bool waiting = NetGame.Instance == null || NetGame.Instance.S == GameState.Waiting;
-            bool ok = isHost || (count < Cfg.PlayersNeeded && waiting);
+            bool ok = isHost || (count < Cfg.PlayersNeeded && (waiting || Cfg.Tutorial)); // the tutorial: join any time, straight in
             resp.Approved = ok;
             resp.CreatePlayerObject = ok;
             // everyone starts in the stadium (waiting area); the player places itself properly once it's spawned
