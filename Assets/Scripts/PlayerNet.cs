@@ -1099,6 +1099,7 @@ namespace RockGame
             var r = power ? Cfg.GetPowerRecipe(recipe - Cfg.PowerBase, Team.Value) : Cfg.GetRecipe(recipe);
             // the inventory only makes the starter items: everything else is bought at a workbench (WorkbenchBuyRpc)
             if (!Cfg.IsStarter(r.Output)) { Notify($"The {Cfg.ItemName(r.Output)} is made at a workbench"); return; }
+            if (!Tutorial.AllowsItemFor(this, r.Output)) { Notify("Not yet - the tutorial gets to that soon"); return; }
             if (Cfg.Builder) { ServerCraftModes(r); return; }
             if (!Cfg.CanCraftAt(Team.Value, transform.position, r.Output)) { Notify($"{r.Name} can only be crafted inside your own base"); return; }
             if (r.Output == Item.Armor && ArmorHp.Value >= Cfg.ArmorHp) { Notify("You're already wearing full armour"); return; }
@@ -1129,6 +1130,7 @@ namespace RockGame
             var t = (PieceType)type;
             if (!Cfg.IsGridPiece(t) || type > (byte)PieceType.Tower) return;
             if (Dead.Value || CarryingBall || HeldItem != Item.BuildingPlan || InSuddenDeath) return;
+            if (!Tutorial.AllowsFor(this, TutFeature.Build)) return;
             if (Time.time < m_NextBuild) return;
 
             var key = new PieceKey(BuildGrid.KindOf(t), i, j, l, t == PieceType.Stairs ? (d & 3) : (d & 1));
@@ -1296,6 +1298,7 @@ namespace RockGame
             var kind = (Item)kindByte;
             if (kind != Item.Chest && kind != Item.Barrier && kind != Item.Car && kind != Item.Workbench && kind != Item.Boat /* THEME MAPS */) return;
             if (Dead.Value || CarryingBall || HeldItem != kind || InSuddenDeath) return;
+            if (!Tutorial.AllowsFor(this, TutFeature.Deploy)) return;
             if (Vector3.Distance(pos, transform.position) > Cfg.DeployRange + 3f) return;
             if (!FindDeploySpot(kind, Team.Value, ref pos, yaw, out var problem)) { Notify(problem); return; }
             ServerConsumeHeld();

@@ -97,8 +97,8 @@ namespace RockGame
         public static bool Builder => Rules == GameRules.Builder || Rules == GameRules.BuildingPrimitive;
         public static bool FunRules => Rules == GameRules.Fun || Rules == GameRules.FunRandom || Rules == GameRules.FunRandomLimited;
         /// <summary>Fun Random Limited and Primitive: only the hatchet, spear, building plan and ram can be crafted.</summary>
-        public static bool LimitedCrafting => Rules == GameRules.FunRandomLimited || Rules == GameRules.Primitive || Rules == GameRules.BuildingPrimitive || Rules == GameRules.Tutorial;
-        /// <summary>Tutorial: Primitive's rules, played alone with the clock stopped, with a guide walking you through it.</summary>
+        public static bool LimitedCrafting => Rules == GameRules.FunRandomLimited || Rules == GameRules.Primitive || Rules == GameRules.BuildingPrimitive;
+        /// <summary>Tutorial: the classic rules (starter items in the bag, the rest at a workbench) with the clock stopped, no airdrops, and a guide that unlocks the game a step at a time (Tutorial.cs).</summary>
         public static bool Tutorial => Rules == GameRules.Tutorial;
         public static string RulesName(GameRules r) => r == GameRules.Arsenal ? "Arsenal" : r == GameRules.Builder ? "Builder" : r == GameRules.Fun ? "Fun"
             : r == GameRules.FunRandom ? "Fun Random" : r == GameRules.FunRandomLimited ? "Fun Random Limited" : r == GameRules.Primitive ? "Primitive" : r == GameRules.BuildingPrimitive ? "Building Primitive" : r == GameRules.AutoWood ? "Auto Wood" : r == GameRules.Tutorial ? "Tutorial" : r == GameRules.Dna ? "DNA" : "Classic";
@@ -108,7 +108,7 @@ namespace RockGame
             {
                 case GameRules.Arsenal: return "Normal prices (the crossbow is cheaper), plus a POWER ITEMS menu next to crafting: sword, shotgun, revolver, C4, headshot helmet and Fortify All Walls.";
                 case GameRules.Dna: return DnaDesc;
-                case GameRules.Tutorial: return "New here? Start with this. Short, simple steps teach you the whole game - you do each one to go on. The clock is stopped, friends can join any time, and it's always the small Plains map. Just press HOST GAME.";
+                case GameRules.Tutorial: return "New here? Start with this. Short, simple steps teach you the whole game - you do each one to go on, and each control unlocks as it's taught. The clock is stopped, friends can join any time, and it's always the small Plains map. Just press HOST GAME.";
                 case GameRules.AutoWood: return "Arsenal, but wood piles up at your base by itself (5 a second) - go and pick it up.";
                 case GameRules.Builder: return "No bases. Arsenal's items, but each takes a while to make. Craft and build anywhere - pieces lock onto each other. Plant the ball anywhere (E): whoever's ball it is at the end wins.";
                 case GameRules.Fun: return "No building phase, a short match, and every so often everyone gets the same random item - any item in the game.";

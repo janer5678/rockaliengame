@@ -116,9 +116,27 @@ namespace RockGame
             PlayerPrefs.Save();
         }
 
-        public static bool Held(Bind b) { Ensure(); return Key(s_Main[(int)b]) || Key(s_Alt[(int)b]); }
-        public static bool Down(Bind b) { Ensure(); return KeyDown(s_Main[(int)b]) || KeyDown(s_Alt[(int)b]); }
-        public static bool Up(Bind b) { Ensure(); return KeyUp(s_Main[(int)b]) || KeyUp(s_Alt[(int)b]); }
+        // the tutorial keeps each action locked until the step that teaches it (Tutorial.BindAllowed; always true outside it)
+        public static bool Held(Bind b) { Ensure(); return Tutorial.BindAllowed(b) && (Key(s_Main[(int)b]) || Key(s_Alt[(int)b]) || TestHeld(b)); }
+        public static bool Down(Bind b) => Tutorial.BindAllowed(b) && RawDown(b);
+        public static bool Up(Bind b) { Ensure(); return Tutorial.BindAllowed(b) && (KeyUp(s_Main[(int)b]) || KeyUp(s_Alt[(int)b]) || s_TestUp[(int)b] == Time.frameCount); }
+        /// <summary>Pressed this frame, even if the tutorial hasn't unlocked it yet (to say "not yet").</summary>
+        public static bool RawDown(Bind b) { Ensure(); return KeyDown(s_Main[(int)b]) || KeyDown(s_Alt[(int)b]) || s_TestDown[(int)b] == Time.frameCount; }
+
+        // ---- AutoTest: pretend keys are pressed (they go through the same gates as real ones) ----
+        static readonly bool[] s_TestHeld = new bool[Count];
+        static readonly int[] s_TestDown = new int[Count], s_TestUp = new int[Count];
+        static bool TestHeld(Bind b) => s_TestHeld[(int)b] || s_TestDown[(int)b] == Time.frameCount;
+        /// <summary>AutoTest: hold a key down (from the next frame) or let it go.</summary>
+        public static void TestHold(Bind b, bool on)
+        {
+            if (s_TestHeld[(int)b] == on) return;
+            s_TestHeld[(int)b] = on;
+            if (on) s_TestDown[(int)b] = Time.frameCount + 1; else s_TestUp[(int)b] = Time.frameCount + 1;
+        }
+        /// <summary>AutoTest: tap a key (down next frame, up the frame after).</summary>
+        public static void TestPress(Bind b) { s_TestDown[(int)b] = Time.frameCount + 1; s_TestUp[(int)b] = Time.frameCount + 2; }
+        public static void TestReleaseAll() { for (int i = 0; i < Count; i++) TestHold((Bind)i, false); }
         /// <summary>1 / 0 / -1 from two opposite actions (movement axes).</summary>
         public static float Axis(Bind plus, Bind minus) => (Held(plus) ? 1f : 0f) - (Held(minus) ? 1f : 0f);
 

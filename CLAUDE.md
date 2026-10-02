@@ -4,3 +4,4 @@
 - Unity 6 (6000.0.42f1), URP, Netcode for GameObjects. Build headless with
   `"C:/Program Files/Unity/Hub/Editor/6000.0.42f1/Editor/Unity.exe" -batchmode -quit -projectPath . -executeMethod RockGame.EditorTools.ProjectSetup.BuildWindows -logFile Logs/batch_build.log`
   and check it with the `-autotest` modes described in README.md.
+- When you change a game mechanic, update the tutorial (Tutorial.cs steps and gates) to match.

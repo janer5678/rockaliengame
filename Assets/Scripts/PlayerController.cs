@@ -721,7 +721,7 @@ namespace RockGame
             {
                 for (int k = 0; k < Cfg.HotbarSize; k++)
                     if (Binds.Down(Bind.Hotbar1 + k)) want = k;
-                float scroll = Input.mouseScrollDelta.y;
+                float scroll = Tutorial.Allows(TutFeature.Hotbar) ? Input.mouseScrollDelta.y : 0f; // (the tutorial unlocks the hotbar later)
                 if (scroll != 0) want = ((want + (scroll < 0 ? 1 : -1)) % Cfg.HotbarSize + Cfg.HotbarSize) % Cfg.HotbarSize;
             }
             if (want != cur)
@@ -862,9 +862,10 @@ namespace RockGame
         /// <summary>Rust style: LMB stabs; hold RMB to wind up, then LMB throws. Releasing RMB cancels.</summary>
         void HandleSpear()
         {
-            // hold RMB to ready it (LMB throws); let go and it's a normal spear again
-            if (Binds.Down(Bind.Aim)) m_DrawStart = Time.time;
-            if (!Binds.Held(Bind.Aim)) m_DrawStart = -1f;
+            // hold RMB to ready it (LMB throws); let go and it's a normal spear again (the tutorial: once it's taught)
+            bool canThrow = Tutorial.Allows(TutFeature.Throw);
+            if (canThrow && Binds.Down(Bind.Aim)) m_DrawStart = Time.time;
+            if (!canThrow || !Binds.Held(Bind.Aim)) m_DrawStart = -1f;
             if (m_DrawStart < 0) { HandleMelee(Item.Spear); return; }
 
             if (Binds.Down(Bind.Attack) && Time.time >= m_NextSwing)
@@ -977,6 +978,7 @@ namespace RockGame
 
         void HandleBerry()
         {
+            if (!Tutorial.Allows(TutFeature.Eat)) return;
             if (m_EatStart >= 0)
             {
                 // food takes a moment to eat (berries 1.5 s, horse meat 3 s), a bite every ~0.75 s; switching away cancels it
@@ -1097,7 +1099,7 @@ namespace RockGame
 
         void HandleDeploy(Item held)
         {
-            if (!Binds.Down(Bind.Attack)) return;
+            if (!Binds.Down(Bind.Attack) || !Tutorial.Allows(TutFeature.Deploy)) return;
             if (m_GhostOk)
             {
                 m_Net.PlaceDeployableRpc((byte)held, m_GhostPos, m_GhostYaw);
@@ -1153,12 +1155,13 @@ namespace RockGame
 
         void HandleBuildInput()
         {
+            if (!Tutorial.Allows(TutFeature.Build)) return; // (the tutorial: you get the plan a step before you place with it)
             // hold RMB: Rust-style wheel of building pieces (+ demolish); let go over the one you want
             if (Binds.Down(Bind.Aim)) { WheelOpen = true; Hud.WheelOpened(); }
             if (WheelOpen) return;
             if (Binds.Down(Bind.Rotate)) m_RotOffset = (m_RotOffset + 1) & 3;
 
-            if (Binds.Down(Bind.Attack) && DemolishMode) { TryDemolish(); return; }
+            if (Binds.Down(Bind.Attack) && DemolishMode) { if (Tutorial.Allows(TutFeature.Demolish)) TryDemolish(); return; }
             if (Binds.Down(Bind.Attack) && UpgradeMode) { TryUpgrade(); return; }
             if (Binds.Down(Bind.Attack))
             {
@@ -1292,6 +1295,7 @@ namespace RockGame
                 {
                     var box = t.Obj.GetComponent<Container>();
                     if (box.IsWorkbench && box.Team.Value != m_Net.Team.Value) { Hud.Push("That's the enemy's workbench - only they can use it"); break; }
+                    if (box.IsWorkbench && !Tutorial.Allows(TutFeature.Workbench)) { Hud.Push("Not yet - the tutorial gets to the workbench soon"); break; }
                     LootTarget = box;
                     MenuOpen = true;
                     Sfx.Play2D(Sfx.Place, 0.4f);
