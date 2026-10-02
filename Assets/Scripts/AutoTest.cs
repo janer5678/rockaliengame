@@ -939,7 +939,7 @@ namespace RockGame
             yield return new WaitForSeconds(0.5f);
             me.PortalRpc(field + new Vector3(12f, 0.05f, 0), Vector3.up);
             yield return new WaitForSeconds(0.5f);
-            Check(g.Portals.Count == portals + 2 && g.Portals[portals].Pair == g.Portals[portals + 1].Pair && me.Count(Item.PortalGun) == 0, "portal gun made a linked pair of portals and was used up");
+            Check(g.Portals.Count == portals + 2 && g.Portals[portals].Pair == g.Portals[portals + 1].Pair && me.Count(Item.PortalGun) == 1, "portal gun made a linked pair of portals and is still there (unlimited)");
 
             // jetpack burns fuel and runs out
             me.ServerGive(Item.Jetpack, 1, Cfg.JetpackFuel);
