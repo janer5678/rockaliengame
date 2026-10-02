@@ -229,6 +229,7 @@ namespace RockGame
         /// </summary>
         public static void BuildModel(Transform parent, int team, bool full, int tier = 1)
         {
+            using var tint = ColorSlots.Use(ColorSlots.Workbench); // (Settings > Display colours)
             var t = new GameObject(tier == 2 ? "workbench2" : "workbench").transform;
             t.SetParent(parent, false);
             var tc = Cfg.TeamColor[Mathf.Clamp(team, 0, 3)];

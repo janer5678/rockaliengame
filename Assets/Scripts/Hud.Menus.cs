@@ -556,6 +556,7 @@ namespace RockGame
                 if (Choice((int)m_Tab == i, tabs[i], GUILayout.Height(34 * k))) { m_Tab = (SettingsTab)i; m_Rebinding = false; OnTabOpened(); }
             GUILayout.EndHorizontal();
             GUILayout.Space(10 * k);
+            if (ScrollToColours && m_Tab == SettingsTab.Display && m_ColoursY >= 0f) { m_SettingsScroll.y = m_ColoursY - 6f * k; ScrollToColours = false; }
             m_SettingsScroll = GUILayout.BeginScrollView(m_SettingsScroll);
             switch (m_Tab)
             {
@@ -694,65 +695,129 @@ namespace RockGame
 
         // ------------------------------------------------------------------ display: grass and world colours (Normal graphics)
 
-        readonly Vector3[] m_Hsv = new Vector3[6];
-        readonly Color[] m_HsvOf = new Color[6];
+        readonly Dictionary<int, Vector3> m_Hsv = new Dictionary<int, Vector3>();
+        readonly Dictionary<int, Color> m_HsvOf = new Dictionary<int, Color>();
+        readonly Dictionary<int, string> m_HexEdit = new Dictionary<int, string>();
+        string m_CopyNote;
+        float m_CopyNoteUntil;
+        GUIStyle m_HexField, m_RowLabel;
+        /// <summary>(tests) scroll the settings page to the world colours.</summary>
+        public static bool ScrollToColours;
+        float m_ColoursY = -1f;
 
         void DrawWorldLook()
         {
             float k = m_Scale;
             Caption("GRASS  ·  Normal graphics, just on this PC");
-            float gd = SliderRow("Grass render distance", GameSettings.GrassDistance, GameSettings.GrassDistanceMin, GameSettings.GrassDistanceMax, $"{GameSettings.GrassDistance:0} m", 190 * k);
-            float gn = SliderRow("Grass density", GameSettings.GrassDensity, GameSettings.GrassDensityMin, 1f, $"{GameSettings.GrassDensity * 100f:0}%", 190 * k);
-            if (!Mathf.Approximately(Mathf.Round(gd), GameSettings.GrassDistance) || !Mathf.Approximately(gn, GameSettings.GrassDensity))
-                GameSettings.SetGrass(Mathf.Round(gd), Mathf.Round(gn * 20f) / 20f);
-            GUILayout.Label("<color=#bbbbbb>Less distance or density = faster (it matters most on laptops). The far grass fades into the ground either way.</color>", m_SmallWrap);
+            float gd = SliderRow("Grass render distance", GameSettings.GrassDistance, GameSettings.GrassDistanceMin, GameSettings.GrassDistanceMax, $"{GameSettings.GrassDistance:0} m", 210 * k);
+            float gn = SliderRow("Grass density", GameSettings.GrassDensity, GameSettings.GrassDensityMin, 1f, $"{GameSettings.GrassDensity * 100f:0}%", 210 * k);
+            // falloff: shown the other way round (right = more grass far away)
+            float gf = SliderRow("Far grass thickness", GameSettings.GrassFalloffMax + GameSettings.GrassFalloffMin - GameSettings.GrassFalloff, GameSettings.GrassFalloffMin, GameSettings.GrassFalloffMax,
+                $"{Mathf.InverseLerp(GameSettings.GrassFalloffMax, GameSettings.GrassFalloffMin, GameSettings.GrassFalloff) * 100f:0}%", 210 * k);
+            gf = Mathf.Round((GameSettings.GrassFalloffMax + GameSettings.GrassFalloffMin - gf) * 20f) / 20f;
+            if (!Mathf.Approximately(Mathf.Round(gd), GameSettings.GrassDistance) || !Mathf.Approximately(gn, GameSettings.GrassDensity) || !Mathf.Approximately(gf, GameSettings.GrassFalloff))
+                GameSettings.SetGrass(Mathf.Round(gd), Mathf.Round(gn * 20f) / 20f, gf);
+            GUILayout.Label("<color=#bbbbbb>Less distance, density or far thickness = faster (it matters most on laptops). Far thickness is how slowly the grass thins out with distance. The far grass fades into the ground either way.</color>", m_SmallWrap);
 
             Caption("WORLD COLOURS  ·  Normal graphics, just on this PC");
-            float sw = 30 * k;
-            for (int i = 0; i < GameSettings.WorldColorDefaults.Length; i++)
+            if (Event.current.type == EventType.Repaint) m_ColoursY = GUILayoutUtility.GetLastRect().y;
+            GUILayout.BeginHorizontal();
+            int changed = ColorSlots.ChangedCount;
+            if (Btn($"COPY CHANGED ({changed})", m_Primary, GUILayout.Width(280 * k), GUILayout.Height(32 * k)))
             {
-                var w = (GameSettings.WorldColor)i;
-                var cur = GameSettings.GetWorldColor(w);
-                GUILayout.BeginHorizontal();
-                RowLabel(GameSettings.WorldColorNames[i], 150 * k);
-                // the colour now, then ready-made ones to click
-                var r = GUILayoutUtility.GetRect(sw * 1.6f, sw, GUILayout.Width(sw * 1.6f), GUILayout.Height(sw));
-                Fill(r, new Color(0.8f, 0.8f, 0.8f));
-                Fill(new Rect(r.x + 2, r.y + 2, r.width - 4, r.height - 4), cur);
-                GUILayout.Space(10 * k);
-                foreach (var pc in GameSettings.WorldColorPresets[i])
+                int n = ColorSlots.Copy(true);
+                m_CopyNote = n == 0 ? "Nothing changed from the defaults (copied an empty list)." : $"Copied {n} changed colour{(n == 1 ? "" : "s")} to the clipboard.";
+                m_CopyNoteUntil = Time.unscaledTime + 4f;
+            }
+            if (Btn("COPY ALL", GUILayout.Width(130 * k), GUILayout.Height(32 * k)))
+            {
+                int n = ColorSlots.Copy(false);
+                m_CopyNote = $"Copied all {n} colours to the clipboard.";
+                m_CopyNoteUntil = Time.unscaledTime + 4f;
+            }
+            if (Btn("Reset colours", GUILayout.Width(150 * k), GUILayout.Height(32 * k))) GameSettings.ResetWorldColours();
+            GUILayout.EndHorizontal();
+            GUILayout.Label(Time.unscaledTime < m_CopyNoteUntil ? $"<color=#9fe0a0>{m_CopyNote}</color>"
+                : "<color=#bbbbbb>Click a swatch, type a hex code or Mix your own. The copy buttons put lines like  TreeTrunks = #4F8F2A  on the clipboard.</color>", m_SmallWrap);
+
+            if (m_HexField == null)
+            {
+                m_HexField = new GUIStyle(GUI.skin.textField) { fontSize = Mathf.RoundToInt(15 * k), alignment = TextAnchor.MiddleCenter };
+                m_RowLabel = new GUIStyle(m_Label) { alignment = TextAnchor.MiddleLeft };
+            }
+            if (GUIUtility.keyboardControl == 0) m_HexEdit.Clear();
+            float sw = 22 * k, rowH = 26 * k;
+            foreach (var group in ColorSlots.Groups)
+            {
+                GUILayout.Space(4 * k);
+                GUILayout.Label($"<color=#9ab8d8><b>{group}</b></color>", m_SmallWrap);
+                foreach (var s in ColorSlots.All)
                 {
-                    var pr = GUILayoutUtility.GetRect(sw, sw, GUILayout.Width(sw), GUILayout.Height(sw));
-                    bool on = pc == cur;
-                    Fill(pr, on ? new Color(1f, 0.82f, 0.3f) : new Color(0, 0, 0, 0.6f));
-                    Fill(new Rect(pr.x + 3, pr.y + 3, pr.width - 6, pr.height - 6), pc);
-                    TrackHover(pr);
-                    if (GUI.Button(pr, GUIContent.none, GUIStyle.none)) { ClickSound(); GameSettings.SetWorldColor(w, pc); }
-                    GUILayout.Space(4 * k);
-                }
-                GUILayout.Space(6 * k);
-                string key = "wc:" + i;
-                bool open = m_Open.Contains(key);
-                if (Btn(open ? "Mix ▲" : "Mix ▼", GUILayout.Width(80 * k), GUILayout.Height(sw))) { if (open) m_Open.Remove(key); else m_Open.Add(key); }
-                GUILayout.EndHorizontal();
-                if (m_Open.Contains(key))
-                {
-                    // hue / saturation / brightness (kept while you drag, so grey doesn't lose its hue)
-                    if (m_HsvOf[i] != cur) { Color.RGBToHSV(cur, out float h0, out float s0, out float v0); m_Hsv[i] = new Vector3(h0, s0, v0); m_HsvOf[i] = cur; }
-                    var hsv = m_Hsv[i];
-                    hsv.x = SliderRow("      Hue", hsv.x, 0f, 1f, $"{hsv.x * 360f:0}°", 190 * k);
-                    hsv.y = SliderRow("      Saturation", hsv.y, 0f, 1f, $"{hsv.y * 100f:0}%", 190 * k);
-                    hsv.z = SliderRow("      Brightness", hsv.z, 0.05f, 1f, $"{hsv.z * 100f:0}%", 190 * k);
-                    if (hsv != m_Hsv[i])
+                    if (s.Group != group) continue;
+                    int i = s.Index;
+                    var cur = s.Value;
+                    bool teamHands = s == ColorSlots.Hands && ColorSlots.HandsTeam;
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Label((s.Changed ? "<color=#ffd27a>" : "") + s.Label + (s.Changed ? "</color>" : ""), m_RowLabel, GUILayout.Width(190 * k), GUILayout.Height(rowH));
+                    // the colour now, then ready-made ones to click
+                    var r = GUILayoutUtility.GetRect(sw * 1.6f, sw, GUILayout.Width(sw * 1.6f), GUILayout.Height(rowH));
+                    r.y += (rowH - sw) * 0.5f; r.height = sw;
+                    Fill(r, new Color(0.8f, 0.8f, 0.8f));
+                    Fill(new Rect(r.x + 2, r.y + 2, r.width - 4, r.height - 4), teamHands ? ColorSlots.HandTint(Cfg.TeamColor[0]) : cur);
+                    GUILayout.Space(8 * k);
+                    foreach (var pc in s.Presets)
                     {
-                        m_Hsv[i] = hsv;
-                        var c = Color.HSVToRGB(hsv.x, hsv.y, hsv.z);
-                        m_HsvOf[i] = c;
-                        GameSettings.SetWorldColor(w, c);
+                        var pr = GUILayoutUtility.GetRect(sw, sw, GUILayout.Width(sw), GUILayout.Height(rowH));
+                        pr.y += (rowH - sw) * 0.5f; pr.height = sw;
+                        bool on = !teamHands && ColorSlots.Same(pc, cur);
+                        Fill(pr, on ? new Color(1f, 0.82f, 0.3f) : new Color(0, 0, 0, 0.6f));
+                        Fill(new Rect(pr.x + 2, pr.y + 2, pr.width - 4, pr.height - 4), pc);
+                        TrackHover(pr);
+                        if (GUI.Button(pr, GUIContent.none, GUIStyle.none)) { ClickSound(); ColorSlots.Set(s, pc); }
+                        GUILayout.Space(3 * k);
+                    }
+                    GUILayout.Space(6 * k);
+                    // the hex code: type or paste one
+                    string hex = m_HexEdit.TryGetValue(i, out var ed) ? ed : ColorUtility.ToHtmlStringRGB(cur);
+                    GUI.SetNextControlName("hex" + i);
+                    string nh = GUILayout.TextField(hex, 7, m_HexField, GUILayout.Width(86 * k), GUILayout.Height(rowH - 2 * k));
+                    if (nh != hex)
+                    {
+                        m_HexEdit[i] = nh;
+                        var t = nh.Trim().TrimStart('#');
+                        if (t.Length == 6 && ColorUtility.TryParseHtmlString("#" + t, out var hc)) ColorSlots.Set(s, hc);
+                    }
+                    GUILayout.Space(6 * k);
+                    string key = "wc:" + s.Id;
+                    bool open = m_Open.Contains(key);
+                    if (Btn(open ? "Mix ▲" : "Mix ▼", GUILayout.Width(72 * k), GUILayout.Height(rowH))) { if (open) m_Open.Remove(key); else m_Open.Add(key); }
+                    if (s == ColorSlots.Hands)
+                    {
+                        bool team = ToggleBtn(ColorSlots.HandsTeam, "Team colour", GUILayout.Width(130 * k), GUILayout.Height(rowH));
+                        if (team != ColorSlots.HandsTeam) ColorSlots.SetHandsTeam(team);
+                    }
+                    else if (s.Changed && Btn("Default", GUILayout.Width(90 * k), GUILayout.Height(rowH))) ColorSlots.Set(s, s.Default);
+                    GUILayout.EndHorizontal();
+                    if (m_Open.Contains(key))
+                    {
+                        // hue / saturation / brightness (kept while you drag, so grey doesn't lose its hue)
+                        if (!m_HsvOf.TryGetValue(i, out var of) || of != cur) { Color.RGBToHSV(cur, out float h0, out float s0, out float v0); m_Hsv[i] = new Vector3(h0, s0, v0); m_HsvOf[i] = cur; }
+                        var hsv = m_Hsv[i];
+                        var was = hsv;
+                        hsv.x = SliderRow("      Hue", hsv.x, 0f, 1f, $"{hsv.x * 360f:0}°", 210 * k);
+                        hsv.y = SliderRow("      Saturation", hsv.y, 0f, 1f, $"{hsv.y * 100f:0}%", 210 * k);
+                        hsv.z = SliderRow("      Brightness", hsv.z, 0.05f, 1f, $"{hsv.z * 100f:0}%", 210 * k);
+                        if (hsv != was)
+                        {
+                            m_Hsv[i] = hsv;
+                            var c = Color.HSVToRGB(hsv.x, hsv.y, hsv.z);
+                            m_HsvOf[i] = c;
+                            ColorSlots.Set(s, c);
+                        }
                     }
                 }
             }
-            GUILayout.Space(4 * k);
+            GUILayout.Space(6 * k);
             GUILayout.BeginHorizontal();
             if (Btn("Reset grass and colours", GUILayout.Width(260 * k), GUILayout.Height(32 * k))) GameSettings.ResetWorldLook();
             GUILayout.Label("<color=#bbbbbb>  Changes show straight away.</color>", m_SmallWrap, GUILayout.Height(32 * k));

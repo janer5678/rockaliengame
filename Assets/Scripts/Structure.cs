@@ -142,6 +142,8 @@ namespace RockGame
             Color c = refined ? new Color(0.27f, 0.29f, 0.34f) : sheet ? new Color(0.5f, 0.46f, 0.42f) : stone ? Art.Stone : Art.Wood;
             Color trim = refined ? new Color(0.8f, 0.64f, 0.28f) : sheet ? new Color(0.42f, 0.24f, 0.13f) : stone ? new Color(0.42f, 0.42f, 0.46f) : Art.DarkWood;
             bool col = colliders;
+            // (Settings > Display colours: each tier has its own colour)
+            using var tint = ColorSlots.Use(refined ? ColorSlots.BuildRefined : sheet ? ColorSlots.BuildSheetMetal : stone ? ColorSlots.BuildStone : ColorSlots.BuildWood);
 
             switch (t)
             {

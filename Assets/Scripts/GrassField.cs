@@ -10,10 +10,14 @@ namespace RockGame
     /// golden wheat, clearings of white daisies, purple lupins and clumps of broad leaves - over the flat-colour ground.
     ///
     /// Staying fast: one 8 m patch of blades is drawn instanced on every 8 m square near the camera (only the ones in
-    /// view), with fewer, wider blades further out and none past the grass distance picked in Settings > Display (60 m to start with); the density setting
-    /// draws only the first share of each patch's blades (they're in random order, so it thins evenly).
+    /// view); further out the same patch is stretched over 16 m and then 32 m squares (where only a few of its blades
+    /// are drawn anyway), with fewer, wider blades the further out (how fast it thins is the "far grass thickness"
+    /// setting) and none past the grass distance picked in Settings > Display (60 m to start with, up to 270 m); the
+    /// density setting draws only the first share of each patch's blades (they're in random order, so it thins evenly).
     /// Where each blade grows comes from the "grass field" texture (1 texel a metre): R the ground height, G how much
-    /// grass (none on the bases, the ball drop zone, steep rock, or under anything built), B wheat, A short grass.
+    /// grass (none on the bases, the ball drop zone, steep rock, or under anything built), B tall wheat (head high, you
+    /// can hide in it; kept away from the bases and the ball zone), A short grass.
+    /// Walked-on grass lies flat and stands back up over ~15 s (the trample map, below); the tall wheat doesn't.
     /// The flowers are a few static meshes. Hidden in the PSX and AI PSX graphics (they have their own looks).
     /// </summary>
     public class GrassField : MonoBehaviour
@@ -24,9 +28,11 @@ namespace RockGame
         // how far the grass goes and how many blades are drawn come from Settings > Display (GameSettings.GrassDistance / GrassDensity)
         static float FadeEnd => GameSettings.GrassDistance;
         static float FadeStart => FadeEnd * 0.8f;
-        static float DecorFadeEnd => FadeEnd + 2f;
-        static float DecorFadeStart => FadeEnd - 12f;
+        static float DecorFadeEnd => Mathf.Min(FadeEnd, 90f) + 2f;   // (the flowers stop at 90 m even when the grass goes further)
+        static float DecorFadeStart => DecorFadeEnd - 14f;
         static float Density => GameSettings.GrassDensity;
+        static float Falloff => GameSettings.GrassFalloff;
+        const int Levels = 3;               // squares of 8, 16 and 32 m (the far ones are one patch stretched)
         const float DecorChunk = 32f;
         const int MaxPush = 16;
         static readonly float[] k_LodFrac = { 1f, 0.5f, 0.25f, 0.125f, 0.0625f, 0.03f };
@@ -52,7 +58,10 @@ namespace RockGame
         bool[] m_TileHas;
         Vector2[] m_TileY;                  // lowest / highest ground in each tile
         readonly List<Vector4>[] m_Batches = new List<Vector4>[k_LodFrac.Length];
-        readonly Vector4[] m_Tiles = new Vector4[400];
+        readonly Vector4[] m_Tiles = new Vector4[1024];
+        readonly int[] m_LvN = new int[Levels];
+        readonly bool[][] m_LvHas = new bool[Levels][];
+        readonly Vector2[][] m_LvY = new Vector2[Levels][];
         readonly int[] m_Starts = new int[k_LodFrac.Length];
         readonly MaterialPropertyBlock[] m_Props = new MaterialPropertyBlock[k_LodFrac.Length];
         readonly List<(Renderer r, Vector2 c)> m_Decor = new List<(Renderer, Vector2)>();
@@ -84,6 +93,8 @@ namespace RockGame
             GameSettings.GraphicsChanged -= Refresh;
             if (s_I == this) s_I = null;
             if (m_Field) Destroy(m_Field);
+            if (m_TrTex) Destroy(m_TrTex);
+            foreach (var st in m_Stages) if (st) Destroy(st);
             if (m_Lods != null) foreach (var m in m_Lods) if (m) Destroy(m);
             foreach (var (r, _) in m_Decor) if (r) { var mf = r.GetComponent<MeshFilter>(); if (mf && mf.sharedMesh) Destroy(mf.sharedMesh); }
             if (m_Mat) Destroy(m_Mat);
@@ -130,6 +141,18 @@ namespace RockGame
                     }
                 }
                 float wheat = Mathf.InverseLerp(0.66f, 0.74f, Mathf.PerlinNoise(wx + x * 0.032f, wz + z * 0.032f));
+                // (the tall wheat stays clear of the bases and the ball zone: you see who's coming there)
+                if (wheat > 0f)
+                {
+                    float dBase = float.MaxValue;
+                    for (int t = 0; t < Cfg.TeamCount && !Cfg.Builder; t++)
+                    {
+                        var bc = Cfg.BaseCenter[t];
+                        float bx = Mathf.Max(0, Mathf.Abs(x - bc.x) - Cfg.BaseHalf), bz = Mathf.Max(0, Mathf.Abs(z - bc.z) - Cfg.BaseHalf);
+                        dBase = Mathf.Min(dBase, Mathf.Sqrt(bx * bx + bz * bz));
+                    }
+                    wheat *= Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(6f, 12f, dBase)) * Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(20f, 26f, new Vector2(x, z).magnitude));
+                }
                 m_Px[j * m_N + i] = new Color(y, cover, wheat, 0f);
             }
 
@@ -185,6 +208,33 @@ namespace RockGame
                 m_TileHas[tj * m_TN + ti] = has;
                 m_TileY[tj * m_TN + ti] = new Vector2(lo, hi);
             }
+            // the same for 16 m and 32 m squares (2x2 / 4x4 of them)
+            m_LvN[0] = m_TN; m_LvHas[0] = m_TileHas; m_LvY[0] = m_TileY;
+            for (int L = 1; L < Levels; L++)
+            {
+                int pn = m_LvN[L - 1], n = (pn + 1) / 2;
+                m_LvN[L] = n;
+                m_LvHas[L] = new bool[n * n];
+                m_LvY[L] = new Vector2[n * n];
+                for (int j = 0; j < n; j++)
+                for (int i = 0; i < n; i++)
+                {
+                    bool has = false;
+                    var y = new Vector2(float.MaxValue, float.MinValue);
+                    for (int b = 0; b < 2; b++)
+                    for (int a = 0; a < 2; a++)
+                    {
+                        int ci = i * 2 + a, cj = j * 2 + b;
+                        if (ci >= pn || cj >= pn) continue;
+                        int c = cj * pn + ci;
+                        has |= m_LvHas[L - 1][c];
+                        y = new Vector2(Mathf.Min(y.x, m_LvY[L - 1][c].x), Mathf.Max(y.y, m_LvY[L - 1][c].y));
+                    }
+                    m_LvHas[L][j * n + i] = has;
+                    m_LvY[L][j * n + i] = y;
+                }
+            }
+            InitTrample();
 
             m_Mat = new Material(s_GrassShader) { name = "grass blades" };
             m_DecorMat = new Material(s_GrassShader) { name = "grass flowers" };
@@ -199,7 +249,10 @@ namespace RockGame
         {
             Shader.SetGlobalFloat("_GrassNear", Near);
             Shader.SetGlobalVector("_GrassFade", new Vector4(FadeStart, FadeEnd, DecorFadeStart, DecorFadeEnd));
-            Shader.SetGlobalVector("_GrassWheat", new Color(0.74f, 0.6f, 0.28f).linear);
+            Shader.SetGlobalVector("_GrassWheat", ColorSlots.Wheat.Value.linear);
+            Shader.SetGlobalFloat("_GrassFalloff", Falloff);
+            Shader.SetGlobalVector("_GrassDaisyTint", ColorSlots.LinearRatio(ColorSlots.Daisies));
+            Shader.SetGlobalVector("_GrassLupinTint", ColorSlots.LinearRatio(ColorSlots.Lupins));
             Shader.SetGlobalFloat("_GrassWind", 1f);
             Shader.SetGlobalFloat("_GrassDensity", Density);
             var g = GameSettings.WorldTint(GameSettings.WorldColor.Grass);
@@ -350,10 +403,10 @@ namespace RockGame
                         var dir = new Vector3(Mathf.Cos(pa), 0.18f, Mathf.Sin(pa));
                         var perp = new Vector3(-Mathf.Sin(pa), 0, Mathf.Cos(pa));
                         int v = md.Count;
-                        md.Add(top, white, 1f, p, 0, 0, lean);
-                        md.Add(top + (dir * 0.022f + perp * 0.013f) * size, white, 1f, p, 0, 0, lean);
-                        md.Add(top + dir * 0.048f * size, white, 1f, p, 0, 0, lean);
-                        md.Add(top + (dir * 0.022f - perp * 0.013f) * size, white, 1f, p, 0, 0, lean);
+                        md.Add(top, white, 1f, p, 0, KDaisy, lean);
+                        md.Add(top + (dir * 0.022f + perp * 0.013f) * size, white, 1f, p, 0, KDaisy, lean);
+                        md.Add(top + dir * 0.048f * size, white, 1f, p, 0, KDaisy, lean);
+                        md.Add(top + (dir * 0.022f - perp * 0.013f) * size, white, 1f, p, 0, KDaisy, lean);
                         md.Tri(v, v + 1, v + 2); md.Tri(v, v + 2, v + 3);
                     }
                     int cv = md.Count;
@@ -387,8 +440,8 @@ namespace RockGame
                     {
                         var a = new Vector3(Mathf.Cos(spin), 0, Mathf.Sin(spin)) * 0.012f;
                         int v = md.Count;
-                        md.Add(-a, stem, 0f, p, 0, 0, lean); md.Add(a, stem, 0f, p, 0, 0, lean);
-                        md.Add(-a + Vector3.up * H * 0.4f, stem, 0.4f, p, 0, 0, lean); md.Add(a + Vector3.up * H * 0.4f, stem, 0.4f, p, 0, 0, lean);
+                        md.Add(-a, stem, 0f, p, 0, KGreen, lean); md.Add(a, stem, 0f, p, 0, KGreen, lean);
+                        md.Add(-a + Vector3.up * H * 0.4f, stem, 0.4f, p, 0, KGreen, lean); md.Add(a + Vector3.up * H * 0.4f, stem, 0.4f, p, 0, KGreen, lean);
                         md.Tri(v, v + 2, v + 1); md.Tri(v + 1, v + 2, v + 3);
                     }
                     // the flower spike: two crossed knobbly cards, lighter towards the top
@@ -403,8 +456,8 @@ namespace RockGame
                             float t = s / (float)(widths.Length - 1);
                             float y = Mathf.Lerp(0.38f, 1f, t) * H;
                             var col = Color.Lerp(hue * 0.8f, Color.Lerp(hue, Color.white, 0.3f), t);
-                            md.Add(-a * widths[s] + Vector3.up * y, col, Mathf.Lerp(0.38f, 1f, t), p, 0, 0, lean);
-                            md.Add(a * widths[s] + Vector3.up * y, col, Mathf.Lerp(0.38f, 1f, t), p, 0, 0, lean);
+                            md.Add(-a * widths[s] + Vector3.up * y, col, Mathf.Lerp(0.38f, 1f, t), p, 0, KLupin, lean);
+                            md.Add(a * widths[s] + Vector3.up * y, col, Mathf.Lerp(0.38f, 1f, t), p, 0, KLupin, lean);
                         }
                         for (int s = 0; s < widths.Length - 1; s++)
                         {
@@ -451,6 +504,9 @@ namespace RockGame
             }
         }
 
+        // what each flower vertex is, for the colour settings (uv0.w; the shader tints by it)
+        const float KDaisyMiddle = 0f, KDaisy = 1f, KLupin = 2f, KGreen = 3f;
+
         /// <summary>A broad leaf arching out from the root: up, out and back down at the tip.</summary>
         static void Leaf(MeshData md, Vector2 root, float angle, float length, float width, Color col, float rise)
         {
@@ -465,9 +521,9 @@ namespace RockGame
                 var c = dir * length * t + Vector3.up * length * rise * Mathf.Sin(t * Mathf.PI * 0.85f);
                 var tint = Color.Lerp(col * 0.85f, Color.Lerp(col, new Color(0.7f, 0.9f, 0.4f), 0.25f), t);
                 // a slight fold down the middle so it catches the light
-                md.Add(c - perp * width * ws[s] * 0.5f - Vector3.up * width * ws[s] * 0.12f, tint, t * 0.7f, root, 0, 0, Vector2.zero);
-                md.Add(c + Vector3.up * 0.005f, tint * 1.08f, t * 0.7f, root, 0, 0, Vector2.zero);
-                md.Add(c + perp * width * ws[s] * 0.5f - Vector3.up * width * ws[s] * 0.12f, tint, t * 0.7f, root, 0, 0, Vector2.zero);
+                md.Add(c - perp * width * ws[s] * 0.5f - Vector3.up * width * ws[s] * 0.12f, tint, t * 0.7f, root, 0, KGreen, Vector2.zero);
+                md.Add(c + Vector3.up * 0.005f, tint * 1.08f, t * 0.7f, root, 0, KGreen, Vector2.zero);
+                md.Add(c + perp * width * ws[s] * 0.5f - Vector3.up * width * ws[s] * 0.12f, tint, t * 0.7f, root, 0, KGreen, Vector2.zero);
             }
             for (int s = 0; s < ts.Length - 1; s++)
             {
@@ -490,6 +546,7 @@ namespace RockGame
             Shader.SetGlobalTexture(k_Field, m_Field);
             Shader.SetGlobalVector(k_Rect, new Vector4(m_Min - 0.5f, m_Min - 0.5f, 1f / m_N, 1f / m_N));
             SetSettings();
+            UpdateTrample();
             var cam = Camera.main;
             if (cam == null) return;
             var cp = cam.transform.position;
@@ -502,26 +559,14 @@ namespace RockGame
 
             GeometryUtility.CalculateFrustumPlanes(cam, m_Planes);
             foreach (var b in m_Batches) b.Clear();
-            int r0i = Mathf.FloorToInt((cp.x - FadeEnd) / Tile) - m_T0, r1i = Mathf.FloorToInt((cp.x + FadeEnd) / Tile) - m_T0;
-            int r0j = Mathf.FloorToInt((cp.z - FadeEnd) / Tile) - m_T0, r1j = Mathf.FloorToInt((cp.z + FadeEnd) / Tile) - m_T0;
-            for (int tj = Mathf.Max(0, r0j); tj <= Mathf.Min(m_TN - 1, r1j); tj++)
-            for (int ti = Mathf.Max(0, r0i); ti <= Mathf.Min(m_TN - 1, r1i); ti++)
-            {
-                int t = tj * m_TN + ti;
-                if (!m_TileHas[t]) continue;
-                float x0 = (m_T0 + ti) * Tile, z0 = (m_T0 + tj) * Tile;
-                float nx = Mathf.Clamp(cp.x, x0, x0 + Tile) - cp.x, nz = Mathf.Clamp(cp.z, z0, z0 + Tile) - cp.z;
-                float near = Mathf.Sqrt(nx * nx + nz * nz);
-                if (near > FadeEnd) continue;
-                var ty = m_TileY[t];
-                var b = new Bounds(new Vector3(x0 + Tile * 0.5f, (ty.x + ty.y) * 0.5f + 0.4f, z0 + Tile * 0.5f), new Vector3(Tile + 1f, ty.y - ty.x + 1.6f, Tile + 1f));
-                if (!GeometryUtility.TestPlanesAABB(m_Planes, b)) continue;
-                float dens = (near < Near ? 1f : Mathf.Pow(Near / near, 1.35f)) * Density;
-                int lod = 0;
-                while (lod + 1 < k_LodFrac.Length && k_LodFrac[lod + 1] >= dens) lod++;
-                m_Batches[lod].Add(new Vector4(x0, 0, z0, 0));
-                DrawnPatches++;
-            }
+            // the squares, coarsest first: a 32 m square far away is one patch stretched 4x (its blades 4x further
+            // apart - out there only a few are drawn anyway), nearer ones split into 16 m and then 8 m squares
+            int top = Levels - 1, topN = m_LvN[top];
+            int r0i = (Mathf.FloorToInt((cp.x - FadeEnd) / Tile) - m_T0) >> top, r1i = (Mathf.FloorToInt((cp.x + FadeEnd) / Tile) - m_T0) >> top;
+            int r0j = (Mathf.FloorToInt((cp.z - FadeEnd) / Tile) - m_T0) >> top, r1j = (Mathf.FloorToInt((cp.z + FadeEnd) / Tile) - m_T0) >> top;
+            for (int tj = Mathf.Max(0, r0j); tj <= Mathf.Min(topN - 1, r1j); tj++)
+            for (int ti = Mathf.Max(0, r0i); ti <= Mathf.Min(topN - 1, r1i); ti++)
+                Visit(top, ti, tj, cp);
             // every patch's corner goes in one array; each level of detail is one draw of its own run of it
             // (procedural instancing: the shader picks its patch by instance number - no instancing variants needed)
             int at = 0;
@@ -551,6 +596,40 @@ namespace RockGame
             }
         }
 
+        static float DensityAt(float d) => (d < Near ? 1f : Mathf.Pow(Near / d, Falloff)) * Density;
+
+        /// <summary>One square of level L (8 m << L): drawn as one (stretched) patch, or split into four if it needs more blades than that gives.</summary>
+        void Visit(int L, int i, int j, Vector3 cp)
+        {
+            int n = m_LvN[L];
+            if (i >= n || j >= n) return;
+            int t = j * n + i;
+            if (!m_LvHas[L][t]) return;
+            int s = 1 << L;
+            float size = Tile * s;
+            float x0 = (m_T0 + (i << L)) * Tile, z0 = (m_T0 + (j << L)) * Tile;
+            float nx = Mathf.Clamp(cp.x, x0, x0 + size) - cp.x, nz = Mathf.Clamp(cp.z, z0, z0 + size) - cp.z;
+            float near = Mathf.Sqrt(nx * nx + nz * nz);
+            if (near > FadeEnd) return;
+            var ty = m_LvY[L][t];
+            // (up to 2.6 m: the tall wheat)
+            var b = new Bounds(new Vector3(x0 + size * 0.5f, (ty.x + ty.y) * 0.5f + 1.1f, z0 + size * 0.5f), new Vector3(size + 1f, ty.y - ty.x + 3.4f, size + 1f));
+            if (!GeometryUtility.TestPlanesAABB(m_Planes, b)) return;
+            float need = DensityAt(near) * s * s; // (a patch stretched s times has 1/s² the blades per m²)
+            if (L > 0 && need > 0.25f)
+            {
+                // too close for this size (it would need the full-detail blades): the four smaller squares instead
+                Visit(L - 1, i * 2, j * 2, cp); Visit(L - 1, i * 2 + 1, j * 2, cp);
+                Visit(L - 1, i * 2, j * 2 + 1, cp); Visit(L - 1, i * 2 + 1, j * 2 + 1, cp);
+                return;
+            }
+            need = Mathf.Min(1f, need);
+            int lod = 0;
+            while (lod + 1 < k_LodFrac.Length && k_LodFrac[lod + 1] >= need) lod++;
+            m_Batches[lod].Add(new Vector4(x0, s, z0, 0));
+            DrawnPatches++;
+        }
+
         void UpdatePush(Vector3 cp)
         {
             m_PushList.Clear();
@@ -571,6 +650,163 @@ namespace RockGame
             for (int i = 0; i < n; i++) m_Push[i] = m_PushList[i].p;
             Shader.SetGlobalVectorArray(k_PushArr, m_Push);
             Shader.SetGlobalFloat(k_PushCount, n);
+        }
+    
+        // =====================================================================
+        // The trample map: where the grass has been walked flat
+        // =====================================================================
+
+        // Every 0.5 m square of the map remembers when something last stood on it (seconds, Time.time). The shader
+        // lays a blade flat while that was under TrampleHold seconds ago and stands it back up by TrampleBack, so
+        // nothing has to be updated while the grass recovers. Ten times a second, whatever moved (players on the
+        // ground, horses and cars, the ball) stamps the strip it went over since the last time, and things lying
+        // still (dropped items, chests) stamp their spot every couple of seconds; only the small squares that changed
+        // are copied to the texture (a 16x16 staging texture per block, Graphics.CopyTexture into the big one).
+        const float TrampleRes = 0.5f, TrampleHold = 4f, TrampleBack = 15f, TrampleTick = 0.1f;
+        const int Stage = 16;
+        float[] m_Tr;
+        int m_TrN;
+        float m_TrMin;
+        Texture2D m_TrTex;
+        bool m_TrCopy;
+        readonly List<Texture2D> m_Stages = new List<Texture2D>();
+        readonly float[] m_StageBuf = new float[Stage * Stage];
+        readonly List<RectInt> m_Dirty = new List<RectInt>();
+        readonly Dictionary<int, (Vector3 p, float t)> m_Last = new Dictionary<int, (Vector3, float)>();
+        float m_NextTick, m_NextStill;
+        static readonly int k_Trample = Shader.PropertyToID("_GrassTrample"), k_TrampleRect = Shader.PropertyToID("_GrassTrampleRect"),
+            k_TrampleTime = Shader.PropertyToID("_GrassTrampleTime");
+
+        static readonly bool s_TrampleDebug = System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-trample-debug") >= 0;
+
+        void InitTrample()
+        {
+            m_TrMin = m_Min - 0.5f; // (the same square as the grass field)
+            m_TrN = Mathf.CeilToInt(m_N / TrampleRes);
+            m_Tr = new float[m_TrN * m_TrN];
+            for (int i = 0; i < m_Tr.Length; i++) m_Tr[i] = -1e5f; // (never)
+            m_TrCopy = (SystemInfo.copyTextureSupport & CopyTextureSupport.Basic) != 0 && System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-trample-full") < 0;
+            Debug.Log($"[RockGame] trample map {m_TrN}x{m_TrN}, block copies {m_TrCopy} ({SystemInfo.graphicsDeviceType}, {SystemInfo.copyTextureSupport})");
+            m_TrTex = new Texture2D(m_TrN, m_TrN, TextureFormat.RFloat, false, true) { name = "grass trample", filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Clamp };
+            m_TrTex.SetPixelData(m_Tr, 0);
+            m_TrTex.Apply(false, m_TrCopy); // (only the GPU copy is needed when the blocks can be copied in)
+            BindTrample();
+        }
+
+        void BindTrample()
+        {
+            Shader.SetGlobalTexture(k_Trample, m_TrTex);
+            float size = m_TrN * TrampleRes;
+            Shader.SetGlobalVector(k_TrampleRect, new Vector4(m_TrMin, m_TrMin, 1f / size, 1f / size));
+            Shader.SetGlobalVector(k_TrampleTime, new Vector4(Time.time, TrampleHold, TrampleBack, s_TrampleDebug ? 1 : 0));
+        }
+
+        /// <summary>(tests) How flat the grass is here right now: 1 just walked on, 0 standing.</summary>
+        public float FlatAt(float x, float z)
+        {
+            if (m_Tr == null) return 0f;
+            int i = Mathf.Clamp(Mathf.FloorToInt((x - m_TrMin) / TrampleRes), 0, m_TrN - 1), j = Mathf.Clamp(Mathf.FloorToInt((z - m_TrMin) / TrampleRes), 0, m_TrN - 1);
+            float age = Time.time - m_Tr[j * m_TrN + i];
+            return 1f - Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(TrampleHold, TrampleBack, age));
+        }
+
+        void UpdateTrample()
+        {
+            BindTrample();
+            float now = Time.time;
+            if (now < m_NextTick || m_Tr == null) return;
+            m_NextTick = now + TrampleTick;
+            m_Dirty.Clear();
+            foreach (var p in PlayerNet.All) if (p != null) Step(p.GetInstanceID(), p.transform.position, 0.75f, now);
+            foreach (var v in Vehicle.All) if (v != null) Step(v.GetInstanceID(), v.transform.position, v.IsHorse ? 0.8f : 1.2f, now);
+            if (Ball.Instance != null) Step(Ball.Instance.GetInstanceID(), Ball.Instance.transform.position, 0.45f, now);
+            if (now >= m_NextStill)
+            {
+                // things lying still keep their spot flat
+                m_NextStill = now + 2f;
+                foreach (var c in Container.All) if (c != null) { var p = c.transform.position; if (OnGround(p)) Stamp(p, p, 0.8f, now); }
+                var ng = NetGame.Instance;
+                if (ng != null && ng.IsSpawned)
+                    for (int i = 0; i < ng.Items.Count; i++) { var p = ng.Items[i].Pos; if (OnGround(p)) Stamp(p, p, 0.4f, now); }
+                if (m_Last.Count > 256) m_Last.Clear();
+            }
+            Upload();
+        }
+
+        bool OnGround(Vector3 p)
+        {
+            float gy = Field(p.x, p.z).r;
+            return p.y - gy < 0.5f && p.y - gy > -1.5f;
+        }
+
+        /// <summary>Something that moves: stamps the strip it went over since last time (on the ground only).</summary>
+        void Step(int key, Vector3 p, float r, float now)
+        {
+            if (!OnGround(p)) { m_Last.Remove(key); return; }
+            if (m_Last.TryGetValue(key, out var last))
+            {
+                var d = p - last.p;
+                d.y = 0;
+                bool moved = d.sqrMagnitude > 0.05f * 0.05f;
+                if (!moved && now - last.t < 1.5f) return; // (standing still: now and then is enough)
+                Stamp(d.sqrMagnitude < 25f ? last.p : p, p, r, now); // (not a long streak after a teleport)
+            }
+            else Stamp(p, p, r, now);
+            m_Last[key] = (p, now);
+        }
+
+        /// <summary>Flattens the strip from a to b, radius r (the edges a little less: they stand up again sooner).</summary>
+        void Stamp(Vector3 a, Vector3 b, float r, float now)
+        {
+            float inv = 1f / TrampleRes;
+            int i0 = Mathf.Max(0, Mathf.FloorToInt((Mathf.Min(a.x, b.x) - r - m_TrMin) * inv)), i1 = Mathf.Min(m_TrN - 1, Mathf.FloorToInt((Mathf.Max(a.x, b.x) + r - m_TrMin) * inv));
+            int j0 = Mathf.Max(0, Mathf.FloorToInt((Mathf.Min(a.z, b.z) - r - m_TrMin) * inv)), j1 = Mathf.Min(m_TrN - 1, Mathf.FloorToInt((Mathf.Max(a.z, b.z) + r - m_TrMin) * inv));
+            if (i1 < i0 || j1 < j0) return;
+            var ab = new Vector2(b.x - a.x, b.z - a.z);
+            float len2 = ab.sqrMagnitude;
+            bool any = false;
+            for (int j = j0; j <= j1; j++)
+            for (int i = i0; i <= i1; i++)
+            {
+                var q = new Vector2(m_TrMin + (i + 0.5f) * TrampleRes - a.x, m_TrMin + (j + 0.5f) * TrampleRes - a.z);
+                float t = len2 > 1e-6f ? Mathf.Clamp01(Vector2.Dot(q, ab) / len2) : 0f;
+                float e = (q - ab * t).magnitude / r;
+                if (e >= 1f) continue;
+                float edge = Mathf.Clamp01((e - 0.45f) / 0.55f); // (flat out to about half way, then less and less)
+                float v = now - edge * edge * (TrampleBack * 0.8f);
+                ref float cur = ref m_Tr[j * m_TrN + i];
+                if (v <= cur) continue;
+                cur = v;
+                any = true;
+            }
+            if (any) m_Dirty.Add(new RectInt(i0, j0, i1 - i0 + 1, j1 - j0 + 1));
+        }
+
+        /// <summary>Copies the squares that changed into the texture.</summary>
+        void Upload()
+        {
+            if (m_Dirty.Count == 0) return;
+            if (!m_TrCopy)
+            {
+                m_TrTex.SetPixelData(m_Tr, 0);
+                m_TrTex.Apply(false);
+                return;
+            }
+            int used = 0;
+            foreach (var rc in m_Dirty)
+            for (int by = rc.yMin; by < rc.yMax; by += Stage)
+            for (int bx = rc.xMin; bx < rc.xMax; bx += Stage)
+            {
+                int w = Mathf.Min(Stage, rc.xMax - bx), h = Mathf.Min(Stage, rc.yMax - by);
+                if (used == m_Stages.Count)
+                    m_Stages.Add(new Texture2D(Stage, Stage, TextureFormat.RFloat, false, true) { name = "trample stage", filterMode = FilterMode.Point });
+                var st = m_Stages[used++];
+                for (int y = 0; y < h; y++)
+                    System.Array.Copy(m_Tr, (by + y) * m_TrN + bx, m_StageBuf, y * Stage, w);
+                st.SetPixelData(m_StageBuf, 0);
+                st.Apply(false);
+                Graphics.CopyTexture(st, 0, 0, 0, 0, w, h, m_TrTex, 0, 0, bx, by);
+            }
         }
     }
 }

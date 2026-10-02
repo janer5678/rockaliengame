@@ -121,6 +121,7 @@ namespace RockGame
             else if (kind == Workbench || kind == Workbench2) RockGame.Workbench.BuildModel(t, team, ghost == null, kind == Workbench2 ? 2 : 1);
             else
             {
+                using var tint = ColorSlots.Use(ColorSlots.Chests); // (Settings > Display colours)
                 Art.Box(t, Art.Wood, new Vector3(0, 0.25f, 0), new Vector3(1.05f, 0.5f, 0.58f));
                 Art.Box(t, Art.DarkWood, new Vector3(0, 0.56f, 0), new Vector3(1.1f, 0.14f, 0.62f)); // lid
                 Art.Box(t, Art.Metal, new Vector3(-0.35f, 0.33f, 0), new Vector3(0.06f, 0.68f, 0.64f));

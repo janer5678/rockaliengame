@@ -74,13 +74,16 @@ namespace RockGame
                 var pad = Color.Lerp(new Color(0.5f, 0.45f, 0.35f), team, 0.35f);
                 var line = Color.Lerp(pad, Color.white, 0.25f);
                 float s = Cfg.BaseHalf * 2f;
-                Art.Box(root, pad, c + new Vector3(0, 0.02f, 0), new Vector3(s, 0.03f, s));
                 int cells = Mathf.RoundToInt(s / Cfg.Cell);
-                for (int k = 0; k <= cells; k++)
+                using (ColorSlots.Use(ColorSlots.BasePads))
                 {
-                    float o = -Cfg.BaseHalf + k * Cfg.Cell;
-                    Art.Box(root, line, c + new Vector3(0, 0.04f, o), new Vector3(s, 0.01f, 0.06f));
-                    Art.Box(root, line, c + new Vector3(o, 0.04f, 0), new Vector3(0.06f, 0.01f, s));
+                    Art.Box(root, pad, c + new Vector3(0, 0.02f, 0), new Vector3(s, 0.03f, s));
+                    for (int k = 0; k <= cells; k++)
+                    {
+                        float o = -Cfg.BaseHalf + k * Cfg.Cell;
+                        Art.Box(root, line, c + new Vector3(0, 0.04f, o), new Vector3(s, 0.01f, 0.06f));
+                        Art.Box(root, line, c + new Vector3(o, 0.04f, 0), new Vector3(0.06f, 0.01f, s));
+                    }
                 }
                 for (int side = 0; side < 4; side++)
                 {
@@ -116,30 +119,34 @@ namespace RockGame
             if (ThemeMaps.IsTheme) ThemeMaps.BuildProps(root); // THEME MAPS
 
             // ---------- centre ball drop zone ----------
-            Art.Part(root, Art.Cylinder, new Color(0.85f, 0.75f, 0.3f), new Vector3(0, 0.02f, 0), new Vector3(12f, 0.02f, 12f));
-            Art.Part(root, Art.Cylinder, new Color(0.95f, 0.88f, 0.45f), new Vector3(0, 0.03f, 0), new Vector3(9f, 0.02f, 9f));
-            Art.Part(root, Art.Cylinder, new Color(0.85f, 0.75f, 0.3f), new Vector3(0, 0.04f, 0), new Vector3(2f, 0.02f, 2f));
+            using (ColorSlots.Use(ColorSlots.BallZone))
+            {
+                Art.Part(root, Art.Cylinder, new Color(0.85f, 0.75f, 0.3f), new Vector3(0, 0.02f, 0), new Vector3(12f, 0.02f, 12f));
+                Art.Part(root, Art.Cylinder, new Color(0.95f, 0.88f, 0.45f), new Vector3(0, 0.03f, 0), new Vector3(9f, 0.02f, 9f));
+                Art.Part(root, Art.Cylinder, new Color(0.85f, 0.75f, 0.3f), new Vector3(0, 0.04f, 0), new Vector3(2f, 0.02f, 2f));
+            }
 
             // ---------- map boundary ----------
             var wallC = new Color(0.45f, 0.43f, 0.4f);
             float wh = Cfg.Map == MapKind.Highlands || ThemeMaps.IsTheme /* THEME MAPS */ ? 40f : 5f;
-            Art.Box(root, wallC, new Vector3(0, wh / 2 - (wh > 5 ? 15 : 0), half + 1), new Vector3(2 * half + 4, wh, 2), default, true);
-            Art.Box(root, wallC, new Vector3(0, wh / 2 - (wh > 5 ? 15 : 0), -half - 1), new Vector3(2 * half + 4, wh, 2), default, true);
-            Art.Box(root, wallC, new Vector3(half + 1, wh / 2 - (wh > 5 ? 15 : 0), 0), new Vector3(2, wh, 2 * half + 4), default, true);
-            Art.Box(root, wallC, new Vector3(-half - 1, wh / 2 - (wh > 5 ? 15 : 0), 0), new Vector3(2, wh, 2 * half + 4), default, true);
+            using (ColorSlots.Use(ColorSlots.MapWalls))
+            {
+                Art.Box(root, wallC, new Vector3(0, wh / 2 - (wh > 5 ? 15 : 0), half + 1), new Vector3(2 * half + 4, wh, 2), default, true);
+                Art.Box(root, wallC, new Vector3(0, wh / 2 - (wh > 5 ? 15 : 0), -half - 1), new Vector3(2 * half + 4, wh, 2), default, true);
+                Art.Box(root, wallC, new Vector3(half + 1, wh / 2 - (wh > 5 ? 15 : 0), 0), new Vector3(2, wh, 2 * half + 4), default, true);
+                Art.Box(root, wallC, new Vector3(-half - 1, wh / 2 - (wh > 5 ? 15 : 0), 0), new Vector3(2, wh, 2 * half + 4), default, true);
+            }
 
-            // PSX graphics: the boundary walls are concrete
+            // PSX graphics: the boundary walls are concrete (Normal: the plain walls - the castle dressing is gone)
             {
                 var walls = new List<Renderer>();
                 for (int k = root.childCount - 4; k < root.childCount; k++) walls.Add(root.GetChild(k).GetComponent<Renderer>());
                 PsxModels.Retexture(root.gameObject, walls, r => "concrete_01", 3f);
-                // Normal graphics (Plains, Highlands): castle walls just outside them (the plain walls still do the stopping)
-                if ((Cfg.Map == MapKind.Plains || Cfg.Map == MapKind.Highlands) && WorldDressing.BuildCastle(root, half, look))
-                    look.Other.AddRange(walls);
             }
 
             // distant low-poly mountains for a horizon (PSX graphics: the big PSX terrain rocks). Solid (a convex hull of the rock):
             // the nearest ones poke in past the boundary wall, and you used to walk straight through them
+            using (ColorSlots.Use(ColorSlots.Mountains))
             for (int i = 0; i < 40; i++)
             {
                 float a = i / 40f * Mathf.PI * 2f + R(-0.05f, 0.05f);
@@ -156,6 +163,7 @@ namespace RockGame
             {
                 GrassField.Build(root); // tufts of grass (Normal graphics)
                 CloudLayer.Build(root);  // clouds drifting over (Normal graphics)
+                SkySun.Build(root);      // the low-poly sun (Normal graphics)
             }
             look.Done();
             if (AiPsxArt.On) AiPsxArt.ApplyWorld(root);
@@ -290,15 +298,19 @@ namespace RockGame
             go.transform.position = c;
             var t = go.transform;
             // same height as a foundation (top at BaseY) so foundations and walls line up with it
-            Art.Box(t, k_Silver, new Vector3(0, Cfg.BaseY * 0.5f, 0), new Vector3(s, Cfg.BaseY, s), default, true);
-            Art.Box(t, k_SilverDark, new Vector3(0, Cfg.BaseY * 0.78f, 0), new Vector3(s + 0.04f, 0.1f, s + 0.04f));
-            Art.Box(t, k_SilverDark, new Vector3(0, Cfg.BaseY * 0.25f, 0), new Vector3(s + 0.04f, 0.1f, s + 0.04f));
+            using (ColorSlots.Use(ColorSlots.Bedrock))
+            {
+                Art.Box(t, k_Silver, new Vector3(0, Cfg.BaseY * 0.5f, 0), new Vector3(s, Cfg.BaseY, s), default, true);
+                Art.Box(t, k_SilverDark, new Vector3(0, Cfg.BaseY * 0.78f, 0), new Vector3(s + 0.04f, 0.1f, s + 0.04f));
+                Art.Box(t, k_SilverDark, new Vector3(0, Cfg.BaseY * 0.25f, 0), new Vector3(s + 0.04f, 0.1f, s + 0.04f));
+            }
             // glowing seams and rivets on top
             for (int k = -1; k <= 1; k += 2)
             {
                 Art.Box(t, glow, new Vector3(k * 1.5f, Cfg.BaseY + 0.005f, 0), new Vector3(0.05f, 0.01f, s - 0.2f));
                 Art.Box(t, glow, new Vector3(0, Cfg.BaseY + 0.005f, k * 1.5f), new Vector3(s - 0.2f, 0.01f, 0.05f));
             }
+            using (ColorSlots.Use(ColorSlots.Bedrock))
             for (int x = -1; x <= 1; x += 2)
             for (int z = -1; z <= 1; z += 2)
                 Art.Part(t, Art.Cylinder, k_SilverDark, new Vector3(x * (Cfg.BedrockHalf - 0.25f), Cfg.BaseY + 0.01f, z * (Cfg.BedrockHalf - 0.25f)), new Vector3(0.22f, 0.02f, 0.22f));
@@ -310,6 +322,7 @@ namespace RockGame
 
         static void BuildMachine(Transform root, int team, Color glow)
         {
+            using var tint = ColorSlots.Use(ColorSlots.AlienMachine); // (Settings > Display colours)
             var go = new GameObject("AlienMachine " + Cfg.TeamName[team]);
             go.transform.SetParent(root, false);
             // local +z faces the spawn / the middle of the map
@@ -587,6 +600,7 @@ namespace RockGame
         /// <summary>A wooden watch tower: a platform 6 m up with railings and a roof, reached by a ramp.</summary>
         static void BuildTower(Transform root, Vector3 pos, float yaw)
         {
+            using var tint = ColorSlots.Use(ColorSlots.WatchTowers);
             var go = new GameObject("WatchTower");
             go.transform.SetParent(root, false);
             go.transform.SetPositionAndRotation(pos, Quaternion.Euler(0, yaw, 0));
