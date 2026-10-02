@@ -845,14 +845,14 @@ namespace RockGame
             }
             else if (no.TryGetComponent(out Structure s))
             {
-                if (s.Team.Value == Team.Value || !GameAllowsCombat) return;
+                if (!GameAllowsCombat) return; // your own pieces too: anything an enemy can break, you can
                 float dmg = st.StructureDamage * Cfg.TierMeleeMul(s.Tier.Value);
                 s.ServerDamage(dmg);
                 Fx.Server(FxKind.StructureHit, point, -dir, OwnerClientId);
             }
             else if (no.TryGetComponent(out Container c))
             {
-                if (!c.Breakable || c.Team.Value == Team.Value || !GameAllowsCombat) return;
+                if (!c.Breakable || !GameAllowsCombat) return;
                 c.ServerDamage(st.StructureDamage);
                 Fx.Server(FxKind.StructureHit, point, -dir, OwnerClientId);
             }
@@ -899,7 +899,7 @@ namespace RockGame
                 return; // arrows that hit someone are gone
             }
             if (no.TryGetComponent(out Vehicle v)) { v.ServerDamage(damage * v.HeadMul(point), this); return; }
-            if (no.TryGetComponent(out Structure s) && s.Team.Value != Team.Value && s.Tier.Value == 0)
+            if (no.TryGetComponent(out Structure s) && s.Tier.Value == 0)
                 s.ServerDamage(Cfg.ArrowWoodStructureDamage);
             DropSpentArrow(point, dir);
         }
@@ -955,7 +955,7 @@ namespace RockGame
                     if (!p.Dead.Value) p.Notify("A spear is stuck in you! Press E to pull it out");
                     return;
                 }
-                if (no.TryGetComponent(out Structure s) && s.Team.Value != Team.Value && s.Tier.Value == 0)
+                if (no.TryGetComponent(out Structure s) && s.Tier.Value == 0)
                     s.ServerDamage(Cfg.SpearThrowStructureDamage);
                 if (no.TryGetComponent(out Vehicle v)) v.ServerDamage(Cfg.SpearThrowDamage * power * v.HeadMul(point), this);
             }
@@ -1033,7 +1033,7 @@ namespace RockGame
                 float best = float.MaxValue;
                 foreach (var s in Structure.All)
                 {
-                    if (s == null || !s.IsSpawned || s.PType != PieceType.Barrier || s.Team.Value == Team.Value) continue;
+                    if (s == null || !s.IsSpawned || s.PType != PieceType.Barrier || s.Team.Value != first.Team.Value) continue;
                     var d = s.transform.position - at;
                     d.y = 0;
                     float along = Vector3.Dot(d, dir);
@@ -1062,7 +1062,7 @@ namespace RockGame
             string msg;
             if (no.TryGetComponent(out Structure s))
             {
-                if (s.Team.Value == Team.Value) return;
+                // (your own pieces too)
                 bool hard = s.Tier.Value >= 1 && s.PType != PieceType.Barrier; // the high external wall always goes in one hit
                 msg = hard ? $"Smashed the {s.DisplayName} down to {Cfg.TierName(s.Tier.Value - 1).ToLower()}" : $"Smashed the {s.DisplayName}!";
                 if (s.PType == PieceType.Barrier)
@@ -1073,7 +1073,7 @@ namespace RockGame
                 else if (hard) s.ServerDowngrade();
                 else s.ServerDamage(s.Health.Value + 1f);
             }
-            else if (no.TryGetComponent(out Container c) && c.Breakable && c.Team.Value != Team.Value)
+            else if (no.TryGetComponent(out Container c) && c.Breakable)
             {
                 msg = "Smashed the chest open!";
                 c.ServerBreak();

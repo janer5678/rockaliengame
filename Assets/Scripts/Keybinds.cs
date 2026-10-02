@@ -5,7 +5,7 @@ namespace RockGame
     /// <summary>Every rebindable action (pause menu > Controls). Esc always pauses and can't be rebound.</summary>
     public enum Bind
     {
-        Forward, Back, Left, Right, Jump, Sprint, Crouch,
+        Forward, Back, Left, Right, Jump, Sprint, Crouch, Slide,
         Attack, Aim, Interact, Inventory,
         Rotate, Demolish, Upgrade,
         PushToTalk,
@@ -31,7 +31,8 @@ namespace RockGame
             new Info { Bind = Bind.Right, Group = "MOVEMENT", Label = "Move right", Main = KeyCode.D },
             new Info { Bind = Bind.Jump, Group = "MOVEMENT", Label = "Jump", Hint = "also climbs ladders and flies the jetpack", Main = KeyCode.Space },
             new Info { Bind = Bind.Sprint, Group = "MOVEMENT", Label = "Sprint", Hint = "gallop on a horse", Main = KeyCode.LeftShift },
-            new Info { Bind = Bind.Crouch, Group = "MOVEMENT", Label = "Crouch / slide", Hint = "press it while sprinting to slide", Main = KeyCode.LeftControl, Alt = KeyCode.C },
+            new Info { Bind = Bind.Crouch, Group = "MOVEMENT", Label = "Crouch", Hint = "crouch only (never slides)", Main = KeyCode.LeftControl },
+            new Info { Bind = Bind.Slide, Group = "MOVEMENT", Label = "Slide", Hint = "press it while running to slide (crouches when standing still)", Main = KeyCode.C },
 
             new Info { Bind = Bind.Attack, Group = "ACTIONS", Label = "Attack / use", Hint = "hit, gather, place, throw the ball; hold to draw the bow", Main = KeyCode.Mouse0 },
             new Info { Bind = Bind.Aim, Group = "ACTIONS", Label = "Aim / eat", Hint = "eat, aim the crossbow / sniper; hold + Attack throws a spear", Main = KeyCode.Mouse1 },
@@ -54,6 +55,7 @@ namespace RockGame
         };
 
         const int Count = (int)Bind.Hotbar7 + 1;
+        const string SlideMigrateKey = "RockGame.Keys.SlideSplit";
         static readonly KeyCode[] s_Main = new KeyCode[Count], s_Alt = new KeyCode[Count];
         static bool s_Loaded;
 
@@ -65,6 +67,19 @@ namespace RockGame
             {
                 s_Main[(int)i.Bind] = (KeyCode)PlayerPrefs.GetInt("RockGame.Key." + i.Bind, (int)i.Main);
                 s_Alt[(int)i.Bind] = (KeyCode)PlayerPrefs.GetInt("RockGame.Key2." + i.Bind, (int)i.Alt);
+            }
+            // once: C used to be crouch's second key (crouch slid when running); now Ctrl only crouches and C is its own Slide key
+            if (PlayerPrefs.GetInt(SlideMigrateKey, 0) == 0)
+            {
+                PlayerPrefs.SetInt(SlideMigrateKey, 1);
+                int c = (int)Bind.Crouch, sl = (int)Bind.Slide;
+                if (s_Alt[c] == KeyCode.C) s_Alt[c] = KeyCode.None;
+                if (s_Main[c] == KeyCode.C) { s_Main[c] = s_Alt[c] != KeyCode.None ? s_Alt[c] : KeyCode.LeftControl; s_Alt[c] = KeyCode.None; }
+                // C goes to Slide unless the player put it on something else themselves
+                bool cTaken = false;
+                for (int i = 0; i < Count; i++) if (i != sl && (s_Main[i] == KeyCode.C || s_Alt[i] == KeyCode.C)) cTaken = true;
+                if (!cTaken && s_Main[sl] == KeyCode.None) s_Main[sl] = KeyCode.C;
+                Save();
             }
         }
 

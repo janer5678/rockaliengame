@@ -304,15 +304,21 @@ namespace RockGame
     public static class PortalFx
     {
         static readonly List<GameObject> s_Shown = new List<GameObject>();
+        static readonly List<PortalInfo> s_Info = new List<PortalInfo>();
 
         public static void Sync(NetGame g)
         {
             int n = g.Portals.Count;
             while (s_Shown.Count > n) { if (s_Shown[s_Shown.Count - 1]) Object.Destroy(s_Shown[s_Shown.Count - 1]); s_Shown.RemoveAt(s_Shown.Count - 1); }
+            while (s_Info.Count > s_Shown.Count) s_Info.RemoveAt(s_Info.Count - 1);
             for (int i = 0; i < n; i++)
             {
-                if (i < s_Shown.Count && s_Shown[i] != null) { Animate(s_Shown[i], i); continue; }
                 var p = g.Portals[i];
+                // the oldest portals get cleared out (the portal gun never runs out), so a slot can change what it shows
+                if (i < s_Shown.Count && s_Shown[i] != null && i < s_Info.Count && !s_Info[i].Equals(p)) { Object.Destroy(s_Shown[i]); s_Shown[i] = null; }
+                if (i < s_Shown.Count && s_Shown[i] != null) { Animate(s_Shown[i], i); continue; }
+                while (s_Info.Count <= i) s_Info.Add(default);
+                s_Info[i] = p;
                 var go = new GameObject("Portal");
                 go.transform.SetPositionAndRotation(p.Pos, Quaternion.LookRotation(p.Normal.sqrMagnitude > 0.01f ? p.Normal : Vector3.up));
                 var c = p.Color;
@@ -346,6 +352,7 @@ namespace RockGame
         {
             foreach (var g in s_Shown) if (g) Object.Destroy(g);
             s_Shown.Clear();
+            s_Info.Clear();
         }
     }
 

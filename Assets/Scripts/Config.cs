@@ -283,7 +283,7 @@ namespace RockGame
         [Tune("Mode options")] public static int AirdropItemMask = 1023;
         [Tune("Airdrop")] public static float AirdropBaseDistance = 25f; // never this close to a base
         [Tune("Airdrop")] public static float C4Fuse = 3f, C4Radius = 5f, C4PlayerDamage = 150f, C4KillRadius = 1.6f;
-        [Tune("Airdrop")] public static int SniperAmmo = 3, JetpackFuel = 100, PortalShots = 2;
+        [Tune("Airdrop")] public static int SniperAmmo = 3, JetpackFuel = 100, PortalShots = 2, RocketAmmo = 3;
         [Tune("Airdrop")] public static float JetpackSeconds = 8f, JetpackThrust = 9f, GiantTime = 30f, GiantScale = 3f;
         [Tune("Airdrop")] public static float SlenderSpeed = 4.6f, SlenderHp = 150f, SlenderLife = 60f;
         [Tune("Airdrop")] public static float RocketSpeed = 32f, RocketRadius = 3.5f, RocketStructureDamage = 900f, RocketPlayerDamage = 140f;
@@ -328,7 +328,7 @@ namespace RockGame
         [Tune("Hatchet")] public static float HatchetCooldown = 0.7f, HatchetRange = 2.5f, HatchetPlayerDamage = 14f, HatchetWoodGather = 15f, HatchetStoneGather = 2f, HatchetStructureDamage = 12f;
         [Tune("Pickaxe")] public static float PickaxeCooldown = 0.8f, PickaxeRange = 2.5f, PickaxePlayerDamage = 14f, PickaxeWoodGather = 3f, PickaxeStoneGather = 12f, PickaxeStructureDamage = 12f;
         [Tune("Spear")] public static float SpearCooldown = 0.9f, SpearRange = 3.4f, SpearPlayerDamage = 35f, SpearWoodGather = 2f, SpearStoneGather = 1f, SpearStructureDamage = 10f;
-        [Tune("Spear")] public static float SpearDrawTime = 0.6f, SpearThrowSpeed = 30f, SpearThrowDamage = 60f, SpearThrowStructureDamage = 8f;
+        [Tune("Spear")] public static float SpearDrawTime = 0.6f, SpearThrowSpeed = 30f, SpearThrowDamage = 90f, SpearThrowStructureDamage = 8f;
         [Tune("Chainsaw")] public static float ChainsawCooldown = 0.15f, ChainsawRange = 2.4f, ChainsawPlayerDamage = 8f, ChainsawWoodGather = 12f, ChainsawStoneGather = 10f, ChainsawStructureDamage = 12f;
         [Tune("Melee")] public static float StoneStructureMeleeMul = 0.2f; // stone is very hard to melee - bring a ram
 
@@ -515,6 +515,7 @@ namespace RockGame
                 case Item.Sniper: return SniperAmmo;
                 case Item.Jetpack: return JetpackFuel;
                 case Item.PortalGun: return PortalShots;
+                case Item.RocketLauncher: return RocketAmmo;
                 case Item.Pistol: return PistolMag;
                 case Item.Revolver: return RevolverMag;
                 case Item.TreeCracker: return TreeCrackerUses;
@@ -931,6 +932,7 @@ namespace RockGame
             (1, new[] { "SpearWood", "ArmorWood", "ArmorHp", "SaddleWood", "RamUses", "CrossbowSpeed", "DropWarning" }),
             (2, new[] { "SlideSlipperiness", "SlideBoost", "SlideMaxSpeed", "SlideSlopeAccel", "AlienOutlines", "RevolverMag", "BowMinSpeed", "BowMinDamage" }),
             (3, new[] { "RocketPlayerDamage", "HorseHp", "WoodGen1Wood", "WoodGen2Wood", "AutoWoodLevel1", "AutoWoodLevel2", "BaseRegen" }),
+            (4, new[] { "SpearThrowDamage" }),
         };
         const string MigrateKey = "RockGame.Tunables.migrated";
 

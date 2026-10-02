@@ -47,6 +47,8 @@ namespace RockGame
         public readonly NetworkVariable<bool> TimerPaused = new NetworkVariable<bool>();
         /// <summary>When the next scheduled airdrop lands (server time), announced 20 s ahead; -1 when none is coming.</summary>
         public readonly NetworkVariable<double> NextDropLands = new NetworkVariable<double>(-1);
+        /// <summary>When the next scheduled airdrop lands (server time), always known ahead (the HUD's airdrop timer); -1 when no more are coming.</summary>
+        public readonly NetworkVariable<double> NextScheduledDrop = new NetworkVariable<double>(-1);
         /// <summary>Seconds of warning before an airdrop lands.</summary>
         public const float DropWarning = 10f;
         int m_DropsWarned;
@@ -147,6 +149,7 @@ namespace RockGame
                 if (S == GameState.PreBall || S == GameState.BallLive || S == GameState.SuddenDeath) PhaseEnd.Value += dt;
                 if (m_BallStart >= 0) m_BallStart += dt;
             }
+            ServerTickNextDrop();
             ServerTickC4(now);
             ServerTickAirstrikes(now);
             ServerTickBushes(now);
@@ -626,6 +629,19 @@ namespace RockGame
             }
         }
 
+        /// <summary>Server: when the next scheduled airdrop lands, for the airdrop timer at the top of everyone's screen.</summary>
+        void ServerTickNextDrop()
+        {
+            int n = Mathf.Clamp(Cfg.AirdropCount, 0, 20);
+            double at = -1;
+            if (!Cfg.FunRules && n > 0)
+            {
+                if (S == GameState.PreBall) at = PhaseEnd.Value + (double)BallPhase / (n + 1) + DropLand;
+                else if (S == GameState.BallLive && m_BallStart >= 0 && m_DropsDone < n) at = m_BallStart + (m_DropsDone + 1) * (double)BallPhase / (n + 1) + DropLand;
+            }
+            if (System.Math.Abs(NextScheduledDrop.Value - at) > 0.25) NextScheduledDrop.Value = at;
+        }
+
         /// <summary>Server: forget the countdown once that airdrop is down.</summary>
         void ServerTickDropWarning(double now)
         {
@@ -1040,11 +1056,20 @@ namespace RockGame
         /// <summary>Portal gun: each gun makes one linked pair (2 shots). Portals stay for the whole game, every one a different colour.</summary>
         public void ServerAddPortal(Vector3 pos, Vector3 normal, int pair)
         {
+            // the portal gun has infinite uses: past MaxPortals, the oldest pair (not the one being made) goes
+            while (Portals.Count >= MaxPortals)
+            {
+                int oldest = Portals[0].Pair == pair && Portals.Count > 1 ? Portals[1].Pair : Portals[0].Pair;
+                for (int i = Portals.Count - 1; i >= 0; i--) if (Portals[i].Pair == oldest) Portals.RemoveAt(i);
+            }
             int index = 0;
             foreach (var p in Portals) if (p.Pair == pair) index++;
             Portals.Add(new PortalInfo { Pos = pos, Normal = normal.normalized, Pair = (short)pair, Index = (byte)index });
             Fx.Server(FxKind.PortalOpen, pos, normal);
         }
+
+        /// <summary>Most portals in the world at once (the portal gun never runs out).</summary>
+        public const int MaxPortals = 24;
 
         public int ServerNewPortalPair() => m_NextPortalPair++;
         int m_NextPortalPair;
