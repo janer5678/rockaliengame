@@ -279,26 +279,31 @@ namespace RockGame
             var held = SelectItem(input);
 
             // ---- crouch ----
-            bool wantCrouch = move && !riding && Binds.Held(Bind.Crouch);
+            // Ctrl (Crouch) only crouches; C (Slide) slides when you're running, and crouches when you aren't
+            bool slideKey = move && !riding && Binds.Held(Bind.Slide);
+            bool wantCrouch = move && !riding && (Binds.Held(Bind.Crouch) || slideKey);
             if (!wantCrouch && Crouching && !riding && !HeadroomToStand()) wantCrouch = true;
             if (dead) wantCrouch = false;
-            if (wantCrouch != Crouching)
+            if (slideKey && !dead && Binds.Down(Bind.Slide) && !m_SlideOn)
             {
-                // crouching while running (sprint held, or already moving fast): slide. Pressed in the air it waits for
+                // the slide key while running (sprint held, or already moving fast): slide. Pressed in the air it waits for
                 // the landing (a short buffer), so it works every time.
-                // Or crouching on a slope while moving: you slide down it (no boost), like Apex.
+                // Or pressed on a slope while moving: you slide down it (no boost), like Apex.
                 // (any sprinting counts, or moving at about a run - so it starts the moment you press it, every time)
                 bool moving = Binds.Axis(Bind.Forward, Bind.Back) != 0f || Binds.Axis(Bind.Right, Bind.Left) != 0f;
                 bool running = (Binds.Held(Bind.Sprint) && moving) || m_LastPlanar.magnitude > Cfg.WalkSpeed * 0.9f;
                 bool downhill = m_LastPlanar.magnitude > 1f && SlopeDownhill(out var dh) && Vector3.Dot(dh, m_LastPlanar.normalized) > 0.3f;
-                if (wantCrouch && !m_SlideOn && (running || downhill)) m_SlideQueued = Mathf.Max(Time.time, m_NextSlide) + 0.35f;
+                if (running || downhill) m_SlideQueued = Mathf.Max(Time.time, m_NextSlide) + 0.35f;
+            }
+            if (wantCrouch != Crouching)
+            {
                 Crouching = wantCrouch;
                 m_Net.Crouch.Value = wantCrouch;
             }
             if (dead || riding) { m_SlideOn = false; m_SlideQueued = -1f; }
             // start it right away if we're on (or only just left) the ground; in the air it waits for the landing
             bool onGround = m_CC.enabled && (m_CC.isGrounded || Time.time - m_GroundedAt < 0.2f);
-            if (m_SlideQueued > Time.time && !m_SlideOn && wantCrouch && onGround && Time.time >= m_NextSlide) { m_SlideQueued = -1f; StartSlide(); }
+            if (m_SlideQueued > Time.time && !m_SlideOn && slideKey && onGround && Time.time >= m_NextSlide) { m_SlideQueued = -1f; StartSlide(); }
 
             // ---- move ----
             m_Speed = 0;
@@ -918,17 +923,16 @@ namespace RockGame
                 var s = no != null ? no.GetComponent<Structure>() : null;
                 var c = no != null ? no.GetComponent<Container>() : null;
                 int team = s != null ? s.Team.Value : c != null && c.Breakable ? c.Team.Value : -1;
-                if (team >= 0 && team != m_Net.Team.Value)
+                if (team >= 0) // your own pieces too
                 {
                     m_Net.RamStrikeRpc(no, hit.point);
                     Fx.Play(FxKind.Smash, hit.point, hit.normal);
                     Fx.Shake(0.55f);
                     return;
                 }
-                if (team == m_Net.Team.Value) { Hud.Push("That's your own building"); return; }
             }
             Sfx.Play(Sfx.Thud, transform.position + transform.forward, 0.5f);
-            Hud.Push("The ram only works on enemy buildings - get right up to one");
+            Hud.Push("The ram only works on buildings - get right up to one");
         }
 
         /// <summary>Builder: put the ball down on whatever is just in front of you (ground, floor, a roof...).</summary>
@@ -1531,7 +1535,7 @@ namespace RockGame
                     if (st.Tier.Value == 0 && st.Upgradable && !Cfg.WoodMode) AimText += $"   F: upgrade to stone ({Cfg.UpgradeCost(st.PType)} {Cfg.UpgradeName})";
                     AimText += "   X: demolish";
                 }
-                if (m_Net.HeldItem == Item.Ram && st.Team.Value != m_Net.Team.Value && hit.distance <= Cfg.RamRange)
+                if (m_Net.HeldItem == Item.Ram && hit.distance <= Cfg.RamRange)
                     AimText += st.Tier.Value >= 1 && st.PType != PieceType.Barrier ? $"   hold LMB: ram down to {Cfg.TierName(st.Tier.Value - 1).ToLower()}" : "   hold LMB: ram to smash";
             }
             else if (no.TryGetComponent(out ResourceNode n))

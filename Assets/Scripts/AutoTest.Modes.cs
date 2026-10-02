@@ -71,8 +71,11 @@ namespace RockGame
                 var why = PlayerNet.DeployProblem(Item.Barrier, team, edge, yaw);
                 Check(why == "Not in the enemy base", $"a high external wall poking into the enemy base is refused ({why ?? "allowed"})");
             }
+            if (Cfg.Rules == GameRules.Classic || Cfg.Rules == GameRules.Arsenal || Cfg.Rules == GameRules.AutoWood || Cfg.Rules == GameRules.Dna)
+                yield return RequestTests(me, pc, g, team);
             switch (Cfg.Rules)
             {
+                case GameRules.Classic: break;
                 case GameRules.Arsenal: yield return ArsenalTests(me, pc, g, team); yield return BlastAndRamTests(me, pc, g, team); yield return SuicideTest(me); break;
                 case GameRules.AutoWood: yield return AutoWoodTests(me, pc, g, team); yield return ArsenalTests(me, pc, g, team); break;
                 case GameRules.Tutorial: yield return TutorialTests(me, pc, g, team); break;
@@ -631,6 +634,7 @@ namespace RockGame
                 pc.SetLook(look.y, look.x > 180f ? look.x - 360f : look.x);
             }
             yield return Snap("autowood_machine_0");
+            yield return WoodMachineCloseUp(me, pc, team, 0);
             for (int lvl = 0; lvl < 2; lvl++)
             {
                 int before = me.Count(Item.Wood);
@@ -640,6 +644,7 @@ namespace RockGame
                     $"wood gen level {lvl + 1} for {before - me.Count(Item.Wood)} wood: {Cfg.WoodGenRate(lvl + 1)} a second");
                 yield return new WaitForSeconds(0.6f);
                 yield return Snap("autowood_machine_" + (lvl + 1));
+                yield return WoodMachineCloseUp(me, pc, team, lvl + 1);
             }
             {
                 int before = me.Count(Item.Wood);
@@ -648,6 +653,23 @@ namespace RockGame
                 Check(me.Count(Item.Wood) == before && g.WoodGenLevelOf(team) == 2, "only two wood gen levels");
             }
             for (int i = 0; i < me.Inv.Count; i++) me.Inv[i] = default; // (room for the Arsenal tests that follow)
+        }
+
+        /// <summary>A close look at the wood machine from the front-left, then back to the spawn view.</summary>
+        IEnumerator WoodMachineCloseUp(PlayerNet me, PlayerController pc, int team, int level)
+        {
+            var rot = Quaternion.LookRotation(-Cfg.BackDir(team));
+            var wmPos = Cfg.WoodMachinePos(team);
+            var from = wmPos + rot * new Vector3(-1.6f, 0, 3.4f);
+            pc.LocalTeleport(from, 0f);
+            yield return new WaitForSeconds(0.3f);
+            var look = Quaternion.LookRotation(wmPos + Vector3.up * 1.0f - me.EyePos).eulerAngles;
+            pc.SetLook(look.y, look.x > 180f ? look.x - 360f : look.x);
+            yield return Snap("autowood_machine_close_" + level);
+            pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
+            yield return new WaitForSeconds(0.3f);
+            var back = Quaternion.LookRotation(wmPos + Vector3.up * 0.8f - me.EyePos).eulerAngles;
+            pc.SetLook(back.y, back.x > 180f ? back.x - 360f : back.x);
         }
 
         IEnumerator BuilderTests(PlayerNet me, PlayerController pc, NetGame g, int team)

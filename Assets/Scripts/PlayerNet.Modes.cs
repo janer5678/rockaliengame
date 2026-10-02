@@ -178,7 +178,7 @@ namespace RockGame
                 if (p.Dead.Value) KillConfirmRpc();
             }
             else if (no.TryGetComponent(out Vehicle v)) v.ServerDamage(Cfg.GunBody(gun) * v.HeadMul(point), this);
-            else if (no.TryGetComponent(out Structure s) && s.Team.Value != Team.Value && s.Tier.Value == 0) s.ServerDamage(10f);
+            else if (no.TryGetComponent(out Structure s) && s.Tier.Value == 0) s.ServerDamage(10f);
         }
 
         /// <summary>Fills the pistol's / revolver's magazine from its ammo.</summary>

@@ -138,14 +138,15 @@ namespace RockGame
                     look.Other.AddRange(walls);
             }
 
-            // distant low-poly mountains for a horizon (PSX graphics: the big PSX terrain rocks)
+            // distant low-poly mountains for a horizon (PSX graphics: the big PSX terrain rocks). Solid (a convex hull of the rock):
+            // the nearest ones poke in past the boundary wall, and you used to walk straight through them
             for (int i = 0; i < 40; i++)
             {
                 float a = i / 40f * Mathf.PI * 2f + R(-0.05f, 0.05f);
                 float d = R(half * 1.5f, half * 1.9f);
                 float sc = R(20f, 45f) * Mathf.Max(0.6f, half / 100f);
                 var m = Art.Part(root, Art.MakeRock(i, 0.35f), Color.Lerp(new Color(0.42f, 0.45f, 0.42f), new Color(0.55f, 0.55f, 0.6f), R(0, 1)),
-                    new Vector3(Mathf.Cos(a) * d, sc * 0.2f, Mathf.Sin(a) * d), new Vector3(sc, sc * R(0.6f, 1.1f), sc), new Vector3(0, R(0, 360), 0));
+                    new Vector3(Mathf.Cos(a) * d, sc * 0.2f, Mathf.Sin(a) * d), new Vector3(sc, sc * R(0.6f, 1.1f), sc), new Vector3(0, R(0, 360), 0), true);
                 m.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
                 PsxModels.Replace(m.transform, "bigrock" + (i % 6), PsxModels.Fit.Uniform);
             }

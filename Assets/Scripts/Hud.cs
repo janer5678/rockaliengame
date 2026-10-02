@@ -219,6 +219,7 @@ namespace RockGame
                 Fill(new Rect(sw / 2 - 260 * k, 8, 520 * k, 62 * k), new Color(0, 0, 0, 0.45f));
                 Shadowed(new Rect(0, 10, sw, 30 * k), $"<b><size={Mathf.RoundToInt(24 * k)}>{phase}</size></b>", m_Center);
                 Shadowed(new Rect(0, 40 * k, sw, 26 * k), sub, m_Center);
+                DrawAirdropTimer(game, 8 + 66 * k, k);
             }
 
             // ---- top left: identity + compass ----
@@ -422,12 +423,12 @@ namespace RockGame
                 case Item.Saddle: return $"<b>Saddle</b> ({Cfg.TeamLabel(s.Data > 0 ? s.Data - 1 : me.Team.Value)})    walk up to a wild horse and press E to saddle and ride it";
                 case Item.Meat: return $"<b>Horse Meat</b>    RMB: eat ({Cfg.MeatEatTime:0.#}s, heals you fully)";
                 case Item.Sniper: return $"<b>Sniper Rifle</b> ({s.Data} shots)    hold RMB: scope   LMB: fire - one hit kills (a helmet stops a headshot)";
-                case Item.PortalGun: return $"<b>Portal Gun</b> ({s.Data} portal{(s.Data == 1 ? "" : "s")} left)    LMB: shoot a portal onto any surface";
+                case Item.PortalGun: return $"<b>Portal Gun</b> (never runs out - {(s.Data == 1 ? "next shot links the pair" : "next shot starts a new pair")})    LMB: shoot a portal onto any surface";
                 case Item.Jetpack: return $"<b>Jetpack</b> (fuel {s.Data}%)    hold Space to fly";
                 case Item.SlenderEgg: return "<b>Slenderman Egg</b>    LMB: throw it - Slenderman hatches and hunts your enemy";
                 case Item.BuildEgg: return "<b>Build Egg</b>    LMB: throw it - blocks appear along its path to walk on";
                 case Item.GiantStaff: return "<b>Staff of the Giant</b>    LMB: turn your nearest enemy into a giant";
-                case Item.RocketLauncher: return "<b>Rocket Launcher</b> (1 rocket)    LMB: fire - wrecks enemy buildings";
+                case Item.RocketLauncher: return $"<b>Rocket Launcher</b> ({Mathf.Max(1, (int)s.Data)} rocket{(s.Data > 1 ? "s" : "")})    LMB: fire - wrecks enemy buildings";
                 case Item.BombBush: return "<b>Fake Bomb Bush</b>    LMB: throw it - whoever picks it blows up";
                 case Item.TreeCamo: return "<b>Tree Camo</b>    while you hold it you're a tree (the camera pulls back so you can see it)";
                 case Item.Airstrike: return "<b>Airstrike</b>    LMB: pick a spot on the map - everything there gets flattened";
@@ -499,7 +500,7 @@ namespace RockGame
             string count = s.Count > 1 ? s.Count.ToString() : s.Id == Item.Bow && me != null ? me.Count(Item.Arrow) + "a" : "";
             if (count != "")
                 Shadowed(new Rect(r.x, r.yMax - 22 * m_Scale, r.width - 5, 20 * m_Scale), count, new GUIStyle(m_Small) { alignment = TextAnchor.LowerRight });
-            if (Cfg.MaxData(s.Id) > 0)
+            if (Cfg.MaxData(s.Id) > 0 && s.Id != Item.PortalGun) // (the portal gun never runs out)
             {
                 float d = Mathf.Clamp01(s.Data / (float)Mathf.Max(1, Cfg.MaxData(s.Id)));
                 Fill(new Rect(r.x + 4, r.yMax - 6, (r.width - 8), 3), new Color(0, 0, 0, 0.6f));
@@ -829,6 +830,39 @@ namespace RockGame
                 }
             }
             if (e.type == EventType.MouseDown && e.button == 1) { pc.CloseAirstrikeMap(); e.Use(); }
+        }
+
+        // ------------------------------------------------------------------ the airdrop timer (always under the top banner)
+
+        /// <summary>Whenever the mode has airdrops: a small badge under the top banner - the time to the next one, one on its way, or one on the ground.</summary>
+        void DrawAirdropTimer(NetGame game, float y, float k)
+        {
+            if (game == null || Cfg.FunRules || Mathf.Clamp(Cfg.AirdropCount, 0, 20) == 0) return;
+            if (game.S != GameState.PreBall && game.S != GameState.BallLive) return;
+            double now = game.NetworkManager.ServerTime.Time;
+            bool incoming = false;
+            for (int i = 0; i < NetGame.LaneTotal; i++)
+            {
+                double st = game.LaneStartAt(i);
+                if (st >= 0 && now < st + NetGame.DropLand) incoming = true;
+            }
+            bool landed = false;
+            foreach (var c in Container.All) if (c != null && c.IsAirdrop && !c.Empty) { landed = true; break; }
+            double next = game.NextScheduledDrop.Value;
+            string text;
+            if (incoming) text = $"<color=#e0a8ff><b>AIRDROP INCOMING</b></color>  <color=#dddddd>follow the purple beam</color>";
+            else
+            {
+                text = next > 0 ? $"<b>AIRDROP IN {Clock(Mathf.Max(0f, (float)(next - now)))}</b>" : "";
+                if (landed) text += (text != "" ? "   <color=#888888>·</color>   " : "") + "<color=#e0a8ff><b>AIRDROP LANDED</b></color>  <color=#dddddd>grab it!</color>";
+                if (text == "") text = "<color=#bbbbbb>NO MORE AIRDROPS</color>";
+            }
+            float w = 340 * k, h = 24 * k;
+            var r = new Rect(Screen.width / 2f - w / 2f, y, w, h);
+            float pulse = incoming || (next > 0 && next - now <= NetGame.DropWarning) ? 0.5f + 0.5f * Mathf.Sin(Time.time * 8f) : 0f;
+            Fill(r, new Color(0.18f + 0.25f * pulse, 0.06f, 0.28f + 0.15f * pulse, 0.7f));
+            Fill(new Rect(r.x, r.y, 4 * k, h), new Color(0.75f, 0.35f, 1f, 0.95f));
+            Shadowed(r, text, new GUIStyle(m_Small) { alignment = TextAnchor.MiddleCenter, richText = true });
         }
 
         // ------------------------------------------------------------------ countdowns and the sniper scope

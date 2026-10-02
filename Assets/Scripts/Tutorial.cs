@@ -169,9 +169,9 @@ namespace RockGame
                 new Step
                 {
                     Id = "slide", Title = "Slide",
-                    Body = $"While running, press {K(Bind.Crouch)} to slide. Wheee!",
+                    Body = $"While running, press {K(Bind.Slide)} to slide. Wheee! ({K(Bind.Crouch)} only crouches.)",
                     Goal = "Run, then slide",
-                    Hint = $"Run first ({Binds.Name(Bind.Sprint)} + {Binds.Name(Bind.Forward)}), then tap {Binds.Name(Bind.Crouch)}.",
+                    Hint = $"Run first ({Binds.Name(Bind.Sprint)} + {Binds.Name(Bind.Forward)}), then tap {Binds.Name(Bind.Slide)}.",
                     Done = () => s_Slid,
                 },
                 new Step
