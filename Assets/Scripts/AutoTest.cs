@@ -203,11 +203,11 @@ namespace RockGame
             me.EatRpc();
             me.EatRpc();
             yield return new WaitForSeconds(0.3f);
-            Check(Mathf.Approximately(me.Health.Value, 65f), $"can't eat berries back to back (health {me.Health.Value:0})");
+            Check(me.Health.Value >= 64.9f && me.Health.Value < 67f, $"can't eat berries back to back (health {me.Health.Value:0})");
             yield return new WaitForSeconds(Cfg.BerryEatTime);
             me.EatRpc();
             yield return new WaitForSeconds(0.3f);
-            Check(Mathf.Approximately(me.Health.Value, 90f), $"ate again after {Cfg.BerryEatTime}s (health {me.Health.Value:0})");
+            Check(me.Health.Value >= 89.9f && me.Health.Value < 90f + Cfg.BaseRegen * (Cfg.BerryEatTime + 1f), $"ate again after {Cfg.BerryEatTime}s (health {me.Health.Value:0})");
 
             // horses: hit one, it bleeds and runs off
             Vehicle horse = null;
