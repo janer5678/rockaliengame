@@ -101,6 +101,7 @@ namespace RockGame
             Check(BuildGrid.IsSupported(new PieceKey(PieceKey.KEdge, rockCell.I, rockCell.J, 0, 1), k => false), "walls stand on the bedrock without a foundation");
             if (m_Mode == "rig") { yield return RigShots(me, pc); yield break; }
             if (m_Mode == "psxmodels") { yield return PsxModelShots(me, pc); yield break; }
+            if (m_Mode == "hands") { yield return HandsShots(me, pc); yield break; }
             if (m_Mode == "psx") { yield return PsxShots(me, pc); yield break; }
             if (m_Mode == "grass") { yield return GrassShots(me, pc); yield break; }
             if (m_Mode == "aipsx") { yield return AiPsxShots(me, pc); yield break; }
