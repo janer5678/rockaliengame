@@ -153,11 +153,15 @@ namespace RockGame
             Object.Destroy(lg, 0.25f);
         }
 
+        /// <summary>How many gun tracers have been drawn on this PC (tests: one shot = one tracer).</summary>
+        public static int TracerCount;
+
         /// <summary>Sniper shot: a thin bright line that fades fast.</summary>
         public static void Tracer(Vector3 from, Vector3 to)
         {
             var d = to - from;
             if (d.magnitude < 0.1f) return;
+            TracerCount++;
             var mat = new Material(Art.Ghost(new Color(1f, 0.95f, 0.6f, 0.9f)));
             var go = Art.Part(null, Art.Cube, Color.white, from + d * 0.5f, new Vector3(0.03f, 0.03f, d.magnitude), Quaternion.LookRotation(d).eulerAngles, false, mat);
             go.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;

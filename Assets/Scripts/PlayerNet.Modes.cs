@@ -165,7 +165,8 @@ namespace RockGame
             m_NextPistol = Time.time + Cfg.GunFireRate(gun) * 0.8f;
             Reveal();
             if (Vector3.Distance(point, EyePos) > 250f) point = EyePos + dir.normalized * 100f;
-            Fx.Server(FxKind.SniperTracer, EyePos + dir.normalized * 0.5f - Vector3.up * 0.15f, point);
+            // (not back to the shooter: they already drew their own tracer the moment they fired - two of them was the "double tracer")
+            Fx.Server(FxKind.SniperTracer, EyePos + dir.normalized * 0.5f - Vector3.up * 0.15f, point, OwnerClientId);
             if (!hasTarget || !target.TryGet(out var no) || !GameAllowsCombat) return;
             if (no.TryGetComponent(out PlayerNet p) && p != this && !p.Dead.Value)
             {
@@ -223,7 +224,8 @@ namespace RockGame
             m_ShotgunPelletsLeft = Mathf.Clamp(Cfg.ShotgunPellets, 1, 30);
             m_ShotgunFrom = EyePos;
             Reveal();
-            Fx.Server(FxKind.SniperTracer, EyePos + dir.normalized * 0.5f - Vector3.up * 0.15f, EyePos + dir.normalized * Mathf.Min(Cfg.ShotgunRange, 30f));
+            // everyone else sees one tracer; the shooter already drew its own pellets
+            Fx.Server(FxKind.SniperTracer, EyePos + dir.normalized * 0.5f - Vector3.up * 0.15f, EyePos + dir.normalized * Mathf.Min(Cfg.ShotgunRange, 30f), OwnerClientId);
         }
 
         /// <summary>Pellets from the last shot that hit a player: the server works out the damage from how far away they were.</summary>

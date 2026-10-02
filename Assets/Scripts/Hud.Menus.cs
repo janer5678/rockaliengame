@@ -48,10 +48,13 @@ namespace RockGame
                     if (!m_Rebinding) m_RebindFrame = Time.frameCount;
                 }
             }
+            // a colour picked by dragging is saved once the mouse is let go (even if the menu closed mid-drag)
+            if (m_PickerDirty && !PickerMouseHeld) { m_PickerDrag = 0; SavePick(); }
             // Esc on the main menu goes back a page
             var boot = Bootstrap.I;
             if (boot != null && !boot.InSession && Input.GetKeyDown(KeyCode.Escape) && !m_Rebinding && m_RebindFrame != Time.frameCount && m_Page != MenuPage.Main)
             {
+                if (DropTyping()) return; // (Esc in a search box lets go of it first)
                 m_Page = MenuPage.Main;
                 ClickSound();
             }
@@ -61,6 +64,7 @@ namespace RockGame
         public static bool BackOut()
         {
             if (s_I == null) return false;
+            if (DropTyping()) return true; // typing in a search box: Esc lets go of it first
             if (s_I.m_Rebinding || s_I.m_RebindFrame == Time.frameCount) { s_I.m_Rebinding = false; return true; }
             if (s_I.m_PausePage != PausePage.Root) { s_I.m_PausePage = PausePage.Root; ClickSound(); return true; }
             return false;
@@ -466,6 +470,12 @@ namespace RockGame
             GUILayout.EndHorizontal();
             if (Time.unscaledTime - m_FileMsgTime < 12f) GUILayout.Label($"<color=#9dff9d>{m_FileMsg}</color>", m_SmallWrap);
             GUILayout.Space(6 * k);
+            // search: filters the rows as you type (name or section); the sections with a match open up
+            if (SetValuesSearch != null) { m_ValuesQuery = SetValuesSearch; SetValuesSearch = null; }
+            m_ValuesQuery = SearchBox("search values", m_ValuesQuery, "type to find a value - its name or section (slide, arrow, airdrop...)");
+            if (m_ValuesQuery != m_ValuesQueryWas) { m_ValuesQueryWas = m_ValuesQuery; m_ValuesScroll = Vector2.zero; }
+            bool searching = !string.IsNullOrWhiteSpace(m_ValuesQuery);
+            GUILayout.Space(4 * k);
 
             m_ValuesScroll = GUILayout.BeginScrollView(m_ValuesScroll);
             // group the fields by section, keeping Cfg's order
@@ -479,13 +489,26 @@ namespace RockGame
                 l.Add(f);
             }
             float colW = (w - 70 * k) / 2f;
+            int matches = 0;
             foreach (var sec in sections)
             {
                 var fields = bySection[sec];
-                int changed = 0;
-                foreach (var f in fields) if (!Cfg.IsDefault(f)) changed++;
-                string extra = $"   <color=#aaaaaa>{fields.Count} value{(fields.Count == 1 ? "" : "s")}</color>" + (changed > 0 ? $"   <color=#8fe38f>{changed} changed</color>" : "");
-                if (!Section("v:" + sec, sec.ToUpper(), extra)) continue;
+                if (searching)
+                {
+                    // only the rows that match, under their section's heading (sections with none are left out)
+                    int all = fields.Count;
+                    fields = fields.FindAll(f => Matches(m_ValuesQuery, Pretty(f.Name) + " " + f.Name + " " + sec));
+                    if (fields.Count == 0) continue;
+                    matches += fields.Count;
+                    GUILayout.Label($"▼   {Highlight(sec.ToUpper(), m_ValuesQuery)}   <color=#aaaaaa>{fields.Count} of {all}</color>", m_Header, GUILayout.Height(30 * k));
+                }
+                else
+                {
+                    int changed = 0;
+                    foreach (var f in fields) if (!Cfg.IsDefault(f)) changed++;
+                    string extra = $"   <color=#aaaaaa>{fields.Count} value{(fields.Count == 1 ? "" : "s")}</color>" + (changed > 0 ? $"   <color=#8fe38f>{changed} changed</color>" : "");
+                    if (!Section("v:" + sec, sec.ToUpper(), extra)) continue;
+                }
                 for (int i = 0; i < fields.Count; i += 2)
                 {
                     GUILayout.BeginHorizontal();
@@ -494,7 +517,7 @@ namespace RockGame
                         var f = fields[i + c];
                         bool ch = !Cfg.IsDefault(f);
                         GUILayout.Space(12 * k);
-                        GUILayout.Label((ch ? "<color=#8fe38f>" : "") + Pretty(f.Name) + (ch ? "</color>" : ""), m_Small, GUILayout.Width(colW * 0.62f), GUILayout.Height(24 * k));
+                        GUILayout.Label((ch ? "<color=#8fe38f>" : "") + (searching ? Highlight(Pretty(f.Name), m_ValuesQuery) : Pretty(f.Name)) + (ch ? "</color>" : ""), m_Small, GUILayout.Width(colW * 0.62f), GUILayout.Height(24 * k));
                         if (f.FieldType == typeof(bool))
                         {
                             // on / off settings are a toggle button
@@ -514,6 +537,9 @@ namespace RockGame
                 }
                 GUILayout.Space(6 * k);
             }
+            if (searching && matches == 0)
+                GUILayout.Label($"<color=#ffcc66>No values match \"{m_ValuesQuery.Trim()}\".</color>  <color=#bbbbbb>Try part of a name (slide, arrow, wood) or a section (Airdrop, Player).</color>", m_LabelWrap);
+            ValuesMatches = searching ? matches : -1;
             GUILayout.EndScrollView();
             GUILayout.EndArea();
         }
@@ -557,6 +583,7 @@ namespace RockGame
             GUILayout.EndHorizontal();
             GUILayout.Space(10 * k);
             if (ScrollToColours && m_Tab == SettingsTab.Display && m_ColoursY >= 0f) { m_SettingsScroll.y = m_ColoursY - 6f * k; ScrollToColours = false; }
+            if (m_ScrollToPicker && m_Tab == SettingsTab.Display && m_PickerRowY >= 0f) { m_SettingsScroll.y = m_PickerRowY - 60f * k; m_ScrollToPicker = false; }
             m_SettingsScroll = GUILayout.BeginScrollView(m_SettingsScroll);
             switch (m_Tab)
             {
@@ -655,6 +682,7 @@ namespace RockGame
             GUI.enabled = true;
             GUILayout.EndHorizontal();
             if (inMatch) GUILayout.Label("<color=#bbbbbb>Picked by the host for everyone in this match.</color>", m_SmallWrap);
+            DrawPostFxSettings();
             DrawWorldLook();
             Caption("SCREEN");
             GUILayout.BeginHorizontal();
@@ -738,7 +766,7 @@ namespace RockGame
             if (Btn("Reset colours", GUILayout.Width(150 * k), GUILayout.Height(32 * k))) GameSettings.ResetWorldColours();
             GUILayout.EndHorizontal();
             GUILayout.Label(Time.unscaledTime < m_CopyNoteUntil ? $"<color=#9fe0a0>{m_CopyNote}</color>"
-                : "<color=#bbbbbb>Click a swatch, type a hex code or Mix your own. The copy buttons put lines like  TreeTrunks = #4F8F2A  on the clipboard.</color>", m_SmallWrap);
+                : "<color=#bbbbbb>Click a swatch, type a hex code, or click a row's colour (or Pick) for the colour picker. The copy buttons put lines like  TreeTrunks = #4F8F2A  on the clipboard.</color>", m_SmallWrap);
 
             if (m_HexField == null)
             {
@@ -746,6 +774,14 @@ namespace RockGame
                 m_RowLabel = new GUIStyle(m_Label) { alignment = TextAnchor.MiddleLeft };
             }
             if (GUIUtility.keyboardControl == 0) m_HexEdit.Clear();
+            if (OpenPickerFor >= 0 && OpenPickerFor < ColorSlots.All.Count)
+            {
+                var ps = ColorSlots.All[OpenPickerFor];
+                OpenPickerFor = -1;
+                m_ScrollToPicker = true;
+                m_PickerRowY = -1f;
+                if (m_PickerSlot != ps.Index) TogglePicker(ps, ps == ColorSlots.Hands && ColorSlots.HandsTeam ? ColorSlots.HandTint(Cfg.TeamColor[0]) : ps.Value, ps == ColorSlots.Hands && ColorSlots.HandsTeam);
+            }
             float sw = 22 * k, rowH = 26 * k;
             foreach (var group in ColorSlots.Groups)
             {
@@ -762,8 +798,13 @@ namespace RockGame
                     // the colour now, then ready-made ones to click
                     var r = GUILayoutUtility.GetRect(sw * 1.6f, sw, GUILayout.Width(sw * 1.6f), GUILayout.Height(rowH));
                     r.y += (rowH - sw) * 0.5f; r.height = sw;
-                    Fill(r, new Color(0.8f, 0.8f, 0.8f));
-                    Fill(new Rect(r.x + 2, r.y + 2, r.width - 4, r.height - 4), teamHands ? ColorSlots.HandTint(Cfg.TeamColor[0]) : cur);
+                    var shown = teamHands ? ColorSlots.HandTint(Cfg.TeamColor[0]) : cur;
+                    bool picking = m_PickerSlot == i;
+                    Fill(r, picking ? new Color(1f, 0.82f, 0.3f) : new Color(0.8f, 0.8f, 0.8f));
+                    Fill(new Rect(r.x + 2, r.y + 2, r.width - 4, r.height - 4), shown);
+                    // click the colour: the colour picker for this row
+                    TrackHover(r);
+                    if (GUI.Button(r, GUIContent.none, GUIStyle.none)) { ClickSound(); TogglePicker(s, shown, teamHands); }
                     GUILayout.Space(8 * k);
                     foreach (var pc in s.Presets)
                     {
@@ -781,6 +822,7 @@ namespace RockGame
                     string hex = m_HexEdit.TryGetValue(i, out var ed) ? ed : ColorUtility.ToHtmlStringRGB(cur);
                     GUI.SetNextControlName("hex" + i);
                     string nh = GUILayout.TextField(hex, 7, m_HexField, GUILayout.Width(86 * k), GUILayout.Height(rowH - 2 * k));
+                    NoteTyping("hex" + i); // (typing a hex code mutes the game's keys)
                     if (nh != hex)
                     {
                         m_HexEdit[i] = nh;
@@ -788,9 +830,7 @@ namespace RockGame
                         if (t.Length == 6 && ColorUtility.TryParseHtmlString("#" + t, out var hc)) ColorSlots.Set(s, hc);
                     }
                     GUILayout.Space(6 * k);
-                    string key = "wc:" + s.Id;
-                    bool open = m_Open.Contains(key);
-                    if (Btn(open ? "Mix ▲" : "Mix ▼", GUILayout.Width(72 * k), GUILayout.Height(rowH))) { if (open) m_Open.Remove(key); else m_Open.Add(key); }
+                    if (Btn(picking ? "Pick ▲" : "Pick ▼", GUILayout.Width(72 * k), GUILayout.Height(rowH))) TogglePicker(s, shown, teamHands);
                     if (s == ColorSlots.Hands)
                     {
                         bool team = ToggleBtn(ColorSlots.HandsTeam, "Team colour", GUILayout.Width(130 * k), GUILayout.Height(rowH));
@@ -798,23 +838,8 @@ namespace RockGame
                     }
                     else if (s.Changed && Btn("Default", GUILayout.Width(90 * k), GUILayout.Height(rowH))) ColorSlots.Set(s, s.Default);
                     GUILayout.EndHorizontal();
-                    if (m_Open.Contains(key))
-                    {
-                        // hue / saturation / brightness (kept while you drag, so grey doesn't lose its hue)
-                        if (!m_HsvOf.TryGetValue(i, out var of) || of != cur) { Color.RGBToHSV(cur, out float h0, out float s0, out float v0); m_Hsv[i] = new Vector3(h0, s0, v0); m_HsvOf[i] = cur; }
-                        var hsv = m_Hsv[i];
-                        var was = hsv;
-                        hsv.x = SliderRow("      Hue", hsv.x, 0f, 1f, $"{hsv.x * 360f:0}°", 210 * k);
-                        hsv.y = SliderRow("      Saturation", hsv.y, 0f, 1f, $"{hsv.y * 100f:0}%", 210 * k);
-                        hsv.z = SliderRow("      Brightness", hsv.z, 0.05f, 1f, $"{hsv.z * 100f:0}%", 210 * k);
-                        if (hsv != was)
-                        {
-                            m_Hsv[i] = hsv;
-                            var c = Color.HSVToRGB(hsv.x, hsv.y, hsv.z);
-                            m_HsvOf[i] = c;
-                            ColorSlots.Set(s, c);
-                        }
-                    }
+                    if (picking && Event.current.type == EventType.Repaint) m_PickerRowY = GUILayoutUtility.GetLastRect().y;
+                    if (picking) DrawColourPicker(s, shown, teamHands);
                 }
             }
             GUILayout.Space(6 * k);
@@ -874,7 +899,7 @@ namespace RockGame
             float k = m_Scale, sw = Screen.width, sh = Screen.height;
             if (OpenPause >= 0)
             {
-                m_PausePage = OpenPause >= 1 ? PausePage.Settings : PausePage.Root;
+                m_PausePage = OpenPause == 3 ? PausePage.Dev : OpenPause >= 1 ? PausePage.Settings : PausePage.Root; // (3: Dev settings - tests)
                 m_Tab = OpenPause == 2 ? SettingsTab.Display : SettingsTab.Controls; // (2: Display - for the tests)
                 OpenPause = -1;
                 OnTabOpened();
@@ -928,25 +953,61 @@ namespace RockGame
             string timer = game == null ? "" : $"{game.S}  ·  {Clock(game.TimeLeft)} left" + (game.TimerPaused.Value ? "  <color=#ffcc66>(PAUSED)</color>" : "");
             GUILayout.Label(timer, m_Label);
 
+            if (SetDevSearch != null) { m_DevQuery = SetDevSearch; SetDevSearch = null; }
+            m_DevQuery = SearchBox("search dev", m_DevQuery, "type to find a setting (ball, wood, teleport...)");
+            bool searching = !string.IsNullOrWhiteSpace(m_DevQuery);
+
             void Row(params (string label, DevCmd cmd)[] buttons)
             {
                 GUILayout.BeginHorizontal();
                 foreach (var (label, cmd) in buttons)
-                    if (Btn(label, GUILayout.Height(32 * k))) me.DevRpc(cmd);
+                    if (Btn(searching ? Highlight(label, m_DevQuery) : label, GUILayout.Height(32 * k))) me.DevRpc(cmd);
                 GUILayout.EndHorizontal();
             }
-            Caption("MATCH");
-            Row(("Drop the wall now", DevCmd.DropWallNow), (game != null && game.TimerPaused.Value ? "Resume timer" : "Pause timer", DevCmd.TogglePauseTimer), ("Timer to 10s", DevCmd.TimerTo10s));
-            Row(("+1 minute", DevCmd.AddMinute), ("-1 minute", DevCmd.SubMinute), ("Start sudden death", DevCmd.StartSuddenDeath), ("Win now", DevCmd.WinNow));
-            Caption("WORLD");
-            Row(("Spawn airdrop now", DevCmd.SpawnAirdrop), ("Ball to me", DevCmd.BallToMe), ("Ball to middle", DevCmd.BallToMiddle), ("Regrow nodes", DevCmd.RegrowNodes));
-            Row(("Spawn horse", DevCmd.SpawnHorse));
-            Caption("ME");
-            Row(("+1000 wood", DevCmd.GiveWood), ("+1000 stone", DevCmd.GiveStone), ("+50 arrows", DevCmd.GiveArrows));
-            Row(("All airdrop items", DevCmd.GiveOpItems), ("One of every craftable", DevCmd.GiveCraftables), ("Clear inventory", DevCmd.ClearInventory));
-            Row(("Heal", DevCmd.HealFull), ("God mode on/off", DevCmd.ToggleGod), ("Kill me", DevCmd.KillMe));
-            Caption("TELEPORT");
-            Row(("My base", DevCmd.TpMyBase), ("Enemy base", DevCmd.TpEnemyBase), ("The ball", DevCmd.TpBall), ("The airdrop", DevCmd.TpAirdrop));
+            var sections = new (string title, (string label, DevCmd cmd)[][] rows)[]
+            {
+                ("MATCH", new[]
+                {
+                    new[] { ("Drop the wall now", DevCmd.DropWallNow), (game != null && game.TimerPaused.Value ? "Resume timer" : "Pause timer", DevCmd.TogglePauseTimer), ("Timer to 10s", DevCmd.TimerTo10s) },
+                    new[] { ("+1 minute", DevCmd.AddMinute), ("-1 minute", DevCmd.SubMinute), ("Start sudden death", DevCmd.StartSuddenDeath), ("Win now", DevCmd.WinNow) },
+                }),
+                ("WORLD", new[]
+                {
+                    new[] { ("Spawn airdrop now", DevCmd.SpawnAirdrop), ("Ball to me", DevCmd.BallToMe), ("Ball to middle", DevCmd.BallToMiddle), ("Regrow nodes", DevCmd.RegrowNodes) },
+                    new[] { ("Spawn horse", DevCmd.SpawnHorse) },
+                }),
+                ("ME", new[]
+                {
+                    new[] { ("+1000 wood", DevCmd.GiveWood), ("+1000 stone", DevCmd.GiveStone), ("+50 arrows", DevCmd.GiveArrows) },
+                    new[] { ("All airdrop items", DevCmd.GiveOpItems), ("One of every craftable", DevCmd.GiveCraftables), ("Clear inventory", DevCmd.ClearInventory) },
+                    new[] { ("Heal", DevCmd.HealFull), ("God mode on/off", DevCmd.ToggleGod), ("Kill me", DevCmd.KillMe) },
+                }),
+                ("TELEPORT", new[]
+                {
+                    new[] { ("My base", DevCmd.TpMyBase), ("Enemy base", DevCmd.TpEnemyBase), ("The ball", DevCmd.TpBall), ("The airdrop", DevCmd.TpAirdrop) },
+                }),
+            };
+            int matches = 0;
+            foreach (var (title, rows) in sections)
+            {
+                if (!searching)
+                {
+                    Caption(title);
+                    foreach (var row in rows) Row(row);
+                    continue;
+                }
+                // searching: just the buttons that match (their name or the section's), four to a row
+                var hits = new List<(string label, DevCmd cmd)>();
+                foreach (var row in rows)
+                    foreach (var b in row)
+                        if (Matches(m_DevQuery, b.label + " " + title)) hits.Add(b);
+                if (hits.Count == 0) continue;
+                matches += hits.Count;
+                Caption(title);
+                for (int i = 0; i < hits.Count; i += 4) Row(hits.GetRange(i, Mathf.Min(4, hits.Count - i)).ToArray());
+            }
+            if (searching && matches == 0) GUILayout.Label($"<color=#ffcc66>Nothing matches \"{m_DevQuery.Trim()}\".</color>", m_Label);
+            DevMatches = searching ? matches : -1;
             GUILayout.EndArea();
         }
     }

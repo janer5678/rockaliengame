@@ -26,12 +26,12 @@ namespace RockGame
             if (left <= 0) { ServerClearSlot(HeldSlot.Value); Notify("Out of sniper ammo - the rifle is gone"); }
             else Inv[HeldSlot.Value] = ItemStack.Of(Item.Sniper, 1, left);
             if (Vector3.Distance(point, EyePos) > 400f) point = EyePos + dir.normalized * 100f;
-            Fx.Server(FxKind.SniperTracer, EyePos + dir.normalized * 0.5f - Vector3.up * 0.15f, point);
+            Fx.Server(FxKind.SniperTracer, EyePos + dir.normalized * 0.5f - Vector3.up * 0.15f, point, OwnerClientId); // (the shooter drew its own)
             if (!hasTarget || !target.TryGet(out var no) || !GameAllowsCombat) return;
             if (no.TryGetComponent(out PlayerNet p) && p != this && !p.Dead.Value)
             {
                 bool head = p.IsHeadshot(point);
-                Fx.Server(head ? FxKind.BloodHead : FxKind.Blood, point, dir);
+                Fx.Server(head ? FxKind.BloodHead : FxKind.Blood, point, dir, OwnerClientId);
                 if (head && p.HelmetHp.Value > 0)
                 {
                     p.HelmetHp.Value = 0;

@@ -47,6 +47,7 @@ namespace RockGame
             yield return Shot("menu_mode_options");
             Hud.OpenValues = true;
             yield return Shot("menu_values");
+            yield return ValuesSearchShots(Shot);
             for (int tab = 0; tab < 4; tab++)
             {
                 Hud.OpenSettingsTab = tab;
@@ -92,6 +93,7 @@ namespace RockGame
             if (m_Mode == "teams") { yield return TeamsRoutine(me); yield break; }
             if (m_Mode == "batch5") { yield return Batch5Routine(me, pc); yield break; }
             if (m_Mode == "modes") { yield return ModesRoutine(me, pc); yield break; }
+            if (m_Mode == "tracer") { yield return TracerRoutine(me, pc); yield break; }
             if (m_Mode == "craftui") { yield return CraftUiRoutine(me, pc); yield break; }
             if (m_Mode == "maps") { yield return MapsRoutine(me, pc); yield break; }
             Check(Cfg.BaseTeamAt(me.transform.position) == me.Team.Value, $"spawned inside own base ({me.transform.position})");
@@ -108,6 +110,7 @@ namespace RockGame
             if (m_Mode == "psx") { yield return PsxShots(me, pc); yield break; }
             if (m_Mode == "grass") { yield return GrassShots(me, pc); yield break; }
             if (m_Mode == "world") { yield return WorldShots(me, pc); yield break; }
+            if (m_Mode == "ui") { yield return UiShots(me, pc); yield break; }
             if (m_Mode == "aipsx") { yield return AiPsxShots(me, pc); yield break; }
             if (m_Mode == "outline") { yield return OutlineShots(me, pc); yield break; }
             if (m_Mode == "shots") yield return ShotsRoutine(me, pc);

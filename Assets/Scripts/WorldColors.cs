@@ -138,15 +138,20 @@ namespace RockGame
             if (s.m_Value == c && !handsSwitch) return;
             s.m_Value = c;
             if (s == Hands) s_HandsTeam = false; // (picking a colour for the hands means: not the team's)
-            if (save)
-            {
-                if (Same(c, s.Default)) PlayerPrefs.DeleteKey("RockGame.World." + s.Id);
-                else PlayerPrefs.SetString("RockGame.World." + s.Id, ColorUtility.ToHtmlStringRGB(c));
-                if (s == Hands) PlayerPrefs.SetInt("RockGame.HandsTeam", 0);
-                PlayerPrefs.Save();
-            }
+            if (save) Save(s);
             Retint(s);
             GameSettings.FireWorldLookChanged();
+        }
+
+        /// <summary>Saves the slot's colour as it is now (the colour picker applies with save: false while you drag,
+        /// then saves when you let go).</summary>
+        public static void Save(Slot s)
+        {
+            Load();
+            if (Same(s.m_Value, s.Default)) PlayerPrefs.DeleteKey("RockGame.World." + s.Id);
+            else PlayerPrefs.SetString("RockGame.World." + s.Id, ColorUtility.ToHtmlStringRGB(s.m_Value));
+            if (s == Hands) PlayerPrefs.SetInt("RockGame.HandsTeam", s_HandsTeam ? 1 : 0);
+            PlayerPrefs.Save();
         }
 
         public static void SetHandsTeam(bool on, bool save = true)

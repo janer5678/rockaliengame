@@ -140,8 +140,12 @@ namespace RockGame
         /// <summary>1 / 0 / -1 from two opposite actions (movement axes).</summary>
         public static float Axis(Bind plus, Bind minus) => (Held(plus) ? 1f : 0f) - (Held(minus) ? 1f : 0f);
 
-        static bool Key(KeyCode k) => k != KeyCode.None && Input.GetKey(k);
-        static bool KeyDown(KeyCode k) => k != KeyCode.None && Input.GetKeyDown(k);
+        /// <summary>Typing (the chat line, a menu search box, a hex code): the game's keys are muted - held and pressed
+        /// read as nothing (letting go still counts, so nothing gets stuck).</summary>
+        public static bool Muted => Chat.Open || Hud.Typing;
+
+        static bool Key(KeyCode k) => k != KeyCode.None && !Muted && Input.GetKey(k);
+        static bool KeyDown(KeyCode k) => k != KeyCode.None && !Muted && Input.GetKeyDown(k);
         static bool KeyUp(KeyCode k) => k != KeyCode.None && Input.GetKeyUp(k);
 
         /// <summary>What to call the main key in hints ("LMB", "E", "Shift").</summary>

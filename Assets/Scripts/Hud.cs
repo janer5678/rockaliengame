@@ -140,6 +140,7 @@ namespace RockGame
         void OnGUI()
         {
             Styles();
+            SearchFrame();
             BeginHoverFrame();
             MouseOverUI = false;
             DrawAll();
