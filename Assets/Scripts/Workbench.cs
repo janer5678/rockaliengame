@@ -184,6 +184,7 @@ namespace RockGame
         /// </summary>
         public static void BuildModel(Transform parent, int team, bool full)
         {
+            using var tint = ColorSlots.Use(ColorSlots.Workbench); // (Settings > Display colours)
             var t = new GameObject("workbench").transform;
             t.SetParent(parent, false);
             Color wood = Art.Wood, dark = Art.DarkWood, pale = k_Pale, glow = k_Glow;

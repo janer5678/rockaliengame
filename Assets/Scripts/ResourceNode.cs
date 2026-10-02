@@ -140,6 +140,7 @@ namespace RockGame
             {
                 var mesh = Art.MakeRock(Seed.Value, 0.28f);
                 Color c = Color.Lerp(Art.Stone, new Color(0.45f, 0.44f, 0.42f), r());
+                var stoneTint = ColorSlots.Use(ColorSlots.StoneNodes);
                 var main = Art.Part(tr, mesh, c, new Vector3(0, 0.6f, 0), new Vector3(1.6f, 1.2f, 1.4f), new Vector3(r() * 30, r() * 360, r() * 20), false, null, "rock");
                 var mc = main.AddComponent<MeshCollider>();
                 mc.sharedMesh = mesh;
@@ -147,6 +148,7 @@ namespace RockGame
                 m_SpotCollider = mc;
                 // (the little rock beside it is solid too - you used to be able to walk through it)
                 Art.Part(tr, Art.MakeRock(Seed.Value + 7, 0.3f), c * 0.9f, new Vector3(0.9f, 0.3f, 0.5f), Vector3.one * 0.6f, new Vector3(0, r() * 360, 0), true);
+                stoneTint.Dispose();
                 // the sparkle star
                 m_Marker = new GameObject("star").transform;
                 m_Marker.SetParent(tr, false);
@@ -158,9 +160,11 @@ namespace RockGame
             else
             {
                 Color leaf = Color.Lerp(ItemModels.Leaf, new Color(0.18f, 0.4f, 0.16f), r());
+                var bushTint = ColorSlots.Use(ColorSlots.Bushes);
                 Art.Part(tr, Art.MakeRock(Seed.Value, 0.2f), leaf, new Vector3(0, 0.45f, 0), new Vector3(0.75f, 0.5f, 0.7f), new Vector3(0, r() * 360, 0));
                 Art.Part(tr, Art.MakeRock(Seed.Value + 1, 0.2f), leaf * 0.9f, new Vector3(0.4f, 0.35f, 0.2f), new Vector3(0.45f, 0.38f, 0.45f));
                 Art.Part(tr, Art.MakeRock(Seed.Value + 2, 0.2f), leaf * 1.1f, new Vector3(-0.35f, 0.3f, -0.2f), new Vector3(0.45f, 0.35f, 0.4f));
+                bushTint.Dispose();
                 // loaded with berries
                 m_Berries = new GameObject[14];
                 for (int i = 0; i < m_Berries.Length; i++)
@@ -169,6 +173,7 @@ namespace RockGame
                     float y = 0.3f + r() * 0.6f;
                     float rad = 0.45f + r() * 0.3f;
                     var p = new Vector3(Mathf.Cos(a) * rad, y, Mathf.Sin(a) * rad * 0.95f);
+                    using (ColorSlots.Use(ColorSlots.Berries))
                     m_Berries[i] = Art.Part(tr, Art.Sphere, i % 4 == 0 ? ItemModels.Berry * 0.8f : ItemModels.Berry, p, Vector3.one * (0.12f + r() * 0.05f));
                 }
                 // interaction only (you walk through bushes)
@@ -196,7 +201,9 @@ namespace RockGame
             var rng = new System.Random(seed);
             float r() => (float)rng.NextDouble();
             float h = 4.5f + r() * 2.5f;
-            var trunk = Art.Part(tr, Art.Cylinder, Art.DarkWood, new Vector3(0, h * 0.5f, 0), new Vector3(0.6f, h * 0.5f, 0.6f), default, collider, null, "trunk");
+            GameObject trunk;
+            using (ColorSlots.Use(ColorSlots.TreeTrunks))
+                trunk = Art.Part(tr, Art.Cylinder, Art.DarkWood, new Vector3(0, h * 0.5f, 0), new Vector3(0.6f, h * 0.5f, 0.6f), default, collider, null, "trunk");
             float leafR = r();
             Color leaf = Color.Lerp(Art.Leaves, new Color(0.3f, 0.55f, 0.2f), leafR);
             leaf = ThemeMaps.LeafTint(leaf); // THEME MAPS

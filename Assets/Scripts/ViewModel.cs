@@ -111,7 +111,7 @@ namespace RockGame
             Art.Box(hand, team, new Vector3(0, 0, -0.075f), new Vector3(0.082f, 0.082f, 0.035f));               // wrist band
             Art.Box(hand, skin, new Vector3(0, 0, -0.32f), new Vector3(0.072f, 0.072f, 0.46f));                  // forearm
             // the alien's own forearm and clawed hand in place of the blocks above (which stay as a fallback)
-            var alien = AlienArm.Make(hand, right, Color.Lerp(Color.white, team, 0.6f));
+            var alien = AlienArm.Make(hand, right, HandColorHook.Tint(hand, team)); // (team tint, or the colour in Settings > Display)
             if (alien != null)
                 foreach (var r in hand.GetComponentsInChildren<Renderer>()) if (!r.transform.IsChildOf(alien.Fit)) r.enabled = false;
             arm = alien;

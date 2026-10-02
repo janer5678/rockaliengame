@@ -77,6 +77,7 @@ namespace RockGame
 
         void Build(int level)
         {
+            using var tint = ColorSlots.Use(ColorSlots.WoodMachine); // (Settings > Display colours)
             if (m_Visual) Destroy(m_Visual.gameObject);
             m_Rings.Clear();
             m_Tentacles.Clear();

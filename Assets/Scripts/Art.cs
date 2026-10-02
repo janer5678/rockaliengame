@@ -27,14 +27,24 @@ namespace RockGame
 
         public static Material Mat(Color c)
         {
+            // inside a ColorSlots.Use(...) scope: that colour slot's own material (re-tinted when the slot changes)
+            var slot = ColorSlots.Active;
+            if (slot != null) return ColorSlots.Mat(slot, c);
             if (s_Mats.TryGetValue(c, out var m) && m) return m;
+            m = NewMat(c);
+            s_Mats[c] = m;
+            s_MatColors[m] = c;
+            return m;
+        }
+
+        /// <summary>A new plain colour material (not cached).</summary>
+        public static Material NewMat(Color c)
+        {
             var src = Bootstrap.I != null ? Bootstrap.I.baseMaterial : null;
-            m = src != null ? new Material(src) : new Material(Shader.Find("Universal Render Pipeline/Lit"));
+            var m = src != null ? new Material(src) : new Material(Shader.Find("Universal Render Pipeline/Lit"));
             m.SetColor("_BaseColor", c);
             m.color = c;
             if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.15f);
-            s_Mats[c] = m;
-            s_MatColors[m] = c;
             return m;
         }
 

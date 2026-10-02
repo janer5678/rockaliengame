@@ -1,9 +1,12 @@
 // Normal graphics: grass blades (and the flowers among them). Each blade's vertices are stored as offsets from its
 // root; the root is put on the ground by reading the grass field texture (GrassField.cs: R height, G how much grass
-// grows there, B wheat, A short grass for flower clearings). So one 8 m patch of blades, drawn instanced all round
-// the camera, follows the hills and stays off the bases. Far away there are fewer, wider blades (they shrink into
-// the ground smoothly instead of popping). Blades sway in the wind and are pushed aside by players and things on the
-// ground. Flowers (static meshes, rank < 0) skip the patch-only parts (wheat, thinning out, random gaps).
+// grows there, B tall wheat, A short grass for flower clearings). So one 8 m patch of blades, drawn instanced all
+// round the camera (far away stretched over 16 or 32 m squares), follows the hills and stays off the bases. Far away
+// there are fewer, wider blades (they shrink into the ground smoothly instead of popping). Blades sway in the wind,
+// are pushed aside by players and things on the ground, and lie flat where something has walked (the trample map:
+// when each spot was last stepped on; they stand back up over ~15 s). Tall wheat isn't flattened.
+// Flowers (static meshes, rank < 0) skip the patch-only parts (wheat, thinning out, random gaps); their uv0.w says
+// what they are (0 a daisy's middle, 1 daisy petals, 2 a lupin spike, 3 stems and leaves) for the colour settings.
 // The settings are globals set by GrassField.cs (no material properties).
 Shader "RockGame/Grass"
 {
@@ -15,16 +18,22 @@ Shader "RockGame/Grass"
         HLSLINCLUDE
         #include "GrassLight.hlsl"
         TEXTURE2D(_GrassField); SAMPLER(sampler_GrassField);
+        TEXTURE2D(_GrassTrample); SAMPLER(sampler_GrassTrample);
         float4 _GrassFieldRect;          // xy: world xz of texel (0,0)'s centre; zw: 1 / texture size in metres
+        float4 _GrassTrampleRect;        // xy: world xz of the trample map's corner; zw: 1 / its size in metres
+        float4 _GrassTrampleTime;        // x: now; y: stays flat this long (s); z: standing again by (s)
         float4 _GrassPush[16];           // xyz: something standing in the grass; w: radius
         float _GrassPushCount;
-        float4 _GrassTiles[400];         // where each drawn patch goes (x, z); the draw for one level of detail uses
-        float _TileStart;                // _GrassTiles[_TileStart + instance]
+        float4 _GrassTiles[1024];        // where each drawn patch goes (x, z) and how much it's stretched (y: 1, 2 or 4);
+        float _TileStart;                // the draw for one level of detail uses _GrassTiles[_TileStart + instance]
         float4 _GrassFade;               // x, y: blades fade out from / gone by (m); z, w: the same for flowers
         float4 _GrassWheat;              // wheat colour (linear)
         float _GrassNear;                // full density out to (m)
+        float _GrassFalloff;             // how fast it thins out past that: density = (near / distance) ^ falloff
         float _GrassDensity;             // share of the blades drawn (Settings > Display)
         float4 _GrassTint;               // the grass colour picked in the settings, as a multiplier (linear)
+        float4 _GrassDaisyTint;          // the flowers' colours picked in the settings (multipliers, linear)
+        float4 _GrassLupinTint;
         float _GrassWind;
         float _GrassDebug;
 
@@ -49,12 +58,14 @@ Shader "RockGame/Grass"
         {
             Varyings o;
             float3 root;
+            float stretch = 1;
             bool decor = v.uv0.z < -0.5;
             if (decor) root = TransformObjectToWorld(float3(v.uv0.x, 0, v.uv0.y));
             else
             {
                 float4 tile = _GrassTiles[(uint)_TileStart + iid];
-                root = float3(v.uv0.x + tile.x, 0, v.uv0.y + tile.z);
+                stretch = max(tile.y, 1);
+                root = float3(v.uv0.x * stretch + tile.x, 0, v.uv0.y * stretch + tile.z);
             }
             float4 f = SAMPLE_TEXTURE2D_LOD(_GrassField, sampler_GrassField, (root.xz - _GrassFieldRect.xy) * _GrassFieldRect.zw, 0);
             root.y = f.r - 0.04;
@@ -63,19 +74,26 @@ Shader "RockGame/Grass"
             float bend = v.color.a;
             half3 col = v.color.rgb;
             float hMul = 1, wMul = 1;
+            float wheat = decor ? 0 : f.b;
             if (!decor)
             {
                 col *= _GrassTint.rgb;                                   // the colour picked in the settings
                 hMul = saturate((f.g - h * 0.85) * 7);                    // patchy edges where the grass stops
-                hMul *= lerp(0.7, 1.3, frac(h * 7.13));                  // taller and shorter bits
-                hMul *= lerp(1, 1.5, f.b);                              // wheat is taller...
-                col = lerp(col, _GrassWheat.rgb * lerp(0.85, 1.15, v.uv0.w), f.b); // ...and golden
+                hMul *= lerp(lerp(0.7, 1.3, frac(h * 7.13)), 1, wheat * 0.7); // taller and shorter bits
+                hMul *= lerp(1, 4.6 * lerp(0.88, 1.12, v.uv0.w), wheat);  // tall wheat (head high: you can hide in it)...
+                col = lerp(col, _GrassWheat.rgb * lerp(0.85, 1.15, v.uv0.w), wheat); // ...and golden
                 hMul *= lerp(1, 0.3, f.a);                               // flower clearings are short
-                float dens = (dist < _GrassNear ? 1 : pow(_GrassNear / dist, 1.35)) * _GrassDensity;
-                hMul *= saturate((dens - v.uv0.z) * 12);                 // fewer blades far away...
+                float dens = (dist < _GrassNear ? 1 : pow(_GrassNear / dist, _GrassFalloff)) * _GrassDensity;
+                hMul *= saturate((dens * stretch * stretch - v.uv0.z) * 12); // fewer blades far away...
                 wMul = clamp(rsqrt(max(dens, 0.04)) * 0.8, 1, 2.6);      // ...but wider, so it still looks full
+                wMul *= lerp(1, 1.5, wheat);
             }
-            else hMul = saturate((f.g - 0.5) * 8);
+            else
+            {
+                hMul = saturate((f.g - 0.5) * 8);
+                float kind = v.uv0.w;
+                col *= kind > 2.5 ? _GrassTint.rgb : kind > 1.5 ? _GrassLupinTint.rgb : kind > 0.5 ? _GrassDaisyTint.rgb : half3(1, 1, 1);
+            }
             hMul *= 1 - (decor ? smoothstep(_GrassFade.z, _GrassFade.w, dist) : smoothstep(_GrassFade.x, _GrassFade.y, dist));
 
             float3 off = v.positionOS.xyz;
@@ -83,7 +101,21 @@ Shader "RockGame/Grass"
             off.y *= hMul;
             float b2 = bend * bend;
             float2 lean = v.uv1 * b2 * hMul;
-            // pushed aside (and down) by players, horses and things lying in the grass
+            // trampled: lying flat where something walked (each blade falls its own way), standing back up after a while
+            float2 tuv = (root.xz - _GrassTrampleRect.xy) * _GrassTrampleRect.zw;
+            float stamp = SAMPLE_TEXTURE2D_LOD(_GrassTrample, sampler_GrassTrample, tuv, 0).r;
+            float flat = (1 - smoothstep(_GrassTrampleTime.y, _GrassTrampleTime.z, _GrassTrampleTime.x - stamp)) * (1 - wheat);
+            if (_GrassTrampleTime.w > 0.5) col = lerp(half3(0, 0, 1), half3(1, 0, 0), flat); // (debug)
+            if (flat > 0.001)
+            {
+                float fa = h * 6.2832 + v.uv0.w * 2.0;
+                float2 fall = float2(cos(fa), sin(fa));
+                float ang = flat * lerp(1.15, 1.45, frac(h * 13.7));
+                float fy = off.y;
+                off.y = fy * cos(ang);
+                lean = lean * (1 - flat) + fall * fy * sin(ang);
+            }
+            // pushed aside (and down) by players, horses and things lying in the grass (tall wheat only parts a little)
             [loop] for (int k = 0; k < (int)_GrassPushCount; k++)
             {
                 float4 p = _GrassPush[k];
@@ -91,7 +123,7 @@ Shader "RockGame/Grass"
                 float dl = length(d);
                 if (dl < p.w && abs(root.y - p.y) < 2.5)
                 {
-                    float s = 1 - dl / p.w;
+                    float s = (1 - dl / p.w) * (1 - flat) * lerp(1, 0.35, wheat);
                     off.y *= 1 - s * 0.7;
                     lean += d / max(dl, 0.01) * s * 0.35 * b2 * hMul;
                 }
@@ -101,12 +133,12 @@ Shader "RockGame/Grass"
             float gust = sin(t * 0.9 + root.x * 0.06 + root.z * 0.045) * 0.5 + 0.5;
             float2 wind = float2(sin(t * 1.9 + root.x * 0.35 + root.z * 0.2), cos(t * 1.5 + root.z * 0.3 - root.x * 0.13)) * 0.03
                         + float2(0.07, 0.035) * gust;
-            lean += wind * b2 * hMul * _GrassWind;
+            lean += wind * b2 * hMul * _GrassWind * (1 - flat * 0.85);
 
             o.ws = root + off + float3(lean.x, 0, lean.y);
             o.positionCS = TransformWorldToHClip(o.ws);
-            // dark at the root, bright at the tip; gusts lighten the tops a touch
-            o.color = col * lerp(decor ? 0.6 : 0.42, 1.0, bend) * (1 + gust * 0.08 * b2);
+            // dark at the root, bright at the tip; gusts lighten the tops a touch; flattened grass is a bit paler
+            o.color = col * lerp(decor ? 0.6 : 0.42, 1.0, bend) * (1 + gust * 0.08 * b2) * lerp(half3(1, 1, 1), half3(1.18, 1.14, 0.82), flat); // (trampled: paler, drier)
             o.fog = ComputeFogFactor(o.positionCS.z);
             if (_GrassDebug > 0.5)
             {

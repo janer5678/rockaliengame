@@ -507,6 +507,7 @@ namespace RockGame
             }
             else if (kind == Horse)
             {
+                using var tint = ColorSlots.Use(ColorSlots.Horses); // (Settings > Display colours)
                 var coat = new Color(0.45f, 0.3f, 0.18f);
                 var mane = new Color(0.18f, 0.12f, 0.08f);
                 Art.Box(t, coat, new Vector3(0, 1.15f, 0), new Vector3(0.6f, 0.6f, 1.5f));

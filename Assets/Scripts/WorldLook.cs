@@ -3,92 +3,92 @@ using UnityEngine;
 
 namespace RockGame
 {
-    /// <summary>Settings > Display > WORLD: the grass's render distance and density, and the colours of the Normal look
-    /// (ground, rock, grass, pine leaves, clouds, sky). Saved in PlayerPrefs; changes apply live (WorldLookChanged).</summary>
+    /// <summary>Settings > Display > WORLD: the grass's render distance, density and far thickness, and the world's
+    /// colours (all of them are slots in ColorSlots; the six below are the original ones, kept for older callers).
+    /// Saved in PlayerPrefs; changes apply live (WorldLookChanged).</summary>
     public static partial class GameSettings
     {
         public enum WorldColor { Ground, Rock, Grass, Leaves, Clouds, Sky }
         public static readonly string[] WorldColorNames = { "Ground", "Rock", "Grass", "Tree leaves", "Clouds", "Sky" };
 
+        static ColorSlots.Slot Slot(WorldColor w) => ColorSlots.All[(int)w];
+
         /// <summary>The Normal look's colours (what "Reset" goes back to).</summary>
         public static readonly Color[] WorldColorDefaults =
         {
-            new Color(0.44f, 0.64f, 0.31f),  // ground: a touch lighter than the old flat green
-            new Color(0.58f, 0.56f, 0.52f),  // Highlands rock: a touch lighter than the old grey
-            new Color(0.36f, 0.6f, 0.16f),   // grass blades (the average of their tips)
-            new Color(0.29f, 0.55f, 0.15f),   // pine needles
-            new Color(0.97f, 0.97f, 1f),     // clouds
-            new Color(0.45f, 0.65f, 0.95f),  // sky
+            ColorSlots.Ground.Default, ColorSlots.Rock.Default, ColorSlots.Grass.Default,
+            ColorSlots.Leaves.Default, ColorSlots.Clouds.Default, ColorSlots.Sky.Default,
         };
 
         /// <summary>A few ready-made colours for each (the first is the default).</summary>
         public static readonly Color[][] WorldColorPresets =
         {
-            new[] { WorldColorDefaults[0], new Color(0.34f, 0.52f, 0.25f), new Color(0.55f, 0.62f, 0.3f), new Color(0.66f, 0.6f, 0.36f), new Color(0.5f, 0.38f, 0.25f), new Color(0.88f, 0.9f, 0.93f), new Color(0.3f, 0.55f, 0.45f) },
-            new[] { WorldColorDefaults[1], new Color(0.45f, 0.43f, 0.4f), new Color(0.7f, 0.68f, 0.64f), new Color(0.62f, 0.5f, 0.38f), new Color(0.5f, 0.52f, 0.6f), new Color(0.35f, 0.33f, 0.36f), new Color(0.75f, 0.62f, 0.5f) },
-            new[] { WorldColorDefaults[2], new Color(0.25f, 0.5f, 0.15f), new Color(0.48f, 0.66f, 0.18f), new Color(0.66f, 0.62f, 0.25f), new Color(0.2f, 0.45f, 0.3f), new Color(0.75f, 0.45f, 0.2f), new Color(0.45f, 0.35f, 0.65f) },
-            new[] { WorldColorDefaults[3], new Color(0.16f, 0.36f, 0.14f), new Color(0.36f, 0.58f, 0.18f), new Color(0.2f, 0.42f, 0.32f), new Color(0.7f, 0.42f, 0.15f), new Color(0.72f, 0.25f, 0.18f), new Color(0.85f, 0.9f, 0.92f) },
-            new[] { WorldColorDefaults[4], new Color(1f, 0.93f, 0.85f), new Color(1f, 0.8f, 0.85f), new Color(0.8f, 0.83f, 0.9f), new Color(0.55f, 0.57f, 0.62f), new Color(1f, 0.75f, 0.5f), new Color(0.8f, 0.7f, 1f) },
-            new[] { WorldColorDefaults[5], new Color(0.3f, 0.5f, 0.95f), new Color(0.6f, 0.75f, 0.95f), new Color(0.95f, 0.6f, 0.45f), new Color(0.75f, 0.5f, 0.9f), new Color(0.55f, 0.6f, 0.65f), new Color(0.4f, 0.85f, 0.8f) },
+            ColorSlots.Ground.Presets, ColorSlots.Rock.Presets, ColorSlots.Grass.Presets,
+            ColorSlots.Leaves.Presets, ColorSlots.Clouds.Presets, ColorSlots.Sky.Presets,
         };
 
-        public const float GrassDistanceMin = 25f, GrassDistanceMax = 90f, GrassDistanceDefault = 60f;
+        public const float GrassDistanceMin = 25f, GrassDistanceMax = 270f, GrassDistanceDefault = 60f;
         public const float GrassDensityMin = 0.2f, GrassDensityDefault = 1f;
+        /// <summary>How fast the grass thins out with distance: density = (11 m / distance) ^ falloff.</summary>
+        public const float GrassFalloffMin = 1f, GrassFalloffMax = 2.5f, GrassFalloffDefault = 1.35f;
 
-        static Color[] s_WorldColors;
-        static float s_GrassDistance = GrassDistanceDefault, s_GrassDensity = GrassDensityDefault;
+        static bool s_WorldLoaded;
+        static float s_GrassDistance = GrassDistanceDefault, s_GrassDensity = GrassDensityDefault, s_GrassFalloff = GrassFalloffDefault;
 
         /// <summary>Fired when a world colour or the grass settings change.</summary>
         public static event System.Action WorldLookChanged;
+        internal static void FireWorldLookChanged() => WorldLookChanged?.Invoke();
 
         static void LoadWorld()
         {
-            if (s_WorldColors != null) return;
-            s_WorldColors = new Color[WorldColorDefaults.Length];
-            for (int i = 0; i < s_WorldColors.Length; i++)
-            {
-                s_WorldColors[i] = WorldColorDefaults[i];
-                var hex = PlayerPrefs.GetString("RockGame.World." + (WorldColor)i, "");
-                if (hex.Length > 0 && ColorUtility.TryParseHtmlString("#" + hex, out var c)) s_WorldColors[i] = c;
-            }
+            if (s_WorldLoaded) return;
+            s_WorldLoaded = true;
             s_GrassDistance = Mathf.Clamp(PlayerPrefs.GetFloat("RockGame.GrassDistance", GrassDistanceDefault), GrassDistanceMin, GrassDistanceMax);
             s_GrassDensity = Mathf.Clamp(PlayerPrefs.GetFloat("RockGame.GrassDensity", GrassDensityDefault), GrassDensityMin, 1f);
+            s_GrassFalloff = Mathf.Clamp(PlayerPrefs.GetFloat("RockGame.GrassFalloff", GrassFalloffDefault), GrassFalloffMin, GrassFalloffMax);
         }
 
-        public static Color GetWorldColor(WorldColor w) { LoadWorld(); return s_WorldColors[(int)w]; }
+        public static Color GetWorldColor(WorldColor w) => Slot(w).Value;
 
         /// <summary>The colour as a multiplier of the default one (what the shaders tint by).</summary>
-        public static Color WorldTint(WorldColor w)
-        {
-            var c = GetWorldColor(w);
-            var d = WorldColorDefaults[(int)w];
-            return new Color(c.r / Mathf.Max(0.01f, d.r), c.g / Mathf.Max(0.01f, d.g), c.b / Mathf.Max(0.01f, d.b), 1f);
-        }
+        public static Color WorldTint(WorldColor w) => ColorSlots.Ratio(Slot(w));
 
-        public static void SetWorldColor(WorldColor w, Color c, bool save = true)
-        {
-            LoadWorld();
-            c.a = 1f;
-            if (s_WorldColors[(int)w] == c) return;
-            s_WorldColors[(int)w] = c;
-            if (save) { PlayerPrefs.SetString("RockGame.World." + w, ColorUtility.ToHtmlStringRGB(c)); PlayerPrefs.Save(); }
-            WorldLookChanged?.Invoke();
-        }
+        public static void SetWorldColor(WorldColor w, Color c, bool save = true) => ColorSlots.Set(Slot(w), c, save);
 
         /// <summary>The grass is drawn out to this far (m).</summary>
         public static float GrassDistance { get { LoadWorld(); return s_GrassDistance; } }
         /// <summary>How many of the grass blades are drawn (1 = all).</summary>
         public static float GrassDensity { get { LoadWorld(); return s_GrassDensity; } }
+        /// <summary>How fast the grass thins out past 11 m (the power it falls off by; lower = thicker far away).</summary>
+        public static float GrassFalloff { get { LoadWorld(); return s_GrassFalloff; } }
 
-        public static void SetGrass(float distance, float density, bool save = true)
+        public static void SetGrass(float distance, float density, bool save = true) => SetGrass(distance, density, GrassFalloff, save);
+
+        public static void SetGrass(float distance, float density, float falloff, bool save = true)
         {
             LoadWorld();
             distance = Mathf.Clamp(distance, GrassDistanceMin, GrassDistanceMax);
             density = Mathf.Clamp(density, GrassDensityMin, 1f);
-            if (Mathf.Approximately(distance, s_GrassDistance) && Mathf.Approximately(density, s_GrassDensity)) return;
+            falloff = Mathf.Clamp(falloff, GrassFalloffMin, GrassFalloffMax);
+            if (Mathf.Approximately(distance, s_GrassDistance) && Mathf.Approximately(density, s_GrassDensity) && Mathf.Approximately(falloff, s_GrassFalloff)) return;
             s_GrassDistance = distance;
             s_GrassDensity = density;
-            if (save) { PlayerPrefs.SetFloat("RockGame.GrassDistance", distance); PlayerPrefs.SetFloat("RockGame.GrassDensity", density); PlayerPrefs.Save(); }
+            s_GrassFalloff = falloff;
+            if (save)
+            {
+                PlayerPrefs.SetFloat("RockGame.GrassDistance", distance);
+                PlayerPrefs.SetFloat("RockGame.GrassDensity", density);
+                PlayerPrefs.SetFloat("RockGame.GrassFalloff", falloff);
+                PlayerPrefs.Save();
+            }
+            WorldLookChanged?.Invoke();
+        }
+
+        /// <summary>Every world colour back to the defaults.</summary>
+        public static void ResetWorldColours(bool save = true)
+        {
+            ColorSlots.ResetAll(save);
+            if (save) PlayerPrefs.Save();
             WorldLookChanged?.Invoke();
         }
 
@@ -96,28 +96,25 @@ namespace RockGame
         public static void ResetWorldLook(bool save = true)
         {
             LoadWorld();
-            for (int i = 0; i < s_WorldColors.Length; i++)
-            {
-                s_WorldColors[i] = WorldColorDefaults[i];
-                if (save) PlayerPrefs.DeleteKey("RockGame.World." + (WorldColor)i);
-            }
+            ColorSlots.ResetAll(save);
             s_GrassDistance = GrassDistanceDefault;
             s_GrassDensity = GrassDensityDefault;
-            if (save) { PlayerPrefs.DeleteKey("RockGame.GrassDistance"); PlayerPrefs.DeleteKey("RockGame.GrassDensity"); PlayerPrefs.Save(); }
+            s_GrassFalloff = GrassFalloffDefault;
+            if (save) { PlayerPrefs.DeleteKey("RockGame.GrassDistance"); PlayerPrefs.DeleteKey("RockGame.GrassDensity"); PlayerPrefs.DeleteKey("RockGame.GrassFalloff"); PlayerPrefs.Save(); }
             WorldLookChanged?.Invoke();
         }
     }
 
     /// <summary>
     /// The Normal look's shared world materials (flat-colour ground and rock; the RockGame/Painted vertex-colour meshes:
-    /// castle walls, pine foliage, flags, clouds) and the sky, kept in step with the colours picked in the settings.
+    /// pine foliage, flags, clouds) and the sky, kept in step with the colours picked in the settings.
     /// </summary>
     public static class WorldLook
     {
         /// <summary>The colours the AI PSX look classifies the ground and rock by (the old flat colours, so it's unchanged).</summary>
         public static readonly Color ArtGrass = new Color(0.36f, 0.56f, 0.3f), ArtRock = new Color(0.47f, 0.45f, 0.42f);
 
-        static Material s_Ground, s_Rock, s_Foliage, s_Castle, s_Flag, s_Cloud;
+        static Material s_Ground, s_Rock, s_Foliage, s_Flag, s_Cloud;
         static Shader s_Painted;
         static bool s_ShaderTried;
         static Material s_SkyOrig, s_Sky;
@@ -186,7 +183,6 @@ namespace RockGame
 
         /// <summary>Pine needles (sway in the wind). Null if the shader isn't there (callers fall back to plain colours).</summary>
         public static Material Foliage => PaintedMat(ref s_Foliage, "pine foliage", 1f, false, 0f);
-        public static Material Castle => PaintedMat(ref s_Castle, "castle", 0f, false, 0f);
         public static Material Flag => PaintedMat(ref s_Flag, "flag cloth", 2f, true, 0.15f);
         public static Material Cloud => PaintedMat(ref s_Cloud, "clouds", 0f, false, 0.45f);
 
@@ -218,11 +214,27 @@ namespace RockGame
             else if (sky != s_Sky) return; // (someone else's sky is up)
             var t = GameSettings.GraphicsMode == 0 ? GameSettings.WorldTint(GameSettings.WorldColor.Sky) : Color.white;
             s_Sky.SetColor("_SkyTint", new Color(Mathf.Clamp01(s_SkyTintOrig.r * t.r), Mathf.Clamp01(s_SkyTintOrig.g * t.g), Mathf.Clamp01(s_SkyTintOrig.b * t.b), 1f));
+            if (s_Sky.HasProperty("_SunSize"))
+            {
+                if (s_SunSizeOrig < 0f) s_SunSizeOrig = s_Sky.GetFloat("_SunSize");
+                s_Sky.SetFloat("_SunSize", s_HideSkySun ? 0f : s_SunSizeOrig);
+            }
+        }
+
+        static float s_SunSizeOrig = -1f;
+        static bool s_HideSkySun;
+
+        /// <summary>The low-poly sun (SkySun) is up: the skybox's own sun disc goes (and comes back when it goes).</summary>
+        public static void HideSkyboxSun(bool hide)
+        {
+            if (s_HideSkySun == hide) return;
+            s_HideSkySun = hide;
+            ApplySky();
         }
     }
 
     /// <summary>Two looks for one thing: `normal` renderers show in Normal graphics, `other` ones in PSX and AI PSX
-    /// (e.g. the castle walls in Normal, the old plain walls - which PSX re-textures - otherwise).</summary>
+    /// (e.g. the waving cloth flags in Normal, the old flat flags otherwise).</summary>
     public class NormalLook : MonoBehaviour
     {
         public readonly List<Renderer> Normal = new List<Renderer>(), Other = new List<Renderer>();
