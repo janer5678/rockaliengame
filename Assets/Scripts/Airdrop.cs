@@ -4,15 +4,27 @@ using UnityEngine.Rendering;
 namespace RockGame
 {
     /// <summary>
-    /// The giant alien ship that beams airdrops down (local visuals only, driven by NetGame.DropStart / DropPos on every peer):
-    /// it drops out of the sky, hovers high above the drop spot - over the map's glass dome (HoverAt) - opens a round hatch
-    /// in its belly, beams the crate down through it and through the glass (slowly; the glass glows where the beam goes
-    /// through), shuts the hatch, then flies off over the nearest edge of the map - shrinking away to nothing.
-    /// The server spawns the real (networked) crate when the beam reaches the ground.
+    /// The giant alien ship that beams airdrops down (local visuals only, driven by the lane's synced start time and spot on
+    /// every peer, so they all see the same thing at the same moment): it drops out of the sky, hovers high above the drop
+    /// spot - over the map's glass dome (HoverAt) - opens a round hatch in its belly, and its purple beam comes down onto
+    /// the glass and cuts a round hole in it (MapDome.SetHole: a rim in the frame's style round it, its edge glowing as it
+    /// opens), then carries on down to the ground; the crate comes down the beam (slowly) through the hole. Once the crate
+    /// is down and the beam is off, the hole closes up again (patched, its edge glowing), the hatch shuts, and only then
+    /// does the ship fly off over the nearest edge of the map - shrinking away to nothing.
+    /// The server spawns the real (networked) crate on the ground when the beam gets it there; the dome's collider stays
+    /// whole the whole time (the crate coming down is only a picture), so nothing can get out through the hole.
     /// </summary>
     public class AirdropShip
     {
         const float Arrive = 4f, Hover = 45f, Leave = 6f;
+        /// <summary>The hole in the glass (seconds after the lane starts): the beam is down on the glass just before
+        /// CutStart and starts cutting then, the hole is all the way open OpenTime later; once the crate's down and the beam's off it closes up
+        /// from SealStart to SealEnd; the ship leaves at LeaveStart and is gone at Gone.</summary>
+        public const float CutStart = NetGame.DropArrive + 0.2f, OpenTime = 0.9f;
+        public const float SealStart = NetGame.DropLand + 0.8f, SealEnd = SealStart + 1.4f;
+        public const float LeaveStart = SealEnd + 0.4f, Gone = LeaveStart + Leave;
+        /// <summary>How wide the hole is (a little wider than the beam).</summary>
+        public const float HoleR = HatchR * 1.2f;
         /// <summary>Seconds for the hatch to swing open (it's open before the beam starts at NetGame.DropArrive) or shut.</summary>
         const float HatchTime = 0.8f;
         /// <summary>The hatch: radius of the hole and how far below the ship's centre it is.</summary>
@@ -23,13 +35,16 @@ namespace RockGame
         static float CylR => Art.Cylinder.bounds.extents.x;
         static float CylH => Art.Cylinder.bounds.extents.y;
         static readonly Color k_Glow = new Color(0.75f, 0.35f, 1f);
-        GameObject s_Ship, s_Beam, s_Crate, s_Port;
+        GameObject s_Ship, s_Beam, s_Crate;
         Transform s_Rim, s_DoorL, s_DoorR;
         Light s_ShipLight;
         Light s_GroundLight;
-        Material s_BeamMat, s_PortMat;
+        Material s_BeamMat;
         Vector3 s_Hover, s_Out;
-        float s_PortY;
+        /// <summary>The height of the glass over the drop spot (float.MinValue: no glass there, no hole).</summary>
+        float s_GlassY;
+        /// <summary>This lane's number (its hole's id in the dome).</summary>
+        int s_LaneId;
 
         /// <summary>
         /// Where the ship hovers over a drop spot: Hover metres up, or higher if the map's glass dome is in the way - then
@@ -50,7 +65,7 @@ namespace RockGame
         static AirdropShip[] MakeLanes()
         {
             var a = new AirdropShip[NetGame.LaneTotal];
-            for (int i = 0; i < a.Length; i++) a[i] = new AirdropShip();
+            for (int i = 0; i < a.Length; i++) a[i] = new AirdropShip { s_LaneId = i };
             return a;
         }
 
@@ -64,11 +79,10 @@ namespace RockGame
             if (s_Ship) Object.Destroy(s_Ship);
             if (s_Beam) Object.Destroy(s_Beam);
             if (s_Crate) Object.Destroy(s_Crate);
-            if (s_Port) Object.Destroy(s_Port);
             if (s_GroundLight) Object.Destroy(s_GroundLight.gameObject);
             if (s_BeamMat) Object.Destroy(s_BeamMat);
-            if (s_PortMat) Object.Destroy(s_PortMat);
-            s_Ship = s_Beam = s_Crate = s_Port = null;
+            MapDome.SetHole(s_LaneId, 0f, 0f, 0f, 0f);
+            s_Ship = s_Beam = s_Crate = null;
             s_DoorL = s_DoorR = null;
             s_ShipLight = null;
             s_Start = -2;
@@ -82,7 +96,7 @@ namespace RockGame
         void TickLane(NetGame g, double start, Vector3 ground)
         {
             float e = start < 0 ? -1f : (float)(g.NetworkManager.ServerTime.Time - start);
-            if (e < 0f || e > NetGame.DropLand + Leave)
+            if (e < 0f || e > Gone)
             {
                 if (s_Ship) ClearLane();
                 return;
@@ -109,11 +123,11 @@ namespace RockGame
                 k = 1f - (1f - k) * (1f - k) * (1f - k);
                 pos = Vector3.Lerp(hover + s_Out * 72f + Vector3.up * 300f, hover, k);
             }
-            else if (e < land) pos = hover + Vector3.up * Mathf.Sin(e * 2f) * 0.4f;
+            else if (e < LeaveStart) pos = hover + Vector3.up * Mathf.Sin(e * 2f) * 0.4f; // (it waits for the hole to be patched)
             else
             {
                 // flying off into the distance: it drifts up and away and shrinks smoothly to nothing (no popping out)
-                float k = Mathf.Clamp01((e - land) / Leave);
+                float k = Mathf.Clamp01((e - LeaveStart) / Leave);
                 float ease = k * k * (3f - 2f * k);
                 pos = hover + (s_Out * 48f + Vector3.up * 60f) * ease;
                 scale = Mathf.Pow(1f - ease, 1.5f);
@@ -131,35 +145,41 @@ namespace RockGame
             s_DoorL.localRotation = Quaternion.Euler(0, 0, -100f * open);
             s_ShipLight.intensity = (3f + 5f * open) * scale;
 
-            // the beam out of the open hatch, with the crate sliding down it
+            // the hole in the glass under it: cut open when the beam gets there, patched once the crate's down and the
+            // beam's off (its edge glows while it's opening or closing)
+            bool glass = s_GlassY > ground.y + 1f;
+            float holeK = 0f;
+            if (glass)
+            {
+                float opening = Mathf.Clamp01((e - CutStart) / OpenTime), sealing = Mathf.Clamp01((e - SealStart) / (SealEnd - SealStart));
+                holeK = Mathf.Min(opening, 1f - sealing);
+                holeK = holeK * holeK * (3f - 2f * holeK);
+                float glow = opening < 1f || sealing > 0f ? 1f : 0.35f;
+                MapDome.SetHole(s_LaneId, ground.x, ground.z, HoleR * holeK, glow);
+            }
+            if (s_LaneId == 0) HoleOpen = holeK;
+
+            // the beam out of the open hatch: down onto the glass, where it waits for the hole, then on down to the
+            // ground, with the crate sliding down it
             bool beaming = e >= beamT - 0.2f && e < land + 0.8f;
             s_Beam.SetActive(beaming);
             if (beaming)
             {
-                float top = pos.y + HatchY * scale, bottom = ground.y;
+                float top = pos.y + HatchY * scale;
+                float stop = glass && MapDome.Shown ? s_GlassY : ground.y;
+                float reach = Mathf.Clamp01((e - (beamT - 0.2f)) / (CutStart - 0.15f - beamT + 0.2f)); // (on the glass a moment before it cuts)
+                float bottom = Mathf.Lerp(top, stop, reach);
+                if (stop > ground.y) bottom = Mathf.Lerp(bottom, ground.y, Mathf.Clamp01((e - CutStart - OpenTime * 0.5f) / 0.5f));
+                if (s_LaneId == 0) BeamBottom = bottom;
                 s_Beam.transform.position = new Vector3(ground.x, (top + bottom) * 0.5f, ground.z);
-                s_Beam.transform.localScale = new Vector3(HatchR * 0.95f * scale / CylR, (top - bottom) * 0.5f / CylH, HatchR * 0.95f * scale / CylR);
+                s_Beam.transform.localScale = new Vector3(HatchR * 0.95f * scale / CylR, Mathf.Max(0.01f, top - bottom) * 0.5f / CylH, HatchR * 0.95f * scale / CylR);
                 float a = e < beamT ? (e - beamT + 0.2f) / 0.2f : e > land ? 1f - (e - land) / 0.8f : 1f;
                 var c = k_Glow;
                 c.a = 0.28f * Mathf.Clamp01(a) * (0.85f + 0.15f * Mathf.Sin(Time.time * 12f));
                 s_BeamMat.SetColor("_BaseColor", c);
-                s_GroundLight.intensity = 5f * Mathf.Clamp01(a);
-                // where it goes through the map's glass dome, the glass glows in a ring round it
-                if (s_Port != null)
-                {
-                    bool show = MapDome.Shown && s_PortY > bottom;
-                    if (s_Port.activeSelf != show) s_Port.SetActive(show);
-                    var pc = k_Glow;
-                    pc.a = 0.5f * Mathf.Clamp01(a);
-                    s_PortMat.SetColor("_BaseColor", pc);
-                    s_Port.transform.localScale = new Vector3(HatchR * 1.25f * scale / CylR, 0.06f / CylH, HatchR * 1.25f * scale / CylR);
-                }
+                s_GroundLight.intensity = bottom < ground.y + 0.5f ? 5f * Mathf.Clamp01(a) : 0f;
             }
-            else
-            {
-                s_GroundLight.intensity = 0f;
-                if (s_Port != null && s_Port.activeSelf) s_Port.SetActive(false);
-            }
+            else s_GroundLight.intensity = 0f;
             bool crate = e >= beamT && e < land;
             s_Crate.SetActive(crate);
             if (crate)
@@ -211,17 +231,8 @@ namespace RockGame
             s_GroundLight.range = 14f;
             s_Beam.SetActive(false);
 
-            // a glowing ring of glass where the beam goes through the map's dome (shown with the beam)
-            s_PortY = MapDome.HeightAt(ground.x, ground.z);
-            if (s_PortY > float.MinValue)
-            {
-                s_PortMat = new Material(Art.Ghost(k_Glow));
-                var n = MapDome.NormalAt(ground.x, ground.z);
-                s_Port = Art.Part(null, Art.Cylinder, Color.white, new Vector3(ground.x, s_PortY - 0.2f, ground.z), Vector3.one * 0.01f,
-                    Quaternion.FromToRotation(Vector3.up, n).eulerAngles, false, s_PortMat, "AirdropDomePort");
-                s_Port.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
-                s_Port.SetActive(false);
-            }
+            // where the beam meets the map's glass dome (it cuts its hole there)
+            s_GlassY = MapDome.HeightAt(ground.x, ground.z);
 
             s_Crate = new GameObject("AirdropCrateFalling");
             Container.CreateVisual(Container.Airdrop, 2, s_Crate.transform, Art.Ghost(new Color(0.8f, 0.55f, 1f, 0.85f)));
@@ -233,8 +244,12 @@ namespace RockGame
         public static float ShipScale { get; private set; } = 1f;
         /// <summary>Test hook: the first lane's ship (null when none is flying).</summary>
         public static Transform ShipTransform => s_Lanes[0].s_Ship != null ? s_Lanes[0].s_Ship.transform : null;
-        /// <summary>Test hook: the first lane's glowing ring on the dome (null when there's none).</summary>
-        public static GameObject PortObject => s_Lanes[0].s_Port;
+        /// <summary>Test hooks: how open the first lane's hole in the glass is (0 none / patched, 1 all the way open), and
+        /// how far down its beam reaches.</summary>
+        public static float HoleOpen { get; private set; }
+        public static float BeamBottom { get; private set; }
+        /// <summary>Test hook: the first lane's crate on its way down the beam (null when there's none).</summary>
+        public static Transform FallingCrate => s_Lanes[0].s_Crate != null && s_Lanes[0].s_Crate.activeSelf ? s_Lanes[0].s_Crate.transform : null;
         /// <summary>Test hook: where the first lane's ship hovers.</summary>
         public static Vector3 HoverPoint => s_Lanes[0].s_Hover;
 

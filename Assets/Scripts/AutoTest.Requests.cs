@@ -155,15 +155,15 @@ namespace RockGame
                 int after = Crates();
                 Check(before == 0 && after >= 1, $"the crate lands {NetGame.DropLand}s after the ship arrives ({before} -> {after} crates)");
                 pc.SetLook(yaw, -40f);
-                while (E() < NetGame.DropLand + 3.2) yield return null;
+                while (E() < AirdropShip.LeaveStart + 3.2) yield return null; // (it leaves once the hole it cut in the dome is patched)
                 float mid = AirdropShip.ShipScale;
                 var ship = AirdropShip.ShipTransform;
                 float midScale = ship != null ? ship.localScale.x : -1f;
                 yield return Snap("airdrop_ship_leaving");
-                while (E() < NetGame.DropLand + 5.5) yield return null;
+                while (E() < AirdropShip.LeaveStart + 5.5) yield return null;
                 float late = AirdropShip.ShipScale;
                 yield return Snap("airdrop_ship_leaving_far");
-                while (E() < NetGame.DropLand + 6.5) yield return null;
+                while (E() < AirdropShip.Gone + 0.5) yield return null;
                 Check(mid < 0.8f && mid > 0.1f && Mathf.Abs(midScale - mid) < 0.05f && late < 0.05f && AirdropShip.ShipTransform == null,
                     $"leaving, the ship shrinks away ({mid:0.00} -> {late:0.000}) and is gone");
                 foreach (var c in new System.Collections.Generic.List<Container>(Container.All)) if (c != null && c.IsAirdrop && c.IsSpawned) c.NetworkObject.Despawn(true);
