@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Globalization;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -6,11 +7,17 @@ namespace RockGame
 {
     /// <summary>
     /// The sudden death arena (also the waiting lobby), Super Smash Bros "Final Destination" style, in the game's own
-    /// low-poly look (flat colours, no textures): a flat octagonal platform with pink edges and a lightning bolt inlay,
-    /// a blue mechanical underside with orange panel lines narrowing to a point, floating in space - one flat dark colour
-    /// all round, with low-poly white 3D stars. No walls: walk off the edge and you fall into space (in sudden death
-    /// that's a death like any other; in the lobby you're just put back on the platform). Four floating screens show the
-    /// countdown and the clock. Built identically on every peer (non-networked) by MapBuilder.
+    /// low-poly look (flat colours, no textures): a flat octagonal platform with pink edges, a blue mechanical underside
+    /// with orange panel lines narrowing to a point, floating in space - a black sky full of low-poly 3D stars, a galaxy
+    /// band, spiral galaxies and faceted planets (some ringed, some with moons), slowly turning. All round it, floating
+    /// stands (detached from the platform) packed with a crowd of aliens like you in every colour, each doing its own
+    /// thing (jumping, fist pumping, waving, clapping, swaying, dancing, spinning, sitting and getting up to cheer...),
+    /// with a Mexican wave going round now and then and the whole crowd going wild on ROCK! and every death. No walls:
+    /// walk off the edge and you fall into space (in sudden death that's a death like any other; in the lobby you're just
+    /// put back on the platform). Four floating screens show the countdown and the clock. Built identically on every
+    /// peer (non-networked) by MapBuilder.
+    /// Kept cheap: the whole sky is three meshes; the crowd is one small alien mesh drawn once per stand in view
+    /// (procedural instancing) and animated in its vertex shader (SpaceArena/Crowd.shader); the stands are one mesh.
     /// </summary>
     public static class SpaceArena
     {
@@ -20,12 +27,18 @@ namespace RockGame
         public const float KillDepth = 10f;
         /// <summary>The space shell around the arena (it hides the far-away map).</summary>
         public const float ShellRadius = 360f;
-        /// <summary>How many stars hang in the sky (one merged mesh).</summary>
-        public const int StarCount = 220;
-        /// <summary>The colour of space.</summary>
-        public static readonly Color SkyColor = new Color(0.075f, 0.05f, 0.17f);
+        /// <summary>How many low-poly 3D stars hang in the sky (one merged mesh), and the galaxy band's specks.</summary>
+        public const int StarCount = 1500, GalaxySpecks = 5200;
+        /// <summary>How many planets (plus their moons and rings) are dotted round the sky.</summary>
+        public const int PlanetCount = 18;
+        /// <summary>The colour of space: black.</summary>
+        public static readonly Color SkyColor = Color.black;
+        /// <summary>The crowd's animations (see Crowd.shader): how many there are.</summary>
+        public const int CrowdAnimations = 13;
+        /// <summary>Which way the galaxy band's bright middle is, in the sky's own space (it turns: Stadium.Sky).</summary>
+        public static Vector3 GalaxyCore { get; private set; } = Vector3.up;
 
-        static Shader s_Unlit;
+        static Shader s_Unlit, s_Sky;
 
         /// <summary>The octagon outline (x, z), going round.</summary>
         public static readonly Vector2[] Outline =
@@ -90,7 +103,6 @@ namespace RockGame
             var pinkMat = Art.Mat(new Color(1f, 0.32f, 0.9f));
             var orangeMat = Art.Mat(new Color(1f, 0.56f, 0.15f));
             var whiteMat = Art.Mat(new Color(0.92f, 0.92f, 0.98f));
-            var inlayMat = Art.Mat(new Color(0.42f, 0.26f, 0.7f));
 
             // ---------- the top: a flat octagon (the only thing you can stand on) ----------
             var deck = new MeshBatch();
@@ -172,7 +184,7 @@ namespace RockGame
             tip.Frustum(Outline, -9.2f, 0.15f, -12.5f, 0.015f, false, false, 4f);
             tip.Build(t, "core", Art.Mat(new Color(0.6f, 0.75f, 1f)), false);
 
-            // ---------- pink edges, white corner marks and the lightning bolt inlay ----------
+            // ---------- pink edges and white corner marks ----------
             var edges = new MeshBatch();
             var outline1 = Scale(Outline, 1f - 0.18f / HalfX);
             var outline2 = Scale(Outline, 1f - 1.1f / HalfX);
@@ -188,9 +200,6 @@ namespace RockGame
                 edges.Line(e0 + Vector3.down * 0.18f, e1 + Vector3.down * 0.18f, 0.12f, 0.04f, n);
                 edges.Line(e0 + Vector3.down * 0.85f, e1 + Vector3.down * 0.85f, 0.12f, 0.04f, n);
             }
-            var bolt = BoltOutline();
-            for (int i = 0; i < bolt.Length; i++)
-                edges.Line(V(bolt[i], 0.016f), V(bolt[(i + 1) % bolt.Length], 0.016f), 0.14f, 0.03f, Vector3.up);
             edges.Build(t, "pink edges", pinkMat, false);
             var marks = new MeshBatch();
             var inner = Scale(Outline, 1f - 2.2f / HalfX);
@@ -201,9 +210,6 @@ namespace RockGame
                 marks.Box(p + along * 0.9f, Quaternion.LookRotation(along), new Vector3(0.3f, 0.03f, 1.4f));
             }
             marks.Build(t, "corner marks", whiteMat, false);
-            var inlay = new MeshBatch();
-            inlay.Polygon(bolt, 0.008f, 3f);
-            inlay.Build(t, "bolt inlay", inlayMat, false);
 
             // ---------- lights: a cool glow up onto the machinery, a soft pink wash over the top ----------
             var lc = new GameObject("core light");
@@ -223,7 +229,7 @@ namespace RockGame
             l2.intensity = 0.8f;
             l2.color = new Color(0.9f, 0.6f, 1f);
 
-            // ---------- space all around: one flat colour, with low-poly white stars ----------
+            // ---------- space all around: black, full of stars, a galaxy and planets ----------
             var skyMat = UnlitMat(SkyColor, CullMode.Front);
             var shell = Art.Part(t, Art.Sphere, Color.white, Vector3.zero, Vector3.one * ShellRadius * 2f, default, false, skyMat != null ? skyMat : Art.Mat(SkyColor), "space");
             var sr = shell.GetComponent<MeshRenderer>();
@@ -231,72 +237,179 @@ namespace RockGame
             sr.receiveShadows = false;
             if (skyMat == null) shell.GetComponent<MeshFilter>().sharedMesh = Inverted(Art.Sphere);
             stadium.SetShell(sr);
-            var stars = BuildStars();
-            var starMat = UnlitMat(Color.white, CullMode.Back);
-            var starGo = stars.Build(t, "stars", starMat != null ? starMat : Art.Mat(Color.white), false);
-            starGo.GetComponent<MeshRenderer>().receiveShadows = false;
+            BuildSky(t, stadium);
 
-            // ---------- floating screens with the countdown and the clock ----------
+            // ---------- the crowd, on stands floating all round ----------
+            BuildCrowd(t, stadium);
+
+            // ---------- floating screens with the countdown and the clock (readable from both sides) ----------
             for (int i = 0; i < 4; i++)
             {
                 float a = 45f + i * 90f;
                 var dir = Quaternion.Euler(0, a, 0) * Vector3.forward;
                 var screen = new GameObject("jumbotron").transform;
                 screen.SetParent(t, false);
-                screen.localPosition = dir * 44f + Vector3.up * 16f;
+                screen.localPosition = dir * 44f + Vector3.up * 17f;
                 screen.localRotation = Quaternion.LookRotation(dir); // faces outward, so its back (-z) faces the platform
                 Art.Box(screen, new Color(0.05f, 0.04f, 0.1f), Vector3.zero, new Vector3(10f, 5.5f, 0.3f)).GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
                 var frame = new MeshBatch();
-                Vector3 s0 = new Vector3(-5.1f, -2.85f, -0.2f), s1 = new Vector3(5.1f, -2.85f, -0.2f), s2 = new Vector3(5.1f, 2.85f, -0.2f), s3 = new Vector3(-5.1f, 2.85f, -0.2f);
-                frame.Line(s0, s1, 0.16f, 0.1f, Vector3.back); frame.Line(s1, s2, 0.16f, 0.1f, Vector3.back);
-                frame.Line(s2, s3, 0.16f, 0.1f, Vector3.back); frame.Line(s3, s0, 0.16f, 0.1f, Vector3.back);
+                for (int side = 0; side < 2; side++)
+                {
+                    float z = side == 0 ? -0.2f : 0.2f;
+                    var up = side == 0 ? Vector3.back : Vector3.forward;
+                    Vector3 s0 = new Vector3(-5.1f, -2.85f, z), s1 = new Vector3(5.1f, -2.85f, z), s2 = new Vector3(5.1f, 2.85f, z), s3 = new Vector3(-5.1f, 2.85f, z);
+                    frame.Line(s0, s1, 0.16f, 0.1f, up); frame.Line(s1, s2, 0.16f, 0.1f, up);
+                    frame.Line(s2, s3, 0.16f, 0.1f, up); frame.Line(s3, s0, 0.16f, 0.1f, up);
+                    var txt = new GameObject("text");
+                    txt.transform.SetParent(screen, false);
+                    txt.transform.localPosition = new Vector3(0, 0, side == 0 ? -0.3f : 0.3f);
+                    txt.transform.localRotation = side == 0 ? Quaternion.identity : Quaternion.Euler(0, 180f, 0); // readable from the platform / from outside
+                    var tm = txt.AddComponent<TextMesh>();
+                    tm.anchor = TextAnchor.MiddleCenter;
+                    tm.alignment = TextAlignment.Center;
+                    tm.characterSize = 0.22f;
+                    tm.fontSize = 64;
+                    tm.color = new Color(1f, 0.75f, 1f);
+                    tm.text = "ROCK BRAWL";
+                    stadium.AddScreen(tm);
+                }
                 frame.Build(screen, "frame", pinkMat, false);
-                var txt = new GameObject("text");
-                txt.transform.SetParent(screen, false);
-                txt.transform.localPosition = new Vector3(0, 0, -0.3f);
-                txt.transform.localRotation = Quaternion.identity; // readable from the platform
-                var tm = txt.AddComponent<TextMesh>();
-                tm.anchor = TextAnchor.MiddleCenter;
-                tm.alignment = TextAlignment.Center;
-                tm.characterSize = 0.22f;
-                tm.fontSize = 64;
-                tm.color = new Color(1f, 0.75f, 1f);
-                tm.text = "ROCK BRAWL";
-                stadium.AddScreen(tm);
+            }
+        }
+
+        // =====================================================================
+        // the sky: stars, the galaxy, planets
+        // =====================================================================
+
+        /// <summary>The sky's unlit vertex-colour material; glow: added on top (no depth writes, both sides).</summary>
+        static Material SkyMat(bool glow)
+        {
+            if (s_Sky == null) s_Sky = Resources.Load<Shader>("SpaceArena/SpaceSky");
+            if (s_Sky == null || !s_Sky.isSupported) return glow ? null : Art.Mat(Color.white);
+            var m = new Material(s_Sky) { name = glow ? "space glow" : "space sky" };
+            if (glow)
+            {
+                m.SetFloat("_SrcBlend", (float)BlendMode.One);
+                m.SetFloat("_DstBlend", (float)BlendMode.One);
+                m.SetFloat("_ZWrite", 0f);
+                m.SetFloat("_Cull", (float)CullMode.Off);
+                m.renderQueue = (int)RenderQueue.Transparent;
+            }
+            return m;
+        }
+
+        static float Sq(float x) => x * x;
+        static float AngleDiff(float a, float b) => Mathf.Abs(Mathf.DeltaAngle(a * Mathf.Rad2Deg, b * Mathf.Rad2Deg)) * Mathf.Deg2Rad;
+
+        /// <summary>A unit icosphere, subdivided `sub` times (each triangle on its own: faceted).</summary>
+        static List<(Vector3 a, Vector3 b, Vector3 c)> Ico(int sub)
+        {
+            float g = (1f + Mathf.Sqrt(5f)) * 0.5f;
+            var v = new[]
+            {
+                new Vector3(-1, g, 0), new Vector3(1, g, 0), new Vector3(-1, -g, 0), new Vector3(1, -g, 0),
+                new Vector3(0, -1, g), new Vector3(0, 1, g), new Vector3(0, -1, -g), new Vector3(0, 1, -g),
+                new Vector3(g, 0, -1), new Vector3(g, 0, 1), new Vector3(-g, 0, -1), new Vector3(-g, 0, 1),
+            };
+            int[] f = { 0, 11, 5, 0, 5, 1, 0, 1, 7, 0, 7, 10, 0, 10, 11, 1, 5, 9, 5, 11, 4, 11, 10, 2, 10, 7, 6, 7, 1, 8,
+                        3, 9, 4, 3, 4, 2, 3, 2, 6, 3, 6, 8, 3, 8, 9, 4, 9, 5, 2, 4, 11, 6, 2, 10, 8, 6, 7, 9, 8, 1 };
+            var tris = new List<(Vector3, Vector3, Vector3)>();
+            for (int i = 0; i < f.Length; i += 3) tris.Add((v[f[i]].normalized, v[f[i + 1]].normalized, v[f[i + 2]].normalized));
+            for (int s = 0; s < sub; s++)
+            {
+                var next = new List<(Vector3, Vector3, Vector3)>();
+                foreach (var (a, b, c) in tris)
+                {
+                    var ab = (a + b).normalized; var bc = (b + c).normalized; var ca = (c + a).normalized;
+                    next.Add((a, ab, ca)); next.Add((ab, b, bc)); next.Add((ca, bc, c)); next.Add((ab, bc, ca));
+                }
+                tris = next;
+            }
+            return tris;
+        }
+
+        /// <summary>A speck of the galaxy: a small flat four-pointed diamond facing `n`.</summary>
+        static void Speck(MeshBatch mb, Vector3 c, Vector3 n, float s, float spin, Color col, Vector4 twinkle)
+        {
+            var u = Vector3.Cross(n, Mathf.Abs(n.y) > 0.9f ? Vector3.right : Vector3.up).normalized;
+            var v = Vector3.Cross(n, u);
+            var a = u * Mathf.Cos(spin) + v * Mathf.Sin(spin);
+            var b = -u * Mathf.Sin(spin) + v * Mathf.Cos(spin);
+            mb.Tint = col;
+            mb.Extra = twinkle;
+            Vector3 p0 = c + a * s, p1 = c + b * (s * 0.6f), p2 = c - a * s, p3 = c - b * (s * 0.6f);
+            mb.Tri(p0, p1, p2, n);
+            mb.Tri(p0, p2, p3, n);
+        }
+
+        /// <summary>A soft glow (added on top): a disc of rings in the plane (u, v), colours from the middle out (the last one black).</summary>
+        static void GlowDisc(MeshBatch glow, Vector3 c, Vector3 u, Vector3 v, float[] radii, Color[] cols, int segs)
+        {
+            for (int s = 0; s < segs; s++)
+            {
+                float a0 = s * Mathf.PI * 2f / segs, a1 = (s + 1) * Mathf.PI * 2f / segs;
+                Vector3 d0 = u * Mathf.Cos(a0) + v * Mathf.Sin(a0), d1 = u * Mathf.Cos(a1) + v * Mathf.Sin(a1);
+                glow.TriC(c, c + d0 * radii[0], c + d1 * radii[0], cols[0], cols[1], cols[1]);
+                for (int k = 1; k < radii.Length; k++)
+                {
+                    Vector3 i0 = c + d0 * radii[k - 1], i1 = c + d1 * radii[k - 1], o0 = c + d0 * radii[k], o1 = c + d1 * radii[k];
+                    glow.TriC(i0, o0, o1, cols[k], cols[k + 1], cols[k + 1]);
+                    glow.TriC(i0, o1, i1, cols[k], cols[k + 1], cols[k]);
+                }
             }
         }
 
         /// <summary>
-        /// The stars: chunky low-poly five-pointed stars (a flat star outline pulled out to a point front and back),
-        /// scattered all round inside the space shell, each turned to face the platform. One merged mesh, one draw.
+        /// The sky, all inside the space shell and slowly turning (Stadium): ~1500 chunky low-poly 3D stars in white and
+        /// a few pale tints (some twinkle); a galaxy band right round the sky made of thousands of tiny specks, thickest
+        /// and warmest at its bright middle, with a faint glow along it; two spiral galaxies; a low-poly sun; and faceted
+        /// planets in flat colours (gas giants with bands, rocky, icy, ocean, lava, alien worlds), some with rings and
+        /// moons, lit by that sun. Three meshes: stars, galaxy (specks, planets, sun) and the glow.
         /// </summary>
-        static MeshBatch BuildStars()
+        static void BuildSky(Transform t, Stadium stadium)
         {
+            var sky = new GameObject("sky").transform;
+            sky.SetParent(t, false);
+            stadium.SetSky(sky);
             var rng = new System.Random(9157);
             float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
-            var mb = new MeshBatch();
+            float Gauss()
+            {
+                double u1 = 1.0 - rng.NextDouble(), u2 = rng.NextDouble();
+                return (float)(System.Math.Sqrt(-2.0 * System.Math.Log(u1)) * System.Math.Cos(2.0 * System.Math.PI * u2));
+            }
+            Color L(float r, float g, float b) => new Color(r, g, b).linear;
+            Vector3 RandomDir(float minY, float maxY)
+            {
+                Vector3 d;
+                do d = new Vector3(R(-1f, 1f), R(-1f, 1f), R(-1f, 1f)); while (d.sqrMagnitude > 1f || d.sqrMagnitude < 0.05f || d.normalized.y < minY || d.normalized.y > maxY);
+                return d.normalized;
+            }
+
+            // ---- the stars: a flat star outline pulled out to a point front and back, facing the platform ----
+            var stars = new MeshBatch { Colored = true };
             var pts = new Vector3[10];
+            var starTints = new[] { L(1f, 1f, 1f), L(0.78f, 0.88f, 1f), L(1f, 0.93f, 0.7f), L(1f, 0.72f, 0.88f), L(0.8f, 0.75f, 1f) };
             for (int s = 0; s < StarCount; s++)
             {
-                // a direction on the sphere, not straight down under the platform
-                Vector3 dir;
-                do dir = new Vector3(R(-1f, 1f), R(-1f, 1f), R(-1f, 1f)); while (dir.sqrMagnitude > 1f || dir.sqrMagnitude < 0.05f || dir.normalized.y < -0.85f);
-                dir.Normalize();
-                float dist = R(170f, ShellRadius - 30f);
+                var dir = RandomDir(-0.9f, 1f);
+                float dist = R(170f, ShellRadius - 25f);
                 var c = dir * dist;
-                var n = -dir; // faces the platform
+                var n = -dir;
                 var u = Vector3.Cross(n, Mathf.Abs(n.y) > 0.9f ? Vector3.right : Vector3.up).normalized;
                 var v = Vector3.Cross(n, u);
                 float spin = R(0f, Mathf.PI * 2f);
-                // most are small, a few are big
                 float big = R(0f, 1f);
-                float r0 = (big > 0.9f ? R(5f, 8f) : big > 0.6f ? R(3f, 5f) : R(1.6f, 3f)) * dist / 250f;
+                float r0 = (big > 0.96f ? R(5f, 8f) : big > 0.8f ? R(3f, 5f) : big > 0.45f ? R(1.8f, 3f) : R(1.1f, 1.8f)) * dist / 250f;
                 float r1 = r0 * 0.42f, depth = r0 * 0.38f;
+                float tint = R(0f, 1f);
+                stars.Tint = tint < 0.68f ? starTints[0] : tint < 0.8f ? starTints[1] : tint < 0.9f ? starTints[2] : tint < 0.95f ? starTints[3] : starTints[4];
+                stars.Tint *= R(0.75f, 1f);
+                stars.Extra = R(0f, 1f) < 0.3f ? new Vector4(R(0f, 6.3f), R(0.25f, 0.6f), R(0f, 2.5f), 0) : Vector4.zero;
                 for (int i = 0; i < 10; i++)
                 {
                     float a = spin + i * Mathf.PI / 5f;
-                    float rr = i % 2 == 0 ? r0 : r1;
-                    pts[i] = c + (u * Mathf.Cos(a) + v * Mathf.Sin(a)) * rr;
+                    pts[i] = c + (u * Mathf.Cos(a) + v * Mathf.Sin(a)) * (i % 2 == 0 ? r0 : r1);
                 }
                 var front = c + n * depth;
                 var back = c - n * depth;
@@ -305,11 +418,494 @@ namespace RockGame
                     var p0 = pts[i];
                     var p1 = pts[(i + 1) % 10];
                     var mid = (p0 + p1) * 0.5f - c;
-                    mb.Tri(front, p0, p1, mid + n * depth, 4f);
-                    mb.Tri(back, p0, p1, mid - n * depth, 4f);
+                    stars.Tri(front, p0, p1, mid + n * depth, 4f);
+                    stars.Tri(back, p0, p1, mid - n * depth, 4f);
                 }
             }
-            return mb;
+            stars.Build(sky, "stars", SkyMat(false), false).GetComponent<MeshRenderer>().receiveShadows = false;
+
+            var gal = new MeshBatch { Colored = true };
+            var glow = new MeshBatch { Colored = true };
+
+            // ---- the galaxy band: a great circle tilted 60 degrees, thick and warm round its bright middle ----
+            var nb = new Vector3(0.75f, 0.5f, 0.43f).normalized;
+            var e1 = Vector3.Cross(nb, Vector3.up).normalized;
+            var e2 = Vector3.Cross(nb, e1);
+            if (e2.y < 0) e2 = -e2;
+            const float core = Mathf.PI * 0.5f + 0.45f; // (high in the sky)
+            Vector3 Band(float th, float lat) => ((e1 * Mathf.Cos(th) + e2 * Mathf.Sin(th)) * Mathf.Cos(lat) + nb * Mathf.Sin(lat)).normalized;
+            GalaxyCore = Band(core, 0f);
+            Color[] bandCols = { L(0.75f, 0.85f, 1f), L(0.8f, 0.66f, 1f), L(1f, 0.62f, 0.86f), L(1f, 0.9f, 0.72f), L(1f, 1f, 1f) };
+            for (int i = 0; i < GalaxySpecks; i++)
+            {
+                bool inCore = R(0f, 1f) < 0.4f;
+                float th = inCore ? core + Gauss() * 0.42f : R(0f, Mathf.PI * 2f);
+                float near = Mathf.Exp(-Sq(AngleDiff(th, core) / 0.55f));
+                float lat = Gauss() * (0.045f + 0.1f * near);
+                var dir = Band(th, lat);
+                float pick = R(0f, 1f);
+                var col = near > 0.5f && pick < 0.55f ? bandCols[3] : pick < 0.4f ? bandCols[0] : pick < 0.62f ? bandCols[1] : pick < 0.75f ? bandCols[2] : bandCols[4];
+                col *= R(0.35f, 1f);
+                float size = R(0.6f, 1.5f) * (R(0f, 1f) < 0.05f ? 2.2f : 1f);
+                Speck(gal, dir * R(318f, 342f), -dir, size, R(0f, 6.3f), col, R(0f, 1f) < 0.15f ? new Vector4(R(0f, 6.3f), 0.5f, R(0f, 2f), 0) : Vector4.zero);
+            }
+            // its glow: a ribbon right round, brightest along the middle line and at the core
+            const int bandSegs = 120;
+            float[] lats = { -0.26f, -0.1f, 0f, 0.1f, 0.26f };
+            float[] across = { 0f, 0.5f, 1f, 0.5f, 0f };
+            Color BandGlow(float th, int j)
+            {
+                float near = Mathf.Exp(-Sq(AngleDiff(th, core) / 0.6f));
+                return Color.Lerp(new Color(0.045f, 0.04f, 0.11f), new Color(0.2f, 0.13f, 0.15f), near) * across[j];
+            }
+            for (int i = 0; i < bandSegs; i++)
+            {
+                float t0 = i * Mathf.PI * 2f / bandSegs, t1 = (i + 1) * Mathf.PI * 2f / bandSegs;
+                float w0 = 1f + 0.9f * Mathf.Exp(-Sq(AngleDiff(t0, core) / 0.6f)), w1 = 1f + 0.9f * Mathf.Exp(-Sq(AngleDiff(t1, core) / 0.6f));
+                for (int j = 0; j < lats.Length - 1; j++)
+                {
+                    Vector3 a = Band(t0, lats[j] * w0) * 348f, b = Band(t1, lats[j] * w1) * 348f;
+                    Vector3 c2 = Band(t1, lats[j + 1] * w1) * 348f, d = Band(t0, lats[j + 1] * w0) * 348f;
+                    glow.TriC(a, b, c2, BandGlow(t0, j), BandGlow(t1, j), BandGlow(t1, j + 1));
+                    glow.TriC(a, c2, d, BandGlow(t0, j), BandGlow(t1, j + 1), BandGlow(t0, j + 1));
+                }
+            }
+            {
+                var cd = Band(core, 0f);
+                var bu = Vector3.Cross(cd, nb).normalized;
+                GlowDisc(glow, cd * 346f, bu * 1.7f, nb, new[] { 14f, 34f }, new[] { new Color(0.28f, 0.2f, 0.17f), new Color(0.1f, 0.07f, 0.08f), Color.black }, 20);
+            }
+
+            // ---- spiral galaxies: specks along log-spiral arms round a bright bulge, and a soft glow ----
+            void Spiral(Vector3 dir, float dist, float radius, float tilt, int count, int arms, Color coreCol, Color armCol, Color knotCol, Color glowCol)
+            {
+                var centre = dir * dist;
+                var side = Vector3.Cross(dir, Vector3.up).normalized;
+                var axis = Quaternion.AngleAxis(tilt, side) * -dir;
+                var p1 = Vector3.Cross(axis, dir).normalized;
+                var p2 = Vector3.Cross(axis, p1).normalized;
+                for (int i = 0; i < count; i++)
+                {
+                    Vector3 local;
+                    Color col;
+                    if (R(0f, 1f) < 0.22f)
+                    {
+                        float r = Mathf.Abs(Gauss()) * radius * 0.12f, a = R(0f, Mathf.PI * 2f);
+                        local = (p1 * Mathf.Cos(a) + p2 * Mathf.Sin(a)) * r + axis * (Gauss() * radius * 0.04f);
+                        col = coreCol;
+                    }
+                    else
+                    {
+                        float th = Mathf.Pow(R(0f, 1f), 0.8f) * 10.5f;
+                        float r = radius * Mathf.Exp(0.25f * (th - 10.5f)) * (1f + Gauss() * 0.08f);
+                        float a = th + rng.Next(arms) * Mathf.PI * 2f / arms + Gauss() * 0.16f;
+                        local = (p1 * Mathf.Cos(a) + p2 * Mathf.Sin(a)) * r + axis * (Gauss() * radius * 0.012f);
+                        col = R(0f, 1f) < 0.1f ? knotCol : Color.Lerp(coreCol, armCol, Mathf.Clamp01(r / (radius * 0.35f)));
+                    }
+                    col *= R(0.45f, 1f);
+                    Speck(gal, centre + local, -dir, R(0.5f, 1.3f) * radius / 60f, R(0f, 6.3f), col, Vector4.zero);
+                }
+                GlowDisc(glow, centre + dir * 2f, p1, p2, new[] { radius * 0.12f, radius * 0.45f, radius * 1.05f },
+                         new[] { glowCol, glowCol * 0.5f, glowCol * 0.16f, Color.black }, 24);
+            }
+            Spiral(Quaternion.Euler(-30f, 200f, 0) * Vector3.forward, 305f, 62f, 58f, 2200, 2,
+                   L(1f, 0.92f, 0.75f), L(0.7f, 0.82f, 1f), L(1f, 0.5f, 0.8f), new Color(0.26f, 0.22f, 0.3f));
+            Spiral(Quaternion.Euler(-48f, 75f, 0) * Vector3.forward, 315f, 30f, 35f, 800, 3,
+                   L(1f, 0.85f, 0.9f), L(0.85f, 0.6f, 1f), L(0.6f, 0.9f, 1f), new Color(0.2f, 0.12f, 0.24f));
+
+            // ---- a low-poly sun far off: two yellows, a halo and rays ----
+            var sunDir = (Quaternion.Euler(-24f, 235f, 0) * Vector3.forward).normalized;
+            var sunPos = sunDir * 300f;
+            {
+                int f = 0;
+                foreach (var (a, b, c) in Ico(1))
+                {
+                    gal.Tint = (f++ * 7 % 3) == 0 ? L(1f, 0.85f, 0.45f) : L(1f, 0.96f, 0.72f);
+                    gal.Extra = Vector4.zero;
+                    gal.Tri(sunPos + a * 10f, sunPos + b * 10f, sunPos + c * 10f, a + b + c);
+                }
+                var su = Vector3.Cross(sunDir, Vector3.up).normalized;
+                var sv = Vector3.Cross(sunDir, su);
+                GlowDisc(glow, sunPos + sunDir * 2f, su, sv, new[] { 12f, 20f, 44f }, new[] { new Color(0.6f, 0.5f, 0.25f), new Color(0.5f, 0.38f, 0.16f), new Color(0.16f, 0.1f, 0.04f), Color.black }, 20);
+                for (int k = 0; k < 12; k++)
+                {
+                    float a = k * Mathf.PI * 2f / 12f + 0.13f;
+                    var d = su * Mathf.Cos(a) + sv * Mathf.Sin(a);
+                    var w = Vector3.Cross(sunDir, d) * 2.4f;
+                    float len = k % 2 == 0 ? 46f : 30f;
+                    glow.TriC(sunPos + sunDir * 2f + d * 11f + w, sunPos + sunDir * 2f + d * 11f - w, sunPos + sunDir * 2f + d * len,
+                              new Color(0.32f, 0.24f, 0.08f), new Color(0.32f, 0.24f, 0.08f), Color.black);
+                }
+            }
+
+            // ---- planets ----
+            var types = new[]
+            {
+                // gas giants (banded), then rocky, icy, ocean, lava and alien worlds
+                new[] { L(0.85f, 0.62f, 0.4f), L(0.97f, 0.86f, 0.66f), L(0.7f, 0.42f, 0.28f), L(0.99f, 0.94f, 0.82f) },
+                new[] { L(0.35f, 0.55f, 0.9f), L(0.58f, 0.77f, 1f), L(0.24f, 0.36f, 0.75f), L(0.78f, 0.9f, 1f) },
+                new[] { L(1f, 0.55f, 0.75f), L(1f, 0.78f, 0.88f), L(0.82f, 0.38f, 0.6f), L(0.95f, 0.65f, 0.5f) },
+                new[] { L(0.78f, 0.36f, 0.22f), L(0.6f, 0.26f, 0.17f), L(0.9f, 0.58f, 0.38f) },
+                new[] { L(0.86f, 0.94f, 1f), L(0.62f, 0.8f, 0.95f), L(1f, 1f, 1f) },
+                new[] { L(0.14f, 0.34f, 0.85f), L(0.25f, 0.66f, 0.3f), L(0.78f, 0.68f, 0.42f), L(1f, 1f, 1f) },
+                new[] { L(0.2f, 0.12f, 0.12f), L(0.36f, 0.18f, 0.15f), L(1f, 0.45f, 0.08f) },
+                new[] { L(0.6f, 0.3f, 0.86f), L(0.86f, 0.46f, 0.92f), L(0.38f, 0.2f, 0.6f) },
+                new[] { L(0.46f, 0.8f, 0.3f), L(0.3f, 0.58f, 0.24f), L(0.72f, 0.92f, 0.42f) },
+                new[] { L(0.55f, 0.53f, 0.58f), L(0.4f, 0.38f, 0.44f), L(0.72f, 0.7f, 0.74f) },
+            };
+            var placed = new List<(Vector3 dir, float ang)>
+            {
+                (sunDir, 0.2f), (Band(core, 0f), 0.22f),
+                ((Quaternion.Euler(-30f, 200f, 0) * Vector3.forward).normalized, 0.24f),
+                ((Quaternion.Euler(-48f, 75f, 0) * Vector3.forward).normalized, 0.12f),
+            };
+            var ico0 = Ico(0); var ico1 = Ico(1); var ico2 = Ico(2);
+            int planets = 0;
+            for (int p = 0; p < PlanetCount; p++)
+            {
+                int type = p % types.Length;
+                bool gas = type <= 2;
+                float radius = p < 2 ? R(22f, 30f) : p < 8 ? R(9f, 16f) : R(3.5f, 8f);
+                bool ringed = gas ? R(0f, 1f) < 0.65f : R(0f, 1f) < 0.18f;
+                Vector3 dir = Vector3.up;
+                float dist = 0f, ang = 0f;
+                bool ok = false;
+                for (int tries = 0; tries < 200 && !ok; tries++)
+                {
+                    dir = RandomDir(-0.55f, 0.88f);
+                    dist = p < 2 ? R(265f, 300f) : p < 8 ? R(175f, 290f) : R(135f, 280f);
+                    ang = Mathf.Asin(Mathf.Min(1f, radius * (ringed ? 2.3f : 1.3f) / dist));
+                    ok = true;
+                    foreach (var (d2, a2) in placed)
+                        if (Vector3.Angle(dir, d2) * Mathf.Deg2Rad < (ang + a2) * 1.25f + 0.05f) { ok = false; break; }
+                }
+                if (!ok) continue;
+                placed.Add((dir, ang));
+                planets++;
+                var centre = dir * dist;
+                var pal = types[type];
+                var tilt = Quaternion.Euler(R(-28f, 28f), R(0f, 360f), R(-28f, 28f));
+                var toSun = (sunPos - centre).normalized;
+                float s1 = R(0f, 9f), s2 = R(0f, 9f), s3 = R(0f, 9f), freq = R(2.2f, 3.4f);
+                float Noise(Vector3 q) => Mathf.Sin(q.x * freq + s1) * Mathf.Sin(q.y * freq * 1.1f + s2) * Mathf.Sin(q.z * freq * 0.9f + s3)
+                                          + 0.5f * Mathf.Sin((q.x + q.z) * freq * 2.1f + s2 * 1.7f);
+                foreach (var (a, b, c) in radius > 12f ? ico2 : ico1)
+                {
+                    var fc = (a + b + c).normalized; // (in the planet's own frame: y is its axis)
+                    float nz = Noise(fc), lat = fc.y;
+                    Color col;
+                    if (gas) col = pal[Mathf.Abs(Mathf.FloorToInt(lat * 3.6f + nz * 0.45f + 10f)) % pal.Length];
+                    else if (type == 4) col = Mathf.Abs(lat) > 0.75f ? pal[2] : nz > 0.35f ? pal[1] : pal[0];
+                    else if (type == 5) col = Mathf.Abs(lat) > 0.82f ? pal[3] : nz > 0.25f ? (nz > 0.7f ? pal[2] : pal[1]) : pal[0];
+                    else if (type == 6) col = nz > 0.55f ? pal[2] : nz > -0.1f ? pal[1] : pal[0];
+                    else col = nz > 0.4f ? pal[2] : nz > -0.25f ? pal[0] : pal[1];
+                    var wn = tilt * fc;
+                    float lit = 0.17f + 0.83f * Mathf.Max(0f, Vector3.Dot(wn, toSun));
+                    if (type == 6 && col == pal[2]) lit = Mathf.Max(lit, 0.85f); // lava glows in the dark
+                    gal.Tint = col * lit;
+                    gal.Extra = Vector4.zero;
+                    gal.Tri(centre + tilt * a * radius, centre + tilt * b * radius, centre + tilt * c * radius, wn);
+                }
+                var axisW = tilt * Vector3.up;
+                if (ringed)
+                {
+                    var ru = (tilt * Vector3.right).normalized;
+                    var rv = (tilt * Vector3.forward).normalized;
+                    float ringLit = 0.45f + 0.55f * Mathf.Abs(Vector3.Dot(axisW, toSun));
+                    var bands = new[] { (1.35f, 1.62f, pal[1]), (1.68f, 1.98f, pal[0]), (2.03f, 2.25f, pal[pal.Length - 1]) };
+                    const int rs = 40;
+                    foreach (var (r0, r1, rc) in bands)
+                    {
+                        gal.Tint = rc * ringLit * 0.85f;
+                        for (int s = 0; s < rs; s++)
+                        {
+                            float a0 = s * Mathf.PI * 2f / rs, a1 = (s + 1) * Mathf.PI * 2f / rs;
+                            Vector3 d0 = ru * Mathf.Cos(a0) + rv * Mathf.Sin(a0), d1 = ru * Mathf.Cos(a1) + rv * Mathf.Sin(a1);
+                            Vector3 i0 = centre + d0 * radius * r0, i1 = centre + d1 * radius * r0, o0 = centre + d0 * radius * r1, o1 = centre + d1 * radius * r1;
+                            gal.Quad(i0, o0, o1, i1, axisW); // both sides
+                            gal.Quad(i0, o0, o1, i1, -axisW);
+                        }
+                    }
+                }
+                // moons
+                int moons = R(0f, 1f) < 0.45f ? 0 : R(0f, 1f) < 0.65f ? 1 : 2;
+                for (int m = 0; m < moons; m++)
+                {
+                    float mr = radius * R(0.13f, 0.26f);
+                    var md = (axisW * R(-0.35f, 0.35f) + Vector3.Cross(axisW, RandomDir(-1f, 1f))).normalized;
+                    var mc = centre + md * radius * (ringed ? R(2.6f, 3.3f) : R(1.7f, 2.8f));
+                    var mcol = R(0f, 1f) < 0.5f ? L(0.7f, 0.68f, 0.66f) : L(0.75f, 0.62f, 0.48f);
+                    foreach (var (a, b, c) in mr > 3f ? ico1 : ico0)
+                    {
+                        var fc = (a + b + c).normalized;
+                        float lit = 0.17f + 0.83f * Mathf.Max(0f, Vector3.Dot(fc, (sunPos - mc).normalized));
+                        gal.Tint = mcol * lit * R(0.88f, 1f);
+                        gal.Tri(mc + a * mr, mc + b * mr, mc + c * mr, fc);
+                    }
+                }
+            }
+            stadium.Planets = planets;
+            gal.Build(sky, "galaxy", SkyMat(false), false).GetComponent<MeshRenderer>().receiveShadows = false;
+            var glowMat = SkyMat(true);
+            if (glowMat != null) glow.Build(sky, "galaxy glow", glowMat, false).GetComponent<MeshRenderer>().receiveShadows = false;
+        }
+
+        // =====================================================================
+        // the crowd
+        // =====================================================================
+
+        /// <summary>A floating stand: where it is round the platform (angle from +z, distance to its front, height) and its size.</summary>
+        struct StandSpec
+        {
+            public float Angle, Dist, Y;
+            public int Rows, Seats;
+            public StandSpec(float angle, float dist, float y, int rows, int seats) { Angle = angle; Dist = dist; Y = y; Rows = rows; Seats = seats; }
+        }
+
+        /// <summary>Seat spacing along a row, row depth and rise (m), and how big the fans are (a bit bigger than life, so they read from the platform).</summary>
+        const float SeatSpacing = 1.15f, RowDepth = 1.75f, RowRise = 0.85f, FanScale = 1.35f;
+
+        /// <summary>Two rings of stands: eight close and a little below the platform, eight further out and higher in the gaps.</summary>
+        static StandSpec[] Stands()
+        {
+            var list = new List<StandSpec>();
+            // (the ones off the ends sit a little higher: the long platform hides more of them)
+            for (int i = 0; i < 8; i++) list.Add(new StandSpec(i * 45f, i % 2 == 0 ? 38f : 40f, i % 4 == 0 ? -1.5f : -3f, 4, 14));
+            for (int i = 0; i < 8; i++) list.Add(new StandSpec(22.5f + i * 45f, 58f, 3.5f, 4, 17));
+            return list.ToArray();
+        }
+
+        /// <summary>How often each animation comes up (Crowd.shader: 0 jump, 1 fist pump, 2 wave, 3 clap, 4 sway, 5 dance,
+        /// 6 spin, 7 sit and get up, 8 sit and clap, 9 sit back, 10 point, 11 head-bang, 12 clap over the head).</summary>
+        static readonly float[] k_AnimWeights = { 11, 12, 10, 13, 5, 10, 3, 9, 6, 5, 6, 5, 7 };
+
+        /// <summary>A fan's animation. Each stand has a mood: 0 a mix, 1 a section swaying together, 2 mostly sitting, 3 jumping, 4 clapping.</summary>
+        static int PickAnim(System.Random rng, int mood, int row, int rows, out bool together)
+        {
+            together = false;
+            double u = rng.NextDouble();
+            switch (mood)
+            {
+                case 1: if (u < 0.6) { together = true; return 4; } break;
+                case 2: if (u < 0.55) return 7 + rng.Next(3); break;
+                case 3: if (u < 0.45) return rng.Next(2) == 0 ? 0 : 12; break;
+                case 4: if (u < 0.45) return 3; break;
+            }
+            var w = new float[k_AnimWeights.Length];
+            float total = 0f;
+            for (int i = 0; i < w.Length; i++)
+            {
+                w[i] = k_AnimWeights[i];
+                if (i >= 7 && i <= 9 && row == rows - 1) w[i] *= 1.8f; // the back row sits more
+                if (row == 0 && (i == 0 || i == 6 || i == 10)) w[i] *= 1.5f; // the front row's the wildest
+                total += w[i];
+            }
+            float x = (float)rng.NextDouble() * total;
+            for (int i = 0; i < w.Length; i++) { x -= w[i]; if (x <= 0f) return i; }
+            return 0;
+        }
+
+        /// <summary>A fan's skin: hues all round the wheel (golden ratio), plus classic grey-green aliens and pastels.</summary>
+        static Color FanColour(System.Random rng, int i)
+        {
+            float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
+            double u = rng.NextDouble();
+            if (u < 0.12) return Color.HSVToRGB(R(0.22f, 0.36f), R(0.18f, 0.4f), R(0.75f, 0.92f));
+            if (u < 0.22) return Color.HSVToRGB(R(0f, 1f), R(0.2f, 0.38f), R(0.92f, 1f));
+            return Color.HSVToRGB(Mathf.Repeat(i * 0.618034f + R(-0.04f, 0.04f), 1f), R(0.5f, 1f), R(0.6f, 1f));
+        }
+
+        /// <summary>
+        /// The crowd alien (CrowdAlien.txt, baked from the player model by Tools/crowd_alien.py): flat-coloured triangles
+        /// with what moves each corner (uv0: chain, w1, w2; colour alpha: on the head), and the joints.
+        /// </summary>
+        static Mesh LoadCrowdAlien(Dictionary<string, Vector3> joints)
+        {
+            var ta = Resources.Load<TextAsset>("SpaceArena/CrowdAlien");
+            if (ta == null) return null;
+            var inv = CultureInfo.InvariantCulture;
+            float F(string s) => float.Parse(s, NumberStyles.Float, inv);
+            var pos = new List<Vector3>();
+            var nrm = new List<Vector3>();
+            var col = new List<Color>();
+            var uv = new List<Vector4>();
+            foreach (var raw in ta.text.Split('\n'))
+            {
+                var s = raw.Split((char[])null, System.StringSplitOptions.RemoveEmptyEntries);
+                if (s.Length == 0) continue;
+                if (s[0] == "P" && s.Length >= 5) { joints[s[1]] = new Vector3(F(s[2]), F(s[3]), F(s[4])); continue; }
+                if (s.Length < 13) continue;
+                pos.Add(new Vector3(F(s[0]), F(s[1]), F(s[2])));
+                nrm.Add(new Vector3(F(s[3]), F(s[4]), F(s[5])));
+                var c = new Color(F(s[6]), F(s[7]), F(s[8])).linear;
+                c.a = F(s[12]);
+                col.Add(c);
+                uv.Add(new Vector4(F(s[9]), F(s[10]), F(s[11]), 0f));
+            }
+            if (pos.Count < 3) return null;
+            var tris = new int[pos.Count / 3 * 3];
+            for (int i = 0; i < tris.Length; i++) tris[i] = i;
+            var mesh = new Mesh { name = "crowd alien" };
+            mesh.SetVertices(pos);
+            mesh.SetNormals(nrm);
+            mesh.SetColors(col);
+            mesh.SetUVs(0, uv);
+            mesh.SetTriangles(tris, 0);
+            mesh.bounds = new Bounds(new Vector3(0, 1f, 0), new Vector3(4f, 4f, 4f));
+            mesh.UploadMeshData(true);
+            return mesh;
+        }
+
+        /// <summary>
+        /// One floating stand into the stands mesh (coloured per vertex, uv0.x its bob phase): stepped rows with a bench
+        /// along the back of each (the sitters sit on it), glowing pink step edges, a front barrier and back wall, side
+        /// walls stepping up, and underneath tiers of blue machinery narrowing to a pale crystal like the platform's.
+        /// Local space: x along the rows, +z towards the platform, the front edge at z = 0, the first row's floor at y = 0.
+        /// </summary>
+        static void BuildStandMesh(MeshBatch mb, Vector3 pos, Quaternion rot, int rows, float width, float bob)
+        {
+            Vector3 P(Vector3 l) => pos + rot * l;
+            Color L(float r, float g, float b) => new Color(r, g, b).linear;
+            Color deck = L(0.34f, 0.33f, 0.42f), deck2 = L(0.29f, 0.28f, 0.37f), rim = L(0.11f, 0.1f, 0.17f), hull = L(0.2f, 0.36f, 0.8f);
+            Color pink = L(1f, 0.32f, 0.9f), orange = L(1f, 0.56f, 0.15f), seat = L(0.42f, 0.26f, 0.7f), tip = L(0.6f, 0.75f, 1f);
+            mb.Extra = new Vector4(bob, 0, 0, 0);
+            float hw = width * 0.5f, yb = -1f, depth = rows * RowDepth;
+            void Box(Color c, float x0, float x1, float y0, float y1, float z0, float z1)
+            {
+                mb.Tint = c;
+                mb.Box(P(new Vector3((x0 + x1) * 0.5f, (y0 + y1) * 0.5f, (z0 + z1) * 0.5f)), rot, new Vector3(x1 - x0, y1 - y0, z1 - z0));
+            }
+            void Line(Color c, Vector3 a, Vector3 b, float w, float h)
+            {
+                mb.Tint = c;
+                mb.Line(P(a), P(b), w, h, rot * Vector3.up);
+            }
+            for (int r = 0; r < rows; r++)
+            {
+                float yt = r * RowRise, z0 = -(r + 1) * RowDepth, z1 = -r * RowDepth;
+                Box(r % 2 == 0 ? deck : deck2, -hw, hw, yb, yt, z0, z1);
+                Box(seat, -hw + 0.25f, hw - 0.25f, yt, yt + 0.55f, z0 + 0.1f, z0 + 0.6f);
+                Line(pink, new Vector3(-hw, yt + 0.01f, z1 - 0.07f), new Vector3(hw, yt + 0.01f, z1 - 0.07f), 0.12f, 0.03f);
+                Box(hull, -hw - 0.35f, -hw, yb, yt + 1.1f, z0, z1);
+                Box(hull, hw, hw + 0.35f, yb, yt + 1.1f, z0, z1);
+            }
+            Box(rim, -hw - 0.35f, hw + 0.35f, yb, 0.6f, 0f, 0.3f);
+            Line(pink, new Vector3(-hw - 0.35f, 0.61f, 0.15f), new Vector3(hw + 0.35f, 0.61f, 0.15f), 0.32f, 0.04f);
+            float top = (rows - 1) * RowRise + 2.2f;
+            Box(rim, -hw - 0.35f, hw + 0.35f, yb, top, -depth - 0.35f, -depth);
+            Line(pink, new Vector3(-hw - 0.35f, top + 0.01f, -depth - 0.17f), new Vector3(hw + 0.35f, top + 0.01f, -depth - 0.17f), 0.38f, 0.04f);
+            // the underside
+            float hx = hw + 0.35f, hz = (depth + 0.65f) * 0.5f, zc = 0.3f - hz, ch = Mathf.Min(hx, hz) * 0.45f;
+            var ol = new[]
+            {
+                new Vector2(hx - ch, hz), new Vector2(hx, hz - ch), new Vector2(hx, -hz + ch), new Vector2(hx - ch, -hz),
+                new Vector2(-hx + ch, -hz), new Vector2(-hx, -hz + ch), new Vector2(-hx, hz - ch), new Vector2(-hx + ch, hz),
+            };
+            var tiers = new (float y0, float s0, float y1, float s1, Color c)[]
+            {
+                (yb, 1f, yb - 1.6f, 0.74f, hull), (yb - 1.6f, 0.72f, yb - 3.4f, 0.36f, hull), (yb - 3.4f, 0.34f, yb - 5.4f, 0.03f, tip),
+            };
+            foreach (var tr in tiers)
+                for (int i = 0; i < ol.Length; i++)
+                {
+                    var a = ol[i];
+                    var b = ol[(i + 1) % ol.Length];
+                    Vector3 Q(Vector2 p, float s, float y) => P(new Vector3(p.x * s, y, zc + p.y * s));
+                    var mid = (a + b) * 0.5f;
+                    var outward = rot * new Vector3(mid.x, -0.4f * Mathf.Max(hx, hz), mid.y);
+                    mb.Tint = tr.c;
+                    mb.Quad(Q(a, tr.s0, tr.y0), Q(b, tr.s0, tr.y0), Q(b, tr.s1, tr.y1), Q(a, tr.s1, tr.y1), outward);
+                    if (tr.c == hull)
+                    {
+                        // an orange panel line round each tier, just under its top edge
+                        var la = Q(a, Mathf.Lerp(tr.s0, tr.s1, 0.2f), Mathf.Lerp(tr.y0, tr.y1, 0.2f));
+                        var lb = Q(b, Mathf.Lerp(tr.s0, tr.s1, 0.2f), Mathf.Lerp(tr.y0, tr.y1, 0.2f));
+                        var n = Vector3.Cross(Q(b, tr.s0, tr.y0) - Q(a, tr.s0, tr.y0), Q(a, tr.s1, tr.y1) - Q(a, tr.s0, tr.y0)).normalized;
+                        if (Vector3.Dot(n, outward) < 0) n = -n;
+                        mb.Tint = orange;
+                        mb.Line(la + n * 0.03f, lb + n * 0.03f, 0.12f, 0.05f, n);
+                    }
+                }
+        }
+
+        /// <summary>
+        /// The crowd: two rings of floating stands round the platform (not touching it), packed with aliens like the
+        /// players - every one its own colour, size, animation and timing. Fans in the front rows stand, the sitters sit on
+        /// the benches. Drawn by Stadium (one draw per stand in view); the stands are one mesh.
+        /// </summary>
+        static void BuildCrowd(Transform t, Stadium stadium)
+        {
+            var shader = Resources.Load<Shader>("SpaceArena/Crowd");
+            if (shader == null || !shader.isSupported) { Debug.LogWarning("[RockGame] crowd shader missing: no crowd in the arena"); return; }
+            var joints = new Dictionary<string, Vector3>();
+            var mesh = LoadCrowdAlien(joints);
+            var rng = new System.Random(4242);
+            float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
+            var specs = Stands();
+            var standMesh = new MeshBatch { Colored = true };
+            var data = new List<Vector4>();
+            var draws = new List<Stadium.StandDraw>();
+            var centre = Cfg.ArenaCenter;
+            int[] moods = { 0, 1, 2, 3, 4, 0, 2, 1, 0, 3, 4, 0, 1, 2, 0, 3 };
+            var anims = new HashSet<int>();
+            var hues = new HashSet<int>();
+            int fanNo = 0;
+            for (int si = 0; si < specs.Length; si++)
+            {
+                var sp = specs[si];
+                var dir = Quaternion.Euler(0, sp.Angle, 0) * Vector3.forward;
+                var rot = Quaternion.LookRotation(-dir); // its +z faces the platform
+                var pos = dir * sp.Dist + Vector3.up * sp.Y;
+                float width = sp.Seats * SeatSpacing + 0.6f;
+                float bob = R(0f, Mathf.PI * 2f);
+                BuildStandMesh(standMesh, pos, rot, sp.Rows, width, bob);
+                int start = data.Count / 3;
+                int mood = moods[si % moods.Length];
+                float together = R(0f, 1f);
+                for (int r = 0; r < sp.Rows; r++)
+                    for (int k = 0; k < sp.Seats; k++)
+                    {
+                        if (R(0f, 1f) < 0.03f) continue; // an empty seat here and there
+                        int anim = PickAnim(rng, mood, r, sp.Rows, out bool sync);
+                        bool sitting = anim >= 7 && anim <= 9;
+                        float x = (k - (sp.Seats - 1) * 0.5f) * SeatSpacing + R(-0.1f, 0.1f);
+                        var local = new Vector3(x, r * RowRise, -(r + 1) * RowDepth + (sitting ? 0.38f : 0.95f) + R(-0.05f, 0.05f));
+                        var world = centre + pos + rot * local;
+                        float yaw = (sp.Angle + 180f + R(-14f, 14f)) * Mathf.Deg2Rad;
+                        var skin = FanColour(rng, fanNo);
+                        Color.RGBToHSV(skin, out float h, out float sat, out _);
+                        if (sat > 0.45f) hues.Add(Mathf.FloorToInt(h * 12f) % 12);
+                        var lin = skin.linear;
+                        data.Add(new Vector4(world.x, world.y, world.z, yaw));
+                        data.Add(new Vector4(lin.r, lin.g, lin.b, FanScale * R(0.93f, 1.07f)));
+                        data.Add(new Vector4(anim, sync ? together + R(0f, 0.004f) : R(0f, 1f), sync ? 1f : R(0.85f, 1.2f), bob));
+                        anims.Add(anim);
+                        fanNo++;
+                    }
+                // what has to be in view for the stand's fans to be drawn (arms up, bobbing)
+                var b = new Bounds(centre + pos, Vector3.zero);
+                for (int cx = -1; cx <= 1; cx += 2)
+                    for (int cy = 0; cy <= 1; cy++)
+                        for (int cz = 0; cz <= 1; cz++)
+                            b.Encapsulate(centre + pos + rot * new Vector3(cx * width * 0.5f, cy == 0 ? -1.5f : (sp.Rows - 1) * RowRise + 4f, cz == 0 ? 0.6f : -sp.Rows * RowDepth));
+                b.Expand(2f);
+                draws.Add(new Stadium.StandDraw { Start = start, Count = data.Count / 3 - start, Bounds = b, Centre = centre + pos + rot * new Vector3(0, 0, -sp.Rows * RowDepth * 0.5f) });
+            }
+            var standMat = new Material(shader) { name = "crowd stands" };
+            standMat.SetFloat("_Stand", 1f);
+            var sgo = standMesh.Build(t, "crowd stands", standMat, false);
+            sgo.GetComponent<MeshRenderer>().receiveShadows = false;
+            if (mesh == null) { Debug.LogWarning("[RockGame] CrowdAlien.txt missing: empty stands"); return; }
+            var fanMat = new Material(shader) { name = "crowd" };
+            fanMat.SetFloat("_Stand", 0f);
+            Vector4 J(string n) => joints.TryGetValue(n, out var v) ? (Vector4)v : Vector4.zero;
+            fanMat.SetVectorArray("_CrowdJ", new[] { J("hips"), J("neck"), J("shoulderL"), J("shoulderR"), J("elbowL"), J("elbowR"), J("hipL"), J("hipR") });
+            float rest = Vector3.Angle((Vector3)(J("elbowR") - J("shoulderR")), Vector3.down);
+            float drop = J("hipL").y - J("kneeL").y;
+            fanMat.SetVectorArray("_CrowdK", new[] { J("kneeL"), J("kneeR"), new Vector4(rest, drop, 0, 0), Vector4.zero });
+            Vector4 Axis(string s) => Vector3.Cross(((Vector3)(J("wrist" + s) - J("elbow" + s))).normalized, Vector3.forward).normalized;
+            fanMat.SetVectorArray("_CrowdAxis", new[] { Axis("L"), Axis("R") });
+            stadium.SetCrowd(mesh, fanMat, data.ToArray(), draws, anims.Count, hues.Count);
         }
 
         static Vector3 V(Vector2 p, float y) => new Vector3(p.x, y, p.y);
@@ -320,13 +916,6 @@ namespace RockGame
             for (int i = 0; i < poly.Length; i++) r[i] = poly[i] * s;
             return r;
         }
-
-        /// <summary>The lightning bolt across the middle of the platform (x, z), going round.</summary>
-        static Vector2[] BoltOutline() => Scale(new[]
-        {
-            new Vector2(1.2f, -20f), new Vector2(3.6f, 1.6f), new Vector2(0.9f, 0.6f),
-            new Vector2(-1.2f, 20f), new Vector2(-3.6f, -1.6f), new Vector2(-0.9f, -0.6f),
-        }, HalfZ / 27f);
 
         static Mesh Inverted(Mesh src)
         {
@@ -344,7 +933,17 @@ namespace RockGame
         readonly List<Vector3> m_V = new List<Vector3>();
         readonly List<Vector3> m_N = new List<Vector3>();
         readonly List<Vector2> m_U = new List<Vector2>();
+        readonly List<Color> m_C = new List<Color>();
+        readonly List<Vector4> m_X = new List<Vector4>();
         readonly List<int> m_T = new List<int>();
+
+        /// <summary>
+        /// Coloured: every triangle added gets Tint as its vertex colour and Extra as its uv0 (instead of projected
+        /// UVs), so many colours can share one draw (shaders that read vertex colours, e.g. the arena's sky and stands).
+        /// </summary>
+        public bool Colored;
+        public Color Tint = Color.white;
+        public Vector4 Extra;
 
         /// <summary>A triangle facing `outward`; UVs are projected onto its plane, `tile` metres per repeat.</summary>
         public void Tri(Vector3 a, Vector3 b, Vector3 c, Vector3 outward, float tile = 4f)
@@ -352,16 +951,34 @@ namespace RockGame
             var n = Vector3.Cross(b - a, c - a);
             if (Vector3.Dot(n, outward) < 0) { (b, c) = (c, b); n = -n; }
             n.Normalize();
+            int i = m_V.Count;
+            if (Colored)
+            {
+                m_V.Add(a); m_V.Add(b); m_V.Add(c);
+                for (int k = 0; k < 3; k++) { m_N.Add(n); m_C.Add(Tint); m_X.Add(Extra); }
+                m_T.Add(i); m_T.Add(i + 1); m_T.Add(i + 2);
+                return;
+            }
             Vector3 e1, e2;
             if (Mathf.Abs(n.y) > 0.7f) { e1 = Vector3.right; e2 = Vector3.forward; }
             else { e1 = Vector3.Cross(Vector3.up, n).normalized; e2 = Vector3.Cross(n, e1); }
-            int i = m_V.Count;
             foreach (var p in new[] { a, b, c })
             {
                 m_V.Add(p);
                 m_N.Add(n);
                 m_U.Add(new Vector2(Vector3.Dot(p, e1), Vector3.Dot(p, e2)) / tile);
             }
+            m_T.Add(i); m_T.Add(i + 1); m_T.Add(i + 2);
+        }
+
+        /// <summary>Coloured meshes: a triangle with its own colour at each corner (whichever way it faces).</summary>
+        public void TriC(Vector3 a, Vector3 b, Vector3 c, Color ca, Color cb, Color cc)
+        {
+            var n = Vector3.Cross(b - a, c - a).normalized;
+            int i = m_V.Count;
+            m_V.Add(a); m_V.Add(b); m_V.Add(c);
+            m_C.Add(ca); m_C.Add(cb); m_C.Add(cc);
+            for (int k = 0; k < 3; k++) { m_N.Add(n); m_X.Add(Extra); }
             m_T.Add(i); m_T.Add(i + 1); m_T.Add(i + 2);
         }
 
@@ -469,7 +1086,12 @@ namespace RockGame
             var mesh = new Mesh { name = name, indexFormat = m_V.Count > 65000 ? IndexFormat.UInt32 : IndexFormat.UInt16 };
             mesh.SetVertices(m_V);
             mesh.SetNormals(m_N);
-            mesh.SetUVs(0, m_U);
+            if (Colored)
+            {
+                mesh.SetColors(m_C);
+                mesh.SetUVs(0, m_X);
+            }
+            else mesh.SetUVs(0, m_U);
             mesh.SetTriangles(m_T, 0);
             mesh.RecalculateBounds();
             var go = new GameObject(name);
@@ -484,8 +1106,10 @@ namespace RockGame
 
 
     /// <summary>
-    /// The sudden death arena at runtime: the screens show the countdown and the clock. Everything is only drawn while
-    /// you're there, and while you are, it's space: no fog, a purple ambient light.
+    /// The sudden death arena at runtime: the screens show the countdown and the clock, the sky turns slowly, and the
+    /// crowd is drawn (one draw per stand in view) and egged on: livelier in sudden death, wild for a few seconds on
+    /// ROCK! and every death, celebrating at the end, and every so often a Mexican wave goes round. Everything is only
+    /// drawn while you're there, and while you are, it's space: no fog, a purple ambient light.
     /// </summary>
     public class Stadium : MonoBehaviour
     {
@@ -496,6 +1120,43 @@ namespace RockGame
         Light[] m_Lights;
         bool m_Shown = true;
         Renderer m_Shell;
+        Transform m_Sky;
+
+        /// <summary>One stand's fans: their run in the crowd buffer, and what has to be in view to draw them.</summary>
+        public struct StandDraw
+        {
+            public int Start, Count;
+            public Bounds Bounds;
+            public Vector3 Centre;
+            public MaterialPropertyBlock Props;
+        }
+
+        Mesh m_FanMesh;
+        Material m_FanMat;
+        GraphicsBuffer m_FanBuf;
+        readonly List<StandDraw> m_Stands = new List<StandDraw>();
+        readonly Plane[] m_Planes = new Plane[6];
+        float m_Hype, m_Clock, m_NextWave = 8f, m_WaveAt = -100f, m_WaveFrom;
+        string m_LastWord = "";
+        int m_LastDead;
+        AudioSource m_CrowdSound;
+
+        /// <summary>How many fans there are, how many different animations and hues (of 12) they have.</summary>
+        public int CrowdCount { get; private set; }
+        public int CrowdAnimations { get; private set; }
+        public int CrowdHues { get; private set; }
+        /// <summary>How many fans were drawn this frame (the stands in view).</summary>
+        public int DrawnFans { get; private set; }
+        /// <summary>How excited the crowd is (0..1).</summary>
+        public float Excitement { get; private set; }
+        /// <summary>The planets in the sky.</summary>
+        public int Planets;
+        /// <summary>(tests) don't draw the crowd, to time it.</summary>
+        public bool CrowdHidden;
+        public IReadOnlyList<StandDraw> CrowdStands => m_Stands;
+
+        static readonly int k_Data = Shader.PropertyToID("_CrowdData"), k_Mood = Shader.PropertyToID("_CrowdMood"),
+                            k_Centre = Shader.PropertyToID("_CrowdCentre"), k_Start = Shader.PropertyToID("_Start");
 
         // what the space look changed, put back when you leave
         bool m_EnvOn, m_SavedFog;
@@ -507,11 +1168,42 @@ namespace RockGame
         void OnDestroy()
         {
             SpaceLook(false);
+            if (m_FanBuf != null) { m_FanBuf.Release(); m_FanBuf = null; }
             if (Instance == this) Instance = null;
         }
 
         public void SetShell(Renderer r) => m_Shell = r;
+        public void SetSky(Transform t) => m_Sky = t;
+        /// <summary>The sky (stars, galaxy, planets): it turns slowly.</summary>
+        public Transform Sky => m_Sky;
         public void AddScreen(TextMesh tm) => m_Screens.Add(tm);
+
+        /// <summary>The crowd: the alien mesh, its material, 3 float4s per fan (see Crowd.shader) and the stands.</summary>
+        public void SetCrowd(Mesh mesh, Material mat, Vector4[] data, List<StandDraw> stands, int animations, int hues)
+        {
+            m_FanMesh = mesh;
+            m_FanMat = mat;
+            CrowdCount = data.Length / 3;
+            CrowdAnimations = animations;
+            CrowdHues = hues;
+            if (m_FanBuf != null) m_FanBuf.Release();
+            m_FanBuf = new GraphicsBuffer(GraphicsBuffer.Target.Structured, Mathf.Max(3, data.Length), 16);
+            if (data.Length > 0) m_FanBuf.SetData(data);
+            m_Stands.Clear();
+            foreach (var s in stands)
+            {
+                var d = s;
+                d.Props = new MaterialPropertyBlock();
+                d.Props.SetFloat(k_Start, s.Start);
+                m_Stands.Add(d);
+            }
+        }
+
+        /// <summary>The crowd goes wild for a moment (the fight starts, someone dies).</summary>
+        public static void Roar() { if (Instance != null) Instance.m_Hype = 1f; }
+
+        /// <summary>Start a Mexican wave now (they come round on their own every 25 s).</summary>
+        public void StartWave() { m_WaveAt = Time.time; m_WaveFrom = Random.Range(0f, Mathf.PI * 2f); m_NextWave = Time.time + 25f; }
 
         /// <summary>The arena is far off the edge of the map: only draw it when you're near it (and then it's all you see).</summary>
         void ShowStadium(bool show)
@@ -524,7 +1216,7 @@ namespace RockGame
             foreach (var l in m_Lights) if (l) l.enabled = show;
         }
 
-        /// <summary>Space has no fog, and a cool purple ambient (it lights the underside).</summary>
+        /// <summary>Space has no fog, and a cool purple ambient (it lights the underside and the crowd).</summary>
         void SpaceLook(bool on)
         {
             if (on == m_EnvOn) return;
@@ -554,26 +1246,103 @@ namespace RockGame
 
         void Update()
         {
-            var g = NetGame.Instance;
+            var game = NetGame.Instance;
             var cam = Camera.main;
             float camDist = cam != null ? Vector3.Distance(cam.transform.position, transform.position) : float.MaxValue;
             bool shown = camDist < 300f;
             ShowStadium(shown);
             SpaceLook(shown);
-            if (!shown) return;
-            string text = "ROCK BRAWL";
-            if (g != null && g.IsSpawned)
+            if (!shown)
             {
-                if (g.S == GameState.SuddenDeath)
-                {
-                    string word = Hud.FightWord(g, out _);
-                    if (word != "") text = word;
-                    else { int s = Mathf.CeilToInt(g.TimeLeft); text = $"SUDDEN DEATH\n{s / 60}:{s % 60:00}"; }
-                }
-                else if (g.S == GameState.Waiting) text = "WAITING FOR\nPLAYERS";
-                else if (g.S == GameState.GameOver) text = g.Winner.Value >= 0 ? $"{Cfg.TeamLabel(g.Winner.Value)}\nWINS!" : "DRAW";
+                if (m_CrowdSound) m_CrowdSound.volume = 0f;
+                return;
             }
-            foreach (var s in m_Screens) if (s.text != text) s.text = text;
+            if (m_Sky) m_Sky.localRotation = Quaternion.Euler(0f, Time.time * 0.25f, 0f); // the galaxy turns, very slowly
+            string text = "ROCK BRAWL", word = "";
+            if (game != null && game.IsSpawned)
+            {
+                if (game.S == GameState.SuddenDeath)
+                {
+                    word = Hud.FightWord(game, out _);
+                    if (word != "") text = word;
+                    else { int s = Mathf.CeilToInt(game.TimeLeft); text = $"SUDDEN DEATH\n{s / 60}:{s % 60:00}"; }
+                }
+                else if (game.S == GameState.Waiting) text = "WAITING FOR\nPLAYERS";
+                else if (game.S == GameState.GameOver) text = game.Winner.Value >= 0 ? $"{Cfg.TeamLabel(game.Winner.Value)}\nWINS!" : "DRAW";
+            }
+            // each screen has its text on both faces: only the one facing you is drawn (the font shows through things)
+            var cp = Camera.main != null ? Camera.main.transform.position : transform.position;
+            foreach (var s in m_Screens)
+            {
+                if (s.text != text) s.text = text;
+                var r = s.GetComponent<Renderer>();
+                if (r) r.enabled = Vector3.Dot(cp - s.transform.position, -s.transform.forward) > 0f;
+            }
+            Cheer(game, word);
+        }
+
+        /// <summary>How excited the crowd is, the Mexican wave, the crowd's noise.</summary>
+        void Cheer(NetGame game, string word)
+        {
+            // ROCK! and every death in the arena set them off
+            if (word == "ROCK!" && m_LastWord != "ROCK!") Roar();
+            m_LastWord = word;
+            int dead = 0;
+            foreach (var p in PlayerNet.All) if (p != null && p.Dead.Value && SpaceArena.NearArena(p.transform.position)) dead++;
+            if (dead > m_LastDead) Roar();
+            m_LastDead = dead;
+            bool live = game != null && game.IsSpawned && game.S == GameState.SuddenDeath;
+            bool over = game != null && game.IsSpawned && game.S == GameState.GameOver;
+            m_Hype = Mathf.MoveTowards(m_Hype, 0f, Time.deltaTime * 0.22f);
+            Excitement = Mathf.Clamp01((over ? 0.75f : live ? 0.3f : 0.12f) + m_Hype * 0.75f);
+            m_Clock += Time.deltaTime * (1f + Excitement * 0.5f); // (the crowd's own clock: they speed up when it's wild)
+            // a Mexican wave every so often: one and a half times round in ten seconds
+            if (Time.time > m_NextWave) StartWave();
+            float u = (Time.time - m_WaveAt) / 10f, wave = 0f, waveAng = 0f;
+            if (u >= 0f && u <= 1f)
+            {
+                wave = Mathf.SmoothStep(0f, 1f, u / 0.1f) * (1f - Mathf.SmoothStep(0f, 1f, (u - 0.85f) / 0.15f));
+                waveAng = m_WaveFrom + u * Mathf.PI * 3f;
+            }
+            Shader.SetGlobalVector(k_Mood, new Vector4(Excitement, waveAng, wave, m_Clock));
+            Shader.SetGlobalVector(k_Centre, new Vector4(transform.position.x, transform.position.y, transform.position.z, 30f));
+            if (m_FanBuf != null) Shader.SetGlobalBuffer(k_Data, m_FanBuf);
+            if (m_FanMesh != null && Sfx.Crowd != null)
+            {
+                if (m_CrowdSound == null)
+                {
+                    m_CrowdSound = gameObject.AddComponent<AudioSource>();
+                    m_CrowdSound.clip = Sfx.Crowd;
+                    m_CrowdSound.loop = true;
+                    m_CrowdSound.spatialBlend = 0f;
+                    m_CrowdSound.Play();
+                }
+                m_CrowdSound.volume = (0.08f + Excitement * 0.22f + wave * 0.06f) * GameSettings.SfxVolume;
+            }
+        }
+
+        /// <summary>The fans: one draw per stand that's in view (in LateUpdate: after the camera has moved this frame).</summary>
+        void LateUpdate()
+        {
+            DrawnFans = 0;
+            var cam = Camera.main;
+            if (!m_Shown || CrowdHidden || cam == null || m_FanMesh == null || m_FanMat == null || m_FanBuf == null) return;
+            GeometryUtility.CalculateFrustumPlanes(cam, m_Planes);
+            foreach (var s in m_Stands)
+            {
+                if (s.Count <= 0 || !GeometryUtility.TestPlanesAABB(m_Planes, s.Bounds)) continue;
+                var rp = new RenderParams(m_FanMat)
+                {
+                    camera = cam,
+                    layer = gameObject.layer,
+                    shadowCastingMode = ShadowCastingMode.Off,
+                    receiveShadows = false,
+                    worldBounds = s.Bounds,
+                    matProps = s.Props,
+                };
+                Graphics.RenderMeshPrimitives(rp, m_FanMesh, 0, s.Count);
+                DrawnFans += s.Count;
+            }
         }
     }
 
