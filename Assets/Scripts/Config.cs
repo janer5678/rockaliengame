@@ -157,9 +157,6 @@ namespace RockGame
         /// <summary>Packs the map/mode choice for syncing; the seed is sent separately.</summary>
         public static int MapKey => (int)Map | ((int)Size << SizeShift) | (WoodMode ? WoodBit : 0) | (AirdropSides ? SidesBit : 0) | (AirdropCenter ? CenterBit : 0) | (RespawnLoot ? RespawnLootBit : 0) | ((int)Mode << ModeShift) | ((int)Rules << RulesShift) | ((HostGraphics & GraphicsMask) << GraphicsShift);
 
-        /// <summary>Watch towers on the Highlands map (world positions of their feet), point-mirrored between the halves.</summary>
-        public static readonly List<Vector3> Towers = new List<Vector3>();
-
         public static void SetMap(int key, int seed)
         {
             Map = (MapKind)(key & 15);
@@ -188,7 +185,6 @@ namespace RockGame
             BaseCenter[1] = new Vector3(0, 0, d);
             BaseCenter[2] = new Vector3(d, 0, 0);
             BaseCenter[3] = new Vector3(-d, 0, 0);
-            Towers.Clear();
         }
 
         // ---------- Bedrock spawn + alien machine ----------

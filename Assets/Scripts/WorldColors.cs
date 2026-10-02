@@ -83,7 +83,6 @@ namespace RockGame
             Mountains = Add("Mountains", "Mountains", GGround, new Color(0.48f, 0.5f, 0.51f)),
             MapWalls = Add("MapWalls", "Map dome (glass)", GGround, new Color(0.75f, 0.95f, 1f)), // (was the grey map walls: now the glass dome over the map, MapDome)
             BallZone = Add("BallZone", "Ball drop zone", GGround, new Color(0.85f, 0.75f, 0.3f)),
-            WatchTowers = Add("WatchTowers", "Watch towers", GGround, new Color(0.55f, 0.37f, 0.2f)),
             Wheat = Add("Wheat", "Tall wheat", GPlants, new Color(0.74f, 0.6f, 0.28f),
                 new Color(0.74f, 0.6f, 0.28f), new Color(0.85f, 0.72f, 0.35f), new Color(0.6f, 0.48f, 0.22f), new Color(0.55f, 0.62f, 0.25f), new Color(0.8f, 0.5f, 0.25f), new Color(0.65f, 0.6f, 0.5f), new Color(0.75f, 0.4f, 0.55f)),
             Daisies = Add("Daisies", "Daisies", GPlants, new Color(0.97f, 0.97f, 0.94f),

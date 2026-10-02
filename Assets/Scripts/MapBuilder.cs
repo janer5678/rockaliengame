@@ -6,7 +6,7 @@ namespace RockGame
 {
     /// <summary>
     /// Builds the static (non-networked) world identically on every peer from (map, size, seed):
-    /// flat Plains or hilly Highlands terrain (with watch towers), the two bases with their bedrock spawn and alien machine,
+    /// flat Plains or hilly Highlands terrain, the two bases with their bedrock spawn and alien machine,
     /// the glass wall between the halves and the sudden death arena.
     /// </summary>
     public static class MapBuilder
@@ -28,7 +28,6 @@ namespace RockGame
             if (s_Root) Object.Destroy(s_Root.gameObject);
             s_Glass = null;
             WildRocks.Clear();
-            Cfg.Towers.Clear();
             s_Root = new GameObject("World").transform;
             BuiltKey = Cfg.MapKey;
             BuiltSeed = Cfg.MapSeed;
@@ -117,8 +116,7 @@ namespace RockGame
             // ---------- glass wall between the halves (until the ball drops): it fills the dome's cross-section ----------
             BuildGlassWall(root, half);
 
-            // ---------- watch towers (wild map) ----------
-            if (Cfg.Map == MapKind.Highlands) PlaceTowers(root);
+            // (no watch towers any more)
             if (ThemeMaps.IsTheme) ThemeMaps.BuildProps(root); // THEME MAPS
 
             // ---------- centre ball drop zone ----------
@@ -230,42 +228,11 @@ namespace RockGame
             for (int j = 0; j <= n; j++)
                 hs[i, j] = Height(-half + i * step, -half + j * step);
 
-            // flat-shaded low-poly mesh: grass on gentle slopes, rock on steep ones
-            var verts = new List<Vector3>();
-            var grass = new List<int>();
-            var rock = new List<int>();
-            void Tri(Vector3 a, Vector3 b, Vector3 c)
-            {
-                var nrm = Vector3.Cross(b - a, c - a).normalized;
-                var list = nrm.y < 0.8f ? rock : grass;
-                int k = verts.Count;
-                verts.Add(a); verts.Add(b); verts.Add(c);
-                list.Add(k); list.Add(k + 1); list.Add(k + 2);
-            }
-            for (int i = 0; i < n; i++)
-            for (int j = 0; j < n; j++)
-            {
-                var p00 = new Vector3(-half + i * step, hs[i, j], -half + j * step);
-                var p10 = new Vector3(-half + (i + 1) * step, hs[i + 1, j], -half + j * step);
-                var p01 = new Vector3(-half + i * step, hs[i, j + 1], -half + (j + 1) * step);
-                var p11 = new Vector3(-half + (i + 1) * step, hs[i + 1, j + 1], -half + (j + 1) * step);
-                if (((i + j) & 1) == 0) { Tri(p00, p01, p11); Tri(p00, p11, p10); }
-                else { Tri(p00, p01, p10); Tri(p10, p01, p11); }
-            }
-            var mesh = new Mesh { name = "Terrain", indexFormat = IndexFormat.UInt32 };
-            mesh.SetVertices(verts);
-            mesh.subMeshCount = 2;
-            mesh.SetTriangles(grass, 0);
-            mesh.SetTriangles(rock, 1);
-            mesh.RecalculateNormals();
-            mesh.RecalculateBounds();
+            // smooth-shaded: grass on gentle slopes, rock on steep ones
+            var mesh = SmoothGround("Terrain", hs, half, step, 2, (c, ny) => ny < 0.8f ? 1 : 0);
 
             var go = new GameObject("Ground");
             go.transform.SetParent(root, false);
-            // world-space UVs (a metre each) for the PSX graphics' textures - Normal draws plain colours and ignores them
-            var uvs = new List<Vector2>(verts.Count);
-            foreach (var v in verts) uvs.Add(new Vector2(v.x, v.z));
-            mesh.SetUVs(0, uvs);
             go.AddComponent<MeshFilter>().sharedMesh = mesh;
             var mr = go.AddComponent<MeshRenderer>();
             mr.sharedMaterials = new[] { WorldLook.GroundMaterial(false), WorldLook.GroundMaterial(true) }; // (flat colours, picked in Settings > Display)
@@ -287,6 +254,56 @@ namespace RockGame
                 if (!Cfg.InFirstSector(p, 8f) || Height(p.x, p.z) < 2f) continue;
                 WildRocks.Add(p);
             }
+        }
+
+        /// <summary>
+        /// A smooth-shaded ground mesh from a grid of heights (hs[i, j] at x = -half + i * step, z = -half + j * step):
+        /// every corner is shared by the triangles round it and its normal comes from the slope of the heights there, so
+        /// the light changes smoothly over the hills instead of facet by facet. Each triangle goes in the submesh `sub`
+        /// picks from its centre and how upright it is (its own normal's y), so the grass / rock split stays crisp.
+        /// World-space UVs (a metre each) for the PSX graphics' textures.
+        /// </summary>
+        public static Mesh SmoothGround(string name, float[,] hs, float half, float step, int subCount, System.Func<Vector3, float, int> sub)
+        {
+            int n = hs.GetLength(0) - 1;
+            var verts = new Vector3[(n + 1) * (n + 1)];
+            var normals = new Vector3[verts.Length];
+            var uvs = new Vector2[verts.Length];
+            int I(int i, int j) => i * (n + 1) + j;
+            for (int i = 0; i <= n; i++)
+            for (int j = 0; j <= n; j++)
+            {
+                var v = new Vector3(-half + i * step, hs[i, j], -half + j * step);
+                verts[I(i, j)] = v;
+                uvs[I(i, j)] = new Vector2(v.x, v.z);
+                int i0 = Mathf.Max(0, i - 1), i1 = Mathf.Min(n, i + 1), j0 = Mathf.Max(0, j - 1), j1 = Mathf.Min(n, j + 1);
+                float dx = (hs[i1, j] - hs[i0, j]) / ((i1 - i0) * step), dz = (hs[i, j1] - hs[i, j0]) / ((j1 - j0) * step);
+                normals[I(i, j)] = new Vector3(-dx, 1f, -dz).normalized;
+            }
+            var subs = new List<int>[subCount];
+            for (int s = 0; s < subCount; s++) subs[s] = new List<int>();
+            void Tri(int a, int b, int c)
+            {
+                Vector3 pa = verts[a], pb = verts[b], pc = verts[c];
+                var nrm = Vector3.Cross(pb - pa, pc - pa).normalized;
+                var list = subs[Mathf.Clamp(sub((pa + pb + pc) / 3f, nrm.y), 0, subCount - 1)];
+                list.Add(a); list.Add(b); list.Add(c);
+            }
+            for (int i = 0; i < n; i++)
+            for (int j = 0; j < n; j++)
+            {
+                int p00 = I(i, j), p10 = I(i + 1, j), p01 = I(i, j + 1), p11 = I(i + 1, j + 1);
+                if (((i + j) & 1) == 0) { Tri(p00, p01, p11); Tri(p00, p11, p10); }
+                else { Tri(p00, p01, p10); Tri(p10, p01, p11); }
+            }
+            var mesh = new Mesh { name = name, indexFormat = verts.Length > 65000 ? IndexFormat.UInt32 : IndexFormat.UInt16 };
+            mesh.SetVertices(verts);
+            mesh.SetNormals(normals);
+            mesh.SetUVs(0, uvs);
+            mesh.subMeshCount = subCount;
+            for (int s = 0; s < subCount; s++) mesh.SetTriangles(subs[s], s);
+            mesh.RecalculateBounds();
+            return mesh;
         }
 
         // =====================================================================
@@ -600,104 +617,6 @@ namespace RockGame
                 FxParticle.Spawn(p, d * Random.Range(1f, 3f) + Vector3.up * Random.Range(0f, 2f), new Color(0.75f, 0.95f, 1f), Random.Range(0.08f, 0.2f), Random.Range(0.8f, 1.6f), 14f, false);
             }
             Sfx.Play2D(Sfx.Smash, 0.6f);
-        }
-
-        // =====================================================================
-        // Watch towers (wild map)
-        // =====================================================================
-
-        const float TowerH = 6f, TowerRampAngle = 36f;
-        static float RampRun => TowerH / Mathf.Tan(TowerRampAngle * Mathf.Deg2Rad);
-
-        static void PlaceTowers(Transform root)
-        {
-            var rng = new System.Random(Cfg.MapSeed * 7 + 11);
-            float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
-            float half = Cfg.MapHalf;
-            int want = Cfg.SmallMap ? 1 : Mathf.RoundToInt(2 * Cfg.SizeScale);
-            var mine = new List<(Vector3 p, float yaw)>();
-            for (int tries = 0; tries < 300 && mine.Count < want; tries++)
-            {
-                var p = new Vector3(R(-half + 16, half - 16), 0, R(-half + 16, -14));
-                if (!Cfg.InFirstSector(p, 10f)) continue;
-                var bc = Cfg.BaseCenter[0];
-                if (Mathf.Max(Mathf.Abs(p.x - bc.x), Mathf.Abs(p.z - bc.z)) < Cfg.BaseHalf + 12f) continue;
-                if (new Vector2(p.x, p.z).magnitude < 24f) continue;
-                bool close = false;
-                foreach (var q in mine) for (int m = 0; m < Cfg.Copies; m++) if ((Cfg.Copy(q.p, m) - p).magnitude < 35f) close = true;
-                if (close) continue;
-                float yaw = Mathf.Floor(R(0, 3.99f)) * 90f;
-                var foot = p + Quaternion.Euler(0, yaw, 0) * Vector3.back * (1.9f + RampRun);
-                float h0 = Height(p.x, p.z);
-                bool flat = Mathf.Abs(Height(foot.x, foot.z) - h0) < 1.2f;
-                for (int k = 0; k < 4 && flat; k++)
-                {
-                    var o = Quaternion.Euler(0, k * 90f + 45f, 0) * Vector3.forward * 2.5f;
-                    if (Mathf.Abs(Height(p.x + o.x, p.z + o.z) - h0) > 1.5f) flat = false;
-                }
-                if (!flat && tries < 250) continue;
-                mine.Add((p, yaw));
-            }
-            foreach (var (p, yaw) in mine)
-            {
-                for (int m = 0; m < Cfg.Copies; m++)
-                {
-                    var q = Cfg.Copy(p, m);
-                    q.y = Height(q.x, q.z);
-                    Cfg.Towers.Add(q);
-                    BuildTower(root, q, yaw + m * 360f / Cfg.Copies);
-                }
-            }
-        }
-
-        /// <summary>A wooden watch tower: a platform 6 m up with railings and a roof, reached by a ramp.</summary>
-        static void BuildTower(Transform root, Vector3 pos, float yaw)
-        {
-            using var tint = ColorSlots.Use(ColorSlots.WatchTowers);
-            var go = new GameObject("WatchTower");
-            go.transform.SetParent(root, false);
-            go.transform.SetPositionAndRotation(pos, Quaternion.Euler(0, yaw, 0));
-            var t = go.transform;
-            float h = TowerH;
-            const float r = 1.7f;
-            float w = 2 * r + 0.5f;
-            // posts (sunk into the ground) and cross braces
-            for (int x = -1; x <= 1; x += 2)
-            for (int z = -1; z <= 1; z += 2)
-                Art.Box(t, Art.DarkWood, new Vector3(x * r, (h + 1.6f) * 0.5f, z * r), new Vector3(0.32f, h + 3.6f, 0.32f), default, true);
-            for (int k = -1; k <= 1; k += 2)
-            {
-                Art.Box(t, Art.Wood, new Vector3(r, h * 0.45f, 0), new Vector3(0.12f, 0.12f, 2f * r * 1.35f), new Vector3(k * 55f, 0, 0));
-                Art.Box(t, Art.Wood, new Vector3(-r, h * 0.45f, 0), new Vector3(0.12f, 0.12f, 2f * r * 1.35f), new Vector3(k * 55f, 0, 0));
-                Art.Box(t, Art.Wood, new Vector3(0, h * 0.45f, r), new Vector3(2f * r * 1.35f, 0.12f, 0.12f), new Vector3(0, 0, k * 55f));
-            }
-            // platform
-            Art.Box(t, Art.Wood, new Vector3(0, h - 0.12f, 0), new Vector3(w, 0.25f, w), default, true);
-            for (int k = -2; k <= 2; k++)
-                Art.Box(t, Art.DarkWood, new Vector3(k * 0.75f, h + 0.005f, 0), new Vector3(0.05f, 0.01f, w - 0.05f));
-            // railings on three sides, open on the ramp side (-z)
-            Art.Box(t, Art.Wood, new Vector3(0, h + 0.55f, r + 0.1f), new Vector3(w, 1.1f, 0.08f), default, true);
-            Art.Box(t, Art.Wood, new Vector3(r + 0.1f, h + 0.55f, 0), new Vector3(0.08f, 1.1f, w), default, true);
-            Art.Box(t, Art.Wood, new Vector3(-(r + 0.1f), h + 0.55f, 0), new Vector3(0.08f, 1.1f, w), default, true);
-            Art.Box(t, Art.DarkWood, new Vector3(0, h + 1.1f, r + 0.1f), new Vector3(w + 0.1f, 0.12f, 0.14f));
-            Art.Box(t, Art.DarkWood, new Vector3(r + 0.1f, h + 1.1f, 0), new Vector3(0.14f, 0.12f, w + 0.1f));
-            Art.Box(t, Art.DarkWood, new Vector3(-(r + 0.1f), h + 1.1f, 0), new Vector3(0.14f, 0.12f, w + 0.1f));
-            // pyramid roof
-            Art.Part(t, Art.Cone, new Color(0.45f, 0.28f, 0.14f), new Vector3(0, h + 2.55f, 0), new Vector3(w + 1.2f, 1.6f, w + 1.2f), new Vector3(0, 45f, 0));
-            Art.Box(t, Art.DarkWood, new Vector3(0, h + 2.5f, 0), new Vector3(w + 0.1f, 0.12f, w + 0.1f));
-            // ramp up to the open side
-            float run = RampRun, len = h / Mathf.Sin(TowerRampAngle * Mathf.Deg2Rad);
-            var rampC = new Vector3(0, h * 0.5f - 0.1f, -(r + 0.25f) - run * 0.5f);
-            Art.Box(t, Art.Wood, rampC, new Vector3(1.5f, 0.2f, len + 0.3f), new Vector3(-TowerRampAngle, 0, 0), true);
-            var dir = new Vector3(0, Mathf.Sin(TowerRampAngle * Mathf.Deg2Rad), Mathf.Cos(TowerRampAngle * Mathf.Deg2Rad));
-            int steps = Mathf.RoundToInt(len / 0.45f);
-            for (int k = 0; k < steps; k++)
-            {
-                var p = rampC + dir * ((k + 0.5f) / steps - 0.5f) * len + Vector3.up * 0.11f;
-                Art.Box(t, Art.DarkWood, p, new Vector3(1.45f, 0.05f, 0.1f));
-            }
-            for (int k = -1; k <= 1; k += 2)
-                Art.Box(t, Art.DarkWood, rampC + new Vector3(k * 0.78f, 0.45f, 0), new Vector3(0.08f, 0.08f, len), new Vector3(-TowerRampAngle, 0, 0));
         }
 
         // =====================================================================

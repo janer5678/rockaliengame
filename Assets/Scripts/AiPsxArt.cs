@@ -65,7 +65,7 @@ namespace RockGame
             else Revert();
         }
 
-        /// <summary>The map (ground, walls, towers, mountains, the stadium...) plus the grass tufts.</summary>
+        /// <summary>The map (ground, walls, mountains, the stadium...) plus the grass tufts.</summary>
         public static void ApplyWorld(Transform root)
         {
             if (!On || root == null || Shader == null) return;
