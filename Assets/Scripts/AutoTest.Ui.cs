@@ -6,8 +6,12 @@ namespace RockGame
     /// <summary>
     /// -autotest ui -host -solo -map plains -shotdir DIR: one gun shot = one tracer (revolver, sniper; the shotgun's own
     /// pellets and nothing extra), post processing on / off / each effect (pictures, pixel checks, frame times, off in
-    /// PSX / AI PSX), the Dev settings search (and the game's keys muted while typing in it), the colour picker (open on
-    /// the sky and on the hands; a drag shows straight away and is saved on release) and Settings > Display.
+    /// PSX / AI PSX), each extra look on its own and all together (pictures, pixel checks, each one's frame cost, all off
+    /// again = the usual look pixel for pixel), the FPS counter, the Dev settings search (and the game's keys muted while
+    /// typing in it), Settings > Display, the world colours screen (its own narrow panel with the world in full view
+    /// beside it; the colour picker on the sky and on the hands: a drag shows straight away - the sky beside the panel
+    /// changes - and is saved on release; it swaps sides; Esc goes back) and the last seconds before we win (the
+    /// countdown with no coloured border round the screen).
     /// -autotest tracer -host / -client 127.0.0.1 (two players): the client's shot and the host's shot each show one
     /// tracer on both screens.
     /// Everything it changes on this PC (post processing, colours) is put back as it was.
@@ -62,6 +66,25 @@ namespace RockGame
             return (float)(d / n);
         }
 
+        /// <summary>Mean colour of a part of a grab (r in GUI space: y down from the top of the screen).</summary>
+        static Color Region(ScreenStats s, Rect r)
+        {
+            if (s.Px == null) return Color.clear;
+            int x0 = Mathf.Clamp((int)r.xMin, 0, s.W - 1), x1 = Mathf.Clamp((int)r.xMax, x0 + 1, s.W);
+            int y0 = Mathf.Clamp(s.H - (int)r.yMax, 0, s.H - 1), y1 = Mathf.Clamp(s.H - (int)r.yMin, y0 + 1, s.H);
+            double cr = 0, cg = 0, cb = 0; int n = 0;
+            for (int y = y0; y < y1; y += 3)
+                for (int x = x0; x < x1; x += 3)
+                {
+                    var c = s.Px[y * s.W + x];
+                    cr += c.r; cg += c.g; cb += c.b; n++;
+                }
+            n = Mathf.Max(1, n);
+            return new Color((float)(cr / n / 255.0), (float)(cg / n / 255.0), (float)(cb / n / 255.0));
+        }
+
+        static float Lum(Color c) => 0.2126f * c.r + 0.7152f * c.g + 0.0722f * c.b;
+
         IEnumerator UiShots(PlayerNet me, PlayerController pc)
         {
             string dir = ShotDir();
@@ -80,6 +103,11 @@ namespace RockGame
             // this PC's own settings, put back at the end
             bool pOn = GameSettings.PostFx, pB = GameSettings.PostBloom, pV = GameSettings.PostVignette, pG = GameSettings.PostGrading;
             float pBs = GameSettings.PostBloomStrength, pVs = GameSettings.PostVignetteStrength, pGs = GameSettings.PostGradingStrength;
+            var xWasOn = new bool[GameSettings.PostExtraCount];
+            var xWasStr = new float[GameSettings.PostExtraCount];
+            for (int i = 0; i < GameSettings.PostExtraCount; i++) { xWasOn[i] = GameSettings.PostExtraOn((GameSettings.PostExtra)i); xWasStr[i] = GameSettings.PostExtraStrength((GameSettings.PostExtra)i); }
+            GameSettings.PostExtrasOff();
+            bool fpsWas = GameSettings.ShowFps;
             string skyKey = "RockGame.World." + ColorSlots.Sky.Id, handKey = "RockGame.World." + ColorSlots.Hands.Id;
             string skyPref = PlayerPrefs.GetString(skyKey, null), handPref = PlayerPrefs.GetString(handKey, null);
             bool hadTeamPref = PlayerPrefs.HasKey("RockGame.HandsTeam");
@@ -170,6 +198,54 @@ namespace RockGame
             yield return Look("postfx_bloom_only", true, true, false, false, s => bloom = s);
             yield return Look("postfx_vignette_only", true, false, true, false, s => vig = s);
             yield return Look("postfx_grading_only", true, false, false, true, s => grade = s);
+
+            // ---- the extra looks: each one on its own (over the usual post processing), all together, then all off ----
+            GameSettings.SetPostFx(true, true, true, true, 0.5f, 0.5f, 0.5f, false);
+            GameSettings.PostExtrasOff();
+            ScreenStats xBase = default, xBase2 = default, xBack = default;
+            yield return new WaitForSecondsRealtime(0.5f);
+            yield return Grab(s => xBase = s);
+            yield return new WaitForSecondsRealtime(0.4f);
+            yield return Grab(s => xBase2 = s);
+            float xNoise = Diff(xBase, xBase2);
+            var xDiff = new float[GameSettings.PostExtraCount];
+            bool aoUp = false; float aoOn = 0f;
+            for (int i = 0; i < GameSettings.PostExtraCount; i++)
+            {
+                var e = (GameSettings.PostExtra)i;
+                GameSettings.SetPostExtra(e, true, 0.5f, false);
+                ScreenStats x = default;
+                yield return new WaitForSecondsRealtime(0.5f);
+                yield return Grab(s => x = s);
+                yield return Shot("postfx_extra_" + e);
+                xDiff[i] = Diff(xBase, x);
+                if (e == GameSettings.PostExtra.AmbientOcclusion) { aoOn = PostFx.AoIntensity; aoUp = aoOn > PostFx.AoBaseIntensity + 0.3f; }
+                GameSettings.SetPostExtra(e, false, 0.5f, false);
+            }
+            for (int i = 0; i < GameSettings.PostExtraCount; i++) GameSettings.SetPostExtra((GameSettings.PostExtra)i, true, 0.5f, false);
+            yield return new WaitForSecondsRealtime(0.5f);
+            yield return Shot("postfx_extras_all");
+            for (int i = 0; i < GameSettings.PostExtraCount; i++) GameSettings.SetPostExtra((GameSettings.PostExtra)i, true, 1f, false);
+            yield return new WaitForSecondsRealtime(0.5f);
+            yield return Shot("postfx_extras_all_full");
+            GameSettings.PostExtrasOff();
+            yield return new WaitForSecondsRealtime(0.5f);
+            yield return Grab(s => xBack = s);
+            yield return Shot("postfx_extras_off_again");
+            float dBack = Diff(xBase, xBack);
+            var xs = new System.Text.StringBuilder();
+            for (int i = 0; i < GameSettings.PostExtraCount; i++) xs.Append($"{(GameSettings.PostExtra)i} {xDiff[i]:F2}, ");
+            Log($"extra looks, mean difference from the usual look: {xs}noise {xNoise:F2}, all off again {dBack:F3}");
+            for (int i = 0; i < GameSettings.PostExtraCount; i++)
+                Check(xDiff[i] > xNoise * 2f + 0.1f, $"{GameSettings.PostExtraNames[i]} changes the picture ({xDiff[i]:F2} mean difference vs {xNoise:F2} between two plain frames)");
+            Check(aoUp, $"ambient occlusion turns up the renderer's SSAO (to {aoOn:F2} from {PostFx.AoBaseIntensity:F2} while on)");
+            // (two frames of the very same picture still differ a hair here - the SSAO's noise moves every frame - so "the
+            // same" is: no further from the usual look than two plain frames are from each other)
+            ScreenStats xBack2 = default;
+            yield return Grab(s => xBack2 = s);
+            float backNoise = Diff(xBack, xBack2), dBack2 = Diff(xBase2, xBack2);
+            Check(Mathf.Min(dBack, dBack2) <= Mathf.Max(xNoise, backNoise) * 1.6f + 0.01f && !PostFx.StylizeOn && Mathf.Approximately(PostFx.AoIntensity, PostFx.AoBaseIntensity),
+                $"every extra look off again: the usual look ({dBack:F3} / {dBack2:F3} mean difference from it, {xNoise:F3} / {backNoise:F3} between two plain frames), our pass not drawn, the SSAO back to {PostFx.AoBaseIntensity:F2}");
             yield return Look(null, false, true, true, true, s => off2 = s);
             Time.timeScale = 1f;
             float noise = Diff(off, off2), dOn = Diff(off, on);
@@ -204,17 +280,86 @@ namespace RockGame
             }
             Log($"frame time at {res}: post processing on {tOn:F2} ms, off {tOff:F2} ms (cost {tOn - tOff:F2} ms)");
 
+            // each extra look's cost: the usual post processing with it off / on, switched back and forth every quarter of a
+            // second (24 times) and the medians compared, so a busy machine slows both the same; then all of them
+            GameSettings.SetPostFx(true, true, true, true, 0.5f, 0.5f, 0.5f, false);
+            var costs = new System.Text.StringBuilder();
+            {
+                int vs0 = QualitySettings.vSyncCount, fr0 = Application.targetFrameRate;
+                QualitySettings.vSyncCount = 0; Application.targetFrameRate = 1000;
+                float Median(System.Collections.Generic.List<float> l) { l.Sort(); return l.Count == 0 ? 0f : l[l.Count / 2]; }
+                for (int i = 0; i <= GameSettings.PostExtraCount; i++)
+                {
+                    var sOn = new System.Collections.Generic.List<float>();
+                    var sOff = new System.Collections.Generic.List<float>();
+                    for (int pass = 0; pass < 24; pass++)
+                    {
+                        bool p = pass % 2 == 1;
+                        for (int j = 0; j < GameSettings.PostExtraCount; j++)
+                            GameSettings.SetPostExtra((GameSettings.PostExtra)j, p && (j == i || i == GameSettings.PostExtraCount), 0.5f, false);
+                        for (int f = 0; f < 4; f++) yield return null;
+                        float sum = 0; int n = 0;
+                        float until = Time.realtimeSinceStartup + 0.25f;
+                        while (Time.realtimeSinceStartup < until) { yield return null; sum += Time.unscaledDeltaTime; n++; }
+                        (p ? sOn : sOff).Add(sum / Mathf.Max(1, n) * 1000f);
+                    }
+                    float xOn = Median(sOn), xOff = Median(sOff);
+                    string name = i < GameSettings.PostExtraCount ? ((GameSettings.PostExtra)i).ToString() : "all of them";
+                    costs.Append($"{name} {xOn - xOff:+0.00;-0.00} ms ({xOff:F2} -> {xOn:F2}), ");
+                }
+                QualitySettings.vSyncCount = vs0; Application.targetFrameRate = fr0;
+            }
+            GameSettings.PostExtrasOff();
+            Log($"extra looks' frame cost at {res}: {costs}");
+
+            // the extra looks up close, at our base (machine, bedrock, buildings: the outlines and shading show on them)
+            {
+                var bed = Cfg.BedrockCenter(team);
+                var eye = Ground(bed.x + (bc.x > 0 ? -9f : 9f), bed.z + 7f);
+                float yawBed = Quaternion.LookRotation(new Vector3(bed.x - eye.x, 0, bed.z - eye.z)).eulerAngles.y;
+                pc.LocalTeleport(eye + Vector3.up * 0.1f, yawBed);
+                pc.SetLook(yawBed, 8f);
+                yield return new WaitForSeconds(1f);
+                Time.timeScale = 0f;
+                yield return new WaitForSecondsRealtime(0.3f);
+                yield return Shot("postfx_base_extras_off");
+                foreach (var e in new[] { GameSettings.PostExtra.Outlines, GameSettings.PostExtra.AmbientOcclusion, GameSettings.PostExtra.CelBanding })
+                {
+                    GameSettings.SetPostExtra(e, true, 0.5f, false);
+                    yield return new WaitForSecondsRealtime(0.4f);
+                    yield return Shot("postfx_base_" + e);
+                    GameSettings.SetPostExtra(e, false, 0.5f, false);
+                }
+                for (int i = 0; i < GameSettings.PostExtraCount; i++) GameSettings.SetPostExtra((GameSettings.PostExtra)i, true, 0.5f, false);
+                yield return new WaitForSecondsRealtime(0.4f);
+                yield return Shot("postfx_base_extras_all");
+                GameSettings.PostExtrasOff();
+                Time.timeScale = 1f;
+            }
+
             // PSX and AI PSX keep their own look: no post processing there
             GameSettings.SetPostFx(true, true, true, true, 0.5f, 0.5f, 0.5f, false);
+            for (int i = 0; i < GameSettings.PostExtraCount; i++) GameSettings.SetPostExtra((GameSettings.PostExtra)i, true, 0.5f, false);
             GameSettings.SetGraphics(1, false);
             yield return new WaitForSeconds(0.5f);
-            Check(!PostFx.CameraOn, "PSX: no post processing");
+            Check(!PostFx.CameraOn && !PostFx.StylizeOn && Mathf.Approximately(PostFx.AoIntensity, PostFx.AoBaseIntensity), "PSX: no post processing (none of the extra looks either)");
             GameSettings.SetGraphics(2, false);
             yield return new WaitForSeconds(0.8f);
-            Check(!PostFx.CameraOn, "AI PSX: no post processing");
+            Check(!PostFx.CameraOn && !PostFx.StylizeOn && Mathf.Approximately(PostFx.AoIntensity, PostFx.AoBaseIntensity), "AI PSX: no post processing (none of the extra looks either)");
+            GameSettings.PostExtrasOff();
             GameSettings.SetGraphics(0, false);
             yield return new WaitForSeconds(0.5f);
             Check(PostFx.CameraOn, "Normal again: post processing back on");
+
+            // ---- the FPS counter (Settings > Display), top left under YOU ARE ... ----
+            pc.LocalTeleport(spot + Vector3.up * 0.1f, sunYaw + 28f);
+            pc.SetLook(sunYaw + 28f, Mathf.Max(-24f, sunPitch + 22f));
+            GameSettings.SetShowFps(true, false);
+            yield return new WaitForSeconds(1.3f);
+            yield return Shot("fps_counter");
+            Check(Hud.FpsShown > 1f, $"the FPS counter shows ({Hud.FpsShown:0} FPS)");
+            GameSettings.SetShowFps(false, false);
+            yield return new WaitForSeconds(0.3f);
 
             // ---- the Dev settings search ----
             pc.Paused = true;
@@ -246,20 +391,53 @@ namespace RockGame
             yield return new WaitForSeconds(0.4f);
             Check(Hud.DevMatches == -1, "cleared: every dev setting again");
 
-            // ---- Settings > Display: post processing rows, the colour picker ----
+            // ---- Settings > Display (the FPS counter row, post processing and its extra looks) ----
+            GameSettings.SetShowFps(true, false);
             Hud.OpenPause = 2;
             yield return new WaitForSeconds(0.8f);
             yield return Shot("settings_display_postfx");
-            Hud.OpenPickerFor = ColorSlots.Sky.Index;
+            GameSettings.SetShowFps(false, false);
+            // ---- the world colours screen: the world as it is unpaused, then with the colour screen up (no dark cover) ----
+            pc.Paused = false;
+            yield return new WaitForSeconds(0.6f);
+            ScreenStats plain = default, cscreen = default;
+            yield return Grab(s => plain = s);
+            pc.Paused = true;
+            Hud.OpenPause = 2;
+            yield return new WaitForSeconds(0.3f);
             Hud.ScrollToColours = true;
+            yield return new WaitForSeconds(0.6f);
+            yield return Grab(s => cscreen = s);
+            yield return Shot("colour_screen");
+            var panel = Hud.ColourPanel;
+            var worldArea = new Rect(10, Screen.height * 0.12f, Mathf.Max(20f, panel.xMin - 30f), Screen.height * 0.45f);
+            float lPlain = Lum(Region(plain, worldArea)), lScreen = Lum(Region(cscreen, worldArea));
+            Check(Hud.ColourScreenOpen && panel.width < Screen.width * 0.5f && lScreen > lPlain * 0.9f,
+                $"World colours is its own narrow panel ({panel.width:0} of {Screen.width} px) with the world in full view beside it (brightness {lPlain:F3} unpaused, {lScreen:F3} beside the panel)");
+            Hud.OpenPickerFor = ColorSlots.Sky.Index;
             yield return new WaitForSeconds(0.8f);
             yield return Shot("picker_sky_open");
             Check(Hud.PickerSlot == ColorSlots.Sky.Index, "the colour picker opens on the sky's row");
             var picked = Color.HSVToRGB(0.07f, 0.55f, 0.95f);
             string savedBefore = PlayerPrefs.GetString(skyKey, "");
+            ScreenStats skyBefore = default, skyAfter = default;
+            yield return Grab(s => skyBefore = s);
             Hud.TestPick(0.07f, 0.55f, 0.95f, false);
             yield return new WaitForSeconds(0.5f);
+            yield return Grab(s => skyAfter = s);
             yield return Shot("picker_sky_dragging");
+            // the sky beside the panel: how much of it went from blue to the picked orange
+            int skyPx = 0, turned = 0;
+            if (skyBefore.Px != null && skyAfter.Px != null && skyBefore.Px.Length == skyAfter.Px.Length)
+                for (int y = (int)(skyBefore.H * 0.45f); y < skyBefore.H; y += 4)
+                    for (int x = 0; x < (int)panel.xMin - 20; x += 4)
+                    {
+                        Color32 a = skyBefore.Px[y * skyBefore.W + x], b = skyAfter.Px[y * skyAfter.W + x];
+                        if (a.b <= a.r + 20) continue; // (only what was sky blue before)
+                        skyPx++;
+                        if (b.r > a.r + 25 && b.b < a.b - 25) turned++;
+                    }
+            Check(skyPx > 0 && turned > skyPx * 0.3f, $"the sky changes colour beside the colour screen while you drag ({turned} of {skyPx} sky-blue samples turned orange)");
             Check(ColorSlots.Same(ColorSlots.Sky.Value, picked) && PlayerPrefs.GetString(skyKey, "") == savedBefore, $"dragging in the picker shows the colour straight away (#{ColorUtility.ToHtmlStringRGB(ColorSlots.Sky.Value)}), not saved yet");
             Hud.TestPick(0.07f, 0.55f, 0.95f, true);
             Check(PlayerPrefs.GetString(skyKey, "") == ColorUtility.ToHtmlStringRGB(picked), "let go: the picked colour is saved");
@@ -282,9 +460,53 @@ namespace RockGame
                 }
             Check(Hud.PickerSlot == ColorSlots.Hands.Index && !ColorSlots.HandsTeam && ColorSlots.Same(ColorSlots.Hands.Value, hc) && handRs > 0 && handOk == handRs,
                 $"the picker on the hands: their own colour, on the hands ({handOk} / {handRs} hand meshes)");
+            Hud.SetColourSide(true);
+            yield return new WaitForSeconds(0.4f);
+            yield return Shot("colour_screen_left");
+            Check(Hud.ColourPanel.xMin < Screen.width * 0.1f, "the colour screen can swap to the other side");
+            Hud.SetColourSide(false);
+            Check(Hud.BackOut() && pc.Paused && !Hud.ColourScreenOpen, "Esc on the colour screen goes back to Display (still paused)");
+            yield return new WaitForSeconds(0.4f);
+            yield return Shot("colour_screen_back_to_display");
             pc.Paused = false;
             yield return new WaitForSeconds(0.5f);
             yield return Shot("picker_hands_in_game");
+
+            // ---- about to win: the last seconds count down with no coloured border round the screen ----
+            {
+                var game = NetGame.Instance;
+                if (game.WallUp)
+                {
+                    me.DevRpc(DevCmd.DropWallNow);
+                    float until = Time.time + 8f;
+                    while (Time.time < until && game.S != GameState.BallLive) yield return null;
+                }
+                pc.LocalTeleport(spot + Vector3.up * 0.1f, sunYaw + 28f);
+                pc.SetLook(sunYaw + 28f, Mathf.Max(-24f, sunPitch + 22f));
+                yield return new WaitForSeconds(1.2f);
+                ScreenStats before = default, during = default;
+                yield return Grab(s => before = s);
+                var ball = Ball.Instance;
+                ball.ServerSocket(team);
+                game.DevSetTimeLeft(7.4f); // (grabbed just before the tick to 7: when the old border pulsed strongest)
+                yield return new WaitForSeconds(0.25f);
+                yield return Grab(s => during = s);
+                yield return Shot("win_countdown");
+                yield return new WaitForSeconds(0.6f);
+                yield return Shot("win_countdown_b");
+                float bw = 50f * Mathf.Max(0.75f, Screen.height / 900f);
+                float edge = 0f;
+                foreach (var band in new[] { new Rect(0, Screen.height * 0.3f, bw, Screen.height * 0.4f), new Rect(Screen.width - bw, Screen.height * 0.3f, bw, Screen.height * 0.4f) })
+                {
+                    Color a = Region(before, band), b = Region(during, band);
+                    edge = Mathf.Max(edge, Mathf.Max(Mathf.Abs(a.r - b.r), Mathf.Max(Mathf.Abs(a.g - b.g), Mathf.Abs(a.b - b.b))));
+                }
+                Check(game.S == GameState.BallLive && game.TimeLeft < 10f && ball.SocketTeam.Value == team && edge < 0.04f,
+                    $"about to win: the countdown is up ({game.TimeLeft:0.0} s, YOU WIN IN) with no coloured border (the screen's edges changed by {edge * 255f:0} of 255)");
+                game.DevSetTimeLeft(600f);
+                ball.ServerPlaceInDome();
+                yield return new WaitForSeconds(0.5f);
+            }
 
             // ---- put this PC's settings back ----
             ColorSlots.Set(ColorSlots.Sky, skyWas, false);
@@ -295,6 +517,8 @@ namespace RockGame
             if (hadTeamPref) PlayerPrefs.SetInt("RockGame.HandsTeam", teamPref); else PlayerPrefs.DeleteKey("RockGame.HandsTeam");
             PlayerPrefs.Save();
             GameSettings.SetPostFx(pOn, pB, pV, pG, pBs, pVs, pGs, false);
+            for (int i = 0; i < GameSettings.PostExtraCount; i++) GameSettings.SetPostExtra((GameSettings.PostExtra)i, xWasOn[i], xWasStr[i], false);
+            GameSettings.SetShowFps(fpsWas, false);
             Log("ui test done");
             yield return new WaitForSeconds(0.5f);
             Application.Quit(0);

@@ -117,6 +117,7 @@ namespace RockGame.EditorTools
         [MenuItem("Rock Game/Build Windows Player")]
         public static void BuildWindows()
         {
+            EnsurePostFxVariants();
             var opts = new BuildPlayerOptions
             {
                 scenes = new[] { ScenePath },
@@ -127,6 +128,28 @@ namespace RockGame.EditorTools
             var report = BuildPipeline.BuildPlayer(opts);
             Debug.Log($"[RockGame] Build result: {report.summary.result}, errors: {report.summary.totalErrors}, size: {report.summary.totalSize / (1024 * 1024)} MB");
             if (Application.isBatchMode && report.summary.result != BuildResult.Succeeded) EditorApplication.Exit(1);
+        }
+
+        /// <summary>
+        /// URP strips the post processing shader variants that no volume profile in Assets uses. The extra looks in
+        /// Settings > Display (PostFx.cs) make their profile at runtime, so this profile - never used in the game - is
+        /// only here so depth of field, film grain and chromatic aberration stay in the build.
+        /// </summary>
+        static void EnsurePostFxVariants()
+        {
+            const string path = "Assets/Settings/PostFxVariants.asset";
+            if (AssetDatabase.LoadAssetAtPath<VolumeProfile>(path) != null) return;
+            var p = ScriptableObject.CreateInstance<VolumeProfile>();
+            AssetDatabase.CreateAsset(p, path);
+            foreach (var t in new[] { typeof(UnityEngine.Rendering.Universal.DepthOfField), typeof(UnityEngine.Rendering.Universal.FilmGrain), typeof(UnityEngine.Rendering.Universal.ChromaticAberration) })
+            {
+                var c = p.Add(t, false);
+                c.name = t.Name;
+                c.hideFlags = HideFlags.HideInInspector | HideFlags.HideInHierarchy;
+                AssetDatabase.AddObjectToAsset(c, p);
+            }
+            EditorUtility.SetDirty(p);
+            AssetDatabase.SaveAssets();
         }
 
         /// <summary>Batch entry point: setup then build.</summary>

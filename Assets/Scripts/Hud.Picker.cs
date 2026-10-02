@@ -3,9 +3,10 @@ using UnityEngine;
 namespace RockGame
 {
     /// <summary>
-    /// Settings > Display: the colour picker for a world colour (and the first-person hands) - a saturation / brightness
-    /// square and a hue strip (textures made here) dragged with the mouse, the colour before and now side by side, Revert
-    /// and Close. The colour shows on everything while you drag and is saved when you let go. Also the POST PROCESSING rows.
+    /// Settings > Display > World colours: the colour picker for a world colour (and the first-person hands) - a saturation /
+    /// brightness square and a hue strip (textures made here) dragged with the mouse, the colour before and now side by
+    /// side, Revert and Close. The colour shows on everything while you drag and is saved when you let go. Also the POST
+    /// PROCESSING rows (and their extra looks) in Settings > Display.
     /// </summary>
     public partial class Hud
     {
@@ -104,8 +105,8 @@ namespace RockGame
             return hsv;
         }
 
-        /// <summary>The picker panel, under the colour's row.</summary>
-        void DrawColourPicker(ColorSlots.Slot s, Color shown, bool teamHands)
+        /// <summary>The picker panel, under the colour's row (avail: the width there is for it).</summary>
+        void DrawColourPicker(ColorSlots.Slot s, Color shown, bool teamHands, float avail)
         {
             float k = m_Scale;
             int i = s.Index;
@@ -117,10 +118,11 @@ namespace RockGame
                 m_HsvOf[i] = shown;
             }
             var hsv = m_Hsv[i];
-            float sq = Mathf.Round(176 * k), strip = Mathf.Round(26 * k), pad = Mathf.Round(10 * k), infoW = Mathf.Round(300 * k);
+            float sq = Mathf.Round(176 * k), strip = Mathf.Round(26 * k), pad = Mathf.Round(10 * k), indent = Mathf.Round(12 * k);
+            float infoW = Mathf.Round(Mathf.Clamp(avail - indent - pad * 4 - sq - strip, 170 * k, 300 * k));
             float aw = pad * 4 + sq + strip + infoW, ah = sq + pad * 2;
             GUILayout.BeginHorizontal();
-            GUILayout.Space(24 * k);
+            GUILayout.Space(indent);
             var area = GUILayoutUtility.GetRect(aw, ah, GUILayout.Width(aw), GUILayout.Height(ah));
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
@@ -229,7 +231,8 @@ namespace RockGame
             on = ToggleBtn(on, on ? "On" : "Off", GUILayout.Width(110 * k), GUILayout.Height(30 * k));
             if (GameSettings.GraphicsMode != 0) GUILayout.Label("<color=#bbbbbb>   (not in PSX / AI PSX - they keep their own look)</color>", m_Small, GUILayout.Height(30 * k));
             GUILayout.FlexibleSpace();
-            if (Btn("Defaults", GUILayout.Width(110 * k), GUILayout.Height(30 * k))) { on = bloom = vig = grade = true; bs = vs = gs = 0.5f; }
+            bool defaults = Btn("Defaults", GUILayout.Width(110 * k), GUILayout.Height(30 * k));
+            if (defaults) { on = bloom = vig = grade = true; bs = vs = gs = 0.5f; }
             GUILayout.EndHorizontal();
             if (on)
             {
@@ -239,6 +242,23 @@ namespace RockGame
             }
             GameSettings.SetPostFx(on, bloom, vig, grade, Mathf.Round(bs * 20f) / 20f, Mathf.Round(vs * 20f) / 20f, Mathf.Round(gs * 20f) / 20f);
             GUILayout.Label("<color=#bbbbbb>Bloom: a soft glow round the brightest things (the sun, sky, sparks). Vignette: slightly darker corners. Colour grading: a little more colour and contrast (same hues). Off is exactly the plain look (and a little faster).</color>", m_SmallWrap);
+            // the extra looks: each off to start with (Defaults switches them all off again)
+            if (on)
+            {
+                GUILayout.Space(4 * k);
+                GUILayout.Label("<color=#9ab8d8><b>EXTRA LOOKS</b></color>  <color=#bbbbbb>off to start with · each costs a little more on a laptop</color>", m_SmallWrap);
+                for (int i = 0; i < GameSettings.PostExtraCount; i++)
+                {
+                    var e = (GameSettings.PostExtra)i;
+                    bool x = GameSettings.PostExtraOn(e);
+                    float xs = GameSettings.PostExtraStrength(e);
+                    x = EffectRow(GameSettings.PostExtraNames[i], x, ref xs);
+                    if (defaults) { x = false; xs = 0.5f; }
+                    GameSettings.SetPostExtra(e, x, Mathf.Round(xs * 20f) / 20f);
+                }
+                GUILayout.Label("<color=#bbbbbb>Outlines: dark ink lines round things and along sharp folds, fading with distance. Ambient occlusion: deeper soft shadows in corners, creases and under things. Distance haze: far things fade into a pale sky colour. Depth of field: far away goes softly out of focus. Film grain: fine animated noise. Chromatic aberration: a hint of colour fringing towards the edges. Sharpen: crisper edges. Cel banding: the light falls in a few flat steps, like a cartoon.</color>", m_SmallWrap);
+            }
+            else if (defaults) for (int i = 0; i < GameSettings.PostExtraCount; i++) GameSettings.SetPostExtra((GameSettings.PostExtra)i, false, 0.5f);
         }
 
         /// <summary>"[Effect on/off]  [----o----]  50%".</summary>
@@ -247,7 +267,7 @@ namespace RockGame
             float k = m_Scale;
             GUILayout.BeginHorizontal();
             GUILayout.Space(16 * k);
-            on = ToggleBtn(on, name, GUILayout.Width(194 * k), GUILayout.Height(28 * k));
+            on = ToggleBtn(on, name, GUILayout.Width(214 * k), GUILayout.Height(28 * k));
             GUILayout.Space(10 * k);
             GUI.enabled = on;
             GUILayout.BeginVertical();
