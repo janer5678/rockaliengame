@@ -410,7 +410,7 @@ namespace RockGame
             {
                 case Item.BuildingPlan:
                     if (pc.DemolishMode) return "<b>Demolish</b>    LMB: take down your own piece (half the wood back)    hold RMB: building wheel";
-                    return $"<b>{Cfg.PieceName(pc.BuildPiece)}</b>  ({Cfg.PieceWood(pc.BuildPiece)} {Cfg.CurrencyName})    hold RMB: building wheel   R: rotate stairs   " + (Cfg.WoodMode ? "" : "F: upgrade to stone   ") + "X: demolish yours";
+                    return $"<b>{Cfg.PieceName(pc.BuildPiece)}</b>  ({Cfg.PieceWood(pc.BuildPiece)} {Cfg.CurrencyName})    hold RMB: building wheel   R: rotate stairs   " + (Cfg.WoodMode || Tutorial.HideStone ? "" : "F: upgrade to stone   ") + "X: demolish yours";
                 case Item.Ram: return $"<b>Battering Ram</b> ({s.Data} hit{(s.Data == 1 ? "" : "s")} left)    hold LMB at an enemy piece: wood breaks instantly, stone / metal / refined drop one step";
                 case Item.Spear: return "<b>Spear</b>    LMB: stab    hold RMB + LMB: throw    E: pick thrown spears back up";
                 case Item.Bow: return $"<b>Bow</b>  ({me.Count(Item.Arrow)} arrows)    hold LMB to draw, release to fire";
@@ -429,7 +429,7 @@ namespace RockGame
                 case Item.Saddle: return $"<b>Saddle</b> ({Cfg.TeamLabel(s.Data > 0 ? s.Data - 1 : me.Team.Value)})    walk up to a wild horse and press E to saddle and ride it";
                 case Item.Meat: return $"<b>Horse Meat</b>    RMB: eat ({Cfg.MeatEatTime:0.#}s, heals you fully)";
                 case Item.Sniper: return $"<b>Sniper Rifle</b> ({s.Data} shots)    hold RMB: scope   LMB: fire - one hit kills (a helmet stops a headshot)";
-                case Item.PortalGun: return $"<b>Portal Gun</b> (never runs out - {(s.Data == 1 ? "next shot links the pair" : "next shot starts a new pair")})    LMB: shoot a portal onto any surface";
+                case Item.PortalGun: return "<b>Portal Gun</b> (one shot)    LMB: a portal opens where you stand and another where you shoot (any surface) - then it's used up";
                 case Item.Jetpack: return $"<b>Jetpack</b> (fuel {s.Data}%)    hold Space to fly";
                 case Item.SlenderEgg: return "<b>Slenderman Egg</b>    LMB: throw it - Slenderman hatches and hunts your enemy";
                 case Item.BuildEgg: return "<b>Build Egg</b>    LMB: throw it - blocks appear along its path to walk on";
@@ -506,7 +506,7 @@ namespace RockGame
             string count = s.Count > 1 ? s.Count.ToString() : s.Id == Item.Bow && me != null ? me.Count(Item.Arrow) + "a" : "";
             if (count != "")
                 Shadowed(new Rect(r.x, r.yMax - 22 * m_Scale, r.width - 5, 20 * m_Scale), count, new GUIStyle(m_Small) { alignment = TextAnchor.LowerRight });
-            if (Cfg.MaxData(s.Id) > 0 && s.Id != Item.PortalGun) // (the portal gun never runs out)
+            if (Cfg.MaxData(s.Id) > 0)
             {
                 float d = Mathf.Clamp01(s.Data / (float)Mathf.Max(1, Cfg.MaxData(s.Id)));
                 Fill(new Rect(r.x + 4, r.yMax - 6, (r.width - 8), 3), new Color(0, 0, 0, 0.6f));
@@ -782,7 +782,7 @@ namespace RockGame
             GUI.DrawTexture(new Rect(c.x - R * 0.32f, c.y - R * 0.32f, R * 0.64f, R * 0.64f), s_Disc);
             GUI.color = old;
             var o = opts[Mathf.Clamp(WheelHover, 0, opts.Length - 1)];
-            string cost = o.Demolish ? "your own pieces\nhalf the wood back" : o.Upgrade ? (Cfg.WoodMode ? "not in wood mode" : "to stone\nLMB on your piece") : $"{Cfg.PieceWood(o.Piece)} {Cfg.CurrencyName}";
+            string cost = o.Demolish ? "your own pieces\nhalf the wood back" : o.Upgrade ? (Cfg.WoodMode ? "not in wood mode" : Tutorial.HideStone ? "after the tutorial" : "to stone\nLMB on your piece") : $"{Cfg.PieceWood(o.Piece)} {Cfg.CurrencyName}";
             var title = new GUIStyle(m_Center) { fontStyle = FontStyle.Bold, fontSize = Mathf.RoundToInt(20 * k) };
             title.normal.textColor = o.Demolish ? new Color(1f, 0.5f, 0.4f) : Color.white;
             GUI.Label(new Rect(c.x - 100 * k, c.y - 28 * k, 200 * k, 26 * k), o.Label.ToUpper(), title);

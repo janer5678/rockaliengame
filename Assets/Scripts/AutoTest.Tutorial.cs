@@ -8,6 +8,8 @@ namespace RockGame
     /// The tutorial test (-autotest modes -rules tutorial, on a host with -solo, or a host plus a client that joins it):
     /// plays the whole tutorial step by step, mostly with pretend key presses (Binds.TestHold / TestPress) that go
     /// through the same gates as real keys, and checks that every control is locked until the step that teaches it.
+    /// No stone anywhere; the ball is captured before the workbench (that's what unlocks it). With two players the host
+    /// captures the ball first, then the client steals it out of the host's machine (E) and captures it for its own team.
     /// </summary>
     public partial class AutoTest
     {
@@ -120,8 +122,17 @@ namespace RockGame
                 && Tutorial.UnlockStep(TutFeature.Crouch) < Tutorial.UnlockStep(TutFeature.Slide) && Tutorial.UnlockStep(TutFeature.Slide) < Tutorial.UnlockStep(TutFeature.Hit)
                 && Tutorial.UnlockStep(TutFeature.Hit) < Tutorial.UnlockStep(TutFeature.Inventory) && Tutorial.UnlockStep(TutFeature.Inventory) < Tutorial.UnlockStep(TutFeature.Craft)
                 && Tutorial.UnlockStep(TutFeature.Craft) < Tutorial.UnlockStep(TutFeature.Build) && Tutorial.UnlockStep(TutFeature.Build) < Tutorial.UnlockStep(TutFeature.Demolish)
-                && Tutorial.UnlockStep(TutFeature.Demolish) < Tutorial.UnlockStep(TutFeature.Workbench) && Tutorial.UnlockStep(TutFeature.Workbench) < ids.IndexOf("glass"),
-                "the steps go look > move > run/jump > crouch > slide > hit > bag > craft > build > break your own > workbench > the wall");
+                && Tutorial.UnlockStep(TutFeature.Demolish) < ids.IndexOf("glass") && ids.IndexOf("glass") < ids.IndexOf("score") && ids.IndexOf("score") < ids.IndexOf("bench")
+                && ids.IndexOf("bench") < Tutorial.UnlockStep(TutFeature.Workbench),
+                "the steps go look > move > run/jump > crouch > slide > hit > bag > craft > build > break your own > the wall > capture the ball > workbench");
+            Check(!ids.Contains("stone") && !ids.Contains("mine") && !ids.Contains("pickaxe") && !ids.Contains("ram"), $"no stone steps in the tutorial ({string.Join(" ", ids)})");
+            {
+                // nothing the tutorial teaches you to craft needs stone
+                bool noStone = true;
+                foreach (var it in new[] { Item.Hatchet, Item.BuildingPlan, Item.Spear, Item.Workbench })
+                    noStone &= Cfg.RecipeIndex(it) >= 0 && Cfg.GetRecipe(Cfg.RecipeIndex(it)).Stone == 0;
+                Check(noStone, "nothing the tutorial has you craft needs stone (hatchet, building plan, spear, workbench)");
+            }
 
             // ---- step 1: you can only look around ----
             var spawn = Cfg.SpawnPos(team, me.Slot.Value);
@@ -361,72 +372,12 @@ namespace RockGame
                 yield return TutPress(Bind.Interact, 0.6f);
                 if (me.Count(Item.Spear) == 0) { Log("(E didn't pick the spear up - by RPC)"); me.PickupItemRpc(sid); }
             }
-            yield return TutWaitStep("stone");
-            Check(Tutorial.StepId == "stone" && me.Count(Item.Spear) == 1, $"({who}) picked the spear back up ({Tutorial.StepId})");
-
-            // ---- stone with the rock ----
-            yield return Hold(me, Item.Rock);
-            yield return TutHitNodes(me, pc, ResourceNode.Boulder, () => Tutorial.StepId != "stone", 25f);
-            if (Tutorial.StepId == "stone") { me.DevRpc(DevCmd.GiveStone); yield return TutWaitStep("bench"); }
-            Check(Tutorial.StepId == "bench" && !Tutorial.Allows(TutFeature.Deploy) && !Tutorial.Allows(TutFeature.Workbench), $"({who}) 10 stone ({me.Count(Item.Stone)}) ticks the stone step off ({Tutorial.StepId})");
-
-            // ---- the workbenches: craft a T1, put it down in the base (on the grass, not the bedrock), see the T1 list,
-            //      craft a T2 from it, put that down, craft a pickaxe from the T2 list ----
-            pc.LocalTeleport(spawn, Cfg.SpawnYaw(team));
-            yield return new WaitForSeconds(0.3f);
-            me.CraftRpc(Cfg.CraftIndexOf(Item.Crossbow));
-            yield return new WaitForSeconds(0.6f);
-            Check(me.Count(Item.Crossbow) == 0, $"({who}) no crossbow before there's a workbench");
-            me.CraftRpc(Cfg.RecipeIndex(Item.Workbench));
-            yield return TutWaitStep("placebench");
-            Check(Tutorial.StepId == "placebench" && me.Count(Item.Workbench) == 1 && Tutorial.Allows(TutFeature.Deploy), $"({who}) crafted a Workbench T1 ({Tutorial.StepId})");
-            yield return TutSelect(me, Item.Workbench);
-            yield return TutShot("placebench");
-            var grassSpot = Cfg.BaseCenter[team] - Cfg.BackDir(team) * 7f + Vector3.Cross(Vector3.up, Cfg.BackDir(team)) * (host ? 3f : -3f);
-            grassSpot.y = MapBuilder.Height(grassSpot.x, grassSpot.z);
-            var nearGrass = grassSpot + Cfg.BackDir(team) * 2.5f;
-            nearGrass.y = MapBuilder.Height(nearGrass.x, nearGrass.z) + 0.1f;
-            pc.LocalTeleport(nearGrass, Quaternion.LookRotation(-Cfg.BackDir(team)).eulerAngles.y);
-            yield return new WaitForSeconds(0.4f);
-            me.PlaceDeployableRpc((byte)Item.Workbench, grassSpot, Workbench.DefaultYaw(team));
-            yield return TutWaitStep("newcrafts");
-            var bench = Workbench.ForTeam(team, 1);
-            Check(Tutorial.StepId == "newcrafts" && bench != null, $"({who}) put the Workbench T1 down on the grass in the base ({Tutorial.StepId})");
-            if (bench == null) yield break;
-            Check(Tutorial.AllowsItem(Item.Crossbow) && Tutorial.AllowsItem(Item.Workbench2) && Cfg.CraftTierAt(team, me.transform.position) == 1, $"({who}) the T1 items are unlocked");
-            yield return TutPress(Bind.Inventory);
-            yield return TutWaitStep("bench2");
-            Check(Tutorial.StepId == "bench2", $"({who}) opening the bag in the base shows the T1 list ({Tutorial.StepId})");
-            yield return TutShot("bag_t1");
-            if (me.Count(Item.Wood) < Cfg.Workbench2Wood + 200) me.DevRpc(DevCmd.GiveWood);
-            yield return new WaitForSeconds(0.4f);
-            me.CraftRpc(Cfg.RecipeIndex(Item.Workbench2));
-            yield return TutWaitStep("placebench2");
-            Check(Tutorial.StepId == "placebench2" && me.Count(Item.Workbench2) == 1, $"({who}) crafted a Workbench T2 from the T1 list ({Tutorial.StepId})");
-            yield return TutPress(Bind.Inventory); // (close the bag)
-            yield return TutSelect(me, Item.Workbench2);
-            pc.LocalTeleport(spawn, Cfg.SpawnYaw(team));
-            yield return new WaitForSeconds(0.4f);
-            me.PlaceDeployableRpc((byte)Item.Workbench2, Workbench.DefaultPos(team, 2), Workbench.DefaultYaw(team));
-            yield return TutWaitStep("pickaxe");
-            Check(Tutorial.StepId == "pickaxe" && Workbench.ForTeam(team, 2) != null, $"({who}) put the Workbench T2 down ({Tutorial.StepId})");
-            yield return TutPress(Bind.Inventory);
-            yield return TutShot("bag_t2");
-            me.CraftRpc(Cfg.CraftIndexOf(Item.Pickaxe));
-            yield return TutWaitStep("mine");
-            Check(Tutorial.StepId == "mine" && me.Count(Item.Pickaxe) == 1, $"({who}) crafted a pickaxe from the T2 list ({Tutorial.StepId})");
-            yield return TutPress(Bind.Inventory);
-
-            // ---- mine with it, then a ram ----
-            yield return TutSelect(me, Item.Pickaxe);
-            yield return TutHitNodes(me, pc, ResourceNode.Boulder, () => Tutorial.StepId != "mine", 20f);
-            if (Tutorial.StepId == "mine") { me.DevRpc(DevCmd.GiveStone); yield return TutWaitStep("ram"); }
-            Check(Tutorial.StepId == "ram" && !Tutorial.Allows(TutFeature.Health), $"({who}) 50 stone ticks off the mine step; the health bar's still hidden ({Tutorial.StepId})");
-            pc.LocalTeleport(spawn, Cfg.SpawnYaw(team));
-            yield return new WaitForSeconds(0.3f);
-            me.CraftRpc(Cfg.RecipeIndex(Item.Ram));
             yield return TutWaitStep("berry");
-            Check(Tutorial.StepId == "berry" && me.Count(Item.Ram) == 1 && Tutorial.Allows(TutFeature.Health), $"({who}) crafted a ram; the health bar shows ({Tutorial.StepId})");
+            Check(Tutorial.StepId == "berry" && me.Count(Item.Spear) == 1 && Tutorial.Allows(TutFeature.Health) && !Tutorial.AllowsItem(Item.Workbench) && !Tutorial.AllowsItem(Item.Ram),
+                $"({who}) picked the spear back up - no stone steps, straight on to food (the health bar shows; no workbench or ram yet) ({Tutorial.StepId})");
+            Check(!Cfg.BenchUnlocked(team), $"({who}) our workbench is still locked (the ball hasn't been captured)");
+            Check(Tutorial.HideStone && !Tutorial.Allows(TutFeature.Upgrade) && !Binds.Name(Bind.Upgrade).Equals(""),
+                $"({who}) no stone in the tutorial: the HUD leaves the stone count and \"F: upgrade to stone\" out, and stone upgrades wait until it's done");
 
             // ---- food: pick a bush (E), eat (RMB) ----
             var bush = TutNearest(ResourceNode.Bush, me);
@@ -506,28 +457,112 @@ namespace RockGame
             yield return new WaitForSeconds(3f);
             yield return TutShot("walldown");
 
-            // the ball: run to it, grab it, take it home, guard it
+            // the ball: run to it, grab it, take it home (that captures it: our workbench unlocks), guard it
             var ball = Ball.Instance;
             if (ball == null) yield break;
             pc.LocalTeleport(ball.transform.position + new Vector3(1.5f, 0.1f, host ? 0f : 3f), 270f);
             yield return new WaitForSeconds(2f);
             Check(Tutorial.StepId == "grab", $"({who}) getting to the ball ticks it off ({Tutorial.StepId})");
-            if (!host) { yield return new WaitForSeconds(5f); yield break; }
-            me.PickupBallRpc();
-            yield return new WaitForSeconds(2f);
-            Check(me.CarryingBall && Tutorial.StepId == "score", $"picked up the ball ({Tutorial.StepId})");
+            int notices0 = NetGame.BenchUnlockNotices;
+            if (!host)
+            {
+                // a second player: the host takes the ball home first; once it's done, we steal it out of its machine (E)
+                until = Time.time + 300f;
+                while (Time.time < until)
+                {
+                    bool hostDone = false;
+                    foreach (var p in PlayerNet.All) if (p != null && p != me && p.TutStep.Value == Tutorial.FinishedStep) hostDone = true;
+                    if (hostDone && ball.SocketTeam.Value >= 0 && !ball.IsCarried) break;
+                    yield return null;
+                }
+                int their = ball.SocketTeam.Value;
+                Check(their >= 0 && their != team, $"({who}) the host captured the ball first (it's in team {their}'s machine)");
+                if (their >= 0)
+                {
+                    var sp = Cfg.SocketPos(their);
+                    var toSpawn = Cfg.SpawnPos(their) - sp;
+                    toSpawn.y = 0;
+                    var steal = sp + toSpawn.normalized * 1.5f;
+                    steal.y = Cfg.SpawnPos(their).y;
+                    pc.LocalTeleport(steal, Quaternion.LookRotation(-toSpawn).eulerAngles.y);
+                    yield return new WaitForSeconds(0.6f);
+                    me.PickupBallRpc();
+                    yield return new WaitForSeconds(1f);
+                }
+            }
+            else
+            {
+                me.PickupBallRpc();
+                yield return new WaitForSeconds(2f);
+            }
+            Check(me.CarryingBall && Tutorial.StepId == "score", $"({who}) picked up the ball ({Tutorial.StepId})");
             yield return TutShot("score");
-            pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team) + 180f);
+            pc.LocalTeleport(Cfg.SpawnPos(team, me.Slot.Value), Cfg.SpawnYaw(team) + 180f);
             yield return new WaitForSeconds(0.5f);
             me.ThrowBallRpc(me.EyePos, (Cfg.SocketPos(team) - me.EyePos).normalized, Vector3.zero);
             yield return new WaitForSeconds(2.5f);
-            Check(ball.SocketTeam.Value == team && Tutorial.StepId == "guard", $"the ball is in my machine, now guard it ({Tutorial.StepId})");
+            Check(ball.SocketTeam.Value == team && Tutorial.StepId == "guard" && Cfg.BenchUnlocked(team),
+                $"({who}) the ball is in my machine: that captures it and unlocks our workbench; now guard it ({Tutorial.StepId}, unlocked {Cfg.BenchUnlocked(team)})");
+            Check(NetGame.BenchUnlockNotices == notices0, $"({who}) the WORKBENCH UNLOCKED notice waits for the workbench step");
             yield return TutShot("guard");
-            yield return new WaitForSeconds(7f);
-            Check(Tutorial.Finished && Tutorial.Allows(TutFeature.Move) && Tutorial.AllowsItem(Item.Bow) && Tutorial.AllowsItem(Item.Chest) && me.TutStep.Value == Tutorial.FinishedStep,
-                "guarding the machine finishes the tutorial; everything is unlocked (the bow and chest too)");
+            yield return TutWaitStep("bench", 9f);
+
+            // ---- the workbench: unlocked by the capture - craft a T1, put it down, see its list ----
+            yield return new WaitForSeconds(0.3f);
+            Check(Tutorial.StepId == "bench" && Tutorial.AllowsItem(Item.Workbench) && NetGame.BenchUnlockNotices == notices0 + 1 && Hud.LastBanner.Contains("WORKBENCH UNLOCKED"),
+                $"({who}) guarding ticks off; the workbench step says WORKBENCH UNLOCKED ({Tutorial.StepId}, \"{Hud.LastBanner}\")");
+            me.CraftRpc(Cfg.CraftIndexOf(Item.Crossbow));
+            yield return new WaitForSeconds(0.6f);
+            Check(me.Count(Item.Crossbow) == 0, $"({who}) no crossbow before there's a workbench");
+            if (me.Count(Item.Wood) < Cfg.WorkbenchWood + 50) me.DevRpc(DevCmd.GiveWood);
+            pc.LocalTeleport(spawn, Cfg.SpawnYaw(team));
+            yield return new WaitForSeconds(0.4f);
+            yield return TutPress(Bind.Inventory);
+            for (int i = 0; i < 3; i++) yield return null;
+            string benchRow = RowState(Item.Workbench);
+            yield return TutShot("bench");
+            Check(benchRow == "ok", $"({who}) in the bag the Workbench T1 has a green CRAFT ({benchRow})");
+            me.CraftRpc(Cfg.RecipeIndex(Item.Workbench));
+            yield return TutWaitStep("placebench");
+            Check(Tutorial.StepId == "placebench" && me.Count(Item.Workbench) == 1 && Tutorial.Allows(TutFeature.Deploy), $"({who}) crafted a Workbench T1 ({Tutorial.StepId})");
+            yield return TutPress(Bind.Inventory); // (close the bag)
+            yield return TutSelect(me, Item.Workbench);
+            yield return TutShot("placebench");
+            var grassSpot = Cfg.BaseCenter[team] - Cfg.BackDir(team) * 7f + Vector3.Cross(Vector3.up, Cfg.BackDir(team)) * (host ? 3f : -3f);
+            grassSpot.y = MapBuilder.Height(grassSpot.x, grassSpot.z);
+            var nearGrass = grassSpot + Cfg.BackDir(team) * 2.5f;
+            nearGrass.y = MapBuilder.Height(nearGrass.x, nearGrass.z) + 0.1f;
+            pc.LocalTeleport(nearGrass, Quaternion.LookRotation(-Cfg.BackDir(team)).eulerAngles.y);
+            yield return new WaitForSeconds(0.4f);
+            me.PlaceDeployableRpc((byte)Item.Workbench, grassSpot, Workbench.DefaultYaw(team));
+            yield return TutWaitStep("newcrafts");
+            var bench = Workbench.ForTeam(team, 1);
+            Check(Tutorial.StepId == "newcrafts" && bench != null, $"({who}) put the Workbench T1 down on the grass in the base ({Tutorial.StepId})");
+            Check(Tutorial.AllowsItem(Item.Crossbow) && Tutorial.AllowsItem(Item.Workbench2) && Cfg.CraftTierAt(team, me.transform.position) == 1, $"({who}) the T1 items are unlocked");
+            yield return TutPress(Bind.Inventory);
+            yield return new WaitForSeconds(0.4f);
+            yield return TutShot("bag_t1");
+            yield return new WaitForSeconds(1.5f);
+            Check(Tutorial.Finished && Tutorial.Allows(TutFeature.Move) && Tutorial.AllowsItem(Item.Bow) && Tutorial.AllowsItem(Item.Chest) && Tutorial.AllowsItem(Item.Ram) && me.TutStep.Value == Tutorial.FinishedStep,
+                $"({who}) opening the bag in the base shows the T1 list and finishes the tutorial; everything is unlocked (the bow, chest and ram too)");
+            yield return TutPress(Bind.Inventory);
             yield return TutShot("done");
-            if (!Bootstrap.Solo) yield return new WaitForSeconds(15f); // let the client finish
+            if (host && !Bootstrap.Solo)
+            {
+                // let the other player steal the ball and finish too
+                until = Time.time + 300f;
+                while (Time.time < until)
+                {
+                    bool all = true;
+                    foreach (var p in PlayerNet.All) if (p != null && p.TutStep.Value != Tutorial.FinishedStep) all = false;
+                    if (all) break;
+                    yield return null;
+                }
+                bool allDone = true;
+                foreach (var p in PlayerNet.All) allDone &= p != null && p.TutStep.Value == Tutorial.FinishedStep;
+                Check(allDone, $"every player finished the tutorial ({PlayerNet.All.Count} players)");
+                yield return new WaitForSeconds(3f);
+            }
         }
     }
 }

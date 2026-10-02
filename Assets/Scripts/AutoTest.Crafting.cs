@@ -6,10 +6,11 @@ namespace RockGame
 {
     /// <summary>
     /// -autotest craftui (with -host -solo -fast -shotdir DIR, any -rules): the TAB crafting list with no workbench
-    /// (starter items only), crafting and placing a Workbench T1 anywhere in the base (not outside it, not in the enemy's,
-    /// one per team, unbreakable, E opens nothing), the T1 items showing up in the list only while you're in your base,
-    /// crafting them straight into the inventory, then the Workbench T2 (needs the T1) and its items - with screenshots
-    /// of each list and of both benches.
+    /// (starter items only, the Workbench T1 grey and locked until the ball's been captured - here by putting it in our
+    /// socket, with the "WORKBENCH UNLOCKED" notice), crafting and placing a Workbench T1 anywhere in the base (not outside
+    /// it, not in the enemy's, one per team, unbreakable, E opens nothing), the T1 items showing up in the list only while
+    /// you're in your base, crafting them straight into the inventory, then the Workbench T2 (2000, needs the T1) and its
+    /// items - the list then scrolls (scroll bar) - with screenshots of each list and of both benches.
     /// Also BenchBuy: crafts a workbench-tier item like a player would (for the other tests).
     /// </summary>
     public partial class AutoTest
@@ -110,7 +111,7 @@ namespace RockGame
             string P(string what) => $"craftui_{rn}_{Screen.width}_{what}";
             var spawn = Cfg.SpawnPos(team);
             pc.LocalTeleport(spawn, Cfg.SpawnYaw(team));
-            for (int i = 0; i < 6; i++) me.ServerGive(cur, 1000);
+            for (int i = 0; i < 10; i++) me.ServerGive(cur, 1000);
             if (!Cfg.WoodMode && !Cfg.DnaRules) me.ServerGive(Item.Stone, 300);
             yield return new WaitForSeconds(0.5f);
 
@@ -119,8 +120,13 @@ namespace RockGame
             bool startersOnly = true;
             foreach (var it in listed) startersOnly &= Cfg.IsStarter(it);
             Check(startersOnly && listed.Count == (Cfg.LimitedCrafting ? 4 : 8), $"TAB with no workbench: just the starter items ({string.Join(", ", listed)})");
-            pc.MenuOpen = true;
+            yield return BagRows(pc);
+            string benchRow = RowState(Item.Workbench);
+            float scroll0 = Hud.CraftScrollMax;
             yield return Snap(P("tab_nobench"));
+            if (!Cfg.LimitedCrafting)
+                Check(Cfg.Builder ? benchRow == "ok" : benchRow == "locked", $"the Workbench T1 row is {(Cfg.Builder ? "craftable (Builder: no bases, never locked)" : "grey and locked until the ball's captured")} ({benchRow})");
+            Check(scroll0 <= 0.5f, $"the starter list fits: no scroll bar ({scroll0:0} px to scroll)");
             if (Cfg.LimitedCrafting)
             {
                 Check(Cfg.RecipeIndex(Item.Workbench) < 0 && Cfg.RecipeIndex(Item.Workbench2) < 0, $"{Cfg.RulesName(Cfg.Rules)}: no workbenches");
@@ -138,6 +144,31 @@ namespace RockGame
             me.CraftRpc(Cfg.RecipeIndex(Item.Workbench2));
             yield return new WaitForSeconds(0.5f);
             Check(me.Count(Item.Crossbow) == 0 && me.Count(Item.Workbench2) == 0 && me.Count(cur) == c0, "no crossbow and no Workbench T2 without a Workbench T1");
+
+            // ---- the Workbench T1 is locked until the team captures the ball: here by putting it in our socket ----
+            if (!Cfg.Builder)
+            {
+                var g0 = NetGame.Instance;
+                bool paused0 = g0.TimerPaused.Value;
+                g0.TimerPaused.Value = true; // (no wall dropping in the middle of it: its banner would cover ours)
+                c0 = me.Count(cur);
+                me.CraftRpc(Cfg.RecipeIndex(Item.Workbench));
+                yield return new WaitForSeconds(0.5f);
+                Check(me.Count(Item.Workbench) == 0 && me.Count(cur) == c0 && !Cfg.BenchUnlocked(team), "no Workbench T1 before the ball's been captured (nothing paid)");
+                int notices = NetGame.BenchUnlockNotices;
+                var ball = Ball.Instance;
+                if (ball != null) ball.ServerSocket(team);
+                yield return new WaitForSeconds(0.6f);
+                Check(Cfg.BenchUnlocked(team) && NetGame.BenchUnlockNotices == notices + 1 && Hud.LastBanner.Contains("WORKBENCH UNLOCKED"),
+                    $"the ball in our machine unlocks it - \"{Hud.LastBanner}\"");
+                yield return Snap(P("bench_unlocked"));
+                if (ball != null) ball.ServerPlaceInDome();
+                g0.TimerPaused.Value = paused0;
+                yield return new WaitForSeconds(0.3f);
+                pc.LocalTeleport(spawn, Cfg.SpawnYaw(team));
+                yield return new WaitForSeconds(0.3f);
+            }
+            else Check(Cfg.BenchUnlocked(team), "Builder: the workbench is never locked");
 
             // ---- craft a Workbench T1 ----
             c0 = me.Count(cur);
@@ -241,7 +272,7 @@ namespace RockGame
             c0 = me.Count(cur);
             yield return CraftWait(me, Item.Workbench2);
             int price2 = Cfg.GetRecipe(Cfg.RecipeIndex(Item.Workbench2)).Wood;
-            Check(me.Count(Item.Workbench2) == 1 && c0 - me.Count(cur) == price2, $"crafted a Workbench T2 from the T1 list for {c0 - me.Count(cur)} {Cfg.CurrencyName}");
+            Check(me.Count(Item.Workbench2) == 1 && c0 - me.Count(cur) == price2 && price2 == 2000, $"crafted a Workbench T2 from the T1 list for {c0 - me.Count(cur)} {Cfg.CurrencyName} (2000)");
             var pos2 = Cfg.Builder ? me.transform.position + me.transform.forward * 3f + me.transform.right * 2f : Workbench.DefaultPos(team, 2);
             if (Cfg.Builder) pos2.y = MapBuilder.Height(pos2.x, pos2.z);
             Check(PlayerNet.DeployProblem(Item.Workbench2, team, pos2, yaw) == null, $"the T2 can go down ({PlayerNet.DeployProblem(Item.Workbench2, team, pos2, yaw) ?? "ok"})");
@@ -265,8 +296,23 @@ namespace RockGame
             for (int i = 0; i < Cfg.RecipeCount; i++) if (!listed.Contains(Cfg.GetRecipe(i).Output)) { all = false; missing.Add(Cfg.ItemName(Cfg.GetRecipe(i).Output)); }
             for (int i = 0; i < Cfg.PowerCount; i++) if (!listed.Contains(Cfg.GetPowerRecipe(i).Output)) { all = false; missing.Add(Cfg.ItemName(Cfg.GetPowerRecipe(i).Output)); }
             Check(all, $"with a T2 bench everything in this mode is in the list ({listed.Count} items{(missing.Count > 0 ? ", missing " + string.Join(", ", missing) : "")})");
-            pc.MenuOpen = true;
+            // the long list scrolls: a scroll bar on its right, the mouse wheel / dragging moves it
+            yield return BagRows(pc);
+            float max = Hud.CraftScrollMax;
             yield return Snap(P("tab_t2"));
+            Check(max > 0.5f && Hud.CraftScrollNow == 0f, $"with both benches the list is longer than the screen: it scrolls, with a scroll bar ({max:0} px to scroll at {Screen.width}x{Screen.height})");
+            Hud.TestScrollTo = 100000f;
+            for (int i = 0; i < 3; i++) yield return null;
+            Check(max > 0.5f && Mathf.Abs(Hud.CraftScrollNow - Hud.CraftScrollMax) < 0.5f, $"scrolled to the bottom ({Hud.CraftScrollNow:0} / {Hud.CraftScrollMax:0} px)");
+            yield return Snap(P("tab_t2_scrolled"));
+            Hud.TestScrollTo = Hud.CraftScrollMax * 0.5f;
+            for (int i = 0; i < 3; i++) yield return null;
+            yield return Snap(P("tab_t2_scrolled_half"));
+            pc.CloseMenu();
+            for (int i = 0; i < 6; i++) yield return null;
+            pc.MenuOpen = true;
+            for (int i = 0; i < 3; i++) yield return null;
+            Check(Hud.CraftScrollNow == 0f, "the bag opens at the top of the list again");
             pc.CloseMenu();
             yield return CraftWait(me, Item.Saddle);
             Check(me.Count(Item.Saddle) == 1, "a saddle from the T2 list, straight into the inventory");

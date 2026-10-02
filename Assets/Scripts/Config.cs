@@ -285,7 +285,7 @@ namespace RockGame
         [Tune("Mode options")] public static int AirdropItemMask = 1023;
         [Tune("Airdrop")] public static float AirdropBaseDistance = 25f; // never this close to a base
         [Tune("Airdrop")] public static float C4Fuse = 3f, C4Radius = 5f, C4PlayerDamage = 150f, C4KillRadius = 1.6f;
-        [Tune("Airdrop")] public static int SniperAmmo = 3, JetpackFuel = 100, PortalShots = 2, RocketAmmo = 3;
+        [Tune("Airdrop")] public static int SniperAmmo = 3, JetpackFuel = 100, RocketAmmo = 3; // (the portal gun is one shot: no ammo)
         [Tune("Airdrop")] public static float JetpackSeconds = 8f, JetpackThrust = 9f, GiantTime = 30f, GiantScale = 3f;
         [Tune("Airdrop")] public static float SlenderSpeed = 4.6f, SlenderHp = 150f, SlenderLife = 60f;
         [Tune("Airdrop")] public static float RocketSpeed = 32f, RocketRadius = 3.5f, RocketStructureDamage = 900f, RocketPlayerDamage = 140f;
@@ -524,7 +524,6 @@ namespace RockGame
                 case Item.Armor: return ArmorHp;
                 case Item.Sniper: return SniperAmmo;
                 case Item.Jetpack: return JetpackFuel;
-                case Item.PortalGun: return PortalShots;
                 case Item.RocketLauncher: return RocketAmmo;
                 case Item.Pistol: return PistolMag;
                 case Item.Revolver: return RevolverMag;
@@ -991,6 +990,7 @@ namespace RockGame
             (3, new[] { "RocketPlayerDamage", "HorseHp", "WoodGen1Wood", "WoodGen2Wood", "AutoWoodLevel1", "AutoWoodLevel2", "BaseRegen" }),
             (4, new[] { "SpearThrowDamage" }),
             (5, new[] { "BallGatherMul" }),
+            (6, new[] { "Workbench2Wood" }),
         };
         const string MigrateKey = "RockGame.Tunables.migrated";
 

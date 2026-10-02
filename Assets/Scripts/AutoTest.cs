@@ -381,6 +381,9 @@ namespace RockGame
             Check(CountStructures(PieceType.Foundation, team) == 1, "cannot build outside base");
             Log($"after building wood={me.Count(Item.Wood)}");
 
+            // ---- the workbench from a client: locked until the ball's captured, then craftable standing on our foundation ----
+            yield return ClientBenchCraft(me, pc, team, BuildGrid.CellCenter(ci, cj));
+
             if (m_Mode != "ball") yield break;
 
             // ---- ball capture ----
@@ -958,8 +961,8 @@ namespace RockGame
             Revive(other);
             yield return new WaitForSeconds(0.5f);
 
-            // portal gun: two shots = one linked pair, then it's used up
-            me.ServerGive(Item.PortalGun, 1, Cfg.PortalShots);
+            // portal gun: ONE shot makes the whole linked pair (one portal where you stand, one where it lands), then it's used up
+            me.ServerGive(Item.PortalGun, 1);
             yield return new WaitForSeconds(0.2f);
             yield return Hold(me, Item.PortalGun);
             int portals = g.Portals.Count;
@@ -967,9 +970,9 @@ namespace RockGame
             yield return new WaitForSeconds(0.4f);
             me.PortalRpc(field + new Vector3(0, 0.05f, 0), Vector3.up);
             yield return new WaitForSeconds(0.5f);
-            me.PortalRpc(field + new Vector3(12f, 0.05f, 0), Vector3.up);
-            yield return new WaitForSeconds(0.5f);
-            Check(g.Portals.Count == portals + 2 && g.Portals[portals].Pair == g.Portals[portals + 1].Pair && me.Count(Item.PortalGun) == 1, "portal gun made a linked pair of portals and is still there (unlimited)");
+            Check(g.Portals.Count == portals + 2 && g.Portals[portals].Pair == g.Portals[portals + 1].Pair && me.Count(Item.PortalGun) == 0
+                && Vector3.Distance(g.Portals[portals].Pos, me.transform.position) < 1.5f,
+                $"one portal gun shot made a linked pair (one at my feet) and used the gun up ({g.Portals.Count - portals} portals, {me.Count(Item.PortalGun)} gun left)");
 
             // jetpack burns fuel and runs out
             me.ServerGive(Item.Jetpack, 1, Cfg.JetpackFuel);

@@ -14,7 +14,7 @@ namespace RockGame
     public static partial class Cfg
     {
         [Tune("Crafting")] public static int WorkbenchWood = 150;
-        [Tune("Crafting")] public static int Workbench2Wood = 300;
+        [Tune("Crafting")] public static int Workbench2Wood = 2000;
 
         /// <summary>Tier 0: always in the TAB list (in this order).</summary>
         static readonly Item[] k_Starter = { Item.Hatchet, Item.Spear, Item.BuildingPlan, Item.Bow, Item.Arrow, Item.Chest, Item.Ram, Item.Workbench };

@@ -10,7 +10,7 @@ namespace RockGame
         public Vector3 Pos;   // on the ground
         public float Yaw;     // which way it faces
         public byte Team;     // the colour band
-        public byte Seed;     // the shape (headstone or cross) and tilt
+        public byte Seed;     // the slight random lean
         public bool Equals(GraveInfo o) => Pos == o.Pos && Yaw == o.Yaw && Team == o.Team && Seed == o.Seed;
     }
 
@@ -50,7 +50,8 @@ namespace RockGame
         }
     }
 
-    /// <summary>Draws NetGame.Graves: a little low-poly headstone or cross with the dead player's team colour. No colliders.</summary>
+    /// <summary>Draws NetGame.Graves: every grave is the same little low-poly stone cross (the same shape and stone colour
+    /// for everyone), with a small band in the dead player's team colour, a dirt mound and a slight random lean. No colliders.</summary>
     public static class GraveFx
     {
         static readonly List<GameObject> s_Shown = new List<GameObject>();
@@ -75,7 +76,6 @@ namespace RockGame
         }
 
         static readonly Color Stone = new Color(0.62f, 0.63f, 0.66f);
-        static readonly Color DarkStone = new Color(0.45f, 0.46f, 0.5f);
         static readonly Color Dirt = new Color(0.36f, 0.26f, 0.17f);
 
         static GameObject Build(GraveInfo gi)
@@ -83,7 +83,6 @@ namespace RockGame
             if (s_Root == null) s_Root = new GameObject("Graves").transform;
             var rng = new System.Random(gi.Seed * 7919 + 13);
             float tiltX = (float)(rng.NextDouble() * 2 - 1) * 8f, tiltZ = (float)(rng.NextDouble() * 2 - 1) * 6f;
-            bool cross = rng.NextDouble() < 0.35;
             var team = Cfg.TeamColor[Mathf.Clamp(gi.Team, 0, Cfg.TeamColor.Length - 1)];
 
             var go = new GameObject("Grave");
@@ -94,23 +93,10 @@ namespace RockGame
             var stone = new GameObject("stone").transform;
             stone.SetParent(go.transform, false);
             stone.localRotation = Quaternion.Euler(tiltX, 0f, tiltZ);
-            if (cross)
-            {
-                Art.Box(stone, Stone, new Vector3(0f, 0.45f, 0f), new Vector3(0.14f, 0.95f, 0.14f));
-                Art.Box(stone, Stone, new Vector3(0f, 0.68f, 0f), new Vector3(0.56f, 0.14f, 0.14f));
-                Art.Box(stone, team, new Vector3(0f, 0.68f, 0f), new Vector3(0.18f, 0.16f, 0.16f));
-            }
-            else
-            {
-                // a rounded headstone: a slab with a half-disc on top, and a plinth
-                Art.Box(stone, DarkStone, new Vector3(0f, 0.06f, 0f), new Vector3(0.72f, 0.14f, 0.26f));
-                Art.Box(stone, Stone, new Vector3(0f, 0.38f, 0f), new Vector3(0.56f, 0.56f, 0.14f));
-                Art.Part(stone, Art.Cylinder, Stone, new Vector3(0f, 0.66f, 0f), new Vector3(0.56f, 0.07f, 0.56f), new Vector3(90f, 0f, 0f));
-                Art.Box(stone, team, new Vector3(0f, 0.5f, 0f), new Vector3(0.58f, 0.08f, 0.16f));
-                // an engraved cross
-                Art.Box(stone, DarkStone, new Vector3(0f, 0.34f, 0.072f), new Vector3(0.05f, 0.24f, 0.01f));
-                Art.Box(stone, DarkStone, new Vector3(0f, 0.38f, 0.072f), new Vector3(0.16f, 0.05f, 0.01f));
-            }
+            // the stone cross (the same for everybody): an upright, the cross bar, and the team colour where they meet
+            Art.Box(stone, Stone, new Vector3(0f, 0.45f, 0f), new Vector3(0.14f, 0.95f, 0.14f)).name = "cross upright";
+            Art.Box(stone, Stone, new Vector3(0f, 0.68f, 0f), new Vector3(0.56f, 0.14f, 0.14f)).name = "cross bar";
+            Art.Box(stone, team, new Vector3(0f, 0.68f, 0f), new Vector3(0.18f, 0.16f, 0.16f)).name = "team band";
             return go;
         }
     }
