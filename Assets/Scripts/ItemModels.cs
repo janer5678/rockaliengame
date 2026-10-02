@@ -82,12 +82,13 @@ namespace RockGame
                     Art.Box(t, new Color(0.85f, 0.7f, 0.25f), new Vector3(0, 0.15f, 0.11f), new Vector3(0.04f, 0.05f, 0.02f));
                     break;
                 case Item.Workbench:
+                case Item.Workbench2:
                 {
                     // the workbench in miniature
                     var mini = new GameObject("mini").transform;
                     mini.SetParent(t, false);
-                    mini.localScale = Vector3.one * 0.26f;
-                    Workbench.BuildModel(mini, 0, false);
+                    mini.localScale = Vector3.one * (item == Item.Workbench2 ? 0.2f : 0.26f);
+                    Workbench.BuildModel(mini, 0, false, item == Item.Workbench2 ? 2 : 1);
                     break;
                 }
                 case Item.Barrier:

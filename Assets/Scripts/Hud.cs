@@ -415,6 +415,8 @@ namespace RockGame
                 case Item.Spear: return "<b>Spear</b>    LMB: stab    hold RMB + LMB: throw    E: pick thrown spears back up";
                 case Item.Bow: return $"<b>Bow</b>  ({me.Count(Item.Arrow)} arrows)    hold LMB to draw, release to fire";
                 case Item.Chest: return "<b>Storage Chest</b>    LMB: place it inside your base";
+                case Item.Workbench:
+                case Item.Workbench2: return $"<b>{Cfg.ItemName(s.Id)}</b>    LMB: put it down anywhere in your base - its items then show in your crafting list ({Binds.Name(Bind.Inventory)})";
                 case Item.Barrier: return $"<b>High External Wall</b> x{s.Count}    LMB: place it - in your base or out in the open (not in the enemy base)";
                 case Item.Berry: return $"<b>Berries</b> x{s.Count}    RMB: eat ({Cfg.BerryEatTime:0.#}s, +{Cfg.BerryHeal:0} HP)";
                 case Item.C4: return "<b>C4</b>    LMB: throw it at enemy buildings - it blows up everything nearby";
@@ -607,16 +609,21 @@ namespace RockGame
             float sw = Screen.width, sh = Screen.height, k = m_Scale;
             MouseOverUI = true;
             m_HoverName = "";
-            if (pc.LootTarget != null && pc.LootTarget.IsWorkbench) { DrawWorkbenchMenu(me, pc, pc.LootTarget); return; } // the workbench shop (Hud.Crafting.cs)
             Fill(new Rect(0, 0, sw, sh), new Color(0, 0, 0, 0.4f));
             float slot = Mathf.Min(64 * k, (sw - 120) / 24f), gap = 6 * k;
             float gridW = 7 * slot + 6 * gap;
-            float craftW = 440 * k;
             bool loot = pc.LootTarget != null;
-            float lootW = loot ? gridW : 0;
-            float total = gridW + 30 * k + (loot ? lootW : craftW);
-            float x0 = Mathf.Max(10, (sw - total) / 2);
             float top = sh * 0.14f;
+            // the crafting list: one column, or two when there's a lot in it (workbench tiers) - Hud.Crafting.cs
+            bool craft = !loot && Tutorial.Allows(TutFeature.Craft); // (the tutorial: once crafting is taught)
+            int craftCols = craft ? LayoutCraftList(me, pc, top, sh - 8 * k, k) : 1;
+            float colGap = 10 * k;
+            float craftW = 440 * k;
+            if (craftCols == 2) craftW = Mathf.Min(400 * k, (sw - 20 - gridW - 30 * k - colGap) / 2f);
+            float craftTotal = craftCols * craftW + (craftCols - 1) * colGap;
+            float lootW = loot ? gridW : 0;
+            float total = gridW + 30 * k + (loot ? lootW : craftTotal);
+            float x0 = Mathf.Max(10, (sw - total) / 2);
             float invX = x0;
             float lootX = invX + gridW + 30 * k;
 
@@ -651,9 +658,9 @@ namespace RockGame
                 GUI.Label(new Rect(r.x + 4 * k, r.y + 1, 34 * k, 22 * k), Binds.Short(Bind.Hotbar1 + i), m_SmallNoClip);
             }
             float infoY = hotY + slot + 10 * k;
-            // ---- crafting (right, when not looting): the starter items (Hud.Crafting.cs) ----
+            // ---- crafting (right, when not looting): Hud.Crafting.cs ----
             float cxp = invX + gridW + 30 * k;
-            if (!loot && Tutorial.Allows(TutFeature.Craft)) DrawCraftList(me, pc, cxp, top, craftW, sh - 8 * k, k); // (the tutorial: once crafting is taught)
+            if (craft) DrawCraftList(me, pc, cxp, top, craftW, colGap, sh - 8 * k, k);
             Shadowed(new Rect(invX, infoY, loot ? gridW + 200 : gridW, 60 * k), m_HoverName != "" ? m_HoverName : "Drag to move · right-click: to the hotbar · right-drag splits a stack · shift-click quick-moves · drag outside to drop", m_SmallWrap);
 
             // ---- drag visual ----

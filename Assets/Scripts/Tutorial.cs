@@ -22,7 +22,7 @@ namespace RockGame
         Demolish,   // X, and the wheel's Demolish
         Throw,      // spear: hold RMB + LMB
         Deploy,     // putting down a workbench / chest / high wall
-        Workbench,  // the workbench shop (and everything it sells)
+        Workbench,  // the workbench tiers in the crafting list (everything that isn't a starter item)
         Health,     // the health bar (and armour / buffs under it)
         Eat,        // RMB with food
     }
@@ -77,7 +77,7 @@ namespace RockGame
         // what things were when the step started
         static float s_Moved;
         static Vector3 s_LastPos;
-        static int s_Wood0, s_Weak0, s_Spear0, s_Berry0, s_LastBerries, s_Bench0, s_WallMax;
+        static int s_Wood0, s_Weak0, s_Spear0, s_Berry0, s_LastBerries, s_WallMax;
         static float s_SprintTime, s_GuardTime, s_CrouchTime;
         static bool s_Jumped, s_Slid, s_Ate;
         // server
@@ -128,7 +128,7 @@ namespace RockGame
         static int ItemAt(Item i)
         {
             if (s_Steps == null) Build();
-            if (!Cfg.IsStarter(i)) return FeatureAt(TutFeature.Workbench); // everything else is bought at the workbench
+            if (!Cfg.IsStarter(i)) return FeatureAt(TutFeature.Workbench); // the workbench tiers: once the bag shows them
             return s_ItemAt.TryGetValue(i, out int at) ? at : int.MaxValue; // starters nobody teaches: once you're done
         }
 
@@ -180,7 +180,7 @@ namespace RockGame
                 case TutFeature.Demolish: return $"{K(Bind.Demolish)} demolish";
                 case TutFeature.Throw: return "spear throw";
                 case TutFeature.Deploy: return "putting things down";
-                case TutFeature.Workbench: return "the workbench";
+                case TutFeature.Workbench: return "workbench crafts";
                 case TutFeature.Health: return "health bar";
                 case TutFeature.Eat: return $"{K(Bind.Aim)} eat";
             }
@@ -229,29 +229,14 @@ namespace RockGame
         static string Price(Item i) { int r = Cfg.RecipeIndex(i); return r < 0 ? "" : CostText(Cfg.GetRecipe(r)); }
         static string CostText(Recipe r) => r.Stone > 0 ? $"{r.Wood} wood and {r.Stone} stone" : $"{r.Wood} wood";
         static int WoodOf(Item i) { int r = Cfg.RecipeIndex(i); return r < 0 ? 0 : Cfg.GetRecipe(r).Wood; }
+        static int StoneOf(Item i) { int r = Cfg.RecipeIndex(i); return r < 0 ? 0 : Cfg.GetRecipe(r).Stone; }
 
         static Vector3? BaseSpot => Cfg.BaseCenter[Team] - Cfg.BackDir(Team) * 7f + Vector3.up * (Cfg.BaseY + 0.5f);
         static Vector3? MachineSpot => Cfg.MachinePos(Team) + Vector3.up * 1.6f;
         static Vector3? BallSpot => Ball.Instance != null ? Ball.Instance.transform.position + Vector3.up * 0.6f : (Vector3?)null;
-        static Container MyBench => Workbench.ForTeam(Team);
-        static Vector3? BenchSpot => MyBench != null ? Workbench.Top(MyBench) + Vector3.up * 0.3f : Workbench.DefaultPos(Team) + Vector3.up * 0.5f;
-
-        /// <summary>Things that only come from the workbench (and armour, which goes straight on).</summary>
-        static int BenchThings() => Count(Item.Pickaxe) + Count(Item.Crossbow) + Count(Item.Chainsaw) + Count(Item.Saddle) + (Me != null && Me.ArmorHp.Value > 0 ? 1 : 0);
-
-        static bool BenchBusyOrDone()
-        {
-            var c = MyBench;
-            if (c == null) return false;
-            var w = Workbench.Of(c);
-            if (w != null && w.Working) return true;
-            if (G != null)
-            {
-                var top = Workbench.Top(c);
-                foreach (var it in G.Items) if ((it.Pos - top).sqrMagnitude < 1f) return true;
-            }
-            return BenchThings() > s_Bench0;
-        }
+        static Container MyBench => Workbench.ForTeam(Team, 1);
+        static Container MyBench2 => Workbench.ForTeam(Team, 2);
+        static bool InBase => Me != null && Cfg.BaseTeamAt(Me.transform.position) == Team;
 
         /// <summary>The glass wall on your side of the map, just past the glass dome in the middle (where the walls meet the dome).</summary>
         public static Vector3 WallSpot(int team)
@@ -488,53 +473,63 @@ namespace RockGame
                     Done = () => Count(Item.Stone) >= 10,
                     Target = () => Nearest(ResourceNode.Boulder), TargetLabel = "STONE",
                 },
-                // ---- the workbench ----
+                // ---- the workbenches ----
                 new Step
                 {
                     Id = "bench", Title = "The Workbench",
-                    Body = "Your bag only makes the basics. Everything else comes from a " + Hi("Workbench") + ". Craft one!",
-                    Goal = "Craft a Workbench", Progress = () => WoodNeed(WoodOf(Item.Workbench)),
+                    Body = "Your bag only makes the basics. A " + Hi("Workbench") + " in your base adds more things to it. Craft a " + Hi("Workbench T1") + "!",
+                    Goal = "Craft a Workbench T1", Progress = () => WoodNeed(WoodOf(Item.Workbench)),
                     Hint = $"It costs {Price(Item.Workbench)}. Craft it in your base.",
                     Done = () => Count(Item.Workbench) >= 1 || MyBench != null,
-                    Target = () => TreeIfShort(WoodOf(Item.Workbench), Cfg.BaseTeamAt(Me.transform.position) == Team ? null : BaseSpot), TargetLabel = "",
+                    Target = () => TreeIfShort(WoodOf(Item.Workbench), InBase ? null : BaseSpot), TargetLabel = "",
                     Items = new[] { Item.Workbench },
                 },
                 new Step
                 {
                     Id = "placebench", Title = "Put it down",
-                    Body = "Hold the workbench and click to put it on the " + Hi("metal floor") + " in the middle of your base. Nothing can break it!",
+                    Body = "Hold the workbench and click to put it down " + Hi("anywhere in your base") + ". Nothing can break it!",
                     Goal = "Place your workbench",
-                    Hint = "Pick it on your hotbar. It only fits on the silver metal floor, not on the spawn spot or the ball socket.",
+                    Hint = "Pick it on your hotbar and aim at flat ground inside your base (not the spawn spot or the ball socket).",
                     Done = () => MyBench != null,
-                    Target = () => Workbench.DefaultPos(Team) + Vector3.up * 0.5f, TargetLabel = "METAL FLOOR",
+                    Target = () => InBase ? null : BaseSpot, TargetLabel = "YOUR BASE",
                     Unlocks = new[] { TutFeature.Deploy },
                 },
                 new Step
                 {
-                    Id = "openbench", Title = "Open it",
-                    Body = $"Look at your workbench and press {K(Bind.Interact)}.",
-                    Goal = "Open the workbench",
-                    Done = () => PC != null && PC.MenuOpen && PC.LootTarget != null && PC.LootTarget.IsWorkbench,
-                    Target = () => BenchSpot, TargetLabel = "WORKBENCH",
+                    Id = "newcrafts", Title = "New things!",
+                    Body = $"Open your bag ({K(Bind.Inventory)}). While you're in your base, your workbench adds a " + Hi("WORKBENCH T1") + " list: crossbow, armour, chainsaw, high walls...",
+                    Goal = "Open your bag in your base",
+                    Hint = $"Stand inside your base and press {Binds.Name(Bind.Inventory)}. The new list is under the basics.",
+                    Done = () => PC != null && PC.MenuOpen && PC.LootTarget == null && Cfg.CraftTierAt(Team, Me.transform.position) >= 1,
+                    Target = () => InBase ? null : BaseSpot, TargetLabel = "YOUR BASE",
                     Unlocks = new[] { TutFeature.Workbench },
                 },
                 new Step
                 {
-                    Id = "buy", Title = "Buy something",
-                    Body = "Click the " + Hi("Stone Pickaxe") + ". The bench saws and hammers it out of a cloud of sawdust!",
-                    Goal = "Buy a pickaxe", Progress = () => Count(Item.Stone) < 10 ? $"stone {Count(Item.Stone)} / 10" : "",
-                    Hint = $"It costs {Price(Item.Pickaxe)}. Not enough? Get more first.",
-                    Done = () => BenchBusyOrDone(),
-                    Target = () => Count(Item.Stone) < 10 ? Nearest(ResourceNode.Boulder) : BenchSpot, TargetLabel = "",
+                    Id = "bench2", Title = "Workbench T2",
+                    Body = "A " + Hi("Workbench T2") + " adds even more: guns, C4, a saddle and the " + Hi("pickaxe") + ". Craft one - it's in the T1 list!",
+                    Goal = "Craft a Workbench T2", Progress = () => WoodNeed(WoodOf(Item.Workbench2)),
+                    Hint = $"It costs {Price(Item.Workbench2)}. Chop more if you need it, then craft it in your base.",
+                    Done = () => Count(Item.Workbench2) >= 1 || MyBench2 != null,
+                    Target = () => TreeIfShort(WoodOf(Item.Workbench2), InBase ? null : BaseSpot), TargetLabel = "",
                 },
                 new Step
                 {
-                    Id = "pickup", Title = "Grab it",
-                    Body = $"It's lying on the bench. Look at it and press {K(Bind.Interact)}. (Anyone can grab it - guard your bench!)",
-                    Goal = "Pick it up",
-                    Hint = "Wait for the sawdust to clear, then look at the item on top of the bench.",
-                    Done = () => BenchThings() > s_Bench0,
-                    Target = () => BenchSpot, TargetLabel = "WORKBENCH",
+                    Id = "placebench2", Title = "Put that down too",
+                    Body = "Put the " + Hi("Workbench T2") + " down in your base. Look how much crazier it is!",
+                    Goal = "Place the Workbench T2",
+                    Hint = "Pick it on your hotbar and aim at flat ground inside your base.",
+                    Done = () => MyBench2 != null,
+                    Target = () => InBase ? null : BaseSpot, TargetLabel = "YOUR BASE",
+                },
+                new Step
+                {
+                    Id = "pickaxe", Title = "Make a pickaxe",
+                    Body = $"Open your bag ({K(Bind.Inventory)}). Under " + Hi("WORKBENCH T2") + ", craft a " + Hi("Stone Pickaxe") + ".",
+                    Goal = "Craft a pickaxe", Progress = () => Count(Item.Stone) < StoneOf(Item.Pickaxe) ? $"stone {Count(Item.Stone)} / {StoneOf(Item.Pickaxe)}" : WoodNeed(WoodOf(Item.Pickaxe)),
+                    Hint = $"It costs {Price(Item.Pickaxe)}. Craft it in your base.",
+                    Done = () => Count(Item.Pickaxe) >= 1,
+                    Target = () => Count(Item.Stone) < StoneOf(Item.Pickaxe) ? Nearest(ResourceNode.Boulder) : TreeIfShort(WoodOf(Item.Pickaxe), InBase ? null : BaseSpot), TargetLabel = "",
                 },
                 new Step
                 {
@@ -668,7 +663,6 @@ namespace RockGame
             s_Moved = 0f;
             s_Weak0 = WeakHits;
             s_Spear0 = SpearThrows;
-            s_Bench0 = BenchThings();
             s_WallMax = WallPieces;
             s_SprintTime = s_GuardTime = s_CrouchTime = 0f;
             s_Jumped = s_Slid = s_Ate = false;
@@ -826,7 +820,7 @@ namespace RockGame
                 var fb = new GUIStyle(small) { wordWrap = true, richText = true };
                 string txt = "Win: have the ball " + Hi("in your machine") + " when the clock ends.\n"
                     + "While it's in your machine, your team gathers " + Hi($"{Mathf.RoundToInt((Cfg.BallGatherMul - 1f) * 100f)}% more") + ".\n"
-                    + "Everything is unlocked now - your bag also makes a " + Hi("bow, arrows, chests") + " and " + Hi("high walls") + ".\n"
+                    + "Everything is unlocked now - your bag also makes a " + Hi("bow, arrows and chests") + ", and your workbenches add " + Hi("high walls, guns, armour") + " and more.\n"
                     + "Real matches have " + Hi("airdrops") + ": a warning shows 15 seconds before one lands.\n"
                     + "Tip: Settings > Display changes the grass and the world's colours.\n"
                     + Hi("Esc") + " > Leave game, then host a real match!";
@@ -849,8 +843,7 @@ namespace RockGame
             {
                 // just the goal, along the bottom, while the inventory is up
                 if (pc.Paused) return;
-                bool shop = pc.LootTarget != null && pc.LootTarget.IsWorkbench; // (clear of the shop's own hint line)
-                var gr = new Rect(sw / 2 - 330 * k, sh - (shop ? 90 : 40) * k, 660 * k, 32 * k);
+                var gr = new Rect(sw / 2 - 330 * k, sh - 40 * k, 660 * k, 32 * k);
                 fill(gr, new Color(0, 0, 0, 0.75f));
                 var c = new GUIStyle(small) { alignment = TextAnchor.MiddleCenter, wordWrap = false, richText = true };
                 shadowed(gr, $"<b>TUTORIAL</b>  {goal}", c);
