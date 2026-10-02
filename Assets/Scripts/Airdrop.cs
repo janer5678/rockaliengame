@@ -5,8 +5,9 @@ namespace RockGame
 {
     /// <summary>
     /// The giant alien ship that beams airdrops down (local visuals only, driven by NetGame.DropStart / DropPos on every peer):
-    /// it drops out of the sky, hovers high above the drop spot, opens a round hatch in its belly, beams the crate down
-    /// through it (slowly), shuts the hatch, then flies off into the distance - shrinking away to nothing.
+    /// it drops out of the sky, hovers high above the drop spot - over the map's glass dome (HoverAt) - opens a round hatch
+    /// in its belly, beams the crate down through it and through the glass (slowly; the glass glows where the beam goes
+    /// through), shuts the hatch, then flies off over the nearest edge of the map - shrinking away to nothing.
     /// The server spawns the real (networked) crate when the beam reaches the ground.
     /// </summary>
     public class AirdropShip
@@ -22,11 +23,27 @@ namespace RockGame
         static float CylR => Art.Cylinder.bounds.extents.x;
         static float CylH => Art.Cylinder.bounds.extents.y;
         static readonly Color k_Glow = new Color(0.75f, 0.35f, 1f);
-        GameObject s_Ship, s_Beam, s_Crate;
+        GameObject s_Ship, s_Beam, s_Crate, s_Port;
         Transform s_Rim, s_DoorL, s_DoorR;
         Light s_ShipLight;
         Light s_GroundLight;
-        Material s_BeamMat;
+        Material s_BeamMat, s_PortMat;
+        Vector3 s_Hover, s_Out;
+        float s_PortY;
+
+        /// <summary>
+        /// Where the ship hovers over a drop spot: Hover metres up, or higher if the map's glass dome is in the way - then
+        /// it hovers clear over the glass (its open hatch doors too, all the way across the hull) and beams down through it.
+        /// </summary>
+        public static Vector3 HoverAt(Vector3 ground)
+        {
+            float y = ground.y + Hover;
+            float hullR = Mathf.Max(26f * Art.Sphere.bounds.extents.x, 14.6f + 0.6f);
+            float below = -HatchY + HatchR + 2.5f; // (the open doors hang about this far under its middle)
+            float glass = MapDome.HighestOver(ground.x, ground.z, hullR);
+            if (glass > float.MinValue) y = Mathf.Max(y, glass + below);
+            return new Vector3(ground.x, y, ground.z);
+        }
         double s_Start = -2;
         static readonly AirdropShip[] s_Lanes = MakeLanes();
 
@@ -47,9 +64,11 @@ namespace RockGame
             if (s_Ship) Object.Destroy(s_Ship);
             if (s_Beam) Object.Destroy(s_Beam);
             if (s_Crate) Object.Destroy(s_Crate);
+            if (s_Port) Object.Destroy(s_Port);
             if (s_GroundLight) Object.Destroy(s_GroundLight.gameObject);
             if (s_BeamMat) Object.Destroy(s_BeamMat);
-            s_Ship = s_Beam = s_Crate = null;
+            if (s_PortMat) Object.Destroy(s_PortMat);
+            s_Ship = s_Beam = s_Crate = s_Port = null;
             s_DoorL = s_DoorR = null;
             s_ShipLight = null;
             s_Start = -2;
@@ -73,10 +92,14 @@ namespace RockGame
                 ClearLane();
                 s_Start = start;
                 Build(ground);
+                s_Hover = HoverAt(ground);
+                // it comes in from (and leaves towards) the edge of the map it's nearest, so it's always over the glass dome
+                var outward = new Vector3(ground.x, 0, ground.z);
+                s_Out = outward.sqrMagnitude > 4f ? outward.normalized : new Vector3(0.83f, 0, 0.55f);
                 Sfx.Play2D(Sfx.Hum, 0.35f, 0f);
             }
 
-            var hover = ground + Vector3.up * Hover;
+            var hover = s_Hover;
             float beamT = NetGame.DropArrive, land = NetGame.DropLand;
             Vector3 pos;
             float scale = 1f;
@@ -84,7 +107,7 @@ namespace RockGame
             {
                 float k = e / Arrive;
                 k = 1f - (1f - k) * (1f - k) * (1f - k);
-                pos = Vector3.Lerp(hover + new Vector3(60f, 300f, 40f), hover, k);
+                pos = Vector3.Lerp(hover + s_Out * 72f + Vector3.up * 300f, hover, k);
             }
             else if (e < land) pos = hover + Vector3.up * Mathf.Sin(e * 2f) * 0.4f;
             else
@@ -92,7 +115,7 @@ namespace RockGame
                 // flying off into the distance: it drifts up and away and shrinks smoothly to nothing (no popping out)
                 float k = Mathf.Clamp01((e - land) / Leave);
                 float ease = k * k * (3f - 2f * k);
-                pos = hover + new Vector3(-45f, 60f, -18f) * ease;
+                pos = hover + (s_Out * 48f + Vector3.up * 60f) * ease;
                 scale = Mathf.Pow(1f - ease, 1.5f);
             }
             s_Ship.transform.position = pos;
@@ -121,8 +144,22 @@ namespace RockGame
                 c.a = 0.28f * Mathf.Clamp01(a) * (0.85f + 0.15f * Mathf.Sin(Time.time * 12f));
                 s_BeamMat.SetColor("_BaseColor", c);
                 s_GroundLight.intensity = 5f * Mathf.Clamp01(a);
+                // where it goes through the map's glass dome, the glass glows in a ring round it
+                if (s_Port != null)
+                {
+                    bool show = MapDome.Shown && s_PortY > bottom;
+                    if (s_Port.activeSelf != show) s_Port.SetActive(show);
+                    var pc = k_Glow;
+                    pc.a = 0.5f * Mathf.Clamp01(a);
+                    s_PortMat.SetColor("_BaseColor", pc);
+                    s_Port.transform.localScale = new Vector3(HatchR * 1.25f * scale / CylR, 0.06f / CylH, HatchR * 1.25f * scale / CylR);
+                }
             }
-            else s_GroundLight.intensity = 0f;
+            else
+            {
+                s_GroundLight.intensity = 0f;
+                if (s_Port != null && s_Port.activeSelf) s_Port.SetActive(false);
+            }
             bool crate = e >= beamT && e < land;
             s_Crate.SetActive(crate);
             if (crate)
@@ -174,6 +211,18 @@ namespace RockGame
             s_GroundLight.range = 14f;
             s_Beam.SetActive(false);
 
+            // a glowing ring of glass where the beam goes through the map's dome (shown with the beam)
+            s_PortY = MapDome.HeightAt(ground.x, ground.z);
+            if (s_PortY > float.MinValue)
+            {
+                s_PortMat = new Material(Art.Ghost(k_Glow));
+                var n = MapDome.NormalAt(ground.x, ground.z);
+                s_Port = Art.Part(null, Art.Cylinder, Color.white, new Vector3(ground.x, s_PortY - 0.2f, ground.z), Vector3.one * 0.01f,
+                    Quaternion.FromToRotation(Vector3.up, n).eulerAngles, false, s_PortMat, "AirdropDomePort");
+                s_Port.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
+                s_Port.SetActive(false);
+            }
+
             s_Crate = new GameObject("AirdropCrateFalling");
             Container.CreateVisual(Container.Airdrop, 2, s_Crate.transform, Art.Ghost(new Color(0.8f, 0.55f, 1f, 0.85f)));
             s_Crate.SetActive(false);
@@ -184,6 +233,10 @@ namespace RockGame
         public static float ShipScale { get; private set; } = 1f;
         /// <summary>Test hook: the first lane's ship (null when none is flying).</summary>
         public static Transform ShipTransform => s_Lanes[0].s_Ship != null ? s_Lanes[0].s_Ship.transform : null;
+        /// <summary>Test hook: the first lane's glowing ring on the dome (null when there's none).</summary>
+        public static GameObject PortObject => s_Lanes[0].s_Port;
+        /// <summary>Test hook: where the first lane's ship hovers.</summary>
+        public static Vector3 HoverPoint => s_Lanes[0].s_Hover;
 
         static Material s_GlowMat;
 

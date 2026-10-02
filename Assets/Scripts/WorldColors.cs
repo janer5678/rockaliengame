@@ -81,7 +81,7 @@ namespace RockGame
             Sun = Add("Sun", "Sun", GSky, new Color(1f, 0.86f, 0.42f),
                 new Color(1f, 0.86f, 0.42f), new Color(1f, 0.95f, 0.75f), new Color(1f, 0.65f, 0.3f), new Color(1f, 0.45f, 0.3f), new Color(0.85f, 0.95f, 1f), new Color(1f, 0.6f, 0.85f), new Color(0.7f, 1f, 0.6f)),
             Mountains = Add("Mountains", "Mountains", GGround, new Color(0.48f, 0.5f, 0.51f)),
-            MapWalls = Add("MapWalls", "Map walls", GGround, new Color(0.45f, 0.43f, 0.4f)),
+            MapWalls = Add("MapWalls", "Map dome (glass)", GGround, new Color(0.75f, 0.95f, 1f)), // (was the grey map walls: now the glass dome over the map, MapDome)
             BallZone = Add("BallZone", "Ball drop zone", GGround, new Color(0.85f, 0.75f, 0.3f)),
             WatchTowers = Add("WatchTowers", "Watch towers", GGround, new Color(0.55f, 0.37f, 0.2f)),
             Wheat = Add("Wheat", "Tall wheat", GPlants, new Color(0.74f, 0.6f, 0.28f),
@@ -104,6 +104,7 @@ namespace RockGame
             BuildRefined = Add("BuildRefined", "Refined", GBuild, new Color(0.27f, 0.29f, 0.34f)),
             Horses = Add("Horses", "Horses", GThings, new Color(0.45f, 0.3f, 0.18f)),
             Chests = Add("Chests", "Chests and crates", GThings, new Color(0.55f, 0.37f, 0.2f)),
+            CrashSite = Add("CrashSite", "Crashed UFO", GThings, new Color(0.62f, 0.64f, 0.68f)),
             Hands = Add("Hands", "First-person hands", GYou, new Color(0.78f, 0.82f, 0.74f));
 
         public static Slot Find(string id) { foreach (var s in All) if (s.Id == id) return s; return null; }

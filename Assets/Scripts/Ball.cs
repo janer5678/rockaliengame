@@ -19,6 +19,8 @@ namespace RockGame
         /// <summary>Builder: the ground under the ball's block while it's planted (SocketTeam = whose ball it is).</summary>
         public readonly NetworkVariable<Vector3> PlantPos = new NetworkVariable<Vector3>();
         public const float PlinthH = 1.2f, Radius = 0.62f;
+        /// <summary>The beacon pillar, from the ball's centre: from 4 m under the ground the ball sits on, up into the sky.</summary>
+        public const float BeaconBottom = -(Radius + 4f), BeaconTop = 300.65f;
 
         Rigidbody m_Rb;
         Collider m_Col;
@@ -61,10 +63,13 @@ namespace RockGame
             m_Light.range = 8f;
             m_Light.intensity = 3f;
 
-            // Beacon: a tall translucent pillar of light that always shoots up from the ball (gold loose, team colour when held / socketed)
+            // Beacon: a tall translucent pillar of light (gold loose, team colour when socketed). It doesn't start at the ball:
+            // it comes up out of the ground a few metres under it, runs right through the ball and on up into the sky
             m_Beacon = new GameObject("beacon");
             m_Beacon.transform.SetParent(transform, false);
-            var pillar = Art.Part(m_Beacon.transform, Art.Cylinder, Color.white, new Vector3(0, 150.65f, 0), new Vector3(1.0f, 150, 1.0f), default, false, Art.Ghost(new Color(1, 1, 1, 0.35f)), "pillar"); // (starts at the top of the ball)
+            float halfH = (BeaconTop - BeaconBottom) * 0.5f;
+            var pillar = Art.Part(m_Beacon.transform, Art.Cylinder, Color.white, new Vector3(0, BeaconBottom + halfH, 0),
+                new Vector3(1.0f, halfH / Mathf.Max(0.01f, Art.Cylinder.bounds.extents.y), 1.0f), default, false, Art.Ghost(new Color(1, 1, 1, 0.35f)), "pillar");
             pillar.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             m_BeaconRenderer = pillar.GetComponent<MeshRenderer>();
             SocketTeam.OnValueChanged += OnSocketChanged;

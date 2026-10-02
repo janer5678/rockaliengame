@@ -539,6 +539,34 @@ namespace RockGame
             var look = Quaternion.LookRotation(wmPos + Vector3.up * 1.0f - me.EyePos).eulerAngles;
             pc.SetLook(look.y, look.x > 180f ? look.x - 360f : look.x);
             yield return Snap("autowood_machine_close_" + level);
+            // from the side: a log dropping off the end of the chute onto the pile out in front
+            WoodMachine wmc = null;
+            foreach (var w in FindObjectsByType<WoodMachine>(FindObjectsSortMode.None))
+                if (wmc == null || (w.transform.position - wmPos).sqrMagnitude < (wmc.transform.position - wmPos).sqrMagnitude) wmc = w;
+            if (wmc != null)
+            {
+                var land = wmPos + rot * WoodMachine.LandingLocal;
+                var sideAt = wmPos + rot * new Vector3(1.15f, 0, 3.1f); // (front right, on the bedrock clear of the socket)
+                pc.LocalTeleport(sideAt, 0f);
+                yield return new WaitForSeconds(0.3f);
+                var lk = Quaternion.LookRotation(Vector3.Lerp(wmPos, land, 0.55f) + Vector3.up * 0.5f - me.EyePos).eulerAngles;
+                pc.SetLook(lk.y, lk.x > 180f ? lk.x - 360f : lk.x);
+                float until = Time.time + 3f;
+                bool caught = false;
+                while (Time.time < until)
+                {
+                    float ph = wmc.LogPhase;
+                    if (ph > WoodMachine.LogDrop + 0.12f && ph < 0.93f) { caught = true; break; }
+                    yield return null;
+                }
+                ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "autowood_log_landing_" + level + ".png"));
+                Log($"shot autowood_log_landing_{level} (log {(caught ? "falling off the chute" : "not caught mid-air")})");
+                yield return null;
+                var pile = Cfg.WoodTrayPos(team);
+                var machineLocal = Quaternion.Inverse(rot) * (pile - wmPos);
+                Check(caught && machineLocal.z > 1.4f, $"wood machine level {level}: logs drop off the end of the chute onto the pile well out in front ({machineLocal.z:0.00} m out)");
+                yield return new WaitForSeconds(0.2f);
+            }
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
             yield return new WaitForSeconds(0.3f);
             var back = Quaternion.LookRotation(wmPos + Vector3.up * 0.8f - me.EyePos).eulerAngles;
