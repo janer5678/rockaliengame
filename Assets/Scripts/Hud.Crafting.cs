@@ -130,7 +130,7 @@ namespace RockGame
             foreach (var id in Cfg.StarterOrder)
             {
                 int i = Cfg.RecipeIndex(id);
-                if (i >= 0) ids.Add((i, Cfg.GetRecipe(i)));
+                if (i >= 0 && Tutorial.AllowsItem(id)) ids.Add((i, Cfg.GetRecipe(i))); // (the tutorial adds them one at a time)
             }
             float footer = 44 * k, gap = 5 * k;
             float row = Mathf.Clamp((bottom - top - footer) / Mathf.Max(1, ids.Count) - gap, 34 * k, 76 * k);
@@ -167,7 +167,7 @@ namespace RockGame
             float fy = top + ids.Count * (row + gap) + 2 * k;
             string hint = Cfg.Builder ? "BUILDER: craft anywhere, one thing at a time - each takes a few seconds."
                 : "Spears and hatchets can be crafted anywhere; the rest inside your base.";
-            if (Cfg.RecipeIndex(Item.Workbench) >= 0)
+            if (Cfg.RecipeIndex(Item.Workbench) >= 0 && Tutorial.AllowsItem(Item.Workbench))
                 hint += $"\n<color=#8dff9a>Everything else is made at a <b>Workbench</b>: put it on your base's metal floor and press {Binds.Name(Bind.Interact)} on it.</color>";
             Shadowed(new Rect(x, fy, w, footer + 10 * k), hint, CraftStyle(13 * k, FontStyle.Normal, TextAnchor.UpperLeft, Color.white, true));
         }

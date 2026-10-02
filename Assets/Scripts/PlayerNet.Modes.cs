@@ -120,12 +120,18 @@ namespace RockGame
         /// <summary>Tutorial: this player has walked up to the glass wall (the wall drops once everyone has - see Tutorial.ServerTick).</summary>
         public readonly NetworkVariable<bool> TutAtWall = new NetworkVariable<bool>();
 
-        /// <summary>Tutorial mode only: 1 = I'm at the glass wall step (the server drops the wall once every player is).</summary>
+        /// <summary>Tutorial: the step this player's guide is on (Tutorial.FinishedStep once done), written by their own client,
+        /// so the server knows what's unlocked for them (crafting, building, the workbench - Tutorial.AllowsFor).</summary>
+        public readonly NetworkVariable<byte> TutStep = new NetworkVariable<byte>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
+
+        /// <summary>Tutorial mode only: 1 = I'm at the glass wall step (the server drops the wall once every player is);
+        /// 2 = the eat step: make me hungry (half health) so there's something to heal.</summary>
         [Rpc(SendTo.Server)]
         public void TutorialRpc(byte action)
         {
             if (!Cfg.Tutorial || NetGame.Instance == null) return;
             if (action == 1) Tutorial.ServerAtWall(this);
+            else if (action == 2) Tutorial.ServerHungry(this);
         }
 
         float m_NextSuicide;

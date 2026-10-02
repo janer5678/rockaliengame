@@ -276,7 +276,7 @@ namespace RockGame
 
             // ---- aim info / held item hints ----
             float by = sh - 150 * k;
-            if (!string.IsNullOrEmpty(pc.AimText) && !pc.MenuOpen) Shadowed(new Rect(0, cy + 45 * k, sw, 26 * k), pc.AimText, m_Center);
+            if (!string.IsNullOrEmpty(pc.AimText) && !pc.MenuOpen && Tutorial.Allows(TutFeature.Interact)) Shadowed(new Rect(0, cy + 45 * k, sw, 26 * k), pc.AimText, m_Center);
             if (!me.CarryingBall && !pc.MenuOpen)
             {
                 string hint = HeldHint(me, pc);
@@ -284,8 +284,8 @@ namespace RockGame
                 if (!string.IsNullOrEmpty(pc.BuildHint)) Shadowed(new Rect(0, by - 28 * k, sw, 26 * k), "<color=#ff8888>" + pc.BuildHint + "</color>", m_Center);
             }
 
-            // ---- hotbar ----
-            if (!pc.MenuOpen)
+            // ---- hotbar (the tutorial shows it once you get your first wood) ----
+            if (!pc.MenuOpen && Tutorial.Allows(TutFeature.HotbarHud))
             {
                 float slot = 70 * k, gap = 6 * k;
                 int n = Cfg.HotbarSize;
@@ -300,54 +300,57 @@ namespace RockGame
                 }
             }
 
-            // ---- health (bottom left) ----
-            float hw = 280 * k;
-            var hr = new Rect(14, sh - 44 * k, hw, 28 * k);
-            Fill(hr, new Color(0, 0, 0, 0.55f));
-            float hp = Mathf.Clamp01(me.Health.Value / Mathf.Max(1f, Cfg.MaxHealth));
-            Fill(new Rect(hr.x + 3, hr.y + 3, (hr.width - 6) * hp, hr.height - 6), Color.Lerp(new Color(0.85f, 0.15f, 0.1f), new Color(0.3f, 0.85f, 0.3f), hp));
-            Shadowed(new Rect(hr.x + 8, hr.y + 2, hr.width, hr.height), $"<b>HP {me.Health.Value:0}</b>", m_Label);
-            float statY = hr.y - 26 * k;
-            if (me.ArmorHp.Value > 0)
+            // ---- health (bottom left; the tutorial shows it at the food step) ----
+            if (Tutorial.Allows(TutFeature.Health))
             {
-                // second health bar, used up first
-                var ab = new Rect(hr.x, statY, hw, 22 * k);
-                Fill(ab, new Color(0, 0, 0, 0.55f));
-                Fill(new Rect(ab.x + 2, ab.y + 2, (ab.width - 4) * Mathf.Clamp01(me.ArmorHp.Value / (float)Mathf.Max(1, me.ArmorHp.Value > Cfg.ArmorHp ? Cfg.HeavyArmorHp : Cfg.ArmorHp)), ab.height - 4), new Color(0.75f, 0.55f, 0.3f));
-                Shadowed(new Rect(ab.x + 6, ab.y, ab.width, ab.height), $"<b>ARMOUR {me.ArmorHp.Value}</b>", m_Small);
-                statY -= 26 * k;
-            }
-            // the ball buff, just above the armour: your team's ball is in your base, so gathering pays more
-            if (me.BallBuff && (game == null || game.S != GameState.SuddenDeath))
-            {
-                var br = new Rect(hr.x, statY, hw, 22 * k);
-                Fill(br, new Color(0.3f, 0.22f, 0f, 0.65f));
-                Fill(new Rect(br.x, br.y, 4 * k, br.height), new Color(1f, 0.82f, 0.25f, 0.95f));
-                Shadowed(new Rect(br.x + 10 * k, br.y, br.width, br.height), $"<color=#ffd24a><b>BALL BUFF</b></color>  <color=#eeeeee>+{(Cfg.BallGatherMul - 1f) * 100f:0}% gathering</color>", m_Small);
-                statY -= 26 * k;
-            }
-            if (me.HelmetHp.Value > 0)
-            {
-                Shadowed(new Rect(hr.x, statY, 400 * k, 22 * k), "<color=#a8c4e0><b>HELMET</b> (stops one headshot)</color>", m_Small);
-                statY -= 22 * k;
-            }
-            if (VoiceChat.Transmitting)
-            {
-                Shadowed(new Rect(hr.x, statY, 400 * k, 22 * k), "<color=#7dff9a><b>● MIC ON</b></color>", m_Small);
-                statY -= 22 * k;
-            }
-            if (me.Giant)
-            {
-                Shadowed(new Rect(hr.x, statY, 400 * k, 22 * k), $"<color=#ffcc55><b>GIANT</b> {Mathf.CeilToInt((float)(me.GiantUntil.Value - me.NetworkManager.ServerTime.Time))}s</color>", m_Small);
-                statY -= 22 * k;
-            }
-            if (me.Invisible)
-            {
-                float left = (float)(me.InvisUntil.Value - me.NetworkManager.ServerTime.Time);
-                Shadowed(new Rect(hr.x, statY, 400 * k, 22 * k), me.Hidden ? $"<color=#c98bff><b>INVISIBLE</b> {Mathf.CeilToInt(left)}s</color>" : $"<color=#ff9f5a><b>VISIBLE (attacking)</b></color> <color=#c98bff>{Mathf.CeilToInt(left)}s</color>", m_Label);
+                float hw = 280 * k;
+                var hr = new Rect(14, sh - 44 * k, hw, 28 * k);
+                Fill(hr, new Color(0, 0, 0, 0.55f));
+                float hp = Mathf.Clamp01(me.Health.Value / Mathf.Max(1f, Cfg.MaxHealth));
+                Fill(new Rect(hr.x + 3, hr.y + 3, (hr.width - 6) * hp, hr.height - 6), Color.Lerp(new Color(0.85f, 0.15f, 0.1f), new Color(0.3f, 0.85f, 0.3f), hp));
+                Shadowed(new Rect(hr.x + 8, hr.y + 2, hr.width, hr.height), $"<b>HP {me.Health.Value:0}</b>", m_Label);
+                float statY = hr.y - 26 * k;
+                if (me.ArmorHp.Value > 0)
+                {
+                    // second health bar, used up first
+                    var ab = new Rect(hr.x, statY, hw, 22 * k);
+                    Fill(ab, new Color(0, 0, 0, 0.55f));
+                    Fill(new Rect(ab.x + 2, ab.y + 2, (ab.width - 4) * Mathf.Clamp01(me.ArmorHp.Value / (float)Mathf.Max(1, me.ArmorHp.Value > Cfg.ArmorHp ? Cfg.HeavyArmorHp : Cfg.ArmorHp)), ab.height - 4), new Color(0.75f, 0.55f, 0.3f));
+                    Shadowed(new Rect(ab.x + 6, ab.y, ab.width, ab.height), $"<b>ARMOUR {me.ArmorHp.Value}</b>", m_Small);
+                    statY -= 26 * k;
+                }
+                // the ball buff, just above the armour: your team's ball is in your base, so gathering pays more
+                if (me.BallBuff && (game == null || game.S != GameState.SuddenDeath))
+                {
+                    var br = new Rect(hr.x, statY, hw, 22 * k);
+                    Fill(br, new Color(0.3f, 0.22f, 0f, 0.65f));
+                    Fill(new Rect(br.x, br.y, 4 * k, br.height), new Color(1f, 0.82f, 0.25f, 0.95f));
+                    Shadowed(new Rect(br.x + 10 * k, br.y, br.width, br.height), $"<color=#ffd24a><b>BALL BUFF</b></color>  <color=#eeeeee>+{(Cfg.BallGatherMul - 1f) * 100f:0}% gathering</color>", m_Small);
+                    statY -= 26 * k;
+                }
+                if (me.HelmetHp.Value > 0)
+                {
+                    Shadowed(new Rect(hr.x, statY, 400 * k, 22 * k), "<color=#a8c4e0><b>HELMET</b> (stops one headshot)</color>", m_Small);
+                    statY -= 22 * k;
+                }
+                if (VoiceChat.Transmitting)
+                {
+                    Shadowed(new Rect(hr.x, statY, 400 * k, 22 * k), "<color=#7dff9a><b>● MIC ON</b></color>", m_Small);
+                    statY -= 22 * k;
+                }
+                if (me.Giant)
+                {
+                    Shadowed(new Rect(hr.x, statY, 400 * k, 22 * k), $"<color=#ffcc55><b>GIANT</b> {Mathf.CeilToInt((float)(me.GiantUntil.Value - me.NetworkManager.ServerTime.Time))}s</color>", m_Small);
+                    statY -= 22 * k;
+                }
+                if (me.Invisible)
+                {
+                    float left = (float)(me.InvisUntil.Value - me.NetworkManager.ServerTime.Time);
+                    Shadowed(new Rect(hr.x, statY, 400 * k, 22 * k), me.Hidden ? $"<color=#c98bff><b>INVISIBLE</b> {Mathf.CeilToInt(left)}s</color>" : $"<color=#ff9f5a><b>VISIBLE (attacking)</b></color> <color=#c98bff>{Mathf.CeilToInt(left)}s</color>", m_Label);
+                }
             }
 
-            DrawGains(k);
+            if (Tutorial.Allows(TutFeature.HotbarHud)) DrawGains(k);
 
             DrawCountdowns(game, team);
 
@@ -649,7 +652,7 @@ namespace RockGame
             float infoY = hotY + slot + 10 * k;
             // ---- crafting (right, when not looting): the starter items (Hud.Crafting.cs) ----
             float cxp = invX + gridW + 30 * k;
-            if (!loot) DrawCraftList(me, pc, cxp, top, craftW, sh - 8 * k, k);
+            if (!loot && Tutorial.Allows(TutFeature.Craft)) DrawCraftList(me, pc, cxp, top, craftW, sh - 8 * k, k); // (the tutorial: once crafting is taught)
             Shadowed(new Rect(invX, infoY, loot ? gridW + 200 : gridW, 60 * k), m_HoverName != "" ? m_HoverName : "Drag to move · right-click: to the hotbar · right-drag splits a stack · shift-click quick-moves · drag outside to drop", m_SmallWrap);
 
             // ---- drag visual ----
@@ -836,7 +839,7 @@ namespace RockGame
         /// <summary>Whenever the mode has airdrops: a small badge under the top banner - the time to the next one, one on its way, or one on the ground.</summary>
         void DrawAirdropTimer(NetGame game, float y, float k)
         {
-            if (game == null || Cfg.FunRules || Mathf.Clamp(Cfg.AirdropCount, 0, 20) == 0) return;
+            if (game == null || Cfg.FunRules || Cfg.Tutorial || Mathf.Clamp(Cfg.AirdropCount, 0, 20) == 0) return;
             if (game.S != GameState.PreBall && game.S != GameState.BallLive) return;
             double now = game.NetworkManager.ServerTime.Time;
             bool incoming = false;

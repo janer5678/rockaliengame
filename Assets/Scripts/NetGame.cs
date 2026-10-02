@@ -594,7 +594,7 @@ namespace RockGame
         /// </summary>
         void ServerTickScheduledDrops(double now)
         {
-            if (Cfg.FunRules) return; // the fun modes hand out items instead
+            if (Cfg.FunRules || Cfg.Tutorial) return; // the fun modes hand out items instead; the tutorial has none
             for (int i = m_OldCrates.Count - 1; i >= 0; i--)
             {
                 var c = m_OldCrates[i];
@@ -634,7 +634,7 @@ namespace RockGame
         {
             int n = Mathf.Clamp(Cfg.AirdropCount, 0, 20);
             double at = -1;
-            if (!Cfg.FunRules && n > 0)
+            if (!Cfg.FunRules && !Cfg.Tutorial && n > 0)
             {
                 if (S == GameState.PreBall) at = PhaseEnd.Value + (double)BallPhase / (n + 1) + DropLand;
                 else if (S == GameState.BallLive && m_BallStart >= 0 && m_DropsDone < n) at = m_BallStart + (m_DropsDone + 1) * (double)BallPhase / (n + 1) + DropLand;

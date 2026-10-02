@@ -20,6 +20,7 @@ namespace RockGame
         string ServerWorkbenchBuy(Container c, int recipe)
         {
             if (c.Team.Value != Team.Value) return "That's the enemy's workbench";
+            if (!Tutorial.AllowsFor(this, TutFeature.Workbench)) return "Not yet - the tutorial gets to the workbench soon";
             if (!Cfg.ValidCraftIndex(recipe)) return "You can't make that in this mode";
             var r = Cfg.CraftRecipe(recipe, Team.Value);
             if (Cfg.IsStarter(r.Output)) return $"Craft the {Cfg.ItemName(r.Output)} from your inventory";
