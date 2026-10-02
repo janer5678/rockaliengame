@@ -5,25 +5,24 @@ namespace RockGame
 {
     /// <summary>
     /// Auto Wood: the wood machine on the bedrock, to the right of the alien machine. Futuristic tech in the alien
-    /// machine's style (silver housing, a column with spinning rings and a floating orb, glowing-tipped pylons, a console
-    /// with a screen) that saws wood out of nothing and pushes it down its chute onto the pile (the pile itself is a world
-    /// item, NetGame.ServerTickAutoWood). It changes in front of you when your team upgrades its wood gen:
-    /// level 0 - silver like the alien machine (green and team-colour lights): one ring, two pylons, a saw blade on the side;
-    /// level 1 - bigger and YELLOW: yellow light strips on every edge, two rings, a spinning yellow beacon, twin exhaust
-    ///           stacks puffing yellow, hazard stripes on the chute;
-    /// level 2 - bigger again and PINK: hovering over a pink glow on four tesla pylons, a three-ring gyroscope round a
-    ///           glass dome with a pink energy core, a spinning crystal over it, two emitter arms aimed at the chute, four
-    ///           exhausts puffing pink.
+    /// machine's style (a silver housing with a flat lid, a console with a screen, a saw blade) that saws wood out of
+    /// nothing and pushes it out of a lit port: each log slides down the chute, drops off the end and lands on the pile
+    /// out in front (Cfg.WoodTrayLocal; the pile itself is a world item, NetGame.ServerTickAutoWood). Nothing stands on
+    /// top of it (no column, rings, orb or pylons). It changes in front of you when your team upgrades its wood gen:
+    /// level 0 - silver like the alien machine: green trim round the lid, a team-colour and a green lens, a saw blade on the side;
+    /// level 1 - bigger and YELLOW: yellow light strips on every edge and round the base, hazard stripes on the lid and the
+    ///           chute, two exhaust vents on the back puffing yellow;
+    /// level 2 - bigger again and PINK: hovering over a pink glow on four short tesla legs, pink seams down its sides, a pink
+    ///           diamond and studs on the lid, a second saw, four vents puffing pink.
     /// </summary>
     public class WoodMachine : MonoBehaviour
     {
         int m_Team, m_Level = -1;
         Transform m_Visual;
-        readonly List<Transform> m_Rings = new List<Transform>();
         readonly List<Transform> m_Vents = new List<Transform>();
         readonly List<Transform> m_Saws = new List<Transform>();
-        Transform m_Core, m_Crystal, m_Beacon, m_Log;
-        Vector3 m_CoreBase, m_CrystalBase;
+        Transform m_Log;
+        Vector3 m_ChuteA, m_ChuteB;
         Light m_Light;
         Material m_GlowMat;
         Color m_Accent;
@@ -32,7 +31,7 @@ namespace RockGame
         // the alien machine's palette (MapBuilder.BuildMachine) and the level colours
         static readonly Color k_Metal = new Color(0.3f, 0.33f, 0.36f), k_Silver = new Color(0.72f, 0.74f, 0.78f), k_SilverDark = new Color(0.5f, 0.52f, 0.56f);
         static readonly Color k_Dark = new Color(0.08f, 0.09f, 0.11f);
-        static readonly Color k_Green = new Color(0.45f, 0.95f, 0.55f), k_Yellow = new Color(1f, 0.82f, 0.15f), k_Pink = new Color(1f, 0.32f, 0.78f), k_Cyan = new Color(0.35f, 0.95f, 1f);
+        static readonly Color k_Green = new Color(0.45f, 0.95f, 0.55f), k_Yellow = new Color(1f, 0.82f, 0.15f), k_Pink = new Color(1f, 0.32f, 0.78f);
 
         public static WoodMachine Create(Transform root, int team)
         {
@@ -70,10 +69,8 @@ namespace RockGame
         {
             using var tint = ColorSlots.Use(ColorSlots.WoodMachine); // (Settings > Display colours)
             if (m_Visual) Destroy(m_Visual.gameObject);
-            m_Rings.Clear();
             m_Vents.Clear();
             m_Saws.Clear();
-            m_Core = m_Crystal = m_Beacon = null;
             m_Level = level;
             m_Visual = new GameObject("visual").transform;
             m_Visual.SetParent(transform, false);
@@ -84,14 +81,11 @@ namespace RockGame
             var acc = AccentMat();
             var gGreen = Workbench.Glow(k_Green);
             var gYellow = Workbench.Glow(k_Yellow, 1.8f);
-            var gCyan = Workbench.Glow(k_Cyan, 1.8f);
             var screen = Art.Ghost(level == 1 ? new Color(1f, 0.9f, 0.4f, 0.7f) : level == 2 ? new Color(1f, 0.5f, 0.9f, 0.7f) : new Color(0.4f, 1f, 0.8f, 0.7f));
             float s = level == 2 ? 1.16f : level == 1 ? 1.08f : 1f;
             float hx = 0.48f * s, hz = 0.4f * s;           // the housing's half size
-            float baseTop = level == 2 ? 0.42f : 0.3f;     // (level 2 hovers on its pylons)
+            float baseTop = level == 2 ? 0.42f : 0.3f;     // (level 2 hovers on its legs)
             float houseTop = baseTop + 0.78f * s;
-            float colTop = houseTop + 0.5f * s;
-            float cz = -0.08f;                             // the column stands a little back
 
             // what you bump into
             var body = new GameObject("body");
@@ -133,15 +127,21 @@ namespace RockGame
             for (int k = -1; k <= 1; k += 2) Art.Box(t, m_Accent, portAt + new Vector3(k * 0.19f, 0, 0.01f), new Vector3(0.025f, 0.24f, 0.02f), default, false, acc);
             // grille on the front panel
             for (int i = 0; i < 4; i++) Art.Box(t, k_Metal, new Vector3(0, hy + 0.12f * s + i * 0.07f * s, hz - 0.025f), new Vector3(hx * 1.2f, 0.022f, 0.012f));
-            // the chute down to the pile (hazard stripes from level 1)
+            // the chute out to the front (hazard stripes from level 1): its end is held up off the ground on a strut, so the
+            // logs drop off it onto the pile out in front (Cfg.WoodTrayLocal)
             var chuteA = new Vector3(0, baseTop + 0.16f, hz);
-            var chuteB = new Vector3(0, 0.22f, 1.02f);
+            var chuteB = new Vector3(0, 0.36f, 1.0f);
+            m_ChuteA = chuteA;
+            m_ChuteB = chuteB;
             var cd = chuteB - chuteA;
             var cRot = Quaternion.LookRotation(cd.normalized).eulerAngles;
             var chuteMid = (chuteA + chuteB) * 0.5f;
             Art.Box(t, k_Metal, chuteMid, new Vector3(0.38f, 0.03f, cd.magnitude), cRot);
             for (int k = -1; k <= 1; k += 2)
                 Art.Box(t, k_Silver, chuteMid + new Vector3(k * 0.2f, 0.04f, 0), new Vector3(0.025f, 0.08f, cd.magnitude), cRot);
+            Art.Box(t, k_SilverDark, chuteB + new Vector3(0, 0.02f, -0.01f), new Vector3(0.42f, 0.03f, 0.04f)); // (a lip on the end)
+            for (int k = -1; k <= 1; k += 2)
+                Art.Box(t, k_Metal, new Vector3(k * 0.15f, chuteB.y * 0.5f - 0.01f, chuteB.z - 0.06f), new Vector3(0.04f, chuteB.y, 0.04f));
             if (level >= 1)
                 for (int i = 0; i < 4; i++)
                 {
@@ -197,103 +197,72 @@ namespace RockGame
                 m_Saws.Add(saw2);
             }
 
-            // ---- the column on top, with rings round it and an orb over it (like the alien machine) ----
-            Workbench.Cyl(t, k_Metal, new Vector3(0, houseTop + 0.03f, cz), 0.3f * s, 0.06f);
-            Workbench.Cyl(t, k_Silver, new Vector3(0, (houseTop + colTop) * 0.5f, cz), 0.17f * s, colTop - houseTop);
-            Workbench.Cyl(t, k_Metal, new Vector3(0, colTop, cz), 0.25f * s, 0.05f);
-            for (int i = 0; i <= level; i++) // glowing bands up the column
-                Workbench.Cyl(t, m_Accent, new Vector3(0, houseTop + 0.14f * s + i * 0.12f * s, cz), 0.18f * s, 0.025f, default, acc);
-            var ringAt = new Vector3(0, (houseTop + colTop) * 0.5f + 0.04f, cz);
-            m_Rings.Add(Workbench.Ring(t, ringAt, new Vector3(15, 0, 8), 0.4f * s, 12, 0.16f * s, k_Silver, gTeam, 3));
-            if (level >= 1) m_Rings.Add(Workbench.Ring(t, ringAt, new Vector3(-25, 0, -15), 0.46f * s, 12, 0.14f * s, k_SilverDark, acc, 2));
-            if (level >= 2) m_Rings.Add(Workbench.Ring(t, ringAt, new Vector3(75, 0, 20), 0.53f * s, 16, 0.12f * s, k_Silver, gCyan, 2));
-            if (level < 2)
+            // ---- the top: a finished lid - nothing stands on it any more (no column, rings, orb, beacon or pylons) ----
+            // a metal lid with a silver panel set into it, outlined in the level colour, flat louvres at the back
+            float capY = houseTop + 0.03f;
+            Art.Box(t, k_Metal, new Vector3(0, capY, -0.05f), new Vector3(hx * 1.94f, 0.06f, hz * 1.94f));
+            Art.Box(t, k_Silver, new Vector3(0, capY + 0.035f, -0.05f), new Vector3(hx * 1.7f, 0.012f, hz * 1.7f));
+            for (int k = -1; k <= 1; k += 2)
             {
-                // the floating orb: green, then yellow
-                m_Core = Art.Part(t, Art.Ico, m_Accent, new Vector3(0, colTop + 0.3f, cz), Vector3.one * 0.13f * s, default, false, acc, "orb").transform;
-                Art.Part(m_Core, Art.Ico, Color.white, Vector3.zero, Vector3.one * 1.5f, default, false, Art.Ghost(new Color(m_Accent.r, m_Accent.g, m_Accent.b, 0.3f)));
+                Art.Box(t, m_Accent, new Vector3(0, capY + 0.043f, -0.05f + k * hz * 0.86f), new Vector3(hx * 1.74f, 0.008f, 0.025f), default, false, acc);
+                Art.Box(t, m_Accent, new Vector3(k * hx * 0.86f, capY + 0.043f, -0.05f), new Vector3(0.025f, 0.008f, hz * 1.74f), default, false, acc);
+            }
+            for (int i = 0; i < 4; i++)
+                Art.Box(t, k_Dark, new Vector3(0, capY + 0.044f, -0.05f - hz * 0.6f + i * 0.07f * s), new Vector3(hx * 1.2f, 0.008f, 0.03f));
+            if (level == 0)
+            {
+                // two status lenses flush with the lid: the team colour and the alien machine's green
+                Workbench.Cyl(t, teamGlow, new Vector3(-hx * 0.45f, capY + 0.045f, hz * 0.4f), 0.05f, 0.012f, default, gTeam);
+                Workbench.Cyl(t, k_Green, new Vector3(hx * 0.45f, capY + 0.045f, hz * 0.4f), 0.05f, 0.012f, default, gGreen);
+            }
+            else if (level == 1)
+            {
+                // yellow and black hazard stripes along the front of the lid
+                for (int i = 0; i < 7; i++)
+                    Art.Box(t, i % 2 == 0 ? k_Yellow : k_Dark, new Vector3((i - 3) * hx * 0.24f, capY + 0.046f, hz * 0.45f), new Vector3(hx * 0.2f, 0.008f, 0.1f), new Vector3(0, 30f, 0), false, i % 2 == 0 ? gYellow : null);
             }
             else
             {
-                // a glass dome on the column with a pink energy core, and a crystal spinning over it
-                var domeAt = new Vector3(0, colTop + 0.02f, cz);
-                Workbench.Cyl(t, k_Silver, domeAt, 0.26f, 0.04f);
-                m_Core = Art.Part(t, Art.Ico, k_Pink, domeAt + new Vector3(0, 0.15f, 0), Vector3.one * 0.1f, default, false, acc, "core").transform;
-                Workbench.Ball(t, Color.white, domeAt + new Vector3(0, 0.06f, 0), new Vector3(0.24f, 0.26f, 0.24f), Art.Ghost(new Color(0.75f, 0.95f, 1f, 0.26f)));
-                m_Crystal = new GameObject("crystal").transform;
-                m_Crystal.SetParent(t, false);
-                m_Crystal.localPosition = new Vector3(0, colTop + 0.75f, cz);
-                Art.Part(m_Crystal, Art.Cone, k_Pink, Vector3.zero, new Vector3(0.22f, 0.32f, 0.22f), default, false, acc);
-                Art.Part(m_Crystal, Art.Cone, k_Pink, Vector3.zero, new Vector3(0.22f, 0.22f, 0.22f), new Vector3(180f, 0, 0), false, acc);
-                m_CrystalBase = m_Crystal.localPosition;
-            }
-            m_CoreBase = m_Core.localPosition;
-            // level 1: a spinning yellow beacon on the front of the roof
-            if (level == 1)
-            {
-                m_Beacon = new GameObject("beacon").transform;
-                m_Beacon.SetParent(t, false);
-                m_Beacon.localPosition = new Vector3(hx * 0.6f, houseTop + 0.05f, hz * 0.55f);
-                Workbench.Cyl(m_Beacon, k_Metal, Vector3.zero, 0.07f, 0.04f);
-                Workbench.Ball(m_Beacon, k_Yellow, new Vector3(0, 0.07f, 0), new Vector3(0.06f, 0.07f, 0.06f), gYellow);
-                Art.Box(m_Beacon, k_Dark, new Vector3(0, 0.07f, 0), new Vector3(0.13f, 0.1f, 0.015f));
+                // a pink diamond set into the lid and four glowing studs on its corners
+                Art.Box(t, k_Pink, new Vector3(0, capY + 0.046f, -0.05f), new Vector3(hx * 0.5f, 0.008f, hx * 0.5f), new Vector3(0, 45f, 0), false, acc);
+                for (int sx = -1; sx <= 1; sx += 2)
+                    for (int sz = -1; sz <= 1; sz += 2)
+                        Art.Part(t, Art.Ico, k_Pink, new Vector3(sx * hx * 0.97f, capY + 0.03f, -0.05f + sz * hz * 0.97f), Vector3.one * 0.045f, default, false, acc);
             }
 
-            // ---- pylons with glowing tips (two; level 2: four tesla pylons standing on the ground, holding it up) ----
-            if (level < 2)
-            {
-                for (int k = -1; k <= 1; k += 2)
-                {
-                    var p = new Vector3(k * (hx - 0.06f), houseTop, -0.05f - hz + 0.08f);
-                    Art.Box(t, k_Metal, p + new Vector3(0, 0.3f * s, 0), new Vector3(0.1f, 0.6f * s, 0.1f), new Vector3(0, 0, -k * 7f));
-                    Art.Part(t, Art.Ico, level == 1 ? k_Yellow : teamGlow, p + new Vector3(k * 0.04f, 0.64f * s, 0), Vector3.one * 0.06f, default, false, level == 1 ? gYellow : gTeam);
-                    Art.Part(t, Art.Cone, k_Silver, p + new Vector3(k * 0.04f, 0.66f * s, 0), new Vector3(0.08f, 0.2f, 0.08f));
-                }
-            }
-            else
-            {
+            // level 2: four short tesla legs on the ground holding it up (they stop below the lid)
+            if (level == 2)
                 for (int sx = -1; sx <= 1; sx += 2)
                     for (int sz = -1; sz <= 1; sz += 2)
                     {
                         var p = new Vector3(sx * (hx * 1.2f + 0.04f), 0, -0.05f + sz * (hz * 1.2f + 0.04f));
-                        bool backPair = sz < 0;
-                        float ph = backPair ? colTop - 0.1f : houseTop * 0.75f;
+                        float ph = houseTop * 0.75f;
                         Workbench.Cyl(t, k_Metal, p + Vector3.up * 0.03f, 0.1f, 0.06f);
                         Workbench.Cyl(t, k_Silver, p + Vector3.up * ph * 0.5f, 0.045f, ph);
                         for (int i = 0; i < 3; i++)
                             Workbench.Cyl(t, i == 2 ? k_Pink : k_SilverDark, p + Vector3.up * (ph * 0.55f + i * 0.13f), 0.11f - i * 0.02f, 0.025f, default, i == 2 ? acc : null);
                         Art.Part(t, Art.Ico, k_Pink, p + Vector3.up * (ph + 0.06f), Vector3.one * 0.075f, default, false, acc);
                     }
-                // two emitter arms off the column, aimed down at the chute
-                for (int k = -1; k <= 1; k += 2)
-                {
-                    var a = new Vector3(k * 0.12f, colTop - 0.15f, cz);
-                    var b = new Vector3(k * 0.36f, houseTop + 0.3f, hz + 0.2f);
-                    Workbench.Rod(t, k_Metal, a, b, 0.03f);
-                    Workbench.Ball(t, k_SilverDark, b, Vector3.one * 0.05f);
-                    Art.Part(t, Art.Cone, k_Cyan, b + new Vector3(0, -0.02f, 0.02f), new Vector3(0.09f, 0.12f, 0.09f), new Vector3(140, 0, -k * 25f), false, gCyan);
-                }
-            }
 
-            // ---- exhaust stacks on the back (level 1: two, level 2: four), puffing the level colour ----
+            // ---- exhaust vents low on the back (level 1: two, level 2: four), puffing the level colour out backwards ----
             int vents = level == 0 ? 0 : level == 1 ? 2 : 4;
             for (int i = 0; i < vents; i++)
             {
-                float vx = vents == 2 ? (i == 0 ? -0.26f : 0.26f) * s : (-0.36f + i * 0.24f) * s;
+                float vx = vents == 2 ? (i == 0 ? -0.24f : 0.24f) * s : (-0.33f + i * 0.22f) * s;
                 var v = new GameObject("vent").transform;
                 v.SetParent(t, false);
-                v.localPosition = new Vector3(vx, houseTop, -0.05f - hz + 0.1f);
-                float vh = (0.36f + (i % 2) * 0.1f) * s;
-                Workbench.Cyl(v, k_SilverDark, new Vector3(0, vh * 0.5f, 0), 0.06f, vh);
-                Workbench.Cyl(v, k_Metal, new Vector3(0, vh, 0), 0.075f, 0.04f);
-                Workbench.Cyl(v, m_Accent, new Vector3(0, vh + 0.022f, 0), 0.06f, 0.01f, default, acc);
+                v.localPosition = new Vector3(vx, baseTop + hh * 0.45f, -0.05f - hz - 0.01f);
+                v.localRotation = Quaternion.LookRotation(Vector3.back); // (its forward points out of the back)
+                Art.Box(v, k_Metal, Vector3.zero, new Vector3(0.16f, 0.22f, 0.04f));
+                for (int j = 0; j < 3; j++) Art.Box(v, k_Dark, new Vector3(0, -0.06f + j * 0.06f, 0.022f), new Vector3(0.12f, 0.025f, 0.01f));
+                Art.Box(v, m_Accent, new Vector3(0, 0.12f, 0.02f), new Vector3(0.16f, 0.015f, 0.012f), default, false, acc);
                 m_Vents.Add(v);
             }
 
             // a light in the level colour, brighter with each level
             var lg = new GameObject("light");
             lg.transform.SetParent(t, false);
-            lg.transform.localPosition = new Vector3(0, houseTop + 0.35f, 0.55f);
+            lg.transform.localPosition = new Vector3(0, houseTop + 0.25f, 0.55f);
             m_Light = lg.AddComponent<Light>();
             m_Light.type = LightType.Point;
             m_Light.color = m_Accent;
@@ -334,50 +303,29 @@ namespace RockGame
             if (m_GlowMat && m_GlowMat.HasProperty("_EmissionColor")) m_GlowMat.SetColor("_EmissionColor", m_Accent * (0.9f + 1.4f * beat));
             if (m_Light) m_Light.intensity = m_LightBase * (0.75f + 0.5f * beat);
 
-            // the rings spin, faster with each level; the saws run while it works
-            float spin = running ? 90f + m_Level * 110f : 20f;
-            for (int i = 0; i < m_Rings.Count; i++)
-                if (m_Rings[i]) m_Rings[i].Rotate(0, (i % 2 == 0 ? spin : -spin * 1.3f) * dt, 0, Space.Self);
+            // the saws run while it works
             float saw = running ? 900f + m_Level * 400f : 60f;
             foreach (var sw in m_Saws) if (sw) sw.Rotate(saw * dt, 0, 0, Space.Self);
-            if (m_Core)
-            {
-                m_Core.localPosition = m_CoreBase + Vector3.up * Mathf.Sin(time * 2f) * 0.04f;
-                m_Core.Rotate(15f * dt, 50f * dt, 0, Space.Self);
-            }
-            if (m_Crystal)
-            {
-                m_Crystal.localPosition = m_CrystalBase + Vector3.up * Mathf.Sin(time * 1.5f) * 0.08f;
-                m_Crystal.Rotate(0, 70f * dt, 0, Space.Self);
-            }
-            if (m_Beacon) m_Beacon.Rotate(0, (running ? 300f : 60f) * dt, 0, Space.Self);
 
-            // the level colour puffing out of the exhausts
+            // the level colour puffing out of the vents on the back
             if (running && m_Vents.Count > 0 && time > m_NextPuff)
             {
                 m_NextPuff = time + 0.45f / m_Vents.Count;
                 var v = m_Vents[Random.Range(0, m_Vents.Count)];
-                if (v) FxParticle.Puff(v.position + v.up * 0.5f, new Color(m_Accent.r, m_Accent.g, m_Accent.b, 0.45f), Random.Range(0.18f, 0.32f));
+                if (v) FxParticle.Puff(v.position + v.forward * 0.18f + Vector3.up * 0.05f, new Color(m_Accent.r, m_Accent.g, m_Accent.b, 0.45f), Random.Range(0.18f, 0.32f));
             }
 
-            // a log comes out of the port and slides down the chute onto the pile about once a second
+            // a log comes out of the port about once a second, rolls down the chute, drops off the end and lands on the pile out in front
             if (running && time > m_NextLog && m_Log != null)
             {
                 m_NextLog = time + 1f;
                 m_LogT = 0f;
+                m_Landed = false;
                 if (m_Saws.Count > 0 && m_Saws[0])
                     for (int i = 0; i < 3; i++)
                         FxParticle.Spawn(m_Saws[0].position, (transform.right + Random.insideUnitSphere * 0.6f) * 1.2f + Vector3.up, new Color(0.86f, 0.72f, 0.5f), 0.03f, 0.5f, 6f, false); // sawdust
             }
-            if (m_Log != null)
-            {
-                m_LogT = Mathf.Min(1f, m_LogT + dt * 2.2f);
-                m_Log.gameObject.SetActive(m_LogT < 1f);
-                float grow = Mathf.Clamp01(m_LogT * 4f);
-                m_Log.localScale = new Vector3(0.14f, 0.2f, 0.14f) * Mathf.Lerp(0.2f, 1f, grow);
-                float baseTop = m_Level == 2 ? 0.42f : 0.3f;
-                m_Log.localPosition = Vector3.Lerp(new Vector3(0, baseTop + 0.2f, 0.4f), new Vector3(0, 0.25f, 1.0f), Mathf.Clamp01((m_LogT - 0.2f) / 0.8f));
-            }
+            if (m_Log != null) AnimateLog(dt);
 
             // squash and stretch when it's just been upgraded
             if (m_Pop < 1f && m_Visual)
@@ -387,6 +335,47 @@ namespace RockGame
                 m_Visual.localScale = new Vector3(1f - b * 0.5f, 1f + b, 1f - b * 0.5f);
             }
             else if (m_Visual) m_Visual.localScale = Vector3.one;
+        }
+
+        bool m_Landed;
+
+        /// <summary>Where the log is in its trip (0 just out of the port, 1 landed; the test photographs it falling).</summary>
+        public float LogPhase => m_LogT;
+        /// <summary>The trip's phases: out of the port, rolling down the chute, falling off its end.</summary>
+        public const float LogOut = 0.2f, LogDrop = 0.55f;
+        /// <summary>Where the logs land, in the machine's space: on the pile (Cfg.WoodTrayLocal), not inside the machine.</summary>
+        public static Vector3 LandingLocal => new Vector3(Cfg.WoodTrayLocal.x, 0.14f, Cfg.WoodTrayLocal.z);
+
+        void AnimateLog(float dt)
+        {
+            m_LogT = Mathf.Min(1f, m_LogT + dt * 1.25f);
+            m_Log.gameObject.SetActive(m_LogT < 1f);
+            m_Log.localScale = new Vector3(0.14f, 0.2f, 0.14f) * Mathf.Lerp(0.2f, 1f, Mathf.Clamp01(m_LogT / LogOut));
+            var lift = Vector3.up * 0.1f; // (it rolls on top of the chute)
+            Vector3 p;
+            if (m_LogT < LogOut) p = Vector3.Lerp(m_ChuteA + new Vector3(0, 0.1f, -0.25f), m_ChuteA + lift, m_LogT / LogOut);
+            else if (m_LogT < LogDrop)
+            {
+                float u = (m_LogT - LogOut) / (LogDrop - LogOut);
+                p = Vector3.Lerp(m_ChuteA, m_ChuteB, u * u * 0.6f + u * 0.4f) + lift; // (speeding up down the slope)
+            }
+            else
+            {
+                // off the end: it keeps going forward and falls onto the pile
+                float u = (m_LogT - LogDrop) / (1f - LogDrop);
+                var from = m_ChuteB + lift;
+                var to = LandingLocal;
+                p = new Vector3(Mathf.Lerp(from.x, to.x, u), from.y + (to.y - from.y) * (0.2f * u + 0.8f * u * u), Mathf.Lerp(from.z, to.z, u));
+                if (u >= 0.97f && !m_Landed)
+                {
+                    m_Landed = true;
+                    var at = transform.TransformPoint(to);
+                    for (int i = 0; i < 3; i++)
+                        FxParticle.Spawn(at, (Random.insideUnitSphere + Vector3.up * 1.5f) * 0.9f, new Color(0.62f, 0.44f, 0.25f), 0.035f, 0.45f, 9f, false); // chips off the pile
+                }
+            }
+            m_Log.localPosition = p;
+            m_Log.localRotation = Quaternion.Euler(m_LogT * 540f, 0, 0) * Quaternion.Euler(0, 0, 90); // (rolling forwards)
         }
     }
 }

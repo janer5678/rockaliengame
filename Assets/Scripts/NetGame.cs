@@ -677,7 +677,8 @@ namespace RockGame
                 if (Blocked(p + Vector3.up * 1.4f, new Vector3(1f, 0.9f, 1f))) continue;
                 return p;
             }
-            return new Vector3(3f, MapBuilder.Height(3f, 0f), 0f);
+            var away = -CrashSite.Dir * 3.5f; // (the side away from the crashed UFO)
+            return new Vector3(away.x, MapBuilder.Height(away.x, away.z), away.z);
         }
 
         void ServerTickAirdrop(double now)

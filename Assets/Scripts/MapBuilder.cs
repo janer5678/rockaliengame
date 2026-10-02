@@ -111,7 +111,10 @@ namespace RockGame
                 BuildBedrock(root, t);
             }
 
-            // ---------- glass wall between the halves (until the ball drops) ----------
+            // ---------- the glass dome over the whole map (the edge of the map; the walls below are invisible in Normal) ----------
+            MapDome.Build(root, look);
+
+            // ---------- glass wall between the halves (until the ball drops): it fills the dome's cross-section ----------
             BuildGlassWall(root, half);
 
             // ---------- watch towers (wild map) ----------
@@ -125,22 +128,28 @@ namespace RockGame
                 Art.Part(root, Art.Cylinder, new Color(0.95f, 0.88f, 0.45f), new Vector3(0, 0.03f, 0), new Vector3(9f, 0.02f, 9f));
                 Art.Part(root, Art.Cylinder, new Color(0.85f, 0.75f, 0.3f), new Vector3(0, 0.04f, 0), new Vector3(2f, 0.02f, 2f));
             }
+            // ---------- the crashed UFO round the ball, in the ball zone ----------
+            CrashSite.Build(root);
 
             // ---------- map boundary ----------
+            // the walls are still what stops you at the edge, but in Normal graphics they're invisible: the glass dome over
+            // the map (MapDome, built above) is what you see. PSX / AI PSX keep them, in concrete.
             var wallC = new Color(0.45f, 0.43f, 0.4f);
             float wh = Cfg.Map == MapKind.Highlands || ThemeMaps.IsTheme /* THEME MAPS */ ? 40f : 5f;
-            using (ColorSlots.Use(ColorSlots.MapWalls))
-            {
-                Art.Box(root, wallC, new Vector3(0, wh / 2 - (wh > 5 ? 15 : 0), half + 1), new Vector3(2 * half + 4, wh, 2), default, true);
-                Art.Box(root, wallC, new Vector3(0, wh / 2 - (wh > 5 ? 15 : 0), -half - 1), new Vector3(2 * half + 4, wh, 2), default, true);
-                Art.Box(root, wallC, new Vector3(half + 1, wh / 2 - (wh > 5 ? 15 : 0), 0), new Vector3(2, wh, 2 * half + 4), default, true);
-                Art.Box(root, wallC, new Vector3(-half - 1, wh / 2 - (wh > 5 ? 15 : 0), 0), new Vector3(2, wh, 2 * half + 4), default, true);
-            }
-
-            // PSX graphics: the boundary walls are concrete (Normal: the plain walls - the castle dressing is gone)
             {
                 var walls = new List<Renderer>();
-                for (int k = root.childCount - 4; k < root.childCount; k++) walls.Add(root.GetChild(k).GetComponent<Renderer>());
+                for (int k = 0; k < 4; k++)
+                {
+                    bool alongX = k < 2;
+                    float sign = k % 2 == 0 ? 1f : -1f;
+                    var at = alongX ? new Vector3(0, wh / 2 - (wh > 5 ? 15 : 0), sign * (half + 1)) : new Vector3(sign * (half + 1), wh / 2 - (wh > 5 ? 15 : 0), 0);
+                    var size = alongX ? new Vector3(2 * half + 4, wh, 2) : new Vector3(2, wh, 2 * half + 4);
+                    var r = Art.Box(root, wallC, at, size, default, true).GetComponent<Renderer>();
+                    r.name = "map wall";
+                    walls.Add(r);
+                    look.Other.Add(r);
+                }
+                // PSX graphics: the boundary walls are concrete
                 PsxModels.Retexture(root.gameObject, walls, r => "concrete_01", 3f);
             }
 
@@ -422,62 +431,106 @@ namespace RockGame
                     var arm = new GameObject("glass" + k).transform;
                     arm.SetParent(s_Glass.transform, false);
                     arm.localRotation = Quaternion.Euler(0, 45f + 90f * k, 0);
-                    BuildGlassPanel(arm, half * 1.415f);
+                    BuildGlassPanel(arm, arm.localRotation * Vector3.right);
                 }
                 return;
             }
-            BuildGlassPanel(s_Glass.transform, half);
+            BuildGlassPanel(s_Glass.transform, Vector3.right);
         }
 
         /// <summary>
-        /// One glass wall right across the map (along local x), with a round notch in the middle where it meets the dome:
-        /// its bottom edge follows the dome over the top, so nothing crosses the middle and there's no gap to squeeze through.
+        /// One glass wall right across the map (along local x, which is `dir` in the world), with a round notch in the middle
+        /// where it meets the ball's dome: its bottom edge follows that dome over the top, so nothing crosses the middle and
+        /// there's no gap to squeeze through. Its ends and top edge follow the map's glass dome (MapDome): it fills the
+        /// dome's cross-section exactly, so nothing gets round or over it.
         /// </summary>
-        static void BuildGlassPanel(Transform t, float half)
+        static void BuildGlassPanel(Transform t, Vector3 dir)
         {
-            float L = half + 2f, gy = Height(0, 0);
+            float gy = Height(0, 0);
             float notch = DomeRadius - 0.25f; // (a hair inside the faceted dome: no gap where they meet)
-            const float Bottom = -20f, Top = 80f, Th = 0.15f;
+            const float Bottom = -20f, Th = 0.15f;
+            bool dome = MapDome.Built;
+            float L = dome ? MapDome.ExtentAlong(dir) - 0.03f : Cfg.MapHalf + 2f;
+            // the top edge: just under the map dome's glass (between its rings the glass is straight along here)
+            float Top(float x)
+            {
+                float h = dome ? MapDome.HeightAt(dir.x * x, dir.z * x) : float.MinValue;
+                return h == float.MinValue ? (dome ? MapDome.Shoulder : 80f) : h - 0.08f;
+            }
             float Arc(float x) => gy + Mathf.Sqrt(Mathf.Max(0f, notch * notch - x * x));
             float Under(float x) => Mathf.Abs(x) < notch ? Arc(x) : Bottom;
-            var xs = new List<float> { -L };
+            var xs = new List<float> { -L, L, 0f };
             const int arc = 20;
             for (int i = 0; i <= arc; i++) xs.Add(-notch + 2f * notch * i / arc);
-            xs.Add(L);
+            if (dome)
+            {
+                var rings = new List<float>();
+                MapDome.RingsAlong(dir, rings);
+                foreach (var r in rings) if (r < L - 0.01f && r > 0.01f) { xs.Add(r); xs.Add(-r); }
+            }
+            xs.Sort();
+            for (int i = xs.Count - 1; i > 0; i--) if (xs[i] - xs[i - 1] < 0.01f) xs.RemoveAt(i);
             var mb = new MeshBatch();
             for (int i = 0; i + 1 < xs.Count; i++)
             {
                 float x0 = xs[i], x1 = xs[i + 1];
-                // the outer pieces reach down into the ground; the ones in the middle sit on the dome
-                bool outer = i == 0 || i + 2 == xs.Count;
+                // the outer pieces reach down into the ground; the ones in the middle sit on the ball's dome
+                bool outer = Mathf.Abs((x0 + x1) * 0.5f) >= notch;
                 float b0 = outer ? Bottom : Arc(x0), b1 = outer ? Bottom : Arc(x1);
+                float t0 = Top(x0), t1 = Top(x1);
                 foreach (float z in new[] { Th, -Th })
-                    mb.Quad(new Vector3(x0, b0, z), new Vector3(x1, b1, z), new Vector3(x1, Top, z), new Vector3(x0, Top, z), new Vector3(0, 0, z), 4f);
-                // the underside of the arch, following the dome
+                    mb.Quad(new Vector3(x0, b0, z), new Vector3(x1, b1, z), new Vector3(x1, t1, z), new Vector3(x0, t0, z), new Vector3(0, 0, z), 4f);
+                // the underside of the arch, following the ball's dome
                 if (!outer)
                     mb.Quad(new Vector3(x0, b0, -Th), new Vector3(x1, b1, -Th), new Vector3(x1, b1, Th), new Vector3(x0, b0, Th), Vector3.down, 4f);
+                // and the top edge, under the map dome
+                mb.Quad(new Vector3(x0, t0, -Th), new Vector3(x1, t1, -Th), new Vector3(x1, t1, Th), new Vector3(x0, t0, Th), Vector3.up, 4f);
             }
+            // the two ends, against the dome's straight sides
+            foreach (float x in new[] { -L, L })
+                mb.Quad(new Vector3(x, Bottom, -Th), new Vector3(x, Top(x), -Th), new Vector3(x, Top(x), Th), new Vector3(x, Bottom, Th), new Vector3(Mathf.Sign(x), 0, 0), 4f);
             var glass = mb.Build(t, "glass", Art.Ghost(k_GlassColor), false);
             var mc = glass.AddComponent<MeshCollider>();
             mc.sharedMesh = glass.GetComponent<MeshFilter>().sharedMesh;
 
+            // how far out the wall still reaches at height y (its top edge comes down towards the ends)
+            float Reach(float y)
+            {
+                float best = 0f;
+                for (int i = 0; i + 1 < xs.Count; i++)
+                {
+                    float x0 = xs[i], x1 = xs[i + 1];
+                    if (x1 <= 0f) continue;
+                    float a = Top(x0), b = Top(x1);
+                    if (a >= y && b >= y) best = Mathf.Max(best, x1);
+                    else if (a >= y && b < y) best = Mathf.Max(best, Mathf.Lerp(x0, x1, (a - y) / Mathf.Max(1e-4f, a - b)));
+                }
+                return best;
+            }
             var line = Art.Ghost(k_GlassLine);
             var lines = new MeshBatch();
-            for (int k = 0; k < 8; k++)
+            float topMax = Top(0f);
+            for (int k = 0; 0.6f + k * 4f < topMax - 0.5f; k++)
             {
                 float y = 0.6f + k * 4f;
                 float h = y - gy;
+                float reach = Reach(y);
+                if (reach < 0.5f) continue;
                 float cut = h < notch ? Mathf.Sqrt(notch * notch - h * h) : 0f;
-                if (cut <= 0f) lines.Box(new Vector3(0, y, 0), Quaternion.identity, new Vector3(2 * L, 0.06f, 0.34f));
-                else
+                if (cut <= 0f) lines.Box(new Vector3(0, y, 0), Quaternion.identity, new Vector3(2 * reach, 0.06f, 0.34f));
+                else if (reach > cut)
                     for (int s = -1; s <= 1; s += 2)
-                        lines.Box(new Vector3(s * (L + cut) * 0.5f, y, 0), Quaternion.identity, new Vector3(L - cut, 0.06f, 0.34f));
+                        lines.Box(new Vector3(s * (reach + cut) * 0.5f, y, 0), Quaternion.identity, new Vector3(reach - cut, 0.06f, 0.34f));
             }
-            for (float x = -half; x <= half; x += 12f)
+            for (float x = -Mathf.Floor(L / 12f) * 12f; x <= L; x += 12f)
             {
-                float b = Under(x);
-                lines.Box(new Vector3(x, (b + Top) * 0.5f, 0), Quaternion.identity, new Vector3(0.08f, Top - b, 0.34f));
+                float b = Under(x), top = Top(x);
+                if (top - b < 0.2f) continue;
+                lines.Box(new Vector3(x, (b + top) * 0.5f, 0), Quaternion.identity, new Vector3(0.08f, top - b, 0.34f));
             }
+            // and a frame line along its top edge, under the map dome
+            for (int i = 0; i + 1 < xs.Count; i++)
+                lines.Line(new Vector3(xs[i], Top(xs[i]) - 0.05f, 0), new Vector3(xs[i + 1], Top(xs[i + 1]) - 0.05f, 0), 0.34f, 0.08f, Vector3.up);
             lines.Build(t, "glass lines", line, false);
         }
 

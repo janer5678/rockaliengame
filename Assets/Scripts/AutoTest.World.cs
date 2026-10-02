@@ -52,7 +52,8 @@ namespace RockGame
                 return l;
             }
             int WallsShown() { int k = 0; foreach (var r in PlainWallRs()) if (r && r.enabled) k++; return k; }
-            Check(PlainWallRs().Count == 4 && WallsShown() == 4, $"the 4 plain boundary walls collide and are drawn ({PlainWallRs().Count} walls, {WallsShown()} shown)");
+            // (Normal graphics: the walls still collide but you see the glass dome over the map instead)
+            Check(PlainWallRs().Count == 4 && WallsShown() == 0 && MapDome.Shown, $"the 4 boundary walls collide, the glass dome is drawn instead ({PlainWallRs().Count} walls, {WallsShown()} shown, dome {MapDome.Shown})");
             var clouds = root.GetComponentInChildren<CloudLayer>();
             Check(clouds != null && clouds.Count > 5, $"clouds up ({(clouds != null ? clouds.Count : 0)})");
             int flags = 0;
@@ -320,8 +321,7 @@ namespace RockGame
 
             // ---- colour changes, applied live ----
             var snowy = ColorSlots.Ground.Presets[5];
-            var wall0 = PlainWallRs()[0];
-            var wallMat = wall0.sharedMaterial;
+            var wallMat = MapDome.FrameMaterial; // (the "Map dome" colour: the glass dome's frame)
             Color wallBefore = wallMat.color;
             ColorSlots.Set(ColorSlots.Ground, snowy, false);
             ColorSlots.Set(ColorSlots.Grass, ColorSlots.Grass.Presets[5], false);
@@ -336,7 +336,7 @@ namespace RockGame
             ColorSlots.Set(ColorSlots.Hands, new Color(0.3f, 0.85f, 0.9f), false);
             yield return new WaitForSeconds(0.3f);
             Check(WorldLook.GroundMaterial(false).color == snowy, "the ground takes the colour picked");
-            Check(ColorSlots.Same(wallMat.color, ColorSlots.MapWalls.Value) && !ColorSlots.Same(wallMat.color, wallBefore), $"the map walls take the colour picked (#{ColorUtility.ToHtmlStringRGB(wallMat.color)})");
+            Check(ColorSlots.Same(wallMat.color, ColorSlots.MapWalls.Value) && !ColorSlots.Same(wallMat.color, wallBefore), $"the map dome takes the colour picked (#{ColorUtility.ToHtmlStringRGB(wallMat.color)})");
             int handRs = 0, handOk = 0;
             foreach (var hook in FindObjectsByType<HandColorHook>(FindObjectsSortMode.None))
                 foreach (var r in hook.GetComponentsInChildren<Renderer>(true))
@@ -376,7 +376,7 @@ namespace RockGame
             GameSettings.ResetWorldLook(false);
             yield return new WaitForSeconds(0.2f);
             Check(WorldLook.GroundMaterial(false).color == GameSettings.WorldColorDefaults[0] && ColorSlots.ChangedCount == 0, "reset puts the default colours back");
-            Check(ColorSlots.Same(wallMat.color, wallBefore), "the walls are back to their colour");
+            Check(ColorSlots.Same(wallMat.color, wallBefore), "the map dome is back to its colour");
 
             yield return TrampleAndWheat();
             yield return TrampleAndWheat2();
@@ -385,13 +385,13 @@ namespace RockGame
             GameSettings.SetGraphics(1, false);
             yield return new WaitForSeconds(0.5f);
             yield return Shoot("psx_walls", wallSpot, faceYaw, -6f);
-            Check(WallsShown() == 4 && !clouds.Shown && (sun == null || !sun.Shown), "PSX: the plain (concrete) walls, no clouds, no sun");
+            Check(WallsShown() == 4 && !MapDome.Shown && !clouds.Shown && (sun == null || !sun.Shown), "PSX: the plain (concrete) walls, no glass dome, no clouds, no sun");
             GameSettings.SetGraphics(2, false);
             yield return new WaitForSeconds(0.8f);
-            Check(WallsShown() == 4 && !clouds.Shown && (sun == null || !sun.Shown), "AI PSX: the plain walls, no clouds, no sun");
+            Check(WallsShown() == 4 && !MapDome.Shown && !clouds.Shown && (sun == null || !sun.Shown), "AI PSX: the plain walls, no glass dome, no clouds, no sun");
             GameSettings.SetGraphics(0, false);
             yield return new WaitForSeconds(0.5f);
-            Check(WallsShown() == 4 && clouds.Shown && (sun == null || sun.Shown), "Normal again: the walls, the clouds and the sun");
+            Check(WallsShown() == 0 && MapDome.Shown && clouds.Shown && (sun == null || sun.Shown), "Normal again: the glass dome, the clouds and the sun");
             Log("world test done");
             yield return new WaitForSeconds(0.5f);
             Application.Quit(0);

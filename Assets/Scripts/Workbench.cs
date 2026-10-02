@@ -78,8 +78,8 @@ namespace RockGame
     }
 
     /// <summary>
-    /// The workbenches, T1 and T2: futuristic machines in the alien machine's style (silver metal, glowing tips, spinning
-    /// rings, a floating orb), crafted from the TAB list and put down anywhere inside your own base (Builder: anywhere).
+    /// The workbenches, T1 and T2: futuristic benches in the alien machine's style (silver metal, glowing strips, screens),
+    /// crafted from the TAB list and put down anywhere inside your own base (Builder: anywhere).
     /// They can't be broken. Nothing is made AT a bench: while it stands in your base, its tier's items show up in the TAB
     /// crafting list whenever you're in your base. T2 needs a T1 placed first; one of each per team.
     /// It's a Container (kind Workbench / Workbench2) with no slots. E on it just tells you that.
@@ -220,12 +220,12 @@ namespace RockGame
 
         /// <summary>
         /// A workbench, 1.3 x 0.76 m with its top at TopY, front (+z) towards whoever stands at it. `full` adds the light
-        /// (not for ghosts and icons). Named parts animate: ring*, orb, holo, orbit, light.
-        /// T1: a silver fabricator - a metal plinth, two pedestals, a console with a screen, a column with a spinning ring,
-        ///     two glowing-tipped pylons and a floating green orb (a little alien machine).
-        /// T2: much more - hovering on four legs with pink pads, glowing pink seams, twin consoles, a hologram spinning over a
-        ///     projector pad, a tall tower with a three-ring gyroscope, a big pink orb in a crown of spikes, tesla pylons,
-        ///     two emitter arms and crystals orbiting the tower.
+        /// (not for ghosts and icons). Nothing stands on the top (no column, rings, orb or pylons): the top is a finished
+        /// slab with a low lip along its back edge.
+        /// T1: a silver fabricator - a metal plinth, two pedestals with green status lights, a console with a screen, a green
+        ///     projector pad, a team-colour strip along the front and the back lip.
+        /// T2: much more - hovering on four splayed legs with pink pads over a pink glow, glowing pink seams and edges, a
+        ///     cyan grille, twin consoles, a cyan projector pad, a pink-lit back lip with cyan lights and pink corner studs.
         /// </summary>
         public static void BuildModel(Transform parent, int team, bool full, int tier = 1)
         {
@@ -243,7 +243,7 @@ namespace RockGame
             {
                 var lg = new GameObject("light");
                 lg.transform.SetParent(t, false);
-                lg.transform.localPosition = new Vector3(0, TopY + 0.7f, 0.35f);
+                lg.transform.localPosition = new Vector3(0, TopY + 0.4f, 0.35f);
                 var l = lg.AddComponent<Light>();
                 l.type = LightType.Point;
                 l.color = tier == 2 ? k_Pink : k_Alien;
@@ -278,26 +278,21 @@ namespace RockGame
             Cyl(t, k_SilverDark, new Vector3(-0.32f, TopY + 0.015f, 0.08f), 0.17f, 0.03f);
             Cyl(t, k_Alien, new Vector3(-0.32f, TopY + 0.035f, 0.08f), 0.12f, 0.012f, default, gAlien);
 
-            // the back: a silver column with a spinning ring round it and a floating orb over it (the machine, small)
-            float cz = -0.24f;
-            Cyl(t, k_Metal, new Vector3(0, TopY + 0.04f, cz), 0.22f, 0.08f);
-            Cyl(t, k_Silver, new Vector3(0, TopY + 0.42f, cz), 0.14f, 0.76f);
-            Cyl(t, k_Metal, new Vector3(0, TopY + 0.82f, cz), 0.2f, 0.05f);
-            Ring(t, new Vector3(0, TopY + 0.45f, cz), new Vector3(15, 0, 8), 0.27f, 12, 0.12f, k_Silver, gTeam, 3, "ring");
-            var orb = Art.Part(t, Art.Ico, k_Alien, new Vector3(0, TopY + 1.05f, cz), Vector3.one * 0.09f, default, false, gAlien, "orb").transform;
-            Art.Part(orb, Art.Ico, Color.white, Vector3.zero, Vector3.one * 1.6f, default, false, Art.Ghost(new Color(0.5f, 1f, 0.6f, 0.3f)));
-            // an emitter arm off the column, pointing down at the pad
-            Art.Box(t, k_Metal, new Vector3(-0.16f, TopY + 0.62f, cz + 0.1f), new Vector3(0.36f, 0.05f, 0.06f), new Vector3(0, 35, -10));
-            Art.Part(t, Art.Cone, k_Alien, new Vector3(-0.3f, TopY + 0.6f, 0.03f), new Vector3(0.09f, 0.1f, 0.09f), new Vector3(180, 0, 0), false, gAlien);
-            // two pylons on the back corners with glowing tips and silver spikes
-            for (int k = -1; k <= 1; k += 2)
-            {
-                Art.Box(t, k_Metal, new Vector3(k * 0.56f, TopY + 0.3f, -0.27f), new Vector3(0.1f, 0.6f, 0.1f), new Vector3(0, 0, -k * 6f));
-                Art.Part(t, Art.Ico, teamGlow, new Vector3(k * 0.59f, TopY + 0.64f, -0.27f), Vector3.one * 0.055f, default, false, gTeam);
-                Art.Part(t, Art.Cone, k_Silver, new Vector3(k * 0.59f, TopY + 0.66f, -0.27f), new Vector3(0.07f, 0.16f, 0.07f));
-            }
+            // the back edge: a low metal lip (nothing stands on the top any more - no column, ring, orb or pylons),
+            // with a glowing team-colour strip along it and two green status lights
+            BackLip(t, teamGlow, gTeam, k_Alien, gAlien);
             // the tier: one lit pip on the front
             Art.Part(t, Art.Ico, k_Alien, new Vector3(0, 0.07f, 0.385f), Vector3.one * 0.035f, default, false, gAlien);
+        }
+
+        /// <summary>The finished back edge of a bench top: a low metal lip with a glowing strip and two status lights.</summary>
+        static void BackLip(Transform t, Color strip, Material gStrip, Color lights, Material gLights)
+        {
+            Art.Box(t, k_Metal, new Vector3(0, TopY + 0.05f, -0.33f), new Vector3(1.26f, 0.1f, 0.1f));
+            Art.Box(t, k_SilverDark, new Vector3(0, TopY + 0.105f, -0.33f), new Vector3(1.3f, 0.015f, 0.12f));
+            Art.Box(t, strip, new Vector3(0, TopY + 0.05f, -0.279f), new Vector3(1.0f, 0.02f, 0.008f), default, false, gStrip);
+            for (int k = -1; k <= 1; k += 2)
+                Art.Box(t, lights, new Vector3(k * 0.56f, TopY + 0.05f, -0.279f), new Vector3(0.05f, 0.04f, 0.01f), default, false, gLights);
         }
 
         static void BuildT2(Transform t, Color teamGlow, Material gTeam, Material gAlien, Material screen)
@@ -341,62 +336,15 @@ namespace RockGame
                 Art.Box(t, k_Metal, new Vector3(k * 0.42f, TopY + 0.07f, 0.2f), new Vector3(0.34f, 0.06f, 0.26f), new Vector3(-32, k * -12f, 0));
                 Art.Box(t, Color.white, new Vector3(k * 0.42f, TopY + 0.105f, 0.21f), new Vector3(0.29f, 0.012f, 0.2f), new Vector3(-32, k * -12f, 0), false, screen);
             }
-            // a projector in the middle of the top, with a hologram spinning over it
+            // a projector pad in the middle of the top (flush: no beam or hologram over it any more)
             Cyl(t, k_SilverDark, new Vector3(0, TopY + 0.02f, 0.06f), 0.16f, 0.04f);
             Cyl(t, k_Cyan, new Vector3(0, TopY + 0.045f, 0.06f), 0.11f, 0.012f, default, gCyan);
-            var beam = Art.Part(t, Art.Cone, Color.white, new Vector3(0, TopY + 0.05f, 0.06f), new Vector3(0.36f, 0.4f, 0.36f), new Vector3(180, 0, 0), false, Art.Ghost(new Color(0.4f, 0.95f, 1f, 0.16f)));
-            beam.transform.localPosition = new Vector3(0, TopY + 0.45f, 0.06f); // (upside down: wide at the top)
-            var holo = new GameObject("holo").transform;
-            holo.SetParent(t, false);
-            holo.localPosition = new Vector3(0, TopY + 0.3f, 0.06f);
-            Art.Part(holo, Art.Ico, Color.white, Vector3.zero, Vector3.one * 0.1f, new Vector3(20, 0, 30), false, Art.Ghost(new Color(0.4f, 1f, 1f, 0.55f)));
-            Art.Part(holo, Art.Cube, Color.white, Vector3.zero, Vector3.one * 0.13f, new Vector3(45, 0, 45), false, Art.Ghost(new Color(1f, 0.45f, 0.9f, 0.3f)));
 
-            // the tower at the back: a tall silver column in a three-ring gyroscope, a big pink orb in a crown of spikes
-            float cz = -0.25f;
-            Cyl(t, k_Metal, new Vector3(0, TopY + 0.05f, cz), 0.24f, 0.1f);
-            Cyl(t, k_Silver, new Vector3(0, TopY + 0.65f, cz), 0.13f, 1.2f);
-            for (int i = 0; i < 4; i++) Cyl(t, i % 2 == 0 ? k_SilverDark : k_Pink, new Vector3(0, TopY + 0.3f + i * 0.22f, cz), 0.145f, 0.03f, default, i % 2 == 0 ? null : gPink);
-            Cyl(t, k_Metal, new Vector3(0, TopY + 1.26f, cz), 0.22f, 0.06f);
-            var gyroAt = new Vector3(0, TopY + 0.7f, cz);
-            Ring(t, gyroAt, new Vector3(0, 0, 0), 0.34f, 14, 0.12f, k_Silver, gTeam, 2, "ring");
-            Ring(t, gyroAt, new Vector3(70, 0, 0), 0.4f, 14, 0.11f, k_SilverDark, gPink, 2, "ring");
-            Ring(t, gyroAt, new Vector3(20, 0, 70), 0.46f, 16, 0.1f, k_Silver, gCyan, 2, "ring");
-            for (int i = 0; i < 4; i++)
-            {
-                var r = Quaternion.Euler(0, 45f + i * 90f, 0);
-                Art.Part(t, Art.Cone, k_Silver, new Vector3(0, TopY + 1.28f, cz) + r * new Vector3(0, 0, 0.15f), new Vector3(0.07f, 0.28f, 0.07f), (r * Quaternion.Euler(30, 0, 0)).eulerAngles);
-            }
-            var orb = Art.Part(t, Art.Ico, k_Pink, new Vector3(0, TopY + 1.55f, cz), Vector3.one * 0.13f, default, false, gPink, "orb").transform;
-            Art.Part(orb, Art.Ico, Color.white, Vector3.zero, Vector3.one * 1.7f, default, false, Art.Ghost(new Color(1f, 0.45f, 0.85f, 0.28f)));
-            // crystals orbiting the tower
-            var orbit = new GameObject("orbit").transform;
-            orbit.SetParent(t, false);
-            orbit.localPosition = new Vector3(0, TopY + 1.05f, cz);
-            for (int i = 0; i < 3; i++)
-            {
-                float a = i * Mathf.PI * 2f / 3f;
-                var p = new Vector3(Mathf.Sin(a) * 0.55f, (i - 1) * 0.08f, Mathf.Cos(a) * 0.55f);
-                var col = i == 1 ? k_Cyan : k_Pink;
-                var g = i == 1 ? gCyan : gPink;
-                Art.Part(orbit, Art.Cone, col, p, new Vector3(0.07f, 0.09f, 0.07f), default, false, g);
-                Art.Part(orbit, Art.Cone, col, p, new Vector3(0.07f, 0.09f, 0.07f), new Vector3(180, 0, 0), false, g);
-            }
-            // tesla pylons: tall on the back corners (stacked discs, pink tips), short on the front corners (cyan tips)
+            // the back edge: a low metal lip (no tower, gyroscope, orb, crystals or pylons on top any more), a pink strip
+            // along it, cyan status lights, and two pink studs on the back corners
+            BackLip(t, k_Pink, gPink, k_Cyan, gCyan);
             for (int k = -1; k <= 1; k += 2)
-            {
-                var b = new Vector3(k * 0.56f, TopY, -0.28f);
-                Cyl(t, k_Metal, b + Vector3.up * 0.45f, 0.04f, 0.9f);
-                for (int i = 0; i < 3; i++) Cyl(t, i == 2 ? k_Pink : k_Silver, b + Vector3.up * (0.4f + i * 0.17f), 0.1f - i * 0.02f, 0.025f, default, i == 2 ? gPink : null);
-                Art.Part(t, Art.Ico, k_Pink, b + Vector3.up * 0.95f, Vector3.one * 0.07f, default, false, gPink);
-                Art.Part(t, Art.Cone, k_Silver, b + Vector3.up * 0.98f, new Vector3(0.06f, 0.2f, 0.06f));
-                var f = new Vector3(k * 0.6f, TopY, 0.33f);
-                Cyl(t, k_Metal, f + Vector3.up * 0.1f, 0.03f, 0.2f);
-                Art.Part(t, Art.Ico, k_Cyan, f + Vector3.up * 0.23f, Vector3.one * 0.045f, default, false, gCyan);
-                // emitter arms off the tower, pointing down at the projector
-                Rod(t, k_Metal, new Vector3(k * 0.1f, TopY + 0.95f, cz), new Vector3(k * 0.3f, TopY + 0.75f, 0.0f), 0.025f);
-                Art.Part(t, Art.Cone, k_Cyan, new Vector3(k * 0.3f, TopY + 0.73f, 0.0f), new Vector3(0.08f, 0.1f, 0.08f), new Vector3(180, 0, -k * 25f), false, gCyan);
-            }
+                Art.Part(t, Art.Ico, k_Pink, new Vector3(k * 0.6f, TopY + 0.03f, 0.33f), Vector3.one * 0.04f, default, false, gPink);
             // the tier: two lit pips on the front
             for (int k = -1; k <= 1; k += 2) Art.Part(t, Art.Ico, k_Pink, new Vector3(k * 0.06f, 0.36f, 0.35f), Vector3.one * 0.035f, default, false, gPink);
         }
@@ -404,12 +352,12 @@ namespace RockGame
         /// <summary>Called by the Container when it spawns (kind Workbench / Workbench2): colliders and the idle animation.</summary>
         public static void Setup(Container c, Transform visual, BoxCollider bc)
         {
-            bool t2 = c.BenchTier == 2;
             bc.center = new Vector3(0, TopY * 0.5f, 0);
             bc.size = new Vector3(HalfX * 2f, TopY, HalfZ * 2f);
-            var back = c.gameObject.AddComponent<BoxCollider>(); // the column at the back
-            back.center = new Vector3(0, TopY + (t2 ? 0.7f : 0.5f), -0.26f);
-            back.size = new Vector3(t2 ? 1.2f : 1.2f, t2 ? 1.4f : 1.0f, 0.2f);
+            // (nothing stands on the top any more, so there's no collider up there: the low lip on the back edge is all)
+            var back = c.gameObject.AddComponent<BoxCollider>();
+            back.center = new Vector3(0, TopY + 0.055f, -0.33f);
+            back.size = new Vector3(1.3f, 0.11f, 0.12f);
             var w = c.gameObject.AddComponent<Workbench>();
             foreach (var tr in visual.GetComponentsInChildren<Transform>(true))
             {

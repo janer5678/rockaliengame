@@ -775,8 +775,11 @@ namespace RockGame
         public static int WoodGenRate(int level) => level >= 2 ? AutoWoodLevel2 : level == 1 ? AutoWoodLevel1 : AutoWoodPerSecond;
         /// <summary>Auto Wood: the wood machine stands on the bedrock to the right of the alien machine (as you look at it from your spawn).</summary>
         public static Vector3 WoodMachinePos(int team) => MachinePos(team) + Quaternion.LookRotation(-BackDir(team)) * new Vector3(-2.35f, 0, 0.1f);
+        /// <summary>Where the wood machine's logs land and its pile grows, in the machine's own space (+z out of the front):
+        /// on the bedrock well out in front of the chute, so the logs clearly drop off the end of it.</summary>
+        public static readonly Vector3 WoodTrayLocal = new Vector3(0, 0.3f, 1.65f);
         /// <summary>Where the wood machine's pile of wood comes out: on the bedrock in front of its chute.</summary>
-        public static Vector3 WoodTrayPos(int team) => WoodMachinePos(team) + Quaternion.LookRotation(-BackDir(team)) * new Vector3(0, 0.3f, 0.95f);
+        public static Vector3 WoodTrayPos(int team) => WoodMachinePos(team) + Quaternion.LookRotation(-BackDir(team)) * WoodTrayLocal;
         /// <summary>Power recipes are numbered from here in CraftRpc.</summary>
         public const int PowerBase = 100;
         /// <summary>Where an item is in the power menu (-1 if it isn't there).</summary>
