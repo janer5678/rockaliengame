@@ -31,6 +31,9 @@ namespace RockGame
         }
 
         readonly Transform m_Root, m_R, m_L, m_ItemHolder;
+        readonly AlienArm m_AR, m_AL;
+        /// <summary>How each alien hand sits on its hand transform this frame (set by the poses; a fist round the grip by default).</summary>
+        HandPose m_RP, m_LP;
         GameObject m_Item, m_Arrow, m_Ball, m_StringA, m_StringB;
         Item m_ItemId = (Item)255;
         bool m_WasBall;
@@ -41,20 +44,36 @@ namespace RockGame
         float m_CrouchK, m_SprintK, m_Land, m_AirVel, m_Jump, m_BobPhase, m_AimK;
         bool m_WasGrounded = true;
 
+        // ---- for the hands autotest ----
+        /// <summary>0: the alien arms (the game), 1: the original box arms instead, 2: both at once (to line them up).</summary>
+        public static int DebugArms;
+        /// <summary>When set (>= 0), the swing / throw / eat / use animations are held at this many seconds in.</summary>
+        public static float DebugSwingE = -1f, DebugThrowE = -1f, DebugEatE = -1f, DebugUseE = -1f;
+        public static bool DebugAim, DebugBall;
+        int m_ArmsShown = -1;
+        readonly System.Collections.Generic.List<Renderer> m_BoxR = new System.Collections.Generic.List<Renderer>(), m_AlienR = new System.Collections.Generic.List<Renderer>();
+
         public ViewModel(Transform cam, Color team)
         {
             m_Root = new GameObject("ViewModel").transform;
             m_Root.SetParent(cam, false);
             var skin = new Color(0.6f, 0.64f, 0.58f);
             skin = Color.Lerp(skin, team, 0.25f);
-            m_R = MakeArm(m_Root, skin, team, true);
-            m_L = MakeArm(m_Root, skin, team, false);
+            m_R = MakeArm(m_Root, skin, team, true, out m_AR);
+            m_L = MakeArm(m_Root, skin, team, false, out m_AL);
+            foreach (var r in m_Root.GetComponentsInChildren<Renderer>(true))
+            {
+                bool alien = false;
+                for (var t = r.transform; t != null && t != m_Root; t = t.parent) alien |= t.name.StartsWith("psx alienarm");
+                (alien ? m_AlienR : m_BoxR).Add(r);
+            }
             m_ItemHolder = new GameObject("item").transform;
             m_ItemHolder.SetParent(m_Root, false);
         }
 
         public void Destroy()
         {
+            m_AR?.Free(); m_AL?.Free();
             if (m_Root) Object.Destroy(m_Root.gameObject);
         }
 
@@ -80,7 +99,7 @@ namespace RockGame
         public void Eat() => m_EatStart = Time.time;
         public void Use() => m_UseStart = Time.time;
 
-        static Transform MakeArm(Transform parent, Color skin, Color team, bool right)
+        static Transform MakeArm(Transform parent, Color skin, Color team, bool right, out AlienArm arm)
         {
             var hand = new GameObject(right ? "R" : "L").transform;
             hand.SetParent(parent, false);
@@ -91,24 +110,145 @@ namespace RockGame
             Art.Box(hand, skin, new Vector3(-0.045f * side, 0.025f, 0.035f), new Vector3(0.03f, 0.03f, 0.065f), new Vector3(0, 20 * side, 0)); // thumb
             Art.Box(hand, team, new Vector3(0, 0, -0.075f), new Vector3(0.082f, 0.082f, 0.035f));               // wrist band
             Art.Box(hand, skin, new Vector3(0, 0, -0.32f), new Vector3(0.072f, 0.072f, 0.46f));                  // forearm
-            // the alien's own forearms and clawed hands (cut from the player model, Tools/psx_convert.py), tinted in your team
-            // colour like your body - in place of the blocks above, which only stay as a fallback
-            var arm = PsxModels.Spawn(right ? "alienarm_r" : "alienarm_l", hand);
-            if (arm != null && PsxModels.LocalBounds(hand, hand, out var box, null, arm.transform))
+            // the alien's own forearm and clawed hand in place of the blocks above (which stay as a fallback)
+            var alien = AlienArm.Make(hand, right, Color.Lerp(Color.white, team, 0.6f));
+            if (alien != null)
+                foreach (var r in hand.GetComponentsInChildren<Renderer>()) if (!r.transform.IsChildOf(alien.Fit)) r.enabled = false;
+            arm = alien;
+            foreach (var r in hand.GetComponentsInChildren<Renderer>()) r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            return hand;
+        }
+
+        /// <summary>
+        /// How an alien hand sits on its hand transform. The hand transform is where the old box fist was: its origin is
+        /// the grip (items are held by it), +Z runs from the wrist to the knuckles, and the thumb was on its +Y side.
+        /// Fist: the claws close round the origin, the thumb towards `Dir` (a direction in view model space; by default
+        /// the hand's own +Y, like the box thumb). Palm: a more open hand whose palm faces the point `Dir` (view model space).
+        /// </summary>
+        struct HandPose
+        {
+            public bool Palm, HasDir;
+            public Vector3 Dir;
+            public float Curl;
+            public static HandPose Fist => new HandPose { Curl = 1f };
+            public static HandPose FistThumb(Vector3 dir, float curl = 1f) => new HandPose { HasDir = true, Dir = dir, Curl = curl };
+            public static HandPose PalmAt(Vector3 point, float curl) => new HandPose { Palm = true, HasDir = true, Dir = point, Curl = curl };
+        }
+
+        /// <summary>
+        /// The alien's own forearm and clawed hand (cut from the rigged player model by Tools/psx_convert.py), tinted in
+        /// the team colour like the body. The mesh: hand along +Z, wrist at z = 0, knuckles at z = 0.09, claw tips up to
+        /// z = 0.226, elbow at z = -0.22; the right palm faces (0.96, 0.29) in XY and its thumb (0.29, -0.96) (the left
+        /// arm is its mirror image). Rather than being squeezed into the old box (which put the hand where the forearm
+        /// was), it's fitted by its hand: the claws curl round the grip (the hand's origin, where the box fist was), the
+        /// wrist ends up where the box wrist band was, and the forearm is stretched back so it runs off the edge of the
+        /// screen like a real arm.
+        /// </summary>
+        class AlienArm
+        {
+            public Transform Fit;
+            Mesh m_Mesh;
+            Vector3[] m_Base, m_Work;
+            Matrix4x4 m_ToModel, m_ToMesh;
+            float m_Curl = -1f;
+            Vector2 m_Thumb, m_PalmN;
+
+            public const float Scale = 1.4f;
+            const float Knuckle = 0.09f;    // where the claws start (model z)
+            const float ClawLen = 0.136f;   // the longest claw, knuckle to tip
+            const float FistTurn = 245f;    // how far (degrees) the longest claw curls round in a full fist
+            const float ArmStretch = 0.3f;  // the elbow end is moved back this much (model units) so the arm reaches off screen
+            const float ElbowWiden = 1.15f;
+
+            public static AlienArm Make(Transform hand, bool right, Color tint)
             {
-                PsxModels.FitInto(arm.transform, hand, box, PsxModels.Fit.Uniform);
-                var tint = Color.Lerp(Color.white, team, 0.6f);
-                foreach (var r in arm.GetComponentsInChildren<Renderer>())
+                var fit = new GameObject("alien fit").transform;
+                fit.SetParent(hand, false);
+                var model = PsxModels.Spawn(right ? "alienarm_r" : "alienarm_l", fit);
+                var mf = model != null ? model.GetComponentInChildren<MeshFilter>() : null;
+                if (mf == null || mf.sharedMesh == null) { Object.Destroy(fit.gameObject); return null; }
+                var a = new AlienArm { Fit = fit };
+                a.m_Mesh = Object.Instantiate(mf.sharedMesh);
+                a.m_Mesh.name = "alien arm (posed)";
+                mf.sharedMesh = a.m_Mesh;
+                a.m_Base = a.m_Mesh.isReadable ? a.m_Mesh.vertices : new Vector3[0]; // (Read/Write is on for it: PsxImport)
+                a.m_Work = new Vector3[a.m_Base.Length];
+                a.m_ToModel = model.transform.worldToLocalMatrix * mf.transform.localToWorldMatrix;
+                a.m_ToMesh = a.m_ToModel.inverse;
+                a.m_PalmN = new Vector2(right ? 0.957f : -0.957f, 0.29f);
+                a.m_Thumb = new Vector2(right ? 0.29f : -0.29f, -0.957f);
+                foreach (var r in model.GetComponentsInChildren<Renderer>())
                 {
                     var mats = r.materials; // own copies, tinted
                     foreach (var mt in mats) { mt.SetColor("_BaseColor", tint); mt.color = tint; }
                     r.materials = mats;
                 }
-                foreach (var r in hand.GetComponentsInChildren<Renderer>()) if (!r.transform.IsChildOf(arm.transform)) r.enabled = false;
+                a.Bend(1f);
+                return a;
             }
-            foreach (var r in hand.GetComponentsInChildren<Renderer>()) r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            return hand;
+
+            /// <summary>Re-shapes the mesh: the claws curled by `curl` (0 open, 1 a fist) towards the palm, the forearm stretched.</summary>
+            void Bend(float curl)
+            {
+                if (Mathf.Abs(curl - m_Curl) < 0.01f || m_Base.Length == 0) return;
+                m_Curl = curl;
+                var n = new Vector3(m_PalmN.x, m_PalmN.y, 0f).normalized;
+                var z = Vector3.forward;
+                var ax = Vector3.Cross(z, n);
+                float k = curl * FistTurn * Mathf.Deg2Rad / ClawLen;
+                for (int i = 0; i < m_Base.Length; i++)
+                {
+                    var u = m_ToModel.MultiplyPoint3x4(m_Base[i]);
+                    if (u.z < -0.1f)
+                    {
+                        // the elbow end: further back, a little thicker
+                        u.x *= ElbowWiden; u.y *= ElbowWiden;
+                        u.z -= ArmStretch;
+                    }
+                    float d = u.z - Knuckle;
+                    if (d > 0f && k > 1e-4f)
+                    {
+                        // bend the claws round an arc on the palm side (each point keeps its offset from the claw's centre line)
+                        float pn = Vector3.Dot(u, n), pa = Vector3.Dot(u, ax);
+                        float th = k * d;
+                        var c = new Vector3(0, 0, Knuckle) + z * (Mathf.Sin(th) / k) + n * ((1f - Mathf.Cos(th)) / k);
+                        var n2 = -z * Mathf.Sin(th) + n * Mathf.Cos(th);
+                        u = c + n2 * pn + ax * pa;
+                    }
+                    m_Work[i] = m_ToMesh.MultiplyPoint3x4(u);
+                }
+                m_Mesh.vertices = m_Work;
+                m_Mesh.RecalculateNormals();
+                m_Mesh.RecalculateBounds();
+            }
+
+            public void Free() { if (m_Mesh) Object.Destroy(m_Mesh); }
+
+            /// <summary>Puts the arm on its hand transform for this frame.</summary>
+            public void Pose(HandPose p, Transform hand, Transform root)
+            {
+                float curl = Mathf.Clamp01(p.Curl);
+                Bend(curl);
+                // turn the arm round its length so the thumb / the palm points the right way
+                Vector2 want = Vector2.up; // the thumb where the box fist had it
+                if (p.HasDir)
+                {
+                    var d = p.Palm ? hand.InverseTransformPoint(root.TransformPoint(p.Dir)) : hand.InverseTransformDirection(root.TransformDirection(p.Dir));
+                    if (new Vector2(d.x, d.y).sqrMagnitude > 1e-6f) want = new Vector2(d.x, d.y);
+                }
+                var have = p.Palm ? m_PalmN : m_Thumb;
+                float roll = (Mathf.Atan2(want.y, want.x) - Mathf.Atan2(have.y, have.x)) * Mathf.Rad2Deg;
+                var rot = Quaternion.Euler(0, 0, roll);
+                // a fist closes round the grip: the centre of the claws' curl goes on the hand's origin; an open hand
+                // puts its knuckles there
+                float r = ClawLen / (FistTurn * Mathf.Deg2Rad);
+                var pivot = new Vector3(0, 0, Knuckle) + (Vector3)m_PalmN.normalized * (r * Mathf.Clamp01(curl * 1.5f - 0.5f));
+                Fit.localRotation = rot;
+                Fit.localScale = Vector3.one * Scale;
+                Fit.localPosition = -(rot * (pivot * Scale));
+            }
         }
+
 
         static float Smooth(float t) { t = Mathf.Clamp01(t); return t * t * (3f - 2f * t); }
 
@@ -118,6 +258,18 @@ namespace RockGame
             bool vis = s.Visible && s.Visible2; // hidden while looking through the sniper scope
             if (m_Root.gameObject.activeSelf != vis) m_Root.gameObject.SetActive(vis);
             if (!vis) return;
+            if (DebugAim) s.Aim = true;
+            if (DebugBall) s.Ball = true;
+            if (DebugSwingE >= 0f) { m_SwingStart = Time.time - DebugSwingE; m_FreezeUntil = -10f; m_ImpactKnown = false; }
+            if (DebugThrowE >= 0f) m_ThrowStart = Time.time - DebugThrowE;
+            if (DebugEatE >= 0f) m_EatStart = Time.time - DebugEatE;
+            if (DebugUseE >= 0f) m_UseStart = Time.time - DebugUseE;
+            if (m_ArmsShown != DebugArms && m_AlienR.Count > 0)
+            {
+                m_ArmsShown = DebugArms;
+                foreach (var r in m_BoxR) if (r) r.enabled = DebugArms != 0;
+                foreach (var r in m_AlienR) if (r) r.enabled = DebugArms != 1;
+            }
 
             // ---- models ----
             var want = s.Ball ? (Item)254 : s.Item;
@@ -190,7 +342,8 @@ namespace RockGame
                 + Vector3.down * (1f - equip) * 0.45f;
             Quaternion sharedRot = Quaternion.Euler(m_Sway.y * 300f + m_SprintK * 14f + landDip * 60f, -m_Sway.x * 300f - m_SprintK * 22f, bx * bobAmt * (1.5f + 3f * m_SprintK) + m_SprintK * 12f);
 
-            if (s.Ball) { PoseBall(shared, sharedRot); return; }
+            m_RP = m_LP = HandPose.Fist;
+            if (s.Ball) { PoseBall(shared, sharedRot); ApplyHands(); return; }
             if (m_Item && !m_Item.activeSelf && s.Item != Item.Spear) m_Item.SetActive(true);
 
             switch (s.Item)
@@ -214,6 +367,13 @@ namespace RockGame
                 case Item.None: HideLeft(); Set(m_R, new Vector3(0.3f, -0.9f, 0.2f), Quaternion.identity); break;
                 default: PoseHeld(s.Item, shared, sharedRot); break;
             }
+            ApplyHands();
+        }
+
+        void ApplyHands()
+        {
+            m_AR?.Pose(m_RP, m_R, m_Root);
+            m_AL?.Pose(m_LP, m_L, m_Root);
         }
 
         void Set(Transform t, Vector3 pos, Quaternion rot) { t.localPosition = pos; t.localRotation = rot; }
@@ -275,6 +435,7 @@ namespace RockGame
             m_R.localRotation = rot * Quaternion.Euler(-20f, -35f, -75f);
             m_L.localPosition = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(-0.13f, 0.0f, 0.0f)));
             m_L.localRotation = rot * Quaternion.Euler(-20f, 35f, 75f);
+            m_RP = m_LP = HandPose.PalmAt(m_ItemHolder.localPosition, 0.35f); // palms flat on the rock
         }
 
         /// <summary>Hatchet / pickaxe: one hand; the tool pivots in the fist so the forearm stays out of frame.</summary>
@@ -308,6 +469,8 @@ namespace RockGame
                 m_R.localPosition = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(0.02f, 0.15f, -0.03f)));
                 m_R.localRotation = sharedRot * Quaternion.Euler(-55f, -30f, -20f);
                 Set(m_L, shared + new Vector3(-0.16f, -0.14f, 0.55f), sharedRot * Quaternion.Euler(-25f, 25f, 25f));
+                m_RP = HandPose.FistThumb(rot * Vector3.up);
+                m_LP = HandPose.PalmAt(m_L.localPosition + sharedRot * new Vector3(0.1f, 0.05f, 0.1f), 0.45f); // the free hand points the way
                 return;
             }
             if (m_Item && !m_Item.activeSelf) m_Item.SetActive(true);
@@ -324,6 +487,7 @@ namespace RockGame
             m_R.localRotation = sharedRot * Quaternion.Euler(-25f, -28f, -15f);
             m_L.localPosition = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(-0.03f, 0.62f, 0)));
             m_L.localRotation = sharedRot * Quaternion.Euler(-30f, 22f, 15f);
+            m_RP = m_LP = HandPose.FistThumb(spearRot * Vector3.up);
         }
 
         /// <summary>
@@ -345,6 +509,7 @@ namespace RockGame
             var armDir = (grip - shoulder).normalized;
             m_L.localPosition = grip + armDir * -0.02f + bowRot * new Vector3(-0.01f, -0.01f, 0f);
             m_L.localRotation = Quaternion.LookRotation(armDir, bowRot * Vector3.up) * Quaternion.Euler(0, 0, 70f);
+            m_LP = HandPose.FistThumb(bowRot * Vector3.up);
 
             // arrow: rests on the grip. Idle it points ahead and a bit left; drawn it runs straight along the view, so it
             // lines up with the crosshair and the shaft reaches from the grip down towards the bottom of the screen
@@ -368,6 +533,7 @@ namespace RockGame
             pull.z = Mathf.Max(pull.z, 0.12f); // keep the string in front of the camera
             m_R.localPosition = Vector3.Lerp(pull + new Vector3(0.015f, -0.03f, -0.03f), new Vector3(0.3f, -0.5f, -0.3f), e);
             m_R.localRotation = Quaternion.LookRotation(dir, Vector3.up) * Quaternion.Euler(-10f, 0, -80f);
+            m_RP = HandPose.FistThumb(Vector3.up, 0.6f); // pinching the nock
 
             // the string runs from both limb tips to the nock
             if (m_StringA && m_Item)
@@ -415,6 +581,11 @@ namespace RockGame
             var leftPull = new Vector3(-0.04f, 0.04f, -0.05f);
             m_L.localPosition = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(Vector3.Lerp(leftHold, leftPull, r)));
             m_L.localRotation = rot * Quaternion.Euler(-20f - 40f * r, 20f, 70f);
+            // the trigger hand round the grip, thumb up; the other hand cradles the stock from below
+            m_RP = HandPose.FistThumb(rot * Vector3.up);
+            // (a pistol's support hand is a fist off to the side, as the box hand was; long guns are cradled)
+            bool shortGun = s.Item == Item.Pistol || s.Item == Item.Revolver || s.Item == Item.PortalGun;
+            if (!shortGun) m_LP = HandPose.PalmAt(m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(Vector3.Lerp(leftHold, leftPull, r) + new Vector3(0.06f, -0.01f, 0f))), 0.35f); // palm against the side of the stock
         }
 
         void PoseRam(State s, Vector3 shared, Quaternion sharedRot)
@@ -459,6 +630,7 @@ namespace RockGame
             float push = throwing ? Smooth(Mathf.Min(1f, throwK * 2f)) * 0.3f : 0f;
             Set(m_R, ballPos + new Vector3(0.62f, 0.05f, -0.15f + push), sharedRot * Quaternion.Euler(-10f, -40f, -80f));
             Set(m_L, ballPos + new Vector3(-0.62f, 0.05f, -0.15f + push), sharedRot * Quaternion.Euler(-10f, 40f, 80f));
+            m_RP = m_LP = HandPose.PalmAt(ballPos, 0.3f);
         }
 
         void PoseHeld(Item item, Vector3 shared, Quaternion sharedRot)
@@ -490,6 +662,11 @@ namespace RockGame
                 case Item.Arrow: AttachItemToRight(new Vector3(0, -0.1f, 0.02f), new Vector3(-30, 0, 0), 0.8f); break;
                 default: AttachItemToRight(new Vector3(0, 0.05f, 0.07f), Vector3.zero, 1f); break;
             }
+            // things held by a handle get a fist; things that sit on the hand (food, C4, a chest...) are cradled, the claws
+            // curling up round them
+            if (item == Item.DeathWand || item == Item.Arrow) m_RP = HandPose.FistThumb(m_Root.InverseTransformDirection(m_ItemHolder.up)); // round the shaft
+            else if (item != Item.InvisPotion && item != Item.BuildingPlan)
+                m_RP = HandPose.PalmAt(m_Root.InverseTransformPoint(m_ItemHolder.position), 0.6f);
             HideLeft();
         }
     }

@@ -54,6 +54,7 @@ namespace RockGame.EditorTools
                 pm.animationType = ModelImporterAnimationType.None;
                 pm.materialImportMode = ModelImporterMaterialImportMode.None;
                 pm.importNormals = ModelImporterNormals.Import;
+                if (assetPath.Contains("alienarm")) pm.isReadable = true; // the first-person arms curl their claws (ViewModel)
                 return;
             }
             if (assetPath.StartsWith(Trees))
