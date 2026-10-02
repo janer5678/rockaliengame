@@ -465,7 +465,8 @@ namespace RockGame
     public static class Sfx
     {
         public static AudioClip Swing, Flesh, Headshot, Chop, Clink, Thud, Ding, Smash, Twang, Throw, Pop, Eat, Place, Hurt, Kill, Step, Hiss, Boom, Beep, Zap, Saw, Hum,
-            Hit, Rocket, Sniper, Portal, Jet, Glass, Door, Click, Crowd, Whiz, Slide, Hoof, UiHover, UiClick, UiSlide;
+            Hit, Rocket, Sniper, Portal, Jet, Glass, Door, Click, Crowd, Whiz, Slide, Hoof, UiHover, UiClick, UiSlide,
+            Workshop, ArmorClank, StoneGrind, Engine;
         static readonly Dictionary<AudioClip, AudioClip[]> s_Variants = new Dictionary<AudioClip, AudioClip[]>();
         const int Rate = 44100;
 
@@ -524,6 +525,37 @@ namespace RockGame
             UiClick = Make("uiclick", 0.09f, (t, d) => (t < 0.03f ? Mathf.Sin(t * 2 * Mathf.PI * 880) : Mathf.Sin(t * 2 * Mathf.PI * 1760)) * Env(t < 0.03f ? t : t - 0.03f, 0.04f) * 0.35f + N() * Env(t, 0.004f) * 0.2f);
             UiSlide = Make("uislide", 0.025f, (t, d) => Mathf.Sin(t * 2 * Mathf.PI * 2600) * Env(t, 0.012f) * 0.15f);
             // a hoof on the ground
+            // the workbench making something (2.2 s): a hand saw going back and forth, then three hammer knocks and a tap
+            Workshop = Make("workshop", 2.2f, (t, d) =>
+            {
+                if (t < 1.25f)
+                {
+                    float stroke = Mathf.Abs(Mathf.Sin(t * Mathf.PI * 3.2f)); // push / pull
+                    float teeth = 0.6f + 0.4f * Mathf.Sin(t * 2 * Mathf.PI * (stroke > 0.5f ? 46f : 38f));
+                    return N() * stroke * teeth * 0.55f * Mathf.Min(1f, t * 12f);
+                }
+                float h = t - 1.25f;
+                float k = h < 0.25f ? h : h < 0.5f ? h - 0.25f : h < 0.75f ? h - 0.5f : h - 0.75f;
+                float pitch = h < 0.75f ? 150f : 420f;
+                return Mathf.Sin(k * 2 * Mathf.PI * pitch) * Env(k, h < 0.75f ? 0.07f : 0.12f) * 0.9f + N() * Env(k, 0.015f) * 0.6f;
+            }, lowpass: 0.45f);
+            // armour going on: two metal clanks
+            ArmorClank = Make("armorclank", 0.6f, (t, d) =>
+            {
+                float k = t < 0.22f ? t : t - 0.22f;
+                return (Mathf.Sin(k * 2 * Mathf.PI * 620) * 0.4f + Mathf.Sin(k * 2 * Mathf.PI * 1480) * 0.3f + Mathf.Sin(k * 2 * Mathf.PI * 2710) * 0.15f) * Env(k, 0.16f) + N() * Env(k, 0.02f) * 0.5f;
+            });
+            // fortify: stone grinding and settling
+            StoneGrind = Make("stonegrind", 1.4f, (t, d) => N() * (0.5f + 0.3f * Mathf.Sin(t * 2 * Mathf.PI * 7f)) * Mathf.Sin(t / d * Mathf.PI) * 0.7f
+                + Mathf.Sin(t * 2 * Mathf.PI * Mathf.Lerp(70, 45, t / d)) * Mathf.Sin(t / d * Mathf.PI) * 0.4f, lowpass: 0.1f);
+            // wood gen: an engine coughing to life and a saw spinning up
+            Engine = Make("engine", 1.6f, (t, d) =>
+            {
+                float rev = Mathf.Clamp01(t / 0.9f);
+                float motor = Mathf.Sign(Mathf.Sin(t * 2 * Mathf.PI * Mathf.Lerp(28f, 55f, rev))) * 0.35f;
+                float saw = Mathf.Sin(t * 2 * Mathf.PI * Mathf.Lerp(300f, 900f, rev)) * 0.18f * rev;
+                return (motor + saw + N() * 0.15f) * Mathf.Min(1f, (d - t) * 4f);
+            }, lowpass: 0.35f);
             Hoof = Make("hoof", 0.09f, (t, d) => Mathf.Sin(t * 2 * Mathf.PI * Mathf.Lerp(520, 260, t / d)) * Env(t, 0.04f) * 0.8f + N() * Env(t, 0.01f) * 0.4f, lowpass: 0.5f);
         }
 

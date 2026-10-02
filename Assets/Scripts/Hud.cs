@@ -603,11 +603,11 @@ namespace RockGame
             float sw = Screen.width, sh = Screen.height, k = m_Scale;
             MouseOverUI = true;
             m_HoverName = "";
-            if (CraftViewFrame(pc)) { DrawCraftingView(me, pc); return; } // the Rust-style crafting screen (Hud.Crafting.cs)
+            if (pc.LootTarget != null && pc.LootTarget.IsWorkbench) { DrawWorkbenchMenu(me, pc, pc.LootTarget); return; } // the workbench shop (Hud.Crafting.cs)
             Fill(new Rect(0, 0, sw, sh), new Color(0, 0, 0, 0.4f));
             float slot = Mathf.Min(64 * k, (sw - 120) / 24f), gap = 6 * k;
             float gridW = 7 * slot + 6 * gap;
-            float craftW = 330 * k;
+            float craftW = 440 * k;
             bool loot = pc.LootTarget != null;
             float lootW = loot ? gridW : 0;
             float total = gridW + 30 * k + (loot ? lootW : craftW);
@@ -647,11 +647,10 @@ namespace RockGame
                 GUI.Label(new Rect(r.x + 4 * k, r.y + 1, 34 * k, 22 * k), Binds.Short(Bind.Hotbar1 + i), m_SmallNoClip);
             }
             float infoY = hotY + slot + 10 * k;
-            Shadowed(new Rect(invX, infoY, gridW + 200, 24 * k), m_HoverName != "" ? m_HoverName : "Drag to move · right-click: to the hotbar · right-drag splits a stack · shift-click quick-moves · drag outside to drop", m_Small);
-
-            // ---- the CRAFTING button (right, when not looting): opens the crafting screen ----
+            // ---- crafting (right, when not looting): the starter items (Hud.Crafting.cs) ----
             float cxp = invX + gridW + 30 * k;
-            if (!loot) DrawCraftingButton(me, pc, new Rect(cxp, top, craftW, hotY + slot - top), k);
+            if (!loot) DrawCraftList(me, pc, cxp, top, craftW, sh - 8 * k, k);
+            Shadowed(new Rect(invX, infoY, loot ? gridW + 200 : gridW, 60 * k), m_HoverName != "" ? m_HoverName : "Drag to move · right-click: to the hotbar · right-drag splits a stack · shift-click quick-moves · drag outside to drop", m_SmallWrap);
 
             // ---- drag visual ----
             var e = Event.current;
@@ -1045,33 +1044,6 @@ namespace RockGame
                 Row(id, t, t);
             }
             return y - top + 4 * k;
-        }
-
-        /// <summary>Arsenal / Builder: the powerful items, to the right of crafting.</summary>
-        void DrawPowerMenu(PlayerNet me, bool here, float x, float top, float w, float k)
-        {
-            Shadowed(new Rect(x, top - 34 * k, w, 30 * k), "<b><color=#ffd24a>POWER ITEMS</color></b>", m_Label);
-            float row = Mathf.Min(58 * k, (Screen.height * 0.84f - top) / Mathf.Max(1, Cfg.PowerCount) - 4 * k);
-            int team = me.Team.Value;
-            for (int i = 0; i < Cfg.PowerCount; i++)
-            {
-                var rec = Cfg.GetPowerRecipe(i, team);
-                bool maxed = (rec.Output == Item.FortifyBuff && Cfg.FortifyLevel(team) >= Cfg.MaxFortify) || (rec.Output == Item.WoodGenBuff && Cfg.WoodGenLevel(team) >= Cfg.MaxWoodGen);
-                var rr = new Rect(x, top + i * (row + 4 * k), w, row);
-                bool afford = me.Count(Item.Wood) >= rec.Wood && me.Count(Item.Stone) >= rec.Stone;
-                Fill(rr, new Color(0.25f, 0.18f, 0f, here ? 0.55f : 0.3f));
-                var icon = ItemIcons.Get(rec.Output);
-                var oldC = GUI.color;
-                if (!here) GUI.color = new Color(1, 1, 1, 0.4f);
-                if (icon != null) GUI.DrawTexture(new Rect(rr.x + 4, rr.y + 3, row - 6, row - 6), icon, ScaleMode.ScaleToFit, true);
-                GUI.color = oldC;
-                string cost = $"{rec.Wood} wood" + (Cfg.Builder ? $" · {Cfg.CraftSeconds(rec):0}s" : "");
-                if (!here) cost = "<color=#8fb8ff>in your base</color>  " + cost;
-                GUI.Label(new Rect(rr.x + row + 4, rr.y + 1, w - row - 96 * k, row), $"<b>{rec.Name}</b>  <size={Mathf.RoundToInt(12 * k)}><color={(afford ? "#ffd24a" : "#ff7777")}>{(maxed ? "done" : cost)}</color>\n<color=#bbbbbb>{Cfg.PowerBlurb(rec.Output, team)}</color></size>", m_SmallWrap);
-                GUI.enabled = afford && here && !maxed;
-                if (BtnAt(new Rect(rr.xMax - 84 * k, rr.y + 10 * k, 78 * k, row - 20 * k), "Buy", m_Button)) me.CraftRpc(Cfg.PowerBase + i);
-                GUI.enabled = true;
-            }
         }
 
         static string Direction(Transform me, Vector3 target)

@@ -31,6 +31,7 @@ namespace RockGame
             var g = NetGame.Instance;
             int team = me.Team.Value;
             string rn = Cfg.RulesName(Cfg.Rules).ToLower().Replace(" ", "");
+            Cfg.WorkbenchCraftSeconds = 0.5f; // (things bought at the workbench here don't need the full show - -autotest craftui checks that)
             // every mode: a floor (ceiling) can hang off the top of a ramp
             var ramp = new PieceKey(PieceKey.KStairs, 0, 0, 0, 0);
             Check(BuildGrid.IsSupported(new PieceKey(PieceKey.KFloor, 1, 0, 1, 0), k => k.Equals(ramp)) && BuildGrid.IsSupported(new PieceKey(PieceKey.KFloor, 0, -1, 1, 0), k => k.Equals(ramp)),
@@ -140,13 +141,11 @@ namespace RockGame
             int w0 = me.Count(Item.Wood);
 
             // the revolver (3 rounds, comes empty, bullets bought one at a time)
-            me.CraftRpc(Cfg.PowerBase + Cfg.PowerIndex(Item.Revolver));
-            yield return new WaitForSeconds(0.3f);
+            yield return BenchBuy(me, pc, Item.Revolver);
             Check(me.Count(Item.Revolver) == 1 && w0 - me.Count(Item.Wood) == Cfg.RevolverWood, $"bought a revolver ({w0 - me.Count(Item.Wood)} wood)");
             yield return Hold(me, Item.Revolver);
             Check(me.HeldStack.Data == 0 && Cfg.RevolverMag == 3, $"the revolver comes empty and holds 3 ({me.HeldStack.Data})");
-            for (int i = 0; i < 3; i++) me.CraftRpc(Cfg.PowerBase + Cfg.PowerIndex(Item.RevolverAmmo));
-            yield return new WaitForSeconds(0.3f);
+            for (int i = 0; i < 3; i++) yield return BenchBuy(me, pc, Item.RevolverAmmo);
             me.ReloadPistolRpc();
             yield return new WaitForSeconds(0.4f);
             Check(me.HeldStack.Data == 3 && me.Count(Item.RevolverAmmo) == 0, $"bought 3 bullets and loaded them ({me.HeldStack.Data})");
@@ -158,17 +157,15 @@ namespace RockGame
             me.ReloadPistolRpc();
             yield return new WaitForSeconds(0.4f);
             Check(me.HeldStack.Data == Cfg.RevolverMag - 1, "no reloading without bullets");
-            me.CraftRpc(Cfg.PowerBase + Cfg.PowerIndex(Item.RevolverAmmo));
-            yield return new WaitForSeconds(0.3f);
+            yield return BenchBuy(me, pc, Item.RevolverAmmo);
             me.ReloadPistolRpc();
             yield return new WaitForSeconds(0.4f);
             Check(me.HeldStack.Data == Cfg.RevolverMag && me.Count(Item.RevolverAmmo) == 0, "bought a bullet and reloaded");
 
             // the waterpipe shotgun: one shell at a time
-            me.CraftRpc(Cfg.PowerBase + Cfg.PowerIndex(Item.Shotgun));
-            me.CraftRpc(Cfg.PowerBase + Cfg.PowerIndex(Item.ShotgunShell));
-            me.CraftRpc(Cfg.PowerBase + Cfg.PowerIndex(Item.ShotgunShell));
-            yield return new WaitForSeconds(0.4f);
+            yield return BenchBuy(me, pc, Item.Shotgun);
+            yield return BenchBuy(me, pc, Item.ShotgunShell);
+            yield return BenchBuy(me, pc, Item.ShotgunShell);
             yield return Hold(me, Item.Shotgun);
             Check(me.HeldStack.Data == 0 && me.Count(Item.ShotgunShell) == 2, "bought a shotgun (empty) and 2 shells");
             me.ReloadShotgunRpc();
@@ -182,10 +179,9 @@ namespace RockGame
             yield return Snap("arsenal_shotgun");
 
             // the sword, C4 and the headshot helmet
-            me.CraftRpc(Cfg.PowerBase + Cfg.PowerIndex(Item.Sword));
-            me.CraftRpc(Cfg.PowerBase + Cfg.PowerIndex(Item.C4));
-            me.CraftRpc(Cfg.PowerBase + Cfg.PowerIndex(Item.Helmet));
-            yield return new WaitForSeconds(0.4f);
+            yield return BenchBuy(me, pc, Item.Sword);
+            yield return BenchBuy(me, pc, Item.C4);
+            yield return BenchBuy(me, pc, Item.Helmet);
             Check(me.Count(Item.Sword) == 1 && me.Count(Item.C4) == 1 && me.Count(Item.Helmet) == 1, "bought a sword, C4 and a helmet");
             yield return Hold(me, Item.Sword);
             yield return Snap("arsenal_sword");
@@ -273,8 +269,8 @@ namespace RockGame
             {
                 int before = me.Count(Item.Wood);
                 Check(Cfg.GetPowerRecipe(fi, team).Wood == price[step], $"fortify step {step + 1} costs {Cfg.GetPowerRecipe(fi, team).Wood}");
-                me.CraftRpc(Cfg.PowerBase + fi);
-                yield return new WaitForSeconds(0.5f);
+                yield return BenchBuy(me, pc, Item.FortifyBuff);
+                yield return new WaitForSeconds(0.3f);
                 int up = 0, still = 0;
                 foreach (var s in Structure.All) if (s.Team.Value == team && s.Upgradable) { if (s.Tier.Value == step + 1) up++; else still++; }
                 var w = Structure.All.Find(s => s.Team.Value == team && s.PType == PieceType.Wall);
@@ -283,8 +279,8 @@ namespace RockGame
             }
             {
                 int before = me.Count(Item.Wood);
-                me.CraftRpc(Cfg.PowerBase + fi);
-                yield return new WaitForSeconds(0.4f);
+                yield return BenchBuy(me, pc, Item.FortifyBuff);
+                yield return new WaitForSeconds(0.2f);
                 Check(me.Count(Item.Wood) == before, "a fourth fortify isn't sold (already refined)");
             }
             // a refined piece takes 4 ram hits: each knocks it down one step
@@ -638,8 +634,8 @@ namespace RockGame
             for (int lvl = 0; lvl < 2; lvl++)
             {
                 int before = me.Count(Item.Wood);
-                me.CraftRpc(Cfg.PowerBase + gi);
-                yield return new WaitForSeconds(0.4f);
+                yield return BenchBuy(me, pc, Item.WoodGenBuff);
+                yield return new WaitForSeconds(0.2f);
                 Check(g.WoodGenLevelOf(team) == lvl + 1 && before - me.Count(Item.Wood) == cost[lvl] && Cfg.WoodGenRate(lvl + 1) > Cfg.WoodGenRate(lvl),
                     $"wood gen level {lvl + 1} for {before - me.Count(Item.Wood)} wood: {Cfg.WoodGenRate(lvl + 1)} a second");
                 yield return new WaitForSeconds(0.6f);
@@ -648,8 +644,8 @@ namespace RockGame
             }
             {
                 int before = me.Count(Item.Wood);
-                me.CraftRpc(Cfg.PowerBase + gi);
-                yield return new WaitForSeconds(0.4f);
+                yield return BenchBuy(me, pc, Item.WoodGenBuff);
+                yield return new WaitForSeconds(0.2f);
                 Check(me.Count(Item.Wood) == before && g.WoodGenLevelOf(team) == 2, "only two wood gen levels");
             }
             for (int i = 0; i < me.Inv.Count; i++) me.Inv[i] = default; // (room for the Arsenal tests that follow)
@@ -879,8 +875,7 @@ namespace RockGame
                     me.ServerGive(Item.Wood, 1000);
                     pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
                     yield return new WaitForSeconds(0.3f);
-                    me.CraftRpc(bi);
-                    yield return new WaitForSeconds(0.4f);
+                    yield return BenchBuy(me, pc, Item.Boat);
                     Check(me.Count(Item.Boat) == 1, "crafted a boat");
                     yield return Hold(me, Item.Boat);
                     pc.LocalTeleport(w + new Vector3(0, 0.1f, -2.5f), 0f);

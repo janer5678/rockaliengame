@@ -190,12 +190,11 @@ namespace RockGame
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
             yield return new WaitForSeconds(0.4f);
             int wood = me.Count(Item.Wood);
-            me.CraftRpc(Cfg.RecipeIndex(Item.Armor));
-            yield return new WaitForSeconds(0.3f);
-            me.CraftRpc(Cfg.RecipeIndex(Item.Chainsaw));
-            yield return new WaitForSeconds(0.3f);
-            Check(me.ArmorHp.Value == Cfg.ArmorHp && me.Count(Item.Armor) == 0, "crafted armour goes straight on");
-            Check(me.Count(Item.Chainsaw) == 1 && me.Count(Item.Wood) == wood - Cfg.ArmorWood - Cfg.ChainsawWood, $"chainsaw crafted for {Cfg.ChainsawWood} wood");
+            // armour and the chainsaw are made at the workbench
+            yield return BenchBuy(me, pc, Item.Armor);
+            yield return BenchBuy(me, pc, Item.Chainsaw);
+            Check(me.ArmorHp.Value == Cfg.ArmorHp && me.Count(Item.Armor) == 0, "armour from the workbench goes straight on");
+            Check(me.Count(Item.Chainsaw) == 1 && me.Count(Item.Wood) == wood - Cfg.ArmorWood - Cfg.ChainsawWood, $"chainsaw made at the workbench for {Cfg.ChainsawWood} wood");
 
             // berries: one per eat time
             me.ServerGive(Item.Berry, 3);
@@ -443,11 +442,12 @@ namespace RockGame
 
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
             yield return new WaitForSeconds(0.3f);
-            foreach (var it in new[] { Item.BuildingPlan, Item.Hatchet, Item.Pickaxe, Item.Spear, Item.Bow, Item.Arrow, Item.Ram, Item.Chest, Item.Barrier })
+            foreach (var it in new[] { Item.BuildingPlan, Item.Hatchet, Item.Spear, Item.Bow, Item.Arrow, Item.Ram, Item.Chest, Item.Barrier })
             {
                 me.CraftRpc(Cfg.RecipeIndex(it));
                 yield return new WaitForSeconds(0.3f);
             }
+            yield return BenchBuy(me, pc, Item.Pickaxe); // (the pickaxe is made at the workbench)
             Check(me.Count(Item.BuildingPlan) == 1 && me.Count(Item.Hatchet) == 1 && me.Count(Item.Pickaxe) == 1 && me.Count(Item.Spear) == 1 && me.Count(Item.Bow) == 1
                   && me.Count(Item.Arrow) == Cfg.ArrowsPerCraft && RamHits(me) == Cfg.RamUses && me.Count(Item.Chest) == 1 && me.Count(Item.Barrier) == 1,
                   "host crafted every item in base");

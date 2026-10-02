@@ -71,8 +71,7 @@ namespace RockGame
             me.ServerGive(Item.Dna, 1000);
             yield return new WaitForSeconds(0.3f);
             int before = me.Count(Item.Dna);
-            me.CraftRpc(Cfg.RecipeIndex(Item.Pickaxe));
-            yield return new WaitForSeconds(0.4f);
+            yield return BenchBuy(me, pc, Item.Pickaxe); // (made at the workbench)
             Check(me.Count(Item.Pickaxe) == 1 && before - me.Count(Item.Dna) == pick.Wood, $"crafted a pickaxe for {before - me.Count(Item.Dna)} DNA");
             pc.MenuOpen = true;
             yield return Snap("dna_crafting");

@@ -1097,7 +1097,9 @@ namespace RockGame
             if (Dead.Value || recipe < 0 || (!power && recipe >= Cfg.RecipeCount) || (power && recipe - Cfg.PowerBase >= Cfg.PowerCount)) return;
             if (InSuddenDeath || (NetGame.Instance != null && NetGame.Instance.S == GameState.GameOver)) return;
             var r = power ? Cfg.GetPowerRecipe(recipe - Cfg.PowerBase, Team.Value) : Cfg.GetRecipe(recipe);
-            if (power || Cfg.Builder) { ServerCraftModes(r); return; }
+            // the inventory only makes the starter items: everything else is bought at a workbench (WorkbenchBuyRpc)
+            if (!Cfg.IsStarter(r.Output)) { Notify($"The {Cfg.ItemName(r.Output)} is made at a workbench"); return; }
+            if (Cfg.Builder) { ServerCraftModes(r); return; }
             if (!Cfg.CanCraftAt(Team.Value, transform.position, r.Output)) { Notify($"{r.Name} can only be crafted inside your own base"); return; }
             if (r.Output == Item.Armor && ArmorHp.Value >= Cfg.ArmorHp) { Notify("You're already wearing full armour"); return; }
             if (!CanAfford(r)) { Notify($"Not enough resources for {r.Name}"); return; }
@@ -1224,11 +1226,12 @@ namespace RockGame
         {
             int baseTeam = Cfg.BaseTeamAt(pos);
             if (kind == Item.Boat) return ThemeMaps.WaterAt(pos.x, pos.z) ? null : "Boats go on open water"; // THEME MAPS
+            if (kind == Item.Workbench) { var wp = Workbench.PlaceProblem(team, pos, yaw); if (wp != null) return wp; }
             if (Cfg.Builder) baseTeam = -1; // Builder: no bases - put it anywhere
             if (kind == Item.Chest && baseTeam != team && !Cfg.Builder) return "Chests go inside your own base";
             // chests may go on the bedrock around the machine, just not on the spawn spot
             if (kind == Item.Chest && !Cfg.Builder && new Vector2(pos.x - Cfg.SpawnPos(team).x, pos.z - Cfg.SpawnPos(team).z).magnitude < 1.3f) return "Keep the spawn spot clear";
-            if (kind != Item.Chest && Cfg.PointBlocked(pos)) return "Not on the bedrock";
+            if (kind != Item.Chest && kind != Item.Workbench && Cfg.PointBlocked(pos)) return "Not on the bedrock";
             if (kind != Item.Chest && baseTeam >= 0 && baseTeam != team) return "Not in the enemy base";
             var rot = Quaternion.Euler(0, yaw, 0);
             if (kind == Item.Barrier)
@@ -1250,6 +1253,7 @@ namespace RockGame
             }
             Vector3 c, half;
             if (kind == Item.Chest) { c = new Vector3(0, 0.36f, 0); half = new Vector3(0.5f, 0.3f, 0.27f); }
+            else if (kind == Item.Workbench) { c = new Vector3(0, 0.6f, 0); half = new Vector3(Workbench.HalfX - 0.03f, 0.48f, Workbench.HalfZ - 0.03f); }
             else if (kind == Item.Car) { c = new Vector3(0, 0.8f, 0); half = new Vector3(0.8f, 0.55f, 1.3f); }
             else { c = new Vector3(0, 2.7f, 0); half = new Vector3(1.95f, 2.45f, 0.2f); } // the high external wall
             foreach (var h in Physics.OverlapBox(pos + rot * c, half, rot, ~0, QueryTriggerInteraction.Ignore))
@@ -1290,7 +1294,7 @@ namespace RockGame
         public void PlaceDeployableRpc(byte kindByte, Vector3 pos, float yaw)
         {
             var kind = (Item)kindByte;
-            if (kind != Item.Chest && kind != Item.Barrier && kind != Item.Car && kind != Item.Boat /* THEME MAPS */) return;
+            if (kind != Item.Chest && kind != Item.Barrier && kind != Item.Car && kind != Item.Workbench && kind != Item.Boat /* THEME MAPS */) return;
             if (Dead.Value || CarryingBall || HeldItem != kind || InSuddenDeath) return;
             if (Vector3.Distance(pos, transform.position) > Cfg.DeployRange + 3f) return;
             if (!FindDeploySpot(kind, Team.Value, ref pos, yaw, out var problem)) { Notify(problem); return; }
@@ -1302,6 +1306,7 @@ namespace RockGame
                 go.GetComponent<Container>().ServerInit(Container.Chest, Team.Value, Cfg.ChestSlots, null);
                 go.GetComponent<NetworkObject>().Spawn(true);
             }
+            else if (kind == Item.Workbench) Workbench.ServerSpawn(Team.Value, pos, yaw);
             else if (kind == Item.Car) Vehicle.ServerSpawn(Vehicle.Car, pos + Vector3.up * 0.1f, yaw);
             else if (kind == Item.Boat) Vehicle.ServerSpawn(Vehicle.Boat, new Vector3(pos.x, ThemeMaps.WaterY - 0.1f, pos.z), yaw); // THEME MAPS
             else
