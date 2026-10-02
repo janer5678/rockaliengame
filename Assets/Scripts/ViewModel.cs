@@ -9,7 +9,7 @@ namespace RockGame
     /// Locomotion is animated like a Mixamo-style FPS rig: figure-8 walk bob, a lowered and tilted sprint pose with the
     /// free hand pumping, idle breathing, jump lag and a landing dip.
     /// </summary>
-    public class ViewModel
+    public partial class ViewModel
     {
         /// <summary>Seconds from click to the moment the swing connects (the hit is applied then).</summary>
         public const float ImpactTime = 0.13f;
@@ -35,6 +35,9 @@ namespace RockGame
         /// <summary>How each alien hand sits on its hand transform this frame (set by the poses; a fist round the grip by default).</summary>
         HandPose m_RP, m_LP;
         GameObject m_Item, m_Arrow, m_Ball, m_StringA, m_StringB;
+        /// <summary>What the claws can touch (the item's pieces, the ball, the arrow and string), gathered when they change.</summary>
+        readonly System.Collections.Generic.List<HeldPart> m_Parts = new System.Collections.Generic.List<HeldPart>();
+        bool m_PartsDirty = true;
         Item m_ItemId = (Item)255;
         bool m_WasBall;
         float m_SwingStart = -10f, m_SwingDur = 0.6f, m_ThrowStart = -10f, m_EatStart = -10f, m_UseStart = -10f, m_EquipStart = -10f;
@@ -43,7 +46,9 @@ namespace RockGame
         Vector2 m_Sway;
         float m_CrouchK, m_SprintK, m_Land, m_AirVel, m_Jump, m_BobPhase, m_AimK;
         bool m_WasGrounded = true;
-        GameObject m_CradleFor;
+        GameObject m_CradleFor, m_RockFor;
+        bool m_RockPsx;
+        float m_RockHalf = 0.15f;
         Vector3 m_CradleMid;
         float m_CradleR;
 
@@ -56,8 +61,33 @@ namespace RockGame
         int m_ArmsShown = -1;
         readonly System.Collections.Generic.List<Renderer> m_BoxR = new System.Collections.Generic.List<Renderer>(), m_AlienR = new System.Collections.Generic.List<Renderer>();
 
+        /// <summary>The newest view model (for the hands autotest).</summary>
+        public static ViewModel Last;
+
+        /// <summary>For the hands autotest: the alien hands' rigid pieces (palm, forearm, each claw / thumb segment) in world space.</summary>
+        public void DebugPieces(System.Collections.Generic.List<(string name, Vector3[] pts, int[] tris)> list)
+        {
+            if (m_AR != null && m_R.gameObject.activeInHierarchy) m_AR.DebugPieces("R", list);
+            if (m_AL != null && m_L.gameObject.activeInHierarchy) m_AL.DebugPieces("L", list);
+        }
+
+        public string DebugRest() => m_AR != null ? m_AR.DebugRest() : "no alien arm";
+        public Transform DebugHand(bool right) => right ? m_R : m_L;
+        public string DebugSolve(bool right) => (right ? m_AR : m_AL)?.DebugSolve() ?? "-";
+        public string DebugOutlines(bool right) => (right ? m_AR : m_AL)?.DebugOutlines() ?? "{}";
+
+        /// <summary>For the hands autotest: what the hands hold this frame (the item's shown renderers, the ball, the bow's arrow and string).</summary>
+        public void DebugHeld(System.Collections.Generic.List<Renderer> list)
+        {
+            foreach (var go in new[] { m_Item, m_Ball, m_Arrow, m_StringA, m_StringB })
+                if (go && go.activeInHierarchy)
+                    foreach (var r in go.GetComponentsInChildren<Renderer>())
+                        if (r.enabled && r is MeshRenderer) list.Add(r);
+        }
+
         public ViewModel(Transform cam, Color team)
         {
+            Last = this;
             m_Root = new GameObject("ViewModel").transform;
             m_Root.SetParent(cam, false);
             var skin = new Color(0.6f, 0.64f, 0.58f);
@@ -72,10 +102,15 @@ namespace RockGame
             }
             m_ItemHolder = new GameObject("item").transform;
             m_ItemHolder.SetParent(m_Root, false);
+            GameSettings.GraphicsChanged += OnGraphicsChanged;
         }
+
+        /// <summary>The PSX look of what's held comes and goes with the graphics setting: the claws close round whichever shows.</summary>
+        void OnGraphicsChanged() => m_PartsDirty = true;
 
         public void Destroy()
         {
+            GameSettings.GraphicsChanged -= OnGraphicsChanged;
             m_AR?.Free(); m_AL?.Free();
             if (m_Root) Object.Destroy(m_Root.gameObject);
         }
@@ -122,266 +157,6 @@ namespace RockGame
             return hand;
         }
 
-        /// <summary>
-        /// How an alien hand sits on its hand transform. The hand transform is where the old box fist was: its origin is
-        /// the grip (items are held by it), +Z runs from the wrist to the knuckles, and the thumb was on its +Y side.
-        /// Fist: the claws close round the origin, the thumb towards `Dir` (a direction in view model space; by default
-        /// the hand's own +Y, like the box thumb). Palm: a more open hand whose palm faces the point `Dir` (view model space).
-        /// </summary>
-        struct HandPose
-        {
-            public bool Palm, HasDir, Cradle;
-            public Vector3 Dir;
-            public float Curl, Radius;
-            public static HandPose Fist => new HandPose { Curl = 1f };
-            public static HandPose FistThumb(Vector3 dir, float curl = 1f) => new HandPose { HasDir = true, Dir = dir, Curl = curl };
-            public static HandPose PalmAt(Vector3 point, float curl) => new HandPose { Palm = true, HasDir = true, Dir = point, Curl = curl };
-            /// <summary>
-            /// Holding something that sits on the hand (food, C4, a chest...): the palm under it, facing its middle `point`
-            /// (view model space) from `radius` away, and the claws curled up round its sides.
-            /// </summary>
-            public static HandPose CradleAt(Vector3 point, float radius, float curl) => new HandPose { Palm = true, Cradle = true, HasDir = true, Dir = point, Radius = radius, Curl = curl };
-        }
-
-        /// <summary>
-        /// The alien's own forearm and clawed hand (cut from the rigged player model by Tools/psx_convert.py), tinted in
-        /// the team colour like the body. The mesh: hand along +Z, wrist at z = 0, knuckles at z = 0.09, claw tips up to
-        /// z = 0.226, elbow at z = -0.22; the right palm faces (0.96, 0.29) in XY and its thumb (0.29, -0.96) (the left
-        /// arm is its mirror image). Rather than being squeezed into the old box (which put the hand where the forearm
-        /// was), it's fitted by its hand: the claws curl round the grip (the hand's origin, where the box fist was), the
-        /// wrist ends up where the box wrist band was, and the forearm is stretched back so it runs off the edge of the
-        /// screen like a real arm.
-        /// </summary>
-        class AlienArm
-        {
-            public Transform Fit;
-            Mesh m_Mesh;
-            Vector3[] m_Base, m_Work;
-            Matrix4x4 m_ToModel, m_ToMesh;
-            float m_Curl = -1f;
-            Vector2 m_Thumb, m_PalmN;
-
-            public const float Scale = 1.4f;
-            const float Knuckle = 0.09f;    // where the claws start (model z)
-            const float DigitZ = 0.08f;     // past this (model z) the mesh is three separate digits: two claws and the thumb
-            const float ArmStretch = 0.3f;  // the elbow end is moved back this much (model units) so the arm reaches off screen
-            const float ElbowWiden = 1.15f;
-
-            /// <summary>
-            /// A digit's joint: the vertices past `Hi` (model z, before bending) turn rigidly by `Angle` x the curl round
-            /// `Axis` through `Pivot` (on the palm side of the joint); between `Lo` and `Hi` is the joint's own short band,
-            /// which stretches over it like a knuckle. (Lo = Hi = 0: the whole digit turns, i.e. the knuckle on the palm.)
-            /// </summary>
-            struct Joint { public float Lo, Hi, Angle; public Vector3 Pivot, Axis; }
-            /// <summary>Per vertex: -1 the palm and arm, 0 the upper claw, 1 the long claw, 2 the thumb.</summary>
-            int[] m_Digit;
-            Joint[][] m_Joints;
-            /// <summary>The middle of the curled claws (model space): what a fist closes round.</summary>
-            Vector3 m_Hole = new Vector3(0, 0, Knuckle);
-            // the joint bands of each digit (model z, from the mesh: each segment is a box with a short band at each joint),
-            // the knuckle's z and how far (degrees) each joint bends in a full fist
-            static readonly float[][] Bands =
-            {
-                new[] { 0.077f, 0.1425f, 0.1452f, 0.1728f, 0.1753f }, // upper claw: knuckle, middle joint, last joint
-                new[] { 0.078f, 0.1345f, 0.1388f, 0.1840f, 0.1864f }, // long claw
-                new[] { 0.072f, 0.0956f, 0.0985f, 0.1268f, 0.1298f }, // thumb
-            };
-            static readonly float[][] FistAngles =
-            {
-                new[] { 90f, 95f, 85f },
-                new[] { 90f, 90f, 85f },
-                new[] { 40f, 55f, 50f },
-            };
-
-            public static AlienArm Make(Transform hand, bool right, Color tint)
-            {
-                var fit = new GameObject("alien fit").transform;
-                fit.SetParent(hand, false);
-                var model = PsxModels.Spawn(right ? "alienarm_r" : "alienarm_l", fit);
-                var mf = model != null ? model.GetComponentInChildren<MeshFilter>() : null;
-                if (mf == null || mf.sharedMesh == null) { Object.Destroy(fit.gameObject); return null; }
-                var a = new AlienArm { Fit = fit };
-                a.m_Mesh = Object.Instantiate(mf.sharedMesh);
-                a.m_Mesh.name = "alien arm (posed)";
-                mf.sharedMesh = a.m_Mesh;
-                a.m_Base = a.m_Mesh.isReadable ? a.m_Mesh.vertices : new Vector3[0]; // (Read/Write is on for it: PsxImport)
-                a.m_Work = new Vector3[a.m_Base.Length];
-                a.m_ToModel = model.transform.worldToLocalMatrix * mf.transform.localToWorldMatrix;
-                a.m_ToMesh = a.m_ToModel.inverse;
-                a.m_PalmN = new Vector2(right ? 0.957f : -0.957f, 0.29f);
-                a.m_Thumb = new Vector2(right ? 0.29f : -0.29f, -0.957f);
-                a.FindDigits();
-                foreach (var r in model.GetComponentsInChildren<Renderer>())
-                {
-                    var mats = r.materials; // own copies, tinted
-                    foreach (var mt in mats) { mt.SetColor("_BaseColor", tint); mt.color = tint; }
-                    r.materials = mats;
-                }
-                a.Bend(1f);
-                return a;
-            }
-
-            /// <summary>
-            /// Splits the hand past the knuckles into its three digits (the mesh's separate pieces there: the claw that ends
-            /// furthest out is the long claw, the one that starts nearest the wrist the thumb) and puts a joint at each of
-            /// their knuckles, so Bend can curl them like the rig would.
-            /// </summary>
-            void FindDigits()
-            {
-                int n = m_Base.Length;
-                m_Digit = new int[n];
-                for (int i = 0; i < n; i++) m_Digit[i] = -1;
-                if (n == 0) return;
-                var u = new Vector3[n];
-                for (int i = 0; i < n; i++) u[i] = m_ToModel.MultiplyPoint3x4(m_Base[i]);
-                // weld the split vertices by position, then join everything connected past the knuckles
-                var weld = new int[n];
-                var seen = new System.Collections.Generic.Dictionary<Vector3Int, int>();
-                for (int i = 0; i < n; i++)
-                {
-                    var k = Vector3Int.RoundToInt(u[i] * 10000f);
-                    if (!seen.TryGetValue(k, out int w)) seen[k] = w = i;
-                    weld[i] = w;
-                }
-                var par = new int[n];
-                for (int i = 0; i < n; i++) par[i] = i;
-                int Find(int a) { while (par[a] != a) a = par[a] = par[par[a]]; return a; }
-                for (int sm = 0; sm < m_Mesh.subMeshCount; sm++)
-                {
-                    var tr = m_Mesh.GetTriangles(sm);
-                    for (int t = 0; t < tr.Length; t += 3)
-                        for (int e = 0; e < 3; e++)
-                        {
-                            int a = tr[t + e], b = tr[t + (e + 1) % 3];
-                            if (u[a].z > DigitZ && u[b].z > DigitZ) par[Find(weld[a])] = Find(weld[b]);
-                        }
-                }
-                var islands = new System.Collections.Generic.Dictionary<int, Vector2>(); // root -> (min z, max z)
-                for (int i = 0; i < n; i++)
-                {
-                    if (u[i].z <= DigitZ) continue;
-                    int r = Find(weld[i]);
-                    var mm = islands.TryGetValue(r, out var v) ? v : new Vector2(9f, -9f);
-                    islands[r] = new Vector2(Mathf.Min(mm.x, u[i].z), Mathf.Max(mm.y, u[i].z));
-                }
-                if (islands.Count != 3) { Debug.LogWarning($"alien arm: expected 3 digits past the knuckles, found {islands.Count}; the claws won't bend"); return; }
-                int thumb = -1, longest = -1;
-                foreach (var kv in islands)
-                {
-                    if (thumb < 0 || kv.Value.x < islands[thumb].x) thumb = kv.Key;
-                    if (longest < 0 || kv.Value.y > islands[longest].y) longest = kv.Key;
-                }
-                for (int i = 0; i < n; i++)
-                    if (u[i].z > DigitZ) { int r = Find(weld[i]); m_Digit[i] = r == thumb ? 2 : r == longest ? 1 : 0; }
-
-                // the joints: each digit curls towards the palm (the thumb in towards the claws as well), round a pivot on
-                // the palm side of the joint
-                var palm = new Vector3(m_PalmN.x, m_PalmN.y, 0f).normalized;
-                var thumbIn = (palm * 1.5f - new Vector3(m_Thumb.x, m_Thumb.y, 0f)).normalized; // (over the curled claws in a fist)
-                m_Joints = new Joint[3][];
-                for (int d = 0; d < 3; d++)
-                {
-                    var dir = d == 2 ? thumbIn : palm;
-                    var axis = Vector3.Cross(Vector3.forward, dir);
-                    float first = 9f;
-                    for (int i = 0; i < n; i++) if (m_Digit[i] == d) first = Mathf.Min(first, u[i].z);
-                    m_Joints[d] = new Joint[3];
-                    for (int j = 0; j < 3; j++)
-                    {
-                        float lo = j == 0 ? 0f : Bands[d][j * 2 - 1], hi = j == 0 ? 0f : Bands[d][j * 2];
-                        float z = j == 0 ? Bands[d][0] : (lo + hi) * 0.5f;
-                        // the digit's cross-section at the joint (the knuckle: its first ring)
-                        float zA = j == 0 ? first - 0.001f : lo - 0.008f, zB = j == 0 ? first + 0.008f : hi + 0.008f;
-                        Vector2 c = Vector2.zero; int cnt = 0; float most = -9f;
-                        for (int i = 0; i < n; i++)
-                        {
-                            if (m_Digit[i] != d || u[i].z < zA || u[i].z > zB) continue;
-                            c += new Vector2(u[i].x, u[i].y); cnt++;
-                            most = Mathf.Max(most, Vector3.Dot(new Vector3(u[i].x, u[i].y, 0f), dir));
-                        }
-                        if (cnt > 0) c /= cnt;
-                        var cv = new Vector3(c.x, c.y, 0f);
-                        var pivot = cv + dir * (cnt > 0 ? most - Vector3.Dot(cv, dir) : 0f);
-                        pivot.z = z;
-                        m_Joints[d][j] = new Joint { Lo = lo, Hi = hi, Angle = FistAngles[d][j], Pivot = pivot, Axis = axis };
-                    }
-                }
-            }
-
-            /// <summary>
-            /// Re-shapes the mesh: the digits curled by `curl` (0 open, 1 a fist) towards the palm, each segment turning
-            /// rigidly at its joint (so the low-poly claws keep their shape), and the forearm stretched.
-            /// </summary>
-            void Bend(float curl)
-            {
-                if (Mathf.Abs(curl - m_Curl) < 0.01f || m_Base.Length == 0) return;
-                m_Curl = curl;
-                Vector3 hole = Vector3.zero; int holeN = 0;
-                for (int i = 0; i < m_Base.Length; i++)
-                {
-                    var u = m_ToModel.MultiplyPoint3x4(m_Base[i]);
-                    float z0 = u.z;
-                    if (u.z < -0.1f)
-                    {
-                        // the elbow end: further back, a little thicker
-                        u.x *= ElbowWiden; u.y *= ElbowWiden;
-                        u.z -= ArmStretch;
-                    }
-                    int d = m_Digit[i];
-                    if (d >= 0 && m_Joints != null)
-                    {
-                        // from the tip in: each joint turns everything past it (already turned by the joints further out)
-                        var js = m_Joints[d];
-                        for (int j = js.Length - 1; j >= 0; j--)
-                        {
-                            float w = js[j].Hi <= js[j].Lo ? 1f : Mathf.Clamp01((z0 - js[j].Lo) / (js[j].Hi - js[j].Lo));
-                            if (w <= 0f) continue;
-                            u = js[j].Pivot + Quaternion.AngleAxis(js[j].Angle * curl * w, js[j].Axis) * (u - js[j].Pivot);
-                        }
-                        if (d != 2) { hole += u; holeN++; }
-                    }
-                    m_Work[i] = m_ToMesh.MultiplyPoint3x4(u);
-                }
-                if (holeN > 0) m_Hole = hole / holeN;
-                m_Mesh.vertices = m_Work;
-                m_Mesh.RecalculateNormals();
-                m_Mesh.RecalculateBounds();
-            }
-
-            public void Free() { if (m_Mesh) Object.Destroy(m_Mesh); }
-
-            /// <summary>Puts the arm on its hand transform for this frame.</summary>
-            public void Pose(HandPose p, Transform hand, Transform root)
-            {
-                float curl = Mathf.Clamp01(p.Curl);
-                Bend(curl);
-                // turn the arm round its length so the thumb / the palm points the right way
-                Vector2 want = Vector2.up; // the thumb where the box fist had it
-                if (p.HasDir)
-                {
-                    var d = p.Palm ? hand.InverseTransformPoint(root.TransformPoint(p.Dir)) : hand.InverseTransformDirection(root.TransformDirection(p.Dir));
-                    if (new Vector2(d.x, d.y).sqrMagnitude > 1e-6f) want = new Vector2(d.x, d.y);
-                }
-                var have = p.Palm ? m_PalmN : m_Thumb;
-                float roll = (Mathf.Atan2(want.y, want.x) - Mathf.Atan2(have.y, have.x)) * Mathf.Rad2Deg;
-                var rot = Quaternion.Euler(0, 0, roll);
-                // a fist closes round the grip: (near) the middle of the curled claws goes on the hand's origin, just
-                // inside the palm; an open hand puts its knuckles there, and a cupped one something in between
-                var pivot = Vector3.Lerp(new Vector3(0, 0, Knuckle), m_Hole, p.Palm ? curl : Mathf.Clamp01(curl * 1.5f - 0.5f) * 0.85f);
-                Fit.localRotation = rot;
-                Fit.localScale = Vector3.one * Scale;
-                Fit.localPosition = -(rot * (pivot * Scale));
-                // a cradled thing rests on the middle of the palm
-                if (p.Cradle)
-                {
-                    var palmUp = rot * new Vector3(m_PalmN.x, m_PalmN.y, 0f).normalized;
-                    var palmMid = new Vector3(0, 0, 0.05f) + new Vector3(m_PalmN.x, m_PalmN.y, 0f).normalized * 0.012f;
-                    Fit.localPosition = hand.InverseTransformPoint(root.TransformPoint(p.Dir)) - palmUp * p.Radius - rot * (palmMid * Scale);
-                }
-            }
-        }
-
-
         static float Smooth(float t) { t = Mathf.Clamp01(t); return t * t * (3f - 2f * t); }
 
         public void Update(State s)
@@ -417,10 +192,12 @@ namespace RockGame
                 m_EquipStart = Time.time + (m_WasBall && !s.Ball ? 0.3f : 0f);
                 m_ItemId = want;
                 m_WasBall = s.Ball;
+                m_PartsDirty = true;
             }
             bool wantString = !s.Ball && s.Item == Item.Bow;
             if (wantString != (m_StringA != null))
             {
+                m_PartsDirty = true;
                 if (m_StringA) { Object.Destroy(m_StringA); Object.Destroy(m_StringB); m_StringA = m_StringB = null; }
                 else
                 {
@@ -436,7 +213,8 @@ namespace RockGame
             bool wantArrow = !s.Ball && s.Item == Item.Bow && s.HasArrow;
             if (wantArrow != (m_Arrow != null))
             {
-                if (m_Arrow) Object.Destroy(m_Arrow);
+                m_PartsDirty = true;
+                if (m_Arrow) { Object.Destroy(m_Arrow); m_Arrow = null; }
                 else
                 {
                     m_Arrow = ItemModels.Create(Item.Arrow, m_Root);
@@ -504,8 +282,9 @@ namespace RockGame
 
         void ApplyHands()
         {
-            m_AR?.Pose(m_RP, m_R, m_Root);
-            m_AL?.Pose(m_LP, m_L, m_Root);
+            if (m_PartsDirty) { GatherParts(); m_PartsDirty = false; }
+            m_AR?.Pose(m_RP, m_R, m_Root, m_Parts);
+            m_AL?.Pose(m_LP, m_L, m_Root, m_Parts);
         }
 
         void Set(Transform t, Vector3 pos, Quaternion rot) { t.localPosition = pos; t.localRotation = rot; }
@@ -565,12 +344,30 @@ namespace RockGame
             // hands on either side of the rock, palms on its sides and the long claws reaching up round them and curling
             // over the top, where you can see them (the forearms run down and back out of the bottom corners)
             var centre = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(0f, 0.02f, 0.04f)));
-            m_R.localPosition = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(0.15f, 0.01f, 0.0f)));
-            m_R.localRotation = rot * Quaternion.LookRotation(new Vector3(-0.3f, 0.85f, 0.4f), Vector3.back);
-            m_L.localPosition = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(-0.15f, 0.01f, 0.0f)));
-            m_L.localRotation = rot * Quaternion.LookRotation(new Vector3(0.3f, 0.85f, 0.4f), Vector3.back);
+            // (as wide apart as the rock showing is: the PSX rock is a narrower slab than the Normal one)
+            if (m_Item && (m_RockFor != m_Item || m_RockPsx != PsxModels.On))
+            {
+                m_RockFor = m_Item;
+                m_RockPsx = PsxModels.On;
+                float hw = 0f;
+                foreach (var r in m_Item.GetComponentsInChildren<Renderer>())
+                {
+                    if (!r.enabled) continue;
+                    var b = r.bounds;
+                    for (int i = 0; i < 8; i++)
+                    {
+                        var corner = b.center + Vector3.Scale(b.extents, new Vector3((i & 1) == 0 ? -1 : 1, (i & 2) == 0 ? -1 : 1, (i & 4) == 0 ? -1 : 1));
+                        hw = Mathf.Max(hw, Mathf.Abs(m_ItemHolder.InverseTransformPoint(corner).x));
+                    }
+                }
+                if (hw > 0f) m_RockHalf = Mathf.Clamp(hw, 0.06f, 0.15f);
+            }
+            m_R.localPosition = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(m_RockHalf, 0.01f, 0.0f)));
+            m_R.localRotation = rot * Quaternion.LookRotation(new Vector3(-0.05f, 0.93f, 0.35f), Vector3.back);
+            m_L.localPosition = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(-m_RockHalf, 0.01f, 0.0f)));
+            m_L.localRotation = rot * Quaternion.LookRotation(new Vector3(0.05f, 0.93f, 0.35f), Vector3.back);
             // (palms turned a little forwards so the backs of the hands and the claws face you)
-            m_RP = m_LP = HandPose.PalmAt(centre + rot * Vector3.forward * 0.12f, 0.3f);
+            m_RP = m_LP = HandPose.PalmAt(centre + rot * Vector3.forward * 0.12f, 1f, true);
         }
 
         /// <summary>Hatchet / pickaxe: one hand; the tool pivots in the fist so the forearm stays out of frame.</summary>
@@ -602,7 +399,10 @@ namespace RockGame
                 AttachItemToRoot(shared + pos, rot);
                 if (m_Item) m_Item.SetActive(!throwing || throwK < 0.4f);
                 m_R.localPosition = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(0.02f, 0.15f, -0.03f)));
-                m_R.localRotation = sharedRot * Quaternion.Euler(-55f, -30f, -20f);
+                // (the hand square across the shaft, so the claws can close round it)
+                var spearAxis = rot * Vector3.up;
+                var handZ = sharedRot * Quaternion.Euler(-55f, -30f, -20f) * Vector3.forward;
+                m_R.localRotation = Quaternion.LookRotation((handZ - spearAxis * Vector3.Dot(handZ, spearAxis)).normalized, spearAxis);
                 Set(m_L, shared + new Vector3(-0.16f, -0.14f, 0.55f), sharedRot * Quaternion.Euler(-25f, 25f, 25f));
                 m_RP = HandPose.FistThumb(rot * Vector3.up);
                 m_LP = HandPose.PalmAt(m_L.localPosition + sharedRot * new Vector3(0.1f, 0.05f, 0.1f), 0.45f); // the free hand points the way
@@ -653,7 +453,7 @@ namespace RockGame
             var tipDrawn = grip + new Vector3(-0.02f, 0.065f, 0.07f); // rests on top of the fist; the fletching ends up by your face, out of view
             var dir = Vector3.Slerp(dirIdle, Vector3.forward, e).normalized;
             var tip = Vector3.Lerp(tipIdle, tipDrawn, e);
-            const float arrowLen = 0.72f;
+            const float arrowLen = 0.765f; // (to the very end of the arrow, behind its fletching)
             var nock = tip - dir * arrowLen;
             if (m_Arrow)
             {
@@ -669,9 +469,9 @@ namespace RockGame
             // the claws hooked round the string from the right (an archer's draw): pointing left across it, palm back
             // towards you, so they curl round the string beside the nock
             var across = -Vector3.Cross(bowRot * Vector3.up, dir).normalized;
-            m_R.localPosition = Vector3.Lerp(pull - across * 0.03f - bowRot * Vector3.up * 0.02f, new Vector3(0.3f, -0.5f, -0.3f), e);
+            m_R.localPosition = Vector3.Lerp(pull - across * 0.03f - bowRot * Vector3.up * 0.02f - dir * 0.05f, new Vector3(0.3f, -0.5f, -0.3f), e); // (just behind the nock, clear of the fletching)
             m_R.localRotation = Quaternion.LookRotation((across + dir * 0.3f).normalized, bowRot * Vector3.up);
-            m_RP = HandPose.PalmAt(m_R.localPosition - dir * 0.2f, 0.55f);
+            m_RP = HandPose.PalmAt(m_R.localPosition - dir * 0.2f, 0.85f);
 
             // the string runs from both limb tips to the nock
             if (m_StringA && m_Item)
@@ -713,7 +513,7 @@ namespace RockGame
                 var bolt = m_Item.transform.Find("bolt");
                 if (bolt) bolt.gameObject.SetActive(s.Loaded);
             }
-            m_R.localPosition = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(0.02f, -0.1f, -0.06f)));
+            m_R.localPosition = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(GunGrip(s.Item)));
             m_R.localRotation = rot * Quaternion.Euler(-10f, -10f, -80f);
             var leftHold = new Vector3(-0.02f, -0.05f, 0.2f);
             var leftPull = new Vector3(-0.04f, 0.04f, -0.05f);
@@ -721,9 +521,37 @@ namespace RockGame
             m_L.localRotation = rot * Quaternion.Euler(-20f - 40f * r, 20f, 70f);
             // the trigger hand round the grip, thumb up; the other hand cradles the stock from below
             m_RP = HandPose.FistThumb(rot * Vector3.up);
-            // (a pistol's support hand is a fist off to the side, as the box hand was; long guns are cradled)
+            // (a pistol's support hand is a fist off to the side, as the box hand was; long guns are cradled: the palm
+            // under the stock, the claws reaching across it to the right and curling up round its far side)
             bool shortGun = s.Item == Item.Pistol || s.Item == Item.Revolver || s.Item == Item.PortalGun;
-            if (!shortGun) m_LP = HandPose.PalmAt(m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(Vector3.Lerp(leftHold, leftPull, r) + new Vector3(0.06f, -0.01f, 0f))), 0.35f); // palm against the side of the stock
+            if (shortGun)
+            {
+                // the palm on the side of the gun, the claws over the top of it
+                var hold = Vector3.Lerp(leftHold, leftPull, r);
+                m_LP = HandPose.PalmAt(m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(0f, 0.03f, hold.z))), 1f, true);
+            }
+            else
+            {
+                m_L.localRotation = rot * Quaternion.LookRotation(Vector3.Lerp(new Vector3(0.75f, 0.35f, 0.55f), new Vector3(0.55f, 0.6f, 0.55f), r), Vector3.up);
+                var hold = Vector3.Lerp(leftHold, leftPull, r);
+                m_LP = HandPose.PalmAt(m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(0f, 0.02f, hold.z))), 1f, true);
+            }
+        }
+
+        /// <summary>Where each gun's grip is (item space): the trigger hand goes round it.</summary>
+        static Vector3 GunGrip(Item item)
+        {
+            switch (item)
+            {
+                case Item.Crossbow: return new Vector3(0f, -0.085f, -0.03f);
+                case Item.Pistol: return new Vector3(0f, -0.07f, -0.02f);
+                case Item.Revolver: return new Vector3(0f, -0.06f, -0.075f);
+                case Item.Shotgun: return new Vector3(0f, -0.085f, -0.03f);
+                case Item.Sniper: return new Vector3(0f, -0.08f, 0.01f);
+                case Item.PortalGun: return new Vector3(0f, -0.115f, -0.05f); // (low down: the body sits right on top of the grip)
+                case Item.RocketLauncher: return new Vector3(0f, -0.12f, 0.045f);
+                default: return new Vector3(0.02f, -0.1f, -0.06f);
+            }
         }
 
         void PoseRam(State s, Vector3 shared, Quaternion sharedRot)
@@ -734,9 +562,12 @@ namespace RockGame
             var rot = sharedRot * Quaternion.Euler(-4f + s.RamCharge * 6f, -8f, 0);
             AttachItemToRoot(pos, rot, 0.75f);
             m_R.localPosition = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(0.13f, -0.08f, -0.28f)));
-            m_R.localRotation = rot * Quaternion.Euler(-10f, -10f, -60f);
+            m_R.localRotation = rot * Quaternion.LookRotation(new Vector3(0.45f, 0.85f, 0.25f), Vector3.left);
             m_L.localPosition = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(-0.13f, -0.08f, 0.22f)));
-            m_L.localRotation = rot * Quaternion.Euler(-10f, 10f, 60f);
+            m_L.localRotation = rot * Quaternion.LookRotation(new Vector3(-0.45f, 0.85f, 0.25f), Vector3.right);
+            // palms on the log's sides (facing its middle), the claws reaching up round it and over the top
+            m_RP = HandPose.PalmAt(m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(0f, 0f, -0.28f))), 1f, true);
+            m_LP = HandPose.PalmAt(m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(0f, 0f, 0.22f))), 1f, true);
         }
 
         /// <summary>Chainsaw in both hands like the ram; it shakes while the trigger is held.</summary>
@@ -746,10 +577,14 @@ namespace RockGame
             var pos = shared + new Vector3(0.22f, -0.36f, 0.5f + (s.Firing ? 0.06f : 0f)) + buzz;
             var rot = sharedRot * Quaternion.Euler(s.Firing ? 4f : -2f, -10f, 0);
             AttachItemToRoot(pos, rot, 1f);
-            m_R.localPosition = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(0, 0.1f, -0.12f)));
+            m_R.localPosition = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(0f, 0.17f, -0.12f))); // (on top of the top handle)
             m_R.localRotation = rot * Quaternion.Euler(-20f, -10f, -70f);
-            m_L.localPosition = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(-0.02f, 0.14f, 0.06f)));
-            m_L.localRotation = rot * Quaternion.Euler(-60f, 20f, 70f);
+            m_L.localPosition = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(-0.01f, 0.17f, 0.06f)));
+            m_L.localRotation = rot * Quaternion.Euler(-20f, 10f, 70f);
+            // the top handle sits right on the body, so there's no getting round it: palms on top of it, the claws
+            // curling down over its sides
+            m_RP = HandPose.PalmAt(m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(0f, 0.13f, -0.12f))), 1f, true);
+            m_LP = HandPose.PalmAt(m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(0f, 0.13f, 0.06f))), 1f, true);
         }
 
         /// <summary>The ball, huge, in both hands: fills the bottom half of the screen, its top reaching the middle.</summary>
@@ -766,9 +601,9 @@ namespace RockGame
                 m_Ball.SetActive(!throwing || throwK < 0.5f);
             }
             float push = throwing ? Smooth(Mathf.Min(1f, throwK * 2f)) * 0.3f : 0f;
-            Set(m_R, ballPos + new Vector3(0.62f, 0.05f, -0.15f + push), sharedRot * Quaternion.Euler(-10f, -40f, -80f));
-            Set(m_L, ballPos + new Vector3(-0.62f, 0.05f, -0.15f + push), sharedRot * Quaternion.Euler(-10f, 40f, 80f));
-            m_RP = m_LP = HandPose.PalmAt(ballPos, 0.3f);
+            Set(m_R, ballPos + new Vector3(0.62f, 0.05f, -0.15f + push), sharedRot * Quaternion.LookRotation(new Vector3(0.2f, 0.15f, 0.97f), Vector3.left));
+            Set(m_L, ballPos + new Vector3(-0.62f, 0.05f, -0.15f + push), sharedRot * Quaternion.LookRotation(new Vector3(-0.2f, 0.15f, 0.97f), Vector3.right));
+            m_RP = m_LP = HandPose.PalmAt(ballPos, 1f, true);
         }
 
         void PoseHeld(Item item, Vector3 shared, Quaternion sharedRot)
@@ -793,7 +628,10 @@ namespace RockGame
                 case Item.FortTower: AttachItemToRight(new Vector3(0, 0.02f, 0.06f), new Vector3(0, 20, 0), 1f); break;
                 case Item.Car: AttachItemToRight(new Vector3(0, 0.02f, 0.08f), new Vector3(0, 20, 0), 0.9f); break;
                 case Item.Saddle: AttachItemToRight(new Vector3(0, 0.02f, 0.06f), new Vector3(0, 20, 0), 0.9f); break;
-                case Item.BuildingPlan: AttachItemToRight(new Vector3(0, 0.03f, 0.05f), Vector3.zero, 0.55f); break;
+                case Item.BuildingPlan:
+                    // (the hand forward onto the board's bottom edge, the board where it was)
+                    m_R.localPosition += m_R.localRotation * new Vector3(0f, -0.015f, 0.085f);
+                    AttachItemToRight(new Vector3(0, 0.045f, -0.035f), Vector3.zero, 0.55f); break;
                 case Item.Chest: AttachItemToRight(new Vector3(0, 0.06f, 0.08f), new Vector3(0, 20, 0), 0.9f); break;
                 case Item.Workbench:
                 case Item.Workbench2: AttachItemToRight(new Vector3(0, 0.04f, 0.08f), new Vector3(0, 200, 0), 0.8f); break;
@@ -804,8 +642,8 @@ namespace RockGame
             // things held by a handle get a fist; things that sit on the hand (food, C4, a chest...) are cradled, the claws
             // curling up round them
             if (item == Item.DeathWand || item == Item.Arrow) m_RP = HandPose.FistThumb(m_Root.InverseTransformDirection(m_ItemHolder.up)); // round the shaft
-            else if (item == Item.BuildingPlan) m_RP = HandPose.FistThumb(m_Root.InverseTransformDirection(-m_ItemHolder.right), 0.85f); // gripping the board's bottom edge
-            else if (item != Item.InvisPotion)
+            else if (item == Item.BuildingPlan) m_RP = HandPose.PalmAt(m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(0f, 0.02f, 0.2f))), 1f, true); // the palm on the back of the board near its bottom edge, the claws round it
+            else
             {
                 if (m_CradleFor != m_Item)
                 {
@@ -823,7 +661,7 @@ namespace RockGame
                     m_CradleR = any ? Mathf.Clamp(Mathf.Min(b.extents.x, b.extents.y, b.extents.z), 0.02f, 0.1f) : -1f;
                 }
                 // (nothing to show, e.g. the airdrop signal: an empty fist, like the box hand)
-                if (m_CradleR > 0f) m_RP = HandPose.CradleAt(m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(m_CradleMid)), m_CradleR, 0.45f);
+                if (m_CradleR > 0f) m_RP = HandPose.CradleAt(m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(m_CradleMid)), m_CradleR);
             }
             HideLeft();
         }

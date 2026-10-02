@@ -18,6 +18,9 @@ namespace RockGame.EditorTools
         const string Models = "Assets/Game/Resources/PsxModels/";
         public const string CutoutPath = Trees + "PsxCutout.mat";
 
+        /// <summary>(Bumped when the import settings change, so the assets are imported again.)</summary>
+        public override uint GetVersion() => 2;
+
         void OnPreprocessTexture()
         {
             if (!assetPath.StartsWith(Folder) && !assetPath.StartsWith(Trees) && !assetPath.StartsWith(Models)) return;
@@ -54,7 +57,8 @@ namespace RockGame.EditorTools
                 pm.animationType = ModelImporterAnimationType.None;
                 pm.materialImportMode = ModelImporterMaterialImportMode.None;
                 pm.importNormals = ModelImporterNormals.Import;
-                if (assetPath.Contains("alienarm")) pm.isReadable = true; // the first-person arms curl their claws (ViewModel)
+                // readable: the first-person arms curl their claws (ViewModel), and close them round the PSX items
+                pm.isReadable = true;
                 return;
             }
             if (assetPath.StartsWith(Trees))
