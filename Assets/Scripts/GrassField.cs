@@ -7,10 +7,11 @@ namespace RockGame
     /// <summary>
     /// Normal graphics: a thick, stylised meadow on Plains and Highlands - tall blades of grass that are dark at the
     /// root and bright at the tip, sway in the wind and part round players, horses and dropped things; patches of
-    /// golden wheat, clearings of white daisies, purple lupins and clumps of broad leaves - over a textured ground.
+    /// golden wheat, clearings of white daisies, purple lupins and clumps of broad leaves - over the flat-colour ground.
     ///
     /// Staying fast: one 8 m patch of blades is drawn instanced on every 8 m square near the camera (only the ones in
-    /// view), with fewer, wider blades further out and none past ~80 m (the textured ground carries the look there).
+    /// view), with fewer, wider blades further out and none past the grass distance picked in Settings > Display (60 m to start with); the density setting
+    /// draws only the first share of each patch's blades (they're in random order, so it thins evenly).
     /// Where each blade grows comes from the "grass field" texture (1 texel a metre): R the ground height, G how much
     /// grass (none on the bases, the ball drop zone, steep rock, or under anything built), B wheat, A short grass.
     /// The flowers are a few static meshes. Hidden in the PSX and AI PSX graphics (they have their own looks).
@@ -19,8 +20,13 @@ namespace RockGame
     {
         const float Tile = 8f;              // the patch of blades drawn on every square
         const float BladesPerM2 = 55f;
-        const float Near = 11f, FadeStart = 48f, FadeEnd = 60f;
-        const float DecorFadeStart = 48f, DecorFadeEnd = 62f;
+        const float Near = 11f;
+        // how far the grass goes and how many blades are drawn come from Settings > Display (GameSettings.GrassDistance / GrassDensity)
+        static float FadeEnd => GameSettings.GrassDistance;
+        static float FadeStart => FadeEnd * 0.8f;
+        static float DecorFadeEnd => FadeEnd + 2f;
+        static float DecorFadeStart => FadeEnd - 12f;
+        static float Density => GameSettings.GrassDensity;
         const float DecorChunk = 32f;
         const int MaxPush = 16;
         static readonly float[] k_LodFrac = { 1f, 0.5f, 0.25f, 0.125f, 0.0625f, 0.03f };
@@ -34,8 +40,7 @@ namespace RockGame
         public bool ForceOff;
         public float CoverAt(float x, float z) => Field(x, z).g;
         public float WheatAt(float x, float z) => Field(x, z).b;
-        static Shader s_GrassShader, s_GroundShader;
-        static Material s_GroundMat, s_RockMat;
+        static Shader s_GrassShader;
 
         Texture2D m_Field;
         Color[] m_Px;
@@ -196,6 +201,9 @@ namespace RockGame
             Shader.SetGlobalVector("_GrassFade", new Vector4(FadeStart, FadeEnd, DecorFadeStart, DecorFadeEnd));
             Shader.SetGlobalVector("_GrassWheat", new Color(0.74f, 0.6f, 0.28f).linear);
             Shader.SetGlobalFloat("_GrassWind", 1f);
+            Shader.SetGlobalFloat("_GrassDensity", Density);
+            var g = GameSettings.WorldTint(GameSettings.WorldColor.Grass);
+            Shader.SetGlobalVector("_GrassTint", new Vector4(Mathf.GammaToLinearSpace(g.r), Mathf.GammaToLinearSpace(g.g), Mathf.GammaToLinearSpace(g.b), 1f));
         }
 
         int Idx(float w) => Mathf.Clamp(Mathf.RoundToInt(w - m_Min), 0, m_N - 1);
@@ -508,7 +516,7 @@ namespace RockGame
                 var ty = m_TileY[t];
                 var b = new Bounds(new Vector3(x0 + Tile * 0.5f, (ty.x + ty.y) * 0.5f + 0.4f, z0 + Tile * 0.5f), new Vector3(Tile + 1f, ty.y - ty.x + 1.6f, Tile + 1f));
                 if (!GeometryUtility.TestPlanesAABB(m_Planes, b)) continue;
-                float dens = near < Near ? 1f : Mathf.Pow(Near / near, 1.35f);
+                float dens = (near < Near ? 1f : Mathf.Pow(Near / near, 1.35f)) * Density;
                 int lod = 0;
                 while (lod + 1 < k_LodFrac.Length && k_LodFrac[lod + 1] >= dens) lod++;
                 m_Batches[lod].Add(new Vector4(x0, 0, z0, 0));
@@ -563,125 +571,6 @@ namespace RockGame
             for (int i = 0; i < n; i++) m_Push[i] = m_PushList[i].p;
             Shader.SetGlobalVectorArray(k_PushArr, m_Push);
             Shader.SetGlobalFloat(k_PushCount, n);
-        }
-
-        // =====================================================================
-        // The textured ground (Normal graphics)
-        // =====================================================================
-
-        /// <summary>The ground's material: grass (or, for Highlands' steep bits, rock) with a real texture.
-        /// Counts as an Art colour so the AI PSX look still re-skins it.</summary>
-        public static Material GroundMaterial(bool rock, Color artColor)
-        {
-            ref var cached = ref (rock ? ref s_RockMat : ref s_GroundMat);
-            if (cached != null) return cached;
-            if (s_GroundShader == null) s_GroundShader = Resources.Load<Shader>("Grass/Ground");
-            if (s_GroundShader == null || !s_GroundShader.isSupported) return Art.Mat(artColor);
-            var m = new Material(s_GroundShader) { name = rock ? "ground rock" : "ground grass" };
-            m.SetTexture("_Detail", DetailTexture(rock));
-            m.SetTexture("_Macro", MacroTexture(rock));
-            if (rock) { m.SetFloat("_DetailScale", 0.35f); m.SetFloat("_MacroScale", 0.02f); }
-            Art.Register(m, artColor);
-            return cached = m;
-        }
-
-        /// <summary>Tileable value noise (period cells across), 0..1.</summary>
-        static float TileNoise(float x, float y, int period, int seed)
-        {
-            int x0 = Mathf.FloorToInt(x), y0 = Mathf.FloorToInt(y);
-            float fx = x - x0, fy = y - y0;
-            fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy);
-            float H(int i, int j)
-            {
-                i = ((i % period) + period) % period; j = ((j % period) + period) % period;
-                uint h = (uint)(i * 374761393 + j * 668265263 + seed * 1442695041);
-                h = (h ^ (h >> 13)) * 1274126177u;
-                return ((h ^ (h >> 16)) & 0xffff) / 65535f;
-            }
-            return Mathf.Lerp(Mathf.Lerp(H(x0, y0), H(x0 + 1, y0), fx), Mathf.Lerp(H(x0, y0 + 1), H(x0 + 1, y0 + 1), fx), fy);
-        }
-
-        static float Fbm(float u, float v, int baseCells, int octaves, int seed)
-        {
-            float sum = 0, amp = 0.5f, norm = 0;
-            int cells = baseCells;
-            for (int o = 0; o < octaves; o++, cells *= 2, amp *= 0.5f)
-            {
-                sum += TileNoise(u * cells, v * cells, cells, seed + o * 31) * amp;
-                norm += amp;
-            }
-            return sum / norm;
-        }
-
-        /// <summary>Fine detail, grey around 0.5: soil and little blade strokes, repeats seamlessly.</summary>
-        static Texture2D DetailTexture(bool rock)
-        {
-            const int S = 256;
-            var px = new Color[S * S];
-            var rng = new System.Random(rock ? 11 : 5);
-            for (int y = 0; y < S; y++)
-            for (int x = 0; x < S; x++)
-            {
-                float u = x / (float)S, v = y / (float)S;
-                float n = Fbm(u, v, 8, 4, rock ? 3 : 1);
-                float g = 0.5f + (n - 0.5f) * (rock ? 0.5f : 0.28f);
-                if (rock) g += (TileNoise(u * 48, v * 6, 48, 9) - 0.5f) * 0.12f; // streaks
-                px[y * S + x] = new Color(g, g, g, 1);
-            }
-            if (!rock)
-            {
-                // short blade strokes, dark and light, at every angle
-                for (int k = 0; k < 2600; k++)
-                {
-                    float x = (float)rng.NextDouble() * S, y = (float)rng.NextDouble() * S;
-                    float a = (float)(rng.NextDouble() * Mathf.PI), len = 3f + (float)rng.NextDouble() * 6f;
-                    float val = rng.NextDouble() < 0.55 ? 0.36f : 0.64f;
-                    for (float t = 0; t < len; t += 0.5f)
-                    {
-                        int ix = ((int)(x + Mathf.Cos(a) * t) % S + S) % S, iy = ((int)(y + Mathf.Sin(a) * t) % S + S) % S;
-                        float fade = 1f - t / len * 0.6f;
-                        ref var p = ref px[iy * S + ix];
-                        float g = Mathf.Lerp(p.r, val, 0.7f * fade);
-                        p = new Color(g, g, g, 1);
-                    }
-                }
-                // a few soil specks
-                for (int k = 0; k < 500; k++)
-                {
-                    int x = rng.Next(S), y = rng.Next(S);
-                    ref var p = ref px[y * S + x];
-                    float g = p.r * 0.7f;
-                    p = new Color(g, g, g, 1);
-                }
-            }
-            var tex = new Texture2D(S, S, TextureFormat.RGBA32, true) { name = rock ? "rock detail" : "ground detail", wrapMode = TextureWrapMode.Repeat, filterMode = FilterMode.Trilinear, anisoLevel = 4 };
-            tex.SetPixels(px);
-            tex.Apply(true, true);
-            return tex;
-        }
-
-        /// <summary>Big, slow colour changes across the meadow (lighter, darker, a bit yellower), seamless.</summary>
-        static Texture2D MacroTexture(bool rock)
-        {
-            const int S = 128;
-            var px = new Color[S * S];
-            Color a, b, c;
-            if (rock) { a = new Color(0.5f, 0.48f, 0.45f); b = new Color(0.4f, 0.39f, 0.37f); c = new Color(0.56f, 0.53f, 0.48f); }
-            else { a = new Color(0.34f, 0.6f, 0.21f); b = new Color(0.26f, 0.5f, 0.16f); c = new Color(0.44f, 0.64f, 0.23f); }
-            for (int y = 0; y < S; y++)
-            for (int x = 0; x < S; x++)
-            {
-                float u = x / (float)S, v = y / (float)S;
-                float n1 = Fbm(u, v, 4, 4, rock ? 21 : 17), n2 = Fbm(u, v, 3, 3, rock ? 23 : 19);
-                var col = Color.Lerp(a, b, Mathf.SmoothStep(0, 1, Mathf.InverseLerp(0.45f, 0.7f, n1)));
-                col = Color.Lerp(col, c, Mathf.SmoothStep(0, 1, Mathf.InverseLerp(0.55f, 0.75f, n2)) * 0.8f);
-                col.a = 1;
-                px[y * S + x] = col;
-            }
-            var tex = new Texture2D(S, S, TextureFormat.RGBA32, true) { name = rock ? "rock colour" : "ground colour", wrapMode = TextureWrapMode.Repeat, filterMode = FilterMode.Bilinear };
-            tex.SetPixels(px);
-            tex.Apply(true, true);
-            return tex;
         }
     }
 }

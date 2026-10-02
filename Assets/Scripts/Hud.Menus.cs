@@ -655,6 +655,7 @@ namespace RockGame
             GUI.enabled = true;
             GUILayout.EndHorizontal();
             if (inMatch) GUILayout.Label("<color=#bbbbbb>Picked by the host for everyone in this match.</color>", m_SmallWrap);
+            DrawWorldLook();
             Caption("SCREEN");
             GUILayout.BeginHorizontal();
             RowLabel("Window", 170 * k);
@@ -690,6 +691,73 @@ namespace RockGame
             }
             GUILayout.EndHorizontal();
             GUILayout.Label($"<color=#bbbbbb>Now: {Screen.width} x {Screen.height}, {GameSettings.CurrentMode}, {GameSettings.ChosenRate.value:0.##} Hz. The refresh rate starts at the highest your screen can do; in a window it follows your desktop.</color>", m_SmallWrap);
+        }
+
+        // ------------------------------------------------------------------ display: grass and world colours (Normal graphics)
+
+        readonly Vector3[] m_Hsv = new Vector3[6];
+        readonly Color[] m_HsvOf = new Color[6];
+
+        void DrawWorldLook()
+        {
+            float k = m_Scale;
+            Caption("GRASS  ·  Normal graphics, just on this PC");
+            float gd = SliderRow("Grass render distance", GameSettings.GrassDistance, GameSettings.GrassDistanceMin, GameSettings.GrassDistanceMax, $"{GameSettings.GrassDistance:0} m", 190 * k);
+            float gn = SliderRow("Grass density", GameSettings.GrassDensity, GameSettings.GrassDensityMin, 1f, $"{GameSettings.GrassDensity * 100f:0}%", 190 * k);
+            if (!Mathf.Approximately(Mathf.Round(gd), GameSettings.GrassDistance) || !Mathf.Approximately(gn, GameSettings.GrassDensity))
+                GameSettings.SetGrass(Mathf.Round(gd), Mathf.Round(gn * 20f) / 20f);
+            GUILayout.Label("<color=#bbbbbb>Less distance or density = faster (it matters most on laptops). The far grass fades into the ground either way.</color>", m_SmallWrap);
+
+            Caption("WORLD COLOURS  ·  Normal graphics, just on this PC");
+            float sw = 30 * k;
+            for (int i = 0; i < GameSettings.WorldColorDefaults.Length; i++)
+            {
+                var w = (GameSettings.WorldColor)i;
+                var cur = GameSettings.GetWorldColor(w);
+                GUILayout.BeginHorizontal();
+                RowLabel(GameSettings.WorldColorNames[i], 150 * k);
+                // the colour now, then ready-made ones to click
+                var r = GUILayoutUtility.GetRect(sw * 1.6f, sw, GUILayout.Width(sw * 1.6f), GUILayout.Height(sw));
+                Fill(r, new Color(0.8f, 0.8f, 0.8f));
+                Fill(new Rect(r.x + 2, r.y + 2, r.width - 4, r.height - 4), cur);
+                GUILayout.Space(10 * k);
+                foreach (var pc in GameSettings.WorldColorPresets[i])
+                {
+                    var pr = GUILayoutUtility.GetRect(sw, sw, GUILayout.Width(sw), GUILayout.Height(sw));
+                    bool on = pc == cur;
+                    Fill(pr, on ? new Color(1f, 0.82f, 0.3f) : new Color(0, 0, 0, 0.6f));
+                    Fill(new Rect(pr.x + 3, pr.y + 3, pr.width - 6, pr.height - 6), pc);
+                    TrackHover(pr);
+                    if (GUI.Button(pr, GUIContent.none, GUIStyle.none)) { ClickSound(); GameSettings.SetWorldColor(w, pc); }
+                    GUILayout.Space(4 * k);
+                }
+                GUILayout.Space(6 * k);
+                string key = "wc:" + i;
+                bool open = m_Open.Contains(key);
+                if (Btn(open ? "Mix ▲" : "Mix ▼", GUILayout.Width(80 * k), GUILayout.Height(sw))) { if (open) m_Open.Remove(key); else m_Open.Add(key); }
+                GUILayout.EndHorizontal();
+                if (m_Open.Contains(key))
+                {
+                    // hue / saturation / brightness (kept while you drag, so grey doesn't lose its hue)
+                    if (m_HsvOf[i] != cur) { Color.RGBToHSV(cur, out float h0, out float s0, out float v0); m_Hsv[i] = new Vector3(h0, s0, v0); m_HsvOf[i] = cur; }
+                    var hsv = m_Hsv[i];
+                    hsv.x = SliderRow("      Hue", hsv.x, 0f, 1f, $"{hsv.x * 360f:0}°", 190 * k);
+                    hsv.y = SliderRow("      Saturation", hsv.y, 0f, 1f, $"{hsv.y * 100f:0}%", 190 * k);
+                    hsv.z = SliderRow("      Brightness", hsv.z, 0.05f, 1f, $"{hsv.z * 100f:0}%", 190 * k);
+                    if (hsv != m_Hsv[i])
+                    {
+                        m_Hsv[i] = hsv;
+                        var c = Color.HSVToRGB(hsv.x, hsv.y, hsv.z);
+                        m_HsvOf[i] = c;
+                        GameSettings.SetWorldColor(w, c);
+                    }
+                }
+            }
+            GUILayout.Space(4 * k);
+            GUILayout.BeginHorizontal();
+            if (Btn("Reset grass and colours", GUILayout.Width(260 * k), GUILayout.Height(32 * k))) GameSettings.ResetWorldLook();
+            GUILayout.Label("<color=#bbbbbb>  Changes show straight away.</color>", m_SmallWrap, GUILayout.Height(32 * k));
+            GUILayout.EndHorizontal();
         }
 
         void DrawVoiceTab()
@@ -742,9 +810,10 @@ namespace RockGame
             float k = m_Scale, sw = Screen.width, sh = Screen.height;
             if (OpenPause >= 0)
             {
-                m_PausePage = OpenPause == 1 ? PausePage.Settings : PausePage.Root;
-                m_Tab = SettingsTab.Controls;
+                m_PausePage = OpenPause >= 1 ? PausePage.Settings : PausePage.Root;
+                m_Tab = OpenPause == 2 ? SettingsTab.Display : SettingsTab.Controls; // (2: Display - for the tests)
                 OpenPause = -1;
+                OnTabOpened();
             }
             Fill(new Rect(0, 0, sw, sh), new Color(0, 0, 0, 0.55f));
             if (m_PausePage == PausePage.Settings) { MouseOverUI = true; if (DrawSettingsPanel()) m_PausePage = PausePage.Root; return; }

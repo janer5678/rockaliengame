@@ -11,7 +11,7 @@ namespace RockGame
     /// </summary>
     public static class MapBuilder
     {
-        static readonly Color k_Grass = new Color(0.36f, 0.56f, 0.3f), k_Rock = new Color(0.47f, 0.45f, 0.42f);
+        static readonly Color k_Grass = new Color(0.36f, 0.56f, 0.3f); // (the PSX patches; the ground itself is WorldLook.GroundMaterial)
         static Transform s_Root;
         public static int BuiltKey = -1, BuiltSeed;
 
@@ -33,6 +33,8 @@ namespace RockGame
             BuiltKey = Cfg.MapKey;
             BuiltSeed = Cfg.MapSeed;
             var root = s_Root;
+            // Normal graphics' own looks (castle walls, waving flags) vs the plain ones PSX / AI PSX keep
+            var look = NormalLook.On(root.gameObject);
             var rng = new System.Random(99 + Cfg.MapSeed);
             float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
             float half = Cfg.MapHalf;
@@ -54,8 +56,8 @@ namespace RockGame
                     float w = R(4f, 14f);
                     patchRs.Add(Art.Box(root, c, new Vector3(R(-half + 5, half - 5), 0.005f, R(-half + 5, half - 5)), new Vector3(w, 0.01f, w * R(0.5f, 1.5f)), new Vector3(0, R(0, 90), 0)).GetComponent<Renderer>());
                 }
-                // Normal graphics: a textured meadow (its own colour patches, so the flat patches are only for PSX)
-                ground.GetComponent<Renderer>().sharedMaterial = GrassField.GroundMaterial(false, k_Grass);
+                // Normal graphics: one flat colour (Settings > Display picks it); the patches are only for PSX
+                ground.GetComponent<Renderer>().sharedMaterial = WorldLook.GroundMaterial(false);
                 foreach (var pr in patchRs) pr.enabled = false;
                 // PSX graphics: PSX grass, with darker patches of it
                 PsxModels.Retexture(ground, new[] { ground.GetComponent<Renderer>() }, r => "grass_21", 3f);
@@ -98,7 +100,10 @@ namespace RockGame
                 {
                     Vector3 p = c + new Vector3(sx * (Cfg.BaseHalf + 1f), 0, sz * (Cfg.BaseHalf + 1f));
                     Art.Box(root, Art.DarkWood, p + Vector3.up * 3.5f, new Vector3(0.2f, 7f, 0.2f), default, true);
-                    Art.Box(root, team, p + new Vector3(0.7f, 6.3f, 0), new Vector3(1.4f, 0.9f, 0.05f));
+                    var flagBox = Art.Box(root, team, p + new Vector3(0.7f, 6.3f, 0), new Vector3(1.4f, 0.9f, 0.05f)).GetComponent<Renderer>();
+                    // Normal graphics: the flag is cloth that waves in the wind (PSX / AI PSX keep the plain one)
+                    var cloth = WorldDressing.Flag(root, p + new Vector3(0.1f, 6.75f, 0), team, 1.4f, 0.9f);
+                    if (cloth != null) { look.Normal.Add(cloth); look.Other.Add(flagBox); }
                 }
                 BuildBedrock(root, t);
             }
@@ -128,6 +133,9 @@ namespace RockGame
                 var walls = new List<Renderer>();
                 for (int k = root.childCount - 4; k < root.childCount; k++) walls.Add(root.GetChild(k).GetComponent<Renderer>());
                 PsxModels.Retexture(root.gameObject, walls, r => "concrete_01", 3f);
+                // Normal graphics (Plains, Highlands): castle walls just outside them (the plain walls still do the stopping)
+                if ((Cfg.Map == MapKind.Plains || Cfg.Map == MapKind.Highlands) && WorldDressing.BuildCastle(root, half, look))
+                    look.Other.AddRange(walls);
             }
 
             // distant low-poly mountains for a horizon (PSX graphics: the big PSX terrain rocks)
@@ -143,7 +151,12 @@ namespace RockGame
             }
 
             BuildArena(root);
-            if (Cfg.Map == MapKind.Plains || Cfg.Map == MapKind.Highlands) GrassField.Build(root); // tufts of grass (Normal graphics)
+            if (Cfg.Map == MapKind.Plains || Cfg.Map == MapKind.Highlands)
+            {
+                GrassField.Build(root); // tufts of grass (Normal graphics)
+                CloudLayer.Build(root);  // clouds drifting over (Normal graphics)
+            }
+            look.Done();
             if (AiPsxArt.On) AiPsxArt.ApplyWorld(root);
         }
 
@@ -237,7 +250,7 @@ namespace RockGame
             mesh.SetUVs(0, uvs);
             go.AddComponent<MeshFilter>().sharedMesh = mesh;
             var mr = go.AddComponent<MeshRenderer>();
-            mr.sharedMaterials = new[] { GrassField.GroundMaterial(false, k_Grass), GrassField.GroundMaterial(true, k_Rock) }; // (textured)
+            mr.sharedMaterials = new[] { WorldLook.GroundMaterial(false), WorldLook.GroundMaterial(true) }; // (flat colours, picked in Settings > Display)
             {
                 Material[] saved = null;
                 PsxModels.Look(go, () => { saved = mr.sharedMaterials; mr.sharedMaterials = new[] { PsxModels.Tiled("grass_21", 1f / 3f, 1f / 3f), PsxModels.Tiled("cobble_12", 1f / 3f, 1f / 3f) }; },

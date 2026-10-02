@@ -197,7 +197,8 @@ namespace RockGame
             float r() => (float)rng.NextDouble();
             float h = 4.5f + r() * 2.5f;
             var trunk = Art.Part(tr, Art.Cylinder, Art.DarkWood, new Vector3(0, h * 0.5f, 0), new Vector3(0.6f, h * 0.5f, 0.6f), default, collider, null, "trunk");
-            Color leaf = Color.Lerp(Art.Leaves, new Color(0.3f, 0.55f, 0.2f), r());
+            float leafR = r();
+            Color leaf = Color.Lerp(Art.Leaves, new Color(0.3f, 0.55f, 0.2f), leafR);
             leaf = ThemeMaps.LeafTint(leaf); // THEME MAPS
             trunkRadius = 0.3f;
             bark = Art.Wood;
@@ -222,13 +223,86 @@ namespace RockGame
                 }
                 return trunk;
             }
-            for (int k = 0; k < 3; k++)
+            var foliage = WorldLook.Foliage;
+            if (foliage == null)
             {
-                float y = h * 0.45f + k * 1.4f;
-                float w = 3.6f - k * 0.9f;
-                Art.Part(tr, Art.Cone, leaf, new Vector3(0, y, 0), new Vector3(w, 2.4f, w), new Vector3(0, r() * 60f, 0));
+                // (no Painted shader: the old plain cones)
+                for (int k = 0; k < 3; k++)
+                {
+                    float y = h * 0.45f + k * 1.4f;
+                    float w = 3.6f - k * 0.9f;
+                    Art.Part(tr, Art.Cone, leaf, new Vector3(0, y, 0), new Vector3(w, 2.4f, w), new Vector3(0, r() * 60f, 0));
+                }
+                return trunk;
             }
+            // Normal graphics: a tall pine - four tiers of needles in one mesh (one draw), greens to go with the grass
+            // (dark underneath like the grass roots, bright lime towards the tips), swaying gently in the wind
+            var pine = ThemeMaps.LeafTint(Color.Lerp(new Color(0.24f, 0.5f, 0.13f), new Color(0.33f, 0.6f, 0.16f), leafR)); // THEME MAPS (tint)
+            var lay = PineLayout(h);
+            // the trunk stops inside the top tier, where the needles are well clear of it (it never pokes out)
+            trunk.transform.localPosition = new Vector3(0, lay.TrunkTop * 0.5f, 0);
+            trunk.transform.localScale = new Vector3(0.6f, lay.TrunkTop * 0.5f, 0.6f);
+            var kit = new MeshKit();
+            for (int k = 0; k < PineTiers; k++)
+            {
+                float y0 = lay.Y[k], ch = lay.H[k], rad = lay.R[k];
+                float spin = r() * Mathf.PI * 2f;
+                float shade = Mathf.Lerp(0.88f, 1.06f, k / (PineTiers - 1f));
+                Color rim = pine * (0.8f * shade), tip = Color.Lerp(pine * 1.2f, new Color(0.62f, 0.8f, 0.3f), 0.18f) * shade, under = pine * 0.62f;
+                rim.a = tip.a = under.a = 1f;
+                Vector2 Sway(float y, float edge) => new Vector2(Mathf.Pow(Mathf.Clamp01((y - lay.CanopyBottom) / (lay.Top - lay.CanopyBottom)), 1.6f), edge);
+                var apex = new Vector3(0, y0 + ch, 0);
+                var under0 = new Vector3(0, y0 + ch * 0.12f, 0); // the underside is a shallow cone (not a flat lid)
+                for (int s = 0; s < PineSides; s++)
+                {
+                    float a0 = spin + s * Mathf.PI * 2f / PineSides, a1 = spin + (s + 1) * Mathf.PI * 2f / PineSides;
+                    // the rim droops a little between the branch tips (a jagged pine skirt)
+                    var p0 = new Vector3(Mathf.Cos(a0) * rad, y0, Mathf.Sin(a0) * rad);
+                    var p1 = new Vector3(Mathf.Cos(a1) * rad, y0, Mathf.Sin(a1) * rad);
+                    kit.Tri(p0, apex, p1, rim, tip, rim, Sway(y0, 1f), Sway(apex.y, 0f), Sway(y0, 1f));
+                    kit.Tri(p1, under0, p0, under, under, under, Sway(y0, 1f), Sway(under0.y, 0f), Sway(y0, 1f));
+                }
+            }
+            kit.Spawn(tr, "needles", foliage);
+            leafColor = pine * GameSettings.WorldTint(GameSettings.WorldColor.Leaves);
+            leafColor.a = 1f;
             return trunk;
+        }
+
+        public const int PineTiers = 4, PineSides = 8;
+
+        /// <summary>Where a Normal pine's tiers of needles go (from the tree's old trunk height h): bottom, height and
+        /// radius of each tier, and how high the trunk goes.</summary>
+        public struct Pine { public float[] Y, H, R; public float Top, CanopyBottom, TrunkTop; }
+
+        public static Pine PineLayout(float h)
+        {
+            var p = new Pine { Y = new float[PineTiers], H = new float[PineTiers], R = new float[PineTiers] };
+            p.Top = h * 1.6f;                         // 7.2 .. 11.2 m (the old trees were 6.2 .. 8.4)
+            p.CanopyBottom = 2.5f + p.Top * 0.05f;    // high enough to stand under and hit the trunk
+            float span = p.Top - p.CanopyBottom;
+            for (int k = 0; k < PineTiers; k++)
+            {
+                p.H[k] = span * (0.45f - 0.03f * k);
+                p.R[k] = p.Top * 0.2f * (1f - 0.17f * k);
+            }
+            int last = PineTiers - 1;
+            p.Y[last] = p.Top - p.H[last];
+            for (int k = 0; k < last; k++) p.Y[k] = Mathf.Lerp(p.CanopyBottom, p.Y[last], k / (float)last);
+            p.TrunkTop = p.Y[last] + p.H[last] * 0.12f;
+            return p;
+        }
+
+        /// <summary>(tests) How far the needles are from the trunk where the trunk ends, after the most the wind moves
+        /// them (m). Positive = the trunk can't poke out.</summary>
+        public static float PineClearance(float h)
+        {
+            var p = PineLayout(h);
+            int k = PineTiers - 1;
+            float f = (p.TrunkTop - p.Y[k]) / p.H[k];
+            float inscribed = p.R[k] * (1f - f) * Mathf.Cos(Mathf.PI / PineSides);
+            float sway = Mathf.Pow((p.TrunkTop - p.CanopyBottom) / (p.Top - p.CanopyBottom), 1.6f) * (0.07f * 2.2f * 1.12f + 0.05f * 1.42f);
+            return inscribed - 0.3f - sway;
         }
 
         /// <summary>The tree a hit at `pos` landed on (for the chip colours), or null.</summary>

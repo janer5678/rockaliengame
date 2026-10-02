@@ -4,7 +4,7 @@ using UnityEngine;
 namespace RockGame
 {
     /// <summary>Per-PC settings (sound, mouse, display, mic), saved in PlayerPrefs.</summary>
-    public static class GameSettings
+    public static partial class GameSettings
     {
         public const int VoiceOff = 0, VoiceOpen = 1, VoicePushToTalk = 2;
         public static float MasterVolume = 0.8f, SfxVolume = 1f, VoiceVolume = 1f, MicGain = 1.5f, MicThreshold = 0.02f;

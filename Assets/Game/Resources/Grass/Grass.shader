@@ -23,6 +23,8 @@ Shader "RockGame/Grass"
         float4 _GrassFade;               // x, y: blades fade out from / gone by (m); z, w: the same for flowers
         float4 _GrassWheat;              // wheat colour (linear)
         float _GrassNear;                // full density out to (m)
+        float _GrassDensity;             // share of the blades drawn (Settings > Display)
+        float4 _GrassTint;               // the grass colour picked in the settings, as a multiplier (linear)
         float _GrassWind;
         float _GrassDebug;
 
@@ -63,12 +65,13 @@ Shader "RockGame/Grass"
             float hMul = 1, wMul = 1;
             if (!decor)
             {
+                col *= _GrassTint.rgb;                                   // the colour picked in the settings
                 hMul = saturate((f.g - h * 0.85) * 7);                    // patchy edges where the grass stops
                 hMul *= lerp(0.7, 1.3, frac(h * 7.13));                  // taller and shorter bits
                 hMul *= lerp(1, 1.5, f.b);                              // wheat is taller...
                 col = lerp(col, _GrassWheat.rgb * lerp(0.85, 1.15, v.uv0.w), f.b); // ...and golden
                 hMul *= lerp(1, 0.3, f.a);                               // flower clearings are short
-                float dens = dist < _GrassNear ? 1 : pow(_GrassNear / dist, 1.35);
+                float dens = (dist < _GrassNear ? 1 : pow(_GrassNear / dist, 1.35)) * _GrassDensity;
                 hMul *= saturate((dens - v.uv0.z) * 12);                 // fewer blades far away...
                 wMul = clamp(rsqrt(max(dens, 0.04)) * 0.8, 1, 2.6);      // ...but wider, so it still looks full
             }
