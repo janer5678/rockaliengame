@@ -11,7 +11,7 @@ namespace RockGame
     /// </summary>
     public class Container : NetworkBehaviour
     {
-        public const byte Chest = 0, Bag = 1, Airdrop = 2, Gamble = 3, Workbench = 4; // Gamble: DNA mode's gambling machine (GambleMachine.cs); Workbench: Workbench.cs
+        public const byte Chest = 0, Bag = 1, Airdrop = 2, Gamble = 3, Workbench = 4, Workbench2 = 5; // Gamble: DNA mode's gambling machine (GambleMachine.cs); Workbench / Workbench2: the T1 / T2 benches (Workbench.cs)
         public static readonly List<Container> All = new List<Container>();
 
         public readonly NetworkList<ItemStack> Slots = new NetworkList<ItemStack>();
@@ -22,12 +22,14 @@ namespace RockGame
         public bool IsBag => Kind.Value == Bag;
         public bool IsAirdrop => Kind.Value == Airdrop;
         public bool IsGamble => Kind.Value == Gamble;
-        /// <summary>A team's workbench (no slots, unbreakable): E opens its shop.</summary>
-        public bool IsWorkbench => Kind.Value == Workbench;
+        /// <summary>A team's workbench, T1 or T2 (no slots, unbreakable): its tier's items show in the TAB list in your base.</summary>
+        public bool IsWorkbench => Kind.Value == Workbench || Kind.Value == Workbench2;
+        /// <summary>A workbench's tier (1 or 2; 0 for anything else).</summary>
+        public int BenchTier => Kind.Value == Workbench2 ? 2 : Kind.Value == Workbench ? 1 : 0;
         /// <summary>Chests can be damaged and rammed; bags and airdrops can't.</summary>
         public bool Breakable => Kind.Value == Chest;
         public bool TakeOnly => IsBag || IsAirdrop;
-        public string DisplayName => IsWorkbench ? "Workbench" : IsGamble ? "Gambling Machine" : IsBag ? $"{Cfg.TeamName[Mathf.Clamp(Team.Value, 0, 3)]}'s loot bag" : IsAirdrop ? "Alien Airdrop" : "Storage Chest";
+        public string DisplayName => IsWorkbench ? $"Workbench T{BenchTier}" : IsGamble ? "Gambling Machine" : IsBag ? $"{Cfg.TeamName[Mathf.Clamp(Team.Value, 0, 3)]}'s loot bag" : IsAirdrop ? "Alien Airdrop" : "Storage Chest";
         public Vector3 Center => transform.position + Vector3.up * (IsBag ? 0.3f : IsAirdrop ? 0.6f : IsGamble ? 1f : IsWorkbench ? 0.9f : 0.4f);
         public bool Empty
         {
@@ -116,7 +118,7 @@ namespace RockGame
                 }
             }
             else if (kind == Gamble) { } // built by GambleMachine.Setup
-            else if (kind == Workbench) RockGame.Workbench.BuildModel(t, team, ghost == null);
+            else if (kind == Workbench || kind == Workbench2) RockGame.Workbench.BuildModel(t, team, ghost == null, kind == Workbench2 ? 2 : 1);
             else
             {
                 Art.Box(t, Art.Wood, new Vector3(0, 0.25f, 0), new Vector3(1.05f, 0.5f, 0.58f));

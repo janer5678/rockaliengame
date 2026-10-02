@@ -13,7 +13,8 @@ namespace RockGame
         EnderPearl, Pistol, PistolAmmo, HeavyArmor, TreeCracker, FortifyBuff, WoodGenBuff, Boat,
         Sword, Shotgun, ShotgunShell, Revolver, RevolverAmmo,
         Dna,
-        Workbench }
+        Workbench,
+        Workbench2 }
 
     /// <summary>
     /// The game mode (picked in the main menu, next to the players). They don't mix:
@@ -480,7 +481,8 @@ namespace RockGame
                 case Item.Revolver: return "Revolver";
                 case Item.RevolverAmmo: return "Revolver Bullet";
                 case Item.Dna: return "DNA";
-                case Item.Workbench: return "Workbench";
+                case Item.Workbench: return "Workbench T1";
+                case Item.Workbench2: return "Workbench T2";
                 case Item.None: return "";
                 default: return i.ToString();
             }
@@ -546,7 +548,7 @@ namespace RockGame
                 var l = new List<Item>();
                 foreach (Item i in Enum.GetValues(typeof(Item)))
                 {
-                    if (i == Item.None || i == Item.Rock || i == Item.FortifyBuff || i == Item.WoodGenBuff || i == Item.AirdropSignal || i == Item.Workbench) continue;
+                    if (i == Item.None || i == Item.Rock || i == Item.FortifyBuff || i == Item.WoodGenBuff || i == Item.AirdropSignal || i == Item.Workbench || i == Item.Workbench2) continue;
                     if (i == Item.Boat && !ThemeMaps.HasWater) continue; // THEME MAPS
                     l.Add(i);
                 }
@@ -659,7 +661,7 @@ namespace RockGame
         }
 
         // ---------- Crafting ----------
-        static readonly Item[] k_Recipes = { Item.Hatchet, Item.Pickaxe, Item.Spear, Item.BuildingPlan, Item.Chest, Item.Bow, Item.Arrow, Item.Crossbow, Item.Armor, Item.Chainsaw, Item.Ram, Item.Barrier, Item.Saddle, Item.Workbench };
+        static readonly Item[] k_Recipes = { Item.Hatchet, Item.Pickaxe, Item.Spear, Item.BuildingPlan, Item.Chest, Item.Bow, Item.Arrow, Item.Crossbow, Item.Armor, Item.Chainsaw, Item.Ram, Item.Barrier, Item.Saddle, Item.Workbench, Item.Workbench2 };
 
         static readonly Item[] k_Limited = { Item.Hatchet, Item.Spear, Item.BuildingPlan, Item.Ram };
         static readonly List<Item> s_Active = new List<Item>();
@@ -697,6 +699,7 @@ namespace RockGame
                 case Item.Armor: r = new Recipe { Output = Item.Armor, Count = 1, Wood = ArmorWood }; break;
                 case Item.Chainsaw: r = new Recipe { Output = Item.Chainsaw, Count = 1, Wood = ChainsawWood }; break;
                 case Item.Workbench: r = new Recipe { Output = Item.Workbench, Count = 1, Wood = WorkbenchWood }; break;
+                case Item.Workbench2: r = new Recipe { Output = Item.Workbench2, Count = 1, Wood = Workbench2Wood }; break;
                 default: r = new Recipe { Output = Item.Barrier, Count = 1, Wood = BarrierWood }; break;
             }
             if (WoodMode) { r.Wood += r.Stone; r.Stone = 0; } // everything costs wood only

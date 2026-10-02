@@ -101,7 +101,7 @@ namespace RockGame
             Check(Cfg.Map == MapKind.Plains && Cfg.Size == MapSize.Small && !Cfg.WoodMode && g.MapKey.Value == Cfg.MapKey,
                 $"Tutorial ({who}): the map is forced to small Plains, normal materials ({Cfg.MapLabel})");
             Check(Cfg.Tutorial && !Cfg.LimitedCrafting && Cfg.RecipeIndex(Item.Workbench) >= 0 && g.S == GameState.PreBall && g.TimerPaused.Value,
-                $"Tutorial ({who}): playing the classic crafting (starter items + workbench), the clock stopped");
+                $"Tutorial ({who}): playing the classic crafting (starter items + workbenches), the clock stopped");
             // a player who joined mid-tutorial gets dropped straight into their base
             float until = Time.time + 10f;
             while (Cfg.BaseTeamAt(me.transform.position) != team && Time.time < until) yield return null;
@@ -368,49 +368,52 @@ namespace RockGame
             if (Tutorial.StepId == "stone") { me.DevRpc(DevCmd.GiveStone); yield return TutWaitStep("bench"); }
             Check(Tutorial.StepId == "bench" && !Tutorial.Allows(TutFeature.Deploy) && !Tutorial.Allows(TutFeature.Workbench), $"({who}) 10 stone ({me.Count(Item.Stone)}) ticks the stone step off ({Tutorial.StepId})");
 
-            // ---- the workbench: craft it, put it on the metal floor, open it, buy a pickaxe, pick it up ----
+            // ---- the workbenches: craft a T1, put it down in the base (on the grass, not the bedrock), see the T1 list,
+            //      craft a T2 from it, put that down, craft a pickaxe from the T2 list ----
             pc.LocalTeleport(spawn, Cfg.SpawnYaw(team));
             yield return new WaitForSeconds(0.3f);
+            me.CraftRpc(Cfg.CraftIndexOf(Item.Crossbow));
+            yield return new WaitForSeconds(0.6f);
+            Check(me.Count(Item.Crossbow) == 0, $"({who}) no crossbow before there's a workbench");
             me.CraftRpc(Cfg.RecipeIndex(Item.Workbench));
             yield return TutWaitStep("placebench");
-            Check(Tutorial.StepId == "placebench" && me.Count(Item.Workbench) == 1 && Tutorial.Allows(TutFeature.Deploy), $"({who}) crafted a workbench ({Tutorial.StepId})");
+            Check(Tutorial.StepId == "placebench" && me.Count(Item.Workbench) == 1 && Tutorial.Allows(TutFeature.Deploy), $"({who}) crafted a Workbench T1 ({Tutorial.StepId})");
             yield return TutSelect(me, Item.Workbench);
             yield return TutShot("placebench");
-            me.PlaceDeployableRpc((byte)Item.Workbench, Workbench.DefaultPos(team), Workbench.DefaultYaw(team));
-            yield return TutWaitStep("openbench");
-            var bench = Workbench.ForTeam(team);
-            Check(Tutorial.StepId == "openbench" && bench != null, $"({who}) put the workbench on the metal floor ({Tutorial.StepId})");
+            var grassSpot = Cfg.BaseCenter[team] - Cfg.BackDir(team) * 7f + Vector3.Cross(Vector3.up, Cfg.BackDir(team)) * (host ? 3f : -3f);
+            grassSpot.y = MapBuilder.Height(grassSpot.x, grassSpot.z);
+            var nearGrass = grassSpot + Cfg.BackDir(team) * 2.5f;
+            nearGrass.y = MapBuilder.Height(nearGrass.x, nearGrass.z) + 0.1f;
+            pc.LocalTeleport(nearGrass, Quaternion.LookRotation(-Cfg.BackDir(team)).eulerAngles.y);
+            yield return new WaitForSeconds(0.4f);
+            me.PlaceDeployableRpc((byte)Item.Workbench, grassSpot, Workbench.DefaultYaw(team));
+            yield return TutWaitStep("newcrafts");
+            var bench = Workbench.ForTeam(team, 1);
+            Check(Tutorial.StepId == "newcrafts" && bench != null, $"({who}) put the Workbench T1 down on the grass in the base ({Tutorial.StepId})");
             if (bench == null) yield break;
-            var benchC = bench.Center;
-            var stand2 = Cfg.SpawnPos(team, me.Slot.Value);
-            pc.LocalTeleport(stand2, 0f);
-            yield return new WaitForSeconds(0.3f);
-            LookAt(pc, me, benchC);
-            yield return new WaitForSeconds(0.1f);
-            yield return TutPress(Bind.Interact, 0.5f);
-            if (!(pc.MenuOpen && pc.LootTarget == bench)) { Log("(E didn't reach the bench - opening it directly)"); pc.LootTarget = bench; pc.MenuOpen = true; }
-            yield return TutWaitStep("buy");
-            Check(Tutorial.StepId == "buy" && pc.MenuOpen && pc.LootTarget == bench, $"({who}) E opens the workbench's shop ({Tutorial.StepId})");
-            yield return TutShot("bench_shop");
-            me.WorkbenchBuyRpc(new NetworkObjectReference(bench.NetworkObject), Cfg.CraftIndexOf(Item.Pickaxe));
-            pc.CloseMenu();
-            yield return new WaitForSeconds(0.3f);
-            yield return TutShot("bench_sawdust");
-            yield return TutWaitStep("pickup");
-            Check(Tutorial.StepId == "pickup", $"({who}) buying the pickaxe ticks off the buy step ({Tutorial.StepId})");
-            var top = Workbench.Top(bench);
-            until = Time.time + 8f;
-            int pid = -1;
-            while (pid < 0 && Time.time < until) { pid = WorldItemNear(Item.Pickaxe, top, 0.8f); yield return null; }
-            if (pid >= 0)
-            {
-                foreach (var it in g.Items) if (it.Id == pid) LookAt(pc, me, it.Center);
-                yield return new WaitForSeconds(0.1f);
-                yield return TutPress(Bind.Interact, 0.6f);
-                if (me.Count(Item.Pickaxe) == 0) { Log("(E didn't pick the pickaxe up - by RPC)"); me.PickupItemRpc(pid); }
-            }
+            Check(Tutorial.AllowsItem(Item.Crossbow) && Tutorial.AllowsItem(Item.Workbench2) && Cfg.CraftTierAt(team, me.transform.position) == 1, $"({who}) the T1 items are unlocked");
+            yield return TutPress(Bind.Inventory);
+            yield return TutWaitStep("bench2");
+            Check(Tutorial.StepId == "bench2", $"({who}) opening the bag in the base shows the T1 list ({Tutorial.StepId})");
+            yield return TutShot("bag_t1");
+            if (me.Count(Item.Wood) < Cfg.Workbench2Wood + 200) me.DevRpc(DevCmd.GiveWood);
+            yield return new WaitForSeconds(0.4f);
+            me.CraftRpc(Cfg.RecipeIndex(Item.Workbench2));
+            yield return TutWaitStep("placebench2");
+            Check(Tutorial.StepId == "placebench2" && me.Count(Item.Workbench2) == 1, $"({who}) crafted a Workbench T2 from the T1 list ({Tutorial.StepId})");
+            yield return TutPress(Bind.Inventory); // (close the bag)
+            yield return TutSelect(me, Item.Workbench2);
+            pc.LocalTeleport(spawn, Cfg.SpawnYaw(team));
+            yield return new WaitForSeconds(0.4f);
+            me.PlaceDeployableRpc((byte)Item.Workbench2, Workbench.DefaultPos(team, 2), Workbench.DefaultYaw(team));
+            yield return TutWaitStep("pickaxe");
+            Check(Tutorial.StepId == "pickaxe" && Workbench.ForTeam(team, 2) != null, $"({who}) put the Workbench T2 down ({Tutorial.StepId})");
+            yield return TutPress(Bind.Inventory);
+            yield return TutShot("bag_t2");
+            me.CraftRpc(Cfg.CraftIndexOf(Item.Pickaxe));
             yield return TutWaitStep("mine");
-            Check(Tutorial.StepId == "mine" && me.Count(Item.Pickaxe) == 1, $"({who}) picked the pickaxe up off the bench ({Tutorial.StepId})");
+            Check(Tutorial.StepId == "mine" && me.Count(Item.Pickaxe) == 1, $"({who}) crafted a pickaxe from the T2 list ({Tutorial.StepId})");
+            yield return TutPress(Bind.Inventory);
 
             // ---- mine with it, then a ram ----
             yield return TutSelect(me, Item.Pickaxe);

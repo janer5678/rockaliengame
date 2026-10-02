@@ -31,7 +31,6 @@ namespace RockGame
             var g = NetGame.Instance;
             int team = me.Team.Value;
             string rn = Cfg.RulesName(Cfg.Rules).ToLower().Replace(" ", "");
-            Cfg.WorkbenchCraftSeconds = 0.5f; // (things bought at the workbench here don't need the full show - -autotest craftui checks that)
             // every mode: a floor (ceiling) can hang off the top of a ramp
             var ramp = new PieceKey(PieceKey.KStairs, 0, 0, 0, 0);
             Check(BuildGrid.IsSupported(new PieceKey(PieceKey.KFloor, 1, 0, 1, 0), k => k.Equals(ramp)) && BuildGrid.IsSupported(new PieceKey(PieceKey.KFloor, 0, -1, 1, 0), k => k.Equals(ramp)),

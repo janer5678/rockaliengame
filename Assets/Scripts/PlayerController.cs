@@ -419,6 +419,7 @@ namespace RockGame
                         case Item.Barrier:
                         case Item.Car:
                         case Item.Workbench:
+                        case Item.Workbench2:
                         case Item.Boat: /* THEME MAPS */ HandleDeploy(held); break;
                         case Item.Berry:
                         case Item.Meat: HandleBerry(); break;
@@ -1294,8 +1295,13 @@ namespace RockGame
                 case TargetKind.Container:
                 {
                     var box = t.Obj.GetComponent<Container>();
-                    if (box.IsWorkbench && box.Team.Value != m_Net.Team.Value) { Hud.Push("That's the enemy's workbench - only they can use it"); break; }
-                    if (box.IsWorkbench && !Tutorial.Allows(TutFeature.Workbench)) { Hud.Push("Not yet - the tutorial gets to the workbench soon"); break; }
+                    if (box.IsWorkbench)
+                    {
+                        // nothing is made AT a bench: it unlocks its tier in the TAB crafting list anywhere in your base
+                        Hud.Push(box.Team.Value != m_Net.Team.Value ? $"That's the enemy's {box.DisplayName}"
+                            : $"Your {box.DisplayName}: its items are in your crafting list ({Binds.Name(Bind.Inventory)}) anywhere in your base");
+                        break;
+                    }
                     LootTarget = box;
                     MenuOpen = true;
                     Sfx.Play2D(Sfx.Place, 0.4f);
@@ -1327,6 +1333,7 @@ namespace RockGame
             else if (held == Item.Car) want = 102;
             else if (held == Item.Boat) want = 103; // THEME MAPS
             else if (held == Item.Workbench) want = 104;
+            else if (held == Item.Workbench2) want = 105;
 
             if (want != m_GhostId)
             {
@@ -1338,7 +1345,7 @@ namespace RockGame
                 {
                     m_Ghost = new GameObject("Ghost");
                     if (want == 101) Container.CreateVisual(Container.Chest, m_Net.Team.Value, m_Ghost.transform, Art.Ghost(k_GhostOk));
-                    else if (want == 104) Container.CreateVisual(Container.Workbench, m_Net.Team.Value, m_Ghost.transform, Art.Ghost(k_GhostOk));
+                    else if (want == 104 || want == 105) Container.CreateVisual(want == 105 ? Container.Workbench2 : Container.Workbench, m_Net.Team.Value, m_Ghost.transform, Art.Ghost(k_GhostOk));
                     else if (want == 103) Vehicle.CreateVisual(Vehicle.Boat, m_Ghost.transform, Art.Ghost(k_GhostOk), out _, out _, out _, out _, null, null); // THEME MAPS
                     else if (want == 102) Vehicle.CreateVisual(Vehicle.Car, m_Ghost.transform, Art.Ghost(k_GhostOk), out _, out _, out _, out _, null, null);
                     else Structure.CreateVisual(want == 100 ? PieceType.Barrier : (PieceType)want, 0, m_Ghost.transform, false, Art.Ghost(k_GhostOk), out _);
@@ -1357,13 +1364,13 @@ namespace RockGame
 
             if (want >= 100)
             {
-                var kind = want == 100 ? Item.Barrier : want == 101 ? Item.Chest : want == 104 ? Item.Workbench : want == 103 ? Item.Boat /* THEME MAPS */ : Item.Car;
+                var kind = want == 100 ? Item.Barrier : want == 101 ? Item.Chest : want == 104 ? Item.Workbench : want == 105 ? Item.Workbench2 : want == 103 ? Item.Boat /* THEME MAPS */ : Item.Car;
                 visible = hasHit && hit.distance <= Cfg.DeployRange && hit.normal.y > 0.7f;
                 if (!visible) reason = "Aim at flat ground nearby";
                 else
                 {
                     m_GhostPos = hit.point;
-                    m_GhostYaw = m_Yaw + (kind == Item.Chest || kind == Item.Workbench ? 180f : 0f); // (their fronts face you)
+                    m_GhostYaw = m_Yaw + (kind == Item.Chest || Workbench.IsBench(kind) ? 180f : 0f); // (their fronts face you)
                     if (kind == Item.Boat) m_GhostPos.y = ThemeMaps.WaterY - 0.1f; // THEME MAPS
                     PlayerNet.FindDeploySpot(kind, team, ref m_GhostPos, m_GhostYaw, out reason);
                     m_Ghost.transform.SetPositionAndRotation(m_GhostPos, Quaternion.Euler(0, m_GhostYaw, 0));
@@ -1507,7 +1514,7 @@ namespace RockGame
                     var c = t.Obj.GetComponent<Container>();
                     if (c.IsAirdrop) AimText = "<color=#c98bff>Alien Airdrop</color>   E: open";
                     else if (c.IsGamble) AimText = "<color=#7dffb0>Gambling Machine</color>   E: bet DNA - double it or lose it";
-                    else if (c.IsWorkbench) AimText = c.Team.Value == m_Net.Team.Value ? "<color=#8dff9a>Workbench</color>   E: make things" : $"{Cfg.TeamLabel(c.Team.Value)}'s Workbench";
+                    else if (c.IsWorkbench) AimText = c.Team.Value == m_Net.Team.Value ? $"<color=#8dff9a>{c.DisplayName}</color>   its items are in your crafting list ({Binds.Name(Bind.Inventory)}) in your base" : $"{Cfg.TeamLabel(c.Team.Value)}'s {c.DisplayName}";
                     else if (c.IsBag) AimText = $"{c.DisplayName}   E: open";
                     else AimText = $"Storage Chest ({Cfg.TeamLabel(c.Team.Value)})  {c.Health.Value:0}/{Cfg.ChestHp:0}   E: open"
                         + (m_Net.HeldItem == Item.BuildingPlan && c.Team.Value == m_Net.Team.Value ? "   X: demolish" : "");
