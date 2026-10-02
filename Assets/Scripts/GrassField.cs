@@ -35,6 +35,11 @@ namespace RockGame
         const int Levels = 3;               // squares of 8, 16 and 32 m (the far ones are one patch stretched)
         const float DecorChunk = 32f;
         const int MaxPush = 16;
+        /// <summary>Blades this close to the camera aren't drawn, and fade in (dithered) out to NearFadeTo (m; height counts
+        /// double): in the tall wheat it doesn't cover your screen. Only for this camera - others still see you hidden.</summary>
+        public const float NearFadeFrom = 0.3f, NearFadeTo = 1.7f;
+        /// <summary>(tests) Draw the blades at the camera like any others, to compare.</summary>
+        public static bool NearFadeOff;
         static readonly float[] k_LodFrac = { 1f, 0.5f, 0.25f, 0.125f, 0.0625f, 0.03f };
 
         static GrassField s_I;
@@ -254,6 +259,7 @@ namespace RockGame
             Shader.SetGlobalVector("_GrassDaisyTint", ColorSlots.LinearRatio(ColorSlots.Daisies));
             Shader.SetGlobalVector("_GrassLupinTint", ColorSlots.LinearRatio(ColorSlots.Lupins));
             Shader.SetGlobalFloat("_GrassWind", 1f);
+            Shader.SetGlobalVector("_GrassNearFade", NearFadeOff ? Vector4.zero : new Vector4(NearFadeFrom, NearFadeTo, 0f, 0f));
             Shader.SetGlobalFloat("_GrassDensity", Density);
             var g = GameSettings.WorldTint(GameSettings.WorldColor.Grass);
             Shader.SetGlobalVector("_GrassTint", new Vector4(Mathf.GammaToLinearSpace(g.r), Mathf.GammaToLinearSpace(g.g), Mathf.GammaToLinearSpace(g.b), 1f));

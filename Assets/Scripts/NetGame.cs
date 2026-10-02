@@ -440,15 +440,10 @@ namespace RockGame
             float half0 = Cfg.MapHalf;
             // wood mode has no stone at all: every rock becomes a tree
             byte rockKind = Cfg.WoodMode ? ResourceNode.Tree : ResourceNode.Boulder;
-            bool NearTower(Vector3 p)
-            {
-                foreach (var t in Cfg.Towers) if (new Vector2(p.x - t.x, p.z - t.z).magnitude < 12f) return true;
-                return false;
-            }
             // the rocks on the Highlands hills are real, minable stone nodes
             foreach (var p in MapBuilder.WildRocks)
             {
-                if (NearTower(p) || InsideScenery(p)) continue;
+                if (InsideScenery(p)) continue;
                 if (Cfg.DnaRules && rng.NextDouble() > Cfg.DnaRockShare) continue; // DNA mode: rocks are rarer
                 bool close = false;
                 foreach (var q in placed) if ((q - p).sqrMagnitude < 5f * 5f) { close = true; break; }
@@ -466,7 +461,6 @@ namespace RockGame
                         var p = new Vector3(R(-half0 + 10, half0 - 10), 0, R(-half0 + 10, -8f));
                         if (!Cfg.InFirstSector(p, 6f) || new Vector2(p.x, p.z).magnitude < MapBuilder.DomeRadius + 4f) continue; // (not under the glass dome)
                         if (Mathf.Abs(p.x - Cfg.BaseCenter[0].x) < Cfg.BaseHalf + 6 && Mathf.Abs(p.z - Cfg.BaseCenter[0].z) < Cfg.BaseHalf + 6) continue;
-                        if (NearTower(p)) continue;
                         if (!ThemeMaps.SpotOk(p)) continue; // THEME MAPS
                         if (InsideScenery(p)) continue;
                         float yaw = R(0, 360);
@@ -495,7 +489,7 @@ namespace RockGame
                     var p = new Vector3(R(-half + 8, half - 8), 0, R(-half + 8, -5f));
                     if (!Cfg.InFirstSector(p, 4f)) continue;
                     if (Mathf.Abs(p.x - Cfg.BaseCenter[0].x) < Cfg.BaseHalf + 3 && Mathf.Abs(p.z - Cfg.BaseCenter[0].z) < Cfg.BaseHalf + 3) continue;
-                    if (new Vector2(p.x, p.z).magnitude < 12f || NearTower(p)) continue;
+                    if (new Vector2(p.x, p.z).magnitude < 12f) continue;
                     if (!ThemeMaps.SpotOk(p)) continue; // THEME MAPS
                     if (InsideScenery(p)) continue;
                     bool close = false;
@@ -509,7 +503,7 @@ namespace RockGame
             }
         }
 
-        /// <summary>Would something standing at p (a tree, rock, bush or horse) be inside the map's own scenery - towers, ruins, cacti, pillars...? Checked for every team's copy of the spot.</summary>
+        /// <summary>Would something standing at p (a tree, rock, bush or horse) be inside the map's own scenery - ruins, cacti, pillars...? Checked for every team's copy of the spot.</summary>
         public static bool InsideScenery(Vector3 p)
         {
             for (int m = 0; m < Cfg.Copies; m++)

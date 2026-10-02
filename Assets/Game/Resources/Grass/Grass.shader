@@ -7,6 +7,9 @@
 // when each spot was last stepped on; they stand back up over ~15 s). Tall wheat isn't flattened.
 // Flowers (static meshes, rank < 0) skip the patch-only parts (wheat, thinning out, random gaps); their uv0.w says
 // what they are (0 a daisy's middle, 1 daisy petals, 2 a lupin spike, 3 stems and leaves) for the colour settings.
+// Blades right in front of the camera fade out (a dither pattern, so they stay opaque and sorted: the further from the
+// eyes, the more of their pixels are drawn) - standing or crouching in the tall wheat, it doesn't cover your screen.
+// It's only around this camera: everyone else still sees you hidden in it.
 // The settings are globals set by GrassField.cs (no material properties).
 Shader "RockGame/Grass"
 {
@@ -36,6 +39,7 @@ Shader "RockGame/Grass"
         float4 _GrassLupinTint;
         float _GrassWind;
         float _GrassDebug;
+        float4 _GrassNearFade;           // x, y: blades closer to the camera than x (m) are gone, further than y fully there
 
         struct Attributes
         {
@@ -50,6 +54,7 @@ Shader "RockGame/Grass"
             float3 ws : TEXCOORD0;
             half3 color : TEXCOORD1;
             float fog : TEXCOORD2;
+            half fade : TEXCOORD3;          // 0: right at the camera (not drawn) .. 1: drawn
         };
 
         float GrassHash(float2 p) { return frac(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453); }
@@ -140,6 +145,10 @@ Shader "RockGame/Grass"
             // dark at the root, bright at the tip; gusts lighten the tops a touch; flattened grass is a bit paler
             o.color = col * lerp(decor ? 0.6 : 0.42, 1.0, bend) * (1 + gust * 0.08 * b2) * lerp(half3(1, 1, 1), half3(1.18, 1.14, 0.82), flat); // (trampled: paler, drier)
             o.fog = ComputeFogFactor(o.positionCS.z);
+            // close to the camera: fade out (measured with the height counted double, so the grass at your feet stays)
+            float3 dc = o.ws - _WorldSpaceCameraPos;
+            float dn = length(float3(dc.x, dc.y * 2, dc.z));
+            o.fade = _GrassNearFade.y > _GrassNearFade.x ? smoothstep(_GrassNearFade.x, _GrassNearFade.y, dn) : 1;
             if (_GrassDebug > 0.5)
             {
                 // debug: draw every blade full size, coloured by what the shader reads
@@ -147,8 +156,19 @@ Shader "RockGame/Grass"
                 o.positionCS = TransformWorldToHClip(o.ws);
                 o.color = _GrassDebug > 1.5 ? v.color.rgb : float3(frac(v.uv0.x / 8), frac(v.uv0.y / 8), v.uv0.w);
                 o.fog = 0;
+                o.fade = 1;
             }
             return o;
+        }
+
+        // screen-door transparency: a 4x4 ordered dither, so a blade at fade f keeps about f of its pixels
+        void NearFadeClip(Varyings i)
+        {
+            if (i.fade >= 0.999) return;
+            uint2 q = (uint2)i.positionCS.xy & 3;
+            uint x = q.x ^ q.y;
+            uint bayer = ((x & 1) * 2 + (q.y & 1)) * 4 + ((x >> 1) & 1) * 2 + ((q.y >> 1) & 1); // (the 4x4 Bayer matrix)
+            clip(i.fade - (bayer + 0.5) / 16.0);
         }
         ENDHLSL
 
@@ -170,6 +190,7 @@ Shader "RockGame/Grass"
             }
             half4 frag(Varyings i) : SV_Target
             {
+                NearFadeClip(i);
                 return half4(MixFog(i.color, i.fog), 1);
             }
             ENDHLSL
@@ -182,7 +203,7 @@ Shader "RockGame/Grass"
             HLSLPROGRAM
             #pragma vertex vert
             #pragma fragment frag
-            half frag(Varyings i) : SV_Target { return i.positionCS.z; }
+            half frag(Varyings i) : SV_Target { NearFadeClip(i); return i.positionCS.z; }
             ENDHLSL
         }
         Pass
@@ -192,7 +213,7 @@ Shader "RockGame/Grass"
             HLSLPROGRAM
             #pragma vertex vert
             #pragma fragment frag
-            half4 frag(Varyings i) : SV_Target { return half4(0, 1, 0, 0); }
+            half4 frag(Varyings i) : SV_Target { NearFadeClip(i); return half4(0, 1, 0, 0); }
             ENDHLSL
         }
     }

@@ -293,7 +293,7 @@ namespace RockGame
             }
         }
 
-        /// <summary>The ground (a flat-shaded mesh like the Highlands), coloured for the map.</summary>
+        /// <summary>The ground (a smooth-shaded mesh like the Highlands), coloured for the map.</summary>
         public static void BuildGround(Transform root)
         {
             float half = Cfg.MapHalf + 30f;
@@ -304,34 +304,10 @@ namespace RockGame
             for (int j = 0; j <= n; j++)
                 hs[i, j] = Height(-half + i * step, -half + j * step);
             var pal = Palette();
-            var verts = new List<Vector3>();
-            var subs = new List<int>[pal.Length];
-            for (int s = 0; s < subs.Length; s++) subs[s] = new List<int>();
-            void Tri(Vector3 a, Vector3 b, Vector3 c)
-            {
-                var nrm = Vector3.Cross(b - a, c - a).normalized;
-                int k = verts.Count;
-                verts.Add(a); verts.Add(b); verts.Add(c);
-                var list = subs[ColourAt((a + b + c) / 3f, nrm.y)];
-                list.Add(k); list.Add(k + 1); list.Add(k + 2);
-            }
-            for (int i = 0; i < n; i++)
-            for (int j = 0; j < n; j++)
-            {
-                var p00 = new Vector3(-half + i * step, hs[i, j], -half + j * step);
-                var p10 = new Vector3(-half + (i + 1) * step, hs[i + 1, j], -half + j * step);
-                var p01 = new Vector3(-half + i * step, hs[i, j + 1], -half + (j + 1) * step);
-                var p11 = new Vector3(-half + (i + 1) * step, hs[i + 1, j + 1], -half + (j + 1) * step);
-                if (((i + j) & 1) == 0) { Tri(p00, p01, p11); Tri(p00, p11, p10); }
-                else { Tri(p00, p01, p10); Tri(p10, p01, p11); }
-            }
-            var mesh = new Mesh { name = "ThemeTerrain", indexFormat = IndexFormat.UInt32 };
-            mesh.SetVertices(verts);
-            mesh.subMeshCount = pal.Length;
+            // smooth-shaded like the Highlands (each triangle coloured for where it is and how steep)
+            var mesh = MapBuilder.SmoothGround("ThemeTerrain", hs, half, step, pal.Length, (c, ny) => ColourAt(c, ny));
             var mats = new Material[pal.Length];
-            for (int s = 0; s < pal.Length; s++) { mesh.SetTriangles(subs[s], s); mats[s] = Art.Mat(pal[s]); }
-            mesh.RecalculateNormals();
-            mesh.RecalculateBounds();
+            for (int s = 0; s < pal.Length; s++) mats[s] = Art.Mat(pal[s]);
             var go = new GameObject("Ground");
             go.transform.SetParent(root, false);
             go.AddComponent<MeshFilter>().sharedMesh = mesh;

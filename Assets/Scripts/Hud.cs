@@ -812,7 +812,6 @@ namespace RockGame
                 Fill(new Rect(a.x, a.y, bs, bs), new Color(col.r, col.g, col.b, 0.55f));
                 GUI.Label(new Rect(a.x, a.y + bs / 2 - 12, bs, 24), $"<b>{Cfg.TeamName[t]}</b>", m_Center);
             }
-            foreach (var tw in Cfg.Towers) { var q = ToMap(tw); Fill(new Rect(q.x - 3, q.y - 3, 6, 6), new Color(0.5f, 0.3f, 0.15f)); }
             foreach (var c in Container.All) if (c.IsAirdrop) { var q = ToMap(c.transform.position); Fill(new Rect(q.x - 5, q.y - 5, 10, 10), new Color(0.75f, 0.35f, 1f)); }
             if (Ball.Instance != null) { var q = ToMap(Ball.Instance.transform.position); Fill(new Rect(q.x - 5, q.y - 5, 10, 10), new Color(1f, 0.85f, 0.15f)); }
             foreach (var p in PlayerNet.All)

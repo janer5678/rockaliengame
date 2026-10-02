@@ -22,10 +22,24 @@ namespace RockGame
             var root = MapBuilder.Root;
 
             // ---- checks ----
-            float worst = float.MaxValue;
-            for (float h = 4.5f; h <= 7.0001f; h += 0.05f) worst = Mathf.Min(worst, ResourceNode.PineClearance(h));
-            Check(worst > 0.05f, $"pine trunks end inside the needles for every tree height, even swaying (closest {worst:F2} m)");
-            int pines = 0, bad = 0;
+            // the kinds of pine and how tall they are (from the seed alone, so every peer builds the same)
+            {
+                var kinds = new int[ResourceNode.PineVariants];
+                float lo = float.MaxValue, hi = 0f, thinnest = float.MaxValue;
+                for (int seed = 0; seed < 3000; seed++)
+                {
+                    var sh = ResourceNode.PineShapeOf(seed * 7919 + 13);
+                    kinds[sh.Variant]++;
+                    lo = Mathf.Min(lo, sh.Top); hi = Mathf.Max(hi, sh.Top);
+                    for (float y = sh.UnderY(0); y < sh.TrunkTop; y += 0.05f) thinnest = Mathf.Min(thinnest, sh.TrunkRadius(y));
+                }
+                Log($"pine kinds over 3000 seeds: {string.Join(", ", System.Array.ConvertAll(kinds, k => k.ToString()))}; {lo:F1} .. {hi:F1} m tall; thinnest trunk in a crown {thinnest:F2} m");
+                Check(System.Array.TrueForAll(kinds, k => k > 300), $"all {kinds.Length} kinds of pine come up");
+                Check(lo >= 9.4f && hi <= 16.6f && hi - lo > 5f, $"the pines are 10-16 m tall ({lo:F1} .. {hi:F1} m)");
+                Check(thinnest >= 0.05f, $"the trunk never pinches off inside the needles (thinnest {thinnest:F2} m)");
+            }
+            int pines = 0, bad = 0, tallOnes = 0;
+            var kindsHere = new HashSet<int>();
             foreach (var n in ResourceNode.All)
             {
                 if (n == null || n.Kind.Value != ResourceNode.Tree) continue;
@@ -33,11 +47,18 @@ namespace RockGame
                 var trunk = n.transform.Find("visual/trunk");
                 if (needles == null || trunk == null) continue;
                 pines++;
+                kindsHere.Add(ResourceNode.PineVariant(n.Seed.Value));
                 var nb = needles.GetComponent<Renderer>().bounds;
-                var tb = trunk.GetComponent<Renderer>().bounds;
+                var tc = trunk.GetComponent<Collider>();
+                var tb = tc != null ? tc.bounds : trunk.GetComponent<Renderer>().bounds;
                 if (tb.max.y > nb.max.y - 0.8f || tb.max.y < nb.min.y + 1f) bad++;
+                if (nb.max.y - n.transform.position.y > 9.5f) tallOnes++;
+                var cap = trunk.GetComponent<CapsuleCollider>();
+                if (pines == 1) Log($"built-in cylinder mesh extents {Art.Cylinder.bounds.extents}; trunk collider radius {(cap != null ? cap.radius * trunk.lossyScale.x : -1f):F2} m, {tb.size.y:F1} m tall; tree {nb.max.y - n.transform.position.y:F1} m");
             }
-            Check(pines > 0 && bad == 0, $"{pines} pines, trunk tops all well inside the needles ({bad} not)");
+            Check(pines > 0 && bad == 0, $"{pines} pines, trunk colliders end well inside the needles ({bad} not)");
+            Check(tallOnes == pines, $"every pine on the map is over 9.5 m tall ({tallOnes} of {pines})");
+            Check(kindsHere.Count >= Mathf.Min(4, pines), $"{kindsHere.Count} kinds of pine on the map");
             Check(root.Find("Castle") == null, "no castle walls any more");
             // the plain boundary walls stop you, and they're what you see now
             List<Renderer> PlainWallRs()
@@ -196,6 +217,13 @@ namespace RockGame
                 yield break;
             }
 
+            if (System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-trees-only") >= 0)
+            {
+                yield return TreeCloseups(pc, dir, (x, z) => Ground(x, z));
+                yield return BushAndWheatCloseups(me, pc, dir, (x, z) => Ground(x, z));
+                Application.Quit(0);
+                yield break;
+            }
             if (System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-trample-only") >= 0)
             {
                 var mid0 = Ground(Mathf.Lerp(Cfg.BaseCenter[team].x, 0, 0.5f), Mathf.Lerp(Cfg.BaseCenter[team].z, 0, 0.5f));
@@ -222,6 +250,9 @@ namespace RockGame
                 var far = Ground(tp.x + away.x * 32f, tp.z + away.z * 32f);
                 yield return Shoot("trees_far", far, YawTo(far, tp), -4f);
             }
+            // the pines up close (no trunk through the needles), the bush, flag, clouds, hills, towers, inside the wheat
+            yield return TreeCloseups(pc, dir, (x, z) => Ground(x, z));
+            yield return BushAndWheatCloseups(me, pc, dir, (x, z) => Ground(x, z));
 
             // ---- the plain walls (no castle) ----
             float sideZ = bcn.z < 0 ? -half : half;
