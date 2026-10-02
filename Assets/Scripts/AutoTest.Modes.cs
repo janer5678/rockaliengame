@@ -77,7 +77,7 @@ namespace RockGame
             switch (Cfg.Rules)
             {
                 case GameRules.Classic: break;
-                case GameRules.Arsenal: yield return ArsenalTests(me, pc, g, team); yield return BlastAndRamTests(me, pc, g, team); yield return SuicideTest(me); break;
+                case GameRules.Arsenal: yield return ArsenalTests(me, pc, g, team); yield return BlastAndRamTests(me, pc, g, team); yield return SuicideTest(me, pc, g); break;
                 case GameRules.AutoWood: yield return AutoWoodTests(me, pc, g, team); yield return ArsenalTests(me, pc, g, team); break;
                 case GameRules.Tutorial: yield return TutorialTests(me, pc, g, team); break;
                 case GameRules.Dna: yield return DnaTests(me, pc, g, team); break;
@@ -427,7 +427,7 @@ namespace RockGame
             Check(gone == 5 && sidesOk, $"the ram smashed {gone}/5 walls stacked in a row and left the ones beside them");
         }
 
-        IEnumerator SuicideTest(PlayerNet me)
+        IEnumerator SuicideTest(PlayerNet me, PlayerController pc, NetGame g)
         {
             if (me.Dead.Value) yield break;
             // standing in your base heals you
@@ -437,12 +437,12 @@ namespace RockGame
             // chat
             me.ChatRpc(new Unity.Collections.FixedString128Bytes("hello from the test"));
             yield return new WaitForSeconds(0.4f);
+            int graves0 = g.Graves.Count;
+            var diedAt = me.transform.position;
             me.SuicideRpc();
             yield return new WaitForSeconds(0.5f);
             Check(me.Dead.Value, "suicide from the pause menu kills you");
-            yield return new WaitForSeconds(Cfg.RespawnTime + 1.5f);
-            if (me.Dead.Value) me.ServerRespawn(false);
-            yield return new WaitForSeconds(0.5f);
+            yield return GraveTests(me, pc, g, graves0, diedAt); // (waits out the respawn)
             me.SuicideRpc();
             yield return new WaitForSeconds(0.5f);
             Check(!me.Dead.Value, "no second suicide within 30 seconds");

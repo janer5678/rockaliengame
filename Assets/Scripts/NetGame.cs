@@ -101,6 +101,7 @@ namespace RockGame
             if (Instance == this) Instance = null;
             AirdropShip.Clear();
             PortalFx.Clear();
+            GraveFx.Clear();
             foreach (var v in m_ItemVisuals.Values) if (v) Destroy(v);
             m_ItemVisuals.Clear();
         }
@@ -139,6 +140,7 @@ namespace RockGame
             MapBuilder.SetGlassWall(WallUp);
             AirdropShip.Tick(this);
             PortalFx.Sync(this);
+            GraveFx.Sync(this);
             if (!IsServer) return;
             if (Time.time >= m_NextItemCheck) { m_NextItemCheck = Time.time + 0.5f; ServerSettleItems(); }
             double now = NetworkManager.ServerTime.Time;

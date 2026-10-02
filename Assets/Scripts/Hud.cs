@@ -433,7 +433,7 @@ namespace RockGame
                 case Item.GiantStaff: return "<b>Staff of the Giant</b>    LMB: turn your nearest enemy into a giant";
                 case Item.RocketLauncher: return $"<b>Rocket Launcher</b> ({Mathf.Max(1, (int)s.Data)} rocket{(s.Data > 1 ? "s" : "")})    LMB: fire - wrecks enemy buildings";
                 case Item.BombBush: return "<b>Fake Bomb Bush</b>    LMB: throw it - whoever picks it blows up";
-                case Item.TreeCamo: return "<b>Tree Camo</b>    while you hold it you're a tree (the camera pulls back so you can see it)";
+                case Item.TreeCamo: return "<b>Tree Camo</b>    while you hold it you're a tree    hold LMB / RMB: stand still and just look around";
                 case Item.Airstrike: return "<b>Airstrike</b>    LMB: pick a spot on the map - everything there gets flattened";
                 case Item.Wallhack: return "<b>Wallhack Glasses</b>    hold them to see your enemies through walls";
                 case Item.InvisPotion: return $"<b>Invisibility Potion</b>    LMB: drink ({Cfg.InvisTime:0}s, attacking shows you)";

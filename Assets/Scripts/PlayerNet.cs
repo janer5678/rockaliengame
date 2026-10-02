@@ -333,7 +333,12 @@ namespace RockGame
             m_Tree = new GameObject("treeCamo");
             m_Tree.transform.SetParent(transform, false);
             ResourceNode.BuildTreeVisual(m_Tree.transform, (int)(NetworkObjectId * 7919 % 100000), false);
+            m_Tree.transform.rotation = TreeCamoRotation;
         }
+
+        /// <summary>The camo tree's world facing: the same on every screen and it never turns with the player.</summary>
+        public Quaternion TreeCamoRotation => Quaternion.Euler(0f, NetworkObjectId * 137 % 360, 0f);
+        public Transform TreeCamoVisual => m_Tree ? m_Tree.transform : null;
 
         /// <summary>Wallhack glasses: an extra always-on-top red pass on this player's renderers.</summary>
         void SetEsp(bool on)
@@ -553,6 +558,8 @@ namespace RockGame
 
         void LateUpdate()
         {
+            // tree camo: a real tree never turns, so the disguise keeps one fixed facing while you look around
+            if (m_Tree) m_Tree.transform.rotation = TreeCamoRotation;
             if (m_Anim == null || !m_VisualRoot.gameObject.activeSelf) return;
             var item = m_HandItemId;
             m_Anim.Tick(new BodyAnimator.Pose
@@ -667,6 +674,8 @@ namespace RockGame
         {
             Dead.Value = true;
             Health.Value = 0;
+            // a gravestone where you fell (stays for the rest of the match)
+            if (NetGame.Instance != null) NetGame.Instance.ServerAddGrave(transform.position, transform.eulerAngles.y + 180f, Team.Value);
             if (CarryingBall) Ball.Instance.ServerDrop(transform.position + Vector3.up * 1.5f, Vector3.up * 3f);
             InvisUntil.Value = -1;
             ServerDismount();

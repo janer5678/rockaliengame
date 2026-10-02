@@ -295,8 +295,11 @@ namespace RockGame
                 bool moving = Binds.Axis(Bind.Forward, Bind.Back) != 0f || Binds.Axis(Bind.Right, Bind.Left) != 0f;
                 bool running = (Binds.Held(Bind.Sprint) && moving) || m_LastPlanar.magnitude > Cfg.WalkSpeed * 0.9f;
                 bool downhill = m_LastPlanar.magnitude > 1f && SlopeDownhill(out var dh) && Vector3.Dot(dh, m_LastPlanar.normalized) > 0.3f;
-                if (running || downhill) m_SlideQueued = Mathf.Max(Time.time, m_NextSlide) + 0.35f;
+                bool airborne = m_CC.enabled && !m_CC.isGrounded && Time.time - m_GroundedAt >= 0.2f;
+                // in the air: it waits for the landing (however long the fall) and then slides off with the speed you had
+                if (running || downhill) m_SlideQueued = airborne ? float.MaxValue : Mathf.Max(Time.time, m_NextSlide) + 0.35f;
             }
+            if (m_SlideQueued == float.MaxValue && !slideKey) m_SlideQueued = -1f; // let go of C before landing: no slide
             if (wantCrouch != Crouching)
             {
                 Crouching = wantCrouch;
@@ -305,10 +308,11 @@ namespace RockGame
             if (dead || riding) { m_SlideOn = false; m_SlideQueued = -1f; }
             // start it right away if we're on (or only just left) the ground; in the air it waits for the landing
             bool onGround = m_CC.enabled && (m_CC.isGrounded || Time.time - m_GroundedAt < 0.2f);
-            if (m_SlideQueued > Time.time && !m_SlideOn && slideKey && onGround && Time.time >= m_NextSlide) { m_SlideQueued = -1f; StartSlide(); }
+            if (m_SlideQueued > Time.time && !m_SlideOn && slideKey && onGround && Time.time >= m_NextSlide && !TreeLocked) { m_SlideQueued = -1f; StartSlide(); }
 
             // ---- move ----
             m_Speed = 0;
+            TreeLocked = false;
             if (riding)
             {
                 // the vehicle does the moving (Vehicle.Drive reads GetDriveInput); we just sit on it
@@ -325,19 +329,25 @@ namespace RockGame
             {
                 Vector3 wish = Vector3.zero;
                 float fwdInput = 0;
-                if (move)
+                // tree camo: hold LMB or RMB to root yourself to the spot (you can still look around)
+                TreeLocked = move && input && m_Net.TreeCamo && (Binds.Held(Bind.Attack) || Binds.Held(Bind.Aim));
+                if (TreeLocked && m_SlideOn) { m_SlideVel = Vector3.zero; EndSlide(); }
+                if (move && !TreeLocked)
                 {
                     float h = Binds.Axis(Bind.Right, Bind.Left);
                     fwdInput = Binds.Axis(Bind.Forward, Bind.Back);
                     wish = transform.right * h + transform.forward * fwdInput;
                     if (wish.sqrMagnitude > 1f) wish.Normalize();
                 }
-                bool sprint = move && Binds.Held(Bind.Sprint) && fwdInput > 0 && m_DrawStart < 0 && RamCharge <= 0 && !Crouching && !CrossbowAiming;
+                // crouching (or pressing slide) in the air doesn't brake you: you keep the speed you took off with
+                bool airCrouch = Crouching && !m_SlideOn && !m_CC.isGrounded;
+                bool sprint = move && Binds.Held(Bind.Sprint) && fwdInput > 0 && m_DrawStart < 0 && RamCharge <= 0 && (!Crouching || airCrouch) && !CrossbowAiming;
                 float speed = Crouching ? Cfg.CrouchSpeed : sprint ? Cfg.SprintSpeed : Cfg.WalkSpeed;
                 if (carrying) speed *= Cfg.BallCarrySpeedMul;
                 if (m_DrawStart >= 0 || CrossbowAiming) speed *= 0.6f;
                 if (held == Item.Ram && !carrying) speed *= Cfg.RamMoveMul;
                 speed *= ThemeMaps.SpeedMul(transform.position); // THEME MAPS
+                if (airCrouch) speed = Mathf.Max(speed, m_TakeoffSpeed);
 
                 bool grounded = m_CC.isGrounded;
                 if (grounded) m_GroundedAt = Time.time;
@@ -347,7 +357,7 @@ namespace RockGame
                     // sliding: hug the ground going downhill instead of skipping off it
                     if (m_VelY < 0) m_VelY = m_SlideOn ? -(2f + m_SlideVel.magnitude * 0.8f) : -2f;
                     // you can jump out of a slide and keep all that speed
-                    if (move && Binds.Down(Bind.Jump) && (!Crouching || m_SlideOn)) m_VelY = Cfg.JumpSpeed;
+                    if (move && !TreeLocked && Binds.Down(Bind.Jump) && (!Crouching || m_SlideOn)) m_VelY = Cfg.JumpSpeed;
                 }
                 if (ladder)
                 {
@@ -377,6 +387,9 @@ namespace RockGame
                 if (m_SlideOn && m_LastPlanar.magnitude < m_SlideVel.magnitude * 0.85f && (flags & CollisionFlags.Sides) != 0)
                     m_SlideVel = m_SlideVel.normalized * m_LastPlanar.magnitude;
                 m_Speed = m_SlideOn ? 0f : wish.magnitude * speed;
+                // the speed you leave the ground with is what you keep if you crouch in the air
+                if (grounded && !m_SlideOn) m_TakeoffSpeed = speed;
+                else if (!grounded && m_SlideOn) m_TakeoffSpeed = m_SlideVel.magnitude;
                 TickSlideSound();
                 m_Bob += m_Speed * Time.deltaTime;
                 if (grounded && m_Speed > 0.5f && m_Bob - m_LastStep > (Crouching ? 2.6f : 1.9f))
@@ -600,7 +613,11 @@ namespace RockGame
             if (m_Net.Action.Value != (byte)a) m_Net.Action.Value = (byte)a;
         }
 
-        float m_SlideQueued = -1f, m_GroundedAt = -10f, m_NextSlideBoost;
+        float m_SlideQueued = -1f, m_GroundedAt = -10f, m_NextSlideBoost, m_TakeoffSpeed;
+        /// <summary>Tree camo with LMB / RMB held: rooted to the spot, only the view turns.</summary>
+        public bool TreeLocked { get; private set; }
+        /// <summary>For the tests: how many slides ended because you pushed the other way (into a crouch).</summary>
+        public int SlideBrakes { get; private set; }
 
         /// <summary>The ground under you: which way is downhill (flat, unit length) and how steep (sine of the slope).</summary>
         bool SlopeDownhill(out Vector3 downhill) => SlopeDownhill(out downhill, out _);
@@ -666,6 +683,14 @@ namespace RockGame
                     m_SlideVel += dh * (steep / 0.71f) * Cfg.SlideSlopeAccel * (up ? Cfg.SlideUphillMul : 1f) * dt;
                 }
                 if (!Crouching || !move || m_SlideVel.magnitude < Cfg.SlideMinSpeed) { EndSlide(); return m_SlideVel; }
+                // pushing back against the slide: stop it and stay crouched (no leftover push)
+                if (wish.sqrMagnitude > 0.25f && m_SlideVel.sqrMagnitude > 0.01f && Vector3.Dot(wish.normalized, m_SlideVel.normalized) < -0.5f)
+                {
+                    m_SlideVel = Vector3.zero;
+                    EndSlide();
+                    SlideBrakes++;
+                    return wish * Cfg.CrouchSpeed;
+                }
             }
             else m_SlideVel = Vector3.MoveTowards(m_SlideVel, Vector3.zero, 0.4f * dt); // a little air drag
             // steer towards where you're pushing
@@ -744,7 +769,7 @@ namespace RockGame
             return ray.origin + ray.direction * d;
         }
 
-        Ray CenterRay() => new Ray(transform.position + Vector3.up * m_Eye, Quaternion.Euler(m_Pitch, m_Yaw, 0) * Vector3.forward);
+        public Ray CenterRay() => new Ray(transform.position + Vector3.up * m_Eye, Quaternion.Euler(m_Pitch, m_Yaw, 0) * Vector3.forward);
 
         /// <summary>
         /// Aim assist like most melee games: if the exact ray misses a player but a fat sphere along it
@@ -1553,10 +1578,16 @@ namespace RockGame
                 if (m_Net.HeldItem == Item.Ram && hit.distance <= Cfg.RamRange)
                     AimText += st.Tier.Value >= 1 && st.PType != PieceType.Barrier ? $"   hold LMB: ram down to {Cfg.TierName(st.Tier.Value - 1).ToLower()}" : "   hold LMB: ram to smash";
             }
+            // trees show nothing when you point at them (and neither does a player dressed up as one)
             else if (no.TryGetComponent(out ResourceNode n))
-                AimText = n.IsBush ? "Berry Bush (empty)" : $"{n.DisplayName}  ({n.Amount.Value} {(n.Kind.Value == ResourceNode.Tree ? "wood" : "stone")} left)";
+            {
+                if (n.Kind.Value != ResourceNode.Tree || n.IsBush)
+                    AimText = n.IsBush ? "Berry Bush (empty)" : $"{n.DisplayName}  ({n.Amount.Value} stone left)";
+            }
             else if (no.TryGetComponent(out PlayerNet p) && p != m_Net)
-                AimText = $"{Cfg.TeamName[p.Team.Value]} player";
+            {
+                if (!p.TreeCamo) AimText = $"{Cfg.TeamName[p.Team.Value]} player";
+            }
             else if (no.TryGetComponent(out Vehicle hv) && !hv.IsCar)
                 AimText = hv.Hp.Value < hv.MaxHp - 0.5f || hv.IsSlender ? $"{hv.DisplayName}  {hv.Hp.Value:0}/{hv.MaxHp:0} HP" : hv.DisplayName;
             if (AimText == "") AimText = self;

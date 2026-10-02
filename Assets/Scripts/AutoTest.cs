@@ -80,6 +80,9 @@ namespace RockGame
             var nm = NetworkManager.Singleton;
             yield return new WaitForSeconds(0.5f);
             StartCoroutine(Watch());
+            // sd: a grave from before the client joins (late joiners must get it)
+            if (m_Mode == "sd" && nm.IsServer && NetGame.Instance.S == GameState.Waiting)
+                NetGame.Instance.ServerAddGrave(me.transform.position + Vector3.right * 2f, 0f, me.Team.Value);
             Log($"local player spawned: team={Cfg.TeamName[me.Team.Value]} host={nm.IsHost} mode={Cfg.ModeLabel} nodes={FindObjectsByType<ResourceNode>(FindObjectsSortMode.None).Length}");
             if (NetGame.Instance.S == GameState.Waiting)
                 Check(Vector3.Distance(me.transform.position, Cfg.ArenaCenter) < 30f && me.HeldItem == Item.Rock, "waiting for players in the stadium with a rock");
@@ -281,6 +284,15 @@ namespace RockGame
                     if (g.S == GameState.GameOver)
                     {
                         Log($"RESULT winner={(g.Winner.Value < 0 ? "DRAW" : Cfg.TeamName[g.Winner.Value])} reason=\"{g.EndReason.Value}\"");
+                        if (m_Mode == "sd")
+                        {
+                            // every death left a grave (the sudden death kill in the arena, plus one made in the waiting stadium), the same on both screens; the client joined after the first
+                            int inArena = 0;
+                            foreach (var gr in g.Graves) if (Vector3.Distance(gr.Pos, Cfg.ArenaCenter) < 60f) inArena++;
+                            yield return null;
+                            Check(g.Graves.Count >= 2 && inArena >= 2 && GraveFx.Shown == g.Graves.Count,
+                                $"graves synced ({(g.IsServer ? "host" : "client")}): {g.Graves.Count} graves, {inArena} in the arena, {GraveFx.Shown} drawn");
+                        }
                         yield return new WaitForSeconds(3f);
                         Application.Quit(0);
                     }
