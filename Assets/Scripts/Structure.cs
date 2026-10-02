@@ -33,8 +33,20 @@ namespace RockGame
             Rebuild();
             m_Rise = 0f;
             Tier.OnValueChanged += OnTierChanged;
+            ClearGrass();
             // placed right where someone stands: pop them out on top instead of trapping them inside
             if (PlayerController.Local != null) PlayerController.Local.ResolveOverlap(transform);
+        }
+
+        /// <summary>No grass poking up through what's been built.</summary>
+        void ClearGrass()
+        {
+            var rs = GetComponentsInChildren<Renderer>();
+            if (rs.Length == 0) return;
+            var b = rs[0].bounds;
+            foreach (var r in rs) b.Encapsulate(r.bounds);
+            b.center = new Vector3(b.center.x, transform.position.y + b.extents.y, b.center.z); // (it's still rising into place)
+            GrassField.ClearUnder(b);
         }
 
         public override void OnNetworkDespawn()

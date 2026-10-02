@@ -102,6 +102,7 @@ namespace RockGame
             if (m_Mode == "rig") { yield return RigShots(me, pc); yield break; }
             if (m_Mode == "psxmodels") { yield return PsxModelShots(me, pc); yield break; }
             if (m_Mode == "psx") { yield return PsxShots(me, pc); yield break; }
+            if (m_Mode == "grass") { yield return GrassShots(me, pc); yield break; }
             if (m_Mode == "aipsx") { yield return AiPsxShots(me, pc); yield break; }
             if (m_Mode == "outline") { yield return OutlineShots(me, pc); yield break; }
             if (m_Mode == "shots") yield return ShotsRoutine(me, pc);

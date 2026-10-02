@@ -38,6 +38,9 @@ namespace RockGame
             return m;
         }
 
+        /// <summary>Count another material as the plain colour c (so the AI PSX mode re-skins it like one).</summary>
+        public static void Register(Material m, Color c) { if (m != null) s_MatColors[m] = c; }
+
         /// <summary>A plain colour material made by Mat() (the AI PSX mode re-skins these).</summary>
         public static bool IsArtMat(Material m, out Color c)
         {

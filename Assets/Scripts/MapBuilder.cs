@@ -54,9 +54,14 @@ namespace RockGame
                     float w = R(4f, 14f);
                     patchRs.Add(Art.Box(root, c, new Vector3(R(-half + 5, half - 5), 0.005f, R(-half + 5, half - 5)), new Vector3(w, 0.01f, w * R(0.5f, 1.5f)), new Vector3(0, R(0, 90), 0)).GetComponent<Renderer>());
                 }
+                // Normal graphics: a textured meadow (its own colour patches, so the flat patches are only for PSX)
+                ground.GetComponent<Renderer>().sharedMaterial = GrassField.GroundMaterial(false, k_Grass);
+                foreach (var pr in patchRs) pr.enabled = false;
                 // PSX graphics: PSX grass, with darker patches of it
                 PsxModels.Retexture(ground, new[] { ground.GetComponent<Renderer>() }, r => "grass_21", 3f);
                 PsxModels.Retexture(ground, patchRs, r => "grass_10", 3f);
+                PsxModels.Look(ground, () => { foreach (var pr in patchRs) if (pr) pr.enabled = true; },
+                    () => { foreach (var pr in patchRs) if (pr) pr.enabled = false; });
             }
 
             // ---------- bases ----------
@@ -232,7 +237,7 @@ namespace RockGame
             mesh.SetUVs(0, uvs);
             go.AddComponent<MeshFilter>().sharedMesh = mesh;
             var mr = go.AddComponent<MeshRenderer>();
-            mr.sharedMaterials = new[] { Art.Mat(k_Grass), Art.Mat(k_Rock) };
+            mr.sharedMaterials = new[] { GrassField.GroundMaterial(false, k_Grass), GrassField.GroundMaterial(true, k_Rock) }; // (textured)
             {
                 Material[] saved = null;
                 PsxModels.Look(go, () => { saved = mr.sharedMaterials; mr.sharedMaterials = new[] { PsxModels.Tiled("grass_21", 1f / 3f, 1f / 3f), PsxModels.Tiled("cobble_12", 1f / 3f, 1f / 3f) }; },

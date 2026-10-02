@@ -242,8 +242,14 @@ namespace RockGame
             Shot("normalfp_rock");
             yield return new WaitForEndOfFrame();
             int psxLeft = 0;
-            foreach (var r in FindObjectsByType<Renderer>(FindObjectsSortMode.None)) if (r.enabled && r.gameObject.activeInHierarchy && r.name.StartsWith("psx") && r.name != "psx blood" && r.transform.root.name != "corpse") psxLeft++;
-            Check(psxLeft == 0, $"back in Normal graphics no PSX models are showing ({psxLeft})");
+            var left = new List<string>();
+            foreach (var r in FindObjectsByType<Renderer>(FindObjectsSortMode.None))
+                if (r.enabled && r.gameObject.activeInHierarchy && r.name.StartsWith("psx") && r.name != "psx blood" && !r.name.StartsWith("psx alienarm") && r.transform.root.name != "corpse") // (the alien hands are always the model)
+                {
+                    psxLeft++;
+                    if (left.Count < 4) left.Add((r.transform.parent != null ? r.transform.parent.name + "/" : "") + r.name);
+                }
+            Check(psxLeft == 0, $"back in Normal graphics no PSX models are showing ({psxLeft}: {string.Join(", ", left)})");
             Look(Cfg.BaseCenter[team] - back * 7f + Vector3.up * 0.1f, Cfg.MachinePos(team) + Vector3.up * 1.2f);
             yield return new WaitForSeconds(1f);
             Shot("normalworld_machine");
