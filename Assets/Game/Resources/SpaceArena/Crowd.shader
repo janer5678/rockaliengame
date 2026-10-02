@@ -1,7 +1,7 @@
-// The sudden death arena's crowd (SpaceArena.cs): hundreds of aliens drawn in one go per stand (procedural
-// instancing: Graphics.RenderMeshPrimitives, each copy finds its own data by SV_InstanceID - no instancing variants),
-// every one animated here in the vertex shader. Also draws the floating stands they're on (_Stand = 1), so the
-// stands and their fans bob up and down together.
+// The sudden death arena's crowd (SpaceArena.cs): hundreds of aliens drawn in one go per section of the stadium
+// (procedural instancing: Graphics.RenderMeshPrimitives, each copy finds its own data by SV_InstanceID - no instancing
+// variants), every one animated here in the vertex shader. Also draws the stadium they're in (_Stand = 1, vertex
+// coloured, lit the same way). The stadium stands still.
 //
 // The alien (CrowdAlien.txt, baked by Tools/crowd_alien.py from the player model) is flat coloured per face; each
 // corner says which chain moves it (uv0.x: 0 body, 1 head, 2 left arm, 3 right arm, 4 left leg, 5 right leg) and how
@@ -11,7 +11,7 @@
 // Mexican wave going round the stadium.
 //
 // Per fan (_CrowdData, 3 float4s): xyz position (world), w yaw (radians); rgb skin colour (linear), a scale;
-// x animation, y phase (0..1), z speed, w its stand's bob phase.
+// x animation, y phase (0..1), z speed, w unused (0).
 // Lit per vertex: the main light, the ambient light and a soft floodlight from over the platform.
 Shader "RockGame/Crowd"
 {
@@ -48,7 +48,7 @@ Shader "RockGame/Crowd"
                 float4 positionOS : POSITION;
                 float3 normalOS : NORMAL;
                 half4 color : COLOR;          // rgb: flat colour (linear); a: 1 on the head (fans)
-                float4 uv0 : TEXCOORD0;       // fans: chain, w1, w2; stands: x bob phase
+                float4 uv0 : TEXCOORD0;       // fans: chain, w1, w2; stands: unused
             };
             struct Varyings
             {
@@ -275,11 +275,9 @@ Shader "RockGame/Crowd"
             Varyings vert(Attributes v, uint iid : SV_InstanceID)
             {
                 Varyings o;
-                float bobT = _Time.y * 0.5;
                 if (_Stand > 0.5)
                 {
                     float3 ws = TransformObjectToWorld(v.positionOS.xyz);
-                    ws.y += sin(bobT + v.uv0.x) * 0.45;
                     float3 nw = TransformObjectToWorldNormal(v.normalOS);
                     o.positionCS = TransformWorldToHClip(ws);
                     o.color = Shade(v.color.rgb, ws, nw);
@@ -344,12 +342,11 @@ Shader "RockGame/Crowd"
                 q.y += p.lift;
                 q = RotY(RotZ(q, -p.body.z * D2R), p.body.w);
                 n = RotY(RotZ(n, -p.body.z * D2R), p.body.w);
-                // into the world: scale (wider, like the players), turn to face the platform, bob with the stand
+                // into the world: scale (wider, like the players), turn to face the platform
                 q *= d1.a * float3(1.2, 1, 1.2);
                 q = RotY(q, d0.w);
                 n = normalize(RotY(n, d0.w));
                 float3 ws = d0.xyz + q;
-                ws.y += sin(bobT + d2.w) * 0.45;
                 o.positionCS = TransformWorldToHClip(ws);
                 // the head is lighter than the body (like the players, PlayerNet.TeamTint: the grey texture times a bright
                 // colour, x1.6 on the body and x1.35 towards white on the head - here in linear, so 1.6^2.2 and 1.35^2.2)

@@ -1,11 +1,15 @@
+using System.Reflection;
 using UnityEngine;
 using UnityEngine.Rendering;
+using UnityEngine.Rendering.RenderGraphModule;
 using UnityEngine.Rendering.Universal;
 
 namespace RockGame
 {
     /// <summary>Settings > Display > POST PROCESSING (Normal graphics, just on this PC): a master switch plus bloom,
-    /// vignette and colour grading, each with its own strength. Saved in PlayerPrefs; changes apply live.</summary>
+    /// vignette and colour grading, each with its own strength, and the EXTRA LOOKS (outlines, ambient occlusion, distance
+    /// haze, depth of field, film grain, chromatic aberration, sharpen, cel banding), each off to start with. Saved in
+    /// PlayerPrefs; changes apply live.</summary>
     public static partial class GameSettings
     {
         static bool s_PostLoaded;
@@ -62,17 +66,77 @@ namespace RockGame
 
         public static void SetPostFx(bool on, bool save = true) => SetPostFx(on, PostBloom, PostVignette, PostGrading, PostBloomStrength, PostVignetteStrength, PostGradingStrength, save);
 
-        /// <summary>Post processing back to the defaults (all on, middle strengths).</summary>
-        public static void ResetPostFx(bool save = true) => SetPostFx(true, true, true, true, 0.5f, 0.5f, 0.5f, save);
+        /// <summary>Post processing back to the defaults (all on, middle strengths, every extra look off).</summary>
+        public static void ResetPostFx(bool save = true)
+        {
+            for (int i = 0; i < PostExtraCount; i++) SetPostExtra((PostExtra)i, false, 0.5f, save);
+            SetPostFx(true, true, true, true, 0.5f, 0.5f, 0.5f, save);
+        }
+
+        // ---- the extra looks: each off to start with, with its own strength ----
+
+        /// <summary>The extra looks, in the order they're listed in Settings > Display.</summary>
+        public enum PostExtra { Outlines, AmbientOcclusion, Haze, DepthOfField, FilmGrain, Chromatic, Sharpen, CelBanding }
+        public const int PostExtraCount = 8;
+        public static readonly string[] PostExtraNames = { "Outlines", "Ambient occlusion", "Distance haze", "Depth of field", "Film grain", "Chromatic aberration", "Sharpen", "Cel banding" };
+        static readonly bool[] s_Extra = new bool[PostExtraCount];
+        static readonly float[] s_ExtraStr = { 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f };
+        static bool s_ExtraLoaded;
+
+        static void LoadExtras()
+        {
+            if (s_ExtraLoaded) return;
+            s_ExtraLoaded = true;
+            for (int i = 0; i < PostExtraCount; i++)
+            {
+                string key = "RockGame.PostX." + (PostExtra)i;
+                s_Extra[i] = PlayerPrefs.GetInt(key, 0) == 1;
+                s_ExtraStr[i] = Mathf.Clamp01(PlayerPrefs.GetFloat(key + "Str", 0.5f));
+            }
+        }
+
+        /// <summary>Is this extra look switched on (it's only drawn while post processing is on too).</summary>
+        public static bool PostExtraOn(PostExtra e) { LoadExtras(); return s_Extra[(int)e]; }
+        /// <summary>0..1 (0.5 = the middle).</summary>
+        public static float PostExtraStrength(PostExtra e) { LoadExtras(); return s_ExtraStr[(int)e]; }
+        /// <summary>The strength if it's on, else 0.</summary>
+        public static float PostExtraAmount(PostExtra e) => PostExtraOn(e) ? PostExtraStrength(e) : 0f;
+
+        public static void SetPostExtra(PostExtra e, bool on, float strength, bool save = true)
+        {
+            LoadExtras();
+            int i = (int)e;
+            strength = Mathf.Clamp01(strength);
+            if (on == s_Extra[i] && Mathf.Approximately(strength, s_ExtraStr[i])) return;
+            s_Extra[i] = on;
+            s_ExtraStr[i] = strength;
+            if (save)
+            {
+                string key = "RockGame.PostX." + e;
+                PlayerPrefs.SetInt(key, on ? 1 : 0);
+                PlayerPrefs.SetFloat(key + "Str", strength);
+                PlayerPrefs.Save();
+            }
+            PostFxChanged?.Invoke();
+        }
+
+        /// <summary>(tests) every extra look off, without saving.</summary>
+        public static void PostExtrasOff() { for (int i = 0; i < PostExtraCount; i++) SetPostExtra((PostExtra)i, false, PostExtraStrength((PostExtra)i), false); }
     }
 
     /// <summary>
     /// The Normal look's post processing: one global URP Volume with a profile made here (bloom, colour adjustments,
-    /// vignette), and the main camera's post processing switched on while it's wanted. Off (or in
-    /// PSX / AI PSX) the camera renders no post processing at all, so the look is exactly what it was without it.
+    /// vignette, and for the extra looks depth of field, film grain and chromatic aberration), and the main camera's post
+    /// processing switched on while it's wanted. Off (or in PSX / AI PSX) the camera renders no post processing at all,
+    /// so the look is exactly what it was without it.
     /// Every parameter the URP asset's own default profile sets (bloom, tone mapping, vignette) is overridden here, so
     /// an effect switched off really is off. (The bloom shader variants are kept in the build because
-    /// the profiles in Assets/Settings use them - URP strips the post variants no profile asset uses.)
+    /// the profiles in Assets/Settings use them - URP strips the post variants no profile asset uses; the depth of
+    /// field and chromatic aberration ones are kept by Assets/Settings/PostFxVariants.asset, see ProjectSetup.)
+    /// The other extra looks: outlines, distance haze, sharpen and cel banding are one full-screen pass of our own
+    /// (StylizePass, shader Assets/Game/Resources/PostFx/Stylize.shader) put in before URP's post processing, only on
+    /// frames where one of them is on; ambient occlusion turns up the renderer's own SSAO (PC_Renderer's, which
+    /// always runs gently) and puts it back exactly when it's off.
     /// </summary>
     public class PostFx : MonoBehaviour
     {
@@ -83,7 +147,17 @@ namespace RockGame
         Tonemapping m_Tone;
         ColorAdjustments m_Color;
         Vignette m_Vignette;
+        DepthOfField m_Dof;
+        FilmGrain m_Grain;
+        ChromaticAberration m_Chroma;
         Camera m_Cam;
+        Material m_StylizeMat;
+        StylizePass m_Pass;
+        bool m_StylizeOn;
+        // the renderer's SSAO settings (internal to URP: reached by reflection) and what the asset had
+        object m_Ao;
+        FieldInfo m_AoIntensity, m_AoRadius, m_AoDirect;
+        float m_AoBase0, m_AoBase1, m_AoBase2;
 
         /// <summary>Post processing is drawn right now (switched on, Normal graphics).</summary>
         public static bool Active => GameSettings.PostFx && GameSettings.GraphicsMode == 0;
@@ -97,6 +171,12 @@ namespace RockGame
                 return cam != null && cam.TryGetComponent(out UniversalAdditionalCameraData d) && d.renderPostProcessing;
             }
         }
+
+        /// <summary>(tests) the extra full-screen pass (outlines, haze, sharpen, cel banding) is being drawn.</summary>
+        public static bool StylizeOn => s_I != null && s_I.m_StylizeOn;
+        /// <summary>(tests) the renderer's SSAO intensity right now, and what the asset has.</summary>
+        public static float AoIntensity => s_I != null && s_I.m_Ao != null ? (float)s_I.m_AoIntensity.GetValue(s_I.m_Ao) : -1f;
+        public static float AoBaseIntensity => s_I != null ? s_I.m_AoBase0 : -1f;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void Init()
@@ -115,6 +195,9 @@ namespace RockGame
             m_Tone = m_Profile.Add<Tonemapping>(true);
             m_Color = m_Profile.Add<ColorAdjustments>(true);
             m_Vignette = m_Profile.Add<Vignette>(true);
+            m_Dof = m_Profile.Add<DepthOfField>(true);
+            m_Grain = m_Profile.Add<FilmGrain>(true);
+            m_Chroma = m_Profile.Add<ChromaticAberration>(true);
             // cheap bloom (an integrated GPU): quarter-res start, fewer passes, the plain filter
             m_Bloom.threshold.Override(0.85f);
             m_Bloom.scatter.Override(0.7f);
@@ -126,6 +209,13 @@ namespace RockGame
             m_Vignette.smoothness.Override(0.42f);
             m_Vignette.rounded.Override(false);
             m_Vignette.center.Override(new Vector2(0.5f, 0.5f));
+            // the cheap depth of field: Gaussian, far blur only (nothing near you goes soft)
+            m_Dof.mode.Override(DepthOfFieldMode.Off);
+            m_Dof.highQualitySampling.Override(false);
+            m_Grain.type.Override(FilmGrainLookup.Thin2);
+            m_Grain.response.Override(0.8f);
+            m_Grain.intensity.Override(0f);
+            m_Chroma.intensity.Override(0f);
             var go = new GameObject("PostFx Volume");
             go.transform.SetParent(transform, false);
             m_Volume = go.AddComponent<Volume>();
@@ -133,8 +223,17 @@ namespace RockGame
             m_Volume.priority = 100f;
             m_Volume.weight = 1f;
             m_Volume.sharedProfile = m_Profile;
+            var sh = Resources.Load<Shader>("PostFx/Stylize");
+            if (sh != null && sh.isSupported)
+            {
+                m_StylizeMat = new Material(sh) { name = "RockGame Stylize", hideFlags = HideFlags.DontSave };
+                m_Pass = new StylizePass(m_StylizeMat);
+            }
+            else Debug.LogWarning("[RockGame] PostFx/Stylize shader missing: no outlines, haze, sharpen or cel banding");
+            FindAo();
             GameSettings.PostFxChanged += Apply;
             GameSettings.GraphicsChanged += Apply;
+            RenderPipelineManager.beginCameraRendering += OnBeginCamera;
             Apply();
         }
 
@@ -142,7 +241,46 @@ namespace RockGame
         {
             GameSettings.PostFxChanged -= Apply;
             GameSettings.GraphicsChanged -= Apply;
+            RenderPipelineManager.beginCameraRendering -= OnBeginCamera;
+            SetAo(0f); // (the renderer asset's own SSAO back as it was)
             if (m_Profile != null) Destroy(m_Profile);
+            if (m_StylizeMat != null) Destroy(m_StylizeMat);
+        }
+
+        /// <summary>The renderer's own SSAO feature (PC_Renderer has one, running gently all the time).</summary>
+        void FindAo()
+        {
+            if (!(GraphicsSettings.currentRenderPipeline is UniversalRenderPipelineAsset urp)) return;
+            var list = urp.rendererDataList;
+            if (list.Length == 0 || list[0] == null) return;
+            foreach (var f in list[0].rendererFeatures)
+            {
+                if (!(f is ScreenSpaceAmbientOcclusion)) continue;
+                var sf = typeof(ScreenSpaceAmbientOcclusion).GetField("m_Settings", BindingFlags.Instance | BindingFlags.NonPublic);
+                var ao = sf?.GetValue(f);
+                if (ao == null) return;
+                var t = ao.GetType();
+                const BindingFlags any = BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public;
+                m_AoIntensity = t.GetField("Intensity", any);
+                m_AoRadius = t.GetField("Radius", any);
+                m_AoDirect = t.GetField("DirectLightingStrength", any);
+                if (m_AoIntensity == null || m_AoRadius == null || m_AoDirect == null) return;
+                m_Ao = ao;
+                m_AoBase0 = (float)m_AoIntensity.GetValue(ao);
+                m_AoBase1 = (float)m_AoRadius.GetValue(ao);
+                m_AoBase2 = (float)m_AoDirect.GetValue(ao);
+                return;
+            }
+        }
+
+        /// <summary>0: the asset's own SSAO exactly; up to 1: deep, wide contact shadows in creases and under things.</summary>
+        void SetAo(float s)
+        {
+            if (m_Ao == null) return;
+            bool off = s <= 0f;
+            m_AoIntensity.SetValue(m_Ao, off ? m_AoBase0 : Mathf.Max(m_AoBase0, 0.9f + s * 2.2f));
+            m_AoRadius.SetValue(m_Ao, off ? m_AoBase1 : Mathf.Max(m_AoBase1, 0.35f + s * 0.45f));
+            m_AoDirect.SetValue(m_Ao, off ? m_AoBase2 : Mathf.Max(m_AoBase2, 0.35f + s * 0.4f));
         }
 
         // the main camera can come and go (scene rebuilds): keep its post processing flag in step
@@ -150,6 +288,7 @@ namespace RockGame
         {
             var cam = Camera.main;
             if (cam != m_Cam) { m_Cam = cam; ApplyCamera(); }
+            if (m_StylizeOn) UpdateStylize();
         }
 
         void ApplyCamera()
@@ -158,6 +297,37 @@ namespace RockGame
             var data = m_Cam.GetUniversalAdditionalCameraData();
             bool on = Active;
             if (data.renderPostProcessing != on) data.renderPostProcessing = on;
+        }
+
+        /// <summary>Our full-screen pass goes in for the main camera only, and only while one of its looks is on.</summary>
+        void OnBeginCamera(ScriptableRenderContext ctx, Camera cam)
+        {
+            if (!m_StylizeOn || m_Pass == null || cam == null || cam != m_Cam || cam.cameraType != CameraType.Game) return;
+            var data = cam.GetUniversalAdditionalCameraData();
+            if (data == null || data.scriptableRenderer == null) return;
+            data.scriptableRenderer.EnqueuePass(m_Pass);
+        }
+
+        static readonly int k_Outline = Shader.PropertyToID("_RgOutline"), k_Haze = Shader.PropertyToID("_RgHaze"),
+                            k_HazeColor = Shader.PropertyToID("_RgHazeColor"), k_Look = Shader.PropertyToID("_RgLook");
+
+        /// <summary>The full-screen pass's numbers (the haze follows the sky colour; there's none in space).</summary>
+        void UpdateStylize()
+        {
+            float o = GameSettings.PostExtraAmount(GameSettings.PostExtra.Outlines);
+            float h = GameSettings.PostExtraAmount(GameSettings.PostExtra.Haze);
+            float sh = GameSettings.PostExtraAmount(GameSettings.PostExtra.Sharpen);
+            float cel = GameSettings.PostExtraAmount(GameSettings.PostExtra.CelBanding);
+            if (h > 0f && m_Cam != null && SpaceArena.NearArena(m_Cam.transform.position)) h = 0f;
+            float px = Mathf.Max(1f, Screen.height / 1080f);
+            // outlines: how dark (0..1), how thick (pixels), the depth step (relative) and the fold (normals) that count
+            m_StylizeMat.SetVector(k_Outline, o > 0f ? new Vector4(0.5f + o * 0.5f, px * (0.8f + o * 0.7f), 0.11f - o * 0.04f, 0.55f) : Vector4.zero);
+            // haze: how much at most, where it starts and how far until it's all there (m)
+            m_StylizeMat.SetVector(k_Haze, h > 0f ? new Vector4(0.12f + h * 0.4f, 35f, Mathf.Lerp(520f, 200f, h), 0f) : Vector4.zero);
+            var sky = ColorSlots.Sky.Value;
+            m_StylizeMat.SetColor(k_HazeColor, Color.Lerp(sky, Color.white, 0.4f).linear);
+            // sharpen amount; cel banding: how many brightness steps (fewer = stronger)
+            m_StylizeMat.SetVector(k_Look, new Vector4(sh > 0f ? 0.15f + sh * 0.6f : 0f, cel > 0f ? Mathf.Round(Mathf.Lerp(14f, 4f, cel)) : 0f, 0f, 0f));
         }
 
         void Apply()
@@ -179,9 +349,71 @@ namespace RockGame
             m_Color.saturation.Override(g * 30f);
             m_Color.hueShift.Override(0f);
             m_Color.colorFilter.Override(Color.white);
+            // the extra looks (all 0 / off unless switched on)
+            float dof = on ? GameSettings.PostExtraAmount(GameSettings.PostExtra.DepthOfField) : 0f;
+            m_Dof.mode.Override(dof > 0f ? DepthOfFieldMode.Gaussian : DepthOfFieldMode.Off);
+            m_Dof.gaussianStart.Override(Mathf.Lerp(70f, 22f, dof));
+            m_Dof.gaussianEnd.Override(Mathf.Lerp(260f, 90f, dof));
+            m_Dof.gaussianMaxRadius.Override(Mathf.Lerp(0.5f, 1f, dof));
+            m_Grain.intensity.Override(GameSettings.PostExtraAmount(GameSettings.PostExtra.FilmGrain) * 0.55f);
+            m_Chroma.intensity.Override(GameSettings.PostExtraAmount(GameSettings.PostExtra.Chromatic) * 0.3f);
+            SetAo(on ? GameSettings.PostExtraAmount(GameSettings.PostExtra.AmbientOcclusion) : 0f);
+            m_StylizeOn = on && m_Pass != null && (GameSettings.PostExtraOn(GameSettings.PostExtra.Outlines) || GameSettings.PostExtraOn(GameSettings.PostExtra.Haze)
+                || GameSettings.PostExtraOn(GameSettings.PostExtra.Sharpen) || GameSettings.PostExtraOn(GameSettings.PostExtra.CelBanding));
             m_Volume.enabled = on;
             m_Cam = Camera.main;
             ApplyCamera();
+            if (m_StylizeOn) UpdateStylize();
+        }
+
+        /// <summary>
+        /// Outlines, distance haze, sharpen and cel banding in one full-screen pass (render graph), before URP's post
+        /// processing: reads the camera colour, depth and normals (the normals are already drawn for the renderer's
+        /// SSAO), writes a new colour target and hands it on as the camera colour (no extra copy).
+        /// </summary>
+        class StylizePass : ScriptableRenderPass
+        {
+            readonly Material m_Mat;
+            static readonly MaterialPropertyBlock s_Props = new MaterialPropertyBlock();
+            static readonly int k_BlitTex = Shader.PropertyToID("_BlitTexture"), k_BlitScale = Shader.PropertyToID("_BlitScaleBias");
+
+            class PassData { public Material Mat; public TextureHandle Src; }
+
+            public StylizePass(Material mat)
+            {
+                m_Mat = mat;
+                renderPassEvent = RenderPassEvent.BeforeRenderingPostProcessing;
+                profilingSampler = new ProfilingSampler("RockGame Stylize");
+                ConfigureInput(ScriptableRenderPassInput.Depth | ScriptableRenderPassInput.Normal);
+            }
+
+            public override void RecordRenderGraph(RenderGraph renderGraph, ContextContainer frameData)
+            {
+                var res = frameData.Get<UniversalResourceData>();
+                if (res.isActiveTargetBackBuffer || !res.cameraColor.IsValid()) return;
+                var desc = renderGraph.GetTextureDesc(res.activeColorTexture);
+                desc.name = "_RockGameStylize";
+                desc.clearBuffer = false;
+                desc.msaaSamples = MSAASamples.None;
+                var dst = renderGraph.CreateTexture(desc);
+                using (var builder = renderGraph.AddRasterRenderPass<PassData>("RockGame Stylize", out var data, profilingSampler))
+                {
+                    data.Mat = m_Mat;
+                    data.Src = res.activeColorTexture;
+                    builder.UseTexture(data.Src, AccessFlags.Read);
+                    if (res.cameraDepthTexture.IsValid()) builder.UseTexture(res.cameraDepthTexture, AccessFlags.Read);
+                    if (res.cameraNormalsTexture.IsValid()) builder.UseTexture(res.cameraNormalsTexture, AccessFlags.Read);
+                    builder.SetRenderAttachment(dst, 0, AccessFlags.Write);
+                    builder.SetRenderFunc((PassData d, RasterGraphContext ctx) =>
+                    {
+                        s_Props.Clear();
+                        s_Props.SetTexture(k_BlitTex, d.Src);
+                        s_Props.SetVector(k_BlitScale, new Vector4(1, 1, 0, 0));
+                        ctx.cmd.DrawProcedural(Matrix4x4.identity, d.Mat, 0, MeshTopology.Triangles, 3, 1, s_Props);
+                    });
+                }
+                res.cameraColor = dst;
+            }
         }
     }
 }

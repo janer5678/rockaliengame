@@ -9,15 +9,17 @@ namespace RockGame
     /// The sudden death arena (also the waiting lobby), Super Smash Bros "Final Destination" style, in the game's own
     /// low-poly look (flat colours, no textures): a flat octagonal platform with pink edges, a blue mechanical underside
     /// with orange panel lines narrowing to a point, floating in space - a black sky full of low-poly 3D stars, a galaxy
-    /// band, spiral galaxies and faceted planets (some ringed, some with moons), slowly turning. All round it, floating
-    /// stands (detached from the platform) packed with a crowd of aliens like you in every colour, each doing its own
-    /// thing (jumping, fist pumping, waving, clapping, swaying, dancing, spinning, sitting and getting up to cheer...),
-    /// with a Mexican wave going round now and then and the whole crowd going wild on ROCK! and every death. No walls:
-    /// walk off the edge and you fall into space (in sudden death that's a death like any other; in the lobby you're just
-    /// put back on the platform). Four floating screens show the countdown and the clock. Built identically on every
-    /// peer (non-networked) by MapBuilder.
-    /// Kept cheap: the whole sky is three meshes; the crowd is one small alien mesh drawn once per stand in view
-    /// (procedural instancing) and animated in its vertex shader (SpaceArena/Crowd.shader); the stands are one mesh.
+    /// band, spiral galaxies and faceted planets (some ringed, some with moons), slowly turning. All round it a standard
+    /// stadium - one continuous bowl of stands (a padded front wall, rising rows of steps and benches, a back wall with
+    /// floodlights and big screens), with a gap all round between it and the platform - packed with a crowd of aliens like
+    /// you in every colour, each doing its own thing (jumping, fist pumping, waving, clapping, swaying, dancing, spinning,
+    /// sitting and getting up to cheer...), with a Mexican wave going round now and then and the whole crowd going wild on
+    /// ROCK! and every death. Struts far below join the platform to the stadium. No walls: walk off the edge and you fall
+    /// into space (in sudden death that's a death like any other; in the lobby you're just put back on the platform).
+    /// Four screens on the back wall show the countdown and the clock. Built identically on every peer (non-networked)
+    /// by MapBuilder.
+    /// Kept cheap: the whole sky is three meshes; the crowd is one small alien mesh drawn once per section of the stadium
+    /// in view (procedural instancing) and animated in its vertex shader (SpaceArena/Crowd.shader); the stadium is one mesh.
     /// </summary>
     public static class SpaceArena
     {
@@ -239,19 +241,22 @@ namespace RockGame
             stadium.SetShell(sr);
             BuildSky(t, stadium);
 
-            // ---------- the crowd, on stands floating all round ----------
+            // ---------- the stadium all round, packed with the crowd, and the struts holding the platform in it ----------
             BuildCrowd(t, stadium);
+            BuildStruts(t, hullMat);
 
-            // ---------- floating screens with the countdown and the clock (readable from both sides) ----------
+            // ---------- big screens on posts on the stadium's back wall, with the countdown and the clock (readable from both sides) ----------
             for (int i = 0; i < 4; i++)
             {
                 float a = 45f + i * 90f;
                 var dir = Quaternion.Euler(0, a, 0) * Vector3.forward;
+                var rp = RingPoint(a, Gap + BowlDepth + 0.2f);
                 var screen = new GameObject("jumbotron").transform;
                 screen.SetParent(t, false);
-                screen.localPosition = dir * 44f + Vector3.up * 17f;
+                screen.localPosition = new Vector3(rp.x, WallTop + 7f, rp.y);
                 screen.localRotation = Quaternion.LookRotation(dir); // faces outward, so its back (-z) faces the platform
                 Art.Box(screen, new Color(0.05f, 0.04f, 0.1f), Vector3.zero, new Vector3(10f, 5.5f, 0.3f)).GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
+                Art.Box(screen, new Color(0.11f, 0.1f, 0.17f), new Vector3(0f, -5.6f, 0.2f), new Vector3(0.6f, 5.6f, 0.6f)).GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
                 var frame = new MeshBatch();
                 for (int side = 0; side < 2; side++)
                 {
@@ -654,25 +659,74 @@ namespace RockGame
         // the crowd
         // =====================================================================
 
-        /// <summary>A floating stand: where it is round the platform (angle from +z, distance to its front, height) and its size.</summary>
-        struct StandSpec
+        /// <summary>
+        /// The stadium round the platform: how far its front wall is from the platform's edge (the gap you fall through
+        /// into space), its rows (how many, how deep, how much each one rises), the first row's floor (a little under the
+        /// platform's top, so the front rows look across at the fight), how round its corners are, seat spacing, how big
+        /// the fans are (a bit bigger than life, so they read from the platform) and how many sections it's drawn in.
+        /// </summary>
+        public const float Gap = 12f, RowDepth = 1.75f, RowRise = 0.85f, FrontY = -2.4f, SeatSpacing = 1.2f, FanScale = 1.35f;
+        public const int Rows = 6, CornerSteps = 3, Sections = 16;
+        /// <summary>From the front wall to the back wall, and the back wall's top.</summary>
+        public const float BowlDepth = Rows * RowDepth, WallTop = FrontY + (Rows - 1) * RowRise + 2.2f;
+        /// <summary>The bottom of the stadium's hull (a ring keel) and the struts that hold the platform in its middle.</summary>
+        public const float KeelY = -12.5f, StrutY = -12.9f;
+
+        /// <summary>Outward normal of the platform outline's edge i (from corner i to i + 1).</summary>
+        static Vector2 EdgeNormal(int i)
         {
-            public float Angle, Dist, Y;
-            public int Rows, Seats;
-            public StandSpec(float angle, float dist, float y, int rows, int seats) { Angle = angle; Dist = dist; Y = y; Rows = rows; Seats = seats; }
+            int n = Outline.Length;
+            i = (i % n + n) % n;
+            var a = Outline[i];
+            var b = Outline[(i + 1) % n];
+            var e = b - a;
+            var nrm = new Vector2(e.y, -e.x).normalized;
+            return Vector2.Dot(nrm, (a + b) * 0.5f) < 0 ? -nrm : nrm;
         }
 
-        /// <summary>Seat spacing along a row, row depth and rise (m), and how big the fans are (a bit bigger than life, so they read from the platform).</summary>
-        const float SeatSpacing = 1.15f, RowDepth = 1.75f, RowRise = 0.85f, FanScale = 1.35f;
-
-        /// <summary>Two rings of stands: eight close and a little below the platform, eight further out and higher in the gaps.</summary>
-        static StandSpec[] Stands()
+        /// <summary>The outward direction at each point of a Ring (the same for every distance).</summary>
+        static Vector2[] RingNormals()
         {
-            var list = new List<StandSpec>();
-            // (the ones off the ends sit a little higher: the long platform hides more of them)
-            for (int i = 0; i < 8; i++) list.Add(new StandSpec(i * 45f, i % 2 == 0 ? 38f : 40f, i % 4 == 0 ? -1.5f : -3f, 4, 14));
-            for (int i = 0; i < 8; i++) list.Add(new StandSpec(22.5f + i * 45f, 58f, 3.5f, 4, 17));
-            return list.ToArray();
+            int n = Outline.Length;
+            var r = new Vector2[n * (CornerSteps + 1)];
+            for (int i = 0; i < n; i++)
+            {
+                Vector2 n0 = EdgeNormal(i - 1), n1 = EdgeNormal(i);
+                float a0 = Mathf.Atan2(n0.y, n0.x), da = Mathf.DeltaAngle(a0 * Mathf.Rad2Deg, Mathf.Atan2(n1.y, n1.x) * Mathf.Rad2Deg) * Mathf.Deg2Rad;
+                for (int k = 0; k <= CornerSteps; k++)
+                {
+                    float a = a0 + da * k / CornerSteps;
+                    r[i * (CornerSteps + 1) + k] = new Vector2(Mathf.Cos(a), Mathf.Sin(a));
+                }
+            }
+            return r;
+        }
+
+        /// <summary>The platform's outline pushed out by d all round, with rounded corners (x, z; going round). Every
+        /// ring has the same points in the same order, so rings at different distances join up into one stadium.</summary>
+        public static Vector2[] Ring(float d)
+        {
+            var nrm = RingNormals();
+            var r = new Vector2[nrm.Length];
+            for (int i = 0; i < r.Length; i++) r[i] = Outline[i / (CornerSteps + 1)] + nrm[i] * d;
+            return r;
+        }
+
+        /// <summary>Where a line out from the middle at this angle (degrees from +z) crosses the ring d out from the edge.</summary>
+        public static Vector2 RingPoint(float angle, float d)
+        {
+            var ring = Ring(d);
+            var dir = new Vector2(Mathf.Sin(angle * Mathf.Deg2Rad), Mathf.Cos(angle * Mathf.Deg2Rad));
+            float best = 0f;
+            for (int i = 0; i < ring.Length; i++)
+            {
+                Vector2 a = ring[i], b = ring[(i + 1) % ring.Length], e = b - a;
+                float den = dir.x * e.y - dir.y * e.x;
+                if (Mathf.Abs(den) < 1e-6f) continue;
+                float t = (a.x * e.y - a.y * e.x) / den, u = (a.x * dir.y - a.y * dir.x) / den;
+                if (t > 0f && u >= 0f && u <= 1f) best = Mathf.Max(best, t);
+            }
+            return dir * best;
         }
 
         /// <summary>How often each animation comes up (Crowd.shader: 0 jump, 1 fist pump, 2 wave, 3 clap, 4 sway, 5 dance,
@@ -757,81 +811,163 @@ namespace RockGame
         }
 
         /// <summary>
-        /// One floating stand into the stands mesh (coloured per vertex, uv0.x its bob phase): stepped rows with a bench
-        /// along the back of each (the sitters sit on it), glowing pink step edges, a front barrier and back wall, side
-        /// walls stepping up, and underneath tiers of blue machinery narrowing to a pale crystal like the platform's.
-        /// Local space: x along the rows, +z towards the platform, the front edge at z = 0, the first row's floor at y = 0.
+        /// The stadium into the stands mesh (coloured per vertex; local space, the platform's top in the middle at y = 0):
+        /// one continuous bowl all the way round the platform, like a normal stadium - a padded front wall (red and blue
+        /// pads, like the old stadium's), rows of steps rising away from the platform with a bench along the back of each
+        /// (the sitters sit on it) and glowing pink step edges, a tall back wall with floodlight masts on it, and under it
+        /// all one ring of blue hull with orange panel lines narrowing to a pale crystal keel. Nothing of it is within
+        /// Gap of the platform, so you still fall off the edge into space.
         /// </summary>
-        static void BuildStandMesh(MeshBatch mb, Vector3 pos, Quaternion rot, int rows, float width, float bob)
+        static void BuildBowlMesh(MeshBatch mb)
         {
-            Vector3 P(Vector3 l) => pos + rot * l;
             Color L(float r, float g, float b) => new Color(r, g, b).linear;
-            Color deck = L(0.34f, 0.33f, 0.42f), deck2 = L(0.29f, 0.28f, 0.37f), rim = L(0.11f, 0.1f, 0.17f), hull = L(0.2f, 0.36f, 0.8f);
-            Color pink = L(1f, 0.32f, 0.9f), orange = L(1f, 0.56f, 0.15f), seat = L(0.42f, 0.26f, 0.7f), tip = L(0.6f, 0.75f, 1f);
-            mb.Extra = new Vector4(bob, 0, 0, 0);
-            float hw = width * 0.5f, yb = -1f, depth = rows * RowDepth;
-            void Box(Color c, float x0, float x1, float y0, float y1, float z0, float z1)
+            Color deck = L(0.34f, 0.33f, 0.42f), deck2 = L(0.29f, 0.28f, 0.37f), riser = L(0.22f, 0.21f, 0.3f), rim = L(0.11f, 0.1f, 0.17f), hull = L(0.2f, 0.36f, 0.8f);
+            Color pink = L(1f, 0.32f, 0.9f), orange = L(1f, 0.56f, 0.15f), seat = L(0.42f, 0.26f, 0.7f), seatFront = L(0.33f, 0.2f, 0.56f), tip = L(0.6f, 0.75f, 1f);
+            Color padRed = L(0.75f, 0.2f, 0.2f), padBlue = L(0.2f, 0.25f, 0.55f), lamp = L(1f, 0.97f, 0.82f), outside = L(0.16f, 0.28f, 0.66f);
+            mb.Extra = Vector4.zero;
+            var nrm = RingNormals();
+            int m = nrm.Length;
+            Vector3 P(Vector2[] ring, int i, float y) => new Vector3(ring[i].x, y, ring[i].y);
+            Vector3 Out(int i, int j) => new Vector3(nrm[i].x + nrm[j].x, 0f, nrm[i].y + nrm[j].y);
+            // a flat band between two rings (facing up), a wall on one ring (facing in, towards the platform, or out), and a
+            // sloping band from one ring at one height to another ring at another (facing `side` in or out, and down)
+            void Flat(float d0, float d1, float y, Color c)
             {
+                Vector2[] a = Ring(d0), b = Ring(d1);
                 mb.Tint = c;
-                mb.Box(P(new Vector3((x0 + x1) * 0.5f, (y0 + y1) * 0.5f, (z0 + z1) * 0.5f)), rot, new Vector3(x1 - x0, y1 - y0, z1 - z0));
+                for (int i = 0; i < m; i++) { int j = (i + 1) % m; mb.Quad(P(a, i, y), P(a, j, y), P(b, j, y), P(b, i, y), Vector3.up); }
             }
-            void Line(Color c, Vector3 a, Vector3 b, float w, float h)
+            void Wall(float d, float y0, float y1, Color c, bool facingIn)
             {
+                var a = Ring(d);
                 mb.Tint = c;
-                mb.Line(P(a), P(b), w, h, rot * Vector3.up);
+                for (int i = 0; i < m; i++) { int j = (i + 1) % m; mb.Quad(P(a, i, y0), P(a, j, y0), P(a, j, y1), P(a, i, y1), facingIn ? -Out(i, j) : Out(i, j)); }
             }
-            for (int r = 0; r < rows; r++)
+            void Slope(float d0, float y0, float d1, float y1, Color c, float side, bool line)
             {
-                float yt = r * RowRise, z0 = -(r + 1) * RowDepth, z1 = -r * RowDepth;
-                Box(r % 2 == 0 ? deck : deck2, -hw, hw, yb, yt, z0, z1);
-                Box(seat, -hw + 0.25f, hw - 0.25f, yt, yt + 0.55f, z0 + 0.1f, z0 + 0.6f);
-                Line(pink, new Vector3(-hw, yt + 0.01f, z1 - 0.07f), new Vector3(hw, yt + 0.01f, z1 - 0.07f), 0.12f, 0.03f);
-                Box(hull, -hw - 0.35f, -hw, yb, yt + 1.1f, z0, z1);
-                Box(hull, hw, hw + 0.35f, yb, yt + 1.1f, z0, z1);
-            }
-            Box(rim, -hw - 0.35f, hw + 0.35f, yb, 0.6f, 0f, 0.3f);
-            Line(pink, new Vector3(-hw - 0.35f, 0.61f, 0.15f), new Vector3(hw + 0.35f, 0.61f, 0.15f), 0.32f, 0.04f);
-            float top = (rows - 1) * RowRise + 2.2f;
-            Box(rim, -hw - 0.35f, hw + 0.35f, yb, top, -depth - 0.35f, -depth);
-            Line(pink, new Vector3(-hw - 0.35f, top + 0.01f, -depth - 0.17f), new Vector3(hw + 0.35f, top + 0.01f, -depth - 0.17f), 0.38f, 0.04f);
-            // the underside
-            float hx = hw + 0.35f, hz = (depth + 0.65f) * 0.5f, zc = 0.3f - hz, ch = Mathf.Min(hx, hz) * 0.45f;
-            var ol = new[]
-            {
-                new Vector2(hx - ch, hz), new Vector2(hx, hz - ch), new Vector2(hx, -hz + ch), new Vector2(hx - ch, -hz),
-                new Vector2(-hx + ch, -hz), new Vector2(-hx, -hz + ch), new Vector2(-hx, hz - ch), new Vector2(-hx + ch, hz),
-            };
-            var tiers = new (float y0, float s0, float y1, float s1, Color c)[]
-            {
-                (yb, 1f, yb - 1.6f, 0.74f, hull), (yb - 1.6f, 0.72f, yb - 3.4f, 0.36f, hull), (yb - 3.4f, 0.34f, yb - 5.4f, 0.03f, tip),
-            };
-            foreach (var tr in tiers)
-                for (int i = 0; i < ol.Length; i++)
+                Vector2[] a = Ring(d0), b = Ring(d1);
+                for (int i = 0; i < m; i++)
                 {
-                    var a = ol[i];
-                    var b = ol[(i + 1) % ol.Length];
-                    Vector3 Q(Vector2 p, float s, float y) => P(new Vector3(p.x * s, y, zc + p.y * s));
-                    var mid = (a + b) * 0.5f;
-                    var outward = rot * new Vector3(mid.x, -0.4f * Mathf.Max(hx, hz), mid.y);
-                    mb.Tint = tr.c;
-                    mb.Quad(Q(a, tr.s0, tr.y0), Q(b, tr.s0, tr.y0), Q(b, tr.s1, tr.y1), Q(a, tr.s1, tr.y1), outward);
-                    if (tr.c == hull)
-                    {
-                        // an orange panel line round each tier, just under its top edge
-                        var la = Q(a, Mathf.Lerp(tr.s0, tr.s1, 0.2f), Mathf.Lerp(tr.y0, tr.y1, 0.2f));
-                        var lb = Q(b, Mathf.Lerp(tr.s0, tr.s1, 0.2f), Mathf.Lerp(tr.y0, tr.y1, 0.2f));
-                        var n = Vector3.Cross(Q(b, tr.s0, tr.y0) - Q(a, tr.s0, tr.y0), Q(a, tr.s1, tr.y1) - Q(a, tr.s0, tr.y0)).normalized;
-                        if (Vector3.Dot(n, outward) < 0) n = -n;
-                        mb.Tint = orange;
-                        mb.Line(la + n * 0.03f, lb + n * 0.03f, 0.12f, 0.05f, n);
-                    }
+                    int j = (i + 1) % m;
+                    var face = Out(i, j).normalized * side + Vector3.down * 0.6f;
+                    mb.Tint = c;
+                    mb.Quad(P(a, i, y0), P(a, j, y0), P(b, j, y1), P(b, i, y1), face);
+                    if (!line) continue;
+                    // an orange panel line round the hull, just under its top edge
+                    Vector3 la = Vector3.Lerp(P(a, i, y0), P(b, i, y1), 0.22f), lb = Vector3.Lerp(P(a, j, y0), P(b, j, y1), 0.22f);
+                    var n = Vector3.Cross(lb - la, P(b, i, y1) - P(a, i, y0)).normalized;
+                    if (Vector3.Dot(n, face) < 0) n = -n;
+                    mb.Tint = orange;
+                    mb.Line(la + n * 0.03f, lb + n * 0.03f, 0.12f, 0.05f, n);
                 }
+            }
+
+            float back = Gap + BowlDepth;
+            // the padded front wall, its pink top and the pads along its face (red and blue, like the old stadium)
+            Wall(Gap - 0.3f, FrontY - 1f, FrontY + 0.6f, rim, true);
+            Wall(Gap, FrontY, FrontY + 0.6f, rim, false);
+            Flat(Gap - 0.3f, Gap, FrontY + 0.6f, pink);
+            {
+                var ring = Ring(Gap - 0.36f);
+                float len = 0f;
+                for (int i = 0; i < m; i++) len += Vector2.Distance(ring[i], ring[(i + 1) % m]);
+                int pads = Mathf.RoundToInt(len / 2.6f);
+                for (int p = 0; p < pads; p++)
+                {
+                    var (pos, n) = AlongRing(ring, nrm, (p + 0.5f) / pads * len);
+                    var rot = Quaternion.LookRotation(new Vector3(n.x, 0f, n.y));
+                    mb.Tint = p % 2 == 0 ? padBlue : padRed;
+                    mb.Box(new Vector3(pos.x, FrontY - 0.15f, pos.y), rot, new Vector3(2.4f, 1.3f, 0.12f));
+                }
+            }
+            // the rows: a step, its riser, a bench along its back and a pink edge along its front
+            for (int r = 0; r < Rows; r++)
+            {
+                float yt = FrontY + r * RowRise, d0 = Gap + r * RowDepth, d1 = d0 + RowDepth;
+                Flat(d0, d1, yt, r % 2 == 0 ? deck : deck2);
+                if (r > 0) Wall(d0, yt - RowRise, yt, riser, true);
+                Flat(d1 - 0.6f, d1 - 0.1f, yt + 0.55f, seat);
+                Wall(d1 - 0.6f, yt, yt + 0.55f, seatFront, true);
+                Flat(d0 + 0.02f, d0 + 0.14f, yt + 0.012f, pink);
+            }
+            // the back wall (inside and out) with a pink top
+            float lastTread = FrontY + (Rows - 1) * RowRise;
+            Wall(back, lastTread, WallTop, rim, true);
+            Wall(back + 0.35f, FrontY - 1f, WallTop, outside, false);
+            Wall(back + 0.37f, WallTop - 0.75f, WallTop - 0.5f, pink, false);
+            Wall(back + 0.37f, FrontY - 0.6f, FrontY - 0.45f, orange, false);
+            Flat(back, back + 0.35f, WallTop, pink);
+            // the hull under it all: one ring, in and out, narrowing to a pale crystal keel
+            float mid = Gap + BowlDepth * 0.5f;
+            Slope(Gap - 0.3f, FrontY - 1f, Gap + 2.2f, FrontY - 5f, hull, -1f, true);
+            Slope(Gap + 2.2f, FrontY - 5f, mid - 0.4f, KeelY + 1.6f, hull, -1f, true);
+            Slope(back + 0.35f, FrontY - 1f, back - 2.2f, FrontY - 5f, hull, 1f, true);
+            Slope(back - 2.2f, FrontY - 5f, mid + 0.4f, KeelY + 1.6f, hull, 1f, true);
+            Slope(mid - 0.4f, KeelY + 1.6f, mid, KeelY, tip, -1f, false);
+            Slope(mid + 0.4f, KeelY + 1.6f, mid, KeelY, tip, 1f, false);
+            // floodlight masts on the back wall, off the ends and the sides, their lamps tipped down at the platform
+            for (int i = 0; i < 4; i++)
+            {
+                float a = i * 90f;
+                var p = RingPoint(a, back + 0.6f);
+                var outDir = new Vector3(p.x, 0f, p.y).normalized;
+                var basePos = new Vector3(p.x, WallTop, p.y);
+                mb.Tint = rim;
+                mb.Box(basePos + Vector3.up * 6.5f, Quaternion.LookRotation(outDir), new Vector3(0.55f, 13f, 0.55f));
+                var head = basePos + Vector3.up * 13.4f - outDir * 0.4f;
+                var rot = Quaternion.LookRotation(-outDir) * Quaternion.Euler(28f, 0f, 0f);
+                mb.Box(head + rot * new Vector3(0, 0, -0.25f), rot, new Vector3(5f, 2.4f, 0.4f));
+                mb.Tint = lamp;
+                for (int lx = 0; lx < 3; lx++)
+                    for (int ly = 0; ly < 2; ly++)
+                        mb.Box(head + rot * new Vector3(-1.6f + lx * 1.6f, -0.55f + ly * 1.1f, 0.02f), rot, new Vector3(1.35f, 0.9f, 0.12f));
+            }
+        }
+
+        /// <summary>The point s metres round a ring (and the outward direction there).</summary>
+        static (Vector2 pos, Vector2 n) AlongRing(Vector2[] ring, Vector2[] nrm, float s)
+        {
+            int m = ring.Length;
+            for (int guard = 0; guard < 2; guard++)
+                for (int i = 0; i < m; i++)
+                {
+                    int j = (i + 1) % m;
+                    float seg = Vector2.Distance(ring[i], ring[j]);
+                    if (s <= seg || (guard == 1 && i == m - 1))
+                    {
+                        float t = seg > 1e-5f ? Mathf.Clamp01(s / seg) : 0f;
+                        return (Vector2.Lerp(ring[i], ring[j], t), Vector2.Lerp(nrm[i], nrm[j], t).normalized);
+                    }
+                    s -= seg;
+                }
+            return (ring[0], nrm[0]);
         }
 
         /// <summary>
-        /// The crowd: two rings of floating stands round the platform (not touching it), packed with aliens like the
-        /// players - every one its own colour, size, animation and timing. Fans in the front rows stand, the sitters sit on
-        /// the benches. Drawn by Stadium (one draw per stand in view); the stands are one mesh.
+        /// The struts under the platform: eight beams from the stadium's keel in to a hub under the platform's crystal
+        /// point, so the platform and the stadium are one structure. They're well below KillDepth (you're lost in space
+        /// before you'd get near them) and have no colliders.
+        /// </summary>
+        static void BuildStruts(Transform t, Material mat)
+        {
+            var mb = new MeshBatch();
+            float mid = Gap + BowlDepth * 0.5f;
+            for (int i = 0; i < 8; i++)
+            {
+                var p = RingPoint(22.5f + i * 45f, mid);
+                var a = new Vector3(p.x, StrutY, p.y);
+                var b = new Vector3(p.x, 0f, p.y).normalized * 2.2f + Vector3.up * StrutY;
+                mb.Box((a + b) * 0.5f, Quaternion.LookRotation(b - a), new Vector3(0.9f, 0.9f, (a - b).magnitude));
+            }
+            var hub = Scale(Outline, 2.6f / HalfX);
+            mb.Frustum(hub, StrutY + 0.7f, 1f, StrutY - 0.7f, 1f, true, true, 4f);
+            mb.Build(t, "stadium struts", mat, false);
+        }
+
+        /// <summary>
+        /// The crowd: one stadium all round the platform (not touching it), packed with aliens like the players - every
+        /// one its own colour, size, animation and timing. Fans in the front of each row stand, the sitters sit on the
+        /// benches. Drawn by Stadium in sections (one draw per section in view); the stadium itself is one mesh.
         /// </summary>
         static void BuildCrowd(Transform t, Stadium stadium)
         {
@@ -841,55 +977,79 @@ namespace RockGame
             var mesh = LoadCrowdAlien(joints);
             var rng = new System.Random(4242);
             float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
-            var specs = Stands();
             var standMesh = new MeshBatch { Colored = true };
-            var data = new List<Vector4>();
-            var draws = new List<Stadium.StandDraw>();
+            BuildBowlMesh(standMesh);
             var centre = Cfg.ArenaCenter;
             int[] moods = { 0, 1, 2, 3, 4, 0, 2, 1, 0, 3, 4, 0, 1, 2, 0, 3 };
+            var nrm = RingNormals();
+            // every seat, binned by section (by its angle round the middle) so each section's fans are one run in the buffer
+            var bins = new List<Vector4>[Sections];
+            for (int s = 0; s < Sections; s++) bins[s] = new List<Vector4>();
             var anims = new HashSet<int>();
             var hues = new HashSet<int>();
+            var sectionTogether = new float[Sections];
+            for (int s = 0; s < Sections; s++) sectionTogether[s] = R(0f, 1f);
             int fanNo = 0;
-            for (int si = 0; si < specs.Length; si++)
+            for (int r = 0; r < Rows; r++)
             {
-                var sp = specs[si];
-                var dir = Quaternion.Euler(0, sp.Angle, 0) * Vector3.forward;
-                var rot = Quaternion.LookRotation(-dir); // its +z faces the platform
-                var pos = dir * sp.Dist + Vector3.up * sp.Y;
-                float width = sp.Seats * SeatSpacing + 0.6f;
-                float bob = R(0f, Mathf.PI * 2f);
-                BuildStandMesh(standMesh, pos, rot, sp.Rows, width, bob);
+                // the standing fans' line (the front of the row) and the sitters' (on the bench at the back)
+                float yt = FrontY + r * RowRise;
+                var standRing = Ring(Gap + r * RowDepth + 0.8f);
+                var sitRing = Ring(Gap + (r + 1) * RowDepth - 0.36f);
+                float len = 0f;
+                for (int i = 0; i < standRing.Length; i++) len += Vector2.Distance(standRing[i], standRing[(i + 1) % standRing.Length]);
+                int seats = Mathf.FloorToInt(len / SeatSpacing);
+                float sitLen = 0f;
+                for (int i = 0; i < sitRing.Length; i++) sitLen += Vector2.Distance(sitRing[i], sitRing[(i + 1) % sitRing.Length]);
+                float offset = R(0f, 1f);
+                for (int k = 0; k < seats; k++)
+                {
+                    if (R(0f, 1f) < 0.05f) continue; // an empty seat here and there
+                    float u = (k + offset + R(-0.08f, 0.08f)) / seats;
+                    var (probe, _) = AlongRing(standRing, nrm, u * len);
+                    float ang = Mathf.Atan2(probe.x, probe.y) * Mathf.Rad2Deg;
+                    int sec = Mathf.FloorToInt(Mathf.Repeat(ang + 180f / Sections, 360f) / (360f / Sections)) % Sections;
+                    int anim = PickAnim(rng, moods[sec % moods.Length], r, Rows, out bool sync);
+                    bool sitting = anim >= 7 && anim <= 9;
+                    Vector2 p, n;
+                    if (sitting) (p, n) = AlongRing(sitRing, nrm, u * sitLen);
+                    else (p, n) = AlongRing(standRing, nrm, u * len);
+                    var world = centre + new Vector3(p.x, yt, p.y);
+                    // facing in: across at the platform (a little towards its middle), each one turned a bit
+                    var face = Vector2.Lerp(-n, -p.normalized, 0.3f);
+                    float yaw = Mathf.Atan2(face.x, face.y) + R(-14f, 14f) * Mathf.Deg2Rad;
+                    var skin = FanColour(rng, fanNo);
+                    Color.RGBToHSV(skin, out float h, out float sat, out _);
+                    if (sat > 0.45f) hues.Add(Mathf.FloorToInt(h * 12f) % 12);
+                    var lin = skin.linear;
+                    var bin = bins[sec];
+                    bin.Add(new Vector4(world.x, world.y, world.z, yaw));
+                    bin.Add(new Vector4(lin.r, lin.g, lin.b, FanScale * R(0.93f, 1.07f)));
+                    bin.Add(new Vector4(anim, sync ? sectionTogether[sec] + R(0f, 0.004f) : R(0f, 1f), sync ? 1f : R(0.85f, 1.2f), 0f));
+                    anims.Add(anim);
+                    fanNo++;
+                }
+            }
+            var data = new List<Vector4>();
+            var draws = new List<Stadium.StandDraw>();
+            for (int s = 0; s < Sections; s++)
+            {
+                var bin = bins[s];
+                if (bin.Count == 0) continue;
                 int start = data.Count / 3;
-                int mood = moods[si % moods.Length];
-                float together = R(0f, 1f);
-                for (int r = 0; r < sp.Rows; r++)
-                    for (int k = 0; k < sp.Seats; k++)
-                    {
-                        if (R(0f, 1f) < 0.03f) continue; // an empty seat here and there
-                        int anim = PickAnim(rng, mood, r, sp.Rows, out bool sync);
-                        bool sitting = anim >= 7 && anim <= 9;
-                        float x = (k - (sp.Seats - 1) * 0.5f) * SeatSpacing + R(-0.1f, 0.1f);
-                        var local = new Vector3(x, r * RowRise, -(r + 1) * RowDepth + (sitting ? 0.38f : 0.95f) + R(-0.05f, 0.05f));
-                        var world = centre + pos + rot * local;
-                        float yaw = (sp.Angle + 180f + R(-14f, 14f)) * Mathf.Deg2Rad;
-                        var skin = FanColour(rng, fanNo);
-                        Color.RGBToHSV(skin, out float h, out float sat, out _);
-                        if (sat > 0.45f) hues.Add(Mathf.FloorToInt(h * 12f) % 12);
-                        var lin = skin.linear;
-                        data.Add(new Vector4(world.x, world.y, world.z, yaw));
-                        data.Add(new Vector4(lin.r, lin.g, lin.b, FanScale * R(0.93f, 1.07f)));
-                        data.Add(new Vector4(anim, sync ? together + R(0f, 0.004f) : R(0f, 1f), sync ? 1f : R(0.85f, 1.2f), bob));
-                        anims.Add(anim);
-                        fanNo++;
-                    }
-                // what has to be in view for the stand's fans to be drawn (arms up, bobbing)
-                var b = new Bounds(centre + pos, Vector3.zero);
-                for (int cx = -1; cx <= 1; cx += 2)
-                    for (int cy = 0; cy <= 1; cy++)
-                        for (int cz = 0; cz <= 1; cz++)
-                            b.Encapsulate(centre + pos + rot * new Vector3(cx * width * 0.5f, cy == 0 ? -1.5f : (sp.Rows - 1) * RowRise + 4f, cz == 0 ? 0.6f : -sp.Rows * RowDepth));
+                // what has to be in view for the section's fans to be drawn (arms up, jumping)
+                var b = new Bounds((Vector3)bin[0], Vector3.zero);
+                var sum = Vector3.zero;
+                for (int i = 0; i < bin.Count; i += 3)
+                {
+                    var p = (Vector3)bin[i];
+                    b.Encapsulate(p + Vector3.down * 0.5f);
+                    b.Encapsulate(p + Vector3.up * 4f);
+                    sum += p;
+                }
                 b.Expand(2f);
-                draws.Add(new Stadium.StandDraw { Start = start, Count = data.Count / 3 - start, Bounds = b, Centre = centre + pos + rot * new Vector3(0, 0, -sp.Rows * RowDepth * 0.5f) });
+                data.AddRange(bin);
+                draws.Add(new Stadium.StandDraw { Start = start, Count = bin.Count / 3, Bounds = b, Centre = sum / (bin.Count / 3) });
             }
             var standMat = new Material(shader) { name = "crowd stands" };
             standMat.SetFloat("_Stand", 1f);
@@ -1107,7 +1267,7 @@ namespace RockGame
 
     /// <summary>
     /// The sudden death arena at runtime: the screens show the countdown and the clock, the sky turns slowly, and the
-    /// crowd is drawn (one draw per stand in view) and egged on: livelier in sudden death, wild for a few seconds on
+    /// crowd is drawn (one draw per section of the stadium in view) and egged on: livelier in sudden death, wild for a few seconds on
     /// ROCK! and every death, celebrating at the end, and every so often a Mexican wave goes round. Everything is only
     /// drawn while you're there, and while you are, it's space: no fog, a purple ambient light.
     /// </summary>
@@ -1122,7 +1282,7 @@ namespace RockGame
         Renderer m_Shell;
         Transform m_Sky;
 
-        /// <summary>One stand's fans: their run in the crowd buffer, and what has to be in view to draw them.</summary>
+        /// <summary>One section of the stadium: its fans' run in the crowd buffer, and what has to be in view to draw them.</summary>
         public struct StandDraw
         {
             public int Start, Count;
@@ -1145,7 +1305,7 @@ namespace RockGame
         public int CrowdCount { get; private set; }
         public int CrowdAnimations { get; private set; }
         public int CrowdHues { get; private set; }
-        /// <summary>How many fans were drawn this frame (the stands in view).</summary>
+        /// <summary>How many fans were drawn this frame (the sections in view).</summary>
         public int DrawnFans { get; private set; }
         /// <summary>How excited the crowd is (0..1).</summary>
         public float Excitement { get; private set; }
@@ -1321,7 +1481,7 @@ namespace RockGame
             }
         }
 
-        /// <summary>The fans: one draw per stand that's in view (in LateUpdate: after the camera has moved this frame).</summary>
+        /// <summary>The fans: one draw per section of the stadium in view (in LateUpdate: after the camera has moved this frame).</summary>
         void LateUpdate()
         {
             DrawnFans = 0;

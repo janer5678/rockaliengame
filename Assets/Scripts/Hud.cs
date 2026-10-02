@@ -88,6 +88,7 @@ namespace RockGame
         {
             if (Time.frameCount > 3) ItemIcons.EnsureRendered();
             MenuUpdate();
+            CountFps();
             var me = PlayerNet.Local;
             TrackGains(me);
             if (me != null)
@@ -144,6 +145,7 @@ namespace RockGame
             BeginHoverFrame();
             MouseOverUI = false;
             DrawAll();
+            DrawFps(Bootstrap.I != null && Bootstrap.I.InSession && PlayerNet.Local != null);
             EndHoverFrame();
         }
 
@@ -870,15 +872,7 @@ namespace RockGame
                 int n = Mathf.CeilToInt(game.TimeLeft);
                 float frac = n == 0 ? 1f : game.TimeLeft - Mathf.Floor(game.TimeLeft);
                 if (n != m_LastCount) { m_LastCount = n; Sfx.Play2D(n <= 3 ? Sfx.Ding : Sfx.Beep, n <= 3 ? 0.9f : 0.6f, 0f); Fx.Shake(0.08f + (10 - n) * 0.02f); }
-                // a heartbeat around the edge of the screen that gets stronger
-                float pulse = (1f - frac) * (0.25f + (10 - n) * 0.05f);
-                var edge = sock < 0 ? new Color(0.9f, 0f, 0f, pulse) : new Color(Cfg.TeamColor[sock].r, Cfg.TeamColor[sock].g, Cfg.TeamColor[sock].b, pulse);
-                float b = 60f * k;
-                if (sock >= 0) // (no red border on the sudden death countdown)
-                {
-                    Fill(new Rect(0, 0, sw, b), edge); Fill(new Rect(0, sh - b, sw, b), edge);
-                    Fill(new Rect(0, 0, b, sh), edge); Fill(new Rect(sw - b, 0, b, sh), edge);
-                }
+                // (no coloured border round the screen - just the words and the number)
                 string label = sock < 0 ? "SUDDEN DEATH IN" : sock == myTeam ? "YOU WIN IN" : $"{Cfg.TeamName[sock]} WINS IN";
                 var st = new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt(30 * k) };
                 st.normal.textColor = new Color(1f, 0.9f, 0.85f, 0.95f);

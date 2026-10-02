@@ -55,6 +55,7 @@ namespace RockGame
             if (boot != null && !boot.InSession && Input.GetKeyDown(KeyCode.Escape) && !m_Rebinding && m_RebindFrame != Time.frameCount && m_Page != MenuPage.Main)
             {
                 if (DropTyping()) return; // (Esc in a search box lets go of it first)
+                if (m_Page == MenuPage.Settings && m_ColourScreen) { m_ColourScreen = false; ClickSound(); return; } // (the colour screen: back to Display)
                 m_Page = MenuPage.Main;
                 ClickSound();
             }
@@ -66,6 +67,7 @@ namespace RockGame
             if (s_I == null) return false;
             if (DropTyping()) return true; // typing in a search box: Esc lets go of it first
             if (s_I.m_Rebinding || s_I.m_RebindFrame == Time.frameCount) { s_I.m_Rebinding = false; return true; }
+            if (s_I.m_PausePage == PausePage.Settings && s_I.m_ColourScreen) { s_I.m_ColourScreen = false; ClickSound(); return true; } // (back to Display)
             if (s_I.m_PausePage != PausePage.Root) { s_I.m_PausePage = PausePage.Root; ClickSound(); return true; }
             return false;
         }
@@ -564,6 +566,11 @@ namespace RockGame
         /// <summary>The settings window (main menu and pause menu). Returns true when Back is pressed.</summary>
         bool DrawSettingsPanel()
         {
+            // the colour screen only stays open while the settings stay open (shut them, and they come back on the tabs)
+            if (Time.frameCount - m_SettingsFrame > 1) m_ColourScreen = false;
+            m_SettingsFrame = Time.frameCount;
+            if ((ScrollToColours || OpenPickerFor >= 0) && m_Tab == SettingsTab.Display) { m_ColourScreen = true; ScrollToColours = false; }
+            if (m_ColourScreen) { DrawColourScreen(); return false; }
             float k = m_Scale, sw = Screen.width, sh = Screen.height;
             float w = Mathf.Min(sw - 40, 900 * k), h = Mathf.Min(sh - 40, 760 * k);
             var r = new Rect((sw - w) / 2, (sh - h) / 2, w, h);
@@ -582,8 +589,6 @@ namespace RockGame
                 if (Choice((int)m_Tab == i, tabs[i], GUILayout.Height(34 * k))) { m_Tab = (SettingsTab)i; m_Rebinding = false; OnTabOpened(); }
             GUILayout.EndHorizontal();
             GUILayout.Space(10 * k);
-            if (ScrollToColours && m_Tab == SettingsTab.Display && m_ColoursY >= 0f) { m_SettingsScroll.y = m_ColoursY - 6f * k; ScrollToColours = false; }
-            if (m_ScrollToPicker && m_Tab == SettingsTab.Display && m_PickerRowY >= 0f) { m_SettingsScroll.y = m_PickerRowY - 60f * k; m_ScrollToPicker = false; }
             m_SettingsScroll = GUILayout.BeginScrollView(m_SettingsScroll);
             switch (m_Tab)
             {
@@ -682,6 +687,13 @@ namespace RockGame
             GUI.enabled = true;
             GUILayout.EndHorizontal();
             if (inMatch) GUILayout.Label("<color=#bbbbbb>Picked by the host for everyone in this match.</color>", m_SmallWrap);
+            GUILayout.BeginHorizontal();
+            RowLabel("FPS counter", 170 * k);
+            bool fps = ToggleBtn(GameSettings.ShowFps, GameSettings.ShowFps ? "On" : "Off", GUILayout.Width(110 * k), GUILayout.Height(30 * k));
+            if (fps != GameSettings.ShowFps) GameSettings.SetShowFps(fps);
+            GUILayout.Label("<color=#bbbbbb>   frames per second in the top left corner</color>", m_Small, GUILayout.Height(30 * k));
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
             DrawPostFxSettings();
             DrawWorldLook();
             Caption("SCREEN");
@@ -729,9 +741,8 @@ namespace RockGame
         string m_CopyNote;
         float m_CopyNoteUntil;
         GUIStyle m_HexField, m_RowLabel;
-        /// <summary>(tests) scroll the settings page to the world colours.</summary>
+        /// <summary>(tests) open the world colours screen (from Settings > Display).</summary>
         public static bool ScrollToColours;
-        float m_ColoursY = -1f;
 
         void DrawWorldLook()
         {
@@ -748,25 +759,72 @@ namespace RockGame
             GUILayout.Label("<color=#bbbbbb>Less distance, density or far thickness = faster (it matters most on laptops). Far thickness is how slowly the grass thins out with distance. The far grass fades into the ground either way.</color>", m_SmallWrap);
 
             Caption("WORLD COLOURS  ·  Normal graphics, just on this PC");
-            if (Event.current.type == EventType.Repaint) m_ColoursY = GUILayoutUtility.GetLastRect().y;
+            GUILayout.BeginHorizontal();
+            int nChanged = ColorSlots.ChangedCount;
+            if (Btn("World colours  ▶", m_Primary, GUILayout.Width(240 * k), GUILayout.Height(36 * k))) { m_ColourScreen = true; m_ColourScroll = Vector2.zero; }
+            GUILayout.Label($"<color=#bbbbbb>  Opens beside the game, so you can see the world change as you pick.</color>{(nChanged > 0 ? $"  <color=#ffd27a>{nChanged} changed</color>" : "")}", m_SmallWrap, GUILayout.MinHeight(36 * k));
+            GUILayout.EndHorizontal();
+            GUILayout.Space(6 * k);
+            GUILayout.BeginHorizontal();
+            if (Btn("Reset grass and colours", GUILayout.Width(260 * k), GUILayout.Height(32 * k))) GameSettings.ResetWorldLook();
+            GUILayout.Label("<color=#bbbbbb>  Changes show straight away.</color>", m_SmallWrap, GUILayout.Height(32 * k));
+            GUILayout.EndHorizontal();
+        }
+
+        // ------------------------------------------------------------------ display: the world colours screen
+
+        bool m_ColourScreen, m_ColourLeft;
+        int m_SettingsFrame = -10;
+        Vector2 m_ColourScroll;
+
+        /// <summary>(tests) the world colours screen is open.</summary>
+        public static bool ColourScreenOpen => s_I != null && s_I.m_ColourScreen;
+        /// <summary>(tests) the colour screen's panel, in screen pixels (GUI space: y down).</summary>
+        public static Rect ColourPanel { get; private set; }
+        /// <summary>(tests) put the colour screen on the left (or back on the right), as its ◀ / ▶ button does.</summary>
+        public static void SetColourSide(bool left) { if (s_I != null) s_I.m_ColourLeft = left; }
+
+        /// <summary>
+        /// Settings > Display > World colours: a narrow panel down one side of the screen (no dimming behind it, the pause
+        /// menu's dark cover is off too) so the world stays in view and every colour change shows on it as you pick.
+        /// It can swap sides; Back (or Esc) goes back to the Display tab.
+        /// </summary>
+        void DrawColourScreen()
+        {
+            float k = m_Scale, scrW = Screen.width, scrH = Screen.height;
+            float w = Mathf.Min(scrW * 0.46f, 560 * k), m = 10 * k;
+            var panel = new Rect(m_ColourLeft ? m : scrW - w - m, m, w, scrH - 2 * m);
+            ColourPanel = panel;
+            if (panel.Contains(Event.current.mousePosition)) MouseOverUI = true;
+            Fill(panel, new Color(0.05f, 0.05f, 0.06f, 0.9f));
+            float pad = 14 * k;
+            var area = new Rect(panel.x + pad, panel.y + 10 * k, panel.width - 2 * pad, panel.height - 20 * k);
+            GUILayout.BeginArea(area);
+            GUILayout.BeginHorizontal();
+            GUILayout.Label($"<b><size={Mathf.RoundToInt(22 * k)}>WORLD COLOURS</size></b>", m_Label, GUILayout.Height(34 * k));
+            GUILayout.FlexibleSpace();
+            if (Btn(m_ColourLeft ? "▶" : "◀", GUILayout.Width(44 * k), GUILayout.Height(32 * k))) m_ColourLeft = !m_ColourLeft;
+            if (Btn("Back", GUILayout.Width(96 * k), GUILayout.Height(32 * k))) m_ColourScreen = false;
+            GUILayout.EndHorizontal();
             GUILayout.BeginHorizontal();
             int changed = ColorSlots.ChangedCount;
-            if (Btn($"COPY CHANGED ({changed})", m_Primary, GUILayout.Width(280 * k), GUILayout.Height(32 * k)))
+            if (Btn($"COPY CHANGED ({changed})", m_Primary, GUILayout.Height(30 * k)))
             {
                 int n = ColorSlots.Copy(true);
                 m_CopyNote = n == 0 ? "Nothing changed from the defaults (copied an empty list)." : $"Copied {n} changed colour{(n == 1 ? "" : "s")} to the clipboard.";
                 m_CopyNoteUntil = Time.unscaledTime + 4f;
             }
-            if (Btn("COPY ALL", GUILayout.Width(130 * k), GUILayout.Height(32 * k)))
+            if (Btn("COPY ALL", GUILayout.Width(100 * k), GUILayout.Height(30 * k)))
             {
                 int n = ColorSlots.Copy(false);
                 m_CopyNote = $"Copied all {n} colours to the clipboard.";
                 m_CopyNoteUntil = Time.unscaledTime + 4f;
             }
-            if (Btn("Reset colours", GUILayout.Width(150 * k), GUILayout.Height(32 * k))) GameSettings.ResetWorldColours();
+            if (Btn("Reset all", GUILayout.Width(100 * k), GUILayout.Height(30 * k))) GameSettings.ResetWorldColours();
             GUILayout.EndHorizontal();
             GUILayout.Label(Time.unscaledTime < m_CopyNoteUntil ? $"<color=#9fe0a0>{m_CopyNote}</color>"
-                : "<color=#bbbbbb>Click a swatch, type a hex code, or click a row's colour (or Pick) for the colour picker. The copy buttons put lines like  TreeTrunks = #4F8F2A  on the clipboard.</color>", m_SmallWrap);
+                : "<color=#bbbbbb>Click a swatch, type a hex code, or Pick for the colour picker - it shows on the world straight away. The copy buttons put lines like  TreeTrunks = #4F8F2A  on the clipboard.</color>", m_SmallWrap);
+            GUILayout.Space(4 * k);
 
             if (m_HexField == null)
             {
@@ -782,7 +840,11 @@ namespace RockGame
                 m_PickerRowY = -1f;
                 if (m_PickerSlot != ps.Index) TogglePicker(ps, ps == ColorSlots.Hands && ColorSlots.HandsTeam ? ColorSlots.HandTint(Cfg.TeamColor[0]) : ps.Value, ps == ColorSlots.Hands && ColorSlots.HandsTeam);
             }
-            float sw = 22 * k, rowH = 26 * k;
+            if (m_ScrollToPicker && m_PickerRowY >= 0f) { m_ColourScroll.y = m_PickerRowY - 40f * k; m_ScrollToPicker = false; }
+            m_ColourScroll = GUILayout.BeginScrollView(m_ColourScroll);
+            // each colour on two lines (the panel is narrow): its name, Pick and Default; then the colour now, the
+            // ready-made ones and its hex code
+            float sw = 22 * k, rowH = 26 * k, avail = area.width - 22 * k;
             foreach (var group in ColorSlots.Groups)
             {
                 GUILayout.Space(4 * k);
@@ -793,16 +855,28 @@ namespace RockGame
                     int i = s.Index;
                     var cur = s.Value;
                     bool teamHands = s == ColorSlots.Hands && ColorSlots.HandsTeam;
-                    GUILayout.BeginHorizontal();
-                    GUILayout.Label((s.Changed ? "<color=#ffd27a>" : "") + s.Label + (s.Changed ? "</color>" : ""), m_RowLabel, GUILayout.Width(190 * k), GUILayout.Height(rowH));
-                    // the colour now, then ready-made ones to click
-                    var r = GUILayoutUtility.GetRect(sw * 1.6f, sw, GUILayout.Width(sw * 1.6f), GUILayout.Height(rowH));
-                    r.y += (rowH - sw) * 0.5f; r.height = sw;
                     var shown = teamHands ? ColorSlots.HandTint(Cfg.TeamColor[0]) : cur;
                     bool picking = m_PickerSlot == i;
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Label((s.Changed ? "<color=#ffd27a>" : "") + s.Label + (s.Changed ? "</color>" : ""), m_RowLabel, GUILayout.Height(rowH));
+                    GUILayout.FlexibleSpace();
+                    if (Btn(picking ? "Pick ▲" : "Pick ▼", GUILayout.Width(72 * k), GUILayout.Height(rowH))) TogglePicker(s, shown, teamHands);
+                    if (s == ColorSlots.Hands)
+                    {
+                        bool team = ToggleBtn(ColorSlots.HandsTeam, "Team colour", GUILayout.Width(120 * k), GUILayout.Height(rowH));
+                        if (team != ColorSlots.HandsTeam) ColorSlots.SetHandsTeam(team);
+                    }
+                    else if (s.Changed) { if (Btn("Default", GUILayout.Width(84 * k), GUILayout.Height(rowH))) ColorSlots.Set(s, s.Default); }
+                    else GUILayout.Space(84 * k + 4);
+                    GUILayout.EndHorizontal();
+                    if (picking && Event.current.type == EventType.Repaint) m_PickerRowY = GUILayoutUtility.GetLastRect().y;
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Space(12 * k);
+                    // the colour now (click it: the colour picker), then ready-made ones to click
+                    var r = GUILayoutUtility.GetRect(sw * 1.6f, sw, GUILayout.Width(sw * 1.6f), GUILayout.Height(rowH));
+                    r.y += (rowH - sw) * 0.5f; r.height = sw;
                     Fill(r, picking ? new Color(1f, 0.82f, 0.3f) : new Color(0.8f, 0.8f, 0.8f));
                     Fill(new Rect(r.x + 2, r.y + 2, r.width - 4, r.height - 4), shown);
-                    // click the colour: the colour picker for this row
                     TrackHover(r);
                     if (GUI.Button(r, GUIContent.none, GUIStyle.none)) { ClickSound(); TogglePicker(s, shown, teamHands); }
                     GUILayout.Space(8 * k);
@@ -817,7 +891,7 @@ namespace RockGame
                         if (GUI.Button(pr, GUIContent.none, GUIStyle.none)) { ClickSound(); ColorSlots.Set(s, pc); }
                         GUILayout.Space(3 * k);
                     }
-                    GUILayout.Space(6 * k);
+                    GUILayout.FlexibleSpace();
                     // the hex code: type or paste one
                     string hex = m_HexEdit.TryGetValue(i, out var ed) ? ed : ColorUtility.ToHtmlStringRGB(cur);
                     GUI.SetNextControlName("hex" + i);
@@ -829,24 +903,14 @@ namespace RockGame
                         var t = nh.Trim().TrimStart('#');
                         if (t.Length == 6 && ColorUtility.TryParseHtmlString("#" + t, out var hc)) ColorSlots.Set(s, hc);
                     }
-                    GUILayout.Space(6 * k);
-                    if (Btn(picking ? "Pick ▲" : "Pick ▼", GUILayout.Width(72 * k), GUILayout.Height(rowH))) TogglePicker(s, shown, teamHands);
-                    if (s == ColorSlots.Hands)
-                    {
-                        bool team = ToggleBtn(ColorSlots.HandsTeam, "Team colour", GUILayout.Width(130 * k), GUILayout.Height(rowH));
-                        if (team != ColorSlots.HandsTeam) ColorSlots.SetHandsTeam(team);
-                    }
-                    else if (s.Changed && Btn("Default", GUILayout.Width(90 * k), GUILayout.Height(rowH))) ColorSlots.Set(s, s.Default);
                     GUILayout.EndHorizontal();
-                    if (picking && Event.current.type == EventType.Repaint) m_PickerRowY = GUILayoutUtility.GetLastRect().y;
-                    if (picking) DrawColourPicker(s, shown, teamHands);
+                    if (picking) DrawColourPicker(s, shown, teamHands, avail);
+                    GUILayout.Space(3 * k);
                 }
             }
-            GUILayout.Space(6 * k);
-            GUILayout.BeginHorizontal();
-            if (Btn("Reset grass and colours", GUILayout.Width(260 * k), GUILayout.Height(32 * k))) GameSettings.ResetWorldLook();
-            GUILayout.Label("<color=#bbbbbb>  Changes show straight away.</color>", m_SmallWrap, GUILayout.Height(32 * k));
-            GUILayout.EndHorizontal();
+            GUILayout.Space(8 * k);
+            GUILayout.EndScrollView();
+            GUILayout.EndArea();
         }
 
         void DrawVoiceTab()
@@ -902,9 +966,11 @@ namespace RockGame
                 m_PausePage = OpenPause == 3 ? PausePage.Dev : OpenPause >= 1 ? PausePage.Settings : PausePage.Root; // (3: Dev settings - tests)
                 m_Tab = OpenPause == 2 ? SettingsTab.Display : SettingsTab.Controls; // (2: Display - for the tests)
                 OpenPause = -1;
+                m_ColourScreen = false;
                 OnTabOpened();
             }
-            Fill(new Rect(0, 0, sw, sh), new Color(0, 0, 0, 0.55f));
+            // (no dark cover while the world colours screen is up: the world has to show)
+            if (!(m_PausePage == PausePage.Settings && m_ColourScreen)) Fill(new Rect(0, 0, sw, sh), new Color(0, 0, 0, 0.55f));
             if (m_PausePage == PausePage.Settings) { MouseOverUI = true; if (DrawSettingsPanel()) m_PausePage = PausePage.Root; return; }
             if (m_PausePage == PausePage.Dev) { DrawDevMenu(me, game); return; }
             float w = 420 * k, h = Mathf.Min(sh - 40, 460 * k);

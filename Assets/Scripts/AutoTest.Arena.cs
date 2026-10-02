@@ -8,8 +8,8 @@ namespace RockGame
     /// -autotest arena: the sudden death platform in space. Start the host on its own (-autotest arena -host -fast
     /// -shotdir DIR, windowed for the screenshots) and a client (-autotest arena -client 127.0.0.1) about a minute later.
     /// Alone in the lobby the host checks the look (flat colours, no lightning bolt, a black sky with low-poly stars, the
-    /// galaxy and planets, 15% smaller, a dense crowd in every colour doing many different things on stands floating
-    /// clear of the platform, only the stands in view drawn), photographs the platform, the crowd (first person, close
+    /// galaxy and planets, 15% smaller, a dense crowd in every colour doing many different things in one stadium all the
+    /// way round, a gap clear of the platform, the struts far below, only the sections in view drawn), photographs the platform, the crowd (first person, close
     /// up, a Mexican wave) and the galaxy, times frames with and without the crowd, and checks that walking off the edge
     /// just puts you back on top. When the client joins, sudden death starts (Ready? / Set / ROCK!, frozen until ROCK!,
     /// the crowd goes wild), and the host walks off the edge: that's a death like a kill, so the client wins the duel.
@@ -29,7 +29,22 @@ namespace RockGame
             Check(Stadium.Instance != null && Stadium.Instance.GetComponentInChildren<TextMesh>().GetComponent<Renderer>().enabled, "the arena is drawn while you're in it");
             Check(!RenderSettings.fog, "no fog in space");
             var st = Stadium.Instance;
-            int textured = 0, starTris = 0, galaxyTris = 0, glowTris = 0, boltBits = 0, standsNear = 0, standVerts = 0;
+            int textured = 0, starTris = 0, galaxyTris = 0, glowTris = 0, boltBits = 0, standsNear = 0, standVerts = 0, strutVerts = 0, strutsHigh = 0;
+            var standAround = new bool[72];
+            // how far a point (x, z, from the middle) is outside the platform's edge (0 on or over it)
+            float PlatformDistance(Vector2 p)
+            {
+                if (SpaceArena.OverPlatform(c + new Vector3(p.x, 0f, p.y))) return 0f;
+                float best = float.MaxValue;
+                var o = SpaceArena.Outline;
+                for (int i = 0; i < o.Length; i++)
+                {
+                    Vector2 a = o[i], b = o[(i + 1) % o.Length], e = b - a;
+                    float u = Mathf.Clamp01(Vector2.Dot(p - a, e) / e.sqrMagnitude);
+                    best = Mathf.Min(best, Vector2.Distance(p, a + e * u));
+                }
+                return best;
+            }
             Renderer shellR = null;
             foreach (var t in st.GetComponentsInChildren<Transform>(true))
             {
@@ -43,14 +58,18 @@ namespace RockGame
                 if (t.name == "pink edges" && mf)
                     foreach (var v in mf.sharedMesh.vertices)
                         if (Mathf.Abs(v.x) < 5f && Mathf.Abs(v.z) < SpaceArena.HalfZ - 3f) boltBits++;
-                // the stands float on their own, well clear of the platform
+                // the stadium: one bowl all the way round, well clear of the platform (the gap you fall through)
                 if (t.name == "crowd stands" && mf)
                     foreach (var v in mf.sharedMesh.vertices)
                     {
                         standVerts++;
-                        var flat = new Vector3(v.x, 0f, v.z);
-                        if (flat.magnitude < 9f || SpaceArena.OverPlatform(c + flat - flat.normalized * 9f)) standsNear++;
+                        var flat = new Vector2(v.x, v.z);
+                        if (PlatformDistance(flat) < SpaceArena.Gap - 0.5f) standsNear++;
+                        standAround[Mathf.FloorToInt(Mathf.Repeat(Mathf.Atan2(v.x, v.z) * Mathf.Rad2Deg, 360f) / 5f) % 72] = true;
                     }
+                // the struts under it all are far below where you're lost in space
+                if (t.name == "stadium struts" && mf)
+                    foreach (var v in mf.sharedMesh.vertices) { strutVerts++; if (v.y > -SpaceArena.KillDepth - 1.5f) strutsHigh++; }
             }
             foreach (var r in st.GetComponentsInChildren<MeshRenderer>(true))
                 if (r.GetComponent<TextMesh>() == null) // (the screens' text is a font)
@@ -63,8 +82,12 @@ namespace RockGame
             Check(shellR != null && skyCol.maxColorComponent < 0.01f && SpaceArena.SkyColor.maxColorComponent < 0.01f, $"the night sky is black ({skyCol})");
             Check(boltBits == 0, $"no lightning bolt on the platform ({boltBits} bits of it left)");
             Check(st.CrowdCount >= 400 && st.CrowdAnimations >= 10 && st.CrowdHues >= 10,
-                  $"a dense crowd ({st.CrowdCount} fans, {st.CrowdAnimations} of {SpaceArena.CrowdAnimations} animations, {st.CrowdHues} of 12 hues, {st.CrowdStands.Count} stands)");
-            Check(standVerts > 0 && standsNear == 0, $"the stands float on their own, clear of the platform ({standsNear} of {standVerts} stand vertices within 9 m of it)");
+                  $"a dense crowd ({st.CrowdCount} fans, {st.CrowdAnimations} of {SpaceArena.CrowdAnimations} animations, {st.CrowdHues} of 12 hues, {st.CrowdStands.Count} sections)");
+            int around = 0;
+            foreach (var b in standAround) if (b) around++;
+            Check(standVerts > 0 && standsNear == 0, $"the stadium is clear of the platform: a {SpaceArena.Gap} m gap to fall through ({standsNear} of {standVerts} stand vertices closer)");
+            Check(around == 72, $"the stands are one stadium all the way round, not separate floating stands ({around} of 72 five-degree slices have stands)");
+            Check(strutVerts > 0 && strutsHigh == 0, $"the struts holding the platform are far below the edge ({strutsHigh} of {strutVerts} strut vertices above {SpaceArena.KillDepth + 1.5f} m down)");
             Check(textured == 0, $"flat colours, no textures ({textured} textured materials)");
             Check(Mathf.Approximately(SpaceArena.HalfX, 21f * 0.85f) && Mathf.Approximately(SpaceArena.HalfZ, 27f * 0.85f), $"the platform is 15% smaller ({SpaceArena.HalfX} x {SpaceArena.HalfZ})");
             for (int team = 0; team < 4; team++)
@@ -88,14 +111,14 @@ namespace RockGame
             float sideYaw = Mathf.Atan2(side.x, side.z) * Mathf.Rad2Deg;
             pc.SetLook(sideYaw, -2f);
             yield return Snap("arena_14_fp_crowd");
-            Check(st.DrawnFans > 0 && st.DrawnFans < st.CrowdCount, $"only the stands in view are drawn ({st.DrawnFans} of {st.CrowdCount} fans)");
+            Check(st.DrawnFans > 0 && st.DrawnFans < st.CrowdCount, $"only the sections of the stadium in view are drawn ({st.DrawnFans} of {st.CrowdCount} fans)");
 
             // frame time in the arena (uncapped): down the platform, across it and up at the sky - everything, without the
             // crowd, and without the crowd, its stands and the new sky (stars, galaxy, planets: about the old arena),
             // taking turns so a busy machine slows them all the same
             var extras = new System.Collections.Generic.List<Renderer>();
             foreach (var r in st.GetComponentsInChildren<Renderer>(true))
-                if (r.name == "galaxy" || r.name == "galaxy glow" || r.name == "stars" || r.name == "crowd stands") extras.Add(r);
+                if (r.name == "galaxy" || r.name == "galaxy glow" || r.name == "stars" || r.name == "crowd stands" || r.name == "stadium struts") extras.Add(r);
             IEnumerator Measure(string what, float yaw, float pitch)
             {
                 pc.SetLook(yaw, pitch);
