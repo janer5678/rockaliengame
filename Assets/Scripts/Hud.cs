@@ -17,6 +17,8 @@ namespace RockGame
         static float s_HitTime = -10f, s_BannerTime = -10f, s_WakeTime = -10f;
         static bool s_HitKill, s_HitHead;
         static string s_BannerTitle, s_BannerSub;
+        /// <summary>Test hook: the last banner (title and line under it).</summary>
+        public static string LastBanner => s_BannerTitle + " | " + s_BannerSub;
         public static bool MouseOverUI;
         static readonly System.Text.RegularExpressions.Regex s_ColorTag = new System.Text.RegularExpressions.Regex("</?color[^>]*>");
 
@@ -219,7 +221,6 @@ namespace RockGame
                 Fill(new Rect(sw / 2 - 260 * k, 8, 520 * k, 62 * k), new Color(0, 0, 0, 0.45f));
                 Shadowed(new Rect(0, 10, sw, 30 * k), $"<b><size={Mathf.RoundToInt(24 * k)}>{phase}</size></b>", m_Center);
                 Shadowed(new Rect(0, 40 * k, sw, 26 * k), sub, m_Center);
-                DrawAirdropTimer(game, 8 + 66 * k, k);
             }
 
             // ---- top left: identity + compass ----
@@ -356,7 +357,7 @@ namespace RockGame
 
             // ---- banner ----
             float bage = Time.time - s_BannerTime;
-            if (bage < 4f && game != null && game.S != GameState.GameOver && !game.FightFrozen)
+            if (bage < 4f && game != null && game.S != GameState.GameOver && !game.FightFrozen && !(game.S == GameState.BallLive && game.TimeLeft <= 10f)) // (not over the final countdown)
             {
                 float a = Mathf.Clamp01(4f - bage);
                 var st = new GUIStyle(m_Big);
@@ -834,56 +835,35 @@ namespace RockGame
             if (e.type == EventType.MouseDown && e.button == 1) { pc.CloseAirstrikeMap(); e.Use(); }
         }
 
-        // ------------------------------------------------------------------ the airdrop timer (always under the top banner)
-
-        /// <summary>Whenever the mode has airdrops: a small badge under the top banner - the time to the next one, one on its way, or one on the ground.</summary>
-        void DrawAirdropTimer(NetGame game, float y, float k)
-        {
-            if (game == null || Cfg.FunRules || Cfg.Tutorial || Mathf.Clamp(Cfg.AirdropCount, 0, 20) == 0) return;
-            if (game.S != GameState.PreBall && game.S != GameState.BallLive) return;
-            double now = game.NetworkManager.ServerTime.Time;
-            bool incoming = false;
-            for (int i = 0; i < NetGame.LaneTotal; i++)
-            {
-                double st = game.LaneStartAt(i);
-                if (st >= 0 && now < st + NetGame.DropLand) incoming = true;
-            }
-            bool landed = false;
-            foreach (var c in Container.All) if (c != null && c.IsAirdrop && !c.Empty) { landed = true; break; }
-            double next = game.NextScheduledDrop.Value;
-            string text;
-            if (incoming) text = $"<color=#e0a8ff><b>AIRDROP INCOMING</b></color>  <color=#dddddd>follow the purple beam</color>";
-            else
-            {
-                text = next > 0 ? $"<b>AIRDROP IN {Clock(Mathf.Max(0f, (float)(next - now)))}</b>" : "";
-                if (landed) text += (text != "" ? "   <color=#888888>·</color>   " : "") + "<color=#e0a8ff><b>AIRDROP LANDED</b></color>  <color=#dddddd>grab it!</color>";
-                if (text == "") text = "<color=#bbbbbb>NO MORE AIRDROPS</color>";
-            }
-            float w = 340 * k, h = 24 * k;
-            var r = new Rect(Screen.width / 2f - w / 2f, y, w, h);
-            float pulse = incoming || (next > 0 && next - now <= NetGame.DropWarning) ? 0.5f + 0.5f * Mathf.Sin(Time.time * 8f) : 0f;
-            Fill(r, new Color(0.18f + 0.25f * pulse, 0.06f, 0.28f + 0.15f * pulse, 0.7f));
-            Fill(new Rect(r.x, r.y, 4 * k, h), new Color(0.75f, 0.35f, 1f, 0.95f));
-            Shadowed(r, text, new GUIStyle(m_Small) { alignment = TextAnchor.MiddleCenter, richText = true });
-        }
-
         // ------------------------------------------------------------------ countdowns and the sniper scope
 
         int m_LastCount = -1;
 
-        /// <summary>The last 10 seconds before sudden death (or the win), and the stadium's 3-2-1-FIGHT.</summary>
+        /// <summary>The sudden death arena's countdown word right now ("" when there's none): Ready?, Set, then ROCK!.</summary>
+        public static string FightWord(NetGame game, out float t)
+        {
+            t = 0f;
+            if (game == null || !game.IsSpawned || game.S != GameState.SuddenDeath || game.FightAt.Value <= 0) return "";
+            double left = game.FightAt.Value - game.NetworkManager.ServerTime.Time;
+            float half = NetGame.FightCountdown * 0.5f;
+            if (left > half) { t = (float)(NetGame.FightCountdown - left) / half; return "Ready?"; }
+            if (left > 0) { t = (float)(half - left) / half; return "Set"; }
+            if (left > -1.2) { t = (float)(-left) / 1.2f; return "ROCK!"; }
+            return "";
+        }
+
+        /// <summary>The last 10 seconds before sudden death (it sits on 0 for a moment before the arena) or the win, and the arena's Ready? / Set / ROCK!.</summary>
         void DrawCountdowns(NetGame game, int myTeam)
         {
             float sw = Screen.width, sh = Screen.height, k = m_Scale;
             if (game == null) return;
-            double now = game.NetworkManager.ServerTime.Time;
-            if (game.S == GameState.BallLive && game.TimeLeft <= 10f && game.TimeLeft > 0f)
+            int sock = Ball.Instance != null ? Ball.Instance.SocketTeam.Value : -1;
+            if (game.S == GameState.BallLive && game.TimeLeft <= 10f && (game.TimeLeft > 0f || sock < 0))
             {
                 int n = Mathf.CeilToInt(game.TimeLeft);
-                float frac = game.TimeLeft - Mathf.Floor(game.TimeLeft);
+                float frac = n == 0 ? 1f : game.TimeLeft - Mathf.Floor(game.TimeLeft);
                 if (n != m_LastCount) { m_LastCount = n; Sfx.Play2D(n <= 3 ? Sfx.Ding : Sfx.Beep, n <= 3 ? 0.9f : 0.6f, 0f); Fx.Shake(0.08f + (10 - n) * 0.02f); }
-                int sock = Ball.Instance != null ? Ball.Instance.SocketTeam.Value : -1;
-                // a red heartbeat around the edge of the screen that gets stronger
+                // a heartbeat around the edge of the screen that gets stronger
                 float pulse = (1f - frac) * (0.25f + (10 - n) * 0.05f);
                 var edge = sock < 0 ? new Color(0.9f, 0f, 0f, pulse) : new Color(Cfg.TeamColor[sock].r, Cfg.TeamColor[sock].g, Cfg.TeamColor[sock].b, pulse);
                 float b = 60f * k;
@@ -901,29 +881,25 @@ namespace RockGame
                 GUI.Label(new Rect(0, sh * 0.24f, sw, 220 * k), n.ToString(), big);
                 return;
             }
-            if (game.S == GameState.SuddenDeath && game.FightAt.Value > 0)
+            string word = FightWord(game, out float t);
+            if (word != "")
             {
-                double left = game.FightAt.Value - now;
-                if (left > 0)
+                int n = word == "Ready?" ? 2 : word == "Set" ? 1 : 0;
+                if (n != m_LastCount)
                 {
-                    int n = Mathf.CeilToInt((float)left);
-                    if (n != m_LastCount) { m_LastCount = n; Sfx.Play2D(Sfx.Ding, 1f, 0f); Fx.Shake(0.2f); Stadium.Roar(); }
-                    float frac = (float)(left - System.Math.Floor(left));
-                    Fill(new Rect(0, 0, sw, sh), new Color(0, 0, 0, 0.25f));
-                    var st = new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt(34 * k) };
-                    st.normal.textColor = new Color(1f, 0.9f, 0.4f);
-                    GUI.Label(new Rect(0, sh * 0.2f, sw, 44 * k), "SUDDEN DEATH  ·  GET READY", st);
-                    var big = new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt((180f + frac * 90f) * k) };
-                    big.normal.textColor = new Color(1f, 1f, 1f, 0.5f + frac * 0.5f);
-                    GUI.Label(new Rect(0, sh * 0.26f, sw, 260 * k), n.ToString(), big);
+                    m_LastCount = n;
+                    if (n > 0) { Sfx.Play2D(Sfx.Ding, 1f, 0f); Fx.Shake(0.2f); }
+                    else { Sfx.Play2D(Sfx.Boom, 0.7f, 0f); Fx.Shake(0.5f); }
                 }
-                else if (left > -1.2)
-                {
-                    if (m_LastCount != 0) { m_LastCount = 0; Sfx.Play2D(Sfx.Boom, 0.7f, 0f); Stadium.Roar(); Fx.Shake(0.5f); }
-                    var big = new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt(170f * k) };
-                    big.normal.textColor = new Color(1f, 0.25f, 0.15f, (float)(1.2 + left) / 1.2f);
-                    GUI.Label(new Rect(0, sh * 0.26f, sw, 260 * k), "FIGHT!", big);
-                }
+                // each word pops in big and settles; ROCK! fades away as the duel starts
+                float pop = 1f + 0.35f * Mathf.Clamp01(1f - t * 4f);
+                if (n > 0) Fill(new Rect(0, 0, sw, sh), new Color(0, 0, 0, 0.25f));
+                var st = new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt(34 * k) };
+                st.normal.textColor = new Color(1f, 0.9f, 0.4f, n > 0 ? 1f : 1f - t);
+                GUI.Label(new Rect(0, sh * 0.2f, sw, 44 * k), "SUDDEN DEATH", st);
+                var big = new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt((n > 0 ? 170f : 200f) * pop * k) };
+                big.normal.textColor = n == 2 ? new Color(1f, 1f, 1f, 0.95f) : n == 1 ? new Color(1f, 0.85f, 0.3f, 0.95f) : new Color(1f, 0.3f, 0.15f, 1f - t);
+                GUI.Label(new Rect(0, sh * 0.24f, sw, 300 * k), word, big);
                 return;
             }
             m_LastCount = -1;

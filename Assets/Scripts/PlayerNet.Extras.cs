@@ -68,7 +68,7 @@ namespace RockGame
             if (!Physics.Raycast(point + Vector3.up * 2f, Vector3.down, out var hit, 60f, ~(1 << HitboxLayer), QueryTriggerInteraction.Ignore)) hit.point = new Vector3(point.x, MapBuilder.Height(point.x, point.z), point.z);
             var pos = hit.point;
             int bt = Cfg.BaseTeamAt(pos);
-            if ((bt >= 0 && bt != Team.Value) || Cfg.PointBlocked(pos) || MapBuilder.GlassUp && Mathf.Abs(pos.z) < 3f)
+            if ((bt >= 0 && bt != Team.Value) || Cfg.PointBlocked(pos) || MapBuilder.GlassUp && (Mathf.Abs(pos.z) < 3f || new Vector2(pos.x, pos.z).magnitude < MapBuilder.DomeRadius + 3f))
             {
                 Notify(bt >= 0 && bt != Team.Value ? "Can't build a fort in the enemy base - here it is back" : "Can't build a fort there - here it is back");
                 ServerGive(Item.FortTower, 1);
@@ -172,8 +172,10 @@ namespace RockGame
                 case DevCmd.SpawnAirdrop: g.DevSpawnAirdrop(); break;
                 case DevCmd.BallToMe:
                 case DevCmd.BallToMiddle:
-                    if (Ball.Instance == null) { Notify("The ball hasn't dropped yet"); return; }
-                    Ball.Instance.ServerDrop(cmd == DevCmd.BallToMe ? transform.position + transform.forward * 2f + Vector3.up * 1.5f : Cfg.BallDropPoint, Vector3.zero);
+                    if (Ball.Instance == null) { Notify("There's no ball right now"); return; }
+                    if (cmd == DevCmd.BallToMe) Ball.Instance.ServerDrop(transform.position + transform.forward * 2f + Vector3.up * 1.5f, Vector3.zero);
+                    else if (g.WallUp) Ball.Instance.ServerPlaceInDome(); // back under the glass dome
+                    else Ball.Instance.ServerDropFromSky(Cfg.BallDropPoint); // (falls in slowly)
                     break;
                 case DevCmd.GiveWood: ServerGive(Cfg.GatherItem(Item.Wood), 1000); break;
                 case DevCmd.GiveStone: ServerGive(Cfg.GatherItem(Item.Stone), 1000); break;
@@ -204,7 +206,7 @@ namespace RockGame
                 case DevCmd.TpEnemyBase: NetGame.SpawnPoint((Team.Value + 1) % Cfg.TeamCount, false, out var ep, out var ey); TeleportRpc(ep, ey); break;
                 case DevCmd.TpMyBase: NetGame.SpawnPoint(Team.Value, false, out var mp, out var my); TeleportRpc(mp, my); break;
                 case DevCmd.TpBall:
-                    if (Ball.Instance == null) { Notify("The ball hasn't dropped yet"); return; }
+                    if (Ball.Instance == null) { Notify("There's no ball right now"); return; }
                     TeleportRpc(Ball.Instance.transform.position + new Vector3(1.5f, 0.3f, 0), 270f);
                     break;
                 case DevCmd.SpawnHorse: Vehicle.ServerSpawn(Vehicle.Horse, transform.position + transform.forward * 3f, transform.eulerAngles.y); break;

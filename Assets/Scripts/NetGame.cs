@@ -45,12 +45,10 @@ namespace RockGame
         public readonly NetworkVariable<double> FightAt = new NetworkVariable<double>(-1);
         /// <summary>Dev setting: the match timer (and the airdrop timers) are frozen.</summary>
         public readonly NetworkVariable<bool> TimerPaused = new NetworkVariable<bool>();
-        /// <summary>When the next scheduled airdrop lands (server time), announced 20 s ahead; -1 when none is coming.</summary>
+        /// <summary>When the next scheduled airdrop lands (server time), set when it's announced (DropWarning s ahead); -1 when none is coming.</summary>
         public readonly NetworkVariable<double> NextDropLands = new NetworkVariable<double>(-1);
-        /// <summary>When the next scheduled airdrop lands (server time), always known ahead (the HUD's airdrop timer); -1 when no more are coming.</summary>
-        public readonly NetworkVariable<double> NextScheduledDrop = new NetworkVariable<double>(-1);
-        /// <summary>Seconds of warning before an airdrop lands.</summary>
-        public const float DropWarning = 10f;
+        /// <summary>Seconds of warning before an airdrop lands (the one and only airdrop announcement).</summary>
+        public const float DropWarning = 15f;
         int m_DropsWarned;
 
         int m_NextItemId = 1;
@@ -121,7 +119,7 @@ namespace RockGame
         {
             switch ((GameState)cur)
             {
-                case GameState.PreBall: if (Cfg.FunRules) break; if (Cfg.Tutorial) { Hud.Banner("TUTORIAL", "Do each step on the left. The clock is stopped."); break; } Hud.Banner("GATHER & BUILD", $"A glass wall splits the map for {Clock(Bootstrap.Fast ? Cfg.FastBallDropDelay : Cfg.BallDropDelay)}. " + (Cfg.Builder ? "BUILDER: build and craft anywhere (TAB)." : "Craft anywhere inside your base (TAB).")); break;
+                case GameState.PreBall: if (Cfg.FunRules) break; if (Cfg.Tutorial) { Hud.Banner("TUTORIAL", "Do each step on the left. The clock is stopped."); break; } Hud.Banner("GATHER & BUILD", $"The ball waits under the glass dome - the walls drop in {Clock(Bootstrap.Fast ? Cfg.FastBallDropDelay : Cfg.BallDropDelay)}. " + (Cfg.Builder ? "BUILDER: build and craft anywhere (TAB)." : "Craft anywhere inside your base (TAB).")); break;
                 case GameState.BallLive: Hud.Banner("THE WALL IS DOWN", Cfg.Builder ? "Grab the ball and plant it anywhere (E) - whoever's ball it is when time runs out wins!" : "Grab the ball from the middle and put it in YOUR machine's socket!"); break;
                 case GameState.SuddenDeath: Hud.Banner("SUDDEN DEATH", "Welcome to space. Rocks only. First kill wins - and don't fall off!"); break;
             }
@@ -149,7 +147,6 @@ namespace RockGame
                 if (S == GameState.PreBall || S == GameState.BallLive || S == GameState.SuddenDeath) PhaseEnd.Value += dt;
                 if (m_BallStart >= 0) m_BallStart += dt;
             }
-            ServerTickNextDrop();
             ServerTickC4(now);
             ServerTickAirstrikes(now);
             ServerTickBushes(now);
@@ -167,21 +164,25 @@ namespace RockGame
                         float delay = Cfg.FunRules ? 0f : fast ? Cfg.FastBallDropDelay : Cfg.BallDropDelay; // fun modes: wall down and ball in from the start
                         SetPhase(GameState.PreBall, delay);
                         if (Cfg.Tutorial) TimerPaused.Value = true; // the tutorial goes at your pace
+                        // the ball is there from the start: in the middle of the map, under the glass dome
+                        SpawnBall();
                         // out of the waiting stadium and into your base
                         foreach (var p in PlayerNet.All) p.ServerSendHome();
-                        Broadcast(Cfg.Tutorial ? "Tutorial started! Do each step on the left - the wall drops when everyone reaches it" : Cfg.FunRules ? "Match started! The wall is down and the ball is in - free items on the way!" : $"Match started! The glass wall drops (and the ball with it) in {Clock(delay)}");
+                        Broadcast(Cfg.Tutorial ? "Tutorial started! Do each step on the left - the wall drops when everyone reaches it" : Cfg.FunRules ? "Match started! The wall is down and the ball is in - free items on the way!" : $"Match started! The ball is under the glass dome in the middle - the wall and the dome drop in {Clock(delay)}");
                     }
                     break;
                 case GameState.PreBall:
                     ServerTickAirdrop(now);
                     if (now >= PhaseEnd.Value)
                     {
-                        SpawnBall();
+                        if (Ball.Instance == null) SpawnBall();
+                        if (Ball.Instance != null) Ball.Instance.ServerRelease(); // the dome's gone: the ball is up for grabs
                         SetPhase(GameState.BallLive, BallPhase);
                         m_BallStart = now;
                         m_DropsDone = 0;
                         m_DropsWarned = 0;
-                        Broadcast("The glass wall is down and the BALL has dropped in the middle!");
+                        m_SuddenDeathAt = -1;
+                        if (!Cfg.FunRules) Broadcast("The glass wall and the dome are down - grab the BALL in the middle!");
                     }
                     break;
                 case GameState.BallLive:
@@ -190,18 +191,24 @@ namespace RockGame
                     ServerTickAirdrop(now);
                     if (now >= PhaseEnd.Value)
                     {
-                        if (Cfg.Builder)
+                        if (m_SuddenDeathAt < 0)
                         {
-                            // Builder: whoever's ball it is (planted, not carried or loose) wins
-                            int pt = Ball.Instance != null && !Ball.Instance.IsCarried ? Ball.Instance.SocketTeam.Value : -1;
-                            if (pt >= 0) EndGame(pt, $"The ball was planted for {Cfg.TeamLabel(pt)} when time ran out!");
-                            else StartSuddenDeath();
-                            break;
+                            if (Cfg.Builder)
+                            {
+                                // Builder: whoever's ball it is (planted, not carried or loose) wins
+                                int pt = Ball.Instance != null && !Ball.Instance.IsCarried ? Ball.Instance.SocketTeam.Value : -1;
+                                if (pt >= 0) { EndGame(pt, $"The ball was planted for {Cfg.TeamLabel(pt)} when time ran out!"); break; }
+                            }
+                            else
+                            {
+                                // only the machine socket counts - a ball lying around in your base doesn't win
+                                int t = Ball.Instance != null ? Ball.Instance.SocketTeam.Value : -1;
+                                if (t >= 0) { EndGame(t, $"{Cfg.TeamName[t]} had the ball in their machine when time ran out!"); break; }
+                            }
+                            // nobody has it: the countdown sits on 0 for a moment, then everyone goes to the arena
+                            m_SuddenDeathAt = now + ZeroHold;
                         }
-                        // only the machine socket counts - a ball lying around in your base doesn't win
-                        int t = Ball.Instance != null ? Ball.Instance.SocketTeam.Value : -1;
-                        if (t >= 0) EndGame(t, $"{Cfg.TeamName[t]} had the ball in their machine when time ran out!");
-                        else StartSuddenDeath();
+                        if (now >= m_SuddenDeathAt) StartSuddenDeath();
                     }
                     break;
                 case GameState.SuddenDeath:
@@ -219,13 +226,18 @@ namespace RockGame
             State.Value = (byte)s;
         }
 
-        public const float FightCountdown = 5f;
+        /// <summary>Sudden death: Ready? (the first half), Set (the second half), then ROCK! - nobody can move until ROCK!</summary>
+        public const float FightCountdown = 3.6f;
+        /// <summary>The end-of-match countdown stays on 0 this long before everyone is sent to the sudden death arena.</summary>
+        public const float ZeroHold = 1.2f;
+        double m_SuddenDeathAt = -1;
         public bool FightFrozen => S == GameState.SuddenDeath && IsSpawned && NetworkManager.ServerTime.Time < FightAt.Value;
 
         void StartSuddenDeath()
         {
+            m_SuddenDeathAt = -1;
             if (Ball.Instance != null && Ball.Instance.IsSpawned) Ball.Instance.NetworkObject.Despawn(true);
-            // everybody into the stadium, then a big 5 second countdown before the duel
+            // everybody into the stadium, then Ready? / Set / ROCK! before the duel
             FightAt.Value = NetworkManager.ServerTime.Time + FightCountdown;
             SetPhase(GameState.SuddenDeath, Cfg.SuddenDeathLength + FightCountdown);
             foreach (var p in PlayerNet.All) p.ServerEnterArena();
@@ -411,8 +423,10 @@ namespace RockGame
 
         void SpawnBall()
         {
-            var go = Instantiate(Bootstrap.I.ballPrefab, Cfg.BallDropPoint, Quaternion.identity);
+            if (Ball.Instance != null && Ball.Instance.IsSpawned) return;
+            var go = Instantiate(Bootstrap.I.ballPrefab, Ball.DomeSpot, Quaternion.identity);
             go.GetComponent<NetworkObject>().Spawn(true);
+            go.GetComponent<Ball>().ServerPlaceInDome(); // sitting still under the glass dome until the wall drops
         }
 
         void SpawnNodes()
@@ -448,7 +462,7 @@ namespace RockGame
                     for (int attempt = 0; attempt < 40; attempt++)
                     {
                         var p = new Vector3(R(-half0 + 10, half0 - 10), 0, R(-half0 + 10, -8f));
-                        if (!Cfg.InFirstSector(p, 6f)) continue;
+                        if (!Cfg.InFirstSector(p, 6f) || new Vector2(p.x, p.z).magnitude < MapBuilder.DomeRadius + 4f) continue; // (not under the glass dome)
                         if (Mathf.Abs(p.x - Cfg.BaseCenter[0].x) < Cfg.BaseHalf + 6 && Mathf.Abs(p.z - Cfg.BaseCenter[0].z) < Cfg.BaseHalf + 6) continue;
                         if (NearTower(p)) continue;
                         if (!ThemeMaps.SpotOk(p)) continue; // THEME MAPS
@@ -525,7 +539,7 @@ namespace RockGame
             {
                 // on your team's spot around the stadium pit, facing the middle
                 var dir = Quaternion.Euler(0, team * 360f / Mathf.Max(2, Cfg.TeamCount), 0) * Vector3.back;
-                pos = Cfg.ArenaCenter + dir * 14f + Vector3.Cross(Vector3.up, dir) * Cfg.SlotOffset(slot, 1.5f) + Vector3.up * 0.1f;
+                pos = Cfg.ArenaCenter + dir * 12f + Vector3.Cross(Vector3.up, dir) * Cfg.SlotOffset(slot, 1.5f) + Vector3.up * 0.1f;
                 yaw = Quaternion.LookRotation(-dir).eulerAngles.y;
                 return;
             }
@@ -560,7 +574,8 @@ namespace RockGame
 
         // ------------------------------------------------------------------ airdrops
 
-        const float DropArrive = 4f, DropBeam = 4f;
+        /// <summary>The ship arrives and opens its hatch (DropArrive), then beams the crate down - slowly (DropBeam).</summary>
+        public const float DropArrive = 5f, DropBeam = 8f;
         /// <summary>Seconds after a lane's start when the crate touches down (the ship arrives, then beams it down).</summary>
         public const float DropLand = DropArrive + DropBeam;
         /// <summary>Lanes 0-3: the world airdrops (one for the whole map, or one per team's side).</summary>
@@ -605,13 +620,12 @@ namespace RockGame
             int n = Mathf.Clamp(Cfg.AirdropCount, 0, 20);
             if (m_BallStart < 0 || m_DropsDone >= n) return;
             double launch = m_BallStart + (m_DropsDone + 1) * (double)BallPhase / (n + 1);
-            // 10 seconds before it lands: AIRDROP DROPPING IN 10 SECONDS (and a countdown on everyone's screen)
+            if (launch + DropLand > PhaseEnd.Value - 1.0) return; // it couldn't land before the clock runs out: no warning, no ship
+            // 15 seconds before it lands: the one and only airdrop announcement (where it's coming down)
             if (m_DropsWarned <= m_DropsDone && now >= launch + DropLand - DropWarning)
             {
                 m_DropsWarned = m_DropsDone + 1;
-                NextDropLands.Value = launch + DropLand;
-                string where = Cfg.AirdropCenter ? "In the middle of the map" : Cfg.AirdropSides && !Cfg.AirdropCenter ? "One on every side of the map" : "Somewhere on the map - watch for the purple beam";
-                BannerRpc(new FixedString64Bytes($"AIRDROP DROPPING IN {Mathf.CeilToInt((float)(launch + DropLand - now))} SECONDS"), new FixedString128Bytes(where));
+                ServerAirdropWarning(launch + DropLand);
             }
             if (now < launch) return;
             bool split = Cfg.AirdropSides && !Cfg.AirdropCenter;
@@ -625,21 +639,22 @@ namespace RockGame
                 if (lane.Crate != null && lane.Crate.IsSpawned) m_OldCrates.Add(lane.Crate);
                 lane.Crate = null;
                 lane.Region = split ? i : -1;
-                ServerLaunchDrop(i, now, Cfg.AirdropCenter ? PickCenterSpot() : PickDropSpot(lane.Region));
+                ServerLaunchDrop(i, now, Cfg.AirdropCenter ? PickCenterSpot() : PickDropSpot(lane.Region), false);
             }
         }
 
-        /// <summary>Server: when the next scheduled airdrop lands, for the airdrop timer at the top of everyone's screen.</summary>
-        void ServerTickNextDrop()
+        /// <summary>Where scheduled airdrops come down, for the warning.</summary>
+        static string DropWhere => Cfg.AirdropCenter ? "It's dropping in the centre of the map!"
+            : Cfg.AirdropSides ? "One is dropping on every side of the map - watch for the purple beams"
+            : "Somewhere on the map - watch for the purple beam";
+
+        /// <summary>Server: the airdrop warning, DropWarning seconds before it lands - the only notification an airdrop gets.</summary>
+        public void ServerAirdropWarning(double landsAt)
         {
-            int n = Mathf.Clamp(Cfg.AirdropCount, 0, 20);
-            double at = -1;
-            if (!Cfg.FunRules && !Cfg.Tutorial && n > 0)
-            {
-                if (S == GameState.PreBall) at = PhaseEnd.Value + (double)BallPhase / (n + 1) + DropLand;
-                else if (S == GameState.BallLive && m_BallStart >= 0 && m_DropsDone < n) at = m_BallStart + (m_DropsDone + 1) * (double)BallPhase / (n + 1) + DropLand;
-            }
-            if (System.Math.Abs(NextScheduledDrop.Value - at) > 0.25) NextScheduledDrop.Value = at;
+            NextDropLands.Value = landsAt;
+            int secs = Mathf.Max(1, Mathf.RoundToInt((float)(landsAt - NetworkManager.ServerTime.Time)));
+            BannerRpc(new FixedString64Bytes($"AIRDROP IN {secs} SECONDS"), new FixedString128Bytes(DropWhere));
+            Broadcast($"Airdrop in {secs} seconds! " + DropWhere);
         }
 
         /// <summary>Server: forget the countdown once that airdrop is down.</summary>
@@ -698,21 +713,22 @@ namespace RockGame
             }
         }
 
-        void ServerLaunchDrop(int i, double now, Vector3 pos)
+        /// <summary>announce: the dev setting's airdrop says it's coming (a scheduled one was already announced by its warning).</summary>
+        void ServerLaunchDrop(int i, double now, Vector3 pos, bool announce)
         {
             var lane = m_Lanes[i];
             SetLane(i, now, pos);
             lane.Incoming = true;
+            if (!announce) return;
             string where = lane.Region < 0 ? (Cfg.AirdropCenter ? "In the middle of the map!" : "Look for the purple beam") : $"On the {Cfg.TeamLabel(lane.Region)} side - look for the purple beam";
             BannerRpc(new FixedString64Bytes("AIRDROP INCOMING"), new FixedString128Bytes(where));
             Broadcast("An alien AIRDROP is beaming down! " + where);
         }
 
-        /// <summary>One random OP item.</summary>
+        /// <summary>One random OP item from the picked ones, rarer or commoner by its Airdrop Rarity weight.</summary>
         public static ItemStack RollAirdropLoot()
         {
-            var pool = Cfg.AirdropLoot;
-            var id = pool[Random.Range(0, pool.Count)];
+            var id = Cfg.PickAirdropItem(Cfg.AirdropLoot);
             if (id == Item.Wood) return Cfg.DnaSwap(ItemStack.Of(Cfg.WoodMode || Random.value < 0.5f ? Item.Wood : Item.Stone, Mathf.Clamp(Cfg.AirdropResources, 1, 1000)));
             if (id == Item.Helmet) return ItemStack.Of(Item.Helmet, 1, 1);
             return ItemStack.Of(id, 1, Mathf.Clamp(Cfg.MaxData(id), 0, 255));
@@ -728,6 +744,7 @@ namespace RockGame
             {
                 var p = new Vector3(Random.Range(-half + 12f, half - 12f), 0, Random.Range(-half + 12f, half - 12f));
                 if (region >= 0 && Cfg.RegionOf(p) != region) continue;
+                if (MapBuilder.GlassUp && new Vector2(p.x, p.z).magnitude < MapBuilder.DomeRadius + 3f) continue; // (not on the glass dome)
                 float d = float.MaxValue;
                 for (int t = 0; t < Cfg.TeamCount; t++)
                 {
@@ -797,7 +814,7 @@ namespace RockGame
                 if (lane.Crate != null && lane.Crate.IsSpawned) lane.Crate.NetworkObject.Despawn(true);
                 lane.Crate = null;
                 lane.Region = WorldLaneCount > 1 ? i : -1;
-                ServerLaunchDrop(i, now, Cfg.AirdropCenter ? PickCenterSpot() : PickDropSpot(lane.Region));
+                ServerLaunchDrop(i, now, Cfg.AirdropCenter && !WallUp ? PickCenterSpot() : PickDropSpot(lane.Region), true); // (not under the glass dome)
             }
         }
 
@@ -830,7 +847,7 @@ namespace RockGame
                 for (int tries = 0; tries < 60; tries++)
                 {
                     var p = new Vector3(Random.Range(-half + 8f, half - 8f), 0, Random.Range(-half + 8f, half - 8f));
-                    if (Cfg.RegionOf(p) != region || Cfg.BaseTeamAt(p) >= 0 || new Vector2(p.x, p.z).magnitude < 8f) continue;
+                    if (Cfg.RegionOf(p) != region || Cfg.BaseTeamAt(p) >= 0 || new Vector2(p.x, p.z).magnitude < MapBuilder.DomeRadius + 2f) continue; // (not under the glass dome)
                     p.y = MapBuilder.Height(p.x, p.z);
                     if (Blocked(p + Vector3.up * 1.3f, new Vector3(1f, 0.9f, 1f))) continue;
                     SpawnNode(ResourceNode.Bush, p, Random.Range(0, 1 << 30));

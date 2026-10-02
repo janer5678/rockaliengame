@@ -5,24 +5,27 @@ using UnityEngine.Rendering;
 namespace RockGame
 {
     /// <summary>
-    /// The sudden death arena (also the waiting lobby), Super Smash Bros "Final Destination" style: a flat octagonal
-    /// platform with glowing pink edges and a lightning bolt inlay, a blue mechanical underside with orange panel lines
-    /// and a glowing core, floating in a starry nebula. No walls: walk off the edge and you fall into space (in sudden
-    /// death that's a death like any other; in the lobby you're just put back on the platform). The crowd stands on
-    /// floating rocks all around, detached from the platform: aliens like you, every one a different colour.
-    /// Built identically on every peer (non-networked) by MapBuilder.
+    /// The sudden death arena (also the waiting lobby), Super Smash Bros "Final Destination" style, in the game's own
+    /// low-poly look (flat colours, no textures): a flat octagonal platform with pink edges and a lightning bolt inlay,
+    /// a blue mechanical underside with orange panel lines narrowing to a point, floating in space - one flat dark colour
+    /// all round, with low-poly white 3D stars. No walls: walk off the edge and you fall into space (in sudden death
+    /// that's a death like any other; in the lobby you're just put back on the platform). Four floating screens show the
+    /// countdown and the clock. Built identically on every peer (non-networked) by MapBuilder.
     /// </summary>
     public static class SpaceArena
     {
         /// <summary>Half sizes of the octagon (x across, z along the duel) and how much its corners are cut off.</summary>
-        public const float HalfX = 21f, HalfZ = 27f, Chamfer = 8f;
+        public const float HalfX = 17.85f, HalfZ = 22.95f, Chamfer = 6.8f;
         /// <summary>Fall this far below the top of the platform in sudden death and you're lost in space.</summary>
         public const float KillDepth = 10f;
         /// <summary>The space shell around the arena (it hides the far-away map).</summary>
         public const float ShellRadius = 360f;
+        /// <summary>How many stars hang in the sky (one merged mesh).</summary>
+        public const int StarCount = 220;
+        /// <summary>The colour of space.</summary>
+        public static readonly Color SkyColor = new Color(0.075f, 0.05f, 0.17f);
 
-        static Texture2D s_Deck, s_Hull, s_Inlay;
-        static Shader s_Glow, s_Sky;
+        static Shader s_Unlit;
 
         /// <summary>The octagon outline (x, z), going round.</summary>
         public static readonly Vector2[] Outline =
@@ -60,32 +63,14 @@ namespace RockGame
         // building it
         // =====================================================================
 
-        static Material GlowMat(Color c, Texture tex = null, bool additive = false)
+        /// <summary>A plain unlit colour (space and the stars: they aren't lit by anything). cull: which faces to skip.</summary>
+        static Material UnlitMat(Color c, CullMode cull)
         {
-            if (s_Glow == null) s_Glow = Resources.Load<Shader>("SpaceArena/SpaceGlow");
-            if (s_Glow == null || !s_Glow.isSupported) return Art.Mat(c);
-            var m = new Material(s_Glow) { name = "space glow" };
+            if (s_Unlit == null) s_Unlit = Resources.Load<Shader>("SpaceArena/SpaceGlow");
+            if (s_Unlit == null || !s_Unlit.isSupported) return null;
+            var m = new Material(s_Unlit) { name = "space unlit" };
             m.SetColor("_Color", c);
-            if (tex != null) m.SetTexture("_MainTex", tex);
-            if (additive)
-            {
-                m.SetFloat("_SrcBlend", (float)BlendMode.One);
-                m.SetFloat("_DstBlend", (float)BlendMode.One);
-                m.SetFloat("_ZWrite", 0f);
-                m.SetFloat("_Cull", (float)CullMode.Off);
-                m.SetOverrideTag("RenderType", "Transparent");
-                m.renderQueue = 3000;
-            }
-            return m;
-        }
-
-        static Material LitMat(Color c, Texture tex, float smooth)
-        {
-            var m = new Material(Art.Mat(Color.white)) { name = "space lit" };
-            m.SetColor("_BaseColor", c);
-            m.color = c;
-            if (tex != null) { m.SetTexture("_BaseMap", tex); m.mainTexture = tex; }
-            if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", smooth);
+            m.SetFloat("_Cull", (float)cull);
             return m;
         }
 
@@ -97,23 +82,21 @@ namespace RockGame
             go.transform.position = c;
             var t = go.transform;
             var stadium = go.AddComponent<Stadium>();
-            MakeTextures();
 
-            var pink = new Color(1f, 0.28f, 0.95f);
-            var orange = new Color(1f, 0.55f, 0.12f);
-            var deckMat = LitMat(new Color(0.62f, 0.62f, 0.7f), s_Deck, 0.3f);
-            var rimMat = LitMat(new Color(0.07f, 0.06f, 0.12f), null, 0.5f);
-            var hullMat = LitMat(Color.white, s_Hull, 0.45f);
-            var pinkMat = GlowMat(pink);
-            var orangeMat = GlowMat(orange);
-            var whiteMat = GlowMat(new Color(0.95f, 0.95f, 1f));
+            // flat colours, like the rest of the game
+            var deckMat = Art.Mat(new Color(0.34f, 0.33f, 0.42f));
+            var rimMat = Art.Mat(new Color(0.11f, 0.1f, 0.17f));
+            var hullMat = Art.Mat(new Color(0.2f, 0.36f, 0.8f));
+            var pinkMat = Art.Mat(new Color(1f, 0.32f, 0.9f));
+            var orangeMat = Art.Mat(new Color(1f, 0.56f, 0.15f));
+            var whiteMat = Art.Mat(new Color(0.92f, 0.92f, 0.98f));
+            var inlayMat = Art.Mat(new Color(0.42f, 0.26f, 0.7f));
 
             // ---------- the top: a flat octagon (the only thing you can stand on) ----------
             var deck = new MeshBatch();
             deck.Frustum(Outline, 0f, 1f, -1f, 1f, true, true, 6f);
             var deckGo = deck.Build(t, "ArenaFloor", deckMat, true);
-            // the rim faces use their own dark material: rebuild the slab as two submeshes would be fussier, so the
-            // rim is a second, slightly bigger band around the top's sides
+            // the rim faces: a second, slightly bigger dark band around the top's sides
             var rim = new MeshBatch();
             rim.Frustum(Scale(Outline, 1.004f), -0.02f, 1f, -1.02f, 1f, false, false, 4f);
             rim.Build(t, "rim", rimMat, true);
@@ -122,15 +105,15 @@ namespace RockGame
             mc.convex = true;
             deckGo.AddComponent<GroundMarker>();
 
-            // ---------- the underside: tiers of blue machinery, narrowing to a glowing core ----------
+            // ---------- the underside: tiers of blue machinery, narrowing to a point ----------
             var hull = new MeshBatch();
             var lines = new MeshBatch();
             var tiers = new (float y0, float s0, float y1, float s1, int dividers)[]
             {
-                (-1.0f, 0.975f, -2.3f, 0.87f, 1),
-                (-2.3f, 0.84f, -5.2f, 0.62f, 2),
-                (-5.2f, 0.6f, -8.2f, 0.38f, 1),
-                (-8.2f, 0.36f, -10.8f, 0.15f, 0),
+                (-1.0f, 0.975f, -2.1f, 0.87f, 1),
+                (-2.1f, 0.84f, -4.5f, 0.62f, 2),
+                (-4.5f, 0.6f, -7f, 0.38f, 1),
+                (-7f, 0.36f, -9.2f, 0.15f, 0),
             };
             foreach (var tr in tiers)
             {
@@ -168,8 +151,8 @@ namespace RockGame
                     var p2 = Vector2.Lerp(a, b, k == 0 ? 0.28f : 0.72f) * 0.74f;
                     var outDir = V(p2, 0f).normalized;
                     var rot = Quaternion.LookRotation(outDir) * Quaternion.Euler(-18f, 0, 0); // bottom kicks outwards
-                    var centre = V(p2, -5.6f);
-                    var size = new Vector3(Mathf.Min(3.2f, Vector3.Distance(V(a, 0), V(b, 0)) * 0.22f), 6.5f, 1.1f);
+                    var centre = V(p2, -4.8f);
+                    var size = new Vector3(Mathf.Min(2.7f, Vector3.Distance(V(a, 0), V(b, 0)) * 0.22f), 5.5f, 0.95f);
                     hull.Box(centre, rot, size);
                     // orange outline on the outward face
                     var f = rot * Vector3.forward * (size.z * 0.5f + 0.03f);
@@ -180,30 +163,16 @@ namespace RockGame
                     lines.Line(c0, c1, 0.09f, 0.05f, fn); lines.Line(c1, c2, 0.09f, 0.05f, fn);
                     lines.Line(c2, c3, 0.09f, 0.05f, fn); lines.Line(c3, c0, 0.09f, 0.05f, fn);
                     lines.Line(centre + f - u * 0.2f - r, centre + f - u * 0.2f + r, 0.09f, 0.05f, fn);
-                    // a little yellow light at the bottom of every other fin
-                    if (k == 0) hull.Box(centre + f + rot * new Vector3(0, -size.y * 0.5f + 0.5f, 0.02f), rot, new Vector3(0.6f, 0.25f, 0.05f));
                 }
             }
             hull.Build(t, "underside", hullMat, true);
             lines.Build(t, "panel lines", orangeMat, false);
+            // the point at the bottom: a pale blue crystal
+            var tip = new MeshBatch();
+            tip.Frustum(Outline, -9.2f, 0.15f, -12.5f, 0.015f, false, false, 4f);
+            tip.Build(t, "core", Art.Mat(new Color(0.6f, 0.75f, 1f)), false);
 
-            // the dark core with its halo, and a thin beam of light falling away below it
-            var core = Art.Part(t, Art.Sphere, Color.white, new Vector3(0, -11.6f, 0), Vector3.one * 5.6f, default, false, LitMat(new Color(0.02f, 0.02f, 0.05f), null, 0.92f), "core");
-            core.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
-            // its glow: nested additive shells, brighter towards the middle
-            for (int k = 0; k < 5; k++)
-            {
-                var shellMat = GlowMat(new Color(0.55f, 0.65f, 1f) * (0.2f - k * 0.035f), null, true);
-                shellMat.SetFloat("_Cull", (float)CullMode.Back);
-                var g = Art.Part(t, Art.Sphere, Color.white, new Vector3(0, -11.6f, 0), Vector3.one * (6.3f + k * 1.6f), default, false, shellMat, "core glow");
-                g.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
-            }
-            var beam = Art.Part(t, Art.Cylinder, Color.white, new Vector3(0, -54f, 0), new Vector3(0.12f, 40f, 0.12f), default, false, GlowMat(new Color(0.9f, 0.95f, 1f)), "beam");
-            beam.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
-            var beamGlow = Art.Part(t, Art.Cylinder, Color.white, new Vector3(0, -54f, 0), new Vector3(0.7f, 40f, 0.7f), default, false, GlowMat(new Color(0.15f, 0.2f, 0.35f), null, true), "beam glow");
-            beamGlow.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
-
-            // ---------- glowing pink edges, white corner marks and the lightning bolt inlay ----------
+            // ---------- pink edges, white corner marks and the lightning bolt inlay ----------
             var edges = new MeshBatch();
             var outline1 = Scale(Outline, 1f - 0.18f / HalfX);
             var outline2 = Scale(Outline, 1f - 1.1f / HalfX);
@@ -234,49 +203,49 @@ namespace RockGame
             marks.Build(t, "corner marks", whiteMat, false);
             var inlay = new MeshBatch();
             inlay.Polygon(bolt, 0.008f, 3f);
-            inlay.Build(t, "bolt inlay", GlowMat(new Color(0.9f, 0.9f, 1f), s_Inlay), false);
+            inlay.Build(t, "bolt inlay", inlayMat, false);
 
-            // ---------- lights: a cool glow up from the core onto the machinery, a pink wash over the top ----------
+            // ---------- lights: a cool glow up onto the machinery, a soft pink wash over the top ----------
             var lc = new GameObject("core light");
             lc.transform.SetParent(t, false);
-            lc.transform.localPosition = new Vector3(0, -14f, 0);
+            lc.transform.localPosition = new Vector3(0, -13f, 0);
             var l = lc.AddComponent<Light>();
             l.type = LightType.Point;
-            l.range = 32f;
-            l.intensity = 5f;
+            l.range = 28f;
+            l.intensity = 4f;
             l.color = new Color(0.55f, 0.7f, 1f);
             var lp = new GameObject("pink light");
             lp.transform.SetParent(t, false);
-            lp.transform.localPosition = new Vector3(0, 16f, 0);
+            lp.transform.localPosition = new Vector3(0, 14f, 0);
             var l2 = lp.AddComponent<Light>();
             l2.type = LightType.Point;
-            l2.range = 45f;
-            l2.intensity = 1.2f;
-            l2.color = new Color(0.9f, 0.5f, 1f);
+            l2.range = 38f;
+            l2.intensity = 0.8f;
+            l2.color = new Color(0.9f, 0.6f, 1f);
 
-            // ---------- space all around ----------
-            if (s_Sky == null) s_Sky = Resources.Load<Shader>("SpaceArena/SpaceSky");
-            var skyMat = s_Sky != null && s_Sky.isSupported ? new Material(s_Sky) { name = "space sky" } : Art.Mat(new Color(0.03f, 0.02f, 0.08f));
-            var shell = Art.Part(t, Art.Sphere, Color.white, Vector3.zero, Vector3.one * ShellRadius * 2f, default, false, skyMat, "space");
+            // ---------- space all around: one flat colour, with low-poly white stars ----------
+            var skyMat = UnlitMat(SkyColor, CullMode.Front);
+            var shell = Art.Part(t, Art.Sphere, Color.white, Vector3.zero, Vector3.one * ShellRadius * 2f, default, false, skyMat != null ? skyMat : Art.Mat(SkyColor), "space");
             var sr = shell.GetComponent<MeshRenderer>();
             sr.shadowCastingMode = ShadowCastingMode.Off;
             sr.receiveShadows = false;
-            if (s_Sky == null) shell.GetComponent<MeshFilter>().sharedMesh = Inverted(Art.Sphere);
+            if (skyMat == null) shell.GetComponent<MeshFilter>().sharedMesh = Inverted(Art.Sphere);
             stadium.SetShell(sr);
+            var stars = BuildStars();
+            var starMat = UnlitMat(Color.white, CullMode.Back);
+            var starGo = stars.Build(t, "stars", starMat != null ? starMat : Art.Mat(Color.white), false);
+            starGo.GetComponent<MeshRenderer>().receiveShadows = false;
 
-            // ---------- the crowd, on rocks floating in space ----------
-            BuildCrowd(t, stadium);
-
-            // ---------- floating holo screens with the countdown and the clock ----------
+            // ---------- floating screens with the countdown and the clock ----------
             for (int i = 0; i < 4; i++)
             {
                 float a = 45f + i * 90f;
                 var dir = Quaternion.Euler(0, a, 0) * Vector3.forward;
                 var screen = new GameObject("jumbotron").transform;
                 screen.SetParent(t, false);
-                screen.localPosition = dir * 50f + Vector3.up * 20f;
+                screen.localPosition = dir * 44f + Vector3.up * 16f;
                 screen.localRotation = Quaternion.LookRotation(dir); // faces outward, so its back (-z) faces the platform
-                Art.Box(screen, new Color(0.04f, 0.02f, 0.09f), Vector3.zero, new Vector3(10f, 5.5f, 0.3f)).GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
+                Art.Box(screen, new Color(0.05f, 0.04f, 0.1f), Vector3.zero, new Vector3(10f, 5.5f, 0.3f)).GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
                 var frame = new MeshBatch();
                 Vector3 s0 = new Vector3(-5.1f, -2.85f, -0.2f), s1 = new Vector3(5.1f, -2.85f, -0.2f), s2 = new Vector3(5.1f, 2.85f, -0.2f), s3 = new Vector3(-5.1f, 2.85f, -0.2f);
                 frame.Line(s0, s1, 0.16f, 0.1f, Vector3.back); frame.Line(s1, s2, 0.16f, 0.1f, Vector3.back);
@@ -297,90 +266,50 @@ namespace RockGame
             }
         }
 
-        static void BuildCrowd(Transform t, Stadium stadium)
+        /// <summary>
+        /// The stars: chunky low-poly five-pointed stars (a flat star outline pulled out to a point front and back),
+        /// scattered all round inside the space shell, each turned to face the platform. One merged mesh, one draw.
+        /// </summary>
+        static MeshBatch BuildStars()
         {
-            var rng = new System.Random(4242);
+            var rng = new System.Random(9157);
             float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
-            var prefab = Resources.Load<GameObject>("Alien/AlienRigged");
-            var rockMat = LitMat(new Color(0.42f, 0.38f, 0.5f), null, 0.1f);
-            var topMat = LitMat(new Color(0.75f, 0.7f, 0.85f), s_Deck, 0.2f);
-            var ringMat = GlowMat(new Color(1f, 0.28f, 0.95f));
-            const int islands = 10;
-            int fanNo = 0;
-            for (int i = 0; i < islands; i++)
+            var mb = new MeshBatch();
+            var pts = new Vector3[10];
+            for (int s = 0; s < StarCount; s++)
             {
-                float ang = (i + R(-0.25f, 0.25f)) * Mathf.PI * 2f / islands;
-                float dist = R(40f, 54f);
-                float h = (i % 3) switch { 0 => R(-6f, -2.5f), 1 => R(-1f, 3f), _ => R(6f, 11f) };
-                var island = new GameObject("crowd rock").transform;
-                island.SetParent(t, false);
-                island.localPosition = new Vector3(Mathf.Cos(ang) * dist, h, Mathf.Sin(ang) * dist);
-                var toCentre = -new Vector3(island.localPosition.x, 0, island.localPosition.z).normalized;
-                island.localRotation = Quaternion.LookRotation(toCentre);
-                float r = R(3.9f, 4.7f);
-                var ce = Art.Cylinder.bounds.extents; // (sized by the mesh's real bounds)
-                var top = Art.Part(island, Art.Cylinder, Color.white, new Vector3(0, -0.4f, 0), new Vector3(r / ce.x, 0.4f / ce.y, r / ce.z), default, false, topMat, "top");
-                var rock = Art.Part(island, Art.MakeRock(i + 7, 0.15f), Color.white, new Vector3(0, -r * 1.3f, 0), new Vector3(r * 1.25f, r * 1.2f, r * 1.25f), new Vector3(R(-8, 8), R(0, 360), 180f), false, rockMat, "rock");
-                var ring = new MeshBatch();
-                const int segs = 16;
-                for (int s = 0; s < segs; s++)
+                // a direction on the sphere, not straight down under the platform
+                Vector3 dir;
+                do dir = new Vector3(R(-1f, 1f), R(-1f, 1f), R(-1f, 1f)); while (dir.sqrMagnitude > 1f || dir.sqrMagnitude < 0.05f || dir.normalized.y < -0.85f);
+                dir.Normalize();
+                float dist = R(170f, ShellRadius - 30f);
+                var c = dir * dist;
+                var n = -dir; // faces the platform
+                var u = Vector3.Cross(n, Mathf.Abs(n.y) > 0.9f ? Vector3.right : Vector3.up).normalized;
+                var v = Vector3.Cross(n, u);
+                float spin = R(0f, Mathf.PI * 2f);
+                // most are small, a few are big
+                float big = R(0f, 1f);
+                float r0 = (big > 0.9f ? R(5f, 8f) : big > 0.6f ? R(3f, 5f) : R(1.6f, 3f)) * dist / 250f;
+                float r1 = r0 * 0.42f, depth = r0 * 0.38f;
+                for (int i = 0; i < 10; i++)
                 {
-                    float a0 = s * Mathf.PI * 2f / segs, a1 = (s + 1) * Mathf.PI * 2f / segs;
-                    var p0 = new Vector3(Mathf.Cos(a0) * r, -0.12f, Mathf.Sin(a0) * r);
-                    var p1 = new Vector3(Mathf.Cos(a1) * r, -0.12f, Mathf.Sin(a1) * r);
-                    var n = ((p0 + p1) * 0.5f).normalized;
-                    ring.Line(p0 + n * 0.03f, p1 + n * 0.03f, 0.14f, 0.06f, n);
-                    ring.Line(p0 * 0.93f + Vector3.up * 0.13f, p1 * 0.93f + Vector3.up * 0.13f, 0.16f, 0.03f, Vector3.up);
+                    float a = spin + i * Mathf.PI / 5f;
+                    float rr = i % 2 == 0 ? r0 : r1;
+                    pts[i] = c + (u * Mathf.Cos(a) + v * Mathf.Sin(a)) * rr;
                 }
-                ring.Build(island, "ring", ringMat, false);
-                foreach (var mr in island.GetComponentsInChildren<MeshRenderer>()) mr.shadowCastingMode = ShadowCastingMode.Off;
-                _ = top; _ = rock;
-                stadium.AddIsland(island, R(0f, 10f));
-                if (prefab == null) continue;
-                // the fans: two loose rows facing the platform (local +z)
-                var spots = new List<Vector2>();
-                for (int row = 0; row < 2; row++)
+                var front = c + n * depth;
+                var back = c - n * depth;
+                for (int i = 0; i < 10; i++)
                 {
-                    float z = r * (0.42f - row * 0.45f);
-                    for (float x = -r; x <= r; x += 1.6f)
-                    {
-                        var sp = new Vector2(x + (row % 2) * 0.8f + R(-0.15f, 0.15f), z + R(-0.15f, 0.15f));
-                        if (sp.magnitude < r - 0.75f) spots.Add(sp);
-                    }
-                }
-                foreach (var sp in spots)
-                {
-                    float x = sp.x, z = sp.y;
-                    var fan = new GameObject("fan").transform;
-                    fan.SetParent(island, false);
-                    fan.localPosition = new Vector3(x, 0f, z);
-                    fan.localRotation = Quaternion.Euler(0, R(-20f, 20f), 0);
-                    fan.localScale = Vector3.one * 1.3f; // a bit bigger than life, so you can see them from the platform
-                    var model = Object.Instantiate(prefab, fan, false);
-                    model.name = "alien";
-                    model.transform.localScale = new Vector3(Cfg.ModelWidth, 1f, Cfg.ModelWidth);
-                    foreach (var an in model.GetComponentsInChildren<Animator>(true)) Object.Destroy(an);
-                    // your skin, in every colour: hues spread out round the wheel (golden ratio)
-                    var mats = new List<Material>();
-                    PlayerNet.SkinAlien(model, mats);
-                    float hue = Mathf.Repeat(fanNo * 0.618034f + 0.11f, 1f);
-                    var col = Color.HSVToRGB(hue, R(0.6f, 1f), R(0.75f, 1f));
-                    foreach (var m in mats)
-                    {
-                        var tint = m.name.Contains("Head") ? Color.Lerp(Color.white, col, 0.55f) * 1.35f : col * 1.6f;
-                        tint.a = 1f;
-                        m.SetColor("_BaseColor", tint);
-                        m.color = tint;
-                    }
-                    foreach (var smr in model.GetComponentsInChildren<SkinnedMeshRenderer>())
-                    {
-                        smr.shadowCastingMode = ShadowCastingMode.Off;
-                        smr.localBounds = new Bounds(new Vector3(0, 0.9f, 0), new Vector3(2.5f, 2.5f, 2.5f));
-                    }
-                    stadium.AddFan(fan, model.transform, R(0f, 10f), R(0.8f, 1.3f));
-                    fanNo++;
+                    var p0 = pts[i];
+                    var p1 = pts[(i + 1) % 10];
+                    var mid = (p0 + p1) * 0.5f - c;
+                    mb.Tri(front, p0, p1, mid + n * depth, 4f);
+                    mb.Tri(back, p0, p1, mid - n * depth, 4f);
                 }
             }
+            return mb;
         }
 
         static Vector3 V(Vector2 p, float y) => new Vector3(p.x, y, p.y);
@@ -393,11 +322,11 @@ namespace RockGame
         }
 
         /// <summary>The lightning bolt across the middle of the platform (x, z), going round.</summary>
-        static Vector2[] BoltOutline() => new[]
+        static Vector2[] BoltOutline() => Scale(new[]
         {
             new Vector2(1.2f, -20f), new Vector2(3.6f, 1.6f), new Vector2(0.9f, 0.6f),
             new Vector2(-1.2f, 20f), new Vector2(-3.6f, -1.6f), new Vector2(-0.9f, -0.6f),
-        };
+        }, HalfZ / 27f);
 
         static Mesh Inverted(Mesh src)
         {
@@ -406,70 +335,6 @@ namespace RockGame
             for (int i = 0; i < tris.Length; i += 3) (tris[i + 1], tris[i + 2]) = (tris[i + 2], tris[i + 1]);
             m.triangles = tris;
             return m;
-        }
-
-        // =====================================================================
-        // generated textures
-        // =====================================================================
-
-        static void MakeTextures()
-        {
-            if (s_Deck != null) return;
-            var rng = new System.Random(77);
-            float Rn() => (float)rng.NextDouble();
-            // the top: dark grey with a fine woven grid and some grit
-            const int S = 256;
-            s_Deck = new Texture2D(S, S, TextureFormat.RGBA32, true) { name = "fd deck", wrapMode = TextureWrapMode.Repeat, filterMode = FilterMode.Trilinear, anisoLevel = 4 };
-            var px = new Color[S * S];
-            for (int y = 0; y < S; y++)
-            for (int x = 0; x < S; x++)
-            {
-                float v = 0.2f + (Rn() - 0.5f) * 0.05f;
-                bool grid = x % 8 == 0 || y % 8 == 0;
-                if (grid) v -= 0.05f;
-                if ((x / 8 + y / 8) % 2 == 0) v += 0.015f;
-                if (Rn() < 0.004f) v += 0.12f;
-                px[y * S + x] = new Color(v, v, v * 1.08f, 1f);
-            }
-            s_Deck.SetPixels(px);
-            s_Deck.Apply(true);
-
-            // the underside: blue plates with dark seams and rivets
-            s_Hull = new Texture2D(S, S, TextureFormat.RGBA32, true) { name = "fd hull", wrapMode = TextureWrapMode.Repeat, filterMode = FilterMode.Trilinear, anisoLevel = 4 };
-            for (int y = 0; y < S; y++)
-            for (int x = 0; x < S; x++)
-            {
-                var c = new Color(0.16f, 0.33f, 0.78f);
-                float k = 1f + (Rn() - 0.5f) * 0.08f;
-                int px64 = x % 64, py64 = y % 128;
-                if (px64 < 2 || py64 < 2) k = 0.35f;                      // seams
-                else if (px64 < 5 || py64 < 5) k *= 1.18f;               // a lit bevel
-                else if (px64 > 60 || py64 > 124) k *= 0.7f;             // a shadowed bevel
-                if ((px64 == 9 || px64 == 55) && (py64 % 32 == 12)) k = 1.5f; // rivets
-                if (x % 128 > 70 && x % 128 < 74 && py64 > 20 && py64 < 100) k *= 0.6f;
-                c *= k;
-                c.a = 1f;
-                px[y * S + x] = c;
-            }
-            s_Hull.SetPixels(px);
-            s_Hull.Apply(true);
-
-            // the bolt inlay: a glittery purple mesh
-            const int I = 128;
-            s_Inlay = new Texture2D(I, I, TextureFormat.RGBA32, true) { name = "fd inlay", wrapMode = TextureWrapMode.Repeat, filterMode = FilterMode.Bilinear };
-            var ip = new Color[I * I];
-            var sparkle = new[] { new Color(0.4f, 0.9f, 1f), new Color(1f, 0.85f, 0.3f), new Color(1f, 0.4f, 0.95f), Color.white, new Color(0.5f, 0.6f, 1f) };
-            for (int y = 0; y < I; y++)
-            for (int x = 0; x < I; x++)
-            {
-                var c = Color.Lerp(new Color(0.2f, 0.08f, 0.38f), new Color(0.12f, 0.16f, 0.45f), Rn());
-                if ((x + y) % 6 == 0 || (x - y + I) % 6 == 0) c = Color.Lerp(c, new Color(0.55f, 0.45f, 0.9f), 0.6f);
-                if (Rn() < 0.07f) c = sparkle[rng.Next(sparkle.Length)] * (0.6f + Rn() * 0.5f);
-                c.a = 1f;
-                ip[y * I + x] = c;
-            }
-            s_Inlay.SetPixels(ip);
-            s_Inlay.Apply(true);
         }
     }
 
@@ -617,29 +482,16 @@ namespace RockGame
         }
     }
 
+
     /// <summary>
-    /// The sudden death arena at runtime: the crowd cheers (and goes wild on the countdown and kills), their rocks drift,
-    /// the screens show the clock. Everything is only drawn while you're there, and while you are, it's space: no fog,
-    /// a purple ambient light.
+    /// The sudden death arena at runtime: the screens show the countdown and the clock. Everything is only drawn while
+    /// you're there, and while you are, it's space: no fog, a purple ambient light.
     /// </summary>
     public class Stadium : MonoBehaviour
     {
         public static Stadium Instance;
 
-        struct Fan
-        {
-            public Transform Body;
-            public Vector3 Base;
-            public Transform LArm, RArm;
-            public Quaternion LLow, LUp, RLow, RUp;
-            public float Phase, Speed;
-        }
-
-        readonly List<Fan> m_Fans = new List<Fan>();
-        readonly List<(Transform t, Vector3 basePos, float phase)> m_Islands = new List<(Transform, Vector3, float)>();
         readonly List<TextMesh> m_Screens = new List<TextMesh>();
-        AudioSource m_Crowd;
-        float m_Hype;
         Renderer[] m_Renderers;
         Light[] m_Lights;
         bool m_Shown = true;
@@ -660,40 +512,6 @@ namespace RockGame
 
         public void SetShell(Renderer r) => m_Shell = r;
         public void AddScreen(TextMesh tm) => m_Screens.Add(tm);
-        public void AddIsland(Transform t, float phase) => m_Islands.Add((t, t.localPosition, phase));
-
-        /// <summary>A fan (the rigged alien under `body`): works out its arms-out and arms-up poses for cheering.</summary>
-        public void AddFan(Transform body, Transform model, float phase, float speed)
-        {
-            var f = new Fan { Body = body, Base = body.localPosition, Phase = phase, Speed = speed };
-            var map = new Dictionary<string, Transform>();
-            foreach (var tr in model.GetComponentsInChildren<Transform>(true)) map[tr.name] = tr;
-            map.TryGetValue("LeftUpperArm", out var la); map.TryGetValue("LeftLowerArm", out var lf);
-            map.TryGetValue("RightUpperArm", out var ra); map.TryGetValue("RightLowerArm", out var rf);
-            if (la != null && lf != null && ra != null && rf != null)
-            {
-                Pose(body, la, lf, out f.LLow, out f.LUp);
-                Pose(body, ra, rf, out f.RLow, out f.RUp);
-                f.LArm = la;
-                f.RArm = ra;
-            }
-            m_Fans.Add(f);
-        }
-
-        static void Pose(Transform body, Transform arm, Transform fore, out Quaternion low, out Quaternion up)
-        {
-            var cur = (fore.position - arm.position).normalized;
-            float side = Mathf.Sign(Vector3.Dot(arm.position - body.position, body.right));
-            if (side == 0) side = 1;
-            var wantUp = body.rotation * new Vector3(side * 0.38f, 1f, 0.12f).normalized;
-            var wantLow = body.rotation * new Vector3(side * 0.9f, 0.45f, 0.35f).normalized;
-            var parent = arm.parent != null ? arm.parent.rotation : Quaternion.identity;
-            up = Quaternion.Inverse(parent) * (Quaternion.FromToRotation(cur, wantUp) * arm.rotation);
-            low = Quaternion.Inverse(parent) * (Quaternion.FromToRotation(cur, wantLow) * arm.rotation);
-        }
-
-        /// <summary>Someone scored a kill / the fight started: the crowd goes wild for a moment.</summary>
-        public static void Roar() { if (Instance != null) Instance.m_Hype = 1f; }
 
         /// <summary>The arena is far off the edge of the map: only draw it when you're near it (and then it's all you see).</summary>
         void ShowStadium(bool show)
@@ -706,7 +524,7 @@ namespace RockGame
             foreach (var l in m_Lights) if (l) l.enabled = show;
         }
 
-        /// <summary>Space has no fog, and a cool purple ambient (it lights the underside and the crowd).</summary>
+        /// <summary>Space has no fog, and a cool purple ambient (it lights the underside).</summary>
         void SpaceLook(bool on)
         {
             if (on == m_EnvOn) return;
@@ -737,48 +555,19 @@ namespace RockGame
         void Update()
         {
             var g = NetGame.Instance;
-            bool live = g != null && g.IsSpawned && g.S == GameState.SuddenDeath;
             var cam = Camera.main;
             float camDist = cam != null ? Vector3.Distance(cam.transform.position, transform.position) : float.MaxValue;
             bool shown = camDist < 300f;
             ShowStadium(shown);
             SpaceLook(shown);
-            bool near = camDist < 160f;
-            if (!near) { if (m_Crowd) m_Crowd.volume = 0f; return; }
-            m_Hype = Mathf.MoveTowards(m_Hype, 0f, Time.deltaTime * 0.3f);
-            float excite = 0.35f + (live ? 0.3f : 0f) + m_Hype * 0.7f;
-            float t = Time.time;
-            foreach (var (it, bp, ph) in m_Islands) it.localPosition = bp + Vector3.up * Mathf.Sin(t * 0.45f + ph) * 0.7f;
-            for (int i = 0; i < m_Fans.Count; i++)
-            {
-                var f = m_Fans[i];
-                float w = t * (4f + excite * 3f) * f.Speed + f.Phase;
-                float jump = Mathf.Max(0f, Mathf.Sin(w)) * 0.3f * excite;
-                f.Body.localPosition = f.Base + Vector3.up * jump;
-                if (f.LArm == null) continue;
-                // arms pump up and down, a bit out of step with each other
-                float a = Mathf.Clamp01(0.5f + 0.5f * Mathf.Sin(w * 1.3f + 0.5f) * (0.6f + excite));
-                float b = Mathf.Clamp01(0.5f + 0.5f * Mathf.Sin(w * 1.3f + 1.4f) * (0.6f + excite));
-                f.LArm.localRotation = Quaternion.Slerp(f.LLow, f.LUp, a);
-                f.RArm.localRotation = Quaternion.Slerp(f.RLow, f.RUp, b);
-            }
-            if (m_Crowd == null)
-            {
-                m_Crowd = gameObject.AddComponent<AudioSource>();
-                m_Crowd.clip = Sfx.Crowd;
-                m_Crowd.loop = true;
-                m_Crowd.spatialBlend = 0f;
-                m_Crowd.Play();
-            }
-            m_Crowd.volume = (0.12f + excite * 0.25f) * GameSettings.SfxVolume;
+            if (!shown) return;
             string text = "ROCK BRAWL";
             if (g != null && g.IsSpawned)
             {
                 if (g.S == GameState.SuddenDeath)
                 {
-                    double left = g.FightAt.Value - g.NetworkManager.ServerTime.Time;
-                    if (left > 0) text = Mathf.CeilToInt((float)left).ToString();
-                    else if (left > -1.5) text = "FIGHT!";
+                    string word = Hud.FightWord(g, out _);
+                    if (word != "") text = word;
                     else { int s = Mathf.CeilToInt(g.TimeLeft); text = $"SUDDEN DEATH\n{s / 60}:{s % 60:00}"; }
                 }
                 else if (g.S == GameState.Waiting) text = "WAITING FOR\nPLAYERS";

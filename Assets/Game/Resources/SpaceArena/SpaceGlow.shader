@@ -1,5 +1,5 @@
-// Sudden death arena: glowing, unlit lines and panels (the pink edges, the orange panel lines under the platform,
-// the bolt inlay). _MainTex times _Color; with _Additive it's blended on top (soft halos, the light beam).
+// Unlit flat colours (the sudden death arena's space and stars, the airdrop ship's glowing hatch).
+// _MainTex times _Color; with _SrcBlend / _DstBlend it can be blended on top.
 Shader "RockGame/SpaceGlow"
 {
     Properties

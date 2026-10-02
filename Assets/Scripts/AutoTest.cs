@@ -372,7 +372,7 @@ namespace RockGame
             if (m_Mode != "ball") yield break;
 
             // ---- ball capture ----
-            while (Ball.Instance == null) yield return null;
+            while (Ball.Instance == null || NetGame.Instance.WallUp) yield return null; // (under the glass dome until the wall drops)
             yield return new WaitForSeconds(4f);
             var ball = Ball.Instance;
             Log($"ball landed at {ball.transform.position}");
@@ -401,7 +401,23 @@ namespace RockGame
         {
             if (m_Mode != "sd") yield break;
             yield return HostRaidTest(me, pc);
+            // the countdown hits 0 (and stays there a moment) before everyone is sent to the arena
+            while (NetGame.Instance != null && NetGame.Instance.S == GameState.BallLive && NetGame.Instance.TimeLeft > 0f) yield return null;
+            if (NetGame.Instance != null && NetGame.Instance.S == GameState.BallLive)
+            {
+                float zeroAt = Time.time;
+                yield return new WaitForSeconds(0.25f);
+                bool stillZero = NetGame.Instance.S == GameState.BallLive && NetGame.Instance.TimeLeft <= 0f;
+                ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "sd_countdown_zero.png"));
+                Log("shot sd_countdown_zero");
+                while (NetGame.Instance.S == GameState.BallLive) yield return null;
+                float held = Time.time - zeroAt;
+                Check(stillZero && held > NetGame.ZeroHold - 0.4f && NetGame.Instance.S == GameState.SuddenDeath, $"the clock sits on 0 for {held:0.0}s before sudden death");
+            }
             while (NetGame.Instance == null || NetGame.Instance.S != GameState.SuddenDeath) yield return null;
+            yield return new WaitForSeconds(0.3f);
+            ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "sd_ready.png"));
+            Log("shot sd_ready " + Hud.FightWord(NetGame.Instance, out _));
             yield return new WaitForSeconds(1.5f);
             PlayerNet other = null;
             foreach (var p in PlayerNet.All) if (p != me) other = p;
@@ -804,7 +820,7 @@ namespace RockGame
                 Check(me.Riding && horse.Saddled.Value && me.Count(Item.Saddle) == 0, "saddled the horse and got on");
                 // the ball on horseback: pick it up from the saddle and throw it
                 var ball = Ball.Instance;
-                if (ball != null && !ball.IsCarried)
+                if (ball != null && !ball.IsCarried && !NetGame.Instance.WallUp)
                 {
                     var ballWas = ball.transform.position;
                     // drop it on the ground beside the horse (clear of its body, or it can get knocked away)
@@ -1446,7 +1462,7 @@ namespace RockGame
             pc.DebugDraw = 1f;
             yield return Shot("08_bow_drawn");
             pc.DebugDraw = -1f;
-            while (Ball.Instance == null) yield return null;
+            while (Ball.Instance == null || NetGame.Instance.WallUp) yield return null; // (under the glass dome until the wall drops)
             yield return new WaitForSeconds(3f);
             pc.LocalTeleport(Ball.Instance.transform.position + new Vector3(0, 0.1f, -1.5f), 0);
             yield return new WaitForSeconds(0.4f);

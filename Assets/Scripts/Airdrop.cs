@@ -5,15 +5,26 @@ namespace RockGame
 {
     /// <summary>
     /// The giant alien ship that beams airdrops down (local visuals only, driven by NetGame.DropStart / DropPos on every peer):
-    /// it drops out of the sky, hovers high above the drop spot, beams the crate down, then flies off.
+    /// it drops out of the sky, hovers high above the drop spot, opens a round hatch in its belly, beams the crate down
+    /// through it (slowly), shuts the hatch, then flies off into the distance - shrinking away to nothing.
     /// The server spawns the real (networked) crate when the beam reaches the ground.
     /// </summary>
     public class AirdropShip
     {
         const float Arrive = 4f, Hover = 45f, Leave = 6f;
+        /// <summary>Seconds for the hatch to swing open (it's open before the beam starts at NetGame.DropArrive) or shut.</summary>
+        const float HatchTime = 0.8f;
+        /// <summary>The hatch: radius of the hole and how far below the ship's centre it is.</summary>
+        const float HatchR = 5.5f;
+        /// <summary>How far below the ship's centre the hatch is: just under the bottom of the hull (worked out from the sphere mesh's real size).</summary>
+        static float HatchY => -Art.Sphere.bounds.extents.y * 4.5f - 0.04f;
+        /// <summary>The built-in cylinder's real radius and half height (to size discs in metres).</summary>
+        static float CylR => Art.Cylinder.bounds.extents.x;
+        static float CylH => Art.Cylinder.bounds.extents.y;
         static readonly Color k_Glow = new Color(0.75f, 0.35f, 1f);
         GameObject s_Ship, s_Beam, s_Crate;
-        Transform s_Rim;
+        Transform s_Rim, s_DoorL, s_DoorR;
+        Light s_ShipLight;
         Light s_GroundLight;
         Material s_BeamMat;
         double s_Start = -2;
@@ -39,6 +50,8 @@ namespace RockGame
             if (s_GroundLight) Object.Destroy(s_GroundLight.gameObject);
             if (s_BeamMat) Object.Destroy(s_BeamMat);
             s_Ship = s_Beam = s_Crate = null;
+            s_DoorL = s_DoorR = null;
+            s_ShipLight = null;
             s_Start = -2;
         }
 
@@ -64,8 +77,9 @@ namespace RockGame
             }
 
             var hover = ground + Vector3.up * Hover;
-            float beamT = Arrive, land = NetGame.DropLand;
+            float beamT = NetGame.DropArrive, land = NetGame.DropLand;
             Vector3 pos;
+            float scale = 1f;
             if (e < Arrive)
             {
                 float k = e / Arrive;
@@ -75,21 +89,34 @@ namespace RockGame
             else if (e < land) pos = hover + Vector3.up * Mathf.Sin(e * 2f) * 0.4f;
             else
             {
-                float k = (e - land) / Leave;
-                pos = hover + new Vector3(-80f, 260f, -30f) * k * k;
+                // flying off into the distance: it drifts up and away and shrinks smoothly to nothing (no popping out)
+                float k = Mathf.Clamp01((e - land) / Leave);
+                float ease = k * k * (3f - 2f * k);
+                pos = hover + new Vector3(-45f, 60f, -18f) * ease;
+                scale = Mathf.Pow(1f - ease, 1.5f);
             }
             s_Ship.transform.position = pos;
+            s_Ship.transform.localScale = Vector3.one * Mathf.Max(0.001f, scale);
+            ShipScale = scale;
             s_Rim.Rotate(0, 60f * Time.deltaTime, 0, Space.Self);
 
-            // the beam, with the crate sliding down it
-            bool beaming = e >= beamT - 0.3f && e < land + 0.8f;
+            // the round hatch underneath: swings open once the ship is hovering, shuts again after the beam
+            float open = Mathf.Clamp01(Mathf.Min((e - (beamT - 0.2f - HatchTime)) / HatchTime, 1f - (e - (land + 0.6f)) / HatchTime));
+            open = open * open * (3f - 2f * open);
+            HatchOpen = open;
+            s_DoorR.localRotation = Quaternion.Euler(0, 0, 100f * open);
+            s_DoorL.localRotation = Quaternion.Euler(0, 0, -100f * open);
+            s_ShipLight.intensity = (3f + 5f * open) * scale;
+
+            // the beam out of the open hatch, with the crate sliding down it
+            bool beaming = e >= beamT - 0.2f && e < land + 0.8f;
             s_Beam.SetActive(beaming);
             if (beaming)
             {
-                float top = pos.y - 1.5f, bottom = ground.y;
+                float top = pos.y + HatchY * scale, bottom = ground.y;
                 s_Beam.transform.position = new Vector3(ground.x, (top + bottom) * 0.5f, ground.z);
-                s_Beam.transform.localScale = new Vector3(7f, (top - bottom) * 0.5f, 7f);
-                float a = e < beamT ? (e - beamT + 0.3f) / 0.3f : e > land ? 1f - (e - land) / 0.8f : 1f;
+                s_Beam.transform.localScale = new Vector3(HatchR * 0.95f * scale / CylR, (top - bottom) * 0.5f / CylH, HatchR * 0.95f * scale / CylR);
+                float a = e < beamT ? (e - beamT + 0.2f) / 0.2f : e > land ? 1f - (e - land) / 0.8f : 1f;
                 var c = k_Glow;
                 c.a = 0.28f * Mathf.Clamp01(a) * (0.85f + 0.15f * Mathf.Sin(Time.time * 12f));
                 s_BeamMat.SetColor("_BaseColor", c);
@@ -101,7 +128,7 @@ namespace RockGame
             if (crate)
             {
                 float k = (e - beamT) / (land - beamT);
-                s_Crate.transform.position = Vector3.Lerp(hover - Vector3.up * 3f, ground, k * k * (3f - 2f * k));
+                s_Crate.transform.position = Vector3.Lerp(hover + Vector3.up * (HatchY - 1.2f), ground, k * k * (3f - 2f * k));
                 s_Crate.transform.Rotate(0, 45f * Time.deltaTime, 0);
             }
         }
@@ -114,7 +141,11 @@ namespace RockGame
             Art.Part(t, Art.Sphere, metal, Vector3.zero, new Vector3(26f, 4.5f, 26f));
             Art.Part(t, Art.Cylinder, metal * 0.8f, new Vector3(0, -0.2f, 0), new Vector3(30f, 0.35f, 30f));
             Art.Part(t, Art.Sphere, Color.white, new Vector3(0, 2f, 0), new Vector3(9f, 5f, 9f), default, false, Art.Ghost(new Color(0.6f, 0.9f, 1f, 0.5f)));
-            Art.Part(t, Art.Cylinder, k_Glow, new Vector3(0, -2.2f, 0), new Vector3(7f, 0.1f, 7f));
+            // the hatch: a dark frame ring, the glowing hole, and two half-round doors hinged on its edge
+            Art.Part(t, Art.Cylinder, metal * 0.45f, new Vector3(0, HatchY + 0.1f, 0), new Vector3(HatchR * 1.2f / CylR, 0.05f / CylH, HatchR * 1.2f / CylR)); // (HatchY + 0.05 .. 0.15: a dark ring just above the hole)
+            Art.Part(t, Art.Cylinder, Color.white, new Vector3(0, HatchY, 0), new Vector3(HatchR / CylR, 0.03f / CylH, HatchR / CylR), default, false, GlowMat(), "hatch hole"); // (HatchY +- 0.03: below the frame, above the doors)
+            s_DoorR = HatchDoor(t, 1f, metal * 0.85f);
+            s_DoorL = HatchDoor(t, -1f, metal * 0.85f);
             s_Rim = new GameObject("rim").transform;
             s_Rim.SetParent(t, false);
             for (int i = 0; i < 20; i++)
@@ -126,7 +157,7 @@ namespace RockGame
             var sl = new GameObject("shipLight");
             sl.transform.SetParent(t, false);
             sl.transform.localPosition = new Vector3(0, -4f, 0);
-            var l = sl.AddComponent<Light>();
+            var l = s_ShipLight = sl.AddComponent<Light>();
             l.type = LightType.Point;
             l.color = k_Glow;
             l.range = 40f;
@@ -146,6 +177,51 @@ namespace RockGame
             s_Crate = new GameObject("AirdropCrateFalling");
             Container.CreateVisual(Container.Airdrop, 2, s_Crate.transform, Art.Ghost(new Color(0.8f, 0.55f, 1f, 0.85f)));
             s_Crate.SetActive(false);
+        }
+
+        /// <summary>Test hooks: how open the newest ship's hatch is (0 shut, 1 open) and how big the ship is (1, shrinking to 0 as it leaves).</summary>
+        public static float HatchOpen { get; private set; }
+        public static float ShipScale { get; private set; } = 1f;
+        /// <summary>Test hook: the first lane's ship (null when none is flying).</summary>
+        public static Transform ShipTransform => s_Lanes[0].s_Ship != null ? s_Lanes[0].s_Ship.transform : null;
+
+        static Material s_GlowMat;
+
+        /// <summary>Unlit glowing purple (the hatch hole and the door seams).</summary>
+        static Material GlowMat()
+        {
+            if (s_GlowMat != null) return s_GlowMat;
+            var sh = Resources.Load<Shader>("SpaceArena/SpaceGlow");
+            if (sh == null || !sh.isSupported) return s_GlowMat = Art.Mat(new Color(0.92f, 0.7f, 1f));
+            s_GlowMat = new Material(sh) { name = "hatch glow" };
+            s_GlowMat.SetColor("_Color", new Color(0.92f, 0.7f, 1f));
+            return s_GlowMat;
+        }
+
+        /// <summary>One half of the round hatch: a half disc hinged on the hatch's rim at x = side * HatchR (it swings down).</summary>
+        static Transform HatchDoor(Transform ship, float side, Color c)
+        {
+            var hinge = new GameObject(side > 0 ? "hatch door R" : "hatch door L").transform;
+            hinge.SetParent(ship, false);
+            hinge.localPosition = new Vector3(side * HatchR, HatchY - 0.06f, 0);
+            // the half disc, centred on its own centroid (so the prism's faces point the right way)
+            const int n = 10;
+            float cx = 4f * HatchR / (3f * Mathf.PI);
+            var half = new Vector2[n + 1];
+            for (int i = 0; i <= n; i++)
+            {
+                float a = -Mathf.PI * 0.5f + Mathf.PI * i / n;
+                half[i] = new Vector2(side * (Mathf.Cos(a) * HatchR - cx), Mathf.Sin(a) * HatchR);
+            }
+            var mb = new MeshBatch();
+            mb.Frustum(half, 0f, 1f, -0.22f, 1f, true, true, 4f);
+            var door = mb.Build(hinge, "door", Art.Mat(c), false);
+            door.transform.localPosition = new Vector3(side * (cx - HatchR), 0, 0);
+            // a glowing seam along the straight edge, where the two doors meet
+            var seam = new MeshBatch();
+            seam.Line(new Vector3(-side * (HatchR - 0.1f), -0.24f, -HatchR * 0.95f), new Vector3(-side * (HatchR - 0.1f), -0.24f, HatchR * 0.95f), 0.16f, 0.03f, Vector3.down);
+            seam.Build(hinge, "door seam", GlowMat(), false);
+            return hinge;
         }
     }
 }

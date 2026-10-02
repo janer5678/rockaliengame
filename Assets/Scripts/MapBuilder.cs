@@ -392,10 +392,15 @@ namespace RockGame
         // Glass wall between the two halves
         // =====================================================================
 
+        /// <summary>Radius of the glass dome over the middle of the map (the ball waits under it until the walls drop).</summary>
+        public const float DomeRadius = 11f;
+        static readonly Color k_GlassColor = new Color(0.6f, 0.9f, 1f, 0.16f), k_GlassLine = new Color(0.75f, 0.95f, 1f, 0.45f);
+
         static void BuildGlassWall(Transform root, float half)
         {
             s_Glass = new GameObject("GlassWall");
             s_Glass.transform.SetParent(root, false);
+            BuildGlassDome(s_Glass.transform);
             if (Cfg.FourWay)
             {
                 // free for all: two diagonal walls in an X, one quarter of the map each
@@ -411,26 +416,102 @@ namespace RockGame
             BuildGlassPanel(s_Glass.transform, half);
         }
 
+        /// <summary>
+        /// One glass wall right across the map (along local x), with a round notch in the middle where it meets the dome:
+        /// its bottom edge follows the dome over the top, so nothing crosses the middle and there's no gap to squeeze through.
+        /// </summary>
         static void BuildGlassPanel(Transform t, float half)
         {
-            var glass = Art.Part(t, Art.Cube, Color.white, new Vector3(0, 30f, 0), new Vector3(2 * half + 4, 100f, 0.3f), default, true, Art.Ghost(new Color(0.6f, 0.9f, 1f, 0.16f)), "glass");
-            glass.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
-            var line = Art.Ghost(new Color(0.75f, 0.95f, 1f, 0.45f));
+            float L = half + 2f, gy = Height(0, 0);
+            float notch = DomeRadius - 0.25f; // (a hair inside the faceted dome: no gap where they meet)
+            const float Bottom = -20f, Top = 80f, Th = 0.15f;
+            float Arc(float x) => gy + Mathf.Sqrt(Mathf.Max(0f, notch * notch - x * x));
+            float Under(float x) => Mathf.Abs(x) < notch ? Arc(x) : Bottom;
+            var xs = new List<float> { -L };
+            const int arc = 20;
+            for (int i = 0; i <= arc; i++) xs.Add(-notch + 2f * notch * i / arc);
+            xs.Add(L);
+            var mb = new MeshBatch();
+            for (int i = 0; i + 1 < xs.Count; i++)
+            {
+                float x0 = xs[i], x1 = xs[i + 1];
+                // the outer pieces reach down into the ground; the ones in the middle sit on the dome
+                bool outer = i == 0 || i + 2 == xs.Count;
+                float b0 = outer ? Bottom : Arc(x0), b1 = outer ? Bottom : Arc(x1);
+                foreach (float z in new[] { Th, -Th })
+                    mb.Quad(new Vector3(x0, b0, z), new Vector3(x1, b1, z), new Vector3(x1, Top, z), new Vector3(x0, Top, z), new Vector3(0, 0, z), 4f);
+                // the underside of the arch, following the dome
+                if (!outer)
+                    mb.Quad(new Vector3(x0, b0, -Th), new Vector3(x1, b1, -Th), new Vector3(x1, b1, Th), new Vector3(x0, b0, Th), Vector3.down, 4f);
+            }
+            var glass = mb.Build(t, "glass", Art.Ghost(k_GlassColor), false);
+            var mc = glass.AddComponent<MeshCollider>();
+            mc.sharedMesh = glass.GetComponent<MeshFilter>().sharedMesh;
+
+            var line = Art.Ghost(k_GlassLine);
+            var lines = new MeshBatch();
             for (int k = 0; k < 8; k++)
             {
-                var b = Art.Part(t, Art.Cube, Color.white, new Vector3(0, 0.6f + k * 4f, 0), new Vector3(2 * half + 4, 0.06f, 0.34f), default, false, line);
-                b.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
+                float y = 0.6f + k * 4f;
+                float h = y - gy;
+                float cut = h < notch ? Mathf.Sqrt(notch * notch - h * h) : 0f;
+                if (cut <= 0f) lines.Box(new Vector3(0, y, 0), Quaternion.identity, new Vector3(2 * L, 0.06f, 0.34f));
+                else
+                    for (int s = -1; s <= 1; s += 2)
+                        lines.Box(new Vector3(s * (L + cut) * 0.5f, y, 0), Quaternion.identity, new Vector3(L - cut, 0.06f, 0.34f));
             }
             for (float x = -half; x <= half; x += 12f)
             {
-                var b = Art.Part(t, Art.Cube, Color.white, new Vector3(x, 30f, 0), new Vector3(0.08f, 100f, 0.34f), default, false, line);
-                b.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
+                float b = Under(x);
+                lines.Box(new Vector3(x, (b + Top) * 0.5f, 0), Quaternion.identity, new Vector3(0.08f, Top - b, 0.34f));
             }
+            lines.Build(t, "glass lines", line, false);
+        }
+
+        /// <summary>The glass dome over the middle of the map: a faceted, low-poly half sphere (solid), with a few ribs.</summary>
+        static void BuildGlassDome(Transform parent)
+        {
+            float gy = Height(0, 0), R = DomeRadius;
+            const int rings = 7, segs = 20;
+            Vector3 P(int ring, int seg)
+            {
+                float lat = Mathf.PI * 0.5f * ring / rings, lon = Mathf.PI * 2f * seg / segs;
+                return new Vector3(Mathf.Cos(lat) * Mathf.Cos(lon) * R, gy + Mathf.Sin(lat) * R, Mathf.Cos(lat) * Mathf.Sin(lon) * R);
+            }
+            var c = new Vector3(0, gy, 0);
+            var mb = new MeshBatch();
+            for (int s = 0; s < segs; s++)
+            {
+                // a short skirt into the ground, so there's never a gap under the edge
+                Vector3 a = P(0, s), b = P(0, s + 1);
+                mb.Quad(a + Vector3.down * 1.5f, b + Vector3.down * 1.5f, b, a, (a + b) * 0.5f - c, 4f);
+                for (int r = 0; r < rings; r++)
+                {
+                    Vector3 p00 = P(r, s), p01 = P(r, s + 1), p10 = P(r + 1, s), p11 = P(r + 1, s + 1);
+                    var outward = (p00 + p11) * 0.5f - c;
+                    if (r == rings - 1) mb.Tri(p00, p01, p10, outward, 4f); // the top: a fan to the point
+                    else mb.Quad(p00, p01, p11, p10, outward, 4f);
+                }
+            }
+            var dome = mb.Build(parent, "glass dome", Art.Ghost(new Color(k_GlassColor.r, k_GlassColor.g, k_GlassColor.b, 0.2f)), false);
+            var mc = dome.AddComponent<MeshCollider>();
+            mc.sharedMesh = dome.GetComponent<MeshFilter>().sharedMesh;
+            // ribs: a ring round the bottom and half way up, and every fourth meridian
+            var ribs = new MeshBatch();
+            for (int s = 0; s < segs; s++)
+            {
+                ribs.Line(P(0, s) + Vector3.up * 0.15f, P(0, s + 1) + Vector3.up * 0.15f, 0.22f, 0.06f, ((P(0, s) + P(0, s + 1)) * 0.5f - c).normalized);
+                ribs.Line(P(3, s), P(3, s + 1), 0.1f, 0.05f, ((P(3, s) + P(3, s + 1)) * 0.5f - c).normalized);
+                if (s % 4 != 0) continue;
+                for (int r = 0; r < rings; r++)
+                    ribs.Line(P(r, s), P(r + 1, s), 0.1f, 0.05f, ((P(r, s) + P(r + 1, s)) * 0.5f - c).normalized);
+            }
+            ribs.Build(parent, "glass dome ribs", Art.Ghost(k_GlassLine), false);
         }
 
         public static bool GlassUp => s_Glass != null && s_Glass.activeSelf;
 
-        /// <summary>The wall is up until the ball drops (driven by the match state on every peer).</summary>
+        /// <summary>The wall (and the dome) is up until the wall drops (driven by the match state on every peer).</summary>
         public static void SetGlassWall(bool up)
         {
             if (s_Glass == null || s_Glass.activeSelf == up) return;
@@ -443,6 +524,14 @@ namespace RockGame
                 var p = new Vector3(Random.Range(-half, half), Random.Range(0.5f, 12f), 0);
                 p.y += Height(p.x, p.z);
                 FxParticle.Spawn(p, new Vector3(Random.Range(-2f, 2f), Random.Range(0f, 3f), Random.Range(-3f, 3f)), new Color(0.75f, 0.95f, 1f), Random.Range(0.08f, 0.2f), Random.Range(0.8f, 1.6f), 14f, false);
+            }
+            // the dome bursts too
+            for (int i = 0; i < 30; i++)
+            {
+                var d = Random.onUnitSphere;
+                d.y = Mathf.Abs(d.y);
+                var p = new Vector3(0, Height(0, 0), 0) + d * DomeRadius;
+                FxParticle.Spawn(p, d * Random.Range(1f, 3f) + Vector3.up * Random.Range(0f, 2f), new Color(0.75f, 0.95f, 1f), Random.Range(0.08f, 0.2f), Random.Range(0.8f, 1.6f), 14f, false);
             }
             Sfx.Play2D(Sfx.Smash, 0.6f);
         }
