@@ -25,7 +25,7 @@ Laid out top to bottom: **MATCH SETUP** (what the host picks), then **PLAY** (ho
   - *Classic*: the original game.
   - *Tutorial* (**start here if you're new**): Primitive's rules with the clock stopped, always on the **small Plains map with normal materials** (the menu's Map / Size / Materials rows are locked to that while Tutorial is picked, and a `-map` / `-big` / `-wood` on the command line is ignored). A small panel on the left gives one simple step at a time - a title, a sentence or two and a goal - and you have to actually **do** each one to move on (there's no skipping): look at your machine, walk, run and jump, slide, chop a tree, hit the X, get 100 wood, open your bag, craft a hatchet and chop with it, go home, craft the building plan, place a foundation, a wall (the building wheel) and a doorway, get stone, craft a spear, throw it and pick it up, craft a ram, pick a berry and eat it, then **the glass wall**: walk up to it, it drops, run to the ball, grab it, put it in your machine and guard it (enemies can steal it). A pulsing marker points at what the step is about, and if a step takes over 40 s a one-line hint shows up. While the inventory is open the goal shows along the bottom.
     - **Multiplayer**: friends can join a tutorial any time (up to the players picked) - the match starts as soon as the host is in, and anyone who joins later is dropped straight into their base. Everyone goes through the steps at their own pace. The glass wall drops **once every player has walked up to it** (the others see "waiting for N more players"), or 90 s after the first one got there so nobody's stuck waiting for someone who wandered off; nobody wins by the others leaving. Code: `Tutorial.cs` (the steps, the panel, and `ServerTick` for the server side), `PlayerNet.TutAtWall` / `TutorialRpc`. `-autotest modes -host -solo -rules tutorial` checks it alone; the same without `-solo` plus a second copy with `-autotest modes -client 127.0.0.1 -rules tutorial` checks two players.
-  - *Arsenal*: normal prices (except the crossbow, 350 wood instead of 500), plus **POWER ITEMS** (a POWER category in the crafting screen, see below).
+  - *Arsenal*: normal prices (except the crossbow, 350 wood instead of 500), plus **POWER ITEMS** (sold at the workbench, see below).
   - *Auto Wood*: Arsenal, but **wood piles up at your base by itself**: a **wood machine** stands on the bedrock to the right of the alien machine (as you look at it from your spawn), sawing wood out of nothing and pushing it down its chute onto a growing pile in front of it - 5 a second. Walk up and press E to take the lot: the pile keeps stacking past 1000 and splits into 1000-stacks as it goes into your inventory. **Wood Gen upgrade** (power item, Auto Wood only), two levels: level 1 for 1000 wood (12 a second), level 2 for 3000 (25 a second) - all in CHANGE VALUES > Auto Wood. The wood machine changes in front of you with each one: a plank hopper with one saw, then iron bands, a bigger saw, a smoking chimney and a lamp, then a riveted steel housing in your team colour with twin saws, two chimneys, glowing gauges and a light on top (and lit pips on its front for the level).
   - *Primitive*: the classic game, but the only things you can craft are the hatchet, spear, building plan and battering ram.
   - *Building Primitive*: Builder's rules (below), but only those four primitive items and no power items.
@@ -58,7 +58,7 @@ Laid out top to bottom: **MATCH SETUP** (what the host picks), then **PLAY** (ho
 Command line: `-host`, `-client <ip>`, `-port <n>`, `-solo`, `-fast`, `-map plains|highlands`, `-small`, `-big` (medium), `-wood`, `-normal`, `-sides`, `-anywhere`, `-seed <n>`, `-mode 1v1|2v2|3v3|4v4|ffa3|ffa4|2v2v2|2v2v2v2`, `-large`, `-huge`, `-rules tutorial|classic|arsenal|autowood|builder|fun|funrandom|funrandomlimited|primitive|buildingprimitive|dna`, `-map beach|canyon|frostlake|volcano|ruins`.
 
 ### Power items (Arsenal, Auto Wood and Builder)
-Bought with wood from the **POWER** category of the crafting screen (in your base; anywhere in Builder). Fortify and Wood Gen show their next step's price:
+Bought with wood at your **workbench** (see Crafting; in Builder it can stand anywhere). Fortify and Wood Gen show their next step's price:
 
 | Item | Wood | What it does |
 |---|---|---|
@@ -147,8 +147,8 @@ Everything for the five theme maps is in `Assets/Scripts/ThemeMaps/` (terrain, p
 | Hold LMB (ram) | wind up and slam the enemy piece you're looking at |
 | RMB (berries) | eat (+15 HP) |
 | 1-7, mouse wheel | hotbar slot |
-| TAB | inventory (21 slots + 7 hotbar) and the CRAFTING button |
-| E | use whatever you're looking at: your machine (put the ball in), ball, door, chest, airdrop, berry bush, dropped items and arrows, horse or car (E again to get off), a spear stuck in someone (or in you) |
+| TAB | inventory (21 slots + 7 hotbar) and the crafting list |
+| E | use whatever you're looking at: your machine (put the ball in), ball, door, chest, your workbench (its shop), airdrop, berry bush, dropped items and arrows, horse or car (E again to get off), a spear stuck in someone (or in you) |
 | Building plan | **hold RMB: building wheel** (Rust style, light blue, with a picture of each piece; clockwise from the top: Foundation, Ceiling, Wall (right), Window, Demolish (trash can, bottom), Stairs, Doorway, Upgrade) · R rotate stairs · F upgrade to stone · X demolish your own piece (half the wood back) |
 | Crossbow | LMB fire · hold RMB aim · reloads itself (uses an arrow) |
 | Helmet / armour / potion | LMB (or RMB) to put on / drink |
@@ -167,15 +167,17 @@ Everything for the five theme maps is in `Assets/Scripts/ThemeMaps/` (terrain, p
 - **Drag an item outside the inventory** to throw it on the ground; look at it and press E to pick it up.
 - Drag to move or swap, **right-drag** to split a stack in half, **shift-click** to quick-move (between chest/bag and inventory, or hotbar and inventory).
 - **Shift-clicking things into a chest sorts it**: stacks of the same thing are topped up and everything is laid out in order - wood and stone, ammo, weapons, tools, things you place, armour, food, then the rest. (Dragging things in by hand leaves them where you put them.)
-- **Storage chest**: craft it, hold it and click to place it anywhere inside your base. Press E on it to open it next to your inventory (14 slots). Enemies who break in can loot it, and breaking it spills its contents into a bag.
+- **Storage chest**: craft it (TAB), hold it and click to place it anywhere inside your base. Press E on it to open it next to your inventory (14 slots). Enemies who break in can loot it, and breaking it spills its contents into a bag.
 
-## Crafting (anywhere in your base, TAB)
-TAB shows your inventory with a big **CRAFTING** button on its right (a chest you're looting shows there instead). The button opens a Rust-style crafting screen:
-- **◄ INVENTORY** tab at the top goes back (so does Esc; TAB closes everything).
-- **Categories** down the left with how many items each has: COMMON (everything), CONSTRUCTION (chest, high external wall, fortify, wood gen), ITEMS (armour, saddle, boat, helmet), TOOLS (hatchet, pickaxe, chainsaw, building plan, ram), WEAPONS, AMMO, and POWER in the modes that have power items.
-- An **icon grid** (greyed out when you can't make it right now; hover for the name; a gold dot marks power items) with a **Search** box under it (searches every category; game keys are off while you type, Enter or Esc leaves the box), and the **crafting queue** under that (Builder's timers).
-- The picked item's **details**: name, a badge for where it can be made (green *CRAFT ANYWHERE* / *IN YOUR BASE*, red *CRAFT IN YOUR BASE* when you're out of it), a description, the craft time (Builder) and how many one craft makes, a cost table (AMOUNT / ITEM TYPE / TOTAL / HAVE - HAVE goes red when you're short), why you can't craft it if you can't, then **- [n] + ►|** (►| = as many as you can afford; the mouse wheel works too) and **CRAFT**, which crafts that many.
-- `-autotest craftui -host -solo -fast -rules <mode> -shotdir DIR` photographs it (inventory, categories, search, power items, out of base) and checks crafting several at once.
+## Crafting (TAB) and the workbench
+**TAB** shows your inventory with the crafting list on its right, one big row per item: its icon, name, price (red when you're short) and a **CRAFT** button (green when you can make it). Point at a row for what it does. The list only has the starter items: **Stone Hatchet, Spear, Building Plan, Bow, Arrows, Storage Chest, Battering Ram, High External Wall and the Workbench**. Spears and hatchets can be crafted anywhere, the rest inside your base (Builder: anywhere, with its timers).
+
+**Everything else is made at a workbench**:
+- The **Workbench** (150 wood, Workbench Wood in CHANGE VALUES) is a wooden alien machine - plank top on four jointed legs with glowing feet, a carved dome with two antennae, a glowing eye in a porthole, a round saw and a mallet arm. Hold it and click to put it down: **only on your own base's metal floor (the bedrock)**, not over the spawn spot or the ball socket, and **one per team** (Builder has no bedrock: anywhere). It **can't be broken** (or demolished, rammed or blown up). Only your team can use it.
+- **E on it** opens its shop: the whole screen, no inventory - just what you have to spend, big (wood, or DNA in DNA mode; stone too when something needs it), and a big tile for every other item with its price: weapons, then ammo, armour, tools, riding, then base upgrades (kept together, no headings). Tiles you can't buy are greyed out and say why (not enough, maxed out, already wearing it, the bench is busy). Which items show depends on the mode (power items only in Arsenal / Auto Wood / Builder, the wood gen only in Auto Wood, the boat on water maps; Primitive-style modes have no workbench at all).
+- **Click a tile to buy it**: the menu closes and the workbench makes it in front of everyone - sawdust pours out of it, the saw spins and the mallet hammers with a sawing-and-hammering noise for about 2 seconds (Workbench Craft Seconds; Builder: at least its usual craft time) - and as the dust clears the item is lying in the middle of the bench. Pick it up with E (anyone can - guard your bench). One thing at a time.
+- **Armour and base upgrades** (Fortify All Walls, the wood gen) don't land on the bench: they just happen, with a fitting noise (a metal clank, grinding stone, an engine starting up).
+- `-autotest craftui -host -solo -fast -rules <mode> -shotdir DIR` photographs the TAB list, the workbench (ghost, front, side), its shop, the sawdust and the item on the bench, and checks the rules (starter items only from TAB, not from the bench; only on your bedrock, one per team, unbreakable; armour straight on). The other tests buy through the workbench too.
 
 | Item | Cost |
 |---|---|
@@ -187,11 +189,14 @@ TAB shows your inventory with a big **CRAFTING** button on its right (a chest yo
 | Bow | 100 wood, 15 stone |
 | Arrows (5) | 50 wood |
 | Crossbow (55 damage, faster and flatter than the bow) | 500 wood |
-| Armour (goes straight on: 50 extra health) | 250 wood |
+| Armour (workbench; goes straight on: 50 extra health) | 250 wood |
 | Chainsaw (67 uses) | 500 wood |
 | Battering Ram (1 hit) | 125 wood, 50 stone |
 | High External Wall | 40 wood |
 | Saddle (ride a wild horse; in your team's colour) | 750 wood |
+| Workbench | 150 wood |
+
+The pickaxe, crossbow, armour, chainsaw and saddle (and the boat) are made at the workbench; the rest in TAB.
 
 In wood mode the stone part is added to the wood cost and there's no pickaxe. In DNA mode everything costs DNA: the wood part 1:1 plus 1.5 DNA for every stone.
 

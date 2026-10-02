@@ -23,6 +23,8 @@ namespace RockGame
         public bool ThirdPerson => m_Third > 0.5f;
         int m_EatBites;
         public Container LootTarget;
+        /// <summary>What you're looking at (E uses it), as of the last frame.</summary>
+        public Interactable Target;
         public PieceType BuildPiece = PieceType.Foundation;
         /// <summary>Building plan: the Rust-style wheel (hold RMB) is open, and demolish mode picked on it.</summary>
         public bool WheelOpen, DemolishMode, UpgradeMode;
@@ -411,6 +413,7 @@ namespace RockGame
                         case Item.Chest:
                         case Item.Barrier:
                         case Item.Car:
+                        case Item.Workbench:
                         case Item.Boat: /* THEME MAPS */ HandleDeploy(held); break;
                         case Item.Berry:
                         case Item.Meat: HandleBerry(); break;
@@ -447,6 +450,7 @@ namespace RockGame
             PublishAction(held, dead, carrying);
 
             var target = FindInteract();
+            Target = target;
             if (input) HandleInteract(target, carrying);
             UpdateGhost(input && !carrying && !gameOver && !riding && !DemolishMode && !UpgradeMode ? held : Item.None);
             UpdateAimText(target);
@@ -1281,10 +1285,14 @@ namespace RockGame
                 case TargetKind.Ball: m_Net.PickupBallRpc(); Sfx.Play2D(Sfx.Pop, 0.5f); break;
                 case TargetKind.Door: m_Net.ToggleDoorRpc(t.Obj); break;
                 case TargetKind.Container:
-                    LootTarget = t.Obj.GetComponent<Container>();
+                {
+                    var box = t.Obj.GetComponent<Container>();
+                    if (box.IsWorkbench && box.Team.Value != m_Net.Team.Value) { Hud.Push("That's the enemy's workbench - only they can use it"); break; }
+                    LootTarget = box;
                     MenuOpen = true;
                     Sfx.Play2D(Sfx.Place, 0.4f);
                     break;
+                }
                 case TargetKind.Bush: m_Net.PickBerriesRpc(t.Obj); m_VM.Use(); Sfx.Play2D(Sfx.Pop, 0.5f); break;
                 case TargetKind.PlayerSpear: m_Net.PullSpearRpc(t.Obj); m_VM.Use(); break;
                 case TargetKind.WorldItem: m_Net.PickupItemRpc(t.ItemId); m_VM.Use(); break;
@@ -1310,6 +1318,7 @@ namespace RockGame
             else if (held == Item.Chest) want = 101;
             else if (held == Item.Car) want = 102;
             else if (held == Item.Boat) want = 103; // THEME MAPS
+            else if (held == Item.Workbench) want = 104;
 
             if (want != m_GhostId)
             {
@@ -1321,6 +1330,7 @@ namespace RockGame
                 {
                     m_Ghost = new GameObject("Ghost");
                     if (want == 101) Container.CreateVisual(Container.Chest, m_Net.Team.Value, m_Ghost.transform, Art.Ghost(k_GhostOk));
+                    else if (want == 104) Container.CreateVisual(Container.Workbench, m_Net.Team.Value, m_Ghost.transform, Art.Ghost(k_GhostOk));
                     else if (want == 103) Vehicle.CreateVisual(Vehicle.Boat, m_Ghost.transform, Art.Ghost(k_GhostOk), out _, out _, out _, out _, null, null); // THEME MAPS
                     else if (want == 102) Vehicle.CreateVisual(Vehicle.Car, m_Ghost.transform, Art.Ghost(k_GhostOk), out _, out _, out _, out _, null, null);
                     else Structure.CreateVisual(want == 100 ? PieceType.Barrier : (PieceType)want, 0, m_Ghost.transform, false, Art.Ghost(k_GhostOk), out _);
@@ -1339,13 +1349,13 @@ namespace RockGame
 
             if (want >= 100)
             {
-                var kind = want == 100 ? Item.Barrier : want == 101 ? Item.Chest : want == 103 ? Item.Boat /* THEME MAPS */ : Item.Car;
+                var kind = want == 100 ? Item.Barrier : want == 101 ? Item.Chest : want == 104 ? Item.Workbench : want == 103 ? Item.Boat /* THEME MAPS */ : Item.Car;
                 visible = hasHit && hit.distance <= Cfg.DeployRange && hit.normal.y > 0.7f;
                 if (!visible) reason = "Aim at flat ground nearby";
                 else
                 {
                     m_GhostPos = hit.point;
-                    m_GhostYaw = m_Yaw + (kind == Item.Chest ? 180f : 0f);
+                    m_GhostYaw = m_Yaw + (kind == Item.Chest || kind == Item.Workbench ? 180f : 0f); // (their fronts face you)
                     if (kind == Item.Boat) m_GhostPos.y = ThemeMaps.WaterY - 0.1f; // THEME MAPS
                     PlayerNet.FindDeploySpot(kind, team, ref m_GhostPos, m_GhostYaw, out reason);
                     m_Ghost.transform.SetPositionAndRotation(m_GhostPos, Quaternion.Euler(0, m_GhostYaw, 0));
@@ -1489,6 +1499,7 @@ namespace RockGame
                     var c = t.Obj.GetComponent<Container>();
                     if (c.IsAirdrop) AimText = "<color=#c98bff>Alien Airdrop</color>   E: open";
                     else if (c.IsGamble) AimText = "<color=#7dffb0>Gambling Machine</color>   E: bet DNA - double it or lose it";
+                    else if (c.IsWorkbench) AimText = c.Team.Value == m_Net.Team.Value ? "<color=#8dff9a>Workbench</color>   E: make things" : $"{Cfg.TeamLabel(c.Team.Value)}'s Workbench";
                     else if (c.IsBag) AimText = $"{c.DisplayName}   E: open";
                     else AimText = $"Storage Chest ({Cfg.TeamLabel(c.Team.Value)})  {c.Health.Value:0}/{Cfg.ChestHp:0}   E: open"
                         + (m_Net.HeldItem == Item.BuildingPlan && c.Team.Value == m_Net.Team.Value ? "   X: demolish" : "");
