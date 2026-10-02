@@ -487,7 +487,7 @@ namespace RockGame
                     pc.LocalTeleport(steal, Quaternion.LookRotation(-toSpawn).eulerAngles.y);
                     yield return new WaitForSeconds(0.6f);
                     me.PickupBallRpc();
-                    yield return new WaitForSeconds(1f);
+                    yield return new WaitForSeconds(2f); // (the grab step ticks, then moves on a second later)
                 }
             }
             else
