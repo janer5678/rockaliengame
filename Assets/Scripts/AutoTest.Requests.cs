@@ -5,9 +5,9 @@ namespace RockGame
 {
     /// <summary>
     /// -autotest modes (classic, arsenal, autowood, dna): the ball under the glass dome, the ball buff, airdrop rarity, the airdrop
-    /// warning and the ship (hatch, slow crate, shrinking away), harder thrown spears, breaking your own pieces, the portal gun that
-    /// never runs out, airdrop rocket launchers with 3 rockets, Ctrl crouch / C slide,
-    /// and solid border rocks.
+    /// warning and the ship (hatch, slow crate, shrinking away), harder thrown spears, breaking your own pieces, the one-shot portal
+    /// gun, airdrop rocket launchers with 3 rockets, Ctrl crouch / C slide, solid border rocks, and the workbench checks in
+    /// AutoTest.Bench.cs (locked until the ball's captured, crafting it everywhere, C4 on benches and chests).
     /// </summary>
     public partial class AutoTest
     {
@@ -34,6 +34,9 @@ namespace RockGame
             string rn = Cfg.RulesName(Cfg.Rules).ToLower().Replace(" ", "");
             bool wasPaused = g.TimerPaused.Value;
             if (g.S == GameState.PreBall) g.TimerPaused.Value = true; // (these need the wall up for a while)
+
+            // the workbench: locked until the ball's captured, then craftable everywhere; C4 on benches and chests (AutoTest.Bench.cs)
+            yield return BenchTests(me, pc, g, team);
 
             // the ball is in the middle from the start, under a glass dome the walls meet: nobody can get at it until they drop
             Check(g.S == GameState.PreBall, $"the wall is still up for the glass dome checks ({g.S})");
@@ -189,26 +192,10 @@ namespace RockGame
                 }
             }
 
-            // the portal gun never runs out (and the oldest pairs go once there are lots)
-            {
-                int p0 = g.Portals.Count;
-                me.ServerGive(Item.PortalGun, 1, Cfg.MaxData(Item.PortalGun));
-                yield return new WaitForSeconds(0.2f);
-                yield return Hold(me, Item.PortalGun);
-                var at = Cfg.SpawnPos(team) - Cfg.BackDir(team) * 9f;
-                for (int i = 0; i < 6; i++)
-                {
-                    var p = at + new Vector3(i * 2.5f - 6f, 0, 0);
-                    p.y = MapBuilder.Height(p.x, p.z);
-                    me.PortalRpc(p, Vector3.up);
-                    yield return new WaitForSeconds(0.5f);
-                }
-                Check(me.Count(Item.PortalGun) == 1 && g.Portals.Count == p0 + 6, $"the portal gun is still there after 6 shots ({g.Portals.Count - p0} portals, {me.Count(Item.PortalGun)} gun)");
-                for (int i = 0; i < 40; i++) g.ServerAddPortal(at + Vector3.down * 50f, Vector3.up, g.ServerNewPortalPair());
-                Check(g.Portals.Count <= NetGame.MaxPortals, $"no more than {NetGame.MaxPortals} portals at once ({g.Portals.Count})");
-                g.Portals.Clear();
-                for (int i = 0; i < Cfg.PlayerSlots; i++) if (me.SlotAt(i).Id == Item.PortalGun) me.Inv[i] = default;
-            }
+            // the portal gun: ONE shot, and that shot makes the whole linked pair - a portal where you stand and one where it
+            // lands - then it's used up. The one under you doesn't take you until you step off it; walking back in does.
+            // (and the oldest pairs go once there are lots)
+            yield return PortalGunTests(me, pc, g, team);
 
             // your own pieces break like the enemy's: rock, thrown spear and ram on our own walls
             {
@@ -451,6 +438,31 @@ namespace RockGame
             yield return Snap("graves");
             Check(!me.Dead.Value && g.Graves.Count == count0 + 4 && GraveFx.Shown == g.Graves.Count && go != null && g.Graves[count0].Equals(gi),
                 $"the grave stays after you come back, and more pile up ({g.Graves.Count - count0} new, {GraveFx.Shown} drawn)");
+            Check(AllGravesCrosses(out string why), $"every grave is the same stone cross, only the team band differs ({why})");
+        }
+
+        /// <summary>Every grave drawn is the stone cross: an upright and a bar in the stone colour, a team-colour band, nothing else.</summary>
+        static bool AllGravesCrosses(out string why)
+        {
+            int n = GraveFx.Shown, crosses = 0;
+            Color? stone = null;
+            bool same = true;
+            for (int i = 0; i < n; i++)
+            {
+                var go = GraveFx.Get(i);
+                if (go == null) continue;
+                var st = go.transform.Find("stone");
+                if (st == null || st.childCount != 3) continue;
+                var up = st.Find("cross upright");
+                var bar = st.Find("cross bar");
+                if (up == null || bar == null || st.Find("team band") == null) continue;
+                var c = up.GetComponent<Renderer>().sharedMaterial.color;
+                if (stone == null) stone = c;
+                same &= stone.Value == c && bar.GetComponent<Renderer>().sharedMaterial.color == c;
+                crosses++;
+            }
+            why = $"{crosses} of {n} are crosses, same stone colour {same}";
+            return n > 0 && crosses == n && same;
         }
     }
 }

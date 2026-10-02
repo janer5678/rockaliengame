@@ -9,7 +9,7 @@ namespace RockGame
     {
         public bool Scoped { get; private set; }
         public bool AirstrikeMapOpen { get; private set; }
-        int m_PortalLockPair = -1;
+        int m_PortalLockPair = -1, m_PortalNewestSeen = -1;
         float m_JetUsed, m_JetSendAt;
 
         void HandleOnce(Item held, Action act)
@@ -44,7 +44,7 @@ namespace RockGame
             Fx.Shake(0.25f);
         }
 
-        /// <summary>Portal gun: LMB shoots a portal onto whatever surface you aim at (two shots, one linked pair).</summary>
+        /// <summary>Portal gun: LMB shoots once - a portal where you stand and one where you aim (one linked pair) - and it's used up.</summary>
         void HandlePortalGun()
         {
             if (!Binds.Down(Bind.Attack) || Time.time < m_NextSwing) return;
@@ -64,12 +64,34 @@ namespace RockGame
             Fx.Kick(1.5f);
         }
 
-        /// <summary>Walk into a portal and come out of its partner. You can't go back until you've stepped away from both.</summary>
+        /// <summary>Is a player whose middle is at c inside this portal?</summary>
+        static bool InPortal(Vector3 c, PortalInfo p)
+        {
+            var d = c - p.Pos;
+            float along = Vector3.Dot(d, p.Normal);
+            var lateral = d - p.Normal * along;
+            return along >= -0.4f && along <= 1.2f && lateral.magnitude <= 1.0f;
+        }
+
+        /// <summary>Walk into a portal and come out of its partner. You can't go back until you've stepped away from both.
+        /// A portal that opens right where you are (the portal gun's one at your feet) doesn't take you until you've stepped off it.</summary>
         void TickPortals(bool dead)
         {
             var g = NetGame.Instance;
-            if (g == null || dead || m_Net.Riding || g.Portals.Count < 2) return;
+            if (g == null) return;
             var c = transform.position + Vector3.up * 0.9f;
+            // pairs are numbered as they're made: one we haven't seen yet that opened right where we are doesn't take us
+            // until we've stepped off it
+            int count = g.Portals.Count, newest = m_PortalNewestSeen;
+            for (int i = 0; i < count; i++)
+            {
+                var p = g.Portals[i];
+                if (p.Pair <= m_PortalNewestSeen) continue;
+                if (InPortal(c, p)) m_PortalLockPair = p.Pair;
+                newest = Mathf.Max(newest, p.Pair);
+            }
+            m_PortalNewestSeen = newest;
+            if (dead || m_Net.Riding || count < 2) return;
             if (m_PortalLockPair >= 0)
             {
                 bool near = false;
@@ -80,10 +102,7 @@ namespace RockGame
             for (int i = 0; i < g.Portals.Count; i++)
             {
                 var p = g.Portals[i];
-                var d = c - p.Pos;
-                float along = Vector3.Dot(d, p.Normal);
-                var lateral = d - p.Normal * along;
-                if (along < -0.4f || along > 1.2f || lateral.magnitude > 1.0f) continue;
+                if (!InPortal(c, p)) continue;
                 if (!g.TryPartner(i, out var to)) continue;
                 // out of the other one, facing out of it
                 Vector3 feet;

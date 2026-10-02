@@ -172,5 +172,23 @@ namespace RockGame
             Fx.Server(FxKind.Break, transform.position + Vector3.up * 0.4f, Vector3.up);
             NetworkObject.Despawn(true);
         }
+
+        /// <summary>
+        /// A workbench blown up by C4 stuck right onto it (the only thing that can): it drops as its item where it stood
+        /// (anyone can pick it up and put it down again), and its team's slot is free - they can put that one or a new one down.
+        /// </summary>
+        public void ServerBreakBench()
+        {
+            if (!IsServer || !IsSpawned || !IsWorkbench) return;
+            var item = BenchTier == 2 ? Item.Workbench2 : Item.Workbench;
+            var g = NetGame.Instance;
+            if (g != null)
+            {
+                g.ServerDropItem(ItemStack.Of(item, 1), transform.position + Vector3.up * 0.3f, transform.forward, transform.position + Vector3.up * 0.9f);
+                g.Broadcast($"{Cfg.TeamLabel(Team.Value)}'s {Cfg.ItemName(item)} was blown up - it dropped on the ground");
+            }
+            Fx.Server(FxKind.Break, transform.position + Vector3.up * 0.6f, Vector3.up);
+            NetworkObject.Despawn(true);
+        }
     }
 }

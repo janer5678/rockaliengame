@@ -8,6 +8,7 @@ namespace RockGame
         DropWallNow, TogglePauseTimer, AddMinute, SubMinute, TimerTo10s, SpawnAirdrop, BallToMe, BallToMiddle,
         GiveWood, GiveStone, GiveArrows, GiveOpItems, GiveCraftables, HealFull, ToggleGod, KillMe, StartSuddenDeath, WinNow,
         RegrowNodes, TpAirdrop, TpEnemyBase, TpMyBase, TpBall, SpawnHorse, SpawnCar, ClearInventory,
+        UnlockBench, // (new ones go on the end)
     }
 
     /// <summary>Crossbow, fort tower, riding (cars and horses), dev tools and proximity voice.</summary>
@@ -196,6 +197,7 @@ namespace RockGame
                 case DevCmd.StartSuddenDeath: g.DevStartSuddenDeath(); break;
                 case DevCmd.WinNow: g.EndGame(Team.Value, $"{who} used the dev win button"); break;
                 case DevCmd.RegrowNodes: g.DevRegrowNodes(); break;
+                case DevCmd.UnlockBench: g.ServerUnlockBench(Team.Value, "used the dev setting"); what = "unlocked their workbench"; break;
                 case DevCmd.TpAirdrop:
                 {
                     var d = g.ActiveDrop;

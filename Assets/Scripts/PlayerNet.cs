@@ -1105,6 +1105,12 @@ namespace RockGame
             if (InSuddenDeath || (NetGame.Instance != null && NetGame.Instance.S == GameState.GameOver)) return;
             var r = power ? Cfg.GetPowerRecipe(recipe - Cfg.PowerBase, Team.Value) : Cfg.GetRecipe(recipe);
             if (!Tutorial.AllowsItemFor(this, r.Output)) { Notify("Not yet - the tutorial gets to that soon"); return; }
+            // the Workbench T1 is locked until your team has captured the ball (NetGame.Bench.cs)
+            if (r.Output == Item.Workbench && !Cfg.BenchUnlocked(Team.Value))
+            {
+                Notify("You can only craft the Workbench once the ball has been captured");
+                return;
+            }
             // tier 1 / 2 items need your team's workbench of that tier, and you in your base (Builder: anywhere)
             int tier = Cfg.CraftTier(r.Output);
             if (tier > 0)
@@ -1197,6 +1203,7 @@ namespace RockGame
         {
             if (Dead.Value || HeldItem != Item.BuildingPlan || InSuddenDeath) return;
             if (Cfg.WoodMode) { Notify("Wood mode: no stone upgrades"); return; }
+            if (!Tutorial.AllowsFor(this, TutFeature.Upgrade)) { Notify("Not yet - stone upgrades come after the tutorial"); return; }
             if (Time.time < m_NextUpgrade) return;
             if (!target.TryGet(out var no) || !no.TryGetComponent(out Structure s)) return;
             if (s.Team.Value != Team.Value || !s.HasKey || !s.Upgradable) return;

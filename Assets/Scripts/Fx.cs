@@ -470,7 +470,7 @@ namespace RockGame
     {
         public static AudioClip Swing, Flesh, Headshot, Chop, Clink, Thud, Ding, Smash, Twang, Throw, Pop, Eat, Place, Hurt, Kill, Step, Hiss, Boom, Beep, Zap, Saw, Hum,
             Hit, Rocket, Sniper, Portal, Jet, Glass, Door, Click, Crowd, Whiz, Slide, Hoof, UiHover, UiClick, UiSlide,
-            Workshop, ArmorClank, StoneGrind, Engine;
+            Workshop, ArmorClank, StoneGrind, Engine, Unlock;
         static readonly Dictionary<AudioClip, AudioClip[]> s_Variants = new Dictionary<AudioClip, AudioClip[]>();
         const int Rate = 44100;
 
@@ -494,6 +494,19 @@ namespace RockGame
             Chop = Make("chop", 0.14f, (t, d) => Mathf.Sin(t * 2 * Mathf.PI * 190) * Env(t, 0.08f) * 0.9f + N() * Env(t, 0.02f) * 0.6f, lowpass: 0.4f);
             Clink = Make("clink", 0.2f, (t, d) => (Mathf.Sin(t * 2 * Mathf.PI * 1250) * 0.4f + Mathf.Sin(t * 2 * Mathf.PI * 2150) * 0.25f + Mathf.Sin(t * 2 * Mathf.PI * 3300) * 0.15f) * Env(t, 0.1f) + N() * Env(t, 0.02f) * 0.5f);
             Thud = Make("thud", 0.2f, (t, d) => Mathf.Sin(t * 2 * Mathf.PI * Mathf.Lerp(110, 70, t / d)) * Env(t, 0.14f) + N() * Env(t, 0.03f) * 0.4f, lowpass: 0.3f);
+            // something new unlocked (the workbench): a bright rising arpeggio, C E G C
+            Unlock = Make("unlock", 1.1f, (t, d) =>
+            {
+                float v = 0f;
+                float[] notes = { 1047f, 1319f, 1568f, 2093f };
+                for (int i = 0; i < notes.Length; i++)
+                {
+                    float k = t - i * 0.12f;
+                    if (k < 0f) continue;
+                    v += (Mathf.Sin(k * 2 * Mathf.PI * notes[i]) * 0.4f + Mathf.Sin(k * 2 * Mathf.PI * notes[i] * 2f) * 0.12f) * Env(k, i == 3 ? 0.55f : 0.25f);
+                }
+                return v * 0.7f;
+            });
             Ding = Make("ding", 0.4f, (t, d) => (Mathf.Sin(t * 2 * Mathf.PI * 1568) * 0.5f + Mathf.Sin(t * 2 * Mathf.PI * 2350) * 0.25f) * Env(t, 0.3f));
             Smash = Make("smash", 0.7f, (t, d) => N() * Env(t, 0.35f) * 0.8f + Mathf.Sin(t * 2 * Mathf.PI * Mathf.Lerp(80, 35, t / d)) * Env(t, 0.4f) * 0.9f, lowpass: 0.35f);
             Twang = Make("twang", 0.35f, (t, d) => Mathf.Sin(t * 2 * Mathf.PI * (210 + Mathf.Sin(t * 60) * 6)) * Env(t, 0.22f) * 0.6f + N() * Env(t, 0.02f) * 0.3f);

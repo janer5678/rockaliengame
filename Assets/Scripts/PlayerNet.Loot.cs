@@ -8,7 +8,6 @@ namespace RockGame
     public partial class PlayerNet
     {
         float m_NextSniper, m_NextPortal, m_NextUse;
-        int m_PortalPair = -1;
         readonly Dictionary<Item, int> m_PendingThrows = new Dictionary<Item, int>();
 
         static bool Throwable(Item i) => i == Item.SlenderEgg || i == Item.BuildEgg || i == Item.RocketLauncher || i == Item.BombBush || i == Item.EnderPearl;
@@ -47,23 +46,49 @@ namespace RockGame
             else if (no.TryGetComponent(out Structure s)) s.ServerDamage(60f);
         }
 
-        /// <summary>Portal gun: every two shots make a linked pair, with no limit (the oldest pairs go once there are too many). Works on any surface inside the map.</summary>
+        /// <summary>The portal gun's two portals have to be at least this far apart.</summary>
+        public const float PortalMinGap = 3f;
+
+        /// <summary>
+        /// Portal gun: ONE shot, then it's used up. That shot makes the whole linked pair: one portal on the ground where
+        /// you're standing and the other where the shot lands (any surface inside the map). Portals stay for the game (the
+        /// oldest pairs go once there are too many). The portal that opens under you doesn't take you until you've stepped
+        /// off it (PlayerController.TickPortals).
+        /// </summary>
         [Rpc(SendTo.Server)]
         public void PortalRpc(Vector3 point, Vector3 normal)
         {
             var g = NetGame.Instance;
             if (Dead.Value || g == null || HeldItem != Item.PortalGun || Time.time < m_NextPortal) return;
             if (Mathf.Abs(point.x) > Cfg.MapHalf + 2 || Mathf.Abs(point.z) > Cfg.MapHalf + 2 || Vector3.Distance(point, EyePos) > 120f) { Notify("Portals only work inside the battle area"); return; }
-            // infinite uses: Data counts down the shots left in the current pair (2 = the next shot starts a new pair)
-            var st = HeldStack;
-            int shots = Mathf.Max(2, Cfg.PortalShots);
-            int data = st.Data <= 0 || st.Data > shots ? shots : st.Data;
+            if (normal.sqrMagnitude < 0.01f) normal = Vector3.up;
+            // the other end: on the ground under your feet
+            if (!PortalFeet(out var feet, out var feetNormal)) { Notify("Stand on something to open a portal"); return; }
+            if (Vector3.Distance(feet, point) < PortalMinGap) { Notify("Too close - shoot the portal further away"); return; }
             m_NextPortal = Time.time + 0.4f;
-            if (data >= shots || m_PortalPair < 0) m_PortalPair = g.ServerNewPortalPair();
-            g.ServerAddPortal(point + normal.normalized * 0.03f, normal, m_PortalPair);
-            int left = data - 1;
-            if (left <= 0) { left = shots; m_PortalPair = -1; Notify("Portal pair linked - the next shot starts a new pair"); }
-            Inv[HeldSlot.Value] = ItemStack.Of(Item.PortalGun, 1, left);
+            int pair = g.ServerNewPortalPair();
+            g.ServerAddPortal(feet + feetNormal * 0.03f, feetNormal, pair);
+            g.ServerAddPortal(point + normal.normalized * 0.03f, normal, pair);
+            ServerClearSlot(HeldSlot.Value);
+            Notify("Portals linked: one where you stand, one where you shot - the portal gun is used up");
+        }
+
+        /// <summary>The ground right under this player (for the portal gun's portal at your feet).</summary>
+        bool PortalFeet(out Vector3 point, out Vector3 normal)
+        {
+            point = transform.position;
+            normal = Vector3.up;
+            RaycastHit best = default;
+            bool found = false;
+            foreach (var h in Physics.RaycastAll(transform.position + Vector3.up * 0.5f, Vector3.down, 3f, ~(1 << HitboxLayer), QueryTriggerInteraction.Ignore))
+            {
+                if (h.collider.GetComponentInParent<PlayerNet>() != null || h.collider.GetComponentInParent<Vehicle>() != null) continue;
+                if (!found || h.distance < best.distance) { best = h; found = true; }
+            }
+            if (!found) return false;
+            point = best.point;
+            normal = best.normal.y > 0.5f ? best.normal : Vector3.up;
+            return true;
         }
 
         /// <summary>The jetpack reports how long it thrusted; fuel runs out and then it's gone.</summary>

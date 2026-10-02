@@ -139,6 +139,7 @@ namespace RockGame
             AirdropShip.Tick(this);
             PortalFx.Sync(this);
             GraveFx.Sync(this);
+            TickBenchUnlockNotice(); // "WORKBENCH UNLOCKED" when our team captures the ball (NetGame.Bench.cs)
             if (!IsServer) return;
             if (Time.time >= m_NextItemCheck) { m_NextItemCheck = Time.time + 0.5f; ServerSettleItems(); }
             double now = NetworkManager.ServerTime.Time;
@@ -153,6 +154,7 @@ namespace RockGame
             ServerTickAirstrikes(now);
             ServerTickBushes(now);
             ServerTickModes(now);
+            ServerTickBenchUnlock(); // the Workbench T1 unlocks once a team has captured the ball
             Tutorial.ServerTick(this); // tutorial: clock stopped, late joiners in, the wall drops once everyone reaches it
             SpaceArena.ServerTick(this); // sudden death: falling off the platform into space
             ThemeMaps.ServerTick(); // THEME MAPS
@@ -873,11 +875,34 @@ namespace RockGame
 
         // ------------------------------------------------------------------ explosions (C4, rockets, bomb bush, airstrike)
 
-        struct PendingC4 { public Vector3 Pos, Normal; public int Team; public PlayerNet Thrower; public double At; public Structure On; }
+        struct PendingC4 { public Vector3 Pos, Normal; public int Team; public PlayerNet Thrower; public double At; public Structure On; public Container OnBox; }
         readonly List<PendingC4> m_C4 = new List<PendingC4>();
+
+        /// <summary>
+        /// The chest or workbench a C4 is stuck right onto (null if it's on anything else - a wall next to one, the ground):
+        /// a short ray back into the surface it landed on (`normal` points out of it) has to hit the box itself first.
+        /// </summary>
+        public static Container C4StuckBox(Vector3 pos, Vector3 normal)
+        {
+            if (normal.sqrMagnitude < 0.01f) normal = Vector3.up;
+            normal.Normalize();
+            var from = pos + normal * 0.25f;
+            RaycastHit best = default;
+            bool found = false;
+            foreach (var h in Physics.RaycastAll(from, -normal, 0.6f, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore))
+            {
+                if (h.collider.GetComponentInParent<PlayerNet>() != null) continue;
+                if (!found || h.distance < best.distance) { best = h; found = true; }
+            }
+            if (!found) return null;
+            var c = best.collider.GetComponentInParent<Container>();
+            return c != null && c.IsSpawned && (c.Breakable || c.IsWorkbench) ? c : null;
+        }
 
         public void ServerArmC4(Vector3 pos, Vector3 normal, PlayerNet thrower)
         {
+            // stuck right onto a chest or workbench: that's what it blows up (nothing through walls - see ServerBlast)
+            var box = C4StuckBox(pos, normal);
             // the piece it's stuck to (or the nearest one right next to it): refined and sheet metal only give way around that one
             Structure on = null;
             float best = 1.2f;
@@ -888,7 +913,8 @@ namespace RockGame
                 float d = Vector3.Distance(h.ClosestPoint(pos), pos);
                 if (d < best) { best = d; on = s; }
             }
-            m_C4.Add(new PendingC4 { Pos = pos, Normal = normal.sqrMagnitude > 0.01f ? normal.normalized : Vector3.up, Team = thrower.Team.Value, Thrower = thrower, At = NetworkManager.ServerTime.Time + Cfg.C4Fuse, On = on });
+            if (box != null) on = null; // (on a chest / bench: no fortified piece is the one it's stuck to)
+            m_C4.Add(new PendingC4 { Pos = pos, Normal = normal.sqrMagnitude > 0.01f ? normal.normalized : Vector3.up, Team = thrower.Team.Value, Thrower = thrower, At = NetworkManager.ServerTime.Time + Cfg.C4Fuse, On = on, OnBox = box });
             Fx.Server(FxKind.C4Placed, pos, normal);
         }
 
@@ -934,7 +960,7 @@ namespace RockGame
                 var c = m_C4[i];
                 m_C4.RemoveAt(i);
                 // (everyone's buildings - your own C4 blows up your own base too)
-                int n = ServerBlast(c.Pos, Cfg.C4Radius, -1, Cfg.C4PlayerDamage, -1f, Cfg.C4KillRadius, c.Thrower, false, false, BlastKind.C4, c.On, c.Normal);
+                int n = ServerBlast(c.Pos, Cfg.C4Radius, -1, Cfg.C4PlayerDamage, -1f, Cfg.C4KillRadius, c.Thrower, false, false, BlastKind.C4, c.On, c.Normal, c.OnBox);
                 if (c.Thrower != null && n > 0) c.Thrower.NotifyPublic($"Your C4 destroyed {n} piece{(n == 1 ? "" : "s")}!");
             }
         }
@@ -949,10 +975,12 @@ namespace RockGame
         /// <summary>
         /// An explosion. `team`: that team's own buildings are spared (-1 = nothing is spared, -2 = buildings are not hurt at all).
         /// structureDamage &lt; 0 destroys pieces outright. Players take damage falling off with distance; inside killRadius they die.
-        /// Returns how many building pieces were destroyed.
+        /// C4 only breaks the chest or workbench it's stuck right onto (`onBox`): a chest spills what's in it, a workbench drops
+        /// as its item (and its team can put that or another one down). Nothing else ever breaks a workbench; the other blasts
+        /// still break chests nearby. Returns how many building pieces were destroyed.
         /// </summary>
         public int ServerBlast(Vector3 pos, float radius, int team, float playerDamage, float structureDamage, float killRadius, PlayerNet attacker, bool nodes, bool trees = false,
-            BlastKind kind = BlastKind.Other, Structure on = null, Vector3 normal = default)
+            BlastKind kind = BlastKind.Other, Structure on = null, Vector3 normal = default, Container onBox = null)
         {
             Fx.Server(FxKind.Explosion, pos, Vector3.up);
             var structures = new HashSet<Structure>();
@@ -964,11 +992,16 @@ namespace RockGame
                 var s = h.GetComponentInParent<Structure>();
                 if (s != null && s.IsSpawned && team != -2 && s.Team.Value != team) structures.Add(s);
                 var c = h.GetComponentInParent<Container>();
-                if (c != null && c.IsSpawned && c.Breakable && team != -2 && c.Team.Value != team) chests.Add(c);
+                if (c != null && c.IsSpawned && c.Breakable && team != -2 && c.Team.Value != team && kind != BlastKind.C4) chests.Add(c); // (C4: only the one it's on)
                 var v = h.GetComponentInParent<Vehicle>();
                 if (v != null && v.IsSpawned) creatures.Add(v);
                 var n = h.GetComponentInParent<ResourceNode>();
                 if (n != null && n.IsSpawned && (nodes || (trees && n.Kind.Value == ResourceNode.Tree && n.Amount.Value > 0))) hitNodes.Add(n);
+            }
+            if (kind == BlastKind.C4 && onBox != null && onBox.IsSpawned && team != -2 && onBox.Team.Value != team)
+            {
+                if (onBox.IsWorkbench) onBox.ServerBreakBench();
+                else if (onBox.Breakable) chests.Add(onBox);
             }
             foreach (var c in chests) if (c.IsSpawned) c.ServerBreak();
             int destroyed = 0;
@@ -1073,10 +1106,10 @@ namespace RockGame
 
         // ------------------------------------------------------------------ portals
 
-        /// <summary>Portal gun: each gun makes one linked pair (2 shots). Portals stay for the whole game, every one a different colour.</summary>
+        /// <summary>Portal gun: each gun makes one linked pair (its one shot). Portals stay for the whole game, every one a different colour.</summary>
         public void ServerAddPortal(Vector3 pos, Vector3 normal, int pair)
         {
-            // the portal gun has infinite uses: past MaxPortals, the oldest pair (not the one being made) goes
+            // past MaxPortals, the oldest pair (not the one being made) goes
             while (Portals.Count >= MaxPortals)
             {
                 int oldest = Portals[0].Pair == pair && Portals.Count > 1 ? Portals[1].Pair : Portals[0].Pair;
@@ -1088,7 +1121,7 @@ namespace RockGame
             Fx.Server(FxKind.PortalOpen, pos, normal);
         }
 
-        /// <summary>Most portals in the world at once (the portal gun never runs out).</summary>
+        /// <summary>Most portals in the world at once (the oldest pair goes first).</summary>
         public const int MaxPortals = 24;
 
         public int ServerNewPortalPair() => m_NextPortalPair++;
