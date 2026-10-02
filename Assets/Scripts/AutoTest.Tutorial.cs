@@ -109,7 +109,9 @@ namespace RockGame
             float t0 = g.TimeLeft;
             yield return new WaitForSeconds(2f);
             Check(Mathf.Abs(g.TimeLeft - t0) < 0.5f, $"the clock doesn't move ({t0:0.0} -> {g.TimeLeft:0.0})");
-            Check(g.NextScheduledDrop.Value <= 0, $"no airdrops in the tutorial (next {g.NextScheduledDrop.Value:0})");
+            Check(g.LaneStartAt(0) < 0 && g.NextDropLands.Value < 0, "no airdrops in the tutorial");
+            Check(Ball.Instance != null && MapBuilder.GlassUp && new Vector2(Ball.Instance.transform.position.x, Ball.Instance.transform.position.z).magnitude < 0.5f && !Ball.Instance.IsCarried,
+                "the ball is already in the middle, under the glass dome");
             var ids = Tutorial.StepIds();
             Log($"tutorial steps ({ids.Count}): {string.Join(" ", ids)}");
             Check(Tutorial.StepCount >= 30 && Tutorial.StepId == "machine" && !Tutorial.HasEnterKey, $"the guide is on step 1 of {Tutorial.StepCount} ({Tutorial.StepId}), no Enter to skip");
@@ -470,7 +472,16 @@ namespace RockGame
             pc.LocalTeleport(Cfg.SpawnPos(team, me.Slot.Value), Cfg.SpawnYaw(team));
             yield return TutShot("glass");
             Check(g.S == GameState.PreBall && Tutorial.StepId == "glass", "the glass step waits until you walk up to the wall");
-            var near = Cfg.BackDir(team) * 3.5f;
+            // the ball waiting under the glass dome, from out on our side (not near enough to the wall to tick the step off)
+            {
+                var view = Cfg.BackDir(team) * (MapBuilder.DomeRadius + 8f);
+                view.y = MapBuilder.Height(view.x, view.z) + 0.1f;
+                pc.LocalTeleport(view, Quaternion.LookRotation(-Cfg.BackDir(team)).eulerAngles.y);
+                pc.SetLook(Quaternion.LookRotation(-Cfg.BackDir(team)).eulerAngles.y, 4f);
+                yield return TutShot("glass_dome");
+                Check(Tutorial.StepId == "glass" && g.S == GameState.PreBall && Ball.Instance != null && !Ball.Instance.IsCarried, "the ball sits under the dome until the wall drops");
+            }
+            var near = Tutorial.WallSpot(team); // (by the wall, just outside the glass dome)
             near.y = MapBuilder.Height(near.x, near.z) + 0.1f;
             pc.LocalTeleport(near, Cfg.SpawnYaw(team));
             yield return new WaitForSeconds(2.5f);

@@ -307,6 +307,56 @@ namespace RockGame
             MoveTo(Cfg.BallDropPoint);
             m_Rb.linearVelocity = Vector3.zero;
             m_Rb.angularVelocity = Vector3.zero;
+            m_SlowFall = true;
+        }
+
+        /// <summary>Where the ball waits at the start of a match: on the ground in the middle, under the glass dome.</summary>
+        public static Vector3 DomeSpot => new Vector3(0, MapBuilder.Height(0, 0) + Radius + 0.02f, 0);
+
+        /// <summary>Server: the match starts with the ball sitting still in the middle of the map, under the glass dome (nobody can reach it until the wall drops).</summary>
+        public void ServerPlaceInDome()
+        {
+            SocketTeam.Value = -1;
+            CarrierId.Value = NoCarrier;
+            m_Rb.isKinematic = true;
+            MoveTo(DomeSpot);
+            transform.rotation = Quaternion.identity;
+            m_SlowFall = false;
+        }
+
+        /// <summary>Server: the wall (and the dome) dropped - the ball is loose (a normal physics ball again).</summary>
+        public void ServerRelease()
+        {
+            if (IsCarried || SocketTeam.Value >= 0) return; // (picked up or socketed by a dev setting meanwhile)
+            m_Rb.isKinematic = false;
+            m_Rb.linearVelocity = Vector3.zero;
+            m_Rb.WakeUp();
+        }
+
+        // ---------------- falling from the sky slowly ----------------
+
+        /// <summary>The ball is dropping in from high up (a reset, the dev setting's "ball to the middle"): it falls at half the speed.</summary>
+        bool m_SlowFall;
+        /// <summary>Gravity on a slowly falling ball: a quarter of normal, so it's going half as fast at any height.</summary>
+        const float SlowFallGravity = 0.25f;
+
+        /// <summary>Server: drop the ball from up in the sky at half speed (it slows its fall until it hits something).</summary>
+        public void ServerDropFromSky(Vector3 pos)
+        {
+            ServerDrop(pos, Vector3.zero);
+            m_SlowFall = true;
+        }
+
+        void FixedUpdate()
+        {
+            if (!IsServer || !m_SlowFall || m_Rb == null) return;
+            if (m_Rb.isKinematic || IsCarried) { m_SlowFall = false; return; }
+            m_Rb.AddForce(-Physics.gravity * (1f - SlowFallGravity), ForceMode.Acceleration);
+        }
+
+        void OnCollisionEnter(Collision c)
+        {
+            if (m_SlowFall && IsServer) m_SlowFall = false; // landed: normal physics again
         }
 
         public bool ServerPickup(PlayerNet p)
@@ -347,6 +397,7 @@ namespace RockGame
             SocketTeam.Value = -1;
             CarrierId.Value = NoCarrier;
             m_Rb.isKinematic = false;
+            m_SlowFall = false;
             MoveTo(pos);
             m_Rb.linearVelocity = Vector3.ClampMagnitude(vel, 40f);
         }

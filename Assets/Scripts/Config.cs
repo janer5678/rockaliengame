@@ -292,6 +292,12 @@ namespace RockGame
         [Tune("Airdrop")] public static float WandRange = 90f, WandRadius = 3f;
         [Tune("Airdrop")] public static float InvisTime = 30f, InvisRevealTime = 1.2f;
         [Tune("Airdrop")] public static int ChainsawUses = 67, AirdropResources = 1000;
+        // how common each item is in airdrops (and respawn loot, Fun Random): a weight - 20 comes twice as often as 10, 0 never
+        // (only among the items picked in the mode options; if every picked item is 0 they're all equally likely)
+        [Tune("Airdrop rarity")] public static int RarityC4 = 10, RarityDeathWand = 10, RarityPortalGun = 10, RarityRocketLauncher = 10, RarityTreeCamo = 10,
+            RarityInvisPotion = 10, RarityJetpack = 10, RarityWallhack = 10, RarityBombBush = 10, RarityEnderPearl = 10;
+        [Tune("Airdrop rarity")] public static int RarityHelmet = 10, RarityArmor = 10, RarityChainsaw = 10, RarityFortTower = 10, RaritySniper = 10,
+            RaritySlenderEgg = 10, RarityBuildEgg = 10, RarityGiantStaff = 10, RarityAirstrike = 10, RarityWood = 10;
 
         // ---------- Player ----------
         [Tune("Player")] public static float MaxHealth = 100f;
@@ -314,8 +320,8 @@ namespace RockGame
         [Tune("Player")] public static float SlideUphillMul = 1.8f;   // going up a slope slows you this many times harder
         /// <summary>Standing in your own base heals you slowly (HP a second).</summary>
         [Tune("Player")] public static float BaseRegen = 2f;
-        /// <summary>While your team's ball is in your base, everything you gather gives this much more.</summary>
-        [Tune("Player")] public static float BallGatherMul = 1.25f;
+        /// <summary>While your team's ball is in your machine's socket (Builder: planted for your team), everything you gather gives this much more.</summary>
+        [Tune("Player")] public static float BallGatherMul = 1.15f;
         [Tune("Player")] public static float BerryHeal = 25f, BerryEatTime = 1.5f, MeatEatTime = 3f;
         [Tune("Player")] public static int ArmorHp = 50;               // wooden armour: a second health bar, used up first (max 255)
         [Tune("Player")] public static float HeadshotMul = 2f;
@@ -573,6 +579,51 @@ namespace RockGame
                 case Item.Crossbow: return ItemStack.Of(Item.Crossbow, 1, 1);
                 default: return ItemStack.Of(id, 1, Mathf.Clamp(MaxData(id), 0, 255));
             }
+        }
+
+        /// <summary>An airdrop item's rarity weight (CHANGE VALUES > Airdrop rarity): higher = more common, 0 = never.</summary>
+        public static int AirdropRarity(Item i)
+        {
+            switch (i)
+            {
+                case Item.C4: return RarityC4;
+                case Item.DeathWand: return RarityDeathWand;
+                case Item.PortalGun: return RarityPortalGun;
+                case Item.RocketLauncher: return RarityRocketLauncher;
+                case Item.TreeCamo: return RarityTreeCamo;
+                case Item.InvisPotion: return RarityInvisPotion;
+                case Item.Jetpack: return RarityJetpack;
+                case Item.Wallhack: return RarityWallhack;
+                case Item.BombBush: return RarityBombBush;
+                case Item.EnderPearl: return RarityEnderPearl;
+                case Item.Helmet: return RarityHelmet;
+                case Item.Armor: return RarityArmor;
+                case Item.Chainsaw: return RarityChainsaw;
+                case Item.FortTower: return RarityFortTower;
+                case Item.Sniper: return RaritySniper;
+                case Item.SlenderEgg: return RaritySlenderEgg;
+                case Item.BuildEgg: return RarityBuildEgg;
+                case Item.GiantStaff: return RarityGiantStaff;
+                case Item.Airstrike: return RarityAirstrike;
+                case Item.Wood: return RarityWood;
+                default: return 10;
+            }
+        }
+
+        /// <summary>A random airdrop item out of `pool`, weighted by its rarity (all equally likely if they're all 0).</summary>
+        public static Item PickAirdropItem(IList<Item> pool)
+        {
+            if (pool == null || pool.Count == 0) return Item.C4;
+            int total = 0;
+            foreach (var i in pool) total += Mathf.Max(0, AirdropRarity(i));
+            if (total <= 0) return pool[UnityEngine.Random.Range(0, pool.Count)];
+            int r = UnityEngine.Random.Range(0, total);
+            foreach (var i in pool)
+            {
+                r -= Mathf.Max(0, AirdropRarity(i));
+                if (r < 0) return i;
+            }
+            return pool[pool.Count - 1];
         }
 
         /// <summary>Everything an airdrop (or the respawn-loot option) can give you: the picked items (all of them if none are picked).</summary>
@@ -936,6 +987,7 @@ namespace RockGame
             (2, new[] { "SlideSlipperiness", "SlideBoost", "SlideMaxSpeed", "SlideSlopeAccel", "AlienOutlines", "RevolverMag", "BowMinSpeed", "BowMinDamage" }),
             (3, new[] { "RocketPlayerDamage", "HorseHp", "WoodGen1Wood", "WoodGen2Wood", "AutoWoodLevel1", "AutoWoodLevel2", "BaseRegen" }),
             (4, new[] { "SpearThrowDamage" }),
+            (5, new[] { "BallGatherMul" }),
         };
         const string MigrateKey = "RockGame.Tunables.migrated";
 

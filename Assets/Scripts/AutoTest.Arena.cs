@@ -7,8 +7,9 @@ namespace RockGame
     /// <summary>
     /// -autotest arena: the sudden death platform in space. Start the host on its own (-autotest arena -host -fast
     /// -shotdir DIR, windowed for the screenshots) and a client (-autotest arena -client 127.0.0.1) about a minute later.
-    /// Alone in the lobby the host photographs the platform, the crowd and space, and checks that walking off the edge
-    /// just puts you back on top. When the client joins, sudden death starts, and the host walks off the edge: that's a
+    /// Alone in the lobby the host checks the look (no crowd, flat colours, low-poly stars, 15% smaller), photographs the
+    /// platform and space, and checks that walking off the edge
+    /// just puts you back on top. When the client joins, sudden death starts (Ready? / Set / ROCK!, frozen until ROCK!), and the host walks off the edge: that's a
     /// death like a kill, so the client wins the duel.
     /// </summary>
     public partial class AutoTest
@@ -25,9 +26,27 @@ namespace RockGame
             Check(SpaceArena.OverPlatform(me.transform.position) && Mathf.Abs(me.transform.position.y - c.y) < 0.6f, $"standing on the platform in the lobby ({me.transform.position - c})");
             Check(Stadium.Instance != null && Stadium.Instance.GetComponentInChildren<TextMesh>().GetComponent<Renderer>().enabled, "the arena is drawn while you're in it");
             Check(!RenderSettings.fog, "no fog in space");
-            int fans = 0;
-            foreach (var t in Stadium.Instance.GetComponentsInChildren<Transform>()) if (t.name == "fan") fans++;
-            Check(fans >= 40 && fans <= 100, $"a crowd of {fans} aliens on the floating rocks");
+            int fans = 0, rocks = 0, textured = 0, starTris = 0;
+            foreach (var t in Stadium.Instance.GetComponentsInChildren<Transform>(true))
+            {
+                if (t.name == "fan") fans++;
+                if (t.name == "crowd rock") rocks++;
+                if (t.name == "stars" && t.TryGetComponent<MeshFilter>(out var mf)) starTris = mf.sharedMesh.triangles.Length / 3;
+            }
+            foreach (var r in Stadium.Instance.GetComponentsInChildren<MeshRenderer>(true))
+                if (r.GetComponent<TextMesh>() == null) // (the screens' text is a font)
+                foreach (var m in r.sharedMaterials)
+                    if (m != null && ((m.HasProperty("_BaseMap") && m.GetTexture("_BaseMap") != null) || (m.HasProperty("_MainTex") && m.GetTexture("_MainTex") != null && m.GetTexture("_MainTex").name != "UnityWhite"))) textured++;
+            Check(fans == 0 && rocks == 0, $"no crowd any more ({fans} fans, {rocks} rocks)");
+            Check(starTris >= SpaceArena.StarCount * 10, $"low-poly white stars in the sky ({SpaceArena.StarCount} stars, {starTris} triangles in one mesh)");
+            Check(textured == 0, $"flat colours, no textures ({textured} textured materials)");
+            Check(Mathf.Approximately(SpaceArena.HalfX, 21f * 0.85f) && Mathf.Approximately(SpaceArena.HalfZ, 27f * 0.85f), $"the platform is 15% smaller ({SpaceArena.HalfX} x {SpaceArena.HalfZ})");
+            for (int team = 0; team < 4; team++)
+                for (int slot = 0; slot < 4; slot++)
+                {
+                    NetGame.SpawnPoint(team, true, slot, out var tp, out _);
+                    if (!SpaceArena.OverPlatform(tp)) Check(false, $"arena spawn {team}/{slot} is off the platform ({tp - c})");
+                }
 
             // first person, from the spawn spot
             NetGame.SpawnPoint(me.Team.Value, true, me.Slot.Value, out var sp, out var sy);
@@ -35,7 +54,7 @@ namespace RockGame
             pc.SetLook(sy, 4f);
             yield return Snap("arena_01_fp_spawn");
             pc.SetLook(sy + 70f, -4f);
-            yield return Snap("arena_02_fp_crowd");
+            yield return Snap("arena_02_fp_stars");
             pc.SetLook(sy + 150f, -32f);
             yield return Snap("arena_03_fp_space_up");
 
@@ -54,14 +73,7 @@ namespace RockGame
             yield return View("arena_06_three_quarter", new Vector3(48f, 26f, -52f), new Vector3(0, -3f, 0));
             yield return View("arena_07_below", new Vector3(26f, -30f, -44f), new Vector3(0, -6f, 0));
             yield return View("arena_04_edge", new Vector3(9f, 1.5f, -33f), new Vector3(0f, -5f, -18f));
-            foreach (Transform rock in Stadium.Instance.transform)
-                if (rock.name == "crowd rock" && rock.localPosition.y > -3f && rock.localPosition.y < 4f)
-                {
-                    var lp = rock.localPosition;
-                    var toC = -new Vector3(lp.x, 0, lp.z).normalized;
-                    yield return View("arena_08_crowd_close", lp + toC * 11f + Vector3.up * 3f + Vector3.Cross(Vector3.up, toC) * 4f, lp + Vector3.up * 1.2f);
-                    break;
-                }
+            yield return View("arena_08_stars", new Vector3(0f, 3f, 0f), new Vector3(60f, 45f, 120f));
             yield return View("arena_09_top", new Vector3(0f, 70f, -10f), new Vector3(0, 0, 0));
             foreach (var h in hidden) h.SetActive(true);
             if (hud) hud.enabled = true;
@@ -91,8 +103,33 @@ namespace RockGame
             Check(SpaceArena.OverPlatform(me.transform.position) && SpaceArena.OverPlatform(other.transform.position), "both players teleported onto the platform for sudden death");
             NetGame.SpawnPoint(me.Team.Value, true, me.Slot.Value, out sp, out sy);
             pc.SetLook(sy, 2f);
-            yield return Snap("arena_11_sd_countdown");
-            while (g.FightFrozen) yield return null;
+            // Ready? / Set / ROCK! - and nobody moves until ROCK!
+            while (Hud.FightWord(g, out _) != "Ready?" && g.FightFrozen) yield return null;
+            var frozenAt = me.transform.position;
+            Binds.TestHold(Bind.Forward, true);
+            ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "arena_11_sd_ready.png"));
+            Log("shot arena_11_sd_ready");
+            while (Hud.FightWord(g, out _) == "Ready?") yield return null;
+            Check(Hud.FightWord(g, out _) == "Set" && g.FightFrozen, $"Ready? then Set ({Hud.FightWord(g, out _)})");
+            yield return new WaitForSeconds(0.3f);
+            ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "arena_11_sd_set.png"));
+            Log("shot arena_11_sd_set");
+            float moved = 0f;
+            while (g.FightFrozen)
+            {
+                moved = Mathf.Max(moved, Vector3.Distance(new Vector3(frozenAt.x, 0, frozenAt.z), new Vector3(me.transform.position.x, 0, me.transform.position.z)));
+                yield return null;
+            }
+            Check(moved < 0.2f, $"holding W during Ready? / Set doesn't move you ({moved:0.00} m)");
+            Check(Hud.FightWord(g, out _) == "ROCK!", $"then ROCK! ({Hud.FightWord(g, out _)})");
+            yield return new WaitForSeconds(0.15f);
+            ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "arena_11_sd_rock.png"));
+            Log("shot arena_11_sd_rock");
+            yield return new WaitForSeconds(0.6f);
+            Binds.TestReleaseAll();
+            float moved2 = Vector3.Distance(new Vector3(frozenAt.x, 0, frozenAt.z), new Vector3(me.transform.position.x, 0, me.transform.position.z));
+            Check(moved2 > 1f, $"after ROCK! you can move ({moved2:0.0} m)");
+            pc.LocalTeleport(sp, sy);
             yield return new WaitForSeconds(2.5f);
             yield return Snap("arena_12_sd_duel");
             Check(g.S == GameState.SuddenDeath && !me.Dead.Value && !other.Dead.Value, "nobody died before anyone fell");

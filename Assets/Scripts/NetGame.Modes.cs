@@ -119,7 +119,7 @@ namespace RockGame
                 foreach (var p in PlayerNet.All)
                 {
                     if (p.Dead.Value) continue;
-                    var stack = Cfg.GiftStack(Cfg.AllAirdropItems[Random.Range(0, Cfg.AllAirdropItems.Length)]);
+                    var stack = Cfg.GiftStack(Cfg.PickAirdropItem(Cfg.AllAirdropItems)); // (by Airdrop Rarity)
                     ServerGiftTo(p, stack);
                     p.NotifyPublic($"FUN RANDOM: you got {Cfg.ItemName(stack.Id)}{(stack.Count > 1 ? " x" + stack.Count : "")}!");
                 }

@@ -766,16 +766,14 @@ namespace RockGame
             Health.Value = Mathf.Min(Cfg.MaxHealth, Health.Value + add);
         }
 
-        /// <summary>Your team's ball is in your base (in your machine, planted for you, or lying there): gathering pays a bit more.</summary>
+        /// <summary>The ball is in your team's machine socket (Builder: planted for your team): gathering pays a bit more. Lying in your base doesn't count.</summary>
         public bool BallBuff
         {
             get
             {
                 var b = Ball.Instance;
-                if (b == null || !b.IsSpawned) return false;
-                if (b.SocketTeam.Value == Team.Value) return true;
-                if (b.IsCarried || Cfg.Builder) return false;
-                return Cfg.BaseTeamAt(b.transform.position) == Team.Value;
+                if (b == null || !b.IsSpawned || b.IsCarried) return false;
+                return b.SocketTeam.Value == Team.Value;
             }
         }
 
@@ -1506,6 +1504,7 @@ namespace RockGame
         {
             var b = Ball.Instance;
             if (Dead.Value || b == null || b.IsCarried || InSuddenDeath) return;
+            if (NetGame.Instance != null && NetGame.Instance.WallUp) return; // under the glass dome until the wall drops
             if (Vector3.Distance(b.transform.position, EyePos) > Cfg.InteractRange + 2f) return;
             if (b.ServerPickup(this) && NetGame.Instance != null)
                 NetGame.Instance.Broadcast($"{Cfg.TeamName[Team.Value]} picked up the ball!");

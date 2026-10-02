@@ -253,10 +253,14 @@ namespace RockGame
             return BenchThings() > s_Bench0;
         }
 
-        /// <summary>The glass wall, just on your side of the middle of the map (where all the walls meet).</summary>
+        /// <summary>The glass wall on your side of the map, just past the glass dome in the middle (where the walls meet the dome).</summary>
         public static Vector3 WallSpot(int team)
         {
-            var p = Cfg.BackDir(team) * 2.5f;
+            // along the wall from the middle (the wall runs across your direction home), a little out past the dome
+            var back = Cfg.BackDir(team);
+            var along = Cfg.FourWay ? (Quaternion.Euler(0, 45f, 0) * back).normalized : Vector3.Cross(Vector3.up, back);
+            var p = along * (MapBuilder.DomeRadius + 3.5f);
+            p += back * (Cfg.FourWay ? 1.5f : 2.5f);
             p.y = MapBuilder.Height(p.x, p.z) + 1.5f;
             return p;
         }
@@ -575,7 +579,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "glass", Title = "The glass wall",
-                    Body = "A big " + Hi("glass wall") + " splits the map. Walk up to it!",
+                    Body = "A big " + Hi("glass wall") + " splits the map. The " + Hi("ball") + " waits under the glass dome in the middle. Walk up to the wall!",
                     Goal = "Walk up to the glass wall",
                     Done = () => NearWall(Me.transform.position) || WallDown,
                     Target = () => WallSpot(Team), TargetLabel = "GLASS WALL",
@@ -586,7 +590,7 @@ namespace RockGame
                     BodyF = () =>
                     {
                         int left = PlayersNotAtWall();
-                        return WallDown || left == 0 ? "Down it goes! A " + Hi("ball") + " falls in the middle."
+                        return WallDown || left == 0 ? "Down it goes - and the dome too! The " + Hi("ball") + " in the middle is free."
                             : $"It drops when everyone is here. Waiting for {left} more player{(left == 1 ? "" : "s")}...";
                     },
                     Goal = "Wait for the wall to drop",
@@ -821,8 +825,9 @@ namespace RockGame
                 float fw = 340 * k, fx = 14, fy = 230 * k;
                 var fb = new GUIStyle(small) { wordWrap = true, richText = true };
                 string txt = "Win: have the ball " + Hi("in your machine") + " when the clock ends.\n"
+                    + "While it's in your machine, your team gathers " + Hi($"{Mathf.RoundToInt((Cfg.BallGatherMul - 1f) * 100f)}% more") + ".\n"
                     + "Everything is unlocked now - your bag also makes a " + Hi("bow, arrows, chests") + " and " + Hi("high walls") + ".\n"
-                    + "Real matches have " + Hi("airdrops") + ": the purple timer at the top says when the next one lands.\n"
+                    + "Real matches have " + Hi("airdrops") + ": a warning shows 15 seconds before one lands.\n"
                     + "Tip: Settings > Display changes the grass and the world's colours.\n"
                     + Hi("Esc") + " > Leave game, then host a real match!";
                 float fh = 30 * k + 30 * k + fb.CalcHeight(new GUIContent(txt), fw - 24 * k) + 12 * k;
