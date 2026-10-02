@@ -271,6 +271,272 @@ namespace RockGame
             }
             Time.timeScale = 1f;
             cam.fieldOfView = 70f;
+            yield return SmoothShadingCheck(trees);
+            yield return TreeXCheck(pc, dir, ground, trees, pick);
+            yield return FallingLeavesCheck(pc, dir, ground, pick);
+        }
+
+        /// <summary>The pines (and the clouds) are smooth-shaded: most corners' normals are bent off their own face's.</summary>
+        IEnumerator SmoothShadingCheck(List<ResourceNode> trees)
+        {
+            float Smooth(Mesh m, int sub)
+            {
+                var v = m.vertices; var nr = m.normals; var t = m.GetTriangles(sub);
+                int bent = 0;
+                for (int i = 0; i < t.Length; i += 3)
+                {
+                    var fn = Vector3.Cross(v[t[i + 1]] - v[t[i]], v[t[i + 2]] - v[t[i]]).normalized;
+                    for (int k = 0; k < 3; k++) if (Vector3.Angle(nr[t[i + k]], fn) > 3f) bent++;
+                }
+                return t.Length > 0 ? bent / (float)t.Length : 0f;
+            }
+            float needles = 1f, bark = 1f;
+            foreach (var n in trees)
+            {
+                var m = n.transform.Find("visual/needles").GetComponent<MeshFilter>().sharedMesh;
+                needles = Mathf.Min(needles, Smooth(m, 0));
+                bark = Mathf.Min(bark, Smooth(m, 1));
+            }
+            float cloud = 1f;
+            var cl = MapBuilder.Root != null ? MapBuilder.Root.GetComponentInChildren<CloudLayer>() : null;
+            if (cl != null) foreach (var mf in cl.GetComponentsInChildren<MeshFilter>()) cloud = Mathf.Min(cloud, Smooth(mf.sharedMesh, 0));
+            Log($"smooth shading: least share of corners bent off their face's normal - needles {needles * 100f:F0}%, bark {bark * 100f:F0}%, clouds {cloud * 100f:F0}%");
+            Check(trees.Count > 0 && needles > 0.5f && bark > 0.5f, $"the pines are smooth-shaded (needles {needles * 100f:F0}%, bark {bark * 100f:F0}% of corners smoothed)");
+            Check(cl != null && cloud > 0.5f, $"the clouds are smooth-shaded ({cloud * 100f:F0}% of corners smoothed)");
+            yield break;
+        }
+
+        /// <summary>
+        /// The weak spot X sits on the bark you see, never in it: every spot of every pine is shown in turn, and every corner
+        /// of the X's two bars (at its biggest pulse) has to be outside the trunk's mesh. The old placement (on the round
+        /// collider, which the ten-sided bark stands out past at its corners) is measured the same way, to compare. Then
+        /// the worst old spot on a few trees is photographed from the front and from the sides, zoomed in.
+        /// </summary>
+        IEnumerator TreeXCheck(PlayerController pc, string dir, System.Func<float, float, Vector3> ground, List<ResourceNode> trees, List<ResourceNode> pick)
+        {
+            var cam = Camera.main;
+            // the bark in world space (the trunk doesn't sway below the needles)
+            List<Vector3> Bark(ResourceNode n)
+            {
+                var needles = n.transform.Find("visual/needles");
+                var mesh = needles.GetComponent<MeshFilter>().sharedMesh;
+                var v = mesh.vertices; var t = mesh.GetTriangles(1);
+                var l = new List<Vector3>();
+                var m = needles.localToWorldMatrix;
+                for (int i = 0; i < t.Length; i += 3) { l.Add(m.MultiplyPoint3x4(v[t[i]])); l.Add(m.MultiplyPoint3x4(v[t[i + 1]])); l.Add(m.MultiplyPoint3x4(v[t[i + 2]])); }
+                return l;
+            }
+            int Crossings(List<Vector3> tris, Vector3 p, Vector3 d)
+            {
+                int hits = 0;
+                for (int i = 0; i < tris.Count; i += 3)
+                {
+                    Vector3 a = tris[i], e1 = tris[i + 1] - a, e2 = tris[i + 2] - a;
+                    var pv = Vector3.Cross(d, e2);
+                    float det = Vector3.Dot(e1, pv);
+                    if (Mathf.Abs(det) < 1e-9f) continue;
+                    float inv = 1f / det;
+                    var tv = p - a;
+                    float u = Vector3.Dot(tv, pv) * inv;
+                    if (u < 0f || u > 1f) continue;
+                    var qv = Vector3.Cross(tv, e1);
+                    float w = Vector3.Dot(d, qv) * inv;
+                    if (w < 0f || u + w > 1f) continue;
+                    if (Vector3.Dot(e2, qv) * inv > 1e-5f) hits++;
+                }
+                return hits;
+            }
+            // inside the trunk: rays out from the point (away from the axis, and tipped up and down) cross the bark an odd number of times (2 of 3)
+            bool Inside(List<Vector3> tris, Vector3 axis, Vector3 p)
+            {
+                var o = new Vector3(p.x - axis.x, 0, p.z - axis.z).normalized;
+                int odd = 0;
+                foreach (var d in new[] { o, (o + Vector3.up * 0.3f).normalized, (o - Vector3.up * 0.3f + Vector3.Cross(Vector3.up, o) * 0.2f).normalized })
+                    if ((Crossings(tris, p, d) & 1) == 1) odd++;
+                return odd >= 2;
+            }
+            // the corners (and back middles) of the X's two bars, for an X at this position / rotation at its biggest pulse
+            List<Vector3> XPoints(Transform marker, Vector3 pos, Quaternion rot)
+            {
+                var l = new List<Vector3>();
+                var m = Matrix4x4.TRS(pos, rot, Vector3.one * 1.08f);
+                foreach (Transform bar in marker)
+                {
+                    if (bar.GetComponent<MeshFilter>() == null || bar.name == "x decal") continue;
+                    var bm = m * Matrix4x4.TRS(bar.localPosition, bar.localRotation, bar.localScale);
+                    for (int c = 0; c < 8; c++) l.Add(bm.MultiplyPoint3x4(new Vector3((c & 1) - 0.5f, ((c >> 1) & 1) - 0.5f, ((c >> 2) & 1) - 0.5f)));
+                    l.Add(bm.MultiplyPoint3x4(new Vector3(0, 0, 0.5f)));
+                }
+                return l;
+            }
+            int shown = 0, badNew = 0, badOld = 0;
+            float worstOld = 0f, nearest = float.MaxValue, farthest = 0f;
+            var worstSpot = new Dictionary<ResourceNode, (int spot, float depth)>();
+            yield return new WaitForSeconds(0.6f); // (the tree hit above has stopped shaking)
+            var fails = new List<string>();
+            for (int s = 0; s < 12; s++)
+            {
+                foreach (var n in trees) n.Spot.Value = (byte)s;
+                yield return null;
+                yield return null;
+                foreach (var n in trees)
+                {
+                    Transform marker = null;
+                    foreach (var t in n.GetComponentsInChildren<Transform>(true)) if (t.name == "x") marker = t;
+                    if (marker == null || !marker.gameObject.activeInHierarchy || !n.TryGetSpot(out var spot, out var normal)) continue;
+                    shown++;
+                    var axis = n.transform.position;
+                    var tris = Bark(n);
+                    int inNew = 0;
+                    foreach (var q in XPoints(marker, marker.position, marker.rotation)) if (Inside(tris, axis, q)) inNew++;
+                    float r = new Vector2(marker.position.x - axis.x, marker.position.z - axis.z).magnitude;
+                    if (inNew > 0)
+                    {
+                        badNew++;
+                        if (fails.Count < 8) fails.Add($"tree {trees.IndexOf(n)} spot {s}: {inNew} corners in, the X {r:F3} m out, its visual at {n.transform.Find("visual").localPosition}");
+                    }
+                    nearest = Mathf.Min(nearest, r); farthest = Mathf.Max(farthest, r);
+                    // the old way: a ray onto the round collider, the X 1.5 cm off it
+                    var col = n.transform.Find("visual/trunk").GetComponent<Collider>();
+                    float y = 0.8f + (s % 3) * 0.35f;
+                    var wd = n.transform.rotation * new Vector3(Mathf.Cos(s * 30f * Mathf.Deg2Rad), 0, Mathf.Sin(s * 30f * Mathf.Deg2Rad));
+                    if (col.Raycast(new Ray(axis + Vector3.up * y + wd * 4f, -wd), out var hit, 8f))
+                    {
+                        int inOld = 0;
+                        var oldPts = XPoints(marker, hit.point + hit.normal * 0.015f, Quaternion.LookRotation(-hit.normal));
+                        foreach (var q in oldPts) if (Inside(tris, axis, q)) inOld++;
+                        if (inOld > 0) badOld++;
+                        worstOld = Mathf.Max(worstOld, inOld / (float)oldPts.Count);
+                        // (how much room there is between the old X's middle and the bark behind it, in mm)
+                        int room = 0;
+                        while (room < 40 && !Inside(tris, axis, hit.point + hit.normal * (0.014f - room * 0.001f))) room++;
+                        float bury = inOld * 100f - room;
+                        if (!worstSpot.TryGetValue(n, out var w) || bury > w.depth) worstSpot[n] = (s, bury);
+                    }
+                }
+            }
+            Log($"weak spot X on the pines: {shown} shown ({trees.Count} trees x 12 spots), {badNew} with a bit of the X inside the bark; the old placement (on the collider) had {badOld} (worst {worstOld * 100f:F0}% of its corners in); the X is {nearest:F3} .. {farthest:F3} m from the axis");
+            foreach (var f in fails) Log("  X in the bark: " + f);
+            Check(shown >= trees.Count * 12 - 2 && badNew == 0, $"the X never goes into a pine's bark ({badNew} of {shown} spots do; the old placement: {badOld})");
+            // photographs: the worst old spot on three trees, from the front and from the sides, normal and zoomed
+            int shot = 0;
+            IEnumerator Look(Vector3 feet, Vector3 at, string name)
+            {
+                pc.LocalTeleport(feet, 0f);
+                var eye = feet + Vector3.up * Cfg.EyeHeight;
+                var d = at - eye;
+                pc.SetLook(Mathf.Atan2(d.x, d.z) * Mathf.Rad2Deg, -Mathf.Atan2(d.y, new Vector2(d.x, d.z).magnitude) * Mathf.Rad2Deg);
+                cam.fieldOfView = 70f;
+                yield return null; yield return null; yield return new WaitForEndOfFrame();
+                ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(dir, $"treex_{shot++:00}_{name}.png"));
+                yield return null;
+                cam.fieldOfView = Mathf.Clamp(2f * Mathf.Atan(0.45f / d.magnitude) * Mathf.Rad2Deg, 5f, 50f);
+                yield return null; yield return null; yield return new WaitForEndOfFrame();
+                ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(dir, $"treex_{shot++:00}_{name}_zoom.png"));
+                yield return null;
+                cam.fieldOfView = 70f;
+            }
+            int done = 0;
+            foreach (var n in pick)
+            {
+                if (done >= 3 || !worstSpot.TryGetValue(n, out var w)) continue;
+                done++;
+                foreach (var t in trees) t.Spot.Value = ResourceNode.NoSpot;
+                n.Spot.Value = (byte)w.spot;
+                yield return new WaitForSeconds(0.4f); // (the pop settles)
+                Time.timeScale = 0f;
+                n.TryGetSpot(out var spot, out var normal);
+                foreach (float side in new[] { 0f, -40f, 40f })
+                {
+                    var off = Quaternion.Euler(0, side, 0) * normal;
+                    var feet = ground(spot.x + off.x * 1.7f, spot.z + off.z * 1.7f);
+                    yield return Look(feet, spot, $"t{pick.IndexOf(n)}_spot{w.spot}_{(side == 0f ? "front" : side < 0f ? "left" : "right")}");
+                }
+                Time.timeScale = 1f;
+            }
+            foreach (var t in trees) t.Spot.Value = ResourceNode.NoSpot;
+            Time.timeScale = 1f;
+            cam.fieldOfView = 70f;
+        }
+
+        /// <summary>A hit on a tree shakes a few leaves loose: they start in its crown, in its leaf colour, and drift down.
+        /// Photographed as they fall (from beside the tree, and looking up into it).</summary>
+        IEnumerator FallingLeavesCheck(PlayerController pc, string dir, System.Func<float, float, Vector3> ground, List<ResourceNode> pick)
+        {
+            if (pick.Count == 0) yield break;
+            var cam = Camera.main;
+            cam.fieldOfView = 70f;
+            int shot = 0;
+            foreach (var n in new[] { pick[0], pick[pick.Count - 1] })
+            {
+                var tp = n.transform.position;
+                var lay = ResourceNode.PineShapeOf(n.Seed.Value);
+                var away = -tp; away.y = 0; away = away.sqrMagnitude > 0.01f ? away.normalized : Vector3.forward;
+                var feet = ground(tp.x + away.x * 4.5f, tp.z + away.z * 4.5f);
+                pc.LocalTeleport(feet, 0f);
+                var eye = feet + Vector3.up * Cfg.EyeHeight;
+                var d = tp + Vector3.up * (lay.CanopyBottom * 0.75f) - eye;
+                pc.SetLook(Mathf.Atan2(d.x, d.z) * Mathf.Rad2Deg, -Mathf.Atan2(d.y, new Vector2(d.x, d.z).magnitude) * Mathf.Rad2Deg);
+                yield return new WaitForSeconds(0.3f);
+                foreach (var old in FindObjectsByType<FxLeaf>(FindObjectsSortMode.None)) Destroy(old.gameObject);
+                yield return null;
+                int before = FxLeaf.Alive;
+                // a hit on the trunk, as the player's swing plays it
+                Fx.Play(FxKind.WoodChips, tp + Vector3.up * 1.1f + away * ResourceNode.TrunkR, away);
+                yield return null;
+                var leaves = new List<FxLeaf>(FindObjectsByType<FxLeaf>(FindObjectsSortMode.None));
+                int made = FxLeaf.Alive - before;
+                var start = new Dictionary<FxLeaf, Vector3>();
+                float lo = float.MaxValue, hi = float.MinValue;
+                foreach (var l in leaves) { start[l] = l.transform.position; lo = Mathf.Min(lo, l.transform.position.y - tp.y); hi = Mathf.Max(hi, l.transform.position.y - tp.y); }
+                var want = n.Leaf;
+                var lc = FxLeaf.LastColour;
+                Log($"falling leaves from tree {pick.IndexOf(n)}: {made} shaken loose, {lo:F1} .. {hi:F1} m up (its needles start at {lay.CanopyBottom:F1} m), colour #{ColorUtility.ToHtmlStringRGB(lc)} (the tree's #{ColorUtility.ToHtmlStringRGB(want)})");
+                Check(made >= 3 && made <= 10, $"a hit shakes a few leaves loose ({made})");
+                Check(made > 0 && lo > lay.CanopyBottom - 0.8f && hi < lay.CanopyBottom + 2.5f, $"they start in the crown ({lo:F1} .. {hi:F1} m, the needles from {lay.CanopyBottom:F1} m)");
+                bool sameColour = lc.g > lc.b && lc.g > lc.r && Vector3.Distance(new Vector3(lc.r, lc.g, lc.b), new Vector3(want.r, want.g, want.b)) < 0.25f;
+                Check(sameColour, $"in the tree's leaf colour (#{ColorUtility.ToHtmlStringRGB(lc)} vs #{ColorUtility.ToHtmlStringRGB(want)})");
+                string tag = $"t{pick.IndexOf(n)}";
+                float waited = 0f;
+                foreach (float at in new[] { 0.5f, 1.2f, 2.2f })
+                {
+                    yield return new WaitForSeconds(at - waited);
+                    waited = at;
+                    yield return new WaitForEndOfFrame();
+                    ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(dir, $"leaves_{shot++:00}_{tag}_{at:F1}s.png"));
+                }
+                // they've come down (and swung about on the way)
+                float drop = 0f, sway = 0f; int alive = 0;
+                foreach (var l in leaves)
+                {
+                    if (l == null) continue;
+                    alive++;
+                    var dp = l.transform.position - start[l];
+                    drop += -dp.y; sway += new Vector2(dp.x, dp.z).magnitude;
+                }
+                if (alive > 0) { drop /= alive; sway /= alive; }
+                Log($"after 2.2 s: {alive} leaves still about, fallen {drop:F2} m on average, {sway:F2} m sideways");
+                Check(alive == 0 || drop > 1.2f, $"the leaves drift down ({drop:F2} m in 2.2 s)");
+                yield return new WaitForSeconds(4f);
+            }
+            // looking up into a tree while it's hit
+            {
+                var n = pick[0];
+                var tp = n.transform.position;
+                var lay = ResourceNode.PineShapeOf(n.Seed.Value);
+                var side = new Vector3(1, 0, 0.3f).normalized;
+                var feet = ground(tp.x + side.x * 2.2f, tp.z + side.z * 2.2f);
+                pc.LocalTeleport(feet, 0f);
+                var eye = feet + Vector3.up * Cfg.EyeHeight;
+                var d = tp + Vector3.up * (lay.CanopyBottom + 1f) - eye;
+                pc.SetLook(Mathf.Atan2(d.x, d.z) * Mathf.Rad2Deg, -Mathf.Atan2(d.y, new Vector2(d.x, d.z).magnitude) * Mathf.Rad2Deg);
+                yield return new WaitForSeconds(0.3f);
+                Fx.Play(FxKind.WoodChips, tp + Vector3.up * 1.1f + side * ResourceNode.TrunkR, side);
+                yield return new WaitForSeconds(0.7f);
+                yield return new WaitForEndOfFrame();
+                ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(dir, $"leaves_{shot++:00}_looking_up.png"));
+                yield return new WaitForSeconds(0.3f);
+            }
         }
 
         /// <summary>A berry bush up close (and at a gust and a lull, to see it move), the bases' flag, the clouds, the
@@ -362,6 +628,24 @@ namespace RockGame
             var outDir = new Vector3(-bc.x, 0, -bc.z).normalized;
             yield return Look(mid, mid + Vector3.up * 1.6f + Quaternion.Euler(0, 30f, 0) * outDir * 100f + Vector3.up * 60f, "clouds_up", 0f);
             yield return Look(mid, mid + Vector3.up * 1.6f + Quaternion.Euler(0, -40f, 0) * outDir * 300f + Vector3.up * 40f, "clouds_horizon", 0f);
+            // one cloud close up (zoomed in: the shading over its puffs)
+            var layer = MapBuilder.Root != null ? MapBuilder.Root.GetComponentInChildren<CloudLayer>() : null;
+            if (layer != null)
+            {
+                Renderer near = null;
+                foreach (var r in layer.GetComponentsInChildren<Renderer>())
+                {
+                    var c = r.bounds.center;
+                    if (new Vector2(c.x - mid.x, c.z - mid.z).magnitude < 60f) continue; // (not right overhead)
+                    if (near == null || (c - mid).sqrMagnitude < (near.bounds.center - mid).sqrMagnitude) near = r;
+                }
+                if (near != null)
+                {
+                    Time.timeScale = 0f;
+                    yield return Look(mid, near.bounds.center, "cloud_close", near.bounds.size.magnitude * 0.8f);
+                    Time.timeScale = 1f;
+                }
+            }
 
             // ---- where the watch towers stood (Highlands) and the shading of the hills (the grass off, then on) ----
             int towers = 0;
@@ -416,13 +700,49 @@ namespace RockGame
                 for (int k = 0; k < 20000 && !found; k++)
                 {
                     var p = new Vector3(Random.Range(-Cfg.MapHalf, Cfg.MapHalf), 0, Random.Range(-Cfg.MapHalf, Cfg.MapHalf));
-                    bool ok = gr.CoverAt(p.x, p.z) > 0.99f;
-                    for (int s = 0; s < 8 && ok; s++) { float a = s * Mathf.PI / 4f; ok &= gr.WheatAt(p.x + Mathf.Cos(a) * 3f, p.z + Mathf.Sin(a) * 3f) > 0.97f; }
+                    bool ok = gr.CoverAt(p.x, p.z) > 0.99f && gr.WheatAt(p.x, p.z) > 0.75f;
+                    for (int s = 0; s < 8 && ok; s++) { float a = s * Mathf.PI / 4f; ok &= gr.WheatAt(p.x + Mathf.Cos(a) * 2.5f, p.z + Mathf.Sin(a) * 2.5f) > 0.56f; }
                     if (ok) { inWheat = ground(p.x, p.z); found = true; }
                 }
                 Check(found, "found a spot deep in the tall wheat");
                 if (found)
                 {
+                    // the patch from outside: where its tall middle starts, from eye height and from above
+                    var pc0 = new Vector2(inWheat.x, inWheat.z);
+                    for (int k = 0; k < 60; k++)
+                    {
+                        // (walk up to the deepest spot of this patch)
+                        Vector2 best = pc0; float bw = gr.WheatAt(pc0.x, pc0.y);
+                        for (int s = 0; s < 8; s++) { var q = pc0 + new Vector2(Mathf.Cos(s * Mathf.PI / 4f), Mathf.Sin(s * Mathf.PI / 4f)); float w = gr.WheatAt(q.x, q.y); if (w > bw) { bw = w; best = q; } }
+                        if (best == pc0) break;
+                        pc0 = best;
+                    }
+                    var centre = ground(pc0.x, pc0.y);
+                    // straight out from the middle until it's open grass, then 5 m more
+                    var outward = new Vector2(1, 0.35f).normalized;
+                    float edge = 0f;
+                    while (edge < 40f && gr.WheatAt(pc0.x + outward.x * edge, pc0.y + outward.y * edge) > 0.001f) edge += 0.25f;
+                    float rimAt = 0f;
+                    while (rimAt < edge && gr.WheatAt(pc0.x + outward.x * rimAt, pc0.y + outward.y * rimAt) >= 0.5f) rimAt += 0.25f;
+                    Log($"tall grass patch at {centre}: its edge {edge:F1} m from the middle, the tall middle out to {rimAt:F1} m (the knee-high rim {edge - rimAt:F1} m wide)");
+                    Check(rimAt > 0.5f && edge - rimAt > 0.8f, $"a patch has a knee-high rim round a tall middle (middle {rimAt:F1} m, rim {edge - rimAt:F1} m)");
+                    var outside = ground(pc0.x + outward.x * (edge + 5f), pc0.y + outward.y * (edge + 5f));
+                    yield return Look(outside, centre + Vector3.up * 1.2f, "wheat_patch_from_outside", 0f);
+                    var side = new Vector2(-outward.y, outward.x);
+                    var outside2 = ground(pc0.x + side.x * (edge + 3f), pc0.y + side.y * (edge + 3f));
+                    yield return Look(outside2, centre + Vector3.up * 1.2f, "wheat_patch_from_the_side", 0f);
+                    var above = centre + new Vector3(outward.x * (edge + 6f), 14f, outward.y * (edge + 6f));
+                    pc.LocalTeleport(above, 0f);
+                    {
+                        var d = centre - (above + Vector3.up * Cfg.EyeHeight);
+                        pc.SetLook(Mathf.Atan2(d.x, d.z) * Mathf.Rad2Deg, -Mathf.Atan2(d.y, new Vector2(d.x, d.z).magnitude) * Mathf.Rad2Deg);
+                        yield return new WaitForSeconds(0.8f);
+                        Snap("wheat_patch_from_above");
+                        yield return Frame();
+                    }
+                    // standing on the edge of the tall middle, looking in
+                    var rimFeet = ground(pc0.x + outward.x * (rimAt + 1.2f), pc0.y + outward.y * (rimAt + 1.2f));
+                    yield return Look(rimFeet, centre + Vector3.up * Cfg.EyeHeight, "wheat_patch_rim_looking_in", 0f);
                     float yaw = Random.Range(0f, 360f);
                     var fwd = Quaternion.Euler(0, yaw, 0) * Vector3.forward;
                     var fade = Shader.GetGlobalVector("_GrassNearFade");

@@ -1,5 +1,5 @@
-// Normal graphics: vertex-coloured, flat-shaded world meshes merged into a few big ones (castle walls, pine foliage,
-// team flags, clouds). Colour = vertex colour (linear) x _Tint, lit like the grass and the ground (GrassLight.hlsl).
+// Normal graphics: vertex-coloured world meshes merged into a few big ones (pine foliage and trunks, team flags, clouds,
+// berry bushes), flat- or smooth-shaded by their own normals (the pines and the clouds are smooth). Colour = vertex colour (linear) x _Tint, lit like the grass and the ground (GrassLight.hlsl).
 // _Wind picks how the mesh moves (all in the vertex shader, so it costs nothing on the CPU):
 //   0 still;  1 pine foliage: sways a little in the same slow gusts as the grass, more towards the top
 //   (uv0.x = how much this vertex sways);  2 a flag: the cloth waves out from the pole (uv0.x = 0 at the pole .. 1 at

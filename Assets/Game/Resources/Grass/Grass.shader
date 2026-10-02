@@ -1,15 +1,17 @@
 // Normal graphics: grass blades (and the flowers among them). Each blade's vertices are stored as offsets from its
 // root; the root is put on the ground by reading the grass field texture (GrassField.cs: R height, G how much grass
-// grows there, B tall wheat, A short grass for flower clearings). So one 8 m patch of blades, drawn instanced all
+// grows there, B tall wheat: how far into a patch, A short grass for flower clearings). So one 8 m patch of blades, drawn instanced all
 // round the camera (far away stretched over 16 or 32 m squares), follows the hills and stays off the bases. Far away
 // there are fewer, wider blades (they shrink into the ground smoothly instead of popping). Blades sway in the wind,
 // are pushed aside by players and things on the ground, and lie flat where something has walked (the trample map:
-// when each spot was last stepped on; they stand back up over ~15 s). Tall wheat isn't flattened.
+// when each spot was last stepped on; they stand back up over ~15 s). Tall wheat isn't flattened. A tall grass patch
+// is knee-high round its rim (B under 0.5) and steps up sharply to the head-high middle (B 0.5 .. 1, tallest at 1).
 // Flowers (static meshes, rank < 0) skip the patch-only parts (wheat, thinning out, random gaps); their uv0.w says
 // what they are (0 a daisy's middle, 1 daisy petals, 2 a lupin spike, 3 stems and leaves) for the colour settings.
 // Blades right in front of the camera fade out (a dither pattern, so they stay opaque and sorted: the further from the
 // eyes, the more of their pixels are drawn) - standing or crouching in the tall wheat, it doesn't cover your screen.
-// It's only around this camera: everyone else still sees you hidden in it.
+// The tall grass of a patch fades further out and more (_GrassNearFade.zw). It's only around this camera: everyone
+// else still sees you hidden in it.
 // The settings are globals set by GrassField.cs (no material properties).
 Shader "RockGame/Grass"
 {
@@ -39,7 +41,8 @@ Shader "RockGame/Grass"
         float4 _GrassLupinTint;
         float _GrassWind;
         float _GrassDebug;
-        float4 _GrassNearFade;           // x, y: blades closer to the camera than x (m) are gone, further than y fully there
+        float4 _GrassNearFade;           // x, y: blades closer to the camera than x (m) are gone, further than y fully there;
+                                         // z, w: the same for the tall grass in a patch
 
         struct Attributes
         {
@@ -56,6 +59,7 @@ Shader "RockGame/Grass"
             float fog : TEXCOORD2;
             half fade : TEXCOORD3;          // 0: right at the camera (not drawn) .. 1: drawn
         };
+        static const float k_TallH = 5.8;   // the middle of a tall grass patch: this many times the grass's height
 
         float GrassHash(float2 p) { return frac(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453); }
 
@@ -79,19 +83,24 @@ Shader "RockGame/Grass"
             float bend = v.color.a;
             half3 col = v.color.rgb;
             float hMul = 1, wMul = 1;
-            float wheat = decor ? 0 : f.b;
+            // a tall grass patch: in it at all (the knee-high rim), in its tall middle (a sharp step up), the very middle
+            float inPatch = decor ? 0 : smoothstep(0.0, 0.1, f.b);
+            float wheat = decor ? 0 : smoothstep(0.46, 0.54, f.b);
+            float rise = saturate(f.b * 2 - 1);
             if (!decor)
             {
                 col *= _GrassTint.rgb;                                   // the colour picked in the settings
                 hMul = saturate((f.g - h * 0.85) * 7);                    // patchy edges where the grass stops
                 hMul *= lerp(lerp(0.7, 1.3, frac(h * 7.13)), 1, wheat * 0.7); // taller and shorter bits
-                hMul *= lerp(1, 4.6 * lerp(0.88, 1.12, v.uv0.w), wheat);  // tall wheat (head high: you can hide in it)...
-                col = lerp(col, _GrassWheat.rgb * lerp(0.85, 1.15, v.uv0.w), wheat); // ...and golden
+                // knee-high round the rim, then head high and more in the middle (you can hide in it)...
+                float tall = lerp(lerp(1.3, 2.1, saturate(f.b * 2)), k_TallH * lerp(1, 1.18, rise), wheat) * lerp(0.88, 1.12, v.uv0.w);
+                hMul *= lerp(1, tall, inPatch);
+                col = lerp(col, _GrassWheat.rgb * lerp(0.85, 1.15, v.uv0.w), inPatch * lerp(0.45, 1, wheat)); // ...and golden
                 hMul *= lerp(1, 0.3, f.a);                               // flower clearings are short
                 float dens = (dist < _GrassNear ? 1 : pow(_GrassNear / dist, _GrassFalloff)) * _GrassDensity;
                 hMul *= saturate((dens * stretch * stretch - v.uv0.z) * 12); // fewer blades far away...
                 wMul = clamp(rsqrt(max(dens, 0.04)) * 0.8, 1, 2.6);      // ...but wider, so it still looks full
-                wMul *= lerp(1, 1.5, wheat);
+                wMul *= lerp(1, 1.5, wheat) * lerp(1, 1.15, inPatch);
             }
             else
             {
@@ -147,8 +156,11 @@ Shader "RockGame/Grass"
             o.fog = ComputeFogFactor(o.positionCS.z);
             // close to the camera: fade out (measured with the height counted double, so the grass at your feet stays)
             float3 dc = o.ws - _WorldSpaceCameraPos;
+            // (the tall grass in a patch: further out, and see-through for longer - the fade is squared)
             float dn = length(float3(dc.x, dc.y * 2, dc.z));
-            o.fade = _GrassNearFade.y > _GrassNearFade.x ? smoothstep(_GrassNearFade.x, _GrassNearFade.y, dn) : 1;
+            float2 nf = lerp(_GrassNearFade.xy, _GrassNearFade.zw, wheat);
+            float nfade = smoothstep(nf.x, nf.y, dn);
+            o.fade = _GrassNearFade.y > _GrassNearFade.x ? lerp(nfade, nfade * nfade, wheat) : 1;
             if (_GrassDebug > 0.5)
             {
                 // debug: draw every blade full size, coloured by what the shader reads

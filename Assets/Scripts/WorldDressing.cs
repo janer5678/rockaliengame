@@ -39,7 +39,7 @@ namespace RockGame
     }
 
     /// <summary>Normal graphics: puffy low-poly clouds drifting slowly high over the map (a handful of merged meshes,
-    /// no shadows). Hidden in PSX / AI PSX and in the sudden death arena in space.</summary>
+    /// smooth-shaded, no shadows). Hidden in PSX / AI PSX and in the sudden death arena in space.</summary>
     public class CloudLayer : MonoBehaviour
     {
         readonly List<Transform> m_Clouds = new List<Transform>();
@@ -106,16 +106,17 @@ namespace RockGame
                 var c = new Vector3((t - 0.5f) * len, r * 0.35f + R(-0.5f, 1.2f), R(-4f, 4f) * (1f - big * 0.5f));
                 Puff(kit, c, r, R(0.85f, 1.15f), rng, top, bottom);
             }
+            kit.SmoothNormals(65f); // (smooth-shaded puffs; the flat bottom keeps its edge)
             return kit.ToMesh("cloud");
         }
 
         static void Puff(MeshKit kit, Vector3 c, float r, float squash, System.Random rng, Color top, Color bottom)
         {
-            MeshKit.Ico80(out var icoV, out var icoF);
+            MeshKit.Ico320(out var icoV, out var icoF);
             var pts = new Vector3[icoV.Length];
             for (int i = 0; i < pts.Length; i++)
             {
-                var p = icoV[i] * r * (1f + ((float)rng.NextDouble() - 0.5f) * 0.12f);
+                var p = icoV[i] * r * (1f + ((float)rng.NextDouble() - 0.5f) * 0.05f);
                 p.y *= 0.72f * squash;
                 p += c;
                 p.y = Mathf.Max(p.y, 0f); // flat bottom

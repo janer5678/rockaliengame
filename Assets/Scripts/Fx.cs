@@ -59,7 +59,7 @@ namespace RockGame
             {
                 case FxKind.Blood: Blood(pos, dir, false); break;
                 case FxKind.BloodHead: Blood(pos, dir, true); break;
-                case FxKind.WoodChips: Chips(pos, dir, BarkAt(pos), 8); Sfx.Play(Sfx.Chop, pos, 0.3f); break;
+                case FxKind.WoodChips: Chips(pos, dir, BarkAt(pos), 8); FallingLeaves(pos, dir); Sfx.Play(Sfx.Chop, pos, 0.3f); break;
                 case FxKind.StoneChips: Chips(pos, dir, Art.Stone, 8); Sparks(pos, dir, 5); Sfx.Play(Sfx.Clink, pos); break;
                 case FxKind.WeakSpot: Sparks(pos, dir, 16); Sfx.Play(Sfx.Ding, pos, 0.8f); break;
                 case FxKind.WeakSpotTree: Sparks(pos, dir, 16); Chips(pos, dir, BarkAt(pos), 6, 4.5f); TreeHitNote(pos); break;
@@ -100,6 +100,18 @@ namespace RockGame
         {
             var t = ResourceNode.TreeNear(pos, 2.5f);
             return t != null ? t.Bark : Art.Wood;
+        }
+
+        /// <summary>A hit on a tree shakes a few leaves (needles) loose: they flutter down out of its crown in its own leaf
+        /// colour. Played wherever the hit's chips are (every peer that sees the hit).</summary>
+        public static void FallingLeaves(Vector3 pos, Vector3 dir)
+        {
+            var t = ResourceNode.TreeNear(pos, 2.5f);
+            if (t == null) return;
+            var towards = pos + (dir.sqrMagnitude > 0.01f ? dir.normalized : Vector3.zero) * 3f;
+            int n = Random.Range(4, 8);
+            for (int i = 0; i < n; i++)
+                if (t.LeafFrom(towards, out var p, out var c)) FxLeaf.Spawn(p, c, Random.Range(0f, 0.35f));
         }
 
         static AudioClip[] s_TreeNotes;
@@ -459,6 +471,114 @@ namespace RockGame
                 transform.localScale = Vector3.one * m_Size * Mathf.Clamp01(k * 2f);
             }
             else transform.localScale = new Vector3(m_Size * 2.2f, m_Size * 2.2f, 0.01f) * Mathf.Clamp01(k * 3f);
+        }
+    }
+
+    /// <summary>A leaf shaken off a tree by a hit: a small pointed card in the tree's leaf colour that drifts down slowly, swinging
+    /// from side to side and tipping as it goes, lies on whatever it lands on for a moment and shrinks away.</summary>
+    public class FxLeaf : MonoBehaviour
+    {
+        /// <summary>How many are falling or lying about right now (tests; capped, they're only looks).</summary>
+        public static int Alive { get; private set; }
+        public static Color LastColour { get; private set; }
+        Vector3 m_Drift, m_Side;
+        float m_Fall, m_Swing, m_Freq, m_Phase, m_Age, m_Delay, m_Life = 9f, m_Size, m_Spin;
+        bool m_Landed;
+        Renderer m_R;
+        static Mesh s_Mesh;
+
+        /// <summary>A pointed leaf, 1 long (x) and half as wide, drawn from both sides - and lit from both like its top
+        /// (every normal points up), so one seen from underneath isn't a black speck.</summary>
+        static Mesh LeafMesh
+        {
+            get
+            {
+                if (s_Mesh != null) return s_Mesh;
+                var outline = new[] { new Vector3(-0.5f, 0, 0), new Vector3(-0.2f, 0.01f, 0.22f), new Vector3(0.2f, 0.01f, 0.2f), new Vector3(0.5f, 0, 0), new Vector3(0.2f, 0.01f, -0.2f), new Vector3(-0.2f, 0.01f, -0.22f) };
+                var v = new List<Vector3>(outline);
+                v.Add(new Vector3(0, 0.025f, 0)); // (the middle, a little raised: a slight fold)
+                v.AddRange(v.ToArray());
+                var t = new List<int>();
+                for (int i = 0; i < 6; i++)
+                {
+                    int a = i, b = (i + 1) % 6;
+                    t.Add(6); t.Add(a); t.Add(b);          // top (clockwise seen from above)
+                    t.Add(13); t.Add(7 + b); t.Add(7 + a); // underneath
+                }
+                var n = new Vector3[v.Count];
+                for (int i = 0; i < n.Length; i++) n[i] = Vector3.up;
+                s_Mesh = new Mesh { name = "leaf" };
+                s_Mesh.SetVertices(v);
+                s_Mesh.normals = n;
+                s_Mesh.SetTriangles(t, 0);
+                s_Mesh.RecalculateBounds();
+                return s_Mesh;
+            }
+        }
+
+        public static void Spawn(Vector3 pos, Color c, float delay)
+        {
+            if (Alive >= 120) return;
+            // three shades of the leaf colour, on the light side like the branch tips (the materials are cached by
+            // colour, so there are only a few)
+            int shade = Random.Range(0, 3);
+            var col = shade == 0 ? c * 1.12f : shade == 1 ? c * 0.95f : Color.Lerp(c * 1.2f, new Color(0.62f, 0.8f, 0.3f), 0.25f);
+            col.a = 1f;
+            LastColour = col;
+            float size = Random.Range(0.14f, 0.2f);
+            var go = Art.Part(null, LeafMesh, col, pos, Vector3.one * size, new Vector3(0, Random.Range(0f, 360f), 0));
+            go.name = "falling leaf";
+            var mr = go.GetComponent<MeshRenderer>();
+            mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            mr.receiveShadows = false; // (they'd be black specks in the tree's own shadow)
+            var l = go.AddComponent<FxLeaf>();
+            l.m_R = mr;
+            l.m_Size = size;
+            l.m_Delay = delay;
+            l.m_Fall = Random.Range(0.9f, 1.4f);
+            l.m_Swing = Random.Range(0.25f, 0.45f);
+            l.m_Freq = Random.Range(2.2f, 3.4f);
+            l.m_Phase = Random.Range(0f, Mathf.PI * 2f);
+            l.m_Spin = Random.Range(-90f, 90f);
+            float a = Random.Range(0f, Mathf.PI * 2f);
+            l.m_Side = new Vector3(Mathf.Cos(a), 0, Mathf.Sin(a));
+            l.m_Drift = new Vector3(0.25f, 0, 0.1f) * Random.Range(0.5f, 1.2f); // (the same way the wind blows the grass)
+            if (delay > 0f) mr.enabled = false;
+            Alive++;
+        }
+
+        void OnDestroy() => Alive--;
+
+        void Update()
+        {
+            float dt = Time.deltaTime;
+            if (m_Delay > 0f) { m_Delay -= dt; if (m_Delay <= 0f) m_R.enabled = true; return; }
+            m_Age += dt;
+            if (m_Landed)
+            {
+                m_Life -= dt;
+                if (m_Life <= 0f) { Destroy(gameObject); return; }
+                transform.localScale = Vector3.one * m_Size * Mathf.Clamp01(m_Life * 2f);
+                return;
+            }
+            if (m_Age > 12f) { Destroy(gameObject); return; }
+            // falling: a steady slow drop (after a moment speeding up to it), swinging side to side like a pendulum
+            float fall = m_Fall * Mathf.Clamp01(m_Age * 2.5f);
+            float w = m_Age * m_Freq + m_Phase;
+            var step = (Vector3.down * fall + m_Side * Mathf.Cos(w) * m_Swing * m_Freq + m_Drift) * dt;
+            if (Physics.Raycast(transform.position, step, out var hit, step.magnitude + 0.01f, ~0, QueryTriggerInteraction.Ignore)
+                && hit.collider.GetComponentInParent<PlayerNet>() == null)
+            {
+                m_Landed = true;
+                transform.position = hit.point + hit.normal * 0.008f;
+                transform.rotation = Quaternion.FromToRotation(Vector3.up, hit.normal) * Quaternion.Euler(0, Random.Range(0f, 360f), 0);
+                m_Life = Random.Range(2f, 3.5f);
+                return;
+            }
+            transform.position += step;
+            // tipping with the swing, and turning slowly
+            var tilt = Vector3.Cross(Vector3.up, m_Side);
+            transform.rotation = Quaternion.AngleAxis(Mathf.Sin(w) * 40f, tilt) * Quaternion.Euler(0, m_Age * m_Spin, 0);
         }
     }
 
