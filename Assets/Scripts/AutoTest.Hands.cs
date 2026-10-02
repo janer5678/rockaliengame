@@ -66,6 +66,16 @@ namespace RockGame
             foreach (var t in new[] { Item.InvisPotion, Item.DeathWand, Item.Helmet, Item.Armor, Item.Chest, Item.Barrier, Item.Arrow, Item.AirdropSignal, Item.FortTower, Item.EnderPearl })
                 Add(t.ToString().ToLower() + "_idle", t);
 
+            // -hands a,b,...: only the poses whose names start with one of these (to iterate on a few quickly)
+            string only = null;
+            var args = System.Environment.GetCommandLineArgs();
+            for (int i = 0; i < args.Length - 1; i++) if (args[i] == "-hands") only = args[i + 1];
+            if (!string.IsNullOrEmpty(only))
+            {
+                var keep = only.Split(',');
+                poses.RemoveAll(p => !System.Array.Exists(keep, k => p.name.StartsWith(k)));
+            }
+
             void Shot(string n) { ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(dir, n + ".png")); }
             Item heldNow = (Item)255;
             foreach (var p in poses)
