@@ -578,6 +578,18 @@ namespace RockGame
             }
         }
 
+        /// <summary>The needles of the pine a tree with this seed gets (every tier, exactly as on the tree), added to `kit` in
+        /// the tree's own space (0 = the ground): the scenery pines out past the map are these (MapScenery). `sides`: fewer
+        /// branch tips round each tier (the far ones: the same shape with fewer faces; 0 = as on the tree).</summary>
+        public static PineShape PineNeedles(MeshKit kit, int seed, int sides = 0)
+        {
+            var shape = PineShapeOf(seed);
+            if (sides > 0) shape.Sides = Mathf.Min(shape.Sides, sides);
+            var spinRng = new System.Random(seed ^ 0x3c6ef372);
+            for (int k = 0; k < shape.Tiers; k++) PineTier(kit, shape, k, (float)spinRng.NextDouble() * Mathf.PI * 2f);
+            return shape;
+        }
+
         /// <summary>The pine a tree with this seed gets in Normal graphics.</summary>
         public static PineShape PineShapeOf(int seed)
         {

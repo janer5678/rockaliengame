@@ -145,6 +145,7 @@ namespace RockGame
             var go = new GameObject("Mountain ranges");
             go.transform.SetParent(root, false);
             RangeTrees.Clear();
+            var allSpots = new List<PineSpot>();
             using (ColorSlots.Use(ColorSlots.Mountains))
                 for (int layer = 0; layer < k_Ranges.Length; layer++)
                 {
@@ -152,26 +153,29 @@ namespace RockGame
                     float rc = half * 1.45f + L.dist * k, depth = L.depth * k, H = L.height * hk;
                     var rock = new MeshBatch();
                     var snow = new MeshBatch();
-                    var trees = layer < k_TreeCol.Length ? new MeshBatch() : null;
+                    var trees = layer < k_TreeCol.Length ? new List<PineSpot>() : null;
                     Range(rock, layer == k_Ranges.Length - 1 ? snow : null, trees, layer, Cfg.MapSeed * 31 + layer * 977, rc, depth, H, L.peaks);
                     var r = Own(rock.Build(go.transform, "range " + layer, Art.Mat(L.col), false));
                     Ranges.Add(r.GetComponent<Renderer>());
                     Psx(r, "cobble_12");
                     if (layer == k_Ranges.Length - 1) Psx(Own(snow.Build(go.transform, "range snow " + layer, Art.Mat(k_Snow), false)), "concrete_00");
                     if (trees != null)
-                        using (ColorSlots.Use(ColorSlots.Leaves))
-                        {
-                            var tr = Own(trees.Build(go.transform, "range trees " + layer, Art.Mat(k_TreeCol[layer]), false));
-                            RangeTrees.Add(tr.GetComponent<Renderer>());
-                            tr.GetComponent<MeshRenderer>().receiveShadows = false;
-                        }
+                    {
+                        // the same pines as the trees on the map (a little hazier further out), or the old cones without the shader
+                        RangeTrees.AddRange(BuildPines(go.transform, "range trees " + layer, trees, true, k_RangeHaze[layer], k_TreeCol[layer]));
+                        allSpots.AddRange(trees);
+                    }
                 }
+            PsxPines.Add(go, allSpots, RangeTrees, 2);
         }
 
         /// <summary>The forests on the nearer ranges (tests): one merged mesh per range, nearest first.</summary>
         public static readonly List<Renderer> RangeTrees = new List<Renderer>();
-        /// <summary>The forests' colour on each range that has them (darker and bluer further out: the air between).</summary>
+        /// <summary>The forests' colour on each range that has them (darker and bluer further out: the air between) - only
+        /// for the old plain cones (no Painted shader); the real pines are hazed by k_RangeHaze instead.</summary>
         static readonly Color[] k_TreeCol = { new Color(0.2f, 0.33f, 0.19f), new Color(0.3f, 0.4f, 0.34f) };
+        /// <summary>How far the pines on each range are faded towards the blue-grey of the air between (0 = as on the map).</summary>
+        static readonly float[] k_RangeHaze = { 0.12f, 0.26f };
 
         /// <summary>A low-poly pine for the far scenery added to a merged mesh: tiers of six-sided cones (no trunk on the
         /// far ones - nobody sees it from there), `h` tall, standing on `foot`.</summary>
@@ -222,7 +226,7 @@ namespace RockGame
         /// sharpened into peaks; across the band it rises from below the ground to a crest that wanders from side to
         /// side. Every corner is nudged a little so the facets aren't regular. Faces high up and facing up go in `snow`.
         /// </summary>
-        static void Range(MeshBatch rock, MeshBatch snow, MeshBatch trees, int layer, int seed, float rc, float depth, float H, float peaks)
+        static void Range(MeshBatch rock, MeshBatch snow, List<PineSpot> trees, int layer, int seed, float rc, float depth, float H, float peaks)
         {
             var rng = new System.Random(seed);
             float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
@@ -291,7 +295,7 @@ namespace RockGame
                     var q1 = Vector3.Lerp(p[i, j + 1], p[i1, j + 1], u);
                     var at = Vector3.Lerp(q0, q1, v);
                     if (at.y < -1f || at.y > treeLine * T(0.6f, 1f)) continue;
-                    AddPine(trees, null, at - Vector3.up * 0.8f, treeH * T(0.7f, 1.3f), T(0f, 6.3f), 2);
+                    trees.Add(new PineSpot { Foot = at - Vector3.up * 0.8f, Height = treeH * T(0.7f, 1.3f), Yaw = T(0f, 360f), Pick = trng.Next() });
                 }
             }
         }
@@ -319,9 +323,10 @@ namespace RockGame
             float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
             var rocks = new MeshBatch();
             var rocksDark = new MeshBatch();
-            var needles = new MeshBatch();
-            var trunks = new MeshBatch();
+            var pines = new List<PineSpot>();
             float inner = half + 6f, outer = half + 27f; // (the ground reaches half + 30)
+            // (a pine's reach round its trunk: its lowest tier, at the biggest it's drawn)
+            float pineReach = PineReach * 1.2f;
             int n = Mathf.RoundToInt(260 * half / 100f);
             for (int i = 0; i < n; i++)
             {
@@ -335,16 +340,7 @@ namespace RockGame
                 float gy = MapBuilder.Height(x, z);
                 if (tree)
                 {
-                    float th = R(6f, 11f) * (0.85f + out01 * 0.4f);
-                    float reach = th * 0.37f; // (its lowest tier's reach)
-                    if (m - reach < half + 4f)
-                    {
-                        float k = (half + 4f + reach) / m;
-                        x *= k; z *= k;
-                        gy = MapBuilder.Height(x, z);
-                    }
-                    AddPine(needles, trunks, new Vector3(x, gy - 0.2f, z), th, R(0f, 6.3f), 3);
-                    OutskirtTrees++;
+                    TryPine(pines, x, z, m, R(0.8f, 1.15f) * (0.9f + out01 * 0.3f), R(0f, 360f), rng.Next(), half, pineReach);
                 }
                 else
                 {
@@ -362,6 +358,19 @@ namespace RockGame
                     OutskirtRocks++;
                 }
             }
+            // more pines: a second sweep round the band that only plants trees (thick in the clumps, a few between them)
+            int extra = Mathf.RoundToInt(300 * half / 100f);
+            for (int i = 0; i < extra; i++)
+            {
+                float m = R(inner, outer), along = R(-m, m);
+                int side = rng.Next(4);
+                float x = side < 2 ? along : (side == 2 ? m : -m), z = side < 2 ? (side == 0 ? m : -m) : along;
+                float clump = Mathf.PerlinNoise(x * 0.04f + 17.3f, z * 0.04f + 5.1f);
+                if (rng.NextDouble() > Mathf.Lerp(0.15f, 0.95f, Mathf.InverseLerp(0.3f, 0.6f, clump))) continue;
+                float out01 = Mathf.InverseLerp(inner, outer, m);
+                TryPine(pines, x, z, m, R(0.8f, 1.15f) * (0.9f + out01 * 0.3f), R(0f, 360f), rng.Next(), half, pineReach);
+            }
+            OutskirtTrees = pines.Count;
             var go = new GameObject("Outskirts");
             go.transform.SetParent(root, false);
             void Add(GameObject g) { Outskirts.Add(g.GetComponent<Renderer>()); g.GetComponent<MeshRenderer>().receiveShadows = false; }
@@ -370,10 +379,264 @@ namespace RockGame
                 Add(Own(rocks.Build(go.transform, "outskirt rocks", Art.Mat(new Color(0.54f, 0.53f, 0.5f)), false)));
                 Add(Own(rocksDark.Build(go.transform, "outskirt rocks dark", Art.Mat(new Color(0.43f, 0.42f, 0.4f)), false)));
             }
-            using (ColorSlots.Use(ColorSlots.Leaves))
-                Add(Own(needles.Build(go.transform, "outskirt pines", Art.Mat(new Color(0.22f, 0.4f, 0.17f)), false)));
-            using (ColorSlots.Use(ColorSlots.TreeTrunks))
-                Add(Own(trunks.Build(go.transform, "outskirt trunks", Art.Mat(new Color(0.36f, 0.23f, 0.12f)), false)));
+            // the pines: the same as the trees on the map (PSX graphics: the PSX trees, like the map's)
+            var pineRs = BuildPines(go.transform, "outskirt pines", pines, false, 0f, new Color(0.22f, 0.4f, 0.17f));
+            Outskirts.AddRange(pineRs);
+            PsxPines.Add(go, pines, pineRs, 1);
+        }
+
+        /// <summary>A pine out past the edge at (x, z) (m: how far out it is, the larger of |x| and |z|), pushed straight out
+        /// until none of it reaches back in towards the dome, and not right on top of another one.</summary>
+        static void TryPine(List<PineSpot> pines, float x, float z, float m, float scale, float yaw, int pick, float half, float reach)
+        {
+            float r = reach * scale / 1.2f;
+            if (m - r < half + 4f)
+            {
+                float k = (half + 4f + r) / m;
+                x *= k; z *= k; // (m is the larger of |x| and |z|, so this moves it straight out)
+            }
+            foreach (var o in pines)
+                if (new Vector2(o.Foot.x - x, o.Foot.z - z).sqrMagnitude < 2.6f * 2.6f) return;
+            var tpl = Pines()[(pick & 0x7fffffff) % Pines().Count];
+            pines.Add(new PineSpot { Foot = new Vector3(x, MapBuilder.Height(x, z) - 0.15f, z), Height = tpl.Top * scale, Yaw = yaw, Pick = pick });
+        }
+
+        // =====================================================================
+        // Scenery pines: the same pines as the trees on the map
+        // =====================================================================
+
+        /// <summary>Where a scenery pine stands: its foot, how tall, turned how far (degrees), and which pine (any number:
+        /// it picks one of the templates).</summary>
+        public struct PineSpot { public Vector3 Foot; public float Height, Yaw; public int Pick; }
+
+        /// <summary>One of the map's pines (by a tree seed), ready to be copied: its needles exactly as on the tree and a
+        /// simple trunk; and for the far ranges (a hundred metres and more away) the same pine with five branch tips a tier
+        /// instead of 7-10, no undersides (nobody sees under them from the map) and a four-sided stub of a trunk - about a
+        /// third of the faces; plus how tall it is and how far its lowest tier reaches.</summary>
+        sealed class PineTemplate { public MeshKit Needles, Trunk, NeedlesFar, TrunkFar; public float Top, Reach; }
+
+        static List<PineTemplate> s_Pines;
+        const int PineTemplateCount = 20;
+
+        /// <summary>The templates: four of each of the five kinds of pine on the map (classic, spruce, fir, droopy, scraggly).</summary>
+        static List<PineTemplate> Pines()
+        {
+            if (s_Pines != null) return s_Pines;
+            s_Pines = new List<PineTemplate>();
+            int seed = 7001;
+            for (int i = 0; i < PineTemplateCount; i++)
+            {
+                // (a seed that gives the next kind in turn)
+                while (ResourceNode.PineVariant(seed) != i % ResourceNode.PineVariants) seed++;
+                var needles = new MeshKit();
+                var shape = ResourceNode.PineNeedles(needles, seed);
+                seed++;
+                needles.SmoothNormals(65f); // (as on the tree)
+                var lod = new MeshKit();
+                ResourceNode.PineNeedles(lod, seed - 1, 5);
+                lod.SmoothNormals(65f);
+                var far = new MeshKit();
+                for (int t = 0; t < lod.T.Count; t += 3)
+                {
+                    int a = lod.T[t], b = lod.T[t + 1], c = lod.T[t + 2];
+                    var n = Vector3.Cross(lod.V[b] - lod.V[a], lod.V[c] - lod.V[a]);
+                    if (n.y < -0.3f * n.magnitude) continue; // (an underside)
+                    int k = far.V.Count;
+                    foreach (int v in new[] { a, b, c }) { far.V.Add(lod.V[v]); far.N.Add(lod.N[v]); far.C.Add(lod.C[v]); far.U.Add(lod.U[v]); }
+                    far.T.Add(k); far.T.Add(k + 1); far.T.Add(k + 2);
+                }
+                var trunk = new MeshKit();
+                TrunkLite(trunk, shape, 8, false);
+                var trunkFar = new MeshKit();
+                TrunkLite(trunkFar, shape, 4, true);
+                float reach = 0f;
+                foreach (var r in shape.R) reach = Mathf.Max(reach, r);
+                s_Pines.Add(new PineTemplate { Needles = needles, NeedlesFar = far, Trunk = trunk, TrunkFar = trunkFar, Top = shape.Top, Reach = reach });
+            }
+            return s_Pines;
+        }
+
+        /// <summary>The furthest any template pine's needles reach out from its trunk (m, at its own size).</summary>
+        static float PineReach { get { float r = 0f; foreach (var p in Pines()) r = Mathf.Max(r, p.Reach); return r; } }
+
+        /// <summary>A plain trunk for a scenery pine: eight smooth sides from under the ground up into the needles, as thick as
+        /// the tree's own trunk at each height (and coloured like it). The trees' full trunk has hundreds of faces for its
+        /// weak spot and the bark marks; from out past the edge nobody can tell.</summary>
+        static void TrunkLite(MeshKit kit, ResourceNode.PineShape p, int sides, bool stub)
+        {
+            float top = Mathf.Min(p.TrunkTop, p.UnderY(0) + 0.6f);
+            float[] ys = stub ? new[] { -0.6f, top } : new[] { -0.4f, 0.3f, 1.8f, (1.8f + top) * 0.5f, top };
+            int k0 = kit.V.Count;
+            for (int i = 0; i < ys.Length; i++)
+            {
+                float y = ys[i], r = p.TrunkRadius(Mathf.Max(0f, y));
+                var c = p.Bark * Mathf.Lerp(0.78f, 1f, Mathf.Clamp01(y / 2.5f));
+                c.a = 1f;
+                for (int s = 0; s <= sides; s++)
+                {
+                    float a = s * Mathf.PI * 2f / sides;
+                    var d = new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a));
+                    kit.V.Add(d * r + Vector3.up * y);
+                    kit.N.Add(d);
+                    kit.C.Add(c.linear);
+                    kit.U.Add(new Vector2(p.Sway(y), 0f));
+                }
+            }
+            for (int i = 0; i + 1 < ys.Length; i++)
+                for (int s = 0; s < sides; s++)
+                {
+                    int a = k0 + i * (sides + 1) + s, b = a + 1, d = a + sides + 1, e = d + 1;
+                    kit.T.Add(a); kit.T.Add(d); kit.T.Add(b);
+                    kit.T.Add(b); kit.T.Add(d); kit.T.Add(e);
+                }
+        }
+
+        /// <summary>Copies a template's kit into a merged one: turned by `rot`, scaled by `s`, standing at `at`, its colours
+        /// faded `haze` of the way towards the blue-grey of the air.</summary>
+        static void Put(MeshKit dst, MeshKit src, Vector3 at, Quaternion rot, float s, float haze)
+        {
+            int o = dst.V.Count;
+            var air = new Color(0.52f, 0.6f, 0.68f).linear;
+            for (int i = 0; i < src.V.Count; i++)
+            {
+                dst.V.Add(at + rot * (src.V[i] * s));
+                dst.N.Add(rot * src.N[i]);
+                dst.C.Add(haze > 0f ? Color.Lerp(src.C[i], air, haze) : src.C[i]);
+                dst.U.Add(new Vector2(src.U[i].x * s, src.U[i].y));
+            }
+            foreach (int t in src.T) dst.T.Add(t + o);
+        }
+
+        /// <summary>
+        /// The scenery pines at these spots, as the map's own pines (their needles and colours, swaying in the same wind,
+        /// tinted by the Pine needles and Tree trunks colours): merged meshes in pieces round the map (two draws each, so the
+        /// ones behind you aren't drawn; near ones swap to the far pines further off), no colliders, no shadows. `far`: without the tiers' undersides. Without
+        /// the Painted shader: the old plain low-poly cones in `fallback`.
+        /// </summary>
+        static List<Renderer> BuildPines(Transform parent, string name, List<PineSpot> spots, bool far, float haze, Color fallback)
+        {
+            var list = new List<Renderer>();
+            if (spots.Count == 0) return list;
+            var foliage = WorldLook.Foliage;
+            var bark = WorldLook.Bark;
+            if (foliage == null || bark == null)
+            {
+                var mb = new MeshBatch();
+                var tb = new MeshBatch();
+                foreach (var sp in spots) AddPine(mb, far ? null : tb, sp.Foot, sp.Height, sp.Yaw * Mathf.Deg2Rad, far ? 2 : 3);
+                using (ColorSlots.Use(ColorSlots.Leaves))
+                    list.Add(Own(mb.Build(parent, name, Art.Mat(fallback), false)).GetComponent<Renderer>());
+                if (!far)
+                    using (ColorSlots.Use(ColorSlots.TreeTrunks))
+                        list.Add(Own(tb.Build(parent, name + " trunks", Art.Mat(new Color(0.36f, 0.23f, 0.12f)), false)).GetComponent<Renderer>());
+                foreach (var r in list) ((MeshRenderer)r).receiveShadows = false;
+                return list;
+            }
+            var tpl = Pines();
+            // far ones (the ranges): four quarters round the map. Near ones (the outskirts): 16 pieces round the band, each
+            // drawn in full close up and as the far pines (a third of the faces) from about 120 m away (a LODGroup)
+            int pieces = far ? 4 : 16;
+            var needles = new MeshKit[pieces];
+            var trunks = new MeshKit[pieces];
+            var needlesLo = far ? null : new MeshKit[pieces];
+            var trunksLo = far ? null : new MeshKit[pieces];
+            for (int q = 0; q < pieces; q++)
+            {
+                needles[q] = new MeshKit(); trunks[q] = new MeshKit();
+                if (!far) { needlesLo[q] = new MeshKit(); trunksLo[q] = new MeshKit(); }
+            }
+            foreach (var sp in spots)
+            {
+                var t = tpl[(sp.Pick & 0x7fffffff) % tpl.Count];
+                // (the piece round the middle it's in)
+                int q = Mathf.Clamp(Mathf.FloorToInt((Mathf.Atan2(sp.Foot.z, sp.Foot.x) + Mathf.PI) / (Mathf.PI * 2f) * pieces), 0, pieces - 1);
+                float s = sp.Height / Mathf.Max(1f, t.Top);
+                var rot = Quaternion.Euler(0f, sp.Yaw, 0f);
+                Put(needles[q], far ? t.NeedlesFar : t.Needles, sp.Foot, rot, s, haze);
+                Put(trunks[q], far ? t.TrunkFar : t.Trunk, sp.Foot, rot, s, haze);
+                if (!far)
+                {
+                    Put(needlesLo[q], t.NeedlesFar, sp.Foot, rot, s, haze);
+                    Put(trunksLo[q], t.TrunkFar, sp.Foot, rot, s, haze);
+                }
+            }
+            for (int q = 0; q < pieces; q++)
+            {
+                if (needles[q].Count == 0) continue;
+                var go = MeshKit.Spawn(parent, name + " " + q, new[] { foliage, bark }, false, needles[q], trunks[q]);
+                var mr = go.GetComponent<MeshRenderer>();
+                mr.receiveShadows = false;
+                list.Add(mr);
+                if (far) continue;
+                var lo = MeshKit.Spawn(go.transform, name + " " + q + " far", new[] { foliage, bark }, false, needlesLo[q], trunksLo[q]);
+                var lr = lo.GetComponent<MeshRenderer>();
+                lr.receiveShadows = false;
+                list.Add(lr);
+                // (switches by how much of the screen the piece fills: a piece is ~60 m along, so 0.4 is about 120 m away)
+                var lg = go.AddComponent<LODGroup>();
+                lg.SetLODs(new[] { new LOD(0.4f, new Renderer[] { mr }), new LOD(0f, new Renderer[] { lr }) });
+                lg.RecalculateBounds();
+            }
+            return list;
+        }
+
+        /// <summary>
+        /// PSX (and the AI PSX test): the map's trees are the PSX trees, so the scenery pines are too. The first time the
+        /// look is on, a PSX tree goes up at every `every`th spot (the far ranges: every other one - there are hundreds);
+        /// the Normal pines are hidden while it's on, and come back when it's off.
+        /// </summary>
+        class PsxPines : MonoBehaviour
+        {
+            List<PineSpot> m_Spots;
+            List<Renderer> m_Normal;
+            int m_Every;
+            GameObject m_Psx;
+            bool m_On;
+
+            public static void Add(GameObject owner, List<PineSpot> spots, List<Renderer> normal, int every)
+            {
+                if (spots.Count == 0) return;
+                var p = owner.AddComponent<PsxPines>();
+                p.m_Spots = spots;
+                p.m_Normal = new List<Renderer>(normal);
+                p.m_Every = Mathf.Max(1, every);
+                GameSettings.GraphicsChanged += p.Refresh;
+                p.Refresh();
+            }
+
+            void OnDestroy() => GameSettings.GraphicsChanged -= Refresh;
+
+            /// <summary>(tests) PSX trees shown.</summary>
+            public int PsxCount => m_Psx != null && m_Psx.activeSelf ? m_Psx.transform.childCount : 0;
+
+            void Refresh()
+            {
+                if (this == null) return;
+                bool on = PsxArt.On || AiPsxArt.On;
+                if (on == m_On) return;
+                m_On = on;
+                if (on && m_Psx == null)
+                {
+                    m_Psx = new GameObject("psx trees");
+                    m_Psx.transform.SetParent(transform, false);
+                    for (int i = 0; i < m_Spots.Count; i += m_Every)
+                    {
+                        var sp = m_Spots[i];
+                        var holder = new GameObject("psx pine").transform;
+                        holder.SetParent(m_Psx.transform, false);
+                        holder.position = sp.Foot;
+                        if (!PsxArt.BuildTree(holder, sp.Pick, sp.Height, out _, out _, out _)) { Destroy(holder.gameObject); break; }
+                        foreach (var r in holder.GetComponentsInChildren<MeshRenderer>())
+                        {
+                            r.shadowCastingMode = ShadowCastingMode.Off;
+                            r.receiveShadows = false;
+                        }
+                    }
+                    if (AiPsxArt.On) AiPsxArt.Apply(m_Psx.transform);
+                }
+                if (m_Psx != null) m_Psx.SetActive(on);
+                foreach (var r in m_Normal) if (r) r.enabled = !on;
+            }
         }
 
         // =====================================================================

@@ -780,6 +780,7 @@ namespace RockGame
             DrawPostFxSettings();
             DrawInterfaceSettings();
             DrawWorldLook();
+            DrawBaseFloorSettings(); // (Hud.BaseFloor.cs)
 
             Caption("SCREEN");
             GUILayout.BeginHorizontal();

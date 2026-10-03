@@ -153,14 +153,23 @@ namespace RockGame
     /// Highlands, Normal graphics: a few big planets hanging in the sky - a banded gas giant with a ring, a blue-green
     /// world and a small pale moon - smooth-shaded (a fine sphere with round normals, vertex-coloured, lit by the sun
     /// through RockGame/Painted with a little glow so the night side isn't black). Like the sun they're sky, not things
-    /// in the world: each sits 1150-1250 m out along its own fixed direction from the camera every frame (inside the
-    /// far plane), high above the mountains and away from the sun, so nothing in the world - the airdrop ships coming
+    /// in the world: each sits 1150-1250 m out along its own fixed direction from the camera every frame (wholly inside
+    /// the far plane, ring and all: it's pushed out to FarPlane while they're up), high above the mountains and away from the sun, so nothing in the world - the airdrop ships coming
     /// in, hovering and leaving (all within ~600 m of anyone), the clouds, the dome - ever reaches them or passes behind
     /// them, and they have no colliders. Hidden in PSX / AI PSX and in the sudden death arena in space.
     /// </summary>
     public class SkyPlanets : MonoBehaviour
     {
-        struct Planet { public Transform T; public Vector3 Dir; public float Dist, Spin; }
+        struct Planet { public Transform T; public Vector3 Dir; public float Dist, Spin, Radius, Reach; }
+        /// <summary>The camera's far plane while the planets are up (m): far enough for the whole gas giant and its ring
+        /// (1250 m out, the ring reaching 430 m round it) - at the old 1500 m the far side of the ring was cut off. Nothing
+        /// else in the world is out past 1500 m, so this costs nothing.</summary>
+        public const float FarPlane = 1750f;
+        /// <summary>(tests) The furthest any part of a planet (its ring too) is from the camera, and the far plane then.</summary>
+        public float FurthestReach { get; private set; }
+        public float FarNow { get; private set; }
+        float m_OldFar = -1f;
+        Camera m_FarCam;
         readonly List<Planet> m_Planets = new List<Planet>();
         readonly List<Renderer> m_Rs = new List<Renderer>();
         readonly List<Object> m_Owned = new List<Object>();
@@ -253,7 +262,7 @@ namespace RockGame
                 }
                 go.transform.localRotation = Quaternion.Euler(R(-20f, 20f), R(0f, 360f), R(-25f, 25f));
                 NearestReach = Mathf.Min(NearestReach, reach);
-                m_Planets.Add(new Planet { T = go.transform, Dir = dir.normalized, Dist = p.dist, Spin = p.kind == 2 ? 0f : R(0.4f, 1.2f) });
+                m_Planets.Add(new Planet { T = go.transform, Dir = dir.normalized, Dist = p.dist, Spin = p.kind == 2 ? 0f : R(0.4f, 1.2f), Radius = r, Reach = p.dist - reach });
             }
         }
 
@@ -370,14 +379,36 @@ namespace RockGame
                 foreach (var r in m_Rs) if (r) r.enabled = show;
             }
             if (!show) return;
-            float far = cam.farClipPlane * 0.9f;
+            // the whole planet and its ring inside the far plane (it used to cut the ring off): push the far plane out to
+            // FarPlane, and if a camera's is still too near, bring the planet in and shrink it to match - the same size in
+            // the sky either way
+            if (cam.farClipPlane < FarPlane)
+            {
+                if (m_FarCam != cam) { m_FarCam = cam; m_OldFar = cam.farClipPlane; }
+                cam.farClipPlane = FarPlane;
+            }
+            float fit = cam.farClipPlane * 0.97f;
+            FarNow = cam.farClipPlane;
+            float furthest = 0f, nearest = float.MaxValue;
             foreach (var p in m_Planets)
             {
                 // (fixed in the sky like the sun: always the same way from wherever you are, never any nearer)
-                float d = Mathf.Min(p.Dist, far);
-                p.T.position = cam.transform.position + p.Dir * d;
+                float k = Mathf.Min(1f, fit / (p.Dist + p.Reach));
+                p.T.position = cam.transform.position + p.Dir * (p.Dist * k);
+                p.T.localScale = Vector3.one * (p.Radius * k);
+                furthest = Mathf.Max(furthest, (p.Dist + p.Reach) * k);
+                nearest = Mathf.Min(nearest, (p.Dist - p.Reach) * k);
                 if (p.Spin > 0f) p.T.Rotate(0f, p.Spin * Time.deltaTime, 0f, Space.Self);
             }
+            FurthestReach = furthest;
+            NearestReach = nearest;
+        }
+
+        void OnDisable()
+        {
+            // (the far plane back as it was once the planets are gone)
+            if (m_FarCam != null && m_OldFar > 0f && Mathf.Approximately(m_FarCam.farClipPlane, FarPlane)) m_FarCam.farClipPlane = m_OldFar;
+            m_FarCam = null;
         }
     }
 }

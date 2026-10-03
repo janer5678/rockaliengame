@@ -222,6 +222,22 @@ namespace RockGame
             Shader.SetGlobalFloat(k_PushCount, 0);
             Shader.SetGlobalVectorArray(k_PushArr, m_Push);
 
+            ComputeTiles();
+            InitTrample();
+
+            m_Mat = new Material(s_GrassShader) { name = "grass blades" };
+            m_DecorMat = new Material(s_GrassShader) { name = "grass flowers" };
+            for (int i = 0; i < m_Batches.Length; i++) { m_Batches[i] = new List<Vector4>(); m_Props[i] = new MaterialPropertyBlock(); }
+            Shader.SetGlobalVectorArray(k_Tiles, m_Tiles);
+
+            BuildPatch(new System.Random(77));
+            BuildDecor(rng, clearings);
+        }
+
+        /// <summary>Which squares have any grass (only those are drawn), and how high their ground goes - at every level.
+        /// Again whenever grass comes or goes over a big area (the bases' blades: SetBaseBlades).</summary>
+        void ComputeTiles()
+        {
             // which squares have any grass, and how high their ground goes
             m_T0 = Mathf.FloorToInt(m_Min / Tile);
             m_TN = Mathf.CeilToInt((m_Min + m_N) / Tile) - m_T0;
@@ -270,15 +286,58 @@ namespace RockGame
                     m_LvY[L][j * n + i] = y;
                 }
             }
-            InitTrample();
+        }
 
-            m_Mat = new Material(s_GrassShader) { name = "grass blades" };
-            m_DecorMat = new Material(s_GrassShader) { name = "grass flowers" };
-            for (int i = 0; i < m_Batches.Length; i++) { m_Batches[i] = new List<Vector4>(); m_Props[i] = new MaterialPropertyBlock(); }
-            Shader.SetGlobalVectorArray(k_Tiles, m_Tiles);
+        // ---- the bases' grass (Settings > Display > Base floor: "Grass + blades" after the build phase) ----
 
-            BuildPatch(new System.Random(77));
-            BuildDecor(rng, clearings);
+        bool m_BaseBlades;
+        bool[] m_Built;   // (texels something's been built over: no grass there, whatever the bases' setting)
+
+        /// <summary>(tests) Blades grow on the bases now.</summary>
+        public static bool BaseBlades => s_I != null && s_I.m_BaseBlades;
+
+        /// <summary>
+        /// Grass blades on the bases (on) or none (off, as the field was made: you build there). Called every frame by
+        /// MapBuilder.SetGlassWall; only does anything when it changes. Never on the bedrock (a margin round it) or where
+        /// something's been built.
+        /// </summary>
+        public static void SetBaseBlades(bool on)
+        {
+            var g = s_I;
+            if (g == null || g.m_Field == null || g.m_BaseBlades == on) return;
+            g.m_BaseBlades = on;
+            float half = Cfg.MapHalf;
+            int changed = 0;
+            for (int t = 0; t < Cfg.TeamCount && !Cfg.Builder; t++)
+            {
+                var c = Cfg.BaseCenter[t];
+                for (int j = g.Idx(c.z - Cfg.BaseHalf); j <= g.Idx(c.z + Cfg.BaseHalf); j++)
+                for (int i = g.Idx(c.x - Cfg.BaseHalf); i <= g.Idx(c.x + Cfg.BaseHalf); i++)
+                {
+                    float x = g.m_Min + i, z = g.m_Min + j;
+                    if (Cfg.BaseTeamAt(new Vector3(x, 0, z)) != t || Mathf.Max(Mathf.Abs(x), Mathf.Abs(z)) > half - 1.5f) continue;
+                    int k = j * g.m_N + i;
+                    bool grow = on && (g.m_Built == null || !g.m_Built[k]) && !NearBedrock(x, z);
+                    ref var px = ref g.m_Px[k];
+                    float want = grow ? 1f : 0f;
+                    if (px.g == want) continue;
+                    px.g = want;
+                    changed++;
+                }
+            }
+            if (changed == 0) return;
+            g.m_Field.SetPixels(g.m_Px);
+            g.m_Field.Apply(false);
+            g.ComputeTiles();
+        }
+
+        static bool NearBedrock(float x, float z)
+        {
+            const float m = 1.1f;
+            for (int a = -1; a <= 1; a++)
+                for (int b = -1; b <= 1; b++)
+                    if (Cfg.PointBlocked(new Vector3(x + a * m, 0, z + b * m))) return true;
+            return false;
         }
 
         static void SetSettings()
@@ -445,7 +504,10 @@ namespace RockGame
             for (int i = i0; i <= i1; i++)
             {
                 ref var px = ref g.m_Px[j * g.m_N + i];
-                if (px.g <= 0f || b.min.y > px.r + 1.2f) continue; // (not if it's up in the air)
+                if (b.min.y > px.r + 1.2f) continue; // (not if it's up in the air)
+                if (g.m_Built == null) g.m_Built = new bool[g.m_Px.Length];
+                g.m_Built[j * g.m_N + i] = true; // (and none comes back there if the bases grow blades later)
+                if (px.g <= 0f) continue;
                 px.g = 0f;
                 g.m_Field.SetPixel(i, j, px);
                 any = true;
