@@ -22,7 +22,7 @@ namespace RockGame
     /// <summary>
     /// The workbench unlock: per team, the Workbench T1 can only be crafted once the team has put the ball in its machine
     /// socket once, or had the ball in its base for Cfg.BenchUnlockSeconds in all. The server keeps score and syncs a bit
-    /// per team (BenchUnlocks) and the seconds so far (BallInBaseSecs); each client says "WORKBENCH UNLOCKED" (banner +
+    /// per team (BenchUnlocks) and the seconds so far (BallInBaseSecs); each client says "WORK BENCHES UNLOCKED" (banner +
     /// sound) when its own team's bit comes on. In the tutorial the notice waits for the workbench step.
     /// </summary>
     public partial class NetGame
@@ -67,7 +67,7 @@ namespace RockGame
 
         // ---- the client: say so when our own team's bench unlocks ----
 
-        /// <summary>Test hook: how many times this client has shown "WORKBENCH UNLOCKED".</summary>
+        /// <summary>Test hook: how many times this client has shown "WORK BENCHES UNLOCKED".</summary>
         public static int BenchUnlockNotices;
         int m_SeenUnlockTeam = -1;
         bool m_SeenUnlock, m_UnlockPending;
@@ -85,8 +85,8 @@ namespace RockGame
             if (!m_UnlockPending || (Tutorial.On && !Tutorial.AllowsItem(Item.Workbench))) return;
             m_UnlockPending = false;
             BenchUnlockNotices++;
-            Hud.Banner("WORKBENCH UNLOCKED", $"Craft it in your bag ({Binds.Name(Bind.Inventory)}) - your team captured the ball");
-            Hud.Push("Workbench unlocked: craft a Workbench T1 in your bag");
+            Hud.Banner("WORK BENCHES UNLOCKED", $"Craft it in your bag ({Binds.Name(Bind.Inventory)}) - your team captured the ball");
+            Hud.Push("Work Benches Unlocked: craft a Workbench T1 in your bag");
             Sfx.Play2D(Sfx.Unlock, 0.8f, 0f);
         }
     }

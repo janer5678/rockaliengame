@@ -9,7 +9,7 @@ namespace RockGame
     /// Workbench checks (run by -autotest modes in classic / arsenal / autowood / dna, from RequestTests, on a solo host):
     /// - the Workbench T1 is locked (grey in the bag: "Can only craft once the ball has been captured", refused by the server)
     ///   until the team captures the ball - classic checks 30 s with the ball in the base, the others the machine socket -
-    ///   and then "WORKBENCH UNLOCKED" (banner + sound); the Workbench T2 costs 2000;
+    ///   and then "WORK BENCHES UNLOCKED" (banner + sound); the Workbench T2 costs 2000;
     /// - once unlocked it can be crafted in every situation a player gets into: on the bedrock, on the grass, on a
     ///   foundation, right after dying and respawning, with a full hotbar, after the team's bench was blown up (and the bag
     ///   says "bag full" instead of a green CRAFT that does nothing when there's really no room);
@@ -119,7 +119,7 @@ namespace RockGame
                 Check(Cfg.BenchUnlocked(team) && !Cfg.BenchUnlocked(1 - team), "putting the ball in our machine once unlocks our Workbench T1, not the other team's");
             }
             yield return new WaitForSeconds(0.3f);
-            Check(NetGame.BenchUnlockNotices == notices + 1 && Hud.LastBanner.Contains("WORKBENCH UNLOCKED") && Hud.LastBanner.Contains("bag"),
+            Check(NetGame.BenchUnlockNotices == notices + 1 && Hud.LastBanner.Contains("WORK BENCHES UNLOCKED") && Hud.LastBanner.Contains("bag"),
                 $"it tells us (with a sound): \"{Hud.LastBanner}\"");
             pc.LocalTeleport(spawn, yaw);
             yield return Snap($"bench_unlocked_{rn}");
@@ -324,9 +324,10 @@ namespace RockGame
         }
 
         /// <summary>
-        /// The portal gun: ONE shot makes the whole linked pair - a portal where you stand and one where it lands - and uses
-        /// the gun up; too close is refused (nothing used); the portal under you doesn't take you until you've stepped off it;
-        /// walking back into it does; and there are never more than NetGame.MaxPortals.
+        /// The portal gun: two shots (pressing LMB like a player, aimed at the ground): the first opens a portal where it
+        /// lands, the second its partner, and the gun is used up; a second shot too close to the first is refused (nothing
+        /// used); walking into one brings you out of the other; there are never more than NetGame.MaxPortals. Then raiding
+        /// breaks portals (PortalRaidTests).
         /// </summary>
         IEnumerator PortalGunTests(PlayerNet me, PlayerController pc, NetGame g, int team)
         {
@@ -334,35 +335,57 @@ namespace RockGame
             var back = Cfg.BackDir(team);
             var side = Vector3.Cross(Vector3.up, back);
             float yaw = Quaternion.LookRotation(-back).eulerAngles.y;
+            g.Portals.Clear();
             int p0 = g.Portals.Count;
-            me.ServerGive(Item.PortalGun, 1);
+            me.ServerGive(Item.PortalGun, 1, Cfg.PortalShots);
             yield return new WaitForSeconds(0.2f);
             yield return Hold(me, Item.PortalGun);
+            Check(Cfg.PortalShots == 2 && Cfg.MaxData(Item.PortalGun) == 2 && me.HeldStack.Data == 2, $"the portal gun has 2 shots ({Cfg.PortalShots}, holding {me.HeldStack.Data})");
             var stand = OnGround(Cfg.SpawnPos(team) - back * 9f);
             pc.LocalTeleport(stand, yaw);
             yield return new WaitForSeconds(0.5f);
             stand = me.transform.position;
-            // too close: refused, nothing used up
-            me.PortalRpc(OnGround(stand + side * 1.2f, 0f), Vector3.up);
+            var aim1 = OnGround(stand - back * 6f + side * 2f, 0f);
+            var aim2 = OnGround(stand - back * 13f - side * 2f, 0f);
+            // (nothing in the way of the shots: trees on the lines of fire are cleared)
+            foreach (var n in FindObjectsByType<ResourceNode>(FindObjectsSortMode.None))
+            {
+                if (n == null || !n.IsSpawned) continue;
+                var q = n.transform.position;
+                foreach (var t in new[] { aim1, aim2 })
+                {
+                    var d = t - stand; d.y = 0;
+                    float u = Mathf.Clamp01(Vector3.Dot(new Vector3(q.x - stand.x, 0, q.z - stand.z), d) / Mathf.Max(0.01f, d.sqrMagnitude));
+                    if (Flat(q, stand + d * u) < 3f) { n.NetworkObject.Despawn(true); break; }
+                }
+            }
+            // shot 1: one portal where it lands, one shot left
+            LookAt(pc, me, aim1);
+            yield return new WaitForSeconds(0.2f);
+            Binds.TestPress(Bind.Attack);
+            yield return new WaitForSeconds(0.7f);
+            bool one = g.Portals.Count == p0 + 1 && Flat(g.Portals[p0].Pos, aim1) < 0.8f;
+            Check(one && me.Count(Item.PortalGun) == 1 && me.HeldStack.Data == 1,
+                $"first portal gun shot (LMB): one portal where it landed, one shot left ({g.Portals.Count - p0} portals, {me.HeldStack.Data} shot(s) left)");
+            // a second shot right next to the first portal: refused, nothing used up
+            me.PortalRpc(OnGround(aim1 + side * 1.2f, 0f), Vector3.up);
             yield return new WaitForSeconds(0.5f);
-            Check(g.Portals.Count == p0 && me.Count(Item.PortalGun) == 1, "a portal shot right next to you is refused (the gun isn't used up)");
-            var shot = OnGround(stand - back * 12f, 0f);
-            me.PortalRpc(shot, Vector3.up);
-            yield return new WaitForSeconds(0.6f);
-            bool pair = g.Portals.Count == p0 + 2 && g.Portals[p0].Pair == g.Portals[p0 + 1].Pair;
-            Check(pair && me.Count(Item.PortalGun) == 0 && Flat(g.Portals[p0].Pos, stand) < 1f && Flat(g.Portals[p0 + 1].Pos, shot) < 0.5f,
-                $"ONE portal gun shot opens a linked pair - one where you stand, one where it lands - and the gun is used up ({g.Portals.Count - p0} portals, {me.Count(Item.PortalGun)} gun)");
-            yield return new WaitForSeconds(0.8f);
-            Check(Flat(me.transform.position, stand) < 1f, $"the portal that opened under you doesn't take you until you step off it ({Flat(me.transform.position, stand):0.0} m)");
+            Check(g.Portals.Count == p0 + 1 && me.HeldStack.Data == 1, "a second portal right next to the first is refused (the shot isn't used up)");
+            // shot 2: its partner, linked; the gun is used up
+            LookAt(pc, me, aim2);
+            yield return new WaitForSeconds(0.2f);
+            Binds.TestPress(Bind.Attack);
+            yield return new WaitForSeconds(0.7f);
+            bool pair = g.Portals.Count == p0 + 2 && g.Portals[p0].Pair == g.Portals[p0 + 1].Pair && Flat(g.Portals[p0 + 1].Pos, aim2) < 0.8f;
+            Check(pair && me.Count(Item.PortalGun) == 0,
+                $"second shot (LMB): its partner where it landed, the two linked, and the gun used up ({g.Portals.Count - p0} portals, {me.Count(Item.PortalGun)} gun)");
             pc.SetLook(yaw, 22f);
             yield return Snap($"portal_pair_{rn}");
             if (pair)
             {
-                pc.LocalTeleport(stand + side * 4f, yaw);
-                yield return new WaitForSeconds(0.5f);
-                pc.LocalTeleport(stand, yaw);
+                pc.LocalTeleport(g.Portals[p0].Pos + Vector3.up * 0.1f, yaw);
                 yield return new WaitForSeconds(0.6f);
-                Check(Flat(me.transform.position, shot) < 2.5f, $"step off it and walk back in: out of the other one ({Flat(me.transform.position, shot):0.0} m from it)");
+                Check(Flat(me.transform.position, aim2) < 2.5f, $"walk into the first portal: out of the second ({Flat(me.transform.position, aim2):0.0} m from it)");
             }
             for (int i = 0; i < 40; i++) g.ServerAddPortal(stand + Vector3.down * 50f, Vector3.up, g.ServerNewPortalPair());
             Check(g.Portals.Count <= NetGame.MaxPortals, $"no more than {NetGame.MaxPortals} portals at once ({g.Portals.Count})");
@@ -370,6 +393,7 @@ namespace RockGame
             Drop(me, Item.PortalGun);
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
             yield return new WaitForSeconds(0.3f);
+            yield return PortalRaidTests(me, pc, g, team);
         }
 
         /// <summary>
@@ -396,7 +420,7 @@ namespace RockGame
                 Check(locked == "locked" && me.Count(Item.Workbench) == 0 && me.Count(cur) == w0, $"(client) the Workbench T1 is locked until the ball's been captured ({locked})");
                 me.DevRpc(DevCmd.UnlockBench);
                 yield return new WaitForSeconds(0.8f);
-                Check(Cfg.BenchUnlocked(team) && NetGame.BenchUnlockNotices == notices + 1 && Hud.LastBanner.Contains("WORKBENCH UNLOCKED"), $"(client) unlocked, and the client is told ({Hud.LastBanner})");
+                Check(Cfg.BenchUnlocked(team) && NetGame.BenchUnlockNotices == notices + 1 && Hud.LastBanner.Contains("WORK BENCHES UNLOCKED"), $"(client) unlocked, and the client is told ({Hud.LastBanner})");
             }
             // standing on the foundation we built
             var on = foundation;

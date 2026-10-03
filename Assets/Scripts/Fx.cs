@@ -4,7 +4,7 @@ using UnityEngine;
 namespace RockGame
 {
     // new kinds go at the end (they're sent over the network as bytes)
-    public enum FxKind : byte { Blood, BloodHead, WoodChips, StoneChips, WeakSpot, Break, Smash, StructureHit, Spawn, C4Placed, Explosion, WandBeam, HelmetBreak, Craft, Drink, AirstrikeWarn, SniperTracer, PortalOpen, Timber, WeakSpotTree }
+    public enum FxKind : byte { Blood, BloodHead, WoodChips, StoneChips, WeakSpot, Break, Smash, StructureHit, Spawn, C4Placed, Explosion, WandBeam, HelmetBreak, Craft, Drink, AirstrikeWarn, SniperTracer, PortalOpen, Timber, WeakSpotTree, Heal }
 
     /// <summary>
     /// Game feel: particles (blood, chips, sparks), camera shake/kick, floating damage numbers and sounds.
@@ -91,6 +91,12 @@ namespace RockGame
                 case FxKind.Drink:
                     for (int i = 0; i < 8; i++) FxParticle.Puff(pos + Random.insideUnitSphere * 0.6f + Vector3.up, new Color(0.7f, 0.4f, 1f, 0.5f), Random.Range(0.4f, 0.8f));
                     Sfx.Play(Sfx.Zap, pos, 0.5f);
+                    break;
+                case FxKind.Heal:
+                    // a horse fed a berry: green puffs rising off it and a munch
+                    for (int i = 0; i < 10; i++) FxParticle.Puff(pos + Random.insideUnitSphere * 0.7f, new Color(0.45f, 1f, 0.45f, 0.6f), Random.Range(0.3f, 0.6f));
+                    Sparks(pos, Vector3.up, 8);
+                    Sfx.Play(Sfx.Eat, pos, 0.8f);
                     break;
             }
         }

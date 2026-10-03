@@ -1498,6 +1498,14 @@ namespace RockGame
                     if (p.Dead.Value) KillConfirmRpc();
                 }
             }
+            // horses (and Slenderman) it passes close to die too
+            foreach (var v in Vehicle.All.ToArray())
+            {
+                if (v == null || !v.IsSpawned || v.IsCar || (Riding && v.NetworkObjectId == RidingId.Value)) continue; // (not the one you're on)
+                var c = v.transform.position + Vector3.up * 1f;
+                float t = Mathf.Clamp(Vector3.Dot(c - eye, dir), 0f, dist);
+                if (Vector3.Distance(eye + dir * t, c) <= Cfg.WandRadius * 0.5f || Vector3.Distance(end, c) <= Cfg.WandRadius) v.ServerDamage(99999f, this);
+            }
         }
 
         // ---------------- interaction ----------------

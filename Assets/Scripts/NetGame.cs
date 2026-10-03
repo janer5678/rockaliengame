@@ -139,7 +139,7 @@ namespace RockGame
             AirdropShip.Tick(this);
             PortalFx.Sync(this);
             GraveFx.Sync(this);
-            TickBenchUnlockNotice(); // "WORKBENCH UNLOCKED" when our team captures the ball (NetGame.Bench.cs)
+            TickBenchUnlockNotice(); // "WORK BENCHES UNLOCKED" when our team captures the ball (NetGame.Bench.cs)
             if (!IsServer) return;
             if (Time.time >= m_NextItemCheck) { m_NextItemCheck = Time.time + 0.5f; ServerSettleItems(); }
             double now = NetworkManager.ServerTime.Time;
@@ -1008,6 +1008,12 @@ namespace RockGame
             if (on != null && structures.Contains(on) && on.IsSpawned && ServerBlastPiece(on, kind, structureDamage, pos, radius, on, normal)) destroyed++;
             if (structures.Count > 0) ServerCollapseCheck();
             foreach (var v in creatures) if (v.IsSpawned) v.ServerDamage(playerDamage * 2f, attacker);
+            // raiding breaks portals (C4, rockets, airstrikes - not the fake bomb bush)
+            if (kind != BlastKind.Other)
+            {
+                int portals = ServerBreakPortals(pos, radius);
+                if (portals > 0 && attacker != null) attacker.NotifyPublic($"Your {(kind == BlastKind.C4 ? "C4" : kind == BlastKind.Rocket ? "rocket" : "airstrike")} broke {(portals == 1 ? "a portal" : portals + " portals")}!");
+            }
             foreach (var n in hitNodes)
             {
                 if (!n.IsSpawned) continue;
@@ -1100,7 +1106,8 @@ namespace RockGame
 
         // ------------------------------------------------------------------ portals
 
-        /// <summary>Portal gun: each gun makes one linked pair (its one shot). Portals stay for the whole game, every one a different colour.</summary>
+        /// <summary>Portal gun: each gun makes one linked pair (its two shots). Portals stay for the whole game (unless they're
+        /// raided: ServerBreakPortals), every one a different colour.</summary>
         public void ServerAddPortal(Vector3 pos, Vector3 normal, int pair)
         {
             // past MaxPortals, the oldest pair (not the one being made) goes
@@ -1120,6 +1127,32 @@ namespace RockGame
 
         public int ServerNewPortalPair() => m_NextPortalPair++;
         int m_NextPortalPair;
+
+        /// <summary>
+        /// Raiding breaks portals: a raid blast (C4, a rocket, an airstrike - ServerBlast) closes every portal within its radius,
+        /// and the other end of its pair with it (a portal on its own goes nowhere). Returns how many pairs it closed.
+        /// </summary>
+        public int ServerBreakPortals(Vector3 pos, float radius)
+        {
+            var pairs = new HashSet<int>();
+            foreach (var p in Portals) if (Vector3.Distance(p.Pos, pos) <= radius) pairs.Add(p.Pair);
+            if (pairs.Count == 0) return 0;
+            for (int i = Portals.Count - 1; i >= 0; i--)
+            {
+                var p = Portals[i];
+                if (!pairs.Contains(p.Pair)) continue;
+                Portals.RemoveAt(i);
+                Fx.Server(FxKind.PortalOpen, p.Pos, p.Normal); // (the same burst of sparks it opened with)
+            }
+            return pairs.Count;
+        }
+
+        /// <summary>Is there a portal within r of p?</summary>
+        public bool PortalNear(Vector3 p, float r)
+        {
+            foreach (var x in Portals) if (Vector3.Distance(x.Pos, p) <= r) return true;
+            return false;
+        }
 
         /// <summary>The other portal of this one's pair, if it exists.</summary>
         public bool TryPartner(int i, out PortalInfo partner)

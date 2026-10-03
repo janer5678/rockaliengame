@@ -125,7 +125,7 @@ namespace RockGame
         {
             var hat = Cfg.GetRecipe(Cfg.RecipeIndex(Item.Hatchet));
             var xbow = Cfg.GetRecipe(Cfg.RecipeIndex(Item.Crossbow));
-            Check(Cfg.PowerMenu && Cfg.PowerCount == (Cfg.AutoWood ? 9 : 8) && Cfg.PowerIndex(Item.Pistol) < 0 && hat.Wood == Cfg.HatchetWood && xbow.Wood == 350, $"{Cfg.RulesName(Cfg.Rules)}: power menu ({Cfg.PowerCount} items, no pistol), normal prices (hatchet {hat.Wood} wood), crossbow {xbow.Wood} wood");
+            Check(Cfg.PowerMenu && Cfg.PowerCount == 7 && Cfg.PowerIndex(Item.Pistol) < 0 && Cfg.PowerIndex(Item.FortifyBuff) < 0 && hat.Wood == Cfg.HatchetWood && xbow.Wood == 350, $"{Cfg.RulesName(Cfg.Rules)}: power menu ({Cfg.PowerCount} items, no pistol, no fortify - it's in UPGRADES), normal prices (hatchet {hat.Wood} wood), crossbow {xbow.Wood} wood");
             Check(Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.Sword)).Wood == 500 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.C4)).Wood == 2500 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.Helmet)).Wood == 800
                 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.Shotgun)).Wood == 2000 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.ShotgunShell)).Wood == 250
                 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.Revolver)).Wood == 2500 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.RevolverAmmo)).Wood == 200,
@@ -260,15 +260,14 @@ namespace RockGame
             foreach (var s in Structure.All) if (s.Team.Value == team && s.Upgradable && s.Tier.Value == 0) wood++;
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
             yield return new WaitForSeconds(0.3f);
-            // fortify goes up a step every time it's bought: stone 1000, metal 2000, refined 2500
-            int fi = Cfg.PowerIndex(Item.FortifyBuff);
+            // fortify (UPGRADES at the alien machine) goes up a step every time it's bought: stone 1000, metal 2000, refined 2500
             int[] price = { 1000, 2000, 2500 };
             string[] names = { "Stone Wall", "Metal Wall", "Refined Wall" };
             for (int step = 0; step < 3; step++)
             {
                 int before = me.Count(Item.Wood);
-                Check(Cfg.GetPowerRecipe(fi, team).Wood == price[step], $"fortify step {step + 1} costs {Cfg.GetPowerRecipe(fi, team).Wood}");
-                yield return BenchBuy(me, pc, Item.FortifyBuff);
+                Check(Cfg.BaseUpgradeRecipe(Item.FortifyBuff, team).Wood == price[step], $"fortify step {step + 1} costs {Cfg.BaseUpgradeRecipe(Item.FortifyBuff, team).Wood}");
+                yield return UpgradeBuy(me, pc, Item.FortifyBuff);
                 yield return new WaitForSeconds(0.3f);
                 int up = 0, still = 0;
                 foreach (var s in Structure.All) if (s.Team.Value == team && s.Upgradable) { if (s.Tier.Value == step + 1) up++; else still++; }
@@ -278,7 +277,7 @@ namespace RockGame
             }
             {
                 int before = me.Count(Item.Wood);
-                yield return BenchBuy(me, pc, Item.FortifyBuff);
+                yield return UpgradeBuy(me, pc, Item.FortifyBuff);
                 yield return new WaitForSeconds(0.2f);
                 Check(me.Count(Item.Wood) == before, "a fourth fortify isn't sold (already refined)");
             }
@@ -493,11 +492,10 @@ namespace RockGame
                 Check(me.Count(Item.Wood) - wb >= 2500 && stacks1 >= stacks0 + 2, $"picked up {me.Count(Item.Wood) - wb} wood into {stacks1 - stacks0} more stacks");
             }
             else Log("FAIL: no wood pile");
-            // wood gen upgrades: 1000, 2000, 3000 - faster each time
+            // wood gen upgrades (UPGRADES at the alien machine): 1000, then 3000 - faster each time
             for (int i = 0; i < 5; i++) me.ServerGive(Item.Wood, 1000);
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
             yield return new WaitForSeconds(0.3f);
-            int gi = Cfg.PowerIndex(Item.WoodGenBuff);
             int[] cost = { 1000, 3000 };
             var wm = FindAnyObjectByType<WoodMachine>();
             Check(wm != null, "the wood machine stands next to the alien machine");
@@ -511,7 +509,7 @@ namespace RockGame
             for (int lvl = 0; lvl < 2; lvl++)
             {
                 int before = me.Count(Item.Wood);
-                yield return BenchBuy(me, pc, Item.WoodGenBuff);
+                yield return UpgradeBuy(me, pc, Item.WoodGenBuff);
                 yield return new WaitForSeconds(0.2f);
                 Check(g.WoodGenLevelOf(team) == lvl + 1 && before - me.Count(Item.Wood) == cost[lvl] && Cfg.WoodGenRate(lvl + 1) > Cfg.WoodGenRate(lvl),
                     $"wood gen level {lvl + 1} for {before - me.Count(Item.Wood)} wood: {Cfg.WoodGenRate(lvl + 1)} a second");
@@ -521,7 +519,7 @@ namespace RockGame
             }
             {
                 int before = me.Count(Item.Wood);
-                yield return BenchBuy(me, pc, Item.WoodGenBuff);
+                yield return UpgradeBuy(me, pc, Item.WoodGenBuff);
                 yield return new WaitForSeconds(0.2f);
                 Check(me.Count(Item.Wood) == before && g.WoodGenLevelOf(team) == 2, "only two wood gen levels");
             }

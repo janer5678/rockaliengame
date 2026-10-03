@@ -49,11 +49,14 @@ namespace RockGame
         /// <summary>The portal gun's two portals have to be at least this far apart.</summary>
         public const float PortalMinGap = 3f;
 
+        /// <summary>The pair this player's portal gun is making (its first shot opened one end; -1 = the next shot starts a new pair).</summary>
+        int m_PortalPair = -1;
+
         /// <summary>
-        /// Portal gun: ONE shot, then it's used up. That shot makes the whole linked pair: one portal on the ground where
-        /// you're standing and the other where the shot lands (any surface inside the map). Portals stay for the game (the
-        /// oldest pairs go once there are too many). The portal that opens under you doesn't take you until you've stepped
-        /// off it (PlayerController.TickPortals).
+        /// Portal gun: two shots (Cfg.PortalShots; the shots left are the stack's Data), then it's used up. The first shot opens
+        /// a portal where it lands (any surface inside the map), the second opens its partner where that one lands - at least
+        /// PortalMinGap from the first (closer is refused and costs nothing) - and links the two. Portals stay for the game
+        /// (the oldest pairs go once there are too many, and raiding blows them up - NetGame.ServerBreakPortals).
         /// </summary>
         [Rpc(SendTo.Server)]
         public void PortalRpc(Vector3 point, Vector3 normal)
@@ -62,33 +65,49 @@ namespace RockGame
             if (Dead.Value || g == null || HeldItem != Item.PortalGun || Time.time < m_NextPortal) return;
             if (Mathf.Abs(point.x) > Cfg.MapHalf + 2 || Mathf.Abs(point.z) > Cfg.MapHalf + 2 || Vector3.Distance(point, EyePos) > 120f) { Notify("Portals only work inside the battle area"); return; }
             if (normal.sqrMagnitude < 0.01f) normal = Vector3.up;
-            // the other end: on the ground under your feet
-            if (!PortalFeet(out var feet, out var feetNormal)) { Notify("Stand on something to open a portal"); return; }
-            if (Vector3.Distance(feet, point) < PortalMinGap) { Notify("Too close - shoot the portal further away"); return; }
+            int shots = Mathf.Max(1, Cfg.PortalShots);
+            var st = HeldStack;
+            int left = st.Data <= 0 || st.Data > shots ? shots : st.Data;
+            // a later shot links up with the first one's portal (if that's gone - raided, cleared out - it starts a new pair)
+            var firstPos = Vector3.zero;
+            bool first = left >= shots || m_PortalPair < 0 || !PortalOf(g, m_PortalPair, out firstPos);
+            if (!first && Vector3.Distance(firstPos, point) < PortalMinGap) { Notify("Too close to your first portal - shoot this one further away"); return; }
             m_NextPortal = Time.time + 0.4f;
-            int pair = g.ServerNewPortalPair();
-            g.ServerAddPortal(feet + feetNormal * 0.03f, feetNormal, pair);
-            g.ServerAddPortal(point + normal.normalized * 0.03f, normal, pair);
-            ServerClearSlot(HeldSlot.Value);
-            Notify("Portals linked: one where you stand, one where you shot - the portal gun is used up");
+            if (first) m_PortalPair = g.ServerNewPortalPair();
+            g.ServerAddPortal(point + normal.normalized * 0.03f, normal, m_PortalPair);
+            left--;
+            if (left <= 0) { ServerClearSlot(HeldSlot.Value); m_PortalPair = -1; Notify("Both portals placed and linked - the portal gun is used up"); }
+            else { Inv[HeldSlot.Value] = ItemStack.Of(Item.PortalGun, 1, left); Notify("Portal placed - shoot again for the other end"); }
         }
 
-        /// <summary>The ground right under this player (for the portal gun's portal at your feet).</summary>
-        bool PortalFeet(out Vector3 point, out Vector3 normal)
+        /// <summary>How close to a portal a ram has to hit to smash it.</summary>
+        public const float RamPortalReach = 1.5f;
+
+        /// <summary>The battering ram slammed into a portal (raiding breaks portals): it and its partner close. Uses a ram hit.</summary>
+        [Rpc(SendTo.Server)]
+        public void RamPortalRpc(Vector3 point)
         {
-            point = transform.position;
-            normal = Vector3.up;
-            RaycastHit best = default;
-            bool found = false;
-            foreach (var h in Physics.RaycastAll(transform.position + Vector3.up * 0.5f, Vector3.down, 3f, ~(1 << HitboxLayer), QueryTriggerInteraction.Ignore))
-            {
-                if (h.collider.GetComponentInParent<PlayerNet>() != null || h.collider.GetComponentInParent<Vehicle>() != null) continue;
-                if (!found || h.distance < best.distance) { best = h; found = true; }
-            }
-            if (!found) return false;
-            point = best.point;
-            normal = best.normal.y > 0.5f ? best.normal : Vector3.up;
-            return true;
+            var g = NetGame.Instance;
+            if (g == null || Dead.Value || CarryingBall || InSuddenDeath || HeldItem != Item.Ram || !GameAllowsCombat || Time.time < m_NextRam) return;
+            if (Vector3.Distance(EyePos, point) > Cfg.RamRange + 2f) return;
+            m_NextRam = Time.time + Cfg.RamWindup * 0.85f;
+            SwingRpc();
+            Reveal();
+            if (g.ServerBreakPortals(point, RamPortalReach) == 0) return;
+            var ram = HeldStack;
+            int left = ram.Data - 1;
+            if (left <= 0) ServerClearSlot(HeldSlot.Value);
+            else Inv[HeldSlot.Value] = ItemStack.Of(Item.Ram, 1, left);
+            Fx.Server(FxKind.Smash, point, (EyePos - point).normalized);
+            Notify("Smashed the portal!" + (left > 0 ? $"  ({left} ram hits left)" : "  - your ram broke"));
+        }
+
+        /// <summary>Where this pair's portal already in the world is (false if there isn't one).</summary>
+        static bool PortalOf(NetGame g, int pair, out Vector3 pos)
+        {
+            foreach (var p in g.Portals) if (p.Pair == pair) { pos = p.Pos; return true; }
+            pos = default;
+            return false;
         }
 
         /// <summary>The jetpack reports how long it thrusted; fuel runs out and then it's gone.</summary>
