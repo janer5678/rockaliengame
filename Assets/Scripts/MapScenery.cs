@@ -422,12 +422,15 @@ namespace RockGame
         }
 
         /// <summary>
-        /// Big boulders about the map: a group of one big chiselled rock (2.5-6 m across, sunk into the ground, leaning a
+        /// Big boulders about the map: a group of one big chiselled rock (about 5-10 m across, sunk into the ground, leaning a
         /// little) and one to three smaller ones round its foot. Spots are picked in one team's part of the map and copied
         /// round to the others (same rocks, turned), so every team gets the same. They're solid (a convex collider each;
         /// the trees, bushes, horses and airdrops are put down clear of them) but not minable. Colour: Big rocks.
         /// PSX graphics: the big PSX terrain rocks; AI PSX: its rock.
         /// </summary>
+        /// <summary>The big boulders are this much bigger than they first were (3 - 6.4 m across then; now about 5 - 10 m).</summary>
+        public const float BoulderScale = 1.6f;
+
         static void BuildBoulders(Transform root)
         {
             Boulders.Clear();
@@ -441,7 +444,8 @@ namespace RockGame
             var spots = new List<(Vector3 p, float r)>();
             for (int tries = 0; tries < want * 60 && spots.Count < want; tries++)
             {
-                float r = R(1.5f, 3.2f);
+                // (BoulderScale times as big as they were - a little less late on, if the big ones won't all fit: small maps)
+                float r = R(1.5f, 3.2f) * Mathf.Lerp(BoulderScale, 1.15f, Mathf.Clamp01(tries / (want * 60f) * 2f - 1f));
                 var p = new Vector3(R(-half + 6f, half - 6f), 0, R(-half + 6f, -6f));
                 if (!BoulderSpotOk(p, r)) continue;
                 bool close = false;

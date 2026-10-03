@@ -17,7 +17,9 @@ namespace RockGame
     /// Where each blade grows comes from the "grass field" texture (1 texel a metre): R the ground height, G how much
     /// grass (none on the bases, the ball drop zone, steep rock, or under anything built), B tall wheat (head high, you
     /// can hide in it; kept away from the bases and the ball zone), A short grass.
-    /// Walked-on grass lies flat and stands back up over ~15 s (the trample map, below); the tall wheat doesn't.
+    /// Walked-on grass lies flat and stands back up over ~15 s (the trample map, below); the tall wheat doesn't. The grass
+    /// round a fallen log lies flat while it's there. What's built (and a fallen log) keeps the grass off its footprint
+    /// until it's gone (Block / Unblock).
     /// The flowers are a few static meshes. Hidden in the PSX and AI PSX graphics (they have their own looks).
     /// </summary>
     public class GrassField : MonoBehaviour
@@ -212,6 +214,11 @@ namespace RockGame
 
             m_Field = new Texture2D(m_N, m_N, TextureFormat.RGBAFloat, false, true) { name = "grass field", filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Clamp };
             m_Field.SetPixels(m_Px);
+            // (the grass as generated, for when something built on it goes; and anything already standing on it)
+            m_Cover0 = new float[m_Px.Length];
+            for (int k = 0; k < m_Px.Length; k++) m_Cover0[k] = m_Px[k].g;
+            if (s_Blocks.Count > 0) Recompute(0, m_N - 1, 0, m_N - 1);
+            m_FieldDirty = false;
             m_Field.Apply(false);
             // (texel i's centre is at m_Min + i: uv = (world - (m_Min - 0.5)) / m_N)
             Shader.SetGlobalTexture(k_Field, m_Field);
@@ -237,7 +244,7 @@ namespace RockGame
                 for (int i = Idx(x0 - 1); i <= Idx(x0 + Tile + 1); i++)
                 {
                     var p = m_Px[j * m_N + i];
-                    if (p.g > 0.02f) has = true;
+                    if (m_Cover0[j * m_N + i] > 0.02f) has = true; // (as generated: what's built on it can go)
                     lo = Mathf.Min(lo, p.r);
                     hi = Mathf.Max(hi, p.r);
                 }
@@ -434,23 +441,136 @@ namespace RockGame
         int Idx(float w) => Mathf.Clamp(Mathf.RoundToInt(w - m_Min), 0, m_N - 1);
         Color Field(float x, float z) => m_Px[Idx(z) * m_N + Idx(x)];
 
-        /// <summary>Nothing grows under something built (called when a building piece appears).</summary>
+        /// <summary>Nothing ever grows here again (a box: tests; what's built uses Block / Unblock, which put it back).</summary>
         public static void ClearUnder(Bounds b)
         {
             var g = s_I;
             if (g == null || g.m_Field == null) return;
             int i0 = g.Idx(b.min.x - 0.3f), i1 = g.Idx(b.max.x + 0.3f), j0 = g.Idx(b.min.z - 0.3f), j1 = g.Idx(b.max.z + 0.3f);
-            bool any = false;
             for (int j = j0; j <= j1; j++)
             for (int i = i0; i <= i1; i++)
             {
-                ref var px = ref g.m_Px[j * g.m_N + i];
-                if (px.g <= 0f || b.min.y > px.r + 1.2f) continue; // (not if it's up in the air)
-                px.g = 0f;
-                g.m_Field.SetPixel(i, j, px);
-                any = true;
+                int k = j * g.m_N + i;
+                if (b.min.y > g.m_Px[k].r + 1.2f) continue; // (not if it's up in the air)
+                g.m_Cover0[k] = 0f;
             }
-            if (any) g.m_Field.Apply(false);
+            g.Recompute(i0, i1, j0, j1);
+        }
+
+        // =====================================================================
+        // Kept clear: no blades through what's built (building pieces, chests, workbenches...) or a fallen log
+        // =====================================================================
+
+        // Each thing registers its footprint on the ground (a rectangle turned with it, in metres) while it's there. The
+        // field's G under it (and out to Pad round it: the shader blends the 1 m texels round each blade, so a texel next
+        // to the footprint would still grow blades through its edge) is 0 while it stands, and back to what was generated
+        // when it goes. Only the texels under the one that changed are worked out again, and the texture is uploaded once
+        // a frame at most.
+        struct Blocker
+        {
+            public float cx, cz, rx, rz, hx, hz, pad, yMin;
+            public bool Covers(float x, float z, float ground)
+            {
+                if (yMin > ground + 1.2f) return false; // (up in the air: an upper floor)
+                float dx = x - cx, dz = z - cz;
+                float lx = Mathf.Abs(dx * rx + dz * rz) - hx, lz = Mathf.Abs(-dx * rz + dz * rx) - hz;
+                lx = Mathf.Max(0f, lx); lz = Mathf.Max(0f, lz);
+                return lx * lx + lz * lz < pad * pad;
+            }
+            public float Reach => Mathf.Sqrt(hx * hx + hz * hz) + pad;
+        }
+        static readonly Dictionary<int, Blocker> s_Blocks = new Dictionary<int, Blocker>();
+        float[] m_Cover0;
+        bool m_FieldDirty;
+        /// <summary>How far round a building's footprint the grass is kept clear (m).</summary>
+        public const float BuildPad = 0.9f;
+
+        /// <summary>(tests) How many things are keeping the grass clear under them.</summary>
+        public static int BlockCount => s_Blocks.Count;
+
+        /// <summary>Keeps the grass clear under a footprint (centre, the way its x side runs, half sizes; while it's there).</summary>
+        public static void Block(int id, Vector3 centre, Vector3 right, Vector2 half, float pad, float yMin)
+        {
+            right.y = 0f;
+            if (right.sqrMagnitude < 1e-6f) right = Vector3.right;
+            right.Normalize();
+            if (s_Blocks.ContainsKey(id)) Unblock(id);
+            var b = new Blocker { cx = centre.x, cz = centre.z, rx = right.x, rz = right.z, hx = Mathf.Max(0f, half.x), hz = Mathf.Max(0f, half.y), pad = pad, yMin = yMin };
+            s_Blocks[id] = b;
+            if (s_I != null) s_I.RecomputeAround(b);
+        }
+
+        /// <summary>Keeps the grass clear under everything `t` draws (its footprint turned with it), plus BuildPad round it.</summary>
+        public static void BlockRenderers(int id, Transform t)
+        {
+            var frame = Quaternion.Euler(0, t.eulerAngles.y, 0);
+            var inv = Quaternion.Inverse(frame);
+            var o = t.position;
+            bool any = false;
+            Vector3 lo = default, hi = default;
+            float yMin = o.y;
+            foreach (var r in t.GetComponentsInChildren<MeshRenderer>())
+            {
+                var lb = r.localBounds;
+                var m = r.transform.localToWorldMatrix;
+                for (int c = 0; c < 8; c++)
+                {
+                    var w = m.MultiplyPoint3x4(lb.center + Vector3.Scale(lb.extents, new Vector3((c & 1) == 0 ? -1 : 1, (c & 2) == 0 ? -1 : 1, (c & 4) == 0 ? -1 : 1)));
+                    yMin = Mathf.Min(yMin, w.y);
+                    var l = inv * (w - o);
+                    if (!any) { lo = hi = l; any = true; }
+                    else { lo = Vector3.Min(lo, l); hi = Vector3.Max(hi, l); }
+                }
+            }
+            if (!any) return;
+            var mid = (lo + hi) * 0.5f;
+            Block(id, o + frame * mid, frame * Vector3.right, new Vector2((hi.x - lo.x) * 0.5f, (hi.z - lo.z) * 0.5f), BuildPad, yMin);
+        }
+
+        /// <summary>It's gone: the grass grows there again (unless something else still stands on it).</summary>
+        public static void Unblock(int id)
+        {
+            if (!s_Blocks.TryGetValue(id, out var b)) return;
+            s_Blocks.Remove(id);
+            if (s_I != null) s_I.RecomputeAround(b);
+        }
+
+        void RecomputeAround(Blocker b)
+        {
+            if (m_Field == null || m_Cover0 == null) return;
+            float r = b.Reach + 0.5f;
+            Recompute(Mathf.Clamp(Mathf.FloorToInt(b.cx - r - m_Min), 0, m_N - 1), Mathf.Clamp(Mathf.CeilToInt(b.cx + r - m_Min), 0, m_N - 1),
+                      Mathf.Clamp(Mathf.FloorToInt(b.cz - r - m_Min), 0, m_N - 1), Mathf.Clamp(Mathf.CeilToInt(b.cz + r - m_Min), 0, m_N - 1));
+        }
+
+        readonly List<Blocker> m_Near = new List<Blocker>();
+
+        /// <summary>Texels i0..i1 x j0..j1: what was generated there, cleared where anything stands on it.</summary>
+        void Recompute(int i0, int i1, int j0, int j1)
+        {
+            if (m_Field == null || m_Cover0 == null) return;
+            float x0 = m_Min + i0, x1 = m_Min + i1, z0 = m_Min + j0, z1 = m_Min + j1;
+            m_Near.Clear();
+            foreach (var b in s_Blocks.Values)
+            {
+                float r = b.Reach;
+                if (b.cx + r < x0 || b.cx - r > x1 || b.cz + r < z0 || b.cz - r > z1) continue;
+                m_Near.Add(b);
+            }
+            for (int j = j0; j <= j1; j++)
+            for (int i = i0; i <= i1; i++)
+            {
+                int k = j * m_N + i;
+                ref var px = ref m_Px[k];
+                float g = m_Cover0[k];
+                if (g > 0f)
+                    foreach (var b in m_Near)
+                        if (b.Covers(m_Min + i, m_Min + j, px.r)) { g = 0f; break; }
+                if (g == px.g) continue;
+                px.g = g;
+                m_Field.SetPixel(i, j, px);
+                m_FieldDirty = true;
+            }
         }
 
         // =====================================================================
@@ -713,6 +833,7 @@ namespace RockGame
         {
             DrawnPatches = 0;
             DrawnTriangles = 0;
+            if (m_FieldDirty && m_Field != null) { m_FieldDirty = false; m_Field.Apply(false); } // (what's built / gone this frame)
             if (!m_On || m_Lods == null || s_I != this) return;
             // (the field is shared by every grass material; re-bind it in case another map's field was up)
             Shader.SetGlobalTexture(k_Field, m_Field);
@@ -836,6 +957,8 @@ namespace RockGame
         // still (dropped items, chests) stamp their spot every couple of seconds; only the small squares that changed
         // are copied to the texture (a 16x16 staging texture per block, Graphics.CopyTexture into the big one).
         const float TrampleRes = 0.5f, TrampleHold = 4f, TrampleBack = 15f, TrampleTick = 0.1f;
+        /// <summary>How far past a fallen log's side the grass round it is flattened (m).</summary>
+        public const float LogFlatten = 0.8f;
         const int Stage = 16;
         float[] m_Tr;
         int m_TrN;
@@ -901,6 +1024,12 @@ namespace RockGame
                 var ng = NetGame.Instance;
                 if (ng != null && ng.IsSpawned)
                     for (int i = 0; i < ng.Items.Count; i++) { var p = ng.Items[i].Pos; if (OnGround(p)) Stamp(p, p, 0.4f, now); }
+                // fallen logs: the grass round them lies flat while they're there (and stands back up once one's chopped up)
+                var cam = Camera.main;
+                float near = FadeEnd + 25f;
+                foreach (var n in ResourceNode.All)
+                    if (n != null && cam != null && n.LogLying(out var a, out var b, out float r) && (n.transform.position - cam.transform.position).sqrMagnitude < near * near)
+                        Stamp(a, b, r + LogFlatten, now);
                 if (m_Last.Count > 256) m_Last.Clear();
             }
             Upload();

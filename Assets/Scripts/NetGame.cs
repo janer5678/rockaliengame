@@ -526,7 +526,7 @@ namespace RockGame
             trees = Mathf.RoundToInt(trees * ThemeMaps.NodeMul(ResourceNode.Tree)); stones = Mathf.RoundToInt(stones * ThemeMaps.NodeMul(ResourceNode.Boulder)); bushes = Mathf.RoundToInt(bushes * ThemeMaps.NodeMul(ResourceNode.Bush));
             if (Cfg.DnaRules) stones = Mathf.Max(2, Mathf.RoundToInt(stones * Cfg.DnaRockShare)); // DNA mode: rocks are rarer
             // fallen logs (wood, with an X on them too): Plains and Highlands
-            int logs = ThemeMaps.IsTheme ? 0 : Mathf.Max(2, Mathf.RoundToInt(7 * area));
+            int logs = ThemeMaps.IsTheme ? 0 : Mathf.Max(2, Mathf.RoundToInt(3.5f * area)); // (half as many as there were)
             float half = Cfg.MapHalf;
             for (int n = 0; n < trees + stones + bushes + logs; n++)
             {

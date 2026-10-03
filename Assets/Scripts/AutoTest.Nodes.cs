@@ -336,6 +336,220 @@ namespace RockGame
                 }
             }
 
+            // ---------------- 8. bigger berries ----------------
+            {
+                var bushes = Of(ResourceNode.Bush);
+                var mf = bushes.Count > 0 ? bushes[0].transform.Find("visual/bush")?.GetComponent<MeshFilter>() : null;
+                if (mf != null && mf.sharedMesh.subMeshCount > 1)
+                {
+                    // each berry is 20 triangles (60 corners) in submesh 1
+                    var v = mf.sharedMesh.vertices; var tr = mf.sharedMesh.GetTriangles(1);
+                    float sum = 0f; int n = 0;
+                    for (int s = 0; s + 60 <= tr.Length; s += 60)
+                    {
+                        var bb = new Bounds(v[tr[s]], Vector3.zero);
+                        for (int c = 1; c < 60; c++) bb.Encapsulate(v[tr[s + c]]);
+                        sum += bb.size.x; n++;
+                    }
+                    float avg = sum / Mathf.Max(1, n);
+                    Log($"berries: {n} on the bush, {avg * 100f:F1} cm across on average (x{ResourceNode.BerrySize} what they were)");
+                    Check(n >= 12 && avg > 0.2f, $"the berries are bigger ({avg * 100f:F1} cm across, {n} of them)");
+                    var bp = bushes[0].transform.position;
+                    yield return Look(From(bp, toMid, 2.2f), bp + Vector3.up * 0.6f, "berries_big", 40f);
+                }
+                else Check(false, "a Normal berry bush to measure the berries on");
+            }
+
+            // ---------------- 9. bigger decorative boulders ----------------
+            {
+                float biggest = 0f, sum = 0f;
+                foreach (var r in MapScenery.BoulderRadius) { biggest = Mathf.Max(biggest, r); sum += r; }
+                int nb = MapScenery.BoulderRadius.Count;
+                Log($"big boulders: {nb}, radius {sum / Mathf.Max(1, nb):F1} m on average, biggest {biggest:F1} m (x{MapScenery.BoulderScale} what they were)");
+                Check(nb >= 4 && sum / Mathf.Max(1, nb) > 3.2f, $"the decorative boulders are bigger (average radius {sum / Mathf.Max(1, nb):F1} m, they were about 2.3)");
+                if (nb > 0)
+                {
+                    int bi = 0;
+                    for (int i = 1; i < nb; i++) if ((MapScenery.Boulders[i] - bc).sqrMagnitude < (MapScenery.Boulders[bi] - bc).sqrMagnitude) bi = i;
+                    var p = MapScenery.Boulders[bi];
+                    float r = MapScenery.BoulderRadius[bi];
+                    yield return Look(From(p, bc - p, r * 2f + 7f), p + Vector3.up * r * 0.4f, "boulder_big");
+                }
+            }
+
+            var gf = GrassField.Current;
+            // ---------------- 10. fallen logs: fewer, and the grass round them flat (none through them) ----------------
+            {
+                var logs = Of(ResourceNode.Log);
+                float area = Cfg.MapHalf / 100f; area *= area * 2f / Cfg.Copies;
+                Check(logs.Count <= Mathf.Max(2, Mathf.RoundToInt(3.5f * area)) * Cfg.Copies, $"half as many fallen logs as before ({logs.Count}; it was {Mathf.Max(2, Mathf.RoundToInt(7 * area)) * Cfg.Copies})");
+                ResourceNode l = null;
+                if (gf != null)
+                    foreach (var c in logs)
+                        if (c != logs[0] && c.LogLying(out var a0, out var b0, out _) && gf.CoverAt(c.transform.position.x + c.transform.forward.x * 2.5f, c.transform.position.z + c.transform.forward.z * 2.5f) > 0.5f) { l = c; break; }
+                if (l != null)
+                {
+                    l.LogLying(out var a, out var b, out float lr);
+                    var mid = (a + b) * 0.5f;
+                    var across = l.transform.forward; across.y = 0f; across.Normalize();
+                    pc.LocalTeleport(Ground(mid.x + across.x * 6f, mid.z + across.z * 6f), 0f);
+                    yield return new WaitForSeconds(2.5f); // (the logs are stamped every couple of seconds)
+                    // (measured on the far side from where we stand)
+                    float flatSide = Mathf.Min(gf.FlatAt(mid.x - across.x * (lr + 0.3f), mid.z - across.z * (lr + 0.3f)), gf.FlatAt(mid.x + across.x * (lr + 0.3f), mid.z + across.z * (lr + 0.3f)));
+                    float flatFar = gf.FlatAt(mid.x - across.x * 4f, mid.z - across.z * 4f);
+                    Log($"log at {mid}, r {lr:F2}, len {(b - a).magnitude:F1}: flat along it {gf.FlatAt(a.x * 0.75f + b.x * 0.25f, a.z * 0.75f + b.z * 0.25f):F2}, at its middle {gf.FlatAt(mid.x, mid.z):F2}");
+                    float under = gf.CoverAt(mid.x, mid.z);
+                    Log($"log grass: flat {flatSide:F2} beside it, {flatFar:F2} 4 m off; grass under it {under:F2}");
+                    Check(flatSide > 0.9f && flatFar < 0.2f, $"the grass round a fallen log lies flat ({flatSide:F2} beside it, {flatFar:F2} 4 m away)");
+                    Check(under == 0f, $"no grass grows up through a fallen log ({under:F2})");
+                    yield return Look(Ground(mid.x + across.x * 3.5f + (b - a).normalized.x * 2f, mid.z + across.z * 3.5f + (b - a).normalized.z * 2f), mid, "log_grass");
+                    // chopped up: the grass comes back
+                    l.ServerDeplete();
+                    yield return new WaitForSeconds(0.3f);
+                    float back = gf.CoverAt(mid.x, mid.z);
+                    Check(back > 0f || gf.CoverAt(mid.x + across.x * (lr + 0.6f), mid.z + across.z * (lr + 0.6f)) > 0f, $"the grass grows back where a log was ({back:F2})");
+                    yield return new WaitForSeconds(16f);
+                    float flatAfter = gf.FlatAt(mid.x + across.x * (lr + 0.4f), mid.z + across.z * (lr + 0.4f));
+                    Check(flatAfter < 0.05f, $"and stands back up once it's gone ({flatAfter:F2} flat after 16 s)");
+                    yield return Look(Ground(mid.x + across.x * 3.5f + (b - a).normalized.x * 2f, mid.z + across.z * 3.5f + (b - a).normalized.z * 2f), mid, "log_gone_grass");
+                    l.ServerRegrow();
+                }
+                else Check(false, "a fallen log in the grass");
+            }
+
+            // ---------------- 11. no grass through what's built (and back when it goes) ----------------
+            if (gf != null)
+            {
+                Vector3 spot = default;
+                for (int k = 0; k < 400; k++)
+                {
+                    var p = Vector3.Lerp(bc, Vector3.zero, 0.45f) + new Vector3(Random.Range(-15f, 15f), 0, Random.Range(-15f, 15f));
+                    bool ok = true;
+                    for (int dx = -3; dx <= 3 && ok; dx++) for (int dz = -3; dz <= 3 && ok; dz++) ok = gf.CoverAt(p.x + dx, p.z + dz) > 0.99f;
+                    if (ok) { spot = Ground(p.x, p.z); break; }
+                }
+                var box = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                Destroy(box.GetComponent<Collider>());
+                box.transform.SetPositionAndRotation(spot + Vector3.up * 0.5f, Quaternion.Euler(0, 30f, 0));
+                box.transform.localScale = new Vector3(3f, 1f, 1.2f);
+                int blocks = GrassField.BlockCount;
+                GrassField.BlockRenderers(box.GetInstanceID(), box.transform);
+                var right = box.transform.right; var fwd = box.transform.forward;
+                float inside = 0f, edge = 0f;
+                for (int i = -3; i <= 3; i++) inside = Mathf.Max(inside, gf.CoverAt(spot.x + right.x * i * 0.5f, spot.z + right.z * i * 0.5f));
+                foreach (var e in new[] { right * 1.5f, -right * 1.5f, fwd * 0.6f, -fwd * 0.6f }) edge = Mathf.Max(edge, gf.CoverAt(spot.x + e.x, spot.z + e.z));
+                float away = gf.CoverAt(spot.x + fwd.x * 3f, spot.z + fwd.z * 3f);
+                Check(GrassField.BlockCount == blocks + 1 && inside == 0f && edge == 0f && away > 0.99f, $"no grass through a building's footprint (inside {inside:F2}, its edges {edge:F2}, 3 m off {away:F2})");
+                yield return Look(Ground(spot.x + fwd.x * 4f, spot.z + fwd.z * 4f), spot + Vector3.up * 0.4f, "built_no_grass");
+                GrassField.Unblock(box.GetInstanceID());
+                Destroy(box);
+                float backIn = gf.CoverAt(spot.x, spot.z);
+                Check(backIn > 0.99f, $"the grass grows back when it's gone ({backIn:F2})");
+                // the real thing: every building piece, chest and workbench standing keeps its grass clear
+                int pieces = 0, clear = 0;
+                foreach (var s in Structure.All)
+                {
+                    if (s == null) continue;
+                    var p = s.transform.position;
+                    if (p.y > MapBuilder.Height(p.x, p.z) + 1f) continue;
+                    pieces++;
+                    if (gf.CoverAt(p.x, p.z) == 0f) clear++;
+                }
+                Log($"built pieces on the ground: {pieces}, grass clear under {clear}; things keeping grass clear: {GrassField.BlockCount}");
+                Check(clear == pieces, $"no grass under any building piece ({clear} of {pieces})");
+            }
+
+            // ---------------- 12. the tree X's settings (Settings > Display > TREE X) ----------------
+            {
+                var t = pines[Mathf.Min(1, pines.Count - 1)];
+                var ls = Quaternion.Inverse(t.transform.rotation) * toMid;
+                t.Spot.Value = (byte)(Mathf.RoundToInt(Mathf.Repeat(Mathf.Atan2(ls.z, ls.x) * Mathf.Rad2Deg, 360f) / 30f) % 12);
+                yield return new WaitForSeconds(0.4f);
+                float g0 = GameSettings.TreeXGlow, h0 = GameSettings.TreeXHalo, s0 = GameSettings.TreeXSize; var c0 = GameSettings.TreeXColour;
+                Transform marker = null, halo = null;
+                foreach (var tt in t.GetComponentsInChildren<Transform>(true)) { if (tt.name == "x") marker = tt; if (tt.name == "x halo") halo = tt; }
+                float haloR = halo != null ? halo.GetComponent<MeshFilter>().sharedMesh.bounds.extents.x : 0f;
+                Check(haloR > 0.45f, $"the X's glow reaches further ({haloR:F2} m round it; it was 0.3)");
+                t.TryGetSpot(out var xs, out var xn);
+                var view = Ground(xs.x + xn.x * 3f, xs.z + xn.z * 3f);
+                yield return Look(view, xs, "x_default", 30f);
+                GameSettings.SetTreeX(3.2f, 2f, 1.6f, GameSettings.TreeXColours[4], false);
+                yield return new WaitForSeconds(0.4f);
+                var gm = ResourceNode.GlowMat;
+                float haloR2 = halo != null ? halo.GetComponent<MeshFilter>().sharedMesh.bounds.extents.x : 0f;
+                float scale = marker != null ? marker.localScale.x : 0f;
+                bool onBark = t.TryGetSpot(out var xs2, out _);
+                Check(gm != null && Mathf.Approximately(gm.GetFloat("_Intensity"), 3.2f) && (Color)gm.GetColor("_Color") == GameSettings.TreeXColours[4], "the X takes the glow amount and colour picked");
+                Check(haloR2 > haloR * 1.8f && scale > 1.4f && onBark, $"the X's glow size and size follow the settings (halo {haloR2:F2} m, X x{scale:F2}, still on the bark {onBark})");
+                yield return Look(view, xs2, "x_custom", 30f);
+                GameSettings.SetTreeX(1f, 0f, 0.8f, GameSettings.TreeXColours[2], false);
+                yield return new WaitForSeconds(0.4f);
+                yield return Look(view, xs2, "x_custom_nohalo", 30f);
+                GameSettings.SetTreeX(g0, h0, s0, c0, false);
+                t.Spot.Value = ResourceNode.NoSpot;
+            }
+
+            // ---------------- 13. birds: out of a hit tree, into another, and on again ----------------
+            {
+                var t = pines[0];
+                foreach (var f in BirdFlock.All.ToArray()) if (f) Destroy(f.gameObject);
+                yield return null;
+                int before = BirdFlock.All.Count;
+                t.ServerSendBirds();
+                yield return new WaitForSeconds(0.2f);
+                BirdFlock flock = BirdFlock.All.Count > before ? BirdFlock.All[BirdFlock.All.Count - 1] : null;
+                Check(flock != null && flock.Flying && flock.Count >= 5, $"a hit sends a flock of birds flying out of the tree ({(flock != null ? flock.Count : 0)} birds)");
+                if (flock != null)
+                {
+                    var to = flock.Tree;
+                    Check(to != null && to != t, "they fly to another tree");
+                    yield return new WaitForSeconds(0.9f);
+                    float a0 = flock.WingAngle;
+                    yield return new WaitForSeconds(0.07f);
+                    float a1 = flock.WingAngle;
+                    var c = Vector3.zero; int n = 0;
+                    foreach (var p in flock.Positions) { c += p; n++; }
+                    c /= Mathf.Max(1, n);
+                    Check(Mathf.Abs(Mathf.DeltaAngle(a0, a1)) > 1f && c.y > MapBuilder.Height(c.x, c.z) + 4f, $"they flap their wings ({a0:F0} -> {a1:F0} degrees) up in the air ({c.y - MapBuilder.Height(c.x, c.z):F1} m up)");
+                    var tp = t.transform.position;
+                    yield return Look(Ground(tp.x + toMid.x * 14f, tp.z + toMid.z * 14f), c, "birds_flying", 60f);
+                    float until = Time.time + 12f;
+                    while (Time.time < until && (flock != null && flock.Flying || to.Birds.Value == 0)) yield return null;
+                    bool landed = flock != null && !flock.Flying && to.Birds.Value == flock.Count;
+                    float far = 0f;
+                    if (flock != null) foreach (var p in flock.Positions) far = Mathf.Max(far, new Vector2(p.x - to.transform.position.x, p.z - to.transform.position.z).magnitude);
+                    Check(landed && far < 6f, $"they land in it ({(to != null ? to.Birds.Value : 0)} birds sitting in it, all within {far:F1} m of its trunk)");
+                    if (to != null)
+                    {
+                        var op = to.transform.position;
+                        var pp = Vector3.zero; n = 0;
+                        foreach (var p in flock.Positions) { pp += p; n++; }
+                        pp /= Mathf.Max(1, n);
+                        yield return Look(Ground(op.x + toMid.x * 8f, op.z + toMid.z * 8f), pp, "birds_perched", 45f);
+                        // hit that tree: off they go again, to another one
+                        to.ServerHarvest(1, false, Ground(op.x + toMid.x * 3f, op.z + toMid.z * 3f));
+                        yield return new WaitForSeconds(0.3f);
+                        Check(to.Birds.Value == 0 && flock != null && flock.Flying && flock.Tree != to && flock.Tree != null, "hitting the tree they're in sends them on to another");
+                        to.ServerRegrow();
+                    }
+                }
+                // and a hit only sometimes sends a new flock up
+                int sent = 0;
+                var others = Of(ResourceNode.Tree);
+                foreach (var f in BirdFlock.All.ToArray()) if (f) Destroy(f.gameObject);
+                yield return null;
+                int flocks0 = BirdFlock.All.Count;
+                for (int i = 0; i < 40 && i < others.Count; i++)
+                {
+                    others[i].ServerHarvest(1, false, others[i].transform.position + Vector3.forward * 3f);
+                    others[i].ServerRegrow();
+                }
+                yield return new WaitForSeconds(0.2f);
+                sent = BirdFlock.All.Count - flocks0;
+                Log($"40 hits on trees sent {sent} flocks up ({ResourceNode.ServerFlockCount()} about; chance {ResourceNode.BirdChance * 100f:0}% a hit, at most {ResourceNode.FlocksPerTeam * Cfg.Copies})");
+                Check(sent >= 1 && ResourceNode.ServerFlockCount() <= ResourceNode.FlocksPerTeam * Cfg.Copies, $"hits now and then send birds up, never too many ({sent} from 40 hits)");
+            }
+
             cam.fieldOfView = 70f;
             Log("nodes test done");
             yield return new WaitForSeconds(0.5f);
