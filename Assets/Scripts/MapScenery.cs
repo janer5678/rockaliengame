@@ -106,6 +106,7 @@ namespace RockGame
             if (Cfg.Map != MapKind.Plains && Cfg.Map != MapKind.Highlands) return;
             BuildRanges(root);
             BuildBoulders(root);
+            BuildOutskirts(root);
         }
 
         // =====================================================================
@@ -143,6 +144,7 @@ namespace RockGame
             float hk = Mathf.Max(0.75f, Mathf.Sqrt(half / 100f));  // (how tall)
             var go = new GameObject("Mountain ranges");
             go.transform.SetParent(root, false);
+            RangeTrees.Clear();
             using (ColorSlots.Use(ColorSlots.Mountains))
                 for (int layer = 0; layer < k_Ranges.Length; layer++)
                 {
@@ -150,12 +152,60 @@ namespace RockGame
                     float rc = half * 1.45f + L.dist * k, depth = L.depth * k, H = L.height * hk;
                     var rock = new MeshBatch();
                     var snow = new MeshBatch();
-                    Range(rock, layer == k_Ranges.Length - 1 ? snow : null, Cfg.MapSeed * 31 + layer * 977, rc, depth, H, L.peaks);
+                    var trees = layer < k_TreeCol.Length ? new MeshBatch() : null;
+                    Range(rock, layer == k_Ranges.Length - 1 ? snow : null, trees, layer, Cfg.MapSeed * 31 + layer * 977, rc, depth, H, L.peaks);
                     var r = Own(rock.Build(go.transform, "range " + layer, Art.Mat(L.col), false));
                     Ranges.Add(r.GetComponent<Renderer>());
                     Psx(r, "cobble_12");
                     if (layer == k_Ranges.Length - 1) Psx(Own(snow.Build(go.transform, "range snow " + layer, Art.Mat(k_Snow), false)), "concrete_00");
+                    if (trees != null)
+                        using (ColorSlots.Use(ColorSlots.Leaves))
+                        {
+                            var tr = Own(trees.Build(go.transform, "range trees " + layer, Art.Mat(k_TreeCol[layer]), false));
+                            RangeTrees.Add(tr.GetComponent<Renderer>());
+                            tr.GetComponent<MeshRenderer>().receiveShadows = false;
+                        }
                 }
+        }
+
+        /// <summary>The forests on the nearer ranges (tests): one merged mesh per range, nearest first.</summary>
+        public static readonly List<Renderer> RangeTrees = new List<Renderer>();
+        /// <summary>The forests' colour on each range that has them (darker and bluer further out: the air between).</summary>
+        static readonly Color[] k_TreeCol = { new Color(0.2f, 0.33f, 0.19f), new Color(0.3f, 0.4f, 0.34f) };
+
+        /// <summary>A low-poly pine for the far scenery added to a merged mesh: tiers of six-sided cones (no trunk on the
+        /// far ones - nobody sees it from there), `h` tall, standing on `foot`.</summary>
+        static void AddPine(MeshBatch mb, MeshBatch trunk, Vector3 foot, float h, float yaw, int tiers)
+        {
+            const int n = 6;
+            float w = h * 0.36f;
+            if (trunk != null)
+            {
+                float tr = h * 0.045f, th = h * 0.3f;
+                for (int i = 0; i < 4; i++)
+                {
+                    float a0 = yaw + i * Mathf.PI * 0.5f, a1 = a0 + Mathf.PI * 0.5f;
+                    var o0 = new Vector3(Mathf.Cos(a0), 0, Mathf.Sin(a0)) * tr;
+                    var o1 = new Vector3(Mathf.Cos(a1), 0, Mathf.Sin(a1)) * tr;
+                    trunk.Quad(foot + o0 - Vector3.up * 0.5f, foot + o1 - Vector3.up * 0.5f, foot + o1 + Vector3.up * th, foot + o0 + Vector3.up * th, o0 + o1, 2f);
+                }
+            }
+            for (int t = 0; t < tiers; t++)
+            {
+                float k = tiers == 1 ? 0f : t / (tiers - 1f);
+                float y0 = h * Mathf.Lerp(0.2f, 0.52f, k), y1 = h * Mathf.Lerp(tiers == 1 ? 1f : 0.62f, 1f, k);
+                float r = w * Mathf.Lerp(1f, 0.58f, k);
+                var top = foot + Vector3.up * y1;
+                for (int i = 0; i < n; i++)
+                {
+                    float a0 = yaw + t * 0.5f + i * Mathf.PI * 2f / n, a1 = a0 + Mathf.PI * 2f / n;
+                    var p0 = foot + new Vector3(Mathf.Cos(a0) * r, y0, Mathf.Sin(a0) * r);
+                    var p1 = foot + new Vector3(Mathf.Cos(a1) * r, y0, Mathf.Sin(a1) * r);
+                    var mid = (p0 + p1) * 0.5f - foot;
+                    mb.Tri(p0, p1, top, new Vector3(mid.x, r * 0.6f, mid.z), 4f);
+                    mb.Tri(p0, p1, foot + Vector3.up * (y0 + 0.05f), Vector3.down, 4f); // (the underside of the tier)
+                }
+            }
         }
 
         /// <summary>PSX graphics: a tiling PSX surface instead of the flat colour (one tile every 12 m, the mesh's UVs).</summary>
@@ -172,7 +222,7 @@ namespace RockGame
         /// sharpened into peaks; across the band it rises from below the ground to a crest that wanders from side to
         /// side. Every corner is nudged a little so the facets aren't regular. Faces high up and facing up go in `snow`.
         /// </summary>
-        static void Range(MeshBatch rock, MeshBatch snow, int seed, float rc, float depth, float H, float peaks)
+        static void Range(MeshBatch rock, MeshBatch snow, MeshBatch trees, int layer, int seed, float rc, float depth, float H, float peaks)
         {
             var rng = new System.Random(seed);
             float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
@@ -219,6 +269,111 @@ namespace RockGame
                     else { Tri(a, b, d); Tri(b, c, d); }
                 }
             }
+            if (trees == null) return;
+            // forests on the lower slopes facing the map (thinning out higher up, none near the snow), in clumps
+            var trng = new System.Random(seed + 5);
+            float T(float a, float b) => a + (float)trng.NextDouble() * (b - a);
+            float treeH = layer == 0 ? 11f : 17f;
+            float treeLine = H * (layer == 0 ? 0.5f : 0.42f);
+            for (int i = 0; i < segs; i++)
+            {
+                int i1 = (i + 1) % segs;
+                // (clumps: some stretches of the range are thick with trees, others bare)
+                float a = i / (float)segs * Mathf.PI * 2f;
+                float clump = Mathf.PerlinNoise(seed * 0.01f + Mathf.Cos(a) * 3f, Mathf.Sin(a) * 3f + 7f);
+                int per = Mathf.RoundToInt(Mathf.Lerp(0f, layer == 0 ? 14f : 9f, Mathf.InverseLerp(0.3f, 0.7f, clump)));
+                for (int t = 0; t < per; t++)
+                {
+                    // a spot on the inner two rows of the band (the side that faces the map)
+                    float u = T(0f, 1f), v = T(0f, 1f);
+                    int j = trng.NextDouble() < 0.6 ? 0 : 1;
+                    var q0 = Vector3.Lerp(p[i, j], p[i1, j], u);
+                    var q1 = Vector3.Lerp(p[i, j + 1], p[i1, j + 1], u);
+                    var at = Vector3.Lerp(q0, q1, v);
+                    if (at.y < -1f || at.y > treeLine * T(0.6f, 1f)) continue;
+                    AddPine(trees, null, at - Vector3.up * 0.8f, treeH * T(0.7f, 1.3f), T(0f, 6.3f), 2);
+                }
+            }
+        }
+
+        // =====================================================================
+        // Outskirts: rocks and trees out past the edge of the map
+        // =====================================================================
+
+        /// <summary>The outskirts' merged meshes (tests): the rocks and the trees.</summary>
+        public static readonly List<Renderer> Outskirts = new List<Renderer>();
+        /// <summary>How many rocks and trees went out there (tests).</summary>
+        public static int OutskirtRocks, OutskirtTrees;
+
+        /// <summary>
+        /// Decoration out past the edge of the map, outside the glass dome (nobody can get there): a band of rocks of all
+        /// sizes and clumps of pines on the ground all the way round (on Highlands, up the rocky rise at the edge), so the
+        /// view out through the glass isn't bare. Merged meshes (a few draws), no colliders, no shadows.
+        /// </summary>
+        static void BuildOutskirts(Transform root)
+        {
+            Outskirts.Clear();
+            OutskirtRocks = OutskirtTrees = 0;
+            float half = Cfg.MapHalf;
+            var rng = new System.Random(Cfg.MapSeed * 13 + 77);
+            float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
+            var rocks = new MeshBatch();
+            var rocksDark = new MeshBatch();
+            var needles = new MeshBatch();
+            var trunks = new MeshBatch();
+            float inner = half + 6f, outer = half + 27f; // (the ground reaches half + 30)
+            int n = Mathf.RoundToInt(260 * half / 100f);
+            for (int i = 0; i < n; i++)
+            {
+                // a spot in the band round the square map
+                float m = R(inner, outer), along = R(-m, m);
+                int side = rng.Next(4);
+                float x = side < 2 ? along : (side == 2 ? m : -m), z = side < 2 ? (side == 0 ? m : -m) : along;
+                float out01 = Mathf.InverseLerp(inner, outer, m);
+                float clump = Mathf.PerlinNoise(x * 0.04f + 17.3f, z * 0.04f + 5.1f);
+                bool tree = clump > 0.48f && rng.NextDouble() < 0.75;
+                float gy = MapBuilder.Height(x, z);
+                if (tree)
+                {
+                    float th = R(6f, 11f) * (0.85f + out01 * 0.4f);
+                    float reach = th * 0.37f; // (its lowest tier's reach)
+                    if (m - reach < half + 4f)
+                    {
+                        float k = (half + 4f + reach) / m;
+                        x *= k; z *= k;
+                        gy = MapBuilder.Height(x, z);
+                    }
+                    AddPine(needles, trunks, new Vector3(x, gy - 0.2f, z), th, R(0f, 6.3f), 3);
+                    OutskirtTrees++;
+                }
+                else
+                {
+                    float sz = rng.NextDouble() < 0.18 ? R(3f, 7.5f) : R(0.8f, 2.6f);
+                    var size = new Vector3(sz * R(0.9f, 1.4f), sz * R(0.5f, 0.85f), sz * R(0.8f, 1.2f));
+                    // (a big one is pushed out until none of it reaches back in towards the dome)
+                    float reach = Mathf.Max(size.x, size.z) * 0.62f;
+                    if (m - reach < half + 4f)
+                    {
+                        float k = (half + 4f + reach) / m;
+                        x *= k; z *= k; // (m is the larger of |x| and |z|, so this moves it straight out)
+                        gy = MapBuilder.Height(x, z);
+                    }
+                    AddRock(i % 3 == 0 ? rocksDark : rocks, new Vector3(x, gy + size.y * 0.2f, z), Quaternion.Euler(R(-15f, 15f), R(0f, 360f), R(-15f, 15f)), size, rng.Next());
+                    OutskirtRocks++;
+                }
+            }
+            var go = new GameObject("Outskirts");
+            go.transform.SetParent(root, false);
+            void Add(GameObject g) { Outskirts.Add(g.GetComponent<Renderer>()); g.GetComponent<MeshRenderer>().receiveShadows = false; }
+            using (ColorSlots.Use(ColorSlots.Boulders))
+            {
+                Add(Own(rocks.Build(go.transform, "outskirt rocks", Art.Mat(new Color(0.54f, 0.53f, 0.5f)), false)));
+                Add(Own(rocksDark.Build(go.transform, "outskirt rocks dark", Art.Mat(new Color(0.43f, 0.42f, 0.4f)), false)));
+            }
+            using (ColorSlots.Use(ColorSlots.Leaves))
+                Add(Own(needles.Build(go.transform, "outskirt pines", Art.Mat(new Color(0.22f, 0.4f, 0.17f)), false)));
+            using (ColorSlots.Use(ColorSlots.TreeTrunks))
+                Add(Own(trunks.Build(go.transform, "outskirt trunks", Art.Mat(new Color(0.36f, 0.23f, 0.12f)), false)));
         }
 
         // =====================================================================

@@ -395,6 +395,7 @@ namespace RockGame
             }
 
             if (pc.MenuOpen) DrawInventory(me, pc);
+            FlareTip.Draw(k, m_Label, m_Small, Fill, Shadowed); // (by the glass wall while it's up: the ball is the emergency flare)
             Tutorial.Draw(k, m_Label, m_Small, Fill, Shadowed);
             if (!pc.Paused) Chat.Draw(k, m_Small, Fill, Shadowed);
             if (pc.WheelOpen) DrawWheel(pc);

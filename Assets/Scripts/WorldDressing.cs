@@ -39,10 +39,14 @@ namespace RockGame
     }
 
     /// <summary>Normal graphics: puffy low-poly clouds drifting slowly high over the map (a handful of merged meshes,
-    /// smooth-shaded, no shadows). Hidden in PSX / AI PSX and in the sudden death arena in space.</summary>
+    /// smooth-shaded, no shadows). Hidden in PSX / AI PSX and in the sudden death arena in space.
+    /// They drift over a square far bigger than the map and wrap round at its edge - but never pop: a cloud shrinks
+    /// away to nothing as it nears the far edge (far out over the mountains, low on the horizon) and grows back out of
+    /// nothing on the other side, so it's already gone when it jumps.</summary>
     public class CloudLayer : MonoBehaviour
     {
         readonly List<Transform> m_Clouds = new List<Transform>();
+        readonly List<float> m_Scale = new List<float>();
         readonly List<Renderer> m_Rs = new List<Renderer>();
         readonly List<Mesh> m_Meshes = new List<Mesh>();
         float m_Extent;
@@ -67,16 +71,18 @@ namespace RockGame
         {
             var rng = new System.Random(Cfg.MapSeed * 5 + 3);
             float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
-            m_Extent = Cfg.MapHalf * 2.4f + 60f;
+            m_Extent = Cfg.MapHalf * 3.2f + 120f;
             for (int v = 0; v < 6; v++) m_Meshes.Add(CloudMesh(rng));
-            int n = Mathf.RoundToInt(16 * Mathf.Max(1f, Cfg.MapHalf / 100f));
+            int n = Mathf.RoundToInt(26 * Mathf.Max(1f, Cfg.MapHalf / 100f));
             for (int i = 0; i < n; i++)
             {
                 var c = new GameObject("cloud");
                 c.transform.SetParent(transform, false);
                 c.transform.localPosition = new Vector3(R(-m_Extent, m_Extent), R(105f, 160f), R(-m_Extent, m_Extent));
                 c.transform.localRotation = Quaternion.Euler(0, R(-25f, 25f), 0);
-                c.transform.localScale = Vector3.one * R(2.2f, 3.8f); // (big: 2-3x what they were)
+                float sc = R(2.2f, 3.8f); // (big: 2-3x what they were)
+                m_Scale.Add(sc);
+                c.transform.localScale = Vector3.one * sc * Fade(c.transform.localPosition);
                 c.AddComponent<MeshFilter>().sharedMesh = m_Meshes[i % m_Meshes.Count];
                 var mr = c.AddComponent<MeshRenderer>();
                 mr.sharedMaterial = mat;
@@ -142,13 +148,29 @@ namespace RockGame
             }
             if (!show) return;
             var step = k_Wind * Time.deltaTime;
-            foreach (var c in m_Clouds)
+            for (int i = 0; i < m_Clouds.Count; i++)
             {
+                var c = m_Clouds[i];
                 var p = c.localPosition + step;
                 if (p.x > m_Extent) p.x -= 2f * m_Extent;
                 if (p.z > m_Extent) p.z -= 2f * m_Extent;
                 c.localPosition = p;
+                c.localScale = Vector3.one * Mathf.Max(0.0001f, m_Scale[i] * Fade(p));
             }
         }
+
+        /// <summary>How big a cloud is here, 0-1: full size over most of the square, shrinking smoothly to nothing over the
+        /// last stretch before its edge (where it wraps round to the other side), so it never pops in or out.</summary>
+        public float Fade(Vector3 p)
+        {
+            float band = m_Extent * 0.22f;
+            float e = Mathf.Max(Mathf.Abs(p.x), Mathf.Abs(p.z));
+            float k = Mathf.Clamp01((m_Extent - e) / band);
+            return k * k * (3f - 2f * k);
+        }
+
+        /// <summary>The clouds (tests).</summary>
+        public IReadOnlyList<Transform> Clouds => m_Clouds;
+        public float Extent => m_Extent;
     }
 }

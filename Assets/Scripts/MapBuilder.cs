@@ -27,6 +27,8 @@ namespace RockGame
         {
             if (s_Root) Object.Destroy(s_Root.gameObject);
             s_Glass = null;
+            s_Dropping = null;
+            s_BaseFloors.Clear();
             WildRocks.Clear();
             s_Root = new GameObject("World").transform;
             BuiltKey = Cfg.MapKey;
@@ -76,12 +78,17 @@ namespace RockGame
                 int cells = Mathf.RoundToInt(s / Cfg.Cell);
                 using (ColorSlots.Use(ColorSlots.BasePads))
                 {
-                    Art.Box(root, pad, c + new Vector3(0, 0.02f, 0), new Vector3(s, 0.03f, s));
+                    // (the tinted floor and its grid are only there while you build: once the wall drops they go, and the
+                    // base is plain flat ground - grass, no blades - inside its team-colour border; SetGlassWall)
+                    var floor = new GameObject("base floor " + t).transform;
+                    floor.SetParent(root, false);
+                    s_BaseFloors.Add(floor.gameObject);
+                    Art.Box(floor, pad, c + new Vector3(0, 0.02f, 0), new Vector3(s, 0.03f, s));
                     for (int k = 0; k <= cells; k++)
                     {
                         float o = -Cfg.BaseHalf + k * Cfg.Cell;
-                        Art.Box(root, line, c + new Vector3(0, 0.04f, o), new Vector3(s, 0.01f, 0.06f));
-                        Art.Box(root, line, c + new Vector3(o, 0.04f, 0), new Vector3(0.06f, 0.01f, s));
+                        Art.Box(floor, line, c + new Vector3(0, 0.04f, o), new Vector3(s, 0.01f, 0.06f));
+                        Art.Box(floor, line, c + new Vector3(o, 0.04f, 0), new Vector3(0.06f, 0.01f, s));
                     }
                 }
                 for (int side = 0; side < 4; side++)
@@ -166,6 +173,7 @@ namespace RockGame
                 GrassField.Build(root); // tufts of grass (Normal graphics)
                 CloudLayer.Build(root);  // clouds drifting over (Normal graphics)
                 SkySun.Build(root);      // the low-poly sun (Normal graphics)
+                if (Cfg.Map == MapKind.Highlands) SkyPlanets.Build(root); // big planets in the sky (Normal graphics)
             }
             look.Done();
             if (AiPsxArt.On) AiPsxArt.ApplyWorld(root);
@@ -193,6 +201,19 @@ namespace RockGame
             return (f - 0.42f) * 16f + ridge * ridge * 7f;
         }
 
+        /// <summary>The craggy bumps on the rocky rise at the edge of the map (metres, about -4 to 4).</summary>
+        static float Crag(float x, float z)
+        {
+            float o = (Cfg.MapSeed % 997) * 0.37f;
+            float a = Mathf.PerlinNoise(x * 0.09f + o, z * 0.09f + 40f) - 0.5f;
+            float b = Mathf.PerlinNoise(x * 0.23f + 13f, z * 0.23f + o) - 0.5f;
+            return a * 9f + b * 4f;
+        }
+
+        /// <summary>Highlands: is this part of the ground the rocky rise at the edge of the map? (Drawn faceted - flat-shaded,
+        /// like the mountain rocks - not smooth like the hills.)</summary>
+        public static bool EdgeRise(float x, float z) => Cfg.Map == MapKind.Highlands && Mathf.Max(Mathf.Abs(x), Mathf.Abs(z)) > Cfg.MapHalf - 12f;
+
         /// <summary>Ground height at (x, z). Bases and the ball zone are flat (y = 0) so building and the drop work the same.</summary>
         public static float Height(float x, float z) => Height(x, z, out _, out _);
 
@@ -216,7 +237,17 @@ namespace RockGame
             // (flat out to 13 m round the middle: the crash site's dirt lies on it - CrashSite.DirtR)
             mask = Mathf.Min(SmoothStep(2f, 16f, dBase), SmoothStep(13f, 27f, new Vector2(x, z).magnitude));
             float edge = Mathf.Max(Mathf.Abs(x), Mathf.Abs(z)) - (Cfg.MapHalf - 14f);
-            if (edge > 0) h += edge * 0.9f;
+            if (edge > 0)
+            {
+                h += edge * 0.9f;
+                // out past the dome the rise is broken stone: crags and ledges (the same for every team), growing as it
+                // climbs (none inside the dome - its foot and trim follow the ground there, and you walk on it)
+                if (edge > 16f)
+                {
+                    float crag = Cfg.FourWay ? 0.25f * (Crag(x, z) + Crag(-z, x) + Crag(-x, -z) + Crag(z, -x)) : 0.5f * (Crag(x, z) + Crag(-x, -z));
+                    h += crag * Mathf.Clamp01((edge - 16f) / 10f);
+                }
+            }
             hills = Mathf.Max(h, -2.5f);
             return hills * mask;
         }
@@ -237,7 +268,7 @@ namespace RockGame
             s_RockField = RockFieldOf(hills, mask, half, step);
             s_FieldHalf = half;
             s_FieldStep = step;
-            var mesh = SmoothGround("Terrain", hs, half, step, 2, null, s_RockField);
+            var mesh = SmoothGround("Terrain", hs, half, step, 2, null, s_RockField, c => EdgeRise(c.x, c.z));
 
             var go = new GameObject("Ground");
             go.transform.SetParent(root, false);
@@ -274,7 +305,7 @@ namespace RockGame
         /// the edge of the rock is one clean, smooth line instead of following the triangles.
         /// World-space UVs (a metre each) for the PSX graphics' textures.
         /// </summary>
-        public static Mesh SmoothGround(string name, float[,] hs, float half, float step, int subCount, System.Func<Vector3, float, int> sub, float[,] split = null)
+        public static Mesh SmoothGround(string name, float[,] hs, float half, float step, int subCount, System.Func<Vector3, float, int> sub, float[,] split = null, System.Func<Vector3, bool> faceted = null)
         {
             int n = hs.GetLength(0) - 1;
             int corners = (n + 1) * (n + 1);
@@ -309,7 +340,25 @@ namespace RockGame
                 uvs.Add(Vector2.Lerp(uvs[a], uvs[b], t));
                 return cuts[key] = verts.Count - 1;
             }
-            void Add(int s, int a, int b, int c) { subs[s].Add(a); subs[s].Add(b); subs[s].Add(c); }
+            void Add(int s, int a, int b, int c)
+            {
+                if (faceted != null)
+                {
+                    // (faceted: the triangle gets corners of its own, all with its own face's normal - flat-shaded)
+                    Vector3 pa = verts[a], pb = verts[b], pc = verts[c];
+                    if (faceted((pa + pb + pc) / 3f))
+                    {
+                        var nrm = Vector3.Cross(pb - pa, pc - pa).normalized;
+                        if (nrm.y < 0f) nrm = -nrm;
+                        int k0 = verts.Count;
+                        verts.Add(pa); verts.Add(pb); verts.Add(pc);
+                        normals.Add(nrm); normals.Add(nrm); normals.Add(nrm);
+                        uvs.Add(uvs[a]); uvs.Add(uvs[b]); uvs.Add(uvs[c]);
+                        a = k0; b = k0 + 1; c = k0 + 2;
+                    }
+                }
+                subs[s].Add(a); subs[s].Add(b); subs[s].Add(c);
+            }
             void Tri(int a, int b, int c)
             {
                 if (f == null)
@@ -736,31 +785,147 @@ namespace RockGame
             ribs.Build(parent, "glass dome ribs", Art.Ghost(k_GlassLine), false);
         }
 
-        public static bool GlassUp => s_Glass != null && s_Glass.activeSelf;
+        /// <summary>The wall (and the dome) still stands: up and not dropping. Everything that goes by the wall - hits across
+        /// it, the ball under the dome, what's allowed where - takes it as down the moment it starts dropping.</summary>
+        public static bool GlassUp => s_Glass != null && s_Glass.activeSelf && s_Dropping == null;
+        /// <summary>The wall is sliding down into the ground right now (the picture only: it's already down for the game).</summary>
+        public static bool GlassDropping => s_Dropping != null;
+        /// <summary>The tinted base floors (with their build grid): only shown while the wall is up (tests).</summary>
+        public static IReadOnlyList<GameObject> BaseFloors => s_BaseFloors;
+        static readonly List<GameObject> s_BaseFloors = new List<GameObject>();
+        static GlassWallDrop s_Dropping;
 
-        /// <summary>The wall (and the dome) is up until the wall drops (driven by the match state on every peer).</summary>
+        /// <summary>The wall (and the dome) is up until the wall drops (driven by the match state on every peer, every frame).
+        /// Down without DropGlassWall first (joining a match that's already past it, the fun modes): gone at once.</summary>
         public static void SetGlassWall(bool up)
         {
-            if (s_Glass == null || s_Glass.activeSelf == up) return;
-            s_Glass.SetActive(up);
-            if (up) return;
-            // shatter
-            float half = Cfg.MapHalf;
-            for (int i = 0; i < 40; i++)
+            // the bases' tinted build floors only while you build
+            foreach (var f in s_BaseFloors) if (f != null && f.activeSelf != up) f.SetActive(up);
+            if (s_Glass == null) return;
+            if (up)
             {
-                var p = new Vector3(Random.Range(-half, half), Random.Range(0.5f, 12f), 0);
-                p.y += Height(p.x, p.z);
-                FxParticle.Spawn(p, new Vector3(Random.Range(-2f, 2f), Random.Range(0f, 3f), Random.Range(-3f, 3f)), new Color(0.75f, 0.95f, 1f), Random.Range(0.08f, 0.2f), Random.Range(0.8f, 1.6f), 14f, false);
+                if (s_Dropping != null) { s_Dropping.Stop(); s_Dropping = null; }
+                if (!s_Glass.activeSelf) s_Glass.SetActive(true);
+                return;
             }
-            // the dome bursts too
-            for (int i = 0; i < 30; i++)
+            if (s_Dropping == null && s_Glass.activeSelf) s_Glass.SetActive(false);
+        }
+
+        /// <summary>
+        /// The build phase is over: the glass wall and the ball's dome slide down into the ground (every peer runs it from
+        /// the moment its match state turns, so everyone sees the same thing). It counts as down straight away: its
+        /// colliders go at once (the ball's free, nobody is stopped by glass that's on its way down), and the wall slides
+        /// down - a shudder, then faster and faster, easing in at the bottom - with dust rolling out along its foot and a
+        /// rumble, a crack of glass at the start and a thud at the end. Then it's switched off.
+        /// </summary>
+        public static void DropGlassWall()
+        {
+            if (s_Glass == null || !s_Glass.activeSelf || s_Dropping != null) return;
+            foreach (var c in s_Glass.GetComponentsInChildren<Collider>()) c.enabled = false;
+            s_Dropping = s_Glass.AddComponent<GlassWallDrop>();
+        }
+
+        /// <summary>Slides the glass wall down into the ground (MapBuilder.DropGlassWall), then switches it off.</summary>
+        public class GlassWallDrop : MonoBehaviour
+        {
+            /// <summary>How long the slide takes (s), the shudder before it, and how far down it goes (its top edge, m).</summary>
+            public const float Duration = 4.2f, Shudder = 0.45f;
+            float m_T0, m_Depth, m_NextDust, m_NextRumble;
+            Vector3 m_Start;
+            readonly List<Vector3> m_Foot = new List<Vector3>();
+
+            void Start()
             {
-                var d = Random.onUnitSphere;
-                d.y = Mathf.Abs(d.y);
-                var p = new Vector3(0, Height(0, 0), 0) + d * DomeRadius;
-                FxParticle.Spawn(p, d * Random.Range(1f, 3f) + Vector3.up * Random.Range(0f, 2f), new Color(0.75f, 0.95f, 1f), Random.Range(0.08f, 0.2f), Random.Range(0.8f, 1.6f), 14f, false);
+                m_T0 = Time.time;
+                m_Start = transform.localPosition;
+                float top = 0f;
+                foreach (var r in GetComponentsInChildren<Renderer>()) top = Mathf.Max(top, r.bounds.max.y);
+                m_Depth = top - Height(0, 0) + 2f;
+                // where the dust comes up: along the wall's foot (and round the ball's dome)
+                float half = Cfg.MapHalf;
+                var dirs = new List<Vector3>();
+                if (Cfg.FourWay) { dirs.Add(Quaternion.Euler(0, 45f, 0) * Vector3.right); dirs.Add(Quaternion.Euler(0, 135f, 0) * Vector3.right); }
+                else dirs.Add(Vector3.right);
+                foreach (var d in dirs)
+                    for (float x = -half; x <= half; x += 3f)
+                    {
+                        if (Mathf.Abs(x) < DomeRadius) continue;
+                        var p = d * x;
+                        p.y = Height(p.x, p.z);
+                        m_Foot.Add(p);
+                    }
+                for (int i = 0; i < 24; i++)
+                {
+                    float a = i * Mathf.PI * 2f / 24f;
+                    var p = new Vector3(Mathf.Cos(a) * DomeRadius, 0, Mathf.Sin(a) * DomeRadius);
+                    p.y = Height(p.x, p.z);
+                    m_Foot.Add(p);
+                }
+                Sfx.Play2D(Sfx.Glass, 0.5f);
+                Sfx.Play2D(Sfx.StoneGrind, 0.55f);
+                m_NextRumble = Time.time + 1.1f;
             }
-            Sfx.Play2D(Sfx.Smash, 0.6f);
+
+            /// <summary>0..1: how far down it is at time t into the drop: still through the shudder, then faster and faster
+            /// like something heavy giving way, easing in over the last quarter (the speed carries straight on between).</summary>
+            public static float Progress(float t)
+            {
+                if (t <= Shudder) return 0f;
+                float k = Mathf.Clamp01((t - Shudder) / (Duration - Shudder));
+                const float s = 0.75f;
+                if (k < s) return s * (k / s) * (k / s);
+                float u = 1f - (k - s) / (1f - s);
+                return s + (1f - s) * (1f - u * u);
+            }
+
+            void Update()
+            {
+                float t = Time.time - m_T0;
+                float k = Progress(t);
+                var shake = Vector3.zero;
+                if (t < Duration)
+                {
+                    float amp = t < Shudder ? 0.06f : 0.025f * (1f - k);
+                    shake = new Vector3(Mathf.Sin(t * 57f), 0, Mathf.Cos(t * 43f)) * amp;
+                }
+                transform.localPosition = m_Start + Vector3.down * (m_Depth * k) + shake;
+                // dust rolling out along its foot while it goes
+                if (t > Shudder * 0.6f && t < Duration && Time.time >= m_NextDust && m_Foot.Count > 0)
+                {
+                    m_NextDust = Time.time + 0.06f;
+                    var cam = Camera.main;
+                    for (int i = 0; i < 5; i++)
+                    {
+                        var p = m_Foot[Random.Range(0, m_Foot.Count)];
+                        // (only where someone might see it)
+                        if (cam != null && (p - cam.transform.position).sqrMagnitude > 90f * 90f) continue;
+                        var col = Color.Lerp(new Color(0.55f, 0.48f, 0.38f), new Color(0.7f, 0.66f, 0.58f), Random.value);
+                        FxParticle.Puff(p + new Vector3(Random.Range(-1.5f, 1.5f), Random.Range(0.1f, 0.8f), Random.Range(-1.5f, 1.5f)), col, Random.Range(1.4f, 2.6f));
+                        FxParticle.Spawn(p + Vector3.up * 0.3f, new Vector3(Random.Range(-2.5f, 2.5f), Random.Range(1f, 3.5f), Random.Range(-2.5f, 2.5f)), col * 0.85f, Random.Range(0.08f, 0.2f), Random.Range(0.6f, 1.2f), 9f, false);
+                    }
+                }
+                if (t < Duration - 0.6f && Time.time >= m_NextRumble)
+                {
+                    m_NextRumble = Time.time + 1.1f;
+                    Sfx.Play2D(Sfx.StoneGrind, 0.45f);
+                }
+                if (t >= Duration)
+                {
+                    Sfx.Play2D(Sfx.Thud, 0.8f);
+                    Sfx.Play2D(Sfx.Boom, 0.25f);
+                    Stop();
+                    if (s_Dropping == this) s_Dropping = null;
+                    gameObject.SetActive(false);
+                }
+            }
+
+            /// <summary>Put the wall back where it was (solid again) and stop.</summary>
+            public void Stop()
+            {
+                transform.localPosition = m_Start;
+                foreach (var c in GetComponentsInChildren<Collider>(true)) c.enabled = true;
+                Destroy(this);
+            }
         }
 
         // =====================================================================

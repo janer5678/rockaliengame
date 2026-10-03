@@ -23,7 +23,11 @@ namespace RockGame
         public static CrashSite Current;
 
         /// <summary>The saucer's radius, how far its centre is from the ball and how steeply it's nose-down.</summary>
-        public const float SaucerR = 4f, SaucerDist = 6f, Tilt = 17f;
+        public const float SaucerR = 4f, SaucerDist = 6f, Tilt = 32f;
+        /// <summary>How deep the lowest point of the saucer's near edge is driven into the ground.</summary>
+        const float Bury = 0.9f;
+        /// <summary>How high the soil is heaped up against the buried near edge, in front (it thins out round the sides).</summary>
+        const float HeapH = 1.65f;
 
         /// <summary>Which way the saucer lies from the middle of the map (flat, unit length).</summary>
         public static Vector3 Dir => Cfg.TeamCount >= 4 ? new Vector3(1f, 0, 1f).normalized : Cfg.TeamCount == 3 ? Vector3.left : Vector3.right;
@@ -75,6 +79,19 @@ namespace RockGame
         {
             foreach (var m in m_OwnMats) if (m) Destroy(m);
             if (Current == this) Current = null;
+        }
+
+        /// <summary>How far this spot (this object's space) is from the nearest line from a base to the ball (flat).</summary>
+        float SightDist(Vector3 p)
+        {
+            float best = 999f;
+            for (int team = 0; team < Cfg.TeamCount; team++)
+            {
+                var d = transform.InverseTransformDirection(new Vector3(Cfg.BaseCenter[team].x, 0, Cfg.BaseCenter[team].z).normalized);
+                if (Vector3.Dot(d, p) <= -1f) continue;
+                best = Mathf.Min(best, Vector3.Cross(d, new Vector3(p.x, 0, p.z)).magnitude);
+            }
+            return best;
         }
 
         /// <summary>Is this spot (in this object's space) near the line from some base to the ball? Nothing that sticks up
@@ -155,17 +172,16 @@ namespace RockGame
                 }
                 Own(mb.Build(t, "furrow", Art.Mat(new Color(0.27f, 0.19f, 0.12f)), false));
             }
-            // dirt thrown up along the furrow and piled round the buried nose (low: nothing to trip the ball)
-            for (int i = 0; i < 14; i++)
+            // dirt thrown up along the furrow (low: nothing to trip the ball)
+            for (int i = 0; i < 8; i++)
             {
-                bool berm = i < 6;
-                float a = berm ? R(35f, 95f) * (i % 2 == 0 ? 1 : -1) * Mathf.Deg2Rad : 0f;
-                var p = berm ? new Vector3(SaucerDist - Mathf.Cos(a) * (SaucerR + 0.2f), 0, Mathf.Sin(a) * (SaucerR + 0.2f))
-                             : new Vector3(R(6.5f, 12f), 0, (i % 2 == 0 ? 1 : -1) * R(1.6f, 2.3f));
+                var p = new Vector3(R(6.5f, 12f), 0, (i % 2 == 0 ? 1 : -1) * R(1.6f, 2.3f));
                 p.y = G(p.x, p.z);
-                float s = berm ? R(0.45f, 0.75f) : R(0.25f, 0.5f);
-                Art.Part(t, Art.MakeRock(30 + i, 0.35f), Color.Lerp(k_Dirt, k_Scorch, R(0f, 0.5f)), p, new Vector3(s * 1.3f, s * 0.45f, s), new Vector3(0, R(0, 360), 0));
+                float s = R(0.25f, 0.5f);
+                Art.Part(t, Art.MakeRock(36 + i, 0.35f), Color.Lerp(k_Dirt, k_Scorch, R(0f, 0.5f)), p, new Vector3(s * 1.3f, s * 0.45f, s), new Vector3(0, R(0, 360), 0));
             }
+            // the soil the saucer ploughed up as it drove in nose first: a big heap banked up against the buried edge
+            BuildSoilHeap(t, rng);
 
             using (ColorSlots.Use(ColorSlots.CrashSite)) // (Settings > Display colours)
             {
@@ -235,6 +251,80 @@ namespace RockGame
             go.AddComponent<GroundMarker>(); // (no collider: just so the AI PSX look skins it as ground - dirt, not wood)
         }
 
+        // ---------------- the soil heaped up at the point of impact ----------------
+
+        /// <summary>The saucer's footprint seen from above (an ellipse: tilted, it's foreshortened along x), in "rim
+        /// units": 1 on the rim, and the angle round it (pi = the near side, towards the ball).</summary>
+        static void Footprint(float x, float z, out float e, out float ang)
+        {
+            float u = (x - SaucerDist) / (SaucerR * Mathf.Cos(Tilt * Mathf.Deg2Rad)), v = z / SaucerR;
+            e = Mathf.Sqrt(u * u + v * v);
+            ang = Mathf.Atan2(v, u);
+        }
+
+        /// <summary>How high the heap of ploughed-up soil stands over the ground here (this object's space): a bank pushed
+        /// up in front of the buried near edge like a bow wave, thinning round the sides, sloping up onto the hull and
+        /// down into the crater, lumpy; kept down near the lines from the bases to the ball.</summary>
+        float SoilH(float x, float z)
+        {
+            Footprint(x, z, out float e, out float ang);
+            float c = Mathf.Cos(ang);
+            float front = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.4f, -0.25f, c)) * (0.3f + 0.7f * Mathf.Max(0f, -c));
+            if (front <= 0f) return 0f;
+            float prof = e < 1.08f ? Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.6f, 1.08f, e)) : Mathf.Exp(-Mathf.Pow((e - 1.08f) / 0.24f, 2f));
+            float lumps = 0.75f + 0.5f * Mathf.PerlinNoise(x * 0.9f + 31.7f, z * 0.9f + 12.3f);
+            float sight = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(1.4f, 2.5f, SightDist(new Vector3(x, 0, z))));
+            return HeapH * front * prof * lumps * sight;
+        }
+
+        /// <summary>The heap (merged faceted meshes in the crash dirt colour, no collider of its own - its core is part of
+        /// the saucer's solid lump), with clods and lumps of earth tumbled over it.</summary>
+        void BuildSoilHeap(Transform t, System.Random rng)
+        {
+            float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
+            var heap = new MeshBatch();
+            var heapDark = new MeshBatch();
+            const int segs = 44, rings = 12;
+            const float a0 = 50f * Mathf.Deg2Rad, a1 = 310f * Mathf.Deg2Rad, e0 = 0.55f, e1 = 1.62f;
+            float cx = SaucerR * Mathf.Cos(Tilt * Mathf.Deg2Rad);
+            var grid = new Vector3[segs + 1, rings + 1];
+            for (int i = 0; i <= segs; i++)
+                for (int k = 0; k <= rings; k++)
+                {
+                    float a = Mathf.Lerp(a0, a1, i / (float)segs), e = Mathf.Lerp(e0, e1, k / (float)rings);
+                    // (a little jitter so the facets aren't a neat grid)
+                    if (i > 0 && i < segs && k > 0 && k < rings) { a += R(-0.03f, 0.03f); e += R(-0.03f, 0.03f); }
+                    float x = SaucerDist + Mathf.Cos(a) * e * cx, z = Mathf.Sin(a) * e * SaucerR;
+                    float h = SoilH(x, z);
+                    // (where there's no heap it sinks just under the ground, so the heap grows out of the dirt)
+                    grid[i, k] = new Vector3(x, G(x, z) + (h > 0.02f ? h : -0.06f), z);
+                }
+            for (int i = 0; i < segs; i++)
+                for (int k = 0; k < rings; k++)
+                {
+                    var mb = (i * 7 + k * 3) % 5 == 0 ? heapDark : heap;
+                    mb.Quad(grid[i, k], grid[i + 1, k], grid[i + 1, k + 1], grid[i, k + 1], Vector3.up);
+                }
+            // clods and lumps of earth tumbled over it, thickest along its crest
+            var clods = new MeshBatch();
+            for (int i = 0; i < 34; i++)
+            {
+                float a = R(80f, 280f) * Mathf.Deg2Rad, e = R(0.85f, 1.45f);
+                float x = SaucerDist + Mathf.Cos(a) * e * cx, z = Mathf.Sin(a) * e * SaucerR;
+                float h = SoilH(x, z);
+                if (h < 0.15f) continue;
+                float s = R(0.25f, 0.6f);
+                var size = new Vector3(s * R(1f, 1.5f), s * R(0.45f, 0.7f), s);
+                MapScenery.AddRock(clods, new Vector3(x, G(x, z) + h - size.y * 0.2f, z), Quaternion.Euler(R(-15f, 15f), R(0f, 360f), R(-15f, 15f)), size, rng.Next(), 0.3f);
+            }
+            using (ColorSlots.Use(ColorSlots.BallZone))
+            {
+                Own(heap.Build(t, "rubble soil heap", Art.Mat(k_CrashDirt * 0.92f), true)).AddComponent<GroundMarker>();
+                Own(heapDark.Build(t, "rubble soil heap dark", Art.Mat(k_CrashDirt * 0.74f), true)).AddComponent<GroundMarker>();
+                Own(clods.Build(t, "rubble soil clods", Art.Mat(k_CrashDirt * 0.82f), true)).AddComponent<GroundMarker>();
+            }
+        }
+
         // ---------------- the saucer ----------------
 
         /// <summary>The upper hull: an ellipsoid of these radii, centred this high in the saucer's space.</summary>
@@ -252,9 +342,10 @@ namespace RockGame
         void BuildSaucer(Transform t, System.Random rng)
         {
             float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
-            // nose-down: its near edge (towards the ball) buried ~0.45 m deep, the far edge up in the air
+            // nose-down and steeply upturned: its near edge (towards the ball) driven ~0.9 m into the ground under a heap of
+            // soil, the far edge reared up in the air
             float tilt = Tilt * Mathf.Deg2Rad;
-            float yc = -0.45f + SaucerR * Mathf.Sin(tilt) + LowB * Mathf.Cos(tilt) + G(SaucerDist - SaucerR, 0);
+            float yc = -Bury + SaucerR * Mathf.Sin(tilt) + LowB * Mathf.Cos(tilt) + G(SaucerDist - SaucerR * Mathf.Cos(tilt), 0);
             m_Saucer = new GameObject("saucer").transform;
             m_Saucer.SetParent(t, false);
             m_Saucer.localPosition = new Vector3(SaucerDist, yc, 0);
@@ -407,6 +498,15 @@ namespace RockGame
                 pts.Add(m_Saucer.localRotation * new Vector3(c * 1.7f, UpY + UpB + 0.95f, sn * 1.7f) + m_Saucer.localPosition);
             }
             pts.Add(m_Saucer.localRotation * new Vector3(0, UpY + UpB + 1.35f, 0) + m_Saucer.localPosition);
+            // the core of the soil heap banked up against the buried edge, so you climb it instead of wading through it
+            float cx = SaucerR * Mathf.Cos(Tilt * Mathf.Deg2Rad);
+            for (int i = 0; i <= 16; i++)
+            {
+                float a = Mathf.Lerp(100f, 260f, i / 16f) * Mathf.Deg2Rad;
+                float x = SaucerDist + Mathf.Cos(a) * 1.08f * cx, z = Mathf.Sin(a) * 1.08f * SaucerR;
+                float h = SoilH(x, z);
+                if (h > 0.45f) pts.Add(new Vector3(x, G(x, z) + h - 0.2f, z));
+            }
             int top = pts.Count;
             for (int i = 0; i < top; i++)
             {
@@ -676,13 +776,13 @@ namespace RockGame
             }
             foreach (var gash in m_GashFires) Fire(gash.at, gash.size);
             // on the ground: by the buried nose, in the furrow, on bits of debris (never between a base and the ball)
-            var ground = new[] { new Vector3(3.4f, 0, 0.9f), new Vector3(9.6f, 0, -0.7f), new Vector3(3.6f, 0, 2.0f), new Vector3(-3.4f, 0, -3.2f), new Vector3(3.4f, 0, -2.2f), new Vector3(-6.2f, 0, 1.2f) };
+            var ground = new[] { new Vector3(2.7f, 0, 2.4f), new Vector3(9.6f, 0, -0.7f), new Vector3(3.6f, 0, 2.0f), new Vector3(-3.4f, 0, -3.2f), new Vector3(3.4f, 0, -2.2f), new Vector3(-6.2f, 0, 1.2f) };
             float[] sizes = { 0.8f, 0.9f, 0.55f, 0.5f, 0.45f, 0.5f };
             for (int i = 0; i < ground.Length; i++)
             {
                 var g = ground[i];
                 if (OnSightline(g, 1.6f)) continue;
-                g.y = G(g.x, g.z) + 0.05f;
+                g.y = G(g.x, g.z) + SoilH(g.x, g.z) + 0.05f;
                 var w = t.TransformPoint(g);
                 Fire(w, sizes[i]);
                 if (i < 2) m_SmokeAt.Add(w + Vector3.up * 0.3f);

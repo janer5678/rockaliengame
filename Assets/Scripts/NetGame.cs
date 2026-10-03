@@ -121,7 +121,10 @@ namespace RockGame
             switch ((GameState)cur)
             {
                 case GameState.PreBall: if (Cfg.FunRules) break; if (Cfg.Tutorial) { Hud.Banner("TUTORIAL", "Do each step on the left. The clock is stopped."); break; } Hud.Banner("GATHER & BUILD", $"The ball waits under the glass dome - the walls drop in {Clock(Bootstrap.Fast ? Cfg.FastBallDropDelay : Cfg.BallDropDelay)}. " + (Cfg.Builder ? "BUILDER: build and craft anywhere (TAB)." : "Craft anywhere inside your base (TAB).")); break;
-                case GameState.BallLive: Hud.Banner("THE WALL IS DOWN", Cfg.Builder ? "Grab the ball and plant it anywhere (E) - whoever's ball it is when time runs out wins!" : "Grab the ball from the middle and put it in YOUR machine's socket!"); break;
+                case GameState.BallLive:
+                    // the build phase is over: the glass wall and the dome slide down into the ground (fun modes: no build phase, gone at once)
+                    if ((GameState)prev == GameState.PreBall && !Cfg.FunRules) MapBuilder.DropGlassWall();
+                    Hud.Banner(Cfg.FunRules ? "THE WALL IS DOWN" : "THE WALL IS DROPPING", Cfg.Builder ? "Grab the ball and plant it anywhere (E) - whoever's ball it is when time runs out wins!" : "Grab the ball from the middle and put it in YOUR machine's socket!"); break;
                 case GameState.SuddenDeath: Hud.Banner("SUDDEN DEATH", "Welcome to space. Rocks only. First kill wins - and don't fall off!"); break;
             }
         }
@@ -186,7 +189,7 @@ namespace RockGame
                         m_DropsDone = 0;
                         m_DropsWarned = 0;
                         m_SuddenDeathAt = -1;
-                        if (!Cfg.FunRules) Broadcast("The glass wall and the dome are down - grab the BALL in the middle!");
+                        if (!Cfg.FunRules) Broadcast("The glass wall and the dome are dropping - grab the BALL in the middle!");
                     }
                     break;
                 case GameState.BallLive:

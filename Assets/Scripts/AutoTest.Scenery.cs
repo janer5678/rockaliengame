@@ -128,12 +128,80 @@ namespace RockGame
                 var rim = CrashSite.Dir * -7f + side * 3f;
                 yield return LookShot("centre_rim_close", Eye(rim.x, rim.z), Ground(rim.x * 0.3f + side.x * 2f, rim.z * 0.3f + side.z * 2f));
             }
-            // the walls drop
+            // ---------------- the emergency flare tip by the glass wall (build phase, every mode) ----------------
+            {
+                var spot = Tutorial.WallSpot(team);
+                var back = Cfg.BackDir(team);
+                var feet = Ground(spot.x, spot.z);
+                float yaw = YawTo(feet, Vector3.zero);
+                float until = Time.time + 1.2f;
+                while (Time.time < until) { pc.LocalTeleport(feet, yaw); pc.SetLook(yaw, -4f); yield return null; }
+                Check(FlareTip.Wanted(me.transform.position) && FlareTip.Showing, $"walking up to the glass wall in the middle shows the EMERGENCY FLARE tip ({FlareTip.WallDistance(me.transform.position):0.0} m from the wall)");
+                string file = $"scenery_{map}_{shot++:00}_flare_tip.png";
+                ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(dir, file));
+                Log("shot " + file);
+                yield return null; yield return null;
+                var far = Ground(back.x * 40f, back.z * 40f);
+                until = Time.time + 1.2f;
+                while (Time.time < until) { pc.LocalTeleport(far, yaw); yield return null; }
+                Check(!FlareTip.Wanted(me.transform.position) && !FlareTip.Showing, "away from the wall the tip goes");
+            }
+            // the base floors (with their grid) are there while you build
+            int floorsUp = 0;
+            foreach (var f in MapBuilder.BaseFloors) if (f != null && f.activeInHierarchy) floorsUp++;
+            Check(Cfg.Builder || floorsUp == Cfg.TeamCount, $"the tinted base floors with their grid are there while you build ({floorsUp})");
+
+            // ---------------- the walls drop: they slide down into the ground ----------------
+            {
+                var back = Cfg.BackDir(team);
+                var side = Quaternion.Euler(0, 90f, 0) * back;
+                var eye = Eye(back.x * 34f + side.x * 30f, back.z * 34f + side.z * 30f, 2f);
+                float yaw = YawTo(eye, Vector3.zero), pitch = -PitchTo(eye, new Vector3(0, MapBuilder.Height(0, 0) + 14f, 0));
+                pc.LocalTeleport(eye - Vector3.up * Cfg.EyeHeight, yaw);
+                pc.SetLook(yaw, pitch);
+                yield return new WaitForSeconds(0.3f);
+            }
+            var glassGo = root.Find("GlassWall");
+            float glassY0 = glassGo != null ? glassGo.position.y : 0f;
             g.TimerPaused.Value = false;
             g.DevSkipPhase(GameState.PreBall);
             while (g.S != GameState.BallLive) yield return null;
             g.TimerPaused.Value = true;
-            yield return new WaitForSeconds(1.5f);
+            {
+                yield return null;
+                int solid = 0;
+                if (glassGo != null) foreach (var c in glassGo.GetComponentsInChildren<Collider>()) if (c.enabled) solid++;
+                Check(MapBuilder.GlassDropping && !MapBuilder.GlassUp && glassGo != null && glassGo.gameObject.activeSelf && solid == 0,
+                    $"the wall is dropping (still there, sliding, not solid: {solid} colliders on; counts as down)");
+                Check(FlareTip.Wanted(Vector3.zero) == false, "no flare tip once the wall's dropping");
+                int floors = 0;
+                foreach (var f in MapBuilder.BaseFloors) if (f != null && f.activeInHierarchy) floors++;
+                Check(floors == 0, $"the tinted base floors and their grid went with the build phase ({floors} left)");
+                float t0 = Time.time, lastY = glassY0;
+                bool down = true;
+                int pic = 0;
+                foreach (float at in new[] { 0.3f, 1.4f, 2.4f, 3.3f })
+                {
+                    while (Time.time - t0 < at) yield return null;
+                    float y = glassGo.position.y;
+                    if (at > 1f && y > lastY - 0.5f) down = false;
+                    lastY = y;
+                    string file = $"scenery_{map}_{shot++:00}_wall_dropping_{pic++}.png";
+                    ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(dir, file));
+                    Log($"shot {file} (wall {y - glassY0:0.0} m)");
+                    yield return null;
+                }
+                Check(down, $"the wall slides down into the ground ({lastY - glassY0:0.0} m down by {Time.time - t0:0.0} s)");
+                float stop = Time.time + 6f;
+                while (Time.time < stop && MapBuilder.GlassDropping) yield return null;
+                Check(!MapBuilder.GlassDropping && glassGo != null && !glassGo.gameObject.activeSelf, $"the wall has gone into the ground and is switched off ({Time.time - t0:0.0} s)");
+                // our base now: flat ground inside the team-colour border
+                var bc = Cfg.BaseCenter[team];
+                var outDir = new Vector3(bc.x, 0, bc.z).normalized;
+                var corner = bc + Quaternion.Euler(0, 35f, 0) * -outDir * (Cfg.BaseHalf + 8f);
+                yield return LookShot("base_after_wall", Eye(corner.x, corner.z, 6f), Ground(bc.x, bc.z));
+            }
+            yield return new WaitForSeconds(0.5f);
             {
                 var back = Cfg.BackDir(team);
                 yield return LookShot("centre_open", Eye(back.x * 15f + 3f, back.z * 15f), Ground(0, 0) + Vector3.up * 0.3f);
@@ -181,6 +249,116 @@ namespace RockGame
                 yield return LookShot("mountains_from_high", high, high + Quaternion.Euler(0, 40f, 0) * outDir * 300f + Vector3.up * 10f);
                 var baseEye = Ground(bc.x, bc.z) + Vector3.up * (Cfg.BaseY + Cfg.EyeHeight);
                 yield return LookShot("mountains_from_base_back", baseEye, baseEye + outDir * 300f + Vector3.up * 35f);
+            }
+
+            // ---------------- forests on the ranges, rocks and trees out past the edge ----------------
+            {
+                int treeTris = 0;
+                foreach (var r in MapScenery.RangeTrees) if (r != null) treeTris += r.GetComponent<MeshFilter>().sharedMesh.triangles.Length / 3;
+                Check(MapScenery.RangeTrees.Count >= 2 && treeTris > 4000, $"forests on the nearer ranges ({MapScenery.RangeTrees.Count} meshes, {treeTris} triangles)");
+                Check(MapScenery.OutskirtRocks > 60 && MapScenery.OutskirtTrees > 30, $"rocks and trees out past the edge of the map ({MapScenery.OutskirtRocks} rocks, {MapScenery.OutskirtTrees} trees)");
+                float inside = float.MaxValue;
+                int cols = 0;
+                foreach (var r in MapScenery.Outskirts)
+                {
+                    if (r == null) continue;
+                    cols += r.GetComponentsInChildren<Collider>().Length;
+                    foreach (var v in r.GetComponent<MeshFilter>().sharedMesh.vertices)
+                    {
+                        var w = r.transform.TransformPoint(v);
+                        inside = Mathf.Min(inside, Mathf.Max(Mathf.Abs(w.x), Mathf.Abs(w.z)));
+                    }
+                }
+                foreach (var r in MapScenery.RangeTrees) if (r != null) cols += r.GetComponentsInChildren<Collider>().Length;
+                Check(inside > half + 2.5f && cols == 0, $"they're all outside the map's edge and dome ({inside - half:0.0} m past the edge at the nearest), no colliders ({cols})");
+                var bc = Cfg.BaseCenter[team];
+                var outDir = new Vector3(bc.x, 0, bc.z).normalized;
+                var side = Quaternion.Euler(0, 90f, 0) * outDir;
+                var near = Ground(bc.x + outDir.x * 14f + side.x * 30f, bc.z + outDir.z * 14f + side.z * 30f);
+                var edgeLook = near + outDir * 60f;
+                yield return LookShot("outskirts", near + Vector3.up * Cfg.EyeHeight, new Vector3(edgeLook.x, MapBuilder.Height(edgeLook.x, edgeLook.z) + 6f, edgeLook.z));
+                yield return LookShot("outskirts_side", near + Vector3.up * Cfg.EyeHeight, near + (outDir + side * 1.2f).normalized * 120f + Vector3.up * 25f);
+                yield return LookShot("range_forests", near + Vector3.up * (Cfg.EyeHeight + 25f), near + Quaternion.Euler(0, -30f, 0) * outDir * 260f + Vector3.up * 35f);
+            }
+            // ---------------- Highlands: the rocky rise at the edge of the map is faceted (flat-shaded) ----------------
+            if (Cfg.Map == MapKind.Highlands)
+            {
+                var gGo = root.Find("Ground");
+                var gm = gGo != null ? gGo.GetComponent<MeshFilter>().sharedMesh : null;
+                if (gm != null)
+                {
+                    var vs = gm.vertices; var ns = gm.normals;
+                    int edgeTris = 0, smooth = 0, inTris = 0, inFlat = 0;
+                    for (int sub = 0; sub < gm.subMeshCount; sub++)
+                    {
+                        var tris = gm.GetTriangles(sub);
+                        for (int i = 0; i < tris.Length; i += 3)
+                        {
+                            var c = (vs[tris[i]] + vs[tris[i + 1]] + vs[tris[i + 2]]) / 3f;
+                            bool sameN = Vector3.Dot(ns[tris[i]], ns[tris[i + 1]]) > 0.9999f && Vector3.Dot(ns[tris[i]], ns[tris[i + 2]]) > 0.9999f;
+                            if (MapBuilder.EdgeRise(c.x, c.z)) { edgeTris++; if (!sameN) smooth++; }
+                            else if (Mathf.Max(Mathf.Abs(c.x), Mathf.Abs(c.z)) < half - 30f && MapBuilder.RockField(c.x, c.z) > 0.1f) { inTris++; if (sameN) inFlat++; }
+                        }
+                    }
+                    Check(edgeTris > 1000 && smooth == 0, $"the rocky rise at the edge is faceted ({edgeTris} triangles, {smooth} smooth-shaded)");
+                    Check(inTris == 0 || inFlat < inTris / 2, $"the hills inside stay smooth ({inFlat} of {inTris} rock triangles flat)");
+                }
+                var bc = Cfg.BaseCenter[team];
+                var outDir = new Vector3(bc.x, 0, bc.z).normalized;
+                var side = Quaternion.Euler(0, 90f, 0) * outDir;
+                // where the glass wall meets the edge of the map
+                var wallEnd = side * (half - 30f) + outDir * 12f;
+                yield return LookShot("edge_rise_wall_end", Eye(wallEnd.x, wallEnd.z, 2f), Ground(side.x * (half + 6f), side.z * (half + 6f)) + Vector3.up * 8f);
+                var by = Ground(bc.x * 0.6f + side.x * 30f, bc.z * 0.6f + side.z * 30f);
+                yield return LookShot("edge_rise", by + Vector3.up * Cfg.EyeHeight, Ground(side.x * (half + 4f) + outDir.x * 30f, side.z * (half + 4f) + outDir.z * 30f) + Vector3.up * 10f);
+            }
+            // ---------------- Highlands: planets in the sky ----------------
+            {
+                var pl = SkyPlanets.Current;
+                if (Cfg.Map == MapKind.Highlands)
+                {
+                    Check(pl != null && pl.Count == 3 && pl.Shown, $"big planets in the Highlands sky ({(pl != null ? pl.Count : 0)})");
+                    if (pl != null)
+                    {
+                        int cols = 0;
+                        foreach (var r in pl.Renderers) cols += r.GetComponentsInChildren<Collider>().Length;
+                        // (the airdrop ships come in from 300 m up and 72 m out over the hover spot - over the dome, under 75 m up -
+                        // and leave 60 m up / 48 m out: nothing of theirs is ever further than this from anyone on the map)
+                        float shipReach = new Vector2(MapDome.HalfSize * 2.83f + 72f, 300f + 75f).magnitude; // (from one corner to a ship over the other)
+                        Check(cols == 0 && pl.NearestReach > shipReach, $"the planets are sky: no colliders ({cols}), never nearer than {pl.NearestReach:0} m (the ships stay within {shipReach:0} m)");
+                        float lowest = 90f;
+                        for (int i = 0; i < pl.Count; i++) lowest = Mathf.Min(lowest, Mathf.Asin(pl.DirOf(i).y) * Mathf.Rad2Deg);
+                        Check(lowest > 15f, $"they're high in the sky ({lowest:0} degrees up at the lowest)");
+                        var eye = Eye(Cfg.BaseCenter[team].x * 0.5f, Cfg.BaseCenter[team].z * 0.5f);
+                        for (int i = 0; i < pl.Count; i++) yield return LookShot($"planet_{i}", eye, eye + pl.DirOf(i) * 100f);
+                        var d0 = pl.DirOf(0);
+                        yield return LookShot("planets_wide", eye, eye + new Vector3(d0.x, 0.12f, d0.z).normalized * 100f);
+                    }
+                }
+                else Check(pl == null, "no planets on Plains");
+            }
+            // ---------------- clouds never pop: they shrink away before they wrap round ----------------
+            {
+                CloudLayer cl = null;
+                foreach (var c in root.GetComponentsInChildren<CloudLayer>()) cl = c;
+                if (cl != null && cl.Clouds.Count > 0)
+                {
+                    var c0 = cl.Clouds[0];
+                    var p0 = c0.localPosition;
+                    c0.localPosition = new Vector3(cl.Extent - 0.08f, p0.y, 0f);
+                    float before = float.MaxValue, after = float.MaxValue, mid = 0f;
+                    float until = Time.time + 1f;
+                    while (Time.time < until && c0.localPosition.x > 0f) { before = c0.localScale.x; yield return null; }
+                    after = c0.localScale.x;
+                    c0.localPosition = new Vector3(0f, p0.y, 0f);
+                    yield return null;
+                    mid = c0.localScale.x;
+                    c0.localPosition = p0;
+                    Check(before < mid * 0.01f && after < mid * 0.01f && mid > 1f, $"a cloud is shrunk to nothing as it wraps round (size {before:0.000} before, {after:0.000} after, {mid:0.0} over the map)");
+                    // and no cloud over the map is shrunk (the edge is far out over the mountains)
+                    Check(cl.Fade(new Vector3(MapDome.HalfSize * 1.5f, 0, MapDome.HalfSize * 1.5f)) > 0.99f, "clouds over and round the map are full size");
+                }
+                else Check(false, "clouds");
             }
 
             // ---------------- the boulders ----------------
