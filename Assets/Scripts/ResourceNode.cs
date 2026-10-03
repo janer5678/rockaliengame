@@ -427,7 +427,8 @@ namespace RockGame
             {
                 trunkCap.direction = 1;
                 trunkCap.center = Vector3.zero;
-                trunkCap.radius = TrunkR / 0.6f;
+                // (out to the bark's ten corners and a little past: the X sits on them, and aimed at side on it has to hit)
+                trunkCap.radius = (TrunkR / Mathf.Cos(Mathf.PI / TrunkSides) + 0.02f) / 0.6f;
                 trunkCap.height = CylinderHalfHeight * 2f;
             }
             var needles = new MeshKit();
