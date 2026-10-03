@@ -91,17 +91,18 @@ namespace RockGame
             Check(textured == 0, $"flat colours, no textures ({textured} textured materials)");
             Check(Mathf.Approximately(SpaceArena.HalfX, 21f * 0.85f) && Mathf.Approximately(SpaceArena.HalfZ, 27f * 0.85f), $"the platform is 15% smaller ({SpaceArena.HalfX} x {SpaceArena.HalfZ})");
             // the crowd sits higher up, and a second ring of stands full of fans rises above and behind the first
-            int upper = 0, lowSections = 0;
+            int upper = 0, top = 0, lowSections = 0;
             float lowest = float.MaxValue;
             foreach (var sd in st.CrowdStands)
             {
-                if (sd.Bounds.min.y > c.y + SpaceArena.UpperFrontY - 2.6f) upper += sd.Count;
+                if (sd.Bounds.min.y > c.y + SpaceArena.TopFrontY - 2.6f) top += sd.Count;
+                else if (sd.Bounds.min.y > c.y + SpaceArena.UpperFrontY - 2.6f) upper += sd.Count;
                 else lowSections++;
                 lowest = Mathf.Min(lowest, sd.Bounds.min.y + 1.5f - c.y); // (the bounds reach 0.5 m under the fans' feet, and 1 m more)
             }
-            Check(upper > 600 && lowSections >= SpaceArena.Sections - 1 && st.CrowdStands.Count >= SpaceArena.Sections * 2 - 2 && st.CrowdCount - upper > 800,
-                  $"two rings of crowd: {st.CrowdCount - upper} fans in the lower ring, {upper} in the upper one ({st.CrowdStands.Count} sections)");
-            Check(lowest > SpaceArena.FrontY - 0.1f && SpaceArena.FrontY > -1f, $"the crowd sits higher up: the lowest fans stand {lowest:0.0} m from the platform's top (the front row's floor at {SpaceArena.FrontY} m)");
+            Check(upper > 600 && top > 500 && lowSections >= SpaceArena.Sections - 1 && st.CrowdStands.Count >= SpaceArena.Sections * 3 - 3 && st.CrowdCount - upper - top > 800,
+                  $"three rings of crowd: {st.CrowdCount - upper - top} fans in the lower ring, {upper} in the upper one, {top} in the top one ({st.CrowdStands.Count} sections)");
+            Check(lowest > SpaceArena.FrontY - 0.1f && SpaceArena.FrontY > 0f,$"the crowd sits higher up: the lowest fans stand {lowest:0.0} m from the platform's top (the front row's floor at {SpaceArena.FrontY} m)");
             // the big screens' text fits on the screens (every text they show, shrunk if it's long)
             var screen = st.Screens[0];
             string keep = screen.text;
@@ -203,14 +204,14 @@ namespace RockGame
                 yield return Snap(name);
             }
             yield return View("arena_05_side", new Vector3(0f, 6f, -44f), new Vector3(0, -4f, 0));
-            yield return View("arena_06_three_quarter", new Vector3(48f, 26f, -52f), new Vector3(0, -3f, 0));
+            yield return View("arena_06_three_quarter", new Vector3(58f, 46f, -76f), new Vector3(0, -3f, 0));
             yield return View("arena_07_below", new Vector3(26f, -30f, -44f), new Vector3(0, -6f, 0));
             yield return View("arena_04_edge", new Vector3(9f, 1.5f, -33f), new Vector3(0f, -5f, -18f));
             yield return View("arena_08_stars", new Vector3(0f, 3f, 0f), new Vector3(60f, 45f, 120f));
             yield return View("arena_09_top", new Vector3(0f, 70f, -10f), new Vector3(0, 0, 0));
             yield return View("arena_20_upper_ring", new Vector3(0f, 2.2f, 4f), new Vector3(0f, 12f, 40f));
             yield return View("arena_21_lights", new Vector3(-6f, 3f, -14f), new Vector3(4f, 4f, 30f));
-            yield return View("arena_22_lights_wide", new Vector3(30f, 30f, -62f), new Vector3(0, 0f, 0));
+            yield return View("arena_22_lights_wide", new Vector3(36f, 48f, -86f), new Vector3(0, 0f, 0));
             var scr = st.Screens[0].transform.parent;
             var scrOut = scr.forward;
             yield return View("arena_23_screen", scr.position - c - scrOut * 16f + Vector3.down * 3f, scr.position - c);

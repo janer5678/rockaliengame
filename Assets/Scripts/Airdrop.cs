@@ -23,7 +23,11 @@ namespace RockGame
     /// </summary>
     public class AirdropShip
     {
-        const float Arrive = 4f, Hover = 45f, Leave = 6f;
+        const float Arrive = 4f, Leave = 6f;
+        /// <summary>How high it hovers over the drop spot (it used to be 45 m), but never above HoverCeiling - its top stays
+        /// well under the clouds (their undersides start about 100 m up) and nowhere near the Highlands' sky planets (over
+        /// a kilometre out) - unless the dome's glass makes it go higher.</summary>
+        public const float Hover = 70f, HoverCeiling = 88f;
         /// <summary>The way in: from this far out over the map's edge and this high over the hover point.</summary>
         public const float ArriveOut = 90f, ArriveUp = 110f;
         /// <summary>The way out: this far on out over the edge, climbing this much (never above LeaveCeiling: under the clouds).</summary>
@@ -54,13 +58,13 @@ namespace RockGame
         {
             public GameObject Root;
             public Transform Rim, DoorL, DoorR;
-            public Light Point, Spot;
+            public Light Point, Spot, Under;
             public Material BellyGlow;
         }
 
         Parts m_Ship;
         GameObject m_Beam, m_Crate, m_GroundGlow;
-        Light m_GroundLight;
+        Light m_GroundLight, m_CrateLight;
         Material m_BeamMat, m_CoreMat, m_HaloMat, m_GroundMat;
         Transform m_Core, m_Halo, m_Main;
         Vector3 m_Hover, m_Out, m_Ground;
@@ -77,14 +81,15 @@ namespace RockGame
         /// <summary>
         /// Where the ship hovers over a drop spot: Hover metres up, or higher if the map's glass dome is in the way - then
         /// it hovers clear over the glass (its open hatch doors too, all the way across the hull) and beams down through it.
+        /// Never higher than HoverCeiling for the height alone. glass: false when the dome's gone (the victory cutscene).
         /// </summary>
-        public static Vector3 HoverAt(Vector3 ground, float up = Hover)
+        public static Vector3 HoverAt(Vector3 ground, float up = Hover, bool glass = true)
         {
-            float y = ground.y + up;
+            float y = Mathf.Min(ground.y + up, Mathf.Max(HoverCeiling, ground.y + 12f));
             float hullR = Mathf.Max(26f * Art.Sphere.bounds.extents.x, 14.6f + 0.6f);
             float below = -HatchY + HatchR + 2.5f; // (the open doors hang about this far under its middle)
-            float glass = MapDome.HighestOver(ground.x, ground.z, hullR);
-            if (glass > float.MinValue) y = Mathf.Max(y, glass + below);
+            float top = glass ? MapDome.HighestOver(ground.x, ground.z, hullR) : float.MinValue;
+            if (top > float.MinValue) y = Mathf.Max(y, top + below);
             return new Vector3(ground.x, y, ground.z);
         }
 
@@ -243,7 +248,21 @@ namespace RockGame
                 float k = (e - beamT) / (land - beamT);
                 m_Crate.transform.position = Vector3.Lerp(hover + Vector3.up * (HatchY - 1.2f), ground, k * k * (3f - 2f * k));
                 m_Crate.transform.Rotate(0, 45f * Time.deltaTime, 0);
+                // its light hangs off the side you're looking from
+                var cam = Camera.main;
+                if (cam != null && m_CrateLight != null)
+                {
+                    var cp = m_Crate.transform.position + Vector3.up * 0.6f;
+                    var toCam = cam.transform.position - cp;
+                    m_CrateLight.transform.position = cp + (toCam.sqrMagnitude > 0.01f ? toCam.normalized : Vector3.up) * 2.4f + Vector3.up * 0.8f;
+                }
             }
+            // the beam goes see-through round the crate coming down it (and the crate's lit up), so you can watch it come
+            float clearR = crate ? 1.9f : 0f;
+            var cc = m_Crate.transform.position + Vector3.up * 0.7f;
+            BeamFx.SetClear(m_BeamMat, 0, cc, clearR);
+            BeamFx.SetClear(m_CoreMat, 0, cc, clearR);
+            BeamFx.SetClear(m_HaloMat, 0, cc, clearR);
         }
 
         /// <summary>A beam (main column, bright core, wide faint halo) straight down from `top` to `bottom` over `at`, radius r.</summary>
@@ -266,6 +285,13 @@ namespace RockGame
             s.Spot.range = Mathf.Max(20f, height + 25f);
             s.Spot.intensity = (1.1f + 1.3f * open) * scale * height * height; // (URP lights fade with the square of the distance)
             BeamFx.Set(s.BellyGlow, Glow, (1.4f + 1.2f * open) * Mathf.Clamp01(scale * 1.5f));
+            // the underside lit softly from below (the light shrinks in with the ship as it flies off)
+            if (s.Under != null)
+            {
+                float d = UnderLightDown * Mathf.Max(0.05f, scale);
+                s.Under.range = d + 8f * scale;
+                s.Under.intensity = UnderLightK * d * d;
+            }
         }
 
         void Build(Vector3 ground)
@@ -281,7 +307,7 @@ namespace RockGame
             m_GroundLight.type = LightType.Point;
             m_GroundLight.color = Glow;
             m_GroundLight.range = 16f;
-            m_GroundMat = BeamFx.Glow(Glow, 0f, 1.6f);
+            m_GroundMat = BeamFx.AsBeam(BeamFx.Glow(Glow, 0f, 1.6f)); // (fades down with the beam as you come up to it)
             m_GroundGlow = BeamFx.Disc(null, m_GroundMat, "AirdropGroundGlow");
             m_GroundGlow.transform.position = ground + Vector3.up * 0.08f;
             m_GroundGlow.transform.localScale = Vector3.one * HatchR * 3.2f;
@@ -290,8 +316,22 @@ namespace RockGame
             // where the beam meets the map's glass dome (it cuts its hole there)
             m_GlassY = MapDome.HeightAt(ground.x, ground.z);
 
+            // the crate coming down the beam: the real crate's solid look (not a see-through ghost any more, so it shows
+            // inside the light), without its beacon, lit from in front by a soft white light that comes down with it
             m_Crate = new GameObject("AirdropCrateFalling");
-            Container.CreateVisual(Container.Airdrop, 2, m_Crate.transform, Art.Ghost(new Color(0.8f, 0.55f, 1f, 0.85f)));
+            var vis = Container.CreateVisual(Container.Airdrop, 2, m_Crate.transform, null);
+            var bc = vis.transform.Find("beacon");
+            if (bc != null) Object.Destroy(bc.gameObject);
+            foreach (var r in vis.GetComponentsInChildren<MeshRenderer>()) r.shadowCastingMode = ShadowCastingMode.Off;
+            var cl = new GameObject("crateLight");
+            cl.transform.SetParent(m_Crate.transform, false);
+            cl.transform.localPosition = new Vector3(0f, 1.2f, 0f);
+            var crl = m_CrateLight = cl.AddComponent<Light>();
+            crl.type = LightType.Point;
+            crl.color = new Color(1f, 0.95f, 1f);
+            crl.range = 6f;
+            crl.intensity = 4f;
+            crl.shadows = LightShadows.None;
             m_Crate.SetActive(false);
         }
 
@@ -300,9 +340,10 @@ namespace RockGame
         public static void MakeBeam(Transform root, Color c, float scroll, out Material main, out Material core, out Material halo,
             out Transform mainT, out Transform coreT, out Transform haloT)
         {
-            main = BeamFx.Column(c, 0f, 1.2f, 0.3f, scroll, 0.02f, 0.04f, 0.18f);
-            core = BeamFx.Column(new Color(0.95f, 0.85f, 1f), 0f, 2.2f, 0.2f, scroll * 1.5f, 0.02f, 0.04f, 0.3f);
-            halo = BeamFx.Column(c, 0f, 2.5f, 0f, 0f, 0.05f, 0.1f);
+            // (beams: as bright as the ball's from far away, fading down as you come up to them - Settings > Display > BEAMS)
+            main = BeamFx.AsBeam(BeamFx.Column(c, 0f, 1.2f, 0.3f, scroll, 0.02f, 0.04f, 0.18f));
+            core = BeamFx.AsBeam(BeamFx.Column(new Color(0.95f, 0.85f, 1f), 0f, 2.2f, 0.2f, scroll * 1.5f, 0.02f, 0.04f, 0.3f));
+            halo = BeamFx.AsBeam(BeamFx.Column(c, 0f, 2.5f, 0f, 0f, 0.05f, 0.1f));
             mainT = BeamFx.Cylinder(root, main, "beam").transform;
             coreT = BeamFx.Cylinder(root, core, "beam core").transform;
             haloT = BeamFx.Cylinder(root, halo, "beam halo").transform;
@@ -369,8 +410,26 @@ namespace RockGame
             s.range = 70f;
             s.intensity = 14f;
             s.shadows = LightShadows.None;
+            // a soft light from under it shining back up at the hull, so its underside isn't the same colour as the sky
+            // (lit only by the sun from above, it was a flat sky-blue disc from the ground)
+            var ul = new GameObject("underLight");
+            ul.transform.SetParent(t, false);
+            ul.transform.localPosition = new Vector3(0, -UnderLightDown, 0);
+            ul.transform.localRotation = Quaternion.Euler(-90f, 0f, 0f);
+            var u = p.Under = ul.AddComponent<Light>();
+            u.type = LightType.Spot;
+            u.color = UnderColour;
+            u.spotAngle = 128f;
+            u.innerSpotAngle = 70f;
+            u.range = UnderLightDown + 8f;
+            u.intensity = UnderLightK * UnderLightDown * UnderLightDown;
+            u.shadows = LightShadows.None;
             return p;
         }
+
+        /// <summary>The light under the hull: how far under its middle it is, how bright it lights the underside, its colour.</summary>
+        const float UnderLightDown = 11f, UnderLightK = 1.5f;
+        static readonly Color UnderColour = new Color(0.82f, 0.78f, 1f);
 
         static float Sq(float x) => x * x;
 
@@ -415,6 +474,12 @@ namespace RockGame
         public static float BeamIntensity => Lane0 != null && Lane0.m_Beam != null && Lane0.m_Beam.activeSelf ? BeamFx.Intensity(Lane0.m_BeamMat) : 0f;
         /// <summary>Test hook: the first lane's ship's belly spotlight.</summary>
         public static Light BellySpot => Lane0 != null && Lane0.m_Ship != null ? Lane0.m_Ship.Spot : null;
+        /// <summary>Test hook: the first lane's ship's light under its hull (shining up at its underside).</summary>
+        public static Light UnderLight => Lane0 != null && Lane0.m_Ship != null ? Lane0.m_Ship.Under : null;
+        /// <summary>Test hook: the first lane's beam material (main column).</summary>
+        public static Material BeamMaterial => Lane0 != null ? Lane0.m_BeamMat : null;
+        /// <summary>Test hook: how far the first lane's beam is see-through round the crate coming down it (0 none).</summary>
+        public static float CrateClear => Lane0 != null && Lane0.m_BeamMat != null && Lane0.m_BeamMat.HasProperty("_Clear0") ? Lane0.m_BeamMat.GetVector("_Clear0").w : 0f;
 
         static Material s_GlowMat;
 

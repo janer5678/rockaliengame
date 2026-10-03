@@ -74,12 +74,12 @@ namespace RockGame
             m_Beacon.transform.SetParent(transform, false);
             float halfH = (BeaconTop - BeaconBottom) * 0.5f;
             float hy = halfH / Mathf.Max(0.01f, Art.Cylinder.bounds.extents.y), cr = 0.5f / Mathf.Max(0.01f, Art.Cylinder.bounds.extents.x);
-            m_BeaconMat = BeamFx.Column(Color.white, 1f, 1.1f, 0.25f, 0.6f, 0f, 0.3f, 0.12f);
+            m_BeaconMat = BeamFx.AsBeam(BeamFx.Column(Color.white, 1f, 1.1f, 0.25f, 0.6f, 0f, 0.3f, 0.12f)); // (fades down as you come up to it: Settings > Display > BEAMS)
             var pillar = BeamFx.Cylinder(m_Beacon.transform, m_BeaconMat, "pillar");
             pillar.transform.localPosition = new Vector3(0, BeaconBottom + halfH, 0);
             pillar.transform.localScale = new Vector3(BeaconCore * 2f * cr, hy, BeaconCore * 2f * cr);
             m_BeaconRenderer = pillar.GetComponent<MeshRenderer>();
-            m_HaloMat = BeamFx.Column(Color.white, 1f, 2.2f, 0f, 0f, 0f, 0.55f);
+            m_HaloMat = BeamFx.AsBeam(BeamFx.Column(Color.white, 1f, 2.2f, 0f, 0f, 0f, 0.55f));
             var halo = BeamFx.Cylinder(m_Beacon.transform, m_HaloMat, "pillar halo");
             halo.transform.localPosition = pillar.transform.localPosition;
             halo.transform.localScale = new Vector3(BeaconHalo * 2f * cr, hy, BeaconHalo * 2f * cr);

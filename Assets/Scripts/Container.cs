@@ -76,6 +76,17 @@ namespace RockGame
 
         public override void OnNetworkDespawn() => All.Remove(this);
 
+        static Material s_BeaconCore, s_BeaconHalo;
+
+        /// <summary>The landed airdrop crates' beacon (shared by them all): a purple beam as bright as the ball's from far
+        /// away (its core, or the soft halo round it).</summary>
+        static Material CrateBeacon(bool halo)
+        {
+            var glow = new Color(0.75f, 0.35f, 1f);
+            if (halo) return s_BeaconHalo != null ? s_BeaconHalo : s_BeaconHalo = BeamFx.AsBeam(BeamFx.Column(glow, 0.45f, 2.2f, 0f, 0f, 0f, 0.55f));
+            return s_BeaconCore != null ? s_BeaconCore : s_BeaconCore = BeamFx.AsBeam(BeamFx.Column(Color.Lerp(glow, Color.white, 0.25f), 2f, 1.1f, 0.25f, 0.6f, 0f, 0.3f, 0.12f));
+        }
+
         public static GameObject CreateVisual(byte kind, int team, Transform parent, Material ghost)
         {
             var root = new GameObject("visual");
@@ -105,8 +116,17 @@ namespace RockGame
                 Art.Part(t, Art.Ico, glow, new Vector3(0, 1.6f, 0), new Vector3(0.22f, 0.35f, 0.22f), new Vector3(0, 30, 0), false, null, "crystal");
                 if (ghost == null)
                 {
-                    var beam = Art.Part(t, Art.Cylinder, Color.white, new Vector3(0, 60f, 0), new Vector3(0.8f, 60f, 0.8f), default, false, Art.Ghost(new Color(0.75f, 0.35f, 1f, 0.3f)), "beacon");
-                    beam.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                    // its beacon: a beam of light like the ball's (BeamFx: as bright from far away, fading down to a
+                    // faint purple column as you come up to it - Settings > Display > BEAMS)
+                    var beacon = new GameObject("beacon");
+                    beacon.transform.SetParent(t, false);
+                    float ch = Art.Cylinder.bounds.extents.y, cr = Art.Cylinder.bounds.extents.x;
+                    var core = BeamFx.Cylinder(beacon.transform, CrateBeacon(false), "beacon core");
+                    core.transform.localPosition = new Vector3(0, 100f, 0);
+                    core.transform.localScale = new Vector3(0.45f / cr, 100f / ch, 0.45f / cr);
+                    var halo = BeamFx.Cylinder(beacon.transform, CrateBeacon(true), "beacon halo");
+                    halo.transform.localPosition = new Vector3(0, 100f, 0);
+                    halo.transform.localScale = new Vector3(1.5f / cr, 100f / ch, 1.5f / cr);
                     var lg = new GameObject("glow");
                     lg.transform.SetParent(t, false);
                     lg.transform.localPosition = new Vector3(0, 1.8f, 0);

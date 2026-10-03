@@ -155,31 +155,50 @@ namespace RockGame
             s_NoteStep++;
         }
 
+        /// <summary>Test hooks: how many explosions this PC has shown, and the last one's camera distance, shake and the
+        /// delay before its far-off boom was heard (-1: none, it was close).</summary>
+        public static int Explosions { get; private set; }
+        public static float LastBlastDistance { get; private set; }
+        public static float LastBlastShake { get; internal set; }
+        public static float LastBlastSoundDelay { get; internal set; } = -1f;
+        static float s_BurstAt = -10f;
+        static Vector3 s_BurstPos;
+        static int s_BurstCount;
+
+        /// <summary>
+        /// An explosion (C4, a rocket, an airstrike's bombs, a fake bomb bush): a bright flash, a fireball that swells and
+        /// burns out, a column of dark smoke rolling up and spreading, debris and burning bits flying out (trailing smoke),
+        /// a shockwave ring racing out along the ground with a ring of dust, a scorch mark left behind, and the camera
+        /// shaking by how close you are. Heard right across the map like in Rust: a sharp crack and boom close up; further
+        /// off a deep rolling boom that arrives late (sound travels 343 m/s) and gets more muffled (low-passed) and quieter
+        /// with distance - but never silent on the map. Several at once (an airstrike's carpet of bombs) only get the full
+        /// show for the first two and only one far-off boom, so it stays cheap.
+        /// </summary>
         public static void Explosion(Vector3 pos)
         {
-            Sfx.Play(Sfx.Boom, pos, 1f, 0.05f, 180f);
-            for (int i = 0; i < 14; i++)
-                FxParticle.Puff(pos + Random.insideUnitSphere * 1.8f + Vector3.up * 0.6f, i % 3 == 0 ? new Color(1f, 0.85f, 0.3f, 0.8f) : new Color(1f, 0.45f, 0.1f, 0.7f), Random.Range(1.5f, 3.2f));
-            for (int i = 0; i < 8; i++)
-                FxParticle.Puff(pos + Random.insideUnitSphere * 2.5f + Vector3.up * 1.5f, new Color(0.25f, 0.23f, 0.22f, 0.6f), Random.Range(2f, 3.5f));
-            Chips(pos, Vector3.up, Art.Wood, 30, 9f);
-            Chips(pos, Vector3.up, Art.Stone, 20, 8f);
-            Sparks(pos, Vector3.up, 30);
+            Explosions++;
             var cam = Camera.main;
-            if (cam != null)
-            {
-                float d = Vector3.Distance(cam.transform.position, pos);
-                Shake(Mathf.Clamp01(1.2f - d / 30f));
-            }
-            var lg = new GameObject("boomLight");
-            lg.transform.position = pos + Vector3.up;
-            var l = lg.AddComponent<Light>();
-            l.type = LightType.Point;
-            l.color = new Color(1f, 0.6f, 0.2f);
-            l.range = 18f;
-            l.intensity = 8f;
-            Object.Destroy(lg, 0.25f);
+            var cp = cam != null ? cam.transform.position : pos;
+            float d = Vector3.Distance(cp, pos);
+            bool burst = Time.time - s_BurstAt < 0.3f && (pos - s_BurstPos).sqrMagnitude < 50f * 50f;
+            s_BurstCount = burst ? s_BurstCount + 1 : 1;
+            s_BurstAt = Time.time;
+            s_BurstPos = pos;
+            LastBlastDistance = d;
+            FxBlast.Spawn(pos, d, s_BurstCount <= 2, s_BurstCount == 1, s_BurstCount <= 3);
         }
+
+        /// <summary>How hard an explosion this far away shakes the camera (0..1): hard right on top of it, fading out by about 70 m.</summary>
+        public static float BlastShake(float d) => Mathf.Clamp01(1.25f - d / 45f) + (d < 70f ? 0.15f * (1f - d / 70f) : 0f);
+
+        /// <summary>When a far-off explosion's boom is heard: sound at 343 m/s (none for close ones: the near boom covers it).</summary>
+        public static float BoomDelay(float d) => d < 35f ? 0f : d / 343f;
+
+        /// <summary>How muffled a far-off boom is: the low-pass cutoff (Hz) - crisp up close, a deep thud right across the map.</summary>
+        public static float BoomCutoff(float d) => Mathf.Lerp(5000f, 380f, Mathf.Clamp01((d - 30f) / 350f));
+
+        /// <summary>How loud a far-off boom is (before the SFX slider): it never drops to nothing on the map.</summary>
+        public static float BoomVolume(float d) => Mathf.Lerp(1f, 0.32f, Mathf.Clamp01((d - 30f) / 600f));
 
         /// <summary>How many gun tracers have been drawn on this PC (tests: one shot = one tracer).</summary>
         public static int TracerCount;
@@ -420,6 +439,328 @@ namespace RockGame
         }
     }
 
+    /// <summary>
+    /// One explosion (Fx.Explosion): drives its flash, fireball, shockwave and delayed shake/boom over its first few
+    /// seconds; the smoke, dust, debris and scorch mark are their own objects (FxSmoke, FxEmber, FxParticle).
+    /// </summary>
+    public class FxBlast : MonoBehaviour
+    {
+        /// <summary>How big the fireball gets (m across) and how far the shockwave ring races out (m).</summary>
+        public const float FireballSize = 9f, ShockRadius = 18f;
+        Light m_Flash;
+        readonly List<(Transform t, Material m, float size, float delay, float bright)> m_Balls = new List<(Transform, Material, float, float, float)>();
+        Transform m_Ring, m_Shell;
+        Material m_RingMat, m_ShellMat;
+        float m_Age, m_ShakeAt = -1f, m_Shake, m_Life;
+        static Material s_ShellSrc;
+
+        public static void Spawn(Vector3 pos, float dist, bool full, bool farBoom, bool nearBoom)
+        {
+            var go = new GameObject("explosion");
+            go.transform.position = pos;
+            var b = go.AddComponent<FxBlast>();
+            b.Build(pos, dist, full, farBoom, nearBoom);
+        }
+
+        void Build(Vector3 pos, float d, bool full, bool farBoom, bool nearBoom)
+        {
+            var t = transform;
+            // ---- the flash ----
+            var lg = new GameObject("flash");
+            lg.transform.SetParent(t, false);
+            lg.transform.localPosition = Vector3.up * 1.5f;
+            m_Flash = lg.AddComponent<Light>();
+            m_Flash.type = LightType.Point;
+            m_Flash.color = new Color(1f, 0.62f, 0.25f);
+            m_Flash.range = full ? 45f : 25f;
+            m_Flash.intensity = full ? 40f : 18f;
+            m_Flash.shadows = LightShadows.None;
+
+            // ---- the fireball: a white-hot core and orange lobes round it, swelling and burning out ----
+            int balls = full ? 5 : 2;
+            for (int i = 0; i < balls; i++)
+            {
+                bool core = i == 0;
+                var c = core ? new Color(1f, 0.85f, 0.55f) : Color.Lerp(new Color(1f, 0.42f, 0.08f), new Color(1f, 0.62f, 0.2f), Random.value);
+                var m = BeamFx.Ball(c, 0f, core ? 1.1f : 1.6f);
+                var off = core ? Vector3.up * 1.2f : Vector3.Scale(Random.insideUnitSphere, new Vector3(2.2f, 1.2f, 2.2f)) + Vector3.up * 2f;
+                var ball = BeamFx.Cylinder(t, m, "fireball");
+                ball.GetComponent<MeshFilter>().sharedMesh = Art.Sphere;
+                ball.transform.localPosition = off;
+                ball.transform.localScale = Vector3.zero;
+                float size = (core ? 1f : Random.Range(0.55f, 0.8f)) * FireballSize * (full ? 1f : 0.7f);
+                m_Balls.Add((ball.transform, m, size, core ? 0f : Random.Range(0f, 0.08f), core ? 4.5f : 3f));
+            }
+            // a burst of flame puffs and fiery bits
+            for (int i = 0; i < (full ? 16 : 6); i++)
+                FxParticle.Puff(pos + Random.insideUnitSphere * 2.6f + Vector3.up * 1.2f, i % 3 == 0 ? new Color(1f, 0.85f, 0.3f, 0.85f) : new Color(1f, 0.45f, 0.1f, 0.75f), Random.Range(2.2f, 4.2f));
+            Fx.Sparks(pos + Vector3.up * 0.5f, Vector3.up, full ? 45 : 15);
+
+            // ---- the smoke: a dark column rolling up and spreading at the top, and dust racing out along the ground ----
+            if (full)
+            {
+                for (int i = 0; i < 16; i++)
+                {
+                    float u = i / 15f;
+                    var at = pos + Vector3.up * (0.8f + u * 2.5f) + Random.insideUnitSphere * 1.4f;
+                    var v = new Vector3(Random.Range(-0.8f, 0.8f), Mathf.Lerp(3.5f, 9f, u) * Random.Range(0.8f, 1.15f), Random.Range(-0.8f, 0.8f));
+                    float g = Random.Range(0.12f, 0.24f);
+                    FxSmoke.Spawn(at, v, new Color(g, g * 0.95f, g * 0.9f, Random.Range(0.9f, 1f)), Random.Range(2f, 3f), Random.Range(6.5f, 10f) * Mathf.Lerp(0.8f, 1.3f, u),
+                        Random.Range(6f, 10f), 0.25f, 0.6f, 0.05f + u * 0.12f);
+                }
+                for (int i = 0; i < 14; i++)
+                {
+                    float a = i * Mathf.PI * 2f / 14f + Random.Range(-0.15f, 0.15f);
+                    var dir = new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a));
+                    FxSmoke.Spawn(pos + dir * 1.2f + Vector3.up * 0.4f, dir * Random.Range(11f, 16f) + Vector3.up * Random.Range(0.3f, 1.2f), new Color(0.45f, 0.4f, 0.34f, 0.45f),
+                        1.2f, Random.Range(3.5f, 5f), Random.Range(2.2f, 3.4f), 0.1f, 2.6f, 0.12f);
+                }
+            }
+            else
+                for (int i = 0; i < 5; i++)
+                    FxSmoke.Spawn(pos + Vector3.up * 1.5f + Random.insideUnitSphere, new Vector3(Random.Range(-0.6f, 0.6f), Random.Range(3f, 6f), Random.Range(-0.6f, 0.6f)), new Color(0.2f, 0.19f, 0.18f, 0.6f),
+                        1.6f, Random.Range(4f, 6f), Random.Range(4f, 6f), 0.3f, 0.6f, 0.3f);
+
+            // ---- debris: chunks of wood and stone and charred bits, and burning bits trailing smoke ----
+            int chunks = full ? 34 : 10;
+            for (int i = 0; i < chunks; i++)
+            {
+                var c = i % 3 == 0 ? Art.Stone : i % 3 == 1 ? Art.Wood * 0.75f : new Color(0.12f, 0.11f, 0.1f);
+                var v = Random.insideUnitSphere * 7f + Vector3.up * Random.Range(7f, 17f);
+                FxParticle.Spawn(pos + Vector3.up * 0.6f, v, c, Random.Range(0.1f, 0.34f), Random.Range(1.4f, 2.6f), 20f, true);
+            }
+            for (int i = 0; i < (full ? 7 : 2); i++)
+            {
+                var v = Random.insideUnitSphere * 8f + Vector3.up * Random.Range(9f, 16f);
+                FxEmber.Spawn(pos + Vector3.up * 0.8f, v);
+            }
+
+            // ---- the shockwave: a glowing ring racing out along the ground, and a pale shell of air swelling out ----
+            if (full)
+            {
+                m_RingMat = BeamFx.Column(new Color(1f, 0.78f, 0.5f), 0f, 0.8f, 0f, 0f, 0.15f, 0.4f);
+                var ring = BeamFx.Cylinder(t, m_RingMat, "shockwave");
+                m_Ring = ring.transform;
+                m_Ring.localPosition = Vector3.up * 0.4f;
+                m_Ring.localScale = Vector3.zero;
+                if (s_ShellSrc == null) s_ShellSrc = Art.Ghost(new Color(1f, 0.95f, 0.85f, 0.22f));
+                m_ShellMat = new Material(s_ShellSrc) { name = "shock shell" };
+                var shell = Art.Part(t, Art.Sphere, Color.white, Vector3.up * 1f, Vector3.zero, default, false, m_ShellMat, "shock shell");
+                shell.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                m_Shell = shell.transform;
+                Scorch(pos);
+            }
+
+            // ---- the camera: shaken by how close you are (now if it's close, when the boom gets to you if it's far) ----
+            float shake = Fx.BlastShake(d);
+            Fx.LastBlastShake = shake;
+            if (d < 70f)
+            {
+                Fx.Shake(shake);
+                Fx.Punch(Mathf.Clamp01(1f - d / 40f) * 6f);
+            }
+            else if (d < 420f)
+            {
+                m_ShakeAt = Fx.BoomDelay(d);
+                m_Shake = 0.32f * (1f - (d - 70f) / 350f);
+            }
+
+            // ---- the sound: a sharp crack and boom close by; far off a deep, late, muffled boom heard right across the map ----
+            if (nearBoom && d < 140f) Sfx.Play(Sfx.BigBoom, pos, Mathf.Lerp(1f, 0.6f, d / 140f), 0.05f, 220f);
+            Fx.LastBlastSoundDelay = -1f;
+            if (farBoom && d >= 35f)
+            {
+                float delay = Fx.BoomDelay(d);
+                Fx.LastBlastSoundDelay = delay;
+                Sfx.PlayFar(Sfx.FarBoom, pos, Fx.BoomVolume(d), delay, Fx.BoomCutoff(d));
+            }
+            m_Life = Mathf.Max(1.6f, m_ShakeAt + 0.1f);
+        }
+
+        /// <summary>A charred patch on the ground under it (fading away after a while).</summary>
+        static void Scorch(Vector3 pos)
+        {
+            if (!Physics.Raycast(pos + Vector3.up * 1.5f, Vector3.down, out var hit, 6f, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore)) return;
+            if (hit.collider.GetComponentInParent<PlayerNet>() != null) return;
+            FxSmoke.Scorch(hit.point + hit.normal * 0.03f, hit.normal, Random.Range(4.5f, 6f));
+        }
+
+        void Update()
+        {
+            float dt = Time.deltaTime;
+            m_Age += dt;
+            float a = m_Age;
+            if (m_Flash != null)
+            {
+                m_Flash.intensity *= Mathf.Exp(-dt * 7f);
+                if (a > 0.7f) { Destroy(m_Flash.gameObject); m_Flash = null; }
+            }
+            foreach (var (bt, bm, size, delay, bright) in m_Balls)
+            {
+                if (bt == null) continue;
+                float u = Mathf.Max(0f, a - delay);
+                float grow = 1f - Mathf.Exp(-u * 9f);
+                bt.localScale = Vector3.one * size * (0.25f + 0.75f * grow) * (1f + u * 0.12f);
+                bt.localPosition += Vector3.up * dt * 2.2f; // (it rises as it burns)
+                // white-hot at first, cooling to a deep orange as it burns out
+                float burn = u < 0.06f ? u / 0.06f : Mathf.Exp(-(u - 0.06f) * 3.2f);
+                var c = Color.Lerp(new Color(1f, 0.32f, 0.06f), new Color(1f, 0.85f, 0.6f), Mathf.Clamp01(1f - u * 2.2f));
+                BeamFx.Set(bm, c, bright * burn);
+                if (u > 1.4f && bt.gameObject.activeSelf) bt.gameObject.SetActive(false);
+            }
+            if (m_Ring != null)
+            {
+                float u = Mathf.Clamp01(a / 0.55f);
+                float r = ShockRadius * (1f - (1f - u) * (1f - u));
+                float cr = Art.Cylinder.bounds.extents.x, ch = Art.Cylinder.bounds.extents.y;
+                m_Ring.localScale = new Vector3(r / cr, (0.5f + 0.6f * (1f - u)) / ch, r / cr);
+                BeamFx.Set(m_RingMat, new Color(1f, 0.78f, 0.5f), 2.2f * (1f - u) * (1f - u));
+                if (u >= 1f) { Destroy(m_Ring.gameObject); m_Ring = null; }
+            }
+            if (m_Shell != null)
+            {
+                float u = Mathf.Clamp01(a / 0.3f);
+                m_Shell.localScale = Vector3.one * (ShockRadius * 0.8f * Mathf.Sqrt(u));
+                var c = new Color(1f, 0.95f, 0.85f, 0.22f * (1f - u));
+                m_ShellMat.SetColor("_BaseColor", c);
+                m_ShellMat.color = c;
+                if (u >= 1f) { Destroy(m_Shell.gameObject); m_Shell = null; }
+            }
+            if (m_ShakeAt >= 0f && a >= m_ShakeAt)
+            {
+                Fx.Shake(m_Shake);
+                m_ShakeAt = -1f;
+            }
+            if (a > m_Life) Destroy(gameObject);
+        }
+
+        void OnDestroy()
+        {
+            foreach (var b in m_Balls) if (b.m) Destroy(b.m);
+            if (m_RingMat) Destroy(m_RingMat);
+            if (m_ShellMat) Destroy(m_ShellMat);
+        }
+    }
+
+    /// <summary>
+    /// A puff of smoke or dust (explosions): rises (or races out along the ground and slows), swells and thins out. Lit
+    /// see-through (the sun shades it); one shared material, its colour per puff. Capped (they're only looks).
+    /// </summary>
+    public class FxSmoke : MonoBehaviour
+    {
+        public static int Alive { get; private set; }
+        static Material s_Mat;
+        static MaterialPropertyBlock s_Mpb;
+        static readonly int k_Base = Shader.PropertyToID("_BaseColor");
+        Renderer m_R;
+        Vector3 m_Vel;
+        Color m_C;
+        float m_Age, m_Life, m_Size0, m_Size1, m_Rise, m_Drag, m_FadeIn, m_Spin;
+        bool m_Decal;
+
+        static Material Mat
+        {
+            get
+            {
+                if (s_Mat == null) s_Mat = new Material(Art.Ghost(new Color(0.2f, 0.2f, 0.2f, 0.6f))) { name = "smoke" };
+                return s_Mat;
+            }
+        }
+
+        /// <summary>A puff at pos moving at vel: colour (alpha = how thick), size from size0 to size1 (m), life (s), how
+        /// fast it keeps rising (m/s²), how quickly it slows (drag), and when (fraction of its life) it's thickest.</summary>
+        public static void Spawn(Vector3 pos, Vector3 vel, Color c, float size0, float size1, float life, float rise, float drag, float fadeIn)
+        {
+            if (Alive > 240) return;
+            var go = Art.Part(null, Art.Ico, c, pos, Vector3.one * size0 * 0.4f, Random.rotation.eulerAngles, false, Mat, "smoke");
+            var s = go.AddComponent<FxSmoke>();
+            s.m_R = go.GetComponent<MeshRenderer>();
+            s.m_R.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            s.m_R.receiveShadows = false;
+            s.m_Vel = vel; s.m_C = c; s.m_Life = life; s.m_Size0 = size0; s.m_Size1 = size1; s.m_Rise = rise; s.m_Drag = drag; s.m_FadeIn = Mathf.Clamp(fadeIn, 0.02f, 0.9f);
+            s.m_Spin = Random.Range(-25f, 25f);
+            s.Apply(0f);
+            Alive++;
+        }
+
+        /// <summary>A charred patch lying on a surface: a dark disc that fades away over half a minute.</summary>
+        public static void Scorch(Vector3 pos, Vector3 normal, float size)
+        {
+            var go = Art.Part(null, Art.Cylinder, Color.black, pos, Vector3.zero, default, false, Mat, "scorch");
+            go.transform.rotation = Quaternion.FromToRotation(Vector3.up, normal) * Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
+            float cr = Art.Cylinder.bounds.extents.x, ch = Art.Cylinder.bounds.extents.y;
+            go.transform.localScale = new Vector3(size * 0.5f / cr, 0.01f / ch, size * 0.5f / cr);
+            var s = go.AddComponent<FxSmoke>();
+            s.m_R = go.GetComponent<MeshRenderer>();
+            s.m_R.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            s.m_C = new Color(0.05f, 0.045f, 0.04f, 0.7f);
+            s.m_Life = 30f;
+            s.m_Decal = true;
+            s.Apply(0f);
+            Alive++;
+        }
+
+        void Apply(float k)
+        {
+            if (s_Mpb == null) s_Mpb = new MaterialPropertyBlock();
+            var c = m_C;
+            c.a *= m_Decal ? Mathf.Clamp01((1f - k) * 4f) : Mathf.Clamp01(k / m_FadeIn) * Mathf.Clamp01((1f - k) * 1.6f);
+            s_Mpb.SetColor(k_Base, c);
+            m_R.SetPropertyBlock(s_Mpb);
+        }
+
+        void Update()
+        {
+            float dt = Time.deltaTime;
+            m_Age += dt;
+            float k = m_Age / m_Life;
+            if (k >= 1f) { Destroy(gameObject); return; }
+            Apply(k);
+            if (m_Decal) return;
+            m_Vel *= Mathf.Exp(-m_Drag * dt);
+            m_Vel.y += m_Rise * dt;
+            transform.position += (m_Vel + new Vector3(0.6f, 0f, 0.25f) * k) * dt; // (a little wind as it thins out)
+            transform.Rotate(0f, m_Spin * dt, 0f, Space.World);
+            float grow = 1f - Mathf.Pow(1f - k, 2.2f);
+            transform.localScale = Vector3.one * Mathf.Lerp(m_Size0, m_Size1, grow) * 0.4f;
+        }
+
+        void OnDestroy() => Alive--;
+    }
+
+    /// <summary>A burning bit flung out of an explosion: a glowing ember arcing through the air, trailing smoke, then gone.</summary>
+    public class FxEmber : MonoBehaviour
+    {
+        Vector3 m_Vel;
+        float m_Age, m_Life, m_Next;
+
+        public static void Spawn(Vector3 pos, Vector3 vel)
+        {
+            if (FxSmoke.Alive > 200) return;
+            var go = Art.Part(null, Art.Cube, new Color(1f, 0.55f, 0.15f), pos, Vector3.one * Random.Range(0.14f, 0.24f), Random.rotation.eulerAngles);
+            go.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            var e = go.AddComponent<FxEmber>();
+            e.m_Vel = vel;
+            e.m_Life = Random.Range(1.2f, 2f);
+        }
+
+        void Update()
+        {
+            float dt = Time.deltaTime;
+            m_Age += dt;
+            if (m_Age > m_Life) { Destroy(gameObject); return; }
+            m_Vel += Vector3.down * 16f * dt;
+            transform.position += m_Vel * dt;
+            transform.Rotate(400f * dt, 300f * dt, 0f);
+            if (m_Age >= m_Next)
+            {
+                m_Next = m_Age + 0.09f;
+                float k = m_Age / m_Life;
+                FxSmoke.Spawn(transform.position, Vector3.up * 0.5f, new Color(0.18f, 0.17f, 0.16f, 0.5f * (1f - k)), 0.5f, 1.5f, 1.2f, 0.2f, 1f, 0.1f);
+            }
+        }
+    }
+
     /// <summary>Tiny cube particle with gravity; lands and lingers as a splat when `stick` is set.</summary>
     public class FxParticle : MonoBehaviour
     {
@@ -615,7 +956,7 @@ namespace RockGame
     {
         public static AudioClip Swing, Flesh, Headshot, Chop, Clink, Thud, Ding, Smash, Twang, Throw, Pop, Eat, Place, Hurt, Kill, Step, Hiss, Boom, Beep, Zap, Saw, Hum,
             Hit, Rocket, Sniper, Portal, Jet, Glass, Door, Click, Crowd, Whiz, Slide, Hoof, UiHover, UiClick, UiSlide, EnemyStep,
-            Workshop, ArmorClank, StoneGrind, Engine, Unlock;
+            Workshop, ArmorClank, StoneGrind, Engine, Unlock, BigBoom, FarBoom;
         static readonly Dictionary<AudioClip, AudioClip[]> s_Variants = new Dictionary<AudioClip, AudioClip[]>();
         const int Rate = 44100;
 
@@ -663,6 +1004,23 @@ namespace RockGame
             Kill = Make("kill", 0.5f, (t, d) => (t < 0.12f ? Mathf.Sin(t * 2 * Mathf.PI * 1318) : Mathf.Sin(t * 2 * Mathf.PI * 1976)) * Env(t < 0.12f ? t : t - 0.12f, 0.2f) * 0.5f);
             Hiss = Make("hiss", 0.9f, (t, d) => N() * Mathf.Min(1f, t * 20f) * Mathf.Exp(-t * 3f) * 0.5f, lowpass: 0.6f);
             Boom = Make("boom", 1.4f, (t, d) => N() * Env(t, 0.6f) * 0.9f + Mathf.Sin(t * 2 * Mathf.PI * Mathf.Lerp(60, 25, t / d)) * Env(t, 0.8f), lowpass: 0.12f);
+            // an explosion close by (C4, rockets): a sharp crack, a heavy thump that drops in pitch, a rumble and debris
+            // pattering down after it
+            BigBoom = Make("bigboom", 2.6f, (t, d) =>
+                N() * Env(t, 0.035f) * 1.6f
+                + Mathf.Sin(t * 2 * Mathf.PI * Mathf.Lerp(78, 26, Mathf.Sqrt(t / d))) * Env(t, 0.75f) * 1.1f
+                + N() * Env(t, 1.1f) * 0.75f
+                + (t > 0.5f && N() > 0.93f ? N() * Env(t - 0.5f, 1.2f) * 0.8f : 0f), lowpass: 0.2f);
+            // the same explosion heard from far across the map: a deep, rolling boom that comes and goes (echoes off the
+            // hills), no crack (it's low-passed again by distance when it's played: Sfx.PlayFar)
+            FarBoom = Make("farboom", 4.5f, (t, d) =>
+            {
+                float att = Mathf.Min(1f, t / 0.03f);
+                float body = N() * 2.6f * Env(t, 1.5f) + Mathf.Sin(t * 2 * Mathf.PI * Mathf.Lerp(46, 24, t / d)) * Env(t, 1.6f) * 0.9f;
+                float echo1 = t > 0.55f ? N() * 1.6f * Env(t - 0.55f, 1.2f) : 0f;
+                float echo2 = t > 1.3f ? N() * 1.1f * Env(t - 1.3f, 1.4f) : 0f;
+                return (body + echo1 + echo2) * att * 0.75f;
+            }, lowpass: 0.045f);
             Beep = Make("beep", 0.08f, (t, d) => Mathf.Sign(Mathf.Sin(t * 2 * Mathf.PI * 1800)) * 0.25f);
             Zap = Make("zap", 0.3f, (t, d) => (Mathf.Sin(t * 2 * Mathf.PI * Mathf.Lerp(1400, 200, t / d)) * 0.5f + N() * 0.3f) * Env(t, 0.2f));
             Saw = Make("saw", 0.2f, (t, d) => (Mathf.Sign(Mathf.Sin(t * 2 * Mathf.PI * 95)) * 0.3f + N() * 0.25f) * (0.7f + 0.3f * Mathf.Sin(t * 2 * Mathf.PI * 25)), lowpass: 0.35f);
@@ -815,6 +1173,40 @@ namespace RockGame
             Spatial(src, range);
             src.Play();
             Object.Destroy(go, clip.length / Mathf.Max(0.5f, src.pitch) + 0.1f);
+        }
+
+        static AnimationCurve s_FarCurve;
+
+        /// <summary>
+        /// A sound from far off (an explosion right across the map): heard from where it is (panned that way, a little
+        /// spread), after `delay` seconds (sound travels at 343 m/s), muffled by a low-pass filter (cutoff, Hz) and at
+        /// `volume` - it carries the whole map, never fading out to nothing.
+        /// </summary>
+        public static AudioSource PlayFar(AudioClip clip, Vector3 pos, float volume, float delay, float cutoff)
+        {
+            if (clip == null) return null;
+            volume = Vol(clip, volume);
+            clip = Pick(clip);
+            var go = new GameObject("sfxfar");
+            go.transform.position = pos;
+            var src = go.AddComponent<AudioSource>();
+            src.clip = clip;
+            src.volume = volume;
+            src.pitch = 1f + Random.Range(-0.05f, 0.05f);
+            src.spatialBlend = 1f;
+            src.spread = 70f;
+            src.dopplerLevel = 0f;
+            src.minDistance = 1f;
+            src.maxDistance = 3000f;
+            src.rolloffMode = AudioRolloffMode.Custom;
+            if (s_FarCurve == null) s_FarCurve = new AnimationCurve(new Keyframe(0f, 1f), new Keyframe(1f, 1f)); // (the volume's set by distance already)
+            src.SetCustomCurve(AudioSourceCurveType.CustomRolloff, s_FarCurve);
+            var lp = go.AddComponent<AudioLowPassFilter>();
+            lp.cutoffFrequency = Mathf.Clamp(cutoff, 100f, 22000f);
+            lp.lowpassResonanceQ = 1f;
+            src.PlayDelayed(Mathf.Max(0f, delay));
+            Object.Destroy(go, delay + clip.length / Mathf.Max(0.5f, src.pitch) + 0.2f);
+            return src;
         }
 
         /// <summary>A looping 3D sound following `parent` (flying arrows, sliding players). Returns it so it can be faded.</summary>
