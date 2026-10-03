@@ -228,8 +228,9 @@ namespace RockGame
             var l2 = lp.AddComponent<Light>();
             l2.type = LightType.Point;
             l2.range = 38f;
-            l2.intensity = 0.8f;
+            l2.intensity = 0.5f;
             l2.color = new Color(0.9f, 0.6f, 1f);
+            BuildShowLights(t, stadium);
 
             // ---------- space all around: black, full of stars, a galaxy and planets ----------
             var skyMat = UnlitMat(SkyColor, CullMode.Front);
@@ -250,10 +251,10 @@ namespace RockGame
             {
                 float a = 45f + i * 90f;
                 var dir = Quaternion.Euler(0, a, 0) * Vector3.forward;
-                var rp = RingPoint(a, Gap + BowlDepth + 0.2f);
+                var rp = RingPoint(a, OuterBack + 0.2f);
                 var screen = new GameObject("jumbotron").transform;
                 screen.SetParent(t, false);
-                screen.localPosition = new Vector3(rp.x, WallTop + 7f, rp.y);
+                screen.localPosition = new Vector3(rp.x, UpperTop + 7f, rp.y);
                 screen.localRotation = Quaternion.LookRotation(dir); // faces outward, so its back (-z) faces the platform
                 Art.Box(screen, new Color(0.05f, 0.04f, 0.1f), Vector3.zero, new Vector3(10f, 5.5f, 0.3f)).GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
                 Art.Box(screen, new Color(0.11f, 0.1f, 0.17f), new Vector3(0f, -5.6f, 0.2f), new Vector3(0.6f, 5.6f, 0.6f)).GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
@@ -272,13 +273,135 @@ namespace RockGame
                     var tm = txt.AddComponent<TextMesh>();
                     tm.anchor = TextAnchor.MiddleCenter;
                     tm.alignment = TextAlignment.Center;
-                    tm.characterSize = 0.22f;
+                    tm.characterSize = Stadium.ScreenCharSize;
                     tm.fontSize = 64;
                     tm.color = new Color(1f, 0.75f, 1f);
                     tm.text = "ROCK BRAWL";
                     stadium.AddScreen(tm);
+                    Stadium.FitScreen(tm);
                 }
                 frame.Build(screen, "frame", pinkMat, false);
+            }
+        }
+
+        // =====================================================================
+        // the show lighting
+        // =====================================================================
+
+        /// <summary>The four coloured show spotlights that sweep the platform and the stands (pink, cyan, violet, amber).</summary>
+        public static readonly Color[] ShowColours = { new Color(1f, 0.25f, 0.85f), new Color(0.2f, 0.85f, 1f), new Color(0.62f, 0.3f, 1f), new Color(1f, 0.62f, 0.15f) };
+        /// <summary>The show spotlights' cone (degrees across) and the floodlights'.</summary>
+        public const float ShowSpotAngle = 18f, FloodAngle = 46f;
+        /// <summary>The coloured rim lights low at the two ends of the platform: pink behind the +z end, cyan behind -z.</summary>
+        public static readonly Color RimPink = new Color(1f, 0.3f, 0.8f), RimCyan = new Color(0.25f, 0.8f, 1f);
+
+        /// <summary>A spot light under t (local position, pointing at local `at`), no shadows; brightness: on what it
+        /// lights at that distance (URP lights fall off with the square of the distance).</summary>
+        static Light Spot(Transform t, string name, Vector3 pos, Vector3 at, Color c, float angle, float brightness)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(t, false);
+            go.transform.localPosition = pos;
+            go.transform.localRotation = Quaternion.LookRotation(at - pos);
+            var l = go.AddComponent<Light>();
+            l.type = LightType.Spot;
+            l.color = c;
+            l.spotAngle = angle;
+            l.innerSpotAngle = angle * 0.6f;
+            float d = Vector3.Distance(pos, at);
+            l.range = d * 1.6f + 10f;
+            l.intensity = brightness * d * d;
+            l.shadows = LightShadows.None;
+            return l;
+        }
+
+        /// <summary>A soft shaft of light under a spot light, along its beam (len metres long, as wide as its cone).</summary>
+        static Transform ShaftFor(Light l, Material mat, float len)
+        {
+            var sh = BeamFx.Shaft(l.transform, mat, l.name + " shaft").transform;
+            sh.localRotation = Quaternion.Euler(90f, 0f, 0f); // (the cone's y along the light's forward)
+            float w = 2f * Mathf.Tan(l.spotAngle * 0.5f * Mathf.Deg2Rad) * len * 0.85f;
+            sh.localScale = new Vector3(w, len, w);
+            return sh;
+        }
+
+        /// <summary>
+        /// Dramatic lighting: a white floodlight from each mast head down onto the platform, with a soft shaft of light
+        /// down its beam; four coloured show spotlights on the upper ring's back wall that sweep the platform and the
+        /// stands (faster when the crowd's wild), each with its own visible shaft (and lighting the crowd: Crowd.shader);
+        /// coloured rim lights low at the two ends of the platform (pink and cyan, catching the fighters' edges); coloured
+        /// uplights round the platform's rim; and glowing strips round the stands (they bloom).
+        /// </summary>
+        static void BuildShowLights(Transform t, Stadium stadium)
+        {
+            var target = Vector3.up * 0.8f;
+            for (int i = 0; i < 4; i++)
+            {
+                FloodlightHead(i, out _, out var head, out var rot, out _);
+                var lamp = head + rot * Vector3.forward * 0.4f;
+                var l = Spot(t, "floodlight", lamp, target, new Color(1f, 0.94f, 0.86f), FloodAngle, 0.55f);
+                ShaftFor(l, BeamFx.Column(new Color(1f, 0.93f, 0.82f), 0.14f, 1.3f, 0.12f, -0.12f, 0.06f, 0.55f, 0.08f), Vector3.Distance(lamp, target));
+            }
+            for (int i = 0; i < 4; i++)
+            {
+                float a = 45f + i * 90f + 22f;
+                var rp = RingPoint(a, UpperBack - 0.6f);
+                var pos = new Vector3(rp.x, UpperTop + 0.9f, rp.y);
+                var c = ShowColours[i];
+                var l = Spot(t, "show spot", pos, target, c, ShowSpotAngle, 1.7f);
+                var mat = BeamFx.Column(c, 0.32f, 1.5f, 0.18f, -0.35f, 0.04f, 0.3f, 0.12f);
+                var shaft = ShaftFor(l, mat, Vector3.Distance(pos, target));
+                stadium.AddSweep(l, shaft, pos, c);
+                // the lamp itself: a small bright housing on the wall
+                var lampGlow = Art.Part(l.transform, Art.Sphere, Color.white, Vector3.zero, Vector3.one * 1.1f, default, false, UnlitMat(c * 2.2f, CullMode.Back), "show lamp");
+                lampGlow.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
+            }
+            // rim lights: low and behind each end of the platform, raking across it at chest height
+            for (int k = 0; k < 2; k++)
+            {
+                float z = (k == 0 ? 1f : -1f) * (HalfZ + Gap - 1.5f);
+                Spot(t, "rim light", new Vector3(0f, 2.2f, z), new Vector3(0f, 1.2f, -z * 0.2f), k == 0 ? RimPink : RimCyan, 70f, 0.9f);
+            }
+            // uplights round the rim of the platform, alternating pink and cyan
+            for (int i = 0; i < Outline.Length; i++)
+            {
+                var mid = (Outline[i] + Outline[(i + 1) % Outline.Length]) * 0.5f;
+                var go = new GameObject("rim uplight");
+                go.transform.SetParent(t, false);
+                go.transform.localPosition = V(mid * 1.08f, -1.8f);
+                var l = go.AddComponent<Light>();
+                l.type = LightType.Point;
+                l.color = i % 2 == 0 ? RimPink : RimCyan;
+                l.range = 9f;
+                l.intensity = 22f;
+                l.shadows = LightShadows.None;
+            }
+            // glowing strips round the stands (unlit and bright, so they bloom): the lower front wall, the balcony and the top
+            float soffit = UpperFrontY - 1.4f;
+            var cyan = new MeshBatch();
+            var pink = new MeshBatch();
+            RingStrip(cyan, Gap - 0.33f, FrontY + 0.3f, 0.14f, true);
+            RingStrip(pink, UpperGap - 0.33f, soffit + 0.45f, 0.16f, true);
+            RingStrip(cyan, UpperGap - 0.33f, UpperFrontY + 0.25f, 0.12f, true);
+            RingStrip(pink, UpperBack - 0.03f, UpperTop - 0.35f, 0.14f, true);
+            var cm = UnlitMat(new Color(0.35f, 1.6f, 2.2f), CullMode.Back);
+            var pm = UnlitMat(new Color(2.2f, 0.45f, 1.8f), CullMode.Back);
+            if (cm != null) cyan.Build(t, "stadium glow strips", cm, false);
+            if (pm != null) pink.Build(t, "stadium glow strips", pm, false);
+        }
+
+        /// <summary>A thin strip all the way round the ring d out from the platform, at height y, facing in (towards the platform) or out.</summary>
+        static void RingStrip(MeshBatch mb, float d, float y, float height, bool facingIn)
+        {
+            var ring = Ring(d);
+            var nrm = RingNormals();
+            for (int i = 0; i < ring.Length; i++)
+            {
+                int j = (i + 1) % ring.Length;
+                var n = new Vector3(nrm[i].x + nrm[j].x, 0f, nrm[i].y + nrm[j].y).normalized * (facingIn ? -1f : 1f);
+                var a = new Vector3(ring[i].x, y, ring[i].y) + n * 0.02f;
+                var b = new Vector3(ring[j].x, y, ring[j].y) + n * 0.02f;
+                mb.Line(a, b, height, 0.03f, n);
             }
         }
 
@@ -661,16 +784,33 @@ namespace RockGame
 
         /// <summary>
         /// The stadium round the platform: how far its front wall is from the platform's edge (the gap you fall through
-        /// into space), its rows (how many, how deep, how much each one rises), the first row's floor (a little under the
-        /// platform's top, so the front rows look across at the fight), how round its corners are, seat spacing, how big
-        /// the fans are (a bit bigger than life, so they read from the platform) and how many sections it's drawn in.
+        /// into space), its rows (how many, how deep, how much each one rises), the first row's floor (just under the
+        /// platform's top, so even the front rows sit up and look down at the fight), how round its corners are, seat
+        /// spacing, how big the fans are (a bit bigger than life, so they read from the platform) and how many sections
+        /// each ring is drawn in.
         /// </summary>
-        public const float Gap = 12f, RowDepth = 1.75f, RowRise = 0.85f, FrontY = -2.4f, SeatSpacing = 1.2f, FanScale = 1.35f;
+        public const float Gap = 12f, RowDepth = 1.75f, RowRise = 1.0f, FrontY = -0.4f, SeatSpacing = 1.2f, FanScale = 1.35f;
         public const int Rows = 6, CornerSteps = 3, Sections = 16;
-        /// <summary>From the front wall to the back wall, and the back wall's top.</summary>
+        /// <summary>From the front wall to the lower ring's back wall, and the top of that wall (the old stadium's top).</summary>
         public const float BowlDepth = Rows * RowDepth, WallTop = FrontY + (Rows - 1) * RowRise + 2.2f;
+        /// <summary>
+        /// The upper ring of stands, above and behind the lower one: its balcony front hangs out a little over the lower
+        /// ring's back wall, then UpperRows steeper rows rise to its own back wall (the stadium's outside). Its fans are
+        /// a little further apart (fewer of them to draw).
+        /// </summary>
+        public const int UpperRows = 5;
+        public const float UpperGap = Gap + BowlDepth - 1.2f, UpperFrontY = WallTop + 2.4f, UpperRowRise = 1.3f, UpperSeatSpacing = 1.3f;
+        public const float UpperBack = UpperGap + UpperRows * RowDepth, UpperTop = UpperFrontY + (UpperRows - 1) * UpperRowRise + 2.4f;
+        /// <summary>The outside of the whole stadium (its back wall) and the middle of its hull.</summary>
+        public const float OuterBack = UpperBack + 0.35f, HullMid = (Gap + OuterBack) * 0.5f;
         /// <summary>The bottom of the stadium's hull (a ring keel) and the struts that hold the platform in its middle.</summary>
         public const float KeelY = -12.5f, StrutY = -12.9f;
+        /// <summary>The two rings of stands (lower, upper): front distance, first row's floor, rows, rise, seat spacing.</summary>
+        public static readonly (float gap, float frontY, int rows, float rise, float spacing)[] Tiers =
+        {
+            (Gap, FrontY, Rows, RowRise, SeatSpacing),
+            (UpperGap, UpperFrontY, UpperRows, UpperRowRise, UpperSeatSpacing),
+        };
 
         /// <summary>Outward normal of the platform outline's edge i (from corner i to i + 1).</summary>
         static Vector2 EdgeNormal(int i)
@@ -837,6 +977,12 @@ namespace RockGame
                 mb.Tint = c;
                 for (int i = 0; i < m; i++) { int j = (i + 1) % m; mb.Quad(P(a, i, y), P(a, j, y), P(b, j, y), P(b, i, y), Vector3.up); }
             }
+            void FlatDown(float d0, float d1, float y, Color c)
+            {
+                Vector2[] a = Ring(d0), b = Ring(d1);
+                mb.Tint = c;
+                for (int i = 0; i < m; i++) { int j = (i + 1) % m; mb.Quad(P(a, i, y), P(b, i, y), P(b, j, y), P(a, j, y), Vector3.down); }
+            }
             void Wall(float d, float y0, float y1, Color c, bool facingIn)
             {
                 var a = Ring(d);
@@ -880,48 +1026,69 @@ namespace RockGame
                     mb.Box(new Vector3(pos.x, FrontY - 0.15f, pos.y), rot, new Vector3(2.4f, 1.3f, 0.12f));
                 }
             }
-            // the rows: a step, its riser, a bench along its back and a pink edge along its front
-            for (int r = 0; r < Rows; r++)
-            {
-                float yt = FrontY + r * RowRise, d0 = Gap + r * RowDepth, d1 = d0 + RowDepth;
-                Flat(d0, d1, yt, r % 2 == 0 ? deck : deck2);
-                if (r > 0) Wall(d0, yt - RowRise, yt, riser, true);
-                Flat(d1 - 0.6f, d1 - 0.1f, yt + 0.55f, seat);
-                Wall(d1 - 0.6f, yt, yt + 0.55f, seatFront, true);
-                Flat(d0 + 0.02f, d0 + 0.14f, yt + 0.012f, pink);
-            }
-            // the back wall (inside and out) with a pink top
-            float lastTread = FrontY + (Rows - 1) * RowRise;
-            Wall(back, lastTread, WallTop, rim, true);
-            Wall(back + 0.35f, FrontY - 1f, WallTop, outside, false);
-            Wall(back + 0.37f, WallTop - 0.75f, WallTop - 0.5f, pink, false);
-            Wall(back + 0.37f, FrontY - 0.6f, FrontY - 0.45f, orange, false);
-            Flat(back, back + 0.35f, WallTop, pink);
+            // the rows of both rings: a step, its riser, a bench along its back and a pink edge along its front
+            foreach (var tier in Tiers)
+                for (int r = 0; r < tier.rows; r++)
+                {
+                    float yt = tier.frontY + r * tier.rise, d0 = tier.gap + r * RowDepth, d1 = d0 + RowDepth;
+                    Flat(d0, d1, yt, r % 2 == 0 ? deck : deck2);
+                    if (r > 0) Wall(d0, yt - tier.rise, yt, riser, true);
+                    Flat(d1 - 0.6f, d1 - 0.1f, yt + 0.55f, seat);
+                    Wall(d1 - 0.6f, yt, yt + 0.55f, seatFront, true);
+                    Flat(d0 + 0.02f, d0 + 0.14f, yt + 0.012f, pink);
+                }
+            // the lower ring's back wall, up to the underside of the upper ring's balcony (which hangs out over it), and
+            // that underside
+            float lastTread = FrontY + (Rows - 1) * RowRise, soffit = UpperFrontY - 1.4f;
+            Wall(back, lastTread, soffit, rim, true);
+            Wall(back - 0.02f, WallTop - 0.5f, WallTop - 0.3f, pink, true);
+            FlatDown(UpperGap - 0.3f, back, soffit, riser);
+            // the upper ring's balcony front (a deep fascia; its glowing strips are in the glow mesh) and pink top
+            Wall(UpperGap - 0.3f, soffit, UpperFrontY + 0.6f, rim, true);
+            Wall(UpperGap, UpperFrontY, UpperFrontY + 0.6f, rim, false);
+            Flat(UpperGap - 0.3f, UpperGap, UpperFrontY + 0.6f, pink);
+            // its back wall (the outside of the stadium, inside and out) with a pink top
+            float upperTread = UpperFrontY + (UpperRows - 1) * UpperRowRise;
+            Wall(UpperBack, upperTread, UpperTop, rim, true);
+            Wall(OuterBack, FrontY - 1f, UpperTop, outside, false);
+            Wall(OuterBack + 0.02f, UpperTop - 0.75f, UpperTop - 0.5f, pink, false);
+            Wall(OuterBack + 0.02f, WallTop - 0.75f, WallTop - 0.5f, pink, false);
+            Wall(OuterBack + 0.02f, FrontY - 0.6f, FrontY - 0.45f, orange, false);
+            Flat(UpperBack, OuterBack, UpperTop, pink);
             // the hull under it all: one ring, in and out, narrowing to a pale crystal keel
-            float mid = Gap + BowlDepth * 0.5f;
+            float mid = HullMid;
             Slope(Gap - 0.3f, FrontY - 1f, Gap + 2.2f, FrontY - 5f, hull, -1f, true);
             Slope(Gap + 2.2f, FrontY - 5f, mid - 0.4f, KeelY + 1.6f, hull, -1f, true);
-            Slope(back + 0.35f, FrontY - 1f, back - 2.2f, FrontY - 5f, hull, 1f, true);
-            Slope(back - 2.2f, FrontY - 5f, mid + 0.4f, KeelY + 1.6f, hull, 1f, true);
+            Slope(OuterBack, FrontY - 1f, OuterBack - 2.2f, FrontY - 5f, hull, 1f, true);
+            Slope(OuterBack - 2.2f, FrontY - 5f, mid + 0.4f, KeelY + 1.6f, hull, 1f, true);
             Slope(mid - 0.4f, KeelY + 1.6f, mid, KeelY, tip, -1f, false);
             Slope(mid + 0.4f, KeelY + 1.6f, mid, KeelY, tip, 1f, false);
             // floodlight masts on the back wall, off the ends and the sides, their lamps tipped down at the platform
             for (int i = 0; i < 4; i++)
             {
-                float a = i * 90f;
-                var p = RingPoint(a, back + 0.6f);
-                var outDir = new Vector3(p.x, 0f, p.y).normalized;
-                var basePos = new Vector3(p.x, WallTop, p.y);
+                FloodlightHead(i, out var basePos, out var head, out var rot, out var outDir);
                 mb.Tint = rim;
-                mb.Box(basePos + Vector3.up * 6.5f, Quaternion.LookRotation(outDir), new Vector3(0.55f, 13f, 0.55f));
-                var head = basePos + Vector3.up * 13.4f - outDir * 0.4f;
-                var rot = Quaternion.LookRotation(-outDir) * Quaternion.Euler(28f, 0f, 0f);
+                mb.Box(basePos + Vector3.up * MastHeight * 0.5f, Quaternion.LookRotation(outDir), new Vector3(0.55f, MastHeight, 0.55f));
                 mb.Box(head + rot * new Vector3(0, 0, -0.25f), rot, new Vector3(5f, 2.4f, 0.4f));
                 mb.Tint = lamp;
                 for (int lx = 0; lx < 3; lx++)
                     for (int ly = 0; ly < 2; ly++)
                         mb.Box(head + rot * new Vector3(-1.6f + lx * 1.6f, -0.55f + ly * 1.1f, 0.02f), rot, new Vector3(1.35f, 0.9f, 0.12f));
             }
+        }
+
+        /// <summary>How tall the floodlight masts on the back wall are.</summary>
+        public const float MastHeight = 13f;
+
+        /// <summary>Floodlight mast i (0-3, off the ends and the sides): the foot of its mast on the back wall, its lamp
+        /// head (local space), which way the head faces (tipped down at the middle of the platform) and the way out.</summary>
+        public static void FloodlightHead(int i, out Vector3 basePos, out Vector3 head, out Quaternion rot, out Vector3 outDir)
+        {
+            var p = RingPoint(i * 90f, OuterBack + 0.25f);
+            outDir = new Vector3(p.x, 0f, p.y).normalized;
+            basePos = new Vector3(p.x, UpperTop, p.y);
+            head = basePos + Vector3.up * (MastHeight + 0.4f) - outDir * 0.4f;
+            rot = Quaternion.LookRotation((Vector3.up * 1.2f - head).normalized);
         }
 
         /// <summary>The point s metres round a ring (and the outward direction there).</summary>
@@ -951,7 +1118,7 @@ namespace RockGame
         static void BuildStruts(Transform t, Material mat)
         {
             var mb = new MeshBatch();
-            float mid = Gap + BowlDepth * 0.5f;
+            float mid = HullMid;
             for (int i = 0; i < 8; i++)
             {
                 var p = RingPoint(22.5f + i * 45f, mid);
@@ -983,22 +1150,24 @@ namespace RockGame
             int[] moods = { 0, 1, 2, 3, 4, 0, 2, 1, 0, 3, 4, 0, 1, 2, 0, 3 };
             var nrm = RingNormals();
             // every seat, binned by section (by its angle round the middle) so each section's fans are one run in the buffer
-            var bins = new List<Vector4>[Sections];
-            for (int s = 0; s < Sections; s++) bins[s] = new List<Vector4>();
+            var bins = new List<Vector4>[Sections * Tiers.Length];
+            for (int s = 0; s < bins.Length; s++) bins[s] = new List<Vector4>();
             var anims = new HashSet<int>();
             var hues = new HashSet<int>();
             var sectionTogether = new float[Sections];
             for (int s = 0; s < Sections; s++) sectionTogether[s] = R(0f, 1f);
             int fanNo = 0;
-            for (int r = 0; r < Rows; r++)
+            for (int ti = 0; ti < Tiers.Length; ti++)
+            for (int r = 0; r < Tiers[ti].rows; r++)
             {
+                var tier = Tiers[ti];
                 // the standing fans' line (the front of the row) and the sitters' (on the bench at the back)
-                float yt = FrontY + r * RowRise;
-                var standRing = Ring(Gap + r * RowDepth + 0.8f);
-                var sitRing = Ring(Gap + (r + 1) * RowDepth - 0.36f);
+                float yt = tier.frontY + r * tier.rise;
+                var standRing = Ring(tier.gap + r * RowDepth + 0.8f);
+                var sitRing = Ring(tier.gap + (r + 1) * RowDepth - 0.36f);
                 float len = 0f;
                 for (int i = 0; i < standRing.Length; i++) len += Vector2.Distance(standRing[i], standRing[(i + 1) % standRing.Length]);
-                int seats = Mathf.FloorToInt(len / SeatSpacing);
+                int seats = Mathf.FloorToInt(len / tier.spacing);
                 float sitLen = 0f;
                 for (int i = 0; i < sitRing.Length; i++) sitLen += Vector2.Distance(sitRing[i], sitRing[(i + 1) % sitRing.Length]);
                 float offset = R(0f, 1f);
@@ -1009,7 +1178,7 @@ namespace RockGame
                     var (probe, _) = AlongRing(standRing, nrm, u * len);
                     float ang = Mathf.Atan2(probe.x, probe.y) * Mathf.Rad2Deg;
                     int sec = Mathf.FloorToInt(Mathf.Repeat(ang + 180f / Sections, 360f) / (360f / Sections)) % Sections;
-                    int anim = PickAnim(rng, moods[sec % moods.Length], r, Rows, out bool sync);
+                    int anim = PickAnim(rng, moods[(sec + ti * 5) % moods.Length], r, tier.rows, out bool sync);
                     bool sitting = anim >= 7 && anim <= 9;
                     Vector2 p, n;
                     if (sitting) (p, n) = AlongRing(sitRing, nrm, u * sitLen);
@@ -1022,7 +1191,7 @@ namespace RockGame
                     Color.RGBToHSV(skin, out float h, out float sat, out _);
                     if (sat > 0.45f) hues.Add(Mathf.FloorToInt(h * 12f) % 12);
                     var lin = skin.linear;
-                    var bin = bins[sec];
+                    var bin = bins[ti * Sections + sec];
                     bin.Add(new Vector4(world.x, world.y, world.z, yaw));
                     bin.Add(new Vector4(lin.r, lin.g, lin.b, FanScale * R(0.93f, 1.07f)));
                     bin.Add(new Vector4(anim, sync ? sectionTogether[sec] + R(0f, 0.004f) : R(0f, 1f), sync ? 1f : R(0.85f, 1.2f), 0f));
@@ -1032,7 +1201,7 @@ namespace RockGame
             }
             var data = new List<Vector4>();
             var draws = new List<Stadium.StandDraw>();
-            for (int s = 0; s < Sections; s++)
+            for (int s = 0; s < bins.Length; s++)
             {
                 var bin = bins[s];
                 if (bin.Count == 0) continue;
@@ -1337,6 +1506,97 @@ namespace RockGame
         /// <summary>The sky (stars, galaxy, planets): it turns slowly.</summary>
         public Transform Sky => m_Sky;
         public void AddScreen(TextMesh tm) => m_Screens.Add(tm);
+        public IReadOnlyList<TextMesh> Screens => m_Screens;
+
+        /// <summary>The big screens' text: its full size, and the room it has on the screen's face (metres; the screen is
+        /// 10 x 5.5 with a frame round it). Longer text is shrunk to fit (FitScreen).</summary>
+        public const float ScreenCharSize = 0.22f, ScreenTextW = 8.8f, ScreenTextH = 4.6f;
+
+        /// <summary>How big a TextMesh's text is (metres, in its own space) at this character size - from the font's own
+        /// glyph advances and line height (a TextMesh draws a font pixel characterSize / 10 units across).</summary>
+        public static Vector2 TextSize(TextMesh tm, float charSize)
+        {
+            var font = tm.font;
+            if (font == null || string.IsNullOrEmpty(tm.text)) return Vector2.zero;
+            int size = tm.fontSize > 0 ? tm.fontSize : Mathf.Max(1, font.fontSize);
+            font.RequestCharactersInTexture(tm.text, size, tm.fontStyle);
+            float w = 0f, widest = 0f;
+            int lines = 1;
+            foreach (char ch in tm.text)
+            {
+                if (ch == '\n') { widest = Mathf.Max(widest, w); w = 0f; lines++; continue; }
+                if (font.GetCharacterInfo(ch, out var ci, size, tm.fontStyle)) w += ci.advance;
+            }
+            widest = Mathf.Max(widest, w);
+            float px = charSize * 0.1f;
+            float lineH = (font.fontSize > 0 ? font.lineHeight * size / (float)font.fontSize : size * 1.15f) * tm.lineSpacing;
+            return new Vector2(widest * px, lines * lineH * px);
+        }
+
+        /// <summary>Shrink a screen's text (from its full size) until it fits inside the screen's frame.</summary>
+        public static void FitScreen(TextMesh tm)
+        {
+            if (tm.font == null)
+            {
+                tm.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+                var r = tm.GetComponent<MeshRenderer>();
+                if (r != null && tm.font != null) r.sharedMaterial = tm.font.material;
+            }
+            var full = TextSize(tm, ScreenCharSize);
+            float k = 1f;
+            if (full.x > ScreenTextW) k = Mathf.Min(k, ScreenTextW / full.x);
+            if (full.y > ScreenTextH) k = Mathf.Min(k, ScreenTextH / full.y);
+            tm.characterSize = ScreenCharSize * k;
+        }
+
+        /// <summary>One of the coloured show spotlights: the light, its shaft, where it hangs (local) and its colour.</summary>
+        struct Sweep
+        {
+            public Light Light;
+            public Transform Shaft;
+            public Vector3 Pos;
+            public Color Colour;
+            public float Brightness;
+        }
+        readonly List<Sweep> m_Sweeps = new List<Sweep>();
+        float m_ShowClock;
+        readonly Vector4[] m_SpotPos = new Vector4[4], m_SpotDir = new Vector4[4], m_SpotCol = new Vector4[4];
+        static readonly int k_SpotPos = Shader.PropertyToID("_ArenaSpotPos"), k_SpotDir = Shader.PropertyToID("_ArenaSpotDir"), k_SpotCol = Shader.PropertyToID("_ArenaSpotCol");
+
+        public void AddSweep(Light l, Transform shaft, Vector3 localPos, Color c) =>
+            m_Sweeps.Add(new Sweep { Light = l, Shaft = shaft, Pos = localPos, Colour = c, Brightness = l.intensity / Mathf.Max(1f, (l.transform.localPosition - Vector3.up * 0.8f).sqrMagnitude) });
+        /// <summary>Test hooks: how many show spotlights there are, and where the first one points (world).</summary>
+        public int ShowSpots => m_Sweeps.Count;
+        public Vector3 ShowSpotAim(int i) => i < m_Sweeps.Count ? m_Sweeps[i].Light.transform.forward : Vector3.zero;
+
+        /// <summary>The show spotlights sweep the platform and the stands (faster and brighter when the crowd's wild);
+        /// the crowd shader lights the fans they pass over.</summary>
+        void SweepLights()
+        {
+            m_ShowClock += Time.deltaTime * (0.45f + Excitement * 1.4f);
+            for (int k = 0; k < m_Sweeps.Count && k < 4; k++)
+            {
+                var sw = m_Sweeps[k];
+                float t = m_ShowClock;
+                var target = new Vector3(Mathf.Sin(t * 0.53f + k * 1.9f) * 27f, 0.6f + 6f * Mathf.Max(0f, Mathf.Sin(t * 0.31f + k * 2.7f)), Mathf.Cos(t * 0.41f + k * 1.3f) * 33f);
+                var d = target - sw.Pos;
+                float len = d.magnitude;
+                var dir = d / Mathf.Max(0.01f, len);
+                sw.Light.transform.localRotation = Quaternion.LookRotation(dir);
+                sw.Light.intensity = sw.Brightness * len * len * (0.75f + 0.5f * Excitement);
+                float w = 2f * Mathf.Tan(sw.Light.spotAngle * 0.5f * Mathf.Deg2Rad) * len * 0.85f;
+                if (sw.Shaft) sw.Shaft.localScale = new Vector3(w, len, w);
+                var wp = transform.TransformPoint(sw.Pos);
+                var wd = transform.TransformDirection(dir);
+                m_SpotPos[k] = new Vector4(wp.x, wp.y, wp.z, Mathf.Cos(sw.Light.spotAngle * 0.5f * Mathf.Deg2Rad));
+                m_SpotDir[k] = new Vector4(wd.x, wd.y, wd.z, 0f);
+                var c = sw.Colour * (0.7f + 0.6f * Excitement);
+                m_SpotCol[k] = new Vector4(c.r, c.g, c.b, 0f);
+            }
+            Shader.SetGlobalVectorArray(k_SpotPos, m_SpotPos);
+            Shader.SetGlobalVectorArray(k_SpotDir, m_SpotDir);
+            Shader.SetGlobalVectorArray(k_SpotCol, m_SpotCol);
+        }
 
         /// <summary>The crowd: the alien mesh, its material, 3 float4s per fan (see Crowd.shader) and the stands.</summary>
         public void SetCrowd(Mesh mesh, Material mat, Vector4[] data, List<StandDraw> stands, int animations, int hues)
@@ -1434,11 +1694,12 @@ namespace RockGame
             var cp = Camera.main != null ? Camera.main.transform.position : transform.position;
             foreach (var s in m_Screens)
             {
-                if (s.text != text) s.text = text;
+                if (s.text != text) { s.text = text; FitScreen(s); }
                 var r = s.GetComponent<Renderer>();
                 if (r) r.enabled = Vector3.Dot(cp - s.transform.position, -s.transform.forward) > 0f;
             }
             Cheer(game, word);
+            SweepLights();
         }
 
         /// <summary>How excited the crowd is, the Mexican wave, the crowd's noise.</summary>

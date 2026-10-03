@@ -81,6 +81,7 @@ namespace RockGame
         // ---- visuals ----
         CharacterController m_CC;
         Transform m_VisualRoot, m_Head, m_Hand;
+        bool m_Lifted, m_SeeSelf;
         GameObject m_HandItem, m_Helmet, m_Armor, m_Tree, m_Flame;
         bool m_TreePsx;
         bool m_Esp;
@@ -494,6 +495,9 @@ namespace RockGame
             if (tree != (m_Tree != null) || (tree && m_TreePsx != (GameSettings.PsxGraphics || GameSettings.AiPsx))) RebuildTree(tree);
             if (tree) showBody = false;
             // PSX graphics: the dead are a skeleton on the ground (the PSX dead model) instead of the alien falling over
+            // the victory cutscene: beamed up into the UFO (only the picture moves); once inside, gone
+            bool lifted = VictoryCutscene.Lift(this, out float liftUp, out float liftSpin, out float liftScale, out bool liftGone);
+            if (lifted && liftGone) showBody = false;
             bool bones = dead && showBody && PsxModels.On;
             if (bones) showBody = false;
             if (bones != (m_Skeleton != null)) SetSkeleton(bones);
@@ -526,6 +530,21 @@ namespace RockGame
             // staff of the giant: grow (the hitbox stays normal size)
             m_VisScale = Mathf.MoveTowards(m_VisScale, Scale, Time.deltaTime * 3f);
             m_VisualRoot.localScale = Vector3.one * m_VisScale;
+            if (lifted || m_Lifted)
+            {
+                m_VisualRoot.localPosition = lifted ? Vector3.up * liftUp : Vector3.zero;
+                m_VisualRoot.localRotation = lifted ? Quaternion.Euler(0f, liftSpin, 0f) : Quaternion.identity;
+                if (lifted) m_VisualRoot.localScale *= liftScale;
+                m_Lifted = lifted;
+            }
+            // in the cutscene you see yourself (your own body is normally only a shadow)
+            bool seeSelf = IsOwner && VictoryCutscene.Active;
+            if (seeSelf != m_SeeSelf)
+            {
+                m_SeeSelf = seeSelf;
+                foreach (var r in m_VisualRoot.GetComponentsInChildren<Renderer>(true))
+                    r.shadowCastingMode = seeSelf ? UnityEngine.Rendering.ShadowCastingMode.On : UnityEngine.Rendering.ShadowCastingMode.ShadowsOnly;
+            }
             // wallhack glasses: enemies glow through walls while you hold them
             var local = Local;
             bool esp = !IsOwner && local != null && local.HeldItem == Item.Wallhack && !local.Dead.Value && local.Team.Value != Team.Value && !dead;

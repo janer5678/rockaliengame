@@ -12,7 +12,8 @@
 //
 // Per fan (_CrowdData, 3 float4s): xyz position (world), w yaw (radians); rgb skin colour (linear), a scale;
 // x animation, y phase (0..1), z speed, w unused (0).
-// Lit per vertex: the main light, the ambient light and a soft floodlight from over the platform.
+// Lit per vertex: the main light, the ambient light, a soft floodlight from over the platform and the arena's four
+// coloured show spotlights sweeping round the stands (_ArenaSpotPos / Dir / Col, set by Stadium every frame).
 Shader "RockGame/Crowd"
 {
     Properties
@@ -42,6 +43,9 @@ Shader "RockGame/Crowd"
             float4 _CrowdJ[8];            // joints: 0 hips, 1 neck, 2/3 shoulder L/R, 4/5 elbow L/R, 6/7 hip L/R (w: 0)
             float4 _CrowdK[4];            // 0/1 knee L/R; 2: x rest angle of the upper arms from straight down, y sitting drop
             float4 _CrowdAxis[2];         // the elbows' hinge axes L/R (the forearm bends forward round them)
+            float4 _ArenaSpotPos[4];      // the show spotlights: xyz where the lamp is (world), w the cosine of its cone's half angle
+            float4 _ArenaSpotDir[4];      // xyz which way it points
+            float4 _ArenaSpotCol[4];      // rgb its colour and strength (0: off)
 
             struct Attributes
             {
@@ -269,7 +273,16 @@ Shader "RockGame/Crowd"
                 // floodlights over the platform light the side facing the fight
                 float3 fl = normalize(_CrowdCentre.xyz + float3(0, _CrowdCentre.w, 0) - ws);
                 half3 flood = half3(1.0, 0.9, 1.0) * saturate(dot(n, fl)) * 0.75;
-                return albedo * (direct + amb + flood);
+                // the coloured show spotlights sweeping round the stands
+                half3 show = 0;
+                [unroll] for (int k = 0; k < 4; k++)
+                {
+                    float3 L = _ArenaSpotPos[k].xyz - ws;
+                    L *= rsqrt(max(dot(L, L), 1e-4));
+                    float cone = smoothstep(_ArenaSpotPos[k].w, _ArenaSpotPos[k].w + 0.025, dot(-L, _ArenaSpotDir[k].xyz));
+                    show += _ArenaSpotCol[k].rgb * cone * (0.35 + 0.65 * saturate(dot(n, L)));
+                }
+                return albedo * (direct + amb + flood + show);
             }
 
             Varyings vert(Attributes v, uint iid : SV_InstanceID)

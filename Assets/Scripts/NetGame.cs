@@ -47,6 +47,11 @@ namespace RockGame
         public readonly NetworkVariable<bool> TimerPaused = new NetworkVariable<bool>();
         /// <summary>When the next scheduled airdrop lands (server time), set when it's announced (DropWarning s ahead); -1 when none is coming.</summary>
         public readonly NetworkVariable<double> NextDropLands = new NetworkVariable<double>(-1);
+        /// <summary>The victory cutscene (VictoryCutscene.cs): when it started (server time; -1 none), the spot under the
+        /// UFO (the winners' bedrock) and the winners it beams up (their NetworkObjectIds, by slot).</summary>
+        public readonly NetworkVariable<double> CutsceneAt = new NetworkVariable<double>(-1);
+        public readonly NetworkVariable<Vector3> CutsceneSpot = new NetworkVariable<Vector3>();
+        public readonly NetworkList<ulong> CutsceneRiders = new NetworkList<ulong>();
         /// <summary>Seconds of warning before an airdrop lands (the one and only airdrop announcement).</summary>
         public const float DropWarning = 15f;
         int m_DropsWarned;
@@ -98,6 +103,7 @@ namespace RockGame
             if (IsServer && NetworkManager != null) NetworkManager.OnClientDisconnectCallback -= OnClientDisconnect;
             if (Instance == this) Instance = null;
             AirdropShip.Clear();
+            VictoryCutscene.Clear();
             PortalFx.Clear();
             GraveFx.Clear();
             foreach (var v in m_ItemVisuals.Values) if (v) Destroy(v);
@@ -140,6 +146,7 @@ namespace RockGame
             SyncItemVisuals();
             MapBuilder.SetGlassWall(WallUp);
             AirdropShip.Tick(this);
+            VictoryCutscene.Tick(this); // the winners beamed up into a UFO (when the ball in their socket won it)
             PortalFx.Sync(this);
             GraveFx.Sync(this);
             TickBenchUnlockNotice(); // "WORK BENCHES UNLOCKED" when our team captures the ball (NetGame.Bench.cs)
@@ -210,7 +217,7 @@ namespace RockGame
                             {
                                 // only the machine socket counts - a ball lying around in your base doesn't win
                                 int t = Ball.Instance != null ? Ball.Instance.SocketTeam.Value : -1;
-                                if (t >= 0) { EndGame(t, $"{Cfg.TeamName[t]} had the ball in their machine when time ran out!"); break; }
+                                if (t >= 0) { ServerVictoryCutscene(t, $"{Cfg.TeamName[t]} had the ball in their machine when time ran out!"); break; }
                             }
                             // nobody has it: the countdown sits on 0 for a moment, then everyone goes to the arena
                             m_SuddenDeathAt = now + ZeroHold;
@@ -249,6 +256,33 @@ namespace RockGame
             SetPhase(GameState.SuddenDeath, Cfg.SuddenDeathLength + FightCountdown);
             foreach (var p in PlayerNet.All) p.ServerEnterArena();
             Broadcast("Nobody had the ball in their base - SUDDEN DEATH!");
+        }
+
+        /// <summary>
+        /// Server: the team won with its ball in its machine's socket when the timer ran out - the game's over, and every
+        /// peer plays the victory cutscene (VictoryCutscene) before the victory screen: the winners who are alive and still
+        /// here are sent home onto their bedrock (off any horse) and beamed up by a UFO over it.
+        /// </summary>
+        public void ServerVictoryCutscene(int team, string reason)
+        {
+            if (S == GameState.GameOver) return;
+            CutsceneRiders.Clear();
+            var spot = Vector3.zero;
+            var riders = VictoryCutscene.PickRiders(team, PlayerNet.All);
+            foreach (var p in riders)
+            {
+                if (p.Riding) p.ServerDismount();
+                SpawnPoint(team, false, p.Slot.Value, out var pos, out var yaw);
+                p.TeleportRpc(pos, yaw);
+                CutsceneRiders.Add(p.NetworkObjectId);
+                spot += pos;
+            }
+            if (riders.Count > 0) spot /= riders.Count;
+            else SpawnPoint(team, false, 0, out spot, out _);
+            spot.y = Cfg.SpawnPos(team).y - 0.05f;
+            CutsceneSpot.Value = spot;
+            CutsceneAt.Value = NetworkManager.ServerTime.Time;
+            EndGame(team, reason);
         }
 
         public void EndGame(int team, string reason)

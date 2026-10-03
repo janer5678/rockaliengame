@@ -90,6 +90,46 @@ namespace RockGame
             Check(strutVerts > 0 && strutsHigh == 0, $"the struts holding the platform are far below the edge ({strutsHigh} of {strutVerts} strut vertices above {SpaceArena.KillDepth + 1.5f} m down)");
             Check(textured == 0, $"flat colours, no textures ({textured} textured materials)");
             Check(Mathf.Approximately(SpaceArena.HalfX, 21f * 0.85f) && Mathf.Approximately(SpaceArena.HalfZ, 27f * 0.85f), $"the platform is 15% smaller ({SpaceArena.HalfX} x {SpaceArena.HalfZ})");
+            // the crowd sits higher up, and a second ring of stands full of fans rises above and behind the first
+            int upper = 0, lowSections = 0;
+            float lowest = float.MaxValue;
+            foreach (var sd in st.CrowdStands)
+            {
+                if (sd.Bounds.min.y > c.y + SpaceArena.UpperFrontY - 2.6f) upper += sd.Count;
+                else lowSections++;
+                lowest = Mathf.Min(lowest, sd.Bounds.min.y + 1.5f - c.y); // (the bounds reach 0.5 m under the fans' feet, and 1 m more)
+            }
+            Check(upper > 600 && lowSections >= SpaceArena.Sections - 1 && st.CrowdStands.Count >= SpaceArena.Sections * 2 - 2 && st.CrowdCount - upper > 800,
+                  $"two rings of crowd: {st.CrowdCount - upper} fans in the lower ring, {upper} in the upper one ({st.CrowdStands.Count} sections)");
+            Check(lowest > SpaceArena.FrontY - 0.1f && SpaceArena.FrontY > -1f, $"the crowd sits higher up: the lowest fans stand {lowest:0.0} m from the platform's top (the front row's floor at {SpaceArena.FrontY} m)");
+            // the big screens' text fits on the screens (every text they show, shrunk if it's long)
+            var screen = st.Screens[0];
+            string keep = screen.text;
+            float worst = 0f;
+            foreach (var txt in new[] { "SUDDEN DEATH\n4:59", "WAITING FOR\nPLAYERS", "ALIEN\nWINS!", "ROCK BRAWL", "Ready?", "ROCK!", "DRAW" })
+            {
+                screen.text = txt;
+                Stadium.FitScreen(screen);
+                var sz = Stadium.TextSize(screen, screen.characterSize);
+                worst = Mathf.Max(worst, Mathf.Max(sz.x / Stadium.ScreenTextW, sz.y / Stadium.ScreenTextH));
+            }
+            screen.text = keep;
+            Stadium.FitScreen(screen);
+            Check(worst > 0.3f && worst <= 1.001f, $"the screens' text fits inside the screen (the widest takes {worst * 100f:0}% of the room)");
+            yield return null;
+            var sr0 = screen.GetComponent<MeshRenderer>();
+            var lb = sr0 != null ? sr0.localBounds : default;
+            Log($"screen text \"{screen.text.Replace("\n", " / ")}\": local bounds {lb.size.x:0.00} x {lb.size.y:0.00} (scale {screen.characterSize:0.000}), room {Stadium.ScreenTextW} x {Stadium.ScreenTextH}");
+            Check(lb.size.x <= 0.01f || lb.size.x <= Stadium.ScreenTextW + 0.3f, $"the drawn screen text is inside the screen ({lb.size.x:0.00} m wide)");
+            // the show lighting: floodlights with shafts, sweeping coloured spots, rim lights
+            int spots = 0, shafts = 0;
+            foreach (var l in st.GetComponentsInChildren<Light>(true)) if (l.type == LightType.Spot) spots++;
+            foreach (var r in st.GetComponentsInChildren<MeshRenderer>(true)) if (r.name.EndsWith("shaft")) shafts++;
+            var aim0 = st.ShowSpotAim(0);
+            yield return new WaitForSeconds(0.8f);
+            var aim1 = st.ShowSpotAim(0);
+            Check(st.ShowSpots == 4 && spots >= 10 && shafts >= 8 && Vector3.Angle(aim0, aim1) > 0.5f,
+                  $"dramatic lighting: {spots} spotlights, {shafts} light shafts, {st.ShowSpots} coloured show spots sweeping ({Vector3.Angle(aim0, aim1):0.0} degrees in 0.8 s)");
             for (int team = 0; team < 4; team++)
                 for (int slot = 0; slot < 4; slot++)
                 {
@@ -168,6 +208,12 @@ namespace RockGame
             yield return View("arena_04_edge", new Vector3(9f, 1.5f, -33f), new Vector3(0f, -5f, -18f));
             yield return View("arena_08_stars", new Vector3(0f, 3f, 0f), new Vector3(60f, 45f, 120f));
             yield return View("arena_09_top", new Vector3(0f, 70f, -10f), new Vector3(0, 0, 0));
+            yield return View("arena_20_upper_ring", new Vector3(0f, 2.2f, 4f), new Vector3(0f, 12f, 40f));
+            yield return View("arena_21_lights", new Vector3(-6f, 3f, -14f), new Vector3(4f, 4f, 30f));
+            yield return View("arena_22_lights_wide", new Vector3(30f, 30f, -62f), new Vector3(0, 0f, 0));
+            var scr = st.Screens[0].transform.parent;
+            var scrOut = scr.forward;
+            yield return View("arena_23_screen", scr.position - c - scrOut * 16f + Vector3.down * 3f, scr.position - c);
             // the crowd up close (a stand to the side, from in front of it at head height): every colour, all sorts of moves
             var stand = st.CrowdStands[2];
             var toStand = new Vector3(stand.Centre.x - c.x, 0f, stand.Centre.z - c.z).normalized;
