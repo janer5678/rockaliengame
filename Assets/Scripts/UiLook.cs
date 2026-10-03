@@ -20,13 +20,13 @@ namespace RockGame
         public const bool ShowGraphicsPicker = false;
 
         static bool s_UiLoaded;
-        static float s_ShadowStrength = 1f, s_ShadowDistance = ShadowDistanceDefault;
-        static int s_Font;
-        static float s_UiScale = 1f, s_HudOpacity = 1f;
-        static int s_Accent;
-        static bool s_PostOnUi;
+        static float s_ShadowStrength = DisplayDefaults.ShadowStrength, s_ShadowDistance = ShadowDistanceDefault;
+        static int s_Font = DisplayDefaults.UiFont;
+        static float s_UiScale = DisplayDefaults.UiScale, s_HudOpacity = DisplayDefaults.HudOpacity;
+        static int s_Accent = DisplayDefaults.UiAccent;
+        static bool s_PostOnUi = DisplayDefaults.PostOnUi;
 
-        public const float ShadowDistanceMin = 20f, ShadowDistanceMax = 300f, ShadowDistanceDefault = 50f;
+        public const float ShadowDistanceMin = 20f, ShadowDistanceMax = 300f, ShadowDistanceDefault = DisplayDefaults.ShadowDistance;
         public const float UiScaleMin = 0.75f, UiScaleMax = 1.4f, HudOpacityMin = 0.25f;
 
         /// <summary>The fonts to pick from (Windows fonts, so nothing to ship; the ones this PC hasn't got are left out).
@@ -57,13 +57,13 @@ namespace RockGame
         {
             if (s_UiLoaded) return;
             s_UiLoaded = true;
-            s_ShadowStrength = Mathf.Clamp01(PlayerPrefs.GetFloat("RockGame.ShadowStrength", 1f));
+            s_ShadowStrength = Mathf.Clamp01(PlayerPrefs.GetFloat("RockGame.ShadowStrength", DisplayDefaults.ShadowStrength));
             s_ShadowDistance = Mathf.Clamp(PlayerPrefs.GetFloat("RockGame.ShadowDistance", ShadowDistanceDefault), ShadowDistanceMin, ShadowDistanceMax);
-            s_Font = Mathf.Clamp(PlayerPrefs.GetInt("RockGame.UiFont", 0), 0, FontChoices.Length - 1);
-            s_UiScale = Mathf.Clamp(PlayerPrefs.GetFloat("RockGame.UiScale", 1f), UiScaleMin, UiScaleMax);
-            s_HudOpacity = Mathf.Clamp(PlayerPrefs.GetFloat("RockGame.HudOpacity", 1f), HudOpacityMin, 1f);
-            s_Accent = Mathf.Clamp(PlayerPrefs.GetInt("RockGame.UiAccent", 0), 0, AccentChoices.Length - 1);
-            s_PostOnUi = PlayerPrefs.GetInt("RockGame.PostOnUi", 0) == 1;
+            s_Font = Mathf.Clamp(PlayerPrefs.GetInt("RockGame.UiFont", DisplayDefaults.UiFont), 0, FontChoices.Length - 1);
+            s_UiScale = Mathf.Clamp(PlayerPrefs.GetFloat("RockGame.UiScale", DisplayDefaults.UiScale), UiScaleMin, UiScaleMax);
+            s_HudOpacity = Mathf.Clamp(PlayerPrefs.GetFloat("RockGame.HudOpacity", DisplayDefaults.HudOpacity), HudOpacityMin, 1f);
+            s_Accent = Mathf.Clamp(PlayerPrefs.GetInt("RockGame.UiAccent", DisplayDefaults.UiAccent), 0, AccentChoices.Length - 1);
+            s_PostOnUi = PlayerPrefs.GetInt("RockGame.PostOnUi", DisplayDefaults.PostOnUi ? 1 : 0) == 1;
             // the glow (it used to be a host value in CHANGE VALUES; now it's how this PC draws it)
             Cfg.AlienOutlineStrength = Mathf.Clamp(PlayerPrefs.GetFloat("RockGame.GlowStrength", Cfg.AlienOutlineStrength), 0.02f, 1f);
             Cfg.AlienOutlineWidth = Mathf.Clamp(PlayerPrefs.GetFloat("RockGame.GlowWidth", Cfg.AlienOutlineWidth), 0.005f, 0.12f);
@@ -146,11 +146,49 @@ namespace RockGame
         public static void ResetUiLook(bool save = true)
         {
             LoadUi();
-            s_ShadowStrength = 1f; s_ShadowDistance = ShadowDistanceDefault;
-            s_Font = 0; s_UiScale = 1f; s_HudOpacity = 1f; s_Accent = 0; s_PostOnUi = false;
-            Cfg.AlienOutlineStrength = 0.3f; Cfg.AlienOutlineWidth = 0.03f;
+            s_ShadowStrength = DisplayDefaults.ShadowStrength; s_ShadowDistance = ShadowDistanceDefault;
+            s_Font = DisplayDefaults.UiFont; s_UiScale = DisplayDefaults.UiScale; s_HudOpacity = DisplayDefaults.HudOpacity; s_Accent = DisplayDefaults.UiAccent; s_PostOnUi = DisplayDefaults.PostOnUi;
+            Cfg.AlienOutlineStrength = DisplayDefaults.GlowStrength; Cfg.AlienOutlineWidth = DisplayDefaults.GlowWidth;
+            ResetUiPost(save);
             if (save) SaveUi();
             UiLookChanged?.Invoke();
+        }
+
+        // ---- POST PROCESSING ON THE UI: the UI's own looks (they only show while "On the UI too" is on) ----
+        const string GUiPost = "POST PROCESSING ON THE UI";
+        /// <summary>The world's post processing (bloom, vignette, grading, the extra looks) goes over the UI too. Off: the
+        /// UI is laid on after the world's post processing and only gets its own looks below.</summary>
+        public static readonly DisplayPref.Bool UiWorldPost = new("ui.post.world", GUiPost, DisplayDefaults.UiWorldPost);
+        /// <summary>Cel shading: the UI's colours snapped to a few flat steps (strength: fewer steps).</summary>
+        public static readonly DisplayPref.Bool UiCel = new("ui.cel", GUiPost, DisplayDefaults.UiCel);
+        public static readonly DisplayPref.Float UiCelStrength = new("ui.cel.strength", GUiPost, DisplayDefaults.UiCelStrength, 0f, 1f);
+        /// <summary>Ink outlines round everything on the UI (text, icons, panels), on the darker side of each edge.</summary>
+        public static readonly DisplayPref.Bool UiOutline = new("ui.outline", GUiPost, DisplayDefaults.UiOutline);
+        /// <summary>How thick the UI outlines are (pixels at 1080p; scaled with the screen).</summary>
+        public static readonly DisplayPref.Float UiOutlineWidth = new("ui.outline.width", GUiPost, DisplayDefaults.UiOutlineWidth, UiOutlineWidthMin, UiOutlineWidthMax);
+        public static readonly DisplayPref.Colour UiOutlineColour = new("ui.outline.colour", GUiPost, DisplayDefaults.Hex(DisplayDefaults.UiOutlineColour));
+        public static readonly DisplayPref.Float UiOutlineOpacity = new("ui.outline.opacity", GUiPost, DisplayDefaults.UiOutlineOpacity, 0f, 1f);
+        /// <summary>A glow round the UI's bright parts (white text, the accent colour).</summary>
+        public static readonly DisplayPref.Bool UiBloom = new("ui.bloom", GUiPost, DisplayDefaults.UiBloom);
+        public static readonly DisplayPref.Float UiBloomStrength = new("ui.bloom.strength", GUiPost, DisplayDefaults.UiBloomStrength, 0f, 1f);
+        /// <summary>The UI's colourfulness and contrast (1 = as drawn).</summary>
+        public static readonly DisplayPref.Float UiSaturation = new("ui.saturation", GUiPost, DisplayDefaults.UiSaturation, 0f, 2f);
+        public static readonly DisplayPref.Float UiContrast = new("ui.contrast", GUiPost, DisplayDefaults.UiContrast, 0.5f, 1.6f);
+        public const float UiOutlineWidthMin = 0.5f, UiOutlineWidthMax = 8f;
+
+        /// <summary>Any of the UI's own looks is doing something.</summary>
+        public static bool UiOwnLooks => UiCel.Value || UiOutline.Value || UiBloom.Value
+            || !Mathf.Approximately(UiSaturation.Value, 1f) || !Mathf.Approximately(UiContrast.Value, 1f);
+
+        /// <summary>The UI's own looks back to the defaults.</summary>
+        public static void ResetUiPost(bool save = true)
+        {
+            UiWorldPost.Set(DisplayDefaults.UiWorldPost, save);
+            UiCel.Set(DisplayDefaults.UiCel, save); UiCelStrength.Set(DisplayDefaults.UiCelStrength, save);
+            UiOutline.Set(DisplayDefaults.UiOutline, save); UiOutlineWidth.Set(DisplayDefaults.UiOutlineWidth, save);
+            UiOutlineColour.Set(DisplayDefaults.Hex(DisplayDefaults.UiOutlineColour), save); UiOutlineOpacity.Set(DisplayDefaults.UiOutlineOpacity, save);
+            UiBloom.Set(DisplayDefaults.UiBloom, save); UiBloomStrength.Set(DisplayDefaults.UiBloomStrength, save);
+            UiSaturation.Set(DisplayDefaults.UiSaturation, save); UiContrast.Set(DisplayDefaults.UiContrast, save);
         }
 
         /// <summary>Is this font on this PC (the first one always is).</summary>
@@ -313,10 +351,36 @@ namespace RockGame
             if (data == null || data.scriptableRenderer == null) return;
             m_Mat.SetTexture(k_UiTex, m_UiRt);
             m_Mat.SetFloat(k_UiFlip, FlipUi ? 1f : 0f);
+            SetUiLooks(m_Mat, m_UiRt.width, m_UiRt.height);
+            // the world's post processing over the UI too (before URP's post processing), or the UI laid on after it
+            // (exactly AfterRenderingPostProcessing: URP then keeps an intermediate target for it)
+            m_Pass.renderPassEvent = GameSettings.UiWorldPost.Value ? RenderPassEvent.BeforeRenderingPostProcessing + 1 : RenderPassEvent.AfterRenderingPostProcessing;
             data.scriptableRenderer.EnqueuePass(m_Pass);
         }
 
-        static readonly int k_UiTex = Shader.PropertyToID("_RgUiTex"), k_UiFlip = Shader.PropertyToID("_RgUiFlip");
+        static readonly int k_UiTex = Shader.PropertyToID("_RgUiTex"), k_UiFlip = Shader.PropertyToID("_RgUiFlip"),
+            k_UiTexel = Shader.PropertyToID("_RgUiTexel"), k_UiLook = Shader.PropertyToID("_RgUiLook"),
+            k_UiGlow = Shader.PropertyToID("_RgUiGlow"), k_UiInk = Shader.PropertyToID("_RgUiInk");
+
+        /// <summary>(tests) the UI is laid on after the world's post processing (UI looks only).</summary>
+        public static bool UiAfterPost => s_I != null && s_I.m_Pass != null && s_I.m_Pass.renderPassEvent == RenderPassEvent.AfterRenderingPostProcessing && UiUnderPost;
+
+        /// <summary>The UI's own looks (Settings > Display > POST PROCESSING ON THE UI) for the composite shader.</summary>
+        static void SetUiLooks(Material m, int w, int h)
+        {
+            float px = Mathf.Max(0.5f, h / 1080f);
+            float cel = GameSettings.UiCel.Value ? Mathf.Round(Mathf.Lerp(12f, 3f, GameSettings.UiCelStrength.Value)) : 0f;
+            float ink = GameSettings.UiOutline.Value ? GameSettings.UiOutlineWidth.Value * px : 0f;
+            float glow = GameSettings.UiBloom.Value ? GameSettings.UiBloomStrength.Value : 0f;
+            m.SetVector(k_UiTexel, new Vector4(1f / w, 1f / h, w, h));
+            // x: colour steps (0 = off), y: saturation, z: contrast, w: outline radius (px, 0 = off)
+            m.SetVector(k_UiLook, new Vector4(cel, GameSettings.UiSaturation.Value, GameSettings.UiContrast.Value, ink));
+            // x: glow amount (0 = off), y: glow radius (px)
+            m.SetVector(k_UiGlow, new Vector4(glow * 1.6f, (6f + 10f * glow) * px, 0f, 0f));
+            var c = GameSettings.UiOutlineColour.Value;
+            c.a = GameSettings.UiOutlineOpacity.Value;
+            m.SetColor(k_UiInk, c);
+        }
         /// <summary>Turn the UI texture upside down as it goes on (how the GUI lands in a texture depends on the graphics API).</summary>
         public static bool FlipUi;
 

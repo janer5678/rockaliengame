@@ -10,7 +10,7 @@ namespace RockGame
         /// <summary>Show the frames-per-second counter in the top left corner.</summary>
         public static bool ShowFps
         {
-            get { if (s_ShowFps < 0) s_ShowFps = PlayerPrefs.GetInt("RockGame.ShowFps", 0); return s_ShowFps == 1; }
+            get { if (s_ShowFps < 0) s_ShowFps = PlayerPrefs.GetInt("RockGame.ShowFps", DisplayDefaults.ShowFps ? 1 : 0); return s_ShowFps == 1; }
         }
 
         public static void SetShowFps(bool on, bool save = true)

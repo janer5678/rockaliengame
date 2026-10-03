@@ -547,12 +547,24 @@ namespace RockGame
             GameSettings.SetPostOnUi(false, false);
             yield return new WaitForSecondsRealtime(0.5f);
             yield return Grab(s => direct = s);
+            yield return shot("display_ui_direct_plain");
             GameSettings.SetPostOnUi(true, false);
             yield return new WaitForSecondsRealtime(0.5f);
             yield return Grab(s => composited = s);
             yield return shot("display_ui_under_post_plain");
             float same = Diff(direct, composited);
-            Check(UiLook.UiUnderPost && same < 2.5f, $"UI under the post processing, every effect off: it looks as it did drawn to the screen ({same:F2} mean difference) - the right way up, in the right place");
+            {
+                // (how far apart two plain frames are, for the log: the grass and clouds move on real time)
+                ScreenStats again = default;
+                GameSettings.SetPostOnUi(false, false);
+                yield return new WaitForSecondsRealtime(0.5f);
+                yield return Grab(s => again = s);
+                GameSettings.SetPostOnUi(true, false);
+                yield return new WaitForSecondsRealtime(0.5f);
+                Log($"two plain frames differ by {Diff(direct, again):F2}; the UI under the post processing {same:F2}");
+            }
+            // (3: the On the UI too button itself reads On in one and Off in the other - at 1080p it's in view - and the clock ticks)
+            Check(UiLook.UiUnderPost && same < 3f, $"UI under the post processing, every effect off: it looks as it did drawn to the screen ({same:F2} mean difference) - the right way up, in the right place");
             GameSettings.SetPostFx(true, false, true, true, 0.5f, 1f, 1f, false);
             GameSettings.SetPostOnUi(false, false);
             yield return new WaitForSecondsRealtime(0.5f);
@@ -566,6 +578,9 @@ namespace RockGame
             float panelSame = 0f;
             { Color c = Region(direct, panel), d = Region(composited, panel); panelSame = (Mathf.Abs(c.r - d.r) + Mathf.Abs(c.g - d.g) + Mathf.Abs(c.b - d.b)) * 255f / 3f; }
             Check(panelDiff > panelSame + 1f, $"with a strong vignette and grading the settings panel itself changes once the UI goes under them ({panelDiff:F2} vs {panelSame:F2} of 255)");
+            // ---- the UI's own looks (POST PROCESSING ON THE UI) ----
+            yield return UiOwnLookTests(shot, panel, strongDirect);
+
             GameSettings.SetPostOnUi(false, false);
             yield return new WaitForSecondsRealtime(0.3f);
             Check(!UiLook.UiUnderPost, "UI under the post processing off again: drawn straight to the screen");
@@ -594,6 +609,179 @@ namespace RockGame
             GameSettings.SetPostOnUi(uiWas, false);
             GameSettings.SetPostFx(pOn, pB, pV, pG, pBs, pVs, pGs, false);
             Time.timeScale = 1f;
+        }
+
+        /// <summary>How many sampled pixels of a part of a grab pass the test (r in GUI space).</summary>
+        static int CountPx(ScreenStats s, Rect r, System.Func<Color32, bool> test)
+        {
+            if (s.Px == null) return 0;
+            int x0 = Mathf.Clamp((int)r.xMin, 0, s.W - 1), x1 = Mathf.Clamp((int)r.xMax, x0 + 1, s.W);
+            int y0 = Mathf.Clamp(s.H - (int)r.yMax, 0, s.H - 1), y1 = Mathf.Clamp(s.H - (int)r.yMin, y0 + 1, s.H);
+            int n = 0;
+            for (int y = y0; y < y1; y += 2)
+                for (int x = x0; x < x1; x += 2)
+                    if (test(s.Px[y * s.W + x])) n++;
+            return n;
+        }
+
+        /// <summary>
+        /// (paused, Settings > Display open, the UI under the post processing) the UI's own looks: thick red outlines
+        /// round the panel and its text, cel shading, the glow, saturation 0 each change the panel the way they should;
+        /// with "World effects too" off, a strong vignette and grading on the world leave the UI as it is drawn straight
+        /// to the screen (the UI goes on after the world's post processing, still the right way up). This PC's display
+        /// settings are put back afterwards (nothing saved).
+        /// </summary>
+        IEnumerator UiOwnLookTests(System.Func<string, IEnumerator> shot, Rect panel, ScreenStats strongDirect)
+        {
+            string was = DisplayCode.Export();
+            GameSettings.ResetUiPost(false);
+            GameSettings.SetPostFx(true, false, false, false, 0.5f, 0.5f, 0.5f, false);
+            GameSettings.SetPostOnUi(true, false);
+            var area = new Rect(panel.x - 20f, panel.y, panel.width + 20f, panel.height);
+            ScreenStats basePic = default, pic = default;
+            yield return new WaitForSecondsRealtime(0.5f);
+            yield return Grab(s => basePic = s);
+            System.Func<Color32, bool> red = c => c.r > c.g + 90 && c.r > c.b + 90;
+            // (the accent colour's gold: the section titles and the picked options)
+            System.Func<Color32, bool> colourful = c => c.r > 170 && c.g > 110 && c.b < 120 && c.r - c.b > 90;
+
+            // outlines: thick and red
+            GameSettings.UiOutline.Set(true, false);
+            GameSettings.UiOutlineWidth.Set(6f, false);
+            GameSettings.UiOutlineColour.Set(Color.red, false);
+            GameSettings.UiOutlineOpacity.Set(1f, false);
+            yield return new WaitForSecondsRealtime(0.5f);
+            yield return Grab(s => pic = s);
+            yield return shot("display_ui_looks_outlines_red");
+            int r0 = CountPx(basePic, area, red), r1 = CountPx(pic, area, red);
+            Check(r1 > r0 + 200, $"UI outlines: thick red ink round the panel and its text ({r0} -> {r1} red samples)");
+            GameSettings.UiOutlineColour.Set(Color.black, false);
+            GameSettings.UiOutlineWidth.Set(3f, false);
+            yield return new WaitForSecondsRealtime(0.4f);
+            yield return shot("display_ui_looks_outlines_black");
+            GameSettings.UiOutline.Set(false, false);
+
+            // cel shading
+            GameSettings.UiCel.Set(true, false);
+            GameSettings.UiCelStrength.Set(1f, false);
+            yield return new WaitForSecondsRealtime(0.5f);
+            yield return Grab(s => pic = s);
+            yield return shot("display_ui_looks_cel");
+            Color a = Region(basePic, panel), b = Region(pic, panel);
+            float celDiff = (Mathf.Abs(a.r - b.r) + Mathf.Abs(a.g - b.g) + Mathf.Abs(a.b - b.b)) * 255f / 3f;
+            Check(celDiff > 0.4f, $"UI cel shading changes the panel ({celDiff:F2} of 255)");
+            GameSettings.UiCel.Set(false, false);
+
+            // glow
+            GameSettings.UiBloom.Set(true, false);
+            GameSettings.UiBloomStrength.Set(1f, false);
+            yield return new WaitForSecondsRealtime(0.5f);
+            yield return Grab(s => pic = s);
+            yield return shot("display_ui_looks_glow");
+            float l0 = Lum(Region(basePic, panel)), l1 = Lum(Region(pic, panel));
+            Check(l1 > l0 + 0.004f, $"UI glow brightens round the text ({l0:F3} -> {l1:F3})");
+            GameSettings.UiBloom.Set(false, false);
+
+            // saturation 0: the accent colour (gold) and the coloured text go grey
+            GameSettings.UiSaturation.Set(0f, false);
+            yield return new WaitForSecondsRealtime(0.5f);
+            yield return Grab(s => pic = s);
+            yield return shot("display_ui_looks_grey");
+            int c0 = CountPx(basePic, panel, colourful), c1 = CountPx(pic, panel, colourful);
+            Check(c0 > 20 && c1 < c0 * 0.5f, $"UI saturation 0: the panel's colours go grey ({c0} -> {c1} colourful samples)");
+            GameSettings.UiSaturation.Set(1f, false);
+
+            // world effects off the UI: the strong vignette and grading on the world only
+            GameSettings.SetPostFx(true, false, true, true, 0.5f, 1f, 1f, false);
+            GameSettings.SetPostOnUi(false, false);
+            yield return new WaitForSecondsRealtime(0.5f);
+            ScreenStats direct = default, under = default;
+            yield return Grab(s => direct = s);
+            GameSettings.SetPostOnUi(true, false);
+            yield return new WaitForSecondsRealtime(0.5f);
+            yield return Grab(s => under = s);
+            GameSettings.UiWorldPost.Set(false, false);
+            yield return new WaitForSecondsRealtime(0.5f);
+            yield return Grab(s => pic = s);
+            yield return shot("display_ui_looks_no_world_effects");
+            float PanelDiff(ScreenStats x, ScreenStats y) { Color p = Region(x, panel), q = Region(y, panel); return (Mathf.Abs(p.r - q.r) + Mathf.Abs(p.g - q.g) + Mathf.Abs(p.b - q.b)) * 255f / 3f; }
+            float panelOff = PanelDiff(direct, pic), panelUnder = PanelDiff(direct, under);
+            Check(UiLook.UiAfterPost && panelOff < 1f && panelUnder > panelOff + 1f,
+                $"\"World effects too\" off: the UI goes on after the world's post processing, untouched by its vignette and grading (the panel {panelOff:F2} from the UI drawn straight to the screen; {panelUnder:F2} with the world's effects over it)");
+
+            DisplayCode.Apply(was, false);
+            GameSettings.SetPostFx(true, false, false, false, 0.5f, 0.5f, 0.5f, false);
+            yield return new WaitForSecondsRealtime(0.3f);
+        }
+
+        /// <summary>
+        /// (main menu, -autotest menushot) Settings > Display > COPY SETTINGS / PASTE SETTINGS: the code has the header, every
+        /// display setting (post processing, the UI's looks, shadows, interface, glow, grass, every world colour) and no
+        /// screen settings; a pasted code applies its values, ignores unknown keys, skips bad values and leaves missing keys
+        /// alone; the old world colours lines still paste; junk and an empty clipboard are refused with a message and
+        /// change nothing; pasting the first code back gives the same code. This PC's settings are put back.
+        /// </summary>
+        IEnumerator DisplayCodeTests(System.Func<string, IEnumerator> shot)
+        {
+            string clipWas = GUIUtility.systemCopyBuffer;
+            string was = DisplayCode.Export();
+            static string Body(string code) { int i = code.IndexOf('\n'); i = code.IndexOf('\n', i + 1); return code.Substring(i + 1); } // (without the header and the date)
+            Hud.OpenSettingsTab = 2;
+            string note = Hud.CopyDisplaySettings();
+            string clip = GUIUtility.systemCopyBuffer;
+            Check(clip.StartsWith(DisplayCode.Header + DisplayCode.Version) && Body(clip) == Body(was) && note.StartsWith("Copied"), $"COPY SETTINGS puts the display settings code on the clipboard ({note})");
+            bool keysOk = true;
+            foreach (var key in new[] { "post", "post.bloom.strength", "post.extra.outlines", "post.extra.celbanding.strength", "ui.post", "ui.post.world", "ui.cel", "ui.outline.width",
+                "ui.outline.colour", "ui.bloom", "ui.saturation", "shadows.darkness", "shadows.distance", "ui.font", "ui.scale", "ui.accent", "fps.counter", "glow.strength",
+                "grass.distance", "grass.height", "colour.Sky", "colour.Hands", "colour.hands.team" })
+                if (!clip.Contains("\n" + key + " = ")) { keysOk = false; Log("missing from the code: " + key); }
+            bool noScreen = !clip.ToLowerInvariant().Contains("resolution") && !clip.ToLowerInvariant().Contains("refresh") && !clip.ToLowerInvariant().Contains("window") && !clip.ToLowerInvariant().Contains("vsync");
+            int colours = 0;
+            foreach (var line in clip.Split('\n')) if (line.StartsWith("colour.") && line.Contains("= #")) colours++;
+            Check(keysOk && noScreen && colours == ColorSlots.All.Count && DisplayCode.Entries.Count > 50,
+                $"the code holds every display setting ({DisplayCode.Entries.Count}: post processing, the UI's looks, shadows, interface, glow, grass, all {colours} colours) and no screen settings");
+            Log("display settings code:\n" + clip);
+
+            // paste a code: known keys apply, an unknown key is ignored, a bad value is skipped, the rest stay as they are
+            float grassWas = GameSettings.GrassHeight, glowWas = Cfg.AlienOutlineStrength;
+            GUIUtility.systemCopyBuffer = DisplayCode.Header + "1\n# a test\npost.bloom.strength = 0.8\nui.post = on\nui.cel = on\nui.outline = yes\nui.outline.width = 2.5 px\n"
+                + "ui.outline.colour = #202A50   # navy\ncolour.Sky = #2050A0\nui.font = Consolas\nshadows.distance = 120\nsome.future.setting = 7\npost.vignette.strength = banana\n";
+            note = Hud.PasteDisplaySettings();
+            yield return shot("menu_settings_display_pasted");
+            // the UI's own looks folded open (the pasted outlines and cel shading on)
+            Hud.OpenUiLooks(true);
+            Hud.SetSettingsScroll(600f);
+            yield return shot("menu_settings_display_ui_looks");
+            Hud.SetSettingsScroll(0f);
+            Hud.OpenUiLooks(false);
+            int fontWant = System.Array.IndexOf(GameSettings.FontChoices, "Consolas");
+            Check(Mathf.Approximately(GameSettings.PostBloomStrength, 0.8f) && GameSettings.PostOnUi && GameSettings.UiCel.Value && GameSettings.UiOutline.Value
+                && Mathf.Approximately(GameSettings.UiOutlineWidth.Value, 2.5f) && ColorSlots.Same(GameSettings.UiOutlineColour.Value, new Color32(0x20, 0x2A, 0x50, 255))
+                && ColorSlots.Same(ColorSlots.Sky.Value, new Color32(0x20, 0x50, 0xA0, 255)) && GameSettings.UiFont == fontWant && Mathf.Approximately(GameSettings.ShadowDistance, 120f),
+                $"PASTE SETTINGS applies the code's values ({note})");
+            Check(note.Contains("9 settings applied") && note.Contains("1 unknown key") && note.Contains("1 bad value") && Mathf.Approximately(GameSettings.GrassHeight, grassWas) && Mathf.Approximately(Cfg.AlienOutlineStrength, glowWas),
+                "an unknown key is ignored, a bad value skipped (and both reported), the settings not in the code keep their values");
+            // the old world colours lines (no header) still paste
+            GUIUtility.systemCopyBuffer = "Sky = #336699\nHandsUseTeamColour = true\n";
+            note = Hud.PasteDisplaySettings();
+            Check(ColorSlots.Same(ColorSlots.Sky.Value, new Color32(0x33, 0x66, 0x99, 255)) && ColorSlots.HandsTeam, $"the old world colours lines paste too ({note})");
+            // junk and an empty clipboard: refused, nothing changes
+            string before = Body(DisplayCode.Export());
+            GUIUtility.systemCopyBuffer = "hello, this is not a settings code";
+            note = Hud.PasteDisplaySettings();
+            yield return shot("menu_settings_display_paste_refused");
+            string note2;
+            GUIUtility.systemCopyBuffer = "";
+            note2 = Hud.PasteDisplaySettings();
+            Check(note.StartsWith("That isn't") && note2.Contains("empty") && Body(DisplayCode.Export()) == before, $"junk and an empty clipboard are refused and change nothing ({note} / {note2})");
+            // the first code pasted back: everything as it was
+            GUIUtility.systemCopyBuffer = was;
+            note = Hud.PasteDisplaySettings();
+            Check(Body(DisplayCode.Export()) == Body(was), $"pasting the first code back puts every setting back ({note})");
+            if (Body(DisplayCode.Export()) != Body(was)) Log("after the round trip:\n" + DisplayCode.Export());
+            GUIUtility.systemCopyBuffer = clipWas;
+            Hud.OpenSettingsTab = 0;
+            yield return null;
         }
 
         /// <summary>Main menu > CHANGE VALUES with searches typed in (run from -autotest menushot).</summary>

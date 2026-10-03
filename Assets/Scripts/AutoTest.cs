@@ -43,6 +43,7 @@ namespace RockGame
             }
             yield return new WaitForSeconds(2.2f);
             yield return Shot("menu_main");
+            Check(Hud.MainTitle == "ALIEN ROCK GAME", $"the main menu's title is {Hud.MainTitle}");
             // the game modes: Tutorial, Classic (the Auto Wood rules) and Primitive (the original game) on the menu, the rest folded away
             Check(Cfg.MainRules.Length == 3 && Cfg.RulesName(Cfg.MainRules[0]) == "Tutorial" && Cfg.RulesName(Cfg.MainRules[1]) == "Classic" && Cfg.MainRules[1] == GameRules.AutoWood
                 && Cfg.RulesName(Cfg.MainRules[2]) == "Primitive" && Cfg.MainRules[2] == GameRules.Classic && Cfg.RulesName(GameRules.Primitive) == "Primitive Limited"
@@ -89,6 +90,7 @@ namespace RockGame
                 GameSettings.SetInterface(font, scale, hud, accent, false);
                 yield return new WaitForSeconds(0.3f);
             }
+            yield return DisplayCodeTests(Shot);
             // CHANGE VALUES > Export writes every value to a file next to the game; Import reads them back
             float before = Cfg.WalkSpeed;
             Cfg.WalkSpeed = 6.5f;

@@ -74,6 +74,9 @@ namespace RockGame
 
         // ------------------------------------------------------------------ main menu
 
+        /// <summary>The game's name at the top of the main menu.</summary>
+        public const string MainTitle = "ALIEN ROCK GAME";
+
         void DrawMainMenu(Bootstrap boot)
         {
             if (OpenModeOptions) { OpenModeOptions = false; m_Page = MenuPage.ModeOptions; }
@@ -91,7 +94,7 @@ namespace RockGame
             Fill(r, new Color(0, 0, 0, 0.72f));
             GUILayout.BeginArea(new Rect(r.x + 20 * k, r.y + 14 * k, r.width - 40 * k, r.height - 24 * k));
             m_MenuScroll = GUILayout.BeginScrollView(m_MenuScroll, GUIStyle.none, GUIStyle.none);
-            GUILayout.Label("<b>ROCK BASE BRAWL</b>", m_Big);
+            GUILayout.Label($"<b>{MainTitle}</b>", m_Big);
             GUILayout.Label("1v1 · gather · build · raid · steal the ball", m_Center);
 
             int key = Bootstrap.MapChoice;
@@ -746,6 +749,46 @@ namespace RockGame
             float k = m_Scale;
             if (m_ResList == null) OnTabOpened();
             float lw = 150 * k;
+            // ---- the screen first (window mode, resolution, refresh rate) ----
+            Caption("SCREEN");
+            GUILayout.BeginHorizontal();
+            RowLabel("Window", lw);
+            foreach (var mode in new[] { GameSettings.WindowMode.Fullscreen, GameSettings.WindowMode.Borderless, GameSettings.WindowMode.Windowed })
+                if (Choice(m_ModeSel == mode, mode == GameSettings.WindowMode.Borderless ? "Borderless" : mode.ToString(), GUILayout.Height(30 * k))) m_ModeSel = mode;
+            GUILayout.EndHorizontal();
+
+            GUILayout.BeginHorizontal();
+            RowLabel("Resolution", lw);
+            if (Btn("<", GUILayout.Width(40 * k), GUILayout.Height(30 * k))) { m_ResSel = Mathf.Min(m_ResList.Count - 1, m_ResSel + 1); m_RateSel = 0; }
+            var res = m_ResList[Mathf.Clamp(m_ResSel, 0, m_ResList.Count - 1)];
+            bool native = res.x == Screen.currentResolution.width && res.y == Screen.currentResolution.height;
+            GUILayout.Label($"<b>{res.x} x {res.y}</b>{(native ? "  <color=#aaaaaa>(your screen)</color>" : "")}", m_Center, GUILayout.ExpandWidth(true), GUILayout.Height(30 * k));
+            if (Btn(">", GUILayout.Width(40 * k), GUILayout.Height(30 * k))) { m_ResSel = Mathf.Max(0, m_ResSel - 1); m_RateSel = 0; }
+            GUILayout.EndHorizontal();
+
+            var rates = GameSettings.RefreshRates(res);
+            m_RateSel = Mathf.Clamp(m_RateSel, 0, rates.Count - 1);
+            GUILayout.BeginHorizontal();
+            RowLabel("Refresh rate", lw);
+            if (Btn("<", GUILayout.Width(40 * k), GUILayout.Height(30 * k))) m_RateSel = Mathf.Min(rates.Count - 1, m_RateSel + 1);
+            GUILayout.Label($"<b>{rates[m_RateSel].value:0.##} Hz</b>{(m_RateSel == 0 ? "  <color=#aaaaaa>(highest)</color>" : "")}", m_Center, GUILayout.ExpandWidth(true), GUILayout.Height(30 * k));
+            if (Btn(">", GUILayout.Width(40 * k), GUILayout.Height(30 * k))) m_RateSel = Mathf.Max(0, m_RateSel - 1);
+            GUILayout.EndHorizontal();
+
+            GUILayout.Space(8 * k);
+            GUILayout.BeginHorizontal();
+            if (Btn("Apply", m_Primary, GUILayout.Height(38 * k))) GameSettings.SetDisplay(res, m_ModeSel, rates[m_RateSel]);
+            if (Btn("Use my screen's best", GUILayout.Height(38 * k)))
+            {
+                m_ResSel = Mathf.Max(0, m_ResList.IndexOf(new Vector2Int(Screen.currentResolution.width, Screen.currentResolution.height)));
+                m_RateSel = 0;
+            }
+            GUILayout.EndHorizontal();
+            GUILayout.Label($"<color=#bbbbbb>Now: {Screen.width} x {Screen.height}, {GameSettings.CurrentMode}, {GameSettings.ChosenRate.value:0.##} Hz. The refresh rate starts at the highest your screen can do; in a window it follows your desktop.</color>", m_SmallWrap);
+
+            // ---- every other display setting as a code: copy it, paste one back ----
+            DrawDisplayCode();
+
             Caption("GRAPHICS");
             // (the PSX test looks are hidden for now - GameSettings.ShowGraphicsPicker)
             if (GameSettings.ShowGraphicsPicker)
@@ -783,42 +826,50 @@ namespace RockGame
             DrawTreeXSettings(); // (TreeX.cs)
             DrawBaseFloorSettings(); // (Hud.BaseFloor.cs)
             DrawBeamSettings(); // (Hud.Beams.cs)
+        }
 
-            Caption("SCREEN");
+        bool m_CopyNoteBad;
+
+        /// <summary>Settings > Display, under the screen: COPY SETTINGS puts every other display setting on the clipboard as
+        /// a code (DisplayCode), PASTE SETTINGS reads one back from the clipboard and applies it.</summary>
+        void DrawDisplayCode()
+        {
+            float k = m_Scale;
+            Caption("SHARE YOUR LOOK");
             GUILayout.BeginHorizontal();
-            RowLabel("Window", lw);
-            foreach (var mode in new[] { GameSettings.WindowMode.Fullscreen, GameSettings.WindowMode.Borderless, GameSettings.WindowMode.Windowed })
-                if (Choice(m_ModeSel == mode, mode == GameSettings.WindowMode.Borderless ? "Borderless" : mode.ToString(), GUILayout.Height(30 * k))) m_ModeSel = mode;
+            if (Btn("COPY SETTINGS", m_Primary, GUILayout.Height(34 * k))) CopyDisplaySettings();
+            if (Btn("PASTE SETTINGS", GUILayout.Height(34 * k))) PasteDisplaySettings();
             GUILayout.EndHorizontal();
+            bool showNote = Time.unscaledTime < m_CopyNoteUntil && !string.IsNullOrEmpty(m_CopyNote);
+            GUILayout.Label(showNote ? $"<color={(m_CopyNoteBad ? "#ff8a7a" : "#9fe0a0")}>{m_CopyNote}</color>"
+                : "<color=#bbbbbb>Copy: every display setting below (post processing, the UI's looks, shadows, interface, glow, grass, every world colour - not the screen) as a short text code on the clipboard. Paste: applies a code from the clipboard.</color>", m_SmallWrap);
+        }
 
-            GUILayout.BeginHorizontal();
-            RowLabel("Resolution", lw);
-            if (Btn("<", GUILayout.Width(40 * k), GUILayout.Height(30 * k))) { m_ResSel = Mathf.Min(m_ResList.Count - 1, m_ResSel + 1); m_RateSel = 0; }
-            var res = m_ResList[Mathf.Clamp(m_ResSel, 0, m_ResList.Count - 1)];
-            bool native = res.x == Screen.currentResolution.width && res.y == Screen.currentResolution.height;
-            GUILayout.Label($"<b>{res.x} x {res.y}</b>{(native ? "  <color=#aaaaaa>(your screen)</color>" : "")}", m_Center, GUILayout.ExpandWidth(true), GUILayout.Height(30 * k));
-            if (Btn(">", GUILayout.Width(40 * k), GUILayout.Height(30 * k))) { m_ResSel = Mathf.Max(0, m_ResSel - 1); m_RateSel = 0; }
-            GUILayout.EndHorizontal();
+        /// <summary>COPY SETTINGS (also for the tests): the display settings code on the clipboard.</summary>
+        public static string CopyDisplaySettings()
+        {
+            int n = DisplayCode.CopyToClipboard();
+            return Note($"Copied {n} display settings to the clipboard.", false);
+        }
 
-            var rates = GameSettings.RefreshRates(res);
-            m_RateSel = Mathf.Clamp(m_RateSel, 0, rates.Count - 1);
-            GUILayout.BeginHorizontal();
-            RowLabel("Refresh rate", lw);
-            if (Btn("<", GUILayout.Width(40 * k), GUILayout.Height(30 * k))) m_RateSel = Mathf.Min(rates.Count - 1, m_RateSel + 1);
-            GUILayout.Label($"<b>{rates[m_RateSel].value:0.##} Hz</b>{(m_RateSel == 0 ? "  <color=#aaaaaa>(highest)</color>" : "")}", m_Center, GUILayout.ExpandWidth(true), GUILayout.Height(30 * k));
-            if (Btn(">", GUILayout.Width(40 * k), GUILayout.Height(30 * k))) m_RateSel = Mathf.Max(0, m_RateSel - 1);
-            GUILayout.EndHorizontal();
+        /// <summary>PASTE SETTINGS (also for the tests): applies the code on the clipboard. Returns what it says.</summary>
+        public static string PasteDisplaySettings()
+        {
+            var r = DisplayCode.PasteFromClipboard();
+            if (r.Ok && s_I != null) s_I.m_PendingScale = -1f;
+            return Note(r.ToString(), !r.Ok);
+        }
 
-            GUILayout.Space(8 * k);
-            GUILayout.BeginHorizontal();
-            if (Btn("Apply", m_Primary, GUILayout.Height(38 * k))) GameSettings.SetDisplay(res, m_ModeSel, rates[m_RateSel]);
-            if (Btn("Use my screen's best", GUILayout.Height(38 * k)))
+        static string Note(string text, bool bad)
+        {
+            if (s_I != null)
             {
-                m_ResSel = Mathf.Max(0, m_ResList.IndexOf(new Vector2Int(Screen.currentResolution.width, Screen.currentResolution.height)));
-                m_RateSel = 0;
+                s_I.m_CopyNote = text;
+                s_I.m_CopyNoteBad = bad;
+                s_I.m_CopyNoteUntil = Time.unscaledTime + 6f;
             }
-            GUILayout.EndHorizontal();
-            GUILayout.Label($"<color=#bbbbbb>Now: {Screen.width} x {Screen.height}, {GameSettings.CurrentMode}, {GameSettings.ChosenRate.value:0.##} Hz. The refresh rate starts at the highest your screen can do; in a window it follows your desktop.</color>", m_SmallWrap);
+            Debug.Log("[RockGame] " + text);
+            return text;
         }
 
         /// <summary>Settings > Display > INTERFACE (the font, UI scale, HUD opacity, accent colour) and ALIEN GLOW.</summary>
@@ -873,7 +924,7 @@ namespace RockGame
             GameSettings.SetInterface(font, scale, Mathf.Round(hud * 20f) / 20f, accent);
             GUILayout.BeginHorizontal();
             GUILayout.Label("<color=#bbbbbb>HUD opacity: the in-game HUD (bars, hotbar, timer) - the menus and the inventory stay solid.</color>", m_SmallWrap);
-            if (Btn("Defaults", GUILayout.Width(100 * k), GUILayout.Height(28 * k))) GameSettings.SetInterface(0, 1f, 1f, 0);
+            if (Btn("Defaults", GUILayout.Width(100 * k), GUILayout.Height(28 * k))) GameSettings.SetInterface(DisplayDefaults.UiFont, DisplayDefaults.UiScale, DisplayDefaults.HudOpacity, DisplayDefaults.UiAccent);
             GUILayout.EndHorizontal();
 
             Caption("ALIEN GLOW  ·  just on this PC");
@@ -963,22 +1014,11 @@ namespace RockGame
             GUILayout.EndHorizontal();
             GUILayout.BeginHorizontal();
             int changed = ColorSlots.ChangedCount;
-            if (Btn($"COPY CHANGED ({changed})", m_Primary, GUILayout.Height(30 * k)))
-            {
-                int n = ColorSlots.Copy(true);
-                m_CopyNote = n == 0 ? "Nothing changed from the defaults (copied an empty list)." : $"Copied {n} changed colour{(n == 1 ? "" : "s")} to the clipboard.";
-                m_CopyNoteUntil = Time.unscaledTime + 4f;
-            }
-            if (Btn("COPY ALL", GUILayout.Width(100 * k), GUILayout.Height(30 * k)))
-            {
-                int n = ColorSlots.Copy(false);
-                m_CopyNote = $"Copied all {n} colours to the clipboard.";
-                m_CopyNoteUntil = Time.unscaledTime + 4f;
-            }
+            GUILayout.Label(changed > 0 ? $"<color=#ffd27a>{changed} changed</color>" : "<color=#bbbbbb>none changed</color>", m_Small, GUILayout.Height(30 * k));
+            GUILayout.FlexibleSpace();
             if (Btn("Reset all", GUILayout.Width(100 * k), GUILayout.Height(30 * k))) GameSettings.ResetWorldColours();
             GUILayout.EndHorizontal();
-            GUILayout.Label(Time.unscaledTime < m_CopyNoteUntil ? $"<color=#9fe0a0>{m_CopyNote}</color>"
-                : "<color=#bbbbbb>Click a swatch, type a hex code, or Pick for the colour picker - it shows on the world straight away. The copy buttons put lines like  TreeTrunks = #4F8F2A  on the clipboard.</color>", m_SmallWrap);
+            GUILayout.Label("<color=#bbbbbb>Click a swatch, type a hex code, or Pick for the colour picker - it shows on the world straight away. To share them: Back, then COPY SETTINGS at the top of Display (the colours are in the code with everything else).</color>", m_SmallWrap);
             GUILayout.Space(4 * k);
 
             if (m_HexField == null)
