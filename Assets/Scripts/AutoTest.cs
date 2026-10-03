@@ -96,6 +96,7 @@ namespace RockGame
             if (m_Mode == "modes") { yield return ModesRoutine(me, pc); yield break; }
             if (m_Mode == "tracer") { yield return TracerRoutine(me, pc); yield break; }
             if (m_Mode == "craftui") { yield return CraftUiRoutine(me, pc); yield break; }
+            if (m_Mode == "upgrades") { yield return UpgradesRoutine(me, pc); yield break; }
             if (m_Mode == "maps") { yield return MapsRoutine(me, pc); yield break; }
             Check(Cfg.BaseTeamAt(me.transform.position) == me.Team.Value, $"spawned inside own base ({me.transform.position})");
             Check(me.Count(Item.Rock) == 0 && me.HeldItem == Item.Rock, "empty hand = holding the rock (no rock item)");
@@ -967,8 +968,8 @@ namespace RockGame
             Revive(other);
             yield return new WaitForSeconds(0.5f);
 
-            // portal gun: ONE shot makes the whole linked pair (one portal where you stand, one where it lands), then it's used up
-            me.ServerGive(Item.PortalGun, 1);
+            // portal gun: two shots make a linked pair, then it's used up
+            me.ServerGive(Item.PortalGun, 1, Cfg.PortalShots);
             yield return new WaitForSeconds(0.2f);
             yield return Hold(me, Item.PortalGun);
             int portals = g.Portals.Count;
@@ -976,9 +977,10 @@ namespace RockGame
             yield return new WaitForSeconds(0.4f);
             me.PortalRpc(field + new Vector3(0, 0.05f, 0), Vector3.up);
             yield return new WaitForSeconds(0.5f);
-            Check(g.Portals.Count == portals + 2 && g.Portals[portals].Pair == g.Portals[portals + 1].Pair && me.Count(Item.PortalGun) == 0
-                && Vector3.Distance(g.Portals[portals].Pos, me.transform.position) < 1.5f,
-                $"one portal gun shot made a linked pair (one at my feet) and used the gun up ({g.Portals.Count - portals} portals, {me.Count(Item.PortalGun)} gun left)");
+            me.PortalRpc(field + new Vector3(0, 0.05f, 8f), Vector3.up);
+            yield return new WaitForSeconds(0.5f);
+            Check(g.Portals.Count == portals + 2 && g.Portals[portals].Pair == g.Portals[portals + 1].Pair && me.Count(Item.PortalGun) == 0,
+                $"two portal gun shots made a linked pair and used the gun up ({g.Portals.Count - portals} portals, {me.Count(Item.PortalGun)} gun left)");
 
             // jetpack burns fuel and runs out
             me.ServerGive(Item.Jetpack, 1, Cfg.JetpackFuel);

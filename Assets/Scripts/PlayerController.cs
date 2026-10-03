@@ -23,6 +23,8 @@ namespace RockGame
         public bool ThirdPerson => m_Third > 0.5f;
         int m_EatBites;
         public Container LootTarget;
+        /// <summary>The menu is the UPGRADES screen (E on your own alien machine) instead of crafting - Hud.Upgrades.cs.</summary>
+        public bool UpgradesOpen;
         /// <summary>What you're looking at (E uses it), as of the last frame.</summary>
         public Interactable Target;
         public PieceType BuildPiece = PieceType.Foundation;
@@ -153,6 +155,17 @@ namespace RockGame
         {
             MenuOpen = false;
             LootTarget = null;
+            UpgradesOpen = false;
+        }
+
+        /// <summary>E on your own alien machine: the UPGRADES screen (in the modes that have base upgrades - Upgrades.cs).</summary>
+        public void OpenUpgrades()
+        {
+            LootTarget = null;
+            UpgradesOpen = true;
+            MenuOpen = true;
+            WheelOpen = false;
+            Sfx.Play2D(Sfx.Place, 0.4f);
         }
 
         /// <summary>Death screen choice (after the wall is down): back to your bedrock, or a random spot in the enemy's half.</summary>
@@ -237,6 +250,8 @@ namespace RockGame
             }
             if (sd || dead) CloseMenu();
             if (LootTarget != null && (!LootTarget.IsSpawned || !LootTarget.InReach(m_Net.EyePos))) LootTarget = null;
+            // the UPGRADES screen goes with the menu, and closes if you walk away from your machine
+            if (UpgradesOpen && (!MenuOpen || !Cfg.AtOwnMachine(m_Net.Team.Value, transform.position))) { if (MenuOpen) MenuOpen = false; UpgradesOpen = false; }
             if (Paused || MenuOpen || dead) WheelOpen = false;
             if (dead || m_Net.HeldItem != Item.Airstrike) AirstrikeMapOpen = false;
 
@@ -961,6 +976,13 @@ namespace RockGame
                     Fx.Shake(0.55f);
                     return;
                 }
+                // a portal on what you hit: the ram smashes it (raiding breaks portals)
+                if (NetGame.Instance != null && NetGame.Instance.PortalNear(hit.point, PlayerNet.RamPortalReach))
+                {
+                    m_Net.RamPortalRpc(hit.point);
+                    Fx.Shake(0.55f);
+                    return;
+                }
             }
             Sfx.Play(Sfx.Thud, transform.position + transform.forward, 0.5f);
             Hud.Push("The ram only works on buildings - get right up to one");
@@ -1015,6 +1037,16 @@ namespace RockGame
                 m_Net.EatRpc();
                 return;
             }
+            // LMB with berries on a horse: feed it one (it heals; you don't eat it)
+            if (m_Net.HeldItem == Item.Berry && Binds.Down(Bind.Attack) && Time.time >= m_NextSwing)
+            {
+                m_NextSwing = Time.time + 0.35f;
+                var horse = HorseAimed();
+                if (horse == null) Hud.Push("Berries: RMB to eat - or LMB on a horse to feed it");
+                else if (horse.Hp.Value >= horse.MaxHp - 0.5f) Hud.Push("That horse is already at full health");
+                else { m_Net.FeedHorseRpc(horse.NetworkObject); m_VM.Use(); Sfx.Play2D(Sfx.Eat, 0.6f); }
+                return;
+            }
             if (!Binds.Down(Bind.Aim) || Time.time < m_NextEat) return;
             if (m_Net.Health.Value >= Cfg.MaxHealth) { Hud.Push("You're already at full health"); return; }
             m_VM.Eat();
@@ -1022,6 +1054,14 @@ namespace RockGame
             m_EatStart = Time.time;
             m_EatBites = 0;
             m_NextEat = Time.time + EatTime + 0.1f;
+        }
+
+        /// <summary>The horse under the crosshair, close enough to feed (null if there isn't one).</summary>
+        Vehicle HorseAimed()
+        {
+            if (!Aim(CenterRay(), Cfg.InteractRange + 2f, out var hit)) return null;
+            var v = hit.collider.GetComponentInParent<Vehicle>();
+            return v != null && v.IsHorse && v.IsSpawned ? v : null;
         }
 
         /// <summary>C4 or the fort tower: LMB lobs it where you look.</summary>
@@ -1338,6 +1378,8 @@ namespace RockGame
                 case TargetKind.SelfSpear: m_Net.PullSpearRpc(m_Net.NetworkObject); Sfx.Play2D(Sfx.Flesh, 0.6f); break;
                 case TargetKind.Machine:
                     if (t.MachineTeam != m_Net.Team.Value) { Hud.Push(carrying ? "Put the ball in YOUR machine to win" : "That's the enemy's machine"); break; }
+                    // your own machine: the UPGRADES screen (fortify, the wood gen), in the modes that have them
+                    if (!carrying && Cfg.HasBaseUpgrades) { OpenUpgrades(); break; }
                     Hud.Push(carrying ? "Throw the ball (LMB) into the socket - it snaps in when it gets close" : "Throw the ball into this socket to win. (Craft anywhere in your base with TAB)");
                     break;
                 case TargetKind.Vehicle:
@@ -1547,15 +1589,18 @@ namespace RockGame
                 }
                 case TargetKind.Machine:
                     if (t.MachineTeam != m_Net.Team.Value) AimText = $"{Cfg.TeamName[t.MachineTeam]} alien machine";
-                    else AimText = "Your alien machine - the ball goes in the socket" + (Ball.Instance != null && Ball.Instance.SocketTeam.Value == m_Net.Team.Value ? "   <color=#77ff77>(the ball is in!)</color>" : "");
+                    else AimText = "Your alien machine - the ball goes in the socket" + (Ball.Instance != null && Ball.Instance.SocketTeam.Value == m_Net.Team.Value ? "   <color=#77ff77>(the ball is in!)</color>" : "")
+                        + (Cfg.HasBaseUpgrades ? $"   <color=#ffd24a>{Binds.Name(Bind.Interact)}: upgrades</color>" : "");
                     return;
                 case TargetKind.Vehicle:
                 {
                     var v = t.Obj.GetComponent<Vehicle>();
-                    // a horse's HP only shows once it has been hurt
-                    string hp = v.Hp.Value < v.MaxHp - 0.5f ? $"  {v.Hp.Value:0}/{v.MaxHp:0} HP" : "";
+                    // a horse's HP only shows once it has been hurt (or while you're holding berries to feed it)
+                    bool feeding = v.IsHorse && m_Net.HeldItem == Item.Berry;
+                    string hp = v.Hp.Value < v.MaxHp - 0.5f || feeding ? $"  {v.Hp.Value:0}/{v.MaxHp:0} HP" : "";
                     string e = Binds.Name(Bind.Interact);
                     AimText = v.IsHorse ? (v.Saddled.Value ? $"Horse{hp}   {e}: ride" : $"Wild horse{hp}   {e}: saddle and ride ({(m_Net.Count(Item.Saddle) > 0 ? "uses your saddle" : "<color=#ff8888>needs a saddle</color>")})") : $"Wooden car   {e}: drive";
+                    if (feeding) AimText += FeedHint(v);
                     return;
                 }
                 case TargetKind.Bush: AimText = "Berry Bush   E: pick it"; return;
@@ -1596,8 +1641,16 @@ namespace RockGame
                 if (!p.TreeCamo) AimText = $"{Cfg.TeamName[p.Team.Value]} player";
             }
             else if (no.TryGetComponent(out Vehicle hv) && !hv.IsCar)
-                AimText = hv.Hp.Value < hv.MaxHp - 0.5f || hv.IsSlender ? $"{hv.DisplayName}  {hv.Hp.Value:0}/{hv.MaxHp:0} HP" : hv.DisplayName;
+            {
+                bool feeding = hv.IsHorse && m_Net.HeldItem == Item.Berry && hit.distance <= Cfg.InteractRange + 2f;
+                AimText = hv.Hp.Value < hv.MaxHp - 0.5f || hv.IsSlender || feeding ? $"{hv.DisplayName}  {hv.Hp.Value:0}/{hv.MaxHp:0} HP" : hv.DisplayName;
+                if (feeding) AimText += FeedHint(hv);
+            }
             if (AimText == "") AimText = self;
         }
+
+        /// <summary>What LMB does with berries on this horse.</summary>
+        static string FeedHint(Vehicle v) => v.Hp.Value < v.MaxHp - 0.5f
+            ? $"   <color=#8dff9a>LMB: feed it a berry (+{Cfg.HorseBerryHeal:0} HP)</color>" : "   <color=#bbbbbb>(full health)</color>";
     }
 }

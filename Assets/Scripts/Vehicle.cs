@@ -110,6 +110,16 @@ namespace RockGame
             NetworkObject.Despawn(true);
         }
 
+        /// <summary>Feed a horse (berries): it gets HP back, up to full. Returns how much it healed.</summary>
+        public float ServerHeal(float hp)
+        {
+            if (!IsServer || !IsSpawned || !IsHorse || hp <= 0f) return 0f;
+            float before = Hp.Value;
+            Hp.Value = Mathf.Min(MaxHp, Hp.Value + hp);
+            if (Hp.Value > before) Fx.Server(FxKind.Heal, transform.position + Vector3.up * 1.4f, Vector3.up);
+            return Hp.Value - before;
+        }
+
         public override void OnNetworkSpawn()
         {
             All.Add(this);

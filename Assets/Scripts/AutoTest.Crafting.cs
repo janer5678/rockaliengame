@@ -7,7 +7,7 @@ namespace RockGame
     /// <summary>
     /// -autotest craftui (with -host -solo -fast -shotdir DIR, any -rules): the TAB crafting list with no workbench
     /// (starter items only, the Workbench T1 grey and locked until the ball's been captured - here by putting it in our
-    /// socket, with the "WORKBENCH UNLOCKED" notice), crafting and placing a Workbench T1 anywhere in the base (not outside
+    /// socket, with the "WORK BENCHES UNLOCKED" notice), crafting and placing a Workbench T1 anywhere in the base (not outside
     /// it, not in the enemy's, one per team, unbreakable, E opens nothing), the T1 items showing up in the list only while
     /// you're in your base, crafting them straight into the inventory, then the Workbench T2 (2000, needs the T1) and its
     /// items - the list then scrolls (scroll bar) - with screenshots of each list and of both benches.
@@ -159,7 +159,7 @@ namespace RockGame
                 var ball = Ball.Instance;
                 if (ball != null) ball.ServerSocket(team);
                 yield return new WaitForSeconds(0.6f);
-                Check(Cfg.BenchUnlocked(team) && NetGame.BenchUnlockNotices == notices + 1 && Hud.LastBanner.Contains("WORKBENCH UNLOCKED"),
+                Check(Cfg.BenchUnlocked(team) && NetGame.BenchUnlockNotices == notices + 1 && Hud.LastBanner.Contains("WORK BENCHES UNLOCKED"),
                     $"the ball in our machine unlocks it - \"{Hud.LastBanner}\"");
                 yield return Snap(P("bench_unlocked"));
                 if (ball != null) ball.ServerPlaceInDome();
@@ -225,9 +225,22 @@ namespace RockGame
             listed = ListAt(team, me.transform.position);
             bool t1 = listed.Contains(Item.Crossbow) && listed.Contains(Item.Armor) && listed.Contains(Item.Chainsaw) && listed.Contains(Item.Barrier) && listed.Contains(Item.Workbench2);
             bool noT2 = !listed.Contains(Item.Saddle) && !listed.Contains(Item.Pickaxe);
-            if (Cfg.PowerMenu) { t1 &= listed.Contains(Item.Sword) && listed.Contains(Item.FortifyBuff); noT2 &= !listed.Contains(Item.Revolver) && !listed.Contains(Item.C4); }
-            if (Cfg.AutoWood) t1 &= listed.Contains(Item.WoodGenBuff);
+            if (Cfg.PowerMenu) { t1 &= listed.Contains(Item.Sword); noT2 &= !listed.Contains(Item.Revolver) && !listed.Contains(Item.C4); }
+            if (Cfg.Builder) t1 &= listed.Contains(Item.FortifyBuff); // (Builder has no alien machine: its fortify is still crafted)
             Check(t1 && noT2, $"with a T1 bench, in the base the list has the T1 items too, not T2 ({string.Join(", ", listed)})");
+            // the base upgrades aren't crafted any more (they're in UPGRADES at the alien machine)
+            {
+                var every = ListAt(team, me.transform.position);
+                Check(Cfg.Builder || (!every.Contains(Item.FortifyBuff) && !every.Contains(Item.WoodGenBuff) && Cfg.CraftIndexOf(Item.FortifyBuff) < 0 && Cfg.CraftIndexOf(Item.WoodGenBuff) < 0),
+                    "Fortify All Walls and the wood gen aren't in the crafting list (UPGRADES at the alien machine)");
+            }
+            // the saddle needs the Workbench T2: with only the T1 the server won't make it
+            {
+                int s0 = me.Count(Item.Saddle), w0 = me.Count(cur);
+                me.CraftRpc(Cfg.CraftIndexOf(Item.Saddle));
+                yield return new WaitForSeconds(0.5f);
+                Check(Cfg.CraftTier(Item.Saddle) == 2 && me.Count(Item.Saddle) == s0 && me.Count(cur) == w0, "the saddle needs a Workbench T2: refused with only the T1 (nothing paid)");
+            }
             pc.MenuOpen = true;
             yield return Snap(P("tab_t1"));
             pc.CloseMenu();

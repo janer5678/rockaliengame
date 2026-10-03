@@ -503,14 +503,14 @@ namespace RockGame
             yield return new WaitForSeconds(2.5f);
             Check(ball.SocketTeam.Value == team && Tutorial.StepId == "guard" && Cfg.BenchUnlocked(team),
                 $"({who}) the ball is in my machine: that captures it and unlocks our workbench; now guard it ({Tutorial.StepId}, unlocked {Cfg.BenchUnlocked(team)})");
-            Check(NetGame.BenchUnlockNotices == notices0, $"({who}) the WORKBENCH UNLOCKED notice waits for the workbench step");
+            Check(NetGame.BenchUnlockNotices == notices0, $"({who}) the WORK BENCHES UNLOCKED notice waits for the workbench step");
             yield return TutShot("guard");
             yield return TutWaitStep("bench", 9f);
 
             // ---- the workbench: unlocked by the capture - craft a T1, put it down, see its list ----
             yield return new WaitForSeconds(0.3f);
-            Check(Tutorial.StepId == "bench" && Tutorial.AllowsItem(Item.Workbench) && NetGame.BenchUnlockNotices == notices0 + 1 && Hud.LastBanner.Contains("WORKBENCH UNLOCKED"),
-                $"({who}) guarding ticks off; the workbench step says WORKBENCH UNLOCKED ({Tutorial.StepId}, \"{Hud.LastBanner}\")");
+            Check(Tutorial.StepId == "bench" && Tutorial.AllowsItem(Item.Workbench) && NetGame.BenchUnlockNotices == notices0 + 1 && Hud.LastBanner.Contains("WORK BENCHES UNLOCKED"),
+                $"({who}) guarding ticks off; the workbench step says WORK BENCHES UNLOCKED ({Tutorial.StepId}, \"{Hud.LastBanner}\")");
             me.CraftRpc(Cfg.CraftIndexOf(Item.Crossbow));
             yield return new WaitForSeconds(0.6f);
             Check(me.Count(Item.Crossbow) == 0, $"({who}) no crossbow before there's a workbench");

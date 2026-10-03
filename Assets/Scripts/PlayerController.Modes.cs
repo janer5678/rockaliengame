@@ -104,6 +104,7 @@ namespace RockGame
 
             // every pellet: its own ray inside the spread cone
             var hits = new Dictionary<PlayerNet, (int body, int head, Vector3 point)>();
+            var animals = new Dictionary<Vehicle, (int n, Vector3 point)>();
             int n = Mathf.Clamp(Cfg.ShotgunPellets, 1, 30);
             var rot = Quaternion.LookRotation(ray.direction);
             float spread = Mathf.Tan(Cfg.ShotgunSpread * Mathf.Deg2Rad);
@@ -125,8 +126,16 @@ namespace RockGame
                     hits.TryGetValue(p, out var c);
                     hits[p] = (c.body + (head ? 0 : 1), c.head + (head ? 1 : 0), h.point);
                 }
+                else if (h.collider.GetComponentInParent<Vehicle>() is Vehicle v && !v.IsCar)
+                {
+                    // horses (and Slenderman) take pellets too
+                    animals.TryGetValue(v, out var c);
+                    animals[v] = (c.n + 1, h.point);
+                }
                 else Fx.Chips(h.point, h.normal, new Color(0.35f, 0.3f, 0.22f), 2, 1.5f);
             }
+            foreach (var kv in animals)
+                m_Net.ShotgunHitRpc(new Unity.Netcode.NetworkObjectReference(kv.Key.NetworkObject), kv.Value.point, (byte)kv.Value.n, 0);
             foreach (var kv in hits)
             {
                 var p = kv.Key;

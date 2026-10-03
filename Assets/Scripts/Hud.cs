@@ -421,7 +421,7 @@ namespace RockGame
                 case Item.Workbench:
                 case Item.Workbench2: return $"<b>{Cfg.ItemName(s.Id)}</b>    LMB: put it down anywhere in your base - its items then show in your crafting list ({Binds.Name(Bind.Inventory)})";
                 case Item.Barrier: return $"<b>High External Wall</b> x{s.Count}    LMB: place it - in your base or out in the open (not in the enemy base)";
-                case Item.Berry: return $"<b>Berries</b> x{s.Count}    RMB: eat ({Cfg.BerryEatTime:0.#}s, +{Cfg.BerryHeal:0} HP)";
+                case Item.Berry: return $"<b>Berries</b> x{s.Count}    RMB: eat ({Cfg.BerryEatTime:0.#}s, +{Cfg.BerryHeal:0} HP)   LMB on a horse: feed it (+{Cfg.HorseBerryHeal:0} HP)";
                 case Item.C4: return "<b>C4</b>    LMB: throw it at enemy buildings - it blows up everything nearby";
                 case Item.DeathWand: return "<b>Death Wand</b> (1 shot)    LMB: fire - anyone it passes close to dies";
                 case Item.Helmet: return "<b>Alien Helmet</b>    LMB: put it on - the next headshot does no damage and breaks it";
@@ -432,7 +432,11 @@ namespace RockGame
                 case Item.Saddle: return $"<b>Saddle</b> ({Cfg.TeamLabel(s.Data > 0 ? s.Data - 1 : me.Team.Value)})    walk up to a wild horse and press E to saddle and ride it";
                 case Item.Meat: return $"<b>Horse Meat</b>    RMB: eat ({Cfg.MeatEatTime:0.#}s, heals you fully)";
                 case Item.Sniper: return $"<b>Sniper Rifle</b> ({s.Data} shots)    hold RMB: scope   LMB: fire - one hit kills (a helmet stops a headshot)";
-                case Item.PortalGun: return "<b>Portal Gun</b> (one shot)    LMB: a portal opens where you stand and another where you shoot (any surface) - then it's used up";
+                case Item.PortalGun:
+                {
+                    int left = s.Data <= 0 || s.Data > Cfg.PortalShots ? Cfg.PortalShots : s.Data;
+                    return $"<b>Portal Gun</b> ({left} portal{(left == 1 ? "" : "s")} left)    LMB: shoot a portal onto any surface - " + (left >= Cfg.PortalShots ? "two shots make a linked pair" : "this shot links it to your first one");
+                }
                 case Item.Jetpack: return $"<b>Jetpack</b> (fuel {s.Data}%)    hold Space to fly";
                 case Item.SlenderEgg: return "<b>Slenderman Egg</b>    LMB: throw it - Slenderman hatches and hunts your enemy";
                 case Item.BuildEgg: return "<b>Build Egg</b>    LMB: throw it - blocks appear along its path to walk on";
@@ -618,7 +622,8 @@ namespace RockGame
             bool loot = pc.LootTarget != null;
             float top = sh * 0.14f;
             // the crafting list: one column, or two when there's a lot in it (workbench tiers) - Hud.Crafting.cs
-            bool craft = !loot && Tutorial.Allows(TutFeature.Craft); // (the tutorial: once crafting is taught)
+            bool upgrades = !loot && pc.UpgradesOpen; // E on your alien machine: UPGRADES instead of crafting (Hud.Upgrades.cs)
+            bool craft = !loot && !upgrades && Tutorial.Allows(TutFeature.Craft); // (the tutorial: once crafting is taught)
             int craftCols = craft ? LayoutCraftList(me, pc, top, sh - 8 * k, k) : 1;
             float colGap = 10 * k;
             float craftW = 440 * k;
@@ -664,6 +669,7 @@ namespace RockGame
             // ---- crafting (right, when not looting): Hud.Crafting.cs ----
             float cxp = invX + gridW + 30 * k;
             if (craft) DrawCraftList(me, pc, cxp, top, craftW, colGap, sh - 8 * k, k);
+            if (upgrades) DrawUpgradeList(me, pc, cxp, top, craftW, sh - 8 * k, k);
             Shadowed(new Rect(invX, infoY, loot ? gridW + 200 : gridW, 60 * k), m_HoverName != "" ? m_HoverName : "Drag to move · right-click: to the hotbar · right-drag splits a stack · shift-click quick-moves · drag outside to drop", m_SmallWrap);
 
             // ---- drag visual ----

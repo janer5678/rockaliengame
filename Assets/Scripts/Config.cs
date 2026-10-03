@@ -107,10 +107,10 @@ namespace RockGame
         {
             switch (r)
             {
-                case GameRules.Arsenal: return "Normal prices (the crossbow is cheaper), plus a POWER ITEMS menu next to crafting: sword, shotgun, revolver, C4, headshot helmet and Fortify All Walls.";
+                case GameRules.Arsenal: return "Normal prices (the crossbow is cheaper), plus a POWER ITEMS menu next to crafting: sword, shotgun, revolver, C4 and headshot helmet. E on your alien machine: UPGRADES (fortify all your walls).";
                 case GameRules.Dna: return DnaDesc;
                 case GameRules.Tutorial: return "New here? Start with this. Short, simple steps teach you the whole game - you do each one to go on, and each control unlocks as it's taught. The clock is stopped, friends can join any time, and it's always the small Plains map. Just press HOST GAME.";
-                case GameRules.AutoWood: return "Arsenal, but wood piles up at your base by itself (5 a second) - go and pick it up.";
+                case GameRules.AutoWood: return "Arsenal, but wood piles up at your base by itself (5 a second) - go and pick it up. Speed it up in UPGRADES (E on your alien machine).";
                 case GameRules.Builder: return "No bases. Arsenal's items, but each takes a while to make. Craft and build anywhere - pieces lock onto each other. Plant the ball anywhere (E): whoever's ball it is at the end wins.";
                 case GameRules.Fun: return "No building phase, a short match, and every so often everyone gets the same random item - any item in the game.";
                 case GameRules.FunRandom: return "No building phase, a short match, and every so often each player gets their own random airdrop item.";
@@ -281,7 +281,7 @@ namespace RockGame
         [Tune("Mode options")] public static int AirdropItemMask = 1023;
         [Tune("Airdrop")] public static float AirdropBaseDistance = 25f; // never this close to a base
         [Tune("Airdrop")] public static float C4Fuse = 3f, C4Radius = 5f, C4PlayerDamage = 150f, C4KillRadius = 1.6f;
-        [Tune("Airdrop")] public static int SniperAmmo = 3, JetpackFuel = 100, RocketAmmo = 3; // (the portal gun is one shot: no ammo)
+        [Tune("Airdrop")] public static int SniperAmmo = 3, JetpackFuel = 100, PortalShots = 2, RocketAmmo = 3; // (the portal gun: two shots = one linked pair)
         [Tune("Airdrop")] public static float JetpackSeconds = 8f, JetpackThrust = 9f, GiantTime = 30f, GiantScale = 3f;
         [Tune("Airdrop")] public static float SlenderSpeed = 4.6f, SlenderHp = 150f, SlenderLife = 60f;
         [Tune("Airdrop")] public static float RocketSpeed = 32f, RocketRadius = 3.5f, RocketStructureDamage = 900f, RocketPlayerDamage = 140f;
@@ -380,6 +380,8 @@ namespace RockGame
         [Tune("Vehicles")] public static float CarSpeed = 17f, CarReverseSpeed = 6f, CarAccel = 9f, CarTurn = 95f, CarHitDamage = 30f, CarKnockback = 11f;
         [Tune("Vehicles")] public static float HorseWalk = 4.5f, HorseSprint = 11f, HorseJump = 8.5f, HorseHp = 60f;
         [Tune("Vehicles")] public static int HorsesPerSide = 3;
+        /// <summary>HP a horse gets back from one berry (LMB on it holding berries).</summary>
+        [Tune("Vehicles")] public static float HorseBerryHeal = 20f;
 
         // ---------- Game modes ----------
         /// <summary>Arsenal / Builder: normal prices, except the crossbow is cheaper.</summary>
@@ -520,6 +522,7 @@ namespace RockGame
                 case Item.Armor: return ArmorHp;
                 case Item.Sniper: return SniperAmmo;
                 case Item.Jetpack: return JetpackFuel;
+                case Item.PortalGun: return PortalShots;
                 case Item.RocketLauncher: return RocketAmmo;
                 case Item.Pistol: return PistolMag;
                 case Item.Revolver: return RevolverMag;
@@ -759,10 +762,11 @@ namespace RockGame
         }
 
         // ---------- Arsenal / Builder / Auto Wood: the powerful items menu ----------
-        static readonly Item[] k_PowerBase = { Item.Sword, Item.Shotgun, Item.ShotgunShell, Item.Revolver, Item.RevolverAmmo, Item.C4, Item.Helmet, Item.FortifyBuff };
-        static readonly Item[] k_PowerAutoWood = { Item.Sword, Item.Shotgun, Item.ShotgunShell, Item.Revolver, Item.RevolverAmmo, Item.C4, Item.Helmet, Item.FortifyBuff, Item.WoodGenBuff };
-        /// <summary>Auto Wood also sells the wood gen upgrade.</summary>
-        static Item[] k_Power => AutoWood ? k_PowerAutoWood : k_PowerBase;
+        static readonly Item[] k_PowerBase = { Item.Sword, Item.Shotgun, Item.ShotgunShell, Item.Revolver, Item.RevolverAmmo, Item.C4, Item.Helmet };
+        static readonly Item[] k_PowerBuilder = { Item.Sword, Item.Shotgun, Item.ShotgunShell, Item.Revolver, Item.RevolverAmmo, Item.C4, Item.Helmet, Item.FortifyBuff };
+        /// <summary>Fortify All Walls and the wood gen aren't crafted: they're bought in UPGRADES (E on your alien machine,
+        /// Upgrades.cs). Builder has no machines, so there Fortify stays in this list.</summary>
+        static Item[] k_Power => Builder ? k_PowerBuilder : k_PowerBase;
         /// <summary>Auto Wood: how many times a team has upgraded its wood gen (0-3), synced by NetGame.</summary>
         public static int WoodGenLevel(int team) => NetGame.Instance != null && team >= 0 && team < 4 ? NetGame.Instance.WoodGenLevelOf(team) : 0;
         public const int MaxWoodGen = 2;
@@ -798,16 +802,7 @@ namespace RockGame
                 case Item.RevolverAmmo: return new Recipe { Output = id, Count = 1, Wood = RevolverAmmoWood };
                 case Item.C4: return new Recipe { Output = id, Count = 1, Wood = C4Wood };
                 case Item.Helmet: return new Recipe { Output = id, Count = 1, Wood = HelmetWood };
-                case Item.WoodGenBuff:
-                {
-                    int lvl = WoodGenLevel(team);
-                    return new Recipe { Output = id, Count = 1, Wood = lvl >= 1 ? WoodGen2Wood : WoodGen1Wood };
-                }
-                default:
-                {
-                    int lvl = FortifyLevel(team);
-                    return new Recipe { Output = Item.FortifyBuff, Count = 1, Wood = lvl >= 2 ? FortifyRefinedWood : lvl == 1 ? FortifyMetalWood : FortifyStoneWood };
-                }
+                default: return BaseUpgradeRecipe(id, team); // (Builder's Fortify All Walls)
             }
         }
 
@@ -823,18 +818,7 @@ namespace RockGame
                 case Item.RevolverAmmo: return "one bullet for the revolver";
                 case Item.C4: return "thrown: wrecks every building piece nearby";
                 case Item.Helmet: return "put it on: stops one headshot completely";
-                case Item.WoodGenBuff:
-                {
-                    int lvl = WoodGenLevel(team);
-                    if (lvl >= MaxWoodGen) return $"maxed out: {WoodGenRate(lvl)} wood a second";
-                    return $"level {lvl + 1}: your base makes {WoodGenRate(lvl + 1)} wood a second (now {WoodGenRate(lvl)})";
-                }
-                default:
-                {
-                    int lvl = FortifyLevel(team);
-                    if (lvl >= MaxFortify) return "your pieces are all refined - fully fortified";
-                    return $"all your team's pieces to {TierName(lvl + 1).ToLower()} ({lvl + 2} ram hits each)";
-                }
+                default: return BaseUpgradeBlurb(id, team);
             }
         }
 

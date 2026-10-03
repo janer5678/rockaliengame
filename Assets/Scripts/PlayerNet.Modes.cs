@@ -90,19 +90,7 @@ namespace RockGame
                     break;
                 }
                 case Item.WoodGenBuff:
-                    if (g != null)
-                    {
-                        int lvl = g.ServerWoodGenUp(Team.Value);
-                        g.Broadcast($"{Cfg.TeamLabel(Team.Value)} upgraded their wood gen to level {lvl}: {Cfg.WoodGenRate(lvl)} wood a second!");
-                    }
-                    break;
-                case Item.FortifyBuff:
-                    if (g != null)
-                    {
-                        int n = g.ServerFortify(Team.Value);
-                        g.Broadcast($"{Cfg.TeamLabel(Team.Value)} fortified all their walls - {n} piece{(n == 1 ? "" : "s")} turned to {Cfg.TierName(g.FortifyLevelOf(Team.Value)).ToUpper()}!");
-                    }
-                    break;
+                case Item.FortifyBuff: ServerApplyBaseUpgrade(r.Output); break; // (Builder's Fortify; elsewhere they're UPGRADES - Upgrades.cs)
                 default:
                 {
                     // guns come empty: the revolver and shotgun need their ammo bought

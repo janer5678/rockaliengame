@@ -44,7 +44,7 @@ namespace RockGame
             Fx.Shake(0.25f);
         }
 
-        /// <summary>Portal gun: LMB shoots once - a portal where you stand and one where you aim (one linked pair) - and it's used up.</summary>
+        /// <summary>Portal gun: LMB shoots a portal onto whatever surface you aim at (two shots, one linked pair, then it's used up).</summary>
         void HandlePortalGun()
         {
             if (!Binds.Down(Bind.Attack) || Time.time < m_NextSwing) return;
@@ -74,7 +74,7 @@ namespace RockGame
         }
 
         /// <summary>Walk into a portal and come out of its partner. You can't go back until you've stepped away from both.
-        /// A portal that opens right where you are (the portal gun's one at your feet) doesn't take you until you've stepped off it.</summary>
+        /// A portal pair that opens right where you are (a portal shot at your own feet) doesn't take you until you've stepped off it.</summary>
         void TickPortals(bool dead)
         {
             var g = NetGame.Instance;
