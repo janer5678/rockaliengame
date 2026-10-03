@@ -53,7 +53,7 @@ namespace RockGame
         public static MeshCollider Collider { get; private set; }
         public static IReadOnlyList<Renderer> Renderers => s_Rs;
         /// <summary>Is the dome drawn (Normal graphics)?</summary>
-        public static bool Shown => Built && s_Rs.Count > 0 && s_Rs[0] != null && s_Rs[0].enabled;
+        public static bool Shown => Built && s_Rs.Count > 0 && s_Rs[0] != null && s_Rs[0].enabled && s_Fade > 0.001f;
         /// <summary>Test hooks: how many frame lines there are, and the most the bottom trim is off the ground anywhere round the edge.</summary>
         public static int FrameLines { get; private set; }
         public static float TrimGap { get; private set; }
@@ -137,6 +137,7 @@ namespace RockGame
         public static void Build(Transform root, NormalLook look)
         {
             Built = false;
+            s_Fade = 1f;
             s_Rs.Clear();
             s_Holes.Clear();
             s_Clear.Clear();
@@ -334,13 +335,30 @@ namespace RockGame
             if (s_LineMat == null || s_GlassMat == null) return;
             var slot = ColorSlots.MapWalls;
             var line = ColorSlots.Tinted(slot, LineColor);
-            line.a = LineColor.a;
+            line.a = LineColor.a * s_Fade;
             s_LineMat.SetColor("_BaseColor", line);
             s_LineMat.color = line;
             var g = ColorSlots.Tinted(slot, k_Glass);
-            g.a = k_Glass.a;
+            g.a = k_Glass.a * s_Fade;
             s_GlassMat.SetColor("_BaseColor", g);
             s_GlassMat.color = g;
+        }
+
+        static float s_Fade = 1f;
+
+        /// <summary>How much of the dome there is (the victory cutscene takes it away: 1 as normal .. 0 gone).</summary>
+        public static float Fade => s_Fade;
+
+        /// <summary>The dome fading away (the victory cutscene, so the camera and the UFO have the open sky): its glass and
+        /// frame fade out, and at 0 it's switched off altogether (drawn and solid again at 1; a new map builds a new one).</summary>
+        public static void SetFade(float k)
+        {
+            k = Mathf.Clamp01(k);
+            if (!Built || Root == null || Mathf.Approximately(k, s_Fade)) return;
+            s_Fade = k;
+            bool on = k > 0.001f;
+            if (Root.activeSelf != on) Root.SetActive(on);
+            Retint();
         }
 
         public static Material GlassMaterial => s_GlassMat;

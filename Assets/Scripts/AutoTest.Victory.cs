@@ -6,12 +6,15 @@ namespace RockGame
 {
     /// <summary>
     /// -autotest victory -host -solo -fast -rules classic -shotdir DIR (windowed, for the pictures):
-    /// - airdrops: the ship never pops out of existence - a ship that's flying off keeps shrinking away even when its lane
+    /// - explosions: a close one (fireball, smoke column, hard shake) and a far one (late muffled boom, no shake);
+    /// - airdrops: it hovers high (under the clouds), its underside is lit, its beam fades down as you come up to it and
+    ///   the crate coming down it is solid with the beam see-through round it (victory_airdrop_crate, _beam_near); the ship never pops out of existence - a ship that's flying off keeps shrinking away even when its lane
     ///   starts the next drop at once (two in the sky), it stays low (in from at most ArriveUp over its hover point, off
     ///   under the clouds), it shines down out of its belly (a spotlight and a glow), and its beam is bright
     ///   (victory_airdrop_beam, victory_airdrop_far, victory_airdrop_leaving);
     /// - the ball's beacon is bright (victory_ball_beacon_far);
-    /// - the win: we take the ball, put it in our socket, walk out into the wild and the timer runs out - the game is
+    /// - the win (with our bedrock walled in, two walls high: the camera has to film from outside, over them, with nothing
+    ///   in the way; the dome goes; the winners' victory screen is black): we take the ball, put it in our socket, walk out into the wild and the timer runs out - the game is
     ///   over, the victory cutscene plays (we're sent home, a UFO comes, its beam takes us up, it flies off; a winner who
     ///   isn't there any more is skipped), nothing can be done meanwhile (no cursor, no pause, the camera is the
     ///   cutscene's), the victory screen doesn't show until it's over and then does (victory_cut_*, victory_screen).
@@ -24,6 +27,7 @@ namespace RockGame
             var g = NetGame.Instance;
             int team = me.Team.Value;
             g.TimerPaused.Value = true;
+            yield return VictoryExplosionChecks(me, pc);
             yield return VictoryAirdropChecks(me, pc, g, team);
             yield return VictoryBeaconCheck(me, pc, g);
 
@@ -53,6 +57,24 @@ namespace RockGame
             var riders = VictoryCutscene.PickRiders(team, PlayerNet.All);
             var none = VictoryCutscene.PickRiders(team, new List<PlayerNet> { null });
             Check(riders.Count == 1 && riders[0] == me && none.Count == 0, $"victory: the riders are the winners who are alive and here ({riders.Count})");
+            // a walled-in base round the bedrock (two walls high all round, 9 m out): the camera mustn't end up inside it or
+            // behind a wall (it used to be blocked about one time in three)
+            var home = Cfg.SpawnPos(team, me.Slot.Value);
+            int walls = 0;
+            for (int side = 0; side < 4; side++)
+            {
+                var n = Quaternion.Euler(0f, side * 90f, 0f) * Vector3.forward;
+                var along = Vector3.Cross(Vector3.up, n);
+                for (int k = 0; k < 6; k++)
+                    for (int lvl = 0; lvl < 2; lvl++)
+                    {
+                        var wp = home + n * 9f + along * (-7.5f + k * 3f);
+                        wp.y = home.y - 0.1f + lvl * 3f;
+                        SpawnKeylessPiece(PieceType.Wall, team, wp, Quaternion.LookRotation(n));
+                        walls++;
+                    }
+            }
+            yield return new WaitForSeconds(0.5f);
             g.TimerPaused.Value = false;
             g.DevSetTimeLeft(1.5f);
             while (g.S != GameState.GameOver) yield return null;
@@ -63,13 +85,15 @@ namespace RockGame
             // a winner who left mid-cutscene: their id is still on the list but nobody's there - it just skips them
             g.CutsceneRiders.Add(987654321UL);
             bool early = false, lockedAll = true, camAll = true, homeOk = false, liftSeen = false, goneSeen = false;
-            float lastE = 0f, maxLift = 0f, maxShip = 0f;
+            float lastE = 0f, maxLift = 0f, maxShip = 0f, camFromBase = float.MaxValue;
+            bool domeGone = true;
+            int camFrames = 0, camBlocked = 0;
             int taken = 0;
             float hoverY = 0f;
             var shots = new Queue<(float at, string name)>(new[]
             {
-                (1.9f, "victory_cut_arriving"), (VictoryCutscene.BeamOn + 0.8f, "victory_cut_beam"), (VictoryCutscene.LiftStart + 1.7f, "victory_cut_lift"),
-                (VictoryCutscene.BeamOff - 0.3f, "victory_cut_taken"), (VictoryCutscene.LeaveStart + 1.6f, "victory_cut_leaving"),
+                (0.9f, "victory_cut_dome"), (2.6f, "victory_cut_arriving"), (VictoryCutscene.BeamOn + 0.8f, "victory_cut_beam"), (VictoryCutscene.LiftStart + 1.7f, "victory_cut_lift"),
+                (VictoryCutscene.BeamOff - 0.3f, "victory_cut_taken"), (VictoryCutscene.LeaveStart + 0.6f, "victory_cut_windup"), (VictoryCutscene.LeaveStart + 1.6f, "victory_cut_leaving"), (VictoryCutscene.Gone - 0.06f, "victory_cut_twinkle"),
             });
             var body = me.transform.Find("body");
             while (VictoryCutscene.Active)
@@ -81,13 +105,30 @@ namespace RockGame
                 // locked: no free cursor, no pause, the camera's the cutscene's (away from our eyes)
                 lockedAll &= Cursor.lockState == CursorLockMode.Locked && !pc.Paused && !pc.MenuOpen;
                 var cam = Camera.main.transform;
-                if (e > 0.3f && VictoryCutscene.CameraPose(out var cp, out _, out _)) camAll &= Vector3.Distance(cam.position, cp) < 0.5f && Vector3.Distance(cam.position, me.EyePos) > 6f;
+                if (e > 0.3f && VictoryCutscene.CameraPose(out var cp, out _, out _)) camAll &= Vector3.Distance(cam.position, cp) < 1.5f /* (still last frame's pose: it drifts ~1 m/s, and a screenshot frame is long) */ && Vector3.Distance(cam.position, me.EyePos) > 6f;
                 if (e > 1.2f && e < VictoryCutscene.LiftStart) homeOk |= Vector3.Distance(me.transform.position, Cfg.SpawnPos(team, me.Slot.Value)) < 1.6f;
                 if (body != null && body.gameObject.activeSelf) maxLift = Mathf.Max(maxLift, body.localPosition.y);
                 liftSeen |= VictoryCutscene.LiftOf(0) > 0.3f && VictoryCutscene.LiftOf(0) < 0.9f && body != null && body.localPosition.y > 2f;
                 goneSeen |= VictoryCutscene.LiftOf(0) >= 1f && body != null && !body.gameObject.activeSelf;
                 if (VictoryCutscene.Ship != null) maxShip = Mathf.Max(maxShip, VictoryCutscene.Ship.position.y);
                 if (VictoryCutscene.Ship != null) hoverY = VictoryCutscene.HoverPoint.y;
+                // the dome's gone (so it's open sky for the UFO and the camera)
+                if (e > VictoryCutscene.DomeGone + 0.2f && MapDome.Built) domeGone &= MapDome.Fade <= 0.001f && (MapDome.Root == null || !MapDome.Root.activeSelf);
+                // nothing between the camera and the beam the winners go up (no wall of theirs, no hill): the middle of
+                // it, and the hatch
+                if (e > VictoryCutscene.BeamOn + 0.3f && e < VictoryCutscene.BeamOff && VictoryCutscene.CameraPose(out var vp, out _, out _))
+                {
+                    var hov = VictoryCutscene.HoverPoint;
+                    var spotNow = g.CutsceneSpot.Value;
+                    foreach (var target in new[] { Vector3.Lerp(spotNow, hov, 0.5f), hov + Vector3.up * AirdropShip.HatchY })
+                    {
+                        camFrames++;
+                        var dv = target - vp;
+                        foreach (var hit in Physics.SphereCastAll(vp, 0.2f, dv.normalized, dv.magnitude - 1f, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore))
+                            if (hit.collider.GetComponentInParent<PlayerNet>() == null) { camBlocked++; break; }
+                    }
+                    camFromBase = Mathf.Min(camFromBase, new Vector2(vp.x - spotNow.x, vp.z - spotNow.z).magnitude);
+                }
                 if (shots.Count > 0 && e >= shots.Peek().at)
                 {
                     var s = shots.Dequeue();
@@ -104,13 +145,51 @@ namespace RockGame
             Check(lockedAll && camAll, $"victory: everything locked meanwhile (cursor, pause, menus: {lockedAll}) and the camera is the cutscene's ({camAll})");
             Check(maxShip <= hoverY + AirdropShip.ArriveUp + 1f, $"victory: the UFO stays low in the sky (highest {maxShip:0} m, hovering at {hoverY:0} m)");
             Check(!early, "victory: the victory screen waited for the cutscene");
+            Check(domeGone, "victory: the glass dome over the map is taken away for the cutscene");
+            Check(camFrames > 20 && camBlocked == 0 && camFromBase > 20f && VictoryCutscene.CamClear > 0.5f,
+                $"victory: the camera films from outside the walled-in base ({camFromBase:0} m out, {walls} walls round it) with nothing in the way of the beam ({camBlocked} of {camFrames} looks blocked; it sees {VictoryCutscene.CamClear * 100f:0}% of the action, {VictoryCutscene.CamTried} spots tried)");
             yield return new WaitForSeconds(1.2f);
             Check(Hud.GameOverShownAt > t0 + VictoryCutscene.Length - 0.5f && !VictoryCutscene.Active && VictoryCutscene.Ship == null,
                 $"victory: then the victory screen comes up ({Hud.GameOverShownAt - t0:0.0} s after the end) and the UFO is gone");
             Check(Cursor.lockState == CursorLockMode.None && Cursor.visible, "victory: the cursor is free on the victory screen");
+            Check(Hud.WinnerScreenBlack, "victory: the winners' victory screen is black (they escaped)");
             yield return Snap("victory_screen");
             Log("victory test done");
             Application.Quit(0);
+        }
+
+        /// <summary>
+        /// Explosions (local, just the look and sound): one 24 m in front of us - a big fireball, the smoke column, a hard
+        /// shake, no late far-off boom (victory_explosion_fireball, victory_explosion_smoke) - and one 250 m off: no shake to
+        /// speak of, its boom heard late (at the speed of sound) and muffled, but heard.
+        /// </summary>
+        IEnumerator VictoryExplosionChecks(PlayerNet me, PlayerController pc)
+        {
+            var spawn = me.transform.position;
+            var toMid = new Vector3(-spawn.x, 0f, -spawn.z);
+            if (toMid.sqrMagnitude < 1f) toMid = Vector3.forward;
+            toMid.Normalize();
+            float yaw = Quaternion.LookRotation(toMid).eulerAngles.y;
+            pc.SetLook(yaw, -6f);
+            var at = spawn + toMid * 24f;
+            at.y = MapBuilder.Height(at.x, at.z) + 0.3f;
+            int before = Fx.Explosions;
+            Fx.Trauma = 0f;
+            Fx.Explosion(at);
+            Check(Fx.Explosions == before + 1 && Fx.LastBlastShake > 0.6f && Fx.LastBlastSoundDelay < 0f,
+                $"explosions: one close by shakes the camera hard ({Fx.LastBlastShake:0.00} at {Fx.LastBlastDistance:0} m) with no late far-off boom");
+            yield return new WaitForSeconds(0.12f);
+            yield return Snap("victory_explosion_fireball");
+            yield return new WaitForSeconds(1.6f);
+            int smoke = FxSmoke.Alive;
+            yield return Snap("victory_explosion_smoke");
+            Check(smoke >= 12, $"explosions: a column of smoke rises ({smoke} puffs)");
+            var far = spawn + toMid * 250f;
+            Fx.Explosion(far);
+            float want = Vector3.Distance(Camera.main.transform.position, far) / 343f;
+            Check(Mathf.Abs(Fx.LastBlastSoundDelay - want) < 0.05f && Fx.LastBlastShake < 0.05f && Fx.BoomCutoff(250f) < 2500f && Fx.BoomVolume(600f) > 0.3f,
+                $"explosions: one 250 m off is heard {Fx.LastBlastSoundDelay:0.00} s later (sound speed), muffled ({Fx.BoomCutoff(250f):0} Hz) but loud enough right across the map ({Fx.BoomVolume(600f):0.00} at 600 m), no shake");
+            yield return new WaitForSeconds(4f);
         }
 
         /// <summary>The airdrop ship: never pops out, stays low, shines down, bright beam.</summary>
@@ -139,7 +218,42 @@ namespace RockGame
             Check(spot != null && spot.type == LightType.Spot && spot.enabled && spot.intensity > 100f && spot.transform.forward.y < -0.95f,
                 $"airdrop: a spotlight shines down out of the ship's belly ({(spot != null ? spot.intensity : 0f):0})");
             Check(AirdropShip.BeamIntensity > 1f && BeamFx.Real, $"airdrop: the beam is bright ({AirdropShip.BeamIntensity:0.0}, beam shader {BeamFx.Real})");
+            // it hovers higher than it used to (45 m), but under the clouds
+            Check(hover.y >= Mathf.Min(gp.y + AirdropShip.Hover, AirdropShip.HoverCeiling) - 0.5f && hover.y + 6f < 100f,
+                $"airdrop: the ship hovers high, under the clouds ({hover.y - gp.y:0} m over the drop, at {hover.y:0} m)");
+            // its underside is lit from below (it isn't a sky-coloured disc)
+            var under = AirdropShip.UnderLight;
+            Check(under != null && under.enabled && under.intensity > 10f && under.transform.forward.y > 0.95f,
+                $"airdrop: a light under the ship shines up at its underside ({(under != null ? under.intensity : 0f):0})");
+            // the crate coming down the beam is solid and the beam's see-through round it
+            var crate = AirdropShip.FallingCrate;
+            bool solid = crate != null;
+            if (crate != null) foreach (var r in crate.GetComponentsInChildren<MeshRenderer>()) if (r.sharedMaterial != null && r.sharedMaterial.color.a < 0.99f) solid = false;
+            Check(solid && AirdropShip.CrateClear > 1f, $"airdrop: the crate coming down the beam is solid and the beam clears round it (clear {AirdropShip.CrateClear:0.0} m)");
+            // beams: bright from far away, faint right next to them (Settings > Display > BEAMS, at the defaults)
+            float keepS = GameSettings.BeamStrength, keepF = GameSettings.BeamFalloff;
+            GameSettings.SetBeams(GameSettings.BeamStrengthDefault, GameSettings.BeamFalloffDefault, false);
+            float seenNear = BeamFx.Seen(gp, gp + Vector3.right * 1.5f), seenFar = BeamFx.Seen(gp, gp + Vector3.right * 140f);
+            var bm = AirdropShip.BeamMaterial;
+            Check(seenNear < 0.3f && seenFar > 0.95f && bm != null && bm.GetFloat("_DistFade") > 0.5f,
+                $"beams fade down as you come up to them ({seenNear:0.00} of full right by it, {seenFar:0.00} from 140 m)");
+            if (crate != null)
+            {
+                var to = crate.position + Vector3.up * 0.6f - me.EyePos;
+                pc.SetLook(yaw, -Mathf.Atan2(to.y, new Vector2(to.x, to.z).magnitude) * Mathf.Rad2Deg);
+                yield return Snap("victory_airdrop_crate");
+                pc.SetLook(yaw, -30f);
+            }
             yield return Snap("victory_airdrop_beam");
+            // right up by the beam: faint
+            var nearEye = gp + toMid.normalized * 9f;
+            nearEye.y = MapBuilder.Height(nearEye.x, nearEye.z) + 0.1f;
+            pc.LocalTeleport(nearEye, yaw);
+            pc.SetLook(yaw, -10f);
+            yield return Snap("victory_airdrop_beam_near");
+            GameSettings.SetBeams(keepS, keepF, false);
+            pc.LocalTeleport(eye, yaw);
+            pc.SetLook(yaw, -30f);
             // from far away too
             var far = gp + toMid.normalized * 140f;
             far.y = MapBuilder.Height(far.x, far.z) + 0.1f;

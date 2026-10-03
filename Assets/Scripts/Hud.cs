@@ -1213,6 +1213,8 @@ namespace RockGame
         /// <summary>Test hooks: when the victory / game over screen was last drawn (Time.time; -1 never), and when the cutscene's bars were.</summary>
         public static float GameOverShownAt { get; private set; } = -1f;
         public static float CutsceneShownAt { get; private set; } = -1f;
+        /// <summary>Test hook: the last victory screen drawn was the winners' all-black one.</summary>
+        public static bool WinnerScreenBlack { get; private set; }
 
         /// <summary>The victory cutscene's HUD: black letterbox bars sliding in, the winners' name and why they won in the
         /// bottom bar, and a fade to black at the very end (then the victory screen).</summary>
@@ -1247,11 +1249,15 @@ namespace RockGame
         {
             GameOverShownAt = Time.time;
             float sw = Screen.width, sh = Screen.height, k = m_Scale;
-            Fill(new Rect(0, 0, sw, sh), new Color(0, 0, 0, 0.6f));
             int w = game.Winner.Value;
-            string title = w < 0 ? "DRAW" : w == myTeam ? "<color=#77ff77>VICTORY</color>" : "<color=#ff5555>DEFEAT</color>";
+            // the winners have escaped (the UFO took them): all black for them; everyone else still sees the world behind it
+            bool won = w >= 0 && w == myTeam;
+            WinnerScreenBlack = won;
+            Fill(new Rect(0, 0, sw, sh), new Color(0, 0, 0, won ? 1f : 0.6f));
+            string title = w < 0 ? "DRAW" : won ? "<color=#77ff77>VICTORY</color>" : "<color=#ff5555>DEFEAT</color>";
             Shadowed(new Rect(0, sh * 0.3f, sw, 70 * k), $"<size={Mathf.RoundToInt(64 * k)}>{title}</size>", m_Big);
             Shadowed(new Rect(0, sh * 0.3f + 80 * k, sw, 30 * k), game.EndReason.Value.ToString(), m_Center);
+            if (won && game.CutsceneAt.Value >= 0) GUI.Label(new Rect(0, sh * 0.3f - 34 * k, sw, 28 * k), "<color=#9a9aaa>You escaped.</color>", m_Center);
             DrawLeaveButton(boot, new Rect(sw / 2 - 110 * k, sh * 0.3f + 140 * k, 220 * k, 46 * k));
         }
     }
