@@ -28,10 +28,11 @@ namespace RockGame
             if (secs > 0f && m_Queued.Count >= MaxCraftQueue) { Notify("Your crafting queue is full"); return; }
             if (r.Output == Item.Armor && ArmorHp.Value >= Cfg.ArmorHp) { Notify("You're already wearing full armour"); return; }
             if (r.Output == Item.HeavyArmor && ArmorHp.Value >= Cfg.HeavyArmorHp) { Notify("You're already wearing heavy armour"); return; }
+            if (r.Output == Item.Helmet && (HelmetHp.Value > 0 || CraftingItem.Value == (byte)Item.Helmet || CraftQueue.Contains((byte)Item.Helmet))) { Notify("You're already wearing a helmet"); return; }
             if (r.Output == Item.FortifyBuff && Cfg.FortifyLevel(Team.Value) >= Cfg.MaxFortify) { Notify("Your walls are already refined - fully fortified"); return; }
             if (r.Output == Item.WoodGenBuff && Cfg.WoodGenLevel(Team.Value) >= Cfg.MaxWoodGen) { Notify("Your wood gen is already maxed out"); return; }
             if (!CanAfford(r)) { Notify($"Not enough resources for {r.Name}"); return; }
-            bool noItem = r.Output == Item.Armor || r.Output == Item.HeavyArmor || r.Output == Item.FortifyBuff || r.Output == Item.WoodGenBuff;
+            bool noItem = r.Output == Item.Armor || r.Output == Item.HeavyArmor || r.Output == Item.Helmet || r.Output == Item.FortifyBuff || r.Output == Item.WoodGenBuff;
             int data = r.Output == Item.Saddle ? Team.Value + 1 : Mathf.Clamp(Cfg.MaxData(r.Output), 0, 255);
             if (!noItem && secs <= 0f && InvOps.Space(Inv, r.Output, data) < r.Count && !InvOps.HasEmpty(Inv)) { Notify("Inventory full!"); return; }
 
@@ -89,6 +90,11 @@ namespace RockGame
                     Notify($"Heavy armour on: {ArmorHp.Value} extra health" + (had ? " (your old armour broke off)" : ""));
                     break;
                 }
+                case Item.Helmet:
+                    // the alien helmet goes straight on, like armour (one already on: this one goes in your bag)
+                    if (HelmetHp.Value > 0) { if (ServerGive(Item.Helmet, 1, 1) > 0 && g != null) g.ServerDropItem(ItemStack.Of(Item.Helmet, 1, 1), transform.position + transform.forward, transform.forward, EyePos); }
+                    else { HelmetHp.Value = 1; Notify("Helmet on: it stops one headshot completely"); }
+                    break;
                 case Item.WoodGenBuff:
                 case Item.FortifyBuff: ServerApplyBaseUpgrade(r.Output); break; // (Builder's Fortify; elsewhere they're UPGRADES - Upgrades.cs)
                 default:
@@ -168,7 +174,7 @@ namespace RockGame
                     return;
                 }
                 p.ServerDamage(head ? Cfg.GunHead(gun) : Cfg.GunBody(gun), this);
-                Fx.Server(head ? FxKind.BloodHead : FxKind.Blood, point, dir, OwnerClientId);
+                p.ServerBleed(head, point, dir, OwnerClientId);
                 if (p.Dead.Value) KillConfirmRpc();
             }
             else if (no.TryGetComponent(out Vehicle v)) v.ServerDamage(Cfg.GunBody(gun) * v.HeadMul(point), this);
@@ -247,7 +253,7 @@ namespace RockGame
                 }
                 if (dmg <= 0f) return;
                 p.ServerDamage(dmg, this);
-                Fx.Server(head > 0 ? FxKind.BloodHead : FxKind.Blood, point, (point - m_ShotgunFrom).normalized, OwnerClientId);
+                p.ServerBleed(head > 0, point, (point - m_ShotgunFrom).normalized, OwnerClientId);
                 if (p.Dead.Value) KillConfirmRpc();
             }
             else if (no.TryGetComponent(out Vehicle v)) v.ServerDamage(Cfg.ShotgunPelletDamage * n * Cfg.ShotgunFalloff(Vector3.Distance(m_ShotgunFrom, v.transform.position)), this);

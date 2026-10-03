@@ -314,7 +314,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "sprint", Title = "Run and jump",
-                    Body = $"Hold {K(Bind.Sprint)} to run. Tap {K(Bind.Jump)} to jump.",
+                    Body = $"Hold {K(Bind.Sprint)} to run. Tap {K(Bind.Jump)} to jump. (Press it just before you land and you jump again the moment you touch down.)",
                     Goal = "Run 2 seconds and jump",
                     Progress = () => $"run {Mathf.Min(2f, s_SprintTime):0.0}/2 s   jump {(s_Jumped ? "✔" : "-")}",
                     Hint = $"Hold {Binds.Name(Bind.Sprint)} while you walk forward.",
@@ -783,7 +783,8 @@ namespace RockGame
                     + "Everything is unlocked now - your bag also makes a " + Hi("bow, arrows, chests and the battering ram") + ", and your workbenches add " + Hi("high walls, guns, armour") + " and more.\n"
                     + "Real matches have " + Hi("airdrops") + ": a warning shows 15 seconds before one lands.\n"
                     + "In Classic and Arsenal, the " + Hi("upgrade station") + $" (green plus, left of your machine): {K(Bind.Interact)} opens " + Hi("UPGRADES") + " (fortify all your walls, a faster wood gen).\n"
-                    + "Hurt horses: hold " + Hi("berries") + $" and {K(Bind.Attack)} on one to feed it.\n"
+                    + "Hurt horses: hold " + Hi("berries") + $" and {K(Bind.Attack)} on one to feed it. Riding, {K(Bind.Interact)} picks up what you look at before it gets you off.\n"
+                    + $"Hold {K(Bind.Interact)} on an " + Hi("empty chest or workbench") + " of yours to pick it back up (a tap still opens a chest).\n"
                     + "Tip: Settings > Display changes the shadows, post processing, the UI's font and size, the grass and the world's colours.\n"
                     + Hi("Esc") + " > Leave game, then host a real match!";
                 float fh = 30 * k + 30 * k + fb.CalcHeight(new GUIContent(txt), fw - 24 * k) + 12 * k;

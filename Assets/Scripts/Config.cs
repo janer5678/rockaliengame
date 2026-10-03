@@ -321,6 +321,8 @@ namespace RockGame
         [Tune("Player")] public static float SprintSpeed = 7.5f;
         [Tune("Player")] public static float CrouchSpeed = 2.6f;
         [Tune("Player")] public static float JumpSpeed = 7.2f;
+        [Tune("Player")] public static float JumpBuffer = 0.15f;  // a jump pressed this long before landing still jumps on landing (s)
+        [Tune("Player")] public static float CoyoteTime = 0.12f;  // you can still jump this long after walking off an edge (s)
         [Tune("Player")] public static float Gravity = 20f;
         [Tune("Player")] public static float BallCarrySpeedMul = 1f;
         [Tune("Player")] public static float BallThrowSpeed = 11f;
@@ -385,6 +387,8 @@ namespace RockGame
 
         // ---------- Building ----------
         [Tune("Building")] public static float BuildCooldown = 0f, UpgradeCooldown = 0f, DemolishRefund = 0.5f;
+        [Tune("Building")] public static float PackUpHoldTime = 0.8f;   // hold E this long on an empty chest / workbench of yours to pick it up
+        [Tune("Building")] public static float WallRebuildCooldown = 4f; // seconds before a wall can go back where one was just broken
         [Tune("Building")] public static int FoundationWood = 15, WallWood = 15, DoorwayWood = 20, WindowWood = 15, FloorWood = 12, StairsWood = 20;
         [Tune("Building")] public static int FoundationStone = 50, WallStone = 50, DoorwayStone = 40, WindowStone = 45, FloorStone = 30, StairsStone = 30;
         [Tune("Building HP")] public static float FoundationHp = 500, WallHp = 400, DoorwayHp = 350, WindowHp = 350, FloorHp = 300, StairsHp = 300;
@@ -429,8 +433,8 @@ namespace RockGame
         [Tune("Arsenal and Builder")] public static float ShotgunHeadMul = 1.5f;
         /// <summary>Shotgun pellet damage share at this distance: full up close, down to FarMul at the range.</summary>
         public static float ShotgunFalloff(float dist) => dist <= ShotgunPointBlank ? 1f : dist >= ShotgunRange ? 0f : Mathf.Lerp(1f, ShotgunFarMul, (dist - ShotgunPointBlank) / Mathf.Max(0.1f, ShotgunRange - ShotgunPointBlank));
-        /// <summary>Revolver: 6 rounds, its own head / body damage.</summary>
-        [Tune("Arsenal and Builder")] public static int RevolverMag = 3;
+        /// <summary>Revolver: 5 rounds, its own head / body damage.</summary>
+        [Tune("Arsenal and Builder")] public static int RevolverMag = 5;
         [Tune("Arsenal and Builder")] public static float RevolverBodyDamage = 30f, RevolverHeadDamage = 50f, RevolverFireRate = 0.3f, RevolverReload = 2f;
         /// <summary>Auto Wood: wood added to the pile at every base each second.</summary>
         [Tune("Auto Wood")] public static int AutoWoodPerSecond = 5;
@@ -862,7 +866,7 @@ namespace RockGame
                 case Item.Revolver: return $"{RevolverMag} rounds, {RevolverBodyDamage:0} body / {RevolverHeadDamage:0} head";
                 case Item.RevolverAmmo: return "one bullet for the revolver";
                 case Item.C4: return "thrown: wrecks every building piece nearby";
-                case Item.Helmet: return "put it on: stops one headshot completely";
+                case Item.Helmet: return "goes straight on: stops one headshot completely";
                 default: return BaseUpgradeBlurb(id, team);
             }
         }
@@ -1019,6 +1023,7 @@ namespace RockGame
             (4, new[] { "SpearThrowDamage" }),
             (5, new[] { "BallGatherMul" }),
             (6, new[] { "Workbench2Wood" }),
+            (7, new[] { "RevolverMag" }),
         };
         const string MigrateKey = "RockGame.Tunables.migrated";
 

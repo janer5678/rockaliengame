@@ -122,7 +122,7 @@ namespace RockGame
                 case Item.Revolver: return $"Revolver: {Cfg.RevolverMag} rounds, hitscan.";
                 case Item.RevolverAmmo: return "One revolver bullet.";
                 case Item.C4: return "C4: throw it at enemy buildings.";
-                case Item.Helmet: return "Alien Helmet: stops one headshot completely.";
+                case Item.Helmet: return "Alien Helmet: goes straight on - stops one headshot completely.";
                 default: return Cfg.ItemName(id) + (Cfg.PowerIndex(id) >= 0 ? ": " + Cfg.PowerBlurb(id, team) : "");
             }
         }
@@ -194,6 +194,7 @@ namespace RockGame
             if (r.Output == Item.WoodGenBuff && Cfg.WoodGenLevel(team) >= Cfg.MaxWoodGen) return "maxed out";
             if (r.Output == Item.Armor && me.ArmorHp.Value >= Cfg.ArmorHp) return "wearing it";
             if (r.Output == Item.HeavyArmor && me.ArmorHp.Value >= Cfg.HeavyArmorHp) return "wearing it";
+            if (r.Output == Item.Helmet && me.HelmetHp.Value > 0) return "wearing it";
             if (Cfg.Builder && Cfg.CraftSeconds(r) > 0f && me.CraftQueue.Count >= PlayerNet.MaxCraftQueue) return "queue full";
             if (!me.CanAfford(r)) return "can't afford";
             if (BagFull(me, r)) return "bag full"; // (the server would refuse it: no green CRAFT that does nothing)
@@ -205,7 +206,7 @@ namespace RockGame
         static bool BagFull(PlayerNet me, Recipe r)
         {
             var o = r.Output;
-            if (o == Item.Armor || o == Item.HeavyArmor || o == Item.FortifyBuff || o == Item.WoodGenBuff) return false;
+            if (o == Item.Armor || o == Item.HeavyArmor || o == Item.Helmet || o == Item.FortifyBuff || o == Item.WoodGenBuff) return false;
             if (Cfg.Builder && Cfg.CraftSeconds(r) > 0f) return false;
             int data = o == Item.Saddle ? me.Team.Value + 1 : Mathf.Clamp(Cfg.MaxData(o), 0, 255);
             return InvOps.Space(me.Inv, o, data) < r.Count && !InvOps.HasEmpty(me.Inv);

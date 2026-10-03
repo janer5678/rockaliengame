@@ -139,15 +139,15 @@ namespace RockGame
             yield return new WaitForSeconds(0.4f);
             int w0 = me.Count(Item.Wood);
 
-            // the revolver (3 rounds, comes empty, bullets bought one at a time)
+            // the revolver (5 rounds, comes empty, bullets bought one at a time)
             yield return BenchBuy(me, pc, Item.Revolver);
             Check(me.Count(Item.Revolver) == 1 && w0 - me.Count(Item.Wood) == Cfg.RevolverWood, $"bought a revolver ({w0 - me.Count(Item.Wood)} wood)");
             yield return Hold(me, Item.Revolver);
-            Check(me.HeldStack.Data == 0 && Cfg.RevolverMag == 3, $"the revolver comes empty and holds 3 ({me.HeldStack.Data})");
-            for (int i = 0; i < 3; i++) yield return BenchBuy(me, pc, Item.RevolverAmmo);
+            Check(me.HeldStack.Data == 0 && Cfg.RevolverMag == 5, $"the revolver comes empty and holds 5 ({me.HeldStack.Data})");
+            for (int i = 0; i < Cfg.RevolverMag; i++) yield return BenchBuy(me, pc, Item.RevolverAmmo);
             me.ReloadPistolRpc();
             yield return new WaitForSeconds(0.4f);
-            Check(me.HeldStack.Data == 3 && me.Count(Item.RevolverAmmo) == 0, $"bought 3 bullets and loaded them ({me.HeldStack.Data})");
+            Check(me.HeldStack.Data == Cfg.RevolverMag && me.Count(Item.RevolverAmmo) == 0, $"bought {Cfg.RevolverMag} bullets and loaded them ({me.HeldStack.Data})");
             yield return Snap("arsenal_revolver");
             var fwd = me.transform.forward;
             me.FirePistolRpc(false, default, me.EyePos + fwd * 30f, fwd);
@@ -180,8 +180,15 @@ namespace RockGame
             // the sword, C4 and the headshot helmet
             yield return BenchBuy(me, pc, Item.Sword);
             yield return BenchBuy(me, pc, Item.C4);
+            me.HelmetHp.Value = 0;
             yield return BenchBuy(me, pc, Item.Helmet);
-            Check(me.Count(Item.Sword) == 1 && me.Count(Item.C4) == 1 && me.Count(Item.Helmet) == 1, "bought a sword, C4 and a helmet");
+            Check(me.Count(Item.Sword) == 1 && me.Count(Item.C4) == 1, "bought a sword and C4");
+            Check(me.HelmetHp.Value == 1 && me.Count(Item.Helmet) == 0, $"the alien helmet goes straight on when it's crafted, like armour (wearing {me.HelmetHp.Value}, {me.Count(Item.Helmet)} in the bag)");
+            int hw0 = me.Count(Item.Wood);
+            me.CraftRpc(Cfg.CraftIndexOf(Item.Helmet));
+            yield return new WaitForSeconds(0.4f);
+            Check(me.Count(Item.Wood) == hw0 && me.CraftingItem.Value != (byte)Item.Helmet, "a second helmet is refused while you're wearing one (nothing paid)");
+            me.HelmetHp.Value = 0;
             yield return Hold(me, Item.Sword);
             yield return Snap("arsenal_sword");
 
@@ -350,7 +357,7 @@ namespace RockGame
         {
             var arrows = Cfg.GetRecipe(Cfg.RecipeIndex(Item.Arrow));
             Check(arrows.Wood == 50 && arrows.Count == 5, $"arrows: {arrows.Count} for {arrows.Wood} wood");
-            Check(Cfg.RevolverHeadDamage == 50f && Cfg.RevolverBodyDamage == 30f && Cfg.RevolverMag == 3, "revolver: 3 rounds, 50 head, 30 body");
+            Check(Cfg.RevolverHeadDamage == 50f && Cfg.RevolverBodyDamage == 30f && Cfg.RevolverMag == 5, "revolver: 5 rounds, 50 head, 30 body");
             // the bow: an instant shot is weak and short, a full draw hits hard
             Check(Mathf.Approximately(Cfg.BowDamage(Cfg.BowMinSpeed), Cfg.BowMinDamage) && Mathf.Approximately(Cfg.BowDamage(1f), Cfg.ArrowPlayerDamage)
                 && Cfg.BowDamage(Mathf.Lerp(Cfg.BowMinSpeed, 1f, 0.5f)) < Cfg.ArrowPlayerDamage * 0.4f && Cfg.BowMinSpeed < 0.5f,

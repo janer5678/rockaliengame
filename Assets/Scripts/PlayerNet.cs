@@ -347,6 +347,12 @@ namespace RockGame
         float m_TreeMove, m_TreePhase, m_TreeSquash;
         /// <summary>How high the camo tree is hopping right now (m; tests).</summary>
         public float TreeHopHeight => m_TreeHop ? m_TreeHop.localPosition.y : 0f;
+        /// <summary>How far the camo tree travels in one hop (m): half the hop rate it used to have (1.3 m).</summary>
+        public const float TreeHopStride = 2.6f;
+        /// <summary>For the tests: how many hops the camo tree has finished.</summary>
+        public int TreeHops { get; private set; }
+        /// <summary>Server, for the tests: walls refused because one was just broken in that spot.</summary>
+        public static int WallRebuildRefusals;
 
         /// <summary>
         /// Tree camo on the move: the tree bounces along in little hops - up off the ground stretched tall, a squash as it
@@ -373,9 +379,10 @@ namespace RockGame
                 m_TreeHop.localScale = Vector3.Lerp(m_TreeHop.localScale, Vector3.one, k);
                 return;
             }
-            // a hop every ~1.3 m (quicker when running); finish the hop we're in before settling
+            // a hop every ~2.6 m (quicker when running); finish the hop we're in before settling
             float before = m_TreePhase;
-            m_TreePhase += dt * Mathf.Max(speed, 2.5f) / 1.3f * Mathf.PI;
+            m_TreePhase += dt * Mathf.Max(speed, 2.5f) / TreeHopStride * Mathf.PI;
+            if (Mathf.Floor(before / Mathf.PI) != Mathf.Floor(m_TreePhase / Mathf.PI)) TreeHops++;
             if (m_TreeMove <= 0.001f && Mathf.Floor(before / Mathf.PI) != Mathf.Floor(m_TreePhase / Mathf.PI)) m_TreePhase = 0f;
             float arc = Mathf.Abs(Mathf.Sin(m_TreePhase));
             float hop = arc * (0.28f + 0.1f * Mathf.Clamp01(speed / 7f)) * Mathf.Max(m_TreeMove, m_TreePhase > 0f ? 0.4f : 0f);
@@ -548,7 +555,7 @@ namespace RockGame
         {
             bool dead = Dead.Value;
             if (!IsOwner) RemoteSounds(dead);
-            if (IsServer) { ServerTickCraft(); ServerTickBaseRegen(); }
+            if (IsServer) { ServerTickCraft(); ServerTickBaseRegen(); ServerTickBleed(); }
             if (dead && !m_WasDead) m_DeadSince = Time.time;
             m_WasDead = dead;
             // the body topples over and stays a moment before disappearing
@@ -752,14 +759,55 @@ namespace RockGame
                 dmg = Mathf.Max(0f, dmg - take);
                 if (ArmorHp.Value == 0) { Notify("Your armour broke!"); Fx.Server(FxKind.Break, transform.position + Vector3.up * 1.2f, Vector3.up); }
             }
+            float hp0 = Health.Value;
             Health.Value = Mathf.Max(0, Health.Value - dmg);
+            // it bleeds where everyone can see: the weapon's own splash at the hit point if it made one this frame
+            // (ServerBleed), otherwise a burst out of the body (explosions, falls...); a kill is a much bigger burst
+            if (Health.Value < hp0 && !(attacker == null && cause == KillCause.Lava))
+            {
+                m_HurtFrame = Time.frameCount;
+                m_HurtDir = attacker != null && attacker != this ? transform.position - attacker.transform.position : Vector3.up;
+            }
             if (Health.Value <= 0) ServerDie(attacker, cause);
+        }
+
+        int m_HurtFrame = -1, m_BledFrame = -1;
+        float m_NextBodyBleed;
+        Vector3 m_HurtDir;
+        /// <summary>Where blood comes out of the body when the hit has no point of its own (the chest).</summary>
+        public Vector3 BleedPos => transform.position + Vector3.up * (Crouch.Value ? 0.8f : 1.1f);
+
+        /// <summary>Server: a hit on this player sprays blood from `point` on every screen (except `skipClient`, who
+        /// already drew it). Hits that call this don't also get the body burst ServerDamage would add.</summary>
+        public void ServerBleed(bool head, Vector3 point, Vector3 dir, ulong skipClient = ulong.MaxValue)
+        {
+            m_BledFrame = Time.frameCount;
+            Fx.Server(head ? FxKind.BloodHead : FxKind.Blood, point, dir, skipClient);
+        }
+
+        /// <summary>Server: damage with no blood of its own (explosions, falls, rockets...) - a burst out of the body, for
+        /// everyone (not every frame: at most four a second).</summary>
+        void ServerTickBleed()
+        {
+            if (m_HurtFrame < 0 || Time.frameCount <= m_HurtFrame) return;
+            bool bled = m_BledFrame == m_HurtFrame;
+            m_HurtFrame = -1;
+            if (bled || Dead.Value || Time.time < m_NextBodyBleed) return;
+            m_NextBodyBleed = Time.time + 0.25f;
+            var d = m_HurtDir; d.y = Mathf.Max(d.y, 0f);
+            Fx.Server(FxKind.Blood, BleedPos, d.sqrMagnitude > 0.01f ? d.normalized : Vector3.up);
         }
 
         void ServerDie(PlayerNet killer, byte cause = 0)
         {
             Dead.Value = true;
             Health.Value = 0;
+            // a kill: a big burst of blood out of the body, on every screen
+            {
+                var d = killer != null && killer != this ? transform.position - killer.transform.position : Vector3.up;
+                d.y = Mathf.Max(d.y, 0f);
+                Fx.Server(FxKind.BloodKill, BleedPos, d.sqrMagnitude > 0.01f ? d.normalized : Vector3.up);
+            }
             // a gravestone where you fell (stays for the rest of the match)
             if (NetGame.Instance != null) NetGame.Instance.ServerAddGrave(transform.position, transform.eulerAngles.y + 180f, Team.Value);
             if (CarryingBall) Ball.Instance.ServerDrop(transform.position + Vector3.up * 1.5f, Vector3.up * 3f);
@@ -888,7 +936,7 @@ namespace RockGame
                 return;
             }
             p.ServerDamage(dmg, this, cause);
-            Fx.Server(head ? FxKind.BloodHead : FxKind.Blood, point, dir, OwnerClientId);
+            p.ServerBleed(head, point, dir, OwnerClientId);
             if (p.Dead.Value) KillConfirmRpc();
         }
 
@@ -1212,11 +1260,17 @@ namespace RockGame
             if (r.Output == Item.Armor && ArmorHp.Value >= Cfg.ArmorHp) { Notify("You're already wearing full armour"); return; }
             if (!CanAfford(r)) { Notify($"Not enough resources for {r.Name}"); return; }
             int data = r.Output == Item.Saddle ? Team.Value + 1 : Mathf.Clamp(Cfg.MaxData(r.Output), 0, 255); // saddles are in your team colour
-            bool wear = r.Output == Item.Armor; // armour goes straight on
+            if (r.Output == Item.Helmet && HelmetHp.Value > 0) { Notify("You're already wearing a helmet"); return; }
+            bool wear = r.Output == Item.Armor || r.Output == Item.Helmet; // armour and the alien helmet go straight on
             if (!wear && InvOps.Space(Inv, r.Output, data) < r.Count && !InvOps.HasEmpty(Inv)) { Notify("Inventory full!"); return; }
 
             ServerPay(r);
-            if (wear)
+            if (r.Output == Item.Helmet)
+            {
+                HelmetHp.Value = 1;
+                Notify("Helmet on: it stops one headshot completely");
+            }
+            else if (wear)
             {
                 ArmorHp.Value = (byte)Mathf.Clamp(Cfg.ArmorHp, 1, 255);
                 Notify($"Armour on: {ArmorHp.Value} extra health, used up before your own");
@@ -1247,6 +1301,9 @@ namespace RockGame
             BuildGrid.Pose(t, key, out var pos, out var rot);
             if (Vector3.Distance(pos, transform.position) > Cfg.BuildRange + 4f) { Notify("Too far away"); return; }
             if (BuildGrid.IsOccupied(key, BuildGrid.Registry.ContainsKey)) { Notify("Something is already built there"); return; }
+            // a wall was just broken down here: you can't slap a new one straight back in
+            float rebuild = Structure.RebuildWait(key);
+            if (rebuild > 0f) { WallRebuildRefusals++; Notify($"A wall was just broken here - you can build here again in {Mathf.CeilToInt(rebuild)} s"); return; }
             if (!BuildGrid.IsSupported(key, BuildGrid.Registry.ContainsKey))
             {
                 Notify(t == PieceType.Floor ? "Floors need a wall below or a floor next to them" :
@@ -1582,7 +1639,7 @@ namespace RockGame
                 if (off <= Cfg.WandRadius * 0.5f || nearImpact)
                 {
                     p.ServerDamage(99999f, this, (byte)Item.DeathWand);
-                    Fx.Server(FxKind.BloodHead, c, dir);
+                    p.ServerBleed(true, c, dir);
                     if (p.Dead.Value) KillConfirmRpc();
                 }
             }

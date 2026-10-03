@@ -322,7 +322,14 @@ namespace RockGame
                 bool downhill = m_LastPlanar.magnitude > 1f && SlopeDownhill(out var dh) && Vector3.Dot(dh, m_LastPlanar.normalized) > 0.3f;
                 bool airborne = m_CC.enabled && !m_CC.isGrounded && Time.time - m_GroundedAt >= 0.2f;
                 // in the air: it waits for the landing (however long the fall) and then slides off with the speed you had
-                if (running || downhill) m_SlideQueued = airborne ? float.MaxValue : Mathf.Max(Time.time, m_NextSlide) + 0.35f;
+                if ((running || downhill) && !m_Net.TreeCamo) m_SlideQueued = airborne ? float.MaxValue : Mathf.Max(Time.time, m_NextSlide) + 0.35f;
+                else if (m_Net.TreeCamo) SlidesRefusedAsTree++;
+            }
+            // a tree can't slide: becoming one calls off a slide (or one waiting for the landing)
+            if (m_Net.TreeCamo)
+            {
+                m_SlideQueued = -1f;
+                if (m_SlideOn) { m_SlideVel = Vector3.zero; EndSlide(); }
             }
             if (m_SlideQueued == float.MaxValue && !slideKey) m_SlideQueued = -1f; // let go of C before landing: no slide
             if (wantCrouch != Crouching)
@@ -340,7 +347,7 @@ namespace RockGame
             }
             // start it right away if we're on (or only just left) the ground; in the air it waits for the landing
             bool onGround = m_CC.enabled && (m_CC.isGrounded || Time.time - m_GroundedAt < 0.2f);
-            if (m_SlideQueued > Time.time && !m_SlideOn && slideKey && onGround && Time.time >= m_NextSlide && !TreeLocked) { m_SlideQueued = -1f; StartSlide(); }
+            if (m_SlideQueued > Time.time && !m_SlideOn && slideKey && onGround && Time.time >= m_NextSlide && !TreeLocked && !m_Net.TreeCamo) { m_SlideQueued = -1f; StartSlide(); }
 
             // ---- move ----
             m_Speed = 0;
@@ -384,12 +391,26 @@ namespace RockGame
                 bool grounded = m_CC.isGrounded;
                 if (grounded) m_GroundedAt = Time.time;
                 bool ladder = OnLadder();
+                // jump buffering: a press shortly before you land still jumps the moment you touch down
+                if (move && !TreeLocked && Binds.Down(Bind.Jump)) m_JumpPressedAt = Time.time;
+                bool jumpWanted = move && !TreeLocked && Time.time - m_JumpPressedAt <= Mathf.Max(Time.deltaTime, Cfg.JumpBuffer);
                 if (grounded)
                 {
+                    if (m_VelY <= 0f) m_JumpedSinceGround = false;
                     // sliding: hug the ground going downhill instead of skipping off it
                     if (m_VelY < 0) m_VelY = m_SlideOn ? -(2f + m_SlideVel.magnitude * 0.8f) : -2f;
-                    // you can jump out of a slide and keep all that speed
-                    if (move && !TreeLocked && Binds.Down(Bind.Jump) && (!Crouching || m_SlideOn)) m_VelY = Cfg.JumpSpeed;
+                }
+                // coyote time: just walked off an edge, you can still jump for a moment (once - not a double jump)
+                bool coyote = !grounded && !ladder && !m_JumpedSinceGround && m_VelY <= 0f && Time.time - m_GroundedAt <= Cfg.CoyoteTime;
+                // you can jump out of a slide and keep all that speed
+                if ((grounded || coyote) && jumpWanted && (!Crouching || m_SlideOn))
+                {
+                    if (grounded && Time.time - m_JumpPressedAt > Time.deltaTime + 0.001f) BufferedJumps++;
+                    if (coyote) CoyoteJumps++;
+                    Jumps++;
+                    m_VelY = Cfg.JumpSpeed;
+                    m_JumpPressedAt = -10f;
+                    m_JumpedSinceGround = true;
                 }
                 if (ladder)
                 {
@@ -399,7 +420,7 @@ namespace RockGame
                     // at the top: step off forwards onto the floor
                     var ld = CurrentLadder;
                     if (ld != null && transform.position.y > ld.TopWorldY - 0.15f && up) { m_Push = ld.ExitDir * 3f; m_VelY = Mathf.Max(m_VelY, 1.5f); }
-                    if (move && Binds.Down(Bind.Jump)) { m_VelY = 4f; m_Push = -transform.forward * 3f; }
+                    if (move && Binds.Down(Bind.Jump)) { m_VelY = 4f; m_Push = -transform.forward * 3f; m_JumpPressedAt = -10f; m_JumpedSinceGround = true; }
                 }
                 else m_VelY -= Cfg.Gravity * Time.deltaTime;
                 m_Grounded = grounded || ladder;
@@ -504,6 +525,7 @@ namespace RockGame
             var target = FindInteract();
             Target = target;
             if (input) HandleInteract(target, carrying);
+            else { m_PackStart = -1f; m_PackObj = null; }
             UpdateGhost(input && !carrying && !gameOver && !riding && !DemolishMode && !UpgradeMode ? held : Item.None);
             UpdateAimText(target);
         }
@@ -662,6 +684,15 @@ namespace RockGame
         public int SlideBrakes { get; private set; }
         /// <summary>For the tests: how many slides the crouch key turned straight into a crouch.</summary>
         public int SlideCrouches { get; private set; }
+        /// <summary>For the tests: slide presses ignored because you're a tree (tree camo can't slide).</summary>
+        public int SlidesRefusedAsTree { get; private set; }
+        /// <summary>For the tests: jumps that came from a press buffered before landing / from coyote time after leaving an edge.</summary>
+        public int BufferedJumps { get; private set; }
+        public int CoyoteJumps { get; private set; }
+        public int Jumps { get; private set; }
+        public float VelY => m_VelY;
+        float m_JumpPressedAt = -10f;
+        bool m_JumpedSinceGround;
 
         /// <summary>The ground under you: which way is downhill (flat, unit length) and how steep (sine of the slope).</summary>
         bool SlopeDownhill(out Vector3 downhill) => SlopeDownhill(out downhill, out _);
@@ -1389,12 +1420,13 @@ namespace RockGame
             var game = NetGame.Instance;
             if (game != null)
             {
-                float bestPerp = 0.5f;
+                // (from a horse you sit high up, so it reaches a bit further down: loot comes before getting off)
+                float bestPerp = mount != null ? 0.65f : 0.5f, reach = Cfg.InteractRange + (mount != null ? 1.8f : 1f);
                 foreach (var it in game.Items)
                 {
                     var mid = it.Center;
                     float t = Vector3.Dot(mid - ray.origin, ray.direction);
-                    if (t < 0 || t > found + 0.4f || t > Cfg.InteractRange + 1f) continue;
+                    if (t < 0 || t > found + 0.4f || t > reach) continue;
                     float perp = Vector3.Distance(ray.origin + ray.direction * t, mid);
                     if (perp < bestPerp) { bestPerp = perp; result = new Interactable { Kind = TargetKind.WorldItem, ItemId = it.Id, Stack = it.Stack }; }
                 }
@@ -1429,13 +1461,89 @@ namespace RockGame
             return TargetKind.None;
         }
 
+        // ---- hold E: pick an empty chest / workbench of yours back up ----
+        NetworkObject m_PackObj;
+        float m_PackStart = -1f;
+        /// <summary>How far through holding E to pick up a chest / workbench (0..1; 0 when not holding). Drawn round the crosshair.</summary>
+        public float PackUpProgress => m_PackStart < 0f ? 0f : Mathf.Clamp01((Time.time - m_PackStart) / Mathf.Max(0.05f, Cfg.PackUpHoldTime));
+        /// <summary>What's being picked up (for the HUD's label).</summary>
+        public string PackUpName { get; private set; }
+
+        /// <summary>The thing in the crosshair can be picked back up by holding E (an empty chest / workbench of your team's).</summary>
+        bool CanPackUp(Interactable t, bool carrying)
+        {
+            if (carrying || t.Kind != TargetKind.Container || t.Obj == null || !Tutorial.Allows(TutFeature.Deploy)) return false;
+            var c = t.Obj.GetComponent<Container>();
+            return c != null && m_Net.PackUpProblem(c) == null;
+        }
+
+        /// <summary>A tap on a chest / workbench (let go before the hold finished): what E did before - open the chest,
+        /// or say what the workbench does.</summary>
+        void TapContainer(Container box)
+        {
+            if (box == null || !box.IsSpawned) return;
+            if (box.IsWorkbench)
+            {
+                // nothing is made AT a bench: it unlocks its tier in the TAB crafting list anywhere in your base
+                Hud.Push(box.Team.Value != m_Net.Team.Value ? $"That's the enemy's {box.DisplayName}"
+                    : $"Your {box.DisplayName}: its items are in your crafting list ({Binds.Name(Bind.Inventory)}) anywhere in your base");
+                return;
+            }
+            LootTarget = box;
+            MenuOpen = true;
+            Sfx.Play2D(Sfx.Place, 0.4f);
+        }
+
+        /// <summary>Holding E on something to pick up: true while it's being held (or was just let go / finished).</summary>
+        bool TickPackUp(Interactable t)
+        {
+            if (m_PackStart < 0f) return false;
+            var obj = m_PackObj;
+            bool still = obj != null && obj.IsSpawned && t.Kind == TargetKind.Container && t.Obj == obj && !m_Net.Dead.Value;
+            if (!Binds.Held(Bind.Interact))
+            {
+                // let go early: a tap
+                m_PackStart = -1f; m_PackObj = null;
+                if (still) TapContainer(obj.GetComponent<Container>());
+                return true;
+            }
+            if (!still) { m_PackStart = -1f; m_PackObj = null; return false; } // looked away / it's gone: called off
+            if (PackUpProgress >= 1f)
+            {
+                m_PackStart = -1f; m_PackObj = null;
+                m_Net.PackUpRpc(obj);
+                m_VM.Use();
+                Sfx.Play2D(Sfx.Pop, 0.6f);
+                PackUps++;
+            }
+            return true;
+        }
+
+        /// <summary>For the tests: chests / workbenches this player has asked to pick up by holding E.</summary>
+        public int PackUps { get; private set; }
+
+        /// <summary>Riding: E on these does them (loot first); anywhere else it gets you off.</summary>
+        static bool LootableFromSaddle(Interactable t, bool carrying)
+        {
+            if (t.Kind == TargetKind.Ball) return !carrying;
+            if (carrying) return false;
+            if (t.Kind == TargetKind.WorldItem) return true;
+            if (t.Kind == TargetKind.Container && t.Obj != null)
+            {
+                var c = t.Obj.GetComponent<Container>();
+                return c != null && !c.IsWorkbench;
+            }
+            return false;
+        }
+
         void HandleInteract(Interactable t, bool carrying)
         {
+            if (TickPackUp(t)) return;
             if (!Binds.Down(Bind.Interact)) return;
             // Builder: E puts the ball down right in front of you - it's your team's until someone picks it up
             if (carrying && Cfg.Builder) { PlantBall(); return; }
-            // on a horse, E picks up the ball if you're looking at it; otherwise it gets you off
-            if (m_Net.Riding && !(t.Kind == TargetKind.Ball && !carrying)) { m_Net.DismountRpc(); Sfx.Play2D(Sfx.Pop, 0.4f); return; }
+            // on a horse, E loots what you're looking at (items, chests, bags, the ball) first; otherwise it gets you off
+            if (m_Net.Riding && !LootableFromSaddle(t, carrying)) { m_Net.DismountRpc(); Sfx.Play2D(Sfx.Pop, 0.4f); return; }
             if (carrying && t.Kind != TargetKind.Door && t.Kind != TargetKind.Machine && t.Kind != TargetKind.Vehicle) return; // hands are full (but you can get on a horse)
             switch (t.Kind)
             {
@@ -1443,17 +1551,15 @@ namespace RockGame
                 case TargetKind.Door: m_Net.ToggleDoorRpc(t.Obj); break;
                 case TargetKind.Container:
                 {
-                    var box = t.Obj.GetComponent<Container>();
-                    if (box.IsWorkbench)
+                    // an empty chest / workbench of yours: hold E to pick it up (a tap still opens it - on letting go)
+                    if (!m_Net.Riding && CanPackUp(t, carrying))
                     {
-                        // nothing is made AT a bench: it unlocks its tier in the TAB crafting list anywhere in your base
-                        Hud.Push(box.Team.Value != m_Net.Team.Value ? $"That's the enemy's {box.DisplayName}"
-                            : $"Your {box.DisplayName}: its items are in your crafting list ({Binds.Name(Bind.Inventory)}) anywhere in your base");
+                        m_PackObj = t.Obj;
+                        m_PackStart = Time.time;
+                        PackUpName = t.Obj.GetComponent<Container>().DisplayName;
                         break;
                     }
-                    LootTarget = box;
-                    MenuOpen = true;
-                    Sfx.Play2D(Sfx.Place, 0.4f);
+                    TapContainer(t.Obj.GetComponent<Container>());
                     break;
                 }
                 case TargetKind.Bush: m_Net.PickBerriesRpc(t.Obj); m_VM.Use(); Sfx.Play2D(Sfx.Pop, 0.5f); break;
@@ -1673,6 +1779,8 @@ namespace RockGame
                     else if (c.IsBag) AimText = $"{c.DisplayName}   E: open";
                     else AimText = $"Storage Chest ({Cfg.TeamLabel(c.Team.Value)})  {c.Health.Value:0}/{Cfg.ChestHp:0}   E: open"
                         + (m_Net.HeldItem == Item.BuildingPlan && c.Team.Value == m_Net.Team.Value ? "   X: demolish" : "");
+                    if (m_PackStart >= 0f) AimText = $"Picking up your {c.DisplayName}...";
+                    else if (!m_Net.Riding && CanPackUp(t, m_Net.CarryingBall)) AimText += $"   hold {Binds.Name(Bind.Interact)}: pick up";
                     return;
                 }
                 case TargetKind.Machine:
