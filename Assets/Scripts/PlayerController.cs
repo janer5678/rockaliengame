@@ -227,6 +227,7 @@ namespace RockGame
             var game = NetGame.Instance;
             bool dead = m_Net.Dead.Value;
             bool gameOver = game != null && game.S == GameState.GameOver;
+            bool cutscene = VictoryCutscene.Active; // the victory cutscene: everything locked until the victory screen
             bool sd = game != null && game.S == GameState.SuddenDeath;
             bool carrying = m_Net.CarryingBall;
             bool riding = m_Net.Riding;
@@ -234,8 +235,16 @@ namespace RockGame
 
             // ---- menus ----
             // Enter: type in the chat (Enter again sends it, Esc cancels)
-            if (!Chat.Open && !Paused && !MenuOpen && !Hud.Rebinding && (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))) Chat.Begin();
-            if (Input.GetKeyDown(KeyCode.Escape) && !Chat.Open && !Hud.BackOut())
+            if (cutscene)
+            {
+                CloseMenu();
+                Paused = false;
+                WheelOpen = false;
+                AirstrikeMapOpen = false;
+                if (Chat.Open) Chat.Close();
+            }
+            if (!cutscene && !Chat.Open && !Paused && !MenuOpen && !Hud.Rebinding && (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))) Chat.Begin();
+            if (!cutscene && Input.GetKeyDown(KeyCode.Escape) && !Chat.Open && !Hud.BackOut())
             {
                 if (WheelOpen) WheelOpen = false;
                 else if (AirstrikeMapOpen) CloseAirstrikeMap();
@@ -262,10 +271,10 @@ namespace RockGame
                 else if (Input.GetKeyDown(KeyCode.Alpha2)) ChooseRespawn(true);
             }
 
-            bool cursorFree = MenuOpen || Paused || gameOver || choosing || WheelOpen || AirstrikeMapOpen;
+            bool cursorFree = (MenuOpen || Paused || gameOver || choosing || WheelOpen || AirstrikeMapOpen) && !cutscene;
             Cursor.lockState = cursorFree ? CursorLockMode.None : CursorLockMode.Locked;
             Cursor.visible = cursorFree && !WheelOpen;
-            bool input = !cursorFree && !dead && !Hud.Rebinding && !Chat.Open;
+            bool input = !cursorFree && !dead && !Hud.Rebinding && !Chat.Open && !cutscene;
             // you can keep walking, jumping and crouching with the inventory open
             bool frozen = game != null && game.FightFrozen;
             bool move = !dead && !Paused && !gameOver && !frozen && !AirstrikeMapOpen && !Chat.Open;
@@ -493,6 +502,14 @@ namespace RockGame
         void LateUpdate()
         {
             if (!IsSpawned || !IsOwner || m_Cam == null) return;
+            // the victory cutscene has the camera (and your hands are put away)
+            if (VictoryCutscene.CameraPose(out var cutPos, out var cutRot, out var cutFov))
+            {
+                m_Cam.transform.SetPositionAndRotation(cutPos, cutRot);
+                m_Cam.fieldOfView = cutFov;
+                m_VM.Update(new ViewModel.State { Item = m_Net.HeldItem, Visible = false, Visible2 = false });
+                return;
+            }
             if (m_Net.Riding) FollowSeat();
             Fx.TickCamera(Time.deltaTime);
             var rv = m_Net.Riding ? RidingVehicle : null;

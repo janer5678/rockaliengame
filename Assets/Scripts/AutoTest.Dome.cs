@@ -337,6 +337,8 @@ namespace RockGame
                 double st = g.LaneStartAt(0);
                 var gp = g.LanePosAt(0);
                 double E() => g.NetworkManager.ServerTime.Time - st;
+                int hid = -1;
+                int Hid() { if (hid < 0) hid = AirdropShip.HoleId; return hid; } // (every flight cuts its own hole)
                 var toMid = new Vector3(-gp.x, 0, -gp.z);
                 if (toMid.sqrMagnitude < 1f) toMid = -Cfg.BackDir(team);
                 var eye = gp + toMid.normalized * (pass == 0 ? 45f : 40f) + Vector3.up * Cfg.EyeHeight;
@@ -369,11 +371,11 @@ namespace RockGame
                 yield return LookShot(tag + "_hole_opening", hi, hole, 0.02f);
                 Check(opening > 0.1f && opening < 0.95f, $"{tag}: the hole opens up round the beam ({opening:0.00} open)");
                 while (E() < AirdropShip.CutStart + AirdropShip.OpenTime + 0.2) yield return null;
-                var rim = MapDome.HoleRim(0);
+                var rim = MapDome.HoleRim(Hid());
                 var off = aside * (AirdropShip.HoleR + 3f);
-                Check(Mathf.Abs(MapDome.HoleRadius(0) - AirdropShip.HoleR) < 0.05f && MapDome.GlassAt(gp.x, gp.z) < 0.01f && MapDome.GlassAt(gp.x + off.x, gp.z + off.z) > 0.99f
+                Check(Mathf.Abs(MapDome.HoleRadius(Hid()) - AirdropShip.HoleR) < 0.05f && MapDome.GlassAt(gp.x, gp.z) < 0.01f && MapDome.GlassAt(gp.x + off.x, gp.z + off.z) > 0.99f
                     && rim != null && rim.enabled && rim.bounds.size.x > AirdropShip.HoleR * 2f,
-                    $"{tag}: a round hole is open in the glass under the ship (radius {MapDome.HoleRadius(0):0.0} m, glass in it {MapDome.GlassAt(gp.x, gp.z):0.00}, beside it {MapDome.GlassAt(gp.x + off.x, gp.z + off.z):0.00}), with its rim");
+                    $"{tag}: a round hole is open in the glass under the ship (radius {MapDome.HoleRadius(Hid()):0.0} m, glass in it {MapDome.GlassAt(gp.x, gp.z):0.00}, beside it {MapDome.GlassAt(gp.x + off.x, gp.z + off.z):0.00}), with its rim");
                 Check(AirdropShip.BeamBottom < gp.y + 0.5f, $"{tag}: then the beam goes on down through the hole to the ground ({AirdropShip.BeamBottom:0.0} m)");
                 bool solid = Physics.Raycast(new Vector3(gp.x, glassY - 3f, gp.z), Vector3.up, out var sh, 10f, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore) && sh.collider == MapDome.Collider;
                 Check(solid && MapDome.Collider.enabled, $"{tag}: the dome stays solid there (nothing can get out through the hole)");
@@ -388,7 +390,7 @@ namespace RockGame
                     {
                         noColliders &= fc.GetComponentsInChildren<Collider>().Length == 0;
                         float y = fc.position.y;
-                        if (y < glassY + 1.5f && y > glassY - 1.5f && (crossR < 0f || MapDome.HoleRadius(0) < crossR)) { crossR = MapDome.HoleRadius(0); crossT = (float)E(); }
+                        if (y < glassY + 1.5f && y > glassY - 1.5f && (crossR < 0f || MapDome.HoleRadius(Hid()) < crossR)) { crossR = MapDome.HoleRadius(Hid()); crossT = (float)E(); }
                         if (!crateShot && y < glassY + 2.5f)
                         {
                             crateShot = true;
@@ -409,7 +411,7 @@ namespace RockGame
                 Check(sealing > 0.05f && sealing < 0.95f && AirdropShip.ShipScale > 0.999f, $"{tag}: once the crate's down, the hole closes up ({sealing:0.00} open), the ship waits");
                 while (E() < AirdropShip.SealEnd + 0.1) yield return null;
                 var shipAt = AirdropShip.ShipTransform;
-                Check(MapDome.HoleRadius(0) == 0f && MapDome.HoleRim(0) == null && MapDome.GlassAt(gp.x, gp.z) > 0.99f
+                Check(MapDome.HoleRadius(Hid()) == 0f && MapDome.HoleRim(Hid()) == null && MapDome.GlassAt(gp.x, gp.z) > 0.99f
                     && shipAt != null && Vector3.Distance(shipAt.position, AirdropShip.HoverPoint) < 1f && AirdropShip.ShipScale > 0.999f,
                     $"{tag}: the hole is patched (glass {MapDome.GlassAt(gp.x, gp.z):0.00}) before the ship moves off");
                 yield return LookShot(tag + "_hole_patched", hi, hole, 0.02f);
@@ -419,7 +421,7 @@ namespace RockGame
                 yield return LookShot(tag + "_ship_leaving", eye, shipNow2 != null ? shipNow2.position : hole, 0.02f);
                 Check(leaving < 0.9f && leaving > 0.1f, $"{tag}: then it flies off, shrinking away ({leaving:0.00})");
                 while (E() < AirdropShip.Gone + 0.5) yield return null;
-                Check(AirdropShip.ShipTransform == null && MapDome.HoleRim(0) == null, $"{tag}: the ship's gone, the glass is whole");
+                Check(AirdropShip.ShipTransform == null && MapDome.HoleRim(Hid()) == null, $"{tag}: the ship's gone, the glass is whole");
                 pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
             }
 

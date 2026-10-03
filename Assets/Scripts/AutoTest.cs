@@ -98,6 +98,7 @@ namespace RockGame
             if (m_Mode == "craftui") { yield return CraftUiRoutine(me, pc); yield break; }
             if (m_Mode == "upgrades") { yield return UpgradesRoutine(me, pc); yield break; }
             if (m_Mode == "maps") { yield return MapsRoutine(me, pc); yield break; }
+            if (m_Mode == "victory") { yield return VictoryRoutine(me, pc); yield break; }
             Check(Cfg.BaseTeamAt(me.transform.position) == me.Team.Value, $"spawned inside own base ({me.transform.position})");
             Check(me.Count(Item.Rock) == 0 && me.HeldItem == Item.Rock, "empty hand = holding the rock (no rock item)");
             Check(Vector3.Distance(me.transform.position, Cfg.SpawnPos(me.Team.Value, me.Slot.Value)) < 1.5f, $"sent home to the bedrock when the match started on {Cfg.MapLabel} (seed {Cfg.MapSeed})");
@@ -299,6 +300,26 @@ namespace RockGame
                             yield return null;
                             Check(g.Graves.Count >= 2 && inArena >= 2 && GraveFx.Shown == g.Graves.Count,
                                 $"graves synced ({(g.IsServer ? "host" : "client")}): {g.Graves.Count} graves, {inArena} in the arena, {GraveFx.Shown} drawn");
+                        }
+                        // won with the ball in the socket: the victory cutscene plays first, and only then the victory screen
+                        if (g.CutsceneAt.Value >= 0)
+                        {
+                            if (m_Mode == "victory") yield break; // (VictoryRoutine checks it and quits)
+                            float before = Hud.GameOverShownAt, start = Time.time;
+                            bool early = false, ship = false;
+                            int taken = 0;
+                            while (VictoryCutscene.Active)
+                            {
+                                early |= Hud.GameOverShownAt != before;
+                                ship |= VictoryCutscene.Ship != null;
+                                taken = Mathf.Max(taken, VictoryCutscene.Taken);
+                                yield return null;
+                            }
+                            float took = Time.time - start;
+                            yield return new WaitForSeconds(1f);
+                            bool hud = Hud.CutsceneShownAt >= 0f; // (no HUD at all when there are no graphics)
+                            Check(ship && took > VictoryCutscene.Length - 1.5f && (!hud || (!early && Hud.GameOverShownAt > start + took - 0.3f)),
+                                $"victory cutscene on the {(g.IsServer ? "host" : "client")}: the UFO came ({ship}), it ran {took:0.0} s, {g.CutsceneRiders.Count} beamed up ({taken} seen taken), then the victory screen{(hud ? "" : " (no HUD drawn)")}");
                         }
                         yield return new WaitForSeconds(3f);
                         Application.Quit(0);

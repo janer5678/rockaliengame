@@ -178,6 +178,8 @@ namespace RockGame
             var game = NetGame.Instance;
             float sw = Screen.width, sh = Screen.height, k = m_Scale;
             int team = me.Team.Value;
+            // the victory cutscene: just letterbox bars and a caption over it; the victory screen waits until it's over
+            if (game != null && VictoryCutscene.Active) { DrawVictoryCutscene(game, team); return; }
 
             if (m_DamageFlash > 0) Fill(new Rect(0, 0, sw, sh), new Color(0.8f, 0, 0, m_DamageFlash * 0.5f));
             float wake = Time.time - s_WakeTime;
@@ -1043,8 +1045,42 @@ namespace RockGame
             return $"{dist:0}m {arrow}";
         }
 
+        /// <summary>Test hooks: when the victory / game over screen was last drawn (Time.time; -1 never), and when the cutscene's bars were.</summary>
+        public static float GameOverShownAt { get; private set; } = -1f;
+        public static float CutsceneShownAt { get; private set; } = -1f;
+
+        /// <summary>The victory cutscene's HUD: black letterbox bars sliding in, the winners' name and why they won in the
+        /// bottom bar, and a fade to black at the very end (then the victory screen).</summary>
+        void DrawVictoryCutscene(NetGame game, int myTeam)
+        {
+            CutsceneShownAt = Time.time;
+            float sw = Screen.width, sh = Screen.height, k = m_Scale;
+            float e = VictoryCutscene.Elapsed;
+            float bars = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(e / 0.6f)) * sh * 0.12f;
+            Fill(new Rect(0, 0, sw, bars), Color.black);
+            Fill(new Rect(0, sh - bars, sw, bars), Color.black);
+            int w = game.Winner.Value;
+            float a = Mathf.Clamp01((e - 0.8f) / 0.6f) * Mathf.Clamp01((VictoryCutscene.Gone - e) / 0.5f);
+            if (w >= 0 && a > 0f)
+            {
+                var tc = Cfg.TeamColor[Mathf.Clamp(w, 0, 3)];
+                string col = ColorUtility.ToHtmlStringRGB(Color.Lerp(tc, Color.white, 0.25f));
+                string who = w == myTeam ? "YOUR TEAM WINS!" : $"{Cfg.TeamLabel(w).ToUpper()} WINS!";
+                var big = new GUIStyle(m_Big);
+                big.normal.textColor = new Color(1, 1, 1, a);
+                GUI.Label(new Rect(0, sh - bars + 4 * k, sw, 46 * k), $"<color=#{col}>{who}</color>", big);
+                var sub = new GUIStyle(m_Center);
+                sub.normal.textColor = new Color(0.85f, 0.85f, 0.85f, a);
+                GUI.Label(new Rect(0, sh - bars + 50 * k, sw, 26 * k), game.EndReason.Value.ToString(), sub);
+            }
+            // fade to black as the ship leaves, so the victory screen comes up out of the dark
+            float fade = Mathf.Clamp01((e - (VictoryCutscene.Length - 0.7f)) / 0.6f);
+            if (fade > 0f) Fill(new Rect(0, 0, sw, sh), new Color(0, 0, 0, fade));
+        }
+
         void DrawGameOver(Bootstrap boot, NetGame game, int myTeam)
         {
+            GameOverShownAt = Time.time;
             float sw = Screen.width, sh = Screen.height, k = m_Scale;
             Fill(new Rect(0, 0, sw, sh), new Color(0, 0, 0, 0.6f));
             int w = game.Winner.Value;

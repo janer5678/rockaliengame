@@ -28,6 +28,9 @@ namespace RockGame
         GameObject m_Mesh;
         GameObject m_Beacon;
         Renderer m_BeaconRenderer;
+        Material m_BeaconMat, m_HaloMat, m_FootMat;
+        /// <summary>The beacon's bright core and its soft halo (radius, metres).</summary>
+        public const float BeaconCore = 0.55f, BeaconHalo = 1.9f;
         Light m_Light;
         Collider m_IgnoredCol, m_IgnoredMount;
         float m_IgnoreUntil;
@@ -63,15 +66,27 @@ namespace RockGame
             m_Light.range = 8f;
             m_Light.intensity = 3f;
 
-            // Beacon: a tall translucent pillar of light (gold loose, team colour when socketed). It doesn't start at the ball:
-            // it comes up out of the ground a few metres under it, runs right through the ball and on up into the sky
+            // Beacon: a tall glowing pillar of light (gold loose, team colour when socketed) - additive, so it shines out
+            // in daylight and from right across the map: a bright core, a wide soft halo round it that fades out high up,
+            // and a glow on the ground at its foot. It doesn't start at the ball: it comes up out of the ground a few
+            // metres under it, runs right through the ball and on up into the sky
             m_Beacon = new GameObject("beacon");
             m_Beacon.transform.SetParent(transform, false);
             float halfH = (BeaconTop - BeaconBottom) * 0.5f;
-            var pillar = Art.Part(m_Beacon.transform, Art.Cylinder, Color.white, new Vector3(0, BeaconBottom + halfH, 0),
-                new Vector3(1.0f, halfH / Mathf.Max(0.01f, Art.Cylinder.bounds.extents.y), 1.0f), default, false, Art.Ghost(new Color(1, 1, 1, 0.35f)), "pillar");
-            pillar.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            float hy = halfH / Mathf.Max(0.01f, Art.Cylinder.bounds.extents.y), cr = 0.5f / Mathf.Max(0.01f, Art.Cylinder.bounds.extents.x);
+            m_BeaconMat = BeamFx.Column(Color.white, 1f, 1.1f, 0.25f, 0.6f, 0f, 0.3f, 0.12f);
+            var pillar = BeamFx.Cylinder(m_Beacon.transform, m_BeaconMat, "pillar");
+            pillar.transform.localPosition = new Vector3(0, BeaconBottom + halfH, 0);
+            pillar.transform.localScale = new Vector3(BeaconCore * 2f * cr, hy, BeaconCore * 2f * cr);
             m_BeaconRenderer = pillar.GetComponent<MeshRenderer>();
+            m_HaloMat = BeamFx.Column(Color.white, 1f, 2.2f, 0f, 0f, 0f, 0.55f);
+            var halo = BeamFx.Cylinder(m_Beacon.transform, m_HaloMat, "pillar halo");
+            halo.transform.localPosition = pillar.transform.localPosition;
+            halo.transform.localScale = new Vector3(BeaconHalo * 2f * cr, hy, BeaconHalo * 2f * cr);
+            m_FootMat = BeamFx.Glow(Color.white, 1f, 1.8f);
+            var foot = BeamFx.Disc(m_Beacon.transform, m_FootMat, "pillar foot glow");
+            foot.transform.localPosition = new Vector3(0, -Radius + 0.06f, 0);
+            foot.transform.localScale = Vector3.one * BeaconHalo * 3f;
             SocketTeam.OnValueChanged += OnSocketChanged;
             OnSocketChanged(-1, SocketTeam.Value);
         }
@@ -79,6 +94,7 @@ namespace RockGame
         public override void OnNetworkDespawn()
         {
             if (m_Plinth) Destroy(m_Plinth.gameObject);
+            foreach (var m in new[] { m_BeaconMat, m_HaloMat, m_FootMat }) if (m) Destroy(m);
             SocketTeam.OnValueChanged -= OnSocketChanged;
             if (Instance == this) Instance = null;
         }
@@ -135,8 +151,13 @@ namespace RockGame
             if (team == m_BeaconTeam || m_BeaconRenderer == null) return;
             m_BeaconTeam = team;
             var c = team >= 0 ? Cfg.TeamColor[Mathf.Clamp(team, 0, 3)] : new Color(1f, 0.85f, 0.3f);
-            m_BeaconRenderer.sharedMaterial = Art.Ghost(new Color(c.r, c.g, c.b, team >= 0 ? 0.4f : 0.3f));
+            BeamFx.Set(m_BeaconMat, Color.Lerp(c, Color.white, 0.25f), team >= 0 ? 2.1f : 1.8f);
+            BeamFx.Set(m_HaloMat, c, team >= 0 ? 0.5f : 0.42f);
+            BeamFx.Set(m_FootMat, c, 1.3f);
         }
+
+        /// <summary>Test hook: the beacon's core brightness (0 when it isn't up).</summary>
+        public float BeaconIntensity => m_Beacon != null && m_Beacon.activeInHierarchy ? BeamFx.Intensity(m_BeaconMat) : 0f;
 
         void LateUpdate()
         {

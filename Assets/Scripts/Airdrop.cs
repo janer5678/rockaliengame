@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -11,12 +12,22 @@ namespace RockGame
     /// opens), then carries on down to the ground; the crate comes down the beam (slowly) through the hole. Once the crate
     /// is down and the beam is off, the hole closes up again (patched, its edge glowing), the hatch shuts, and only then
     /// does the ship fly off over the nearest edge of the map - shrinking away to nothing.
-    /// The server spawns the real (networked) crate on the ground when the beam gets it there; the dome's collider stays
+    /// The server spawns the real (networked) crate on the ground when the beam gets there; the dome's collider stays
     /// whole the whole time (the crate coming down is only a picture), so nothing can get out through the hole.
+    ///
+    /// Every flight is its own object (one per lane start), so a ship that's flying off always finishes shrinking away even
+    /// if its lane has already started the next drop (it used to be torn down on the spot - the ship "popped" out of
+    /// existence). Its whole path stays low (it comes in from about 110 m over its hover point and leaves under the
+    /// clouds, never climbing into them - from far away, clouds in the way used to swallow it whole as it climbed off -
+    /// and nowhere near the sky's distant planets).
     /// </summary>
     public class AirdropShip
     {
         const float Arrive = 4f, Hover = 45f, Leave = 6f;
+        /// <summary>The way in: from this far out over the map's edge and this high over the hover point.</summary>
+        public const float ArriveOut = 90f, ArriveUp = 110f;
+        /// <summary>The way out: this far on out over the edge, climbing this much (never above LeaveCeiling: under the clouds).</summary>
+        public const float LeaveOut = 75f, LeaveUp = 18f, LeaveCeiling = 98f;
         /// <summary>The hole in the glass (seconds after the lane starts): the beam is down on the glass just before
         /// CutStart and starts cutting then, the hole is all the way open OpenTime later; once the crate's down and the beam's off it closes up
         /// from SealStart to SealEnd; the ship leaves at LeaveStart and is gone at Gone.</summary>
@@ -27,235 +38,387 @@ namespace RockGame
         public const float HoleR = HatchR * 1.2f;
         /// <summary>Seconds for the hatch to swing open (it's open before the beam starts at NetGame.DropArrive) or shut.</summary>
         const float HatchTime = 0.8f;
-        /// <summary>The hatch: radius of the hole and how far below the ship's centre it is.</summary>
-        const float HatchR = 5.5f;
+        /// <summary>The hatch: radius of the hole.</summary>
+        public const float HatchR = 5.5f;
         /// <summary>How far below the ship's centre the hatch is: just under the bottom of the hull (worked out from the sphere mesh's real size).</summary>
-        static float HatchY => -Art.Sphere.bounds.extents.y * 4.5f - 0.04f;
+        public static float HatchY => -Art.Sphere.bounds.extents.y * 4.5f - 0.04f;
         /// <summary>The built-in cylinder's real radius and half height (to size discs in metres).</summary>
         static float CylR => Art.Cylinder.bounds.extents.x;
         static float CylH => Art.Cylinder.bounds.extents.y;
-        static readonly Color k_Glow = new Color(0.75f, 0.35f, 1f);
-        GameObject s_Ship, s_Beam, s_Crate;
-        Transform s_Rim, s_DoorL, s_DoorR;
-        Light s_ShipLight;
-        Light s_GroundLight;
-        Material s_BeamMat;
-        Vector3 s_Hover, s_Out;
+        public static readonly Color Glow = new Color(0.75f, 0.35f, 1f);
+        /// <summary>The colour of the light shining down out of the ship's belly.</summary>
+        public static readonly Color BellyLight = new Color(0.86f, 0.72f, 1f);
+
+        /// <summary>The ship's moving parts (BuildShip).</summary>
+        public class Parts
+        {
+            public GameObject Root;
+            public Transform Rim, DoorL, DoorR;
+            public Light Point, Spot;
+            public Material BellyGlow;
+        }
+
+        Parts m_Ship;
+        GameObject m_Beam, m_Crate, m_GroundGlow;
+        Light m_GroundLight;
+        Material m_BeamMat, m_CoreMat, m_HaloMat, m_GroundMat;
+        Transform m_Core, m_Halo, m_Main;
+        Vector3 m_Hover, m_Out, m_Ground;
         /// <summary>The height of the glass over the drop spot (float.MinValue: no glass there, no hole).</summary>
-        float s_GlassY;
-        /// <summary>This lane's number (its hole's id in the dome).</summary>
-        int s_LaneId;
+        float m_GlassY;
+        /// <summary>The lane it flies for, its start (server time) and its own hole in the dome.</summary>
+        int m_Lane, m_HoleId;
+        double m_Start;
+        bool m_HoleDone;
+
+        static readonly List<AirdropShip> s_Flights = new List<AirdropShip>();
+        static int s_NextHole = 1;
 
         /// <summary>
         /// Where the ship hovers over a drop spot: Hover metres up, or higher if the map's glass dome is in the way - then
         /// it hovers clear over the glass (its open hatch doors too, all the way across the hull) and beams down through it.
         /// </summary>
-        public static Vector3 HoverAt(Vector3 ground)
+        public static Vector3 HoverAt(Vector3 ground, float up = Hover)
         {
-            float y = ground.y + Hover;
+            float y = ground.y + up;
             float hullR = Mathf.Max(26f * Art.Sphere.bounds.extents.x, 14.6f + 0.6f);
             float below = -HatchY + HatchR + 2.5f; // (the open doors hang about this far under its middle)
             float glass = MapDome.HighestOver(ground.x, ground.z, hullR);
             if (glass > float.MinValue) y = Mathf.Max(y, glass + below);
             return new Vector3(ground.x, y, ground.z);
         }
-        double s_Start = -2;
-        static readonly AirdropShip[] s_Lanes = MakeLanes();
 
-        static AirdropShip[] MakeLanes()
+        /// <summary>Which way a ship over this spot comes in from and leaves towards: the edge of the map it's nearest.</summary>
+        public static Vector3 OutDir(Vector3 ground)
         {
-            var a = new AirdropShip[NetGame.LaneTotal];
-            for (int i = 0; i < a.Length; i++) a[i] = new AirdropShip { s_LaneId = i };
-            return a;
+            var outward = new Vector3(ground.x, 0, ground.z);
+            return outward.sqrMagnitude > 4f ? outward.normalized : new Vector3(0.83f, 0, 0.55f);
+        }
+
+        /// <summary>Where the ship is (and how big) e seconds after it showed up: in over the edge from ArriveUp metres up,
+        /// then hovering from `arrive` until `leave`, then off over the edge and shrinking away to nothing in `leaveTime`.</summary>
+        public static Vector3 FlightPos(Vector3 hover, Vector3 outDir, float e, float arrive, float leave, float leaveTime, out float scale)
+        {
+            scale = 1f;
+            if (e < arrive)
+            {
+                float k = Mathf.Clamp01(e / arrive);
+                k = 1f - (1f - k) * (1f - k) * (1f - k);
+                return Vector3.Lerp(hover + outDir * ArriveOut + Vector3.up * ArriveUp, hover, k);
+            }
+            if (e < leave) return hover + Vector3.up * Mathf.Sin(e * 2f) * 0.4f;
+            // flying off into the distance: it drifts out and a little up - staying under the clouds - and shrinks smoothly to nothing
+            float u = Mathf.Clamp01((e - leave) / leaveTime);
+            float ease = u * u * (3f - 2f * u);
+            float up = Mathf.Clamp(LeaveCeiling - hover.y, 0f, LeaveUp);
+            scale = Mathf.Pow(1f - ease, 1.5f);
+            return hover + (outDir * LeaveOut + Vector3.up * up) * ease;
         }
 
         public static void Clear()
         {
-            foreach (var l in s_Lanes) l.ClearLane();
+            foreach (var f in s_Flights) f.Destroy(true);
+            s_Flights.Clear();
+            HatchOpen = 0f;
+            ShipScale = 1f;
+            HoleOpen = 0f;
         }
 
-        void ClearLane()
+        void Destroy(bool hole)
         {
-            if (s_Ship) Object.Destroy(s_Ship);
-            if (s_Beam) Object.Destroy(s_Beam);
-            if (s_Crate) Object.Destroy(s_Crate);
-            if (s_GroundLight) Object.Destroy(s_GroundLight.gameObject);
-            if (s_BeamMat) Object.Destroy(s_BeamMat);
-            MapDome.SetHole(s_LaneId, 0f, 0f, 0f, 0f);
-            s_Ship = s_Beam = s_Crate = null;
-            s_DoorL = s_DoorR = null;
-            s_ShipLight = null;
-            s_Start = -2;
+            if (m_Ship != null && m_Ship.Root) Object.Destroy(m_Ship.Root);
+            if (m_Beam) Object.Destroy(m_Beam);
+            if (m_Crate) Object.Destroy(m_Crate);
+            if (m_GroundGlow) Object.Destroy(m_GroundGlow);
+            if (m_GroundLight) Object.Destroy(m_GroundLight.gameObject);
+            foreach (var m in new[] { m_BeamMat, m_CoreMat, m_HaloMat, m_GroundMat, m_Ship != null ? m_Ship.BellyGlow : null }) if (m) Object.Destroy(m);
+            if (hole && !m_HoleDone) MapDome.SetHole(m_HoleId, 0f, 0f, 0f, 0f);
+            m_Ship = null;
         }
 
+        /// <summary>Every frame on every peer: a flight for every lane that's started one, each one flying (and shrinking
+        /// away) until it's gone - even after its lane has started the next.</summary>
         public static void Tick(NetGame g)
         {
-            for (int i = 0; i < s_Lanes.Length; i++) s_Lanes[i].TickLane(g, g.LaneStartAt(i), g.LanePosAt(i));
+            double now = g.NetworkManager.ServerTime.Time;
+            for (int i = 0; i < NetGame.LaneTotal; i++)
+            {
+                double start = g.LaneStartAt(i);
+                if (start < 0 || now - start < 0 || now - start > Gone) continue;
+                bool have = false;
+                foreach (var f in s_Flights) if (f.m_Lane == i && f.m_Start == start) { have = true; break; }
+                if (!have) s_Flights.Add(Begin(i, start, g.LanePosAt(i)));
+            }
+            Flying = 0;
+            for (int k = s_Flights.Count - 1; k >= 0; k--)
+            {
+                var f = s_Flights[k];
+                float e = (float)(now - f.m_Start);
+                if (e < 0f || e > Gone)
+                {
+                    f.Destroy(true);
+                    s_Flights.RemoveAt(k);
+                    continue;
+                }
+                f.TickFlight(e);
+                Flying++;
+            }
+            var lead = Lane0;
+            if (lead != null) { ShipScale = lead.m_LastScale; HatchOpen = lead.m_LastHatch; }
         }
 
-        void TickLane(NetGame g, double start, Vector3 ground)
+        static AirdropShip Begin(int lane, double start, Vector3 ground)
         {
-            float e = start < 0 ? -1f : (float)(g.NetworkManager.ServerTime.Time - start);
-            if (e < 0f || e > Gone)
-            {
-                if (s_Ship) ClearLane();
-                return;
-            }
-            if (s_Ship == null || s_Start != start)
-            {
-                ClearLane();
-                s_Start = start;
-                Build(ground);
-                s_Hover = HoverAt(ground);
-                // it comes in from (and leaves towards) the edge of the map it's nearest, so it's always over the glass dome
-                var outward = new Vector3(ground.x, 0, ground.z);
-                s_Out = outward.sqrMagnitude > 4f ? outward.normalized : new Vector3(0.83f, 0, 0.55f);
-                Sfx.Play2D(Sfx.Hum, 0.35f, 0f);
-            }
+            var f = new AirdropShip { m_Lane = lane, m_Start = start, m_Ground = ground, m_HoleId = s_NextHole++ };
+            f.Build(ground);
+            f.m_Hover = HoverAt(ground);
+            f.m_Out = OutDir(ground); // it comes in from (and leaves towards) the edge of the map it's nearest, so it's always over the glass dome
+            Sfx.Play2D(Sfx.Hum, 0.35f, 0f);
+            return f;
+        }
 
-            var hover = s_Hover;
+        float m_LastScale = 1f, m_LastHatch;
+
+        void TickFlight(float e)
+        {
+            var ground = m_Ground;
+            var hover = m_Hover;
             float beamT = NetGame.DropArrive, land = NetGame.DropLand;
-            Vector3 pos;
-            float scale = 1f;
-            if (e < Arrive)
-            {
-                float k = e / Arrive;
-                k = 1f - (1f - k) * (1f - k) * (1f - k);
-                pos = Vector3.Lerp(hover + s_Out * 72f + Vector3.up * 300f, hover, k);
-            }
-            else if (e < LeaveStart) pos = hover + Vector3.up * Mathf.Sin(e * 2f) * 0.4f; // (it waits for the hole to be patched)
-            else
-            {
-                // flying off into the distance: it drifts up and away and shrinks smoothly to nothing (no popping out)
-                float k = Mathf.Clamp01((e - LeaveStart) / Leave);
-                float ease = k * k * (3f - 2f * k);
-                pos = hover + (s_Out * 48f + Vector3.up * 60f) * ease;
-                scale = Mathf.Pow(1f - ease, 1.5f);
-            }
-            s_Ship.transform.position = pos;
-            s_Ship.transform.localScale = Vector3.one * Mathf.Max(0.001f, scale);
-            ShipScale = scale;
-            s_Rim.Rotate(0, 60f * Time.deltaTime, 0, Space.Self);
+            var pos = FlightPos(hover, m_Out, e, Arrive, LeaveStart, Leave, out float scale);
+            var t = m_Ship.Root.transform;
+            t.position = pos;
+            t.localScale = Vector3.one * Mathf.Max(0.001f, scale);
+            m_LastScale = scale;
+            m_Ship.Rim.Rotate(0, 60f * Time.deltaTime, 0, Space.Self);
 
             // the round hatch underneath: swings open once the ship is hovering, shuts again after the beam
             float open = Mathf.Clamp01(Mathf.Min((e - (beamT - 0.2f - HatchTime)) / HatchTime, 1f - (e - (land + 0.6f)) / HatchTime));
             open = open * open * (3f - 2f * open);
-            HatchOpen = open;
-            s_DoorR.localRotation = Quaternion.Euler(0, 0, 100f * open);
-            s_DoorL.localRotation = Quaternion.Euler(0, 0, -100f * open);
-            s_ShipLight.intensity = (3f + 5f * open) * scale;
+            m_LastHatch = open;
+            SetHatch(m_Ship, open, scale, pos.y - ground.y);
 
             // the hole in the glass under it: cut open when the beam gets there, patched once the crate's down and the
-            // beam's off (its edge glows while it's opening or closing)
-            bool glass = s_GlassY > ground.y + 1f;
+            // beam's off (its edge glows while it's opening or closing). Its own hole: nothing else touches it.
+            bool glass = m_GlassY > ground.y + 1f;
             float holeK = 0f;
-            if (glass)
+            if (glass && !m_HoleDone)
             {
                 float opening = Mathf.Clamp01((e - CutStart) / OpenTime), sealing = Mathf.Clamp01((e - SealStart) / (SealEnd - SealStart));
                 holeK = Mathf.Min(opening, 1f - sealing);
                 holeK = holeK * holeK * (3f - 2f * holeK);
                 float glow = opening < 1f || sealing > 0f ? 1f : 0.35f;
-                MapDome.SetHole(s_LaneId, ground.x, ground.z, HoleR * holeK, glow);
+                MapDome.SetHole(m_HoleId, ground.x, ground.z, HoleR * holeK, glow);
+                if (sealing >= 1f) m_HoleDone = true;
             }
-            if (s_LaneId == 0) HoleOpen = holeK;
+            if (this == Lane0) HoleOpen = holeK;
 
             // the beam out of the open hatch: down onto the glass, where it waits for the hole, then on down to the
             // ground, with the crate sliding down it
             bool beaming = e >= beamT - 0.2f && e < land + 0.8f;
-            s_Beam.SetActive(beaming);
+            m_Beam.SetActive(beaming);
+            float groundGlow = 0f;
             if (beaming)
             {
                 float top = pos.y + HatchY * scale;
-                float stop = glass && MapDome.Shown ? s_GlassY : ground.y;
+                float stop = glass && MapDome.Shown ? m_GlassY : ground.y;
                 float reach = Mathf.Clamp01((e - (beamT - 0.2f)) / (CutStart - 0.15f - beamT + 0.2f)); // (on the glass a moment before it cuts)
                 float bottom = Mathf.Lerp(top, stop, reach);
                 if (stop > ground.y) bottom = Mathf.Lerp(bottom, ground.y, Mathf.Clamp01((e - CutStart - OpenTime * 0.5f) / 0.5f));
-                if (s_LaneId == 0) BeamBottom = bottom;
-                s_Beam.transform.position = new Vector3(ground.x, (top + bottom) * 0.5f, ground.z);
-                s_Beam.transform.localScale = new Vector3(HatchR * 0.95f * scale / CylR, Mathf.Max(0.01f, top - bottom) * 0.5f / CylH, HatchR * 0.95f * scale / CylR);
-                float a = e < beamT ? (e - beamT + 0.2f) / 0.2f : e > land ? 1f - (e - land) / 0.8f : 1f;
-                var c = k_Glow;
-                c.a = 0.28f * Mathf.Clamp01(a) * (0.85f + 0.15f * Mathf.Sin(Time.time * 12f));
-                s_BeamMat.SetColor("_BaseColor", c);
-                s_GroundLight.intensity = bottom < ground.y + 0.5f ? 5f * Mathf.Clamp01(a) : 0f;
+                if (this == Lane0) BeamBottom = bottom;
+                float a = Mathf.Clamp01(e < beamT ? (e - beamT + 0.2f) / 0.2f : e > land ? 1f - (e - land) / 0.8f : 1f);
+                float flicker = 0.9f + 0.1f * Mathf.Sin(Time.time * 12f);
+                PlaceBeam(m_Beam.transform, m_Main, m_Core, m_Halo, new Vector3(ground.x, 0f, ground.z), top, bottom, HatchR * 0.95f * scale);
+                BeamFx.Set(m_BeamMat, Glow, 1.3f * a * flicker);
+                BeamFx.Set(m_CoreMat, new Color(0.95f, 0.85f, 1f), 2.0f * a * flicker);
+                BeamFx.Set(m_HaloMat, Glow, 0.55f * a);
+                if (bottom < ground.y + 0.5f) groundGlow = a;
             }
-            else s_GroundLight.intensity = 0f;
+            m_GroundLight.intensity = 6f * groundGlow;
+            m_GroundGlow.SetActive(groundGlow > 0.01f);
+            BeamFx.Set(m_GroundMat, Glow, 2.2f * groundGlow);
             bool crate = e >= beamT && e < land;
-            s_Crate.SetActive(crate);
+            m_Crate.SetActive(crate);
             if (crate)
             {
                 float k = (e - beamT) / (land - beamT);
-                s_Crate.transform.position = Vector3.Lerp(hover + Vector3.up * (HatchY - 1.2f), ground, k * k * (3f - 2f * k));
-                s_Crate.transform.Rotate(0, 45f * Time.deltaTime, 0);
+                m_Crate.transform.position = Vector3.Lerp(hover + Vector3.up * (HatchY - 1.2f), ground, k * k * (3f - 2f * k));
+                m_Crate.transform.Rotate(0, 45f * Time.deltaTime, 0);
             }
+        }
+
+        /// <summary>A beam (main column, bright core, wide faint halo) straight down from `top` to `bottom` over `at`, radius r.</summary>
+        public static void PlaceBeam(Transform root, Transform main, Transform core, Transform halo, Vector3 at, float top, float bottom, float r)
+        {
+            root.position = new Vector3(at.x, (top + bottom) * 0.5f, at.z);
+            float h = Mathf.Max(0.01f, top - bottom) * 0.5f / CylH;
+            main.localScale = new Vector3(r / CylR, h, r / CylR);
+            core.localScale = new Vector3(r * 0.3f / CylR, h, r * 0.3f / CylR);
+            halo.localScale = new Vector3(r * 1.45f / CylR, h, r * 1.45f / CylR);
+        }
+
+        /// <summary>Swing the hatch doors (0 shut .. 1 open) and set the belly lights; height: how far over the ground it is.</summary>
+        public static void SetHatch(Parts s, float open, float scale, float height)
+        {
+            s.DoorR.localRotation = Quaternion.Euler(0, 0, 100f * open);
+            s.DoorL.localRotation = Quaternion.Euler(0, 0, -100f * open);
+            s.Point.intensity = (3f + 5f * open) * scale;
+            // the light shining down out of its belly: always on, brighter with the hatch open, reaching the ground
+            s.Spot.range = Mathf.Max(20f, height + 25f);
+            s.Spot.intensity = (1.1f + 1.3f * open) * scale * height * height; // (URP lights fade with the square of the distance)
+            BeamFx.Set(s.BellyGlow, Glow, (1.4f + 1.2f * open) * Mathf.Clamp01(scale * 1.5f));
         }
 
         void Build(Vector3 ground)
         {
+            m_Ship = BuildShip("AirdropShip");
+            m_Beam = new GameObject("AirdropBeam");
+            MakeBeam(m_Beam.transform, Glow, -0.7f, out m_BeamMat, out m_CoreMat, out m_HaloMat, out m_Main, out m_Core, out m_Halo);
+            m_Beam.SetActive(false);
+            // where the beam lands: a glow on the ground and a light
+            var gl = new GameObject("beamLight");
+            gl.transform.position = ground + Vector3.up * 2f;
+            m_GroundLight = gl.AddComponent<Light>();
+            m_GroundLight.type = LightType.Point;
+            m_GroundLight.color = Glow;
+            m_GroundLight.range = 16f;
+            m_GroundMat = BeamFx.Glow(Glow, 0f, 1.6f);
+            m_GroundGlow = BeamFx.Disc(null, m_GroundMat, "AirdropGroundGlow");
+            m_GroundGlow.transform.position = ground + Vector3.up * 0.08f;
+            m_GroundGlow.transform.localScale = Vector3.one * HatchR * 3.2f;
+            m_GroundGlow.SetActive(false);
+
+            // where the beam meets the map's glass dome (it cuts its hole there)
+            m_GlassY = MapDome.HeightAt(ground.x, ground.z);
+
+            m_Crate = new GameObject("AirdropCrateFalling");
+            Container.CreateVisual(Container.Airdrop, 2, m_Crate.transform, Art.Ghost(new Color(0.8f, 0.55f, 1f, 0.85f)));
+            m_Crate.SetActive(false);
+        }
+
+        /// <summary>The beam's three layers under `root` (each a column centred on root, sized by PlaceBeam): the main
+        /// column, a bright thin core and a wide faint halo; scroll: which way its bands run (+ up).</summary>
+        public static void MakeBeam(Transform root, Color c, float scroll, out Material main, out Material core, out Material halo,
+            out Transform mainT, out Transform coreT, out Transform haloT)
+        {
+            main = BeamFx.Column(c, 0f, 1.2f, 0.3f, scroll, 0.02f, 0.04f, 0.18f);
+            core = BeamFx.Column(new Color(0.95f, 0.85f, 1f), 0f, 2.2f, 0.2f, scroll * 1.5f, 0.02f, 0.04f, 0.3f);
+            halo = BeamFx.Column(c, 0f, 2.5f, 0f, 0f, 0.05f, 0.1f);
+            mainT = BeamFx.Cylinder(root, main, "beam").transform;
+            coreT = BeamFx.Cylinder(root, core, "beam core").transform;
+            haloT = BeamFx.Cylinder(root, halo, "beam halo").transform;
+        }
+
+        /// <summary>
+        /// The ship itself (also the victory UFO): a big flying saucer with a glass dome on top, a turning rim of lights, a
+        /// round hatch in its belly (two half-round doors that swing down), a ring of glowing lights round its underside,
+        /// a soft glow under it, a purple light round it and a spotlight shining down out of its belly.
+        /// </summary>
+        public static Parts BuildShip(string name)
+        {
+            var p = new Parts();
             var metal = new Color(0.42f, 0.45f, 0.5f);
-            s_Ship = new GameObject("AirdropShip");
-            var t = s_Ship.transform;
+            p.Root = new GameObject(name);
+            var t = p.Root.transform;
             Art.Part(t, Art.Sphere, metal, Vector3.zero, new Vector3(26f, 4.5f, 26f));
             Art.Part(t, Art.Cylinder, metal * 0.8f, new Vector3(0, -0.2f, 0), new Vector3(30f, 0.35f, 30f));
             Art.Part(t, Art.Sphere, Color.white, new Vector3(0, 2f, 0), new Vector3(9f, 5f, 9f), default, false, Art.Ghost(new Color(0.6f, 0.9f, 1f, 0.5f)));
             // the hatch: a dark frame ring, the glowing hole, and two half-round doors hinged on its edge
             Art.Part(t, Art.Cylinder, metal * 0.45f, new Vector3(0, HatchY + 0.1f, 0), new Vector3(HatchR * 1.2f / CylR, 0.05f / CylH, HatchR * 1.2f / CylR)); // (HatchY + 0.05 .. 0.15: a dark ring just above the hole)
             Art.Part(t, Art.Cylinder, Color.white, new Vector3(0, HatchY, 0), new Vector3(HatchR / CylR, 0.03f / CylH, HatchR / CylR), default, false, GlowMat(), "hatch hole"); // (HatchY +- 0.03: below the frame, above the doors)
-            s_DoorR = HatchDoor(t, 1f, metal * 0.85f);
-            s_DoorL = HatchDoor(t, -1f, metal * 0.85f);
-            s_Rim = new GameObject("rim").transform;
-            s_Rim.SetParent(t, false);
+            p.DoorR = HatchDoor(t, 1f, metal * 0.85f);
+            p.DoorL = HatchDoor(t, -1f, metal * 0.85f);
+            p.Rim = new GameObject("rim").transform;
+            p.Rim.SetParent(t, false);
             for (int i = 0; i < 20; i++)
             {
                 float a = i * Mathf.PI * 2f / 20f;
-                Art.Box(s_Rim, i % 2 == 0 ? k_Glow : new Color(1f, 0.85f, 0.4f), new Vector3(Mathf.Sin(a) * 14.6f, -0.2f, Mathf.Cos(a) * 14.6f), new Vector3(1.2f, 0.5f, 1.2f));
+                Art.Box(p.Rim, i % 2 == 0 ? Glow : new Color(1f, 0.85f, 0.4f), new Vector3(Mathf.Sin(a) * 14.6f, -0.2f, Mathf.Cos(a) * 14.6f), new Vector3(1.2f, 0.5f, 1.2f));
             }
-            foreach (var r in s_Ship.GetComponentsInChildren<MeshRenderer>()) r.shadowCastingMode = ShadowCastingMode.Off;
+            // a ring of glowing lights round the underside (they stick out under the hull, so they're seen from below)
+            float hy = Art.Sphere.bounds.extents.y * 4.5f;
+            for (int i = 0; i < 12; i++)
+            {
+                float a = (i + 0.5f) * Mathf.PI * 2f / 12f, r = 9.5f;
+                float y = -hy * Mathf.Sqrt(Mathf.Max(0f, 1f - Sq(r / 13f)));
+                Art.Part(t, Art.Sphere, Color.white, new Vector3(Mathf.Sin(a) * r, y, Mathf.Cos(a) * r), new Vector3(1.5f, 0.55f, 1.5f), default, false, GlowMat(), "belly light");
+            }
+            foreach (var r in p.Root.GetComponentsInChildren<MeshRenderer>()) r.shadowCastingMode = ShadowCastingMode.Off;
+            // the soft glow under it, round the hatch
+            p.BellyGlow = BeamFx.Glow(Glow, 1.4f, 1.3f);
+            var bg = BeamFx.Disc(t, p.BellyGlow, "belly glow");
+            bg.transform.localPosition = new Vector3(0, HatchY - 0.35f, 0);
+            bg.transform.localScale = Vector3.one * 30f;
             var sl = new GameObject("shipLight");
             sl.transform.SetParent(t, false);
             sl.transform.localPosition = new Vector3(0, -4f, 0);
-            var l = s_ShipLight = sl.AddComponent<Light>();
+            var l = p.Point = sl.AddComponent<Light>();
             l.type = LightType.Point;
-            l.color = k_Glow;
+            l.color = Glow;
             l.range = 40f;
             l.intensity = 3f;
-
-            s_BeamMat = new Material(Art.Ghost(k_Glow));
-            s_Beam = Art.Part(null, Art.Cylinder, Color.white, ground, Vector3.one, default, false, s_BeamMat, "AirdropBeam");
-            s_Beam.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
-            var gl = new GameObject("beamLight");
-            gl.transform.position = ground + Vector3.up * 2f;
-            s_GroundLight = gl.AddComponent<Light>();
-            s_GroundLight.type = LightType.Point;
-            s_GroundLight.color = k_Glow;
-            s_GroundLight.range = 14f;
-            s_Beam.SetActive(false);
-
-            // where the beam meets the map's glass dome (it cuts its hole there)
-            s_GlassY = MapDome.HeightAt(ground.x, ground.z);
-
-            s_Crate = new GameObject("AirdropCrateFalling");
-            Container.CreateVisual(Container.Airdrop, 2, s_Crate.transform, Art.Ghost(new Color(0.8f, 0.55f, 1f, 0.85f)));
-            s_Crate.SetActive(false);
+            // the light shining down out of its belly onto the ground under it
+            var sp = new GameObject("bellySpot");
+            sp.transform.SetParent(t, false);
+            sp.transform.localPosition = new Vector3(0, HatchY - 0.2f, 0);
+            sp.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+            var s = p.Spot = sp.AddComponent<Light>();
+            s.type = LightType.Spot;
+            s.color = BellyLight;
+            s.spotAngle = 62f;
+            s.innerSpotAngle = 28f;
+            s.range = 70f;
+            s.intensity = 14f;
+            s.shadows = LightShadows.None;
+            return p;
         }
 
-        /// <summary>Test hooks: how open the newest ship's hatch is (0 shut, 1 open) and how big the ship is (1, shrinking to 0 as it leaves).</summary>
+        static float Sq(float x) => x * x;
+
+        /// <summary>Test hooks: how open the first lane's newest ship's hatch is (0 shut, 1 open) and how big it is (1, shrinking to 0 as it leaves).</summary>
         public static float HatchOpen { get; private set; }
         public static float ShipScale { get; private set; } = 1f;
-        /// <summary>Test hook: the first lane's ship (null when none is flying).</summary>
-        public static Transform ShipTransform => s_Lanes[0].s_Ship != null ? s_Lanes[0].s_Ship.transform : null;
+        /// <summary>Test hook: how many airdrop ships are in the sky right now (a leaving one counts until it's gone).</summary>
+        public static int Flying { get; private set; }
+        /// <summary>The first lane's newest flight (null when none).</summary>
+        static AirdropShip Lane0
+        {
+            get
+            {
+                AirdropShip best = null;
+                foreach (var f in s_Flights) if (f.m_Lane == 0 && (best == null || f.m_Start > best.m_Start)) best = f;
+                return best;
+            }
+        }
+        /// <summary>Test hook: the first lane's (newest) ship (null when none is flying).</summary>
+        public static Transform ShipTransform => Lane0 != null && Lane0.m_Ship != null && Lane0.m_Ship.Root ? Lane0.m_Ship.Root.transform : null;
+        /// <summary>Test hook: the ships in the sky, oldest first.</summary>
+        public static List<Transform> Ships
+        {
+            get
+            {
+                var l = new List<Transform>();
+                foreach (var f in s_Flights) if (f.m_Ship != null && f.m_Ship.Root) l.Add(f.m_Ship.Root.transform);
+                return l;
+            }
+        }
+        /// <summary>Test hook: the id of the first lane's ship's hole in the dome (MapDome.HoleRadius / HoleRim).</summary>
+        public static int HoleId => Lane0 != null ? Lane0.m_HoleId : -1;
         /// <summary>Test hooks: how open the first lane's hole in the glass is (0 none / patched, 1 all the way open), and
         /// how far down its beam reaches.</summary>
         public static float HoleOpen { get; private set; }
         public static float BeamBottom { get; private set; }
         /// <summary>Test hook: the first lane's crate on its way down the beam (null when there's none).</summary>
-        public static Transform FallingCrate => s_Lanes[0].s_Crate != null && s_Lanes[0].s_Crate.activeSelf ? s_Lanes[0].s_Crate.transform : null;
+        public static Transform FallingCrate => Lane0 != null && Lane0.m_Crate != null && Lane0.m_Crate.activeSelf ? Lane0.m_Crate.transform : null;
         /// <summary>Test hook: where the first lane's ship hovers.</summary>
-        public static Vector3 HoverPoint => s_Lanes[0].s_Hover;
+        public static Vector3 HoverPoint => Lane0 != null ? Lane0.m_Hover : Vector3.zero;
+        /// <summary>Test hook: the first lane's beam's brightness (0 off).</summary>
+        public static float BeamIntensity => Lane0 != null && Lane0.m_Beam != null && Lane0.m_Beam.activeSelf ? BeamFx.Intensity(Lane0.m_BeamMat) : 0f;
+        /// <summary>Test hook: the first lane's ship's belly spotlight.</summary>
+        public static Light BellySpot => Lane0 != null && Lane0.m_Ship != null ? Lane0.m_Ship.Spot : null;
 
         static Material s_GlowMat;
 
-        /// <summary>Unlit glowing purple (the hatch hole and the door seams).</summary>
+        /// <summary>Unlit glowing purple (the hatch hole, the door seams and the belly lights).</summary>
         static Material GlowMat()
         {
             if (s_GlowMat != null) return s_GlowMat;
