@@ -25,6 +25,9 @@ namespace RockGame
         /// <summary>Fake bomb bush: the team that threw it (NoTrap = a real bush). Looks exactly the same.</summary>
         public readonly NetworkVariable<byte> TrapTeam = new NetworkVariable<byte>(NoTrap);
         public const byte NoTrap = 255;
+        /// <summary>Trees: how many birds are sitting in it (0 = none). A flock lands here after flying out of a tree that
+        /// was hit, and flies on to another tree when this one is hit (Birds.cs).</summary>
+        public readonly NetworkVariable<byte> Birds = new NetworkVariable<byte>();
 
         /// <summary>Every node in the match (to find the tree a hit landed on, and to swap graphics modes).</summary>
         public static readonly System.Collections.Generic.List<ResourceNode> All = new System.Collections.Generic.List<ResourceNode>();
@@ -83,8 +86,10 @@ namespace RockGame
             if (IsBush) m_Grow = 0f; // bushes come up out of the ground
             Amount.OnValueChanged += OnAmountChanged;
             Spot.OnValueChanged += OnSpotChanged;
+            Birds.OnValueChanged += OnBirdsChanged;
             RefreshState();
             PlaceMarker();
+            if (Birds.Value > 0) BirdFlock.Perch(this, Birds.Value); // (joined while birds sat in it)
         }
 
         public override void OnNetworkDespawn()
@@ -93,6 +98,15 @@ namespace RockGame
             GameSettings.GraphicsChanged -= OnGraphicsChanged;
             Amount.OnValueChanged -= OnAmountChanged;
             Spot.OnValueChanged -= OnSpotChanged;
+            Birds.OnValueChanged -= OnBirdsChanged;
+            GrassField.Unblock(GetInstanceID());
+            BirdFlock.NodeGone(this);
+        }
+
+        void OnBirdsChanged(byte prev, byte cur)
+        {
+            if (cur > 0) BirdFlock.Perch(this, cur); // (nothing if the flock flying here is already on its way)
+            else BirdFlock.Orphan(this);              // (they fly off: the take-off message says where to)
         }
 
         void OnAmountChanged(int prev, int cur)
@@ -117,6 +131,7 @@ namespace RockGame
                 return;
             }
             if (m_Visual.activeSelf != alive) m_Visual.SetActive(alive);
+            if (Kind.Value == Log) LogGrass(alive);
             if (!alive) ClearHitMarks();
             if (m_Stump != null && m_Stump.activeSelf == alive) m_Stump.SetActive(!alive);
             if (alive && Kind.Value == Boulder)
@@ -156,6 +171,8 @@ namespace RockGame
             BuildVisual();
             RefreshState();
             PlaceMarker();
+            // (the birds sitting in it move to the new tree's branches)
+            if (Birds.Value > 0) { BirdFlock.NodeGone(this); BirdFlock.Perch(this, Birds.Value); }
         }
 
         void BuildVisual()
@@ -251,7 +268,7 @@ namespace RockGame
                     float rad = 0.45f + r() * 0.3f;
                     var p = new Vector3(Mathf.Cos(a) * rad, y, Mathf.Sin(a) * rad * 0.95f);
                     using (ColorSlots.Use(ColorSlots.Berries))
-                    m_Berries[i] = Art.Part(tr, Art.Sphere, i % 4 == 0 ? ItemModels.Berry * 0.8f : ItemModels.Berry, p, Vector3.one * (0.12f + r() * 0.05f));
+                    m_Berries[i] = Art.Part(tr, Art.Sphere, i % 4 == 0 ? ItemModels.Berry * 0.8f : ItemModels.Berry, p, Vector3.one * (0.12f + r() * 0.05f) * BerrySize);
                 }
                 if (GetComponent<SphereCollider>() == null)
                 {
@@ -336,7 +353,8 @@ namespace RockGame
                 }
                 return false;
             }
-            int want = 18 + rng.Next(6), made = 0;
+            // (bigger berries than they were - BerrySize - and a few fewer of them)
+            int want = 15 + rng.Next(5), made = 0;
             for (int tries = 0; tries < 300 && made < want; tries++)
             {
                 int bi = 1 + rng.Next(blobs.Count - 1);
@@ -352,8 +370,8 @@ namespace RockGame
                 var up = Vector3.Cross(side, dir);
                 for (int k = 0; k < cluster && made < want; k++)
                 {
-                    float br = R(0.065f, 0.085f);
-                    var bc = at + dir * br * 0.55f + (side * R(-1f, 1f) + up * R(-1f, 1f)) * 0.06f * (k == 0 ? 0f : 1f);
+                    float br = R(0.065f, 0.085f) * BerrySize;
+                    var bc = at + dir * br * 0.55f + (side * R(-1f, 1f) + up * R(-1f, 1f)) * 0.06f * BerrySize * (k == 0 ? 0f : 1f);
                     var berry = k == 0 && rng.NextDouble() < 0.3 ? ItemModels.Berry * 0.8f : ItemModels.Berry;
                     berry.a = 1f;
                     Berry(berries, bc, br, berry, Sway(bc, 0.6f));
@@ -370,6 +388,8 @@ namespace RockGame
 
         /// <summary>The Normal berry bush is this much bigger than the old one (about 2.2 m across, 1.4 m high).</summary>
         public const float BushSize = 1.25f;
+        /// <summary>The berries on the bushes are this much bigger than they first were (radius 6.5 .. 8.5 cm then).</summary>
+        public const float BerrySize = 1.45f;
 
         /// <summary>One berry: a little faceted ball, shiny on top.</summary>
         static void Berry(MeshKit kit, Vector3 c, float r, Color col, Vector2 sway)
@@ -796,8 +816,8 @@ namespace RockGame
                     if (sh != null && sh.isSupported)
                     {
                         s_GlowMat = new Material(sh) { name = "x glow" };
-                        s_GlowMat.SetColor("_Color", XColour);
-                        s_GlowMat.SetFloat("_Intensity", XGlow);
+                        s_GlowMat.SetColor("_Color", GameSettings.TreeXColour);
+                        s_GlowMat.SetFloat("_Intensity", GameSettings.TreeXGlow);
                     }
                     else Debug.LogWarning("[RockGame] World/Glow shader missing: the X won't glow");
                     var sun = Resources.Load<Shader>("World/Sun");
@@ -806,10 +826,29 @@ namespace RockGame
                         s_HaloMat = new Material(sun) { name = "x halo" };
                         s_HaloMat.SetColor("_Tint", Color.white);
                     }
+                    GameSettings.TreeXChanged += ApplyXLook;
                 }
                 return s_GlowMat;
             }
         }
+
+        /// <summary>Settings > Display > TREE X changed: the glow material, the halo and every X's place (its size).</summary>
+        static void ApplyXLook()
+        {
+            if (s_GlowMat != null)
+            {
+                s_GlowMat.SetColor("_Color", GameSettings.TreeXColour);
+                s_GlowMat.SetFloat("_Intensity", GameSettings.TreeXGlow);
+            }
+            if (s_HaloMesh != null) FillHalo(s_HaloMesh);
+            foreach (var n in All)
+                if (n != null && n.IsWood) { n.m_BarkSpotFor = -1; n.PlaceMarker(); }
+        }
+
+        /// <summary>The Normal X is drawn this many times its made size (Settings > Display > TREE X; PSX X's stay as they are).</summary>
+        static float XScale => PsxArt.On || AiPsxArt.On ? 1f : GameSettings.TreeXSize;
+        /// <summary>The X's half size right now (bigger X's are kept clear of the bark over more).</summary>
+        static float XHalfNow => XHalf * XScale;
 
         /// <summary>The Normal X: two glowing bars and a soft orange halo round them on the bark (the halo shows as a glow
         /// even with post processing off).</summary>
@@ -818,7 +857,7 @@ namespace RockGame
             var glow = GlowMat;
             foreach (float z in new[] { 45f, -45f })
             {
-                var bar = Art.Box(marker, XColour, Vector3.zero, new Vector3(0.34f, 0.06f, 0.02f), new Vector3(0, 0, z), false, glow);
+                var bar = Art.Box(marker, GameSettings.TreeXColour, Vector3.zero, new Vector3(0.34f, 0.06f, 0.02f), new Vector3(0, 0, z), false, glow);
                 bar.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             }
             if (s_HaloMat == null) return;
@@ -833,23 +872,39 @@ namespace RockGame
             mr.receiveShadows = false;
         }
 
-        /// <summary>A soft round glow: bright orange in the middle fading out to nothing (vertex colours, linear; the Sun shader).</summary>
+        /// <summary>A soft round glow: bright in the middle fading out to nothing (vertex colours, linear; the Sun shader),
+        /// in the X's colour. Shared by every X; FillHalo redoes it when the settings change.</summary>
         static Mesh HaloMesh()
         {
+            var m = new Mesh { name = "x halo" };
+            FillHalo(m);
+            return m;
+        }
+
+        /// <summary>How far the halo reaches round the X at the default halo size (m; it was 0.3).</summary>
+        public const float HaloRadius = 0.52f;
+
+        static void FillHalo(Mesh m)
+        {
             const int N = 24;
-            float[] rad = { 0f, 0.1f, 0.19f, 0.3f };
-            float[] alpha = { 0.6f, 0.42f, 0.16f, 0f };
+            float[] rad = { 0f, 0.29f, 0.6f, 1f };
+            float[] alpha = { 0.62f, 0.44f, 0.18f, 0f };
+            float size = GameSettings.TreeXHalo * HaloRadius;
+            // (the glow amount makes the halo stronger / fainter too; size 0 = no halo)
+            float amount = Mathf.Clamp(GameSettings.TreeXGlow / GameSettings.TreeXGlowDefault, 0.25f, 1.5f) * (size < 0.01f ? 0f : 1f);
+            size = Mathf.Max(size, 0.001f);
             var v = new List<Vector3>();
             var c = new List<Color>();
             var t = new List<int>();
-            var lin = XColour.linear;
-            v.Add(Vector3.zero); c.Add(new Color(lin.r, lin.g, lin.b, alpha[0]));
+            var lin = GameSettings.TreeXColour.linear;
+            Color A(int ring) => new Color(lin.r, lin.g, lin.b, Mathf.Min(0.95f, alpha[ring] * amount));
+            v.Add(Vector3.zero); c.Add(A(0));
             for (int ring = 1; ring < rad.Length; ring++)
                 for (int k = 0; k < N; k++)
                 {
                     float a = k * Mathf.PI * 2f / N;
-                    v.Add(new Vector3(Mathf.Cos(a), Mathf.Sin(a), 0) * rad[ring]);
-                    c.Add(new Color(lin.r, lin.g, lin.b, alpha[ring]));
+                    v.Add(new Vector3(Mathf.Cos(a), Mathf.Sin(a), 0) * rad[ring] * size);
+                    c.Add(A(ring));
                 }
             int R(int ring, int k) => 1 + (ring - 1) * N + (k % N);
             for (int k = 0; k < N; k++) { t.Add(0); t.Add(R(1, k + 1)); t.Add(R(1, k)); }
@@ -859,10 +914,9 @@ namespace RockGame
                     t.Add(R(ring, k)); t.Add(R(ring, k + 1)); t.Add(R(ring + 1, k + 1));
                     t.Add(R(ring, k)); t.Add(R(ring + 1, k + 1)); t.Add(R(ring + 1, k));
                 }
-            var m = new Mesh { name = "x halo" };
+            m.Clear();
             m.SetVertices(v); m.SetColors(c); m.SetTriangles(t, 0);
             m.RecalculateBounds();
-            return m;
         }
 
         /// <summary>Puts a triangle in the kit facing `outward` (whichever way round its corners were given).</summary>
@@ -1076,6 +1130,33 @@ namespace RockGame
         /// <summary>How far round from the top of a log its side weak spots are (degrees).</summary>
         public const float LogSpotSide = 62f;
 
+        /// <summary>A fallen log lying here (not chopped up): its two ends (on its axis) and its radius. The grass round it
+        /// lies flat (GrassField's trample map) and none grows up through it (GrassField.Block) while it's there.</summary>
+        public bool LogLying(out Vector3 a, out Vector3 b, out float r)
+        {
+            a = b = default;
+            r = m_LogR;
+            if (Kind.Value != Log || m_LogT == null || Amount.Value <= 0 || !IsSpawned) return false;
+            var half = m_LogT.right * (m_LogLen * 0.5f);
+            var c = m_LogT.position;
+            a = c - half;
+            b = c + half;
+            return true;
+        }
+
+        public float LogLength => m_LogLen;
+        public float LogRadius => m_LogR;
+
+        /// <summary>How far round a log's footprint no grass grows (m; further out it's only flattened).</summary>
+        public const float LogGrassPad = 0.45f;
+
+        void LogGrass(bool lying)
+        {
+            if (lying && m_LogT != null)
+                GrassField.Block(GetInstanceID(), m_LogT.position, m_LogT.right, new Vector2(m_LogLen * 0.5f, m_LogR * 0.85f), LogGrassPad, m_LogT.position.y - m_LogR * 1.2f);
+            else GrassField.Unblock(GetInstanceID());
+        }
+
         /// <summary>A new weak spot on a log: one facing the hitter (on their side of it, or the top), never the same one.</summary>
         byte PickLogSpot(Vector3 hitterPos)
         {
@@ -1269,6 +1350,120 @@ namespace RockGame
             if (Amount.Value <= 0) return;
             Amount.Value = 0;
             m_RespawnAt = Time.time + Cfg.NodeRespawnTime;
+            if (Birds.Value > 0) ServerBirdsTakeOff(Birds.Value);
+        }
+
+        // =====================================================================
+        // Birds: a flock now and then flies out of a tree that's hit, and on to another tree whenever theirs is hit
+        // =====================================================================
+
+        /// <summary>The chance a hit on a tree with no birds in it sends a new flock flying out of it.</summary>
+        public const float BirdChance = 0.15f;
+        /// <summary>At most this many flocks about the map per team.</summary>
+        public const int FlocksPerTeam = 2;
+        int m_BirdsIncoming;
+        float m_BirdsLandAt;
+
+        /// <summary>(server) How many flocks are about (sitting in a tree or on their way to one).</summary>
+        public static int ServerFlockCount()
+        {
+            int n = 0;
+            foreach (var t in All) if (t != null && (t.Birds.Value > 0 || t.m_BirdsIncoming > 0)) n++;
+            return n;
+        }
+
+        /// <summary>(server) A tree was hit: its birds fly to another tree - or, now and then, a new flock flies out.</summary>
+        void ServerBirdsOnHit(bool force = false)
+        {
+            if (Kind.Value != Tree) return;
+            byte n = Birds.Value;
+            if (n == 0)
+            {
+                if (m_BirdsIncoming > 0) return; // (a flock's on its way here: it lands in it anyway)
+                if (!force && (Random.value >= BirdChance || ServerFlockCount() >= FlocksPerTeam * Cfg.Copies)) return;
+                n = (byte)Random.Range(5, 10);
+            }
+            ServerBirdsTakeOff(n);
+        }
+
+        /// <summary>(tests) A flock flies out of this tree now (as if a hit had sent one up).</summary>
+        public void ServerSendBirds() => ServerBirdsOnHit(true);
+
+        /// <summary>(server) The n birds in (or on their way to) this tree fly off to another one (every peer sees the same
+        /// flight: BirdsFlyRpc); they've landed there when the flight's time is up (Birds on that tree).</summary>
+        void ServerBirdsTakeOff(byte n)
+        {
+            Birds.Value = 0;
+            var to = ServerPickBirdTree();
+            float dur = to != null ? BirdFlock.FlightTime(transform.position, to.transform.position) : 6f;
+            if (to != null) { to.m_BirdsIncoming = n; to.m_BirdsLandAt = Time.time + dur; }
+            BirdsFlyRpc(to != null ? to.NetworkObjectId : ulong.MaxValue, n, Random.Range(0, int.MaxValue), dur);
+        }
+
+        /// <summary>Another standing tree for the birds to land in: 15 - 70 m away if there is one, no birds in it already.</summary>
+        ResourceNode ServerPickBirdTree()
+        {
+            var near = new List<ResourceNode>();
+            ResourceNode any = null;
+            float anyD = float.MaxValue;
+            foreach (var t in All)
+            {
+                if (t == null || t == this || t.Kind.Value != Tree || t.Amount.Value <= 0 || t.Birds.Value > 0 || t.m_BirdsIncoming > 0) continue;
+                var d = t.transform.position - transform.position;
+                d.y = 0f;
+                float m = d.magnitude;
+                if (m >= 15f && m <= 70f) near.Add(t);
+                else if (m >= 8f && m < anyD) { anyD = m; any = t; }
+            }
+            return near.Count > 0 ? near[Random.Range(0, near.Count)] : any;
+        }
+
+        [Rpc(SendTo.ClientsAndHost)]
+        void BirdsFlyRpc(ulong toId, byte count, int seed, float duration)
+        {
+            ResourceNode to = null;
+            if (toId != ulong.MaxValue && NetworkManager != null && NetworkManager.SpawnManager.SpawnedObjects.TryGetValue(toId, out var no)) to = no.GetComponent<ResourceNode>();
+            BirdFlock.TakeOff(this, to, count, seed, duration);
+        }
+
+        void ServerBirdsUpdate()
+        {
+            if (m_BirdsIncoming <= 0 || Time.time < m_BirdsLandAt) return;
+            byte n = (byte)m_BirdsIncoming;
+            m_BirdsIncoming = 0;
+            if (Kind.Value == Tree && Amount.Value > 0) Birds.Value = n;
+            else ServerBirdsTakeOff(n); // (felled while they were on their way: on to another)
+        }
+
+        /// <summary>Where bird i of a flock sits in this tree (world space): on the branch tips of a pine's lower tiers
+        /// (from its seed, so every peer puts them in the same places), or out in the crown of any other tree.</summary>
+        public Vector3 BirdPerch(int i)
+        {
+            var rng = new System.Random(Seed.Value * 97 + i * 7919 + 3);
+            float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
+            float ang = R(0f, Mathf.PI * 2f);
+            var dir = new Vector3(Mathf.Cos(ang), 0, Mathf.Sin(ang));
+            var vt = m_Visual != null ? m_Visual.transform : transform;
+            if (m_Pine != null)
+            {
+                int k = Mathf.Min(m_Pine.Tiers - 1, rng.Next(Mathf.Max(1, m_Pine.Tiers - 1)));
+                float rr = m_Pine.R[k] * R(0.6f, 0.85f);
+                // on the skirt's upper side: from the branch tips (Y, R) rising to the ring part way up (MidY, MidR)
+                float t = Mathf.InverseLerp(m_Pine.R[k], m_Pine.R[k] * m_Pine.MidR, rr);
+                float y = Mathf.Lerp(m_Pine.Y[k] + m_Pine.H[k] * m_Pine.NotchUp, m_Pine.MidY(k), t) + 0.02f;
+                return vt.TransformPoint(dir * rr + Vector3.up * y);
+            }
+            bool any = false;
+            var b = default(Bounds);
+            if (m_Visual != null)
+                foreach (var r in m_Visual.GetComponentsInChildren<Renderer>())
+                {
+                    if (!r.enabled || (m_Marker != null && r.transform.IsChildOf(m_Marker))) continue;
+                    if (!any) { b = r.bounds; any = true; } else b.Encapsulate(r.bounds);
+                }
+            if (!any || b.size.y < 1f) return transform.position + dir * 1.5f + Vector3.up * 7f;
+            float rad = Mathf.Min(b.extents.x, b.extents.z) * R(0.45f, 0.8f);
+            return new Vector3(transform.position.x, 0, transform.position.z) + dir * rad + Vector3.up * Mathf.Lerp(b.min.y, b.max.y, R(0.55f, 0.8f));
         }
 
         /// <summary>Local-space direction and height of weak spot `i` (a ring around the trunk / rock).</summary>
@@ -1330,7 +1525,7 @@ namespace RockGame
         /// <summary>Normal pines: where the X goes on the bark you see, in the visual's space - facing straight out along
         /// dir, as far out as the bark comes anywhere behind the X (the trunk has ten flat sides: in front of a corner the
         /// bark stands out past the round collider, and a card on the collider was partly inside it).</summary>
-        bool BarkSpot(Vector3 dir, float y, out Vector3 pos) => BarkSpot(new Vector3(0, y, 0), dir, Vector3.up, XHalf, out pos);
+        bool BarkSpot(Vector3 dir, float y, out Vector3 pos) => BarkSpot(new Vector3(0, y, 0), dir, Vector3.up, XHalfNow, out pos);
 
         /// <summary>The same for any axis: from `centre` (on the trunk's / log's axis) out along `dir`, the spot on the bark
         /// that a card `half` across (its sides along `up` and across it) sits in front of without touching.</summary>
@@ -1371,7 +1566,7 @@ namespace RockGame
                 if (m_BarkSpotFor != Spot.Value)
                 {
                     LogSpot(Spot.Value, out var lc, out var ld, out var la);
-                    m_BarkSpotOk = BarkSpot(lc, ld, la, XHalf, out m_BarkSpotAt);
+                    m_BarkSpotOk = BarkSpot(lc, ld, la, XHalfNow, out m_BarkSpotAt);
                     m_BarkSpotFor = Spot.Value;
                 }
                 if (!m_BarkSpotOk) return false;
@@ -1463,6 +1658,7 @@ namespace RockGame
 
         void Update()
         {
+            if (IsServer && m_BirdsIncoming > 0) ServerBirdsUpdate();
             if (m_Grow < 1f && m_Visual)
             {
                 m_Grow = Mathf.Min(1f, m_Grow + Time.deltaTime / 1.6f);
@@ -1491,7 +1687,7 @@ namespace RockGame
                 m_MarkerPop = Mathf.Min(1f, m_MarkerPop + Time.deltaTime * 5f);
                 float pop = 1f + (1f - m_MarkerPop) * 1.2f;
                 float pulse = Kind.Value == Tree ? 1f + Mathf.Sin(Time.time * 6f) * 0.08f : 0.85f + Mathf.Abs(Mathf.Sin(Time.time * 4f)) * 0.35f;
-                m_Marker.localScale = Vector3.one * pop * pulse;
+                m_Marker.localScale = Vector3.one * pop * pulse * (IsWood && m_Decal == null ? XScale : 1f);
                 if (Kind.Value == Boulder) m_Marker.rotation *= Quaternion.Euler(0, 0, Time.deltaTime * 90f);
             }
 
@@ -1528,6 +1724,7 @@ namespace RockGame
             int got = Mathf.Min(want, Amount.Value);
             Amount.Value -= got;
             if (Amount.Value <= 0) m_RespawnAt = Time.time + Cfg.NodeRespawnTime;
+            if (Kind.Value == Tree) ServerBirdsOnHit();
             if (IsBush && Amount.Value <= 0)
             {
                 // a new bush grows somewhere else in this half of the map later

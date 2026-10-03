@@ -72,9 +72,15 @@ namespace RockGame
             else if (IsWorkbench) RockGame.Workbench.Setup(this, m_Visual, bc);
             else { bc.center = new Vector3(0, 0.33f, 0); bc.size = new Vector3(1.1f, 0.66f, 0.62f); }
             m_Pop = 0f;
+            // no grass through a chest, a workbench or a gamble machine (it grows back when it's gone; bags and airdrops lie in it)
+            if (!IsBag && !IsAirdrop) GrassField.BlockRenderers(GetInstanceID(), transform);
         }
 
-        public override void OnNetworkDespawn() => All.Remove(this);
+        public override void OnNetworkDespawn()
+        {
+            All.Remove(this);
+            GrassField.Unblock(GetInstanceID());
+        }
 
         public static GameObject CreateVisual(byte kind, int team, Transform parent, Material ghost)
         {
