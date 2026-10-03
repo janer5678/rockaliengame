@@ -14,19 +14,23 @@ namespace RockGame
     ///   and airstrike blasts);
     /// - LMB with berries on a hurt horse feeds it (HorseFeedTests: one berry a click, you don't eat it, not past full);
     /// - the two-shot portal gun and raiding portals (PortalGunTests in AutoTest.Bench.cs, PortalRaidTests);
-    /// - UPGRADES at the alien machine (UpgradesScreenTests: E opens it, photographed poor / ready / level 1 / maxed, every
-    ///   level bought for its price, refused when maxed or away from the machine; the ball in a socket is still the ball);
+    /// - the UPGRADE STATION and its UPGRADES screen (UpgradesScreenTests: the station stands left of the alien machine
+    ///   clear of everything (machine, socket, spawns, benches, wood machine) inside the bedrock, a chest can't go in it,
+    ///   its prompt names it, E on it opens UPGRADES (E on the alien machine doesn't any more), photographed poor / ready /
+    ///   level 1 / maxed, every level bought for its price with the station's celebration (plus signs, flash, bounce)
+    ///   played and photographed, refused when maxed or away from the station; the ball in a socket is still the ball);
     /// - the saddle needs the Workbench T2;
-    /// and from a client (ClientUpgradesRoutine): hurt a horse, feed it, open UPGRADES and buy Fortify at our machine.
+    /// and from a client (ClientUpgradesRoutine): hurt a horse, feed it, open UPGRADES at our upgrade station and buy
+    /// Fortify there (the client sees its station celebrate, and so does the host).
     /// UpgradeBuy buys an upgrade like a player would (for the Arsenal / Auto Wood tests).
     /// </summary>
     public partial class AutoTest
     {
-        /// <summary>Buy a base upgrade the way the UPGRADES screen's button does (going to our machine first if we're away).</summary>
+        /// <summary>Buy a base upgrade the way the UPGRADES screen's button does (going to our upgrade station first if we're away).</summary>
         IEnumerator UpgradeBuy(PlayerNet me, PlayerController pc, Item id)
         {
             int team = me.Team.Value;
-            if (!Cfg.AtOwnMachine(team, me.transform.position))
+            if (!Cfg.AtOwnStation(team, me.transform.position))
             {
                 pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
                 yield return new WaitForSeconds(0.4f);
@@ -46,7 +50,7 @@ namespace RockGame
             yield return PortalGunTests(me, pc, g, team); // (and PortalRaidTests)
             yield return SaddleTierTest(me, pc, team);
             yield return UpgradesScreenTests(me, pc, g, team);
-            // a client: wait for it to do its part (it feeds a horse and buys Fortify at its own machine)
+            // a client: wait for it to do its part (it feeds a horse and buys Fortify at its own upgrade station)
             if (!Bootstrap.Solo)
             {
                 PlayerNet other = null;
@@ -57,7 +61,9 @@ namespace RockGame
                     int ot = other.Team.Value;
                     until = Time.time + 180f;
                     while (Cfg.FortifyLevel(ot) < 1 && Time.time < until) yield return null;
-                    Check(Cfg.FortifyLevel(ot) >= 1, $"(host) the client bought Fortify All Walls at its own machine (level {Cfg.FortifyLevel(ot)})");
+                    Check(Cfg.FortifyLevel(ot) >= 1, $"(host) the client bought Fortify All Walls at its own upgrade station (level {Cfg.FortifyLevel(ot)})");
+                    yield return new WaitForSeconds(0.5f);
+                    Check(UpgradeStation.CelebrationsOf[ot] >= 1, $"(host) saw the client's upgrade station celebrate ({UpgradeStation.CelebrationsOf[ot]})");
                     yield return new WaitForSeconds(5f);
                 }
                 else Check(false, "(host) no client joined");
@@ -319,7 +325,7 @@ namespace RockGame
             Drop(me, Item.Saddle);
         }
 
-        // ------------------------------------------------------------------ UPGRADES at the alien machine
+        // ------------------------------------------------------------------ the UPGRADE STATION and UPGRADES
 
         IEnumerator UpgradesScreenTests(PlayerNet me, PlayerController pc, NetGame g, int team)
         {
@@ -335,6 +341,13 @@ namespace RockGame
                 LookAt(pc, me, Cfg.MachinePos(team) + Vector3.up * 1.1f);
                 yield return new WaitForSeconds(0.3f);
             }
+            IEnumerator FaceStation()
+            {
+                pc.LocalTeleport(spawn, Cfg.SpawnYaw(team));
+                yield return new WaitForSeconds(0.4f);
+                LookAt(pc, me, Cfg.UpgradeStationPos(team) + Vector3.up * 0.95f);
+                yield return new WaitForSeconds(0.3f);
+            }
             var ups = new List<Item>();
             Cfg.BaseUpgrades(ups);
             for (int i = 0; i < me.Inv.Count; i++) me.Inv[i] = default;
@@ -343,13 +356,27 @@ namespace RockGame
 
             if (!Cfg.HasBaseUpgrades)
             {
-                // modes with no base upgrades: E on the machine still just says what it's for
+                // modes with no base upgrades: no station, and E on the machine still just says what it's for
+                Check(UpgradeStation.ByTeam[team] == null && FindAnyObjectByType<UpgradeStation>() == null, $"{Cfg.RulesName(Cfg.Rules)} has no upgrade stations");
                 Binds.TestPress(Bind.Interact);
                 yield return new WaitForSeconds(0.4f);
                 Check(!pc.UpgradesOpen && !pc.MenuOpen && ups.Count == 0, $"{Cfg.RulesName(Cfg.Rules)} has no base upgrades: E on the machine opens nothing");
                 yield break;
             }
-            Check(pc.AimText.Contains("upgrades"), $"our machine says E: upgrades (\"{pc.AimText}\")");
+            // the alien machine doesn't do upgrades any more
+            Check(!pc.AimText.ToLower().Contains("upgrade"), $"our alien machine's prompt doesn't offer upgrades (\"{pc.AimText}\")");
+            Binds.TestPress(Bind.Interact);
+            yield return new WaitForSeconds(0.4f);
+            Check(!pc.UpgradesOpen && !pc.MenuOpen, "E on the alien machine doesn't open UPGRADES any more");
+            pc.CloseMenu();
+
+            // the station: one per base, left of the alien machine, on the bedrock and clear of everything
+            yield return StationLayoutTests(me, pc, team);
+
+            yield return FaceStation();
+            Check(pc.Target.Kind == PlayerController.TargetKind.UpgradeStation && pc.Target.MachineTeam == team, $"looking at our upgrade station ({pc.Target.Kind})");
+            Check(pc.AimText.Contains("UPGRADE STATION") && pc.AimText.Contains("to open"), $"its prompt names it (\"{pc.AimText}\")");
+            yield return Snap($"upgrade_station_{rn}");
             Check(ups.Contains(Item.FortifyBuff) && ups.Contains(Item.WoodGenBuff) == Cfg.AutoWood, $"UPGRADES has {string.Join(", ", ups)} (the wood gen only in Auto Wood)");
             Check(Cfg.CraftIndexOf(Item.FortifyBuff) < 0 && Cfg.CraftIndexOf(Item.WoodGenBuff) < 0 && Cfg.PowerIndex(Item.FortifyBuff) < 0, "neither is a crafted (POWER ITEMS) item any more");
             // no workbench needed: here from the start
@@ -360,7 +387,7 @@ namespace RockGame
             Binds.TestPress(Bind.Interact);
             yield return new WaitForSeconds(0.3f);
             yield return Frames();
-            Check(pc.UpgradesOpen && pc.MenuOpen && pc.LootTarget == null, "E on our machine opens UPGRADES");
+            Check(pc.UpgradesOpen && pc.MenuOpen && pc.LootTarget == null, "E on our upgrade station opens UPGRADES");
             Check(Row(Item.FortifyBuff) == "can't afford" && Hud.CraftRowsShown.Count == 0, $"with no {Cfg.CurrencyName} its rows say so ({Row(Item.FortifyBuff)}), and the crafting list isn't drawn ({Hud.CraftRowsShown.Count} rows)");
             yield return Snap($"upgrades_{rn}_poor");
             for (int i = 0; i < 12; i++) me.ServerGive(cur, 1000);
@@ -371,14 +398,14 @@ namespace RockGame
             Check(allOk, $"with enough {Cfg.CurrencyName} every upgrade is ready to buy ({string.Join(", ", Hud.UpgradeRowsShown)})");
             yield return Snap($"upgrades_{rn}");
 
-            // away from the machine: the server won't sell it, and the screen closes
+            // away from the station: the server won't sell it, and the screen closes
             pc.LocalTeleport(spawn - Cfg.BackDir(team) * 12f, Cfg.SpawnYaw(team));
             yield return new WaitForSeconds(0.4f);
             int w0 = me.Count(cur);
             me.BaseUpgradeRpc(Item.FortifyBuff);
             yield return new WaitForSeconds(0.4f);
-            Check(!pc.UpgradesOpen && Cfg.FortifyLevel(team) == 0 && me.Count(cur) == w0, "away from the machine: the screen closes and the server won't sell upgrades");
-            yield return FaceMachine();
+            Check(!pc.UpgradesOpen && Cfg.FortifyLevel(team) == 0 && me.Count(cur) == w0, "away from the station: the screen closes and the server won't sell upgrades");
+            yield return FaceStation();
             Binds.TestPress(Bind.Interact);
             yield return new WaitForSeconds(0.3f);
 
@@ -389,12 +416,30 @@ namespace RockGame
                 for (int lvl = 0; lvl < max; lvl++)
                 {
                     int price = Cfg.BaseUpgradeRecipe(id, team).Wood;
-                    int before = me.Count(cur), bought = PlayerNet.UpgradesBought;
+                    int before = me.Count(cur), bought = PlayerNet.UpgradesBought, cel = UpgradeStation.Celebrations;
                     me.BaseUpgradeRpc(id);
+                    if (lvl == 0 && id == Item.FortifyBuff)
+                    {
+                        // the station's show: close the screen and photograph it mid-celebration
+                        float until = Time.time + 3f;
+                        while (UpgradeStation.Celebrations == cel && Time.time < until) yield return null;
+                        var st = UpgradeStation.ByTeam[team];
+                        Check(UpgradeStation.Celebrations == cel + 1 && st != null && st.Animating && FindObjectsByType<PlusParticle>(FindObjectsSortMode.None).Length > 0,
+                            "buying an upgrade sets the station off: green plus signs, the screen flash and the bounce");
+                        pc.CloseMenu();
+                        yield return new WaitForSeconds(0.12f);
+                        yield return Snap($"upgrade_station_{rn}_celebrate");
+                        yield return new WaitForSeconds(0.25f);
+                        yield return Snap($"upgrade_station_{rn}_celebrate2");
+                        yield return new WaitForSeconds(2f);
+                        Check(st != null && !st.Animating && st.transform.GetChild(0).localScale == Vector3.one, "and it settles back down");
+                        Binds.TestPress(Bind.Interact);
+                        yield return new WaitForSeconds(0.3f);
+                    }
                     yield return new WaitForSeconds(0.5f);
                     yield return Frames();
-                    Check(Cfg.BaseUpgradeLevel(id, team) == lvl + 1 && before - me.Count(cur) == price && PlayerNet.UpgradesBought == bought + 1,
-                        $"UPGRADE {Cfg.ItemName(id)} to level {lvl + 1} for {before - me.Count(cur)} {Cfg.CurrencyName} (price {price})");
+                    Check(Cfg.BaseUpgradeLevel(id, team) == lvl + 1 && before - me.Count(cur) == price && PlayerNet.UpgradesBought == bought + 1 && UpgradeStation.Celebrations == cel + 1,
+                        $"UPGRADE {Cfg.ItemName(id)} to level {lvl + 1} for {before - me.Count(cur)} {Cfg.CurrencyName} (price {price}), the station celebrated");
                     if (lvl == 0 && id == Item.FortifyBuff) yield return Snap($"upgrades_{rn}_level1");
                 }
                 {
@@ -403,6 +448,7 @@ namespace RockGame
                     yield return new WaitForSeconds(0.4f);
                     yield return Frames();
                     Check(me.Count(cur) == before && Cfg.BaseUpgradeLevel(id, team) == max && Row(id) == "maxed out", $"{Cfg.ItemName(id)} maxed out at level {max}: refused, the row says so ({Row(id)})");
+                    Check(pc.UpgradesOpen, "(UPGRADES still open)");
                 }
             }
             Check(Cfg.FortifyStoneWood == 1000 && Cfg.FortifyMetalWood == 2000 && Cfg.FortifyRefinedWood == 2500 && (!Cfg.AutoWood || (Cfg.WoodGen1Wood == 1000 && Cfg.WoodGen2Wood == 3000)),
@@ -450,13 +496,87 @@ namespace RockGame
                 Binds.TestPress(Bind.Interact);
                 yield return new WaitForSeconds(0.5f);
                 Check(me.CarryingBall && !pc.UpgradesOpen, "E takes the ball out of the enemy's machine");
-                // and carrying it, E on our own machine doesn't open UPGRADES
-                yield return FaceMachine();
+                // and carrying it, E on our own station doesn't open UPGRADES
+                yield return FaceStation();
                 Binds.TestPress(Bind.Interact);
                 yield return new WaitForSeconds(0.4f);
-                Check(!pc.UpgradesOpen, "carrying the ball, E on our machine doesn't open UPGRADES");
+                Check(!pc.UpgradesOpen, "carrying the ball, E on our upgrade station doesn't open UPGRADES");
             }
             pc.CloseMenu();
+        }
+
+        /// <summary>Every base's upgrade station: left of the alien machine, inside the bedrock (so it never sits where you
+        /// could build, and leaves room for walls on the bedrock's edges), clear of the machine, socket, spawns, benches and
+        /// the wood machine, and solid (a chest can't be put down in it).</summary>
+        IEnumerator StationLayoutTests(PlayerNet me, PlayerController pc, int team)
+        {
+            for (int t = 0; t < Cfg.TeamCount; t++)
+            {
+                var st = UpgradeStation.ByTeam[t];
+                if (st == null) { Check(false, $"team {t} has an upgrade station"); continue; }
+                var back = Cfg.BackDir(t);
+                var left = -Vector3.Cross(Vector3.up, back);
+                var c = Cfg.BedrockCenter(t);
+                // the station's extent along the base's left and back axes (renderers and its collider)
+                float lMin = 1e9f, lMax = -1e9f, bMin = 1e9f, bMax = -1e9f;
+                var all = new List<Bounds>();
+                foreach (var r in st.GetComponentsInChildren<Renderer>()) all.Add(r.bounds);
+                foreach (var col in st.GetComponentsInChildren<Collider>()) all.Add(col.bounds);
+                foreach (var bd in all)
+                    for (int i = 0; i < 8; i++)
+                    {
+                        var p = new Vector3((i & 1) == 0 ? bd.min.x : bd.max.x, 0, (i & 2) == 0 ? bd.min.z : bd.max.z) - new Vector3(c.x, 0, c.z);
+                        float l = Vector3.Dot(p, left), b = Vector3.Dot(p, back);
+                        lMin = Mathf.Min(lMin, l); lMax = Mathf.Max(lMax, l); bMin = Mathf.Min(bMin, b); bMax = Mathf.Max(bMax, b);
+                    }
+                float edge = Cfg.BedrockHalf - 0.1f;
+                Check((st.transform.position - Cfg.UpgradeStationPos(t)).sqrMagnitude < 0.01f && lMin > 1.45f,
+                    $"team {t}'s upgrade station stands left of the alien machine (left {lMin:0.00} to {lMax:0.00} m, the machine reaches 1.4)");
+                Check(lMax <= edge && bMax <= edge && bMin >= -edge, $"team {t}'s station is inside the bedrock with room for walls on its edges (left to {lMax:0.00}, back {bMin:0.00} to {bMax:0.00}, edge {Cfg.BedrockHalf})");
+                // nothing solid in its body (the alien machine, the socket, a bench, the wood machine, a chest...)
+                var body = st.GetComponentInChildren<BoxCollider>();
+                var hits = new List<string>();
+                if (body != null)
+                {
+                    foreach (var h in Physics.OverlapBox(body.transform.TransformPoint(body.center) + Vector3.up * 0.05f, Vector3.Scale(body.size * 0.5f, new Vector3(1f, 0.9f, 1f)), body.transform.rotation, ~0, QueryTriggerInteraction.Ignore))
+                    {
+                        if (h.transform.IsChildOf(st.transform) || h.GetComponentInParent<PlayerNet>() != null) continue;
+                        var root = h.transform; while (root.parent != null && !root.name.StartsWith("Bedrock")) root = root.parent;
+                        if (root.name.StartsWith("Bedrock") || h is TerrainCollider || h.name.StartsWith("Ground") || h.name.StartsWith("Terrain")) continue;
+                        hits.Add(h.name + " (" + h.transform.root.name + ")");
+                    }
+                }
+                Check(body != null && hits.Count == 0, $"team {t}'s station overlaps nothing ({(hits.Count == 0 ? "clear" : string.Join(", ", hits))})");
+                // and keeps clear of the spawns, the socket, the benches' spots and the wood machine
+                bool Near(Vector3 p, float r)
+                {
+                    var d = p - new Vector3(c.x, 0, c.z); float l = Vector3.Dot(d, left), b = Vector3.Dot(d, back);
+                    float dl = Mathf.Max(0f, Mathf.Max(lMin - l, l - lMax)), db = Mathf.Max(0f, Mathf.Max(bMin - b, b - bMax));
+                    return Mathf.Sqrt(dl * dl + db * db) < r;
+                }
+                bool spawnsClear = true;
+                for (int slot = 0; slot < 4; slot++) spawnsClear &= !Near(Cfg.SpawnPos(t, slot), 0.7f);
+                Check(spawnsClear && !Near(Cfg.SocketPos(t), 1.2f), $"team {t}'s station keeps clear of the spawn spots and the ball socket");
+                bool benchesClear = true;
+                for (int tier = 1; tier <= 2; tier++) benchesClear &= !Near(Workbench.DefaultPos(t, tier), Mathf.Max(Workbench.HalfX, Workbench.HalfZ) + 0.2f);
+                Check(benchesClear && (!Cfg.AutoWood || !Near(Cfg.WoodMachinePos(t), 1.2f)) && (!Cfg.AutoWood || !Near(Cfg.WoodTrayPos(t), 1f)),
+                    $"team {t}'s station keeps clear of the workbench spots{(Cfg.AutoWood ? ", the wood machine and its pile" : "")}");
+                Check(PlayerNet.DeployProblem(Item.Chest, t, Cfg.UpgradeStationPos(t), Cfg.SpawnYaw(t)) != null, $"team {t}: a chest can't be put down inside the station");
+            }
+            // a photo of our base's back row: the upgrade station, the alien machine (and the wood machine)
+            var b0 = Cfg.BackDir(team);
+            pc.LocalTeleport(Cfg.BedrockCenter(team) - b0 * 2.6f + Vector3.up * (Cfg.BaseY + 0.05f), Cfg.SpawnYaw(team));
+            yield return new WaitForSeconds(0.4f);
+            LookAt(pc, me, Cfg.MachinePos(team) + Vector3.up * 0.9f);
+            yield return new WaitForSeconds(0.3f);
+            yield return Snap($"upgrade_station_{Cfg.RulesName(Cfg.Rules).ToLower().Replace(" ", "")}_row");
+            // close up from the front
+            var sp = Cfg.UpgradeStationPos(team);
+            pc.LocalTeleport(sp - b0 * 2.4f + Vector3.up * 0.05f, Cfg.SpawnYaw(team));
+            yield return new WaitForSeconds(0.4f);
+            LookAt(pc, me, sp + Vector3.up * 0.9f);
+            yield return new WaitForSeconds(0.3f);
+            yield return Snap($"upgrade_station_{Cfg.RulesName(Cfg.Rules).ToLower().Replace(" ", "")}_close");
         }
 
         // ------------------------------------------------------------------ the client's part
@@ -520,16 +640,18 @@ namespace RockGame
                 }
             }
 
-            // UPGRADES at our machine: E opens it, buy Fortify
+            // UPGRADES at our upgrade station: E opens it, buy Fortify
             if (Cfg.HasBaseUpgrades)
             {
                 pc.LocalTeleport(Cfg.SpawnPos(team, me.Slot.Value), Cfg.SpawnYaw(team));
                 yield return new WaitForSeconds(0.5f);
-                LookAt(pc, me, Cfg.MachinePos(team) + Vector3.up * 1.1f);
+                LookAt(pc, me, Cfg.UpgradeStationPos(team) + Vector3.up * 0.95f);
                 yield return new WaitForSeconds(0.4f);
+                Check(pc.Target.Kind == PlayerController.TargetKind.UpgradeStation && pc.AimText.Contains("UPGRADE STATION"), $"(client) looking at our upgrade station (\"{pc.AimText}\")");
                 Binds.TestPress(Bind.Interact);
                 yield return new WaitForSeconds(0.5f);
-                Check(pc.UpgradesOpen && pc.MenuOpen, "(client) E on our machine opens UPGRADES");
+                Check(pc.UpgradesOpen && pc.MenuOpen, "(client) E on our upgrade station opens UPGRADES");
+                int cel = UpgradeStation.Celebrations;
                 yield return Snap("upgrades_client");
                 int w0 = me.Count(Cfg.CurrencyItem), price = Cfg.BaseUpgradeRecipe(Item.FortifyBuff, team).Wood;
                 me.BaseUpgradeRpc(Item.FortifyBuff);
@@ -538,6 +660,7 @@ namespace RockGame
                 yield return new WaitForSeconds(0.5f);
                 Check(Cfg.FortifyLevel(team) == 1 && w0 - me.Count(Cfg.CurrencyItem) == price && PlayerNet.UpgradesBought >= 1,
                     $"(client) bought Fortify All Walls level 1 for {w0 - me.Count(Cfg.CurrencyItem)} {Cfg.CurrencyName} (price {price})");
+                Check(UpgradeStation.Celebrations > cel, "(client) our upgrade station celebrated (networked to this client)");
                 pc.CloseMenu();
             }
             Log("(client) upgrades test done");

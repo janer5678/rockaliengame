@@ -19,7 +19,7 @@ namespace RockGame
         /// <summary>Tier 0: always in the TAB list (in this order).</summary>
         static readonly Item[] k_Starter = { Item.Hatchet, Item.Spear, Item.BuildingPlan, Item.Bow, Item.Arrow, Item.Chest, Item.Ram, Item.Workbench };
         /// <summary>Tier 1 (Workbench T1 in your base): the user's list, then the T2 bench. (Fortify All Walls is only crafted in
-        /// Builder, which has no alien machine; everywhere else the base upgrades are in UPGRADES - Upgrades.cs.)</summary>
+        /// Builder, which has no bases or upgrade stations; everywhere else the base upgrades are in UPGRADES - Upgrades.cs.)</summary>
         static readonly Item[] k_Tier1 = { Item.Crossbow, Item.Sword, Item.Armor, Item.Barrier, Item.Chainsaw, Item.FortifyBuff, Item.Workbench2 };
         /// <summary>Tier 2 (Workbench T2 in your base): guns, ammo, C4, saddle, helmet, then whatever's left (pickaxe, boat...).
         /// Anything craftable that isn't tier 0 or 1 is tier 2.</summary>

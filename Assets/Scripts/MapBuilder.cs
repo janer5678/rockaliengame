@@ -488,6 +488,7 @@ namespace RockGame
             PsxModels.Retexture(go, go.GetComponentsInChildren<Renderer>(), r => Art.IsArtMat(r.sharedMaterial, out var col) && (col == k_Silver || col == k_SilverDark) ? (col == k_Silver ? "concrete_00" : "concrete_10") : null, 2f);
             BuildMachine(root, team, glow);
             if (Cfg.AutoWood) WoodMachine.Create(root, team); // Auto Wood: the wood machine, right of the alien machine
+            if (Cfg.HasBaseUpgrades) UpgradeStation.Create(root, team); // Arsenal / Auto Wood: the upgrade station, left of it
         }
 
         static void BuildMachine(Transform root, int team, Color glow)

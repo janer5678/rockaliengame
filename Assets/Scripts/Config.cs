@@ -107,10 +107,10 @@ namespace RockGame
         {
             switch (r)
             {
-                case GameRules.Arsenal: return "Normal prices (the crossbow is cheaper), plus a POWER ITEMS menu next to crafting: sword, shotgun, revolver, C4 and headshot helmet. E on your alien machine: UPGRADES (fortify all your walls).";
+                case GameRules.Arsenal: return "Normal prices (the crossbow is cheaper), plus a POWER ITEMS menu next to crafting: sword, shotgun, revolver, C4 and headshot helmet. E on the upgrade station beside your alien machine: UPGRADES (fortify all your walls).";
                 case GameRules.Dna: return DnaDesc;
                 case GameRules.Tutorial: return "New here? Start with this. Short, simple steps teach you the whole game - you do each one to go on, and each control unlocks as it's taught. The clock is stopped, friends can join any time, and it's always the small Plains map. Just press HOST GAME.";
-                case GameRules.AutoWood: return "Arsenal, but wood piles up at your base by itself (5 a second) - go and pick it up. Speed it up in UPGRADES (E on your alien machine).";
+                case GameRules.AutoWood: return "Arsenal, but wood piles up at your base by itself (5 a second) - go and pick it up. Speed it up in UPGRADES (E on the upgrade station beside your alien machine).";
                 case GameRules.Builder: return "No bases. Arsenal's items, but each takes a while to make. Craft and build anywhere - pieces lock onto each other. Plant the ball anywhere (E): whoever's ball it is at the end wins.";
                 case GameRules.Fun: return "No building phase, a short match, and every so often everyone gets the same random item - any item in the game.";
                 case GameRules.FunRandom: return "No building phase, a short match, and every so often each player gets their own random airdrop item.";
@@ -764,7 +764,7 @@ namespace RockGame
         // ---------- Arsenal / Builder / Auto Wood: the powerful items menu ----------
         static readonly Item[] k_PowerBase = { Item.Sword, Item.Shotgun, Item.ShotgunShell, Item.Revolver, Item.RevolverAmmo, Item.C4, Item.Helmet };
         static readonly Item[] k_PowerBuilder = { Item.Sword, Item.Shotgun, Item.ShotgunShell, Item.Revolver, Item.RevolverAmmo, Item.C4, Item.Helmet, Item.FortifyBuff };
-        /// <summary>Fortify All Walls and the wood gen aren't crafted: they're bought in UPGRADES (E on your alien machine,
+        /// <summary>Fortify All Walls and the wood gen aren't crafted: they're bought in UPGRADES (E on your upgrade station,
         /// Upgrades.cs). Builder has no machines, so there Fortify stays in this list.</summary>
         static Item[] k_Power => Builder ? k_PowerBuilder : k_PowerBase;
         /// <summary>Auto Wood: how many times a team has upgraded its wood gen (0-3), synced by NetGame.</summary>

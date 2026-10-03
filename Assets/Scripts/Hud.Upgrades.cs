@@ -4,7 +4,7 @@ using UnityEngine;
 namespace RockGame
 {
     /// <summary>
-    /// UPGRADES: E on your own alien machine opens it (PlayerController.UpgradesOpen). It's the crafting screen's layout -
+    /// UPGRADES: E on your own upgrade station (UpgradeStation.cs, left of the alien machine) opens it (PlayerController.UpgradesOpen). It's the crafting screen's layout -
     /// your inventory on the left, the list on the right under an "UPGRADES" header with what you have to spend - with one
     /// row per base upgrade (Upgrades.cs): icon, name, the level bought so far (pips), what the next level does, its price
     /// (red when you're short) and an UPGRADE button (green when you can buy it; MAXED once it's all the way up).
@@ -23,7 +23,7 @@ namespace RockGame
         {
             int team = me.Team.Value;
             if (Cfg.BaseUpgradeMaxed(id, team)) return "maxed out";
-            if (!Cfg.AtOwnMachine(team, me.transform.position)) return "at your machine";
+            if (!Cfg.AtOwnStation(team, me.transform.position)) return "at your station";
             if (!me.CanAfford(Cfg.BaseUpgradeRecipe(id, team))) return "can't afford";
             return null;
         }
@@ -59,7 +59,7 @@ namespace RockGame
                 y += row + gap;
             }
             string hint = "Upgrades are here from the start - no workbench needed. Press "
-                + $"{Binds.Name(Bind.Interact)} on your alien machine to open this; {Binds.Name(Bind.Inventory)} or Esc closes it.";
+                + $"{Binds.Name(Bind.Interact)} on your upgrade station (the green plus, left of your alien machine) to open this; {Binds.Name(Bind.Inventory)} or Esc closes it.";
             var hintStyle = CraftStyle(13 * k, FontStyle.Normal, TextAnchor.UpperLeft, Color.white, true);
             Shadowed(new Rect(x, y + 4 * k, colW, Mathf.Max(40 * k, bottom - y)), hint, hintStyle);
         }
@@ -105,7 +105,7 @@ namespace RockGame
                 CraftStyle(Mathf.Min(14 * k, row * 0.17f), FontStyle.Normal, TextAnchor.MiddleLeft, new Color(0.88f, 0.88f, 0.84f), true));
             string sub = maxed ? $"<color=#ffd24a>MAXED OUT</color>  <color=#a8a8a0>{Cfg.BaseUpgradeNow(id, team)}</color>"
                 : CostColored(me, rec);
-            if (problem == "at your machine") sub += "  <color=#8fb8ff>at your machine</color>";
+            if (problem == "at your station") sub += "  <color=#8fb8ff>at your upgrade station</color>";
             GUI.Label(new Rect(tx, rr.y + row * 0.66f, tw, row * 0.28f), sub, FitStyle(sub, tw, Mathf.Min(16 * k, row * 0.19f), FontStyle.Bold, TextAnchor.MiddleLeft, Color.white));
             if (FlatBtn(br, ok ? k_BtnOk : k_BtnNo, k_BtnOkHi, ok)) me.BaseUpgradeRpc(id);
             GUI.Label(br, maxed ? "MAXED" : "UPGRADE", CraftStyle(Mathf.Min(17 * k, row * 0.22f), FontStyle.Bold, TextAnchor.MiddleCenter, ok ? Color.white : new Color(1, 1, 1, 0.35f)));

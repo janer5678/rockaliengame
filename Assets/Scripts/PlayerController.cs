@@ -23,7 +23,7 @@ namespace RockGame
         public bool ThirdPerson => m_Third > 0.5f;
         int m_EatBites;
         public Container LootTarget;
-        /// <summary>The menu is the UPGRADES screen (E on your own alien machine) instead of crafting - Hud.Upgrades.cs.</summary>
+        /// <summary>The menu is the UPGRADES screen (E on your own upgrade station) instead of crafting - Hud.Upgrades.cs.</summary>
         public bool UpgradesOpen;
         /// <summary>What you're looking at (E uses it), as of the last frame.</summary>
         public Interactable Target;
@@ -158,7 +158,7 @@ namespace RockGame
             UpgradesOpen = false;
         }
 
-        /// <summary>E on your own alien machine: the UPGRADES screen (in the modes that have base upgrades - Upgrades.cs).</summary>
+        /// <summary>E on your own upgrade station (UpgradeStation.cs): the UPGRADES screen (in the modes that have base upgrades - Upgrades.cs).</summary>
         public void OpenUpgrades()
         {
             LootTarget = null;
@@ -250,8 +250,8 @@ namespace RockGame
             }
             if (sd || dead) CloseMenu();
             if (LootTarget != null && (!LootTarget.IsSpawned || !LootTarget.InReach(m_Net.EyePos))) LootTarget = null;
-            // the UPGRADES screen goes with the menu, and closes if you walk away from your machine
-            if (UpgradesOpen && (!MenuOpen || !Cfg.AtOwnMachine(m_Net.Team.Value, transform.position))) { if (MenuOpen) MenuOpen = false; UpgradesOpen = false; }
+            // the UPGRADES screen goes with the menu, and closes if you walk away from your upgrade station
+            if (UpgradesOpen && (!MenuOpen || !Cfg.AtOwnStation(m_Net.Team.Value, transform.position))) { if (MenuOpen) MenuOpen = false; UpgradesOpen = false; }
             if (Paused || MenuOpen || dead) WheelOpen = false;
             if (dead || m_Net.HeldItem != Item.Airstrike) AirstrikeMapOpen = false;
 
@@ -1262,7 +1262,7 @@ namespace RockGame
 
         // ------------------------------------------------------------------ interaction (whatever you're looking at)
 
-        public enum TargetKind { None, Ball, Door, Container, Bush, PlayerSpear, WorldItem, SelfSpear, Machine, Vehicle }
+        public enum TargetKind { None, Ball, Door, Container, Bush, PlayerSpear, WorldItem, SelfSpear, Machine, Vehicle, UpgradeStation }
 
         public struct Interactable
         {
@@ -1270,7 +1270,7 @@ namespace RockGame
             public NetworkObject Obj;
             public int ItemId;
             public ItemStack Stack;
-            public int MachineTeam;
+            public int MachineTeam; // (Machine and UpgradeStation: whose it is)
         }
 
         Interactable FindInteract()
@@ -1293,6 +1293,14 @@ namespace RockGame
                 {
                     result.Kind = TargetKind.Machine;
                     result.MachineTeam = machine.Team;
+                    found = h.distance;
+                    break;
+                }
+                var station = h.collider.GetComponentInParent<UpgradeStation>();
+                if (station != null && h.distance <= Cfg.InteractRange + 1f)
+                {
+                    result.Kind = TargetKind.UpgradeStation;
+                    result.MachineTeam = station.Team;
                     found = h.distance;
                     break;
                 }
@@ -1378,9 +1386,13 @@ namespace RockGame
                 case TargetKind.SelfSpear: m_Net.PullSpearRpc(m_Net.NetworkObject); Sfx.Play2D(Sfx.Flesh, 0.6f); break;
                 case TargetKind.Machine:
                     if (t.MachineTeam != m_Net.Team.Value) { Hud.Push(carrying ? "Put the ball in YOUR machine to win" : "That's the enemy's machine"); break; }
-                    // your own machine: the UPGRADES screen (fortify, the wood gen), in the modes that have them
-                    if (!carrying && Cfg.HasBaseUpgrades) { OpenUpgrades(); break; }
-                    Hud.Push(carrying ? "Throw the ball (LMB) into the socket - it snaps in when it gets close" : "Throw the ball into this socket to win. (Craft anywhere in your base with TAB)");
+                    Hud.Push(carrying ? "Throw the ball (LMB) into the socket - it snaps in when it gets close" : "Throw the ball into this socket to win. (Craft anywhere in your base with TAB"
+                        + (Cfg.HasBaseUpgrades ? "; upgrades are at the upgrade station to the left of it)" : ")"));
+                    break;
+                case TargetKind.UpgradeStation:
+                    // your own upgrade station: the UPGRADES screen (fortify, the wood gen)
+                    if (t.MachineTeam != m_Net.Team.Value) { Hud.Push("That's the enemy's upgrade station"); break; }
+                    if (!carrying) OpenUpgrades();
                     break;
                 case TargetKind.Vehicle:
                     m_Net.MountRpc(t.Obj);
@@ -1589,8 +1601,11 @@ namespace RockGame
                 }
                 case TargetKind.Machine:
                     if (t.MachineTeam != m_Net.Team.Value) AimText = $"{Cfg.TeamName[t.MachineTeam]} alien machine";
-                    else AimText = "Your alien machine - the ball goes in the socket" + (Ball.Instance != null && Ball.Instance.SocketTeam.Value == m_Net.Team.Value ? "   <color=#77ff77>(the ball is in!)</color>" : "")
-                        + (Cfg.HasBaseUpgrades ? $"   <color=#ffd24a>{Binds.Name(Bind.Interact)}: upgrades</color>" : "");
+                    else AimText = "Your alien machine - the ball goes in the socket" + (Ball.Instance != null && Ball.Instance.SocketTeam.Value == m_Net.Team.Value ? "   <color=#77ff77>(the ball is in!)</color>" : "");
+                    return;
+                case TargetKind.UpgradeStation:
+                    AimText = t.MachineTeam != m_Net.Team.Value ? $"{Cfg.TeamLabel(t.MachineTeam)}'s upgrade station"
+                        : $"<color=#b4ffbc><b>UPGRADE STATION</b></color> — {Binds.Name(Bind.Interact)} to open";
                     return;
                 case TargetKind.Vehicle:
                 {
