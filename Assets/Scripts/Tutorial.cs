@@ -494,7 +494,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "glass", Title = "The glass wall",
-                    Body = "A big " + Hi("glass wall") + " splits the map. The " + Hi("ball") + " waits under the glass dome in the middle. Walk up to the wall!",
+                    Body = "A big " + Hi("glass wall") + " splits the map. The " + Hi("ball") + " waits under the glass dome in the middle - it's your " + Hi("emergency flare") + ". Walk up to the wall!",
                     Goal = "Walk up to the glass wall",
                     Done = () => NearWall(Me.transform.position) || WallDown,
                     Target = () => WallSpot(Team), TargetLabel = "GLASS WALL",
@@ -505,7 +505,7 @@ namespace RockGame
                     BodyF = () =>
                     {
                         int left = PlayersNotAtWall();
-                        return WallDown || left == 0 ? "Down it goes - and the dome too! The " + Hi("ball") + " in the middle is free."
+                        return WallDown || left == 0 ? "Down it slides into the ground - and the dome too! The " + Hi("ball") + " in the middle is free."
                             : $"It drops when everyone is here. Waiting for {left} more player{(left == 1 ? "" : "s")}...";
                     },
                     Goal = "Wait for the wall to drop",
