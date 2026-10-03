@@ -33,6 +33,14 @@ namespace RockGame
         /// <summary>A PSX trunk can be thicker or thinner than the (unchanged) trunk collider: the X moves out / in by this much, onto the bark you see.</summary>
         float m_MarkerOut;
         PsxArt.Trunk m_PsxTrunk;
+        /// <summary>Normal pines: the bark you see round the weak spots' heights (triangles, in the visual's space) - the X
+        /// goes on these, in front of the bark's ten corners, not on the round collider inside them.</summary>
+        List<Vector3> m_BarkTris;
+        int m_BarkSpotFor = -1;             // (which spot m_BarkSpotAt was worked out for)
+        bool m_BarkSpotOk;
+        Vector3 m_BarkSpotAt;
+        /// <summary>Normal pines: the tree's shape (where leaves fall from when it's hit).</summary>
+        PineShape m_Pine;
         MeshFilter m_Decal;
         float m_TrunkR = 0.3f;
         /// <summary>This tree's bark and leaf colours (for the chips and leaves that fly off it).</summary>
@@ -145,6 +153,10 @@ namespace RockGame
                 if (PsxArt.On && m_PsxTrunk != null) m_MarkerOut = 0f; // (the trunk collider wraps the PSX trunk there)
                 m_TrunkR = trunkR;
                 m_Decal = null;
+                var needles = tr.Find("needles");
+                m_Pine = needles != null ? PineShapeOf(Seed.Value) : null;
+                m_BarkTris = needles != null ? BarkAround(needles, 0.3f, 2.3f) : null;
+                m_BarkSpotFor = -1;
                 // the X (a chunky pixel-art one on PSX trees)
                 m_Marker = new GameObject("x").transform;
                 m_Marker.SetParent(tr, false);
@@ -425,8 +437,11 @@ namespace RockGame
             trunk.GetComponent<MeshRenderer>().enabled = false;
             PineTrunk(barkKit, shape, (float)spinRng.NextDouble() * Mathf.PI * 2f);
             if (shape.Variant == 4) DeadBranches(barkKit, shape, spinRng);
+            // smooth-shaded (a tier's rim over its underside, the trunk's top and the dead branches' edges stay sharp)
+            needles.SmoothNormals(65f);
+            barkKit.SmoothNormals(80f);
             MeshKit.Spawn(tr, "needles", new[] { foliage, barkMat }, true, needles, barkKit);
-            trunkRadius = 0.3f; // (the X goes on the collider, which is the bark you see)
+            trunkRadius = 0.3f; // (the X goes on the bark mesh itself: BarkSpot)
             leafColor = shape.Needles * GameSettings.WorldTint(GameSettings.WorldColor.Leaves);
             leafColor.a = 1f;
             return trunk;
@@ -636,7 +651,7 @@ namespace RockGame
             }
         }
 
-        /// <summary>The trunk: a ten-sided, flat-shaded log from just under the ground up into the top tier, swaying with
+        /// <summary>The trunk: a ten-sided, smooth-shaded log from just under the ground up into the top tier, swaying with
         /// the needles. Each ring is no thicker than the trunk may be anywhere between its neighbours, so the straight
         /// sides between rings stay inside the needles too.</summary>
         static void PineTrunk(MeshKit kit, PineShape p, float spin)
@@ -660,19 +675,21 @@ namespace RockGame
             float circ = 1f / Mathf.Cos(Mathf.PI / TrunkSides); // (flat sides where the collider is)
             Vector3 P(int i, int s) { float a = spin + s * Mathf.PI * 2f / TrunkSides; return new Vector3(Mathf.Cos(a) * rs[i] * circ, ys[i], Mathf.Sin(a) * rs[i] * circ); }
             Vector2 W(Vector3 v) => new Vector2(p.Sway(v.y), 0f);
-            for (int i = 0; i + 1 < ys.Count; i++)
+            // bark: streaks of slightly different shades up and round it (blended corner to corner), darker at the foot
+            Color C(int i, int s)
             {
-                float dark = Mathf.Lerp(0.78f, 1f, Mathf.Clamp01(ys[i] / 2.5f));
+                var c = p.Bark * (Mathf.Lerp(0.78f, 1f, Mathf.Clamp01(ys[i] / 2.5f)) * (0.9f + 0.1f * (((s % TrunkSides) * 7 + i * 3) % 3)));
+                c.a = 1f;
+                return c;
+            }
+            for (int i = 0; i + 1 < ys.Count; i++)
                 for (int s = 0; s < TrunkSides; s++)
                 {
-                    // bark: each side a slightly different shade, darker at the foot
-                    var c = p.Bark * (dark * (0.9f + 0.1f * ((s * 7 + i * 3) % 3)));
-                    c.a = 1f;
                     Vector3 a = P(i, s), b = P(i, s + 1), cc = P(i + 1, s + 1), d = P(i + 1, s);
-                    kit.Tri(a, d, b, c, c, c, W(a), W(d), W(b));
-                    kit.Tri(b, d, cc, c, c, c, W(b), W(d), W(cc));
+                    Color ca = C(i, s), cb = C(i, s + 1), ccc = C(i + 1, s + 1), cd = C(i + 1, s);
+                    kit.Tri(a, d, b, ca, cd, cb, W(a), W(d), W(b));
+                    kit.Tri(b, d, cc, cb, cd, ccc, W(b), W(d), W(cc));
                 }
-            }
             // the top, inside the needles
             int top = ys.Count - 1;
             var centre = new Vector3(0, ys[top], 0);
@@ -729,6 +746,43 @@ namespace RockGame
             return best;
         }
 
+        /// <summary>
+        /// Somewhere for a leaf shaken loose by a hit to start falling from: just under the branch tips of the lowest
+        /// tiers (Normal pines), or low in the crown (PSX trees, palms), mostly on the side of `towards` (the hitter) so
+        /// they come down where you can see them. Also the leaf colour to drop.
+        /// </summary>
+        public bool LeafFrom(Vector3 towards, out Vector3 pos, out Color colour)
+        {
+            pos = default;
+            colour = Leaf;
+            if (Kind.Value != Tree || Amount.Value <= 0 || m_Visual == null || !m_Visual.activeInHierarchy) return false;
+            var vt = m_Visual.transform;
+            var to = vt.InverseTransformPoint(towards);
+            float face = Mathf.Atan2(to.z, to.x) + Random.Range(-1.9f, 1.9f);
+            var dir = new Vector3(Mathf.Cos(face), 0, Mathf.Sin(face));
+            if (m_Pine != null)
+            {
+                int k = Random.value < 0.7f ? 0 : Mathf.Min(1, m_Pine.Tiers - 1);
+                pos = vt.TransformPoint(dir * m_Pine.R[k] * Random.Range(0.45f, 0.92f) + Vector3.up * (m_Pine.Y[k] - Random.Range(0.05f, 0.3f)));
+                colour = m_Pine.Needles * GameSettings.WorldTint(GameSettings.WorldColor.Leaves);
+                colour.a = 1f;
+                return true;
+            }
+            // (other trees: low in the crown, from what's drawn)
+            bool any = false;
+            var b = default(Bounds);
+            foreach (var r in m_Visual.GetComponentsInChildren<Renderer>())
+            {
+                if (!r.enabled || (m_Marker != null && r.transform.IsChildOf(m_Marker))) continue;
+                if (!any) { b = r.bounds; any = true; } else b.Encapsulate(r.bounds);
+            }
+            if (!any || b.size.y < 1f) return false;
+            float rad = Mathf.Min(b.extents.x, b.extents.z) * Random.Range(0.3f, 0.75f);
+            var c = new Vector3(transform.position.x, 0, transform.position.z);
+            pos = c + vt.TransformDirection(dir) * rad + Vector3.up * Mathf.Lerp(b.min.y, b.max.y, Random.Range(0.5f, 0.68f));
+            return true;
+        }
+
         /// <summary>Airstrike: flattened, regrows later like any empty node.</summary>
         public void ServerDeplete()
         {
@@ -746,6 +800,72 @@ namespace RockGame
             y = kind == Tree ? 0.8f + (i % 3) * 0.35f : 0.45f + (i % 3) * 0.2f;
         }
 
+        /// <summary>The bark triangles (submesh 1 of a pine's mesh) between heights y0 and y1, in the visual's space.</summary>
+        static List<Vector3> BarkAround(Transform needles, float y0, float y1)
+        {
+            var mf = needles.GetComponent<MeshFilter>();
+            var mesh = mf != null ? mf.sharedMesh : null;
+            if (mesh == null || mesh.subMeshCount < 2) return null;
+            var v = mesh.vertices;
+            var t = mesh.GetTriangles(1);
+            var m = Matrix4x4.TRS(needles.localPosition, needles.localRotation, needles.localScale);
+            var l = new List<Vector3>();
+            for (int i = 0; i < t.Length; i += 3)
+            {
+                Vector3 a = m.MultiplyPoint3x4(v[t[i]]), b = m.MultiplyPoint3x4(v[t[i + 1]]), c = m.MultiplyPoint3x4(v[t[i + 2]]);
+                if (Mathf.Max(a.y, Mathf.Max(b.y, c.y)) < y0 || Mathf.Min(a.y, Mathf.Min(b.y, c.y)) > y1) continue;
+                l.Add(a); l.Add(b); l.Add(c);
+            }
+            return l.Count > 0 ? l : null;
+        }
+
+        /// <summary>How far a ray from `from` going along -dir travels before it first meets the bark (-1: it misses).</summary>
+        static float BarkHit(List<Vector3> tris, Vector3 from, Vector3 dir)
+        {
+            float best = float.MaxValue;
+            for (int i = 0; i < tris.Count; i += 3)
+            {
+                Vector3 a = tris[i], e1 = tris[i + 1] - a, e2 = tris[i + 2] - a;
+                var pv = Vector3.Cross(-dir, e2);
+                float det = Vector3.Dot(e1, pv);
+                if (Mathf.Abs(det) < 1e-9f) continue;
+                float inv = 1f / det;
+                var tv = from - a;
+                float u = Vector3.Dot(tv, pv) * inv;
+                if (u < 0f || u > 1f) continue;
+                var qv = Vector3.Cross(tv, e1);
+                float w = Vector3.Dot(-dir, qv) * inv;
+                if (w < 0f || u + w > 1f) continue;
+                float t = Vector3.Dot(e2, qv) * inv;
+                if (t > 0f && t < best) best = t;
+            }
+            return best == float.MaxValue ? -1f : best;
+        }
+
+        /// <summary>The X's half size (its arms reach this far from its middle, pulsing included).</summary>
+        public const float XHalf = 0.14f;
+
+        /// <summary>Normal pines: where the X goes on the bark you see, in the visual's space - facing straight out along
+        /// dir, as far out as the bark comes anywhere behind the X (the trunk has ten flat sides: in front of a corner the
+        /// bark stands out past the round collider, and a card on the collider was partly inside it).</summary>
+        bool BarkSpot(Vector3 dir, float y, out Vector3 pos)
+        {
+            pos = default;
+            const float Out = 3f;
+            var side = Vector3.Cross(Vector3.up, dir).normalized;
+            float depth = -1f;
+            for (int a = -2; a <= 2; a++)
+            for (int b = -2; b <= 2; b++)
+            {
+                var from = new Vector3(0, y, 0) + dir * Out + side * (a * XHalf * 0.5f) + Vector3.up * (b * XHalf * 0.5f);
+                float t = BarkHit(m_BarkTris, from, dir);
+                if (t >= 0f) depth = Mathf.Max(depth, Out - t);
+            }
+            if (depth <= 0f) return false;
+            pos = new Vector3(0, y, 0) + dir * depth;
+            return true;
+        }
+
         /// <summary>World position/normal of the current weak spot (on the actual surface).</summary>
         public bool TryGetSpot(out Vector3 pos, out Vector3 normal) => TryGetSpot(out pos, out normal, out _);
 
@@ -759,6 +879,21 @@ namespace RockGame
             var worldDir = transform.rotation * dir;
             // PSX trees: right on the trunk model's surface (it can be thinner, thicker or off to one side of the cylinder)
             if (m_PsxTrunk != null && m_PsxTrunk.Hit(transform.position.y + y, worldDir, out pos, out normal)) { onVisual = true; return true; }
+            // Normal pines: on the bark you see (worked out in the visual's own space, so it shakes with it exactly)
+            if (m_BarkTris != null && Kind.Value == Tree)
+            {
+                var vt = m_Visual.transform;
+                var localDir = vt.InverseTransformDirection(worldDir);
+                localDir.y = 0f;
+                localDir.Normalize();
+                if (m_BarkSpotFor != Spot.Value) { m_BarkSpotOk = BarkSpot(localDir, y, out m_BarkSpotAt); m_BarkSpotFor = Spot.Value; }
+                if (m_BarkSpotOk)
+                {
+                    pos = vt.TransformPoint(m_BarkSpotAt);
+                    normal = vt.TransformDirection(localDir);
+                    return true;
+                }
+            }
             var center = transform.position + Vector3.up * (y * (Kind.Value == Boulder ? m_Visual.transform.localScale.y : 1f));
             var ray = new Ray(center + worldDir * 4f, -worldDir);
             if (!m_SpotCollider.Raycast(ray, out var hit, 8f)) return false;
@@ -796,7 +931,7 @@ namespace RockGame
             if (m_Marker == null) return;
             if (!TryGetSpot(out var p, out var n, out bool onVisual)) { m_Marker.gameObject.SetActive(false); return; }
             m_Marker.gameObject.SetActive(true);
-            m_Marker.position = p + n * (onVisual ? 0.03f : 0.015f + m_MarkerOut);
+            m_Marker.position = p + n * (onVisual ? 0.03f : m_BarkTris != null ? 0.025f : 0.015f + m_MarkerOut);
             m_Marker.rotation = Quaternion.LookRotation(-n);
             // PSX trunks: the X is printed onto the bark (a decal following the trunk), not a card in front of it
             if (onVisual && m_PsxTrunk != null)

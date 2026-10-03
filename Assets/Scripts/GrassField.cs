@@ -36,8 +36,9 @@ namespace RockGame
         const float DecorChunk = 32f;
         const int MaxPush = 16;
         /// <summary>Blades this close to the camera aren't drawn, and fade in (dithered) out to NearFadeTo (m; height counts
-        /// double): in the tall wheat it doesn't cover your screen. Only for this camera - others still see you hidden.</summary>
-        public const float NearFadeFrom = 0.3f, NearFadeTo = 1.7f;
+        /// double): in the grass it doesn't cover your screen. The tall grass in a patch fades much more (NearFadeTall*:
+        /// further out, and see-through for longer). Only for this camera - others still see you hidden.</summary>
+        public const float NearFadeFrom = 0.3f, NearFadeTo = 1.7f, NearFadeTallFrom = 0.8f, NearFadeTallTo = 3.4f;
         /// <summary>(tests) Draw the blades at the camera like any others, to compare.</summary>
         public static bool NearFadeOff;
         static readonly float[] k_LodFrac = { 1f, 0.5f, 0.25f, 0.125f, 0.0625f, 0.03f };
@@ -50,6 +51,7 @@ namespace RockGame
         public readonly List<Vector2> ClearingSpots = new List<Vector2>();
         public bool ForceOff;
         public float CoverAt(float x, float z) => Field(x, z).g;
+        /// <summary>How far into a tall grass patch (0 outside, under 0.5 the knee-high rim, 0.5 .. 1 the tall middle).</summary>
         public float WheatAt(float x, float z) => Field(x, z).b;
         static Shader s_GrassShader;
 
@@ -145,9 +147,10 @@ namespace RockGame
                         if (new Vector3(-dx, 1f, -dz).normalized.y < 0.82f) cover = 0f;
                     }
                 }
-                float wheat = Mathf.InverseLerp(0.66f, 0.74f, Mathf.PerlinNoise(wx + x * 0.032f, wz + z * 0.032f));
+                // tall grass patches: the tops of a slow noise (fewer, further apart than they were)
+                bool wheat = Mathf.PerlinNoise(wx + x * WheatFreq, wz + z * WheatFreq) > WheatLevel && Mathf.Max(Mathf.Abs(x), Mathf.Abs(z)) < half - 1.5f;
                 // (the tall wheat stays clear of the bases and the ball zone: you see who's coming there)
-                if (wheat > 0f)
+                if (wheat)
                 {
                     float dBase = float.MaxValue;
                     for (int t = 0; t < Cfg.TeamCount && !Cfg.Builder; t++)
@@ -156,10 +159,12 @@ namespace RockGame
                         float bx = Mathf.Max(0, Mathf.Abs(x - bc.x) - Cfg.BaseHalf), bz = Mathf.Max(0, Mathf.Abs(z - bc.z) - Cfg.BaseHalf);
                         dBase = Mathf.Min(dBase, Mathf.Sqrt(bx * bx + bz * bz));
                     }
-                    wheat *= Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(6f, 12f, dBase)) * Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(20f, 26f, new Vector2(x, z).magnitude));
+                    wheat = dBase > 9f && new Vector2(x, z).magnitude > 23f;
                 }
-                m_Px[j * m_N + i] = new Color(y, cover, wheat, 0f);
+                m_Px[j * m_N + i] = new Color(y, cover, wheat ? 1f : 0f, 0f);
             }
+            ShapeWheat();
+            Debug.Log($"[RockGame] tall grass: {WheatPatches} patches ({WheatPatchesRaw - WheatPatches} too small dropped), {WheatArea:F0} m² ({WheatCore:F0} m² tall middles)");
 
             // flower clearings: short grass with daisies
             var clearings = new List<(Vector2 c, float r)>();
@@ -259,10 +264,111 @@ namespace RockGame
             Shader.SetGlobalVector("_GrassDaisyTint", ColorSlots.LinearRatio(ColorSlots.Daisies));
             Shader.SetGlobalVector("_GrassLupinTint", ColorSlots.LinearRatio(ColorSlots.Lupins));
             Shader.SetGlobalFloat("_GrassWind", 1f);
-            Shader.SetGlobalVector("_GrassNearFade", NearFadeOff ? Vector4.zero : new Vector4(NearFadeFrom, NearFadeTo, 0f, 0f));
+            Shader.SetGlobalVector("_GrassNearFade", NearFadeOff ? Vector4.zero : new Vector4(NearFadeFrom, NearFadeTo, NearFadeTallFrom, NearFadeTallTo));
             Shader.SetGlobalFloat("_GrassDensity", Density);
             var g = GameSettings.WorldTint(GameSettings.WorldColor.Grass);
             Shader.SetGlobalVector("_GrassTint", new Vector4(Mathf.GammaToLinearSpace(g.r), Mathf.GammaToLinearSpace(g.g), Mathf.GammaToLinearSpace(g.b), 1f));
+        }
+
+        // the tall grass patches: where a slow noise (WheatFreq per metre) is over WheatLevel
+        const float WheatFreq = 0.026f, WheatLevel = 0.72f;
+        /// <summary>A patch has to reach this far in from its edge (m) to stay: room for a tall middle.</summary>
+        const float WheatMinDepth = 2.2f;
+        /// <summary>(tests) Tall grass patches on the map (and before the small ones were dropped), their area and the tall middles' (m²).</summary>
+        public int WheatPatches { get; private set; }
+        public int WheatPatchesRaw { get; private set; }
+        public float WheatArea { get; private set; }
+        public float WheatCore { get; private set; }
+
+        /// <summary>
+        /// Gives each tall grass patch its shape: B (1 where it's in a patch) becomes how far in from the patch's edge
+        /// that spot is - 0 at the edge, rising to 0.5 across a rim (a third of the way in, at most 3 m) and on to 1 at the
+        /// very middle. The shader makes the rim knee-high grass and steps up to the head-high tall grass at 0.5, so the
+        /// tallest grass is always in the middle and there's a clear line where it starts. Patches too small to have a
+        /// middle are dropped.
+        /// </summary>
+        void ShapeWheat()
+        {
+            int n = m_N;
+            var d = new float[n * n];
+            for (int k = 0; k < d.Length; k++) d[k] = m_Px[k].b > 0.5f ? 1e6f : 0f;
+            // the distance to the nearest spot outside (two sweeps, straight steps 1 m and diagonal ones 1.41 m)
+            const float D = 1.4142f;
+            for (int j = 0; j < n; j++)
+            for (int i = 0; i < n; i++)
+            {
+                int k = j * n + i;
+                if (d[k] == 0f) continue;
+                float v = d[k];
+                if (i > 0) v = Mathf.Min(v, d[k - 1] + 1f);
+                if (j > 0)
+                {
+                    v = Mathf.Min(v, d[k - n] + 1f);
+                    if (i > 0) v = Mathf.Min(v, d[k - n - 1] + D);
+                    if (i < n - 1) v = Mathf.Min(v, d[k - n + 1] + D);
+                }
+                d[k] = v;
+            }
+            for (int j = n - 1; j >= 0; j--)
+            for (int i = n - 1; i >= 0; i--)
+            {
+                int k = j * n + i;
+                if (d[k] == 0f) continue;
+                float v = d[k];
+                if (i < n - 1) v = Mathf.Min(v, d[k + 1] + 1f);
+                if (j < n - 1)
+                {
+                    v = Mathf.Min(v, d[k + n] + 1f);
+                    if (i < n - 1) v = Mathf.Min(v, d[k + n + 1] + D);
+                    if (i > 0) v = Mathf.Min(v, d[k + n - 1] + D);
+                }
+                d[k] = v;
+            }
+            for (int k = 0; k < d.Length; k++) if (d[k] > 0f) d[k] -= 0.5f; // (the edge is half way to the spot outside)
+            // each patch on its own (joined side to side), measured by how far in its middle is
+            var seen = new bool[n * n];
+            var patch = new List<int>();
+            var stack = new Stack<int>();
+            int kept = 0, raw = 0, area = 0, core = 0;
+            for (int s = 0; s < d.Length; s++)
+            {
+                if (d[s] <= 0f || seen[s]) continue;
+                patch.Clear();
+                stack.Push(s);
+                seen[s] = true;
+                float deep = 0f;
+                while (stack.Count > 0)
+                {
+                    int k = stack.Pop();
+                    patch.Add(k);
+                    deep = Mathf.Max(deep, d[k]);
+                    int i = k % n, j = k / n;
+                    void Next(int q) { if (d[q] > 0f && !seen[q]) { seen[q] = true; stack.Push(q); } }
+                    if (i > 0) Next(k - 1);
+                    if (i < n - 1) Next(k + 1);
+                    if (j > 0) Next(k - n);
+                    if (j < n - 1) Next(k + n);
+                }
+                raw++;
+                bool keep = deep >= WheatMinDepth;
+                if (keep) kept++;
+                float rim = Mathf.Clamp(deep * 0.36f, 1.2f, 3f);
+                foreach (int k in patch)
+                {
+                    float b = 0f;
+                    if (keep)
+                    {
+                        b = d[k] < rim ? 0.5f * d[k] / rim : 0.5f + 0.5f * Mathf.Clamp01((d[k] - rim) / Mathf.Max(0.5f, deep - rim));
+                        area++;
+                        if (b >= 0.5f) core++;
+                    }
+                    m_Px[k].b = b;
+                }
+            }
+            WheatPatches = kept;
+            WheatPatchesRaw = raw;
+            WheatArea = area;
+            WheatCore = core;
         }
 
         int Idx(float w) => Mathf.Clamp(Mathf.RoundToInt(w - m_Min), 0, m_N - 1);
@@ -385,7 +491,7 @@ namespace RockGame
                 if (!chunks.TryGetValue(key, out var md)) { md = MeshData.New(); md.Decor = true; chunks[key] = md; }
                 return md;
             }
-            bool Grows(Vector2 p) { var f = Field(p.x, p.y); return f.g > 0.95f && f.b < 0.2f; }
+            bool Grows(Vector2 p) { var f = Field(p.x, p.y); return f.g > 0.95f && f.b < 0.05f; }
 
             // daisies
             var white = new Color(0.97f, 0.97f, 0.94f);
@@ -618,8 +724,8 @@ namespace RockGame
             float near = Mathf.Sqrt(nx * nx + nz * nz);
             if (near > FadeEnd) return;
             var ty = m_LvY[L][t];
-            // (up to 2.6 m: the tall wheat)
-            var b = new Bounds(new Vector3(x0 + size * 0.5f, (ty.x + ty.y) * 0.5f + 1.1f, z0 + size * 0.5f), new Vector3(size + 1f, ty.y - ty.x + 3.4f, size + 1f));
+            // (up to 4.5 m: the tall wheat)
+            var b = new Bounds(new Vector3(x0 + size * 0.5f, (ty.x + ty.y) * 0.5f + 2f, z0 + size * 0.5f), new Vector3(size + 1f, ty.y - ty.x + 5.2f, size + 1f));
             if (!GeometryUtility.TestPlanesAABB(m_Planes, b)) return;
             float need = DensityAt(near) * s * s; // (a patch stretched s times has 1/s² the blades per m²)
             if (L > 0 && need > 0.25f)

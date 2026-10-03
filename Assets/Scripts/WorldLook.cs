@@ -288,7 +288,8 @@ namespace RockGame
         void OnDestroy() { if (Mesh) Destroy(Mesh); }
     }
 
-    /// <summary>Builds flat-shaded, vertex-coloured meshes (for the RockGame/Painted shader) out of boxes, prisms and cones.</summary>
+    /// <summary>Builds vertex-coloured meshes (for the RockGame/Painted shader) out of boxes, prisms and cones: flat-shaded,
+    /// or smooth-shaded after SmoothNormals.</summary>
     public class MeshKit
     {
         public readonly List<Vector3> V = new List<Vector3>();
@@ -363,6 +364,52 @@ namespace RockGame
 
         public void Clear() { V.Clear(); N.Clear(); C.Clear(); U.Clear(); T.Clear(); }
 
+        /// <summary>
+        /// Smooth shading: every corner's normal becomes the average of the faces that meet at that spot (weighted by
+        /// their angle there) - only faces bent less than `crease` degrees from its own, so sharp edges (a tier's rim
+        /// over its underside, a cloud's flat bottom) stay sharp. The corners keep their own colours; nothing is merged.
+        /// </summary>
+        public void SmoothNormals(float crease = 70f)
+        {
+            int tris = T.Count / 3;
+            var fn = new Vector3[tris];
+            var at = new Dictionary<Vector3Int, List<int>>(); // (corners at each spot, as indices into T)
+            for (int f = 0; f < tris; f++)
+            {
+                Vector3 a = V[T[f * 3]], b = V[T[f * 3 + 1]], c = V[T[f * 3 + 2]];
+                fn[f] = Vector3.Cross(b - a, c - a).normalized;
+                for (int k = 0; k < 3; k++)
+                {
+                    var p = V[T[f * 3 + k]];
+                    var key = new Vector3Int(Mathf.RoundToInt(p.x * 500f), Mathf.RoundToInt(p.y * 500f), Mathf.RoundToInt(p.z * 500f));
+                    if (!at.TryGetValue(key, out var l)) at[key] = l = new List<int>(6);
+                    l.Add(f * 3 + k);
+                }
+            }
+            float AngleAt(int corner)
+            {
+                int f = corner / 3, k = corner % 3;
+                Vector3 p = V[T[corner]], q = V[T[f * 3 + (k + 1) % 3]], r = V[T[f * 3 + (k + 2) % 3]];
+                return Vector3.Angle(q - p, r - p);
+            }
+            float cos = Mathf.Cos(crease * Mathf.Deg2Rad);
+            var done = new Vector3[V.Count];
+            foreach (var l in at.Values)
+                foreach (int corner in l)
+                {
+                    var own = fn[corner / 3];
+                    if (own == Vector3.zero) continue;
+                    var sum = Vector3.zero;
+                    foreach (int o in l)
+                    {
+                        var on = fn[o / 3];
+                        if (Vector3.Dot(own, on) >= cos) sum += on * AngleAt(o);
+                    }
+                    done[T[corner]] = sum.sqrMagnitude > 1e-12f ? sum.normalized : own;
+                }
+            for (int i = 0; i < V.Count; i++) if (done[i] != Vector3.zero) N[i] = done[i];
+        }
+
         /// <summary>Several kits as the submeshes of one mesh (one draw each, with their own materials).</summary>
         public static Mesh ToMesh(string name, params MeshKit[] kits)
         {
@@ -421,26 +468,49 @@ namespace RockGame
                     3,9,4, 3,4,2, 3,2,6, 3,6,8, 3,8,9, 4,9,5, 2,4,11, 6,2,10, 8,6,7, 9,8,1
                 };
                 for (int i = 0; i < v.Count; i++) v[i] = v[i].normalized;
-                var mids = new Dictionary<(int, int), int>();
-                int Mid(int a, int b)
-                {
-                    var key = a < b ? (a, b) : (b, a);
-                    if (mids.TryGetValue(key, out int m)) return m;
-                    v.Add(((v[a] + v[b]) * 0.5f).normalized);
-                    return mids[key] = v.Count - 1;
-                }
-                var faces2 = new List<int>();
-                for (int i = 0; i < f.Length; i += 3)
-                {
-                    int a = f[i], b = f[i + 1], c = f[i + 2];
-                    int ab = Mid(a, b), bc = Mid(b, c), ca = Mid(c, a);
-                    faces2.AddRange(new[] { a, ab, ca, b, bc, ab, c, ca, bc, ab, bc, ca });
-                }
+                s_IcoF = Subdivide(v, f);
                 s_IcoV = v.ToArray();
-                s_IcoF = faces2.ToArray();
             }
             verts = s_IcoV;
             faces = s_IcoF;
+        }
+
+        static Vector3[] s_Ico320V;
+        static int[] s_Ico320F;
+
+        /// <summary>The same sphere subdivided once more (162 corners, 320 faces): rounder, for smooth-shaded puffs.</summary>
+        public static void Ico320(out Vector3[] verts, out int[] faces)
+        {
+            if (s_Ico320V == null)
+            {
+                Ico80(out var v80, out var f80);
+                var v = new List<Vector3>(v80);
+                s_Ico320F = Subdivide(v, f80);
+                s_Ico320V = v.ToArray();
+            }
+            verts = s_Ico320V;
+            faces = s_Ico320F;
+        }
+
+        /// <summary>Splits every face of a unit sphere into four (new corners on the sphere, added to v); returns the faces.</summary>
+        static int[] Subdivide(List<Vector3> v, int[] f)
+        {
+            var mids = new Dictionary<(int, int), int>();
+            int Mid(int a, int b)
+            {
+                var key = a < b ? (a, b) : (b, a);
+                if (mids.TryGetValue(key, out int m)) return m;
+                v.Add(((v[a] + v[b]) * 0.5f).normalized);
+                return mids[key] = v.Count - 1;
+            }
+            var faces2 = new List<int>();
+            for (int i = 0; i < f.Length; i += 3)
+            {
+                int a = f[i], b = f[i + 1], c = f[i + 2];
+                int ab = Mid(a, b), bc = Mid(b, c), ca = Mid(c, a);
+                faces2.AddRange(new[] { a, ab, ca, b, bc, ab, c, ca, bc, ab, bc, ca });
+            }
+            return faces2.ToArray();
         }
 
         /// <summary>A child object drawing this mesh with mat (the mesh goes when the object does).</summary>

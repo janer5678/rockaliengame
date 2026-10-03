@@ -178,11 +178,14 @@ namespace RockGame
                 for (int k = 0; k < 20000 && !found; k++)
                 {
                     var p = new Vector3(Random.Range(-half, half), 0, Random.Range(-half, half));
-                    if (gr.WheatAt(p.x, p.z) < 0.97f || gr.CoverAt(p.x, p.z) < 0.99f) continue;
+                    // (in a patch's tall middle, tall grass all round it, and open grass ~2 m past the patch's edge)
+                    if (gr.WheatAt(p.x, p.z) < 0.6f || gr.CoverAt(p.x, p.z) < 0.99f) continue;
                     var d = Quaternion.Euler(0, Random.Range(0f, 360f), 0) * Vector3.forward;
-                    bool ok = gr.WheatAt(p.x + d.x, p.z + d.z) > 0.95f && gr.WheatAt(p.x - d.x * 1.2f, p.z - d.z * 1.2f) > 0.9f;
-                    var f = p - d * 5f;
-                    ok &= gr.WheatAt(f.x, f.z) < 0.03f && gr.CoverAt(f.x, f.z) > 0.5f;
+                    bool ok = gr.WheatAt(p.x + d.x, p.z + d.z) > 0.55f && gr.WheatAt(p.x - d.x * 1.2f, p.z - d.z * 1.2f) > 0.55f;
+                    float edge = 0f;
+                    while (edge < 8f && gr.WheatAt(p.x - d.x * edge, p.z - d.z * edge) > 0.001f) edge += 0.25f;
+                    var f = p - d * (edge + 2f);
+                    ok &= edge < 8f && gr.WheatAt(f.x, f.z) < 0.001f && gr.CoverAt(f.x, f.z) > 0.5f;
                     if (!ok) continue;
                     inWheat = Ground(p.x, p.z); from = Ground(f.x, f.z); found = true;
                 }

@@ -56,14 +56,19 @@ namespace RockGame
                 from.y = MapBuilder.Height(from.x, from.z);
                 yield return Shoot("daisies", from, 45f, 30f);
             }
-            // a wheat patch, if there's one near
+            // the tall grass patches: fewer than there were, each with a knee-high rim round its tall middle
+            Log($"tall grass: {g.WheatPatches} patches ({g.WheatPatchesRaw - g.WheatPatches} too small dropped), {g.WheatArea:F0} m² ({g.WheatCore:F0} m² tall middles) on a {Cfg.MapHalf * 2f:F0} m map");
+            Check(g.WheatPatches > 0 && g.WheatCore > 0f && g.WheatCore < g.WheatArea, $"tall grass patches with tall middles ({g.WheatPatches})");
+            // one from outside (a few metres past its edge)
             for (int k = 0; k < 4000; k++)
             {
                 var p = new Vector3(Random.Range(-Cfg.MapHalf, Cfg.MapHalf), 0, Random.Range(-Cfg.MapHalf, Cfg.MapHalf));
-                if (g.WheatAt(p.x, p.z) < 0.95f || g.CoverAt(p.x, p.z) < 0.99f) continue;
-                var from = p - new Vector3(6, 0, 0);
+                if (g.WheatAt(p.x, p.z) < 0.9f || g.CoverAt(p.x, p.z) < 0.99f) continue;
+                float edge = 0f;
+                while (edge < 40f && g.WheatAt(p.x - edge, p.z) > 0.001f) edge += 0.5f;
+                var from = p - new Vector3(edge + 5f, 0, 0);
                 from.y = MapBuilder.Height(from.x, from.z);
-                yield return Shoot("wheat", from, 90f, 10f);
+                yield return Shoot("wheat", from, 90f, 4f);
                 break;
             }
 
