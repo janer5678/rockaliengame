@@ -17,14 +17,16 @@ namespace RockGame
             m_SmallNoClip = new GUIStyle(m_Small) { clipping = TextClipping.Overflow, wordWrap = false };
             m_LabelWrap = new GUIStyle(m_Label) { wordWrap = true };
             m_Caption = new GUIStyle(m_Small) { fontStyle = FontStyle.Bold };
-            m_Caption.normal.textColor = new Color(1f, 0.82f, 0.48f);
+            // (the accent colour: Settings > Display > INTERFACE; gold to start with)
+            var accent = GameSettings.AccentColor;
+            m_Caption.normal.textColor = Color.Lerp(accent, Color.white, 0.25f);
             m_Header = new GUIStyle(m_Button) { alignment = TextAnchor.MiddleLeft, fontStyle = FontStyle.Bold, padding = new RectOffset(10, 10, 4, 4) };
             m_KeyCell = new GUIStyle(m_Button) { fontSize = Mathf.RoundToInt(14 * k), fontStyle = FontStyle.Bold };
             m_Primary = new GUIStyle(m_Button) { fontSize = Mathf.RoundToInt(19 * k), fontStyle = FontStyle.Bold };
             // a picked option looks pressed in (the darker "held down" background) with gold text, so it's obvious which one is on
             m_Choice = new GUIStyle(m_Button);
             m_Choice.onNormal.background = m_Choice.onHover.background = m_Choice.onActive.background = m_Choice.onFocused.background = m_Button.active.background;
-            m_Choice.onNormal.textColor = m_Choice.onHover.textColor = m_Choice.onActive.textColor = m_Choice.onFocused.textColor = new Color(1f, 0.82f, 0.35f);
+            m_Choice.onNormal.textColor = m_Choice.onHover.textColor = m_Choice.onActive.textColor = m_Choice.onFocused.textColor = accent;
             m_Choice.fontStyle = FontStyle.Normal;
             m_KeyCell.onNormal.background = m_KeyCell.onHover.background = m_Button.active.background;
         }

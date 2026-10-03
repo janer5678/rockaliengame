@@ -100,8 +100,8 @@ namespace RockGame
             string who = m_TutWho = host ? "host" : "client";
             Binds.TestReleaseAll();
             yield return new WaitForSeconds(1f);
-            Check(Cfg.Map == MapKind.Plains && Cfg.Size == MapSize.Small && !Cfg.WoodMode && g.MapKey.Value == Cfg.MapKey,
-                $"Tutorial ({who}): the map is forced to small Plains, normal materials ({Cfg.MapLabel})");
+            Check(Cfg.Map == MapKind.Plains && Cfg.Size == MapSize.Small && Cfg.WoodMode == Cfg.WoodIsNormal && g.MapKey.Value == Cfg.MapKey,
+                $"Tutorial ({who}): the map is forced to small Plains, the normal (wood) materials ({Cfg.MapLabel})");
             Check(Cfg.Tutorial && !Cfg.LimitedCrafting && Cfg.RecipeIndex(Item.Workbench) >= 0 && g.S == GameState.PreBall && g.TimerPaused.Value,
                 $"Tutorial ({who}): playing the classic crafting (starter items + workbenches), the clock stopped");
             // a player who joined mid-tutorial gets dropped straight into their base

@@ -49,8 +49,8 @@ namespace RockGame
         /// <summary>Back to this PC's own graphics choice.</summary>
         public static void RestoreGraphics()
         {
-            bool psx = PlayerPrefs.GetInt("RockGame.PsxGraphics", 0) == 1;
-            SetGraphics(psx ? 1 : PlayerPrefs.GetInt("RockGame.AiPsx", 0) == 1 ? 2 : 0, false);
+            bool psx = ShowGraphicsPicker && PlayerPrefs.GetInt("RockGame.PsxGraphics", 0) == 1;
+            SetGraphics(psx ? 1 : ShowGraphicsPicker && PlayerPrefs.GetInt("RockGame.AiPsx", 0) == 1 ? 2 : 0, false);
         }
         public static int VoiceMode = VoicePushToTalk;
         public static string MicDevice = "";
@@ -64,8 +64,9 @@ namespace RockGame
             SfxVolume = PlayerPrefs.GetFloat("RockGame.SfxVolume", 1f);
             VoiceVolume = PlayerPrefs.GetFloat("RockGame.VoiceVolume", 1f);
             MouseSensitivity = PlayerPrefs.GetFloat("RockGame.MouseSensitivity", 2f);
-            PsxGraphics = PlayerPrefs.GetInt("RockGame.PsxGraphics", 0) == 1;
-            AiPsx = !PsxGraphics && PlayerPrefs.GetInt("RockGame.AiPsx", 0) == 1;
+            // (the PSX test graphics are hidden for now: a PSX picked before is ignored - see ShowGraphicsPicker)
+            PsxGraphics = ShowGraphicsPicker && PlayerPrefs.GetInt("RockGame.PsxGraphics", 0) == 1;
+            AiPsx = ShowGraphicsPicker && !PsxGraphics && PlayerPrefs.GetInt("RockGame.AiPsx", 0) == 1;
             MicGain = PlayerPrefs.GetFloat("RockGame.MicGain", 1.5f);
             MicThreshold = PlayerPrefs.GetFloat("RockGame.MicThreshold", 0.02f);
             VoiceMode = PlayerPrefs.GetInt("RockGame.VoiceMode", VoicePushToTalk);

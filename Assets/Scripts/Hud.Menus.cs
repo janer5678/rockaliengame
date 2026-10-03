@@ -14,7 +14,7 @@ namespace RockGame
         MenuPage m_Page;
         PausePage m_PausePage;
         SettingsTab m_Tab;
-        bool m_ShowPort, m_ShowModes;
+        bool m_ShowPort, m_ShowModes, m_ShowMoreRules, m_ShowMoreMaps;
         Vector2 m_MenuScroll, m_ValuesScroll, m_SettingsScroll;
         readonly Dictionary<string, string> m_EditBuffers = new Dictionary<string, string>();
         string m_FileMsg = "";
@@ -135,25 +135,27 @@ namespace RockGame
             key = Bootstrap.MapChoice;
             var rules = (GameRules)Mathf.Clamp((key >> Cfg.RulesShift) & Cfg.RulesMask, 0, (int)GameRules.Dna);
             int noRules = key & ~(Cfg.RulesMask << Cfg.RulesShift);
+            // Tutorial, Classic (the Auto Wood rules) and Primitive (the original game); the rest fold out under "More modes"
+            bool moreRule = System.Array.IndexOf(Cfg.MoreRules, rules) >= 0;
             GUILayout.BeginHorizontal();
             RowLabel("Game mode");
-            foreach (var gr in new[] { GameRules.Tutorial, GameRules.Classic, GameRules.Arsenal, GameRules.Builder })
-                if (Choice(rules == gr, Cfg.RulesName(gr), GUILayout.Height(30 * k))) boot.SetMapChoice(noRules | ((int)gr << Cfg.RulesShift));
+            foreach (var gr in Cfg.MainRules)
+                if (Choice(rules == gr, Cfg.RulesName(gr), GUILayout.Height(30 * k))) { boot.SetMapChoice(noRules | ((int)gr << Cfg.RulesShift)); m_ShowMoreRules = false; }
+            string moreLabel = (moreRule ? $"<color=#{ColorUtility.ToHtmlStringRGB(GameSettings.AccentColor)}>{MoreRuleLabel(rules)}</color>" : "More modes") + (m_ShowMoreRules ? "  ▲" : "  ▼");
+            if (Btn(moreLabel, GUILayout.Height(30 * k))) m_ShowMoreRules = !m_ShowMoreRules;
             GUILayout.EndHorizontal();
-            GUILayout.BeginHorizontal();
-            GUILayout.Space(103 * k);
-            foreach (var gr in new[] { GameRules.AutoWood, GameRules.Primitive, GameRules.BuildingPrimitive, GameRules.Dna })
-                if (Choice(rules == gr, Cfg.RulesName(gr), GUILayout.Height(30 * k))) boot.SetMapChoice(noRules | ((int)gr << Cfg.RulesShift));
-            GUILayout.EndHorizontal();
-            GUILayout.BeginHorizontal();
-            GUILayout.Space(103 * k);
-            foreach (var gr in new[] { GameRules.Fun, GameRules.FunRandom })
-                if (Choice(rules == gr, Cfg.RulesName(gr).ToUpper() + " MODE", GUILayout.Height(30 * k))) boot.SetMapChoice(noRules | ((int)gr << Cfg.RulesShift));
-            GUILayout.EndHorizontal();
-            GUILayout.BeginHorizontal();
-            GUILayout.Space(103 * k);
-            if (Choice(rules == GameRules.FunRandomLimited, "RANDOM FUN MODE LIMITED", GUILayout.Height(30 * k))) boot.SetMapChoice(noRules | ((int)GameRules.FunRandomLimited << Cfg.RulesShift));
-            GUILayout.EndHorizontal();
+            if (m_ShowMoreRules)
+                for (int row = 0; row < Cfg.MoreRules.Length; row += 3)
+                {
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Space(103 * k);
+                    for (int i = row; i < row + 3 && i < Cfg.MoreRules.Length; i++)
+                    {
+                        var gr = Cfg.MoreRules[i];
+                        if (Choice(rules == gr, MoreRuleLabel(gr), GUILayout.Height(30 * k))) { boot.SetMapChoice(noRules | ((int)gr << Cfg.RulesShift)); m_ShowMoreRules = false; }
+                    }
+                    GUILayout.EndHorizontal();
+                }
             GUILayout.BeginHorizontal();
             GUILayout.Space(103 * k);
             GUILayout.Label($"<color=#ffd24a>{Cfg.RulesDesc(rules)}</color>", m_SmallWrap);
@@ -196,37 +198,42 @@ namespace RockGame
 
             key = Bootstrap.MapChoice;
             int flags = key & ~15;
-            // the tutorial always plays on the small Plains map with normal materials: show that, and lock these rows
+            // the tutorial always plays on the small Plains map: show that, and lock these rows
             bool tutMap = rules == GameRules.Tutorial;
             if (tutMap)
             {
                 kind = MapKind.Plains;
                 size = MapSize.Small;
-                wood = false;
+                wood = Cfg.WoodIsNormal;
                 GUILayout.BeginHorizontal();
                 GUILayout.Space(103 * k);
-                GUILayout.Label("<color=#ffd24a>Tutorial: always the small, flat Plains map with normal materials.</color>", m_SmallWrap);
+                GUILayout.Label("<color=#ffd24a>Tutorial: always the small, flat Plains map.</color>", m_SmallWrap);
                 GUILayout.EndHorizontal();
                 GUI.enabled = false;
             }
+            // Plains and Highlands; the theme maps fold out under "More maps"
+            bool themePicked = kind >= MapKind.Beach;
             GUILayout.BeginHorizontal();
             RowLabel("Map");
-            if (Choice(kind == MapKind.Plains, "Plains", GUILayout.Height(30 * k))) boot.SetMapChoice((int)MapKind.Plains | flags);
-            if (Choice(kind == MapKind.Highlands, "Highlands (wild)", GUILayout.Height(30 * k))) boot.SetMapChoice((int)MapKind.Highlands | flags);
+            if (Choice(kind == MapKind.Plains, "Plains", GUILayout.Height(30 * k))) { boot.SetMapChoice((int)MapKind.Plains | flags); m_ShowMoreMaps = false; }
+            if (Choice(kind == MapKind.Highlands, "Highlands (wild)", GUILayout.Height(30 * k))) { boot.SetMapChoice((int)MapKind.Highlands | flags); m_ShowMoreMaps = false; }
+            string mapsLabel = (themePicked ? $"<color=#{ColorUtility.ToHtmlStringRGB(GameSettings.AccentColor)}>{ThemeMaps.Label(kind)}</color>" : "More maps") + (m_ShowMoreMaps ? "  ▲" : "  ▼");
+            if (Btn(mapsLabel, GUILayout.Height(30 * k))) m_ShowMoreMaps = !m_ShowMoreMaps;
             GUILayout.EndHorizontal();
             // THEME MAPS: the five extra maps
-            for (int tr = 0; tr < ThemeMaps.Kinds.Length; tr += 3)
-            {
-                GUILayout.BeginHorizontal();
-                GUILayout.Space(103 * k);
-                for (int ti = tr; ti < tr + 3 && ti < ThemeMaps.Kinds.Length; ti++)
+            if (m_ShowMoreMaps)
+                for (int tr = 0; tr < ThemeMaps.Kinds.Length; tr += 3)
                 {
-                    var tk = ThemeMaps.Kinds[ti];
-                    if (Choice(kind == tk, ThemeMaps.Label(tk), GUILayout.Height(30 * k))) boot.SetMapChoice((int)tk | flags);
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Space(103 * k);
+                    for (int ti = tr; ti < tr + 3 && ti < ThemeMaps.Kinds.Length; ti++)
+                    {
+                        var tk = ThemeMaps.Kinds[ti];
+                        if (Choice(kind == tk, ThemeMaps.Label(tk), GUILayout.Height(30 * k))) { boot.SetMapChoice((int)tk | flags); m_ShowMoreMaps = false; }
+                    }
+                    GUILayout.EndHorizontal();
                 }
-                GUILayout.EndHorizontal();
-            }
-            if (kind >= MapKind.Beach)
+            if (themePicked)
             {
                 GUILayout.BeginHorizontal();
                 GUILayout.Space(103 * k);
@@ -242,44 +249,30 @@ namespace RockGame
                     boot.SetMapChoice((key & ~Cfg.SmallBit & ~(3 << Cfg.SizeShift)) | ((int)sz << Cfg.SizeShift));
             GUILayout.EndHorizontal();
 
-            GUILayout.BeginHorizontal();
-            RowLabel("Materials");
-            if (Choice(!wood, "Normal", GUILayout.Height(30 * k))) boot.SetMapChoice(key & ~Cfg.WoodBit);
-            if (Choice(wood, "Wood mode", GUILayout.Height(30 * k))) boot.SetMapChoice(key | Cfg.WoodBit);
-            GUILayout.EndHorizontal();
-            if (wood) GUILayout.Label("<color=#d9a066>Wood only: no stone, no pickaxe, everything costs wood.</color>", m_SmallWrap);
+            // materials: wood is the normal game now (no row; the old stone materials are kept in the code - Cfg.WoodIsNormal)
+            if (!Cfg.WoodIsNormal)
+            {
+                GUILayout.BeginHorizontal();
+                RowLabel("Materials");
+                if (Choice(!wood, "Normal", GUILayout.Height(30 * k))) boot.SetMapChoice(key & ~Cfg.WoodBit);
+                if (Choice(wood, "Wood mode", GUILayout.Height(30 * k))) boot.SetMapChoice(key | Cfg.WoodBit);
+                GUILayout.EndHorizontal();
+                if (wood) GUILayout.Label("<color=#d9a066>Wood only: no stone, no pickaxe, everything costs wood.</color>", m_SmallWrap);
+            }
             if (tutMap) GUI.enabled = true;
 
-            GUILayout.BeginHorizontal();
-            RowLabel("Graphics");
-            if (Choice(GameSettings.GraphicsMode == 0, "Normal", GUILayout.Height(30 * k))) GameSettings.SetGraphics(0);
-            if (Choice(GameSettings.GraphicsMode == 1, "PSX", GUILayout.Height(30 * k))) GameSettings.SetGraphics(1);
-            if (Choice(GameSettings.GraphicsMode == 2, "AI PSX TEST", GUILayout.Height(30 * k))) GameSettings.SetGraphics(2);
-            GUILayout.EndHorizontal();
-            if (GameSettings.PsxGraphics) GUILayout.Label("<color=#bbbbbb>PSX: low-res PSX models (trees so far). Just the looks. When you host, everyone in the match plays with your graphics.</color>", m_SmallWrap);
-            if (GameSettings.AiPsx) GUILayout.Label("<color=#bbbbbb>AI PSX TEST: the whole wild map redone in the PSX trees' style - pixel textures, wobbly vertices, warping textures, 15-bit colour, half resolution, fog. A test; Normal and PSX are untouched.</color>", m_SmallWrap);
-
-            GUILayout.BeginHorizontal();
-            RowLabel("Testing");
-            Bootstrap.Solo = ToggleBtn(Bootstrap.Solo, "Solo test", GUILayout.Height(30 * k));
-            Bootstrap.Fast = ToggleBtn(Bootstrap.Fast, "Fast timers", GUILayout.Height(30 * k));
-            bool outl = ToggleBtn(Cfg.AlienOutlines, "Alien outlines", GUILayout.Height(30 * k));
-            if (outl != Cfg.AlienOutlines) { Cfg.AlienOutlines = outl; Cfg.SavePrefs(); }
-            GUILayout.EndHorizontal();
-            if (Cfg.AlienOutlines)
+            // graphics: just Normal for now (the PSX test looks are hidden - GameSettings.ShowGraphicsPicker)
+            if (GameSettings.ShowGraphicsPicker)
             {
-                GUILayout.Label("<color=#bbbbbb>Test (works in every mode): enemies have a faint glow in their team colour so they're easier to see.</color>", m_SmallWrap);
-                float st = SliderRow("Glow strength", Cfg.AlienOutlineStrength, 0.02f, 1f, $"{Cfg.AlienOutlineStrength * 100f:0}%");
-                float wd = SliderRow("Glow thickness", Cfg.AlienOutlineWidth, 0.005f, 0.12f, $"{Cfg.AlienOutlineWidth * 100f:0.0} cm");
-                if (!Mathf.Approximately(st, Cfg.AlienOutlineStrength) || !Mathf.Approximately(wd, Cfg.AlienOutlineWidth))
-                {
-                    Cfg.AlienOutlineStrength = st;
-                    Cfg.AlienOutlineWidth = wd;
-                    Cfg.SavePrefs();
-                }
+                GUILayout.BeginHorizontal();
+                RowLabel("Graphics");
+                if (Choice(GameSettings.GraphicsMode == 0, "Normal", GUILayout.Height(30 * k))) GameSettings.SetGraphics(0);
+                if (Choice(GameSettings.GraphicsMode == 1, "PSX", GUILayout.Height(30 * k))) GameSettings.SetGraphics(1);
+                if (Choice(GameSettings.GraphicsMode == 2, "AI PSX TEST", GUILayout.Height(30 * k))) GameSettings.SetGraphics(2);
+                GUILayout.EndHorizontal();
+                if (GameSettings.PsxGraphics) GUILayout.Label("<color=#bbbbbb>PSX: low-res PSX models (trees so far). Just the looks. When you host, everyone in the match plays with your graphics.</color>", m_SmallWrap);
+                if (GameSettings.AiPsx) GUILayout.Label("<color=#bbbbbb>AI PSX TEST: the whole wild map redone in the PSX trees' style - pixel textures, wobbly vertices, warping textures, 15-bit colour, half resolution, fog. A test; Normal and PSX are untouched.</color>", m_SmallWrap);
             }
-            if (Bootstrap.Solo || Bootstrap.Fast)
-                GUILayout.Label("<color=#bbbbbb>" + (Bootstrap.Solo ? "Solo test: the match starts without an opponent. " : "") + (Bootstrap.Fast ? $"Fast timers: {Cfg.FastBallDropDelay:0}s ball drop, {Cfg.FastMatchLength:0}s match." : "") + "</color>", m_SmallWrap);
 
             GUILayout.Space(4 * k);
             GUILayout.BeginHorizontal();
@@ -289,7 +282,7 @@ namespace RockGame
             GUILayout.Label($"<color=#bbbbbb>{ModeOptionsSummary(key)}</color>", m_SmallWrap);
 
             Caption("PLAY");
-            if (Btn("HOST GAME", m_Primary, GUILayout.Height(44 * k))) boot.Host();
+            if (Btn("HOST GAME", m_Primary, GUILayout.Height(44 * k))) boot.Host(false);
             GUILayout.Space(4 * k);
             GUILayout.BeginHorizontal();
             GUILayout.Label("Host IP", m_Label, GUILayout.Width(70 * k), GUILayout.Height(30 * k));
@@ -305,6 +298,12 @@ namespace RockGame
                 GUILayout.EndHorizontal();
             }
             if (Btn("JOIN GAME", m_Primary, GUILayout.Height(44 * k))) boot.Join();
+            // solo test: hosts, and the match starts without an opponent
+            GUILayout.Space(4 * k);
+            GUILayout.BeginHorizontal();
+            if (Btn("SOLO TEST", GUILayout.Width(180 * k), GUILayout.Height(34 * k))) boot.Host(true);
+            GUILayout.Label("<color=#bbbbbb>  host a match on your own: it starts straight away, no opponent needed</color>", m_SmallWrap, GUILayout.MinHeight(34 * k));
+            GUILayout.EndHorizontal();
             if (!string.IsNullOrEmpty(boot.Status)) GUILayout.Label("<color=#ffcc66>" + boot.Status + "</color>", m_LabelWrap);
 
             GUILayout.Space(8 * k);
@@ -316,6 +315,12 @@ namespace RockGame
             GUILayout.EndScrollView();
             GUILayout.EndArea();
         }
+
+        /// <summary>A "More modes" button's name (the fun modes say MODE, as they always did).</summary>
+        static string MoreRuleLabel(GameRules r) => r == GameRules.Fun ? "Fun mode" : r == GameRules.FunRandom ? "Random Fun" : r == GameRules.FunRandomLimited ? "Random Fun Limited" : Cfg.RulesName(r);
+
+        /// <summary>(tests) fold the main menu's "More modes" / "More maps" open or shut.</summary>
+        public static void ShowMore(bool modes, bool maps) { if (s_I != null) { s_I.m_ShowMoreRules = modes; s_I.m_ShowMoreMaps = maps; } }
 
         static string ModeShort(GameMode m) => m == GameMode.Ffa3 ? "FFA 3" : m == GameMode.Ffa4 ? "FFA 4" : Cfg.ModeName(m);
         static string ModeTitle(GameMode m) => m == GameMode.Ffa3 ? "FFA 3  (free for all)" : m == GameMode.Ffa4 ? "FFA 4  (free for all)" : Cfg.ModeName(m);
@@ -343,11 +348,12 @@ namespace RockGame
         void DrawModeOptions(Bootstrap boot)
         {
             float k = m_Scale;
-            float w = 640 * k, h = 720 * k;
+            float w = Mathf.Min(Screen.width - 20, 780 * k), h = 900 * k;
             var r = new Rect((Screen.width - w) / 2, Mathf.Max(10, (Screen.height - h) / 2), w, Mathf.Min(h, Screen.height - 20));
             Fill(r, new Color(0.05f, 0.05f, 0.06f, 0.92f));
             GUILayout.BeginArea(new Rect(r.x + 20 * k, r.y + 14 * k, r.width - 40 * k, r.height - 28 * k));
             GUILayout.Label("<b>MODE OPTIONS</b>", m_Big);
+            m_ModeScroll = GUILayout.BeginScrollView(m_ModeScroll);
             int key = Bootstrap.MapChoice;
             float bh = 32 * k;
 
@@ -380,44 +386,85 @@ namespace RockGame
 
             GUILayout.Space(10 * k);
             GUILayout.BeginHorizontal();
-            GUILayout.Label("AIRDROP ITEMS  <color=#bbbbbb>(click to pick)</color>", m_Caption);
+            GUILayout.Label("AIRDROP ITEMS  <color=#bbbbbb>(click to pick · - / + for how often it drops)</color>", m_Caption);
             GUILayout.FlexibleSpace();
             if (Btn("All", GUILayout.Width(70 * k), GUILayout.Height(26 * k))) { Cfg.AirdropItemMask = (1 << Cfg.AirdropChoices.Length) - 1; Cfg.SavePrefs(); }
             if (Btn("None", GUILayout.Width(70 * k), GUILayout.Height(26 * k))) { Cfg.AirdropItemMask = 0; Cfg.SavePrefs(); }
+            if (Btn("Even chances", GUILayout.Width(130 * k), GUILayout.Height(26 * k))) { foreach (var it in Cfg.AllAirdropItems) Cfg.SetAirdropRarity(it, 10); Cfg.SavePrefs(); }
             GUILayout.EndHorizontal();
-            const int cols = 3;
-            float cw = (r.width - 40 * k) / cols - 6 * k;
+            float gridW = r.width - 40 * k - 20 * k; // (room for the scroll bar)
+            var loot = Cfg.AirdropLoot;
             for (int i = 0; i < Cfg.AirdropChoices.Length; i++)
             {
-                if (i % cols == 0) GUILayout.BeginHorizontal();
                 var it = Cfg.AirdropChoices[i];
                 bool on = (Cfg.AirdropItemMask & (1 << i)) != 0;
-                var cell = GUILayoutUtility.GetRect(cw, 46 * k, GUILayout.Width(cw));
-                // drawn first, then ONE invisible button over the whole cell (nothing else on it takes the click)
-                bool hover = cell.Contains(Event.current.mousePosition);
-                Fill(cell, on ? new Color(0.2f, 0.45f, 0.25f, hover ? 0.95f : 0.8f) : new Color(0.2f, 0.2f, 0.2f, hover ? 0.8f : 0.6f));
-                var icon = ItemIcons.Get(it);
-                if (icon != null) GUI.DrawTexture(new Rect(cell.x + 4, cell.y + 3, 40 * k, 40 * k), icon, ScaleMode.ScaleToFit, true);
-                string label = it == Item.BombBush ? "Bomb Bush" : it == Item.RocketLauncher ? "Rocket" : Cfg.ItemName(it);
-                GUI.Label(new Rect(cell.x + 48 * k, cell.y, cell.width - 48 * k, cell.height), (on ? "<b>" : "<color=#888888>") + label + (on ? "</b>" : "</color>"), new GUIStyle(m_Small) { alignment = TextAnchor.MiddleLeft, wordWrap = true });
-                if (BtnAt(cell, "", GUIStyle.none)) { Cfg.AirdropItemMask ^= 1 << i; Cfg.SavePrefs(); }
-                GUILayout.Space(6 * k);
-                if (i % cols == cols - 1 || i == Cfg.AirdropChoices.Length - 1) { GUILayout.EndHorizontal(); GUILayout.Space(5 * k); }
+                if (DropCell(i, it, true, on, Cfg.AirdropChance(it, loot), gridW)) { Cfg.AirdropItemMask ^= 1 << i; Cfg.SavePrefs(); }
             }
+            if (Cfg.AirdropChoices.Length % DropCols != 0) { GUILayout.EndHorizontal(); GUILayout.Space(5 * k); }
             if ((Cfg.AirdropItemMask & ((1 << Cfg.AirdropChoices.Length) - 1)) == 0)
                 GUILayout.Label("<color=#ffcc66>Nothing picked: airdrops will have any of these.</color>", m_Small);
+            GUILayout.Label("<color=#bbbbbb>The % is each picked item's chance to be in an airdrop (respawn loot too). - / + change how common it is: 20 comes twice as often as 10, 0 never (if every picked item is 0 they're all even).</color>", m_SmallWrap);
+
+            // the items only the Random Fun modes hand out (every airdrop item there is): just how often
+            GUILayout.Space(6 * k);
+            GUILayout.Label("MORE ITEMS  <color=#bbbbbb>(only in the Random Fun modes, which hand out every airdrop item there is)</color>", m_Caption);
+            int cell = 0;
+            foreach (var it in Cfg.AllAirdropItems)
+            {
+                if (System.Array.IndexOf(Cfg.AirdropChoices, it) >= 0) continue;
+                DropCell(cell++, it, false, true, Cfg.AirdropChance(it, Cfg.AllAirdropItems), gridW);
+            }
+            if (cell % DropCols != 0) { GUILayout.EndHorizontal(); GUILayout.Space(5 * k); }
 
             GUILayout.Space(10 * k);
-            bool loot = (key & Cfg.RespawnLootBit) != 0;
+            bool respawnLoot = (key & Cfg.RespawnLootBit) != 0;
             GUILayout.BeginHorizontal();
             RowLabel("Respawn", 90 * k);
-            if (Choice(!loot, "Normal", GUILayout.Height(bh))) boot.SetMapChoice(key & ~Cfg.RespawnLootBit);
-            if (Choice(loot, "With an airdrop item", GUILayout.Height(bh))) boot.SetMapChoice(key | Cfg.RespawnLootBit);
+            if (Choice(!respawnLoot, "Normal", GUILayout.Height(bh))) boot.SetMapChoice(key & ~Cfg.RespawnLootBit);
+            if (Choice(respawnLoot, "With an airdrop item", GUILayout.Height(bh))) boot.SetMapChoice(key | Cfg.RespawnLootBit);
             GUILayout.EndHorizontal();
+            GUILayout.EndScrollView();
 
-            GUILayout.FlexibleSpace();
+            GUILayout.Space(6 * k);
             if (Btn("Done", GUILayout.Height(40 * k))) m_Page = MenuPage.Main;
             GUILayout.EndArea();
+        }
+
+        const int DropCols = 3;
+        Vector2 m_ModeScroll;
+
+        /// <summary>One airdrop item in the mode options grid (three to a row): its icon and name (click: pick it, when
+        /// it can be picked), its chance, and - / + for its rarity weight. True when the item was clicked.</summary>
+        bool DropCell(int index, Item it, bool pickable, bool on, float chance, float gridW)
+        {
+            float k = m_Scale;
+            if (index % DropCols == 0) GUILayout.BeginHorizontal();
+            float cw = gridW / DropCols - 6 * k, ch = 50 * k;
+            var cell = GUILayoutUtility.GetRect(cw, ch, GUILayout.Width(cw));
+            float bw = 24 * k, pctW = 46 * k;
+            // the right side: [-] 12% [+] (the weight under the %)
+            var minus = new Rect(cell.xMax - bw * 2 - pctW - 6 * k, cell.y + (ch - bw) / 2, bw, bw);
+            var pct = new Rect(minus.xMax, cell.y, pctW, ch);
+            var plus = new Rect(pct.xMax, minus.y, bw, bw);
+            var pick = new Rect(cell.x, cell.y, minus.x - cell.x - 2 * k, ch);
+            bool hover = pickable && pick.Contains(Event.current.mousePosition);
+            Fill(cell, on ? new Color(0.2f, 0.45f, 0.25f, hover ? 0.95f : 0.8f) : new Color(0.2f, 0.2f, 0.2f, hover ? 0.8f : 0.6f));
+            var icon = ItemIcons.Get(it);
+            if (icon != null) GUI.DrawTexture(new Rect(cell.x + 4, cell.y + (ch - 40 * k) / 2, 40 * k, 40 * k), icon, ScaleMode.ScaleToFit, true);
+            string label = it == Item.BombBush ? "Bomb Bush" : it == Item.RocketLauncher ? "Rocket" : Cfg.ItemName(it);
+            var small = new GUIStyle(m_Small) { alignment = TextAnchor.MiddleLeft, wordWrap = true };
+            GUI.Label(new Rect(cell.x + 48 * k, cell.y, pick.width - 48 * k, ch), (on ? "<b>" : "<color=#888888>") + label + (on ? "</b>" : "</color>"), small);
+            int weight = Cfg.AirdropRarity(it);
+            string pctText = on ? $"<b>{chance * 100f:0.#}%</b>" : "<color=#888888>-</color>";
+            GUI.Label(new Rect(pct.x, pct.y + 2 * k, pct.width, ch * 0.55f), pctText, new GUIStyle(m_Small) { alignment = TextAnchor.MiddleCenter });
+            GUI.Label(new Rect(pct.x, pct.y + ch * 0.5f, pct.width, ch * 0.45f), $"<color=#aaaaaa><size={Mathf.RoundToInt(10 * k)}>x{weight}</size></color>", new GUIStyle(m_Small) { alignment = TextAnchor.UpperCenter });
+            int step = weight > 20 ? 10 : 5;
+            if (BtnAt(minus, "-", m_Button) && weight > 0) { Cfg.SetAirdropRarity(it, weight - (weight > 20 ? 10 : 5)); Cfg.SavePrefs(); }
+            if (BtnAt(plus, "+", m_Button)) { Cfg.SetAirdropRarity(it, weight + step); Cfg.SavePrefs(); }
+            bool clicked = pickable && BtnAt(pick, "", GUIStyle.none);
+            GUILayout.Space(6 * k);
+            if (index % DropCols == DropCols - 1) { GUILayout.EndHorizontal(); GUILayout.Space(5 * k); }
+            return clicked;
         }
 
         // ------------------------------------------------------------------ CHANGE VALUES
@@ -432,6 +479,9 @@ namespace RockGame
             }
             return sb.ToString().Replace("Hp", "HP");
         }
+
+        /// <summary>The value sections set on the MODE OPTIONS screen (the airdrops, and each airdrop item's chance), not in CHANGE VALUES.</summary>
+        public static bool IsModeOptionsSection(string sec) => sec == "Mode options" || sec == "Airdrop rarity";
 
         /// <summary>Every [Tune] stat in Cfg, folded into sections. Saved on this PC; the host's values are used in a match.</summary>
         void DrawValues()
@@ -486,7 +536,7 @@ namespace RockGame
             foreach (var f in Cfg.TuneFields)
             {
                 var sec = Cfg.SectionOf(f);
-                if (sec == "Mode options") continue;
+                if (IsModeOptionsSection(sec)) continue; // (those are on the MODE OPTIONS screen)
                 if (!bySection.TryGetValue(sec, out var l)) { bySection[sec] = l = new List<System.Reflection.FieldInfo>(); sections.Add(sec); }
                 l.Add(f);
             }
@@ -563,6 +613,11 @@ namespace RockGame
             for (int i = 0; i < rates.Count; i++) if (System.Math.Abs(rates[i].value - GameSettings.ChosenRate.value) < 0.5) m_RateSel = i;
         }
 
+        /// <summary>(tests) the settings window's rect (GUI space), as last drawn.</summary>
+        public static Rect SettingsPanel { get; private set; }
+        /// <summary>The Display tab is a side panel with the game in view beside it (no dark cover behind it).</summary>
+        bool SideSettings => m_Tab == SettingsTab.Display || m_ColourScreen;
+
         /// <summary>The settings window (main menu and pause menu). Returns true when Back is pressed.</summary>
         bool DrawSettingsPanel()
         {
@@ -572,16 +627,31 @@ namespace RockGame
             if ((ScrollToColours || OpenPickerFor >= 0) && m_Tab == SettingsTab.Display) { m_ColourScreen = true; ScrollToColours = false; }
             if (m_ColourScreen) { DrawColourScreen(); return false; }
             float k = m_Scale, sw = Screen.width, sh = Screen.height;
-            float w = Mathf.Min(sw - 40, 900 * k), h = Mathf.Min(sh - 40, 760 * k);
-            var r = new Rect((sw - w) / 2, (sh - h) / 2, w, h);
+            Rect r;
+            bool side = m_Tab == SettingsTab.Display;
+            if (side)
+            {
+                // Display: a panel down one side, like the colour screen (no dark cover), so the game shows beside it
+                // and every change to the look (post processing, shadows, grass, the UI) shows on it as you pick
+                float pw = Mathf.Min(sw * 0.5f, 640 * k), m = 10 * k;
+                r = new Rect(m_ColourLeft ? m : sw - pw - m, m, pw, sh - 2 * m);
+            }
+            else
+            {
+                float w = Mathf.Min(sw - 40, 900 * k), h = Mathf.Min(sh - 40, 760 * k);
+                r = new Rect((sw - w) / 2, (sh - h) / 2, w, h);
+            }
+            SettingsPanel = r;
             if (r.Contains(Event.current.mousePosition)) MouseOverUI = true;
-            Fill(r, new Color(0.05f, 0.05f, 0.06f, 0.95f));
+            Fill(r, new Color(0.05f, 0.05f, 0.06f, side ? 0.9f : 0.95f));
             bool back = false;
-            GUILayout.BeginArea(new Rect(r.x + 20 * k, r.y + 14 * k, r.width - 40 * k, r.height - 28 * k));
+            float pad = side ? 14 * k : 20 * k;
+            GUILayout.BeginArea(new Rect(r.x + pad, r.y + 14 * k, r.width - 2 * pad, r.height - 28 * k));
             GUILayout.BeginHorizontal();
-            GUILayout.Label($"<b><size={Mathf.RoundToInt(28 * k)}>SETTINGS</size></b>", m_Label, GUILayout.Height(40 * k));
+            GUILayout.Label($"<b><size={Mathf.RoundToInt((side ? 24 : 28) * k)}>SETTINGS</size></b>", m_Label, GUILayout.Height(40 * k));
             GUILayout.FlexibleSpace();
-            if (Btn("Back", GUILayout.Width(120 * k), GUILayout.Height(34 * k))) back = true;
+            if (side && Btn(m_ColourLeft ? "▶" : "◀", GUILayout.Width(44 * k), GUILayout.Height(34 * k))) m_ColourLeft = !m_ColourLeft;
+            if (Btn("Back", GUILayout.Width((side ? 96 : 120) * k), GUILayout.Height(34 * k))) back = true;
             GUILayout.EndHorizontal();
             GUILayout.BeginHorizontal();
             string[] tabs = { "Sound", "Controls", "Display", "Voice chat" };
@@ -675,56 +745,71 @@ namespace RockGame
         {
             float k = m_Scale;
             if (m_ResList == null) OnTabOpened();
+            float lw = 150 * k;
             Caption("GRAPHICS");
+            // (the PSX test looks are hidden for now - GameSettings.ShowGraphicsPicker)
+            if (GameSettings.ShowGraphicsPicker)
+            {
+                GUILayout.BeginHorizontal();
+                RowLabel("Style", lw);
+                // in a match the host's graphics are used by everyone
+                bool inMatch = NetGame.Instance != null && NetGame.Instance.IsSpawned;
+                GUI.enabled = !inMatch;
+                if (Choice(GameSettings.GraphicsMode == 0, "Normal", GUILayout.Height(30 * k))) GameSettings.SetGraphics(0);
+                if (Choice(GameSettings.GraphicsMode == 1, "PSX", GUILayout.Height(30 * k))) GameSettings.SetGraphics(1);
+                if (Choice(GameSettings.GraphicsMode == 2, "AI PSX TEST", GUILayout.Height(30 * k))) GameSettings.SetGraphics(2);
+                GUI.enabled = true;
+                GUILayout.EndHorizontal();
+                if (inMatch) GUILayout.Label("<color=#bbbbbb>Picked by the host for everyone in this match.</color>", m_SmallWrap);
+            }
             GUILayout.BeginHorizontal();
-            RowLabel("Style", 170 * k);
-            // in a match the host's graphics are used by everyone
-            bool inMatch = NetGame.Instance != null && NetGame.Instance.IsSpawned;
-            GUI.enabled = !inMatch;
-            if (Choice(GameSettings.GraphicsMode == 0, "Normal", GUILayout.Height(30 * k))) GameSettings.SetGraphics(0);
-            if (Choice(GameSettings.GraphicsMode == 1, "PSX (trees so far)", GUILayout.Height(30 * k))) GameSettings.SetGraphics(1);
-            if (Choice(GameSettings.GraphicsMode == 2, "AI PSX TEST", GUILayout.Height(30 * k))) GameSettings.SetGraphics(2);
-            GUI.enabled = true;
-            GUILayout.EndHorizontal();
-            if (inMatch) GUILayout.Label("<color=#bbbbbb>Picked by the host for everyone in this match.</color>", m_SmallWrap);
-            GUILayout.BeginHorizontal();
-            RowLabel("FPS counter", 170 * k);
-            bool fps = ToggleBtn(GameSettings.ShowFps, GameSettings.ShowFps ? "On" : "Off", GUILayout.Width(110 * k), GUILayout.Height(30 * k));
+            RowLabel("FPS counter", lw);
+            bool fps = ToggleBtn(GameSettings.ShowFps, GameSettings.ShowFps ? "On" : "Off", GUILayout.Width(90 * k), GUILayout.Height(30 * k));
             if (fps != GameSettings.ShowFps) GameSettings.SetShowFps(fps);
-            GUILayout.Label("<color=#bbbbbb>   frames per second in the top left corner</color>", m_Small, GUILayout.Height(30 * k));
+            GUILayout.Label("<color=#bbbbbb>  frames per second, top left</color>", m_Small, GUILayout.Height(30 * k));
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
+
+            // ---- shadows ----
+            Caption("SHADOWS  ·  just on this PC");
+            float ss = SliderRow("Shadow darkness", GameSettings.ShadowStrength, 0f, 1f, $"{GameSettings.ShadowStrength * 100f:0}%", lw);
+            float sd = SliderRow("Shadow distance", GameSettings.ShadowDistance, GameSettings.ShadowDistanceMin, GameSettings.ShadowDistanceMax, $"{GameSettings.ShadowDistance:0} m", lw);
+            GameSettings.SetShadows(Mathf.Round(ss * 20f) / 20f, Mathf.Round(sd / 5f) * 5f);
+            GUILayout.Label("<color=#bbbbbb>Darkness: how dark the sun's shadows are (0% = none). Distance: how far from you shadows are drawn - further looks better, nearer is faster and the near shadows are sharper.</color>", m_SmallWrap);
+
             DrawPostFxSettings();
+            DrawInterfaceSettings();
             DrawWorldLook();
+
             Caption("SCREEN");
             GUILayout.BeginHorizontal();
-            RowLabel("Window", 170 * k);
+            RowLabel("Window", lw);
             foreach (var mode in new[] { GameSettings.WindowMode.Fullscreen, GameSettings.WindowMode.Borderless, GameSettings.WindowMode.Windowed })
-                if (Choice(m_ModeSel == mode, mode == GameSettings.WindowMode.Borderless ? "Borderless window" : mode.ToString(), GUILayout.Height(30 * k))) m_ModeSel = mode;
+                if (Choice(m_ModeSel == mode, mode == GameSettings.WindowMode.Borderless ? "Borderless" : mode.ToString(), GUILayout.Height(30 * k))) m_ModeSel = mode;
             GUILayout.EndHorizontal();
 
             GUILayout.BeginHorizontal();
-            RowLabel("Resolution", 170 * k);
-            if (Btn("<", GUILayout.Width(44 * k), GUILayout.Height(30 * k))) { m_ResSel = Mathf.Min(m_ResList.Count - 1, m_ResSel + 1); m_RateSel = 0; }
+            RowLabel("Resolution", lw);
+            if (Btn("<", GUILayout.Width(40 * k), GUILayout.Height(30 * k))) { m_ResSel = Mathf.Min(m_ResList.Count - 1, m_ResSel + 1); m_RateSel = 0; }
             var res = m_ResList[Mathf.Clamp(m_ResSel, 0, m_ResList.Count - 1)];
             bool native = res.x == Screen.currentResolution.width && res.y == Screen.currentResolution.height;
-            GUILayout.Label($"<b>{res.x} x {res.y}</b>{(native ? "  <color=#aaaaaa>(your screen)</color>" : "")}", m_Center, GUILayout.Width(300 * k), GUILayout.Height(30 * k));
-            if (Btn(">", GUILayout.Width(44 * k), GUILayout.Height(30 * k))) { m_ResSel = Mathf.Max(0, m_ResSel - 1); m_RateSel = 0; }
+            GUILayout.Label($"<b>{res.x} x {res.y}</b>{(native ? "  <color=#aaaaaa>(your screen)</color>" : "")}", m_Center, GUILayout.ExpandWidth(true), GUILayout.Height(30 * k));
+            if (Btn(">", GUILayout.Width(40 * k), GUILayout.Height(30 * k))) { m_ResSel = Mathf.Max(0, m_ResSel - 1); m_RateSel = 0; }
             GUILayout.EndHorizontal();
 
             var rates = GameSettings.RefreshRates(res);
             m_RateSel = Mathf.Clamp(m_RateSel, 0, rates.Count - 1);
             GUILayout.BeginHorizontal();
-            RowLabel("Refresh rate", 170 * k);
-            if (Btn("<", GUILayout.Width(44 * k), GUILayout.Height(30 * k))) m_RateSel = Mathf.Min(rates.Count - 1, m_RateSel + 1);
-            GUILayout.Label($"<b>{rates[m_RateSel].value:0.##} Hz</b>{(m_RateSel == 0 ? "  <color=#aaaaaa>(highest)</color>" : "")}", m_Center, GUILayout.Width(300 * k), GUILayout.Height(30 * k));
-            if (Btn(">", GUILayout.Width(44 * k), GUILayout.Height(30 * k))) m_RateSel = Mathf.Max(0, m_RateSel - 1);
+            RowLabel("Refresh rate", lw);
+            if (Btn("<", GUILayout.Width(40 * k), GUILayout.Height(30 * k))) m_RateSel = Mathf.Min(rates.Count - 1, m_RateSel + 1);
+            GUILayout.Label($"<b>{rates[m_RateSel].value:0.##} Hz</b>{(m_RateSel == 0 ? "  <color=#aaaaaa>(highest)</color>" : "")}", m_Center, GUILayout.ExpandWidth(true), GUILayout.Height(30 * k));
+            if (Btn(">", GUILayout.Width(40 * k), GUILayout.Height(30 * k))) m_RateSel = Mathf.Max(0, m_RateSel - 1);
             GUILayout.EndHorizontal();
 
             GUILayout.Space(8 * k);
             GUILayout.BeginHorizontal();
-            if (Btn("Apply", m_Primary, GUILayout.Width(200 * k), GUILayout.Height(38 * k))) GameSettings.SetDisplay(res, m_ModeSel, rates[m_RateSel]);
-            if (Btn("Use my screen's best", GUILayout.Width(240 * k), GUILayout.Height(38 * k)))
+            if (Btn("Apply", m_Primary, GUILayout.Height(38 * k))) GameSettings.SetDisplay(res, m_ModeSel, rates[m_RateSel]);
+            if (Btn("Use my screen's best", GUILayout.Height(38 * k)))
             {
                 m_ResSel = Mathf.Max(0, m_ResList.IndexOf(new Vector2Int(Screen.currentResolution.width, Screen.currentResolution.height)));
                 m_RateSel = 0;
@@ -732,6 +817,70 @@ namespace RockGame
             GUILayout.EndHorizontal();
             GUILayout.Label($"<color=#bbbbbb>Now: {Screen.width} x {Screen.height}, {GameSettings.CurrentMode}, {GameSettings.ChosenRate.value:0.##} Hz. The refresh rate starts at the highest your screen can do; in a window it follows your desktop.</color>", m_SmallWrap);
         }
+
+        /// <summary>Settings > Display > INTERFACE (the font, UI scale, HUD opacity, accent colour) and ALIEN GLOW.</summary>
+        void DrawInterfaceSettings()
+        {
+            float k = m_Scale, lw = 150 * k;
+            Caption("INTERFACE  ·  just on this PC");
+            int font = GameSettings.UiFont;
+            // the font: every bit of menu and HUD text (each button is written in its own font)
+            GUILayout.BeginHorizontal();
+            RowLabel("Font", lw);
+            GUILayout.BeginVertical();
+            int col = 0;
+            for (int i = 0; i < GameSettings.FontChoices.Length; i++)
+            {
+                if (!GameSettings.FontInstalled(i)) continue;
+                if (col % 3 == 0) GUILayout.BeginHorizontal();
+                var fst = new GUIStyle(m_Choice) { font = UiLook.FontFor(i) };
+                bool pick = GUILayout.Toggle(font == i, GameSettings.FontChoices[i], fst, GUILayout.Height(30 * k));
+                TrackHover(GUILayoutUtility.GetLastRect());
+                if (pick && font != i) { ClickSound(); font = i; }
+                if (col % 3 == 2) GUILayout.EndHorizontal();
+                col++;
+            }
+            if (col % 3 != 0) GUILayout.EndHorizontal();
+            GUILayout.EndVertical();
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            GUILayout.Space(lw + 4 * k);
+            GUILayout.Label($"<color=#bbbbbb>{GameSettings.FontChoices[font]}: {GameSettings.FontBlurbs[font]}.</color>", m_SmallWrap);
+            GUILayout.EndHorizontal();
+            // (the UI scale goes in when the slider is let go, so the panel doesn't change size under the mouse)
+            float shownScale = m_PendingScale > 0f ? m_PendingScale : GameSettings.UiScale;
+            float scale = SliderRow("UI scale", shownScale, GameSettings.UiScaleMin, GameSettings.UiScaleMax, $"{shownScale * 100f:0}%", lw);
+            if (!Mathf.Approximately(scale, shownScale)) m_PendingScale = Mathf.Round(scale * 20f) / 20f;
+            if (m_PendingScale > 0f && GUIUtility.hotControl == 0) { scale = m_PendingScale; m_PendingScale = -1f; }
+            else scale = GameSettings.UiScale;
+            float hud = SliderRow("HUD opacity", GameSettings.HudOpacity, GameSettings.HudOpacityMin, 1f, $"{GameSettings.HudOpacity * 100f:0}%", lw);
+            int accent = GameSettings.UiAccent;
+            GUILayout.BeginHorizontal();
+            RowLabel("Accent colour", lw);
+            for (int i = 0; i < GameSettings.AccentChoices.Length; i++)
+            {
+                var cell = GUILayoutUtility.GetRect(30 * k, 30 * k, GUILayout.Width(30 * k), GUILayout.Height(30 * k));
+                Fill(cell, accent == i ? Color.white : new Color(0, 0, 0, 0.6f));
+                Fill(new Rect(cell.x + 3, cell.y + 3, cell.width - 6, cell.height - 6), GameSettings.AccentChoices[i]);
+                if (BtnAt(cell, "", GUIStyle.none)) accent = i;
+                GUILayout.Space(4 * k);
+            }
+            GUILayout.Label($"<color=#{ColorUtility.ToHtmlStringRGB(GameSettings.AccentChoices[accent])}>  {GameSettings.AccentNames[accent]}</color>", m_Small, GUILayout.Height(30 * k));
+            GUILayout.EndHorizontal();
+            GameSettings.SetInterface(font, scale, Mathf.Round(hud * 20f) / 20f, accent);
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("<color=#bbbbbb>HUD opacity: the in-game HUD (bars, hotbar, timer) - the menus and the inventory stay solid.</color>", m_SmallWrap);
+            if (Btn("Defaults", GUILayout.Width(100 * k), GUILayout.Height(28 * k))) GameSettings.SetInterface(0, 1f, 1f, 0);
+            GUILayout.EndHorizontal();
+
+            Caption("ALIEN GLOW  ·  just on this PC");
+            float st = SliderRow("Glow strength", Cfg.AlienOutlineStrength, 0.02f, 1f, $"{Cfg.AlienOutlineStrength * 100f:0}%", lw);
+            float wd = SliderRow("Glow thickness", Cfg.AlienOutlineWidth, 0.005f, 0.12f, $"{Cfg.AlienOutlineWidth * 100f:0.0} cm", lw);
+            GameSettings.SetAlienGlow(st, wd);
+            GUILayout.Label("<color=#bbbbbb>Enemies always have a faint glow in their team colour so they're easier to spot (every mode).</color>", m_SmallWrap);
+        }
+
+        float m_PendingScale = -1f;
 
         // ------------------------------------------------------------------ display: grass and world colours (Normal graphics)
 
@@ -969,8 +1118,8 @@ namespace RockGame
                 m_ColourScreen = false;
                 OnTabOpened();
             }
-            // (no dark cover while the world colours screen is up: the world has to show)
-            if (!(m_PausePage == PausePage.Settings && m_ColourScreen)) Fill(new Rect(0, 0, sw, sh), new Color(0, 0, 0, 0.55f));
+            // (no dark cover while Display or the world colours screen is up: the world has to show)
+            if (!(m_PausePage == PausePage.Settings && SideSettings)) Fill(new Rect(0, 0, sw, sh), new Color(0, 0, 0, 0.55f));
             if (m_PausePage == PausePage.Settings) { MouseOverUI = true; if (DrawSettingsPanel()) m_PausePage = PausePage.Root; return; }
             if (m_PausePage == PausePage.Dev) { DrawDevMenu(me, game); return; }
             float w = 420 * k, h = Mathf.Min(sh - 40, 460 * k);
