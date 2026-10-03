@@ -4,15 +4,18 @@ using UnityEngine;
 namespace RockGame
 {
     /// <summary>
-    /// The crashed UFO in the middle of the map, round the ball (in the yellow ball zone, under the glass dome until the
-    /// walls drop, and still there after): a low-poly flying saucer nose-down in the ground off to one side of the ball -
+    /// The crashed UFO in the middle of the map, round the ball (in the ball zone, under the glass dome until the walls
+    /// drop, and still there after): a low-poly flying saucer nose-down in the ground off to one side of the ball -
     /// tilted, half buried, its glass cockpit cracked and broken open towards the ball, a torn gash in each side of its
-    /// hull - in a scorched crater with a skid furrow behind it, hull plates and bits strewn round, little fires burning
-    /// (animated low-poly flames), smoke and sparks. The ball sits in the open in the crater in front of it, in plain sight
+    /// hull - in a scorched crater with a skid furrow behind it, on a wide patch of churned-up dirt (where the yellow
+    /// circle used to be: about 12 m round, its edge ragged, lumps of it out in the grass) with burn marks, slabs of
+    /// ground pushed up round the crater, rubble (stones, clods), hull plates and scraps strewn out to ~20 m, little
+    /// fires burning (animated low-poly flames), smoke and sparks. The ball sits in the open in the crater in front of it, in plain sight
     /// from every base: the saucer lies off the lines from the bases to the ball (2 teams: off to the side, along x; 3: on
     /// the side with no base; 4: on a diagonal, between two bases), and it's low.
     /// Only the saucer is solid: one convex lump that reaches down into the ground (nothing can roll or crawl under it, so
-    /// the ball can't get stuck there; you can walk up onto it). The debris, scorch marks, flames and smoke have no colliders.
+    /// the ball can't get stuck there; you can walk up onto it). The dirt, rubble, debris, scorch marks, flames and smoke
+    /// have no colliders, and nothing bigger than gravel lies between a base and the ball.
     /// Local visuals, built the same on every peer (MapBuilder.Build). The fire keeps burning all match.
     /// </summary>
     public class CrashSite : MonoBehaviour
@@ -28,6 +31,12 @@ namespace RockGame
         static readonly Color k_Hull = new Color(0.62f, 0.64f, 0.68f), k_HullDark = new Color(0.36f, 0.38f, 0.42f), k_Rim = new Color(0.5f, 0.52f, 0.56f);
         static readonly Color k_Dark = new Color(0.08f, 0.09f, 0.11f), k_Char = new Color(0.1f, 0.09f, 0.08f), k_Alien = new Color(0.45f, 0.95f, 0.55f);
         static readonly Color k_Dirt = new Color(0.42f, 0.3f, 0.18f), k_Scorch = new Color(0.2f, 0.16f, 0.12f), k_Burnt = new Color(0.13f, 0.11f, 0.1f);
+        /// <summary>The crash's dirt over the ball zone (= the "Crash dirt" colour's default, so a picked colour lands on it exactly).</summary>
+        static readonly Color k_CrashDirt = new Color(0.45f, 0.34f, 0.23f);
+        static readonly Color k_Stone = new Color(0.54f, 0.53f, 0.5f), k_StoneDark = new Color(0.4f, 0.39f, 0.37f);
+
+        /// <summary>How far out the crash's dirt reaches round the middle (its edge wobbles; the grass starts at about 12 m).</summary>
+        public const float DirtR = 12.4f;
 
         struct Flame { public Transform T; public Vector3 Scale; public float Seed; }
         struct Puff { public Transform T; public Vector3 Vel; public float Age, Life, Size; }
@@ -107,9 +116,33 @@ namespace RockGame
             var rng = new System.Random(1234);
             float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
 
-            // ---------------- the ground: a scorched crater round the ball, a skid furrow behind the saucer ----------------
-            Blob(t, new Vector2(1.4f, 0f), 5.6f, 0.22f, rng, k_Scorch, 0.07f, "scorch");
+            // ---------------- the ground: churned-up dirt over the whole ball zone (where the yellow circle was), a scorched
+            // crater round the ball, burn marks, a skid furrow behind the saucer ----------------
+            using (ColorSlots.Use(ColorSlots.BallZone)) // ("Crash dirt" in Settings > Display colours)
+            {
+                Blob(t, new Vector2(0.8f, 0f), DirtR, 0.12f, rng, k_CrashDirt, 0.035f, "ground dirt");
+                // patches of darker and lighter soil turned over in it
+                for (int i = 0; i < 9; i++)
+                {
+                    float a = R(0f, Mathf.PI * 2f), rr = R(3.5f, DirtR - 2.5f);
+                    Blob(t, new Vector2(Mathf.Cos(a) * rr, Mathf.Sin(a) * rr), R(1.2f, 2.6f), 0.3f, rng, i % 3 == 0 ? k_CrashDirt * 1.14f : k_CrashDirt * 0.84f, 0.045f, "ground soil");
+                }
+                // and lumps of it thrown out past its edge, into the grass
+                for (int i = 0; i < 14; i++)
+                {
+                    float a = R(0f, Mathf.PI * 2f), rr = R(DirtR - 0.5f, DirtR + 4.5f);
+                    var c = new Vector2(Mathf.Cos(a) * rr, Mathf.Sin(a) * rr);
+                    Blob(t, c, R(0.6f, 1.5f), 0.3f, rng, k_CrashDirt * R(0.85f, 1.05f), 0.05f, "ground dirt");
+                }
+            }
+            Blob(t, new Vector2(1.4f, 0f), 5.6f, 0.22f, rng, k_Scorch, 0.065f, "scorch");
             Blob(t, new Vector2(0.5f, 0f), 3.0f, 0.18f, rng, k_Burnt, 0.08f, "crater");
+            // burn marks where burning bits landed
+            for (int i = 0; i < 6; i++)
+            {
+                float a = R(0f, Mathf.PI * 2f), rr = R(6.5f, 11f);
+                Blob(t, new Vector2(Mathf.Cos(a) * rr, Mathf.Sin(a) * rr), R(0.7f, 1.6f), 0.3f, rng, k_Scorch, 0.06f, "ground burn");
+            }
             {
                 var mb = new MeshBatch();
                 const int n = 10;
@@ -139,6 +172,7 @@ namespace RockGame
                 BuildSaucer(t, rng);
                 BuildDebris(t, rng);
             }
+            BuildRubble(t, rng);
             BuildFires(t, rng);
 
             // the fire's light
@@ -163,28 +197,42 @@ namespace RockGame
             }
         }
 
-        void Own(GameObject go)
+        GameObject Own(GameObject go)
         {
             var mf = go.GetComponent<MeshFilter>();
             if (mf != null) go.AddComponent<OwnedMesh>().Mesh = mf.sharedMesh;
+            return go;
         }
 
-        /// <summary>A flat, ragged, roughly round patch on the ground (a fan, following the ground).</summary>
+        /// <summary>A flat, ragged, roughly round patch on the ground: rings of corners 1-1.25 m apart, each one on the
+        /// ground (so a big patch follows the ground's rise and fall too), the edge wobbling in and out.</summary>
         void Blob(Transform t, Vector2 c, float r, float jitter, System.Random rng, Color col, float lift, string name)
         {
             var mb = new MeshBatch();
-            const int n = 22;
-            var ring = new Vector3[n];
+            int n = r > 4f ? 64 : r > 2f ? 24 : 12, rings = Mathf.Max(1, Mathf.CeilToInt(r / 1.25f));
+            float o = (float)rng.NextDouble() * 100f;
+            var rim = new float[n];
             for (int i = 0; i < n; i++)
             {
                 float a = i * Mathf.PI * 2f / n;
-                float rr = r * (1f + ((float)rng.NextDouble() * 2f - 1f) * jitter);
+                float wob = (Mathf.PerlinNoise(o + Mathf.Cos(a) * 1.6f, o + Mathf.Sin(a) * 1.6f) - 0.5f) * 1.4f + ((float)rng.NextDouble() * 2f - 1f) * 0.3f;
+                rim[i] = r * (1f + wob * jitter);
+            }
+            Vector3 P(int ring, int i)
+            {
+                float a = (i % n) * Mathf.PI * 2f / n, rr = rim[i % n] * ring / rings;
                 float x = c.x + Mathf.Cos(a) * rr, z = c.y + Mathf.Sin(a) * rr;
-                ring[i] = new Vector3(x, G(x, z) + lift, z);
+                return new Vector3(x, G(x, z) + lift, z);
             }
             var mid = new Vector3(c.x, G(c.x, c.y) + lift, c.y);
-            for (int i = 0; i < n; i++) mb.Tri(mid, ring[i], ring[(i + 1) % n], Vector3.up);
-            Own(mb.Build(t, name, Art.Mat(col), false));
+            for (int i = 0; i < n; i++)
+            {
+                mb.Tri(mid, P(1, i), P(1, i + 1), Vector3.up);
+                for (int ring = 1; ring < rings; ring++) mb.Quad(P(ring, i), P(ring + 1, i), P(ring + 1, i + 1), P(ring, i + 1), Vector3.up);
+            }
+            var go = mb.Build(t, name, Art.Mat(col), false);
+            Own(go);
+            go.AddComponent<GroundMarker>(); // (no collider: just so the AI PSX look skins it as ground - dirt, not wood)
         }
 
         // ---------------- the saucer ----------------
@@ -391,6 +439,11 @@ namespace RockGame
                 new Vector2(-6.2f, 1.2f), new Vector2(-5.0f, -5.6f), new Vector2(7.6f, 4.9f), new Vector2(8.4f, -4.6f),
                 new Vector2(3.0f, 6.9f), new Vector2(-6.6f, -4.0f), new Vector2(10.4f, 1.8f), new Vector2(-7.8f, -2.4f),
                 new Vector2(5.4f, -6.6f), new Vector2(-2.0f, 7.8f),
+                // further out, flung out over the grass
+                new Vector2(12.5f, 6.5f), new Vector2(14.0f, -3.0f), new Vector2(-11.0f, 7.5f), new Vector2(-13.5f, -6.0f),
+                new Vector2(9.0f, -11.0f), new Vector2(-8.5f, 12.0f), new Vector2(16.5f, 9.0f), new Vector2(-17.0f, 2.5f),
+                new Vector2(6.0f, 15.5f), new Vector2(-4.0f, -15.0f), new Vector2(18.0f, -8.0f), new Vector2(-15.0f, -11.0f),
+                new Vector2(11.0f, 13.0f), new Vector2(3.5f, -17.5f), new Vector2(-12.0f, 15.0f), new Vector2(20.0f, 2.0f),
             };
             for (int i = 0; i < spots.Length; i++)
             {
@@ -456,6 +509,102 @@ namespace RockGame
                 shards.Tri(p0, p1, p2, Vector3.up);
             }
             Own(shards.Build(t, "glass shards", Art.Ghost(new Color(0.75f, 0.95f, 1f, 0.55f)), false));
+            // torn scraps of hull all over (flat bits, two merged meshes)
+            var scrap = new MeshBatch();
+            var scrapDark = new MeshBatch();
+            for (int i = 0; i < 46; i++)
+            {
+                float a = R(0f, Mathf.PI * 2f), rr = R(2.6f, 20f);
+                var c = new Vector3(Mathf.Cos(a) * rr + 1f, 0, Mathf.Sin(a) * rr);
+                if (InSaucer(c)) continue;
+                float w = R(0.12f, 0.38f);
+                c.y = G(c.x, c.z) + 0.04f;
+                (i % 3 == 0 ? scrapDark : scrap).Box(c, Quaternion.Euler(R(-25f, 25f), R(0f, 360f), R(-25f, 25f)), new Vector3(w, 0.03f, w * R(0.4f, 0.9f)));
+            }
+            Own(scrap.Build(t, "rubble scrap", Art.Mat(k_Hull), false));
+            Own(scrapDark.Build(t, "rubble scrap dark", Art.Mat(k_HullDark), false));
+        }
+
+        /// <summary>Is this spot (this object's space) under the saucer?</summary>
+        bool InSaucer(Vector3 p, float margin = 0.6f) => new Vector2(p.x - SaucerDist, p.z).magnitude < SaucerR + margin;
+
+        // ---------------- rubble ----------------
+
+        /// <summary>
+        /// Rubble thrown out by the impact (no colliders, like the debris; merged meshes, a handful of draws): slabs of
+        /// ground broken and pushed up round the crater's rim (a few still with grass on top), stones and lumps of rock -
+        /// thickest round the crater and along the furrow, thinning out into the grass - and clods of dirt. Nothing
+        /// bigger than gravel lies between a base and the ball.
+        /// </summary>
+        void BuildRubble(Transform t, System.Random rng)
+        {
+            float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
+            var sod = new MeshBatch();
+            var sodTop = new MeshBatch();
+            var clods = new MeshBatch();
+            var stone = new MeshBatch();
+            var stoneDark = new MeshBatch();
+            // slabs of ground pushed up round the crater, their inner edge up towards it
+            for (int i = 0; i < 18; i++)
+            {
+                float a = R(0f, Mathf.PI * 2f), rr = R(4.3f, 7.8f);
+                var outDir = new Vector3(Mathf.Cos(a), 0, Mathf.Sin(a));
+                var c = outDir * rr + new Vector3(0.6f, 0, 0);
+                if (OnSightline(c, 2.3f) || InSaucer(c, 1f)) continue;
+                float w = R(0.8f, 1.7f), d = R(0.55f, 1.1f), th = R(0.2f, 0.32f), tilt = R(16f, 48f);
+                var rot = Quaternion.LookRotation(outDir) * Quaternion.Euler(tilt, R(-25f, 25f), R(-10f, 10f));
+                c.y = G(c.x, c.z) + Mathf.Sin(tilt * Mathf.Deg2Rad) * d * 0.25f;
+                sod.Box(c, rot, new Vector3(w, th, d));
+                // (a few still have their grass on: most are dirt all over - green tops in the dirt read as holes in it)
+                if (i % 5 == 1) sodTop.Box(c + rot * Vector3.up * (th * 0.5f + 0.02f), rot, new Vector3(w * 0.97f, 0.04f, d * 0.97f));
+            }
+            // stones and lumps of rock: the big ones first, then smaller and smaller, further out
+            for (int i = 0; i < 110; i++)
+            {
+                bool near = i < 60;
+                float a = R(0f, Mathf.PI * 2f), rr = near ? R(2.8f, 9.5f) : R(9f, 19f);
+                var c = new Vector3(Mathf.Cos(a) * rr + 0.8f, 0, Mathf.Sin(a) * rr);
+                if (new Vector2(c.x, c.z).magnitude < 2.4f || InSaucer(c)) continue;
+                float s = i < 22 ? R(0.35f, 0.75f) : R(0.1f, 0.32f);
+                if (s > 0.2f && OnSightline(c, 1.8f + s)) continue; // (only gravel between a base and the ball)
+                var size = new Vector3(s * R(0.9f, 1.4f), s * R(0.5f, 0.85f), s * R(0.8f, 1.2f));
+                c.y = G(c.x, c.z) + size.y * 0.25f;
+                MapScenery.AddRock(i % 3 == 0 ? stoneDark : stone, c, Quaternion.Euler(R(-20f, 20f), R(0f, 360f), R(-20f, 20f)), size, rng.Next());
+            }
+            // along the furrow: stones heaped on both sides
+            for (int i = 0; i < 16; i++)
+            {
+                var c = new Vector3(R(SaucerDist + SaucerR - 0.5f, 13.5f), 0, (i % 2 == 0 ? 1f : -1f) * R(1.4f, 2.9f));
+                float s = R(0.15f, 0.45f);
+                var size = new Vector3(s * R(0.9f, 1.4f), s * R(0.5f, 0.8f), s);
+                c.y = G(c.x, c.z) + 0.09f + size.y * 0.2f;
+                MapScenery.AddRock(i % 2 == 0 ? stone : stoneDark, c, Quaternion.Euler(R(-20f, 20f), R(0f, 360f), R(-20f, 20f)), size, rng.Next());
+            }
+            // clods of dirt
+            for (int i = 0; i < 46; i++)
+            {
+                float a = R(0f, Mathf.PI * 2f), rr = R(3.5f, DirtR + 3f);
+                var c = new Vector3(Mathf.Cos(a) * rr + 0.8f, 0, Mathf.Sin(a) * rr);
+                if (InSaucer(c)) continue;
+                float s = R(0.14f, 0.42f);
+                if (s > 0.22f && OnSightline(c, 1.8f + s)) continue;
+                var size = new Vector3(s * R(1f, 1.5f), s * R(0.4f, 0.6f), s);
+                c.y = G(c.x, c.z) + size.y * 0.2f;
+                MapScenery.AddRock(clods, c, Quaternion.Euler(R(-10f, 10f), R(0f, 360f), R(-10f, 10f)), size, rng.Next(), 0.3f);
+            }
+            using (ColorSlots.Use(ColorSlots.BallZone))
+            {
+                // (marked as ground, no collider: the AI PSX look skins them as dirt)
+                Own(sod.Build(t, "rubble slabs", Art.Mat(k_CrashDirt * 0.9f), true)).AddComponent<GroundMarker>();
+                Own(clods.Build(t, "rubble clods", Art.Mat(k_CrashDirt * 0.95f), true)).AddComponent<GroundMarker>();
+            }
+            // (grass on the slabs: the map's own ground colour; the theme maps' ground isn't grass)
+            if (!ThemeMaps.IsTheme) Own(sodTop.Build(t, "rubble slab grass", WorldLook.GroundMaterial(false), false)); // THEME MAPS
+            using (ColorSlots.Use(ColorSlots.Boulders))
+            {
+                Own(stone.Build(t, "rubble stones", Art.Mat(k_Stone), true));
+                Own(stoneDark.Build(t, "rubble stones dark", Art.Mat(k_StoneDark), true));
+            }
         }
 
         // ---------------- fire, smoke and sparks ----------------

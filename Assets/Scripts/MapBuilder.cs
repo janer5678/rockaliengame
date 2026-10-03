@@ -119,14 +119,7 @@ namespace RockGame
             // (no watch towers any more)
             if (ThemeMaps.IsTheme) ThemeMaps.BuildProps(root); // THEME MAPS
 
-            // ---------- centre ball drop zone ----------
-            using (ColorSlots.Use(ColorSlots.BallZone))
-            {
-                Art.Part(root, Art.Cylinder, new Color(0.85f, 0.75f, 0.3f), new Vector3(0, 0.02f, 0), new Vector3(12f, 0.02f, 12f));
-                Art.Part(root, Art.Cylinder, new Color(0.95f, 0.88f, 0.45f), new Vector3(0, 0.03f, 0), new Vector3(9f, 0.02f, 9f));
-                Art.Part(root, Art.Cylinder, new Color(0.85f, 0.75f, 0.3f), new Vector3(0, 0.04f, 0), new Vector3(2f, 0.02f, 2f));
-            }
-            // ---------- the crashed UFO round the ball, in the ball zone ----------
+            // ---------- the crashed UFO round the ball, in the ball zone (no yellow circle any more: the crash's dirt and rubble) ----------
             CrashSite.Build(root);
 
             // ---------- map boundary ----------
@@ -164,6 +157,8 @@ namespace RockGame
                 m.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
                 PsxModels.Replace(m.transform, "bigrock" + (i % 6), PsxModels.Fit.Uniform);
             }
+            // further out, layers of mountain ranges, each taller and paler; and big boulders about the map (MapScenery)
+            MapScenery.Build(root);
 
             BuildArena(root);
             if (Cfg.Map == MapKind.Plains || Cfg.Map == MapKind.Highlands)
@@ -199,8 +194,14 @@ namespace RockGame
         }
 
         /// <summary>Ground height at (x, z). Bases and the ball zone are flat (y = 0) so building and the drop work the same.</summary>
-        public static float Height(float x, float z)
+        public static float Height(float x, float z) => Height(x, z, out _, out _);
+
+        /// <summary>Height, and the two things it's made of: the hills as they'd be (`hills`) and how much of them there
+        /// is here (`mask`: 0 on the bases and in the middle, which are flat, 1 out in the wild).</summary>
+        static float Height(float x, float z, out float hills, out float mask)
         {
+            hills = 0f;
+            mask = 1f;
             if (ThemeMaps.IsTheme) return ThemeMaps.Height(x, z); // THEME MAPS
             if (Cfg.Map != MapKind.Highlands) return 0f;
             // symmetric: every team gets the same terrain (point mirror, or four ways round)
@@ -212,10 +213,12 @@ namespace RockGame
                 float dx = Mathf.Max(0, Mathf.Abs(x - c.x) - Cfg.BaseHalf), dz = Mathf.Max(0, Mathf.Abs(z - c.z) - Cfg.BaseHalf);
                 dBase = Mathf.Min(dBase, Mathf.Sqrt(dx * dx + dz * dz));
             }
-            float mask = Mathf.Min(SmoothStep(2f, 16f, dBase), SmoothStep(9f, 24f, new Vector2(x, z).magnitude));
+            // (flat out to 13 m round the middle: the crash site's dirt lies on it - CrashSite.DirtR)
+            mask = Mathf.Min(SmoothStep(2f, 16f, dBase), SmoothStep(13f, 27f, new Vector2(x, z).magnitude));
             float edge = Mathf.Max(Mathf.Abs(x), Mathf.Abs(z)) - (Cfg.MapHalf - 14f);
             if (edge > 0) h += edge * 0.9f;
-            return Mathf.Max(h, -2.5f) * mask;
+            hills = Mathf.Max(h, -2.5f);
+            return hills * mask;
         }
 
         static void BuildTerrain(Transform root)
@@ -224,12 +227,17 @@ namespace RockGame
             const float step = 2f;
             int n = Mathf.CeilToInt(half * 2f / step);
             var hs = new float[n + 1, n + 1];
+            var hills = new float[n + 1, n + 1];
+            var mask = new float[n + 1, n + 1];
             for (int i = 0; i <= n; i++)
             for (int j = 0; j <= n; j++)
-                hs[i, j] = Height(-half + i * step, -half + j * step);
+                hs[i, j] = Height(-half + i * step, -half + j * step, out hills[i, j], out mask[i, j]);
 
-            // smooth-shaded: grass on gentle slopes, rock on steep ones
-            var mesh = SmoothGround("Terrain", hs, half, step, 2, (c, ny) => ny < 0.8f ? 1 : 0);
+            // smooth-shaded: grass on gentle slopes, rock on steep ones, split along one clean line (see RockFieldOf)
+            s_RockField = RockFieldOf(hills, mask, half, step);
+            s_FieldHalf = half;
+            s_FieldStep = step;
+            var mesh = SmoothGround("Terrain", hs, half, step, 2, null, s_RockField);
 
             var go = new GameObject("Ground");
             go.transform.SetParent(root, false);
@@ -261,33 +269,65 @@ namespace RockGame
         /// every corner is shared by the triangles round it and its normal comes from the slope of the heights there, so
         /// the light changes smoothly over the hills instead of facet by facet. Each triangle goes in the submesh `sub`
         /// picks from its centre and how upright it is (its own normal's y), so the grass / rock split stays crisp.
+        /// With `split` (a value per corner, Highlands: RockFieldOf) it's two submeshes instead - 0 where split &lt; 0, 1
+        /// where it's &gt;= 0 - and the triangles the line crosses are cut along it (where split is 0 along each edge), so
+        /// the edge of the rock is one clean, smooth line instead of following the triangles.
         /// World-space UVs (a metre each) for the PSX graphics' textures.
         /// </summary>
-        public static Mesh SmoothGround(string name, float[,] hs, float half, float step, int subCount, System.Func<Vector3, float, int> sub)
+        public static Mesh SmoothGround(string name, float[,] hs, float half, float step, int subCount, System.Func<Vector3, float, int> sub, float[,] split = null)
         {
             int n = hs.GetLength(0) - 1;
-            var verts = new Vector3[(n + 1) * (n + 1)];
-            var normals = new Vector3[verts.Length];
-            var uvs = new Vector2[verts.Length];
+            int corners = (n + 1) * (n + 1);
+            var verts = new List<Vector3>(corners);
+            var normals = new List<Vector3>(corners);
+            var uvs = new List<Vector2>(corners);
+            var f = split != null ? new float[corners] : null;
             int I(int i, int j) => i * (n + 1) + j;
             for (int i = 0; i <= n; i++)
             for (int j = 0; j <= n; j++)
             {
                 var v = new Vector3(-half + i * step, hs[i, j], -half + j * step);
-                verts[I(i, j)] = v;
-                uvs[I(i, j)] = new Vector2(v.x, v.z);
+                verts.Add(v);
+                uvs.Add(new Vector2(v.x, v.z));
                 int i0 = Mathf.Max(0, i - 1), i1 = Mathf.Min(n, i + 1), j0 = Mathf.Max(0, j - 1), j1 = Mathf.Min(n, j + 1);
                 float dx = (hs[i1, j] - hs[i0, j]) / ((i1 - i0) * step), dz = (hs[i, j1] - hs[i, j0]) / ((j1 - j0) * step);
-                normals[I(i, j)] = new Vector3(-dx, 1f, -dz).normalized;
+                normals.Add(new Vector3(-dx, 1f, -dz).normalized);
+                if (f != null) f[I(i, j)] = split[i, j];
             }
+            if (f != null) subCount = 2;
             var subs = new List<int>[subCount];
             for (int s = 0; s < subCount; s++) subs[s] = new List<int>();
+            // (split) where the line crosses an edge: one new corner there, shared by the triangles on both sides
+            var cuts = new Dictionary<long, int>();
+            int Cut(int a, int b)
+            {
+                long key = a < b ? (long)a * corners + b : (long)b * corners + a;
+                if (cuts.TryGetValue(key, out int k)) return k;
+                float t = f[a] / (f[a] - f[b]);
+                verts.Add(Vector3.Lerp(verts[a], verts[b], t));
+                normals.Add(Vector3.Lerp(normals[a], normals[b], t).normalized);
+                uvs.Add(Vector2.Lerp(uvs[a], uvs[b], t));
+                return cuts[key] = verts.Count - 1;
+            }
+            void Add(int s, int a, int b, int c) { subs[s].Add(a); subs[s].Add(b); subs[s].Add(c); }
             void Tri(int a, int b, int c)
             {
-                Vector3 pa = verts[a], pb = verts[b], pc = verts[c];
-                var nrm = Vector3.Cross(pb - pa, pc - pa).normalized;
-                var list = subs[Mathf.Clamp(sub((pa + pb + pc) / 3f, nrm.y), 0, subCount - 1)];
-                list.Add(a); list.Add(b); list.Add(c);
+                if (f == null)
+                {
+                    Vector3 pa = verts[a], pb = verts[b], pc = verts[c];
+                    var nrm = Vector3.Cross(pb - pa, pc - pa).normalized;
+                    Add(Mathf.Clamp(sub((pa + pb + pc) / 3f, nrm.y), 0, subCount - 1), a, b, c);
+                    return;
+                }
+                bool ra = f[a] >= 0f, rb = f[b] >= 0f, rc = f[c] >= 0f;
+                if (ra == rb && rb == rc) { Add(ra ? 1 : 0, a, b, c); return; }
+                // turn it round (keeping the winding) so `a` is the corner on its own side of the line
+                if (rb != ra && rb != rc) { (a, b, c) = (b, c, a); ra = rb; }
+                else if (rc != ra && rc != rb) { (a, b, c) = (c, a, b); ra = rc; }
+                int ab = Cut(a, b), ac = Cut(a, c);
+                Add(ra ? 1 : 0, a, ab, ac);
+                Add(ra ? 0 : 1, ab, b, c);
+                Add(ra ? 0 : 1, ab, c, ac);
             }
             for (int i = 0; i < n; i++)
             for (int j = 0; j < n; j++)
@@ -296,7 +336,7 @@ namespace RockGame
                 if (((i + j) & 1) == 0) { Tri(p00, p01, p11); Tri(p00, p11, p10); }
                 else { Tri(p00, p01, p10); Tri(p10, p01, p11); }
             }
-            var mesh = new Mesh { name = name, indexFormat = verts.Length > 65000 ? IndexFormat.UInt32 : IndexFormat.UInt16 };
+            var mesh = new Mesh { name = name, indexFormat = verts.Count > 65000 ? IndexFormat.UInt32 : IndexFormat.UInt16 };
             mesh.SetVertices(verts);
             mesh.SetNormals(normals);
             mesh.SetUVs(0, uvs);
@@ -304,6 +344,110 @@ namespace RockGame
             for (int s = 0; s < subCount; s++) mesh.SetTriangles(subs[s], s);
             mesh.RecalculateBounds();
             return mesh;
+        }
+
+        // ---- where the Highlands hills are rock ----
+
+        /// <summary>How steep (rise over run) the ground has to be, smoothed over a few metres, to be rock (about 25 degrees).</summary>
+        public const float RockSlope = 0.46f;
+        static float[,] s_RockField;
+        static float s_FieldHalf, s_FieldStep;
+
+        /// <summary>
+        /// Highlands: which side of the rock line (x, z) is on - 0 and up is rock, below 0 grass (about -0.15 is a few
+        /// metres out onto the grass). The ground is drawn split along the 0 line and the grass thins out towards it.
+        /// -1 (grass) on the other maps.
+        /// </summary>
+        public static float RockField(float x, float z)
+        {
+            var g = s_RockField;
+            if (g == null || Cfg.Map != MapKind.Highlands) return -1f;
+            int n = g.GetLength(0) - 1;
+            float fx = Mathf.Clamp((x + s_FieldHalf) / s_FieldStep, 0f, n - 0.001f), fz = Mathf.Clamp((z + s_FieldHalf) / s_FieldStep, 0f, n - 0.001f);
+            int i = (int)fx, j = (int)fz;
+            float u = fx - i, v = fz - j;
+            return Mathf.Lerp(Mathf.Lerp(g[i, j], g[i + 1, j], u), Mathf.Lerp(g[i, j + 1], g[i + 1, j + 1], u), v);
+        }
+
+        /// <summary>
+        /// The rock / grass field over the terrain's grid (rock where it's 0 or more). It used to be each triangle on its
+        /// own by its steepness, which on a 2 m grid over noisy hills came out patchy: odd rock triangles dotted over the
+        /// grass, grass specks in the rock faces and a ragged zig-zag edge. Now it's the hills' own steepness at each corner (not
+        /// where the ground just rises off a flat base or the middle to meet them), smoothed
+        /// over about 6 m (so the little bumps the noise adds don't count, only the shape of the hill), less RockSlope;
+        /// the steep rise at the edge of the map is all rock; rock patches too small to be a face (under about 50 m2) go
+        /// back to grass and grass holes up to about 160 m2 in the rock are filled in; and the line between them is cut
+        /// through the triangles (SmoothGround), so it's smooth.
+        /// </summary>
+        static float[,] RockFieldOf(float[,] hills, float[,] mask, float half, float step)
+        {
+            int n = hills.GetLength(0) - 1;
+            var g = new float[n + 1, n + 1];
+            for (int i = 0; i <= n; i++)
+            for (int j = 0; j <= n; j++)
+            {
+                // (the hills' own steepness, as much of it as there is here: where the ground just rises from a flat base
+                // or the middle to meet the hills, that rise isn't a rock face)
+                int i0 = Mathf.Max(0, i - 1), i1 = Mathf.Min(n, i + 1), j0 = Mathf.Max(0, j - 1), j1 = Mathf.Min(n, j + 1);
+                float dx = (hills[i1, j] - hills[i0, j]) / ((i1 - i0) * step), dz = (hills[i, j1] - hills[i, j0]) / ((j1 - j0) * step);
+                g[i, j] = Mathf.Sqrt(dx * dx + dz * dz) * mask[i, j];
+            }
+            for (int pass = 0; pass < 2; pass++) g = Blur(g);
+            for (int i = 0; i <= n; i++)
+            for (int j = 0; j <= n; j++)
+            {
+                g[i, j] -= RockSlope;
+                // (the rise at the edge, from 14 m in - see Height: rock all the way once it's under way)
+                float edge = Mathf.Max(Mathf.Abs(-half + i * step), Mathf.Abs(-half + j * step)) - (Cfg.MapHalf - 14f);
+                if (edge > 0f) g[i, j] += Mathf.Clamp01(edge / 3f) * 0.5f;
+            }
+            Tidy(g, true, 12); // (a corner is 4 m2)
+            Tidy(g, false, 40);
+            return g;
+        }
+
+        /// <summary>A 1-2-1 blur, along both axes.</summary>
+        static float[,] Blur(float[,] g)
+        {
+            int n = g.GetLength(0) - 1;
+            var t = new float[n + 1, n + 1];
+            var o = new float[n + 1, n + 1];
+            for (int i = 0; i <= n; i++)
+            for (int j = 0; j <= n; j++)
+                t[i, j] = (g[Mathf.Max(0, i - 1), j] + 2f * g[i, j] + g[Mathf.Min(n, i + 1), j]) * 0.25f;
+            for (int i = 0; i <= n; i++)
+            for (int j = 0; j <= n; j++)
+                o[i, j] = (t[i, Mathf.Max(0, j - 1)] + 2f * t[i, j] + t[i, Mathf.Min(n, j + 1)]) * 0.25f;
+            return o;
+        }
+
+        /// <summary>Patches of rock (or of grass, away from the edge of the grid) with fewer than `min` corners are pushed
+        /// just over to the other side of the line.</summary>
+        static void Tidy(float[,] g, bool rock, int min)
+        {
+            int n = g.GetLength(0) - 1;
+            var seen = new bool[n + 1, n + 1];
+            var patch = new List<(int i, int j)>();
+            var stack = new Stack<(int i, int j)>();
+            bool Side(int i, int j) => (g[i, j] >= 0f) == rock;
+            void Visit(int i, int j) { if (i >= 0 && j >= 0 && i <= n && j <= n && !seen[i, j] && Side(i, j)) { seen[i, j] = true; stack.Push((i, j)); } }
+            for (int si = 0; si <= n; si++)
+            for (int sj = 0; sj <= n; sj++)
+            {
+                if (seen[si, sj] || !Side(si, sj)) continue;
+                patch.Clear();
+                bool edge = false;
+                Visit(si, sj);
+                while (stack.Count > 0)
+                {
+                    var (i, j) = stack.Pop();
+                    patch.Add((i, j));
+                    if (i == 0 || j == 0 || i == n || j == n) edge = true;
+                    Visit(i - 1, j); Visit(i + 1, j); Visit(i, j - 1); Visit(i, j + 1);
+                }
+                if (patch.Count >= min || (!rock && edge)) continue;
+                foreach (var (i, j) in patch) g[i, j] = rock ? Mathf.Min(g[i, j], 0f) - 0.02f : Mathf.Max(g[i, j], 0f) + 0.02f;
+            }
         }
 
         // =====================================================================

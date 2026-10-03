@@ -208,6 +208,7 @@ namespace RockGame
                         foreach (var r in cs.GetComponentsInChildren<Renderer>())
                         {
                             if (!r.enabled || r.name == "smoke" || r.name == "scorch" || r.name == "crater" || r.name == "furrow" || r.name == "glass shards") continue;
+                            if (r.name.StartsWith("ground ") || r.name.StartsWith("rubble ")) continue; // (flat on the ground, or merged all round the middle: -autotest scenery checks the rubble against these lines)
                             var ray = new Ray(eye, (bp + Vector3.up * 0.2f - eye).normalized);
                             if (r.bounds.IntersectRay(ray, out float dist) && dist < (bp - eye).magnitude - 1.2f && r.bounds.size.y > 0.25f && r.bounds.max.y > bp.y + 0.1f
                                 && DistanceToRay(ray, r.bounds.center) < 0.5f) clear = false;
