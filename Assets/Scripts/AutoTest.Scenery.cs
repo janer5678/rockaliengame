@@ -22,6 +22,10 @@ namespace RockGame
             string dir = ShotDir();
             GameSettings.SetGraphics(0, false);
             GameSettings.ResetWorldLook(false);
+            // (the base floors as they start: flat grass after the build phase - put back as they were at the end)
+            var bfAfter0 = GameSettings.BaseFloorAfter;
+            float bfMix0 = GameSettings.BaseFloorTeamMix;
+            GameSettings.SetBaseFloor(GameSettings.BaseFloorAfterDefault, GameSettings.BaseFloorTeamMixDefault, false);
             g.TimerPaused.Value = true;
             float half = Cfg.MapHalf;
             var root = MapBuilder.Root;
@@ -128,6 +132,55 @@ namespace RockGame
                 var rim = CrashSite.Dir * -7f + side * 3f;
                 yield return LookShot("centre_rim_close", Eye(rim.x, rim.z), Ground(rim.x * 0.3f + side.x * 2f, rim.z * 0.3f + side.z * 2f));
             }
+            // ---------------- the signpost in the middle: an arrow at every team's base ----------------
+            {
+                var sign = CentreSign.Current;
+                Check(Cfg.Builder ? sign == null : sign != null, $"a signpost in the middle ({(sign != null ? "up" : "none")})");
+                if (sign != null)
+                {
+                    var sp = sign.transform.position;
+                    var flat = new Vector3(sp.x, 0f, sp.z);
+                    Check(Vector3.Angle(flat, CrashSite.Dir) > 100f, $"it's on the other side of the ball from the crashed UFO ({Vector3.Angle(flat, CrashSite.Dir):0} degrees round from it)");
+                    Check(flat.magnitude + 1.5f < MapBuilder.DomeRadius, $"it's in the middle, under the ball's dome ({flat.magnitude:0.0} m out)");
+                    // the arrows: one per team, each pointing at its base
+                    int good = 0;
+                    var teams = new HashSet<int>();
+                    foreach (var (t, d, y) in CentreSign.Arrows)
+                    {
+                        var want = Cfg.BaseCenter[t] - sp; want.y = 0f;
+                        if (Vector3.Angle(d, want) < 2f && y > 3f) good++; // (all over head height)
+                        teams.Add(t);
+                    }
+                    Check(CentreSign.Arrows.Count == Cfg.TeamCount && teams.Count == Cfg.TeamCount && good == Cfg.TeamCount,
+                        $"{CentreSign.Arrows.Count} arrows for {Cfg.TeamCount} teams, {good} pointing at their base, up on the pole");
+                    // a tall pole (the arrows on top, over everyone's head), solid, and under the dome's glass
+                    float top = 0f;
+                    foreach (var r in sign.GetComponentsInChildren<Renderer>()) top = Mathf.Max(top, r.bounds.max.y - sp.y);
+                    float reach = 0f;
+                    foreach (var r in sign.GetComponentsInChildren<Renderer>()) reach = Mathf.Max(reach, new Vector2(r.bounds.max.x, r.bounds.max.z).magnitude, new Vector2(r.bounds.min.x, r.bounds.min.z).magnitude);
+                    float glass = Mathf.Sqrt(Mathf.Max(0f, MapBuilder.DomeRadius * MapBuilder.DomeRadius - reach * reach));
+                    Check(top > 4.5f && top < glass, $"a tall signpost ({top:0.0} m), clear of the dome's glass over it ({glass:0.0} m there)");
+                    var pole = sign.GetComponentsInChildren<Collider>();
+                    Check(pole.Length == 1 && pole[0] is CapsuleCollider && pole[0].bounds.size.x < 0.4f, $"only its pole is solid ({pole.Length} colliders)");
+                    // never in the way: off every line from a base to the ball, by a good margin
+                    float nearest = float.MaxValue;
+                    for (int t = 0; t < Cfg.TeamCount; t++)
+                    {
+                        var b = new Vector2(Cfg.BaseCenter[t].x, Cfg.BaseCenter[t].z);
+                        var f2 = new Vector2(sp.x, sp.z);
+                        float along = Mathf.Clamp01(Vector2.Dot(f2 - b, -b) / b.sqrMagnitude);
+                        nearest = Mathf.Min(nearest, (b + (-b) * along - f2).magnitude);
+                    }
+                    Check(nearest > 3f, $"it's off the way from every base to the ball ({nearest:0.0} m from the nearest)");
+                    var toSign = flat.normalized;
+                    var across = Vector3.Cross(Vector3.up, toSign);
+                    yield return LookShot("sign", Eye(sp.x + toSign.x * 6f + across.x * 3f, sp.z + toSign.z * 6f + across.z * 3f), sp + Vector3.up * 4.2f);
+                    yield return LookShot("sign_close", Eye(sp.x + across.x * 3.2f, sp.z + across.z * 3.2f, 1.5f), sp + Vector3.up * 4.4f);
+                    yield return LookShot("sign_from_base", Eye(Cfg.BackDir(team).x * 22f, Cfg.BackDir(team).z * 22f), sp + Vector3.up * 3.5f);
+                    yield return LookShot("sign_from_above", new Vector3(sp.x + 2f, sp.y + 14f, sp.z + 2.5f), sp + Vector3.up * 3f);
+                }
+            }
+
             // ---------------- the emergency flare tip by the glass wall (build phase, every mode) ----------------
             {
                 var spot = Tutorial.WallSpot(team);
@@ -201,6 +254,40 @@ namespace RockGame
                 var outDir = new Vector3(bc.x, 0, bc.z).normalized;
                 var corner = bc + Quaternion.Euler(0, 35f, 0) * -outDir * (Cfg.BaseHalf + 8f);
                 yield return LookShot("base_after_wall", Eye(corner.x, corner.z, 6f), Ground(bc.x, bc.z));
+
+                // Settings > Display > Base floor: the other two looks after the build phase, and the colours
+                int Floors() { int n = 0; foreach (var f in MapBuilder.BaseFloors) if (f != null && f.activeInHierarchy) n++; return n; }
+                var inBase = bc + new Vector3(Cfg.BaseHalf * 0.6f, 0f, Cfg.BaseHalf * 0.55f);
+                var gf = GrassField.Current;
+                Check(!GrassField.BaseBlades && (gf == null || gf.CoverAt(inBase.x, inBase.z) < 0.01f), "flat grass (the default): no blades on the base");
+                GameSettings.SetBaseFloor(GameSettings.BaseFloorStyle.Grid, GameSettings.BaseFloorTeamMixDefault, false);
+                yield return null; yield return null;
+                Check(Floors() == Cfg.TeamCount, $"\"Colour grid\": the base floors and their grid stay after the build phase ({Floors()})");
+                yield return LookShot("base_after_grid", Eye(corner.x, corner.z, 6f), Ground(bc.x, bc.z));
+                // its colours: the floor and grid colours picked, with the team's colour mixed in
+                GameSettings.SetBaseFloorColors(new Color(0.85f, 0.85f, 0.88f), new Color(0.1f, 0.1f, 0.12f), false);
+                GameSettings.SetBaseFloor(GameSettings.BaseFloorStyle.Grid, 0.2f, false);
+                yield return null;
+                BaseFloorLook look = null;
+                foreach (var f in MapBuilder.BaseFloors) if (f != null && f.GetComponent<BaseFloorLook>() is BaseFloorLook l && l.Team == team) look = l;
+                BaseFloorLook.Colours(team, out var wantPad, out var wantLine);
+                Check(look != null && ColorSlots.Same(look.PadColor, wantPad) && ColorSlots.Same(look.LineColor, wantLine)
+                    && ColorSlots.Same(wantPad, Color.Lerp(new Color(0.85f, 0.85f, 0.88f), Cfg.TeamColor[team], 0.2f)),
+                    $"the base floor shows the colours picked (floor #{(look != null ? ColorUtility.ToHtmlStringRGB(look.PadColor) : "-")}, grid #{(look != null ? ColorUtility.ToHtmlStringRGB(look.LineColor) : "-")}, 20% team colour)");
+                yield return LookShot("base_after_grid_colours", Eye(corner.x, corner.z, 6f), Ground(bc.x, bc.z));
+                GameSettings.SetBaseFloorColors(ColorSlots.BasePads.Default, ColorSlots.BaseGrid.Default, false);
+                GameSettings.SetBaseFloor(GameSettings.BaseFloorStyle.GrassBlades, GameSettings.BaseFloorTeamMixDefault, false);
+                yield return null; yield return null;
+                Check(Floors() == 0 && GrassField.BaseBlades && (gf == null || gf.CoverAt(inBase.x, inBase.z) > 0.5f),
+                    $"\"Grass + blades\": the floors go and grass grows on the base (cover {(gf != null ? gf.CoverAt(inBase.x, inBase.z) : -1f):0.00})");
+                var bedrockSpot = Cfg.SpawnPos(team);
+                Check(gf == null || gf.CoverAt(bedrockSpot.x, bedrockSpot.z) < 0.01f, "but none on the bedrock");
+                yield return LookShot("base_after_blades", Eye(corner.x, corner.z, 6f), Ground(bc.x, bc.z));
+                yield return LookShot("base_after_blades_low", Eye(inBase.x + 4f, inBase.z - 4f), Ground(bc.x, bc.z));
+                GameSettings.SetBaseFloor(GameSettings.BaseFloorStyle.Grass, GameSettings.BaseFloorTeamMixDefault, false);
+                yield return null; yield return null;
+                Check(Floors() == 0 && !GrassField.BaseBlades && (gf == null || gf.CoverAt(inBase.x, inBase.z) < 0.01f), "back to flat grass: no floors, no blades");
+                GameSettings.SetBaseFloor(bfAfter0, bfMix0, false);
             }
             yield return new WaitForSeconds(0.5f);
             {
@@ -281,7 +368,7 @@ namespace RockGame
                 yield return LookShot("outskirts_side", near + Vector3.up * Cfg.EyeHeight, near + (outDir + side * 1.2f).normalized * 120f + Vector3.up * 25f);
                 yield return LookShot("range_forests", near + Vector3.up * (Cfg.EyeHeight + 25f), near + Quaternion.Euler(0, -30f, 0) * outDir * 260f + Vector3.up * 35f);
             }
-            // ---------------- Highlands: the rocky rise at the edge of the map is faceted (flat-shaded) ----------------
+            // ---------------- Highlands: the rocky rise at the edge of the map is smooth-shaded (like the hills) ----------------
             if (Cfg.Map == MapKind.Highlands)
             {
                 var gGo = root.Find("Ground");
@@ -289,7 +376,7 @@ namespace RockGame
                 if (gm != null)
                 {
                     var vs = gm.vertices; var ns = gm.normals;
-                    int edgeTris = 0, smooth = 0, inTris = 0, inFlat = 0;
+                    int edgeTris = 0, flat = 0, inTris = 0, inFlat = 0;
                     for (int sub = 0; sub < gm.subMeshCount; sub++)
                     {
                         var tris = gm.GetTriangles(sub);
@@ -297,11 +384,11 @@ namespace RockGame
                         {
                             var c = (vs[tris[i]] + vs[tris[i + 1]] + vs[tris[i + 2]]) / 3f;
                             bool sameN = Vector3.Dot(ns[tris[i]], ns[tris[i + 1]]) > 0.9999f && Vector3.Dot(ns[tris[i]], ns[tris[i + 2]]) > 0.9999f;
-                            if (MapBuilder.EdgeRise(c.x, c.z)) { edgeTris++; if (!sameN) smooth++; }
+                            if (MapBuilder.EdgeRise(c.x, c.z)) { edgeTris++; if (sameN) flat++; }
                             else if (Mathf.Max(Mathf.Abs(c.x), Mathf.Abs(c.z)) < half - 30f && MapBuilder.RockField(c.x, c.z) > 0.1f) { inTris++; if (sameN) inFlat++; }
                         }
                     }
-                    Check(edgeTris > 1000 && smooth == 0, $"the rocky rise at the edge is faceted ({edgeTris} triangles, {smooth} smooth-shaded)");
+                    Check(edgeTris > 1000 && flat < edgeTris / 10, $"the rocky rise at the edge is smooth-shaded again ({edgeTris} triangles, {flat} flat-shaded)");
                     Check(inTris == 0 || inFlat < inTris / 2, $"the hills inside stay smooth ({inFlat} of {inTris} rock triangles flat)");
                 }
                 var bc = Cfg.BaseCenter[team];
@@ -327,6 +414,7 @@ namespace RockGame
                         // and leave 60 m up / 48 m out: nothing of theirs is ever further than this from anyone on the map)
                         float shipReach = new Vector2(MapDome.HalfSize * 2.83f + 72f, 300f + 75f).magnitude; // (from one corner to a ship over the other)
                         Check(cols == 0 && pl.NearestReach > shipReach, $"the planets are sky: no colliders ({cols}), never nearer than {pl.NearestReach:0} m (the ships stay within {shipReach:0} m)");
+                        Check(pl.FurthestReach > 0f && pl.FurthestReach < pl.FarNow, $"every planet is whole, the gas giant's ring too: inside the far plane (furthest {pl.FurthestReach:0} m, far plane {pl.FarNow:0} m)");
                         float lowest = 90f;
                         for (int i = 0; i < pl.Count; i++) lowest = Mathf.Min(lowest, Mathf.Asin(pl.DirOf(i).y) * Mathf.Rad2Deg);
                         Check(lowest > 15f, $"they're high in the sky ({lowest:0} degrees up at the lowest)");
@@ -551,6 +639,39 @@ namespace RockGame
                 foreach (var r in scenery) if (r) r.enabled = true;
                 QualitySettings.vSyncCount = vsync; Application.targetFrameRate = fr;
                 Log($"frame time with the new scenery (ranges, boulders, crash dirt and rubble: {scenery.Count} renderers) {on / Mathf.Max(1, onN) * 1000f:F2} ms, hidden {off / Mathf.Max(1, offN) * 1000f:F2} ms");
+            }
+            // ---------------- frame time: the scenery pines (outskirts and range forests) shown / hidden ----------------
+            {
+                var pines = new List<Renderer>();
+                int tris = 0;
+                foreach (var r in MapScenery.RangeTrees) if (r != null) pines.Add(r);
+                foreach (var r in MapScenery.Outskirts) if (r != null && r.name.Contains("pines")) pines.Add(r);
+                foreach (var r in pines) tris += r.GetComponent<MeshFilter>().sharedMesh.triangles.Length / 3;
+                var bc = Cfg.BaseCenter[team];
+                var feet = Ground(bc.x * 0.8f, bc.z * 0.8f);
+                float yaw = YawTo(feet, new Vector3(bc.x * 3f, 0f, bc.z * 3f) + Quaternion.Euler(0, 90f, 0) * bc);
+                pc.LocalTeleport(feet, yaw);
+                pc.SetLook(yaw, -6f);
+                yield return new WaitForSeconds(0.5f);
+                int vsync = QualitySettings.vSyncCount, fr = Application.targetFrameRate;
+                QualitySettings.vSyncCount = 0; Application.targetFrameRate = 1000;
+                float on = 0, off = 0; int onN = 0, offN = 0;
+                for (int pass = 0; pass < 6; pass++)
+                {
+                    bool show = pass % 2 == 0;
+                    foreach (var r in pines) if (r) r.enabled = show;
+                    yield return new WaitForSeconds(0.4f);
+                    float until = Time.realtimeSinceStartup + 1.5f;
+                    while (Time.realtimeSinceStartup < until)
+                    {
+                        pc.LocalTeleport(feet, yaw);
+                        yield return null;
+                        if (show) { on += Time.unscaledDeltaTime; onN++; } else { off += Time.unscaledDeltaTime; offN++; }
+                    }
+                }
+                foreach (var r in pines) if (r) r.enabled = true;
+                QualitySettings.vSyncCount = vsync; Application.targetFrameRate = fr;
+                Log($"frame time with the scenery pines ({pines.Count} meshes, {tris} triangles, {MapScenery.OutskirtTrees} outskirt trees) {on / Mathf.Max(1, onN) * 1000f:F2} ms, hidden {off / Mathf.Max(1, offN) * 1000f:F2} ms");
             }
 
             // ---------------- PSX and AI PSX ----------------

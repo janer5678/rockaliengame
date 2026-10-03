@@ -94,6 +94,7 @@ namespace RockGame
             StoneNodes = Add("StoneNodes", "Stone nodes", GGround, new Color(0.56f, 0.56f, 0.6f)),
             Boulders = Add("Boulders", "Big rocks", GGround, new Color(0.54f, 0.53f, 0.5f)),
             BasePads = Add("BasePads", "Base floor", GBases, new Color(0.5f, 0.45f, 0.35f)),
+            BaseGrid = Add("BaseGrid", "Base floor grid", GBases, new Color(0.625f, 0.5875f, 0.5125f)), // (the build grid's lines; BaseFloorLook)
             Bedrock = Add("Bedrock", "Bedrock", GBases, new Color(0.72f, 0.74f, 0.78f)),
             AlienMachine = Add("AlienMachine", "Alien machine", GBases, new Color(0.3f, 0.33f, 0.36f)),
             WoodMachine = Add("WoodMachine", "Wood machine", GBases, new Color(0.3f, 0.2f, 0.38f)),

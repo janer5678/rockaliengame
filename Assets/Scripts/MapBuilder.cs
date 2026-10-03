@@ -76,20 +76,22 @@ namespace RockGame
                 var line = Color.Lerp(pad, Color.white, 0.25f);
                 float s = Cfg.BaseHalf * 2f;
                 int cells = Mathf.RoundToInt(s / Cfg.Cell);
-                using (ColorSlots.Use(ColorSlots.BasePads))
                 {
-                    // (the tinted floor and its grid are only there while you build: once the wall drops they go, and the
-                    // base is plain flat ground - grass, no blades - inside its team-colour border; SetGlassWall)
+                    // (the tinted floor and its grid are there while you build; once the wall drops they stay, or go and the
+                    // base is plain flat ground or grass with blades inside its team-colour border - Settings > Display >
+                    // Base floor, SetGlassWall. Their colours come from there too: BaseFloorLook)
                     var floor = new GameObject("base floor " + t).transform;
                     floor.SetParent(root, false);
                     s_BaseFloors.Add(floor.gameObject);
-                    Art.Box(floor, pad, c + new Vector3(0, 0.02f, 0), new Vector3(s, 0.03f, s));
+                    var padR = Art.Box(floor, pad, c + new Vector3(0, 0.02f, 0), new Vector3(s, 0.03f, s)).GetComponent<Renderer>();
+                    var lineRs = new List<Renderer>();
                     for (int k = 0; k <= cells; k++)
                     {
                         float o = -Cfg.BaseHalf + k * Cfg.Cell;
-                        Art.Box(floor, line, c + new Vector3(0, 0.04f, o), new Vector3(s, 0.01f, 0.06f));
-                        Art.Box(floor, line, c + new Vector3(o, 0.04f, 0), new Vector3(0.06f, 0.01f, s));
+                        lineRs.Add(Art.Box(floor, line, c + new Vector3(0, 0.04f, o), new Vector3(s, 0.01f, 0.06f)).GetComponent<Renderer>());
+                        lineRs.Add(Art.Box(floor, line, c + new Vector3(o, 0.04f, 0), new Vector3(0.06f, 0.01f, s)).GetComponent<Renderer>());
                     }
+                    BaseFloorLook.Dress(floor.gameObject, t, padR, lineRs);
                 }
                 for (int side = 0; side < 4; side++)
                 {
@@ -128,6 +130,8 @@ namespace RockGame
 
             // ---------- the crashed UFO round the ball, in the ball zone (no yellow circle any more: the crash's dirt and rubble) ----------
             CrashSite.Build(root);
+            // ---------- a signpost on the other side of the ball, an arrow pointing at every team's base ----------
+            CentreSign.Build(root);
 
             // ---------- map boundary ----------
             // the walls are still what stops you at the edge, but in Normal graphics they're invisible: the glass dome over
@@ -210,8 +214,8 @@ namespace RockGame
             return a * 9f + b * 4f;
         }
 
-        /// <summary>Highlands: is this part of the ground the rocky rise at the edge of the map? (Drawn faceted - flat-shaded,
-        /// like the mountain rocks - not smooth like the hills.)</summary>
+        /// <summary>Highlands: is this part of the ground the rocky rise at the edge of the map? (Drawn smooth-shaded like the
+        /// hills: it was faceted for a while, which looked wrong where the glass wall ends.)</summary>
         public static bool EdgeRise(float x, float z) => Cfg.Map == MapKind.Highlands && Mathf.Max(Mathf.Abs(x), Mathf.Abs(z)) > Cfg.MapHalf - 12f;
 
         /// <summary>Ground height at (x, z). Bases and the ball zone are flat (y = 0) so building and the drop work the same.</summary>
@@ -269,7 +273,7 @@ namespace RockGame
             s_FieldHalf = half;
             s_FieldStep = step;
             s_GroundHs = hs;
-            var mesh = SmoothGround("Terrain", hs, half, step, 2, null, s_RockField, c => EdgeRise(c.x, c.z));
+            var mesh = SmoothGround("Terrain", hs, half, step, 2, null, s_RockField); // (smooth all over, the rise at the edge too)
 
             var go = new GameObject("Ground");
             go.transform.SetParent(root, false);
@@ -839,8 +843,12 @@ namespace RockGame
         /// Down without DropGlassWall first (joining a match that's already past it, the fun modes): gone at once.</summary>
         public static void SetGlassWall(bool up)
         {
-            // the bases' tinted build floors only while you build
-            foreach (var f in s_BaseFloors) if (f != null && f.activeSelf != up) f.SetActive(up);
+            // the bases' tinted build floors while you build; after it, as picked in Settings > Display > Base floor: they
+            // stay, or go (plain ground), or go and grass blades grow there
+            var after = GameSettings.BaseFloorAfter;
+            bool floors = up || after == GameSettings.BaseFloorStyle.Grid;
+            foreach (var f in s_BaseFloors) if (f != null && f.activeSelf != floors) f.SetActive(floors);
+            GrassField.SetBaseBlades(!up && after == GameSettings.BaseFloorStyle.GrassBlades && s_BaseFloors.Count > 0);
             if (s_Glass == null) return;
             if (up)
             {

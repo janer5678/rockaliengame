@@ -229,6 +229,22 @@ namespace RockGame
             Shader.SetGlobalFloat(k_PushCount, 0);
             Shader.SetGlobalVectorArray(k_PushArr, m_Push);
 
+            ComputeTiles();
+            InitTrample();
+
+            m_Mat = new Material(s_GrassShader) { name = "grass blades" };
+            m_DecorMat = new Material(s_GrassShader) { name = "grass flowers" };
+            for (int i = 0; i < m_Batches.Length; i++) { m_Batches[i] = new List<Vector4>(); m_Props[i] = new MaterialPropertyBlock(); }
+            Shader.SetGlobalVectorArray(k_Tiles, m_Tiles);
+
+            BuildPatch(new System.Random(77));
+            BuildDecor(rng, clearings);
+        }
+
+        /// <summary>Which squares have any grass (only those are drawn), and how high their ground goes - at every level.
+        /// Again whenever grass comes or goes over a big area (the bases' blades: SetBaseBlades).</summary>
+        void ComputeTiles()
+        {
             // which squares have any grass, and how high their ground goes
             m_T0 = Mathf.FloorToInt(m_Min / Tile);
             m_TN = Mathf.CeilToInt((m_Min + m_N) / Tile) - m_T0;
@@ -277,15 +293,56 @@ namespace RockGame
                     m_LvY[L][j * n + i] = y;
                 }
             }
-            InitTrample();
+        }
 
-            m_Mat = new Material(s_GrassShader) { name = "grass blades" };
-            m_DecorMat = new Material(s_GrassShader) { name = "grass flowers" };
-            for (int i = 0; i < m_Batches.Length; i++) { m_Batches[i] = new List<Vector4>(); m_Props[i] = new MaterialPropertyBlock(); }
-            Shader.SetGlobalVectorArray(k_Tiles, m_Tiles);
+        // ---- the bases' grass (Settings > Display > Base floor: "Grass + blades" after the build phase) ----
 
-            BuildPatch(new System.Random(77));
-            BuildDecor(rng, clearings);
+        bool m_BaseBlades;
+
+        /// <summary>(tests) Blades grow on the bases now.</summary>
+        public static bool BaseBlades => s_I != null && s_I.m_BaseBlades;
+
+        /// <summary>
+        /// Grass blades on the bases (on) or none (off, as the field was made: you build there). Called every frame by
+        /// MapBuilder.SetGlassWall; only does anything when it changes. Never on the bedrock (a margin round it) or where
+        /// something's been built.
+        /// </summary>
+        public static void SetBaseBlades(bool on)
+        {
+            var g = s_I;
+            if (g == null || g.m_Field == null || g.m_Cover0 == null || g.m_BaseBlades == on) return;
+            g.m_BaseBlades = on;
+            float half = Cfg.MapHalf;
+            int changed = 0;
+            for (int t = 0; t < Cfg.TeamCount && !Cfg.Builder; t++)
+            {
+                var c = Cfg.BaseCenter[t];
+                int i0 = g.Idx(c.x - Cfg.BaseHalf), i1 = g.Idx(c.x + Cfg.BaseHalf), j0 = g.Idx(c.z - Cfg.BaseHalf), j1 = g.Idx(c.z + Cfg.BaseHalf);
+                int before = changed;
+                for (int j = j0; j <= j1; j++)
+                for (int i = i0; i <= i1; i++)
+                {
+                    float x = g.m_Min + i, z = g.m_Min + j;
+                    if (Cfg.BaseTeamAt(new Vector3(x, 0, z)) != t || Mathf.Max(Mathf.Abs(x), Mathf.Abs(z)) > half - 1.5f) continue;
+                    int k = j * g.m_N + i;
+                    float want = on && !NearBedrock(x, z) ? 1f : 0f;
+                    if (g.m_Cover0[k] == want) continue;
+                    g.m_Cover0[k] = want; // (what grows there; anything built on it still clears it - Recompute)
+                    changed++;
+                }
+                if (changed != before) g.Recompute(Mathf.Clamp(i0, 0, g.m_N - 1), Mathf.Clamp(i1, 0, g.m_N - 1), Mathf.Clamp(j0, 0, g.m_N - 1), Mathf.Clamp(j1, 0, g.m_N - 1));
+            }
+            if (changed == 0) return;
+            g.ComputeTiles();
+        }
+
+        static bool NearBedrock(float x, float z)
+        {
+            const float m = 1.1f;
+            for (int a = -1; a <= 1; a++)
+                for (int b = -1; b <= 1; b++)
+                    if (Cfg.PointBlocked(new Vector3(x + a * m, 0, z + b * m))) return true;
+            return false;
         }
 
         static void SetSettings()
