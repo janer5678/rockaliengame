@@ -9,7 +9,7 @@ namespace RockGame
         Attack, Aim, Interact, Inventory,
         Rotate, Demolish, Upgrade,
         PushToTalk,
-        Hotbar1, Hotbar2, Hotbar3, Hotbar4, Hotbar5, Hotbar6, Hotbar7,
+        Hotbar1, Hotbar2, Hotbar3, Hotbar4, Hotbar5, Hotbar6,
     }
 
     /// <summary>Key bindings: a main key and an optional second key per action, saved on this PC.</summary>
@@ -51,10 +51,9 @@ namespace RockGame
             new Info { Bind = Bind.Hotbar4, Group = "HOTBAR", Label = "Slot 4", Main = KeyCode.Alpha4 },
             new Info { Bind = Bind.Hotbar5, Group = "HOTBAR", Label = "Slot 5", Main = KeyCode.Alpha5 },
             new Info { Bind = Bind.Hotbar6, Group = "HOTBAR", Label = "Slot 6", Main = KeyCode.Alpha6 },
-            new Info { Bind = Bind.Hotbar7, Group = "HOTBAR", Label = "Slot 7", Main = KeyCode.Alpha7 },
         };
 
-        const int Count = (int)Bind.Hotbar7 + 1;
+        const int Count = (int)Bind.Hotbar6 + 1;
         const string SlideMigrateKey = "RockGame.Keys.SlideSplit";
         static readonly KeyCode[] s_Main = new KeyCode[Count], s_Alt = new KeyCode[Count];
         static bool s_Loaded;

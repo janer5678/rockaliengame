@@ -243,7 +243,8 @@ namespace RockGame
                 AirstrikeMapOpen = false;
                 if (Chat.Open) Chat.Close();
             }
-            if (!cutscene && !Chat.Open && !Paused && !MenuOpen && !Hud.Rebinding && (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))) Chat.Begin();
+            if (!cutscene && !Chat.Open && !Paused && !MenuOpen && !Hud.Rebinding && (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))) Chat.Begin(false); // global chat
+            else if (!cutscene && !Chat.Open && !Paused && !MenuOpen && !Hud.Rebinding && !Hud.Typing && Input.GetKeyDown(KeyCode.T)) Chat.Begin(true); // team chat
             if (!cutscene && Input.GetKeyDown(KeyCode.Escape) && !Chat.Open && !Hud.BackOut())
             {
                 if (WheelOpen) WheelOpen = false;

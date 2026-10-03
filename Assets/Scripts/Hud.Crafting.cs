@@ -99,7 +99,7 @@ namespace RockGame
                 case Item.Pickaxe: return "Stone Pickaxe: mines rocks for stone much faster than your rock.";
                 case Item.Spear: return "Spear: LMB stabs; hold RMB and press LMB to throw it (E picks it back up). Can be crafted anywhere.";
                 case Item.BuildingPlan: return "Building Plan: hold it to build. Hold RMB for the building wheel.";
-                case Item.Chest: return "Storage Chest: place it in your base, E opens it (14 slots).";
+                case Item.Chest: return $"Storage Chest: place it in your base, E opens it ({Cfg.ChestSlots} slots).";
                 case Item.Bow: return "Bow: hold LMB to draw, let go to fire. Uses arrows.";
                 case Item.Arrow: return $"Arrows: {Mathf.Max(1, Cfg.ArrowsPerCraft)} a craft, for the bow and the crossbow.";
                 case Item.Ram: return $"Battering Ram ({Cfg.RamUses} hit{(Cfg.RamUses == 1 ? "" : "s")}): hold LMB at an enemy piece - wood breaks, stone and up drop a step.";
@@ -124,6 +124,61 @@ namespace RockGame
                 default: return Cfg.ItemName(id) + (Cfg.PowerIndex(id) >= 0 ? ": " + Cfg.PowerBlurb(id, team) : "");
             }
         }
+
+        // ------------------------------------------------------------------ what the mouse is over
+
+        /// <summary>A "Name: what it does" description: the name on top (white), the rest under it (grey).</summary>
+        void SetHover(string full)
+        {
+            int c = full.IndexOf(": ");
+            if (c > 0 && c < 48) { m_HoverTitle = full.Substring(0, c); m_HoverText = full.Substring(c + 2); }
+            else { m_HoverTitle = full; m_HoverText = ""; }
+        }
+
+        /// <summary>An item in the bag or a chest: its name (and how many) and what it does.</summary>
+        void SetHover(ItemStack s, int team)
+        {
+            SetHover(CraftDescription(s.Id, team));
+            if (m_HoverText == "") m_HoverText = ItemNote(s.Id);
+            m_HoverTitle = Cfg.ItemName(s.Id) + (s.Count > 1 ? $"  x{s.Count}" : "");
+            string state = ItemBlurb(s);
+            if (s.Id != Item.Berry && state.StartsWith("  (")) m_HoverText = state.Trim() + (m_HoverText != "" ? "  " + m_HoverText : "");
+        }
+
+        /// <summary>What the things that aren't in the crafting list are for.</summary>
+        static string ItemNote(Item id)
+        {
+            switch (id)
+            {
+                case Item.Wood: return "Building, crafting and upgrades all use it. Chop trees for more.";
+                case Item.Stone: return "For stone upgrades and stone tools. Mine rocks for more.";
+                case Item.Rock: return "Your rock: you hold it whenever your hotbar slot is empty.";
+                case Item.Berry: return $"RMB to eat ({Cfg.BerryEatTime:0.#}s, +{Cfg.BerryHeal:0} HP). LMB on a horse feeds it (+{Cfg.HorseBerryHeal:0} HP).";
+                case Item.Meat: return $"RMB to eat ({Cfg.MeatEatTime:0.#}s): heals you fully.";
+                case Item.Dna: return "What everything costs in DNA mode. Mine trees and rocks for more.";
+                case Item.PistolAmmo: return "The pistol reloads from this.";
+                default: return "";
+            }
+        }
+
+        /// <summary>The room the description needs under the crafting list (kept the same so the list doesn't jump).</summary>
+        static float HoverInfoHeight(float k) => 104 * k;
+
+        /// <summary>The hovered thing's name (white, bold) with its description under it (grey). False when there's nothing.</summary>
+        bool DrawHoverInfo(Rect r, float k)
+        {
+            if (Event.current.type == EventType.Repaint) HoverShown = string.IsNullOrEmpty(m_HoverTitle) ? "" : m_HoverTitle + " | " + m_HoverText;
+            if (string.IsNullOrEmpty(m_HoverTitle)) return false;
+            float th = 22 * k;
+            Shadowed(new Rect(r.x, r.y, r.width, th), $"<b>{m_HoverTitle}</b>", CraftStyle(16 * k, FontStyle.Bold, TextAnchor.UpperLeft, Color.white));
+            if (m_HoverText != "")
+                Shadowed(new Rect(r.x, r.y + th, r.width, Mathf.Max(20 * k, r.height - th)), $"<color=#c8c8c8>{m_HoverText}</color>",
+                    CraftStyle(13 * k, FontStyle.Normal, TextAnchor.UpperLeft, Color.white, true));
+            return true;
+        }
+
+        /// <summary>Test hook: what the hover box last showed ("name | description", "" = nothing).</summary>
+        public static string HoverShown { get; private set; } = "";
 
         // ------------------------------------------------------------------ TAB: the crafting list
 
@@ -218,20 +273,8 @@ namespace RockGame
             Shadowed(new Rect(x, top - 36 * k, colW, 32 * k), "<b>CRAFTING</b>", CraftStyle(20 * k, FontStyle.Bold, TextAnchor.MiddleLeft, Color.white));
             Shadowed(new Rect(x, top - 36 * k, colW, 32 * k), CurrencyText(me), CraftStyle(17 * k, FontStyle.Bold, TextAnchor.MiddleRight, Color.white));
 
-            // the footer: where more comes from (under the list, so the list gets the rest of the height)
-            string hint = Cfg.Builder ? "BUILDER: craft anywhere, one thing at a time - each takes a few seconds."
-                : "Spears and hatchets can be crafted anywhere; the rest inside your base.";
-            int benchTier = Cfg.BenchTier(team);
-            bool benches = Cfg.RecipeIndex(Item.Workbench) >= 0 && Tutorial.AllowsItem(Item.Workbench);
-            if (benches)
-            {
-                if (benchTier > m_CraftTier) hint += $"\n<color=#8fb8ff>Go back to your base for your Workbench T{benchTier} items.</color>";
-                else if (benchTier == 0 && !Cfg.BenchUnlocked(team)) hint += $"\n<color=#c8c8c8>The <b>Workbench T1</b> unlocks once your team captures the ball (in your machine once, or {Cfg.BenchUnlockSeconds:0} s in your base).</color>";
-                else if (benchTier == 0) hint += "\n<color=#8dff9a>Put a <b>Workbench T1</b> down in your base: more things show up here while you're in your base.</color>";
-                else if (benchTier == 1 && Tutorial.AllowsItem(Item.Workbench2)) hint += "\n<color=#ff9ae0>A <b>Workbench T2</b> adds the guns, C4, the saddle and more.</color>";
-            }
-            var hintStyle = CraftStyle(13 * k, FontStyle.Normal, TextAnchor.UpperLeft, Color.white, true);
-            float footer = Mathf.Max(40 * k, hintStyle.CalcHeight(new GUIContent(hint), colW) + 8 * k);
+            // the footer: the name and description of whatever the mouse is over (a row here, or an item in the bag)
+            float footer = HoverInfoHeight(k);
 
             // the rows: fixed heights (the size they were when everything fitted)
             float headH = 24 * k, gap = 4 * k, row = 50 * k;
@@ -324,7 +367,7 @@ namespace RockGame
             }
 
             // (right under the rows when they all fit, at the bottom when the list scrolls)
-            Shadowed(new Rect(x, top + Mathf.Min(view.height, contentH) + 4 * k, colW, footer + 10 * k), hint, hintStyle);
+            DrawHoverInfo(new Rect(x, top + Mathf.Min(view.height, contentH) + 6 * k, colW, footer), k);
         }
 
         /// <summary>One row: icon, name, price (red when you're short) and a CRAFT button (green when you can make it).
@@ -340,7 +383,7 @@ namespace RockGame
             bool ok = problem == null, here = problem != "in your base" && !locked;
             bool over = canClick && rr.Contains(ev.mousePosition);
             Fill(rr, ok ? k_RowOk : k_RowNo);
-            if (over) { Fill(rr, new Color(1, 1, 1, 0.06f)); m_HoverName = CraftDescription(rec.Output, team); }
+            if (over) { Fill(rr, new Color(1, 1, 1, 0.06f)); SetHover(CraftDescription(rec.Output, team)); }
             var edge = locked ? new Color(0.35f, 0.35f, 0.34f) : tier > 0 ? k_TierCol[tier] : ok ? new Color(0.5f, 0.9f, 0.3f) : new Color(0.4f, 0.4f, 0.38f);
             if (tier > 0 && !ok) edge *= 0.6f;
             Fill(new Rect(rr.x, rr.y, 4 * k, rr.height), edge);

@@ -6,7 +6,7 @@ namespace RockGame
     /// <summary>Menu widgets: buttons, choice buttons, sliders and fold-open section headers, with hover / click / slider sounds.</summary>
     public partial class Hud
     {
-        GUIStyle m_SmallWrap, m_SmallNoClip, m_LabelWrap, m_Header, m_Caption, m_KeyCell, m_Primary, m_Choice;
+        GUIStyle m_SmallWrap, m_SmallNoClip, m_SlotKey, m_LabelWrap, m_Header, m_Caption, m_KeyCell, m_Primary, m_Choice;
 
         /// <summary>The extra menu styles (made from the normal ones in Styles()).</summary>
         void UiStyles()
@@ -15,6 +15,7 @@ namespace RockGame
             m_Button.richText = true;
             m_SmallWrap = new GUIStyle(m_Small) { wordWrap = true };
             m_SmallNoClip = new GUIStyle(m_Small) { clipping = TextClipping.Overflow, wordWrap = false };
+            m_SlotKey = new GUIStyle(m_SmallNoClip) { fontStyle = FontStyle.Bold, fontSize = Mathf.RoundToInt(15 * k) }; // hotbar key numbers
             m_LabelWrap = new GUIStyle(m_Label) { wordWrap = true };
             m_Caption = new GUIStyle(m_Small) { fontStyle = FontStyle.Bold };
             // (the accent colour: Settings > Display > INTERFACE; gold to start with)

@@ -133,8 +133,7 @@ namespace RockGame
             if (Time.time < m_NextSuicide) { Notify($"You can't kill yourself again for {Mathf.CeilToInt(m_NextSuicide - Time.time)} s"); return; }
             m_NextSuicide = Time.time + 30f;
             ArmorHp.Value = 0;
-            ServerDie(null);
-            if (NetGame.Instance != null) NetGame.Instance.Broadcast($"{Cfg.TeamLabel(Team.Value)} took the easy way out");
+            ServerDie(null, KillCause.Suicide); // (the kill feed says so)
         }
 
         // ---------------- pistol ----------------
@@ -280,7 +279,7 @@ namespace RockGame
             Fx.Server(FxKind.Drink, transform.position, Vector3.up);
             TeleportRpc(to, transform.eulerAngles.y);
             Fx.Server(FxKind.Drink, to, Vector3.up);
-            ServerDamage(5f, null);
+            ServerDamage(5f, null, (byte)Item.EnderPearl);
         }
     }
 }

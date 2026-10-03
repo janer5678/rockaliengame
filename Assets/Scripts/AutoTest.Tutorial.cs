@@ -253,7 +253,7 @@ namespace RockGame
             Check(me.Count(Item.BuildingPlan) == 0, $"({who}) the building plan can't be crafted yet");
             pc.CloseMenu();
             int slot0 = me.HeldSlot.Value;
-            yield return TutPress(Bind.Hotbar7);
+            yield return TutPress(Bind.Hotbar5);
             yield return TutPress(Bind.Hotbar6);
             Check(me.HeldSlot.Value == slot0, $"({who}) the number keys don't pick hotbar slots yet (slot {slot0} -> {me.HeldSlot.Value})");
             me.CraftRpc(Cfg.RecipeIndex(Item.Hatchet));

@@ -10,6 +10,46 @@ namespace RockGame
     {
         public static readonly Color Berry = new Color(0.75f, 0.08f, 0.2f), Leaf = new Color(0.25f, 0.5f, 0.2f), Twine = new Color(0.8f, 0.7f, 0.5f);
 
+        static Mesh s_Leaf;
+        /// <summary>
+        /// A leaf, 1 long along +Z from its stalk end: pointed at both ends and widest a third of the way up, folded into a
+        /// shallow V along the midrib and curling up towards the tip. Two-sided (the back has its own faces).
+        /// </summary>
+        public static Mesh LeafMesh
+        {
+            get
+            {
+                if (s_Leaf != null) return s_Leaf;
+                const int N = 10;
+                var v = new System.Collections.Generic.List<Vector3>();
+                for (int i = 0; i <= N; i++)
+                {
+                    float z = i / (float)N;
+                    float w = 0.36f * Mathf.Pow(Mathf.Max(0f, Mathf.Sin(Mathf.PI * Mathf.Pow(z, 0.75f))), 0.9f); // (sin(pi) is a hair below 0 in floats: no NaN tip)
+                    float curl = 0.18f * z * z;
+                    v.Add(new Vector3(-w, curl + w * 0.35f, z)); // left edge (raised: the fold)
+                    v.Add(new Vector3(0, curl, z));              // midrib
+                    v.Add(new Vector3(w, curl + w * 0.35f, z));  // right edge
+                }
+                var tris = new System.Collections.Generic.List<int>();
+                for (int i = 0; i < N; i++)
+                {
+                    int a = i * 3, b = (i + 1) * 3;
+                    tris.AddRange(new[] { a, b, a + 1, a + 1, b, b + 1, a + 1, b + 1, a + 2, a + 2, b + 1, b + 2 });
+                }
+                // the back: the same vertices again, faces turned round
+                int n = v.Count, tn = tris.Count;
+                v.AddRange(v.ToArray());
+                for (int i = 0; i < tn; i += 3) tris.AddRange(new[] { tris[i] + n, tris[i + 2] + n, tris[i + 1] + n });
+                s_Leaf = new Mesh { name = "Leaf" };
+                s_Leaf.SetVertices(v);
+                s_Leaf.SetTriangles(tris, 0);
+                s_Leaf.RecalculateNormals();
+                s_Leaf.RecalculateBounds();
+                return s_Leaf;
+            }
+        }
+
         public static GameObject Create(Item item, Transform parent)
         {
             var root = new GameObject(item.ToString());
@@ -122,7 +162,10 @@ namespace RockGame
                     Art.Box(t, Color.white, new Vector3(0, -0.1f, 0), new Vector3(0.005f, 0.12f, 0.09f));
                     break;
                 case Item.Berry:
-                    Art.Part(t, Art.Sphere, Leaf, new Vector3(0, 0.06f, -0.02f), new Vector3(0.12f, 0.03f, 0.08f), new Vector3(20, 30, 0));
+                    // two real leaves (pointed, folded along the middle, curling up) on a little stem over the berries
+                    Art.Box(t, Leaf * 0.7f, new Vector3(0, 0.1f, 0), new Vector3(0.008f, 0.04f, 0.008f), new Vector3(0, 0, 10));
+                    Art.Part(t, LeafMesh, Leaf, new Vector3(0.004f, 0.115f, 0), Vector3.one * 0.15f, new Vector3(-35, 35, 0));
+                    Art.Part(t, LeafMesh, Leaf * 0.85f, new Vector3(-0.004f, 0.11f, 0), Vector3.one * 0.11f, new Vector3(-20, 215, 0));
                     for (int k = 0; k < 6; k++)
                     {
                         float a = k * 1.05f;

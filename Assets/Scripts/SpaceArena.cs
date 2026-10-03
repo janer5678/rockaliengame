@@ -1779,10 +1779,9 @@ namespace RockGame
                 TeleportRpc(pos, yaw);
                 return;
             }
-            if (NetGame.Instance != null) NetGame.Instance.Broadcast($"{Cfg.TeamLabel(Team.Value)} fell into space!");
             Notify("You fell into space!");
             ArmorHp.Value = 0;
-            ServerDie(null);
+            ServerDie(null, KillCause.Fall); // (the kill feed says so)
         }
     }
 }

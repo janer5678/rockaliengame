@@ -272,8 +272,8 @@ namespace RockGame
         public static readonly Vector3 BallDropPoint = new Vector3(0, 40, 0);
 
         // ---------- Inventory (not tunable) ----------
-        public const int HotbarSize = 7, MainSize = 21, PlayerSlots = HotbarSize + MainSize;
-        public const int ChestSlots = 14;
+        public const int HotbarSize = 6, MainSize = 18, PlayerSlots = HotbarSize + MainSize; // six across: a 6-slot hotbar and 3 rows of 6
+        public const int ChestSlots = 12; // 2 rows of 6
         public const float EyeHeight = 1.6f, CrouchEyeHeight = 1.05f;
         public const float StandHeight = 1.8f, CrouchHeight = 1.2f;
         public const float InteractRange = 3f, LootRange = 4f;
@@ -538,7 +538,7 @@ namespace RockGame
             }
         }
 
-        /// <summary>Materials: they stack onto what you already have, otherwise fill the hotbar from slot 7 backwards.</summary>
+        /// <summary>Materials: they stack onto what you already have, otherwise fill the hotbar from its last slot (6) backwards.</summary>
         public static bool IsMat(Item i) => i == Item.Wood || i == Item.Stone || i == Item.Dna || i == Item.Arrow || i == Item.ShotgunShell || i == Item.RevolverAmmo;
 
         /// <summary>Items whose Data byte is a durability / health counter (shown as a bar).</summary>

@@ -141,7 +141,7 @@ namespace RockGame
             push.y = 0;
             push = push.normalized * 0.5f + v.transform.forward * Mathf.Sign(speed);
             p.KnockbackRpc(push.normalized * Cfg.CarKnockback * (0.4f + 0.6f * k) + Vector3.up * 5f);
-            p.ServerDamage(Cfg.CarHitDamage * k, this);
+            p.ServerDamage(Cfg.CarHitDamage * k, this, (byte)Item.Car);
             Fx.Server(FxKind.Blood, p.transform.position + Vector3.up, push);
             if (p.Dead.Value) KillConfirmRpc();
         }
@@ -193,7 +193,7 @@ namespace RockGame
                     break;
                 case DevCmd.HealFull: Health.Value = Cfg.MaxHealth; break;
                 case DevCmd.ToggleGod: m_God = !m_God; what = m_God ? "turned god mode ON" : "turned god mode OFF"; break;
-                case DevCmd.KillMe: bool god = m_God; m_God = false; ServerDamage(99999f, null); m_God = god; break;
+                case DevCmd.KillMe: bool god = m_God; m_God = false; ServerDamage(99999f, null, KillCause.Suicide); m_God = god; break;
                 case DevCmd.StartSuddenDeath: g.DevStartSuddenDeath(); break;
                 case DevCmd.WinNow: g.EndGame(Team.Value, $"{who} used the dev win button"); break;
                 case DevCmd.RegrowNodes: g.DevRegrowNodes(); break;
