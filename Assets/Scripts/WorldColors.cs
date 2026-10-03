@@ -82,7 +82,7 @@ namespace RockGame
                 new Color(1f, 0.86f, 0.42f), new Color(1f, 0.95f, 0.75f), new Color(1f, 0.65f, 0.3f), new Color(1f, 0.45f, 0.3f), new Color(0.85f, 0.95f, 1f), new Color(1f, 0.6f, 0.85f), new Color(0.7f, 1f, 0.6f)),
             Mountains = Add("Mountains", "Mountains", GGround, new Color(0.48f, 0.5f, 0.51f)),
             MapWalls = Add("MapWalls", "Map dome (glass)", GGround, new Color(0.75f, 0.95f, 1f)), // (was the grey map walls: now the glass dome over the map, MapDome)
-            BallZone = Add("BallZone", "Ball drop zone", GGround, new Color(0.85f, 0.75f, 0.3f)),
+            BallZone = Add("BallZone", "Crash dirt (ball zone)", GGround, new Color(0.45f, 0.34f, 0.23f)), // (was the yellow ball drop circle: now the crash site's dirt, CrashSite)
             Wheat = Add("Wheat", "Tall wheat", GPlants, new Color(0.74f, 0.6f, 0.28f),
                 new Color(0.74f, 0.6f, 0.28f), new Color(0.85f, 0.72f, 0.35f), new Color(0.6f, 0.48f, 0.22f), new Color(0.55f, 0.62f, 0.25f), new Color(0.8f, 0.5f, 0.25f), new Color(0.65f, 0.6f, 0.5f), new Color(0.75f, 0.4f, 0.55f)),
             Daisies = Add("Daisies", "Daisies", GPlants, new Color(0.97f, 0.97f, 0.94f),
@@ -92,6 +92,7 @@ namespace RockGame
             Bushes = Add("Bushes", "Berry bushes", GPlants, new Color(0.25f, 0.5f, 0.2f)),
             Berries = Add("Berries", "Berries", GPlants, new Color(0.75f, 0.08f, 0.2f)),
             StoneNodes = Add("StoneNodes", "Stone nodes", GGround, new Color(0.56f, 0.56f, 0.6f)),
+            Boulders = Add("Boulders", "Big rocks", GGround, new Color(0.54f, 0.53f, 0.5f)),
             BasePads = Add("BasePads", "Base floor", GBases, new Color(0.5f, 0.45f, 0.35f)),
             Bedrock = Add("Bedrock", "Bedrock", GBases, new Color(0.72f, 0.74f, 0.78f)),
             AlienMachine = Add("AlienMachine", "Alien machine", GBases, new Color(0.3f, 0.33f, 0.36f)),

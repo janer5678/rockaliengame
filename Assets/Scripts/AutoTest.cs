@@ -89,7 +89,7 @@ namespace RockGame
                 Check(Vector3.Distance(me.transform.position, Cfg.ArenaCenter) < 30f && me.HeldItem == Item.Rock, "waiting for players in the stadium with a rock");
             if (m_Mode == "arena") { yield return ArenaRoutine(me, pc); yield break; }
             while (NetGame.Instance.S == GameState.Waiting) yield return null;
-            if (m_Mode == "dome" && nm.IsServer) NetGame.Instance.TimerPaused.Value = true; // (it needs the glass wall up for a while)
+            if ((m_Mode == "dome" || m_Mode == "scenery") && nm.IsServer) NetGame.Instance.TimerPaused.Value = true; // (it needs the glass wall up for a while)
             yield return new WaitForSeconds(0.8f);
             if (m_Mode == "teams") { yield return TeamsRoutine(me); yield break; }
             if (m_Mode == "batch5") { yield return Batch5Routine(me, pc); yield break; }
@@ -113,6 +113,7 @@ namespace RockGame
             if (m_Mode == "world") { yield return WorldShots(me, pc); yield break; }
             if (m_Mode == "ui") { yield return UiShots(me, pc); yield break; }
             if (m_Mode == "dome") { yield return DomeRoutine(me, pc); yield break; }
+            if (m_Mode == "scenery") { yield return SceneryRoutine(me, pc); yield break; }
             if (m_Mode == "aipsx") { yield return AiPsxShots(me, pc); yield break; }
             if (m_Mode == "outline") { yield return OutlineShots(me, pc); yield break; }
             if (m_Mode == "shots") yield return ShotsRoutine(me, pc);

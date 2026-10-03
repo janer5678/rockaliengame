@@ -138,12 +138,8 @@ namespace RockGame
                 else
                 {
                     cover = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(12f, 14.5f, new Vector2(x, z).magnitude)); // the ball drop zone
-                    if (Cfg.Map == MapKind.Highlands)
-                    {
-                        // grass only where it's gentle (the steep bits are rock)
-                        float dx = MapBuilder.Height(x + 1f, z) - y, dz = MapBuilder.Height(x, z + 1f) - y;
-                        if (new Vector3(-dx, 1f, -dz).normalized.y < 0.82f) cover = 0f;
-                    }
+                    if (Cfg.Map == MapKind.Highlands) // grass only on the grass, thinning out towards the rock faces' edge
+                        cover *= Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(-0.05f, -0.18f, MapBuilder.RockField(x, z)));
                 }
                 float wheat = Mathf.InverseLerp(0.66f, 0.74f, Mathf.PerlinNoise(wx + x * 0.032f, wz + z * 0.032f));
                 // (the tall wheat stays clear of the bases and the ball zone: you see who's coming there)
