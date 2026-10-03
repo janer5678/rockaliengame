@@ -881,8 +881,8 @@ namespace RockGame
             else if (no != null && no.TryGetComponent(out ResourceNode n) && !n.IsBush)
             {
                 weak = n.IsWeakSpotAimed(ray, hit.point, 0.45f);
-                Fx.Play(n.Kind.Value == ResourceNode.Tree ? FxKind.WoodChips : FxKind.StoneChips, hit.point, hit.normal);
-                if (weak) { Fx.Play(n.Kind.Value == ResourceNode.Tree ? FxKind.WeakSpotTree : FxKind.WeakSpot, hit.point, hit.normal); Fx.Punch(-1.5f); Tutorial.WeakHits++; }
+                Fx.Play(n.IsWood ? FxKind.WoodChips : FxKind.StoneChips, hit.point, hit.normal);
+                if (weak) { Fx.Play(n.IsWood ? FxKind.WeakSpotTree : FxKind.WeakSpot, hit.point, hit.normal); Fx.Punch(-1.5f); Tutorial.WeakHits++; }
                 Fx.Shake(0.08f);
             }
             else if (no != null && (no.GetComponent<Structure>() != null || no.GetComponent<Container>() != null))
@@ -1630,10 +1630,10 @@ namespace RockGame
                 if (m_Net.HeldItem == Item.Ram && hit.distance <= Cfg.RamRange)
                     AimText += st.Tier.Value >= 1 && st.PType != PieceType.Barrier ? $"   hold LMB: ram down to {Cfg.TierName(st.Tier.Value - 1).ToLower()}" : "   hold LMB: ram to smash";
             }
-            // trees show nothing when you point at them (and neither does a player dressed up as one)
+            // trees and fallen logs show nothing when you point at them (and neither does a player dressed up as one)
             else if (no.TryGetComponent(out ResourceNode n))
             {
-                if (n.Kind.Value != ResourceNode.Tree || n.IsBush)
+                if (!n.IsWood || n.IsBush)
                     AimText = n.IsBush ? "Berry Bush (empty)" : $"{n.DisplayName}  ({n.Amount.Value} stone left)";
             }
             else if (no.TryGetComponent(out PlayerNet p) && p != m_Net)

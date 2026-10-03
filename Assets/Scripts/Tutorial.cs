@@ -214,15 +214,19 @@ namespace RockGame
 
         static int WallPieces => Pieces(PieceType.Wall) + Pieces(PieceType.Doorway) + Pieces(PieceType.Window);
 
-        static Vector3? Nearest(byte kind)
+        /// <summary>The nearest tree / bush (...) with something left on it in your own team's part of the map - the
+        /// marker never sends you over to the enemy's side.</summary>
+        internal static Vector3? Nearest(byte kind)
         {
             var me = Me;
             if (me == null) return null;
             ResourceNode best = null;
             float bd = float.MaxValue;
+            int team = Team;
             foreach (var n in ResourceNode.All)
             {
                 if (n == null || n.Kind.Value != kind || n.Amount.Value <= 0) continue;
+                if (Cfg.RegionOf(n.transform.position) != team) continue; // (only in your own team's space)
                 float d = (n.transform.position - me.transform.position).sqrMagnitude;
                 if (d < bd) { bd = d; best = n; }
             }
@@ -349,7 +353,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "weak", Title = "Hit the X",
-                    Body = "See the orange " + Hi("X") + " on the tree? Hit it for double wood!",
+                    Body = "See the glowing orange " + Hi("X") + " on the tree? Hit it for double wood!",
                     Goal = "Hit the X 2 times", Progress = () => $"{Mathf.Min(2, WeakHits - s_Weak0)} / 2",
                     Hint = "Aim right at the orange X when you swing. It moves after each hit.",
                     Done = () => WeakHits - s_Weak0 >= 2,
@@ -358,7 +362,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "wood", Title = "More wood",
-                    Body = "Wood makes everything. Keep chopping!",
+                    Body = "Wood makes everything. Keep chopping! " + Hi("Fallen logs") + " give wood too (and have an X), and a felled tree grows back.",
                     Goal = "Have 100 wood", Progress = () => $"{Mathf.Min(100, Count(Item.Wood))} / 100",
                     Done = () => Count(Item.Wood) >= 100,
                     Target = () => Nearest(ResourceNode.Tree), TargetLabel = "TREE",

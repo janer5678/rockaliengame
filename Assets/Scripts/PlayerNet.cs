@@ -836,11 +836,11 @@ namespace RockGame
             {
                 if (n.IsBush) return;
                 weak = weak && n.IsWeakSpotHit(point, 0.8f);
-                bool tree = n.Kind.Value == ResourceNode.Tree;
+                bool tree = n.IsWood; // (a tree or a fallen log)
                 // your team's ball in your base: everything you gather pays a bit more (DNA too)
                 int got = n.ServerHarvest(Mathf.RoundToInt((tree ? st.WoodGather : st.StoneGather) * (BallBuff ? Cfg.BallGatherMul : 1f)), weak, transform.position);
                 if (got > 0) ServerGive(Cfg.GatherItem(n.Yield), Cfg.GatherCount(n.Yield, got)); // DNA mode: DNA instead
-                if (got > 0 && tree && n.Amount.Value <= 0 && Cfg.TreeFellBonus > 0)
+                if (got > 0 && n.Kind.Value == ResourceNode.Tree && n.Amount.Value <= 0 && Cfg.TreeFellBonus > 0)
                 {
                     // felling the whole tree pays out a bonus
                     ServerGive(Cfg.GatherItem(Item.Wood), Cfg.TreeFellBonus);

@@ -752,10 +752,13 @@ namespace RockGame
             float gn = SliderRow("Grass density", GameSettings.GrassDensity, GameSettings.GrassDensityMin, 1f, $"{GameSettings.GrassDensity * 100f:0}%", 210 * k);
             // falloff: shown the other way round (right = more grass far away)
             float gf = SliderRow("Far grass thickness", GameSettings.GrassFalloffMax + GameSettings.GrassFalloffMin - GameSettings.GrassFalloff, GameSettings.GrassFalloffMin, GameSettings.GrassFalloffMax,
-                $"{Mathf.InverseLerp(GameSettings.GrassFalloffMax, GameSettings.GrassFalloffMin, GameSettings.GrassFalloff) * 100f:0}%", 210 * k);
+                $"{GameSettings.GrassThicknessPercent(GameSettings.GrassFalloff):0}%", 210 * k);
             gf = Mathf.Round((GameSettings.GrassFalloffMax + GameSettings.GrassFalloffMin - gf) * 20f) / 20f;
             if (!Mathf.Approximately(Mathf.Round(gd), GameSettings.GrassDistance) || !Mathf.Approximately(gn, GameSettings.GrassDensity) || !Mathf.Approximately(gf, GameSettings.GrassFalloff))
                 GameSettings.SetGrass(Mathf.Round(gd), Mathf.Round(gn * 20f) / 20f, gf);
+            float gh = SliderRow("Grass height", GameSettings.GrassHeight, GameSettings.GrassHeightMin, GameSettings.GrassHeightMax, $"{GameSettings.GrassHeight * 100f:0}%", 210 * k);
+            gh = Mathf.Round(gh * 20f) / 20f;
+            if (!Mathf.Approximately(gh, GameSettings.GrassHeight)) GameSettings.SetGrassHeight(gh);
             GUILayout.Label("<color=#bbbbbb>Less distance, density or far thickness = faster (it matters most on laptops). Far thickness is how slowly the grass thins out with distance. The far grass fades into the ground either way.</color>", m_SmallWrap);
 
             Caption("WORLD COLOURS  ·  Normal graphics, just on this PC");

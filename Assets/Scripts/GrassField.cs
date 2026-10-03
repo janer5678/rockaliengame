@@ -41,6 +41,8 @@ namespace RockGame
         public const float NearFadeFrom = 0.3f, NearFadeTo = 1.7f, NearFadeTallFrom = 0.8f, NearFadeTallTo = 3.4f;
         /// <summary>(tests) Draw the blades at the camera like any others, to compare.</summary>
         public static bool NearFadeOff;
+        /// <summary>(tests) Let the outlines draw on the faded grass round the camera again, to compare.</summary>
+        public static bool OutlineMaskOff;
         static readonly float[] k_LodFrac = { 1f, 0.5f, 0.25f, 0.125f, 0.0625f, 0.03f };
 
         static GrassField s_I;
@@ -50,9 +52,23 @@ namespace RockGame
         public int DrawnTriangles { get; private set; }
         public readonly List<Vector2> ClearingSpots = new List<Vector2>();
         public bool ForceOff;
-        public float CoverAt(float x, float z) => Field(x, z).g;
+        /// <summary>How much grass grows at (x, z), as drawn: the field, and on Highlands no blade on the rock (RockKeep).</summary>
+        public float CoverAt(float x, float z) => Field(x, z).g * (Cfg.Map == MapKind.Highlands ? RockKeep(MapBuilder.RockField(x, z)) : 1f);
+        /// <summary>Each blade's own check against the rock line where it stands (Grass.shader does the same with the
+        /// terrain's rock field grid): none from just short of the line.</summary>
+        public static float RockKeep(float rockField) => Mathf.Clamp01((-0.004f - rockField) * 60f);
         /// <summary>How far into a tall grass patch (0 outside, under 0.5 the knee-high rim, 0.5 .. 1 the tall middle).</summary>
         public float WheatAt(float x, float z) => Field(x, z).b;
+        /// <summary>(tests) Where a blade's root goes at (x, z): the field's height read like the shader reads it (bilinear).</summary>
+        public float RootAt(float x, float z)
+        {
+            float fx = Mathf.Clamp(x - m_Min, 0f, m_N - 1.001f), fz = Mathf.Clamp(z - m_Min, 0f, m_N - 1.001f);
+            int i = (int)fx, j = (int)fz;
+            float u = fx - i, v = fz - j;
+            float a = m_Px[j * m_N + i].r, b = m_Px[j * m_N + i + 1].r, c = m_Px[(j + 1) * m_N + i].r, d = m_Px[(j + 1) * m_N + i + 1].r;
+            if (m_Ground != null) return MapBuilder.GroundHeight(x, z) - 0.04f; // (the shader reads the terrain's own grid)
+            return Mathf.Lerp(Mathf.Lerp(a, b, u), Mathf.Lerp(c, d, u), v) - 0.04f;
+        }
         static Shader s_GrassShader;
 
         Texture2D m_Field;
@@ -65,7 +81,13 @@ namespace RockGame
         bool[] m_TileHas;
         Vector2[] m_TileY;                  // lowest / highest ground in each tile
         readonly List<Vector4>[] m_Batches = new List<Vector4>[k_LodFrac.Length];
-        readonly Vector4[] m_Tiles = new Vector4[1024];
+        readonly Vector4[] m_Tiles = new Vector4[MaxTiles];
+        /// <summary>How many patches can be drawn (the shader's _GrassTiles array is this long).</summary>
+        const int MaxTiles = 1024;
+        /// <summary>A 16 m / 32 m square further out than this isn't split into smaller ones just to draw its blades more
+        /// finely (it draws up to all of its stretched patch's blades instead): with the far grass very thick (a low falloff)
+        /// everything out to the render distance would otherwise be 8 m squares - far more than MaxTiles.</summary>
+        static readonly float[] k_SplitWithin = { 0f, 100f, 190f };
         readonly int[] m_LvN = new int[Levels];
         readonly bool[][] m_LvHas = new bool[Levels][];
         readonly Vector2[][] m_LvY = new Vector2[Levels][];
@@ -101,6 +123,7 @@ namespace RockGame
             if (s_I == this) s_I = null;
             if (m_Field) Destroy(m_Field);
             if (m_TrTex) Destroy(m_TrTex);
+            if (m_Ground) Destroy(m_Ground);
             foreach (var st in m_Stages) if (st) Destroy(st);
             if (m_Lods != null) foreach (var m in m_Lods) if (m) Destroy(m);
             foreach (var (r, _) in m_Decor) if (r) { var mf = r.GetComponent<MeshFilter>(); if (mf && mf.sharedMesh) Destroy(mf.sharedMesh); }
@@ -133,15 +156,20 @@ namespace RockGame
             for (int i = 0; i < m_N; i++)
             {
                 float x = m_Min + i, z = m_Min + j;
-                float y = MapBuilder.Height(x, z);
+                float y = MapBuilder.GroundHeight(x, z); // (the ground as it's drawn: the blades stand on it, not under it)
                 float cover = 1f;
                 if (Mathf.Max(Mathf.Abs(x), Mathf.Abs(z)) > half - 1.5f) cover = 0f;           // off the map
                 else if (Cfg.BaseTeamAt(new Vector3(x, 0, z)) >= 0) cover = 0f;                  // the bases (you build there)
                 else
                 {
                     cover = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(12f, 14.5f, new Vector2(x, z).magnitude)); // the ball drop zone
-                    if (Cfg.Map == MapKind.Highlands) // grass only on the grass, thinning out towards the rock faces' edge
-                        cover *= Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(-0.05f, -0.18f, MapBuilder.RockField(x, z)));
+                    // Highlands: grass on all the green ground, right up to the rock faces (thinning out only over the last
+                    // metre or so). It used to thin out from well before the rock (-0.18 down to -0.05), which on the gentler
+                    // hillsides left wide bands of green ground with no grass on them.
+                    // (and each blade checks the rock line itself, exactly where it stands: RockKeep, in the shader too -
+                    // the shader blends the 1 m texels round a blade, which would put a few blades on the rock's edge)
+                    if (Cfg.Map == MapKind.Highlands)
+                        cover *= Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(RockEdge, RockFull, MapBuilder.RockField(x, z)));
                 }
                 // tall grass patches: the tops of a slow noise (fewer, further apart than they were)
                 bool wheat = Mathf.PerlinNoise(wx + x * WheatFreq, wz + z * WheatFreq) > WheatLevel && Mathf.Max(Mathf.Abs(x), Mathf.Abs(z)) < half - 1.5f;
@@ -188,6 +216,8 @@ namespace RockGame
             // (texel i's centre is at m_Min + i: uv = (world - (m_Min - 0.5)) / m_N)
             Shader.SetGlobalTexture(k_Field, m_Field);
             Shader.SetGlobalVector(k_Rect, new Vector4(m_Min - 0.5f, m_Min - 0.5f, 1f / m_N, 1f / m_N));
+            BuildGround();
+            BindGround();
             SetSettings();
             Shader.SetGlobalFloat(k_PushCount, 0);
             Shader.SetGlobalVectorArray(k_PushArr, m_Push);
@@ -262,9 +292,14 @@ namespace RockGame
             Shader.SetGlobalFloat("_GrassWind", 1f);
             Shader.SetGlobalVector("_GrassNearFade", NearFadeOff ? Vector4.zero : new Vector4(NearFadeFrom, NearFadeTo, NearFadeTallFrom, NearFadeTallTo));
             Shader.SetGlobalFloat("_GrassDensity", Density);
+            Shader.SetGlobalFloat("_GrassHeight", GameSettings.GrassHeight);
+            Shader.SetGlobalFloat("_GrassNoInk", OutlineMaskOff ? 0f : 1f);
             var g = GameSettings.WorldTint(GameSettings.WorldColor.Grass);
             Shader.SetGlobalVector("_GrassTint", new Vector4(Mathf.GammaToLinearSpace(g.r), Mathf.GammaToLinearSpace(g.g), Mathf.GammaToLinearSpace(g.b), 1f));
         }
+
+        /// <summary>Highlands: no grass where the rock field (MapBuilder.RockField) is over RockEdge, all of it under RockFull.</summary>
+        public const float RockEdge = -0.012f, RockFull = -0.055f;
 
         // the tall grass patches: where a slow noise (WheatFreq per metre) is over WheatLevel
         const float WheatFreq = 0.026f, WheatLevel = 0.72f;
@@ -365,6 +400,35 @@ namespace RockGame
             WheatPatchesRaw = raw;
             WheatArea = area;
             WheatCore = core;
+        }
+
+        // Highlands: the terrain's own corner heights (2 m grid), so the shader plants every blade on the ground exactly as
+        // the mesh draws it (straight across its triangles) - the field's 1 m height, read bilinearly, is a little off it over
+        // the bumps (it buried the blades there by up to ~10 cm; planted on MapBuilder.Height it was ~15 cm).
+        Texture2D m_Ground;
+        Vector4 m_GroundRect;
+        static readonly int k_Ground = Shader.PropertyToID("_GrassGround"), k_GroundRect = Shader.PropertyToID("_GrassGroundRect");
+
+        void BuildGround()
+        {
+            m_GroundRect = Vector4.zero;
+            if (!MapBuilder.GroundGrid(out var hs, out var rock, out float half, out float step)) return;
+            int n = hs.GetLength(0);
+            // (r: the height, g: the rock field - which side of the rock line the corner is on)
+            var px = new Vector2[n * n];
+            for (int j = 0; j < n; j++)
+                for (int i = 0; i < n; i++) px[j * n + i] = new Vector2(hs[i, j], rock[i, j]);
+            m_Ground = new Texture2D(n, n, TextureFormat.RGFloat, false, true) { name = "grass ground", filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp };
+            m_Ground.SetPixelData(px, 0);
+            m_Ground.Apply(false, true);
+            m_GroundRect = new Vector4(half, step, n - 1, 1f);
+        }
+
+        void BindGround()
+        {
+            if (m_Ground != null) Shader.SetGlobalTexture(k_Ground, m_Ground);
+            else Shader.SetGlobalTexture(k_Ground, Texture2D.blackTexture);
+            Shader.SetGlobalVector(k_GroundRect, m_GroundRect);
         }
 
         int Idx(float w) => Mathf.Clamp(Mathf.RoundToInt(w - m_Min), 0, m_N - 1);
@@ -653,6 +717,7 @@ namespace RockGame
             // (the field is shared by every grass material; re-bind it in case another map's field was up)
             Shader.SetGlobalTexture(k_Field, m_Field);
             Shader.SetGlobalVector(k_Rect, new Vector4(m_Min - 0.5f, m_Min - 0.5f, 1f / m_N, 1f / m_N));
+            BindGround();
             SetSettings();
             UpdateTrample();
             var cam = Camera.main;
@@ -724,7 +789,7 @@ namespace RockGame
             var b = new Bounds(new Vector3(x0 + size * 0.5f, (ty.x + ty.y) * 0.5f + 2f, z0 + size * 0.5f), new Vector3(size + 1f, ty.y - ty.x + 5.2f, size + 1f));
             if (!GeometryUtility.TestPlanesAABB(m_Planes, b)) return;
             float need = DensityAt(near) * s * s; // (a patch stretched s times has 1/s² the blades per m²)
-            if (L > 0 && need > 0.25f)
+            if (L > 0 && need > 0.25f && near < k_SplitWithin[L])
             {
                 // too close for this size (it would need the full-detail blades): the four smaller squares instead
                 Visit(L - 1, i * 2, j * 2, cp); Visit(L - 1, i * 2 + 1, j * 2, cp);

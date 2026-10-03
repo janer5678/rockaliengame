@@ -448,7 +448,7 @@ namespace RockGame
                 if (InsideScenery(p)) continue;
                 if (Cfg.DnaRules && rng.NextDouble() > Cfg.DnaRockShare) continue; // DNA mode: rocks are rarer
                 bool close = false;
-                foreach (var q in placed) if ((q - p).sqrMagnitude < 5f * 5f) { close = true; break; }
+                foreach (var q in placed) if ((q - p).sqrMagnitude < 6.5f * 6.5f) { close = true; break; } // (the stone nodes are bigger now: room between them)
                 if (close) continue;
                 placed.Add(p);
                 int seed = rng.Next();
@@ -482,10 +482,12 @@ namespace RockGame
             // THEME MAPS: more or fewer of each to suit the map
             trees = Mathf.RoundToInt(trees * ThemeMaps.NodeMul(ResourceNode.Tree)); stones = Mathf.RoundToInt(stones * ThemeMaps.NodeMul(ResourceNode.Boulder)); bushes = Mathf.RoundToInt(bushes * ThemeMaps.NodeMul(ResourceNode.Bush));
             if (Cfg.DnaRules) stones = Mathf.Max(2, Mathf.RoundToInt(stones * Cfg.DnaRockShare)); // DNA mode: rocks are rarer
+            // fallen logs (wood, with an X on them too): Plains and Highlands
+            int logs = ThemeMaps.IsTheme ? 0 : Mathf.Max(2, Mathf.RoundToInt(7 * area));
             float half = Cfg.MapHalf;
-            for (int n = 0; n < trees + stones + bushes; n++)
+            for (int n = 0; n < trees + stones + bushes + logs; n++)
             {
-                byte kind = n < trees ? ResourceNode.Tree : n < trees + stones ? rockKind : ResourceNode.Bush;
+                byte kind = n < trees ? ResourceNode.Tree : n < trees + stones ? rockKind : n < trees + stones + bushes ? ResourceNode.Bush : ResourceNode.Log;
                 for (int attempt = 0; attempt < 60; attempt++)
                 {
                     var p = new Vector3(R(-half + 8, half - 8), 0, R(-half + 8, -5f));
@@ -497,12 +499,31 @@ namespace RockGame
                     bool close = false;
                     foreach (var q in placed) if ((q - p).sqrMagnitude < 7.5f * 7.5f) { close = true; break; }
                     if (close) continue;
-                    placed.Add(p);
                     int seed = rng.Next();
+                    if (kind == ResourceNode.Log)
+                    {
+                        bool fits = true;
+                        for (int m = 0; m < Cfg.Copies && fits; m++) fits = LogFits(Cfg.Copy(p, m), seed); // (every team's copy lies the same way round)
+                        if (!fits) continue;
+                    }
+                    placed.Add(p);
                     for (int m = 0; m < Cfg.Copies; m++) SpawnNode(kind, Cfg.Copy(p, m), seed); // copied round so every team gets the same layout
                     break;
                 }
             }
+        }
+
+        /// <summary>A fallen log (turned by its seed, like every node) lies flat enough here: not across a steep slope, and
+        /// the ground along it not too far off the straight line between its ends.</summary>
+        static bool LogFits(Vector3 p, int seed)
+        {
+            var q = Quaternion.Euler(0, seed % 360, 0);
+            Vector3 along = q * Vector3.right * 2.4f, across = q * Vector3.forward * 1f;
+            float H(Vector3 v) => MapBuilder.Height(v.x, v.z);
+            float a = H(p - along), b = H(p + along), c = H(p);
+            if (Mathf.Abs(H(p + across) - H(p - across)) > 0.5f) return false; // (it would look like it's rolling)
+            if (Mathf.Abs(c - (a + b) * 0.5f) > 0.3f) return false;            // (a hump or a dip under it)
+            return Mathf.Abs(b - a) < 2.2f;
         }
 
         /// <summary>Would something standing at p (a tree, rock, bush or horse) be inside the map's own scenery - ruins, cacti, pillars...? Checked for every team's copy of the spot.</summary>
@@ -990,7 +1011,7 @@ namespace RockGame
                 var v = h.GetComponentInParent<Vehicle>();
                 if (v != null && v.IsSpawned) creatures.Add(v);
                 var n = h.GetComponentInParent<ResourceNode>();
-                if (n != null && n.IsSpawned && (nodes || (trees && n.Kind.Value == ResourceNode.Tree && n.Amount.Value > 0))) hitNodes.Add(n);
+                if (n != null && n.IsSpawned && (nodes || (trees && n.IsWood && n.Amount.Value > 0))) hitNodes.Add(n);
             }
             if (kind == BlastKind.C4 && onBox != null && onBox.IsSpawned && team != -2 && onBox.Team.Value != team)
             {
