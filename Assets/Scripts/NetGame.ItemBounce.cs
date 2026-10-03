@@ -15,6 +15,9 @@ namespace RockGame
 
         /// <summary>For the tests: how many times a stack on the ground has bounced on this machine.</summary>
         public static int StackBounces { get; private set; }
+        static readonly Dictionary<int, int> s_BouncesOf = new Dictionary<int, int>();
+        /// <summary>For the tests: how many times this one stack has bounced (other piles, like the wood machine's, don't count).</summary>
+        public static int StackBouncesOf(int id) => s_BouncesOf.TryGetValue(id, out var n) ? n : 0;
 
         const float BounceTime = 0.55f;
 
@@ -26,6 +29,7 @@ namespace RockGame
             {
                 m_ItemBounceAt[it.Id] = Time.time;
                 StackBounces++;
+                s_BouncesOf[it.Id] = StackBouncesOf(it.Id) + 1;
                 Sfx.Play(Sfx.Thud, it.Pos, 0.2f, 0.15f, 14f);
             }
             m_ItemCount[it.Id] = c;

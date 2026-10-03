@@ -348,17 +348,17 @@ namespace RockGame
                 pc.SetLook(lk.y - 12f, (lk.x > 180f ? lk.x - 360f : lk.x) - 8f); // (just right of the rock in hand)
             }
             yield return new WaitForSeconds(1f);
-            int b0 = NetGame.StackBounces;
+            int b0 = NetGame.StackBouncesOf(m_FeelStack);
             AddToStack(g, m_FeelStack, 5);
             yield return new WaitForSeconds(0.1f);
             ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "stack_bounce.png"));
             yield return new WaitForSeconds(0.5f);
-            Check(NetGame.StackBounces == b0 + 1, $"adding to a stack on the ground bounces it ({NetGame.StackBounces - b0})");
+            Check(NetGame.StackBouncesOf(m_FeelStack) == b0 + 1, $"adding to a stack on the ground bounces it ({NetGame.StackBouncesOf(m_FeelStack) - b0})");
             // taking some away doesn't
-            int b1 = NetGame.StackBounces;
+            int b1 = NetGame.StackBouncesOf(m_FeelStack);
             g.ServerTakeItem(m_FeelStack, at, 50f, 3);
             yield return new WaitForSeconds(0.3f);
-            Check(NetGame.StackBounces == b1, "taking from it doesn't bounce it");
+            Check(NetGame.StackBouncesOf(m_FeelStack) == b1, "taking from it doesn't bounce it");
         }
 
         static void AddToStack(NetGame g, int id, int add)
@@ -445,7 +445,7 @@ namespace RockGame
                 yield return new WaitForSeconds(0.5f);
             }
             yield return Hold(me, Item.Rock);
-            int b0 = NetGame.StackBounces;
+            int b0 = NetGame.StackBouncesOf(m_FeelStack);
             // the host puts out a unicorn and a stack that it adds to
             Vehicle uni = null;
             until = Time.time + 10f;

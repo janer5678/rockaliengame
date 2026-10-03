@@ -134,7 +134,7 @@ namespace RockGame
                 "sword: 150 head, 95 body, a slower swing");
             Check(Mathf.Abs(Cfg.ShotgunPellets * Cfg.ShotgunPelletDamage * Cfg.ShotgunFalloff(0.9f) - 200f) < 0.5f && Cfg.ShotgunFalloff(10f) < 0.7f, "shotgun: 200 within a metre, less further out");
             Check(Cfg.PieceWood(PieceType.Wall) == Cfg.WallWood, $"building pieces at their normal price (wall {Cfg.PieceWood(PieceType.Wall)} wood)");
-            for (int i = 0; i < 24; i++) me.ServerGive(Item.Wood, 1000);
+            for (int i = 0; i < 18; i++) me.ServerGive(Item.Wood, 1000); // leaves room in the 24 slots for what gets bought
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
             yield return new WaitForSeconds(0.4f);
             int w0 = me.Count(Item.Wood);
@@ -214,6 +214,7 @@ namespace RockGame
 
             Check(Cfg.Melee(Item.Rock).Cooldown == Cfg.Melee(Item.Hatchet).Cooldown, $"the rock swings at the hatchet's speed ({Cfg.Melee(Item.Rock).Cooldown}s)");
             // fortify: a foundation and a wall, then every wooden piece turns to stone
+            for (int i = 0; i < 8; i++) me.ServerGive(Item.Wood, 1000); // (topped up: the 24 slots can't hold it all up front)
             me.CraftRpc(Cfg.RecipeIndex(Item.BuildingPlan));
             yield return new WaitForSeconds(0.3f);
             yield return Hold(me, Item.BuildingPlan);
