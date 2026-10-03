@@ -66,7 +66,7 @@ namespace RockGame
         IEnumerator BenchTests(PlayerNet me, PlayerController pc, NetGame g, int team)
         {
             if (Cfg.RecipeIndex(Item.Workbench) < 0) yield break;
-            string rn = Cfg.RulesName(Cfg.Rules).ToLower().Replace(" ", "");
+            string rn = Cfg.RulesId(Cfg.Rules);
             var cur = Cfg.CurrencyItem;
             var back = Cfg.BackDir(team);
             var side = Vector3.Cross(Vector3.up, back);
@@ -331,7 +331,7 @@ namespace RockGame
         /// </summary>
         IEnumerator PortalGunTests(PlayerNet me, PlayerController pc, NetGame g, int team)
         {
-            string rn = Cfg.RulesName(Cfg.Rules).ToLower().Replace(" ", "");
+            string rn = Cfg.RulesId(Cfg.Rules);
             var back = Cfg.BackDir(team);
             var side = Vector3.Cross(Vector3.up, back);
             float yaw = Quaternion.LookRotation(-back).eulerAngles.y;

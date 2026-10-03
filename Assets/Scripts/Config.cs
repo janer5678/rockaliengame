@@ -74,6 +74,12 @@ namespace RockGame
         public static string SizeLabel(MapSize s) => s == MapSize.Small ? "Small" : s == MapSize.Large ? "Large" : s == MapSize.Huge ? "Huge" : "Medium";
         /// <summary>Wood mode: no stone anywhere, everything costs wood, no pickaxe, no stone upgrades.</summary>
         public static bool WoodMode;
+        /// <summary>
+        /// Wood mode is the normal game now: the main menu has no Materials row and always hosts with wood (the tutorial
+        /// too). The old stone materials are all still here (WoodBit off): -normal on the command line, or set this false
+        /// to bring the menu's Materials row back.
+        /// </summary>
+        public const bool WoodIsNormal = true;
         public static int MapSeed;
         public static float MapHalf => SmallMap ? 62f : 100f * SizeScale;
         public const float BaseHalf = 18f; // bases are 36x36m, aligned to the 3m build grid
@@ -101,8 +107,20 @@ namespace RockGame
         public static bool LimitedCrafting => Rules == GameRules.FunRandomLimited || Rules == GameRules.Primitive || Rules == GameRules.BuildingPrimitive;
         /// <summary>Tutorial: the classic rules (starter items in the bag, the rest at a workbench) with the clock stopped, no airdrops, and a guide that unlocks the game a step at a time (Tutorial.cs).</summary>
         public static bool Tutorial => Rules == GameRules.Tutorial;
+        /// <summary>
+        /// The names shown in the menu and the HUD. Renamed on request: the Auto Wood rules are now called Classic,
+        /// the original game (GameRules.Classic) is now Primitive, and the old Primitive (the original game with only
+        /// the basics to craft) is Primitive Limited. The enum (synced) and the -rules names on the command line keep
+        /// the old names.
+        /// </summary>
         public static string RulesName(GameRules r) => r == GameRules.Arsenal ? "Arsenal" : r == GameRules.Builder ? "Builder" : r == GameRules.Fun ? "Fun"
-            : r == GameRules.FunRandom ? "Fun Random" : r == GameRules.FunRandomLimited ? "Fun Random Limited" : r == GameRules.Primitive ? "Primitive" : r == GameRules.BuildingPrimitive ? "Building Primitive" : r == GameRules.AutoWood ? "Auto Wood" : r == GameRules.Tutorial ? "Tutorial" : r == GameRules.Dna ? "DNA" : "Classic";
+            : r == GameRules.FunRandom ? "Fun Random" : r == GameRules.FunRandomLimited ? "Fun Random Limited" : r == GameRules.Primitive ? "Primitive Limited" : r == GameRules.BuildingPrimitive ? "Building Primitive" : r == GameRules.AutoWood ? "Classic" : r == GameRules.Tutorial ? "Tutorial" : r == GameRules.Dna ? "DNA" : "Primitive";
+        /// <summary>The mode's -rules name (the enum's, never renamed: classic, autowood, primitive...) - the tests' file names.</summary>
+        public static string RulesId(GameRules r) => r.ToString().ToLowerInvariant();
+        /// <summary>The game modes on the main menu's first row (the rest are under "More modes").</summary>
+        public static readonly GameRules[] MainRules = { GameRules.Tutorial, GameRules.AutoWood, GameRules.Classic };
+        /// <summary>The rest of the game modes, under "More modes".</summary>
+        public static readonly GameRules[] MoreRules = { GameRules.Arsenal, GameRules.Builder, GameRules.Primitive, GameRules.BuildingPrimitive, GameRules.Dna, GameRules.Fun, GameRules.FunRandom, GameRules.FunRandomLimited };
         public static string RulesDesc(GameRules r)
         {
             switch (r)
@@ -110,14 +128,14 @@ namespace RockGame
                 case GameRules.Arsenal: return "Normal prices (the crossbow is cheaper), plus a POWER ITEMS menu next to crafting: sword, shotgun, revolver, C4 and headshot helmet. E on the upgrade station beside your alien machine: UPGRADES (fortify all your walls).";
                 case GameRules.Dna: return DnaDesc;
                 case GameRules.Tutorial: return "New here? Start with this. Short, simple steps teach you the whole game - you do each one to go on, and each control unlocks as it's taught. The clock is stopped, friends can join any time, and it's always the small Plains map. Just press HOST GAME.";
-                case GameRules.AutoWood: return "Arsenal, but wood piles up at your base by itself (5 a second) - go and pick it up. Speed it up in UPGRADES (E on the upgrade station beside your alien machine).";
+                case GameRules.AutoWood: return "Wood piles up at your base by itself (5 a second) - go and pick it up. Arsenal's prices and POWER ITEMS; speed the wood up in UPGRADES (E on the upgrade station beside your alien machine).";
                 case GameRules.Builder: return "No bases. Arsenal's items, but each takes a while to make. Craft and build anywhere - pieces lock onto each other. Plant the ball anywhere (E): whoever's ball it is at the end wins.";
                 case GameRules.Fun: return "No building phase, a short match, and every so often everyone gets the same random item - any item in the game.";
                 case GameRules.FunRandom: return "No building phase, a short match, and every so often each player gets their own random airdrop item.";
                 case GameRules.FunRandomLimited: return "Fun Random, but the only things you can craft are the hatchet, spear, building plan and battering ram.";
-                case GameRules.Primitive: return "The original game, but the only things you can craft are the hatchet, spear, building plan and battering ram.";
+                case GameRules.Primitive: return "Primitive, but the only things you can craft are the hatchet, spear, building plan and battering ram.";
                 case GameRules.BuildingPrimitive: return "Builder (no bases, build anywhere, plant the ball), but the only things you can craft are the hatchet, spear, building plan and battering ram - no power items.";
-                default: return "The original game: gather, build your base, craft in it, get the ball into your machine.";
+                default: return "The original game, nothing piling up by itself: gather, build your base, craft in it, get the ball into your machine.";
             }
         }
         /// <summary>Players needed to start (and the most that can join).</summary>
@@ -170,10 +188,11 @@ namespace RockGame
             Rules = (GameRules)Mathf.Clamp((key >> RulesShift) & RulesMask, 0, (int)GameRules.Dna);
             if (Rules == GameRules.Tutorial)
             {
-                // the tutorial is always the small, flat Plains map with normal materials (whatever the menu says)
+                // the tutorial is always the small, flat Plains map with the normal (wood) materials, whatever the menu says
                 Map = MapKind.Plains;
                 Size = MapSize.Small;
-                WoodMode = AirdropSides = AirdropCenter = RespawnLoot = false;
+                AirdropSides = AirdropCenter = RespawnLoot = false;
+                WoodMode = WoodIsNormal;
             }
             HostGraphics = Mathf.Clamp((key >> GraphicsShift) & GraphicsMask, 0, 2);
             TeamCount = ModeTeams(Mode);
@@ -425,10 +444,11 @@ namespace RockGame
         [Tune("Arsenal and Builder")] public static int PistolMag = 5, HeavyArmorHp = 200, TreeCrackerUses = 40;
         /// <summary>Builder: every craft takes a while (seconds per 100 wood of its price, between the min and max).</summary>
         [Tune("Arsenal and Builder")] public static float BuilderCraftSecsPer100 = 0.6f, BuilderCraftMin = 2f, BuilderCraftMax = 20f;
-        /// <summary>Test (main menu > Testing, any mode): enemies have a faint glow in their team colour so they're easier to see.</summary>
-        [Tune("Test")] public static bool AlienOutlines = true;
-        /// <summary>How strong (0 = invisible, 1 = bright) and how thick (metres) the glow is.</summary>
-        [Tune("Test")] public static float AlienOutlineStrength = 0.3f, AlienOutlineWidth = 0.03f;
+        /// <summary>Alien outlines (always on, any mode): enemies have a faint glow in their team colour so they're easier to see.
+        /// Not a host value any more; only the tests switch it off.</summary>
+        public static bool AlienOutlines = true;
+        /// <summary>How strong (0 = invisible, 1 = bright) and how thick (metres) the glow is: Settings > Display > ALIEN GLOW, just on this PC.</summary>
+        public static float AlienOutlineStrength = 0.3f, AlienOutlineWidth = 0.03f;
         [Tune("Fun modes")] public static float FunItemInterval = 45f;
         /// <summary>Fun modes: no building phase (the wall is down and the ball in from the start), and a shorter match.</summary>
         [Tune("Fun modes")] public static float FunMatchLength = 600f;
@@ -608,6 +628,22 @@ namespace RockGame
                 case Item.Wood: return RarityWood;
                 default: return 10;
             }
+        }
+
+        /// <summary>Mode options: set an airdrop item's rarity weight (the Rarity... value of the same name).</summary>
+        public static void SetAirdropRarity(Item i, int weight)
+        {
+            var f = typeof(Cfg).GetField("Rarity" + i, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+            if (f != null && f.FieldType == typeof(int)) f.SetValue(null, Mathf.Clamp(weight, 0, 999));
+        }
+
+        /// <summary>An airdrop item's chance (0..1) to be the one picked out of `pool` (as PickAirdropItem picks).</summary>
+        public static float AirdropChance(Item i, IList<Item> pool)
+        {
+            if (!pool.Contains(i)) return 0f;
+            int total = 0;
+            foreach (var p in pool) total += Mathf.Max(0, AirdropRarity(p));
+            return total <= 0 ? 1f / pool.Count : Mathf.Max(0, AirdropRarity(i)) / (float)total;
         }
 
         /// <summary>A random airdrop item out of `pool`, weighted by its rarity (all equally likely if they're all 0).</summary>

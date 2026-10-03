@@ -30,7 +30,7 @@ namespace RockGame
         {
             var g = NetGame.Instance;
             int team = me.Team.Value;
-            string rn = Cfg.RulesName(Cfg.Rules).ToLower().Replace(" ", "");
+            string rn = Cfg.RulesId(Cfg.Rules);
             // every mode: a floor (ceiling) can hang off the top of a ramp
             var ramp = new PieceKey(PieceKey.KStairs, 0, 0, 0, 0);
             Check(BuildGrid.IsSupported(new PieceKey(PieceKey.KFloor, 1, 0, 1, 0), k => k.Equals(ramp)) && BuildGrid.IsSupported(new PieceKey(PieceKey.KFloor, 0, -1, 1, 0), k => k.Equals(ramp)),

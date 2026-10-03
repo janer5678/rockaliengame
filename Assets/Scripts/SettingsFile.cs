@@ -34,9 +34,8 @@ namespace RockGame
                 sb.AppendLine("Players = " + Cfg.ModeName(mode));
                 sb.AppendLine("Map = " + (MapKind)(key & 15));
                 sb.AppendLine("Size = " + Cfg.SizeLabel(size));
-                sb.AppendLine("Mode = " + ((key & Cfg.WoodBit) != 0 ? "Wood mode" : "Normal"));
-                sb.AppendLine("SoloTest = " + (Bootstrap.Solo ? "on" : "off"));
-                sb.AppendLine("FastTimers = " + (Bootstrap.Fast ? "on" : "off"));
+                sb.AppendLine("GameMode = " + Cfg.RulesName((GameRules)Mathf.Clamp((key >> Cfg.RulesShift) & Cfg.RulesMask, 0, (int)GameRules.Dna)));
+                sb.AppendLine("Materials = " + ((key & Cfg.WoodBit) != 0 ? "Wood (normal)" : "Stone (the old normal)"));
                 sb.AppendLine();
                 sb.AppendLine("[Mode options]");
                 sb.AppendLine("AirdropsLand = " + ((key & Cfg.CenterBit) != 0 ? "Middle of the map" : (key & Cfg.SidesBit) != 0 ? "One per side" : "Anywhere"));

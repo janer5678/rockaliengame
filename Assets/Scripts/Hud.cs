@@ -101,7 +101,9 @@ namespace RockGame
 
         void Styles()
         {
-            m_Scale = Mathf.Max(0.75f, Screen.height / 900f);
+            // (Settings > Display > INTERFACE: the UI scale and the font)
+            m_Scale = Mathf.Max(0.75f, Screen.height / 900f) * GameSettings.UiScale;
+            UiLook.ApplyFont();
             int fs = Mathf.RoundToInt(16 * m_Scale);
             m_Label = new GUIStyle(GUI.skin.label) { fontSize = fs, richText = true };
             m_Label.normal.textColor = Color.white;
@@ -114,9 +116,13 @@ namespace RockGame
             UiStyles();
         }
 
+        /// <summary>The in-game HUD's opacity while it's being drawn (Settings > Display > INTERFACE); 1 for the menus.</summary>
+        static float s_HudAlpha = 1f;
+
         static void Fill(Rect r, Color c)
         {
             var old = GUI.color;
+            c.a *= s_HudAlpha;
             GUI.color = c;
             GUI.DrawTexture(r, Texture2D.whiteTexture);
             GUI.color = old;
@@ -140,13 +146,19 @@ namespace RockGame
 
         void OnGUI()
         {
+            // Settings > Display > POST PROCESSING > On the UI too: the repaint goes into a texture the camera's post processing goes over
+            bool toTexture = UiLook.BeginUi(out var prevTarget);
             Styles();
             SearchFrame();
             BeginHoverFrame();
             MouseOverUI = false;
+            s_HudAlpha = 1f;
             DrawAll();
+            s_HudAlpha = 1f;
+            GUI.color = Color.white;
             DrawFps(Bootstrap.I != null && Bootstrap.I.InSession && PlayerNet.Local != null);
             EndHoverFrame();
+            if (toTexture) UiLook.EndUi(prevTarget);
         }
 
         void DrawAll()
@@ -178,6 +190,9 @@ namespace RockGame
             var game = NetGame.Instance;
             float sw = Screen.width, sh = Screen.height, k = m_Scale;
             int team = me.Team.Value;
+            // Settings > Display > INTERFACE > HUD opacity (only while nothing is open over the game)
+            s_HudAlpha = pc.MenuOpen || pc.Paused ? 1f : GameSettings.HudOpacity;
+            GUI.color = new Color(1f, 1f, 1f, s_HudAlpha);
 
             if (m_DamageFlash > 0) Fill(new Rect(0, 0, sw, sh), new Color(0.8f, 0, 0, m_DamageFlash * 0.5f));
             float wake = Time.time - s_WakeTime;
@@ -394,6 +409,9 @@ namespace RockGame
                     : $"Your stuff spilled out where you died. Respawn in {Mathf.CeilToInt(t)}", m_Center);
             }
 
+            // (the HUD's opacity stops here: the inventory, wheel, tutorial panel and menus are drawn solid)
+            s_HudAlpha = 1f;
+            GUI.color = Color.white;
             if (pc.MenuOpen) DrawInventory(me, pc);
             Tutorial.Draw(k, m_Label, m_Small, Fill, Shadowed);
             if (!pc.Paused) Chat.Draw(k, m_Small, Fill, Shadowed);

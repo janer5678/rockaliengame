@@ -43,8 +43,27 @@ namespace RockGame
             }
             yield return new WaitForSeconds(2.2f);
             yield return Shot("menu_main");
+            // the game modes: Tutorial, Classic (the Auto Wood rules) and Primitive (the original game) on the menu, the rest folded away
+            Check(Cfg.MainRules.Length == 3 && Cfg.RulesName(Cfg.MainRules[0]) == "Tutorial" && Cfg.RulesName(Cfg.MainRules[1]) == "Classic" && Cfg.MainRules[1] == GameRules.AutoWood
+                && Cfg.RulesName(Cfg.MainRules[2]) == "Primitive" && Cfg.MainRules[2] == GameRules.Classic && Cfg.RulesName(GameRules.Primitive) == "Primitive Limited"
+                && Cfg.MainRules.Length + Cfg.MoreRules.Length == (int)GameRules.Dna + 1, "game modes: Tutorial, Classic (auto wood), Primitive (the original) on the menu, the other 8 under More modes");
+            Check(Cfg.RulesId(GameRules.Classic) == "classic" && Cfg.RulesId(GameRules.AutoWood) == "autowood", "the -rules names are unchanged (classic = the original game, autowood = the menu's Classic)");
+            Check(!GameSettings.ShowGraphicsPicker && GameSettings.GraphicsMode == 0, "graphics: just Normal (no PSX / AI PSX picker)");
+            Hud.ShowMore(true, true);
+            yield return Shot("menu_main_more_modes_and_maps");
+            Hud.ShowMore(false, false);
             Hud.OpenModeOptions = true;
             yield return Shot("menu_mode_options");
+            // the airdrop chances on the mode options screen add up to 100% (each item's rarity)
+            {
+                float sum = 0f;
+                foreach (var it in Cfg.AirdropLoot) sum += Cfg.AirdropChance(it, Cfg.AirdropLoot);
+                int was = Cfg.RarityC4;
+                Cfg.SetAirdropRarity(Item.C4, was + 15);
+                bool set = Cfg.RarityC4 == was + 15;
+                Cfg.SetAirdropRarity(Item.C4, was);
+                Check(Mathf.Abs(sum - 1f) < 0.01f && set, $"mode options: the airdrop chances add up to {sum * 100f:0.#}%, and - / + changes an item's rarity ({set})");
+            }
             Hud.OpenValues = true;
             yield return Shot("menu_values");
             yield return ValuesSearchShots(Shot);
@@ -52,6 +71,23 @@ namespace RockGame
             {
                 Hud.OpenSettingsTab = tab;
                 yield return Shot("menu_settings_" + tab);
+                if (tab == 2)
+                    Check(Hud.SettingsPanel.width <= Screen.width * 0.55f, $"Settings > Display is a side panel with the game beside it ({Hud.SettingsPanel.width:0} of {Screen.width} px)");
+            }
+            // Settings > Display > INTERFACE: another font and a bigger UI (not saved), then back
+            {
+                int font = GameSettings.UiFont, accent = GameSettings.UiAccent;
+                float scale = GameSettings.UiScale, hud = GameSettings.HudOpacity;
+                int pick = System.Array.IndexOf(GameSettings.FontChoices, "Bahnschrift");
+                if (!GameSettings.FontInstalled(pick)) pick = System.Array.IndexOf(GameSettings.FontChoices, "Consolas");
+                Hud.OpenSettingsTab = 2;
+                GameSettings.SetInterface(pick, 1.2f, hud, 1, false);
+                yield return Shot("menu_settings_display_font");
+                Check(GameSettings.FontInstalled(pick) && UiLook.CurrentFontName.Contains(GameSettings.FontChoices[pick].Split(' ')[0]), $"the UI font changes ({UiLook.CurrentFontName})");
+                Hud.OpenSettingsTab = 0;
+                yield return Shot("menu_settings_sound_font");
+                GameSettings.SetInterface(font, scale, hud, accent, false);
+                yield return new WaitForSeconds(0.3f);
             }
             // CHANGE VALUES > Export writes every value to a file next to the game; Import reads them back
             float before = Cfg.WalkSpeed;

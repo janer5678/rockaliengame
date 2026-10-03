@@ -778,9 +778,9 @@ namespace RockGame
                     + "While it's in your machine, your team gathers " + Hi($"{Mathf.RoundToInt((Cfg.BallGatherMul - 1f) * 100f)}% more") + ".\n"
                     + "Everything is unlocked now - your bag also makes a " + Hi("bow, arrows, chests and the battering ram") + ", and your workbenches add " + Hi("high walls, guns, armour") + " and more.\n"
                     + "Real matches have " + Hi("airdrops") + ": a warning shows 15 seconds before one lands.\n"
-                    + "In Arsenal and Auto Wood, the " + Hi("upgrade station") + $" (green plus, left of your machine): {K(Bind.Interact)} opens " + Hi("UPGRADES") + " (fortify all your walls, a faster wood gen).\n"
+                    + "In Classic and Arsenal, the " + Hi("upgrade station") + $" (green plus, left of your machine): {K(Bind.Interact)} opens " + Hi("UPGRADES") + " (fortify all your walls, a faster wood gen).\n"
                     + "Hurt horses: hold " + Hi("berries") + $" and {K(Bind.Attack)} on one to feed it.\n"
-                    + "Tip: Settings > Display changes the grass and the world's colours.\n"
+                    + "Tip: Settings > Display changes the shadows, post processing, the UI's font and size, the grass and the world's colours.\n"
                     + Hi("Esc") + " > Leave game, then host a real match!";
                 float fh = 30 * k + 30 * k + fb.CalcHeight(new GUIContent(txt), fw - 24 * k) + 12 * k;
                 fill(new Rect(fx, fy, fw, fh), new Color(0.04f, 0.06f, 0.1f, 0.82f));

@@ -7,7 +7,7 @@ namespace RockGame
     /// <summary>
     /// Lives on the NetworkManager object. Holds prefab/material references, builds the world,
     /// and starts/stops hosting or joining.
-    /// Command line: -host | -client [ip] | -port N | -solo | -fast | -map plains|highlands | -small | -big | -wood | -normal | -sides | -anywhere | -mode 1v1|2v2|ffa3|ffa4 | -seed N
+    /// Command line: -host | -client [ip] | -port N | -solo | -fast | -map plains|highlands | -small | -big | -wood | -normal | -sides | -anywhere | -mode 1v1|2v2|ffa3|ffa4 | -rules classic|autowood|primitive|... | -seed N
     /// </summary>
     [RequireComponent(typeof(NetworkManager))]
     public class Bootstrap : MonoBehaviour
@@ -40,7 +40,11 @@ namespace RockGame
             bool test = System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-autotest") >= 0;
             GameSettings.ApplyDisplayAtStartup(test);
             Application.runInBackground = true;
-            MapChoice = PlayerPrefs.GetInt("RockGame.Map", 0);
+            // a first start: the (new) Classic, the Auto Wood rules
+            MapChoice = PlayerPrefs.GetInt("RockGame.Map", test ? 0 : (int)GameRules.AutoWood << Cfg.RulesShift);
+            // wood is the normal materials now (the menu has no Materials row). The tests keep the old stone materials
+            // unless they ask for -wood, so they don't depend on what this PC last hosted; -normal still gets stone.
+            if (test || !Cfg.WoodIsNormal) MapChoice &= ~Cfg.WoodBit; else MapChoice |= Cfg.WoodBit;
             ParseMapArgs();
             Cfg.SetMap(MapChoice, 0);
             MapBuilder.Build();
@@ -112,8 +116,12 @@ namespace RockGame
                     case "-rules":
                         if (i + 1 < args.Length)
                         {
-                            string rs = args[i + 1].ToLowerInvariant();
-                            int rv = rs == "arsenal" ? 1 : rs == "builder" ? 2 : rs == "fun" ? 3 : rs == "funrandom" ? 4 : rs == "funrandomlimited" ? 5 : rs == "primitive" ? 6 : rs == "buildingprimitive" ? 7 : rs == "autowood" ? 8 : rs == "tutorial" ? 9 : rs == "dna" ? (int)GameRules.Dna : 0;
+                            // (the enum's names, as before: classic = the original game - the menu calls it Primitive now -
+                            // and autowood = the menu's Classic. original / primitivelimited / limited are new aliases.)
+                            string rs = args[i + 1].ToLowerInvariant().Replace("-", "").Replace("_", "");
+                            int rv = rs == "arsenal" ? 1 : rs == "builder" ? 2 : rs == "fun" ? 3 : rs == "funrandom" ? 4 : rs == "funrandomlimited" ? 5
+                                : rs == "primitive" || rs == "primitivelimited" || rs == "limited" ? 6 : rs == "buildingprimitive" ? 7 : rs == "autowood" ? 8
+                                : rs == "tutorial" ? 9 : rs == "dna" ? (int)GameRules.Dna : 0; // (classic, original: 0)
                             MapChoice = (MapChoice & ~(Cfg.RulesMask << Cfg.RulesShift)) | (rv << Cfg.RulesShift);
                         }
                         break;
@@ -136,6 +144,13 @@ namespace RockGame
         }
 
         ushort ParsedPort => ushort.TryParse(Port, out var p) ? p : (ushort)7777;
+
+        /// <summary>The main menu's HOST GAME (solo = false) and SOLO TEST (solo = true: hosts and starts without an opponent).</summary>
+        public void Host(bool solo)
+        {
+            Solo = solo;
+            Host();
+        }
 
         public void Host()
         {

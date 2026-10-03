@@ -107,7 +107,7 @@ namespace RockGame
         {
             int team = me.Team.Value;
             var cur = Cfg.CurrencyItem;
-            string rn = Cfg.RulesName(Cfg.Rules).ToLower().Replace(" ", "");
+            string rn = Cfg.RulesId(Cfg.Rules);
             string P(string what) => $"craftui_{rn}_{Screen.width}_{what}";
             var spawn = Cfg.SpawnPos(team);
             pc.LocalTeleport(spawn, Cfg.SpawnYaw(team));

@@ -229,7 +229,7 @@ namespace RockGame
             GUILayout.BeginHorizontal();
             RowLabel("Post processing", 210 * k);
             on = ToggleBtn(on, on ? "On" : "Off", GUILayout.Width(110 * k), GUILayout.Height(30 * k));
-            if (GameSettings.GraphicsMode != 0) GUILayout.Label("<color=#bbbbbb>   (not in PSX / AI PSX - they keep their own look)</color>", m_Small, GUILayout.Height(30 * k));
+            if (GameSettings.GraphicsMode != 0) GUILayout.Label("<color=#bbbbbb>   (not in PSX / AI PSX)</color>", m_Small, GUILayout.Height(30 * k));
             GUILayout.FlexibleSpace();
             bool defaults = Btn("Defaults", GUILayout.Width(110 * k), GUILayout.Height(30 * k));
             if (defaults) { on = bloom = vig = grade = true; bs = vs = gs = 0.5f; }
@@ -242,6 +242,17 @@ namespace RockGame
             }
             GameSettings.SetPostFx(on, bloom, vig, grade, Mathf.Round(bs * 20f) / 20f, Mathf.Round(vs * 20f) / 20f, Mathf.Round(gs * 20f) / 20f);
             GUILayout.Label("<color=#bbbbbb>Bloom: a soft glow round the brightest things (the sun, sky, sparks). Vignette: slightly darker corners. Colour grading: a little more colour and contrast (same hues). Off is exactly the plain look (and a little faster).</color>", m_SmallWrap);
+            // the UI too: the menus, HUD, icons and inventory go under the post processing as well (off to start with)
+            GUILayout.BeginHorizontal();
+            RowLabel("On the UI too", 210 * k);
+            GUI.enabled = on;
+            bool ui = ToggleBtn(GameSettings.PostOnUi, GameSettings.PostOnUi ? "On" : "Off", GUILayout.Width(110 * k), GUILayout.Height(30 * k));
+            GUI.enabled = true;
+            if (defaults) ui = false;
+            GameSettings.SetPostOnUi(ui);
+            GUILayout.Label("<color=#bbbbbb>  menus, HUD, icons and inventory</color>", m_Small, GUILayout.Height(30 * k));
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
             // the extra looks: each off to start with (Defaults switches them all off again)
             if (on)
             {

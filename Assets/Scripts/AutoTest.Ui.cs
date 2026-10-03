@@ -397,6 +397,7 @@ namespace RockGame
             yield return new WaitForSeconds(0.8f);
             yield return Shot("settings_display_postfx");
             GameSettings.SetShowFps(false, false);
+            yield return DisplayExtrasTests(Shot, pc, sunYaw + 28f, Mathf.Max(-24f, sunPitch + 22f));
             // ---- the world colours screen: the world as it is unpaused, then with the colour screen up (no dark cover) ----
             pc.Paused = false;
             yield return new WaitForSeconds(0.6f);
@@ -524,6 +525,77 @@ namespace RockGame
             Application.Quit(0);
         }
 
+        /// <summary>
+        /// (paused, Settings > Display open) Display is a side panel with the game in view; the shadow darkness and
+        /// distance reach the sun and the URP asset and change the picture; post processing on the UI too: with every
+        /// effect at nothing the UI looks just as it does drawn straight to the screen (the right way up, in the right
+        /// place), and with a strong vignette and grading the panel changes; then everything back.
+        /// </summary>
+        IEnumerator DisplayExtrasTests(System.Func<string, IEnumerator> shot, PlayerController pc, float yaw, float pitch)
+        {
+            var panel = Hud.SettingsPanel;
+            Check(panel.width <= Screen.width * 0.55f && panel.xMin > Screen.width * 0.4f, $"Settings > Display is a side panel ({panel.width:0} of {Screen.width} px) with the game in view beside it");
+            float ssWas = GameSettings.ShadowStrength, sdWas = GameSettings.ShadowDistance;
+            bool pOn = GameSettings.PostFx, pB = GameSettings.PostBloom, pV = GameSettings.PostVignette, pG = GameSettings.PostGrading;
+            float pBs = GameSettings.PostBloomStrength, pVs = GameSettings.PostVignetteStrength, pGs = GameSettings.PostGradingStrength;
+            bool uiWas = GameSettings.PostOnUi;
+            Time.timeScale = 0f;
+
+            // ---- post processing on the UI too ----
+            ScreenStats direct = default, composited = default, strongDirect = default, strongUi = default;
+            GameSettings.SetPostFx(true, false, false, false, 0.5f, 0.5f, 0.5f, false);
+            GameSettings.SetPostOnUi(false, false);
+            yield return new WaitForSecondsRealtime(0.5f);
+            yield return Grab(s => direct = s);
+            GameSettings.SetPostOnUi(true, false);
+            yield return new WaitForSecondsRealtime(0.5f);
+            yield return Grab(s => composited = s);
+            yield return shot("display_ui_under_post_plain");
+            float same = Diff(direct, composited);
+            Check(UiLook.UiUnderPost && same < 2.5f, $"UI under the post processing, every effect off: it looks as it did drawn to the screen ({same:F2} mean difference) - the right way up, in the right place");
+            GameSettings.SetPostFx(true, false, true, true, 0.5f, 1f, 1f, false);
+            GameSettings.SetPostOnUi(false, false);
+            yield return new WaitForSecondsRealtime(0.5f);
+            yield return Grab(s => strongDirect = s);
+            GameSettings.SetPostOnUi(true, false);
+            yield return new WaitForSecondsRealtime(0.5f);
+            yield return Grab(s => strongUi = s);
+            yield return shot("display_ui_under_post_vignette_grading");
+            Color a = Region(strongDirect, panel), b = Region(strongUi, panel);
+            float panelDiff = (Mathf.Abs(a.r - b.r) + Mathf.Abs(a.g - b.g) + Mathf.Abs(a.b - b.b)) * 255f / 3f;
+            float panelSame = 0f;
+            { Color c = Region(direct, panel), d = Region(composited, panel); panelSame = (Mathf.Abs(c.r - d.r) + Mathf.Abs(c.g - d.g) + Mathf.Abs(c.b - d.b)) * 255f / 3f; }
+            Check(panelDiff > panelSame + 1f, $"with a strong vignette and grading the settings panel itself changes once the UI goes under them ({panelDiff:F2} vs {panelSame:F2} of 255)");
+            GameSettings.SetPostOnUi(false, false);
+            yield return new WaitForSecondsRealtime(0.3f);
+            Check(!UiLook.UiUnderPost, "UI under the post processing off again: drawn straight to the screen");
+
+
+            // ---- shadows ----
+            ScreenStats sFull = default, sNone = default;
+            // (the back to the sun, looking down at the ground: the shadows fall away from us, in view)
+            pc.SetLook(yaw + 180f, 35f);
+            GameSettings.SetShadows(1f, 120f, false);
+            yield return new WaitForSecondsRealtime(0.4f);
+            yield return Grab(s => sFull = s);
+            Check(Mathf.Approximately(UiLook.SunShadowStrength, 1f) && Mathf.Approximately(UiLook.UrpShadowDistance, 120f), $"shadow distance 120 m reaches the render pipeline ({UiLook.UrpShadowDistance:0} m)");
+            GameSettings.SetShadows(0f, 120f, false);
+            yield return new WaitForSecondsRealtime(0.4f);
+            yield return Grab(s => sNone = s);
+            yield return shot("display_shadows_none");
+            float shadowDiff = Diff(sFull, sNone);
+            Check(Mathf.Approximately(UiLook.SunShadowStrength, 0f) && shadowDiff > 0.3f && sNone.Lum > sFull.Lum,
+                $"shadow darkness 0%: the sun's shadows go (strength {UiLook.SunShadowStrength:0.##}, the picture {shadowDiff:F2} different and brighter: {sFull.Lum:F3} -> {sNone.Lum:F3})");
+            GameSettings.SetShadows(ssWas, sdWas, false);
+            pc.SetLook(yaw, pitch);
+
+            Time.timeScale = 1f;
+            yield return new WaitForSecondsRealtime(0.6f); // (the view settles back)
+            GameSettings.SetPostOnUi(uiWas, false);
+            GameSettings.SetPostFx(pOn, pB, pV, pG, pBs, pVs, pGs, false);
+            Time.timeScale = 1f;
+        }
+
         /// <summary>Main menu > CHANGE VALUES with searches typed in (run from -autotest menushot).</summary>
         IEnumerator ValuesSearchShots(System.Func<string, IEnumerator> shot)
         {
@@ -534,7 +606,7 @@ namespace RockGame
                 foreach (var f in Cfg.TuneFields)
                 {
                     var sec = Cfg.SectionOf(f);
-                    if (sec == "Mode options") continue;
+                    if (Hud.IsModeOptionsSection(sec)) continue;
                     string t = (f.Name + " " + sec).ToLowerInvariant();
                     bool all = true;
                     foreach (var w in words) all &= t.Contains(w) || t.Replace(" ", "").Contains(w);
@@ -546,10 +618,14 @@ namespace RockGame
             yield return shot("menu_values_search_slide");
             int want = Expect("slide");
             Check(want > 0 && Hud.ValuesMatches == want, $"CHANGE VALUES search \"slide\": {Hud.ValuesMatches} rows (expected {want})");
-            Hud.SetValuesSearch = "RARITY";
-            yield return shot("menu_values_search_rarity_section");
-            want = Expect("rarity");
-            Check(want >= 10 && Hud.ValuesMatches == want, $"search \"RARITY\" (any case, a whole section): {Hud.ValuesMatches} rows (expected {want})");
+            Hud.SetValuesSearch = "AIRDROP";
+            yield return shot("menu_values_search_airdrop_section");
+            want = Expect("airdrop");
+            Check(want >= 10 && Hud.ValuesMatches == want, $"search \"AIRDROP\" (any case, a whole section): {Hud.ValuesMatches} rows (expected {want})");
+            // the airdrop rarities moved to MODE OPTIONS (each item's chance there): none left in CHANGE VALUES
+            Hud.SetValuesSearch = "rarity";
+            yield return shot("menu_values_search_rarity_moved");
+            Check(Expect("rarity") == 0 && Hud.ValuesMatches == 0, $"search \"rarity\": nothing - the airdrop rarities are on the MODE OPTIONS screen now ({Hud.ValuesMatches} rows)");
             Hud.SetValuesSearch = "bow speed";
             yield return shot("menu_values_search_two_words");
             want = Expect("bow", "speed");
