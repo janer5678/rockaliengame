@@ -12,6 +12,9 @@
 // eyes, the more of their pixels are drawn) - standing or crouching in the tall wheat, it doesn't cover your screen.
 // The tall grass of a patch fades further out and more (_GrassNearFade.zw). It's only around this camera: everyone
 // else still sees you hidden in it.
+// The blades round the camera that fade also tell the outlines (PostFx Stylize) to leave them alone: the DepthNormals
+// pass writes how much into the normals texture's alpha (1 inside the fade, out to a bit past it), so the dithered
+// see-through grass right round you doesn't crawl with ink lines (_GrassNoInk 0 turns that off, for the tests).
 // The settings are globals set by GrassField.cs (no material properties).
 Shader "RockGame/Grass"
 {
@@ -24,6 +27,28 @@ Shader "RockGame/Grass"
         #include "GrassLight.hlsl"
         TEXTURE2D(_GrassField); SAMPLER(sampler_GrassField);
         TEXTURE2D(_GrassTrample); SAMPLER(sampler_GrassTrample);
+        TEXTURE2D(_GrassGround);
+        float4 _GrassGroundRect;         // Highlands: the terrain's own grid of corners - r the height, g the rock field (x:
+                                         // corner 0 is at -x, y: the step, z: squares a side, w: 1 if there is one)
+
+        // The ground at xz the way the terrain mesh draws it (x: its height, y: the rock field, 0 and up is rock; -1 off
+        // Highlands): straight across the triangle it's in (two per grid square, the diagonal alternating like a
+        // checkerboard - MapBuilder.SmoothGround). The grass field's own height (1 m texels, bilinear) is a little off it
+        // over the bumps, which buried the blades there by up to ~10 cm; and its texels blended round a blade by the rock
+        // line put a few blades on the rock's edge.
+        float2 GrassGroundAt(float2 xz, float fallback)
+        {
+            if (_GrassGroundRect.w < 0.5) return float2(fallback, -1);
+            float n = _GrassGroundRect.z;
+            float2 g = clamp((xz + _GrassGroundRect.x) / _GrassGroundRect.y, 0, n - 0.001);
+            int2 ij = (int2)floor(g);
+            float2 uv = g - ij;
+            float2 h00 = LOAD_TEXTURE2D_LOD(_GrassGround, ij, 0).rg, h10 = LOAD_TEXTURE2D_LOD(_GrassGround, ij + int2(1, 0), 0).rg;
+            float2 h01 = LOAD_TEXTURE2D_LOD(_GrassGround, ij + int2(0, 1), 0).rg, h11 = LOAD_TEXTURE2D_LOD(_GrassGround, ij + int2(1, 1), 0).rg;
+            if (((ij.x + ij.y) & 1) == 0)
+                return uv.y >= uv.x ? h00 + (h11 - h01) * uv.x + (h01 - h00) * uv.y : h00 + (h10 - h00) * uv.x + (h11 - h10) * uv.y;
+            return uv.x + uv.y <= 1 ? h00 + (h10 - h00) * uv.x + (h01 - h00) * uv.y : h11 + (h01 - h11) * (1 - uv.x) + (h10 - h11) * (1 - uv.y);
+        }
         float4 _GrassFieldRect;          // xy: world xz of texel (0,0)'s centre; zw: 1 / texture size in metres
         float4 _GrassTrampleRect;        // xy: world xz of the trample map's corner; zw: 1 / its size in metres
         float4 _GrassTrampleTime;        // x: now; y: stays flat this long (s); z: standing again by (s)
@@ -43,6 +68,8 @@ Shader "RockGame/Grass"
         float _GrassDebug;
         float4 _GrassNearFade;           // x, y: blades closer to the camera than x (m) are gone, further than y fully there;
                                          // z, w: the same for the tall grass in a patch
+        float _GrassNoInk;               // 1: the faded blades round the camera get no outlines (normals alpha)
+        float _GrassHeight;              // how tall the ordinary green grass is (Settings > Display; 1 = as made)
 
         struct Attributes
         {
@@ -58,6 +85,7 @@ Shader "RockGame/Grass"
             half3 color : TEXCOORD1;
             float fog : TEXCOORD2;
             half fade : TEXCOORD3;          // 0: right at the camera (not drawn) .. 1: drawn
+            half noInk : TEXCOORD4;         // 1: no outlines on this blade (it's in the fade round the camera)
         };
         static const float k_TallH = 5.8;   // the middle of a tall grass patch: this many times the grass's height
 
@@ -77,7 +105,8 @@ Shader "RockGame/Grass"
                 root = float3(v.uv0.x * stretch + tile.x, 0, v.uv0.y * stretch + tile.z);
             }
             float4 f = SAMPLE_TEXTURE2D_LOD(_GrassField, sampler_GrassField, (root.xz - _GrassFieldRect.xy) * _GrassFieldRect.zw, 0);
-            root.y = f.r - 0.04;
+            float2 ground = GrassGroundAt(root.xz, f.r);
+            root.y = ground.x - 0.04;
             float dist = distance(root.xz, _WorldSpaceCameraPos.xz);
             float h = GrassHash(root.xz);
             float bend = v.color.a;
@@ -94,12 +123,16 @@ Shader "RockGame/Grass"
                 hMul *= lerp(lerp(0.7, 1.3, frac(h * 7.13)), 1, wheat * 0.7); // taller and shorter bits
                 // knee-high round the rim, then head high and more in the middle (you can hide in it)...
                 float tall = lerp(lerp(1.3, 2.1, saturate(f.b * 2)), k_TallH * lerp(1, 1.18, rise), wheat) * lerp(0.88, 1.12, v.uv0.w);
-                hMul *= lerp(1, tall, inPatch);
+                // the ordinary grass as tall as picked in the settings (a patch's rim never shorter than the grass round it)
+                float gh = max(_GrassHeight, 0.1);
+                hMul *= lerp(gh, max(tall, gh * 1.15), inPatch);
                 col = lerp(col, _GrassWheat.rgb * lerp(0.85, 1.15, v.uv0.w), inPatch * lerp(0.45, 1, wheat)); // ...and golden
                 hMul *= lerp(1, 0.3, f.a);                               // flower clearings are short
                 float dens = (dist < _GrassNear ? 1 : pow(_GrassNear / dist, _GrassFalloff)) * _GrassDensity;
                 hMul *= saturate((dens * stretch * stretch - v.uv0.z) * 12); // fewer blades far away...
-                wMul = clamp(rsqrt(max(dens, 0.04)) * 0.8, 1, 2.6);      // ...but wider, so it still looks full
+                // ...but wider, so it still looks full (as thin as the blades really are: a far, stretched patch can't be
+                // thicker than all of its blades, 1 / stretch² of the near grass)
+                wMul = clamp(rsqrt(max(min(dens, 1 / (stretch * stretch)), 0.04)) * 0.8, 1, 2.6);
                 wMul *= lerp(1, 1.5, wheat) * lerp(1, 1.15, inPatch);
             }
             else
@@ -109,6 +142,7 @@ Shader "RockGame/Grass"
                 col *= kind > 2.5 ? _GrassTint.rgb : kind > 1.5 ? _GrassLupinTint.rgb : kind > 0.5 ? _GrassDaisyTint.rgb : half3(1, 1, 1);
             }
             hMul *= 1 - (decor ? smoothstep(_GrassFade.z, _GrassFade.w, dist) : smoothstep(_GrassFade.x, _GrassFade.y, dist));
+            hMul *= saturate((-0.004 - ground.y) * 60);                 // none on the rock (GrassField.RockKeep)
 
             float3 off = v.positionOS.xyz;
             off.xz *= wMul * saturate(hMul * 4);
@@ -161,6 +195,8 @@ Shader "RockGame/Grass"
             float2 nf = lerp(_GrassNearFade.xy, _GrassNearFade.zw, wheat);
             float nfade = smoothstep(nf.x, nf.y, dn);
             o.fade = _GrassNearFade.y > _GrassNearFade.x ? lerp(nfade, nfade * nfade, wheat) : 1;
+            // (no ink on the faded blades, and for a little way past them, so it doesn't stop at a hard line)
+            o.noInk = _GrassNearFade.y > _GrassNearFade.x ? (1 - smoothstep(nf.y, nf.y * 1.4 + 0.3, dn)) * _GrassNoInk : 0;
             if (_GrassDebug > 0.5)
             {
                 // debug: draw every blade full size, coloured by what the shader reads
@@ -169,6 +205,7 @@ Shader "RockGame/Grass"
                 o.color = _GrassDebug > 1.5 ? v.color.rgb : float3(frac(v.uv0.x / 8), frac(v.uv0.y / 8), v.uv0.w);
                 o.fog = 0;
                 o.fade = 1;
+                o.noInk = 0;
             }
             return o;
         }
@@ -225,7 +262,7 @@ Shader "RockGame/Grass"
             HLSLPROGRAM
             #pragma vertex vert
             #pragma fragment frag
-            half4 frag(Varyings i) : SV_Target { NearFadeClip(i); return half4(0, 1, 0, 0); }
+            half4 frag(Varyings i) : SV_Target { NearFadeClip(i); return half4(0, 1, 0, i.noInk); }
             ENDHLSL
         }
     }

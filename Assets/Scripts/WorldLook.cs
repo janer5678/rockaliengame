@@ -29,11 +29,18 @@ namespace RockGame
 
         public const float GrassDistanceMin = 25f, GrassDistanceMax = 270f, GrassDistanceDefault = 60f;
         public const float GrassDensityMin = 0.2f, GrassDensityDefault = 1f;
-        /// <summary>How fast the grass thins out with distance: density = (11 m / distance) ^ falloff.</summary>
-        public const float GrassFalloffMin = 1f, GrassFalloffMax = 2.5f, GrassFalloffDefault = 1.35f;
+        /// <summary>How fast the grass thins out with distance: density = (11 m / distance) ^ falloff. (It went down to 1 -
+        /// "100%" far thickness - before; now on down to 0.25, so the far grass can be much thicker.)</summary>
+        public const float GrassFalloffMin = 0.25f, GrassFalloffMax = 2.5f, GrassFalloffDefault = 1.35f;
+        /// <summary>The far thickness slider's 100% (the old thickest): it goes on past that to GrassFalloffMin.</summary>
+        public const float GrassFalloffOldMin = 1f;
+        /// <summary>The far grass thickness as the slider shows it: 0% thins fastest, 100% the old thickest, up to 150%.</summary>
+        public static float GrassThicknessPercent(float falloff) => (GrassFalloffMax - falloff) / (GrassFalloffMax - GrassFalloffOldMin) * 100f;
+        /// <summary>How tall the ordinary green grass is (1 = as it was made; the tall grass patches stay as they are).</summary>
+        public const float GrassHeightMin = 0.6f, GrassHeightMax = 2.5f, GrassHeightDefault = 1f;
 
         static bool s_WorldLoaded;
-        static float s_GrassDistance = GrassDistanceDefault, s_GrassDensity = GrassDensityDefault, s_GrassFalloff = GrassFalloffDefault;
+        static float s_GrassDistance = GrassDistanceDefault, s_GrassDensity = GrassDensityDefault, s_GrassFalloff = GrassFalloffDefault, s_GrassHeight = GrassHeightDefault;
 
         /// <summary>Fired when a world colour or the grass settings change.</summary>
         public static event System.Action WorldLookChanged;
@@ -46,6 +53,7 @@ namespace RockGame
             s_GrassDistance = Mathf.Clamp(PlayerPrefs.GetFloat("RockGame.GrassDistance", GrassDistanceDefault), GrassDistanceMin, GrassDistanceMax);
             s_GrassDensity = Mathf.Clamp(PlayerPrefs.GetFloat("RockGame.GrassDensity", GrassDensityDefault), GrassDensityMin, 1f);
             s_GrassFalloff = Mathf.Clamp(PlayerPrefs.GetFloat("RockGame.GrassFalloff", GrassFalloffDefault), GrassFalloffMin, GrassFalloffMax);
+            s_GrassHeight = Mathf.Clamp(PlayerPrefs.GetFloat("RockGame.GrassHeight", GrassHeightDefault), GrassHeightMin, GrassHeightMax);
         }
 
         public static Color GetWorldColor(WorldColor w) => Slot(w).Value;
@@ -61,6 +69,18 @@ namespace RockGame
         public static float GrassDensity { get { LoadWorld(); return s_GrassDensity; } }
         /// <summary>How fast the grass thins out past 11 m (the power it falls off by; lower = thicker far away).</summary>
         public static float GrassFalloff { get { LoadWorld(); return s_GrassFalloff; } }
+        /// <summary>How tall the ordinary green grass is drawn (1 = as made).</summary>
+        public static float GrassHeight { get { LoadWorld(); return s_GrassHeight; } }
+
+        public static void SetGrassHeight(float height, bool save = true)
+        {
+            LoadWorld();
+            height = Mathf.Clamp(height, GrassHeightMin, GrassHeightMax);
+            if (Mathf.Approximately(height, s_GrassHeight)) return;
+            s_GrassHeight = height;
+            if (save) { PlayerPrefs.SetFloat("RockGame.GrassHeight", height); PlayerPrefs.Save(); }
+            WorldLookChanged?.Invoke();
+        }
 
         public static void SetGrass(float distance, float density, bool save = true) => SetGrass(distance, density, GrassFalloff, save);
 
@@ -100,7 +120,8 @@ namespace RockGame
             s_GrassDistance = GrassDistanceDefault;
             s_GrassDensity = GrassDensityDefault;
             s_GrassFalloff = GrassFalloffDefault;
-            if (save) { PlayerPrefs.DeleteKey("RockGame.GrassDistance"); PlayerPrefs.DeleteKey("RockGame.GrassDensity"); PlayerPrefs.DeleteKey("RockGame.GrassFalloff"); PlayerPrefs.Save(); }
+            s_GrassHeight = GrassHeightDefault;
+            if (save) { PlayerPrefs.DeleteKey("RockGame.GrassDistance"); PlayerPrefs.DeleteKey("RockGame.GrassDensity"); PlayerPrefs.DeleteKey("RockGame.GrassFalloff"); PlayerPrefs.DeleteKey("RockGame.GrassHeight"); PlayerPrefs.Save(); }
             WorldLookChanged?.Invoke();
         }
     }

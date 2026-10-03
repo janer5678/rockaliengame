@@ -2,7 +2,8 @@
 // full-screen pass before URP's own post processing, only drawn while one of these is on.
 //   Outlines: dark ink lines where the depth jumps (silhouettes) or the surface folds sharply (the normals the
 //     renderer's SSAO already draws), a darker shade of the colour under them rather than black; they fade out with
-//     distance so the far meadow doesn't turn to scribble.
+//     distance so the far meadow doesn't turn to scribble. None on the see-through grass right round the camera
+//     (the grass writes that into the normals' alpha: Grass.shader) - its dither pattern used to crawl with lines.
 //   Distance haze: far things fade towards a pale version of the sky colour (never the sky itself).
 //   Sharpen: a small unsharp mask (4 taps).
 //   Cel banding: the brightness snapped to a few steps, the hue and saturation kept.
@@ -31,6 +32,8 @@ Shader "Hidden/RockGame/Stylize"
 
             half3 Col(float2 uv) { return SAMPLE_TEXTURE2D_X_LOD(_BlitTexture, sampler_PointClamp, uv, 0).rgb; }
             float Eye(float2 uv) { return LinearEyeDepth(SampleSceneDepth(uv), _ZBufferParams); }
+            // the near grass round the camera says "no ink here" in the normals' alpha (everything else writes 0)
+            float NoInk(float2 uv) { return saturate(SAMPLE_TEXTURE2D_X(_CameraNormalsTexture, sampler_CameraNormalsTexture, UnityStereoTransformScreenSpaceTex(uv)).a); }
             bool Sky(float raw)
             {
             #if UNITY_REVERSED_Z
@@ -69,6 +72,8 @@ Shader "Hidden/RockGame/Stylize"
                     float3 na = SampleSceneNormals(a), nb = SampleSceneNormals(b), ne = SampleSceneNormals(e), nf = SampleSceneNormals(f);
                     float fold = max(1 - dot(na, nb), 1 - dot(ne, nf));
                     edge = max(edge, smoothstep(_RgOutline.w, _RgOutline.w + 0.35, fold) * (Sky(raw) ? 0 : 1));
+                    // none on (or against) the faded grass right round the camera
+                    edge *= 1 - max(max(max(NoInk(a), NoInk(b)), max(NoInk(e), NoInk(f))), NoInk(uv));
                     // fade out with distance (the nearest of the samples: a silhouette against the sky keeps its line)
                     edge *= 1 - smoothstep(45.0, 130.0, near);
                     c *= 1 - edge * _RgOutline.x * 0.78;

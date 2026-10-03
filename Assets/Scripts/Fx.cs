@@ -59,7 +59,7 @@ namespace RockGame
             {
                 case FxKind.Blood: Blood(pos, dir, false); break;
                 case FxKind.BloodHead: Blood(pos, dir, true); break;
-                case FxKind.WoodChips: Chips(pos, dir, BarkAt(pos), 8); FallingLeaves(pos, dir); Sfx.Play(Sfx.Chop, pos, 0.3f); break;
+                case FxKind.WoodChips: Chips(pos, dir, BarkAt(pos), 8); FallingLeaves(pos, dir); HitMark(pos); Sfx.Play(Sfx.Chop, pos, 0.3f); break;
                 case FxKind.StoneChips: Chips(pos, dir, Art.Stone, 8); Sparks(pos, dir, 5); Sfx.Play(Sfx.Clink, pos); break;
                 case FxKind.WeakSpot: Sparks(pos, dir, 16); Sfx.Play(Sfx.Ding, pos, 0.8f); break;
                 case FxKind.WeakSpotTree: Sparks(pos, dir, 16); Chips(pos, dir, BarkAt(pos), 6, 4.5f); TreeHitNote(pos); break;
@@ -104,14 +104,24 @@ namespace RockGame
         /// <summary>Chip colour for a hit on a tree: that tree's bark (the plain wood colour if it's not a tree).</summary>
         static Color BarkAt(Vector3 pos)
         {
-            var t = ResourceNode.TreeNear(pos, 2.5f);
+            var t = ResourceNode.WoodAt(pos, 0.8f);
+            if (t == null) t = ResourceNode.TreeNear(pos, 2.5f);
             return t != null ? t.Bark : Art.Wood;
+        }
+
+        /// <summary>A hit on a tree or a log leaves a mark on its bark (ResourceNode.AddHitMark: on the bark you see).</summary>
+        static void HitMark(Vector3 pos)
+        {
+            var t = ResourceNode.WoodAt(pos, 0.8f);
+            if (t != null) t.AddHitMark(pos);
         }
 
         /// <summary>A hit on a tree shakes a few leaves (needles) loose: they flutter down out of its crown in its own leaf
         /// colour. Played wherever the hit's chips are (every peer that sees the hit).</summary>
         public static void FallingLeaves(Vector3 pos, Vector3 dir)
         {
+            var w = ResourceNode.WoodAt(pos, 0.8f);
+            if (w != null && w.Kind.Value == ResourceNode.Log) return; // (a fallen log has no leaves to drop)
             var t = ResourceNode.TreeNear(pos, 2.5f);
             if (t == null) return;
             var towards = pos + (dir.sqrMagnitude > 0.01f ? dir.normalized : Vector3.zero) * 3f;
@@ -466,6 +476,15 @@ namespace RockGame
                 if (m_Stick && Physics.Raycast(transform.position, step, out var hit, step.magnitude + 0.01f, ~0, QueryTriggerInteraction.Ignore)
                     && hit.collider.GetComponentInParent<PlayerNet>() == null)
                 {
+                    var wood = hit.collider.GetComponentInParent<ResourceNode>();
+                    if (wood != null && wood.Kind.Value == ResourceNode.Tree && hit.normal.y < 0.7f)
+                    {
+                        // (a tree's collider is round, round its ten-sided bark: a chip stuck flat on it sat partly inside the
+                        // bark or floating off it - it bounces off and falls instead; the hit's own mark goes on the bark)
+                        m_Vel = Vector3.Reflect(m_Vel, hit.normal) * 0.3f;
+                        transform.localScale = Vector3.one * m_Size * Mathf.Clamp01(k * 2f);
+                        return;
+                    }
                     m_Landed = true;
                     transform.position = hit.point + hit.normal * 0.005f;
                     transform.rotation = Quaternion.LookRotation(hit.normal) * Quaternion.Euler(0, 0, Random.Range(0, 90f));

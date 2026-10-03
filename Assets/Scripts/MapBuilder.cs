@@ -268,6 +268,7 @@ namespace RockGame
             s_RockField = RockFieldOf(hills, mask, half, step);
             s_FieldHalf = half;
             s_FieldStep = step;
+            s_GroundHs = hs;
             var mesh = SmoothGround("Terrain", hs, half, step, 2, null, s_RockField, c => EdgeRise(c.x, c.z));
 
             var go = new GameObject("Ground");
@@ -411,11 +412,49 @@ namespace RockGame
         {
             var g = s_RockField;
             if (g == null || Cfg.Map != MapKind.Highlands) return -1f;
+            return OnGrid(g, x, z);
+        }
+
+        static float[,] s_GroundHs;
+
+        /// <summary>Highlands: the terrain's grid of corner heights (hs[i, j] at x = -half + i * step, z = -half + j * step;
+        /// the grass shader draws the blades on it exactly as the mesh is drawn). False on the other maps.</summary>
+        public static bool GroundGrid(out float[,] hs, out float[,] rock, out float half, out float step)
+        {
+            hs = s_GroundHs; rock = s_RockField; half = s_FieldHalf; step = s_FieldStep;
+            return hs != null && rock != null && Cfg.Map == MapKind.Highlands && !ThemeMaps.IsTheme;
+        }
+
+        /// <summary>
+        /// The height of the ground mesh as it's drawn at (x, z): on Highlands the 2 m grid's own triangles (which run
+        /// straight between the corners, so over the noisy little bumps they're up to a few tens of cm off Height); the
+        /// same as Height everywhere else. The grass is planted on this, so it isn't buried where the mesh runs above
+        /// the bumps.
+        /// </summary>
+        public static float GroundHeight(float x, float z)
+        {
+            var g = s_GroundHs;
+            if (g == null || Cfg.Map != MapKind.Highlands || ThemeMaps.IsTheme) return Height(x, z);
+            int n = g.GetLength(0) - 1;
+            float fx = (x + s_FieldHalf) / s_FieldStep, fz = (z + s_FieldHalf) / s_FieldStep;
+            if (fx < 0f || fz < 0f || fx > n || fz > n) return Height(x, z);
+            return OnGrid(g, x, z);
+        }
+
+        /// <summary>A value per corner of the terrain grid, read at (x, z) the way the ground mesh is drawn: straight across
+        /// the triangle (x, z) is in (SmoothGround's two triangles per square, the diagonal alternating like a checkerboard).</summary>
+        static float OnGrid(float[,] g, float x, float z)
+        {
             int n = g.GetLength(0) - 1;
             float fx = Mathf.Clamp((x + s_FieldHalf) / s_FieldStep, 0f, n - 0.001f), fz = Mathf.Clamp((z + s_FieldHalf) / s_FieldStep, 0f, n - 0.001f);
             int i = (int)fx, j = (int)fz;
             float u = fx - i, v = fz - j;
-            return Mathf.Lerp(Mathf.Lerp(g[i, j], g[i + 1, j], u), Mathf.Lerp(g[i, j + 1], g[i + 1, j + 1], u), v);
+            float h00 = g[i, j], h10 = g[i + 1, j], h01 = g[i, j + 1], h11 = g[i + 1, j + 1];
+            if (((i + j) & 1) == 0)
+                // (the diagonal from (i, j) to (i + 1, j + 1))
+                return v >= u ? h00 + (h11 - h01) * u + (h01 - h00) * v : h00 + (h10 - h00) * u + (h11 - h10) * v;
+            // (the diagonal from (i, j + 1) to (i + 1, j))
+            return u + v <= 1f ? h00 + (h10 - h00) * u + (h01 - h00) * v : h11 + (h01 - h11) * (1f - u) + (h10 - h11) * (1f - v);
         }
 
         /// <summary>

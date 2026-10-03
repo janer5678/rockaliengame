@@ -362,7 +362,7 @@ namespace RockGame
                 var m = Matrix4x4.TRS(pos, rot, Vector3.one * 1.08f);
                 foreach (Transform bar in marker)
                 {
-                    if (bar.GetComponent<MeshFilter>() == null || bar.name == "x decal") continue;
+                    if (bar.GetComponent<MeshFilter>() == null || bar.name == "x decal" || bar.name == "x halo") continue;
                     var bm = m * Matrix4x4.TRS(bar.localPosition, bar.localRotation, bar.localScale);
                     for (int c = 0; c < 8; c++) l.Add(bm.MultiplyPoint3x4(new Vector3((c & 1) - 0.5f, ((c >> 1) & 1) - 0.5f, ((c >> 2) & 1) - 0.5f)));
                     l.Add(bm.MultiplyPoint3x4(new Vector3(0, 0, 0.5f)));

@@ -5,14 +5,15 @@ using UnityEngine;
 namespace RockGame
 {
     /// <summary>
-    /// A tree (wood), boulder (stone) or berry bush. Trees and boulders have a Rust-style weak spot
-    /// (an X on trees, a sparkle on rocks) that appears after the first hit, gives bonus resources and jumps
-    /// somewhere else when hit. Depleted nodes regrow later. A berry bush is picked whole (E): it disappears and a new
-    /// one grows up out of the ground somewhere else in the same half a while later.
+    /// A tree (wood), fallen log (wood), boulder (stone) or berry bush. Trees, logs and boulders have a Rust-style weak
+    /// spot (a glowing X on trees and logs, a sparkle on rocks) that appears after the first hit, gives bonus resources
+    /// and jumps somewhere else when hit. Hits leave marks on the bark. Depleted nodes regrow later (a felled tree
+    /// leaves its stump until then). A berry bush is picked whole (E): it disappears and a new one grows up out of the
+    /// ground somewhere else in the same half a while later.
     /// </summary>
     public class ResourceNode : NetworkBehaviour
     {
-        public const byte Tree = 0, Boulder = 1, Bush = 2;
+        public const byte Tree = 0, Boulder = 1, Bush = 2, Log = 3;
         const int SpotCount = 12;
         /// <summary>Spot value while the node hasn't been hit yet: no weak spot is shown.</summary>
         public const byte NoSpot = 255;
@@ -52,11 +53,27 @@ namespace RockGame
         bool m_PaintedBush;
         static bool PaintedBush => GameSettings.GraphicsMode == 0 && WorldLook.BushLeaves != null && WorldLook.Berries != null;
         Vector3 m_VisualBase;
+        /// <summary>A felled tree's stump (shown until the tree grows back).</summary>
+        GameObject m_Stump;
+        /// <summary>Fallen logs: the log itself (in the visual, tipped to lie along the ground), its length and radius.</summary>
+        Transform m_LogT;
+        float m_LogLen, m_LogR;
+        /// <summary>The marks hits have left on the bark (trees and logs; children of the visual, so they shake with it).</summary>
+        readonly List<GameObject> m_Marks = new List<GameObject>();
+        public int HitMarkCount => m_Marks.Count;
+        /// <summary>(tests) the newest hit mark.</summary>
+        public Transform LastHitMark => m_Marks.Count > 0 && m_Marks[m_Marks.Count - 1] != null ? m_Marks[m_Marks.Count - 1].transform : null;
+        public GameObject Stump => m_Stump;
+        public Transform LogTransform => m_LogT;
 
         public bool IsBush => Kind.Value == Bush;
-        public int MaxAmount => Kind.Value == Tree ? Cfg.TreeAmount : Kind.Value == Boulder ? Cfg.StoneAmount : 1;
-        public string DisplayName => Kind.Value == Tree ? "Tree" : Kind.Value == Boulder ? "Stone" : "Berry Bush";
-        public Item Yield => Kind.Value == Tree ? Item.Wood : Kind.Value == Boulder ? Item.Stone : Item.Berry;
+        /// <summary>A tree or a fallen log: gives wood, has the X, chips and hit marks.</summary>
+        public bool IsWood => Kind.Value == Tree || Kind.Value == Log;
+        public static bool WoodKind(byte k) => k == Tree || k == Log;
+        public int MaxAmount => AmountOf(Kind.Value);
+        static int AmountOf(byte k) => k == Tree ? Cfg.TreeAmount : k == Log ? Mathf.Max(1, Cfg.TreeAmount / 2) : k == Boulder ? Cfg.StoneAmount : 1;
+        public string DisplayName => Kind.Value == Tree ? "Tree" : Kind.Value == Log ? "Fallen Log" : Kind.Value == Boulder ? "Stone" : "Berry Bush";
+        public Item Yield => IsWood ? Item.Wood : Kind.Value == Boulder ? Item.Stone : Item.Berry;
 
         public override void OnNetworkSpawn()
         {
@@ -100,6 +117,8 @@ namespace RockGame
                 return;
             }
             if (m_Visual.activeSelf != alive) m_Visual.SetActive(alive);
+            if (!alive) ClearHitMarks();
+            if (m_Stump != null && m_Stump.activeSelf == alive) m_Stump.SetActive(!alive);
             if (alive && Kind.Value == Boulder)
             {
                 float s = Mathf.Lerp(0.55f, 1f, Amount.Value / (float)MaxAmount);
@@ -128,10 +147,12 @@ namespace RockGame
                 RefreshState();
                 return;
             }
-            if (Kind.Value != Tree) { if (AiPsxArt.On) AiPsxArt.Apply(m_Visual.transform); return; }
+            if (!IsWood) { if (AiPsxArt.On) AiPsxArt.Apply(m_Visual.transform); return; }
             var old = m_Visual;
             old.SetActive(false);
             Destroy(old);
+            m_Marks.Clear(); // (they went with the old visual)
+            if (m_Stump != null) { Destroy(m_Stump); m_Stump = null; }
             BuildVisual();
             RefreshState();
             PlaceMarker();
@@ -155,31 +176,38 @@ namespace RockGame
                 m_Decal = null;
                 var needles = tr.Find("needles");
                 m_Pine = needles != null ? PineShapeOf(Seed.Value) : null;
-                m_BarkTris = needles != null ? BarkAround(needles, 0.3f, 2.3f) : null;
+                m_BarkTris = needles != null ? BarkAround(needles, 0.2f, MarkTop + 0.2f) : null;
                 m_BarkSpotFor = -1;
                 // the X (a chunky pixel-art one on PSX trees)
                 m_Marker = new GameObject("x").transform;
                 m_Marker.SetParent(tr, false);
                 if ((PsxArt.On || AiPsxArt.On) && trunk.GetComponent<MeshRenderer>() != null && !trunk.GetComponent<MeshRenderer>().enabled) PsxArt.PixelX(m_Marker);
-                else
-                {
-                    var xc = new Color(1f, 0.45f, 0.1f);
-                    Art.Box(m_Marker, xc, Vector3.zero, new Vector3(0.34f, 0.06f, 0.02f), new Vector3(0, 0, 45));
-                    Art.Box(m_Marker, xc, Vector3.zero, new Vector3(0.34f, 0.06f, 0.02f), new Vector3(0, 0, -45));
-                }
+                else GlowX(m_Marker);
+                // the stump it leaves when it's felled (hidden while the tree stands)
+                m_Stump = BuildStump(transform, Seed.Value, m_PsxTrunk != null || m_Pine == null ? Mathf.Clamp(trunkR, 0.2f, 1.2f) : TrunkR, m_Pine != null ? m_Pine.Bark : Bark, m_Pine != null && !PsxArt.On && !AiPsxArt.On);
+            }
+            else if (Kind.Value == Log)
+            {
+                BuildLog(tr);
+                m_BarkSpotFor = -1;
+                m_Marker = new GameObject("x").transform;
+                m_Marker.SetParent(tr, false);
+                if (PsxArt.On || AiPsxArt.On) PsxArt.PixelX(m_Marker);
+                else GlowX(m_Marker);
             }
             else if (Kind.Value == Boulder)
             {
                 var mesh = Art.MakeRock(Seed.Value, 0.28f);
                 Color c = Color.Lerp(Art.Stone, new Color(0.45f, 0.44f, 0.42f), r());
                 var stoneTint = ColorSlots.Use(ColorSlots.StoneNodes);
-                var main = Art.Part(tr, mesh, c, new Vector3(0, 0.6f, 0), new Vector3(1.6f, 1.2f, 1.4f), new Vector3(r() * 30, r() * 360, r() * 20), false, null, "rock");
+                const float S = BoulderSize; // (bigger than they were: they read as rocks across the meadow)
+                var main = Art.Part(tr, mesh, c, new Vector3(0, 0.6f * S, 0), new Vector3(1.6f, 1.2f, 1.4f) * S, new Vector3(r() * 30, r() * 360, r() * 20), false, null, "rock");
                 var mc = main.AddComponent<MeshCollider>();
                 mc.sharedMesh = mesh;
                 mc.convex = true;
                 m_SpotCollider = mc;
                 // (the little rock beside it is solid too - you used to be able to walk through it)
-                Art.Part(tr, Art.MakeRock(Seed.Value + 7, 0.3f), c * 0.9f, new Vector3(0.9f, 0.3f, 0.5f), Vector3.one * 0.6f, new Vector3(0, r() * 360, 0), true);
+                Art.Part(tr, Art.MakeRock(Seed.Value + 7, 0.3f), c * 0.9f, new Vector3(0.9f, 0.3f, 0.5f) * S, Vector3.one * 0.6f * S, new Vector3(0, r() * 360, 0), true);
                 stoneTint.Dispose();
                 // the sparkle star
                 m_Marker = new GameObject("star").transform;
@@ -200,8 +228,8 @@ namespace RockGame
                     // interaction only (you walk through bushes)
                     var sc = gameObject.AddComponent<SphereCollider>();
                     sc.isTrigger = true;
-                    sc.center = new Vector3(0, 0.5f, 0);
-                    sc.radius = 0.8f;
+                    sc.center = new Vector3(0, 0.5f * BushSize, 0);
+                    sc.radius = 0.8f * BushSize;
                 }
             }
             else
@@ -241,16 +269,17 @@ namespace RockGame
         }
 
         /// <summary>
-        /// Normal graphics' berry bush: a rounded clump of leafy blobs (faceted balls, darker underneath and lighter on
+        /// Normal graphics' berry bush: a rounded clump of leafy blobs (round balls, darker underneath and lighter on
         /// top, each a slightly different green) with clusters of berries sitting on them. One mesh, two draws (leaves,
         /// berries), swaying in the same gusts as the pines and the grass (more at the top, the outside fluttering).
-        /// About as big as the old bush.
+        /// Smooth-shaded (the light rolls round each blob; the flat bottoms keep their edge) and BushSize times as big
+        /// as the old bush.
         /// </summary>
         static void BuildBush(Transform tr, int seed, Color leaf)
         {
             var rng = new System.Random(seed * 31 + 7);
             float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
-            MeshKit.Ico80(out var icoV, out var icoF);
+            MeshKit.Ico320(out var icoV, out var icoF);
             var blobs = new List<(Vector3 c, float r, float squash)>();
             blobs.Add((new Vector3(0, 0.5f, 0), R(0.5f, 0.56f), 0.82f));
             int ring = 5 + rng.Next(2);
@@ -268,27 +297,30 @@ namespace RockGame
             var leaves = new MeshKit();
             foreach (var (c, r, squash) in blobs)
             {
-                // a lumpy ball, flat where it meets the ground, its own shade of green
+                // a gently lumpy ball, flat where it meets the ground, its own shade of green - coloured per corner (by
+                // which way that corner faces and how high it is), so the shading and the colour both run smoothly over it
                 Color.RGBToHSV(leaf, out float hue, out float sat, out float val);
                 var tint = Color.HSVToRGB(Mathf.Repeat(hue + R(-0.025f, 0.025f), 1f), sat * R(0.9f, 1.08f), val * R(0.88f, 1.12f));
                 var pts = new Vector3[icoV.Length];
+                var cols = new Color[icoV.Length];
+                var fl = new float[icoV.Length];
                 for (int i = 0; i < pts.Length; i++)
                 {
-                    var q = icoV[i] * r * R(0.9f, 1.1f);
+                    var q = icoV[i] * r * R(0.95f, 1.05f);
                     q.y *= squash;
                     q += c;
                     q.y = Mathf.Max(q.y, ground);
                     pts[i] = q;
+                    float ny = icoV[i].y;
+                    var col = tint * (Mathf.Lerp(0.62f, 1.12f, ny * 0.5f + 0.5f) * Mathf.Lerp(0.8f, 1.05f, Mathf.Clamp01(q.y / 0.9f)));
+                    col.a = 1f;
+                    cols[i] = col;
+                    fl[i] = ny < -0.5f ? 0f : 0.6f;
                 }
                 for (int i = 0; i < icoF.Length; i += 3)
                 {
-                    Vector3 a = pts[icoF[i]], b = pts[icoF[i + 1]], d = pts[icoF[i + 2]];
-                    var n = Vector3.Cross(b - a, d - a).normalized;
-                    float y = (a.y + b.y + d.y) / 3f;
-                    var col = tint * (Mathf.Lerp(0.62f, 1.12f, n.y * 0.5f + 0.5f) * Mathf.Lerp(0.8f, 1.05f, Mathf.Clamp01(y / 0.9f)));
-                    col.a = 1f;
-                    float fl = n.y < -0.5f ? 0f : 0.6f;
-                    leaves.Tri(a, b, d, col, col, col, Sway(a, fl), Sway(b, fl), Sway(d, fl));
+                    int ia = icoF[i], ib = icoF[i + 1], id = icoF[i + 2];
+                    leaves.Tri(pts[ia], pts[ib], pts[id], cols[ia], cols[ib], cols[id], Sway(pts[ia], fl[ia]), Sway(pts[ib], fl[ib]), Sway(pts[id], fl[id]));
                 }
             }
             // berries in little clusters on the outside of the blobs (not buried in the next one)
@@ -328,8 +360,16 @@ namespace RockGame
                     made++;
                 }
             }
+            // smooth-shaded (the flat bottoms stay a crisp edge), and a bit bigger than the old bush
+            leaves.SmoothNormals(70f);
+            berries.SmoothNormals(80f);
+            for (int i = 0; i < leaves.V.Count; i++) leaves.V[i] *= BushSize;
+            for (int i = 0; i < berries.V.Count; i++) berries.V[i] *= BushSize;
             MeshKit.Spawn(tr, "bush", new[] { WorldLook.BushLeaves, WorldLook.Berries }, true, leaves, berries);
         }
+
+        /// <summary>The Normal berry bush is this much bigger than the old one (about 2.2 m across, 1.4 m high).</summary>
+        public const float BushSize = 1.25f;
 
         /// <summary>One berry: a little faceted ball, shiny on top.</summary>
         static void Berry(MeshKit kit, Vector3 c, float r, Color col, Vector2 sway)
@@ -732,6 +772,444 @@ namespace RockGame
             }
         }
 
+        // =====================================================================
+        // The glowing X, stumps, fallen logs and the marks hits leave
+        // =====================================================================
+
+        static Material s_GlowMat, s_HaloMat;
+        static Mesh s_HaloMesh;
+        static bool s_GlowTried;
+        /// <summary>The X's colour (sRGB) and how bright it glows (over 1 is HDR: past the bloom threshold).</summary>
+        public static readonly Color XColour = new Color(1f, 0.42f, 0.08f);
+        public const float XGlow = 1.6f;
+
+        /// <summary>The X's glowing material (RockGame/Glow: unlit, HDR orange - as bright in the shade as in the sun, and
+        /// it blooms with post processing on). Null if the shader isn't there (the X is then a plain orange).</summary>
+        public static Material GlowMat
+        {
+            get
+            {
+                if (!s_GlowTried)
+                {
+                    s_GlowTried = true;
+                    var sh = Resources.Load<Shader>("World/Glow");
+                    if (sh != null && sh.isSupported)
+                    {
+                        s_GlowMat = new Material(sh) { name = "x glow" };
+                        s_GlowMat.SetColor("_Color", XColour);
+                        s_GlowMat.SetFloat("_Intensity", XGlow);
+                    }
+                    else Debug.LogWarning("[RockGame] World/Glow shader missing: the X won't glow");
+                    var sun = Resources.Load<Shader>("World/Sun");
+                    if (sun != null && sun.isSupported)
+                    {
+                        s_HaloMat = new Material(sun) { name = "x halo" };
+                        s_HaloMat.SetColor("_Tint", Color.white);
+                    }
+                }
+                return s_GlowMat;
+            }
+        }
+
+        /// <summary>The Normal X: two glowing bars and a soft orange halo round them on the bark (the halo shows as a glow
+        /// even with post processing off).</summary>
+        static void GlowX(Transform marker)
+        {
+            var glow = GlowMat;
+            foreach (float z in new[] { 45f, -45f })
+            {
+                var bar = Art.Box(marker, XColour, Vector3.zero, new Vector3(0.34f, 0.06f, 0.02f), new Vector3(0, 0, z), false, glow);
+                bar.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            }
+            if (s_HaloMat == null) return;
+            if (s_HaloMesh == null) s_HaloMesh = HaloMesh();
+            var h = new GameObject("x halo");
+            h.transform.SetParent(marker, false);
+            h.transform.localPosition = new Vector3(0, 0, 0.012f); // (behind the bars, in front of the bark)
+            h.AddComponent<MeshFilter>().sharedMesh = s_HaloMesh;
+            var mr = h.AddComponent<MeshRenderer>();
+            mr.sharedMaterial = s_HaloMat;
+            mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            mr.receiveShadows = false;
+        }
+
+        /// <summary>A soft round glow: bright orange in the middle fading out to nothing (vertex colours, linear; the Sun shader).</summary>
+        static Mesh HaloMesh()
+        {
+            const int N = 24;
+            float[] rad = { 0f, 0.1f, 0.19f, 0.3f };
+            float[] alpha = { 0.6f, 0.42f, 0.16f, 0f };
+            var v = new List<Vector3>();
+            var c = new List<Color>();
+            var t = new List<int>();
+            var lin = XColour.linear;
+            v.Add(Vector3.zero); c.Add(new Color(lin.r, lin.g, lin.b, alpha[0]));
+            for (int ring = 1; ring < rad.Length; ring++)
+                for (int k = 0; k < N; k++)
+                {
+                    float a = k * Mathf.PI * 2f / N;
+                    v.Add(new Vector3(Mathf.Cos(a), Mathf.Sin(a), 0) * rad[ring]);
+                    c.Add(new Color(lin.r, lin.g, lin.b, alpha[ring]));
+                }
+            int R(int ring, int k) => 1 + (ring - 1) * N + (k % N);
+            for (int k = 0; k < N; k++) { t.Add(0); t.Add(R(1, k + 1)); t.Add(R(1, k)); }
+            for (int ring = 1; ring + 1 < rad.Length; ring++)
+                for (int k = 0; k < N; k++)
+                {
+                    t.Add(R(ring, k)); t.Add(R(ring, k + 1)); t.Add(R(ring + 1, k + 1));
+                    t.Add(R(ring, k)); t.Add(R(ring + 1, k + 1)); t.Add(R(ring + 1, k));
+                }
+            var m = new Mesh { name = "x halo" };
+            m.SetVertices(v); m.SetColors(c); m.SetTriangles(t, 0);
+            m.RecalculateBounds();
+            return m;
+        }
+
+        /// <summary>Puts a triangle in the kit facing `outward` (whichever way round its corners were given).</summary>
+        static void TriOut(MeshKit k, Vector3 a, Vector3 b, Vector3 c, Color ca, Color cb, Color cc, Vector3 outward)
+        {
+            if (Vector3.Dot(Vector3.Cross(b - a, c - a), outward) < 0f) k.Tri(a, c, b, ca, cc, cb);
+            else k.Tri(a, b, c, ca, cb, cc);
+        }
+
+        static readonly Color k_CutPale = new Color(0.84f, 0.68f, 0.46f), k_CutRing = new Color(0.68f, 0.52f, 0.32f), k_CutHeart = new Color(0.58f, 0.42f, 0.25f);
+
+        /// <summary>
+        /// A felled tree's stump: a short, flared, ten-sided log (as thick as the trunk was) with a pale, slightly ragged
+        /// cut top showing its rings, and a few splinters sticking up where it broke. Solid. Hidden until the tree is felled
+        /// (it's shown while the tree grows back). painted: Normal graphics (the bark material; otherwise plain colours).
+        /// </summary>
+        static GameObject BuildStump(Transform parent, int seed, float r, Color bark, bool painted)
+        {
+            var rng = new System.Random(seed ^ 0x5f3759d);
+            float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
+            var go = new GameObject("stump");
+            go.transform.SetParent(parent, false);
+            go.transform.localRotation = Quaternion.Euler(0, R(0, 360), 0);
+            const int S = TrunkSides;
+            float h = R(0.42f, 0.6f), spin = R(0, Mathf.PI * 2f);
+            float[] ys = { -0.3f, 0f, 0.2f, h };
+            float[] rs = { r * 1.2f, r * 1.16f, r * 1.04f, r };
+            var rimUp = new float[S];
+            for (int s = 0; s < S; s++) rimUp[s] = R(-0.035f, 0.045f);
+            Vector3 P(int i, int s)
+            {
+                float a = spin + (s % S) * Mathf.PI * 2f / S;
+                return new Vector3(Mathf.Cos(a) * rs[i], ys[i] + (i == ys.Length - 1 ? rimUp[s % S] : 0f), Mathf.Sin(a) * rs[i]);
+            }
+            Color C(int i, int s)
+            {
+                var c = bark * (Mathf.Lerp(0.78f, 1f, Mathf.Clamp01(ys[i] / 0.6f)) * (0.9f + 0.1f * (((s % S) * 7 + i * 3) % 3)));
+                c.a = 1f;
+                return c;
+            }
+            var side = new MeshKit();
+            var cut = new MeshKit();
+            for (int i = 0; i + 1 < ys.Length; i++)
+                for (int s = 0; s < S; s++)
+                {
+                    Vector3 a = P(i, s), b = P(i, s + 1), cc = P(i + 1, s + 1), d = P(i + 1, s);
+                    var o = (a + b + cc + d) * 0.25f; o.y = 0f;
+                    TriOut(side, a, d, b, C(i, s), C(i + 1, s), C(i, s + 1), o);
+                    TriOut(side, b, d, cc, C(i, s + 1), C(i + 1, s), C(i + 1, s + 1), o);
+                }
+            // the cut top: the bark's edge, pale sapwood, a darker ring, the heart
+            int top = ys.Length - 1;
+            var centre = new Vector3(0, h - 0.01f, 0);
+            var edge = bark * 0.8f; edge.a = 1f;
+            for (int s = 0; s < S; s++)
+            {
+                Vector3 r0 = P(top, s), r1 = P(top, s + 1);
+                Vector3 e0 = Vector3.Lerp(centre, r0, 0.9f), e1 = Vector3.Lerp(centre, r1, 0.9f);
+                Vector3 m0 = Vector3.Lerp(centre, r0, 0.55f), m1 = Vector3.Lerp(centre, r1, 0.55f);
+                Vector3 i0 = Vector3.Lerp(centre, r0, 0.2f), i1 = Vector3.Lerp(centre, r1, 0.2f);
+                TriOut(cut, r0, r1, e1, edge, edge, edge, Vector3.up); TriOut(cut, r0, e1, e0, edge, edge, edge, Vector3.up);
+                TriOut(cut, e0, e1, m1, k_CutPale, k_CutPale, k_CutRing, Vector3.up); TriOut(cut, e0, m1, m0, k_CutPale, k_CutRing, k_CutRing, Vector3.up);
+                TriOut(cut, m0, m1, i1, k_CutRing, k_CutRing, k_CutPale, Vector3.up); TriOut(cut, m0, i1, i0, k_CutRing, k_CutPale, k_CutPale, Vector3.up);
+                TriOut(cut, i0, i1, centre, k_CutPale, k_CutPale, k_CutHeart, Vector3.up);
+            }
+            // a few splinters standing up on one side, where it broke
+            int at = rng.Next(S);
+            for (int k = 0; k < 3; k++)
+            {
+                int s = (at + k) % S;
+                var b0 = Vector3.Lerp(P(top, s), P(top, s + 1), R(0.1f, 0.4f));
+                var b1 = Vector3.Lerp(P(top, s), P(top, s + 1), R(0.6f, 0.9f));
+                var mid = (b0 + b1) * 0.5f;
+                var tip = Vector3.Lerp(mid, centre, R(0.15f, 0.3f)) + Vector3.up * R(0.1f, 0.24f);
+                var inner = Vector3.Lerp(mid, centre, 0.25f);
+                var o = mid; o.y = 0f;
+                TriOut(side, b0, b1, tip, C(top, s), C(top, s), C(top, s), o);
+                TriOut(cut, b0, inner, tip, k_CutRing, k_CutRing, k_CutPale, -o + Vector3.Cross(Vector3.up, o));
+                TriOut(cut, inner, b1, tip, k_CutRing, k_CutRing, k_CutPale, -o - Vector3.Cross(Vector3.up, o));
+            }
+            side.SmoothNormals(60f);
+            Material[] mats;
+            if (painted && WorldLook.Bark != null) mats = new[] { WorldLook.Bark, WorldLook.Bark };
+            else
+            {
+                Material bm, cm;
+                using (ColorSlots.Use(ColorSlots.TreeTrunks)) bm = Art.Mat(bark);
+                cm = Art.Mat(k_CutPale);
+                mats = new[] { bm, cm };
+            }
+            var mgo = MeshKit.Spawn(go.transform, "stump mesh", mats, true, side, cut);
+            var mc = mgo.AddComponent<MeshCollider>();
+            mc.sharedMesh = mgo.GetComponent<MeshFilter>().sharedMesh;
+            mc.convex = true;
+            if (AiPsxArt.On) AiPsxArt.Apply(go.transform);
+            go.SetActive(false);
+            return go;
+        }
+
+        /// <summary>
+        /// A fallen log (Normal graphics: the painted bark, otherwise plain colours): a twelve-sided, smooth-shaded log 3.6
+        /// to 5.2 m long, a little thinner at one end, mossy on top, with pale cut ends showing their rings, lying along
+        /// the ground (tipped to the slope under its two ends). Solid (a convex collider round it). Its bark triangles are
+        /// kept (in the visual's space) for the X and the hit marks, which sit on the bark you see.
+        /// </summary>
+        void BuildLog(Transform tr)
+        {
+            var rng = new System.Random(Seed.Value * 13 + 3);
+            float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
+            float len = R(3.6f, 5.2f), rad = R(0.36f, 0.47f);
+            m_LogLen = len; m_LogR = rad;
+            // lying along the ground: tipped to the slope between its two ends
+            var pos = transform.position;
+            var right = transform.right;
+            float yc = MapBuilder.Height(pos.x, pos.z);
+            var pl = pos - right * len * 0.42f;
+            var pr = pos + right * len * 0.42f;
+            float yl = MapBuilder.Height(pl.x, pl.z), yr = MapBuilder.Height(pr.x, pr.z);
+            float tilt = Mathf.Atan2(yr - yl, len * 0.84f) * Mathf.Rad2Deg;
+            var lt = new GameObject("log").transform;
+            lt.SetParent(tr, false);
+            // (the node itself stands a little under the ground: SpawnNode)
+            lt.localPosition = new Vector3(0, (yl + yr) * 0.5f - pos.y + rad * 0.82f, 0);
+            lt.localRotation = Quaternion.Euler(0, 0, tilt);
+            m_LogT = lt;
+            const int S = 12, Segs = 6;
+            var barkC = Color.Lerp(Art.DarkWood, Art.Wood, R(0.1f, 0.3f)) * R(0.9f, 1.04f);
+            barkC.a = 1f;
+            Bark = barkC;
+            Leaf = Art.Leaves;
+            float spin = R(0, Mathf.PI * 2f);
+            var radii = new float[Segs + 1];
+            for (int i = 0; i <= Segs; i++) radii[i] = rad * Mathf.Lerp(1f, 0.84f, i / (float)Segs) * R(0.97f, 1.03f);
+            Vector3 P(int i, int s)
+            {
+                float a = spin + (s % S) * Mathf.PI * 2f / S;
+                return new Vector3(-len * 0.5f + len * i / Segs, Mathf.Cos(a) * radii[i], Mathf.Sin(a) * radii[i]);
+            }
+            var moss = new Color(0.33f, 0.45f, 0.2f);
+            Color C(int i, int s)
+            {
+                float a = spin + (s % S) * Mathf.PI * 2f / S, up = Mathf.Cos(a);
+                var c = barkC * ((0.9f + 0.1f * (((s % S) * 7 + i * 3) % 3)) * Mathf.Lerp(0.78f, 1.05f, up * 0.5f + 0.5f));
+                if (up > 0.5f) c = Color.Lerp(c, moss, 0.3f * (up - 0.5f) / 0.5f);
+                c.a = 1f;
+                return c;
+            }
+            var bark = new MeshKit();
+            var cut = new MeshKit();
+            for (int i = 0; i < Segs; i++)
+                for (int s = 0; s < S; s++)
+                {
+                    Vector3 a = P(i, s), b = P(i, s + 1), cc = P(i + 1, s + 1), d = P(i + 1, s);
+                    var o = (a + b + cc + d) * 0.25f; o.x = 0f;
+                    TriOut(bark, a, d, b, C(i, s), C(i + 1, s), C(i, s + 1), o);
+                    TriOut(bark, b, d, cc, C(i, s + 1), C(i + 1, s), C(i + 1, s + 1), o);
+                }
+            // the cut ends: the bark's edge, pale sapwood, a darker ring and the heart
+            var edge = barkC * 0.8f; edge.a = 1f;
+            foreach (int e in new[] { 0, Segs })
+            {
+                var outward = e == 0 ? Vector3.left : Vector3.right;
+                var centre = new Vector3(P(e, 0).x, 0, 0);
+                for (int s = 0; s < S; s++)
+                {
+                    Vector3 r0 = P(e, s), r1 = P(e, s + 1);
+                    Vector3 e0 = Vector3.Lerp(centre, r0, 0.88f), e1 = Vector3.Lerp(centre, r1, 0.88f);
+                    Vector3 m0 = Vector3.Lerp(centre, r0, 0.55f), m1 = Vector3.Lerp(centre, r1, 0.55f);
+                    Vector3 i0 = Vector3.Lerp(centre, r0, 0.2f), i1 = Vector3.Lerp(centre, r1, 0.2f);
+                    TriOut(cut, r0, r1, e1, edge, edge, edge, outward); TriOut(cut, r0, e1, e0, edge, edge, edge, outward);
+                    TriOut(cut, e0, e1, m1, k_CutPale, k_CutPale, k_CutRing, outward); TriOut(cut, e0, m1, m0, k_CutPale, k_CutRing, k_CutRing, outward);
+                    TriOut(cut, m0, m1, i1, k_CutRing, k_CutRing, k_CutPale, outward); TriOut(cut, m0, i1, i0, k_CutRing, k_CutPale, k_CutPale, outward);
+                    TriOut(cut, i0, i1, centre, k_CutPale, k_CutPale, k_CutHeart, outward);
+                }
+            }
+            bark.SmoothNormals(50f);
+            bool painted = !PsxArt.On && !AiPsxArt.On && WorldLook.Bark != null;
+            Material[] mats;
+            if (painted) mats = new[] { WorldLook.Bark, WorldLook.Bark };
+            else
+            {
+                Material bm, cm;
+                using (ColorSlots.Use(ColorSlots.TreeTrunks)) bm = Art.Mat(barkC);
+                cm = Art.Mat(k_CutPale);
+                mats = new[] { bm, cm };
+            }
+            var go = MeshKit.Spawn(lt, "log mesh", mats, true, bark, cut);
+            var mc = go.AddComponent<MeshCollider>();
+            mc.sharedMesh = go.GetComponent<MeshFilter>().sharedMesh;
+            mc.convex = true;
+            m_SpotCollider = mc;
+            // the bark, in the visual's space (the X and the hit marks go on it)
+            var m = Matrix4x4.TRS(lt.localPosition, lt.localRotation, Vector3.one);
+            m_BarkTris = new List<Vector3>(bark.T.Count);
+            foreach (int k in bark.T) m_BarkTris.Add(m.MultiplyPoint3x4(bark.V[k]));
+        }
+
+        /// <summary>Fallen logs: weak spot i, in the visual's space - four along the log, each on the top or one of the two
+        /// upper sides (LogSpotSide round from the top: never underneath, where it faces the ground).</summary>
+        void LogSpot(int i, out Vector3 centre, out Vector3 dir, out Vector3 along)
+        {
+            int a = i % 4, b = (i / 4) % 3;
+            float t = (a - 1.5f) / 1.5f * m_LogLen * 0.3f;
+            float th = (b - 1) * LogSpotSide * Mathf.Deg2Rad;
+            var q = m_LogT.localRotation;
+            centre = m_LogT.localPosition + q * new Vector3(t, 0, 0);
+            dir = q * new Vector3(0, Mathf.Cos(th), Mathf.Sin(th));
+            along = q * Vector3.right;
+        }
+
+        /// <summary>How far round from the top of a log its side weak spots are (degrees).</summary>
+        public const float LogSpotSide = 62f;
+
+        /// <summary>A new weak spot on a log: one facing the hitter (on their side of it, or the top), never the same one.</summary>
+        byte PickLogSpot(Vector3 hitterPos)
+        {
+            var vt = m_Visual.transform;
+            var eye = hitterPos + Vector3.up * 1.5f;
+            var face = new float[SpotCount];
+            var dist = new float[SpotCount];
+            float most = -1f;
+            for (int i = 0; i < SpotCount; i++)
+            {
+                LogSpot(i, out var c, out var d, out _);
+                var wp = vt.TransformPoint(c + d * m_LogR);
+                var to = eye - wp;
+                dist[i] = to.magnitude;
+                face[i] = Vector3.Dot(vt.TransformDirection(d).normalized, to / Mathf.Max(0.001f, dist[i]));
+                if (i != Spot.Value) most = Mathf.Max(most, face[i]);
+            }
+            // one of the spots facing them well (the best there are, on a log tipped away from them), nearer their end
+            float enough = Mathf.Min(0.3f, most - 0.05f);
+            int best = 0;
+            float bestScore = float.MinValue;
+            for (int i = 0; i < SpotCount; i++)
+            {
+                if (i == Spot.Value) continue;
+                float score = face[i] + Random.Range(0f, 0.5f) - dist[i] * 0.05f - (face[i] < enough ? 3f : 0f);
+                if (score > bestScore) { bestScore = score; best = i; }
+            }
+            return (byte)best;
+        }
+
+        /// <summary>(tests) the spot a hit from `hitterPos` would move the weak spot to.</summary>
+        public byte TestPickSpot(Vector3 hitterPos) => PickSpotFacing(hitterPos);
+
+        /// <summary>Trees: the bark is kept up to this high for the hit marks (and the X).</summary>
+        public const float MarkTop = 3f;
+        const int MaxMarks = 10;
+        /// <summary>Half the size of a hit mark (it's kept clear of the bark over this much).</summary>
+        public const float MarkHalf = 0.11f;
+        static readonly Color k_MarkDark = new Color(0.17f, 0.1f, 0.05f), k_MarkPale = new Color(0.86f, 0.71f, 0.48f);
+
+        /// <summary>
+        /// A hit at `point` leaves a mark on the bark you see - a dark gash with pale wood showing in it - sitting on the
+        /// bark (in front of it, never inside): found the same way as the X (rays onto the trunk's / log's own triangles,
+        /// as far out as the bark comes anywhere behind the mark). The point a hit reports is on the collider, which is
+        /// round, round a ten-sided trunk, so anything put there was partly inside the bark (or floating off it). Children
+        /// of the visual (they shake with it); the oldest go past ten; all gone when it's felled. Only looks (every peer
+        /// that sees the hit).
+        /// </summary>
+        public bool AddHitMark(Vector3 point)
+        {
+            if (!IsWood || Amount.Value <= 0 || m_Visual == null || !m_Visual.activeInHierarchy) return false;
+            var vt = m_Visual.transform;
+            var local = vt.InverseTransformPoint(point);
+            Vector3 pos = default, n = default, up = Vector3.up;
+            bool ok = false;
+            if (Kind.Value == Log && m_LogT != null && m_BarkTris != null)
+            {
+                var q = m_LogT.localRotation;
+                var inLog = Quaternion.Inverse(q) * (local - m_LogT.localPosition);
+                float x = Mathf.Clamp(inLog.x, -m_LogLen * 0.5f + 0.2f, m_LogLen * 0.5f - 0.2f);
+                var radial = new Vector3(0, inLog.y, inLog.z);
+                if (radial.sqrMagnitude < 1e-4f) radial = Vector3.up;
+                n = q * radial.normalized;
+                up = q * Vector3.right;
+                ok = BarkSpot(m_LogT.localPosition + q * new Vector3(x, 0, 0), n, up, MarkHalf, out pos);
+            }
+            else if (m_BarkTris != null && m_Pine != null)
+            {
+                var d = new Vector3(local.x, 0, local.z);
+                if (d.sqrMagnitude < 1e-4f) return false;
+                n = d.normalized;
+                ok = BarkSpot(new Vector3(0, Mathf.Clamp(local.y, 0.35f, MarkTop - 0.15f), 0), n, Vector3.up, MarkHalf, out pos);
+            }
+            else if (m_PsxTrunk != null)
+            {
+                var wd = point - transform.position;
+                wd.y = 0f;
+                if (wd.sqrMagnitude > 1e-4f && m_PsxTrunk.Hit(point.y, wd.normalized, out var wp, out var wn))
+                {
+                    pos = vt.InverseTransformPoint(wp);
+                    n = vt.InverseTransformDirection(wn);
+                    ok = true;
+                }
+            }
+            if (!ok && m_SpotCollider != null)
+            {
+                // (any other tree: on its collider, towards its middle)
+                var c = m_SpotCollider.bounds.center;
+                var wd = point - new Vector3(c.x, point.y, c.z);
+                if (wd.sqrMagnitude > 1e-4f && m_SpotCollider.Raycast(new Ray(point + wd.normalized * 2f, -wd.normalized), out var hit, 4f))
+                {
+                    pos = vt.InverseTransformPoint(hit.point);
+                    n = vt.InverseTransformDirection(hit.normal);
+                    ok = true;
+                }
+            }
+            if (!ok || n.sqrMagnitude < 1e-6f) return false;
+            n.Normalize();
+            if (Mathf.Abs(Vector3.Dot(n, up)) > 0.95f) up = Vector3.Cross(n, Vector3.right);
+            var g = new GameObject("hit mark");
+            g.transform.SetParent(vt, false);
+            g.transform.localPosition = pos + n * 0.012f; // (its back 9 mm off the bark: BarkSpot's rays are 5.5 cm apart, and between them a corner of the bark can stand out that much)
+            g.transform.localRotation = Quaternion.LookRotation(-n, up) * Quaternion.Euler(0, 0, Random.Range(-35f, 35f));
+            float w = Random.Range(0.14f, 0.19f);
+            var dark = Art.Box(g.transform, k_MarkDark, Vector3.zero, new Vector3(w, w * 0.3f, 0.006f));
+            var pale = Art.Box(g.transform, k_MarkPale, new Vector3(0, w * 0.03f, -0.0042f), new Vector3(w * 0.7f, w * 0.1f, 0.002f));
+            dark.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            pale.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            m_Marks.Add(g);
+            while (m_Marks.Count > MaxMarks) { if (m_Marks[0] != null) Destroy(m_Marks[0]); m_Marks.RemoveAt(0); }
+            return true;
+        }
+
+        void ClearHitMarks()
+        {
+            foreach (var g in m_Marks) if (g != null) Destroy(g);
+            m_Marks.Clear();
+        }
+
+        /// <summary>The tree or log whose collider a hit at `pos` is on (within `range`), or null.</summary>
+        public static ResourceNode WoodAt(Vector3 pos, float range = 0.6f)
+        {
+            ResourceNode best = null;
+            float bd = range;
+            foreach (var n in All)
+            {
+                if (n == null || !n.IsWood || n.Amount.Value <= 0 || n.m_SpotCollider == null || !n.m_SpotCollider.enabled || !n.m_SpotCollider.gameObject.activeInHierarchy) continue;
+                if ((n.transform.position - pos).sqrMagnitude > 100f) continue;
+                float d = Vector3.Distance(n.m_SpotCollider.ClosestPoint(pos), pos);
+                if (d < bd) { bd = d; best = n; }
+            }
+            return best;
+        }
+
         /// <summary>The tree a hit at `pos` landed on (for the chip colours), or null.</summary>
         public static ResourceNode TreeNear(Vector3 pos, float range = 4f)
         {
@@ -798,8 +1276,11 @@ namespace RockGame
         {
             float a = i * (360f / SpotCount) * Mathf.Deg2Rad;
             dir = new Vector3(Mathf.Cos(a), 0, Mathf.Sin(a));
-            y = kind == Tree ? 0.8f + (i % 3) * 0.35f : 0.45f + (i % 3) * 0.2f;
+            y = kind == Tree ? 0.8f + (i % 3) * 0.35f : (0.45f + (i % 3) * 0.2f) * BoulderSize;
         }
+
+        /// <summary>How much bigger the stone nodes are than they first were (1.6 x 1.2 x 1.4 m of rock then).</summary>
+        public const float BoulderSize = 1.4f;
 
         /// <summary>The bark triangles (submesh 1 of a pine's mesh) between heights y0 and y1, in the visual's space.</summary>
         static List<Vector3> BarkAround(Transform needles, float y0, float y1)
@@ -849,21 +1330,27 @@ namespace RockGame
         /// <summary>Normal pines: where the X goes on the bark you see, in the visual's space - facing straight out along
         /// dir, as far out as the bark comes anywhere behind the X (the trunk has ten flat sides: in front of a corner the
         /// bark stands out past the round collider, and a card on the collider was partly inside it).</summary>
-        bool BarkSpot(Vector3 dir, float y, out Vector3 pos)
+        bool BarkSpot(Vector3 dir, float y, out Vector3 pos) => BarkSpot(new Vector3(0, y, 0), dir, Vector3.up, XHalf, out pos);
+
+        /// <summary>The same for any axis: from `centre` (on the trunk's / log's axis) out along `dir`, the spot on the bark
+        /// that a card `half` across (its sides along `up` and across it) sits in front of without touching.</summary>
+        bool BarkSpot(Vector3 centre, Vector3 dir, Vector3 up, float half, out Vector3 pos)
         {
             pos = default;
+            if (m_BarkTris == null) return false;
             const float Out = 3f;
-            var side = Vector3.Cross(Vector3.up, dir).normalized;
+            var side = Vector3.Cross(up, dir).normalized;
+            up = Vector3.Cross(dir, side).normalized;
             float depth = -1f;
             for (int a = -2; a <= 2; a++)
             for (int b = -2; b <= 2; b++)
             {
-                var from = new Vector3(0, y, 0) + dir * Out + side * (a * XHalf * 0.5f) + Vector3.up * (b * XHalf * 0.5f);
+                var from = centre + dir * Out + side * (a * half * 0.5f) + up * (b * half * 0.5f);
                 float t = BarkHit(m_BarkTris, from, dir);
                 if (t >= 0f) depth = Mathf.Max(depth, Out - t);
             }
             if (depth <= 0f) return false;
-            pos = new Vector3(0, y, 0) + dir * depth;
+            pos = centre + dir * depth;
             return true;
         }
 
@@ -876,6 +1363,23 @@ namespace RockGame
             pos = normal = default;
             onVisual = false;
             if (IsBush || m_SpotCollider == null || Amount.Value <= 0 || Spot.Value == NoSpot) return false;
+            // fallen logs: on the bark you see, on the top or the sides (never underneath)
+            if (Kind.Value == Log)
+            {
+                if (m_LogT == null || m_BarkTris == null) return false;
+                var vt = m_Visual.transform;
+                if (m_BarkSpotFor != Spot.Value)
+                {
+                    LogSpot(Spot.Value, out var lc, out var ld, out var la);
+                    m_BarkSpotOk = BarkSpot(lc, ld, la, XHalf, out m_BarkSpotAt);
+                    m_BarkSpotFor = Spot.Value;
+                }
+                if (!m_BarkSpotOk) return false;
+                LogSpot(Spot.Value, out _, out var nd, out _);
+                pos = vt.TransformPoint(m_BarkSpotAt);
+                normal = vt.TransformDirection(nd).normalized;
+                return true;
+            }
             SpotDir(Kind.Value, Spot.Value, out var dir, out var y);
             var worldDir = transform.rotation * dir;
             // PSX trees: right on the trunk model's surface (it can be thinner, thicker or off to one side of the cylinder)
@@ -933,7 +1437,7 @@ namespace RockGame
             if (!TryGetSpot(out var p, out var n, out bool onVisual)) { m_Marker.gameObject.SetActive(false); return; }
             m_Marker.gameObject.SetActive(true);
             m_Marker.position = p + n * (onVisual ? 0.03f : m_BarkTris != null ? 0.025f : 0.015f + m_MarkerOut);
-            m_Marker.rotation = Quaternion.LookRotation(-n);
+            m_Marker.rotation = Quaternion.LookRotation(-n, Mathf.Abs(n.y) > 0.9f ? transform.forward : Vector3.up);
             // PSX trunks: the X is printed onto the bark (a decal following the trunk), not a card in front of it
             if (onVisual && m_PsxTrunk != null)
             {
@@ -1004,7 +1508,7 @@ namespace RockGame
             Kind.Value = kind;
             Seed.Value = seed;
             Spot.Value = NoSpot;
-            Amount.Value = kind == Tree ? Cfg.TreeAmount : kind == Boulder ? Cfg.StoneAmount : 1;
+            Amount.Value = AmountOf(kind);
         }
 
         /// <summary>Dev setting: full again right now.</summary>
@@ -1038,6 +1542,7 @@ namespace RockGame
         /// <summary>New weak spot on the side facing the player (like Rust), but never the same one.</summary>
         byte PickSpotFacing(Vector3 hitterPos)
         {
+            if (Kind.Value == Log && m_LogT != null) return PickLogSpot(hitterPos);
             var toHitter = Quaternion.Inverse(transform.rotation) * (hitterPos - transform.position);
             toHitter.y = 0;
             float baseAng = Mathf.Atan2(toHitter.z, toHitter.x) * Mathf.Rad2Deg;
