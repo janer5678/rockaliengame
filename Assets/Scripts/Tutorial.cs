@@ -320,7 +320,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "crouch", Title = "Crouch",
-                    Body = $"Hold {K(Bind.Crouch)} to crouch. You're small and your steps are silent. Sneaky!",
+                    Body = $"Hold {K(Bind.Crouch)} to crouch. Enemies hear your footsteps from far off - but crouch-walking is silent. Sneaky!",
                     Goal = "Crouch for 1 second", Progress = () => $"{Mathf.Min(1f, s_CrouchTime):0.0} / 1 s",
                     Hint = $"Keep {Binds.Name(Bind.Crouch)} held down.",
                     Done = () => s_CrouchTime >= 1f,
@@ -329,7 +329,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "slide", Title = "Slide",
-                    Body = $"While running, press {K(Bind.Slide)} to slide. Wheee! Press it mid-jump and you land in a slide; push the other way to stop in a crouch. ({K(Bind.Crouch)} only crouches.)",
+                    Body = $"While running, press {K(Bind.Slide)} to slide. Wheee! Press it mid-jump and you land in a slide; push the other way or press {K(Bind.Crouch)} to drop straight into a crouch. ({K(Bind.Crouch)} only crouches.)",
                     Goal = "Run, then slide",
                     Hint = $"Run first ({Binds.Name(Bind.Sprint)} + {Binds.Name(Bind.Forward)}), then tap {Binds.Name(Bind.Slide)}.",
                     Done = () => s_Slid,
@@ -462,7 +462,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "throw", Title = "Throw it",
-                    Body = $"Hold the spear. Hold {K(Bind.Aim)}, click {K(Bind.Attack)} to throw - it hits hard! {K(Bind.Interact)} picks it up.",
+                    Body = $"Hold the spear. Hold {K(Bind.Aim)} to wind it up, click {K(Bind.Attack)} to throw - it hits hard! (Click early and it throws once it's wound up.) {K(Bind.Interact)} picks it up.",
                     Goal = "Throw the spear and pick it up",
                     Progress = () => SpearThrows - s_Spear0 > 0 ? (Count(Item.Spear) > 0 ? "got it ✔" : "thrown ✔ - pick it up") : "",
                     Hint = "Walk to the spear, look at it and press " + Binds.Name(Bind.Interact) + ".",

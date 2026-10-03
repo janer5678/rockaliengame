@@ -315,6 +315,8 @@ namespace RockGame
         [Tune("Player")] public static float SlideMaxSpeed = 11f;     // no slide goes faster than this (m/s)
         [Tune("Player")] public static float SlideSlopeAccel = 9f;    // how hard a slope pulls you along (m/s² on a 45° slope)
         [Tune("Player")] public static float SlideUphillMul = 1.8f;   // going up a slope slows you this many times harder
+        /// <summary>How far away (m) other players' footsteps can be heard walking / sprinting (crouch-walking is silent).</summary>
+        [Tune("Player")] public static float EnemyStepRange = 55f, EnemyStepRangeSprint = 75f;
         /// <summary>Standing in your own base heals you slowly (HP a second).</summary>
         [Tune("Player")] public static float BaseRegen = 2f;
         /// <summary>While your team's ball is in your machine's socket (Builder: planted for your team), everything you gather gives this much more.</summary>
@@ -347,6 +349,10 @@ namespace RockGame
         public static float BowDamage(float power) { float d = BowDrawFromPower(power); return Mathf.Lerp(BowMinDamage, ArrowPlayerDamage, d * d); }
         [Tune("Crossbow")] public static float CrossbowDamage = 55f, CrossbowSpeed = 58f, CrossbowGravity = 11f, CrossbowReload = 1.6f, CrossbowZoomFov = 45f;
         [Tune("Spear")] public static float SpearGravity = 9.81f;
+        /// <summary>Spear throw timing (s): the shortest wind-up before it can be let go, how long a click is remembered
+        /// (pressed during the wind-up or the recovery it throws as soon as it can), the arm coming through before the spear
+        /// leaves the hand (it can't be called off once started), the recovery after a throw and lowering it again.</summary>
+        [Tune("Spear")] public static float SpearMinWindup = 0.3f, SpearInputBuffer = 0.4f, SpearReleaseTime = 0.1f, SpearThrowRecovery = 0.55f, SpearLowerTime = 0.2f;
 
         // ---------- Battering ram (hand held) ----------
         // Hold LMB to wind up, then it slams whatever enemy piece you look at:
@@ -380,6 +386,9 @@ namespace RockGame
         [Tune("Vehicles")] public static float CarSpeed = 17f, CarReverseSpeed = 6f, CarAccel = 9f, CarTurn = 95f, CarHitDamage = 30f, CarKnockback = 11f;
         [Tune("Vehicles")] public static float HorseWalk = 4.5f, HorseSprint = 11f, HorseJump = 8.5f, HorseHp = 60f;
         [Tune("Vehicles")] public static int HorsesPerSide = 3;
+        /// <summary>The chance (0..1) each wild horse is a Wild Unicorn instead: white with a horn, a little faster and tougher,
+        /// and it leaves a rainbow behind it at a gallop.</summary>
+        [Tune("Vehicles")] public static float UnicornChance = 0.05f, UnicornSpeedMul = 1.15f, UnicornHpMul = 1.35f;
         /// <summary>HP a horse gets back from one berry (LMB on it holding berries).</summary>
         [Tune("Vehicles")] public static float HorseBerryHeal = 20f;
 

@@ -332,8 +332,66 @@ namespace RockGame
             m_TreePsx = GameSettings.PsxGraphics || GameSettings.AiPsx;
             m_Tree = new GameObject("treeCamo");
             m_Tree.transform.SetParent(transform, false);
-            ResourceNode.BuildTreeVisual(m_Tree.transform, (int)(NetworkObjectId * 7919 % 100000), false);
+            // the tree itself sits on a pivot at its foot, which hops it about while you walk (TreeHop)
+            m_TreeHop = new GameObject("hop").transform;
+            m_TreeHop.SetParent(m_Tree.transform, false);
+            ResourceNode.BuildTreeVisual(m_TreeHop, (int)(NetworkObjectId * 7919 % 100000), false);
             m_Tree.transform.rotation = TreeCamoRotation;
+            m_TreeLastPos = transform.position;
+            m_TreeMove = m_TreePhase = 0f;
+        }
+
+        Transform m_TreeHop;
+        Vector3 m_TreeLastPos;
+        float m_TreeMove, m_TreePhase, m_TreeSquash;
+        /// <summary>How high the camo tree is hopping right now (m; tests).</summary>
+        public float TreeHopHeight => m_TreeHop ? m_TreeHop.localPosition.y : 0f;
+
+        /// <summary>
+        /// Tree camo on the move: the tree bounces along in little hops - up off the ground stretched tall, a squash as it
+        /// lands, leaning into the way it's going and wobbling - and settles straight back to a still tree when you stop.
+        /// Driven by how fast this player really moves, so every screen sees it.
+        /// </summary>
+        void TreeHop(float dt)
+        {
+            if (!m_TreeHop || dt <= 0f) return;
+            var p = transform.position;
+            var d = p - m_TreeLastPos;
+            m_TreeLastPos = p;
+            d.y = 0f;
+            float speed = d.magnitude / dt;
+            if (speed > 30f) speed = 0f; // teleport
+            m_TreeMove = Mathf.MoveTowards(m_TreeMove, Mathf.Clamp01((speed - 0.4f) / 2.5f), dt * 5f);
+            if (m_TreeMove <= 0.001f && m_TreePhase == 0f)
+            {
+                // settle back to a still tree
+                float k = Mathf.Clamp01(dt * 14f);
+                m_TreeSquash = Mathf.Lerp(m_TreeSquash, 0f, k);
+                m_TreeHop.localPosition = Vector3.Lerp(m_TreeHop.localPosition, Vector3.zero, k);
+                m_TreeHop.localRotation = Quaternion.Slerp(m_TreeHop.localRotation, Quaternion.identity, k);
+                m_TreeHop.localScale = Vector3.Lerp(m_TreeHop.localScale, Vector3.one, k);
+                return;
+            }
+            // a hop every ~1.3 m (quicker when running); finish the hop we're in before settling
+            float before = m_TreePhase;
+            m_TreePhase += dt * Mathf.Max(speed, 2.5f) / 1.3f * Mathf.PI;
+            if (m_TreeMove <= 0.001f && Mathf.Floor(before / Mathf.PI) != Mathf.Floor(m_TreePhase / Mathf.PI)) m_TreePhase = 0f;
+            float arc = Mathf.Abs(Mathf.Sin(m_TreePhase));
+            float hop = arc * (0.28f + 0.1f * Mathf.Clamp01(speed / 7f)) * Mathf.Max(m_TreeMove, m_TreePhase > 0f ? 0.4f : 0f);
+            if (m_TreePhase == 0f) hop = 0f;
+            // landing squash: squashes as it touches down, springs back up tall as it takes off
+            float target = arc < 0.25f ? -0.16f * (1f - arc / 0.25f) : 0.07f * arc;
+            m_TreeSquash = Mathf.Lerp(m_TreeSquash, target * Mathf.Max(m_TreeMove, 0.3f), dt * 18f);
+            float sy = 1f + m_TreeSquash, sxz = 1f / Mathf.Sqrt(Mathf.Max(0.5f, sy));
+            // lean into the way it's going (in the tree's own space: it never turns) and wobble from side to side
+            var lean = Vector3.zero;
+            if (d.sqrMagnitude > 1e-8f) lean = m_Tree.transform.InverseTransformDirection(d.normalized);
+            float wob = Mathf.Sin(m_TreePhase * 0.5f) * 6f * m_TreeMove;
+            var tilt = Quaternion.AngleAxis(9f * m_TreeMove, Vector3.Cross(Vector3.up, lean).sqrMagnitude > 1e-6f ? Vector3.Cross(Vector3.up, lean).normalized : Vector3.right)
+                * Quaternion.Euler(0f, 0f, wob);
+            m_TreeHop.localPosition = new Vector3(0f, hop, 0f);
+            m_TreeHop.localRotation = Quaternion.Slerp(m_TreeHop.localRotation, tilt, dt * 10f);
+            m_TreeHop.localScale = new Vector3(sxz, sy, sxz);
         }
 
         /// <summary>The camo tree's world facing: the same on every screen and it never turns with the player.</summary>
@@ -452,10 +510,13 @@ namespace RockGame
 
         Vector3 m_LastFootPos;
         float m_FootDist;
+        /// <summary>When we last heard this (other) player's footstep (tests).</summary>
+        public float LastStepAt { get; private set; } = -10f;
         AudioSource m_SlideSound;
 
         /// <summary>
-        /// Other players are heard from where they are: footsteps (walking, louder sprinting, silent when crouch-walking)
+        /// Other players are heard from where they are: footsteps (loud and positional - walking, louder sprinting, silent
+        /// when crouch-walking)
         /// and the scrape of a slide.
         /// </summary>
         void RemoteSounds(bool dead)
@@ -476,7 +537,10 @@ namespace RockGame
             bool sprint = speed > Cfg.WalkSpeed * 1.2f;
             if (m_FootDist < (sprint ? 2.2f : 1.8f)) return;
             m_FootDist = 0f;
-            Sfx.Play(Sfx.Step, p, sprint ? 1f : 0.7f, 0.2f, sprint ? 45f : 30f);
+            // loud, fully 3D thumps where their feet land, so you can hear which way they are and roughly how far
+            // (crouch-walking makes no sound at all)
+            Sfx.Play(Sfx.EnemyStep, p, sprint ? 1f : 0.8f, 0.15f, sprint ? Cfg.EnemyStepRangeSprint : Cfg.EnemyStepRange);
+            LastStepAt = Time.time;
         }
 
         void Update()
@@ -559,7 +623,7 @@ namespace RockGame
         void LateUpdate()
         {
             // tree camo: a real tree never turns, so the disguise keeps one fixed facing while you look around
-            if (m_Tree) m_Tree.transform.rotation = TreeCamoRotation;
+            if (m_Tree) { m_Tree.transform.rotation = TreeCamoRotation; TreeHop(Time.deltaTime); }
             if (m_Anim == null || !m_VisualRoot.gameObject.activeSelf) return;
             var item = m_HandItemId;
             m_Anim.Tick(new BodyAnimator.Pose
@@ -575,6 +639,7 @@ namespace RockGame
                 Swing = m_Swing,
                 Action = (BodyAnimator.Act)Action.Value,
                 Throw = m_Throw,
+                Item = item,
             }, Time.deltaTime);
             m_Anim.GripPose(out var gp, out var gr);
             m_Hand.SetPositionAndRotation(gp, gr);

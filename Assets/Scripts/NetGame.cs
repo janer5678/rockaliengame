@@ -383,8 +383,10 @@ namespace RockGame
             foreach (var it in Items)
             {
                 m_Seen.Add(it.Id);
+                bool fresh = false;
                 if (!m_ItemVisuals.TryGetValue(it.Id, out var go) || !go)
                 {
+                    fresh = true;
                     go = new GameObject("WorldItem");
                     if (it.Stack.Id == Item.Spear) ItemModels.CreateSpearTipForward(go.transform);
                     else if (it.Stack.Id == Item.Arrow) ItemModels.CreateArrowTipForward(go.transform);
@@ -411,11 +413,12 @@ namespace RockGame
                     rot *= Quaternion.Euler((1f - t) * 360f, 0, 0);
                 }
                 go.transform.SetPositionAndRotation(pos, rot);
+                ItemBounce(it, go.transform, fresh); // (a stack that's been added to bounces)
             }
             if (m_ItemVisuals.Count == m_Seen.Count) return;
             var gone = new List<int>();
             foreach (var kv in m_ItemVisuals) if (!m_Seen.Contains(kv.Key)) gone.Add(kv.Key);
-            foreach (var id in gone) { if (m_ItemVisuals[id]) Destroy(m_ItemVisuals[id]); m_ItemVisuals.Remove(id); m_ItemSeenAt.Remove(id); }
+            foreach (var id in gone) { if (m_ItemVisuals[id]) Destroy(m_ItemVisuals[id]); m_ItemVisuals.Remove(id); m_ItemSeenAt.Remove(id); ForgetItemBounce(id); }
         }
 
         public void Broadcast(string msg) => BroadcastRpc(new FixedString128Bytes(msg.Length > 120 ? msg.Substring(0, 120) : msg));
@@ -466,11 +469,14 @@ namespace RockGame
                         if (!ThemeMaps.SpotOk(p)) continue; // THEME MAPS
                         if (InsideScenery(p)) continue;
                         float yaw = R(0, 360);
+                        // now and then it's a Wild Unicorn - in every half at once, so it's fair (UnityEngine.Random, so the
+                        // map's own random sequence isn't disturbed)
+                        bool unicorn = Random.value < Cfg.UnicornChance;
                         for (int m = 0; m < Cfg.Copies; m++)
                         {
                             var q = Cfg.Copy(p, m);
                             q.y = MapBuilder.Height(q.x, q.z) + 0.2f;
-                            Vehicle.ServerSpawn(Vehicle.Horse, q, yaw + m * 360f / Cfg.Copies);
+                            Vehicle.ServerSpawn(Vehicle.Horse, q, yaw + m * 360f / Cfg.Copies, unicorn);
                         }
                         break;
                     }

@@ -623,6 +623,7 @@ namespace RockGame
                 m_ShownWrap = m_Wrap;
                 m_ShownWristQ = m_WristQ;
                 System.Array.Copy(m_Ang, m_Shown, 9);
+                BendCount++;
                 for (int i = 0; i < m_Base.Length; i++) m_Work[i] = m_ToMesh.MultiplyPoint3x4(PoseVertex(i));
                 m_Mesh.vertices = m_Work;
                 m_Mesh.RecalculateNormals();
@@ -848,6 +849,8 @@ namespace RockGame
                         var sw = System.Diagnostics.Stopwatch.StartNew();
                         Solve(p, curl, parts);
                         m_SolveMs = (float)sw.Elapsed.TotalMilliseconds;
+                        SolveCount++;
+                        SolveMsTotal += m_SolveMs;
                         m_SolvedWrap = m_Wrap;
                         if (m_Known.Count > 400) m_Known.Clear();
                         m_Known[key] = ((float[])m_Ang.Clone(), m_Shift, m_Wrap);

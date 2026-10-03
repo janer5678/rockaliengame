@@ -595,7 +595,7 @@ namespace RockGame
     public static class Sfx
     {
         public static AudioClip Swing, Flesh, Headshot, Chop, Clink, Thud, Ding, Smash, Twang, Throw, Pop, Eat, Place, Hurt, Kill, Step, Hiss, Boom, Beep, Zap, Saw, Hum,
-            Hit, Rocket, Sniper, Portal, Jet, Glass, Door, Click, Crowd, Whiz, Slide, Hoof, UiHover, UiClick, UiSlide,
+            Hit, Rocket, Sniper, Portal, Jet, Glass, Door, Click, Crowd, Whiz, Slide, Hoof, UiHover, UiClick, UiSlide, EnemyStep,
             Workshop, ArmorClank, StoneGrind, Engine, Unlock;
         static readonly Dictionary<AudioClip, AudioClip[]> s_Variants = new Dictionary<AudioClip, AudioClip[]>();
         const int Rate = 44100;
@@ -659,6 +659,10 @@ namespace RockGame
             Crowd = Make("crowd", 4f, (t, d) => N() * (0.35f + 0.15f * Mathf.Sin(t * 1.3f) + 0.1f * Mathf.Sin(t * 3.7f + 1f)) * Mathf.Min(1f, Mathf.Min(t, d - t) * 4f + 0.6f), lowpass: 0.08f);
             Click = Make("click", 0.03f, (t, d) => N() * Env(t, 0.01f));
             Step = Make("step", 0.08f, (t, d) => N() * Env(t, 0.03f) * 0.25f, lowpass: 0.15f);
+            // another player's footstep: a heavy heel thump with a gritty scuff on top, loud enough to give them away
+            // (PlayerNet.RemoteSounds plays it in 3D where their foot lands)
+            EnemyStep = Make("enemystep", 0.14f, (t, d) => Mathf.Sin(t * 2 * Mathf.PI * Mathf.Lerp(95, 55, t / d)) * Env(t, 0.06f) * 0.9f
+                + N() * Env(t, 0.035f) * 1.6f + N() * Env(Mathf.Max(0f, t - 0.035f), 0.03f) * (t > 0.035f ? 0.9f : 0f), lowpass: 0.3f);
             // an arrow / spear cutting through the air (loops while it flies, so you can hear where it is and where it's going)
             Whiz = Make("whiz", 1f, (t, d) => (N() * 0.55f + Mathf.Sin(t * 2 * Mathf.PI * 880) * 0.18f + Mathf.Sin(t * 2 * Mathf.PI * 1310) * 0.08f) * (0.8f + 0.2f * Mathf.Sin(t * 2 * Mathf.PI * 9)), lowpass: 0.45f);
             // sliding: a gritty scrape (loops)

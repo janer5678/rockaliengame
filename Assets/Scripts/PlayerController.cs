@@ -321,6 +321,13 @@ namespace RockGame
                 m_Net.Crouch.Value = wantCrouch;
             }
             if (dead || riding) { m_SlideOn = false; m_SlideQueued = -1f; }
+            // the crouch key (Ctrl) pressed mid-slide: drop straight into a crouch - the slide stops dead, no glide-out
+            // (and a slide waiting for the landing is called off)
+            if (move && !riding && Binds.Down(Bind.Crouch) && (m_SlideOn || m_SlideQueued >= 0f))
+            {
+                m_SlideQueued = -1f;
+                if (m_SlideOn) { m_SlideVel = Vector3.zero; EndSlide(); m_Push = Vector3.zero; SlideCrouches++; }
+            }
             // start it right away if we're on (or only just left) the ground; in the air it waits for the landing
             bool onGround = m_CC.enabled && (m_CC.isGrounded || Time.time - m_GroundedAt < 0.2f);
             if (m_SlideQueued > Time.time && !m_SlideOn && slideKey && onGround && Time.time >= m_NextSlide && !TreeLocked) { m_SlideQueued = -1f; StartSlide(); }
@@ -474,6 +481,7 @@ namespace RockGame
             if (held == Item.BuildingPlan && WheelOpen && !Binds.Held(Bind.Aim)) CloseWheel();
             bool drawing = input && !carrying && !gameOver && (held == Item.Bow || held == Item.Spear);
             if (!drawing) m_DrawStart = -1f;
+            if (!drawing || held != Item.Spear) { m_SpearReleaseAt = -1f; m_SpearBufferUntil = -1f; }
             if ((held != Item.Berry && held != Item.Meat) || m_Net.Dead.Value || !input) m_EatStart = -1f;
             float drawTime = held == Item.Spear ? Cfg.SpearDrawTime : Cfg.BowDrawTime;
             DrawAmount = m_DrawStart >= 0 ? Mathf.Clamp01((Time.time - m_DrawStart) / Mathf.Max(0.05f, drawTime)) : 0f;
@@ -634,6 +642,8 @@ namespace RockGame
         public bool TreeLocked { get; private set; }
         /// <summary>For the tests: how many slides ended because you pushed the other way (into a crouch).</summary>
         public int SlideBrakes { get; private set; }
+        /// <summary>For the tests: how many slides the crouch key turned straight into a crouch.</summary>
+        public int SlideCrouches { get; private set; }
 
         /// <summary>The ground under you: which way is downhill (flat, unit length) and how steep (sine of the slope).</summary>
         bool SlopeDownhill(out Vector3 downhill) => SlopeDownhill(out downhill, out _);
@@ -904,28 +914,76 @@ namespace RockGame
         void HandleSpear()
         {
             // hold RMB to ready it (LMB throws); let go and it's a normal spear again (the tutorial: once it's taught)
+            // Timed like the throws in other games: RMB raises it over the shoulder (the wind-up only starts once a poke has
+            // recovered), it can't be let go before Spear Min Windup, a click is remembered for Spear Input Buffer (clicked
+            // during the wind-up or the recovery it goes the moment it can), and once the arm starts coming through the throw
+            // can't be called off. After it there's a recovery before the next poke or wind-up, and lowering it takes a moment.
             bool canThrow = Tutorial.Allows(TutFeature.Throw);
-            if (canThrow && Binds.Down(Bind.Aim)) m_DrawStart = Time.time;
-            if (!canThrow || !Binds.Held(Bind.Aim)) m_DrawStart = -1f;
-            if (m_DrawStart < 0) { HandleMelee(Item.Spear); return; }
-
-            if (Binds.Down(Bind.Attack) && Time.time >= m_NextSwing)
+            float now = Time.time;
+            if (m_SpearReleaseAt >= 0f)
             {
-                float t = Time.time - m_DrawStart;
-                // a quick throw still goes a good way; holding longer throws it harder
-                float power = Mathf.Lerp(0.65f, 1f, Mathf.Clamp01(t / Mathf.Max(0.05f, Cfg.SpearDrawTime)));
-                var ray = CenterRay();
-                Vector3 origin = SafeOrigin(ray, 0.8f);
-                Vector3 vel = ray.direction * Cfg.SpearThrowSpeed * power;
-                ArrowProjectile.SpawnSpear(origin, vel, m_Net, true);
-                m_Net.ThrowSpearRpc(origin, vel);
-                Tutorial.SpearThrows++;
-                m_DrawStart = -1f;
-                m_NextSwing = Time.time + 0.6f;
-                m_VM.Throw();
-                Sfx.Play2D(Sfx.Throw, 0.6f);
-                Fx.Kick(2f);
+                // committed: the arm is coming through
+                if (now >= m_SpearReleaseAt) ReleaseSpear();
+                return;
             }
+            bool aimHeld = canThrow && Binds.Held(Bind.Aim);
+            if (aimHeld && Binds.Down(Bind.Attack))
+            {
+                // remembered until a little after the soonest it could go (the end of any recovery, then the minimum wind-up)
+                float soonest = (m_DrawStart >= 0f ? m_DrawStart : Mathf.Max(now, m_NextSwing)) + Mathf.Max(0f, Cfg.SpearMinWindup);
+                m_SpearBufferUntil = Mathf.Max(now, soonest) + Mathf.Max(0.05f, Cfg.SpearInputBuffer);
+            }
+            if (!aimHeld)
+            {
+                m_SpearBufferUntil = -1f;
+                // letting go of RMB lowers it again - that takes a moment before it can poke
+                if (m_DrawStart >= 0f) { m_DrawStart = -1f; m_NextSwing = Mathf.Max(m_NextSwing, now + Mathf.Max(0f, Cfg.SpearLowerTime)); }
+                HandleMelee(Item.Spear);
+                return;
+            }
+            // RMB held: the wind-up starts as soon as any poke / throw has recovered
+            if (m_DrawStart < 0f)
+            {
+                if (now < m_NextSwing || m_ImpactAt >= 0f) return;
+                m_DrawStart = now;
+            }
+            if (m_SpearBufferUntil >= now && now - m_DrawStart >= Mathf.Max(0f, Cfg.SpearMinWindup))
+            {
+                m_SpearBufferUntil = -1f;
+                // a quick throw still goes a good way; holding longer throws it harder
+                m_SpearPower = Mathf.Lerp(0.65f, 1f, Mathf.Clamp01((now - m_DrawStart) / Mathf.Max(0.05f, Cfg.SpearDrawTime)));
+                m_SpearReleaseAt = now + Mathf.Max(0f, Cfg.SpearReleaseTime);
+                m_VM.Throw();
+                Sfx.Play2D(Sfx.Swing, 0.4f, 0.1f);
+                SpearCommits++;
+                if (m_SpearReleaseAt <= now) ReleaseSpear();
+            }
+        }
+
+        float m_SpearReleaseAt = -1f, m_SpearBufferUntil = -1f, m_SpearPower = 1f;
+        /// <summary>For the tests: throws started (the arm coming through) and let go.</summary>
+        public int SpearCommits { get; private set; }
+        public int SpearReleases { get; private set; }
+        /// <summary>For the tests: the spear's wind-up has started (RMB held, past any recovery).</summary>
+        public bool SpearWindingUp => m_DrawStart >= 0f && m_Net != null && m_Net.HeldItem == Item.Spear;
+        public bool SpearThrowCommitted => m_SpearReleaseAt >= 0f;
+
+        /// <summary>The spear leaves the hand: thrown where you look, as hard as the wind-up was long.</summary>
+        void ReleaseSpear()
+        {
+            m_SpearReleaseAt = -1f;
+            m_DrawStart = -1f;
+            m_NextSwing = Time.time + Mathf.Max(0.1f, Cfg.SpearThrowRecovery);
+            if (m_Net.HeldItem != Item.Spear || m_Net.Dead.Value || m_Net.CarryingBall) return;
+            var ray = CenterRay();
+            Vector3 origin = SafeOrigin(ray, 0.8f);
+            Vector3 vel = ray.direction * Cfg.SpearThrowSpeed * m_SpearPower;
+            ArrowProjectile.SpawnSpear(origin, vel, m_Net, true);
+            m_Net.ThrowSpearRpc(origin, vel);
+            Tutorial.SpearThrows++;
+            SpearReleases++;
+            Sfx.Play2D(Sfx.Throw, 0.6f);
+            Fx.Kick(2f);
         }
 
         void HandleBow()
@@ -1599,7 +1657,7 @@ namespace RockGame
                     bool feeding = v.IsHorse && m_Net.HeldItem == Item.Berry;
                     string hp = v.Hp.Value < v.MaxHp - 0.5f || feeding ? $"  {v.Hp.Value:0}/{v.MaxHp:0} HP" : "";
                     string e = Binds.Name(Bind.Interact);
-                    AimText = v.IsHorse ? (v.Saddled.Value ? $"Horse{hp}   {e}: ride" : $"Wild horse{hp}   {e}: saddle and ride ({(m_Net.Count(Item.Saddle) > 0 ? "uses your saddle" : "<color=#ff8888>needs a saddle</color>")})") : $"Wooden car   {e}: drive";
+                    AimText = v.IsHorse ? (v.Saddled.Value ? $"{(v.IsUnicorn ? "Unicorn" : "Horse")}{hp}   {e}: ride" : $"{(v.IsUnicorn ? "Wild Unicorn" : "Wild horse")}{hp}   {e}: saddle and ride ({(m_Net.Count(Item.Saddle) > 0 ? "uses your saddle" : "<color=#ff8888>needs a saddle</color>")})") : $"Wooden car   {e}: drive";
                     if (feeding) AimText += FeedHint(v);
                     return;
                 }
