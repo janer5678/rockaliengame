@@ -30,7 +30,7 @@ namespace RockGame
             if (no.TryGetComponent(out PlayerNet p) && p != this && !p.Dead.Value)
             {
                 bool head = p.IsHeadshot(point);
-                Fx.Server(head ? FxKind.BloodHead : FxKind.Blood, point, dir, OwnerClientId);
+                p.ServerBleed(head, point, dir, OwnerClientId);
                 if (head && p.HelmetHp.Value > 0)
                 {
                     p.HelmetHp.Value = 0;

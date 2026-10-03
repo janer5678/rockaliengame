@@ -4,7 +4,7 @@ using UnityEngine;
 namespace RockGame
 {
     // new kinds go at the end (they're sent over the network as bytes)
-    public enum FxKind : byte { Blood, BloodHead, WoodChips, StoneChips, WeakSpot, Break, Smash, StructureHit, Spawn, C4Placed, Explosion, WandBeam, HelmetBreak, Craft, Drink, AirstrikeWarn, SniperTracer, PortalOpen, Timber, WeakSpotTree, Heal }
+    public enum FxKind : byte { Blood, BloodHead, WoodChips, StoneChips, WeakSpot, Break, Smash, StructureHit, Spawn, C4Placed, Explosion, WandBeam, HelmetBreak, Craft, Drink, AirstrikeWarn, SniperTracer, PortalOpen, Timber, WeakSpotTree, Heal, BloodKill }
 
     /// <summary>
     /// Game feel: particles (blood, chips, sparks), camera shake/kick, floating damage numbers and sounds.
@@ -59,6 +59,7 @@ namespace RockGame
             {
                 case FxKind.Blood: Blood(pos, dir, false); break;
                 case FxKind.BloodHead: Blood(pos, dir, true); break;
+                case FxKind.BloodKill: BloodKillBurst(pos, dir); break;
                 case FxKind.WoodChips: Chips(pos, dir, BarkAt(pos), 8); FallingLeaves(pos, dir); HitMark(pos); Sfx.Play(Sfx.Chop, pos, 0.3f); break;
                 case FxKind.StoneChips: Chips(pos, dir, Art.Stone, 8); Sparks(pos, dir, 5); Sfx.Play(Sfx.Clink, pos); break;
                 case FxKind.WeakSpot: Sparks(pos, dir, 16); Sfx.Play(Sfx.Ding, pos, 0.8f); break;
@@ -217,8 +218,30 @@ namespace RockGame
         // ---------------- particles ----------------
         static readonly Color k_Blood = new Color(0.62f, 0.02f, 0.02f), k_BloodDark = new Color(0.35f, 0.0f, 0.0f), k_Spark = new Color(1f, 0.85f, 0.35f);
 
+        /// <summary>For the tests: blood splashes / kill bursts played on this screen.</summary>
+        public static int BloodCount, BloodKillCount;
+
+        /// <summary>A kill: a big burst of blood out of the body - a fountain of drops thrown up and out (mostly away from
+        /// whoever did it), a red mist and a wet thud. Played on every screen (PlayerNet.ServerDie).</summary>
+        public static void BloodKillBurst(Vector3 pos, Vector3 dir)
+        {
+            BloodKillCount++;
+            dir = dir.sqrMagnitude > 0.01f ? dir.normalized : Vector3.up;
+            for (int i = 0; i < 70; i++)
+            {
+                var v = dir * Random.Range(0.5f, 4.5f) + Random.insideUnitSphere * 3.5f + Vector3.up * Random.Range(1.5f, 4.5f);
+                var p = pos + Random.insideUnitSphere * 0.25f;
+                FxParticle.Spawn(p, v, i % 3 == 0 ? k_BloodDark : k_Blood, Random.Range(0.05f, 0.14f), Random.Range(0.7f, 1.4f), 14f, true);
+            }
+            for (int i = 0; i < 5; i++) FxParticle.Puff(pos + Random.insideUnitSphere * 0.4f, new Color(0.7f, 0.04f, 0.04f, 0.6f), Random.Range(0.7f, 1.2f));
+            Sfx.Play(Sfx.Flesh, pos, 1f, 0.05f);
+            Sfx.Play(Sfx.Smash, pos, 0.45f, 0.1f);
+            if (PsxModels.On) { BloodDecal(pos, true); BloodDecal(pos + Random.insideUnitSphere * 0.6f, true); }
+        }
+
         public static void Blood(Vector3 pos, Vector3 dir, bool head)
         {
+            BloodCount++;
             dir = dir.sqrMagnitude > 0.01f ? dir.normalized : Vector3.up;
             int n = head ? 26 : 16;
             for (int i = 0; i < n; i++)
@@ -450,8 +473,24 @@ namespace RockGame
             s_Alive++;
         }
 
+        /// <summary>A collider on something that moves about (a splat stuck to it would be left floating where it was).</summary>
+        public static bool Moves(Collider c)
+        {
+            if (c == null) return false;
+            if (c.attachedRigidbody != null) return true;
+            if (c.GetComponentInParent<PlayerNet>() != null || c.GetComponentInParent<Vehicle>() != null || c.GetComponentInParent<Ball>() != null) return true;
+            return Structure.IsDoorLeaf(c.transform);
+        }
+
+        /// <summary>For the tests: how many particles are flying / lying about right now, and the landed ones.</summary>
+        public static int Alive => s_Alive;
+        public static readonly List<FxParticle> Landed = new List<FxParticle>();
+        public bool HasLanded => m_Landed;
+        public Collider LandedOn { get; private set; }
+
         void OnDestroy()
         {
+            Landed.Remove(this);
             s_Alive--;
             if (m_PuffMat) Destroy(m_PuffMat);
         }
@@ -473,8 +512,11 @@ namespace RockGame
             {
                 m_Vel += Vector3.down * m_Grav * dt;
                 var step = m_Vel * dt;
+                // (it only settles on things that stay put: a drop that hit a horse used to stick to the horse's collider
+                // where it was in the world, and when the horse ran off it was left hanging in mid-air - anything that
+                // moves (horses, players, the ball, a swinging door, physics bodies) it falls past instead)
                 if (m_Stick && Physics.Raycast(transform.position, step, out var hit, step.magnitude + 0.01f, ~0, QueryTriggerInteraction.Ignore)
-                    && hit.collider.GetComponentInParent<PlayerNet>() == null)
+                    && !Moves(hit.collider))
                 {
                     var wood = hit.collider.GetComponentInParent<ResourceNode>();
                     if (wood != null && wood.Kind.Value == ResourceNode.Tree && hit.normal.y < 0.7f)
@@ -486,6 +528,8 @@ namespace RockGame
                         return;
                     }
                     m_Landed = true;
+                    LandedOn = hit.collider;
+                    Landed.Add(this);
                     transform.position = hit.point + hit.normal * 0.005f;
                     transform.rotation = Quaternion.LookRotation(hit.normal) * Quaternion.Euler(0, 0, Random.Range(0, 90f));
                     transform.localScale = new Vector3(m_Size * 2.2f, m_Size * 2.2f, 0.01f);
@@ -592,7 +636,7 @@ namespace RockGame
             float w = m_Age * m_Freq + m_Phase;
             var step = (Vector3.down * fall + m_Side * Mathf.Cos(w) * m_Swing * m_Freq + m_Drift) * dt;
             if (Physics.Raycast(transform.position, step, out var hit, step.magnitude + 0.01f, ~0, QueryTriggerInteraction.Ignore)
-                && hit.collider.GetComponentInParent<PlayerNet>() == null)
+                && !FxParticle.Moves(hit.collider))
             {
                 m_Landed = true;
                 transform.position = hit.point + hit.normal * 0.008f;
@@ -615,7 +659,8 @@ namespace RockGame
     {
         public static AudioClip Swing, Flesh, Headshot, Chop, Clink, Thud, Ding, Smash, Twang, Throw, Pop, Eat, Place, Hurt, Kill, Step, Hiss, Boom, Beep, Zap, Saw, Hum,
             Hit, Rocket, Sniper, Portal, Jet, Glass, Door, Click, Crowd, Whiz, Slide, Hoof, UiHover, UiClick, UiSlide, EnemyStep,
-            Workshop, ArmorClank, StoneGrind, Engine, Unlock;
+            Workshop, ArmorClank, StoneGrind, Engine, Unlock,
+            DoorWoodOpen, DoorWoodShut, DoorStoneOpen, DoorStoneShut, DoorMetalOpen, DoorMetalShut, DoorRefinedOpen, DoorRefinedShut;
         static readonly Dictionary<AudioClip, AudioClip[]> s_Variants = new Dictionary<AudioClip, AudioClip[]>();
         const int Rate = 44100;
 
@@ -723,6 +768,70 @@ namespace RockGame
                 return (motor + saw + N() * 0.15f) * Mathf.Min(1f, (d - t) * 4f);
             }, lowpass: 0.35f);
             Hoof = Make("hoof", 0.09f, (t, d) => Mathf.Sin(t * 2 * Mathf.PI * Mathf.Lerp(520, 260, t / d)) * Env(t, 0.04f) * 0.8f + N() * Env(t, 0.01f) * 0.4f, lowpass: 0.5f);
+            MakeDoorSounds();
+        }
+
+        /// <summary>
+        /// Doors sound like what the base is made of (Structure.DoorSoundTier): wood creaks open on its hinges and shuts
+        /// with a hollow knock; stone grinds open and shuts with a heavy thump; metal squeals and shuts with a ringing
+        /// clang; refined (armoured) doors hiss open and shut with a deep clunk and a lock clicking home.
+        /// </summary>
+        static void MakeDoorSounds()
+        {
+            var rng = new System.Random(11);
+            float N() => (float)rng.NextDouble() * 2f - 1f;
+            // a hinge creak: a scratchy squeak sliding about in pitch, stuttering like a dry hinge
+            float Creak(float t, float d, float f0, float f1)
+            {
+                float f = Mathf.Lerp(f0, f1, t / d) + Mathf.Sin(t * 23f) * 40f;
+                float stick = 0.55f + 0.45f * Mathf.Sign(Mathf.Sin(t * 2 * Mathf.PI * 31f));
+                float saw = Mathf.Repeat(t * f, 1f) * 2f - 1f;
+                return saw * stick * Mathf.Sin(Mathf.Clamp01(t / d) * Mathf.PI);
+            }
+            // a struck metal plate: a few inharmonic partials ringing out
+            float Clang(float t, float f, float decay) =>
+                (Mathf.Sin(t * 2 * Mathf.PI * f) * 0.45f + Mathf.Sin(t * 2 * Mathf.PI * f * 2.76f) * 0.3f + Mathf.Sin(t * 2 * Mathf.PI * f * 5.4f) * 0.18f
+                 + Mathf.Sin(t * 2 * Mathf.PI * f * 8.93f) * 0.08f) * Env(t, decay);
+            float Knock(float t, float f, float decay) => Mathf.Sin(t * 2 * Mathf.PI * Mathf.Lerp(f, f * 0.6f, Mathf.Clamp01(t / decay))) * Env(t, decay);
+
+            DoorWoodOpen = Make("doorwoodopen", 0.6f, (t, d) => Creak(t, 0.5f, 520f, 760f) * 0.32f + (t < 0.05f ? N() * Env(t, 0.02f) * 0.5f : 0f), lowpass: 0.55f);
+            DoorWoodShut = Make("doorwoodshut", 0.45f, (t, d) => Knock(t, 135f, 0.16f) * 0.9f + Knock(t, 300f, 0.05f) * 0.35f + N() * Env(t, 0.03f) * 0.55f
+                + (t > 0.09f ? Mathf.Sin((t - 0.09f) * 2 * Mathf.PI * 1900f) * Env(t - 0.09f, 0.02f) * 0.15f : 0f), lowpass: 0.35f);
+            DoorStoneOpen = Make("doorstoneopen", 0.8f, (t, d) => N() * (0.55f + 0.35f * Mathf.Sin(t * 2 * Mathf.PI * 9f)) * Mathf.Sin(t / d * Mathf.PI) * 0.75f
+                + Mathf.Sin(t * 2 * Mathf.PI * 55f) * Mathf.Sin(t / d * Mathf.PI) * 0.35f, lowpass: 0.09f);
+            DoorStoneShut = Make("doorstoneshut", 0.6f, (t, d) => Knock(t, 70f, 0.3f) * 1f + N() * Env(t, 0.08f) * 0.8f
+                + (t > 0.06f ? N() * Env(t - 0.06f, 0.12f) * 0.35f : 0f), lowpass: 0.15f);
+            DoorMetalOpen = Make("doormetalopen", 0.7f, (t, d) => Creak(t, 0.6f, 900f, 1350f) * 0.22f + Clang(t, 410f, 0.08f) * 0.35f, lowpass: 0.7f);
+            DoorMetalShut = Make("doormetalshut", 0.9f, (t, d) => Clang(t, 260f, 0.55f) * 0.75f + Knock(t, 95f, 0.12f) * 0.6f + N() * Env(t, 0.015f) * 0.5f, lowpass: 0.8f);
+            DoorRefinedOpen = Make("doorrefinedopen", 0.8f, (t, d) =>
+            {
+                // the lock clicks back, then a hydraulic hiss as it swings
+                float click = Mathf.Sin(t * 2 * Mathf.PI * 2600f) * Env(t, 0.015f) * 0.4f + N() * Env(t, 0.01f) * 0.3f;
+                float k = t - 0.08f;
+                float hiss = k > 0f ? N() * Mathf.Min(1f, k * 15f) * Mathf.Exp(-k * 3.5f) * 0.45f : 0f;
+                float hum = k > 0f ? Mathf.Sin(t * 2 * Mathf.PI * 82f) * Mathf.Sin(Mathf.Clamp01(k / 0.7f) * Mathf.PI) * 0.25f : 0f;
+                return click + hiss + hum;
+            }, lowpass: 0.6f);
+            DoorRefinedShut = Make("doorrefinedshut", 0.8f, (t, d) =>
+            {
+                // a deep armoured clunk, a short ring, and the bolt shooting home
+                float clunk = Knock(t, 58f, 0.3f) * 1f + Clang(t, 190f, 0.25f) * 0.35f + N() * Env(t, 0.02f) * 0.4f;
+                float k = t - 0.22f;
+                float bolt = k > 0f ? (Mathf.Sin(k * 2 * Mathf.PI * 1500f) * 0.35f + Mathf.Sin(k * 2 * Mathf.PI * 3100f) * 0.2f) * Env(k, 0.035f) + N() * Env(k, 0.012f) * 0.35f : 0f;
+                return clunk + bolt;
+            }, lowpass: 0.5f);
+        }
+
+        /// <summary>The door opening / shutting sound for a base of this tier (0 wood, 1 stone, 2 metal, 3 refined).</summary>
+        public static AudioClip DoorSound(int tier, bool open)
+        {
+            switch (Mathf.Clamp(tier, 0, 3))
+            {
+                case 0: return open ? DoorWoodOpen : DoorWoodShut;
+                case 1: return open ? DoorStoneOpen : DoorStoneShut;
+                case 2: return open ? DoorMetalOpen : DoorMetalShut;
+                default: return open ? DoorRefinedOpen : DoorRefinedShut;
+            }
         }
 
         /// <summary>Swap each synthesised clip for the recorded ones in Resources/Sfx when they exist.</summary>

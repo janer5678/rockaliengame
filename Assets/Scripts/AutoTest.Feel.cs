@@ -28,6 +28,13 @@ namespace RockGame
             yield return HorseLifeTests(me, pc, g, team);
             yield return StackBounceTest(me, pc, g, team);
             if (!Bootstrap.Solo) yield return FeelHostWithClient(me, pc, g, team);
+            yield return JumpFeelTests(me, pc, team);
+            yield return TreeNoSlideTest(me, pc, team);
+            yield return BloodTests(me, pc, g, team);
+            yield return DoorSoundTests(me, pc, g, team);
+            yield return WallRebuildTest(me, pc, team);
+            yield return PackUpTests(me, pc, g, team);
+            yield return RideLootTest(me, pc, g, team);
             Log("feel test done");
             g.EndGame(team, "feel test done");
         }
@@ -246,16 +253,26 @@ namespace RockGame
             Check(me.TreeCamo && Mathf.Abs(me.TreeHopHeight) < 0.005f, $"a tree standing still doesn't hop ({me.TreeHopHeight:0.000} m)");
             Binds.TestHold(Bind.Forward, true);
             float hi = 0f, shotAt = -1f;
-            float end = Time.time + 1.5f;
+            float end = Time.time + 2.5f;
+            int hops0 = -1;
+            Vector3 from = me.transform.position;
             while (Time.time < end)
             {
+                // (counted once it's up to speed)
+                if (hops0 < 0 && Time.time > end - 2f) { hops0 = me.TreeHops; from = me.transform.position; }
                 hi = Mathf.Max(hi, me.TreeHopHeight);
                 if (shotAt < 0f && me.TreeHopHeight > 0.2f && Time.time > end - 1f) { shotAt = Time.time; ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "tree_hop.png")); }
                 yield return null;
             }
             Check(hi > 0.15f, $"walking about as a tree, it hops ({hi:0.00} m up)");
+            {
+                var walked = me.transform.position - from; walked.y = 0f;
+                float perHop = walked.magnitude / Mathf.Max(1, me.TreeHops - hops0);
+                Check(Mathf.Abs(perHop - PlayerNet.TreeHopStride) < 0.8f && PlayerNet.TreeHopStride >= 2.5f,
+                    $"... at half the old rate: a hop every {perHop:0.0} m ({me.TreeHops - hops0} hops in {walked.magnitude:0.0} m; it was 1.3 m)");
+            }
             Binds.TestReleaseAll();
-            yield return new WaitForSeconds(0.8f);
+            yield return new WaitForSeconds(1.4f);
             Check(Mathf.Abs(me.TreeHopHeight) < 0.01f, $"... and settles when you stop ({me.TreeHopHeight:0.000} m)");
             for (int i = 0; i < Cfg.PlayerSlots; i++) if (me.SlotAt(i).Id == Item.TreeCamo) me.Inv[i] = default;
             yield return Hold(me, Item.Rock);
@@ -417,6 +434,7 @@ namespace RockGame
             yield return new WaitForSeconds(1.5f);
             AddToStack(g, id, 7);
             yield return new WaitForSeconds(6f);
+            yield return FeelHostBleedClient(me, pc, other);
         }
 
         IEnumerator FeelClient(PlayerNet me, PlayerController pc, NetGame g)
@@ -455,6 +473,7 @@ namespace RockGame
             until = Time.time + 10f;
             while (Time.time < until && NetGame.StackBounces < b0 + 2) yield return null;
             Check(NetGame.StackBounces >= b0 + 2, $"(client) the stack the host adds to bounces here too ({NetGame.StackBounces - b0})");
+            yield return FeelClientBlood(me);
         }
     }
 }

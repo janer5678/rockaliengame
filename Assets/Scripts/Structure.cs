@@ -33,6 +33,7 @@ namespace RockGame
             Rebuild();
             m_Rise = 0f;
             Tier.OnValueChanged += OnTierChanged;
+            DoorOpen.OnValueChanged += OnDoorChanged;
             ClearGrass();
             // placed right where someone stands: pop them out on top instead of trapping them inside
             if (PlayerController.Local != null) PlayerController.Local.ResolveOverlap(transform);
@@ -53,8 +54,39 @@ namespace RockGame
         {
             All.Remove(this);
             Tier.OnValueChanged -= OnTierChanged;
+            DoorOpen.OnValueChanged -= OnDoorChanged;
             if (IsServer && HasKey && BuildGrid.Registry.TryGetValue(Key, out var s) && s == this)
                 BuildGrid.Registry.Remove(Key);
+        }
+
+        /// <summary>The tier a door sounds like: its base's current fortify / upgrade tier (or its own, if that's higher) -
+        /// wood creaks and knocks, stone grinds and thumps, metal squeals and clangs, refined hisses and locks.</summary>
+        public int DoorSoundTier => Mathf.Clamp(Mathf.Max(Tier.Value, Cfg.FortifyLevel(Team.Value)), 0, 3);
+
+        /// <summary>For the tests: door sounds played on this screen, and the last one's tier / open-or-shut.</summary>
+        public static int DoorSounds, LastDoorSoundTier = -1;
+        public static bool LastDoorSoundOpen;
+
+        void OnDoorChanged(bool was, bool open)
+        {
+            if (was == open) return;
+            int tier = DoorSoundTier;
+            DoorSounds++;
+            LastDoorSoundTier = tier;
+            LastDoorSoundOpen = open;
+            var at = transform.position + transform.rotation * new Vector3(0f, 1.2f, 0f);
+            Sfx.Play(Sfx.DoorSound(tier, open), at, 0.85f, 0.05f, 45f);
+        }
+
+        /// <summary>A collider that's part of a door leaf (it swings: nothing should stick to it in mid-air).</summary>
+        public static bool IsDoorLeaf(Transform t)
+        {
+            for (; t != null; t = t.parent)
+            {
+                if (t.name == "hinge") return true;
+                if (t.GetComponent<Structure>() != null) return false;
+            }
+            return false;
         }
 
         void OnTierChanged(byte prev, byte cur)
@@ -102,6 +134,17 @@ namespace RockGame
 
         public void ServerDamage(float dmg) => ServerDamage(dmg, true);
 
+        static readonly Dictionary<PieceKey, float> s_BrokenAt = new Dictionary<PieceKey, float>();
+
+        /// <summary>Server: how long until a wall (doorway, window) can go back where one was just broken (0 = now).</summary>
+        public static float RebuildWait(PieceKey key)
+        {
+            if (key.Kind != PieceKey.KEdge || !s_BrokenAt.TryGetValue(key, out var at)) return 0f;
+            float w = at + Cfg.WallRebuildCooldown - Time.time;
+            if (w <= 0f) { s_BrokenAt.Remove(key); return 0f; }
+            return w;
+        }
+
         /// <summary>collapse = check whether other pieces lost their support (explosions do it once at the end).</summary>
         public void ServerDamage(float dmg, bool collapse)
         {
@@ -109,6 +152,8 @@ namespace RockGame
             Health.Value = Mathf.Max(0, Health.Value - dmg);
             if (Health.Value <= 0)
             {
+                // a wall broken down: nobody can put a new wall in the same spot for a few seconds (PlayerNet.PlaceRpc)
+                if (HasKey && Key.Kind == PieceKey.KEdge) s_BrokenAt[Key] = Time.time;
                 NetworkObject.Despawn(true);
                 if (collapse && NetGame.Instance) NetGame.Instance.ServerCollapseCheck();
             }

@@ -117,6 +117,42 @@ namespace RockGame
         [Rpc(SendTo.Server)]
         public void DismountRpc() => ServerDismount();
 
+        // ---------------- picking chests and workbenches back up ----------------
+
+        /// <summary>Why this player can't pick this chest / workbench back up (null = they can). Checked on both sides.</summary>
+        public string PackUpProblem(Container c)
+        {
+            if (c == null || !c.IsSpawned) return "";
+            if (!(c.Breakable || c.IsWorkbench)) return "";
+            if (c.Team.Value != Team.Value) return c.IsWorkbench ? "That's the enemy's workbench" : "That's the enemy's chest";
+            if (!c.Empty) return "Empty the chest first";
+            if (c.IsWorkbench && c.BenchTier == 1 && Workbench.ForTeam(Team.Value, 2) != null) return "Pick up your Workbench T2 first";
+            return null;
+        }
+
+        /// <summary>Held E on an empty chest or workbench of your team's: it comes back into your inventory (dropped at
+        /// your feet if there's no room), to be put down somewhere else.</summary>
+        [Rpc(SendTo.Server)]
+        public void PackUpRpc(NetworkObjectReference target)
+        {
+            if (Dead.Value || CarryingBall || InSuddenDeath || !target.TryGet(out var no) || !no.TryGetComponent(out Container c)) return;
+            if (!Tutorial.AllowsFor(this, TutFeature.Deploy)) return;
+            if (Vector3.Distance(c.Center, EyePos) > Cfg.InteractRange + 3f) return;
+            var problem = PackUpProblem(c);
+            if (problem != null) { if (problem.Length > 0) Notify(problem); return; }
+            var item = c.IsWorkbench ? (c.BenchTier == 2 ? Item.Workbench2 : Item.Workbench) : Item.Chest;
+            var at = c.transform.position;
+            c.NetworkObject.Despawn(true);
+            int left = ServerGive(item, 1);
+            if (left > 0 && NetGame.Instance != null) NetGame.Instance.ServerDropItem(ItemStack.Of(item, left), at + Vector3.up * 0.3f, transform.forward, at + Vector3.up * 0.9f);
+            else PickedUpRpc();
+            PackedUp++;
+            Notify($"Picked up your {Cfg.ItemName(item)}");
+        }
+
+        /// <summary>Server, for the tests: chests / workbenches picked back up.</summary>
+        public static int PackedUp;
+
         public void ServerDismount()
         {
             if (!IsServer || !Riding) return;
@@ -142,7 +178,7 @@ namespace RockGame
             push = push.normalized * 0.5f + v.transform.forward * Mathf.Sign(speed);
             p.KnockbackRpc(push.normalized * Cfg.CarKnockback * (0.4f + 0.6f * k) + Vector3.up * 5f);
             p.ServerDamage(Cfg.CarHitDamage * k, this, (byte)Item.Car);
-            Fx.Server(FxKind.Blood, p.transform.position + Vector3.up, push);
+            p.ServerBleed(false, p.transform.position + Vector3.up, push);
             if (p.Dead.Value) KillConfirmRpc();
         }
 

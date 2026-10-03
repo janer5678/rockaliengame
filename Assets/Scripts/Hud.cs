@@ -293,7 +293,7 @@ namespace RockGame
                 GUI.Label(new Rect(cx - 50, cy - 50, 100, 100), "X", st);
             }
             if (pc.Scoped) DrawScope();
-            float charge = Mathf.Max(pc.DrawAmount, pc.RamCharge, pc.EatProgress);
+            float charge = Mathf.Max(pc.DrawAmount, pc.RamCharge, pc.EatProgress, pc.PackUpProgress); // (the last: holding E to pick up a chest / workbench)
             if (charge > 0)
             {
                 Fill(new Rect(cx - 50 * k, cy + 30 * k, 100 * k, 8 * k), new Color(0, 0, 0, 0.5f));
