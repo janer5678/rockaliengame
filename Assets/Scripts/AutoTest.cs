@@ -133,6 +133,7 @@ namespace RockGame
             if (m_Mode == "tracer") { yield return TracerRoutine(me, pc); yield break; }
             if (m_Mode == "craftui") { yield return CraftUiRoutine(me, pc); yield break; }
             if (m_Mode == "upgrades") { yield return UpgradesRoutine(me, pc); yield break; }
+            if (m_Mode == "feel") { yield return FeelRoutine(me, pc); yield break; }
             if (m_Mode == "maps") { yield return MapsRoutine(me, pc); yield break; }
             if (m_Mode == "victory") { yield return VictoryRoutine(me, pc); yield break; }
             Check(Cfg.BaseTeamAt(me.transform.position) == me.Team.Value, $"spawned inside own base ({me.transform.position})");
@@ -1304,6 +1305,9 @@ namespace RockGame
                 ("eat", Item.Berry, 0f, 0f, 0f, false, BodyAnimator.Act.Eat, false, false, false),
                 ("throw", Item.Spear, 0f, 0f, 0f, false, A, false, true, false),
                 ("rock swing", Item.Rock, 0f, 0f, 0f, false, A, true, false, false),
+                ("rock idle", Item.Rock, 0f, 0f, 0f, false, A, false, false, false),
+                ("rock walk", Item.Rock, 3f, 0f, 0f, false, A, false, false, false),
+                ("spear walk", Item.Spear, 3f, 0f, 0f, false, A, false, false, false),
                 ("carry ball", Item.None, 4f, 0f, 0f, false, A, false, false, true),
                 ("ram", Item.Ram, 0f, 0f, 0f, false, BodyAnimator.Act.Ram, false, false, false),
                 ("riding", Item.None, 0f, 0.9f, 0f, false, A, false, false, false),
@@ -1373,7 +1377,7 @@ namespace RockGame
                     {
                         Crouch = ps.crouch, Holding = ps.item != Item.None, Carrying = ps.carry,
                         TwoHanded = ps.item == Item.Rock || ps.item == Item.Spear || ps.item == Item.Ram || ps.item == Item.Chainsaw || ps.item == Item.Crossbow,
-                        Action = ps.act, Pitch = 0f,
+                        Action = ps.act, Pitch = 0f, Item = ps.carry ? Item.None : ps.item,
                         Riding = ps.name == "riding", Dead = ps.name == "dead", DeadTime = t,
                         Swing = ps.swing ? Mathf.Clamp01(1f - (t % 0.9f) / 0.55f) : 0f,
                         Throw = ps.thrw ? Mathf.Clamp01(1f - (t % 0.9f) / 0.5f) : 0f,
@@ -1396,7 +1400,7 @@ namespace RockGame
                 yield return new WaitForSeconds(seconds);
             }
             void Snap(string name) { ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(dir, name + ".png")); Log("shot " + name); }
-            for (int row = 0; row < 3; row++)
+            for (int row = 0; row < (poses.Length + 5) / 6; row++)
             {
                 var c = origin + new Vector3(0, 0, row * 40f);
                 // front: the camera 8 m in front of the row, looking back at them

@@ -28,13 +28,13 @@ namespace RockGame
         public bool IsHorse => Kind.Value == Horse;
         public bool IsSlender => Kind.Value == Slender;
         public bool IsCar => Kind.Value == Car;
-        public float MaxHp => IsSlender ? Cfg.SlenderHp : Cfg.HorseHp;
+        public float MaxHp => IsSlender ? Cfg.SlenderHp : Cfg.HorseHp * (IsUnicorn ? Mathf.Max(0.1f, Cfg.UnicornHpMul) : 1f);
         public bool Rideable => Kind.Value != Slender;
         public bool HasDriver => DriverId.Value != NoDriver;
-        public string DisplayName => IsBoat ? "Boat" /* THEME MAPS */ : IsSlender ? "Slenderman" : IsHorse ? (Saddled.Value ? "Saddled Horse" : "Wild Horse") : "Wooden Car";
+        public string DisplayName => IsBoat ? "Boat" /* THEME MAPS */ : IsSlender ? "Slenderman" : IsHorse ? (Saddled.Value ? (IsUnicorn ? "Saddled Unicorn" : "Saddled Horse") : (IsUnicorn ? "Wild Unicorn" : "Wild Horse")) : "Wooden Car";
         /// <summary>Where the rider's feet go (local space).</summary>
         public Vector3 SeatLocal => IsHorse ? new Vector3(0, 0.95f, -0.1f) : new Vector3(0, 0.3f, -0.25f);
-        public Vector3 SeatWorld => transform.TransformPoint(SeatLocal);
+        public Vector3 SeatWorld => transform.TransformPoint(SeatLocal + (IsHorse && m_Visual ? m_Visual.localPosition * 0.7f : Vector3.zero)); // (bobs a little with the horse's stride)
 
         CharacterController m_CC;
         Transform m_Visual, m_Saddle, m_Fan, m_Head, m_Tail;
@@ -44,12 +44,14 @@ namespace RockGame
         Vector3 m_Planar, m_LastPos;
         readonly Dictionary<ulong, float> m_HitCooldown = new Dictionary<ulong, float>();
 
-        public static Vehicle ServerSpawn(byte kind, Vector3 pos, float yaw)
+        /// <summary>Server: spawn a vehicle. `unicorn`: a horse that's a Wild Unicorn (NetGame rolls Cfg.UnicornChance for the wild ones).</summary>
+        public static Vehicle ServerSpawn(byte kind, Vector3 pos, float yaw, bool unicorn = false)
         {
             var go = Instantiate(Bootstrap.I.vehiclePrefab, pos, Quaternion.Euler(0, yaw, 0));
             var v = go.GetComponent<Vehicle>();
             v.Kind.Value = kind;
-            v.Hp.Value = kind == Slender ? Cfg.SlenderHp : Cfg.HorseHp;
+            v.Unicorn.Value = unicorn && kind == Horse;
+            v.Hp.Value = v.MaxHp;
             go.GetComponent<NetworkObject>().Spawn(true);
             return v;
         }
@@ -130,9 +132,10 @@ namespace RockGame
             m_CC.slopeLimit = 50f;
             m_CC.skinWidth = 0.06f;
             if (IsSlender) { m_CC.radius = 0.4f; m_CC.height = 2.6f; m_CC.center = new Vector3(0, 1.3f, 0); }
-            m_Visual = CreateVisual(Kind.Value, transform, null, out m_Saddle, out m_Fan, out m_Head, out m_Tail, m_Wheels, m_Legs).transform;
+            m_Visual = CreateVisual(Kind.Value, transform, null, out m_Saddle, out m_Fan, out m_Head, out m_Tail, m_Wheels, m_Legs, IsUnicorn).transform;
             if (IsHorse && AiPsxArt.On) AiPsxArt.ApplyAnimal(m_Visual);
-            if (IsHorse) PsxModels.Replace(m_Visual, "horse", PsxModels.Fit.Uniform); // PSX graphics: the PS1 horse
+            // PSX graphics: the PS1 horse (a unicorn keeps its own white model and horn, so it's always plain to see)
+            if (IsHorse && !IsUnicorn) PsxModels.Replace(m_Visual, "horse", PsxModels.Fit.Uniform);
             // the head hitbox moves with the head but never trips up the horse's own movement
             foreach (var c in m_Visual.GetComponentsInChildren<Collider>())
                 if (c.name == "horse head") { m_HeadCol = c; if (m_CC != null) Physics.IgnoreCollision(m_CC, c); }
@@ -255,7 +258,7 @@ namespace RockGame
                 var camF = Quaternion.Euler(0, look, 0) * Vector3.forward;
                 var camR = Quaternion.Euler(0, look, 0) * Vector3.right;
                 var wish = camF * f * (f < 0 ? 0.45f : 1f) + camR * s * 0.6f;
-                float speed = sprint ? Cfg.HorseSprint : Cfg.HorseWalk;
+                float speed = (sprint ? Cfg.HorseSprint : Cfg.HorseWalk) * SpeedMul;
                 var target = wish.sqrMagnitude > 0.01f ? wish.normalized * speed * Mathf.Clamp01(wish.magnitude) : Vector3.zero;
                 m_Planar = Vector3.MoveTowards(m_Planar, target, (target.sqrMagnitude > m_Planar.sqrMagnitude ? 14f : 10f) * dt);
                 if (f > 0.1f || m_Planar.sqrMagnitude > 1f) m_Yaw = Mathf.MoveTowardsAngle(m_Yaw, look, 300f * dt);
@@ -348,7 +351,7 @@ namespace RockGame
                     if (Cfg.BaseTeamAt(ahead) < 0 && Mathf.Abs(ahead.x) < half && Mathf.Abs(ahead.z) < half) { want = tryYaw; break; }
                 }
                 m_Yaw = Mathf.MoveTowardsAngle(m_Yaw, want, 360f * dt);
-                move = Quaternion.Euler(0, m_Yaw, 0) * Vector3.forward * Cfg.HorseSprint * 0.85f;
+                move = Quaternion.Euler(0, m_Yaw, 0) * Vector3.forward * Cfg.HorseSprint * SpeedMul * 0.85f;
                 m_WanderSpeed = 0f;
             }
             else if (IsHorse)
@@ -459,11 +462,13 @@ namespace RockGame
                 m_Legs[i].localRotation = Quaternion.Euler(Mathf.Sin(ph) * amp, 0, 0);
             }
             if (m_Head) m_Head.localRotation = Quaternion.Euler(Mathf.Abs(v) < 0.3f ? 35f + Mathf.Sin(Time.time) * 5f : Mathf.Sin(m_Anim * 2f) * 6f, 0, 0);
-            if (m_Tail) m_Tail.localRotation = Quaternion.Euler(20f, Mathf.Sin(Time.time * 3f) * 15f, 0);
+            if (m_Tail) m_Tail.localRotation = Quaternion.Euler(20f + Mathf.Clamp01(Mathf.Abs(v) / 6f) * 25f, Mathf.Sin(Time.time * 3f) * 15f, 0);
+            Bob(v, dt);
+            if (IsUnicorn) Rainbow(v, dt);
         }
 
         /// <summary>Car: wooden crate on wheels with a fan engine and a green pig at the front. Horse: blocky brown horse.</summary>
-        public static GameObject CreateVisual(byte kind, Transform parent, Material ghost, out Transform saddle, out Transform fan, out Transform head, out Transform tail, List<Transform> wheels, List<Transform> legs)
+        public static GameObject CreateVisual(byte kind, Transform parent, Material ghost, out Transform saddle, out Transform fan, out Transform head, out Transform tail, List<Transform> wheels, List<Transform> legs, bool unicorn = false)
         {
             saddle = fan = head = tail = null;
             var root = new GameObject("visual");
@@ -517,9 +522,9 @@ namespace RockGame
             }
             else if (kind == Horse)
             {
-                using var tint = ColorSlots.Use(ColorSlots.Horses); // (Settings > Display colours)
-                var coat = new Color(0.45f, 0.3f, 0.18f);
-                var mane = new Color(0.18f, 0.12f, 0.08f);
+                using var tint = ColorSlots.Use(unicorn ? null : ColorSlots.Horses); // (Settings > Display colours; a unicorn is always white)
+                var coat = unicorn ? UnicornCoat : new Color(0.45f, 0.3f, 0.18f);
+                var mane = unicorn ? UnicornMane : new Color(0.18f, 0.12f, 0.08f);
                 Art.Box(t, coat, new Vector3(0, 1.15f, 0), new Vector3(0.6f, 0.6f, 1.5f));
                 // neck + head (head pivots to graze)
                 var neck = new GameObject("neck").transform;
@@ -536,6 +541,7 @@ namespace RockGame
                 Art.Box(neck, coat, new Vector3(0.09f, 0.82f, 0.25f), new Vector3(0.06f, 0.14f, 0.06f));
                 Art.Box(neck, coat, new Vector3(-0.09f, 0.82f, 0.25f), new Vector3(0.06f, 0.14f, 0.06f));
                 head = neck;
+                if (unicorn) AddHorn(neck);
                 var tl = new GameObject("tail").transform;
                 tl.SetParent(t, false);
                 tl.localPosition = new Vector3(0, 1.3f, -0.76f);
@@ -548,7 +554,7 @@ namespace RockGame
                     leg.SetParent(t, false);
                     leg.localPosition = new Vector3(x, 0.9f, z);
                     Art.Box(leg, coat, new Vector3(0, -0.4f, 0), new Vector3(0.16f, 0.8f, 0.16f));
-                    Art.Box(leg, mane, new Vector3(0, -0.85f, 0), new Vector3(0.18f, 0.12f, 0.18f));
+                    Art.Box(leg, unicorn ? UnicornHorn : mane, new Vector3(0, -0.85f, 0), new Vector3(0.18f, 0.12f, 0.18f)); // (a unicorn's hooves are gold)
                     legs?.Add(leg);
                 }
                 var sd = new GameObject("saddle").transform;

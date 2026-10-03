@@ -22,6 +22,8 @@ namespace RockGame
             public bool Crouch, Dead, Carrying, TwoHanded, Holding, Riding;
             public float Pitch, Swing, DeadTime;
             public Act Action;
+            /// <summary>What's in the hands (the rock is held in both; the spear is carried like when sprinting).</summary>
+            public Item Item;
             /// <summary>1 right after a throw, falling to 0 (overhand throw).</summary>
             public float Throw;
         }
@@ -35,7 +37,7 @@ namespace RockGame
         float m_Phase, m_Speed, m_Crouch, m_Air, m_VelY, m_Hold, m_Carry, m_Fwd = 1f, m_Side, m_Land, m_AirVel;
         // each action blends in and out (0..1); m_Draw fills up while a bow / spear is held drawn
         float m_Slide, m_Bow, m_SpearAim, m_Aim, m_Eat, m_Ram, m_Saw, m_Draw;
-        float m_SlideYaw;
+        float m_SlideYaw, m_Rock;
         // while aiming, the held item points where the player looks instead of along the forearm
         float m_GripW;
         Quaternion m_GripRot = Quaternion.identity;
@@ -209,10 +211,23 @@ namespace RockGame
             var lFore = new Vector3(elbow + Mathf.Min(0f, sb) * 25f * sprint, 0, 0);
             var rFore = new Vector3(elbow + Mathf.Min(0f, s) * 25f * sprint, 0, 0);
 
-            // holding something: right hand forward, still bobbing a little with the stride
-            rArm = Vector3.Lerp(rArm, new Vector3(-35f + s * armSwing * -0.25f - 15f * sprint, 0, 10f), m_Hold);
-            rFore = Vector3.Lerp(rFore, new Vector3(-45f - 20f * sprint, 0, 0), m_Hold);
-            if (p.TwoHanded && p.Holding)
+            // holding something: right hand forward, still bobbing a little with the stride (the spear is always carried
+            // the way it is at a sprint)
+            float holdSprint = p.Item == Item.Spear ? 1f : sprint;
+            rArm = Vector3.Lerp(rArm, new Vector3(-35f + s * armSwing * -0.25f - 15f * holdSprint, 0, 10f), m_Hold);
+            rFore = Vector3.Lerp(rFore, new Vector3(-45f - 20f * holdSprint, 0, 0), m_Hold);
+            m_Rock = Mathf.MoveTowards(m_Rock, p.Item == Item.Rock && p.Holding && !p.Carrying ? 1f : 0f, dt * 8f);
+            if (m_Rock > 0f)
+            {
+                // the rock in both hands in front of the belly: both arms forward and in, the elbows bent, the hands
+                // either side of it (it sits between them - GripPose), bobbing a little with the stride
+                float bobR = s * armSwing * -0.12f;
+                rArm = Vector3.Lerp(rArm, new Vector3(-24f + bobR, 0, -2f), m_Rock);
+                rFore = Vector3.Lerp(rFore, new Vector3(-88f, 0, 0), m_Rock);
+                lArm = Vector3.Lerp(lArm, new Vector3(-24f + bobR, 0, 30f), m_Rock);
+                lFore = Vector3.Lerp(lFore, new Vector3(-88f, 0, 0), m_Rock);
+            }
+            else if (p.TwoHanded && p.Holding)
             {
                 // both hands on it
                 lArm = Vector3.Lerp(lArm, new Vector3(-40f + sb * armSwing * -0.2f, 0, -18f), m_Hold);
@@ -381,6 +396,15 @@ namespace RockGame
             // item +Z along the forearm, item +Y (the tool head) perpendicular to it in the swing plane
             rot = Quaternion.LookRotation(down, Vector3.Cross(down, m_Root.right));
             if (m_GripW > 0f) rot = Quaternion.Slerp(rot, m_Root.rotation * m_GripRot, Smooth(m_GripW));
+            if (m_Rock > 0f && m_LHand != null)
+            {
+                // the rock: held between the two palms (a little below and in front of the wrists), facing ahead
+                var mid = (m_RHand.position + m_LHand.position) * 0.5f;
+                var fwdR = (Vector3.ProjectOnPlane(down, m_Root.right).normalized + m_Root.forward).normalized;
+                float w = Smooth(m_Rock);
+                pos = Vector3.Lerp(pos, mid + fwdR * 0.07f - m_Root.up * 0.03f, w);
+                rot = Quaternion.Slerp(rot, Quaternion.LookRotation(m_Root.forward, m_Root.up), w);
+            }
         }
     }
 }

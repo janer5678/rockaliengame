@@ -45,7 +45,7 @@ namespace RockGame
         bool m_Hit, m_ImpactKnown;
         float m_FreezeUntil = -10f, m_FreezeE;
         Vector2 m_Sway;
-        float m_CrouchK, m_SprintK, m_Land, m_AirVel, m_Jump, m_BobPhase, m_AimK;
+        float m_CrouchK, m_SprintK, m_CarryK, m_Land, m_AirVel, m_Jump, m_BobPhase, m_AimK;
         bool m_WasGrounded = true;
         GameObject m_CradleFor;
         Vector3 m_CradleMid;
@@ -59,6 +59,11 @@ namespace RockGame
         public static bool DebugAim, DebugBall;
         int m_ArmsShown = -1;
         readonly System.Collections.Generic.List<Renderer> m_BoxR = new System.Collections.Generic.List<Renderer>(), m_AlienR = new System.Collections.Generic.List<Renderer>();
+
+        /// <summary>For the tests / profiling: how many times the claws were worked out afresh (and how long that took in
+        /// all, ms), and how many times an arm's mesh was re-bent.</summary>
+        public static int SolveCount, BendCount;
+        public static double SolveMsTotal;
 
         /// <summary>The newest view model (for the hands autotest).</summary>
         public static ViewModel Last;
@@ -232,6 +237,10 @@ namespace RockGame
 
             // sprint: lower the item and tilt it in (not while attacking)
             m_SprintK = Mathf.MoveTowards(m_SprintK, s.Sprint && !busy ? 1f : 0f, dt * 6f);
+            // the spear is always carried the way it is when sprinting (lowered and tilted in), walking or standing - only
+            // the bigger bob and the free hand pumping are the sprint's own
+            m_CarryK = Mathf.MoveTowards(m_CarryK, s.Item == Item.Spear && !s.Ball && !busy ? 1f : 0f, dt * 6f);
+            float pose = Mathf.Max(m_SprintK, m_CarryK);
             // jump lag / landing dip
             if (s.Grounded && !m_WasGrounded && m_AirVel < -4f) m_Land = Mathf.Clamp01(-m_AirVel / 16f);
             if (!s.Grounded) m_AirVel = s.VelY;
@@ -247,9 +256,9 @@ namespace RockGame
             float breathe = Mathf.Sin(Time.time * 1.7f) * 0.004f * (1f - bobAmt);
             float equip = Smooth((Time.time - m_EquipStart) / 0.25f);
             float landDip = Mathf.Sin(m_Land * Mathf.PI) * 0.06f;
-            Vector3 shared = bob + new Vector3(m_Sway.x + m_SprintK * 0.03f, m_Sway.y - m_CrouchK * 0.02f + breathe + m_Jump - landDip - m_SprintK * 0.07f, -m_SprintK * 0.04f)
+            Vector3 shared = bob + new Vector3(m_Sway.x + pose * 0.03f, m_Sway.y - m_CrouchK * 0.02f + breathe + m_Jump - landDip - pose * 0.07f, -pose * 0.04f)
                 + Vector3.down * (1f - equip) * 0.45f;
-            Quaternion sharedRot = Quaternion.Euler(m_Sway.y * 300f + m_SprintK * 14f + landDip * 60f, -m_Sway.x * 300f - m_SprintK * 22f, bx * bobAmt * (1.5f + 3f * m_SprintK) + m_SprintK * 12f);
+            Quaternion sharedRot = Quaternion.Euler(m_Sway.y * 300f + pose * 14f + landDip * 60f, -m_Sway.x * 300f - pose * 22f, bx * bobAmt * (1.5f + 3f * m_SprintK) + pose * 12f);
 
             m_RP = m_LP = HandPose.Fist;
             if (s.Ball) { PoseBall(shared, sharedRot); ApplyHands(); return; }
@@ -410,12 +419,43 @@ namespace RockGame
         /// <summary>The way a forearm runs from the wrist at `hand` back towards the elbow at `elbow` (view model space).</summary>
         static Vector3 ArmTo(Vector3 hand, Vector3 elbow) => (elbow - hand).normalized;
 
+        /// <summary>
+        /// The spear: carried low like the sprint pose; RMB raises it over the shoulder (blended in over a moment, not
+        /// snapped), the throw drives it forward and lets go, and the next spear (if you have one) comes back up from below
+        /// while the throw recovers. Letting go of RMB lowers it back down the same way.
+        /// </summary>
         void PoseSpear(State s, Vector3 shared, Quaternion sharedRot, bool swinging, float e)
         {
-            // the spear lives on the rig; the hand grabs the shaft with a natural wrist angle
             float throwK = Mathf.Clamp01((Time.time - m_ThrowStart) / 0.25f);
             bool throwing = throwK < 1f;
-            if (s.SpearAim || throwing)
+            float dt = Time.deltaTime;
+            if (throwing) m_SpearAimK = 1f;
+            else if (Time.time - m_ThrowStart < 0.3f) m_SpearAimK = 0f; // (just thrown: the next one comes up from below)
+            else m_SpearAimK = Mathf.MoveTowards(m_SpearAimK, s.SpearAim ? 1f : 0f, dt / (s.SpearAim ? 0.2f : 0.16f));
+            float k = Smooth(m_SpearAimK);
+            if (k >= 0.999f || throwing) { PoseSpearAim(s, shared, sharedRot, throwK, throwing); return; }
+            // after a throw the next spear rises back into the hand
+            float back = Smooth((Time.time - m_ThrowStart - 0.25f) / 0.3f);
+            var low = shared + Vector3.down * (1f - back) * 0.4f;
+            PoseSpearIdle(low, sharedRot, swinging, e);
+            if (k <= 0.001f) return;
+            // part way up / down: between the carry pose and the wound-up one
+            var hp = m_ItemHolder.localPosition; var hr = m_ItemHolder.localRotation;
+            var rp = m_R.localPosition; var rr = m_R.localRotation;
+            var lp = m_L.localPosition; var lr = m_L.localRotation;
+            var rpose = m_RP; var lpose = m_LP;
+            PoseSpearAim(s, shared, sharedRot, 1f, false);
+            Set(m_ItemHolder, Vector3.Lerp(hp, m_ItemHolder.localPosition, k), Quaternion.Slerp(hr, m_ItemHolder.localRotation, k));
+            Set(m_R, Vector3.Lerp(rp, m_R.localPosition, k), Quaternion.Slerp(rr, m_R.localRotation, k));
+            Set(m_L, Vector3.Lerp(lp, m_L.localPosition, k), Quaternion.Slerp(lr, m_L.localRotation, k));
+            if (k < 0.5f) { m_RP = rpose; m_LP = lpose; }
+        }
+
+        float m_SpearAimK;
+
+        void PoseSpearAim(State s, Vector3 shared, Quaternion sharedRot, float throwK, bool throwing)
+        {
+            // the spear lives on the rig; the hand grabs the shaft with a natural wrist angle
             {
                 float d = throwing ? 0f : s.Draw;
                 Vector3 pos = new Vector3(0.4f, 0.17f, 0.15f - d * 0.25f);
@@ -431,8 +471,11 @@ namespace RockGame
                 Set(m_L, shared + new Vector3(-0.16f, -0.14f, 0.55f), sharedRot * Quaternion.Euler(-25f, 25f, 25f));
                 m_RP = HandPose.FistThumb(rot * Vector3.up).WithArm(ArmTo(m_R.localPosition, shared + new Vector3(0.5f, -0.35f, -0.1f))); // (the elbow cocked out to the side)
                 m_LP = HandPose.PalmAt(m_L.localPosition + sharedRot * new Vector3(0.1f, 0.05f, 0.1f), 0.45f); // the free hand points the way
-                return;
             }
+        }
+
+        void PoseSpearIdle(Vector3 shared, Quaternion sharedRot, bool swinging, float e)
+        {
             if (m_Item && !m_Item.activeSelf) m_Item.SetActive(true);
             float thrust = 0;
             if (swinging)
@@ -474,9 +517,12 @@ namespace RockGame
             var bowRot = sharedRot * Quaternion.Euler(Mathf.Lerp(-6f, 0f, e), Mathf.Lerp(-12f, -4f, e), Mathf.Lerp(-14f, -26f, e));
             AttachItemToRoot(grip, bowRot, 1f);
 
-            // bow hand: fist on the grip, forearm reaching back to the lower left
+            // bow hand: fist on the grip, forearm reaching back to the lower left. (The arm's line turns with the view's
+            // sway and the sprint tilt like the bow does, so the hand sits still on the grip: worked out from a shoulder fixed
+            // to the camera it slid round the grip with every step, and the claws had to be re-fitted every frame - that
+            // was the bow's sprint glitch and its frame-rate drop.)
             var shoulder = new Vector3(-0.3f, -0.55f, -0.1f);
-            var armDir = (grip - shoulder).normalized;
+            var armDir = DebugLegacyBow ? (grip - shoulder).normalized : (sharedRot * (grip - shared - shoulder)).normalized;
             m_L.localPosition = grip + armDir * -0.02f + bowRot * new Vector3(-0.01f, -0.01f, 0f);
             m_L.localRotation = Quaternion.LookRotation(armDir, bowRot * Vector3.up) * Quaternion.Euler(0, 0, 70f);
             m_LP = HandPose.FistThumb(bowRot * Vector3.up);
@@ -493,14 +539,21 @@ namespace RockGame
             if (m_Arrow)
             {
                 // the arrow model runs along +Y from -0.15 (fletching) to 0.6 (tip)
-                m_Arrow.transform.localRotation = Quaternion.LookRotation(dir) * Quaternion.Euler(90f, 0, 0);
+                // (rolled with the bow, not kept upright: an arrow that turned against the bow at every step of a run made
+                // the claws round it be re-fitted every frame)
+                m_Arrow.transform.localRotation = Quaternion.LookRotation(dir, DebugLegacyBow ? Vector3.up : bowRot * Vector3.up) * Quaternion.Euler(90f, 0, 0);
                 m_Arrow.transform.localPosition = tip - dir * 0.6f;
             }
 
             // string hand holds the nock at the lower right; drawn, it's back by your face (out of view)
             var stringRest = grip + bowRot * new Vector3(0, 0, -0.03f);
-            var pull = Vector3.Lerp(m_Arrow ? nock : stringRest, grip + new Vector3(0.015f, -0.015f, -0.47f), e);
-            pull.z = Mathf.Max(pull.z, 0.12f); // keep the string in front of the camera
+            var restNock = m_Arrow ? (DebugLegacyBow ? nock : grip + bowRot * BowRestNock) : stringRest;
+            var pull = Vector3.Lerp(restNock, grip + new Vector3(0.015f, -0.015f, -0.47f), e);
+            // keep the string in front of the camera. At rest the nock is kept on the bow (BowRestNock, worked out from
+            // the bow's resting pose) so it moves with it: clamping it to the camera's depth there made it slide along the
+            // string every step of a run (and the claws round it with it); drawn back it's clamped to the view.
+            if (DebugLegacyBow) pull.z = Mathf.Max(pull.z, 0.12f);
+            else pull.z = Mathf.Max(pull.z, Mathf.Lerp(-1f, 0.12f, e));
             // the claws hooked round the string from the right (an archer's draw): pointing left across it, palm back
             // towards you, so they curl round the string beside the nock
             var across = -Vector3.Cross(bowRot * Vector3.up, dir).normalized;
@@ -514,17 +567,38 @@ namespace RockGame
                 var top = m_Root.InverseTransformPoint(m_Item.transform.TransformPoint(new Vector3(0, 0.375f, -0.02f)));
                 var bottom = m_Root.InverseTransformPoint(m_Item.transform.TransformPoint(new Vector3(0, -0.375f, -0.02f)));
                 var mid = Vector3.Lerp(stringRest, pull, Mathf.Max(e, 0.05f));
-                mid.z = Mathf.Max(mid.z, 0.12f);
-                SetString(m_StringA.transform, top, mid);
-                SetString(m_StringB.transform, bottom, mid);
+                mid.z = Mathf.Max(mid.z, DebugLegacyBow ? 0.12f : Mathf.Lerp(-1f, 0.12f, e));
+                var sup = DebugLegacyBow ? Vector3.up : bowRot * Vector3.forward; // (the strings roll with the bow too)
+                SetString(m_StringA.transform, top, mid, sup);
+                SetString(m_StringB.transform, bottom, mid, sup);
             }
         }
 
-        static void SetString(Transform t, Vector3 a, Vector3 b)
+        /// <summary>For the bow sprint profile: the old bow pose (arm from a fixed shoulder, the nock clamped to the view).</summary>
+        public static bool DebugLegacyBow;
+
+        /// <summary>
+        /// Where the arrow's nock sits on the resting bow, in the bow's own space from its grip: the old resting pose (bow
+        /// at rest, no sway or sprint) with the nock brought forward to 0.12 m in front of the camera, as it was drawn.
+        /// </summary>
+        static readonly Vector3 BowRestNock = ComputeBowRestNock();
+
+        static Vector3 ComputeBowRestNock()
+        {
+            var grip = new Vector3(0.2f, -0.22f, 0.62f);
+            var bowRot = Quaternion.Euler(-6f, -12f, -14f);
+            var tip = grip + bowRot * new Vector3(-0.02f, 0.01f, 0.28f);
+            var dir = (bowRot * new Vector3(-0.08f, 0.06f, 1f)).normalized;
+            var nock = tip - dir * 0.765f;
+            nock.z = Mathf.Max(nock.z, 0.12f);
+            return Quaternion.Inverse(bowRot) * (nock - grip);
+        }
+
+        static void SetString(Transform t, Vector3 a, Vector3 b, Vector3 up)
         {
             var d = b - a;
             t.localPosition = (a + b) * 0.5f;
-            t.localRotation = d.sqrMagnitude > 1e-6f ? Quaternion.LookRotation(d) : Quaternion.identity;
+            t.localRotation = d.sqrMagnitude > 1e-6f ? Quaternion.LookRotation(d, up) : Quaternion.identity;
             t.localScale = new Vector3(0.004f, 0.004f, d.magnitude);
         }
 
