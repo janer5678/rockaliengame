@@ -1025,8 +1025,9 @@ namespace RockGame
                 if (p.Dead.Value) continue;
                 float d = Vector3.Distance(p.transform.position + Vector3.up, pos);
                 if (d > radius) continue;
-                if (d <= killRadius) p.ServerKill(attacker);
-                else p.ServerDamage(playerDamage * Mathf.Lerp(1f, 0.3f, d / radius), attacker);
+                byte cause = kind == BlastKind.C4 ? (byte)Item.C4 : kind == BlastKind.Rocket ? (byte)Item.RocketLauncher : kind == BlastKind.Airstrike ? (byte)Item.Airstrike : (byte)Item.BombBush;
+                if (d <= killRadius) p.ServerKill(attacker, cause);
+                else p.ServerDamage(playerDamage * Mathf.Lerp(1f, 0.3f, d / radius), attacker, cause);
             }
             return destroyed;
         }

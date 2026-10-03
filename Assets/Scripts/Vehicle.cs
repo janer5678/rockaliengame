@@ -407,8 +407,7 @@ namespace RockGame
                 to.y = 0;
                 if (best < 1.4f)
                 {
-                    target.ServerKill(null);
-                    NetGame.Instance?.Broadcast($"Slenderman got {Cfg.TeamLabel(target.Team.Value)}!");
+                    target.ServerKill(null, KillCause.Slenderman); // (the kill feed says so)
                     NetworkObject.Despawn(true);
                     return;
                 }

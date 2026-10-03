@@ -175,7 +175,7 @@ namespace RockGame
             if (target.TryGet(out var no) && no.TryGetComponent(out PlayerNet p) && p != this && !p.Dead.Value && GameAllowsCombat
                 && Vector3.Distance(p.transform.position + Vector3.up, point) < 2.5f && !GlassBetween(transform.position, p.transform.position))
             {
-                p.ServerKill(this);
+                p.ServerKill(this, (byte)Item.RocketLauncher);
                 Notify("Direct hit!");
             }
             g.ServerRocket(point, this);

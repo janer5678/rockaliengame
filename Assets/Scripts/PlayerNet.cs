@@ -8,7 +8,7 @@ namespace RockGame
     /// <summary>
     /// Networked player state + all server-side validation of player actions.
     /// Movement is owner-authoritative (NetworkTransform in Owner mode), everything else is server-authoritative.
-    /// Inventory: slots 0..6 are the hotbar, 7..27 the main inventory. There is no rock item: an empty hotbar slot
+    /// Inventory: slots 0..5 are the hotbar, 6..23 the main inventory (Cfg.HotbarSize / MainSize). There is no rock item: an empty hotbar slot
     /// in your hand means you hold your rock. (More in PlayerNet.Extras.cs: vehicles, armour, crossbow, dev tools, voice.)
     /// </summary>
     public partial class PlayerNet : NetworkBehaviour
@@ -648,14 +648,16 @@ namespace RockGame
         public void NotifyPublic(string msg) => Notify(msg);
 
         /// <summary>Instant death (sniper, airstrike, C4 right on top of you): armour doesn't help.</summary>
-        public void ServerKill(PlayerNet attacker)
+        /// <summary>`cause`: what did it, for the kill feed (KillCause: an item, or an explosion, lava...; 0 = what the
+        /// attacker is holding).</summary>
+        public void ServerKill(PlayerNet attacker, byte cause = 0)
         {
             if (Dead.Value || !GameAllowsCombat || m_God) return;
             ArmorHp.Value = 0;
-            ServerDamage(Health.Value + 1f, attacker);
+            ServerDamage(Health.Value + 1f, attacker, cause);
         }
 
-        public void ServerDamage(float dmg, PlayerNet attacker)
+        public void ServerDamage(float dmg, PlayerNet attacker, byte cause = 0)
         {
             if (Dead.Value || !GameAllowsCombat || m_God) return;
             if (ArmorHp.Value > 0 && dmg > 0)
@@ -667,10 +669,10 @@ namespace RockGame
                 if (ArmorHp.Value == 0) { Notify("Your armour broke!"); Fx.Server(FxKind.Break, transform.position + Vector3.up * 1.2f, Vector3.up); }
             }
             Health.Value = Mathf.Max(0, Health.Value - dmg);
-            if (Health.Value <= 0) ServerDie(attacker);
+            if (Health.Value <= 0) ServerDie(attacker, cause);
         }
 
-        void ServerDie(PlayerNet killer)
+        void ServerDie(PlayerNet killer, byte cause = 0)
         {
             Dead.Value = true;
             Health.Value = 0;
@@ -701,7 +703,9 @@ namespace RockGame
             var victimName = Cfg.TeamName[Team.Value];
             if (NetGame.Instance != null)
             {
-                NetGame.Instance.Broadcast(killer != null && killer != this ? $"{Cfg.TeamName[killer.Team.Value]} killed {victimName}" : $"{victimName} died");
+                // the kill feed (top right on everyone's screen): who, with what, and who died
+                if (cause == 0) cause = killer != null && killer != this ? (byte)killer.HeldItem : KillCause.Died;
+                NetGame.Instance.KillFeedRpc(killer != null && killer != this ? killer.Team.Value : (byte)255, killer != null ? killer.Slot.Value : (byte)0, Team.Value, Slot.Value, cause);
                 NetGame.Instance.ServerOnPlayerKilled(this, killer);
             }
         }
@@ -785,7 +789,7 @@ namespace RockGame
         public static bool GlassBetween(Vector3 a, Vector3 b) => MapBuilder.GlassUp && Cfg.RegionOf(a) != Cfg.RegionOf(b);
 
         /// <summary>headDamage: a weapon's own headshot number (sword, guns); otherwise a headshot does the usual x2.</summary>
-        void ServerHitPlayer(PlayerNet p, float baseDamage, Vector3 point, Vector3 dir, float headDamage = -1f)
+        void ServerHitPlayer(PlayerNet p, float baseDamage, Vector3 point, Vector3 dir, float headDamage = -1f, byte cause = 0)
         {
             if (GlassBetween(transform.position, p.transform.position)) return;
             bool head = p.IsHeadshot(point);
@@ -799,7 +803,7 @@ namespace RockGame
                 Notify("Their helmet stopped your headshot!");
                 return;
             }
-            p.ServerDamage(dmg, this);
+            p.ServerDamage(dmg, this, cause);
             Fx.Server(head ? FxKind.BloodHead : FxKind.Blood, point, dir, OwnerClientId);
             if (p.Dead.Value) KillConfirmRpc();
         }
@@ -958,7 +962,7 @@ namespace RockGame
                 if (no.TryGetComponent(out PlayerNet p) && p != this && !p.Dead.Value)
                 {
                     p.StuckSpears.Value++; // stuck first so it drops into the bag if this kills them
-                    ServerHitPlayer(p, Cfg.SpearThrowDamage * power, point, dir);
+                    ServerHitPlayer(p, Cfg.SpearThrowDamage * power, point, dir, -1f, (byte)Item.Spear);
                     if (!p.Dead.Value) p.Notify("A spear is stuck in you! Press E to pull it out");
                     return;
                 }
@@ -1386,7 +1390,7 @@ namespace RockGame
                 n.NetworkObject.Despawn(true);
                 Notify("It was a fake bomb bush!");
                 if (NetGame.Instance != null) NetGame.Instance.ServerBlast(at, 3f, -2, Cfg.BombBushDamage * 0.4f, 0f, 0f, null, false);
-                ServerDamage(Cfg.BombBushDamage, null); // the one who picked it takes the full blast
+                ServerDamage(Cfg.BombBushDamage, null, (byte)Item.BombBush); // the one who picked it takes the full blast
                 return;
             }
             // you pick the whole bush: it's gone, and a new one grows somewhere else on this side later
@@ -1493,7 +1497,7 @@ namespace RockGame
                 bool nearImpact = Vector3.Distance(end, c) <= Cfg.WandRadius;
                 if (off <= Cfg.WandRadius * 0.5f || nearImpact)
                 {
-                    p.ServerDamage(99999f, this);
+                    p.ServerDamage(99999f, this, (byte)Item.DeathWand);
                     Fx.Server(FxKind.BloodHead, c, dir);
                     if (p.Dead.Value) KillConfirmRpc();
                 }

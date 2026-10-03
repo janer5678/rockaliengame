@@ -61,7 +61,9 @@ namespace RockGame
             string hint = "Upgrades are here from the start - no workbench needed. Press "
                 + $"{Binds.Name(Bind.Interact)} on your alien machine to open this; {Binds.Name(Bind.Inventory)} or Esc closes it.";
             var hintStyle = CraftStyle(13 * k, FontStyle.Normal, TextAnchor.UpperLeft, Color.white, true);
-            Shadowed(new Rect(x, y + 4 * k, colW, Mathf.Max(40 * k, bottom - y)), hint, hintStyle);
+            // what the mouse is over (an upgrade or an item in the bag), otherwise how this screen works
+            if (!DrawHoverInfo(new Rect(x, y + 4 * k, colW, Mathf.Max(40 * k, bottom - y)), k))
+                Shadowed(new Rect(x, y + 4 * k, colW, Mathf.Max(40 * k, bottom - y)), hint, hintStyle);
         }
 
         /// <summary>One row: icon, name + level pips, what the next level does, its price, and UPGRADE.</summary>
@@ -75,7 +77,7 @@ namespace RockGame
             bool over = rr.Contains(ev.mousePosition);
             float row = rr.height;
             Fill(rr, ok ? k_RowOk : k_RowNo);
-            if (over) { Fill(rr, new Color(1, 1, 1, 0.06f)); m_HoverName = UpgradeDescription(id, team); }
+            if (over) { Fill(rr, new Color(1, 1, 1, 0.06f)); SetHover(UpgradeDescription(id, team)); }
             Fill(new Rect(rr.x, rr.y, 4 * k, rr.height), ok ? k_UpEdge : k_UpEdge * 0.6f);
             // the icon
             float pad = 8 * k, isz = Mathf.Min(row - 2 * pad, 72 * k);

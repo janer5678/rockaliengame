@@ -35,7 +35,11 @@ namespace RockGame
         bool m_Dragging, m_DragHalf;
         SlotRef m_DragFrom;
         ItemStack m_DragStack;
-        string m_HoverName = "";
+        float m_DragSlot = 64f;
+        /// <summary>How many the drag carries: the whole stack, or half of it (right-drag).</summary>
+        int DragAmount => m_DragHalf ? Mathf.Max(1, m_DragStack.Count / 2) : m_DragStack.Count;
+        // what the mouse is over in the bag (item or crafting row): its name (white, top line) and description (grey)
+        string m_HoverTitle = "", m_HoverText = "";
 
         public static void Push(string text)
         {
@@ -51,7 +55,7 @@ namespace RockGame
         }
         public static void Wake() => s_WakeTime = Time.time;
         public static void Banner(string title, string sub) { s_BannerTitle = title; s_BannerSub = sub; s_BannerTime = Time.time; }
-        public static void Clear() { s_Msgs.Clear(); s_Gains.Clear(); s_BannerTime = -10f; Fx.Numbers.Clear(); }
+        public static void Clear() { s_Msgs.Clear(); s_Gains.Clear(); s_Kills.Clear(); s_BannerTime = -10f; Fx.Numbers.Clear(); }
 
         /// <summary>Materials spent (building, crafting): a red "-15 Wood" line in the same feed.</summary>
         public static void Loss(Item id, int amount)
@@ -242,6 +246,8 @@ namespace RockGame
 
             // ---- Builder crafting timers, then messages (top right) ----
             float my = 10 + DrawCraftStack(me, k, 10);
+            float kf = DrawKillFeed(k, my); // the kill feed (Hud.KillFeed.cs), then the messages under it
+            if (kf > 0) my += kf + 4 * k;
             for (int i = s_Msgs.Count - 1; i >= 0; i--)
             {
                 float age = Time.time - s_Msgs[i].Time;
@@ -291,7 +297,7 @@ namespace RockGame
             // ---- hotbar (the tutorial shows it once you get your first wood) ----
             if (!pc.MenuOpen && Tutorial.Allows(TutFeature.HotbarHud))
             {
-                float slot = 70 * k, gap = 6 * k;
+                float slot = 80 * k, gap = 6 * k; // (six slots: a little bigger than the seven used to be)
                 int n = Cfg.HotbarSize;
                 float hx = cx - (n * slot + (n - 1) * gap) / 2, hy = sh - slot - 14 * k;
                 for (int i = 0; i < n; i++)
@@ -300,7 +306,7 @@ namespace RockGame
                     bool sel = me.HeldSlot.Value == i && !me.CarryingBall;
                     DrawSlotVisual(r, me.SlotAt(i), sel, me);
                     if (sel && me.SlotAt(i).Empty) DrawRockGhost(r);
-                    GUI.Label(new Rect(r.x + 4 * k, r.y + 1, 34 * k, 22 * k), Binds.Short(Bind.Hotbar1 + i), m_SmallNoClip);
+                    Shadowed(new Rect(r.x + 5 * k, r.y + 2, 34 * k, 22 * k), Binds.Short(Bind.Hotbar1 + i), m_SlotKey); // the key number, bold (the stack count stays normal)
                 }
             }
 
@@ -397,6 +403,7 @@ namespace RockGame
             if (pc.MenuOpen) DrawInventory(me, pc);
             Tutorial.Draw(k, m_Label, m_Small, Fill, Shadowed);
             if (!pc.Paused) Chat.Draw(k, m_Small, Fill, Shadowed);
+            DrawDragAndFlights(me, pc); // (on top of the bag, the tutorial panel and the chat)
             if (pc.WheelOpen) DrawWheel(pc);
             if (pc.AirstrikeMapOpen) DrawAirstrikeMap(me, pc);
 
@@ -501,13 +508,14 @@ namespace RockGame
             GUI.color = old;
         }
 
-        void DrawSlotVisual(Rect r, ItemStack s, bool selected, PlayerNet me)
+        void DrawSlotVisual(Rect r, ItemStack s, bool selected, PlayerNet me, float pop = 1f)
         {
             Fill(r, selected ? new Color(1f, 0.85f, 0.3f, 0.55f) : new Color(0, 0, 0, 0.5f));
             Fill(new Rect(r.x, r.yMax - 2, r.width, 2), new Color(1, 1, 1, 0.08f));
             if (s.Empty) return;
             var icon = ItemIcons.Get(s.Id);
-            var inner = new Rect(r.x + r.width * 0.1f, r.y + r.height * 0.08f, r.width * 0.8f, r.height * 0.8f);
+            float iw = r.width * 0.8f * pop, ih = r.height * 0.8f * pop;
+            var inner = new Rect(r.center.x - iw / 2, r.y + r.height * 0.48f - ih / 2, iw, ih);
             if (icon != null) GUI.DrawTexture(inner, icon, ScaleMode.ScaleToFit, true);
             else GUI.Label(r, Cfg.ItemName(s.Id), new GUIStyle(m_Small) { alignment = TextAnchor.MiddleCenter, wordWrap = true });
             string count = s.Count > 1 ? s.Count.ToString() : s.Id == Item.Bow && me != null ? me.Count(Item.Arrow) + "a" : "";
@@ -525,10 +533,16 @@ namespace RockGame
         void DrawSlot(Rect r, ItemStack s, byte kind, int index, bool selected, PlayerNet me, PlayerController pc)
         {
             var e = Event.current;
+            NoteSlotRect(kind, index, r);
             bool hover = r.Contains(e.mousePosition);
             bool isSource = m_Dragging && m_DragFrom.Kind == kind && m_DragFrom.Index == index;
-            DrawSlotVisual(r, isSource ? default : s, selected, me);
-            if (hover) { Fill(r, new Color(1, 1, 1, 0.08f)); if (!s.Empty) m_HoverName = Cfg.ItemName(s.Id) + ItemBlurb(s); }
+            // the slot a drag came from shows what's left behind (nothing, or the other half of a split); a slot something
+            // is flying into shows what it had before it lands (Hud.Flights.cs)
+            var shown = isSource ? (m_DragHalf ? s.WithCount(s.Count - DragAmount) : default)
+                : DropWaiting(kind, index) ? (s.Equals(m_DropStack) ? s.WithCount(s.Count - m_DropAmount) : s)
+                : FlightView(kind, index, s);
+            DrawSlotVisual(r, shown, selected, me, LandPop(kind, index));
+            if (hover) { Fill(r, new Color(1, 1, 1, 0.08f)); if (!s.Empty) SetHover(s, me.Team.Value); }
 
             if (e.type == EventType.MouseDown && hover && !s.Empty)
             {
@@ -539,14 +553,16 @@ namespace RockGame
                     m_DragHalf = e.button == 1;
                     m_DragFrom = new SlotRef { Kind = kind, Index = index };
                     m_DragStack = s;
+                    m_DragSlot = r.width;
                 }
                 e.Use();
             }
             else if (e.type == EventType.MouseUp && hover && m_Dragging)
             {
-                int amount = m_DragHalf ? Mathf.Max(1, m_DragStack.Count / 2) : m_DragStack.Count;
+                int amount = DragAmount;
                 if (!(m_DragFrom.Kind == kind && m_DragFrom.Index == index))
                 {
+                    NoteDrop(m_DragFrom.Kind, m_DragFrom.Index, e.mousePosition, m_DragStack, amount);
                     me.MoveItemRpc(m_DragFrom.Kind, (byte)m_DragFrom.Index, kind, (byte)index, (ushort)amount, LootRef(pc));
                     Sfx.Play2D(Sfx.Pop, 0.3f, 0.2f);
                 }
@@ -611,17 +627,23 @@ namespace RockGame
 
         // ------------------------------------------------------------------ inventory / crafting / loot
 
+        /// <summary>The three lines under the bag that say how to move things.</summary>
+        public const string InvHelp = "Drag to move\nRight+Drag to Split\nShift+Click to quick-move";
+
         void DrawInventory(PlayerNet me, PlayerController pc)
         {
             float sw = Screen.width, sh = Screen.height, k = m_Scale;
             MouseOverUI = true;
-            m_HoverName = "";
+            m_HoverTitle = m_HoverText = "";
+            TrackFlights(me, pc);
             Fill(new Rect(0, 0, sw, sh), new Color(0, 0, 0, 0.4f));
-            float slot = Mathf.Min(64 * k, (sw - 120) / 24f), gap = 6 * k;
-            float gridW = 7 * slot + 6 * gap;
+            // six across (inventory, hotbar and chests): bigger slots than the old seven, about the same width
+            const int cols = Cfg.HotbarSize;
+            float slot = Mathf.Min(76 * k, (sw - 120) / 21f), gap = 6 * k;
+            float gridW = cols * slot + (cols - 1) * gap;
             bool loot = pc.LootTarget != null;
             float top = sh * 0.14f;
-            // the crafting list: one column, or two when there's a lot in it (workbench tiers) - Hud.Crafting.cs
+            // the crafting list: one column (Hud.Crafting.cs)
             bool upgrades = !loot && pc.UpgradesOpen; // E on your alien machine: UPGRADES instead of crafting (Hud.Upgrades.cs)
             bool craft = !loot && !upgrades && Tutorial.Allows(TutFeature.Craft); // (the tutorial: once crafting is taught)
             int craftCols = craft ? LayoutCraftList(me, pc, top, sh - 8 * k, k) : 1;
@@ -634,6 +656,7 @@ namespace RockGame
             float x0 = Mathf.Max(10, (sw - total) / 2);
             float invX = x0;
             float lootX = invX + gridW + 30 * k;
+            float lootBottom = top;
 
             // ---- loot container (right of the inventory) ----
             if (loot)
@@ -643,64 +666,119 @@ namespace RockGame
                 int n = c.Slots.Count;
                 for (int i = 0; i < n; i++)
                 {
-                    var r = new Rect(lootX + (i % 7) * (slot + gap), top + (i / 7) * (slot + gap), slot, slot);
+                    var r = new Rect(lootX + (i % cols) * (slot + gap), top + (i / cols) * (slot + gap), slot, slot);
                     DrawSlot(r, c.Slots[i], 1, i, false, me, pc);
                 }
-                if (c.IsGamble) DrawGamblePanel(c, me, pc, lootX, top + slot + gap, lootW, slot, k); // DNA mode: the GAMBLE button
+                lootBottom = top + Mathf.Max(1, (n + cols - 1) / cols) * (slot + gap);
+                if (c.IsGamble) { DrawGamblePanel(c, me, pc, lootX, top + slot + gap, lootW, slot, k); lootBottom = top + slot + gap + 140 * k; } // DNA mode: the GAMBLE button
             }
 
-            // ---- my inventory (21 slots) + hotbar ----
+            // ---- my inventory (3 rows of 6) + hotbar ----
             Shadowed(new Rect(invX, top - 34 * k, gridW, 30 * k), "<b>INVENTORY</b>", m_Label);
             for (int i = 0; i < Cfg.MainSize; i++)
             {
                 int idx = Cfg.HotbarSize + i;
-                var r = new Rect(invX + (i % 7) * (slot + gap), top + (i / 7) * (slot + gap), slot, slot);
+                var r = new Rect(invX + (i % cols) * (slot + gap), top + (i / cols) * (slot + gap), slot, slot);
                 DrawSlot(r, me.SlotAt(idx), 0, idx, false, me, pc);
             }
-            float hotY = top + 3 * (slot + gap) + 26 * k;
-            Shadowed(new Rect(invX, hotY - 26 * k, gridW, 24 * k), "<b>HOTBAR</b>  <color=#bbbbbb>(keys 1-7)</color>", m_Small);
+            int rows = (Cfg.MainSize + cols - 1) / cols;
+            float hotY = top + rows * (slot + gap) + 26 * k;
+            Shadowed(new Rect(invX, hotY - 26 * k, gridW, 24 * k), $"<b>HOTBAR</b>  <color=#bbbbbb>(keys 1-{Cfg.HotbarSize})</color>", m_Small);
             for (int i = 0; i < Cfg.HotbarSize; i++)
             {
                 var r = new Rect(invX + i * (slot + gap), hotY, slot, slot);
                 DrawSlot(r, me.SlotAt(i), 0, i, me.HeldSlot.Value == i, me, pc);
-                GUI.Label(new Rect(r.x + 4 * k, r.y + 1, 34 * k, 22 * k), Binds.Short(Bind.Hotbar1 + i), m_SmallNoClip);
+                Shadowed(new Rect(r.x + 5 * k, r.y + 2, 34 * k, 22 * k), Binds.Short(Bind.Hotbar1 + i), m_SlotKey); // the key number, bold (the stack count stays normal)
             }
             float infoY = hotY + slot + 10 * k;
-            // ---- crafting (right, when not looting): Hud.Crafting.cs ----
+            if (TestHover != Item.None) SetHover(ItemStack.Of(TestHover, 1), me.Team.Value); // (AutoTest: as if the mouse were on it)
+            // ---- crafting (right, when not looting): Hud.Crafting.cs - what the mouse is over shows under it ----
             float cxp = invX + gridW + 30 * k;
-            if (craft) DrawCraftList(me, pc, cxp, top, craftW, colGap, sh - 8 * k, k);
-            if (upgrades) DrawUpgradeList(me, pc, cxp, top, craftW, sh - 8 * k, k);
-            Shadowed(new Rect(invX, infoY, loot ? gridW + 200 : gridW, 60 * k), m_HoverName != "" ? m_HoverName : "Drag to move · right-click: to the hotbar · right-drag splits a stack · shift-click quick-moves · drag outside to drop", m_SmallWrap);
-
-            // ---- drag visual ----
-            var e = Event.current;
-            if (m_Dragging)
+            bool hoverShown = false;
+            if (craft) { DrawCraftList(me, pc, cxp, top, craftW, colGap, sh - 8 * k, k); hoverShown = true; }
+            if (upgrades) { DrawUpgradeList(me, pc, cxp, top, craftW, sh - 8 * k, k); hoverShown = true; }
+            // how to move things: always these three lines under the bag
+            Shadowed(new Rect(invX, infoY, gridW, 60 * k), $"<color=#bbbbbb>{InvHelp}</color>", m_SmallWrap);
+            // no crafting list beside the bag (a chest is open, or the tutorial hasn't got there): the description goes
+            // under the chest, or under the help lines
+            if (!hoverShown)
             {
-                if (e.type == EventType.MouseUp)
-                {
-                    // released outside the item grids: throw it on the ground (the rock stays with you)
-                    var invRect = new Rect(invX - 10, top - 10, gridW + 20, hotY + slot - top + 20);
-                    var lootRect = new Rect(lootX - 10, top - 10, lootW + 20, 5 * (slot + gap) + 20);
-                    bool outside = !invRect.Contains(e.mousePosition) && !(loot && lootRect.Contains(e.mousePosition));
-                    if (outside)
-                    {
-                        int amount = m_DragHalf ? Mathf.Max(1, m_DragStack.Count / 2) : m_DragStack.Count;
-                        me.DropItemRpc(m_DragFrom.Kind, (byte)m_DragFrom.Index, (ushort)amount, LootRef(pc));
-                        Sfx.Play2D(Sfx.Throw, 0.4f);
-                    }
-                    m_Dragging = false;
-                    e.Use();
-                }
-                else
-                {
-                    var icon = ItemIcons.Get(m_DragStack.Id);
-                    var dr = new Rect(e.mousePosition.x - slot * 0.4f, e.mousePosition.y - slot * 0.4f, slot * 0.8f, slot * 0.8f);
-                    if (icon != null) GUI.DrawTexture(dr, icon, ScaleMode.ScaleToFit, true);
-                    else GUI.Label(dr, Cfg.ItemName(m_DragStack.Id), m_Small);
-                    int amt = m_DragHalf ? Mathf.Max(1, m_DragStack.Count / 2) : m_DragStack.Count;
-                    if (amt > 1) Shadowed(new Rect(dr.x, dr.yMax - 16, dr.width, 18), amt.ToString(), new GUIStyle(m_Small) { alignment = TextAnchor.LowerRight });
-                }
+                var hr = loot ? new Rect(lootX, lootBottom + 8 * k, Mathf.Max(lootW, 300 * k), 120 * k) : new Rect(invX, infoY + 62 * k, gridW, 120 * k);
+                DrawHoverInfo(hr, k);
             }
+
+            // ---- drag: let go outside the item grids to throw it on the ground ----
+            var e = Event.current;
+            if (m_Dragging && e.type == EventType.MouseUp)
+            {
+                // released outside the item grids: throw it on the ground (the rock stays with you)
+                var invRect = new Rect(invX - 10, top - 10, gridW + 20, hotY + slot - top + 20);
+                var lootRect = new Rect(lootX - 10, top - 10, lootW + 20, Mathf.Max(lootBottom, top + 5 * (slot + gap)) - top + 20);
+                bool outside = !invRect.Contains(e.mousePosition) && !(loot && lootRect.Contains(e.mousePosition));
+                if (outside)
+                {
+                    me.DropItemRpc(m_DragFrom.Kind, (byte)m_DragFrom.Index, (ushort)DragAmount, LootRef(pc));
+                    Sfx.Play2D(Sfx.Throw, 0.4f);
+                }
+                m_Dragging = false;
+                e.Use();
+            }
+        }
+
+        /// <summary>
+        /// On top of everything: what's being dragged follows the pointer (a right-drag shows the half it's carrying from
+        /// the moment it's picked up), and items fly to their new slots (Hud.Flights.cs).
+        /// </summary>
+        void DrawDragAndFlights(PlayerNet me, PlayerController pc)
+        {
+            var e = Event.current;
+            if (!pc.MenuOpen) { m_Dragging = false; m_Flights.Clear(); return; }
+            // (the mouse buttons were let go somewhere the bag never heard about: drop the drag)
+            if (m_Dragging && e.type == EventType.Repaint && !TestDragHeld && !Input.GetMouseButton(0) && !Input.GetMouseButton(1)) m_Dragging = false;
+            DrawFlights(me);
+            if (!m_Dragging || e.type != EventType.Repaint) return;
+            // the real pointer (IMGUI's own position isn't always updated while the right button is held)
+            var mp = TestDragHeld ? TestDragAt : new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
+            float s = m_DragSlot;
+            var dr = new Rect(mp.x - s * 0.42f, mp.y - s * 0.42f, s * 0.84f, s * 0.84f);
+            Fill(new Rect(dr.x - 2, dr.y - 2, dr.width + 4, dr.height + 4), new Color(0, 0, 0, 0.35f));
+            var icon = ItemIcons.Get(m_DragStack.Id);
+            if (icon != null) GUI.DrawTexture(dr, icon, ScaleMode.ScaleToFit, true);
+            else GUI.Label(dr, Cfg.ItemName(m_DragStack.Id), m_Small);
+            int amt = DragAmount;
+            if (amt > 1 || m_DragHalf)
+                Shadowed(new Rect(dr.x, dr.yMax - 20 * m_Scale, dr.width - 3, 20 * m_Scale), amt.ToString(), new GUIStyle(m_Small) { alignment = TextAnchor.LowerRight });
+        }
+
+        /// <summary>AutoTest: pretend a drag is held at a screen point (to photograph the split stack on the pointer).</summary>
+        public static bool TestDragHeld;
+        /// <summary>AutoTest: the bag describes this item as if the mouse were over it.</summary>
+        public static Item TestHover;
+        public static Vector2 TestDragAt;
+        public static void TestStartDrag(byte kind, int index, bool half)
+        {
+            var h = Object.FindFirstObjectByType<Hud>();
+            var me = PlayerNet.Local;
+            if (h == null || me == null) return;
+            var lt = PlayerController.Local != null ? PlayerController.Local.LootTarget : null;
+            var s = kind == 0 ? me.SlotAt(index) : lt != null && index < lt.Slots.Count ? lt.Slots[index] : default;
+            h.m_Dragging = !s.Empty;
+            h.m_DragHalf = half;
+            h.m_DragFrom = new SlotRef { Kind = kind, Index = index };
+            h.m_DragStack = s;
+            TestDragHeld = h.m_Dragging;
+        }
+        public static void TestEndDrag()
+        {
+            var h = Object.FindFirstObjectByType<Hud>();
+            if (h != null) h.m_Dragging = false;
+            TestDragHeld = false;
+        }
+        /// <summary>AutoTest: where a slot was last drawn (GUI space), or an empty rect.</summary>
+        public static Rect TestSlotRect(byte kind, int index)
+        {
+            var h = Object.FindFirstObjectByType<Hud>();
+            return h != null && h.m_SlotRects.TryGetValue(SlotKey(kind, index), out var r) ? r : default;
         }
 
         // ------------------------------------------------------------------ build wheel

@@ -433,8 +433,12 @@ namespace RockGame
             yield return new WaitForSeconds(2.2f);
             Check(me.Health.Value > 52f, $"your base heals you slowly (50 -> {me.Health.Value:0})");
             // chat
-            me.ChatRpc(new Unity.Collections.FixedString128Bytes("hello from the test"));
-            yield return new WaitForSeconds(0.4f);
+            me.ChatRpc(new Unity.Collections.FixedString128Bytes("hello from the test"), false);
+            yield return new WaitForSeconds(0.6f);
+            Check(Chat.LastLine.Contains("hello from the test") && !Chat.LastLine.Contains("TEAM CHAT"), $"Enter chat goes to everyone ({Chat.LastLine})");
+            me.ChatRpc(new Unity.Collections.FixedString128Bytes("team only"), true);
+            yield return new WaitForSeconds(0.6f);
+            Check(Chat.LastLine.Contains("(TEAM CHAT)") && Chat.LastLine.Contains("team only") && PlayerNet.LastTeamChatTo >= 1, $"T chat is team chat: \"(TEAM CHAT)\" before the name ({Chat.LastLine}, to {PlayerNet.LastTeamChatTo})");
             int graves0 = g.Graves.Count;
             var diedAt = me.transform.position;
             me.SuicideRpc();

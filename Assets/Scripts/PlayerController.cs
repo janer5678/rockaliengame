@@ -234,7 +234,8 @@ namespace RockGame
 
             // ---- menus ----
             // Enter: type in the chat (Enter again sends it, Esc cancels)
-            if (!Chat.Open && !Paused && !MenuOpen && !Hud.Rebinding && (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))) Chat.Begin();
+            if (!Chat.Open && !Paused && !MenuOpen && !Hud.Rebinding && (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))) Chat.Begin(false); // global chat
+            else if (!Chat.Open && !Paused && !MenuOpen && !Hud.Rebinding && !Hud.Typing && Input.GetKeyDown(KeyCode.T)) Chat.Begin(true); // team chat
             if (Input.GetKeyDown(KeyCode.Escape) && !Chat.Open && !Hud.BackOut())
             {
                 if (WheelOpen) WheelOpen = false;

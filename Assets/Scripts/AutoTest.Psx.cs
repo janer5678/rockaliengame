@@ -225,7 +225,7 @@ namespace RockGame
                 GameSettings.SetGraphics(1, false);
             }
             for (int i = 0; i < Cfg.HotbarSize; i++) me.Inv[i] = default;
-            me.HeldSlot.Value = 6; // empty: the rock
+            me.HeldSlot.Value = Cfg.HotbarSize - 1; // empty: the rock
             yield return new WaitForSeconds(0.6f);
             Shot("psxfp_rock");
             yield return new WaitForEndOfFrame();

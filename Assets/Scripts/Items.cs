@@ -68,7 +68,7 @@ namespace RockGame
 
         /// <summary>
         /// Adds items (topping up existing stacks anywhere first, then empty slots). Returns how many did NOT fit.
-        /// Player inventory: materials go to the hotbar from slot 7 backwards (skipping `avoidSlot`, the empty slot you're
+        /// Player inventory: materials go to the hotbar from its last slot backwards (skipping `avoidSlot`, the empty slot you're
         /// holding your rock in), tools to the hotbar from slot 1; then the main inventory.
         /// </summary>
         public static int Add(NetworkList<ItemStack> list, Item id, int count, int data = 0, bool playerInv = false, int avoidSlot = -1, bool fromRight = false)

@@ -113,6 +113,7 @@ namespace RockGame
             if (m_Mode == "grass") { yield return GrassShots(me, pc); yield break; }
             if (m_Mode == "world") { yield return WorldShots(me, pc); yield break; }
             if (m_Mode == "ui") { yield return UiShots(me, pc); yield break; }
+            if (m_Mode == "inv") { yield return InventoryRoutine(me, pc); yield break; }
             if (m_Mode == "dome") { yield return DomeRoutine(me, pc); yield break; }
             if (m_Mode == "scenery") { yield return SceneryRoutine(me, pc); yield break; }
             if (m_Mode == "aipsx") { yield return AiPsxShots(me, pc); yield break; }
@@ -476,8 +477,8 @@ namespace RockGame
             me.ServerGive(Item.Wood, 3000);
             me.ServerGive(Item.Stone, 2000);
             yield return new WaitForSeconds(0.3f);
-            Check(me.SlotAt(6).Id == Item.Wood && me.SlotAt(5).Id == Item.Wood && me.SlotAt(4).Id == Item.Wood && me.SlotAt(3).Id == Item.Stone && me.SlotAt(me.HeldSlot.Value).Empty,
-                  "materials fill the hotbar from slot 7 backwards and keep clear of the rock slot");
+            Check(me.SlotAt(5).Id == Item.Wood && me.SlotAt(4).Id == Item.Wood && me.SlotAt(3).Id == Item.Wood && me.SlotAt(2).Id == Item.Stone && me.SlotAt(me.HeldSlot.Value).Empty,
+                  "materials fill the hotbar from its last slot (6) backwards and keep clear of the rock slot");
 
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
             yield return new WaitForSeconds(0.3f);

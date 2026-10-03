@@ -201,7 +201,7 @@ namespace RockGame
             foreach (var p in PlayerNet.All)
             {
                 if (p.Dead.Value || p.Riding || !InLava(p.transform.position)) continue;
-                p.ServerDamage(LavaDps * 0.5f, null);
+                p.ServerDamage(LavaDps * 0.5f, null, KillCause.Lava);
             }
         }
 

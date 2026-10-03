@@ -15,7 +15,7 @@ namespace RockGame
         HotbarHud,  // the hotbar strip and the "+30 Wood" pop-ups
         Inventory,  // TAB opens the bag
         Craft,      // the crafting list in the bag (items show up one by one: Tutorial.AllowsItem)
-        Hotbar,     // 1-7 and the mouse wheel pick what you hold
+        Hotbar,     // 1-6 and the mouse wheel pick what you hold
         Build,      // placing building pieces with the plan (and R / F)
         Aim,        // RMB (the building wheel first; the spear throw and eating unlock later)
         Interact,   // E
@@ -161,7 +161,7 @@ namespace RockGame
                 case Bind.Upgrade: return TutFeature.Upgrade;
                 case Bind.Demolish: return TutFeature.Demolish;
                 case Bind.PushToTalk: return null;
-                default: return b >= Bind.Hotbar1 && b <= Bind.Hotbar7 ? TutFeature.Hotbar : (TutFeature?)null;
+                default: return b >= Bind.Hotbar1 && b <= Bind.Hotbar6 ? TutFeature.Hotbar : (TutFeature?)null;
             }
         }
 
@@ -178,7 +178,7 @@ namespace RockGame
                 case TutFeature.HotbarHud: return "your hotbar";
                 case TutFeature.Inventory: return $"{K(Bind.Inventory)} bag";
                 case TutFeature.Craft: return "crafting";
-                case TutFeature.Hotbar: return $"{K(Bind.Hotbar1)}-{K(Bind.Hotbar7)} pick a slot";
+                case TutFeature.Hotbar: return $"{K(Bind.Hotbar1)}-{K(Bind.Hotbar6)} pick a slot";
                 case TutFeature.Build: return "building";
                 case TutFeature.Aim: return $"{K(Bind.Aim)} building wheel";
                 case TutFeature.Interact: return $"{K(Bind.Interact)} use";
@@ -384,9 +384,9 @@ namespace RockGame
                 new Step
                 {
                     Id = "axechop", Title = "Use the axe",
-                    Body = $"Close the bag ({K(Bind.Inventory)}). Press the axe's number ({K(Bind.Hotbar1)}-{K(Bind.Hotbar7)}) or use the mouse wheel, then chop!",
+                    Body = $"Close the bag ({K(Bind.Inventory)}). Press the axe's number ({K(Bind.Hotbar1)}-{K(Bind.Hotbar6)}) or use the mouse wheel, then chop!",
                     Goal = "Get 100 wood with the axe", Progress = () => $"{Mathf.Max(0, Count(Item.Wood) - s_Wood0)} / 100",
-                    Hint = $"Keys {Binds.Name(Bind.Hotbar1)}-{Binds.Name(Bind.Hotbar7)} or the mouse wheel pick what you hold. An empty slot is your rock.",
+                    Hint = $"Keys {Binds.Name(Bind.Hotbar1)}-{Binds.Name(Bind.Hotbar6)} or the mouse wheel pick what you hold. An empty slot is your rock.",
                     Done = () => Count(Item.Wood) - s_Wood0 >= 100 && Me.HeldItem == Item.Hatchet,
                     Target = () => Nearest(ResourceNode.Tree), TargetLabel = "TREE",
                     Unlocks = new[] { TutFeature.Hotbar },
@@ -643,7 +643,7 @@ namespace RockGame
             // pressing something that isn't unlocked yet: say so (it doesn't do anything)
             if (!Chat.Open && !pc.Paused && !pc.MenuOpen && !me.Dead.Value)
             {
-                for (var b = Bind.Forward; b <= Bind.Hotbar7; b++)
+                for (var b = Bind.Forward; b <= Bind.Hotbar6; b++)
                     if (b != Bind.PushToTalk && !BindAllowed(b) && Binds.RawDown(b)) s_LockedAt = Time.time;
                 if (!Allows(TutFeature.Hotbar) && Input.mouseScrollDelta.y != 0) s_LockedAt = Time.time;
             }

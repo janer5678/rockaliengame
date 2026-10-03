@@ -1,0 +1,144 @@
+using System.Collections;
+using UnityEngine;
+
+namespace RockGame
+{
+    /// <summary>
+    /// -autotest inv -host -solo -map plains -shotdir DIR: the bag, hotbar and chests six slots across (inventory 18 + hotbar
+    /// 6, chests 12, keys 1-6), items flying to their new slots (shift-click into and out of a chest, a drag, a split),
+    /// the half stack on the pointer during a right-drag, the three help lines, the hovered item's name and description
+    /// under the crafting list (no workbench / spears-and-hatchets text any more), the bold hotbar numbers, the kill feed
+    /// (icons, names, a real suicide), Enter / T chat (TEAM CHAT) and the berry's leaves. Pictures: inv_*.png.
+    /// </summary>
+    public partial class AutoTest
+    {
+        IEnumerator InventoryRoutine(PlayerNet me, PlayerController pc)
+        {
+            int team = me.Team.Value;
+            string res = $"{Screen.width}";
+            int n = 0;
+            IEnumerator Pic(string name, float wait = 0.5f)
+            {
+                yield return new WaitForSeconds(wait);
+                ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), $"inv_{res}_{n++:00}_{name}.png"));
+                Log("shot " + name);
+                yield return null; yield return null;
+            }
+            int SlotOf(Item id) { for (int i = 0; i < Cfg.PlayerSlots; i++) if (me.SlotAt(i).Id == id) return i; return -1; }
+            int EmptyMain() { for (int i = Cfg.PlayerSlots - 1; i >= Cfg.HotbarSize; i--) if (me.SlotAt(i).Empty) return i; return -1; }
+
+            // ---- six across ----
+            Check(Cfg.HotbarSize == 6 && Cfg.MainSize == 18 && Cfg.ChestSlots == 12 && me.Inv.Count == 24, $"six across: hotbar {Cfg.HotbarSize}, bag {Cfg.MainSize}, chest {Cfg.ChestSlots}, {me.Inv.Count} player slots on the network");
+            Check(!System.Enum.IsDefined(typeof(Bind), "Hotbar7") && Binds.All[Binds.All.Length - 1].Bind == Bind.Hotbar6, "hotbar keys 1-6 (no slot 7 to bind)");
+            me.ServerGive(Item.Wood, 600);
+            me.ServerGive(Item.Stone, 300);
+            me.ServerGive(Item.Berry, 12);
+            me.ServerGive(Item.Spear, 1);
+            me.ServerGive(Item.Hatchet, 1);
+            me.ServerGive(Item.Chest, 1);
+            yield return new WaitForSeconds(0.5f);
+            Check(me.SlotAt(Cfg.HotbarSize - 1).Id == Item.Wood, $"wood lands on the last hotbar slot ({Cfg.HotbarSize}) ({me.SlotAt(Cfg.HotbarSize - 1).Id})");
+
+            // ---- the HUD hotbar: bold key numbers ----
+            yield return Hold(me, Item.Berry);
+            yield return Pic("hud_hotbar_berry_held", 0.8f);
+
+            // ---- a chest ----
+            FreeCell(team, 1, out int chI, out int chJ);
+            var chestPos = BuildGrid.CellCenter(chI, chJ);
+            pc.LocalTeleport(chestPos + new Vector3(0, 0.1f, -2.5f), 0);
+            yield return Hold(me, Item.Chest);
+            me.PlaceDeployableRpc((byte)Item.Chest, chestPos, 180f);
+            yield return new WaitForSeconds(0.6f);
+            Container chest = null;
+            foreach (var c in Container.All) if (c.Breakable && c.Team.Value == team) chest = c;
+            Check(chest != null && chest.Slots.Count == 12, $"a chest has 12 slots ({(chest != null ? chest.Slots.Count : -1)})");
+            if (chest == null) { Application.Quit(1); yield break; }
+            pc.LootTarget = chest;
+            pc.MenuOpen = true;
+            yield return Pic("chest_open");
+            Rect c0 = Hud.TestSlotRect(1, 0), c5 = Hud.TestSlotRect(1, 5), c6 = Hud.TestSlotRect(1, 6), c11 = Hud.TestSlotRect(1, 11);
+            Rect b0 = Hud.TestSlotRect(0, Cfg.HotbarSize), b5 = Hud.TestSlotRect(0, Cfg.HotbarSize + 5), b6 = Hud.TestSlotRect(0, Cfg.HotbarSize + 6), h5 = Hud.TestSlotRect(0, 5);
+            Check(c0.width > 0 && Mathf.Approximately(c0.y, c5.y) && c6.y > c0.y + 1 && Mathf.Approximately(c6.x, c0.x) && Mathf.Approximately(c11.y, c6.y),
+                  $"the chest is 2 rows of 6 ({c0} {c5} {c6} {c11})");
+            Check(b0.width > 0 && Mathf.Approximately(b0.y, b5.y) && b6.y > b0.y + 1 && Mathf.Approximately(b6.x, b0.x) && Mathf.Approximately(h5.x, b5.x),
+                  $"the bag is rows of 6 and the hotbar lines up under it ({b0} {b5} {b6} hotbar 6: {h5})");
+            Check(b0.width >= 64f * Mathf.Max(0.75f, Screen.height / 900f) - 0.5f || b0.width >= (Screen.width - 120) / 21f - 0.5f, $"the slots got bigger to make up for the lost column ({b0.width:0} px)");
+
+            // ---- shift-click into the chest: the wood flies over ----
+            int f0 = Hud.FlightsStarted;
+            int wood = SlotOf(Item.Wood);
+            me.MoveItemRpc(0, (byte)wood, 1, 255, 0, chest.NetworkObject);
+            yield return null; yield return null; yield return null;
+            Check(Hud.FlightsStarted > f0 && Hud.FlightsNow > 0, $"shift-click: the wood flies into the chest ({Hud.FlightsStarted - f0} flights, {Hud.FlightsNow} in the air)");
+            ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), $"inv_{res}_{n++:00}_flight_into_chest.png"));
+            yield return new WaitForSeconds(0.5f);
+            Check(Hud.FlightsNow == 0 && chest.Slots[0].Id == Item.Wood, $"it landed (chest slot 1: {chest.Slots[0].Id} x{chest.Slots[0].Count})");
+            // ... and back out
+            f0 = Hud.FlightsStarted;
+            me.MoveItemRpc(1, 0, 0, 255, 0, chest.NetworkObject);
+            yield return null; yield return null; yield return null;
+            Check(Hud.FlightsStarted > f0, "shift-click out of the chest flies back to the bag");
+            ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), $"inv_{res}_{n++:00}_flight_out_of_chest.png"));
+            yield return new WaitForSeconds(0.5f);
+            // a drag (the server's move, as a drop does it)
+            f0 = Hud.FlightsStarted;
+            int stone = SlotOf(Item.Stone);
+            me.MoveItemRpc(0, (byte)stone, 1, 7, 150, chest.NetworkObject);
+            yield return null; yield return null; yield return null;
+            Check(Hud.FlightsStarted > f0 && chest.Slots[7].Count == 150, $"dragging half the stone into the chest flies it there ({chest.Slots[7].Id} x{chest.Slots[7].Count})");
+            yield return new WaitForSeconds(0.5f);
+            Check(Hud.FlightsNow == 0, "every flight has landed");
+
+            // ---- right-drag: the half stack is on the pointer straight away ----
+            int berries = SlotOf(Item.Berry);
+            Hud.TestDragAt = new Vector2(Screen.width * 0.5f, Screen.height * 0.82f);
+            Hud.TestStartDrag(0, berries, true);
+            yield return Pic("split_on_pointer");
+            Hud.TestEndDrag();
+            pc.CloseMenu();
+            yield return new WaitForSeconds(0.3f);
+
+            // ---- the bag with the crafting list: help lines + the hovered item's description ----
+            pc.MenuOpen = true;
+            Hud.TestHover = Item.Hatchet;
+            yield return Pic("craft_hover_hatchet");
+            Check(Hud.HoverShown.StartsWith("Stone Hatchet |") && Hud.HoverShown.Contains("chops trees"), $"the hovered item's name and description show under the crafting list ({Hud.HoverShown})");
+            Hud.TestHover = Item.Berry;
+            yield return Pic("craft_hover_berry");
+            Check(Hud.HoverShown.StartsWith("Berries") || Hud.HoverShown.Contains("eat"), $"an item in the bag is described too ({Hud.HoverShown})");
+            Hud.TestHover = Item.None;
+            yield return Pic("craft_no_hover");
+            Check(Hud.HoverShown == "", "nothing hovered: nothing under the crafting list (no workbench / spears-and-hatchets text)");
+            Check(Hud.InvHelp == "Drag to move\nRight+Drag to Split\nShift+Click to quick-move", "the help under the bag is the three lines");
+            pc.CloseMenu();
+
+            // ---- chat: Enter = everyone, T = team ----
+            Chat.Begin(true);
+            yield return Pic("chat_team_typing");
+            Chat.Close();
+            me.ChatRpc(new Unity.Collections.FixedString128Bytes("all of you"), false);
+            yield return new WaitForSeconds(0.6f);
+            Check(Chat.LastLine.Contains("all of you") && !Chat.LastLine.Contains("TEAM CHAT"), $"global chat ({Chat.LastLine})");
+            me.ChatRpc(new Unity.Collections.FixedString128Bytes("just us"), true);
+            yield return new WaitForSeconds(0.6f);
+            Check(Chat.LastLine.Contains("(TEAM CHAT)") && Chat.LastLine.Contains("just us"), $"team chat says (TEAM CHAT) before the name ({Chat.LastLine})");
+
+            // ---- the kill feed ----
+            var g = NetGame.Instance;
+            int k0 = Hud.KillLines;
+            g.KillFeedRpc(1, 0, (byte)team, 0, (byte)Item.Crossbow);
+            g.KillFeedRpc((byte)team, 0, 1, 0, (byte)Item.C4);
+            g.KillFeedRpc(1, 0, (byte)team, 0, (byte)Item.Rock);
+            g.KillFeedRpc(255, 0, 1, 0, KillCause.Lava);
+            yield return new WaitForSeconds(0.3f);
+            me.SuicideRpc();
+            yield return new WaitForSeconds(0.5f);
+            Check(Hud.KillLines >= k0 + 5 && Hud.LastKillLine.Contains("suicide"), $"the kill feed: {Hud.KillLines - k0} lines, a real suicide last ({Hud.LastKillLine})");
+            yield return Pic("killfeed", 0.2f);
+
+            Log("inventory test done");
+            Application.Quit(0);
+        }
+    }
+}
