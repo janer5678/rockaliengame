@@ -25,9 +25,10 @@ namespace RockGame
 
         struct KP
         {
-            public Vector3 Pos; public float HandX, ItemX;
-            public KP(Vector3 p, float hx, float ix) { Pos = p; HandX = hx; ItemX = ix; }
-            public static KP Lerp(KP a, KP b, float t) => new KP(Vector3.LerpUnclamped(a.Pos, b.Pos, t), Mathf.LerpUnclamped(a.HandX, b.HandX, t), Mathf.LerpUnclamped(a.ItemX, b.ItemX, t));
+            public Vector3 Pos; public float HandX, ItemX, Yaw, Twist;
+            public KP(Vector3 p, float hx, float ix, float yaw = 0f, float twist = 0f) { Pos = p; HandX = hx; ItemX = ix; Yaw = yaw; Twist = twist; }
+            public static KP Lerp(KP a, KP b, float t) => new KP(Vector3.LerpUnclamped(a.Pos, b.Pos, t), Mathf.LerpUnclamped(a.HandX, b.HandX, t), Mathf.LerpUnclamped(a.ItemX, b.ItemX, t),
+                Mathf.LerpUnclamped(a.Yaw, b.Yaw, t), Mathf.LerpUnclamped(a.Twist, b.Twist, t));
         }
 
         readonly Transform m_Root, m_R, m_L, m_ItemHolder;
@@ -46,9 +47,7 @@ namespace RockGame
         Vector2 m_Sway;
         float m_CrouchK, m_SprintK, m_Land, m_AirVel, m_Jump, m_BobPhase, m_AimK;
         bool m_WasGrounded = true;
-        GameObject m_CradleFor, m_RockFor;
-        bool m_RockPsx;
-        float m_RockHalf = 0.15f;
+        GameObject m_CradleFor;
         Vector3 m_CradleMid;
         float m_CradleR;
 
@@ -330,64 +329,90 @@ namespace RockGame
             return KP.Lerp(follow, idle, Smooth((e - down - 0.16f) / Mathf.Max(0.1f, end - down - 0.16f)));
         }
 
-        /// <summary>A big rock held in both hands in front of you, brought down two-handed.</summary>
+        /// <summary>
+        /// A big rock cupped in both hands in front of you (Rust's rock): it sits in the palms, low in the middle of the
+        /// screen, the claws up its sides; brought down two-handed.
+        /// </summary>
         void PoseRock(Vector3 shared, Quaternion sharedRot, bool swinging, float e)
         {
-            var idle = new KP(new Vector3(0.08f, -0.26f, 0.55f), -5f, 0);
-            var raised = new KP(new Vector3(0.06f, 0.02f, 0.4f), -45f, 0);
-            var slam = new KP(new Vector3(0.03f, -0.3f, 0.68f), 35f, 0);
-            var recoil = new KP(new Vector3(0.05f, -0.1f, 0.55f), -15f, 0);
-            var follow = new KP(new Vector3(0.02f, -0.5f, 0.6f), 60f, 0);
+            var idle = new KP(new Vector3(0.04f, -0.18f, 0.41f), -8f, 0);
+            var raised = new KP(new Vector3(0.05f, 0.03f, 0.36f), -45f, 0);
+            var slam = new KP(new Vector3(0.03f, -0.27f, 0.62f), 35f, 0);
+            var recoil = new KP(new Vector3(0.05f, -0.09f, 0.5f), -15f, 0);
+            var follow = new KP(new Vector3(0.02f, -0.48f, 0.56f), 60f, 0);
             var k = Chop(idle, raised, slam, recoil, follow, swinging, e);
             var rot = sharedRot * Quaternion.Euler(k.HandX, -6f, 0);
             AttachItemToRoot(shared + k.Pos, rot, 1f);
-            // hands on either side of the rock, palms on its sides and the long claws reaching up round them and curling
-            // over the top, where you can see them (the forearms run down and back out of the bottom corners)
-            var centre = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(0f, 0.02f, 0.04f)));
-            // (as wide apart as the rock showing is: the PSX rock is a narrower slab than the Normal one)
-            if (m_Item && (m_RockFor != m_Item || m_RockPsx != PsxModels.On))
+            // the rock sits in the two hands: each palm under its lower side, turned up and in, and the claws reaching up
+            // its sides and curling in round it (the forearms run down and a little out, off the bottom of the screen).
+            // The hands go by the size of the rock showing - the PSX rock is a narrower slab than the Normal one, and it
+            // can turn up a frame or two after the graphics change - from its meshes' own bounds, so they hold still
+            // through a swing.
+            Vector3 lo = new Vector3(-0.12f, -0.1f, -0.08f), hi = new Vector3(0.12f, 0.14f, 0.16f);
+            if (m_Item)
             {
-                m_RockFor = m_Item;
-                m_RockPsx = PsxModels.On;
-                float hw = 0f;
-                foreach (var r in m_Item.GetComponentsInChildren<Renderer>())
+                bool any = false;
+                foreach (var mf in m_Item.GetComponentsInChildren<MeshFilter>())
                 {
-                    if (!r.enabled) continue;
-                    var b = r.bounds;
+                    var r = mf.GetComponent<Renderer>();
+                    if (r == null || !r.enabled || mf.sharedMesh == null) continue;
+                    var b = mf.sharedMesh.bounds;
                     for (int i = 0; i < 8; i++)
                     {
                         var corner = b.center + Vector3.Scale(b.extents, new Vector3((i & 1) == 0 ? -1 : 1, (i & 2) == 0 ? -1 : 1, (i & 4) == 0 ? -1 : 1));
-                        hw = Mathf.Max(hw, Mathf.Abs(m_ItemHolder.InverseTransformPoint(corner).x));
+                        var q = m_ItemHolder.InverseTransformPoint(mf.transform.TransformPoint(corner));
+                        if (!any) { lo = hi = q; any = true; }
+                        else { lo = Vector3.Min(lo, q); hi = Vector3.Max(hi, q); }
                     }
                 }
-                if (hw > 0f) m_RockHalf = Mathf.Clamp(hw, 0.06f, 0.15f);
             }
-            m_R.localPosition = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(m_RockHalf, 0.01f, 0.0f)));
-            m_R.localRotation = rot * Quaternion.LookRotation(new Vector3(-0.05f, 0.93f, 0.35f), Vector3.back);
-            m_L.localPosition = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(-m_RockHalf, 0.01f, 0.0f)));
-            m_L.localRotation = rot * Quaternion.LookRotation(new Vector3(0.05f, 0.93f, 0.35f), Vector3.back);
-            // (palms turned a little forwards so the backs of the hands and the claws face you)
-            m_RP = m_LP = HandPose.PalmAt(centre + rot * Vector3.forward * 0.12f, 1f, true);
+            var mid = (lo + hi) * 0.5f;
+            var half = Vector3.Max((hi - lo) * 0.5f, Vector3.one * 0.03f);
+            float hx = Mathf.Clamp(half.x, 0.04f, 0.15f);
+            var centre = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(mid));
+            // (the knuckles low on its sides and a little nearer you than its middle, the hands leaning in under it: the
+            // palms face in and forwards, the claws reach up its sides and the thumbs curl round its front, as in Rust)
+            m_R.localPosition = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(mid + new Vector3(hx * 0.72f, -half.y * 0.65f, -half.z * 0.7f)));
+            m_R.localRotation = rot * Quaternion.LookRotation(new Vector3(-0.5f, 0.84f, 0.2f), Vector3.back);
+            m_L.localPosition = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(mid + new Vector3(-hx * 0.72f, -half.y * 0.65f, -half.z * 0.7f)));
+            m_L.localRotation = rot * Quaternion.LookRotation(new Vector3(0.5f, 0.84f, 0.2f), Vector3.back);
+            m_RP = m_LP = HandPose.PalmAt(centre, 1f, true);
         }
 
-        /// <summary>Hatchet / pickaxe: one hand; the tool pivots in the fist so the forearm stays out of frame.</summary>
+        /// <summary>
+        /// Hatchet / pickaxe / sword (Rust's equip pose): one fist round the end of the handle at the bottom right, the
+        /// forearm rising into it from below the screen (bent at the wrist), the handle standing up out of the fist with
+        /// the head a little forward, its blade pointing left. HandX is the fist's pitch, ItemX how far the handle leans
+        /// forward of square across it (kept small, so the claws close all the way round), Yaw which way the fist points:
+        /// at rest out to the right, so you see the back of the fist and its knuckles round the handle, as in Rust (Twist
+        /// turns the tool round its handle to put the blade to the left); the swing turns the fist and the blade to face
+        /// forward, lays the tool back, then brings it down.
+        /// </summary>
         void PoseTool(Vector3 shared, Quaternion sharedRot, bool swinging, float e)
         {
-            var idle = new KP(new Vector3(0.27f, -0.3f, 0.5f), -8f, 22f);
-            var raised = new KP(new Vector3(0.3f, -0.1f, 0.38f), -30f, -18f);
-            var slam = new KP(new Vector3(0.14f, -0.38f, 0.62f), 6f, 82f);
-            var recoil = new KP(new Vector3(0.2f, -0.24f, 0.55f), -12f, 25f);
-            var follow = new KP(new Vector3(0.12f, -0.48f, 0.58f), 18f, 100f);
+            var idle = new KP(new Vector3(0.21f, -0.27f, 0.66f), -8f, 14f, 42f, -95f);
+            var raised = new KP(new Vector3(0.27f, -0.13f, 0.52f), -60f, 10f, 0f, 0f);
+            var slam = new KP(new Vector3(0.12f, -0.34f, 0.78f), 70f, 16f, -10f, 0f);
+            var recoil = new KP(new Vector3(0.18f, -0.23f, 0.7f), 0f, 14f, 25f, -55f);
+            var follow = new KP(new Vector3(0.1f, -0.44f, 0.74f), 95f, 17f, -10f, 0f);
             var k = Chop(idle, raised, slam, recoil, follow, swinging, e);
-            float swingK = swinging ? 1f : 0f;
-            Set(m_R, shared + k.Pos, sharedRot * Quaternion.Euler(k.HandX, -18f + swingK * 6f, -8f));
+            Set(m_R, shared + k.Pos, sharedRot * Quaternion.Euler(k.HandX, k.Yaw, 4f));
             AttachItemToRight(new Vector3(0, -0.06f, 0.01f), new Vector3(k.ItemX, 0, 0));
+            m_ItemHolder.localRotation *= Quaternion.Euler(0f, k.Twist, 0f);
+            m_RP = HandPose.Fist.WithArm(ArmTo(m_R.localPosition, shared + RightElbow));
             HideLeft();
         }
 
+        // where the elbows are (view model space, before the bob and sway): each forearm runs from its wrist towards
+        // its elbow, so it comes up into the hand from below the edge of the screen wherever the hand goes
+        static readonly Vector3 RightElbow = new Vector3(0.42f, -0.75f, 0.2f), LeftElbow = new Vector3(-0.42f, -0.75f, 0.2f);
+
+        /// <summary>The way a forearm runs from the wrist at `hand` back towards the elbow at `elbow` (view model space).</summary>
+        static Vector3 ArmTo(Vector3 hand, Vector3 elbow) => (elbow - hand).normalized;
+
         void PoseSpear(State s, Vector3 shared, Quaternion sharedRot, bool swinging, float e)
         {
-            // the spear lives on the rig; both hands grab the shaft with natural wrist angles
+            // the spear lives on the rig; the hand grabs the shaft with a natural wrist angle
             float throwK = Mathf.Clamp01((Time.time - m_ThrowStart) / 0.25f);
             bool throwing = throwK < 1f;
             if (s.SpearAim || throwing)
@@ -404,7 +429,7 @@ namespace RockGame
                 var handZ = sharedRot * Quaternion.Euler(-55f, -30f, -20f) * Vector3.forward;
                 m_R.localRotation = Quaternion.LookRotation((handZ - spearAxis * Vector3.Dot(handZ, spearAxis)).normalized, spearAxis);
                 Set(m_L, shared + new Vector3(-0.16f, -0.14f, 0.55f), sharedRot * Quaternion.Euler(-25f, 25f, 25f));
-                m_RP = HandPose.FistThumb(rot * Vector3.up);
+                m_RP = HandPose.FistThumb(rot * Vector3.up).WithArm(ArmTo(m_R.localPosition, shared + new Vector3(0.5f, -0.35f, -0.1f))); // (the elbow cocked out to the side)
                 m_LP = HandPose.PalmAt(m_L.localPosition + sharedRot * new Vector3(0.1f, 0.05f, 0.1f), 0.45f); // the free hand points the way
                 return;
             }
@@ -416,14 +441,24 @@ namespace RockGame
                 else if (m_ImpactKnown && m_Hit) thrust = 1f - Smooth((e - ImpactTime) / 0.1f) * 1.3f + Smooth((e - ImpactTime - 0.1f) / 0.3f) * 0.3f;
                 else thrust = 1f + Smooth((e - ImpactTime) / 0.08f) * 0.15f - Smooth((e - ImpactTime - 0.1f) / Mathf.Max(0.15f, m_SwingDur * 0.6f)) * 1.15f;
             }
-            var spearRot = sharedRot * Quaternion.Euler(80f, -5f, 0);
-            AttachItemToRoot(shared + new Vector3(0.22f, -0.25f, 0.08f + thrust * 0.4f), spearRot);
-            m_R.localPosition = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(0.03f, 0.12f, 0)));
-            m_R.localRotation = sharedRot * Quaternion.Euler(-25f, -28f, -15f);
-            m_L.localPosition = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(-0.03f, 0.62f, 0)));
-            m_L.localRotation = sharedRot * Quaternion.Euler(-30f, 22f, 15f);
-            m_RP = m_LP = HandPose.FistThumb(spearRot * Vector3.up);
+            // (Rust's spear: one fist low on the right, the shaft standing up out of it with the tip forward and up
+            // towards the middle; a thrust levels it out and drives it forward. The fist points out to the right like
+            // the tools', square round the shaft, the back of it towards you, and the forearm comes up into it from
+            // the bottom right, bent at the wrist.)
+            float level = Mathf.Clamp01(thrust);
+            var spearRot = sharedRot * Quaternion.Euler(Mathf.Lerp(40f, 84f, level), Mathf.Lerp(-20f, -5f, level), 0);
+            var grip = shared + new Vector3(0.23f, -0.26f, 0.52f) + new Vector3(-0.06f, 0.1f, 0.3f) * thrust;
+            AttachItemToRoot(grip - spearRot * new Vector3(0f, SpearGrip, 0f), spearRot);
+            var shaft = spearRot * Vector3.up;
+            var across = sharedRot * new Vector3(0.67f, 0f, 0.74f);
+            m_R.localPosition = grip;
+            m_R.localRotation = Quaternion.LookRotation((across - shaft * Vector3.Dot(across, shaft)).normalized, shaft);
+            m_RP = HandPose.FistThumb(shaft).WithArm(ArmTo(grip, shared + RightElbow));
+            HideLeft();
         }
+
+        /// <summary>Where the spear is held (item +Y from its origin): about a third of the way up the shaft.</summary>
+        const float SpearGrip = 0.08f;
 
         /// <summary>
         /// Rust hunting bow (copied from Rust footage): the LEFT arm comes in from the lower left and holds the bow right of
@@ -469,7 +504,7 @@ namespace RockGame
             // the claws hooked round the string from the right (an archer's draw): pointing left across it, palm back
             // towards you, so they curl round the string beside the nock
             var across = -Vector3.Cross(bowRot * Vector3.up, dir).normalized;
-            m_R.localPosition = Vector3.Lerp(pull - across * 0.03f - bowRot * Vector3.up * 0.02f - dir * 0.05f, new Vector3(0.3f, -0.5f, -0.3f), e); // (just behind the nock, clear of the fletching)
+            m_R.localPosition = Vector3.Lerp(pull - across * 0.035f - bowRot * Vector3.up * 0.02f - dir * 0.07f, new Vector3(0.3f, -0.5f, -0.3f), e); // (just behind the nock, clear of the fletching)
             m_R.localRotation = Quaternion.LookRotation((across + dir * 0.3f).normalized, bowRot * Vector3.up);
             m_RP = HandPose.PalmAt(m_R.localPosition - dir * 0.2f, 0.85f);
 
@@ -493,12 +528,19 @@ namespace RockGame
             t.localScale = new Vector3(0.004f, 0.004f, d.magnitude);
         }
 
-        /// <summary>Rust crossbow: held like a rifle at the hip, RMB brings it up to the eye, and after a shot it's cranked back for the next bolt.</summary>
+        /// <summary>
+        /// Rust crossbow / guns: held low on the right pointing ahead, RMB brings it up to the eye, and after a shot it's
+        /// cranked back for the next bolt. The trigger hand is a fist round the pistol grip, its forearm rising into it
+        /// from below the bottom right of the screen; a long gun's fore-end rests in the other palm (the claws up its far
+        /// side), that forearm coming in from the bottom left. A pistol is held in the one hand, like Rust's.
+        /// </summary>
         void PoseCrossbow(State s, Vector3 shared, Quaternion sharedRot)
         {
             float aim = m_AimK = Mathf.MoveTowards(m_AimK, s.Aim ? 1f : 0f, Time.deltaTime * 7f);
             float kick = Mathf.Clamp01(1f - (Time.time - m_UseStart) / 0.25f);
-            var pos = shared + Vector3.Lerp(new Vector3(0.2f, -0.2f, 0.42f), new Vector3(0f, -0.075f, 0.3f), Smooth(aim)) + new Vector3(0, 0.02f, -0.07f) * kick;
+            bool shortGun = s.Item == Item.Pistol || s.Item == Item.Revolver || s.Item == Item.PortalGun;
+            var hip = shortGun ? new Vector3(0.17f, -0.15f, 0.42f) : new Vector3(0.2f, -0.19f, 0.47f);
+            var pos = shared + Vector3.Lerp(hip, new Vector3(0f, -0.075f, 0.3f), Smooth(aim)) + new Vector3(0, 0.02f, -0.07f) * kick;
             var rot = sharedRot * Quaternion.Euler(Mathf.Lerp(0f, 0f, aim) - kick * 8f, Mathf.Lerp(-6f, 0f, aim), 0);
             float r = s.Reload >= 0f ? Mathf.Sin(Mathf.Clamp01(s.Reload) * Mathf.PI) : 0f;
             if (r > 0f)
@@ -513,30 +555,75 @@ namespace RockGame
                 var bolt = m_Item.transform.Find("bolt");
                 if (bolt) bolt.gameObject.SetActive(s.Loaded);
             }
+            // the trigger hand: a fist square round the grip, thumb up it, pointing ahead and out to the right like the
+            // tools' (so you see the back of the fist round the grip); the forearm comes up into it from the bottom right,
+            // bent at the wrist
+            var gripAxis = rot * GunGripAxis(s.Item);
+            var ahead = rot * new Vector3(0.55f, 0.1f, 0.83f);
             m_R.localPosition = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(GunGrip(s.Item)));
-            m_R.localRotation = rot * Quaternion.Euler(-10f, -10f, -80f);
-            var leftHold = new Vector3(-0.02f, -0.05f, 0.2f);
+            m_R.localRotation = Quaternion.LookRotation((ahead - gripAxis * Vector3.Dot(ahead, gripAxis)).normalized, gripAxis);
+            m_RP = HandPose.FistThumb(gripAxis).WithArm(ArmTo(m_R.localPosition, shared + Vector3.Lerp(new Vector3(0.32f, -0.7f, 0f), new Vector3(0.14f, -0.6f, -0.1f), aim)));
+            var leftHold = GunFore(s.Item);
             var leftPull = new Vector3(-0.04f, 0.04f, -0.05f);
-            m_L.localPosition = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(Vector3.Lerp(leftHold, leftPull, r)));
-            m_L.localRotation = rot * Quaternion.Euler(-20f - 40f * r, 20f, 70f);
-            // the trigger hand round the grip, thumb up; the other hand cradles the stock from below
-            m_RP = HandPose.FistThumb(rot * Vector3.up);
-            // (a pistol's support hand is a fist off to the side, as the box hand was; long guns are cradled: the palm
-            // under the stock, the claws reaching across it to the right and curling up round its far side)
-            bool shortGun = s.Item == Item.Pistol || s.Item == Item.Revolver || s.Item == Item.PortalGun;
+            var hold = Vector3.Lerp(leftHold, leftPull, r);
             if (shortGun)
             {
-                // the palm on the side of the gun, the claws over the top of it
-                var hold = Vector3.Lerp(leftHold, leftPull, r);
+                // one-handed (the other hand only comes up to tip the gun open for a reload): the palm on the side of
+                // the gun, the claws over the top of it
+                HideLeft();
+                if (r > 0f)
+                {
+                    m_L.localPosition = Vector3.Lerp(m_L.localPosition, m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(hold + new Vector3(-0.05f, 0f, 0f))), Smooth(r * 3f));
+                    m_L.localRotation = rot * Quaternion.Euler(-20f - 40f * r, 20f, 70f);
+                }
                 m_LP = HandPose.PalmAt(m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(0f, 0.03f, hold.z))), 1f, true);
             }
             else
             {
-                m_L.localRotation = rot * Quaternion.LookRotation(Vector3.Lerp(new Vector3(0.75f, 0.35f, 0.55f), new Vector3(0.55f, 0.6f, 0.55f), r), Vector3.up);
-                var hold = Vector3.Lerp(leftHold, leftPull, r);
-                m_LP = HandPose.PalmAt(m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(0f, 0.02f, hold.z))), 1f, true);
+                // the fore-end rests in the palm, the hand square across under it and the claws curling up round its far
+                // side; the forearm comes up into it from the bottom left, bent at the wrist (a reload pulls the string
+                // back with this hand)
+                m_L.localPosition = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(hold));
+                m_L.localRotation = rot * Quaternion.LookRotation(Vector3.Lerp(new Vector3(1f, 0.3f, 0f), new Vector3(0.55f, 0.6f, 0.55f), r), Vector3.up);
+                m_LP = HandPose.PalmAt(m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(0f, GunForeAxisY(s.Item), hold.z))), 1f, true)
+                    .WithArm(ArmTo(m_L.localPosition, shared + new Vector3(-0.3f, -0.7f, 0.1f)));
             }
         }
+
+        /// <summary>Which way each gun's grip runs (item space, up it): most rake back a little.</summary>
+        static Vector3 GunGripAxis(Item item)
+        {
+            float rake;
+            switch (item)
+            {
+                case Item.Pistol: rake = 12f; break;
+                case Item.Revolver: rake = 18f; break;
+                case Item.Sniper:
+                case Item.Shotgun:
+                case Item.Crossbow: rake = 15f; break;
+                case Item.RocketLauncher: rake = 10f; break;
+                default: rake = 0f; break;
+            }
+            return Quaternion.Euler(-rake, 0f, 0f) * Vector3.up;
+        }
+
+        /// <summary>
+        /// Where a long gun's fore-end rests in the support hand (item space): the knuckles just past its right edge
+        /// underneath, so the palm runs across under it and the claws reach up its far side.
+        /// </summary>
+        static Vector3 GunFore(Item item)
+        {
+            switch (item)
+            {
+                case Item.Sniper: return new Vector3(0.035f, -0.04f, 0.2f);
+                case Item.Shotgun: return new Vector3(0.035f, -0.04f, 0.22f);
+                case Item.RocketLauncher: return new Vector3(0.07f, -0.05f, 0.3f);
+                default: return new Vector3(0.035f, -0.045f, 0.2f);
+            }
+        }
+
+        /// <summary>The height (item y) of the middle of what the support hand holds, which its palm faces.</summary>
+        static float GunForeAxisY(Item item) => item == Item.RocketLauncher ? 0.02f : 0.0f;
 
         /// <summary>Where each gun's grip is (item space): the trigger hand goes round it.</summary>
         static Vector3 GunGrip(Item item)
@@ -566,8 +653,8 @@ namespace RockGame
             m_L.localPosition = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(-0.13f, -0.08f, 0.22f)));
             m_L.localRotation = rot * Quaternion.LookRotation(new Vector3(-0.45f, 0.85f, 0.25f), Vector3.right);
             // palms on the log's sides (facing its middle), the claws reaching up round it and over the top
-            m_RP = HandPose.PalmAt(m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(0f, 0f, -0.28f))), 1f, true);
-            m_LP = HandPose.PalmAt(m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(0f, 0f, 0.22f))), 1f, true);
+            m_RP = HandPose.PalmAt(m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(0f, 0f, -0.28f))), 1f, true).WithArm(ArmTo(m_R.localPosition, shared + RightElbow));
+            m_LP = HandPose.PalmAt(m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(0f, 0f, 0.22f))), 1f, true).WithArm(ArmTo(m_L.localPosition, shared + LeftElbow));
         }
 
         /// <summary>Chainsaw in both hands like the ram; it shakes while the trigger is held.</summary>
@@ -583,8 +670,8 @@ namespace RockGame
             m_L.localRotation = rot * Quaternion.Euler(-20f, 10f, 70f);
             // the top handle sits right on the body, so there's no getting round it: palms on top of it, the claws
             // curling down over its sides
-            m_RP = HandPose.PalmAt(m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(0f, 0.13f, -0.12f))), 1f, true);
-            m_LP = HandPose.PalmAt(m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(0f, 0.13f, 0.06f))), 1f, true);
+            m_RP = HandPose.PalmAt(m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(0f, 0.13f, -0.12f))), 1f, true).WithArm(ArmTo(m_R.localPosition, shared + RightElbow));
+            m_LP = HandPose.PalmAt(m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(0f, 0.13f, 0.06f))), 1f, true).WithArm(ArmTo(m_L.localPosition, shared + LeftElbow));
         }
 
         /// <summary>The ball, huge, in both hands: fills the bottom half of the screen, its top reaching the middle.</summary>
@@ -629,9 +716,10 @@ namespace RockGame
                 case Item.Car: AttachItemToRight(new Vector3(0, 0.02f, 0.08f), new Vector3(0, 20, 0), 0.9f); break;
                 case Item.Saddle: AttachItemToRight(new Vector3(0, 0.02f, 0.06f), new Vector3(0, 20, 0), 0.9f); break;
                 case Item.BuildingPlan:
-                    // (the hand forward onto the board's bottom edge, the board where it was)
+                    // (the board turned round so it leans away from you, its rolled-up top on the far side, held by its
+                    // bottom edge: the hand a little forward, onto it)
                     m_R.localPosition += m_R.localRotation * new Vector3(0f, -0.015f, 0.085f);
-                    AttachItemToRight(new Vector3(0, 0.045f, -0.035f), Vector3.zero, 0.55f); break;
+                    AttachItemToRight(new Vector3(0, 0.045f, 0.135f), new Vector3(0, 180, 0), 0.55f); break;
                 case Item.Chest: AttachItemToRight(new Vector3(0, 0.06f, 0.08f), new Vector3(0, 20, 0), 0.9f); break;
                 case Item.Workbench:
                 case Item.Workbench2: AttachItemToRight(new Vector3(0, 0.04f, 0.08f), new Vector3(0, 200, 0), 0.8f); break;
@@ -642,7 +730,7 @@ namespace RockGame
             // things held by a handle get a fist; things that sit on the hand (food, C4, a chest...) are cradled, the claws
             // curling up round them
             if (item == Item.DeathWand || item == Item.Arrow) m_RP = HandPose.FistThumb(m_Root.InverseTransformDirection(m_ItemHolder.up)); // round the shaft
-            else if (item == Item.BuildingPlan) m_RP = HandPose.PalmAt(m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(0f, 0.02f, 0.2f))), 1f, true); // the palm on the back of the board near its bottom edge, the claws round it
+            else if (item == Item.BuildingPlan) m_RP = HandPose.PalmAt(m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(0f, -0.07f, 0.045f))), 1f, true); // the palm on the board's face towards you, just above its bottom edge (a point beyond it, in model space), the claws round it
             else
             {
                 if (m_CradleFor != m_Item)
@@ -663,6 +751,7 @@ namespace RockGame
                 // (nothing to show, e.g. the airdrop signal: an empty fist, like the box hand)
                 if (m_CradleR > 0f) m_RP = HandPose.CradleAt(m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(m_CradleMid)), m_CradleR);
             }
+            m_RP = m_RP.WithArm(ArmTo(m_R.localPosition, shared + RightElbow)); // (the forearm up into the hand from below the screen)
             HideLeft();
         }
     }

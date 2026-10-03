@@ -19,13 +19,17 @@ namespace RockGame
         /// Fist: the hand closes round whatever passes through the origin (a handle), the thumb towards `Dir` (a direction
         /// in view model space; by default the hand's own +Y, like the box thumb). Palm: a more open hand whose palm faces
         /// the point `Dir` (view model space); with `Contact` the palm goes onto the surface in front of it. Either way the
-        /// claws close (at most `Curl` of a fist) until they touch what's held.
+        /// claws close (at most `Curl` of a fist) until they touch what's held. With `HasArm` the wrist bends so the
+        /// forearm runs off towards `Arm` (a direction in view model space, from the wrist back towards the elbow)
+        /// instead of straight on from the hand: a fist can then sit square round a handle while the arm comes up into
+        /// it from below the screen, like a real cocked wrist.
         /// </summary>
         struct HandPose
         {
-            public bool Palm, HasDir, Cradle, Contact;
-            public Vector3 Dir;
+            public bool Palm, HasDir, Cradle, Contact, HasArm;
+            public Vector3 Dir, Arm;
             public float Curl, Radius;
+            public HandPose WithArm(Vector3 dir) { HasArm = true; Arm = dir; return this; }
             public static HandPose Fist => new HandPose { Curl = 1f };
             public static HandPose FistThumb(Vector3 dir, float curl = 1f) => new HandPose { HasDir = true, Dir = dir, Curl = curl };
             public static HandPose PalmAt(Vector3 point, float curl, bool contact = false) => new HandPose { Palm = true, HasDir = true, Dir = point, Curl = curl, Contact = contact };
@@ -211,12 +215,19 @@ namespace RockGame
             Matrix4x4 m_ToModel, m_ToMesh;
             Vector2 m_Thumb, m_PalmN;
             Vector3 m_PalmN3, m_FistAnchor = new Vector3(0, 0, Knuckle);
+            /// <summary>How the forearm turns at the wrist (round m_WristPivot), and what the mesh shows now.</summary>
+            Quaternion m_WristQ = Quaternion.identity, m_ShownWristQ = Quaternion.identity;
+            Vector3 m_WristPivot;
 
-            public const float Scale = 1.4f;
+            public const float Scale = 1.65f; // (a hand as broad as a person's next to the items, so a fist covers a handle)
             const float Knuckle = 0.09f;    // where the claws start (model z), roughly
             const float DigitZ = 0.08f;     // past this (model z) the mesh is three separate digits: two claws and the thumb
             const float ArmStretch = 0.3f;  // the elbow end is moved back this much (model units) so the arm reaches off screen
             const float ElbowWiden = 1.15f;
+            /// <summary>The wrist: the forearm turns fully past WristLo (model z), the band up to WristHi stretching over the bend.</summary>
+            const float WristHi = -0.015f, WristLo = -0.06f;
+            /// <summary>The furthest the wrist bends (degrees).</summary>
+            const float MaxWrist = 75f;
             /// <summary>How much of each digit's length is kept (upper claw, long claw, thumb), from its knuckle out.</summary>
             static readonly float[] Length = { 0.64f, 0.64f, 0.82f };
             /// <summary>How far (model units) the claws stop above a surface.</summary>
@@ -366,6 +377,10 @@ namespace RockGame
                 var u = new Vector3[n];
                 for (int i = 0; i < n; i++) u[i] = m_ToModel.MultiplyPoint3x4(m_Base[i]);
                 for (int i = 0; i < n; i++) m_U[i] = Stretch(u[i]);
+                // the wrist's pivot: the middle of the arm where the hand starts
+                Vector3 wc = Vector3.zero; int wn = 0;
+                for (int i = 0; i < n; i++) if (Mathf.Abs(u[i].z) < 0.012f) { wc += u[i]; wn++; }
+                m_WristPivot = wn > 0 ? new Vector3(wc.x / wn, wc.y / wn, 0f) : Vector3.zero;
                 // weld the split vertices by position, then join everything connected past the knuckles
                 var weld = new int[n];
                 var seen = new Dictionary<Vector3Int, int>();
@@ -601,11 +616,12 @@ namespace RockGame
             void Bend()
             {
                 if (m_Base.Length == 0) return;
-                bool same = m_Bent && m_Wrap == m_ShownWrap;
+                bool same = m_Bent && m_Wrap == m_ShownWrap && Quaternion.Angle(m_WristQ, m_ShownWristQ) < 0.05f;
                 for (int k = 0; k < 9 && same; k++) same = Mathf.Abs(m_Ang[k] - m_Shown[k]) < 0.05f;
                 if (same) return;
                 m_Bent = true;
                 m_ShownWrap = m_Wrap;
+                m_ShownWristQ = m_WristQ;
                 System.Array.Copy(m_Ang, m_Shown, 9);
                 for (int i = 0; i < m_Base.Length; i++) m_Work[i] = m_ToMesh.MultiplyPoint3x4(PoseVertex(i));
                 m_Mesh.vertices = m_Work;
@@ -618,7 +634,14 @@ namespace RockGame
             {
                 var u = m_U[i];
                 int d = m_Digit[i];
-                if (d < 0 || m_Joints == null) return u;
+                if (d < 0)
+                {
+                    // the forearm turns at the wrist (the band between WristHi and WristLo stretching over the bend)
+                    if (u.z >= WristHi) return u;
+                    float w = Mathf.Clamp01((WristHi - u.z) / (WristHi - WristLo));
+                    return m_WristPivot + Quaternion.Slerp(Quaternion.identity, m_WristQ, w) * (u - m_WristPivot);
+                }
+                if (m_Joints == null) return u;
                 float z0 = u.z;
                 // from the tip in: each joint turns everything past it (already turned by the joints further out)
                 var js = m_Joints[d == 2 && m_Wrap ? 3 : d];
@@ -772,6 +795,18 @@ namespace RockGame
                     var palmUp = rot * m_PalmN3;
                     var palmMid = new Vector3(0, 0, 0.05f) + m_PalmN3 * 0.012f;
                     Fit.localPosition = hand.InverseTransformPoint(root.TransformPoint(p.Dir)) - palmUp * p.Radius - rot * (palmMid * Scale);
+                }
+                // the wrist: the forearm turned from straight on (model -Z) towards where it should run, as far as it goes
+                m_WristQ = Quaternion.identity;
+                if (p.HasArm)
+                {
+                    var a = m_ModelT.InverseTransformDirection(root.TransformDirection(p.Arm));
+                    if (a.sqrMagnitude > 1e-6f)
+                    {
+                        var q = Quaternion.FromToRotation(Vector3.back, a.normalized);
+                        float ang = Quaternion.Angle(Quaternion.identity, q);
+                        m_WristQ = ang > MaxWrist ? Quaternion.Slerp(Quaternion.identity, q, MaxWrist / ang) : q;
+                    }
                 }
                 m_Wrap = !p.Palm && m_D != null;
                 if (m_D == null)
