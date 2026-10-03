@@ -6,7 +6,8 @@ namespace RockGame
     /// Settings > Display > World colours: the colour picker for a world colour (and the first-person hands) - a saturation /
     /// brightness square and a hue strip (textures made here) dragged with the mouse, the colour before and now side by
     /// side, Revert and Close. The colour shows on everything while you drag and is saved when you let go. Also the POST
-    /// PROCESSING rows (and their extra looks) in Settings > Display.
+    /// PROCESSING rows (their extra looks, and the UI's own looks: cel shading, glow, outlines, saturation, contrast) in
+    /// Settings > Display.
     /// </summary>
     public partial class Hud
     {
@@ -232,7 +233,11 @@ namespace RockGame
             if (GameSettings.GraphicsMode != 0) GUILayout.Label("<color=#bbbbbb>   (not in PSX / AI PSX)</color>", m_Small, GUILayout.Height(30 * k));
             GUILayout.FlexibleSpace();
             bool defaults = Btn("Defaults", GUILayout.Width(110 * k), GUILayout.Height(30 * k));
-            if (defaults) { on = bloom = vig = grade = true; bs = vs = gs = 0.5f; }
+            if (defaults)
+            {
+                on = DisplayDefaults.PostFx; bloom = DisplayDefaults.Bloom; vig = DisplayDefaults.Vignette; grade = DisplayDefaults.Grading;
+                bs = DisplayDefaults.BloomStrength; vs = DisplayDefaults.VignetteStrength; gs = DisplayDefaults.GradingStrength;
+            }
             GUILayout.EndHorizontal();
             if (on)
             {
@@ -248,11 +253,12 @@ namespace RockGame
             GUI.enabled = on;
             bool ui = ToggleBtn(GameSettings.PostOnUi, GameSettings.PostOnUi ? "On" : "Off", GUILayout.Width(110 * k), GUILayout.Height(30 * k));
             GUI.enabled = true;
-            if (defaults) ui = false;
+            if (defaults) { ui = DisplayDefaults.PostOnUi; GameSettings.ResetUiPost(); }
             GameSettings.SetPostOnUi(ui);
             GUILayout.Label("<color=#bbbbbb>  menus, HUD, icons and inventory</color>", m_Small, GUILayout.Height(30 * k));
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
+            if (on) DrawUiPostSettings();
             // the extra looks: each off to start with (Defaults switches them all off again)
             if (on)
             {
@@ -264,12 +270,122 @@ namespace RockGame
                     bool x = GameSettings.PostExtraOn(e);
                     float xs = GameSettings.PostExtraStrength(e);
                     x = EffectRow(GameSettings.PostExtraNames[i], x, ref xs);
-                    if (defaults) { x = false; xs = 0.5f; }
+                    if (defaults) { x = DisplayDefaults.PostExtraOn; xs = DisplayDefaults.PostExtraStrength; }
                     GameSettings.SetPostExtra(e, x, Mathf.Round(xs * 20f) / 20f);
                 }
                 GUILayout.Label("<color=#bbbbbb>Outlines: dark ink lines round things and along sharp folds, fading with distance. Ambient occlusion: deeper soft shadows in corners, creases and under things. Distance haze: far things fade into a pale sky colour. Depth of field: far away goes softly out of focus. Film grain: fine animated noise. Chromatic aberration: a hint of colour fringing towards the edges. Sharpen: crisper edges. Cel banding: the light falls in a few flat steps, like a cartoon.</color>", m_SmallWrap);
             }
-            else if (defaults) for (int i = 0; i < GameSettings.PostExtraCount; i++) GameSettings.SetPostExtra((GameSettings.PostExtra)i, false, 0.5f);
+            else if (defaults) for (int i = 0; i < GameSettings.PostExtraCount; i++) GameSettings.SetPostExtra((GameSettings.PostExtra)i, DisplayDefaults.PostExtraOn, DisplayDefaults.PostExtraStrength);
+        }
+
+        static readonly Color[] s_InkPresets =
+        {
+            Color.black, Color.white, new Color(0.1f, 0.13f, 0.22f), new Color(0.23f, 0.14f, 0.08f), new Color(0.2f, 0.45f, 0.25f), new Color(0.55f, 0.1f, 0.1f),
+        };
+        string m_InkHex;
+        GUIStyle m_InkField;
+        bool m_UiLooksOpen;
+        /// <summary>(tests) fold the UI's own looks open in Settings > Display.</summary>
+        public static void OpenUiLooks(bool open) { if (s_I != null) s_I.m_UiLooksOpen = open; }
+        /// <summary>(tests) scroll the settings window to this height.</summary>
+        public static void SetSettingsScroll(float y) { if (s_I != null) s_I.m_SettingsScroll.y = y; }
+
+        /// <summary>POST PROCESSING ON THE UI: the UI's own looks, apart from the world's (shown while "On the UI too" is on).</summary>
+        void DrawUiPostSettings()
+        {
+            float k = m_Scale, lw = 210 * k;
+            GUILayout.Space(4 * k);
+            // folded away to start with (it only does anything while "On the UI too" is on)
+            GUILayout.BeginHorizontal();
+            GUILayout.Space(16 * k);
+            if (Btn($"THE UI'S OWN LOOKS  {(m_UiLooksOpen ? "▲" : "▼")}", GUILayout.Width(260 * k), GUILayout.Height(28 * k))) m_UiLooksOpen = !m_UiLooksOpen;
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
+            Hint("cel shading, outlines, glow, colour - just the menus and HUD (while On the UI too is on)");
+            if (!m_UiLooksOpen) return;
+            GUILayout.BeginHorizontal();
+            GUILayout.Space(16 * k);
+            bool world = ToggleBtn(GameSettings.UiWorldPost.Value, "World effects too", GUILayout.Width(214 * k), GUILayout.Height(28 * k));
+            GameSettings.UiWorldPost.Set(world);
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
+            Hint(world ? "World effects too: the world's bloom, vignette, grading and extra looks go over the UI as well."
+                : "World effects off: the UI goes on after the world's post processing - only its own looks below.");
+
+            float cs = GameSettings.UiCelStrength.Value;
+            bool cel = EffectRow("Cel shading", GameSettings.UiCel.Value, ref cs);
+            GameSettings.UiCel.Set(cel); GameSettings.UiCelStrength.Set(Mathf.Round(cs * 20f) / 20f);
+
+            float bs = GameSettings.UiBloomStrength.Value;
+            bool bloom = EffectRow("Glow", GameSettings.UiBloom.Value, ref bs);
+            GameSettings.UiBloom.Set(bloom); GameSettings.UiBloomStrength.Set(Mathf.Round(bs * 20f) / 20f);
+
+            // outlines: on / off with their thickness, then the colour and how solid it is
+            float wd01 = Mathf.InverseLerp(GameSettings.UiOutlineWidthMin, GameSettings.UiOutlineWidthMax, GameSettings.UiOutlineWidth.Value);
+            bool ink = EffectRow("Outlines", GameSettings.UiOutline.Value, ref wd01);
+            float wd = Mathf.Round(Mathf.Lerp(GameSettings.UiOutlineWidthMin, GameSettings.UiOutlineWidthMax, wd01) * 2f) / 2f;
+            GameSettings.UiOutline.Set(ink); GameSettings.UiOutlineWidth.Set(wd);
+            if (ink)
+            {
+                GUILayout.BeginHorizontal();
+                GUILayout.Space(32 * k);
+                GUILayout.Label($"<color=#bbbbbb>{wd:0.#} px · colour</color>", m_Small, GUILayout.Width(110 * k), GUILayout.Height(26 * k));
+                var cur = GameSettings.UiOutlineColour.Value;
+                float sw = 22 * k;
+                foreach (var pc in s_InkPresets)
+                {
+                    var pr = GUILayoutUtility.GetRect(sw, sw, GUILayout.Width(sw), GUILayout.Height(26 * k));
+                    pr.y += (26 * k - sw) * 0.5f; pr.height = sw;
+                    Fill(pr, ColorSlots.Same(pc, cur) ? new Color(1f, 0.82f, 0.3f) : new Color(0.5f, 0.5f, 0.5f, 0.8f));
+                    Fill(new Rect(pr.x + 2, pr.y + 2, pr.width - 4, pr.height - 4), pc);
+                    TrackHover(pr);
+                    if (GUI.Button(pr, GUIContent.none, GUIStyle.none)) { ClickSound(); GameSettings.UiOutlineColour.Set(pc); m_InkHex = null; }
+                    GUILayout.Space(3 * k);
+                }
+                GUILayout.Space(6 * k);
+                if (m_InkField == null) m_InkField = new GUIStyle(GUI.skin.textField) { fontSize = Mathf.RoundToInt(15 * k), alignment = TextAnchor.MiddleCenter };
+                if (GUIUtility.keyboardControl == 0) m_InkHex = null;
+                string hex = m_InkHex ?? ColorUtility.ToHtmlStringRGB(cur);
+                GUI.SetNextControlName("inkhex");
+                string nh = GUILayout.TextField(hex, 7, m_InkField, GUILayout.Width(86 * k), GUILayout.Height(24 * k));
+                NoteTyping("inkhex");
+                if (nh != hex)
+                {
+                    m_InkHex = nh;
+                    var t = nh.Trim().TrimStart('#');
+                    if (t.Length == 6 && ColorUtility.TryParseHtmlString("#" + t, out var hc)) GameSettings.UiOutlineColour.Set(hc);
+                }
+                GUILayout.FlexibleSpace();
+                GUILayout.EndHorizontal();
+                GUILayout.BeginHorizontal();
+                GUILayout.Space(16 * k);
+                float op = SliderRow("Outline opacity", GameSettings.UiOutlineOpacity.Value, 0f, 1f, $"{GameSettings.UiOutlineOpacity.Value * 100f:0}%", lw - 16 * k);
+                GameSettings.UiOutlineOpacity.Set(Mathf.Round(op * 20f) / 20f);
+                GUILayout.EndHorizontal();
+            }
+            GUILayout.BeginHorizontal();
+            GUILayout.Space(16 * k);
+            float sat = SliderRow("UI saturation", GameSettings.UiSaturation.Value, 0f, 2f, $"{GameSettings.UiSaturation.Value * 100f:0}%", lw - 16 * k);
+            GameSettings.UiSaturation.Set(Mathf.Round(sat * 20f) / 20f);
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            GUILayout.Space(16 * k);
+            float con = SliderRow("UI contrast", GameSettings.UiContrast.Value, 0.5f, 1.6f, $"{GameSettings.UiContrast.Value * 100f:0}%", lw - 16 * k);
+            GameSettings.UiContrast.Set(Mathf.Round(con * 20f) / 20f);
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("<color=#bbbbbb>Cel shading: the UI's colours in a few flat steps. Glow: a soft glow round the bright text and icons. Outlines: ink lines round text, icons and panels - make them thick for a cartoon look.</color>", m_SmallWrap);
+            if (Btn("Defaults", GUILayout.Width(100 * k), GUILayout.Height(28 * k))) GameSettings.ResetUiPost();
+            GUILayout.EndHorizontal();
+        }
+
+        /// <summary>A grey note on its own line, indented under a row.</summary>
+        void Hint(string text)
+        {
+            GUILayout.BeginHorizontal();
+            GUILayout.Space(20 * m_Scale);
+            GUILayout.Label($"<color=#bbbbbb>{text}</color>", m_SmallWrap);
+            GUILayout.EndHorizontal();
         }
 
         /// <summary>"[Effect on/off]  [----o----]  50%".</summary>

@@ -27,17 +27,17 @@ namespace RockGame
             ColorSlots.Leaves.Presets, ColorSlots.Clouds.Presets, ColorSlots.Sky.Presets,
         };
 
-        public const float GrassDistanceMin = 25f, GrassDistanceMax = 270f, GrassDistanceDefault = 60f;
-        public const float GrassDensityMin = 0.2f, GrassDensityDefault = 1f;
+        public const float GrassDistanceMin = 25f, GrassDistanceMax = 270f, GrassDistanceDefault = DisplayDefaults.GrassDistance;
+        public const float GrassDensityMin = 0.2f, GrassDensityDefault = DisplayDefaults.GrassDensity;
         /// <summary>How fast the grass thins out with distance: density = (11 m / distance) ^ falloff. (It went down to 1 -
         /// "100%" far thickness - before; now on down to 0.25, so the far grass can be much thicker.)</summary>
-        public const float GrassFalloffMin = 0.25f, GrassFalloffMax = 2.5f, GrassFalloffDefault = 1.35f;
+        public const float GrassFalloffMin = 0.25f, GrassFalloffMax = 2.5f, GrassFalloffDefault = DisplayDefaults.GrassFalloff;
         /// <summary>The far thickness slider's 100% (the old thickest): it goes on past that to GrassFalloffMin.</summary>
         public const float GrassFalloffOldMin = 1f;
         /// <summary>The far grass thickness as the slider shows it: 0% thins fastest, 100% the old thickest, up to 150%.</summary>
         public static float GrassThicknessPercent(float falloff) => (GrassFalloffMax - falloff) / (GrassFalloffMax - GrassFalloffOldMin) * 100f;
         /// <summary>How tall the ordinary green grass is (1 = as it was made; the tall grass patches stay as they are).</summary>
-        public const float GrassHeightMin = 0.6f, GrassHeightMax = 2.5f, GrassHeightDefault = 1f;
+        public const float GrassHeightMin = 0.6f, GrassHeightMax = 2.5f, GrassHeightDefault = DisplayDefaults.GrassHeight;
 
         static bool s_WorldLoaded;
         static float s_GrassDistance = GrassDistanceDefault, s_GrassDensity = GrassDensityDefault, s_GrassFalloff = GrassFalloffDefault, s_GrassHeight = GrassHeightDefault;

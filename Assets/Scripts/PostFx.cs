@@ -13,8 +13,8 @@ namespace RockGame
     public static partial class GameSettings
     {
         static bool s_PostLoaded;
-        static bool s_Post = true, s_PostBloom = true, s_PostVignette = true, s_PostGrading = true;
-        static float s_PostBloomStr = 0.5f, s_PostVignetteStr = 0.5f, s_PostGradingStr = 0.5f;
+        static bool s_Post = DisplayDefaults.PostFx, s_PostBloom = DisplayDefaults.Bloom, s_PostVignette = DisplayDefaults.Vignette, s_PostGrading = DisplayDefaults.Grading;
+        static float s_PostBloomStr = DisplayDefaults.BloomStrength, s_PostVignetteStr = DisplayDefaults.VignetteStrength, s_PostGradingStr = DisplayDefaults.GradingStrength;
 
         /// <summary>Fired when any post processing setting changes.</summary>
         public static event System.Action PostFxChanged;
@@ -23,14 +23,16 @@ namespace RockGame
         {
             if (s_PostLoaded) return;
             s_PostLoaded = true;
-            s_Post = PlayerPrefs.GetInt("RockGame.PostFx", 1) == 1;
-            s_PostBloom = PlayerPrefs.GetInt("RockGame.PostBloom", 1) == 1;
-            s_PostVignette = PlayerPrefs.GetInt("RockGame.PostVignette", 1) == 1;
-            s_PostGrading = PlayerPrefs.GetInt("RockGame.PostGrading", 1) == 1;
-            s_PostBloomStr = Mathf.Clamp01(PlayerPrefs.GetFloat("RockGame.PostBloomStr", 0.5f));
-            s_PostVignetteStr = Mathf.Clamp01(PlayerPrefs.GetFloat("RockGame.PostVignetteStr", 0.5f));
-            s_PostGradingStr = Mathf.Clamp01(PlayerPrefs.GetFloat("RockGame.PostGradingStr", 0.5f));
+            s_Post = PlayerPrefs.GetInt("RockGame.PostFx", B(DisplayDefaults.PostFx)) == 1;
+            s_PostBloom = PlayerPrefs.GetInt("RockGame.PostBloom", B(DisplayDefaults.Bloom)) == 1;
+            s_PostVignette = PlayerPrefs.GetInt("RockGame.PostVignette", B(DisplayDefaults.Vignette)) == 1;
+            s_PostGrading = PlayerPrefs.GetInt("RockGame.PostGrading", B(DisplayDefaults.Grading)) == 1;
+            s_PostBloomStr = Mathf.Clamp01(PlayerPrefs.GetFloat("RockGame.PostBloomStr", DisplayDefaults.BloomStrength));
+            s_PostVignetteStr = Mathf.Clamp01(PlayerPrefs.GetFloat("RockGame.PostVignetteStr", DisplayDefaults.VignetteStrength));
+            s_PostGradingStr = Mathf.Clamp01(PlayerPrefs.GetFloat("RockGame.PostGradingStr", DisplayDefaults.GradingStrength));
         }
+
+        static int B(bool b) => b ? 1 : 0;
 
         /// <summary>Post processing on at all (off = exactly the plain look).</summary>
         public static bool PostFx { get { LoadPost(); return s_Post; } }
@@ -69,8 +71,9 @@ namespace RockGame
         /// <summary>Post processing back to the defaults (all on, middle strengths, every extra look off).</summary>
         public static void ResetPostFx(bool save = true)
         {
-            for (int i = 0; i < PostExtraCount; i++) SetPostExtra((PostExtra)i, false, 0.5f, save);
-            SetPostFx(true, true, true, true, 0.5f, 0.5f, 0.5f, save);
+            for (int i = 0; i < PostExtraCount; i++) SetPostExtra((PostExtra)i, DisplayDefaults.PostExtraOn, DisplayDefaults.PostExtraStrength, save);
+            SetPostFx(DisplayDefaults.PostFx, DisplayDefaults.Bloom, DisplayDefaults.Vignette, DisplayDefaults.Grading,
+                DisplayDefaults.BloomStrength, DisplayDefaults.VignetteStrength, DisplayDefaults.GradingStrength, save);
         }
 
         // ---- the extra looks: each off to start with, with its own strength ----
@@ -80,7 +83,7 @@ namespace RockGame
         public const int PostExtraCount = 8;
         public static readonly string[] PostExtraNames = { "Outlines", "Ambient occlusion", "Distance haze", "Depth of field", "Film grain", "Chromatic aberration", "Sharpen", "Cel banding" };
         static readonly bool[] s_Extra = new bool[PostExtraCount];
-        static readonly float[] s_ExtraStr = { 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f };
+        static readonly float[] s_ExtraStr = { 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f }; // (loaded: DisplayDefaults.PostExtraStrength)
         static bool s_ExtraLoaded;
 
         static void LoadExtras()
@@ -90,8 +93,8 @@ namespace RockGame
             for (int i = 0; i < PostExtraCount; i++)
             {
                 string key = "RockGame.PostX." + (PostExtra)i;
-                s_Extra[i] = PlayerPrefs.GetInt(key, 0) == 1;
-                s_ExtraStr[i] = Mathf.Clamp01(PlayerPrefs.GetFloat(key + "Str", 0.5f));
+                s_Extra[i] = PlayerPrefs.GetInt(key, B(DisplayDefaults.PostExtraOn)) == 1;
+                s_ExtraStr[i] = Mathf.Clamp01(PlayerPrefs.GetFloat(key + "Str", DisplayDefaults.PostExtraStrength));
             }
         }
 

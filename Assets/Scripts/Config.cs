@@ -457,7 +457,7 @@ namespace RockGame
         /// Not a host value any more; only the tests switch it off.</summary>
         public static bool AlienOutlines = true;
         /// <summary>How strong (0 = invisible, 1 = bright) and how thick (metres) the glow is: Settings > Display > ALIEN GLOW, just on this PC.</summary>
-        public static float AlienOutlineStrength = 0.3f, AlienOutlineWidth = 0.03f;
+        public static float AlienOutlineStrength = DisplayDefaults.GlowStrength, AlienOutlineWidth = DisplayDefaults.GlowWidth;
         [Tune("Fun modes")] public static float FunItemInterval = 45f;
         /// <summary>Fun modes: no building phase (the wall is down and the ball in from the start), and a shorter match.</summary>
         [Tune("Fun modes")] public static float FunMatchLength = 600f;

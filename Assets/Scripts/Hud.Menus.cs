@@ -74,6 +74,9 @@ namespace RockGame
 
         // ------------------------------------------------------------------ main menu
 
+        /// <summary>The game's name at the top of the main menu.</summary>
+        public const string MainTitle = "ALIEN ROCK GAME";
+
         void DrawMainMenu(Bootstrap boot)
         {
             if (OpenModeOptions) { OpenModeOptions = false; m_Page = MenuPage.ModeOptions; }
@@ -91,7 +94,7 @@ namespace RockGame
             Fill(r, new Color(0, 0, 0, 0.72f));
             GUILayout.BeginArea(new Rect(r.x + 20 * k, r.y + 14 * k, r.width - 40 * k, r.height - 24 * k));
             m_MenuScroll = GUILayout.BeginScrollView(m_MenuScroll, GUIStyle.none, GUIStyle.none);
-            GUILayout.Label("<b>ROCK BASE BRAWL</b>", m_Big);
+            GUILayout.Label($"<b>{MainTitle}</b>", m_Big);
             GUILayout.Label("1v1 · gather · build · raid · steal the ball", m_Center);
 
             int key = Bootstrap.MapChoice;
@@ -746,41 +749,7 @@ namespace RockGame
             float k = m_Scale;
             if (m_ResList == null) OnTabOpened();
             float lw = 150 * k;
-            Caption("GRAPHICS");
-            // (the PSX test looks are hidden for now - GameSettings.ShowGraphicsPicker)
-            if (GameSettings.ShowGraphicsPicker)
-            {
-                GUILayout.BeginHorizontal();
-                RowLabel("Style", lw);
-                // in a match the host's graphics are used by everyone
-                bool inMatch = NetGame.Instance != null && NetGame.Instance.IsSpawned;
-                GUI.enabled = !inMatch;
-                if (Choice(GameSettings.GraphicsMode == 0, "Normal", GUILayout.Height(30 * k))) GameSettings.SetGraphics(0);
-                if (Choice(GameSettings.GraphicsMode == 1, "PSX", GUILayout.Height(30 * k))) GameSettings.SetGraphics(1);
-                if (Choice(GameSettings.GraphicsMode == 2, "AI PSX TEST", GUILayout.Height(30 * k))) GameSettings.SetGraphics(2);
-                GUI.enabled = true;
-                GUILayout.EndHorizontal();
-                if (inMatch) GUILayout.Label("<color=#bbbbbb>Picked by the host for everyone in this match.</color>", m_SmallWrap);
-            }
-            GUILayout.BeginHorizontal();
-            RowLabel("FPS counter", lw);
-            bool fps = ToggleBtn(GameSettings.ShowFps, GameSettings.ShowFps ? "On" : "Off", GUILayout.Width(90 * k), GUILayout.Height(30 * k));
-            if (fps != GameSettings.ShowFps) GameSettings.SetShowFps(fps);
-            GUILayout.Label("<color=#bbbbbb>  frames per second, top left</color>", m_Small, GUILayout.Height(30 * k));
-            GUILayout.FlexibleSpace();
-            GUILayout.EndHorizontal();
-
-            // ---- shadows ----
-            Caption("SHADOWS  ·  just on this PC");
-            float ss = SliderRow("Shadow darkness", GameSettings.ShadowStrength, 0f, 1f, $"{GameSettings.ShadowStrength * 100f:0}%", lw);
-            float sd = SliderRow("Shadow distance", GameSettings.ShadowDistance, GameSettings.ShadowDistanceMin, GameSettings.ShadowDistanceMax, $"{GameSettings.ShadowDistance:0} m", lw);
-            GameSettings.SetShadows(Mathf.Round(ss * 20f) / 20f, Mathf.Round(sd / 5f) * 5f);
-            GUILayout.Label("<color=#bbbbbb>Darkness: how dark the sun's shadows are (0% = none). Distance: how far from you shadows are drawn - further looks better, nearer is faster and the near shadows are sharper.</color>", m_SmallWrap);
-
-            DrawPostFxSettings();
-            DrawInterfaceSettings();
-            DrawWorldLook();
-
+            // ---- the screen first (window mode, resolution, refresh rate) ----
             Caption("SCREEN");
             GUILayout.BeginHorizontal();
             RowLabel("Window", lw);
@@ -816,6 +785,88 @@ namespace RockGame
             }
             GUILayout.EndHorizontal();
             GUILayout.Label($"<color=#bbbbbb>Now: {Screen.width} x {Screen.height}, {GameSettings.CurrentMode}, {GameSettings.ChosenRate.value:0.##} Hz. The refresh rate starts at the highest your screen can do; in a window it follows your desktop.</color>", m_SmallWrap);
+
+            // ---- every other display setting as a code: copy it, paste one back ----
+            DrawDisplayCode();
+
+            Caption("GRAPHICS");
+            // (the PSX test looks are hidden for now - GameSettings.ShowGraphicsPicker)
+            if (GameSettings.ShowGraphicsPicker)
+            {
+                GUILayout.BeginHorizontal();
+                RowLabel("Style", lw);
+                // in a match the host's graphics are used by everyone
+                bool inMatch = NetGame.Instance != null && NetGame.Instance.IsSpawned;
+                GUI.enabled = !inMatch;
+                if (Choice(GameSettings.GraphicsMode == 0, "Normal", GUILayout.Height(30 * k))) GameSettings.SetGraphics(0);
+                if (Choice(GameSettings.GraphicsMode == 1, "PSX", GUILayout.Height(30 * k))) GameSettings.SetGraphics(1);
+                if (Choice(GameSettings.GraphicsMode == 2, "AI PSX TEST", GUILayout.Height(30 * k))) GameSettings.SetGraphics(2);
+                GUI.enabled = true;
+                GUILayout.EndHorizontal();
+                if (inMatch) GUILayout.Label("<color=#bbbbbb>Picked by the host for everyone in this match.</color>", m_SmallWrap);
+            }
+            GUILayout.BeginHorizontal();
+            RowLabel("FPS counter", lw);
+            bool fps = ToggleBtn(GameSettings.ShowFps, GameSettings.ShowFps ? "On" : "Off", GUILayout.Width(90 * k), GUILayout.Height(30 * k));
+            if (fps != GameSettings.ShowFps) GameSettings.SetShowFps(fps);
+            GUILayout.Label("<color=#bbbbbb>  frames per second, top left</color>", m_Small, GUILayout.Height(30 * k));
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
+
+            // ---- shadows ----
+            Caption("SHADOWS  ·  just on this PC");
+            float ss = SliderRow("Shadow darkness", GameSettings.ShadowStrength, 0f, 1f, $"{GameSettings.ShadowStrength * 100f:0}%", lw);
+            float sd = SliderRow("Shadow distance", GameSettings.ShadowDistance, GameSettings.ShadowDistanceMin, GameSettings.ShadowDistanceMax, $"{GameSettings.ShadowDistance:0} m", lw);
+            GameSettings.SetShadows(Mathf.Round(ss * 20f) / 20f, Mathf.Round(sd / 5f) * 5f);
+            GUILayout.Label("<color=#bbbbbb>Darkness: how dark the sun's shadows are (0% = none). Distance: how far from you shadows are drawn - further looks better, nearer is faster and the near shadows are sharper.</color>", m_SmallWrap);
+
+            DrawPostFxSettings();
+            DrawInterfaceSettings();
+            DrawWorldLook();
+        }
+
+        bool m_CopyNoteBad;
+
+        /// <summary>Settings > Display, under the screen: COPY SETTINGS puts every other display setting on the clipboard as
+        /// a code (DisplayCode), PASTE SETTINGS reads one back from the clipboard and applies it.</summary>
+        void DrawDisplayCode()
+        {
+            float k = m_Scale;
+            Caption("SHARE YOUR LOOK");
+            GUILayout.BeginHorizontal();
+            if (Btn("COPY SETTINGS", m_Primary, GUILayout.Height(34 * k))) CopyDisplaySettings();
+            if (Btn("PASTE SETTINGS", GUILayout.Height(34 * k))) PasteDisplaySettings();
+            GUILayout.EndHorizontal();
+            bool showNote = Time.unscaledTime < m_CopyNoteUntil && !string.IsNullOrEmpty(m_CopyNote);
+            GUILayout.Label(showNote ? $"<color={(m_CopyNoteBad ? "#ff8a7a" : "#9fe0a0")}>{m_CopyNote}</color>"
+                : "<color=#bbbbbb>Copy: every display setting below (post processing, the UI's looks, shadows, interface, glow, grass, every world colour - not the screen) as a short text code on the clipboard. Paste: applies a code from the clipboard.</color>", m_SmallWrap);
+        }
+
+        /// <summary>COPY SETTINGS (also for the tests): the display settings code on the clipboard.</summary>
+        public static string CopyDisplaySettings()
+        {
+            int n = DisplayCode.CopyToClipboard();
+            return Note($"Copied {n} display settings to the clipboard.", false);
+        }
+
+        /// <summary>PASTE SETTINGS (also for the tests): applies the code on the clipboard. Returns what it says.</summary>
+        public static string PasteDisplaySettings()
+        {
+            var r = DisplayCode.PasteFromClipboard();
+            if (r.Ok && s_I != null) s_I.m_PendingScale = -1f;
+            return Note(r.ToString(), !r.Ok);
+        }
+
+        static string Note(string text, bool bad)
+        {
+            if (s_I != null)
+            {
+                s_I.m_CopyNote = text;
+                s_I.m_CopyNoteBad = bad;
+                s_I.m_CopyNoteUntil = Time.unscaledTime + 6f;
+            }
+            Debug.Log("[RockGame] " + text);
+            return text;
         }
 
         /// <summary>Settings > Display > INTERFACE (the font, UI scale, HUD opacity, accent colour) and ALIEN GLOW.</summary>
@@ -870,7 +921,7 @@ namespace RockGame
             GameSettings.SetInterface(font, scale, Mathf.Round(hud * 20f) / 20f, accent);
             GUILayout.BeginHorizontal();
             GUILayout.Label("<color=#bbbbbb>HUD opacity: the in-game HUD (bars, hotbar, timer) - the menus and the inventory stay solid.</color>", m_SmallWrap);
-            if (Btn("Defaults", GUILayout.Width(100 * k), GUILayout.Height(28 * k))) GameSettings.SetInterface(0, 1f, 1f, 0);
+            if (Btn("Defaults", GUILayout.Width(100 * k), GUILayout.Height(28 * k))) GameSettings.SetInterface(DisplayDefaults.UiFont, DisplayDefaults.UiScale, DisplayDefaults.HudOpacity, DisplayDefaults.UiAccent);
             GUILayout.EndHorizontal();
 
             Caption("ALIEN GLOW  ·  just on this PC");
@@ -960,22 +1011,11 @@ namespace RockGame
             GUILayout.EndHorizontal();
             GUILayout.BeginHorizontal();
             int changed = ColorSlots.ChangedCount;
-            if (Btn($"COPY CHANGED ({changed})", m_Primary, GUILayout.Height(30 * k)))
-            {
-                int n = ColorSlots.Copy(true);
-                m_CopyNote = n == 0 ? "Nothing changed from the defaults (copied an empty list)." : $"Copied {n} changed colour{(n == 1 ? "" : "s")} to the clipboard.";
-                m_CopyNoteUntil = Time.unscaledTime + 4f;
-            }
-            if (Btn("COPY ALL", GUILayout.Width(100 * k), GUILayout.Height(30 * k)))
-            {
-                int n = ColorSlots.Copy(false);
-                m_CopyNote = $"Copied all {n} colours to the clipboard.";
-                m_CopyNoteUntil = Time.unscaledTime + 4f;
-            }
+            GUILayout.Label(changed > 0 ? $"<color=#ffd27a>{changed} changed</color>" : "<color=#bbbbbb>none changed</color>", m_Small, GUILayout.Height(30 * k));
+            GUILayout.FlexibleSpace();
             if (Btn("Reset all", GUILayout.Width(100 * k), GUILayout.Height(30 * k))) GameSettings.ResetWorldColours();
             GUILayout.EndHorizontal();
-            GUILayout.Label(Time.unscaledTime < m_CopyNoteUntil ? $"<color=#9fe0a0>{m_CopyNote}</color>"
-                : "<color=#bbbbbb>Click a swatch, type a hex code, or Pick for the colour picker - it shows on the world straight away. The copy buttons put lines like  TreeTrunks = #4F8F2A  on the clipboard.</color>", m_SmallWrap);
+            GUILayout.Label("<color=#bbbbbb>Click a swatch, type a hex code, or Pick for the colour picker - it shows on the world straight away. To share them: Back, then COPY SETTINGS at the top of Display (the colours are in the code with everything else).</color>", m_SmallWrap);
             GUILayout.Space(4 * k);
 
             if (m_HexField == null)
