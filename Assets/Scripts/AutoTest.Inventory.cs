@@ -89,6 +89,35 @@ namespace RockGame
             Check(Hud.FlightsStarted > f0 && chest.Slots[7].Count == 150, $"dragging half the stone into the chest flies it there ({chest.Slots[7].Id} x{chest.Slots[7].Count})");
             yield return new WaitForSeconds(0.5f);
             Check(Hud.FlightsNow == 0, "every flight has landed");
+            Check(Hud.LandPopSeconds <= 0.1f && Hud.FlightSeconds >= 0.2f, $"the landing pop is quick ({Hud.LandPopSeconds:0.00} s), the flight itself unchanged ({Hud.FlightSeconds:0.00} s)");
+
+            // ---- Shift+drag: every slot passed over is shift-clicked once (bag -> chest, chest -> bag, hotbar -> bag) ----
+            {
+                int sp = SlotOf(Item.Spear), ha = SlotOf(Item.Hatchet), be = SlotOf(Item.Berry);
+                int m0 = Hud.SweepMoves;
+                Hud.TestSweep(new Vector2Int(0, sp), new Vector2Int(0, ha), new Vector2Int(0, sp), new Vector2Int(0, be), new Vector2Int(0, ha));
+                yield return new WaitForSeconds(0.5f);
+                int InChest(Item id) { for (int i = 0; i < chest.Slots.Count; i++) if (chest.Slots[i].Id == id) return i; return -1; }
+                Check(Hud.SweepMoves - m0 == 3 && SlotOf(Item.Spear) < 0 && SlotOf(Item.Hatchet) < 0 && SlotOf(Item.Berry) < 0
+                      && InChest(Item.Spear) >= 0 && InChest(Item.Hatchet) >= 0 && InChest(Item.Berry) >= 0,
+                    $"shift-drag over the spear, hatchet, spear again, berries, hatchet again: three moves into the chest, each slot once ({Hud.SweepMoves - m0})");
+                yield return Pic("shift_drag_into_chest", 0.1f);
+                m0 = Hud.SweepMoves;
+                Hud.TestSweep(new Vector2Int(1, InChest(Item.Spear)), new Vector2Int(1, InChest(Item.Hatchet)), new Vector2Int(1, InChest(Item.Berry)));
+                yield return new WaitForSeconds(0.5f);
+                Check(Hud.SweepMoves - m0 == 3 && SlotOf(Item.Spear) >= 0 && SlotOf(Item.Hatchet) >= 0 && SlotOf(Item.Berry) >= 0 && InChest(Item.Spear) < 0,
+                    "shift-drag over the chest brings them back to the bag");
+                // no chest open: hotbar <-> bag, like shift-click
+                pc.LootTarget = null;
+                yield return null;
+                sp = SlotOf(Item.Spear);
+                if (sp >= Cfg.HotbarSize) { me.MoveItemRpc(0, (byte)sp, 0, 0, 1, default); yield return new WaitForSeconds(0.4f); sp = SlotOf(Item.Spear); }
+                m0 = Hud.SweepMoves;
+                Hud.TestSweep(new Vector2Int(0, sp), new Vector2Int(0, sp));
+                yield return new WaitForSeconds(0.5f);
+                Check(Hud.SweepMoves - m0 == 1 && sp < Cfg.HotbarSize && SlotOf(Item.Spear) >= Cfg.HotbarSize, $"shift-drag over a hotbar slot sends it up to the bag, once (slot {sp + 1} -> {SlotOf(Item.Spear) + 1})");
+                pc.LootTarget = chest;
+            }
 
             // ---- right-drag: the half stack is on the pointer straight away ----
             int berries = SlotOf(Item.Berry);
@@ -110,7 +139,7 @@ namespace RockGame
             Hud.TestHover = Item.None;
             yield return Pic("craft_no_hover");
             Check(Hud.HoverShown == "", "nothing hovered: nothing under the crafting list (no workbench / spears-and-hatchets text)");
-            Check(Hud.InvHelp == "Drag to move\nRight+Drag to Split\nShift+Click to quick-move", "the help under the bag is the three lines");
+            Check(Hud.InvHelp == "Drag to move\nRight+Drag to Split\nShift+Click/Drag to quick-move", "the help under the bag is the three lines (white; Shift+Click/Drag)");
             pc.CloseMenu();
 
             // ---- chat: Enter = everyone, T = team ----

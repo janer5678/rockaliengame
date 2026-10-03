@@ -137,6 +137,7 @@ namespace RockGame
                 float until = Time.time + 1.2f;
                 while (Time.time < until) { pc.LocalTeleport(feet, yaw); pc.SetLook(yaw, -4f); yield return null; }
                 Check(FlareTip.Wanted(me.transform.position) && FlareTip.Showing, $"walking up to the glass wall in the middle shows the EMERGENCY FLARE tip ({FlareTip.WallDistance(me.transform.position):0.0} m from the wall)");
+                Check(FlareTip.Title == "EMERGENCY FLARE" && FlareTip.Line == "Have it in your base when the timer ends to win", $"the tip is short: no ESCAPE line, just EMERGENCY FLARE and one line ({FlareTip.Line})");
                 string file = $"scenery_{map}_{shot++:00}_flare_tip.png";
                 ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(dir, file));
                 Log("shot " + file);

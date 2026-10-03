@@ -6,12 +6,12 @@ namespace RockGame
     /// <summary>
     /// While the glass wall is up (the build phase, every mode), walking up to the glass wall in the middle of the map
     /// (or the dome over the ball) shows a tip over the ball, in the tutorial's marker style (the gold diamond and a dark
-    /// card): ESCAPE / EMERGENCY FLARE / HAVE INSIDE YOUR BASE WHEN THE BATTLE TIMER ENDS TO WIN. (The ball is the
-    /// emergency flare.) It fades in and out. Drawn by the HUD (Hud.cs calls Draw).
+    /// card): EMERGENCY FLARE / Have it in your base when the timer ends to win. (The ball is the emergency flare.) It
+    /// fades in and out. Drawn by the HUD (Hud.cs calls Draw).
     /// </summary>
     public static class FlareTip
     {
-        public const string Line1 = "ESCAPE", Line2 = "EMERGENCY FLARE", Line3 = "HAVE INSIDE YOUR BASE WHEN THE BATTLE TIMER ENDS TO WIN.";
+        public const string Title = "EMERGENCY FLARE", Line = "Have it in your base when the timer ends to win";
         /// <summary>How close to the wall (m) and how far from the middle along it (m) it shows.</summary>
         public const float WallReach = 7f, CentreReach = 45f;
         static float s_Alpha;
@@ -61,13 +61,12 @@ namespace RockGame
             float a = s_Alpha;
             Color A(Color c) { c.a *= a; return c; }
 
-            // the card: three lines, the middle one big
-            var l1 = new GUIStyle(small) { alignment = TextAnchor.MiddleCenter, wordWrap = false, richText = true };
+            // the card: the title, big, and one short line under it
             var l2 = new GUIStyle(label) { alignment = TextAnchor.MiddleCenter, wordWrap = false, richText = true, fontSize = Mathf.RoundToInt(label.fontSize * 1.25f) };
             var l3 = new GUIStyle(small) { alignment = TextAnchor.MiddleCenter, wordWrap = true, richText = true };
             float w = Mathf.Min(sw - 20f, 380f * k);
-            float h1 = 20f * k, h2 = l2.CalcHeight(new GUIContent(Line2), w), h3 = l3.CalcHeight(new GUIContent(Line3), w - 24f * k);
-            float h = 10f * k + h1 + h2 + h3 + 12f * k;
+            float h2 = l2.CalcHeight(new GUIContent(Title), w), h3 = l3.CalcHeight(new GUIContent(Line), w - 24f * k);
+            float h = 10f * k + h2 + h3 + 12f * k;
             // (kept on the screen, above the marker)
             float x = Mathf.Clamp(pos.x - w / 2f, 10f, sw - w - 10f);
             float y = Mathf.Clamp(pos.y - h - 18f * k, 10f, sh - h - 120f * k);
@@ -75,11 +74,9 @@ namespace RockGame
             fill(new Rect(x, y, w, 3f * k), A(new Color(1f, 0.82f, 0.29f, 0.9f)));
             string hex(Color c) => ColorUtility.ToHtmlStringRGBA(A(c));
             float ty = y + 8f * k;
-            shadowed(new Rect(x, ty, w, h1), $"<b><color=#{hex(new Color(1f, 0.82f, 0.29f))}>{Line1}</color></b>", l1);
-            ty += h1;
-            shadowed(new Rect(x, ty, w, h2), $"<b><color=#{hex(Color.white)}>{Line2}</color></b>", l2);
+            shadowed(new Rect(x, ty, w, h2), $"<b><color=#{hex(Color.white)}>{Title}</color></b>", l2);
             ty += h2;
-            shadowed(new Rect(x + 12f * k, ty, w - 24f * k, h3), $"<color=#{hex(new Color(0.85f, 0.88f, 0.92f))}>{Line3}</color>", l3);
+            shadowed(new Rect(x + 12f * k, ty, w - 24f * k, h3), $"<color=#{hex(new Color(0.85f, 0.88f, 0.92f))}>{Line}</color>", l3);
 
             // the tutorial's marker: a gold diamond over the ball
             float pulse = 1f + Mathf.Sin(Time.time * 6f) * 0.15f;

@@ -588,8 +588,8 @@ namespace RockGame
                 new Step
                 {
                     Id = "newcrafts", Title = "New things!",
-                    Body = $"Open your bag ({K(Bind.Inventory)}). While you're in your base, your workbench adds a " + Hi("WORKBENCH T1") + " list: crossbow, armour, chainsaw, high walls... "
-                        + "and the " + Hi("Workbench T2") + $" ({Price(Item.Workbench2)}) for guns, C4, a saddle and more. Scroll the list with the mouse wheel.",
+                    Body = $"Open your bag ({K(Bind.Inventory)}). Your workbench adds a " + Hi("WORKBENCH T1") + " list: crossbow, armour, chainsaw, high walls, a saddle... "
+                        + "and the " + Hi("Workbench T2") + $" ({Price(Item.Workbench2)}) for guns, ammo, C4 and more. You can see them anywhere, but only craft them in your base. Scroll the list with the mouse wheel.",
                     Goal = "Open your bag in your base",
                     Hint = $"Stand inside your base and press {Binds.Name(Bind.Inventory)}. The new list is under the basics.",
                     Done = () => PC != null && PC.MenuOpen && PC.LootTarget == null && Cfg.CraftTierAt(Team, Me.transform.position) >= 1,

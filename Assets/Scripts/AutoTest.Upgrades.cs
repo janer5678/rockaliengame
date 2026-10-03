@@ -19,7 +19,7 @@ namespace RockGame
     ///   its prompt names it, E on it opens UPGRADES (E on the alien machine doesn't any more), photographed poor / ready /
     ///   level 1 / maxed, every level bought for its price with the station's celebration (plus signs, flash, bounce)
     ///   played and photographed, refused when maxed or away from the station; the ball in a socket is still the ball);
-    /// - the saddle needs the Workbench T2;
+    /// - the saddle needs the Workbench T1 (not the T2);
     /// and from a client (ClientUpgradesRoutine): hurt a horse, feed it, open UPGRADES at our upgrade station and buy
     /// Fortify there (the client sees its station celebrate, and so does the host).
     /// UpgradeBuy buys an upgrade like a player would (for the Arsenal / Auto Wood tests).
@@ -303,7 +303,7 @@ namespace RockGame
             yield return new WaitForSeconds(0.3f);
         }
 
-        // ------------------------------------------------------------------ the saddle is a Workbench T2 item
+        // ------------------------------------------------------------------ the saddle is a Workbench T1 item
 
         IEnumerator SaddleTierTest(PlayerNet me, PlayerController pc, int team)
         {
@@ -314,14 +314,16 @@ namespace RockGame
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
             yield return new WaitForSeconds(0.4f);
             int s0 = me.Count(Item.Saddle), w0 = me.Count(cur);
-            if (Cfg.BenchTier(team) < 2)
+            if (Cfg.BenchTier(team) < 1)
             {
                 me.CraftRpc(idx);
                 yield return new WaitForSeconds(0.5f);
-                Check(me.Count(Item.Saddle) == s0 && me.Count(cur) == w0, $"no saddle without a Workbench T2 (benches: T{Cfg.BenchTier(team)})");
+                Check(me.Count(Item.Saddle) == s0 && me.Count(cur) == w0, $"no saddle without a Workbench T1 (benches: T{Cfg.BenchTier(team)})");
             }
+            int benchBefore = Cfg.BenchTier(team);
             yield return BenchBuy(me, pc, Item.Saddle);
-            Check(Cfg.CraftTier(Item.Saddle) == 2 && Cfg.BenchTier(team) == 2 && me.Count(Item.Saddle) == s0 + 1, "the saddle is crafted with the Workbench T2");
+            Check(Cfg.CraftTier(Item.Saddle) == 1 && Cfg.BenchTier(team) == Mathf.Max(1, benchBefore) && me.Count(Item.Saddle) == s0 + 1,
+                $"the saddle is crafted with the Workbench T1 (no T2 needed; benches: T{Cfg.BenchTier(team)})");
             Drop(me, Item.Saddle);
         }
 

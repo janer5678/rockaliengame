@@ -565,9 +565,11 @@ namespace RockGame
             DrawSlotVisual(r, shown, selected, me, LandPop(kind, index));
             if (hover) { Fill(r, new Color(1, 1, 1, 0.08f)); if (!s.Empty) SetHover(s, me.Team.Value); }
 
+            // Shift+drag: every slot the pointer passes over is shift-clicked, once each (Hud.Sweep below)
+            if (m_Sweeping && e.type == EventType.MouseDrag && e.shift && !s.Empty && SweepCrosses(r, e.mousePosition)) SweepSlot(kind, index, me, pc);
             if (e.type == EventType.MouseDown && hover && !s.Empty)
             {
-                if (e.shift && e.button == 0) QuickMove(kind, index, me, pc);
+                if (e.shift && e.button == 0) SweepSlot(kind, index, me, pc); // (a shift-click: the sweep's first slot)
                 else
                 {
                     m_Dragging = true;
@@ -641,15 +643,77 @@ namespace RockGame
             int start = fromHotbar ? Cfg.HotbarSize : 0, end = fromHotbar ? Cfg.PlayerSlots : Cfg.HotbarSize;
             var s = me.SlotAt(index);
             int target = -1;
-            for (int i = start; i < end && target < 0; i++) if (me.SlotAt(i).Id == s.Id && me.SlotAt(i).Count < Cfg.MaxStack(s.Id)) target = i;
-            for (int i = start; i < end && target < 0; i++) if (me.SlotAt(i).Empty) target = i;
-            if (target >= 0) me.MoveItemRpc(0, (byte)index, 0, (byte)target, s.Count, default);
+            // (a slot this sweep already touched may not have heard back from the server yet: leave it alone)
+            for (int i = start; i < end && target < 0; i++) if (!m_Swept.Contains(SlotKey(0, i)) && me.SlotAt(i).Id == s.Id && me.SlotAt(i).Count < Cfg.MaxStack(s.Id)) target = i;
+            for (int i = start; i < end && target < 0; i++) if (!m_Swept.Contains(SlotKey(0, i)) && me.SlotAt(i).Empty) target = i;
+            if (target >= 0)
+            {
+                me.MoveItemRpc(0, (byte)index, 0, (byte)target, s.Count, default);
+                m_Swept.Add(SlotKey(0, target)); // (and a sweep doesn't carry it straight back when it passes over it)
+            }
+        }
+
+        // ------------------------------------------------------------------ Shift+drag: shift-click every slot you pass over
+
+        readonly HashSet<int> m_Swept = new HashSet<int>();
+        bool m_Sweeping;
+        Vector2 m_SweepLast;
+        /// <summary>Test hook: how many slots shift-click / shift-drag has quick-moved.</summary>
+        public static int SweepMoves { get; private set; }
+
+        /// <summary>Shift+LMB went down in the bag: a new sweep (each slot can be moved once until the button comes up).</summary>
+        void BeginSweep(Vector2 at)
+        {
+            m_Sweeping = true;
+            m_Swept.Clear();
+            m_SweepLast = at;
+        }
+
+        /// <summary>The pointer moved from where it was last drag event to `now`: did it pass over r (fast moves skip no slot)?</summary>
+        bool SweepCrosses(Rect r, Vector2 now)
+        {
+            float len = Vector2.Distance(m_SweepLast, now);
+            int steps = Mathf.Clamp(Mathf.CeilToInt(len / Mathf.Max(4f, r.width * 0.25f)), 1, 64);
+            for (int i = 0; i <= steps; i++) if (r.Contains(Vector2.Lerp(m_SweepLast, now, i / (float)steps))) return true;
+            return false;
+        }
+
+        /// <summary>Quick-move one slot, unless this sweep has already moved it (or moved something into it).</summary>
+        void SweepSlot(byte kind, int index, PlayerNet me, PlayerController pc)
+        {
+            if (!m_Swept.Add(SlotKey(kind, index))) return;
+            SweepMoves++;
+            QuickMove(kind, index, me, pc);
+        }
+
+        /// <summary>After the slots have seen this event: remember where the pointer was, and stop on button up.</summary>
+        void SweepEvent(Event e)
+        {
+            if (e.type == EventType.MouseDrag) m_SweepLast = e.mousePosition;
+            if (e.rawType == EventType.MouseUp && e.button == 0) m_Sweeping = false;
+        }
+
+        /// <summary>AutoTest: a shift-drag over these slots (kind 0 bag / 1 open chest, index), in this order.</summary>
+        public static void TestSweep(params Vector2Int[] path)
+        {
+            var h = Object.FindFirstObjectByType<Hud>();
+            var me = PlayerNet.Local;
+            var pc = PlayerController.Local;
+            if (h == null || me == null || pc == null) return;
+            h.BeginSweep(Vector2.zero);
+            foreach (var p in path)
+            {
+                var lt = pc.LootTarget;
+                var s = p.x == 0 ? me.SlotAt(p.y) : lt != null && p.y < lt.Slots.Count ? lt.Slots[p.y] : default;
+                if (!s.Empty) h.SweepSlot((byte)p.x, p.y, me, pc);
+            }
+            h.m_Sweeping = false;
         }
 
         // ------------------------------------------------------------------ inventory / crafting / loot
 
         /// <summary>The three lines under the bag that say how to move things.</summary>
-        public const string InvHelp = "Drag to move\nRight+Drag to Split\nShift+Click to quick-move";
+        public const string InvHelp = "Drag to move\nRight+Drag to Split\nShift+Click/Drag to quick-move";
 
         void DrawInventory(PlayerNet me, PlayerController pc)
         {
@@ -657,6 +721,8 @@ namespace RockGame
             MouseOverUI = true;
             m_HoverTitle = m_HoverText = "";
             TrackFlights(me, pc);
+            var ev0 = Event.current;
+            if (ev0.type == EventType.MouseDown && ev0.button == 0 && ev0.shift) BeginSweep(ev0.mousePosition); // (Shift+drag starts here)
             Fill(new Rect(0, 0, sw, sh), new Color(0, 0, 0, 0.4f));
             // six across (inventory, hotbar and chests): bigger slots than the old seven, about the same width
             const int cols = Cfg.HotbarSize;
@@ -711,6 +777,7 @@ namespace RockGame
                 DrawSlot(r, me.SlotAt(i), 0, i, me.HeldSlot.Value == i, me, pc);
                 Shadowed(new Rect(r.x + 5 * k, r.y + 2, 34 * k, 22 * k), Binds.Short(Bind.Hotbar1 + i), m_SlotKey); // the key number, bold (the stack count stays normal)
             }
+            SweepEvent(Event.current);
             float infoY = hotY + slot + 10 * k;
             if (TestHover != Item.None) SetHover(ItemStack.Of(TestHover, 1), me.Team.Value); // (AutoTest: as if the mouse were on it)
             // ---- crafting (right, when not looting): Hud.Crafting.cs - what the mouse is over shows under it ----
@@ -719,7 +786,7 @@ namespace RockGame
             if (craft) { DrawCraftList(me, pc, cxp, top, craftW, colGap, sh - 8 * k, k); hoverShown = true; }
             if (upgrades) { DrawUpgradeList(me, pc, cxp, top, craftW, sh - 8 * k, k); hoverShown = true; }
             // how to move things: always these three lines under the bag
-            Shadowed(new Rect(invX, infoY, gridW, 60 * k), $"<color=#bbbbbb>{InvHelp}</color>", m_SmallWrap);
+            Shadowed(new Rect(invX, infoY, gridW, 60 * k), $"<color=#ffffff>{InvHelp}</color>", m_SmallWrap);
             // no crafting list beside the bag (a chest is open, or the tutorial hasn't got there): the description goes
             // under the chest, or under the help lines
             if (!hoverShown)
@@ -753,16 +820,17 @@ namespace RockGame
         void DrawDragAndFlights(PlayerNet me, PlayerController pc)
         {
             var e = Event.current;
-            if (!pc.MenuOpen) { m_Dragging = false; m_Flights.Clear(); return; }
-            // (the mouse buttons were let go somewhere the bag never heard about: drop the drag)
+            if (!pc.MenuOpen) { m_Dragging = false; m_Sweeping = false; m_Flights.Clear(); return; }
+            // (the mouse buttons were let go somewhere the bag never heard about: drop the drag / the shift-drag)
             if (m_Dragging && e.type == EventType.Repaint && !TestDragHeld && !Input.GetMouseButton(0) && !Input.GetMouseButton(1)) m_Dragging = false;
+            if (m_Sweeping && e.type == EventType.Repaint && !Input.GetMouseButton(0)) m_Sweeping = false;
             DrawFlights(me);
             if (!m_Dragging || e.type != EventType.Repaint) return;
             // the real pointer (IMGUI's own position isn't always updated while the right button is held)
             var mp = TestDragHeld ? TestDragAt : new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
             float s = m_DragSlot;
             var dr = new Rect(mp.x - s * 0.42f, mp.y - s * 0.42f, s * 0.84f, s * 0.84f);
-            Fill(new Rect(dr.x - 2, dr.y - 2, dr.width + 4, dr.height + 4), new Color(0, 0, 0, 0.35f));
+            // (just the icon on the pointer: no slot background behind it)
             var icon = ItemIcons.Get(m_DragStack.Id);
             if (icon != null) GUI.DrawTexture(dr, icon, ScaleMode.ScaleToFit, true);
             else GUI.Label(dr, Cfg.ItemName(m_DragStack.Id), m_Small);

@@ -8,9 +8,10 @@ namespace RockGame
     /// -autotest craftui (with -host -solo -fast -shotdir DIR, any -rules): the TAB crafting list with no workbench
     /// (starter items only, the Workbench T1 grey and locked until the ball's been captured - here by putting it in our
     /// socket, with the "WORK BENCHES UNLOCKED" notice), crafting and placing a Workbench T1 anywhere in the base (not outside
-    /// it, not in the enemy's, one per team, unbreakable, E opens nothing), the T1 items showing up in the list only while
-    /// you're in your base, crafting them straight into the inventory, then the Workbench T2 (2000, needs the T1) and its
-    /// items - the list then scrolls (scroll bar) - with screenshots of each list and of both benches.
+    /// it, not in the enemy's, one per team, unbreakable, E opens nothing), the T1 items (sword before crossbow, the saddle)
+    /// craftable only while you're in your base but still listed greyed ("in your base") outside it, crafting them straight
+    /// into the inventory, then the Workbench T2 (2000, needs the T1) and its items (ammo, guns, helmet, C4 in that order) -
+    /// the list then scrolls (scroll bar) - with screenshots of each list and of both benches.
     /// Also BenchBuy: crafts a workbench-tier item like a player would (for the other tests).
     /// </summary>
     public partial class AutoTest
@@ -70,6 +71,19 @@ namespace RockGame
             var l = new List<Item>();
             foreach (var i in idx) l.Add(Cfg.CraftRecipe(i, team).Output);
             return l;
+        }
+
+        /// <summary>Are these all in the list, in this order?</summary>
+        static bool InOrder(List<Item> list, params Item[] ids)
+        {
+            int last = -1;
+            foreach (var id in ids)
+            {
+                int i = list.IndexOf(id);
+                if (i <= last) return false;
+                last = i;
+            }
+            return true;
         }
 
         /// <summary>Craft from the list and wait for it (Builder: its timer).</summary>
@@ -223,8 +237,8 @@ namespace RockGame
             pc.LocalTeleport(spawn, Cfg.SpawnYaw(team));
             yield return new WaitForSeconds(0.4f);
             listed = ListAt(team, me.transform.position);
-            bool t1 = listed.Contains(Item.Crossbow) && listed.Contains(Item.Armor) && listed.Contains(Item.Chainsaw) && listed.Contains(Item.Barrier) && listed.Contains(Item.Workbench2);
-            bool noT2 = !listed.Contains(Item.Saddle) && !listed.Contains(Item.Pickaxe);
+            bool t1 = listed.Contains(Item.Crossbow) && listed.Contains(Item.Armor) && listed.Contains(Item.Chainsaw) && listed.Contains(Item.Barrier) && listed.Contains(Item.Workbench2) && listed.Contains(Item.Saddle);
+            bool noT2 = !listed.Contains(Item.Pickaxe);
             if (Cfg.PowerMenu) { t1 &= listed.Contains(Item.Sword); noT2 &= !listed.Contains(Item.Revolver) && !listed.Contains(Item.C4); }
             if (Cfg.Builder) t1 &= listed.Contains(Item.FortifyBuff); // (Builder has no alien machine: its fortify is still crafted)
             Check(t1 && noT2, $"with a T1 bench, in the base the list has the T1 items too, not T2 ({string.Join(", ", listed)})");
@@ -234,12 +248,14 @@ namespace RockGame
                 Check(Cfg.Builder || (!every.Contains(Item.FortifyBuff) && !every.Contains(Item.WoodGenBuff) && Cfg.CraftIndexOf(Item.FortifyBuff) < 0 && Cfg.CraftIndexOf(Item.WoodGenBuff) < 0),
                     "Fortify All Walls and the wood gen aren't in the crafting list (UPGRADES at the alien machine)");
             }
-            // the saddle needs the Workbench T2: with only the T1 the server won't make it
+            // the T1 list's order: the sword before the crossbow (modes with the sword)
+            if (Cfg.PowerMenu) Check(InOrder(listed, Item.Sword, Item.Crossbow), $"T1: the sword comes before the crossbow ({string.Join(", ", listed)})");
+            // the saddle is a Workbench T1 item: with only the T1 the server makes it
             {
-                int s0 = me.Count(Item.Saddle), w0 = me.Count(cur);
-                me.CraftRpc(Cfg.CraftIndexOf(Item.Saddle));
-                yield return new WaitForSeconds(0.5f);
-                Check(Cfg.CraftTier(Item.Saddle) == 2 && me.Count(Item.Saddle) == s0 && me.Count(cur) == w0, "the saddle needs a Workbench T2: refused with only the T1 (nothing paid)");
+                int s0 = me.Count(Item.Saddle);
+                yield return CraftWait(me, Item.Saddle);
+                Check(Cfg.CraftTier(Item.Saddle) == 1 && me.Count(Item.Saddle) == s0 + 1, "the saddle is on the T1 list: crafted with only the Workbench T1");
+                Drop(me, Item.Saddle);
             }
             pc.MenuOpen = true;
             yield return Snap(P("tab_t1"));
@@ -274,6 +290,11 @@ namespace RockGame
                 me.CraftRpc(Cfg.CraftIndexOf(Item.Crossbow));
                 yield return new WaitForSeconds(0.5f);
                 Check(me.Count(Item.Crossbow) == x0, "and can't be crafted out there");
+                // ... but the bag still shows them, greyed: "in your base"
+                yield return BagRows(pc);
+                Check(RowState(Item.Crossbow) == "in your base" && RowState(Item.Saddle) == "in your base" && RowState(Item.Workbench2) == "in your base",
+                    $"out of the base the bag still lists the T1 items, greyed ({RowState(Item.Crossbow)}, {RowState(Item.Saddle)}, {RowState(Item.Workbench2)})");
+                pc.CloseMenu();
                 pc.MenuOpen = true;
                 yield return Snap(P("tab_outside"));
                 pc.CloseMenu();
@@ -311,6 +332,14 @@ namespace RockGame
             Check(all, $"with a T2 bench everything in this mode is in the list ({listed.Count} items{(missing.Count > 0 ? ", missing " + string.Join(", ", missing) : "")})");
             // the long list scrolls: a scroll bar on its right, the mouse wheel / dragging moves it
             yield return BagRows(pc);
+            {
+                // the T2 list's order: the ammo, then the guns, then the alien helmet, then C4
+                var shown = new List<Item>();
+                foreach (var r in Hud.CraftRowsShown) shown.Add(r.Id);
+                if (Cfg.PowerMenu)
+                    Check(InOrder(shown, Item.ShotgunShell, Item.RevolverAmmo, Item.Shotgun, Item.Revolver, Item.Helmet, Item.C4),
+                        $"T2: ammo, then the guns, the helmet, then C4 ({string.Join(", ", shown)})");
+            }
             float max = Hud.CraftScrollMax;
             yield return Snap(P("tab_t2"));
             Check(max > 0.5f && Hud.CraftScrollNow == 0f, $"with both benches the list is longer than the screen: it scrolls, with a scroll bar ({max:0} px to scroll at {Screen.width}x{Screen.height})");
@@ -328,7 +357,7 @@ namespace RockGame
             Check(Hud.CraftScrollNow == 0f, "the bag opens at the top of the list again");
             pc.CloseMenu();
             yield return CraftWait(me, Item.Saddle);
-            Check(me.Count(Item.Saddle) == 1, "a saddle from the T2 list, straight into the inventory");
+            Check(me.Count(Item.Saddle) == 1, "a saddle from the list, straight into the inventory");
             if (Cfg.CraftIndexOf(Item.Revolver) >= 0)
             {
                 yield return CraftWait(me, Item.Revolver);

@@ -5,9 +5,11 @@ namespace RockGame
 {
     /// <summary>
     /// Crafting: TAB shows the inventory with the crafting list on its right, one row per item (icon, name, price, CRAFT).
-    /// The starter items are always there; while you're in your base, a Workbench T1 your team has put down adds the T1
-    /// items under their own heading, and a Workbench T2 the T2 items (Cfg.CraftTierAt). It's one column: when it's longer
-    /// than the screen it scrolls (mouse wheel, or drag the scroll bar that shows up on its right).
+    /// The starter items are always there; a Workbench T1 your team has put down adds the T1 items under their own
+    /// heading, and a Workbench T2 the T2 items (Cfg.BenchTier). Away from your base they're still listed, greyed with
+    /// "in your base" (they're only crafted there: Cfg.CraftTierAt / the server's check). It's one column: when it's longer
+    /// than the screen it scrolls (mouse wheel - Shift+wheel too, so it scrolls while you sprint - or drag the scroll bar
+    /// that shows up on its right).
     /// The Workbench T1 row is grey and says so until your team has captured the ball (Cfg.BenchUnlocked).
     /// </summary>
     public partial class Hud
@@ -19,7 +21,7 @@ namespace RockGame
         // bag was last drawn (it opens at the top again)
         float m_CraftScroll, m_ThumbGrab;
         bool m_ThumbDrag;
-        int m_CraftDrawnFrame = -10;
+        int m_CraftDrawnFrame = -10, m_WheelFrame = -10;
 
         /// <summary>Test hooks: how far the list can scroll (0 = it all fits, no scroll bar) and how far it is scrolled,
         /// the rows as last drawn (item, why it can't be crafted - null = it can), and a scroll position to jump to.</summary>
@@ -105,19 +107,19 @@ namespace RockGame
                 case Item.Ram: return $"Battering Ram ({Cfg.RamUses} hit{(Cfg.RamUses == 1 ? "" : "s")}): hold LMB at an enemy piece - wood breaks, stone and up drop a step.";
                 case Item.Barrier: return "High External Wall: a tall log wall for your base or out in the open.";
                 case Item.Workbench:
-                    return "Workbench T1: put it down anywhere in your base. While you're in your base, the crossbow, armour, chainsaw, high walls and more show up in this list. Only C4 stuck right on it breaks it (it drops)."
+                    return "Workbench T1: put it down anywhere in your base. The sword, crossbow, armour, chainsaw, high walls, saddle and more show up in this list (crafted in your base). Only C4 stuck right on it breaks it (it drops)."
                         + (Cfg.BenchUnlocked(team) ? "" : $" LOCKED until your team captures the ball: put it in your machine once, or keep it in your base for {Cfg.BenchUnlockSeconds:0} s"
                             + (NetGame.Instance != null ? $" ({Mathf.Min(NetGame.Instance.BallInBaseSecondsOf(team), Mathf.RoundToInt(Cfg.BenchUnlockSeconds))} / {Cfg.BenchUnlockSeconds:0} s so far)." : "."));
-                case Item.Workbench2: return "Workbench T2 (needs the T1): put it down in your base for the guns, ammo, C4, the saddle, the helmet and more. Only C4 stuck right on it breaks it (it drops).";
+                case Item.Workbench2: return "Workbench T2 (needs the T1): put it down in your base for the ammo, guns, the alien helmet, C4 and more. Only C4 stuck right on it breaks it (it drops).";
                 case Item.Crossbow: return $"Crossbow: {Cfg.CrossbowDamage:0} damage, faster and flatter than the bow. Reloads itself from your arrows.";
-                case Item.Armor: return $"Armour: goes straight on - {Cfg.ArmorHp} extra health used up before your own.";
+                case Item.Armor: return $"Armour: {Cfg.ArmorHp} extra health used up before your own.";
                 case Item.Chainsaw: return $"Chainsaw: rips through wood and stone. {Cfg.ChainsawUses} uses.";
                 case Item.Saddle: return "Saddle: E on a wild horse to ride it.";
                 case Item.Boat: return "Boat: put it on open water and E to drive it.";
                 case Item.Sword: return $"Sword: a slow heavy swing, {Cfg.SwordBodyDamage:0} body / {Cfg.SwordHeadDamage:0} head.";
-                case Item.Shotgun: return "Waterpipe Shotgun: one shell at a time, huge up close. Comes empty.";
+                case Item.Shotgun: return "Waterpipe Shotgun: one shell at a time, huge up close.";
                 case Item.ShotgunShell: return "One shotgun shell.";
-                case Item.Revolver: return $"Revolver: {Cfg.RevolverMag} rounds, hitscan. Comes empty.";
+                case Item.Revolver: return $"Revolver: {Cfg.RevolverMag} rounds, hitscan.";
                 case Item.RevolverAmmo: return "One revolver bullet.";
                 case Item.C4: return "C4: throw it at enemy buildings.";
                 case Item.Helmet: return "Alien Helmet: stops one headshot completely.";
@@ -214,7 +216,6 @@ namespace RockGame
         {
             switch (r.Output)
             {
-                case Item.Armor: return "goes straight on";
                 case Item.FortifyBuff:
                 {
                     int lvl = Cfg.FortifyLevel(team);
@@ -225,8 +226,6 @@ namespace RockGame
                     int lvl = Cfg.WoodGenLevel(team);
                     return lvl >= Cfg.MaxWoodGen ? "" : $"level {lvl + 1}";
                 }
-                case Item.Shotgun:
-                case Item.Revolver: return "comes empty";
                 default: return "";
             }
         }
@@ -241,7 +240,8 @@ namespace RockGame
         int LayoutCraftList(PlayerNet me, PlayerController pc, float top, float bottom, float k)
         {
             int team = me.Team.Value;
-            m_CraftTier = Cfg.CraftTierAt(team, me.transform.position);
+            // your team's benches decide what's listed wherever you are (out of your base it's greyed: ListProblem)
+            m_CraftTier = Cfg.BenchTier(team);
             m_CraftRows.Clear();
             for (int tier = 0; tier <= m_CraftTier; tier++)
             {
@@ -293,8 +293,18 @@ namespace RockGame
             bool overList = view.Contains(ev.mousePosition);
             if (ev.type == EventType.ScrollWheel && overList && bar)
             {
-                m_CraftScroll += ev.delta.y * 18f * k; // (one notch is about a row)
+                // (one notch is about a row; with Shift held - sprinting - Windows turns the wheel sideways, so x counts too)
+                float d = Mathf.Abs(ev.delta.y) > 0.001f ? ev.delta.y : ev.delta.x;
+                m_CraftScroll += d * 18f * k;
+                m_WheelFrame = Time.frameCount;
                 ev.Use();
+            }
+            // (and if no wheel event got here this frame - a held key swallowed it - the wheel itself still scrolls the list)
+            else if (ev.type == EventType.Repaint && overList && bar && m_WheelFrame != Time.frameCount)
+            {
+                var w = Input.mouseScrollDelta;
+                float d = Mathf.Abs(w.y) > 0.001f ? w.y : w.x;
+                if (d != 0f) m_CraftScroll -= d * 3f * 18f * k; // (Input: +1 a notch up; the event: +3 a notch down)
             }
 
             // the scroll bar: a track as tall as the list and a thumb as long as the share of it you can see

@@ -15,7 +15,7 @@ namespace RockGame
         struct Flight { public Item Id; public int Count; public Vector2 From; public byte Kind; public int Index; public float Start; }
         struct Change { public byte Kind; public int Index; public Item Id; public int Amount; public float Time; }
 
-        const float FlightTime = 0.24f, LandTime = 0.16f, MatchWindow = 0.4f;
+        const float FlightTime = 0.24f, LandTime = 0.08f, MatchWindow = 0.4f; // (the landing pop is quick: half what it was)
         readonly List<Flight> m_Flights = new List<Flight>();
         readonly List<Change> m_Losses = new List<Change>(), m_Gains = new List<Change>();
         readonly Dictionary<int, Rect> m_SlotRects = new Dictionary<int, Rect>();
@@ -35,6 +35,9 @@ namespace RockGame
         /// <summary>Test hooks: how many flights have started, and how many are in the air now.</summary>
         public static int FlightsStarted { get; private set; }
         public static int FlightsNow { get; private set; }
+        /// <summary>Test hooks: how long a flight and its landing pop take.</summary>
+        public static float FlightSeconds => FlightTime;
+        public static float LandPopSeconds => LandTime;
 
         static int SlotKey(byte kind, int index) => kind * 1024 + index;
         void NoteSlotRect(byte kind, int index, Rect r) => m_SlotRects[SlotKey(kind, index)] = r;

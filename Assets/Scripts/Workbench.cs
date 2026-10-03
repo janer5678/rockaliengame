@@ -7,8 +7,8 @@ namespace RockGame
     /// <summary>
     /// Crafting tiers. Everything is crafted from the TAB list (Hud.Crafting.cs), which shows:
     /// - the starter items (tier 0) always;
-    /// - tier 1 items while you're in your base and your team has a Workbench T1 placed;
-    /// - tier 2 items while you're in your base and your team has a Workbench T2 placed (it needs the T1 first).
+    /// - tier 1 items once your team has a Workbench T1 placed (craftable only in your base: elsewhere they're greyed);
+    /// - tier 2 items once your team has a Workbench T2 placed (it needs the T1 first; craftable only in your base).
     /// Builder has no bases: the tiers follow the team's benches wherever they stand.
     /// </summary>
     public static partial class Cfg
@@ -18,12 +18,12 @@ namespace RockGame
 
         /// <summary>Tier 0: always in the TAB list (in this order).</summary>
         static readonly Item[] k_Starter = { Item.Hatchet, Item.Spear, Item.BuildingPlan, Item.Bow, Item.Arrow, Item.Chest, Item.Ram, Item.Workbench };
-        /// <summary>Tier 1 (Workbench T1 in your base): the user's list, then the T2 bench. (Fortify All Walls is only crafted in
+        /// <summary>Tier 1 (Workbench T1 in your base): sword before crossbow, the saddle, then the T2 bench. (Fortify All Walls is only crafted in
         /// Builder, which has no bases or upgrade stations; everywhere else the base upgrades are in UPGRADES - Upgrades.cs.)</summary>
-        static readonly Item[] k_Tier1 = { Item.Crossbow, Item.Sword, Item.Armor, Item.Barrier, Item.Chainsaw, Item.FortifyBuff, Item.Workbench2 };
-        /// <summary>Tier 2 (Workbench T2 in your base): guns, ammo, C4, saddle, helmet, then whatever's left (pickaxe, boat...).
+        static readonly Item[] k_Tier1 = { Item.Sword, Item.Crossbow, Item.Armor, Item.Barrier, Item.Chainsaw, Item.Saddle, Item.FortifyBuff, Item.Workbench2 };
+        /// <summary>Tier 2 (Workbench T2 in your base): the ammo, then the guns, the alien helmet, C4, then whatever's left (pickaxe, boat...).
         /// Anything craftable that isn't tier 0 or 1 is tier 2.</summary>
-        static readonly Item[] k_Tier2 = { Item.Shotgun, Item.ShotgunShell, Item.Revolver, Item.RevolverAmmo, Item.C4, Item.Saddle, Item.Helmet, Item.Pickaxe, Item.Boat, Item.Pistol, Item.PistolAmmo, Item.HeavyArmor };
+        static readonly Item[] k_Tier2 = { Item.ShotgunShell, Item.RevolverAmmo, Item.Shotgun, Item.Revolver, Item.Helmet, Item.C4, Item.Pickaxe, Item.Boat, Item.PistolAmmo, Item.Pistol, Item.HeavyArmor };
 
         public static bool IsStarter(Item i) => System.Array.IndexOf(k_Starter, i) >= 0;
         public static IReadOnlyList<Item> StarterOrder => k_Starter;
