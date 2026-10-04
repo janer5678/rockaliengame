@@ -6,13 +6,14 @@ namespace RockGame
     public static partial class Cfg
     {
         /// <summary>
-        /// The Workbench T1 is locked until your team has captured the ball: put it in your machine's socket once, or had
-        /// it in your base this many seconds in all (lying there, in the socket, or carried by one of your team - the
-        /// seconds add up over the match, they don't have to be in one go). Builder has no bases or machines: always unlocked.
+        /// The Workbench T1 is locked for EVERYONE until the ball has been captured by any team: a team puts it in its
+        /// machine's socket once, or has it in its base this many seconds in all (lying there, in the socket, or carried
+        /// by one of that team - each team's seconds add up over the match, they don't have to be in one go). The first
+        /// capture unlocks every team's workbench at once. Builder has no bases or machines: always unlocked.
         /// </summary>
         [Tune("Crafting")] public static float BenchUnlockSeconds = 30f;
 
-        /// <summary>Can this team craft its Workbench T1 yet? (synced: NetGame.BenchUnlocks)</summary>
+        /// <summary>Can this team craft its Workbench T1 yet? (synced: NetGame.BenchUnlocks - every team's bit comes on together)</summary>
         public static bool BenchUnlocked(int team) => Builder || NetGame.Instance == null || NetGame.Instance.BenchUnlockedFor(team);
 
         /// <summary>What the crafting list says on the locked Workbench T1.</summary>
@@ -20,24 +21,30 @@ namespace RockGame
     }
 
     /// <summary>
-    /// The workbench unlock: per team, the Workbench T1 can only be crafted once the team has put the ball in its machine
-    /// socket once, or had the ball in its base for Cfg.BenchUnlockSeconds in all. The server keeps score and syncs a bit
-    /// per team (BenchUnlocks) and the seconds so far (BallInBaseSecs); each client says "WORK BENCHES UNLOCKED" (banner +
-    /// sound) when its own team's bit comes on. In the tutorial the notice waits for the workbench step.
+    /// The workbench unlock: nobody can craft the Workbench T1 until the ball has been captured - some team (any team)
+    /// has put it in its machine socket once, or had it in its base for Cfg.BenchUnlockSeconds in all. That first capture
+    /// unlocks it for every team, not just the one that did it. The server keeps score and syncs a bit per team
+    /// (BenchUnlocks: all of them come on together) and each team's seconds so far (BallInBaseSecs); every client says
+    /// "WORK BENCHES UNLOCKED" (banner + sound) when its team's bit comes on. In the tutorial the notice waits for the
+    /// workbench step.
     /// </summary>
     public partial class NetGame
     {
-        /// <summary>Bit t: team t's Workbench T1 is unlocked (it stays unlocked for the rest of the match).</summary>
+        /// <summary>Bit t: team t's Workbench T1 is unlocked (every team's at once; it stays unlocked for the rest of the match).</summary>
         public readonly NetworkVariable<byte> BenchUnlocks = new NetworkVariable<byte>();
         /// <summary>8 bits a team: whole seconds the ball has spent in that team's base so far (towards the unlock).</summary>
         public readonly NetworkVariable<int> BallInBaseSecs = new NetworkVariable<int>();
 
         public bool BenchUnlockedFor(int team) => team >= 0 && team < 8 && ((BenchUnlocks.Value >> team) & 1) != 0;
         public int BallInBaseSecondsOf(int team) => team >= 0 && team < 4 ? (BallInBaseSecs.Value >> (team * 8)) & 255 : 0;
+        /// <summary>The most seconds any team has had the ball in its base so far (the team nearest to unlocking it for everyone).</summary>
+        public int BallInBaseSecondsBest { get { int best = 0; for (int t = 0; t < 4; t++) best = Mathf.Max(best, BallInBaseSecondsOf(t)); return best; } }
+        /// <summary>Which team's capture unlocked the workbenches (-1: not yet, or the dev setting).</summary>
+        public readonly NetworkVariable<sbyte> BenchUnlockedBy = new NetworkVariable<sbyte>(-1);
 
         readonly float[] m_BallInBase = new float[4];
 
-        /// <summary>Server, every frame: unlock a team's workbench when the ball is in its socket, or has been in its base long enough.</summary>
+        /// <summary>Server, every frame: unlock everyone's workbench when the ball is in a team's socket, or has been in a team's base long enough.</summary>
         void ServerTickBenchUnlock()
         {
             if (Cfg.Builder || (S != GameState.PreBall && S != GameState.BallLive)) return;
@@ -57,12 +64,13 @@ namespace RockGame
             if (m_BallInBase[t] >= Cfg.BenchUnlockSeconds) ServerUnlockBench(t, $"kept the ball in their base for {Cfg.BenchUnlockSeconds:0} seconds");
         }
 
-        /// <summary>Server: this team can craft its Workbench T1 from now on (also the dev setting).</summary>
+        /// <summary>Server: this team captured the ball - EVERY team can craft its Workbench T1 from now on (also the dev setting).</summary>
         public void ServerUnlockBench(int team, string why)
         {
             if (!IsServer || team < 0 || team >= 4 || BenchUnlockedFor(team)) return;
-            BenchUnlocks.Value = (byte)(BenchUnlocks.Value | (1 << team));
-            Debug.Log($"[RockGame] {Cfg.TeamLabel(team)}'s Workbench T1 unlocked ({why})"); // (the team's own clients say so: TickBenchUnlockNotice)
+            BenchUnlockedBy.Value = (sbyte)team;
+            BenchUnlocks.Value = 0x0F;
+            Debug.Log($"[RockGame] Workbench T1 unlocked for everyone: {Cfg.TeamLabel(team)} {why}"); // (every client says so: TickBenchUnlockNotice)
         }
 
         // ---- the client: say so when our own team's bench unlocks ----
@@ -85,7 +93,9 @@ namespace RockGame
             if (!m_UnlockPending || (Tutorial.On && !Tutorial.AllowsItem(Item.Workbench))) return;
             m_UnlockPending = false;
             BenchUnlockNotices++;
-            Hud.Banner("WORK BENCHES UNLOCKED", $"Craft it in your bag ({Binds.Name(Bind.Inventory)}) - your team captured the ball");
+            int by = BenchUnlockedBy.Value;
+            string who = by < 0 ? "the ball has been captured" : by == team ? "your team captured the ball" : $"{Cfg.TeamLabel(by)} captured the ball - everyone gets it";
+            Hud.Banner("WORK BENCHES UNLOCKED", $"Craft it in your bag ({Binds.Name(Bind.Inventory)}) - {who}");
             Hud.Push("Work Benches Unlocked: craft a Workbench T1 in your bag");
             Sfx.Play2D(Sfx.Unlock, 0.8f, 0f);
         }

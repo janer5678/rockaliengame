@@ -10,7 +10,7 @@ namespace RockGame
     /// "in your base" (they're only crafted there: Cfg.CraftTierAt / the server's check). It's one column: when it's longer
     /// than the screen it scrolls (mouse wheel - Shift+wheel too, so it scrolls while you sprint - or drag the scroll bar
     /// that shows up on its right).
-    /// The Workbench T1 row is grey and says so until your team has captured the ball (Cfg.BenchUnlocked).
+    /// The Workbench T1 row is grey and says so until the ball has been captured - by any team (Cfg.BenchUnlocked).
     /// </summary>
     public partial class Hud
     {
@@ -108,8 +108,8 @@ namespace RockGame
                 case Item.Barrier: return "High External Wall: a tall log wall for your base or out in the open.";
                 case Item.Workbench:
                     return "Workbench T1: put it down anywhere in your base. The sword, crossbow, armour, chainsaw, high walls, saddle and more show up in this list (crafted in your base). Only C4 stuck right on it breaks it (it drops)."
-                        + (Cfg.BenchUnlocked(team) ? "" : $" LOCKED until your team captures the ball: put it in your machine once, or keep it in your base for {Cfg.BenchUnlockSeconds:0} s"
-                            + (NetGame.Instance != null ? $" ({Mathf.Min(NetGame.Instance.BallInBaseSecondsOf(team), Mathf.RoundToInt(Cfg.BenchUnlockSeconds))} / {Cfg.BenchUnlockSeconds:0} s so far)." : "."));
+                        + (Cfg.BenchUnlocked(team) ? "" : $" LOCKED for everyone until the ball is captured: any team puts it in its machine once, or keeps it in its base for {Cfg.BenchUnlockSeconds:0} s"
+                            + (NetGame.Instance != null ? $" (your base {Mathf.Min(NetGame.Instance.BallInBaseSecondsOf(team), Mathf.RoundToInt(Cfg.BenchUnlockSeconds))} s, the nearest team {Mathf.Min(NetGame.Instance.BallInBaseSecondsBest, Mathf.RoundToInt(Cfg.BenchUnlockSeconds))} / {Cfg.BenchUnlockSeconds:0} s so far)." : "."));
                 case Item.Workbench2: return "Workbench T2 (needs the T1): put it down in your base for the ammo, guns, the alien helmet, C4 and more. Only C4 stuck right on it breaks it (it drops).";
                 case Item.Crossbow: return $"Crossbow: {Cfg.CrossbowDamage:0} damage, faster and flatter than the bow. Reloads itself from your arrows.";
                 case Item.Armor: return $"Armour: {Cfg.ArmorHp} extra health used up before your own.";

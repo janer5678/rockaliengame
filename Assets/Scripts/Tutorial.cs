@@ -553,7 +553,7 @@ namespace RockGame
                 {
                     Id = "guard", Title = "Guard it!",
                     BodyF = () => Ball.Instance != null && Ball.Instance.SocketTeam.Value == Team
-                        ? $"You captured the ball - that unlocks your " + Hi("Workbench") + $"! Enemies can steal it with {K(Bind.Interact)}, so stay by your machine."
+                        ? $"You captured the ball - that unlocks the " + Hi("Workbench") + $" (for everyone)! Enemies can steal it with {K(Bind.Interact)}, so stay by your machine."
                         : "It got stolen! Get it back into your machine.",
                     Goal = "Guard your machine for 5 seconds",
                     Progress = () => $"{Mathf.Min(5f, s_GuardTime):0} / 5 s",
@@ -565,8 +565,8 @@ namespace RockGame
                 {
                     Id = "bench", Title = "The Workbench",
                     BodyF = () => (Cfg.BenchUnlocked(Team) ? "You captured the ball, so the " + Hi("Workbench") + " is unlocked! "
-                            : "The " + Hi("Workbench") + " unlocks once your team captures the ball. ")
-                        + $"(In a match: put the ball in your machine once, or keep it in your base for {Cfg.BenchUnlockSeconds:0} seconds.) "
+                            : "The " + Hi("Workbench") + " unlocks once the ball is captured. ")
+                        + $"(In a match: any team puts the ball in its machine once, or keeps it in its base for {Cfg.BenchUnlockSeconds:0} seconds - and that unlocks it for " + Hi("everyone") + ".) "
                         + "A Workbench in your base adds more things to your bag. Craft a " + Hi("Workbench T1") + "!",
                     Goal = "Craft a Workbench T1",
                     Progress = () => !Cfg.BenchUnlocked(Team) ? "locked - get the ball into your machine" : WoodNeed(WoodOf(Item.Workbench)),

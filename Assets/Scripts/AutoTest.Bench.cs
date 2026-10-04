@@ -109,14 +109,14 @@ namespace RockGame
                 pc.CloseMenu();
                 while (!Cfg.BenchUnlocked(team) && Time.time - t0 < 45f) yield return null;
                 float took = Time.time - t0;
-                Check(Cfg.BenchUnlocked(team) && took >= Cfg.BenchUnlockSeconds - 1.5f && took <= Cfg.BenchUnlockSeconds + 3f && !Cfg.BenchUnlocked(1 - team),
-                    $"{Cfg.BenchUnlockSeconds:0} s with the ball in our base unlocks our Workbench T1 (after {took:0.0} s), not the other team's");
+                Check(Cfg.BenchUnlocked(team) && took >= Cfg.BenchUnlockSeconds - 1.5f && took <= Cfg.BenchUnlockSeconds + 3f && Cfg.BenchUnlocked(1 - team) && g.BenchUnlockedBy.Value == team,
+                    $"{Cfg.BenchUnlockSeconds:0} s with the ball in our base unlocks the Workbench T1 (after {took:0.0} s) - for every team, not just ours (the other team: {Cfg.BenchUnlocked(1 - team)})");
             }
             else
             {
                 ball.ServerSocket(team);
                 yield return new WaitForSeconds(0.5f);
-                Check(Cfg.BenchUnlocked(team) && !Cfg.BenchUnlocked(1 - team), "putting the ball in our machine once unlocks our Workbench T1, not the other team's");
+                Check(Cfg.BenchUnlocked(team) && Cfg.BenchUnlocked(1 - team) && g.BenchUnlockedBy.Value == team, $"putting the ball in our machine once unlocks the Workbench T1 for every team, not just ours (the other team: {Cfg.BenchUnlocked(1 - team)})");
             }
             yield return new WaitForSeconds(0.3f);
             Check(NetGame.BenchUnlockNotices == notices + 1 && Hud.LastBanner.Contains("WORK BENCHES UNLOCKED") && Hud.LastBanner.Contains("bag"),

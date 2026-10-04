@@ -1246,7 +1246,7 @@ namespace RockGame
             if (InSuddenDeath || (NetGame.Instance != null && NetGame.Instance.S == GameState.GameOver)) return;
             var r = power ? Cfg.GetPowerRecipe(recipe - Cfg.PowerBase, Team.Value) : Cfg.GetRecipe(recipe);
             if (!Tutorial.AllowsItemFor(this, r.Output)) { Notify("Not yet - the tutorial gets to that soon"); return; }
-            // the Workbench T1 is locked until your team has captured the ball (NetGame.Bench.cs)
+            // the Workbench T1 is locked for everyone until a team (any team) has captured the ball (NetGame.Bench.cs)
             if (r.Output == Item.Workbench && !Cfg.BenchUnlocked(Team.Value))
             {
                 Notify("You can only craft the Workbench once the ball has been captured");
