@@ -6,9 +6,10 @@ namespace RockGame
 {
     /// <summary>
     /// -autotest hands -host -solo -shotdir DIR (windowed): the first-person hands holding every item, in the key moments of
-    /// each animation, photographed three times - with the original box arms (hands_X_box), with the alien arms the game
-    /// uses (hands_X_alien) and with both at once (hands_X_both) - so the alien hands can be lined up with the old ones.
-    /// Then a few in PSX graphics, and checks that only the local first-person arms are the alien arm models.
+    /// each animation, photographed three times - with the block hands the game uses (hands_X_blocky), with the alien
+    /// clawed hands they replaced (hands_X_alien) and with the original box arms (hands_X_box) - so they can be compared.
+    /// Then a few in PSX graphics, a few shaded smooth (Settings > Display > SHADING: handssmooth_X), and checks that only
+    /// the local first-person arms are the arm models.
     /// </summary>
     public partial class AutoTest
     {
@@ -77,7 +78,8 @@ namespace RockGame
             }
 
             void Shot(string n) { ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(dir, n + ".png")); }
-            if (ViewModel.Last != null) Log("alien arm pieces (model space, unbent):\n" + ViewModel.Last.DebugRest());
+            if (ViewModel.Last != null) Log("block hand pieces (model space, unbent):\n" + ViewModel.Last.DebugRest());
+            Check(ViewModel.Last != null && ViewModel.Last.DebugIsBlocky, "the first-person hands are the square block hands");
             var contacts = new List<ContactResult>();
             bool closeUps = System.Array.IndexOf(args, "-handsclose") >= 0; // (close-ups of each hand as well)
             Item heldNow = (Item)255;
@@ -95,11 +97,11 @@ namespace RockGame
                 }
                 p.set?.Invoke();
                 yield return new WaitForSeconds(0.35f); // (the equip animation when the ball appears)
-                foreach (int mode in new[] { 1, 0, 2 })
+                foreach (int mode in new[] { 2, 1, 0 })
                 {
                     ViewModel.DebugArms = mode;
                     yield return new WaitForSeconds(0.25f);
-                    Shot($"hands_{p.name}_{(mode == 1 ? "box" : mode == 0 ? "alien" : "both")}");
+                    Shot($"hands_{p.name}_{(mode == 1 ? "box" : mode == 0 ? "blocky" : "alien")}");
                     yield return new WaitForEndOfFrame();
                 }
                 // the same from the side (a second camera off to the right), to see how the claws hold the item
@@ -111,11 +113,11 @@ namespace RockGame
                 side.fieldOfView = 55f;
                 side.transform.position = main.transform.TransformPoint(new Vector3(0.95f, 0.1f, 0.3f));
                 side.transform.LookAt(main.transform.TransformPoint(new Vector3(0.05f, -0.22f, 0.42f)), main.transform.up);
-                foreach (int mode in new[] { 1, 0 })
+                foreach (int mode in new[] { 2, 0 })
                 {
                     ViewModel.DebugArms = mode;
                     yield return new WaitForSeconds(0.15f);
-                    Shot($"handsside_{p.name}_{(mode == 1 ? "box" : "alien")}");
+                    Shot($"handsside_{p.name}_{(mode == 0 ? "blocky" : "alien")}");
                     yield return new WaitForEndOfFrame();
                 }
                 // close-ups of each hand that's in view, from outside, from in front and from below
@@ -163,16 +165,66 @@ namespace RockGame
             GameSettings.SetGraphics(0, false);
             yield return new WaitForSeconds(0.5f);
 
-            // the alien arm models are only ever the local first-person arms
-            int arms = 0, elsewhere = 0;
+            // shade smooth (Settings > Display > SHADING > Hands & items): what's held becomes its smooth copy and the
+            // block hands' corners are lit smoothly; off puts the very same meshes back
+            foreach (var it in new[] { Item.Hatchet, Item.Rock, Item.Crossbow })
+            {
+                for (int i = 0; i < Cfg.PlayerSlots; i++) me.Inv[i] = default;
+                if (it != Item.Rock) me.ServerGive(it, 1);
+                yield return new WaitForSeconds(0.2f);
+                yield return Hold(me, it);
+                yield return new WaitForSeconds(0.5f);
+                var held = new List<Renderer>();
+                ViewModel.Last?.DebugHeld(held);
+                var before = new List<Mesh>();
+                foreach (var r in held) before.Add(r.GetComponent<MeshFilter>()?.sharedMesh);
+                Shot("handssmooth_" + it.ToString().ToLower() + "_off");
+                yield return new WaitForEndOfFrame();
+                GameSettings.SmoothHands.Set(true, false);
+                yield return new WaitForSeconds(0.3f);
+                int smooth = 0, total = 0;
+                foreach (var r in held) { var m = r.GetComponent<MeshFilter>()?.sharedMesh; if (m == null || !m.isReadable) continue; total++; if (SmoothShade.IsSmooth(m)) smooth++; }
+                Shot("handssmooth_" + it.ToString().ToLower() + "_on");
+                yield return new WaitForEndOfFrame();
+                Check(total > 0 && smooth == total, $"shade smooth: every held {it} mesh is its smooth copy ({smooth}/{total})");
+                Check(ViewModel.Last != null && ViewModel.Last.DebugBlockySmooth(), $"shade smooth: the block hands' corners are lit smoothly ({it})");
+                GameSettings.SmoothHands.Set(false, false);
+                yield return new WaitForSeconds(0.3f);
+                bool back = true;
+                for (int i = 0; i < held.Count; i++) if (held[i] && held[i].GetComponent<MeshFilter>()?.sharedMesh != before[i]) back = false;
+                Check(back && !ViewModel.Last.DebugBlockySmooth(), $"shade smooth off: the {it}'s own meshes are back and the block hands are flat again");
+            }
+
+            // shade smooth (Aliens & crowd): the alien player models get their smooth copies, and their own meshes back after
+            {
+                var hooks = FindObjectsByType<SmoothShadeHook>(FindObjectsSortMode.None);
+                var skins = new List<SkinnedMeshRenderer>();
+                foreach (var h in hooks) if (h.Aliens) skins.AddRange(h.GetComponentsInChildren<SkinnedMeshRenderer>(true));
+                var was = new List<Mesh>();
+                foreach (var sk in skins) was.Add(sk.sharedMesh);
+                GameSettings.SmoothAliens.Set(true, false);
+                yield return null;
+                int sm = 0;
+                foreach (var sk in skins) if (SmoothShade.IsSmooth(sk.sharedMesh)) sm++;
+                GameSettings.SmoothAliens.Set(false, false);
+                yield return null;
+                bool back = true;
+                for (int i = 0; i < skins.Count; i++) if (skins[i].sharedMesh != was[i]) back = false;
+                Check(skins.Count > 0 && sm == skins.Count && back, $"shade smooth (aliens): the alien models' {skins.Count} skinned meshes are swapped for smooth copies ({sm}) and back");
+            }
+
+            // the arm models are only ever the local first-person arms (the block hands, and the hidden alien claws)
+            int arms = 0, blocks = 0, elsewhere = 0;
             foreach (var r in FindObjectsByType<Renderer>(FindObjectsSortMode.None))
             {
-                bool alien = false, vm = false;
-                for (var t = r.transform; t != null; t = t.parent) { alien |= t.name.StartsWith("psx alienarm"); vm |= t.name == "ViewModel"; }
-                if (!alien) continue;
-                if (vm) arms++; else elsewhere++;
+                bool alien = false, block = false, vm = false;
+                for (var t = r.transform; t != null; t = t.parent) { alien |= t.name.StartsWith("psx alienarm"); block |= t.name.StartsWith("blocky arm"); vm |= t.name == "ViewModel"; }
+                if (!alien && !block) continue;
+                if (!vm) elsewhere++;
+                else if (block) blocks++;
+                else arms++;
             }
-            Check(arms == 2 && elsewhere == 0, $"the alien arm models are the two first-person arms only ({arms} in the view model, {elsewhere} elsewhere)");
+            Check(arms == 2 && blocks == 2 && elsewhere == 0, $"the arm models are the first-person arms only ({blocks} block hands and {arms} alien arms in the view model, {elsewhere} elsewhere)");
 
             // how the claws sit on what they hold: no claw / thumb / palm in the item (the worst depth), and each digit's
             // gap to the item's surface (a fist or a cradle closes onto it)

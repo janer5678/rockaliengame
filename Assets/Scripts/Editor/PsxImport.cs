@@ -19,7 +19,7 @@ namespace RockGame.EditorTools
         public const string CutoutPath = Trees + "PsxCutout.mat";
 
         /// <summary>(Bumped when the import settings change, so the assets are imported again.)</summary>
-        public override uint GetVersion() => 2;
+        public override uint GetVersion() => 3;
 
         void OnPreprocessTexture()
         {
@@ -78,6 +78,8 @@ namespace RockGame.EditorTools
             mi.importLights = false;
             mi.importAnimation = false;
             bool rigged = assetPath.Contains("Rigged");
+            // readable: Settings > Display > SHADING can shade the aliens smooth (a copy of the mesh with averaged normals)
+            mi.isReadable = true;
             mi.animationType = rigged ? ModelImporterAnimationType.Generic : ModelImporterAnimationType.None;
             if (rigged)
             {

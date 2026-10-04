@@ -733,7 +733,7 @@ namespace RockGame
             bool keysOk = true;
             foreach (var key in new[] { "post", "post.bloom.strength", "post.extra.outlines", "post.extra.celbanding.strength", "ui.post", "ui.post.world", "ui.cel", "ui.outline.width",
                 "ui.outline.colour", "ui.bloom", "ui.saturation", "shadows.darkness", "shadows.distance", "ui.font", "ui.scale", "ui.accent", "fps.counter", "glow.strength",
-                "grass.distance", "grass.height", "colour.Sky", "colour.Hands", "colour.hands.team" })
+                "grass.distance", "grass.height", "colour.Sky", "colour.Hands", "colour.hands.team", "shade.smooth.hands", "shade.smooth.aliens" })
                 if (!clip.Contains("\n" + key + " = ")) { keysOk = false; Log("missing from the code: " + key); }
             bool noScreen = !clip.ToLowerInvariant().Contains("resolution") && !clip.ToLowerInvariant().Contains("refresh") && !clip.ToLowerInvariant().Contains("window") && !clip.ToLowerInvariant().Contains("vsync");
             int colours = 0;
@@ -765,6 +765,17 @@ namespace RockGame
             GUIUtility.systemCopyBuffer = "Sky = #336699\nHandsUseTeamColour = true\n";
             note = Hud.PasteDisplaySettings();
             Check(ColorSlots.Same(ColorSlots.Sky.Value, new Color32(0x33, 0x66, 0x99, 255)) && ColorSlots.HandsTeam, $"the old world colours lines paste too ({note})");
+            // the shading switches (Settings > Display > SHADING) paste like the rest
+            bool shWas = GameSettings.SmoothHands.Value, saWas = GameSettings.SmoothAliens.Value;
+            GUIUtility.systemCopyBuffer = DisplayCode.Header + "1\nshade.smooth.hands = on\nshade.smooth.aliens = on\n";
+            note = Hud.PasteDisplaySettings();
+            yield return shot("menu_settings_display_shading_on");
+            Check(GameSettings.SmoothHands.Value && GameSettings.SmoothAliens.Value && DisplayCode.Export().Contains("shade.smooth.aliens = on"), $"the shading switches paste and copy ({note})");
+            GameSettings.SmoothHands.Set(shWas); GameSettings.SmoothAliens.Set(saWas);
+            // outline thickness is set at 1440p and scaled with the screen height (the same share of the screen anywhere)
+            Check(Mathf.Approximately(GameSettings.ScreenPx(2f, 1440f), 2f) && Mathf.Approximately(GameSettings.ScreenPx(2f, 720f), 1f) && Mathf.Approximately(GameSettings.ScreenPx(3f, 1080f), 2.25f)
+                && Mathf.Approximately(PostFx.OutlinePxAt1440(0.5f), 2f) && Mathf.Approximately(PostFx.OutlinePxAt1440(0f), 1f) && Mathf.Approximately(PostFx.OutlinePxAt1440(1f), 2f),
+                $"outline thickness scales with the screen height from 1440p (2 px at 1440p = 1 px at 720p; world outlines at strength 50% are {PostFx.OutlinePxAt1440(0.5f)} px at 1440p, {GameSettings.ScreenPx(PostFx.OutlinePxAt1440(0.5f))} px on this {Screen.height} px screen)");
             // junk and an empty clipboard: refused, nothing changes
             string before = Body(DisplayCode.Export());
             GUIUtility.systemCopyBuffer = "hello, this is not a settings code";

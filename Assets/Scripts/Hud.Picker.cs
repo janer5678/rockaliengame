@@ -329,7 +329,8 @@ namespace RockGame
             {
                 GUILayout.BeginHorizontal();
                 GUILayout.Space(32 * k);
-                GUILayout.Label($"<color=#bbbbbb>{wd:0.#} px · colour</color>", m_Small, GUILayout.Width(110 * k), GUILayout.Height(26 * k));
+                // (the thickness in pixels at 1440p; other resolutions scale it with the screen height)
+                GUILayout.Label($"<color=#bbbbbb>{wd * 4f / 3f:0.#} px · colour</color>", m_Small, GUILayout.Width(110 * k), GUILayout.Height(26 * k));
                 var cur = GameSettings.UiOutlineColour.Value;
                 float sw = 22 * k;
                 foreach (var pc in s_InkPresets)
@@ -374,7 +375,7 @@ namespace RockGame
             GameSettings.UiContrast.Set(Mathf.Round(con * 20f) / 20f);
             GUILayout.EndHorizontal();
             GUILayout.BeginHorizontal();
-            GUILayout.Label("<color=#bbbbbb>Cel shading: the UI's colours in a few flat steps. Glow: a soft glow round the bright text and icons. Outlines: ink lines round text, icons and panels - make them thick for a cartoon look.</color>", m_SmallWrap);
+            GUILayout.Label("<color=#bbbbbb>Cel shading: the UI's colours in a few flat steps. Glow: a soft glow round the bright text and icons. Outlines: ink lines round text, icons and panels - make them thick for a cartoon look (the thickness is in pixels at 1440p; other resolutions scale it with the screen height, so it looks the same everywhere).</color>", m_SmallWrap);
             if (Btn("Defaults", GUILayout.Width(100 * k), GUILayout.Height(28 * k))) GameSettings.ResetUiPost();
             GUILayout.EndHorizontal();
         }

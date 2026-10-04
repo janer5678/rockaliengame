@@ -43,6 +43,24 @@ Shader "Hidden/RockGame/Stylize"
             #endif
             }
 
+            // how much of an ink line this pixel is, with the Roberts cross's samples o (uv) away along the diagonals
+            float Edge(float2 uv, float2 o, float d, float raw)
+            {
+                float2 a = uv + float2(-o.x, -o.y), b = uv + float2(o.x, o.y), e = uv + float2(o.x, -o.y), f = uv + float2(-o.x, o.y);
+                float da = Eye(a), db = Eye(b), de = Eye(e), df = Eye(f);
+                float near = min(min(da, db), min(min(de, df), d));
+                float jump = max(abs(da - db), abs(de - df)) / max(near, 0.01);
+                float edge = smoothstep(_RgOutline.z, _RgOutline.z * 2.2, jump);
+                float3 na = SampleSceneNormals(a), nb = SampleSceneNormals(b), ne = SampleSceneNormals(e), nf = SampleSceneNormals(f);
+                float fold = max(1 - dot(na, nb), 1 - dot(ne, nf));
+                edge = max(edge, smoothstep(_RgOutline.w, _RgOutline.w + 0.35, fold) * (Sky(raw) ? 0 : 1));
+                // none on (or against) the faded grass right round the camera
+                edge *= 1 - max(max(max(NoInk(a), NoInk(b)), max(NoInk(e), NoInk(f))), NoInk(uv));
+                // fade out with distance (the nearest of the samples: a silhouette against the sky keeps its line)
+                edge *= 1 - smoothstep(45.0, 130.0, near);
+                return edge;
+            }
+
             half4 Frag(Varyings input) : SV_Target
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
@@ -60,22 +78,17 @@ Shader "Hidden/RockGame/Stylize"
                 float raw = SampleSceneDepth(uv);
                 float d = LinearEyeDepth(raw, _ZBufferParams);
 
-                // outlines: depth jumps and sharp folds across the diagonals (Roberts cross)
+                // outlines: depth jumps and sharp folds across the diagonals (Roberts cross). The thickness (y, pixels,
+                // already scaled with the screen height: PostFx.cs) can be a fraction of a pixel: the depth and normals
+                // are read pixel by pixel, so the line is worked out at the whole pixel offsets either side of it and
+                // blended between them - a line 1.5 px thick is the 1 px line with the 2 px one's extra ring half dark.
+                // That keeps lines the same share of the screen at any resolution instead of snapping to whole pixels.
                 if (_RgOutline.x > 0)
                 {
-                    float2 o = texel * _RgOutline.y;
-                    float2 a = uv + float2(-o.x, -o.y), b = uv + float2(o.x, o.y), e = uv + float2(o.x, -o.y), f = uv + float2(-o.x, o.y);
-                    float da = Eye(a), db = Eye(b), de = Eye(e), df = Eye(f);
-                    float near = min(min(da, db), min(min(de, df), d));
-                    float jump = max(abs(da - db), abs(de - df)) / max(near, 0.01);
-                    float edge = smoothstep(_RgOutline.z, _RgOutline.z * 2.2, jump);
-                    float3 na = SampleSceneNormals(a), nb = SampleSceneNormals(b), ne = SampleSceneNormals(e), nf = SampleSceneNormals(f);
-                    float fold = max(1 - dot(na, nb), 1 - dot(ne, nf));
-                    edge = max(edge, smoothstep(_RgOutline.w, _RgOutline.w + 0.35, fold) * (Sky(raw) ? 0 : 1));
-                    // none on (or against) the faded grass right round the camera
-                    edge *= 1 - max(max(max(NoInk(a), NoInk(b)), max(NoInk(e), NoInk(f))), NoInk(uv));
-                    // fade out with distance (the nearest of the samples: a silhouette against the sky keeps its line)
-                    edge *= 1 - smoothstep(45.0, 130.0, near);
+                    float t = _RgOutline.y;
+                    float k0 = floor(t), w = t - k0;
+                    float edge = k0 >= 1 ? Edge(uv, texel * k0, d, raw) : 0;
+                    if (w > 0.01) edge = lerp(edge, Edge(uv, texel * (k0 + 1), d, raw), w);
                     c *= 1 - edge * _RgOutline.x * 0.78;
                 }
 

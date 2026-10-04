@@ -164,7 +164,9 @@ namespace RockGame
         public static readonly DisplayPref.Float UiCelStrength = new("ui.cel.strength", GUiPost, DisplayDefaults.UiCelStrength, 0f, 1f);
         /// <summary>Ink outlines round everything on the UI (text, icons, panels), on the darker side of each edge.</summary>
         public static readonly DisplayPref.Bool UiOutline = new("ui.outline", GUiPost, DisplayDefaults.UiOutline);
-        /// <summary>How thick the UI outlines are (pixels at 1080p; scaled with the screen).</summary>
+        /// <summary>How thick the UI outlines are: the setting x 1.333 is the thickness in pixels at 1440p (the
+        /// reference), scaled with the screen's height (UiOutlinePxAt1440). (The setting's numbers stay as they were, so
+        /// saved settings and codes look the same at 1440p.)</summary>
         public static readonly DisplayPref.Float UiOutlineWidth = new("ui.outline.width", GUiPost, DisplayDefaults.UiOutlineWidth, UiOutlineWidthMin, UiOutlineWidthMax);
         public static readonly DisplayPref.Colour UiOutlineColour = new("ui.outline.colour", GUiPost, DisplayDefaults.Hex(DisplayDefaults.UiOutlineColour));
         public static readonly DisplayPref.Float UiOutlineOpacity = new("ui.outline.opacity", GUiPost, DisplayDefaults.UiOutlineOpacity, 0f, 1f);
@@ -175,6 +177,8 @@ namespace RockGame
         public static readonly DisplayPref.Float UiSaturation = new("ui.saturation", GUiPost, DisplayDefaults.UiSaturation, 0f, 2f);
         public static readonly DisplayPref.Float UiContrast = new("ui.contrast", GUiPost, DisplayDefaults.UiContrast, 0.5f, 1.6f);
         public const float UiOutlineWidthMin = 0.5f, UiOutlineWidthMax = 8f;
+        /// <summary>The UI outlines' thickness in pixels at 1440p (scaled with the screen height from there).</summary>
+        public static float UiOutlinePxAt1440 => UiOutlineWidth.Value * (4f / 3f);
 
         /// <summary>Any of the UI's own looks is doing something.</summary>
         public static bool UiOwnLooks => UiCel.Value || UiOutline.Value || UiBloom.Value
@@ -368,15 +372,17 @@ namespace RockGame
         /// <summary>The UI's own looks (Settings > Display > POST PROCESSING ON THE UI) for the composite shader.</summary>
         static void SetUiLooks(Material m, int w, int h)
         {
-            float px = Mathf.Max(0.5f, h / 1080f);
+            // (outline and glow sizes are set at 1440p and scaled with the screen's height: the same share of the screen
+            // at any resolution)
+            float px = GameSettings.ScreenPx(1f, h);
             float cel = GameSettings.UiCel.Value ? Mathf.Round(Mathf.Lerp(12f, 3f, GameSettings.UiCelStrength.Value)) : 0f;
-            float ink = GameSettings.UiOutline.Value ? GameSettings.UiOutlineWidth.Value * px : 0f;
+            float ink = GameSettings.UiOutline.Value ? GameSettings.UiOutlinePxAt1440 * px : 0f;
             float glow = GameSettings.UiBloom.Value ? GameSettings.UiBloomStrength.Value : 0f;
             m.SetVector(k_UiTexel, new Vector4(1f / w, 1f / h, w, h));
             // x: colour steps (0 = off), y: saturation, z: contrast, w: outline radius (px, 0 = off)
             m.SetVector(k_UiLook, new Vector4(cel, GameSettings.UiSaturation.Value, GameSettings.UiContrast.Value, ink));
             // x: glow amount (0 = off), y: glow radius (px)
-            m.SetVector(k_UiGlow, new Vector4(glow * 1.6f, (6f + 10f * glow) * px, 0f, 0f));
+            m.SetVector(k_UiGlow, new Vector4(glow * 1.6f, (6f + 10f * glow) * (4f / 3f) * px, 0f, 0f)); // (8 - 21 px at 1440p)
             var c = GameSettings.UiOutlineColour.Value;
             c.a = GameSettings.UiOutlineOpacity.Value;
             m.SetColor(k_UiInk, c);

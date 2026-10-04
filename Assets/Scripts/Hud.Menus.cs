@@ -820,6 +820,19 @@ namespace RockGame
             GameSettings.SetShadows(Mathf.Round(ss * 20f) / 20f, Mathf.Round(sd / 5f) * 5f);
             GUILayout.Label("<color=#bbbbbb>Darkness: how dark the sun's shadows are (0% = none). Distance: how far from you shadows are drawn - further looks better, nearer is faster and the near shadows are sharper.</color>", m_SmallWrap);
 
+            // ---- shading (SmoothShade.cs): smooth instead of flat facets, one row ----
+            Caption("SHADING  ·  just on this PC");
+            GUILayout.BeginHorizontal();
+            RowLabel("Shade smooth", lw);
+            bool sh = ToggleBtn(GameSettings.SmoothHands.Value, "Hands & items", GUILayout.Width(150 * k), GUILayout.Height(30 * k));
+            GUILayout.Space(6 * k);
+            bool sa = ToggleBtn(GameSettings.SmoothAliens.Value, "Aliens & crowd", GUILayout.Width(150 * k), GUILayout.Height(30 * k));
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
+            GameSettings.SmoothHands.Set(sh);
+            GameSettings.SmoothAliens.Set(sa);
+            GUILayout.Label("<color=#bbbbbb>Lit smoothly instead of in flat facets: your first-person hands and what they hold, and the alien players and the stadium crowd (off = the normal look).</color>", m_SmallWrap);
+
             DrawPostFxSettings();
             DrawInterfaceSettings();
             DrawWorldLook();
