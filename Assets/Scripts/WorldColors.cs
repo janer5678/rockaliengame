@@ -203,8 +203,9 @@ namespace RockGame
             return new Vector4(c.r / Mathf.Max(0.002f, d.r), c.g / Mathf.Max(0.002f, d.g), c.b / Mathf.Max(0.002f, d.b), 1f);
         }
 
-        /// <summary>The first-person hands' tint for a team.</summary>
-        public static Color HandTint(Color team) => HandsTeam ? Color.Lerp(Color.white, team, 0.6f) : Hands.Value;
+        /// <summary>The first-person block hands' skin for a team: grey-green with a quarter of the team colour (the
+        /// original look), or the Hands colour picked.</summary>
+        public static Color HandTint(Color team) => HandsTeam ? Color.Lerp(new Color(0.6f, 0.64f, 0.58f), team, 0.25f) : Hands.Value;
 
         // ---------------------------------------------------------------- the models' materials
 
@@ -284,41 +285,59 @@ namespace RockGame
         }
     }
 
-    /// <summary>Re-tints the first-person alien hands when their colour setting changes (sits on each hand).</summary>
+    /// <summary>
+    /// Re-colours the first-person block hands when their colour setting changes (sits on each hand): the fist, thumb and
+    /// forearm in the skin colour (ColorSlots.HandTint), the knuckle row a shade darker, the wrist band in the team colour.
+    /// </summary>
     public class HandColorHook : MonoBehaviour
     {
+        public const int Skin = 0, Knuckles = 1, Band = 2;
         Color m_Team;
+        readonly List<(Renderer r, int part)> m_Parts = new List<(Renderer, int)>();
 
-        /// <summary>The hands' tint for this team (and keeps it up to date from now on).</summary>
-        public static Color Tint(Transform hand, Color team)
+        /// <summary>The colour of one part of the hands for this team.</summary>
+        public static Color Shade(Color team, int part)
+        {
+            var skin = ColorSlots.HandTint(team);
+            if (part == Band) return team;
+            if (part == Knuckles) { var dark = skin * 0.85f; dark.a = 1f; return dark; }
+            return skin;
+        }
+
+        public static HandColorHook Add(Transform hand, Color team)
         {
             var h = hand.gameObject.AddComponent<HandColorHook>();
             h.m_Team = team;
-            return ColorSlots.HandTint(team);
+            return h;
         }
 
-        void OnEnable() => GameSettings.WorldLookChanged += Apply;
+        /// <summary>Keeps this box in its part's colour from now on.</summary>
+        public GameObject Track(GameObject box, int part)
+        {
+            var r = box != null ? box.GetComponent<Renderer>() : null;
+            if (r != null) m_Parts.Add((r, part));
+            return box;
+        }
+
+        /// <summary>(tests) Every part of this hand in its colour now.</summary>
+        public bool AllShaded(out int parts)
+        {
+            parts = m_Parts.Count;
+            foreach (var p in m_Parts) if (p.r == null || !ColorSlots.Same(p.r.sharedMaterial.color, Shade(m_Team, p.part))) return false;
+            return parts > 0;
+        }
+
+        void OnEnable() { GameSettings.WorldLookChanged += Apply; Apply(); }
         void OnDisable() => GameSettings.WorldLookChanged -= Apply;
 
         void Apply()
         {
             if (this == null) return;
-            var c = ColorSlots.HandTint(m_Team);
-            foreach (var r in GetComponentsInChildren<Renderer>(true))
+            foreach (var p in m_Parts)
             {
-                bool alien = false;
-                for (var t = r.transform; t != null && t != transform; t = t.parent) alien |= t.name == "alien fit";
-                if (!alien) continue;
-                var mf = r.GetComponent<MeshFilter>();
-                if (mf != null && mf.sharedMesh != null && mf.sharedMesh.name == ViewModel.BlockyMeshName)
-                {
-                    // the block hand: the hand, its knuckle row and the wrist band each their own shade
-                    var cols = ViewModel.BlockyColours(c, m_Team);
-                    var mats = r.sharedMaterials;
-                    for (int i = 0; i < mats.Length && i < cols.Length; i++) if (mats[i]) { mats[i].SetColor("_BaseColor", cols[i]); mats[i].color = cols[i]; }
-                    continue;
-                }
-                foreach (var m in r.sharedMaterials) if (m) { m.SetColor("_BaseColor", c); m.color = c; }
+                if (p.r == null) continue;
+                var c = Shade(m_Team, p.part);
+                if (p.r.sharedMaterial == null || p.r.sharedMaterial.color != c) p.r.sharedMaterial = Art.Mat(c);
             }
         }
     }

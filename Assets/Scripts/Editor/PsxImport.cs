@@ -57,7 +57,7 @@ namespace RockGame.EditorTools
                 pm.animationType = ModelImporterAnimationType.None;
                 pm.materialImportMode = ModelImporterMaterialImportMode.None;
                 pm.importNormals = ModelImporterNormals.Import;
-                // readable: the first-person arms curl their claws (ViewModel), and close them round the PSX items
+                // readable: Settings > Display > SHADING makes smooth copies of the held PSX items (SmoothShade)
                 pm.isReadable = true;
                 return;
             }

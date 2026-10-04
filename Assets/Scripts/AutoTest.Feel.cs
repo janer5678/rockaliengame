@@ -7,8 +7,7 @@ namespace RockGame
 {
     /// <summary>
     /// -autotest feel -host -solo -shotdir DIR (windowed): the movement / animation feel batch - crouch out of a slide,
-    /// the spear throw's wind-up / buffer / recovery, the spear carried like at a sprint, the bow at a sprint (frame time
-    /// and how often the claws are re-worked), the tree camo hopping, horses bobbing, the Wild Unicorn (stats, name,
+    /// the spear throw's wind-up / buffer / recovery, the spear carried like at a sprint, the bow at a sprint (frame time), the tree camo hopping, horses bobbing, the Wild Unicorn (stats, name,
     /// rainbow at a gallop) and a stack on the ground bouncing when it's added to. Without -solo, plus a second copy with
     /// -autotest feel -client 127.0.0.1: the host hears the client's footsteps (not when it crouch-walks) and sees its
     /// tree hop, and the client sees the unicorn (hopping as it bolts) and the stack bounce.
@@ -171,8 +170,7 @@ namespace RockGame
 
         // ------------------------------------------------------------------ 2: the bow at a sprint
 
-        /// <summary>Sprints with an item for `secs`, returning the median and 95th percentile frame time (ms) and the claw
-        /// re-solves / mesh re-bends per frame.</summary>
+        /// <summary>Sprints with an item for `secs`, returning the median and 95th percentile frame time (ms).</summary>
         IEnumerator SprintSample(PlayerController pc, Vector3 lane, float yaw, bool sprint, float secs, float[] res)
         {
             pc.LocalTeleport(lane, yaw);
@@ -182,24 +180,19 @@ namespace RockGame
             Binds.TestHold(Bind.Sprint, sprint);
             yield return new WaitForSeconds(0.5f);
             var ft = new List<float>();
-            int s0 = ViewModel.SolveCount, b0 = ViewModel.BendCount;
-            double ms0 = ViewModel.SolveMsTotal;
             float end = Time.time + secs;
             while (Time.time < end) { yield return null; ft.Add(Time.unscaledDeltaTime * 1000f); }
             Binds.TestReleaseAll();
             ft.Sort();
             res[0] = ft.Count > 0 ? ft[ft.Count / 2] : 0f;
             res[1] = ft.Count > 0 ? ft[Mathf.Min(ft.Count - 1, ft.Count * 95 / 100)] : 0f;
-            res[2] = (ViewModel.SolveCount - s0) / (float)Mathf.Max(1, ft.Count);
-            res[3] = (ViewModel.BendCount - b0) / (float)Mathf.Max(1, ft.Count);
-            res[4] = (float)(ViewModel.SolveMsTotal - ms0) / Mathf.Max(1, ft.Count);
         }
 
         IEnumerator BowSprintProfile(PlayerNet me, PlayerController pc, int team)
         {
             Check(ClearLane(team, out var lane, out float laneYaw), "a clear run for the bow sprint");
-            var res = new float[5];
-            void Report(string what) => Log($"{what}: frame {res[0]:0.00} ms median / {res[1]:0.00} ms p95, claw solves {res[2]:0.00}/frame ({res[4]:0.00} ms/frame), arm re-bends {res[3]:0.00}/frame");
+            var res = new float[2];
+            void Report(string what) => Log($"{what}: frame {res[0]:0.00} ms median / {res[1]:0.00} ms p95");
             yield return Hold(me, Item.Rock);
             yield return SprintSample(pc, lane, laneYaw, true, 2f, res);
             Report("rock, sprinting");
@@ -208,25 +201,10 @@ namespace RockGame
             me.ServerGive(Item.Arrow, 10);
             yield return new WaitForSeconds(0.3f);
             yield return Hold(me, Item.Bow);
-            // before the fix (the old pose), for comparison
-            ViewModel.DebugLegacyBow = true;
-            yield return SprintSample(pc, lane, laneYaw, false, 2f, res);
-            Report("bow (old pose), walking");
-            yield return SprintSample(pc, lane, laneYaw, true, 2f, res);
-            Report("bow (old pose), sprinting");
-            pc.LocalTeleport(lane, laneYaw);
-            yield return new WaitForSeconds(0.3f);
-            Binds.TestHold(Bind.Forward, true);
-            Binds.TestHold(Bind.Sprint, true);
-            yield return new WaitForSeconds(0.4f);
-            yield return Snap("bow_sprint_old");
-            Binds.TestReleaseAll();
-            ViewModel.DebugLegacyBow = false;
             yield return SprintSample(pc, lane, laneYaw, false, 2f, res);
             Report("bow, walking");
             yield return SprintSample(pc, lane, laneYaw, true, 2f, res);
             Report("bow, sprinting");
-            Check(res[2] < 0.25f && res[4] < 1f, $"sprinting with the bow doesn't re-work the claws every frame ({res[2]:0.00} solves, {res[4]:0.00} ms a frame)");
             Check(res[0] < rockMs * 1.3f + 1f, $"sprinting with the bow costs about the same as with the rock ({res[0]:0.00} vs {rockMs:0.00} ms a frame)");
             // and how it looks
             pc.LocalTeleport(lane, laneYaw);

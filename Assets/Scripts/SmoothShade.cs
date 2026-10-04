@@ -107,13 +107,11 @@ namespace RockGame
         /// <summary>What a mesh should be swapped for (null: leave it).</summary>
         static Mesh Swap(Mesh m, bool on)
         {
-            if (m == null || Own(m)) return null;
+            if (m == null) return null;
             if (on) { if (s_Orig.ContainsKey(m)) return null; return SmoothOf(m); }
             return s_Orig.TryGetValue(m, out var o) ? o : null;
         }
 
-        /// <summary>The hands' own meshes, which shade themselves (they're re-shaped every time the claws move).</summary>
-        static bool Own(Mesh m) => m.name == ViewModel.BlockyMeshName || m.name == "alien arm (posed)";
     }
 
     /// <summary>Keeps the meshes under its object smooth or flat as the setting says (Settings > Display > SHADING), live.</summary>

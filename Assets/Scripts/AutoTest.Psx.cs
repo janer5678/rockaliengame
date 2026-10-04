@@ -244,7 +244,7 @@ namespace RockGame
             int psxLeft = 0;
             var left = new List<string>();
             foreach (var r in FindObjectsByType<Renderer>(FindObjectsSortMode.None))
-                if (r.enabled && r.gameObject.activeInHierarchy && r.name.StartsWith("psx") && r.name != "psx blood" && !r.name.StartsWith("psx alienarm") && r.transform.root.name != "corpse") // (the alien hands are always the model)
+                if (r.enabled && r.gameObject.activeInHierarchy && r.name.StartsWith("psx") && r.name != "psx blood" && r.transform.root.name != "corpse")
                 {
                     psxLeft++;
                     if (left.Count < 4) left.Add((r.transform.parent != null ? r.transform.parent.name + "/" : "") + r.name);

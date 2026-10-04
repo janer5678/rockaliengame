@@ -451,16 +451,12 @@ namespace RockGame
             var hc = Color.HSVToRGB(0.52f, 0.7f, 0.9f);
             int handRs = 0, handOk = 0;
             foreach (var hook in FindObjectsByType<HandColorHook>(FindObjectsSortMode.None))
-                foreach (var r in hook.GetComponentsInChildren<Renderer>(true))
-                {
-                    bool alien = false;
-                    for (var t = r.transform; t != null && t != hook.transform; t = t.parent) alien |= t.name == "alien fit";
-                    if (!alien) continue;
-                    handRs++;
-                    if (ColorSlots.Same(r.sharedMaterial.color, hc)) handOk++;
-                }
+            {
+                handRs++;
+                if (hook.AllShaded(out _) && ColorSlots.Same(ColorSlots.HandTint(Color.red), hc)) handOk++;
+            }
             Check(Hud.PickerSlot == ColorSlots.Hands.Index && !ColorSlots.HandsTeam && ColorSlots.Same(ColorSlots.Hands.Value, hc) && handRs > 0 && handOk == handRs,
-                $"the picker on the hands: their own colour, on the hands ({handOk} / {handRs} hand meshes)");
+                $"the picker on the hands: their own colour, on the hands ({handOk} / {handRs} hands)");
             Hud.SetColourSide(true);
             yield return new WaitForSeconds(0.4f);
             yield return Shot("colour_screen_left");

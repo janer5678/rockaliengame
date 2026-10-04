@@ -373,15 +373,11 @@ namespace RockGame
             Check(ColorSlots.Same(wallMat.color, ColorSlots.MapWalls.Value) && !ColorSlots.Same(wallMat.color, wallBefore), $"the map dome takes the colour picked (#{ColorUtility.ToHtmlStringRGB(wallMat.color)})");
             int handRs = 0, handOk = 0;
             foreach (var hook in FindObjectsByType<HandColorHook>(FindObjectsSortMode.None))
-                foreach (var r in hook.GetComponentsInChildren<Renderer>(true))
-                {
-                    bool alien = false;
-                    for (var t = r.transform; t != null && t != hook.transform; t = t.parent) alien |= t.name == "alien fit";
-                    if (!alien) continue;
-                    handRs++;
-                    if (ColorSlots.Same(r.sharedMaterial.color, ColorSlots.Hands.Value)) handOk++;
-                }
-            Check(handRs > 0 && handOk == handRs, $"the first-person hands take their colour ({handOk} / {handRs} hand meshes)");
+            {
+                handRs++;
+                if (hook.AllShaded(out _) && ColorSlots.Same(ColorSlots.HandTint(Color.red), ColorSlots.Hands.Value)) handOk++;
+            }
+            Check(handRs > 0 && handOk == handRs, $"the first-person hands take their colour ({handOk} / {handRs} hands)");
             string clip = ColorSlots.Lines(true);
             ColorSlots.Copy(true);
             Log("clipboard (changed colours):\n" + GUIUtility.systemCopyBuffer);
