@@ -81,6 +81,18 @@ namespace RockGame
         Vector3 m_GhostPos;
         float m_GhostYaw;
         readonly HashSet<PieceKey> m_ClientKeys = new HashSet<PieceKey>();
+        /// <summary>The last two grid pieces this player put down (newest last): the ghost leans towards carrying them on.</summary>
+        readonly List<PieceKey> m_RecentPieces = new List<PieceKey>();
+        public IReadOnlyList<PieceKey> RecentPieces => m_RecentPieces;
+        /// <summary>Remember a piece this player just put down (the placement bias: BuildGrid.PreferRecent).</summary>
+        public void NoteBuilt(PieceKey k)
+        {
+            m_RecentPieces.Remove(k);
+            m_RecentPieces.Add(k);
+            while (m_RecentPieces.Count > 2) m_RecentPieces.RemoveAt(0);
+        }
+        /// <summary>For the tests: the ghost went to a slot carrying on your last pieces instead of the one nearest the aim.</summary>
+        public bool GhostFromRecent { get; private set; }
 
         public override void OnNetworkSpawn()
         {
@@ -1341,6 +1353,7 @@ namespace RockGame
                 if (m_GhostOk)
                 {
                     m_Net.PlaceRpc((byte)BuildPiece, m_GhostKey.I, m_GhostKey.J, m_GhostKey.L, m_GhostKey.D);
+                    NoteBuilt(m_GhostKey);
                     m_VM.Use();
                     BuildGrid.Pose(BuildPiece, m_GhostKey, out var pos, out _);
                     Sfx.Play(Sfx.Place, pos, 0.8f);
@@ -1656,6 +1669,14 @@ namespace RockGame
                     m_GhostKey = fk;
                     visible = true;
                 }
+                // building in a line: near a slot that carries on from your last two pieces, that one wins
+                GhostFromRecent = false;
+                if (PreferRecentSlot(t, ray, hasHit, hit, visible, out var rk))
+                {
+                    m_GhostKey = rk;
+                    visible = true;
+                    GhostFromRecent = true;
+                }
                 if (!visible) reason = t == PieceType.Floor ? "Look up at where the floor/ceiling should go" : "Aim at the ground or your building";
                 else
                 {
@@ -1692,6 +1713,34 @@ namespace RockGame
                 key = k;
             }
             return best < float.MaxValue;
+        }
+
+        /// <summary>
+        /// Most people build in a line: when what you aim at is near a slot that carries on one of your last two pieces
+        /// (the ones still standing), take that one over the strictly nearest slot (BuildGrid.PreferRecent: a bias of
+        /// RecentBias m, never past RecentReach m, so aiming clearly elsewhere still goes there). The aim point is where the
+        /// aim ray hits (floors: where it crosses that floor's level, if nothing is in the way first).
+        /// </summary>
+        bool PreferRecentSlot(PieceType t, Ray ray, bool hasHit, RaycastHit hit, bool visible, out PieceKey key)
+        {
+            key = default;
+            if (m_RecentPieces.Count == 0) return false;
+            var recent = new List<PieceKey>(2);
+            foreach (var r in m_RecentPieces) if (m_ClientKeys.Contains(r)) recent.Add(r);
+            if (recent.Count == 0) return false;
+            bool floor = t == PieceType.Floor;
+            if (!floor && (!hasHit || hit.distance > Cfg.BuildRange + 0.5f)) return false;
+            var feet = transform.position;
+            bool currentOk = visible && PlacementProblem(t, m_GhostKey) == null;
+            return BuildGrid.PreferRecent(t, recent, m_GhostKey, currentOk, k =>
+            {
+                if (!floor) return (true, hit.point);
+                if (Mathf.Abs(ray.direction.y) < 0.01f) return (false, default);
+                float d = (BuildGrid.LevelY(k.L) - ray.origin.y) / ray.direction.y;
+                if (d < 0.5f || d > Cfg.BuildRange + 1.5f) return (false, default);
+                if (hasHit && hit.distance < d - 0.6f) return (false, default); // (something in the way first)
+                return (true, ray.GetPoint(d));
+            }, k => Vector3.Distance(BuildGrid.PieceCenter(k), feet) <= Cfg.BuildRange + 2.5f && PlacementProblem(t, k) == null, out key);
         }
 
         /// <summary>Why a grid piece can't go at `key` (null = it can), judged from what this client can see.</summary>

@@ -109,7 +109,7 @@ namespace RockGame
 
             // ---------------- 6. hit marks sit on the bark ----------------
             {
-                int made = 0, inBark = 0, floating = 0, oldIn = 0, tested = 0;
+                int made = 0, inBark = 0, floating = 0, oldIn = 0, tested = 0, crossed = 0;
                 float worstGap = 0f;
                 foreach (var t in pines.GetRange(0, Mathf.Min(3, pines.Count)))
                 {
@@ -128,6 +128,8 @@ namespace RockGame
                             if (!t.AddHitMark(hit.point)) continue;
                             made++;
                             var m = t.LastHitMark;
+                            // a little X: two gashes (dark + pale each) crossing near square
+                            if (m.childCount == 4 && Vector3.Angle(m.GetChild(0).right, m.GetChild(2).right) > 60f && Vector3.Angle(m.GetChild(0).right, m.GetChild(2).right) < 120f) crossed++;
                             bool any = false;
                             foreach (Transform box in m)
                                 foreach (var q in BoxCorners(box.localToWorldMatrix, Vector3.one))
@@ -141,6 +143,7 @@ namespace RockGame
                 }
                 Log($"hit marks: {made} made of {tested} hits, {inBark} with a corner in the bark, {floating} floating off it (worst gap {worstGap * 100f:F1} cm); the old way (flat on the collider) {oldIn} of {tested} were in the bark");
                 Check(made >= tested - 2 && made > 20, $"every hit on a pine leaves a mark ({made} of {tested})");
+                Check(crossed == made, $"every hit mark is a little X, two crossing strokes ({crossed} of {made})");
                 Check(inBark == 0, $"no hit mark goes into the bark ({inBark} of {made} do)");
                 Check(floating == 0, $"the hit marks sit on the bark, not off it ({floating} of {made} more than 5 cm off)");
                 Check(pines[0].HitMarkCount <= 10, $"a tree keeps its last ten marks ({pines[0].HitMarkCount})");
@@ -285,7 +288,13 @@ namespace RockGame
                     int amt = l.Amount.Value;
                     int got = l.ServerHarvest(20, false, standAt);
                     Check(got == 20 && l.Amount.Value == amt - 20 && l.Yield == Item.Wood && l.IsWood, $"a fallen log gives wood ({got}, {l.Amount.Value} of {l.MaxAmount} left)");
+                    // chopping it right through plays the tree-felling crack
+                    int lb0 = Fx.LogBreaks;
+                    l.ServerHarvest(99999, false, standAt);
+                    yield return new WaitForSeconds(0.3f);
+                    Check(l.Amount.Value <= 0 && Fx.LogBreaks == lb0 + 1, $"a fallen log chopped right through plays the tree-break sound ({Fx.LogBreaks - lb0})");
                     l.ServerRegrow();
+                    yield return new WaitForSeconds(0.2f);
                     // and from up close
                     var over = Ground(lp.x + across.x * 6f + l.transform.right.x * 3f, lp.z + across.z * 6f + l.transform.right.z * 3f);
                     yield return Look(over, lp, "log_wide");

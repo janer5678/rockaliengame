@@ -11,7 +11,7 @@ namespace RockGame
     /// and how often the claws are re-worked), the tree camo hopping, horses bobbing, the Wild Unicorn (stats, name,
     /// rainbow at a gallop) and a stack on the ground bouncing when it's added to. Without -solo, plus a second copy with
     /// -autotest feel -client 127.0.0.1: the host hears the client's footsteps (not when it crouch-walks) and sees its
-    /// tree hop, and the client sees the unicorn and the stack bounce.
+    /// tree hop, and the client sees the unicorn (hopping as it bolts) and the stack bounce.
     /// </summary>
     public partial class AutoTest
     {
@@ -306,6 +306,7 @@ namespace RockGame
 
             // both bolt (hurt from behind): they bob as they run, the unicorn's quicker and leaves a rainbow
             int rb0 = Vehicle.RainbowPieces;
+            int hops0 = horse.Hops, uhops0 = uni.Hops;
             horse.ServerDamage(1f, null);
             uni.ServerDamage(1f, null);
             float hBob = 0f, uBob = 0f, hSpeed = 0f, uSpeed = 0f;
@@ -336,13 +337,22 @@ namespace RockGame
             hSpeed = hd.magnitude / dt; uSpeed = ud.magnitude / dt;
             yield return new WaitForSeconds(0.2f);
             Check(hBob > 0.05f && uBob > 0.05f, $"running horses bob up and down (horse {hBob:0.00} m, unicorn {uBob:0.00} m)");
+            Check(hBob > 0.25f && uBob > 0.25f && horse.Hops - hops0 >= 2 && uni.Hops - uhops0 >= 2,
+                $"wild horses hop along like the tree disguise (up to {hBob:0.00} / {uBob:0.00} m; {horse.Hops - hops0} / {uni.Hops - uhops0} hops)");
             Check(uSpeed > hSpeed * 1.05f, $"the unicorn gallops faster ({uSpeed:0.0} vs {hSpeed:0.0} m/s)");
             Check(Vehicle.RainbowPieces - rb0 > 30, $"a galloping unicorn leaves a rainbow ({Vehicle.RainbowPieces - rb0} pieces)");
             int rb1 = Vehicle.RainbowPieces;
             // a horse standing still doesn't bob, and a walking unicorn makes no rainbow
             yield return new WaitForSeconds(8f); // (they stop fleeing)
             float still = 0f;
-            for (int i = 0; i < 30; i++) { if (horse != null && horse.IsSpawned && horse.AnimSpeed < 0.2f) still = Mathf.Max(still, horse.BobHeight); yield return null; }
+            float stillFor = 0f;
+            for (float tt = 0f; tt < 4f; tt += Time.deltaTime)
+            {
+                // (once it's been standing a moment: a hop it was in the middle of finishes first)
+                if (horse != null && horse.IsSpawned && horse.AnimSpeed < 0.2f) stillFor += Time.deltaTime; else stillFor = 0f;
+                if (stillFor > 1.5f) still = Mathf.Max(still, horse.BobHeight);
+                yield return null;
+            }
             Check(still < 0.02f, $"a horse standing still doesn't bob ({still:0.000} m)");
             if (horse != null && horse.IsSpawned) horse.NetworkObject.Despawn(true);
             if (uni != null && uni.IsSpawned) uni.NetworkObject.Despawn(true);
@@ -426,10 +436,12 @@ namespace RockGame
             // now the unicorn and the stack bounce, for the client to see
             var op = other.transform.position;
             var fwd = other.transform.forward;
-            Vehicle.ServerSpawn(Vehicle.Horse, OnGround(op + fwd * 5f, 0.2f), 0f, true);
+            var hostUni = Vehicle.ServerSpawn(Vehicle.Horse, OnGround(op + fwd * 5f, 0.2f), Quaternion.LookRotation(fwd).eulerAngles.y, true);
             var at = op + fwd * 2.5f;
             int id = g.ServerDropItem(ItemStack.Of(Item.Wood, 10), at, Vector3.forward, at);
-            yield return new WaitForSeconds(3f);
+            yield return new WaitForSeconds(1.5f);
+            if (hostUni != null && hostUni.IsSpawned) hostUni.ServerDamage(1f, null); // (it bolts away from the stack: the client sees it hop)
+            yield return new WaitForSeconds(1.5f);
             AddToStack(g, id, 7);
             yield return new WaitForSeconds(1.5f);
             AddToStack(g, id, 7);
@@ -471,7 +483,14 @@ namespace RockGame
             Check(uni != null && uni.DisplayName == "Wild Unicorn" && uni.transform.Find("visual/neck/horn") != null && Mathf.Approximately(uni.MaxHp, Cfg.HorseHp * Cfg.UnicornHpMul),
                 $"(client) the host's unicorn is a unicorn here too ({(uni != null ? uni.DisplayName + ", " + uni.MaxHp + " HP" : "none")})");
             until = Time.time + 10f;
-            while (Time.time < until && NetGame.StackBounces < b0 + 2) yield return null;
+            int uh0 = uni != null ? uni.Hops : 0;
+            float uniHop = 0f;
+            while (Time.time < until && (NetGame.StackBounces < b0 + 2 || (uni != null && uni.Hops - uh0 < 2 && Time.time < until - 5f)))
+            {
+                if (uni != null && uni.IsSpawned) uniHop = Mathf.Max(uniHop, uni.BobHeight);
+                yield return null;
+            }
+            Check(uni != null && uni.Hops - uh0 >= 2 && uniHop > 0.2f, $"(client) the host's wild unicorn hops as it bolts here too ({(uni != null ? uni.Hops - uh0 : 0)} hops, up to {uniHop:0.00} m)");
             Check(NetGame.StackBounces >= b0 + 2, $"(client) the stack the host adds to bounces here too ({NetGame.StackBounces - b0})");
             yield return FeelClientBlood(me);
         }

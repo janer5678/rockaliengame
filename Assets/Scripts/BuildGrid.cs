@@ -311,6 +311,163 @@ namespace RockGame
             return false;
         }
 
+        // ---------------- building in a line: prefer extending the last pieces you placed ----------------
+
+        /// <summary>How much farther (m) from the aim a slot extending one of your last two pieces may be than the slot you'd otherwise get, and still win.</summary>
+        public const float RecentBias = 0.75f;
+        /// <summary>A slot extending your last pieces is only taken when the aim is at most this far (m) from it.</summary>
+        public const float RecentReach = 1.6f;
+        /// <summary>Score bonus (m) for carrying straight on in the line your last two pieces make (over turning a corner).</summary>
+        public const float StraightBonus = 0.25f;
+        /// <summary>Score bonus (m) for extending the very last piece (over the one before).</summary>
+        public const float NewestBonus = 0.1f;
+
+        static PieceType ShapeOf(byte kind) => kind == PieceKey.KFoundation ? PieceType.Foundation : kind == PieceKey.KEdge ? PieceType.Wall : kind == PieceKey.KFloor ? PieceType.Floor : PieceType.Stairs;
+
+        /// <summary>How far `p` is from the box a piece at `k` fills (0 inside it).</summary>
+        public static float DistToPiece(Vector3 p, PieceKey k)
+        {
+            var t = ShapeOf(k.Kind);
+            Pose(t, k, out var pos, out var rot);
+            LocalBounds(t, out var c, out var size);
+            var local = Quaternion.Inverse(rot) * (p - pos) - c;
+            var h = size * 0.5f;
+            var d = new Vector3(Mathf.Max(0f, Mathf.Abs(local.x) - h.x), Mathf.Max(0f, Mathf.Abs(local.y) - h.y), Mathf.Max(0f, Mathf.Abs(local.z) - h.z));
+            return d.magnitude;
+        }
+
+        /// <summary>World centre of the box a piece at `k` fills.</summary>
+        public static Vector3 PieceCenter(PieceKey k)
+        {
+            var t = ShapeOf(k.Kind);
+            Pose(t, k, out var pos, out var rot);
+            LocalBounds(t, out var c, out _);
+            return pos + rot * c;
+        }
+
+        /// <summary>The two corners (grid-line crossings, in cells) an edge runs between.</summary>
+        static void EdgeEnds(PieceKey e, out Vector2Int a, out Vector2Int b)
+        {
+            if (e.D == 0) { a = new Vector2Int(e.I + 1, e.J); b = new Vector2Int(e.I + 1, e.J + 1); }
+            else { a = new Vector2Int(e.I, e.J + 1); b = new Vector2Int(e.I + 1, e.J + 1); }
+        }
+
+        /// <summary>
+        /// The slots for a piece of kind `want` that attach to the piece at `r` (building carried on from it): a foundation
+        /// next to a foundation or either side of a wall; a wall carrying a wall on along its line, round a corner or up a
+        /// level, or on any side of a foundation / floor; a floor next to a floor or on top of a wall. `straight` is set for
+        /// the ones carrying straight on from `r` - along a wall's own line, or for foundations / floors in the direction
+        /// `dir` (cells; zero = any neighbour counts, (99, 99) = none does).
+        /// </summary>
+        public static void AttachedSlots(PieceKey r, byte want, Vector2Int dir, List<PieceKey> slots, List<bool> straight)
+        {
+            void Add(PieceKey k, bool st) { if (k.L < 0 || k.L > Cfg.MaxLevel || k.Equals(r)) return; slots.Add(k); straight.Add(st); }
+            bool Along(int di, int dj) => dir == Vector2Int.zero || (dir.x == di && dir.y == dj);
+            if (r.Kind == PieceKey.KStairs) return;
+            if (want == PieceKey.KFoundation)
+            {
+                if (r.Kind == PieceKey.KFoundation)
+                {
+                    Add(new PieceKey(want, r.I + 1, r.J, 0, 0), Along(1, 0)); Add(new PieceKey(want, r.I - 1, r.J, 0, 0), Along(-1, 0));
+                    Add(new PieceKey(want, r.I, r.J + 1, 0, 0), Along(0, 1)); Add(new PieceKey(want, r.I, r.J - 1, 0, 0), Along(0, -1));
+                }
+                else if (r.Kind == PieceKey.KEdge && r.L == 0)
+                {
+                    Add(new PieceKey(want, r.I, r.J, 0, 0), false);
+                    Add(r.D == 0 ? new PieceKey(want, r.I + 1, r.J, 0, 0) : new PieceKey(want, r.I, r.J + 1, 0, 0), false);
+                }
+            }
+            else if (want == PieceKey.KEdge)
+            {
+                if (r.Kind == PieceKey.KEdge)
+                {
+                    // along its line (straight on), round the corners at either end, and the same wall a level up
+                    EdgeEnds(r, out var a, out var b);
+                    foreach (var c in new[] { a, b })
+                    {
+                        Add(new PieceKey(want, c.x - 1, c.y - 1, r.L, 0), r.D == 0); // (on the x = c.x line, below the corner)
+                        Add(new PieceKey(want, c.x - 1, c.y, r.L, 0), r.D == 0);     // (on the x = c.x line, above it)
+                        Add(new PieceKey(want, c.x - 1, c.y - 1, r.L, 1), r.D == 1); // (on the z = c.y line, left of it)
+                        Add(new PieceKey(want, c.x, c.y - 1, r.L, 1), r.D == 1);     // (on the z = c.y line, right of it)
+                    }
+                    Add(new PieceKey(want, r.I, r.J, r.L + 1, r.D), false);
+                }
+                else if (r.Kind == PieceKey.KFoundation || r.Kind == PieceKey.KFloor)
+                {
+                    Add(new PieceKey(want, r.I, r.J, r.L, 0), false); Add(new PieceKey(want, r.I - 1, r.J, r.L, 0), false);
+                    Add(new PieceKey(want, r.I, r.J, r.L, 1), false); Add(new PieceKey(want, r.I, r.J - 1, r.L, 1), false);
+                }
+            }
+            else if (want == PieceKey.KFloor)
+            {
+                if (r.Kind == PieceKey.KFloor)
+                {
+                    Add(new PieceKey(want, r.I + 1, r.J, r.L, 0), Along(1, 0)); Add(new PieceKey(want, r.I - 1, r.J, r.L, 0), Along(-1, 0));
+                    Add(new PieceKey(want, r.I, r.J + 1, r.L, 0), Along(0, 1)); Add(new PieceKey(want, r.I, r.J - 1, r.L, 0), Along(0, -1));
+                }
+                else if (r.Kind == PieceKey.KEdge)
+                {
+                    Add(new PieceKey(want, r.I, r.J, r.L + 1, 0), false);
+                    Add(r.D == 0 ? new PieceKey(want, r.I + 1, r.J, r.L + 1, 0) : new PieceKey(want, r.I, r.J + 1, r.L + 1, 0), false);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Building in a line: most people carry on from the piece they just put down, so when the aim is near a slot that
+        /// extends one of your last two pieces (`recent`, newest last) that slot wins over the one strictly nearest the aim -
+        /// a bias, not an override: it has to be within RecentReach of the aim and no more than RecentBias farther from it
+        /// than the slot you'd otherwise get (`current`, or none when `currentOk` is false), so aiming clearly somewhere else
+        /// still goes there. Carrying straight on (the line the two make, or a wall's own line) beats turning a corner.
+        /// `aimAt(key)` gives the aim point to measure a slot against (ok false: not aimed near it), `valid(key)` whether
+        /// the piece can go there. Returns true (and `key`) when a recent-extension slot should be used instead.
+        /// </summary>
+        public static bool PreferRecent(PieceType t, IList<PieceKey> recent, PieceKey current, bool currentOk,
+            Func<PieceKey, (bool ok, Vector3 p)> aimAt, Func<PieceKey, bool> valid, out PieceKey key)
+        {
+            key = default;
+            byte want = KindOf(t);
+            if (recent == null || recent.Count == 0 || want == PieceKey.KStairs) return false;
+            float curDist = float.MaxValue;
+            if (currentOk)
+            {
+                var a = aimAt(current);
+                curDist = a.ok ? DistToPiece(a.p, current) : float.MaxValue;
+            }
+            var slots = new List<PieceKey>();
+            var straight = new List<bool>();
+            float best = float.MaxValue;
+            for (int n = recent.Count - 1, age = 0; n >= 0; n--, age++)
+            {
+                var r = recent[n];
+                // the line the last two make (both the same kind, side by side)
+                var dir = Vector2Int.zero;
+                if (age == 0 && n >= 1)
+                {
+                    var o = recent[n - 1];
+                    if (o.Kind == r.Kind && o.L == r.L && Mathf.Abs(r.I - o.I) + Mathf.Abs(r.J - o.J) == 1) dir = new Vector2Int(r.I - o.I, r.J - o.J);
+                    else if (o.Kind == r.Kind) dir = new Vector2Int(99, 99); // (not side by side: no line to carry on)
+                }
+                else if (age > 0) dir = new Vector2Int(99, 99);
+                slots.Clear(); straight.Clear();
+                AttachedSlots(r, want, dir, slots, straight);
+                for (int s = 0; s < slots.Count; s++)
+                {
+                    var k = slots[s];
+                    var a = aimAt(k);
+                    if (!a.ok) continue;
+                    float d = DistToPiece(a.p, k);
+                    if (d > RecentReach || d > curDist + RecentBias) continue;
+                    float score = d - (straight[s] && r.Kind == want ? StraightBonus : 0f) - (age == 0 ? NewestBonus : 0f);
+                    if (score >= best || !valid(k)) continue;
+                    best = score;
+                    key = k;
+                }
+            }
+            if (best == float.MaxValue) return false;
+            return !(currentOk && key.Equals(current));
+        }
+
         /// <summary>Server: find every piece no longer connected to a foundation and return it.</summary>
         public static List<Structure> FindUnsupported()
         {

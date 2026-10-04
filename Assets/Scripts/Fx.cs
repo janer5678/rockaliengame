@@ -4,7 +4,7 @@ using UnityEngine;
 namespace RockGame
 {
     // new kinds go at the end (they're sent over the network as bytes)
-    public enum FxKind : byte { Blood, BloodHead, WoodChips, StoneChips, WeakSpot, Break, Smash, StructureHit, Spawn, C4Placed, Explosion, WandBeam, HelmetBreak, Craft, Drink, AirstrikeWarn, SniperTracer, PortalOpen, Timber, WeakSpotTree, Heal, BloodKill }
+    public enum FxKind : byte { Blood, BloodHead, WoodChips, StoneChips, WeakSpot, Break, Smash, StructureHit, Spawn, C4Placed, Explosion, WandBeam, HelmetBreak, Craft, Drink, AirstrikeWarn, SniperTracer, PortalOpen, Timber, WeakSpotTree, Heal, BloodKill, LogBreak }
 
     /// <summary>
     /// Game feel: particles (blood, chips, sparks), camera shake/kick, floating damage numbers and sounds.
@@ -87,6 +87,11 @@ namespace RockGame
                     Chips(pos, Vector3.up, tree != null ? tree.Bark : Art.Wood, 40, 6f);
                     Chips(pos + Vector3.up * 2f, Vector3.up, tree != null ? tree.Leaf : Art.Leaves, 30, 5f);
                 }
+                    Sfx.Play(Sfx.Smash, pos, 1f);
+                    break;
+                case FxKind.LogBreak:
+                    // a fallen log chopped right through: the same crack as a tree being felled
+                    LogBreaks++;
                     Sfx.Play(Sfx.Smash, pos, 1f);
                     break;
                 case FxKind.Drink:
@@ -239,6 +244,8 @@ namespace RockGame
 
         /// <summary>For the tests: blood splashes / kill bursts played on this screen.</summary>
         public static int BloodCount, BloodKillCount;
+        /// <summary>For the tests: fallen logs heard breaking (FxKind.LogBreak) on this machine.</summary>
+        public static int LogBreaks;
 
         /// <summary>A kill: a big burst of blood out of the body - a fountain of drops thrown up and out (mostly away from
         /// whoever did it), a red mist and a wet thud. Played on every screen (PlayerNet.ServerDie).</summary>

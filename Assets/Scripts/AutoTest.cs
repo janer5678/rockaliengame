@@ -136,6 +136,7 @@ namespace RockGame
             if (m_Mode == "craftui") { yield return CraftUiRoutine(me, pc); yield break; }
             if (m_Mode == "upgrades") { yield return UpgradesRoutine(me, pc); yield break; }
             if (m_Mode == "feel") { yield return FeelRoutine(me, pc); yield break; }
+            if (m_Mode == "buildbias") { yield return BuildBiasRoutine(me, pc); yield break; }
             if (m_Mode == "maps") { yield return MapsRoutine(me, pc); yield break; }
             if (m_Mode == "victory") { yield return VictoryRoutine(me, pc); yield break; }
             Check(Cfg.BaseTeamAt(me.transform.position) == me.Team.Value, $"spawned inside own base ({me.transform.position})");

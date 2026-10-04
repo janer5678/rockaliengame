@@ -438,7 +438,7 @@ namespace RockGame
                     Id = "door", Title = "Build a door",
                     Body = "Pick " + Hi("Doorway") + $" on the wheel and place it. {K(Bind.Interact)} opens your door - enemies can't.",
                     Goal = "Place a doorway",
-                    Hint = "Doorways go on a floor's edge, just like walls.",
+                    Hint = "Doorways go on a floor's edge, just like walls - aim near your last pieces and it carries them on.",
                     Done = () => Pieces(PieceType.Doorway) >= 1,
                     Unlocks = new[] { TutFeature.Interact },
                 },
