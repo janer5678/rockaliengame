@@ -933,8 +933,9 @@ namespace RockGame
         /// The crowd alien (CrowdAlien.txt, baked from the player model by Tools/crowd_alien.py): flat-coloured triangles
         /// with what moves each corner (uv0: chain, w1, w2; colour alpha: on the head), and the joints.
         /// </summary>
-        static Mesh LoadCrowdAlien(Dictionary<string, Vector3> joints)
+        static Mesh LoadCrowdAlien(Dictionary<string, Vector3> joints, out Mesh smooth)
         {
+            smooth = null;
             var ta = Resources.Load<TextAsset>("SpaceArena/CrowdAlien");
             if (ta == null) return null;
             var inv = CultureInfo.InvariantCulture;
@@ -966,6 +967,13 @@ namespace RockGame
             mesh.SetUVs(0, uv);
             mesh.SetTriangles(tris, 0);
             mesh.bounds = new Bounds(new Vector3(0, 1f, 0), new Vector3(4f, 4f, 4f));
+            // its twin shaded smooth (Settings > Display > SHADING > aliens & crowd): the same triangles, each corner's
+            // normal the average of the faces round it
+            smooth = Object.Instantiate(mesh);
+            smooth.name = "crowd alien (smooth)";
+            smooth.SetNormals(SmoothShade.SmoothNormals(pos.ToArray(), tris));
+            smooth.bounds = mesh.bounds;
+            smooth.UploadMeshData(true);
             mesh.UploadMeshData(true);
             return mesh;
         }
@@ -1172,7 +1180,7 @@ namespace RockGame
             var shader = Resources.Load<Shader>("SpaceArena/Crowd");
             if (shader == null || !shader.isSupported) { Debug.LogWarning("[RockGame] crowd shader missing: no crowd in the arena"); return; }
             var joints = new Dictionary<string, Vector3>();
-            var mesh = LoadCrowdAlien(joints);
+            var mesh = LoadCrowdAlien(joints, out var smoothMesh);
             var rng = new System.Random(4242);
             float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
             var standMesh = new MeshBatch { Colored = true };
@@ -1266,6 +1274,7 @@ namespace RockGame
             Vector4 Axis(string s) => Vector3.Cross(((Vector3)(J("wrist" + s) - J("elbow" + s))).normalized, Vector3.forward).normalized;
             fanMat.SetVectorArray("_CrowdAxis", new[] { Axis("L"), Axis("R") });
             stadium.SetCrowd(mesh, fanMat, data.ToArray(), draws, anims.Count, hues.Count);
+            stadium.FanMeshSmooth = smoothMesh;
         }
 
         static Vector3 V(Vector2 p, float y) => new Vector3(p.x, y, p.y);
@@ -1632,6 +1641,12 @@ namespace RockGame
         }
 
         /// <summary>The crowd: the alien mesh, its material, 3 float4s per fan (see Crowd.shader) and the stands.</summary>
+        /// <summary>The crowd alien shaded smooth (drawn instead while Settings > Display > SHADING > aliens & crowd is on).</summary>
+        public Mesh FanMeshSmooth;
+
+        /// <summary>(tests) The mesh the crowd is drawn with now.</summary>
+        public Mesh FanMeshShown => GameSettings.SmoothAliens.Value && FanMeshSmooth != null ? FanMeshSmooth : m_FanMesh;
+
         public void SetCrowd(Mesh mesh, Material mat, Vector4[] data, List<StandDraw> stands, int animations, int hues)
         {
             m_FanMesh = mesh;
@@ -1782,6 +1797,7 @@ namespace RockGame
             var cam = Camera.main;
             if (!m_Shown || CrowdHidden || cam == null || m_FanMesh == null || m_FanMat == null || m_FanBuf == null) return;
             GeometryUtility.CalculateFrustumPlanes(cam, m_Planes);
+            var fan = FanMeshShown;
             foreach (var s in m_Stands)
             {
                 if (s.Count <= 0 || !GeometryUtility.TestPlanesAABB(m_Planes, s.Bounds)) continue;
@@ -1794,7 +1810,7 @@ namespace RockGame
                     worldBounds = s.Bounds,
                     matProps = s.Props,
                 };
-                Graphics.RenderMeshPrimitives(rp, m_FanMesh, 0, s.Count);
+                Graphics.RenderMeshPrimitives(rp, fan, 0, s.Count);
                 DrawnFans += s.Count;
             }
         }

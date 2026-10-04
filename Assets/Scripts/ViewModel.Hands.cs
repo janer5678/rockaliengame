@@ -327,13 +327,19 @@ namespace RockGame
             static float[] s_A = new float[256];
             static Vector2[] s_P = new Vector2[256];
 
-            public static AlienArm Make(Transform hand, bool right, Color tint)
+            /// <summary>
+            /// An arm on its hand transform. blocky: the game's square block hand (Blockify: the alien arm's palm,
+            /// forearm, claws and thumb each turned into square blocks, which bend and close round things exactly like
+            /// the claws did); otherwise the alien's own clawed arm (the look before; kept for the hands autotest).
+            /// </summary>
+            public static AlienArm Make(Transform hand, bool right, Color tint, Color team, bool blocky)
             {
                 var fit = new GameObject("alien fit").transform;
                 fit.SetParent(hand, false);
                 var model = PsxModels.Spawn(right ? "alienarm_r" : "alienarm_l", fit);
                 var mf = model != null ? model.GetComponentInChildren<MeshFilter>() : null;
                 if (mf == null || mf.sharedMesh == null) { Object.Destroy(fit.gameObject); return null; }
+                if (blocky) model.name = right ? "blocky arm_r" : "blocky arm_l";
                 var a = new AlienArm { Fit = fit, m_MeshT = mf.transform, m_ModelT = model.transform };
                 a.m_Mesh = Object.Instantiate(mf.sharedMesh);
                 a.m_Mesh.name = "alien arm (posed)";
@@ -354,11 +360,208 @@ namespace RockGame
                     foreach (var mt in mats) { mt.SetColor("_BaseColor", tint); mt.color = tint; }
                     r.materials = mats;
                 }
+                if (blocky)
+                {
+                    if (a.m_D != null && a.Blockify())
+                    {
+                        var r = mf.GetComponent<Renderer>();
+                        if (r != null)
+                        {
+                            var cols = BlockyColours(tint, team);
+                            var mats = new Material[3];
+                            for (int i = 0; i < 3; i++) mats[i] = Art.NewMat(cols[i]);
+                            r.sharedMaterials = mats;
+                        }
+                    }
+                    else Debug.LogWarning("[RockGame] blocky hands: the alien arm couldn't be cut into blocks; showing its claws");
+                }
                 for (int d = 0; d < 3; d++) for (int j = 0; j < 3; j++) a.m_Ang[d * 3 + j] = FistAngles[d][j];
                 a.m_Wrap = false;
                 a.Bend();
                 return a;
             }
+
+            /// <summary>
+            /// Turns the alien arm into the square block hand (like the old box fist and forearm: flat-coloured boxes with
+            /// a darker knuckle row and a band round the wrist), in place: every piece of the alien hand - the palm, the
+            /// forearm, each claw and the thumb segment by segment - becomes a square block over the same bones (the
+            /// digits a square tube with a joint at each of the claw's joints), and the hand's own data (which digit and
+            /// segment each corner belongs to, the grip's outlines) is worked out again from the blocks. So the blocks
+            /// bend at the claws' joints and close round what's held - the palm against a handle, the fingers stopping on
+            /// its surface - exactly as the claws did: every grip pose stays as it was, only the shape is square.
+            /// </summary>
+            bool Blockify()
+            {
+                int n0 = m_U.Length;
+                if (n0 == 0 || m_D == null) return false;
+                var verts = new List<Vector3>();
+                var dig = new List<int>(); var seg = new List<int>(); var ring = new List<int>();
+                var subs = new[] { new List<int>(), new List<int>(), new List<int>() };
+
+                // the ring of four corners round c (square across axes a, e: half-widths ha, he)
+                Vector3[] Ring(Vector3 c, Vector3 a, Vector3 e, float ha, float he)
+                    => new[] { c - a * ha - e * he, c + a * ha - e * he, c + a * ha + e * he, c - a * ha + e * he };
+                // a face: four corners (any winding: turned to face away from `inside`), all tagged alike per corner
+                void Quad(Vector3 p0, Vector3 p1, Vector3 p2, Vector3 p3, (int d, int s, int r) t0, (int d, int s, int r) t1, (int d, int s, int r) t2, (int d, int s, int r) t3, Vector3 inside, int mat)
+                {
+                    var nrm = Vector3.Cross(p1 - p0, p2 - p0) + Vector3.Cross(p2 - p0, p3 - p0);
+                    var mid = (p0 + p1 + p2 + p3) * 0.25f;
+                    bool flip = Vector3.Dot(nrm, mid - inside) < 0f;
+                    int b = verts.Count;
+                    foreach (var (p, t) in new[] { (p0, t0), (p1, t1), (p2, t2), (p3, t3) }) { verts.Add(p); dig.Add(t.d); seg.Add(t.s); ring.Add(t.r); }
+                    // (Unity: a triangle faces the way of the cross product of its first two edges)
+                    if (!flip) subs[mat].AddRange(new[] { b, b + 1, b + 2, b, b + 2, b + 3 });
+                    else subs[mat].AddRange(new[] { b, b + 2, b + 1, b, b + 3, b + 2 });
+                }
+                // a block between two rings (the four sides; caps where asked), corners tagged by their ring
+                void Prism(Vector3[] r0, Vector3[] r1, (int d, int s, int r) t0, (int d, int s, int r) t1, int mat, bool cap0, bool cap1)
+                {
+                    var inside = (r0[0] + r0[2] + r1[0] + r1[2]) * 0.25f;
+                    for (int i = 0; i < 4; i++)
+                    {
+                        int j = (i + 1) % 4;
+                        Quad(r0[i], r0[j], r1[j], r1[i], t0, t0, t1, t1, inside, mat);
+                    }
+                    if (cap0) Quad(r0[0], r0[1], r0[2], r0[3], t0, t0, t0, t0, inside, mat);
+                    if (cap1) Quad(r1[0], r1[1], r1[2], r1[3], t1, t1, t1, t1, inside, mat);
+                }
+
+                // ---- the digits: a square tube each, from inside the palm out past the knuckle to a square tip ----
+                for (int d = 0; d < 3; d++)
+                {
+                    var g = m_D[d];
+                    // the claw's own middle line (its knuckle ring and each segment's middle) and thickness
+                    var mids = new List<Vector3>();
+                    Vector3 cr = Vector3.zero; int crn = 0;
+                    for (int i = 0; i < n0; i++) if (m_Ring[i] == d) { cr += m_U[i]; crn++; }
+                    if (crn == 0) return false;
+                    mids.Add(cr / crn);
+                    float aLo = 9f, aHi = -9f, eLo = 9f, eHi = -9f, tip = -9f;
+                    for (int s = 0; s < 3; s++)
+                    {
+                        Vector3 cs = Vector3.zero; int cn = 0;
+                        for (int i = 0; i < n0; i++)
+                        {
+                            if (m_Digit[i] != d) continue;
+                            tip = Mathf.Max(tip, m_U[i].z);
+                            if (m_Seg[i] != s) continue;
+                            cs += m_U[i]; cn++;
+                            if (s < 2)
+                            {
+                                float av = Vector3.Dot(m_U[i], g.A), ev = Vector3.Dot(m_U[i], g.E2);
+                                aLo = Mathf.Min(aLo, av); aHi = Mathf.Max(aHi, av); eLo = Mathf.Min(eLo, ev); eHi = Mathf.Max(eHi, ev);
+                            }
+                        }
+                        if (cn == 0) return false;
+                        mids.Add(cs / cn);
+                    }
+                    // square: as thick as the claw's width and depth on average
+                    float h = Mathf.Max(0.004f, ((aHi - aLo) + (eHi - eLo)) * 0.25f);
+                    Vector3 Mid(float z)
+                    {
+                        // along the middle line (straight on past its ends)
+                        int k = 0;
+                        while (k < mids.Count - 2 && z > mids[k + 1].z) k++;
+                        var p = mids[k]; var q = mids[k + 1];
+                        float t = Mathf.Abs(q.z - p.z) > 1e-5f ? (z - p.z) / (q.z - p.z) : 0f;
+                        var m = Vector3.LerpUnclamped(p, q, t);
+                        m.z = z;
+                        return m;
+                    }
+                    var b = Bands[d];
+                    float lo1 = Short(d, b[1]), hi1 = Short(d, b[2]), lo2 = Short(d, b[3]), hi2 = Short(d, b[4]);
+                    float tipZ = hi2 + (tip - hi2) * 0.8f; // (the claw's point is long: the square tip stops short of it)
+                    float[] zs = { 0.066f, b[0], lo1, hi1, lo2, hi2, tipZ };
+                    // each ring's tags: the two inside the palm stay put (the knuckle ring); the rest are the digit's,
+                    // segment 0 up to the first joint, then 1, then 2
+                    (int, int, int)[] tags = { (-1, -1, d), (-1, -1, d), (d, 0, -1), (d, 1, -1), (d, 1, -1), (d, 2, -1), (d, 2, -1) };
+                    var rings = new Vector3[zs.Length][];
+                    for (int k = 0; k < zs.Length; k++) rings[k] = Ring(Mid(zs[k]), g.A, g.E2, h, h);
+                    for (int k = 0; k + 1 < zs.Length; k++)
+                        Prism(rings[k], rings[k + 1], tags[k], tags[k + 1], k <= 1 ? 1 : 0, k == 0, k == zs.Length - 2);
+                }
+
+                // ---- the palm, the wrist band and the forearm (the palm's own frame) ----
+                var en = m_PalmN3;
+                var ap = Vector3.Cross(Vector3.forward, en).normalized;
+                // the middle and half-widths of the alien's palm / arm between two depths (not the digits or their rings)
+                bool Section(float zLo, float zHi, out Vector3 c, out float ha, out float he)
+                {
+                    c = Vector3.zero; ha = he = 0f;
+                    float a0 = 9f, a1 = -9f, e0 = 9f, e1 = -9f; int cn = 0;
+                    for (int i = 0; i < n0; i++)
+                    {
+                        if (m_Digit[i] >= 0 || m_Ring[i] >= 0 || m_U[i].z < zLo || m_U[i].z > zHi) continue;
+                        float av = Vector3.Dot(m_U[i], ap), ev = Vector3.Dot(m_U[i], en);
+                        a0 = Mathf.Min(a0, av); a1 = Mathf.Max(a1, av); e0 = Mathf.Min(e0, ev); e1 = Mathf.Max(e1, ev); cn++;
+                    }
+                    if (cn == 0) return false;
+                    ha = (a1 - a0) * 0.5f; he = (e1 - e0) * 0.5f;
+                    c = ap * ((a0 + a1) * 0.5f) + en * ((e0 + e1) * 0.5f);
+                    return true;
+                }
+                (int, int, int) still = (-1, -1, -1);
+                if (!Section(0f, 0.066f, out var pc, out var pa, out var pe)) return false;
+                Prism(Ring(pc, ap, en, pa, pe), Ring(pc + Vector3.forward * 0.065f, ap, en, pa, pe), still, still, 0, true, true);
+                float armLo = 9f;
+                for (int i = 0; i < n0; i++) if (m_Digit[i] < 0) armLo = Mathf.Min(armLo, m_U[i].z);
+                if (!Section(-0.11f, -0.03f, out var wc, out var wa, out var we)) { wc = pc; wa = pa * 0.8f; we = pe * 0.8f; }
+                if (!Section(armLo, armLo + 0.04f, out var ec, out var ea, out var ee)) { ec = wc; ea = wa; ee = we; }
+                // (the forearm square, as thick as it is at the wrist, the elbow end only a little bigger)
+                float arm = (wa + we) * 0.5f, elbow = Mathf.Min((ea + ee) * 0.5f, arm * 1.25f);
+                wc.z = WristLo; ec.z = armLo;
+                Prism(Ring(ec, ap, en, elbow, elbow), Ring(wc, ap, en, arm, arm), still, still, 0, true, false);
+                // the wrist band (team coloured, like the old box arm's): from the forearm to the palm, over the bend
+                var bc = pc; bc.z = 0.004f;
+                Prism(Ring(wc, ap, en, arm * 1.12f, arm * 1.12f), Ring(bc, ap, en, Mathf.Max(pa, arm) * 1.06f, Mathf.Max(pe, arm) * 1.06f), still, still, 2, true, true);
+
+                // ---- swap the arm over to the blocks ----
+                int n = verts.Count;
+                m_U = verts.ToArray();
+                m_Digit = dig.ToArray(); m_Seg = seg.ToArray(); m_Ring = ring.ToArray();
+                var all = new List<int>();
+                foreach (var sl in subs) all.AddRange(sl);
+                m_Tris = all.ToArray();
+                m_Base = new Vector3[n];
+                m_Work = new Vector3[n];
+                m_Posed = new Vector3[n];
+                // corners at the same place (to smooth the shading over, when that's on)
+                m_Weld = new int[n];
+                var seen = new Dictionary<Vector3Int, int>();
+                for (int i = 0; i < n; i++)
+                {
+                    var k = Vector3Int.RoundToInt(m_U[i] * 100000f);
+                    if (!seen.TryGetValue(k, out int w)) seen[k] = w = seen.Count;
+                    m_Weld[i] = w;
+                }
+                m_WeldCount = seen.Count;
+                var mesh = new Mesh { name = BlockyMeshName };
+                var mv = new Vector3[n];
+                for (int i = 0; i < n; i++) mv[i] = m_ToMesh.MultiplyPoint3x4(m_U[i]);
+                mesh.vertices = mv;
+                mesh.subMeshCount = 3;
+                for (int s = 0; s < 3; s++) mesh.SetTriangles(subs[s], s);
+                mesh.RecalculateNormals();
+                mesh.RecalculateBounds();
+                mesh.MarkDynamic();
+                if (m_Mesh) Object.Destroy(m_Mesh);
+                m_Mesh = mesh;
+                m_MeshT.GetComponent<MeshFilter>().sharedMesh = mesh;
+                m_Blocky = true;
+                m_Bent = false;
+                BuildDigits(m_ThumbIn);
+                return true;
+            }
+
+            bool m_Blocky;
+            /// <summary>The block hand's corners grouped by place (for smooth shading), and how many places.</summary>
+            int[] m_Weld;
+            int m_WeldCount;
+            Vector3 m_ThumbIn;
+            bool m_ShownSmooth;
+            /// <summary>(tests) This is the block hand and its corners are lit smoothly now.</summary>
+            public bool ShownSmooth => m_Blocky && m_ShownSmooth;
+            public bool IsBlocky => m_Blocky;
 
             /// <summary>
             /// Splits the hand past the knuckles into its three digits (the mesh's separate pieces there: the claw that ends
@@ -427,6 +630,7 @@ namespace RockGame
                 // the palm side of the joint
                 var palm = m_PalmN3;
                 var thumbIn = (palm * 1.5f - new Vector3(m_Thumb.x, m_Thumb.y, 0f)).normalized; // (over the curled claws in a fist)
+                m_ThumbIn = thumbIn;
                 m_Joints = new Joint[4][];
                 var ringC = new Vector2[3];
                 for (int f = 0; f < 4; f++)
@@ -616,17 +820,28 @@ namespace RockGame
             void Bend()
             {
                 if (m_Base.Length == 0) return;
-                bool same = m_Bent && m_Wrap == m_ShownWrap && Quaternion.Angle(m_WristQ, m_ShownWristQ) < 0.05f;
+                bool smooth = m_Blocky && GameSettings.SmoothHands.Value;
+                bool same = m_Bent && m_Wrap == m_ShownWrap && smooth == m_ShownSmooth && Quaternion.Angle(m_WristQ, m_ShownWristQ) < 0.05f;
                 for (int k = 0; k < 9 && same; k++) same = Mathf.Abs(m_Ang[k] - m_Shown[k]) < 0.05f;
                 if (same) return;
                 m_Bent = true;
                 m_ShownWrap = m_Wrap;
                 m_ShownWristQ = m_WristQ;
+                m_ShownSmooth = smooth;
                 System.Array.Copy(m_Ang, m_Shown, 9);
                 BendCount++;
                 for (int i = 0; i < m_Base.Length; i++) m_Work[i] = m_ToMesh.MultiplyPoint3x4(PoseVertex(i));
                 m_Mesh.vertices = m_Work;
                 m_Mesh.RecalculateNormals();
+                if (smooth && m_Weld != null)
+                {
+                    // shade smooth (Settings > Display > SHADING): each corner gets the average of the faces round it
+                    var nn = m_Mesh.normals;
+                    var acc = new Vector3[m_WeldCount];
+                    for (int i = 0; i < nn.Length; i++) acc[m_Weld[i]] += nn[i];
+                    for (int i = 0; i < nn.Length; i++) nn[i] = acc[m_Weld[i]].sqrMagnitude > 1e-12f ? acc[m_Weld[i]].normalized : nn[i];
+                    m_Mesh.normals = nn;
+                }
                 m_Mesh.RecalculateBounds();
             }
 

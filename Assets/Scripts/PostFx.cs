@@ -19,6 +19,13 @@ namespace RockGame
         /// <summary>Fired when any post processing setting changes.</summary>
         public static event System.Action PostFxChanged;
 
+        /// <summary>The screen resolution the outline thicknesses are set at: 2560x1440 looks right, and every other
+        /// resolution scales them with its height, so they're the same share of the screen everywhere.</summary>
+        public const float OutlineRefHeight = 1440f;
+
+        /// <summary>Pixels on this screen for a thickness set in pixels at 1440p (thickness x screen height / 1440).</summary>
+        public static float ScreenPx(float pxAt1440, float screenHeight = -1f) => pxAt1440 * (screenHeight > 0f ? screenHeight : Screen.height) / OutlineRefHeight;
+
         static void LoadPost()
         {
             if (s_PostLoaded) return;
@@ -314,6 +321,13 @@ namespace RockGame
         static readonly int k_Outline = Shader.PropertyToID("_RgOutline"), k_Haze = Shader.PropertyToID("_RgHaze"),
                             k_HazeColor = Shader.PropertyToID("_RgHazeColor"), k_Look = Shader.PropertyToID("_RgLook");
 
+        /// <summary>
+        /// How thick the world outlines are at 1440p (pixels) for an Outlines strength. Exactly what 1440p showed before
+        /// they were scaled with the screen: 1.333 x (0.8 + 0.7 strength) px, which the shader's pixel-by-pixel depth
+        /// reads rounded to whole pixels (1 or 2).
+        /// </summary>
+        public static float OutlinePxAt1440(float strength) => Mathf.Max(1f, Mathf.Round(1440f / 1080f * (0.8f + strength * 0.7f)));
+
         /// <summary>The full-screen pass's numbers (the haze follows the sky colour; there's none in space).</summary>
         void UpdateStylize()
         {
@@ -322,9 +336,11 @@ namespace RockGame
             float sh = GameSettings.PostExtraAmount(GameSettings.PostExtra.Sharpen);
             float cel = GameSettings.PostExtraAmount(GameSettings.PostExtra.CelBanding);
             if (h > 0f && m_Cam != null && SpaceArena.NearArena(m_Cam.transform.position)) h = 0f;
-            float px = Mathf.Max(1f, Screen.height / 1080f);
-            // outlines: how dark (0..1), how thick (pixels), the depth step (relative) and the fold (normals) that count
-            m_StylizeMat.SetVector(k_Outline, o > 0f ? new Vector4(0.5f + o * 0.5f, px * (0.8f + o * 0.7f), 0.11f - o * 0.04f, 0.55f) : Vector4.zero);
+            // outlines: how dark (0..1), how thick (pixels), the depth step (relative) and the fold (normals) that count.
+            // The thickness is set at 1440p (the reference: OutlinePxAt1440) and scaled with the screen height, so the
+            // lines are the same share of the screen at any resolution (the shader blends between whole pixels).
+            float px = GameSettings.ScreenPx(OutlinePxAt1440(o));
+            m_StylizeMat.SetVector(k_Outline, o > 0f ? new Vector4(0.5f + o * 0.5f, px, 0.11f - o * 0.04f, 0.55f) : Vector4.zero);
             // haze: how much at most, where it starts and how far until it's all there (m)
             m_StylizeMat.SetVector(k_Haze, h > 0f ? new Vector4(0.12f + h * 0.4f, 35f, Mathf.Lerp(520f, 200f, h), 0f) : Vector4.zero);
             var sky = ColorSlots.Sky.Value;

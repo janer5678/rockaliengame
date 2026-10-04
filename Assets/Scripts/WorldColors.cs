@@ -309,6 +309,15 @@ namespace RockGame
                 bool alien = false;
                 for (var t = r.transform; t != null && t != transform; t = t.parent) alien |= t.name == "alien fit";
                 if (!alien) continue;
+                var mf = r.GetComponent<MeshFilter>();
+                if (mf != null && mf.sharedMesh != null && mf.sharedMesh.name == ViewModel.BlockyMeshName)
+                {
+                    // the block hand: the hand, its knuckle row and the wrist band each their own shade
+                    var cols = ViewModel.BlockyColours(c, m_Team);
+                    var mats = r.sharedMaterials;
+                    for (int i = 0; i < mats.Length && i < cols.Length; i++) if (mats[i]) { mats[i].SetColor("_BaseColor", cols[i]); mats[i].color = cols[i]; }
+                    continue;
+                }
                 foreach (var m in r.sharedMaterials) if (m) { m.SetColor("_BaseColor", c); m.color = c; }
             }
         }

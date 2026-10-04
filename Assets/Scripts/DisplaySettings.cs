@@ -32,7 +32,7 @@ namespace RockGame
         public const bool UiCel = false;                    // ui.cel
         public const float UiCelStrength = 0.5f;           // ui.cel.strength          (0..1: fewer, flatter colour steps)
         public const bool UiOutline = false;                // ui.outline
-        public const float UiOutlineWidth = 2f;             // ui.outline.width         (0.5..8 px at 1080p)
+        public const float UiOutlineWidth = 2f;             // ui.outline.width         (0.5..8; x 1.333 = px at 1440p, scaled with the screen height)
         public const string UiOutlineColour = "#000000";    // ui.outline.colour
         public const float UiOutlineOpacity = 0.9f;         // ui.outline.opacity       (0..1)
         public const bool UiBloom = false;                  // ui.bloom
@@ -54,6 +54,10 @@ namespace RockGame
         // ---- alien glow ----
         public const float GlowStrength = 0.3f;             // glow.strength            (0.02..1)
         public const float GlowWidth = 0.03f;               // glow.width               (0.005..0.12 m)
+
+        // ---- shading ----
+        public const bool SmoothHands = false;              // shade.smooth.hands       (first-person hands + held items)
+        public const bool SmoothAliens = false;             // shade.smooth.aliens      (alien players + the stadium crowd)
 
         // ---- grass ----
         public const float GrassDistance = 60f;             // grass.distance           (25..270 m)
@@ -214,6 +218,8 @@ namespace RockGame
             // ---- shadows ----
             Float("shadows.darkness", GShadows, DisplayDefaults.ShadowStrength, () => GameSettings.ShadowStrength, (v, s) => GameSettings.SetShadows(v, GameSettings.ShadowDistance, s));
             Float("shadows.distance", GShadows, DisplayDefaults.ShadowDistance, () => GameSettings.ShadowDistance, (v, s) => GameSettings.SetShadows(GameSettings.ShadowStrength, v, s));
+            // ---- shading (SmoothShade.cs) ----
+            Pref(GameSettings.SmoothHands, GameSettings.SmoothAliens);
             // ---- interface ----
             Choice("ui.font", GInterface, GameSettings.FontChoices, DisplayDefaults.UiFont, () => GameSettings.UiFont,
                 (v, s) => GameSettings.SetInterface(v, GameSettings.UiScale, GameSettings.HudOpacity, GameSettings.UiAccent, s));

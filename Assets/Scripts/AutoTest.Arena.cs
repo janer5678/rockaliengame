@@ -222,6 +222,15 @@ namespace RockGame
             yield return View("arena_15_crowd_close_a", eye, stand.Centre - c + Vector3.up * 1.2f);
             yield return new WaitForSeconds(0.6f);
             yield return View("arena_15_crowd_close_b", eye, stand.Centre - c + Vector3.up * 1.2f);
+            // shaded smooth (Settings > Display > SHADING > Aliens & crowd): the crowd is drawn with its smooth twin
+            {
+                var flat = st.FanMeshShown;
+                GameSettings.SmoothAliens.Set(true, false);
+                yield return View("arena_15_crowd_close_smooth", eye, stand.Centre - c + Vector3.up * 1.2f);
+                Check(st.FanMeshSmooth != null && st.FanMeshShown == st.FanMeshSmooth && flat != st.FanMeshSmooth, "shade smooth: the crowd is drawn with its smooth-shaded twin");
+                GameSettings.SmoothAliens.Set(false, false);
+                Check(st.FanMeshShown == flat, "shade smooth off: the crowd is flat again");
+            }
             var stand2 = st.CrowdStands[9];
             var toStand2 = new Vector3(stand2.Centre.x - c.x, 0f, stand2.Centre.z - c.z).normalized;
             yield return View("arena_15_crowd_close_c", stand2.Centre - c - toStand2 * 13f + Vector3.up * 2f, stand2.Centre - c + Vector3.up * 2f);

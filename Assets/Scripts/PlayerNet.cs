@@ -177,7 +177,12 @@ namespace RockGame
             return true;
         }
 
-        void SkinAlien(GameObject model) => SkinAlien(model, m_TeamMats);
+        void SkinAlien(GameObject model)
+        {
+            SkinAlien(model, m_TeamMats);
+            // shaded smooth or flat as Settings > Display > SHADING (aliens & crowd) says, live
+            SmoothShadeHook.Add(model, true);
+        }
 
         /// <summary>
         /// URP materials for the alien model. The rigged alien (PS1 grey alien, materials "Alien2" / "Alien2_Head") is

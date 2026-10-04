@@ -32,7 +32,9 @@ namespace RockGame
         }
 
         readonly Transform m_Root, m_R, m_L, m_ItemHolder;
-        readonly AlienArm m_AR, m_AL;
+        /// <summary>The block hands the game shows (m_AR, m_AL), and the alien clawed hands they were before (m_XR,
+        /// m_XL: hidden, only for the hands autotest's comparison shots).</summary>
+        readonly AlienArm m_AR, m_AL, m_XR, m_XL;
         /// <summary>How each alien hand sits on its hand transform this frame (set by the poses; a fist round the grip by default).</summary>
         HandPose m_RP, m_LP;
         GameObject m_Item, m_Arrow, m_Ball, m_StringA, m_StringB;
@@ -52,13 +54,30 @@ namespace RockGame
         float m_CradleR;
 
         // ---- for the hands autotest ----
-        /// <summary>0: the alien arms (the game), 1: the original box arms instead, 2: both at once (to line them up).</summary>
+        /// <summary>0: the block hands (the game), 1: the original box arms instead, 2: the alien clawed hands (the look
+        /// before the block hands), 3: the block hands and the box arms at once (to line them up).</summary>
         public static int DebugArms;
         /// <summary>When set (>= 0), the swing / throw / eat / use animations are held at this many seconds in.</summary>
         public static float DebugSwingE = -1f, DebugThrowE = -1f, DebugEatE = -1f, DebugUseE = -1f;
         public static bool DebugAim, DebugBall;
         int m_ArmsShown = -1;
-        readonly System.Collections.Generic.List<Renderer> m_BoxR = new System.Collections.Generic.List<Renderer>(), m_AlienR = new System.Collections.Generic.List<Renderer>();
+        readonly System.Collections.Generic.List<Renderer> m_BoxR = new System.Collections.Generic.List<Renderer>(), m_AlienR = new System.Collections.Generic.List<Renderer>(),
+            m_BlockR = new System.Collections.Generic.List<Renderer>();
+
+        /// <summary>The block hands' mesh (each hand has its own, re-shaped as it bends).</summary>
+        public const string BlockyMeshName = "blocky arm (posed)";
+
+        /// <summary>The block hands' colours: the hand, the darker knuckle row, and the band round the wrist (in the team
+        /// colour, like the old box arm's).</summary>
+        public static Color[] BlockyColours(Color tint, Color team)
+        {
+            var dark = tint * 0.8f; dark.a = 1f;
+            var band = team * 0.75f; band.a = 1f;
+            return new[] { tint, dark, band };
+        }
+
+        /// <summary>The arm shown for this hand (DebugArms 2: the alien clawed one).</summary>
+        AlienArm Arm(bool right) => DebugArms == 2 && (right ? m_XR : m_XL) != null ? (right ? m_XR : m_XL) : (right ? m_AR : m_AL);
 
         /// <summary>For the tests / profiling: how many times the claws were worked out afresh (and how long that took in
         /// all, ms), and how many times an arm's mesh was re-bent.</summary>
@@ -71,14 +90,18 @@ namespace RockGame
         /// <summary>For the hands autotest: the alien hands' rigid pieces (palm, forearm, each claw / thumb segment) in world space.</summary>
         public void DebugPieces(System.Collections.Generic.List<(string name, Vector3[] pts, int[] tris)> list)
         {
-            if (m_AR != null && m_R.gameObject.activeInHierarchy) m_AR.DebugPieces("R", list);
-            if (m_AL != null && m_L.gameObject.activeInHierarchy) m_AL.DebugPieces("L", list);
+            if (Arm(true) != null && m_R.gameObject.activeInHierarchy) Arm(true).DebugPieces("R", list);
+            if (Arm(false) != null && m_L.gameObject.activeInHierarchy) Arm(false).DebugPieces("L", list);
         }
 
-        public string DebugRest() => m_AR != null ? m_AR.DebugRest() : "no alien arm";
+        public string DebugRest() => Arm(true) != null ? Arm(true).DebugRest() : "no alien arm";
         public Transform DebugHand(bool right) => right ? m_R : m_L;
-        public string DebugSolve(bool right) => (right ? m_AR : m_AL)?.DebugSolve() ?? "-";
-        public string DebugOutlines(bool right) => (right ? m_AR : m_AL)?.DebugOutlines() ?? "{}";
+        /// <summary>(tests) The block hands are both lit smoothly now.</summary>
+        public bool DebugBlockySmooth() => m_AR != null && m_AR.ShownSmooth && (m_AL == null || !m_L.gameObject.activeInHierarchy || m_AL.ShownSmooth);
+        /// <summary>(tests) The hands shown are the block hands.</summary>
+        public bool DebugIsBlocky => m_AR != null && m_AR.IsBlocky;
+        public string DebugSolve(bool right) => Arm(right)?.DebugSolve() ?? "-";
+        public string DebugOutlines(bool right) => Arm(right)?.DebugOutlines() ?? "{}";
 
         /// <summary>For the hands autotest: what the hands hold this frame (the item's shown renderers, the ball, the bow's arrow and string).</summary>
         public void DebugHeld(System.Collections.Generic.List<Renderer> list)
@@ -96,26 +119,31 @@ namespace RockGame
             m_Root.SetParent(cam, false);
             var skin = new Color(0.6f, 0.64f, 0.58f);
             skin = Color.Lerp(skin, team, 0.25f);
-            m_R = MakeArm(m_Root, skin, team, true, out m_AR);
-            m_L = MakeArm(m_Root, skin, team, false, out m_AL);
+            m_R = MakeArm(m_Root, skin, team, true, out m_AR, out m_XR);
+            m_L = MakeArm(m_Root, skin, team, false, out m_AL, out m_XL);
             foreach (var r in m_Root.GetComponentsInChildren<Renderer>(true))
             {
-                bool alien = false;
-                for (var t = r.transform; t != null && t != m_Root; t = t.parent) alien |= t.name.StartsWith("psx alienarm");
-                (alien ? m_AlienR : m_BoxR).Add(r);
+                bool alien = false, block = false;
+                for (var t = r.transform; t != null && t != m_Root; t = t.parent) { alien |= t.name.StartsWith("psx alienarm"); block |= t.name.StartsWith("blocky arm"); }
+                (block ? m_BlockR : alien ? m_AlienR : m_BoxR).Add(r);
             }
             m_ItemHolder = new GameObject("item").transform;
             m_ItemHolder.SetParent(m_Root, false);
             GameSettings.GraphicsChanged += OnGraphicsChanged;
+            // what's held is shaded smooth or flat as Settings > Display > SHADING says (the hands shade themselves)
+            m_Smooth = SmoothShadeHook.Add(m_Root.gameObject, false);
         }
 
-        /// <summary>The PSX look of what's held comes and goes with the graphics setting: the claws close round whichever shows.</summary>
-        void OnGraphicsChanged() => m_PartsDirty = true;
+        readonly SmoothShadeHook m_Smooth;
+
+        /// <summary>The PSX look of what's held comes and goes with the graphics setting: the claws close round whichever
+        /// shows (and it's shaded smooth or flat like the rest).</summary>
+        void OnGraphicsChanged() { m_PartsDirty = true; m_Smooth?.Refresh(true); }
 
         public void Destroy()
         {
             GameSettings.GraphicsChanged -= OnGraphicsChanged;
-            m_AR?.Free(); m_AL?.Free();
+            m_AR?.Free(); m_AL?.Free(); m_XR?.Free(); m_XL?.Free();
             if (m_Root) Object.Destroy(m_Root.gameObject);
         }
 
@@ -141,7 +169,7 @@ namespace RockGame
         public void Eat() => m_EatStart = Time.time;
         public void Use() => m_UseStart = Time.time;
 
-        static Transform MakeArm(Transform parent, Color skin, Color team, bool right, out AlienArm arm)
+        static Transform MakeArm(Transform parent, Color skin, Color team, bool right, out AlienArm arm, out AlienArm claws)
         {
             var hand = new GameObject(right ? "R" : "L").transform;
             hand.SetParent(parent, false);
@@ -152,11 +180,16 @@ namespace RockGame
             Art.Box(hand, skin, new Vector3(-0.045f * side, 0.025f, 0.035f), new Vector3(0.03f, 0.03f, 0.065f), new Vector3(0, 20 * side, 0)); // thumb
             Art.Box(hand, team, new Vector3(0, 0, -0.075f), new Vector3(0.082f, 0.082f, 0.035f));               // wrist band
             Art.Box(hand, skin, new Vector3(0, 0, -0.32f), new Vector3(0.072f, 0.072f, 0.46f));                  // forearm
-            // the alien's own forearm and clawed hand in place of the blocks above (which stay as a fallback)
-            var alien = AlienArm.Make(hand, right, HandColorHook.Tint(hand, team)); // (team tint, or the colour in Settings > Display)
-            if (alien != null)
-                foreach (var r in hand.GetComponentsInChildren<Renderer>()) if (!r.transform.IsChildOf(alien.Fit)) r.enabled = false;
-            arm = alien;
+            // the block hand in place of the boxes above (which stay as a fallback): the alien arm's palm, forearm, claws
+            // and thumb made into square blocks, which bend and close round what's held just like the claws did (team
+            // tint, or the colour in Settings > Display)
+            var tint = HandColorHook.Tint(hand, team);
+            var block = AlienArm.Make(hand, right, tint, team, true);
+            // (and the alien clawed hand they replaced, hidden: the hands autotest photographs it for comparison)
+            claws = AlienArm.Make(hand, right, tint, team, false);
+            if (block != null)
+                foreach (var r in hand.GetComponentsInChildren<Renderer>()) if (!r.transform.IsChildOf(block.Fit)) r.enabled = false;
+            arm = block;
             foreach (var r in hand.GetComponentsInChildren<Renderer>()) r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             return hand;
         }
@@ -175,11 +208,12 @@ namespace RockGame
             if (DebugThrowE >= 0f) m_ThrowStart = Time.time - DebugThrowE;
             if (DebugEatE >= 0f) m_EatStart = Time.time - DebugEatE;
             if (DebugUseE >= 0f) m_UseStart = Time.time - DebugUseE;
-            if (m_ArmsShown != DebugArms && m_AlienR.Count > 0)
+            if (m_ArmsShown != DebugArms && m_BlockR.Count > 0)
             {
                 m_ArmsShown = DebugArms;
-                foreach (var r in m_BoxR) if (r) r.enabled = DebugArms != 0;
-                foreach (var r in m_AlienR) if (r) r.enabled = DebugArms != 1;
+                foreach (var r in m_BoxR) if (r) r.enabled = DebugArms == 1 || DebugArms == 3;
+                foreach (var r in m_BlockR) if (r) r.enabled = DebugArms == 0 || DebugArms == 3;
+                foreach (var r in m_AlienR) if (r) r.enabled = DebugArms == 2;
             }
 
             // ---- models ----
@@ -197,6 +231,7 @@ namespace RockGame
                 m_ItemId = want;
                 m_WasBall = s.Ball;
                 m_PartsDirty = true;
+                m_Smooth?.Refresh(true);
             }
             bool wantString = !s.Ball && s.Item == Item.Bow;
             if (wantString != (m_StringA != null))
@@ -223,6 +258,7 @@ namespace RockGame
                 {
                     m_Arrow = ItemModels.Create(Item.Arrow, m_Root);
                     foreach (var r in m_Arrow.GetComponentsInChildren<Renderer>()) r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                    m_Smooth?.Refresh(true);
                 }
             }
 
@@ -291,8 +327,8 @@ namespace RockGame
         void ApplyHands()
         {
             if (m_PartsDirty) { GatherParts(); m_PartsDirty = false; }
-            m_AR?.Pose(m_RP, m_R, m_Root, m_Parts);
-            m_AL?.Pose(m_LP, m_L, m_Root, m_Parts);
+            Arm(true)?.Pose(m_RP, m_R, m_Root, m_Parts);
+            Arm(false)?.Pose(m_LP, m_L, m_Root, m_Parts);
         }
 
         void Set(Transform t, Vector3 pos, Quaternion rot) { t.localPosition = pos; t.localRotation = rot; }
