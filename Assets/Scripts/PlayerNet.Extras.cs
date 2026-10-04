@@ -256,15 +256,30 @@ namespace RockGame
 
         // ---------------- proximity voice ----------------
 
-        /// <summary>A chunk of compressed mic audio from the owner; the server passes it on to everyone else.</summary>
+        static readonly System.Collections.Generic.List<ulong> s_VoiceTo = new System.Collections.Generic.List<ulong>();
+
+        /// <summary>Test hook (server): how many players the last voice packet was passed on to.</summary>
+        public static int LastVoiceRelayTo;
+
+        /// <summary>
+        /// A 20 ms packet of the owner's voice (VoiceCodec: 166 bytes, or a 3-byte end-of-talk marker), unreliable: a late
+        /// voice packet is worse than a lost one. The server passes it on only to the other players within
+        /// VoiceChat.RelayRange (nobody further away could hear it anyway).
+        /// </summary>
         [Rpc(SendTo.Server, Delivery = RpcDelivery.Unreliable)]
         public void VoiceRpc(byte[] data)
         {
-            if (data == null || data.Length == 0 || data.Length > 1100) return;
-            VoiceOutRpc(data);
+            if (data == null || data.Length < 3 || data.Length > VoiceCodec.PacketBytes) return;
+            s_VoiceTo.Clear();
+            float r2 = VoiceChat.RelayRange * VoiceChat.RelayRange;
+            foreach (var p in All)
+                if (p != null && p.IsSpawned && p.OwnerClientId != OwnerClientId && !s_VoiceTo.Contains(p.OwnerClientId)
+                    && (p.transform.position - transform.position).sqrMagnitude < r2) s_VoiceTo.Add(p.OwnerClientId);
+            LastVoiceRelayTo = s_VoiceTo.Count;
+            if (s_VoiceTo.Count > 0) VoiceOutRpc(data, RpcTarget.Group(s_VoiceTo, RpcTargetUse.Temp));
         }
 
-        [Rpc(SendTo.NotOwner, Delivery = RpcDelivery.Unreliable)]
-        void VoiceOutRpc(byte[] data) => VoiceChat.Receive(this, data);
+        [Rpc(SendTo.SpecifiedInParams, Delivery = RpcDelivery.Unreliable)]
+        void VoiceOutRpc(byte[] data, RpcParams rpcParams = default) => VoiceChat.Receive(this, data);
     }
 }

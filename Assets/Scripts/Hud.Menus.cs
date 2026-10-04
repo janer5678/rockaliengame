@@ -1161,6 +1161,18 @@ namespace RockGame
             if (GameSettings.VoiceMode == GameSettings.VoiceOpen) Fill(new Rect(lr.x + lr.width * Mathf.Clamp01(GameSettings.MicThreshold * 3f), lr.y - 2, 2, lr.height + 4), new Color(1f, 0.8f, 0.3f));
             GUILayout.Label(VoiceChat.Transmitting ? "<color=#7dff9a>sending</color>" : "", m_Small, GUILayout.Width(80 * k));
             GUILayout.EndHorizontal();
+            GUILayout.Space(6 * k);
+            GUILayout.BeginHorizontal();
+            RowLabel("Alien voice", 190 * k);
+            bool alien = ToggleBtn(GameSettings.AlienVoice, GameSettings.AlienVoice ? "On" : "Off", GUILayout.Width(90 * k), GUILayout.Height(30 * k));
+            if (alien != GameSettings.AlienVoice) { GameSettings.AlienVoice = alien; changed = true; }
+            GUILayout.Label("<color=#bbbbbb>your mic is pitched up, ring-modulated and flanged before it's sent - everyone hears you as an alien</color>", m_SmallWrap);
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            RowLabel("Hear myself", 190 * k);
+            GameSettings.HearMyself = ToggleBtn(GameSettings.HearMyself, GameSettings.HearMyself ? "On" : "Off", GUILayout.Width(90 * k), GUILayout.Height(30 * k));
+            GUILayout.Label("<color=#bbbbbb>plays your own voice back (as others hear it) while you talk, to try the settings - use headphones</color>", m_SmallWrap);
+            GUILayout.EndHorizontal();
             if (changed) GameSettings.Save();
         }
 
