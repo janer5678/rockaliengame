@@ -1,0 +1,34 @@
+[Licensing::Module] Trying to connect to existing licensing client channel...
+[Licensing::IpcConnector] Successfully connected to the License Client on channel: "LicenseClient-User" at "2026-10-03T22:30:34.2968618Z"
+[Licensing::Client] Error: Code 10 while verifying Licensing Client signature (process Id: 28336, path: "C:/Program Files/Unity/Hub/Editor/6000.0.42f1/Editor/Data/Resources/Licensing/Client/Unity.Licensing.Client.exe")
+[Licensing::Module] Error: LicensingClient has failed validation; ignoring
+[Licensing::Client] Handshaking with LicensingClient:
+  Version:                 1.16.2+bdef8f5
+  Session Id:              24a5246d166d4279a22eaae68314463a
+  Correlation Id:          5993b6ce70f1606892f031b67d549fe0
+  External correlation Id: 4583368307037167939
+  Machine Id:              rzECLNgbnjn8p4bhGLH++Bbt3vs=
+[Licensing::Module] Successfully connected to LicensingClient on channel: "LicenseClient-User" (connect: 0.00s, validation: 0.01s, handshake: 0.04s)
+[Licensing::IpcConnector] Successfully connected to the License Notification on channel: "LicenseClient-User-notifications" at "2026-10-03T22:30:34.346112Z"
+[Licensing::Module] Error: Access token is unavailable; failed to update
+[Licensing::Client] Error: Code 500 while processing request (status: Unable to update licenses. Errors: No ULF license found.,Token not found in cache)
+[Licensing::Client] Error: Code 500 while updating license in client (status: Unable to update licenses. Errors: No ULF license found.,Token not found in cache)
+Built from '6000.0/staging' branch; Version is '6000.0.42f1 (feb9a7235030) revision 16693671'; Using compiler version '193933523'; Build Type 'Release'
+OS: 'Windows 11  (10.0.26200) 64bit Professional' Language: 'en' Physical Memory: 16103 MB
+[Licensing::Client] Successfully resolved entitlement details
+[Licensing::Module] Serial number assigned to: "17867471807243-UnityPersXXXX"
+BatchMode: 1, IsHumanControllingUs: 0, StartBugReporterOnCrash: 0, Is64bit: 1, IsPro: 0
+[Licensing::Client] Successfully resolved entitlement details
+
+COMMAND LINE ARGUMENTS:
+C:\Program Files\Unity\Hub\Editor\6000.0.42f1\Editor\Unity.exe
+-batchmode
+-quit
+-projectPath
+.
+-executeMethod
+RockGame.EditorTools.ProjectSetup.BuildWindows
+-logFile
+Logs/batch_build.log
+Couldn't set project path to: C:/Users/User/Documents/GitHub/rockaliengame/.claude
+Exiting without the bug reporter. Application will terminate with return code 1
