@@ -13,7 +13,7 @@ namespace RockGame
         public readonly NetworkVariable<double> NextFunItem = new NetworkVariable<double>(-1);
 
 
-        /// <summary>How many times each team has bought Fortify All Walls (2 bits a team: 0 never, 1 stone, 2 metal, 3 refined).</summary>
+        /// <summary>How many times each team has bought Fortify All Walls (2 bits a team: 0 never, 1 stone, 2 metal).</summary>
         public readonly NetworkVariable<int> FortifyLevels = new NetworkVariable<int>();
         public int FortifyLevelOf(int team) => (FortifyLevels.Value >> (team * 2)) & 3;
 

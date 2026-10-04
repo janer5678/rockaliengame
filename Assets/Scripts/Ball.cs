@@ -165,7 +165,8 @@ namespace RockGame
             // the light shoots up only once the ball has sat still (not carried, not rolling) for 3 seconds
             if (IsCarried || (transform.position - m_LastPos).sqrMagnitude > 0.0004f) m_StillSince = Time.time;
             m_LastPos = transform.position;
-            bool beacon = !IsCarried && Time.time - m_StillSince >= 3f;
+            // (and not in the victory cutscene: it ran straight up through the middle of the UFO over the winners' base)
+            bool beacon = !IsCarried && Time.time - m_StillSince >= 3f && !VictoryCutscene.Active;
             if (m_Beacon.activeSelf != beacon) m_Beacon.SetActive(beacon);
             // Clients: render the carried ball in the carrier's arms (avoids interpolation lag).
             // The carrier themselves sees it in their first-person hands instead.

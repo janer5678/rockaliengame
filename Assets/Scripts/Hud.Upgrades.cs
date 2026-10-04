@@ -34,7 +34,7 @@ namespace RockGame
             int lvl = Cfg.BaseUpgradeLevel(id, team), max = Cfg.BaseUpgradeMax(id);
             if (id == Item.WoodGenBuff)
                 return $"Wood Gen: your wood machine makes wood faster - {Cfg.WoodGenRate(0)}, then {Cfg.WoodGenRate(1)}, then {Cfg.WoodGenRate(2)} a second. Level {lvl} of {max}.";
-            return $"Fortify All Walls: every piece your team has built goes up a step at full health - stone, then metal, then refined - and pieces you build after come out that strong too. Level {lvl} of {max}.";
+            return $"Fortify All Walls: every piece your team has built goes up a step at full health - stone, then metal - and pieces you build after come out that strong too. Level {lvl} of {max}.";
         }
 
         /// <summary>Right of the inventory: the UPGRADES header and one row per upgrade, then a footer.</summary>

@@ -124,6 +124,8 @@ namespace RockGame
         };
         static readonly Color k_Snow = new Color(0.93f, 0.95f, 0.98f);
 
+        /// <summary>How high the tallest peaks of range `layer` can be (0: the nearest; the victory UFO lifts over it).</summary>
+        public static float RangeTop(int layer) => k_Ranges[Mathf.Clamp(layer, 0, k_Ranges.Length - 1)].height * Mathf.Max(0.75f, Mathf.Sqrt(Cfg.MapHalf / 100f)) * 1.08f - 4f;
         /// <summary>How many ranges there are (tests).</summary>
         public static int RangeCount => k_Ranges.Length;
         /// <summary>The ranges built (nearest first; tests): the rock mesh's renderer of each.</summary>

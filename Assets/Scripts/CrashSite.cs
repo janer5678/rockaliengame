@@ -135,31 +135,37 @@ namespace RockGame
 
             // ---------------- the ground: churned-up dirt over the whole ball zone (where the yellow circle was), a scorched
             // crater round the ball, burn marks, a skid furrow behind the saucer ----------------
+            // (the patches lie flat on the ground one over another: every one that overlaps another is on its own level,
+            // PatchStep apart - PatchLift - with the big scorch, the crater and the furrow above them all. They used to be
+            // on the same level, or half a centimetre apart, and flickered through each other.)
+            m_Patches.Clear();
             using (ColorSlots.Use(ColorSlots.BallZone)) // ("Crash dirt" in Settings > Display colours)
             {
-                Blob(t, new Vector2(0.8f, 0f), DirtR, 0.12f, rng, k_CrashDirt, 0.035f, "ground dirt");
+                Blob(t, new Vector2(0.8f, 0f), DirtR, 0.12f, rng, k_CrashDirt, DirtLift, "ground dirt");
                 // patches of darker and lighter soil turned over in it
                 for (int i = 0; i < 9; i++)
                 {
-                    float a = R(0f, Mathf.PI * 2f), rr = R(3.5f, DirtR - 2.5f);
-                    Blob(t, new Vector2(Mathf.Cos(a) * rr, Mathf.Sin(a) * rr), R(1.2f, 2.6f), 0.3f, rng, i % 3 == 0 ? k_CrashDirt * 1.14f : k_CrashDirt * 0.84f, 0.045f, "ground soil");
+                    float a = R(0f, Mathf.PI * 2f), rr = R(3.5f, DirtR - 2.5f), r = R(1.2f, 2.6f);
+                    var c = new Vector2(Mathf.Cos(a) * rr, Mathf.Sin(a) * rr);
+                    Blob(t, c, r, 0.3f, rng, i % 3 == 0 ? k_CrashDirt * 1.14f : k_CrashDirt * 0.84f, PatchLift(c, r), "ground soil");
                 }
                 // and lumps of it thrown out past its edge, into the grass
                 for (int i = 0; i < 14; i++)
                 {
-                    float a = R(0f, Mathf.PI * 2f), rr = R(DirtR - 0.5f, DirtR + 4.5f);
+                    float a = R(0f, Mathf.PI * 2f), rr = R(DirtR - 0.5f, DirtR + 4.5f), r = R(0.6f, 1.5f);
                     var c = new Vector2(Mathf.Cos(a) * rr, Mathf.Sin(a) * rr);
-                    Blob(t, c, R(0.6f, 1.5f), 0.3f, rng, k_CrashDirt * R(0.85f, 1.05f), 0.05f, "ground dirt");
+                    Blob(t, c, r, 0.3f, rng, k_CrashDirt * R(0.85f, 1.05f), PatchLift(c, r), "ground dirt");
                 }
             }
-            Blob(t, new Vector2(1.4f, 0f), 5.6f, 0.22f, rng, k_Scorch, 0.065f, "scorch");
-            Blob(t, new Vector2(0.5f, 0f), 3.0f, 0.18f, rng, k_Burnt, 0.08f, "crater");
             // burn marks where burning bits landed
             for (int i = 0; i < 6; i++)
             {
-                float a = R(0f, Mathf.PI * 2f), rr = R(6.5f, 11f);
-                Blob(t, new Vector2(Mathf.Cos(a) * rr, Mathf.Sin(a) * rr), R(0.7f, 1.6f), 0.3f, rng, k_Scorch, 0.06f, "ground burn");
+                float a = R(0f, Mathf.PI * 2f), rr = R(6.5f, 11f), r = R(0.7f, 1.6f);
+                var c = new Vector2(Mathf.Cos(a) * rr, Mathf.Sin(a) * rr);
+                Blob(t, c, r, 0.3f, rng, k_Scorch, PatchLift(c, r), "ground burn");
             }
+            Blob(t, new Vector2(1.4f, 0f), 5.6f, 0.22f, rng, k_Scorch, ScorchLift, "scorch");
+            Blob(t, new Vector2(0.5f, 0f), 3.0f, 0.18f, rng, k_Burnt, CraterLift, "crater");
             {
                 var mb = new MeshBatch();
                 const int n = 10;
@@ -167,7 +173,7 @@ namespace RockGame
                 {
                     float x0 = 5f + i * 0.75f, x1 = x0 + 0.75f;
                     float w0 = Mathf.Lerp(2.1f, 1.3f, i / (float)n), w1 = Mathf.Lerp(2.1f, 1.3f, (i + 1f) / n);
-                    Vector3 P(float x, float z) => new Vector3(x, G(x, z) + 0.09f, z);
+                    Vector3 P(float x, float z) => new Vector3(x, G(x, z) + CraterLift, z); // (it doesn't reach the crater: the same level, over the scorch)
                     mb.Quad(P(x0, -w0), P(x1, -w1), P(x1, w1), P(x0, w0), Vector3.up);
                 }
                 Own(mb.Build(t, "furrow", Art.Mat(new Color(0.27f, 0.19f, 0.12f)), false));
@@ -211,6 +217,27 @@ namespace RockGame
                 p.SetActive(false);
                 m_Puffs.Add(new Puff { T = p.transform });
             }
+        }
+
+        /// <summary>How far over the ground the flat patches lie (m): the wide dirt lowest; the small patches (soil, lumps,
+        /// burn marks) on levels PatchStep apart from PatchBase up, each on the lowest level none of the ones it overlaps
+        /// is on; the big scorch over all of those, the crater (and the furrow) over the scorch.</summary>
+        public const float DirtLift = 0.035f, PatchBase = 0.05f, PatchStep = 0.012f, ScorchLift = PatchBase + PatchLevels * PatchStep, CraterLift = ScorchLift + 0.015f;
+        const int PatchLevels = 5;
+        /// <summary>(tests) the small patches put down: where, how far out they can reach, and the level each is on.</summary>
+        public IReadOnlyList<(Vector2 c, float r, int level)> Patches => m_Patches;
+        readonly List<(Vector2 c, float r, int level)> m_Patches = new List<(Vector2, float, int)>();
+
+        /// <summary>The lift for a small patch at c, radius r: the lowest level that no patch it overlaps is on.</summary>
+        float PatchLift(Vector2 c, float r)
+        {
+            float reach = r * 1.3f + 0.1f; // (its ragged edge wobbles out up to 30%)
+            int used = 0;
+            foreach (var p in m_Patches) if ((p.c - c).magnitude < p.r + reach) used |= 1 << p.level;
+            int level = 0;
+            while (level < PatchLevels - 1 && (used & (1 << level)) != 0) level++;
+            m_Patches.Add((c, reach, level));
+            return PatchBase + level * PatchStep;
         }
 
         GameObject Own(GameObject go)

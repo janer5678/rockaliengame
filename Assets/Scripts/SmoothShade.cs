@@ -80,11 +80,20 @@ namespace RockGame
                 var k = Vector3Int.RoundToInt(v[i] * 10000f);
                 sum[k] = sum.TryGetValue(k, out var s) ? s + n[i] : n[i];
             }
-            for (int i = 0; i < v.Length; i++)
-            {
-                var s = sum[Vector3Int.RoundToInt(v[i] * 10000f)];
-                n[i] = s.sqrMagnitude > 1e-20f ? s.normalized : Vector3.up;
-            }
+            for (int i = 0; i < v.Length; i++) n[i] = Unit(sum[Vector3Int.RoundToInt(v[i] * 10000f)]);
+        }
+
+        /// <summary>
+        /// s at length 1, however short it is (up if it has no length at all). Not Vector3.normalized: that gives ZERO for
+        /// anything shorter than 0.00001, and the sums here are that short on a small model (the alien's faces are
+        /// fractions of a square centimetre) - a zero normal comes out of the shader as not-a-number, which drew the
+        /// smooth-shaded players black and, with bloom on, blew them up into a white glare like the sun.
+        /// </summary>
+        public static Vector3 Unit(Vector3 s)
+        {
+            double x = s.x, y = s.y, z = s.z, m = System.Math.Sqrt(x * x + y * y + z * z);
+            if (!(m > 1e-30) || double.IsInfinity(m)) return Vector3.up;
+            return new Vector3((float)(x / m), (float)(y / m), (float)(z / m));
         }
 
         /// <summary>Swaps every mesh under root for its smooth copy (on) or back to the original (off).</summary>

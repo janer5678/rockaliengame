@@ -4,9 +4,11 @@ using UnityEngine;
 namespace RockGame
 {
     /// <summary>
-    /// A flock of little dark birds (every peer's own copy). Now and then a hit on a tree sends a flock flapping up out
-    /// of it (ResourceNode.BirdChance); it flies in an arc to another tree and settles on its branches. When that tree is
-    /// hit, they fly on to another, and so on. The server picks the trees and the flight's length and tells everyone
+    /// A flock of little dark birds (every peer's own copy). Flocks sit on the branches of a few trees (the server puts
+    /// them there - ResourceNode.ServerFlocksTick - so you can always see beforehand that a tree has birds in it). The
+    /// first hit on their tree sends them flapping up out of it; they fly in an arc to another tree, further away, and
+    /// settle on its branches. When that tree is hit, they fly on to another, and so on. A tree with no birds in it
+    /// never sends any up. The server picks the trees and the flight's length and tells everyone
     /// (ResourceNode.BirdsFlyRpc: from, to, how many, a seed); each peer flies its own birds along the same paths, so
     /// everyone sees the same thing without anything being sent while they fly. Sitting birds are kept by the tree
     /// (ResourceNode.Birds) so someone joining later sees them too. Each bird is a tiny body and two flapping wings

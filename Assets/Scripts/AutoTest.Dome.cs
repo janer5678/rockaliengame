@@ -349,13 +349,13 @@ namespace RockGame
                 while (E() < 2.2) yield return null;
                 var shipNow = AirdropShip.ShipTransform;
                 yield return LookShot(tag + "_arriving", eye, shipNow != null ? Vector3.Lerp(shipNow.position, gp, 0.3f) : gp + Vector3.up * (hover.y - gp.y) * 0.9f, 0.05f);
-                while (E() < NetGame.DropArrive - 0.4) yield return null;
+                while (E() < AirdropShip.CutStart - 0.12) yield return null; // (it's there: the hole is about to open)
                 var ship = AirdropShip.ShipTransform;
                 float hullR = Mathf.Max(26f * Art.Sphere.bounds.extents.x, 15.2f);
                 float glassUnder = MapDome.HighestOver(gp.x, gp.z, hullR);
                 Check(ship != null && ship.position.y - (Art.Sphere.bounds.extents.y * 4.5f + 5.5f) > glassUnder,
                     $"{tag}: the ship hovers clear over the glass ({(ship != null ? ship.position.y : 0f):0.0} m, its open hatch down to {(ship != null ? ship.position.y - Art.Sphere.bounds.extents.y * 4.5f - 5.5f : 0f):0.0} m, glass under it up to {glassUnder:0.0} m)");
-                // the beam comes down onto the glass and cuts a hole in it (a rim round it like the frame lines)
+                // a hole opens in the glass (a rim round it like the frame lines) before the beam comes out
                 float glassY = MapDome.HeightAt(gp.x, gp.z);
                 var hole = new Vector3(gp.x, glassY, gp.z);
                 var aside = Vector3.Cross(Vector3.up, toMid.normalized);
@@ -363,20 +363,28 @@ namespace RockGame
                 hi.y = Mathf.Min(MapDome.HeightAt(hi.x, hi.z) - 5f, glassY - 6f);
                 var above = gp - toMid.normalized * 30f + aside * 20f + Vector3.up * (glassY + 9f - gp.y);
                 while (E() < AirdropShip.CutStart - 0.09) yield return null;
-                Check(Mathf.Abs(AirdropShip.BeamBottom - glassY) < 0.5f && AirdropShip.HoleOpen < 0.03f && MapDome.GlassAt(gp.x, gp.z) > 0.99f,
-                    $"{tag}: the beam comes down onto the glass and stops there (to {AirdropShip.BeamBottom:0.0} m, glass at {glassY:0.0} m; no hole yet: {AirdropShip.HoleOpen:0.00} open, glass {MapDome.GlassAt(gp.x, gp.z):0.00}, {E() - AirdropShip.CutStart:0.00} s to go)");
-                yield return LookShot(tag + "_beam_on_glass", eye, hole, 0.02f);
-                while (E() < AirdropShip.CutStart + AirdropShip.OpenTime * 0.45) yield return null;
-                float opening = AirdropShip.HoleOpen;
-                yield return LookShot(tag + "_hole_opening", hi, hole, 0.02f);
-                Check(opening > 0.1f && opening < 0.95f, $"{tag}: the hole opens up round the beam ({opening:0.00} open)");
-                while (E() < AirdropShip.CutStart + AirdropShip.OpenTime + 0.2) yield return null;
+                Check(AirdropShip.BeamIntensity <= 0f && AirdropShip.HoleOpen < 0.03f && MapDome.GlassAt(gp.x, gp.z) > 0.99f,
+                    $"{tag}: no beam and no hole yet ({AirdropShip.HoleOpen:0.00} open, glass {MapDome.GlassAt(gp.x, gp.z):0.00}, beam {AirdropShip.BeamIntensity:0.00})");
+                // (every frame until the beam's down: was the beam ever on while the hole wasn't all the way open?)
+                float opening = -1f, holeAtBeam = -1f;
+                bool beamEarly = false;
+                while (E() < AirdropShip.BeamStart + AirdropShip.BeamReach + 0.25)
+                {
+                    bool beam = AirdropShip.BeamIntensity > 0f;
+                    if (opening < 0f && E() >= AirdropShip.CutStart + AirdropShip.OpenTime * 0.45) opening = AirdropShip.HoleOpen;
+                    if (beam && holeAtBeam < 0f) holeAtBeam = AirdropShip.HoleOpen;
+                    if (beam && AirdropShip.HoleOpen < 0.99f) beamEarly = true;
+                    yield return null;
+                }
+                Check(opening > 0.1f && opening < 0.95f, $"{tag}: the hole opens up in the glass ({opening:0.00} open part way through)");
+                Check(!beamEarly && holeAtBeam > 0.99f, $"{tag}: the hole is all the way open before the beam comes out ({holeAtBeam:0.00} open when the beam started)");
+                yield return LookShot(tag + "_beam_through_hole", hi, hole, 0.02f);
                 var rim = MapDome.HoleRim(Hid());
                 var off = aside * (AirdropShip.HoleR + 3f);
                 Check(Mathf.Abs(MapDome.HoleRadius(Hid()) - AirdropShip.HoleR) < 0.05f && MapDome.GlassAt(gp.x, gp.z) < 0.01f && MapDome.GlassAt(gp.x + off.x, gp.z + off.z) > 0.99f
                     && rim != null && rim.enabled && rim.bounds.size.x > AirdropShip.HoleR * 2f,
                     $"{tag}: a round hole is open in the glass under the ship (radius {MapDome.HoleRadius(Hid()):0.0} m, glass in it {MapDome.GlassAt(gp.x, gp.z):0.00}, beside it {MapDome.GlassAt(gp.x + off.x, gp.z + off.z):0.00}), with its rim");
-                Check(AirdropShip.BeamBottom < gp.y + 0.5f, $"{tag}: then the beam goes on down through the hole to the ground ({AirdropShip.BeamBottom:0.0} m)");
+                Check(AirdropShip.BeamBottom < gp.y + 0.5f, $"{tag}: the beam goes straight down through the hole to the ground ({AirdropShip.BeamBottom:0.0} m)");
                 bool solid = Physics.Raycast(new Vector3(gp.x, glassY - 3f, gp.z), Vector3.up, out var sh, 10f, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore) && sh.collider == MapDome.Collider;
                 Check(solid && MapDome.Collider.enabled, $"{tag}: the dome stays solid there (nothing can get out through the hole)");
                 if (pass == 0) yield return LookShot(tag + "_hole_open_from_outside", above, hole, 0.02f);

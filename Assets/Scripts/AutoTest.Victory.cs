@@ -86,14 +86,15 @@ namespace RockGame
             g.CutsceneRiders.Add(987654321UL);
             bool early = false, lockedAll = true, camAll = true, homeOk = false, liftSeen = false, goneSeen = false;
             float lastE = 0f, maxLift = 0f, maxShip = 0f, camFromBase = float.MaxValue;
-            bool domeGone = true;
+            bool domeGone = true, ballBeamOff = true;
+            float dashY = 0f;
             int camFrames = 0, camBlocked = 0;
             int taken = 0;
             float hoverY = 0f;
             var shots = new Queue<(float at, string name)>(new[]
             {
                 (0.9f, "victory_cut_dome"), (2.6f, "victory_cut_arriving"), (VictoryCutscene.BeamOn + 0.8f, "victory_cut_beam"), (VictoryCutscene.LiftStart + 1.7f, "victory_cut_lift"),
-                (VictoryCutscene.BeamOff - 0.3f, "victory_cut_taken"), (VictoryCutscene.LeaveStart + 0.6f, "victory_cut_windup"), (VictoryCutscene.LeaveStart + 1.6f, "victory_cut_leaving"), (VictoryCutscene.Gone - 0.06f, "victory_cut_twinkle"),
+                (VictoryCutscene.BeamOff - 0.3f, "victory_cut_taken"), (VictoryCutscene.LeaveStart + 0.6f, "victory_cut_windup"), (VictoryCutscene.DashStart - 0.1f, "victory_cut_lifted"), (VictoryCutscene.DashStart + 0.5f, "victory_cut_leaving"), (VictoryCutscene.Gone - 0.06f, "victory_cut_twinkle"),
             });
             var body = me.transform.Find("body");
             while (VictoryCutscene.Active)
@@ -112,8 +113,10 @@ namespace RockGame
                 goneSeen |= VictoryCutscene.LiftOf(0) >= 1f && body != null && !body.gameObject.activeSelf;
                 if (VictoryCutscene.Ship != null) maxShip = Mathf.Max(maxShip, VictoryCutscene.Ship.position.y);
                 if (VictoryCutscene.Ship != null) hoverY = VictoryCutscene.HoverPoint.y;
-                // the dome's gone (so it's open sky for the UFO and the camera)
-                if (e > VictoryCutscene.DomeGone + 0.2f && MapDome.Built) domeGone &= MapDome.Fade <= 0.001f && (MapDome.Root == null || !MapDome.Root.activeSelf);
+                // the dome's gone from the very start (so it's open sky for the UFO and the camera), and so is the ball's beam
+                if (e > 0.1f && MapDome.Built) domeGone &= MapDome.Fade <= 0.001f && (MapDome.Root == null || !MapDome.Root.activeSelf);
+                if (e > 0.1f && Ball.Instance != null) ballBeamOff &= Ball.Instance.BeaconIntensity <= 0f;
+                if (VictoryCutscene.Ship != null && e >= VictoryCutscene.DashStart - 0.15f && e < VictoryCutscene.DashStart) dashY = VictoryCutscene.Ship.position.y;
                 // nothing between the camera and the beam the winners go up (no wall of theirs, no hill): the middle of
                 // it, and the hatch
                 if (e > VictoryCutscene.BeamOn + 0.3f && e < VictoryCutscene.BeamOff && VictoryCutscene.CameraPose(out var vp, out _, out _))
@@ -143,9 +146,11 @@ namespace RockGame
             Check(homeOk, "victory: the winner out in the wild was sent home under the UFO");
             Check(liftSeen && goneSeen && taken == 1, $"victory: the winner floats up the beam (up to {maxLift:0.0} m) and is taken into the UFO; the one who left is skipped ({taken} taken)");
             Check(lockedAll && camAll, $"victory: everything locked meanwhile (cursor, pause, menus: {lockedAll}) and the camera is the cutscene's ({camAll})");
-            Check(maxShip <= hoverY + AirdropShip.ArriveUp + 1f, $"victory: the UFO stays low in the sky (highest {maxShip:0} m, hovering at {hoverY:0} m)");
+            Check(maxShip <= Mathf.Max(hoverY + AirdropShip.ArriveUp, VictoryCutscene.CruiseY + 21f) + 1f, $"victory: the UFO goes no higher than it has to (highest {maxShip:0} m, hovering at {hoverY:0} m, over the peaks at {VictoryCutscene.CruiseY:0} m)");
             Check(!early, "victory: the victory screen waited for the cutscene");
-            Check(domeGone, "victory: the glass dome over the map is taken away for the cutscene");
+            Check(domeGone, "victory: there's no glass dome over the map for the whole cutscene");
+            Check(ballBeamOff, "victory: the ball's beam is off for the cutscene (it doesn't run up through the UFO)");
+            Check(dashY > MapScenery.RangeTop(0) + 8f && dashY > hoverY + 10f, $"victory: the UFO lifts up over the mountains before it flies off ({dashY:0} m up; it hovered at {hoverY:0} m, the nearest peaks reach {MapScenery.RangeTop(0):0} m)");
             Check(camFrames > 20 && camBlocked == 0 && camFromBase > 20f && VictoryCutscene.CamClear > 0.5f,
                 $"victory: the camera films from outside the walled-in base ({camFromBase:0} m out, {walls} walls round it) with nothing in the way of the beam ({camBlocked} of {camFrames} looks blocked; it sees {VictoryCutscene.CamClear * 100f:0}% of the action, {VictoryCutscene.CamTried} spots tried)");
             yield return new WaitForSeconds(1.2f);

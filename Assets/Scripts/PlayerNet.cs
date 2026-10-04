@@ -563,8 +563,8 @@ namespace RockGame
             if (IsServer) { ServerTickCraft(); ServerTickBaseRegen(); ServerTickBleed(); }
             if (dead && !m_WasDead) m_DeadSince = Time.time;
             m_WasDead = dead;
-            // the body topples over and stays a moment before disappearing
-            bool showBody = !dead || Time.time - m_DeadSince < 2.5f;
+            // the dead leave no body: it's gone the moment they die - just the gravestone where they fell (GraveFx)
+            bool showBody = !dead;
             if (!IsOwner && Hidden && !dead) showBody = false; // invisibility potion
             // tree camo: everyone else sees a tree where you stand
             bool tree = TreeCamo;
@@ -1619,7 +1619,10 @@ namespace RockGame
             NetGame.Instance.ServerArmC4(point, normal, this);
         }
 
-        /// <summary>Death wand: one bolt along the aim. Anyone it passes close to, or who is near where it hits, dies instantly.</summary>
+        /// <summary>Death wand: one bolt along the aim, good for one of three things. Anyone it passes close to, or who is
+        /// near where it hits, dies instantly. If it kills nobody and hits a standing tree, the whole tree is felled and
+        /// everything in it (and the felling bonus) goes straight into your inventory. If it kills nobody and hits a
+        /// building piece (anyone's, any strength - wood to metal), that one piece is destroyed.</summary>
         [Rpc(SendTo.Server)]
         public void WandRpc(Vector3 dir)
         {
@@ -1630,10 +1633,12 @@ namespace RockGame
             dir.Normalize();
             var eye = EyePos;
             float dist = Cfg.WandRange;
+            Collider struck = null;
             foreach (var h in Physics.RaycastAll(eye, dir, Cfg.WandRange, ~(1 << HitboxLayer), QueryTriggerInteraction.Ignore))
-                if (!h.collider.transform.IsChildOf(transform) && h.collider.GetComponentInParent<PlayerNet>() == null && h.distance < dist) dist = h.distance;
+                if (!h.collider.transform.IsChildOf(transform) && h.collider.GetComponentInParent<PlayerNet>() == null && h.distance < dist) { dist = h.distance; struck = h.collider; }
             var end = eye + dir * dist;
             Fx.Server(FxKind.WandBeam, eye + dir * 0.6f - Vector3.up * 0.2f, end);
+            bool killed = false;
             foreach (var p in All)
             {
                 if (p == this || p.Dead.Value) continue;
@@ -1645,7 +1650,7 @@ namespace RockGame
                 {
                     p.ServerDamage(99999f, this, (byte)Item.DeathWand);
                     p.ServerBleed(true, c, dir);
-                    if (p.Dead.Value) KillConfirmRpc();
+                    if (p.Dead.Value) { KillConfirmRpc(); killed = true; }
                 }
             }
             // horses (and Slenderman) it passes close to die too
@@ -1654,7 +1659,32 @@ namespace RockGame
                 if (v == null || !v.IsSpawned || v.IsCar || (Riding && v.NetworkObjectId == RidingId.Value)) continue; // (not the one you're on)
                 var c = v.transform.position + Vector3.up * 1f;
                 float t = Mathf.Clamp(Vector3.Dot(c - eye, dir), 0f, dist);
-                if (Vector3.Distance(eye + dir * t, c) <= Cfg.WandRadius * 0.5f || Vector3.Distance(end, c) <= Cfg.WandRadius) v.ServerDamage(99999f, this);
+                if (Vector3.Distance(eye + dir * t, c) <= Cfg.WandRadius * 0.5f || Vector3.Distance(end, c) <= Cfg.WandRadius) { v.ServerDamage(99999f, this); killed = true; }
+            }
+            if (!killed && struck != null) ServerWandStrike(struck, end, dir);
+        }
+
+        /// <summary>The wand's bolt killed nobody and hit this: a standing tree is felled, all its wood (and the felling
+        /// bonus) into your inventory; a building piece is destroyed, whatever it's made of.</summary>
+        void ServerWandStrike(Collider struck, Vector3 point, Vector3 dir)
+        {
+            var n = struck.GetComponentInParent<ResourceNode>();
+            if (n != null && n.IsSpawned && n.Kind.Value == ResourceNode.Tree && n.Amount.Value > 0)
+            {
+                int got = n.ServerHarvest(n.Amount.Value, false, transform.position);
+                if (got <= 0) return;
+                int wood = Cfg.GatherCount(n.Yield, got) + Mathf.Max(0, Cfg.TreeFellBonus);
+                ServerGive(Cfg.GatherItem(n.Yield), wood);
+                TimberRpc(wood);
+                Fx.Server(FxKind.WoodChips, point, -dir);
+                Fx.Server(FxKind.Timber, n.transform.position + Vector3.up * 2f, Vector3.up);
+                return;
+            }
+            var s = struck.GetComponentInParent<Structure>();
+            if (s != null && s.IsSpawned && GameAllowsCombat)
+            {
+                Fx.Server(FxKind.Smash, point, -dir);
+                s.ServerDamage(s.Health.Value + 1f);
             }
         }
 

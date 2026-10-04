@@ -453,8 +453,8 @@ namespace RockGame
                     Check(pc.UpgradesOpen, "(UPGRADES still open)");
                 }
             }
-            Check(Cfg.FortifyStoneWood == 1000 && Cfg.FortifyMetalWood == 2000 && Cfg.FortifyRefinedWood == 2500 && (!Cfg.AutoWood || (Cfg.WoodGen1Wood == 1000 && Cfg.WoodGen2Wood == 3000)),
-                "the prices are the CHANGE VALUES entries (fortify 1000 / 2000 / 2500, wood gen 1000 / 3000)");
+            Check(Cfg.FortifyStoneWood == 1000 && Cfg.FortifyMetalWood == 2000 && Cfg.MaxFortify == 2 && (!Cfg.AutoWood || (Cfg.WoodGen1Wood == 1000 && Cfg.WoodGen2Wood == 3000)),
+                "the prices are the CHANGE VALUES entries (fortify 1000 / 2000 - two steps, no refined - wood gen 1000 / 3000)");
             yield return Snap($"upgrades_{rn}_maxed");
             // TAB closes it (and opens plain crafting next time)
             Binds.TestPress(Bind.Inventory);

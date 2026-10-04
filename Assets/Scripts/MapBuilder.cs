@@ -177,6 +177,7 @@ namespace RockGame
                 GrassField.Build(root); // tufts of grass (Normal graphics)
                 CloudLayer.Build(root);  // clouds drifting over (Normal graphics)
                 SkySun.Build(root);      // the low-poly sun (Normal graphics)
+                Butterflies.Build(root); // little butterflies fluttering about out in the wild
                 if (Cfg.Map == MapKind.Highlands) SkyPlanets.Build(root); // big planets in the sky (Normal graphics)
             }
             look.Done();

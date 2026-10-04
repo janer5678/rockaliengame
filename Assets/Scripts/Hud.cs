@@ -442,7 +442,7 @@ namespace RockGame
                 case Item.BuildingPlan:
                     if (pc.DemolishMode) return "<b>Demolish</b>    LMB: take down your own piece (half the wood back)    hold RMB: building wheel";
                     return $"<b>{Cfg.PieceName(pc.BuildPiece)}</b>  ({Cfg.PieceWood(pc.BuildPiece)} {Cfg.CurrencyName})    hold RMB: building wheel   R: rotate stairs   " + (Cfg.WoodMode || Tutorial.HideStone ? "" : "F: upgrade to stone   ") + "X: demolish yours";
-                case Item.Ram: return $"<b>Battering Ram</b> ({s.Data} hit{(s.Data == 1 ? "" : "s")} left)    hold LMB at an enemy piece: wood breaks instantly, stone / metal / refined drop one step";
+                case Item.Ram: return $"<b>Battering Ram</b> ({s.Data} hit{(s.Data == 1 ? "" : "s")} left)    hold LMB at an enemy piece: wood breaks instantly, stone / metal drop one step";
                 case Item.Spear: return "<b>Spear</b>    LMB: stab    hold RMB + LMB: throw    E: pick thrown spears back up";
                 case Item.Bow: return $"<b>Bow</b>  ({me.Count(Item.Arrow)} arrows)    hold LMB to draw, release to fire";
                 case Item.Chest: return "<b>Storage Chest</b>    LMB: place it inside your base";
@@ -451,7 +451,7 @@ namespace RockGame
                 case Item.Barrier: return $"<b>High External Wall</b> x{s.Count}    LMB: place it - in your base or out in the open (not in the enemy base)";
                 case Item.Berry: return $"<b>Berries</b> x{s.Count}    RMB: eat ({Cfg.BerryEatTime:0.#}s, +{Cfg.BerryHeal:0} HP)   LMB on a horse: feed it (+{Cfg.HorseBerryHeal:0} HP)";
                 case Item.C4: return "<b>C4</b>    LMB: throw it at enemy buildings - it blows up everything nearby";
-                case Item.DeathWand: return "<b>Death Wand</b> (1 shot)    LMB: fire - anyone it passes close to dies";
+                case Item.DeathWand: return "<b>Death Wand</b> (1 shot)    LMB: fire - kills anyone it passes close to, or fells a tree (all its wood to you), or destroys one building piece";
                 case Item.Helmet: return "<b>Alien Helmet</b>    LMB: put it on - the next headshot does no damage and breaks it";
                 case Item.Armor: return $"<b>Wooden Armour</b> ({(s.Data > 0 ? s.Data : Cfg.ArmorHp)} HP)    LMB: put it on - a second health bar that goes first";
                 case Item.Crossbow: return $"<b>Crossbow</b>  ({(s.Data > 0 ? "loaded" : "empty")}, {me.Count(Item.Arrow)} arrows)    LMB: fire   hold RMB: aim   reloads by itself (one reload for all your crossbows)";

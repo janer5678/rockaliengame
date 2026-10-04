@@ -269,6 +269,18 @@ namespace RockGame
                 yield return null;
                 int sm = 0;
                 foreach (var sk in skins) if (SmoothShade.IsSmooth(sk.sharedMesh)) sm++;
+                // (a smooth copy's normals are all length 1 - never zero, which the shader turns into black / a white glare)
+                int badNormals = 0, smoothMeshes = 0;
+                var alienMesh = Resources.Load<GameObject>("Alien/AlienRigged");
+                if (alienMesh != null)
+                    foreach (var sk in alienMesh.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                    {
+                        var smCopy = SmoothShade.SmoothOf(sk.sharedMesh);
+                        if (smCopy == null) continue;
+                        smoothMeshes++;
+                        foreach (var nn in smCopy.normals) if (!(Mathf.Abs(nn.magnitude - 1f) < 0.01f)) badNormals++;
+                    }
+                Check(smoothMeshes > 0 && badNormals == 0, $"shade smooth: the alien's smooth normals are all whole ({badNormals} bad in {smoothMeshes} meshes)");
                 GameSettings.SmoothAliens.Set(false, false);
                 yield return null;
                 bool back = true;

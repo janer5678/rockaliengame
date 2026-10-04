@@ -421,8 +421,9 @@ namespace RockGame
         /// <summary>Builder: the ball always has a flag pointing at the sky (on), or only grows one while it's planted (off).</summary>
         [Tune("Arsenal and Builder")] public static bool BuilderFlagAlwaysUp = true;
         [Tune("Arsenal and Builder")] public static int FortifyWood = 5000, PistolWood = 5000;
-        /// <summary>Fortify All Walls goes up a step every time your team buys it: stone, then metal, then refined.</summary>
-        [Tune("Arsenal and Builder")] public static int FortifyStoneWood = 1000, FortifyMetalWood = 2000, FortifyRefinedWood = 2500;
+        /// <summary>Fortify All Walls goes up a step every time your team buys it: stone, then metal (that's the top: the
+        /// refined step isn't sold any more).</summary>
+        [Tune("Arsenal and Builder")] public static int FortifyStoneWood = 1000, FortifyMetalWood = 2000;
         [Tune("Arsenal and Builder")] public static int SwordWood = 500, C4Wood = 2500, HelmetWood = 800, ShotgunWood = 2000, ShellWood = 250, RevolverWood = 2500, RevolverAmmoWood = 200;
         /// <summary>Sword: a slow, heavy swing (the swing time is adjustable) - its own head / body damage instead of the usual x2.</summary>
         [Tune("Arsenal and Builder")] public static float SwordSwingTime = 1.25f, SwordHeadDamage = 150f, SwordBodyDamage = 95f, SwordRange = 2.9f;
@@ -444,9 +445,9 @@ namespace RockGame
         [Tune("Auto Wood")] public static int WoodGen1Wood = 1000, WoodGen2Wood = 3000;
         /// <summary>Pistol: hitscan, this much damage a shot (a headshot has its own number instead of the usual x2).</summary>
         [Tune("Arsenal and Builder")] public static float PistolHeadDamage = 200f, PistolBodyDamage = 95f;
-        /// <summary>Metal (Fortify All Walls): this many times the stone HP; melee does this share of its damage.</summary>
-        [Tune("Building HP")] public static float MetalHpMul = 2f, MetalMeleeMul = 0.1f;
-        /// <summary>Refined (the third fortify): this many times the stone HP; melee does this share of its damage.</summary>
+        /// <summary>Metal (Fortify All Walls' top step): this many times the stone HP (it used to be 2); melee does this share of its damage.</summary>
+        [Tune("Building HP")] public static float MetalHpMul = 1.5f, MetalMeleeMul = 0.15f;
+        /// <summary>Refined (not sold any more - no fortify step reaches it): this many times the stone HP; melee does this share of its damage.</summary>
         [Tune("Building HP")] public static float RefinedHpMul = 3f, RefinedMeleeMul = 0.05f;
         /// <summary>Rockets: the share of their damage a piece of this tier takes (sheet metal and refined shrug most of it off).</summary>
         [Tune("Building HP")] public static float MetalRocketMul = 0.45f, RefinedRocketMul = 0.2f;
@@ -833,9 +834,9 @@ namespace RockGame
         /// <summary>Where an item is in the power menu (-1 if it isn't there).</summary>
         public static int PowerIndex(Item id) => System.Array.IndexOf(k_Power, id);
         public static int PowerCount => PowerMenu ? k_Power.Length : 0;
-        /// <summary>How many times a team has bought Fortify All Walls (0 never, 1 stone, 2 metal, 3 refined), synced by NetGame.</summary>
+        /// <summary>How many times a team has bought Fortify All Walls (0 never, 1 stone, 2 metal), synced by NetGame.</summary>
         public static int FortifyLevel(int team) => NetGame.Instance != null && team >= 0 && team < 4 ? NetGame.Instance.FortifyLevelOf(team) : 0;
-        public const int MaxFortify = 3;
+        public const int MaxFortify = 2;
         public static string TierName(int tier) => tier >= 3 ? "Refined" : tier == 2 ? "Metal" : tier == 1 ? "Stone" : "Wooden";
 
         /// <summary>A power item's price. Fortify costs more each time the team buys it (team -1: the first step).</summary>

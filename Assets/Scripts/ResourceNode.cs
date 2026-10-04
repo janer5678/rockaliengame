@@ -25,8 +25,8 @@ namespace RockGame
         /// <summary>Fake bomb bush: the team that threw it (NoTrap = a real bush). Looks exactly the same.</summary>
         public readonly NetworkVariable<byte> TrapTeam = new NetworkVariable<byte>(NoTrap);
         public const byte NoTrap = 255;
-        /// <summary>Trees: how many birds are sitting in it (0 = none). A flock lands here after flying out of a tree that
-        /// was hit, and flies on to another tree when this one is hit (Birds.cs).</summary>
+        /// <summary>Trees: how many birds are sitting in it (0 = none; you can see them on its branches). The server puts
+        /// flocks in a few trees; a flock flies on to another, further tree when the one it's in is hit (Birds.cs).</summary>
         public readonly NetworkVariable<byte> Birds = new NetworkVariable<byte>();
 
         /// <summary>Every node in the match (to find the tree a hit landed on, and to swap graphics modes).</summary>
@@ -1373,15 +1373,39 @@ namespace RockGame
         }
 
         // =====================================================================
-        // Birds: a flock now and then flies out of a tree that's hit, and on to another tree whenever theirs is hit
+        // Birds: flocks sit in a few of the trees (you can see them on the branches before you hit it); the first hit on
+        // their tree sends them off to another one, further away. A tree with no birds in it never sends any up.
         // =====================================================================
 
-        /// <summary>The chance a hit on a tree with no birds in it sends a new flock flying out of it.</summary>
-        public const float BirdChance = 0.15f;
-        /// <summary>At most this many flocks about the map per team.</summary>
-        public const int FlocksPerTeam = 2;
+        /// <summary>This many flocks about the map per team (the server puts them in trees nobody is near: ServerFlocksTick).</summary>
+        public const int FlocksPerTeam = 4;
+        /// <summary>A flock that's hit flies to a tree this far away (m) if there is one - otherwise the furthest it can find.</summary>
+        public const float BirdFlyMin = 45f, BirdFlyMax = 120f;
         int m_BirdsIncoming;
         float m_BirdsLandAt;
+        static float s_NextFlockCheck;
+        /// <summary>(server) Is a flock on its way to this tree?</summary>
+        public bool BirdsComing => m_BirdsIncoming > 0;
+
+        /// <summary>(server, every frame) Keeps FlocksPerTeam flocks a team about: when there are fewer, a new one is put
+        /// in a standing tree with nobody near enough to see it turn up - so birds are always in a tree before it's hit.</summary>
+        public static void ServerFlocksTick()
+        {
+            if (Time.time < s_NextFlockCheck) return;
+            s_NextFlockCheck = Time.time + 2f;
+            int want = FlocksPerTeam * Cfg.Copies;
+            if (ServerFlockCount() >= want) return;
+            var free = new List<ResourceNode>();
+            foreach (var t in All)
+            {
+                if (t == null || !t.IsSpawned || t.Kind.Value != Tree || t.Amount.Value <= 0 || t.Birds.Value > 0 || t.m_BirdsIncoming > 0) continue;
+                bool seen = false;
+                foreach (var p in PlayerNet.All)
+                    if (p != null && !p.Dead.Value && (p.transform.position - t.transform.position).sqrMagnitude < 45f * 45f) { seen = true; break; }
+                if (!seen) free.Add(t);
+            }
+            if (free.Count > 0) free[Random.Range(0, free.Count)].Birds.Value = (byte)Random.Range(5, 10);
+        }
 
         /// <summary>(server) How many flocks are about (sitting in a tree or on their way to one).</summary>
         public static int ServerFlockCount()
@@ -1391,15 +1415,15 @@ namespace RockGame
             return n;
         }
 
-        /// <summary>(server) A tree was hit: its birds fly to another tree - or, now and then, a new flock flies out.</summary>
+        /// <summary>(server) A tree was hit: the birds sitting in it (if any) fly off to another tree, further away. A tree
+        /// with no birds in it sends none up (force: the tests put a flock in it first).</summary>
         void ServerBirdsOnHit(bool force = false)
         {
             if (Kind.Value != Tree) return;
             byte n = Birds.Value;
             if (n == 0)
             {
-                if (m_BirdsIncoming > 0) return; // (a flock's on its way here: it lands in it anyway)
-                if (!force && (Random.value >= BirdChance || ServerFlockCount() >= FlocksPerTeam * Cfg.Copies)) return;
+                if (!force || m_BirdsIncoming > 0) return; // (no birds here - or a flock's on its way: it lands in it anyway)
                 n = (byte)Random.Range(5, 10);
             }
             ServerBirdsTakeOff(n);
@@ -1419,22 +1443,23 @@ namespace RockGame
             BirdsFlyRpc(to != null ? to.NetworkObjectId : ulong.MaxValue, n, Random.Range(0, int.MaxValue), dur);
         }
 
-        /// <summary>Another standing tree for the birds to land in: 15 - 70 m away if there is one, no birds in it already.</summary>
+        /// <summary>Another standing tree for the birds to land in, well away from this one: BirdFlyMin - BirdFlyMax m off
+        /// if there is one (no birds in it already), otherwise the furthest one there is.</summary>
         ResourceNode ServerPickBirdTree()
         {
-            var near = new List<ResourceNode>();
+            var far = new List<ResourceNode>();
             ResourceNode any = null;
-            float anyD = float.MaxValue;
+            float anyD = 8f;
             foreach (var t in All)
             {
                 if (t == null || t == this || t.Kind.Value != Tree || t.Amount.Value <= 0 || t.Birds.Value > 0 || t.m_BirdsIncoming > 0) continue;
                 var d = t.transform.position - transform.position;
                 d.y = 0f;
                 float m = d.magnitude;
-                if (m >= 15f && m <= 70f) near.Add(t);
-                else if (m >= 8f && m < anyD) { anyD = m; any = t; }
+                if (m >= BirdFlyMin && m <= BirdFlyMax) far.Add(t);
+                else if (m < BirdFlyMin && m > anyD) { anyD = m; any = t; }
             }
-            return near.Count > 0 ? near[Random.Range(0, near.Count)] : any;
+            return far.Count > 0 ? far[Random.Range(0, far.Count)] : any;
         }
 
         [Rpc(SendTo.ClientsAndHost)]

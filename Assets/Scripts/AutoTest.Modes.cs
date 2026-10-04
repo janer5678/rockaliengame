@@ -268,10 +268,12 @@ namespace RockGame
             foreach (var s in Structure.All) if (s.Team.Value == team && s.Upgradable && s.Tier.Value == 0) wood++;
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
             yield return new WaitForSeconds(0.3f);
-            // fortify (UPGRADES at the alien machine) goes up a step every time it's bought: stone 1000, metal 2000, refined 2500
-            int[] price = { 1000, 2000, 2500 };
-            string[] names = { "Stone Wall", "Metal Wall", "Refined Wall" };
-            for (int step = 0; step < 3; step++)
+            // fortify (UPGRADES at the alien machine) goes up a step every time it's bought: stone 1000, metal 2000 (the top)
+            int[] price = { 1000, 2000 };
+            string[] names = { "Stone Wall", "Metal Wall" };
+            Check(Cfg.MaxFortify == 2 && Cfg.PieceHp(PieceType.Wall, 2) < Cfg.PieceHp(PieceType.Wall, 1) * 2f && Cfg.PieceHp(PieceType.Wall, 2) > Cfg.PieceHp(PieceType.Wall, 1),
+                $"fortify has two steps, and metal is weaker than it was ({Cfg.PieceHp(PieceType.Wall, 2):0} HP, stone {Cfg.PieceHp(PieceType.Wall, 1):0})");
+            for (int step = 0; step < 2; step++)
             {
                 int before = me.Count(Item.Wood);
                 Check(Cfg.BaseUpgradeRecipe(Item.FortifyBuff, team).Wood == price[step], $"fortify step {step + 1} costs {Cfg.BaseUpgradeRecipe(Item.FortifyBuff, team).Wood}");
@@ -287,16 +289,16 @@ namespace RockGame
                 int before = me.Count(Item.Wood);
                 yield return UpgradeBuy(me, pc, Item.FortifyBuff);
                 yield return new WaitForSeconds(0.2f);
-                Check(me.Count(Item.Wood) == before, "a fourth fortify isn't sold (already refined)");
+                Check(me.Count(Item.Wood) == before && Cfg.FortifyLevel(team) == 2, "a third fortify isn't sold (metal is the top - no refined)");
             }
-            // a refined piece takes 4 ram hits: each knocks it down one step
+            // a metal piece takes 3 ram hits: each knocks it down one step
             {
                 var w = Structure.All.Find(s => s.Team.Value == team && s.PType == PieceType.Wall);
                 if (w != null)
                 {
                     w.ServerDowngrade();
-                    Check(w.Tier.Value == 2 && w.DisplayName == "Metal Wall", "a ram hit knocks refined down to metal");
-                    w.ServerUpgrade(3);
+                    Check(w.Tier.Value == 1 && w.DisplayName == "Stone Wall", "a ram hit knocks metal down to stone");
+                    w.ServerUpgrade(2);
                 }
             }
             // pieces built after fortifying come out fortified too
@@ -308,7 +310,7 @@ namespace RockGame
                 me.PlaceRpc((byte)PieceType.Wall, k2.I, k2.J, k2.L, k2.D);
                 yield return new WaitForSeconds(0.8f);
                 BuildGrid.Registry.TryGetValue(k2, out var fresh);
-                Check(fresh != null && fresh.Tier.Value == 3, $"a wall built after fortifying is refined straight away (tier {(fresh != null ? fresh.Tier.Value : -1)})");
+                Check(fresh != null && fresh.Tier.Value == 2, $"a wall built after fortifying is metal straight away (tier {(fresh != null ? fresh.Tier.Value : -1)})");
                 yield return Snap("arsenal_fortify_looks");
             }
 

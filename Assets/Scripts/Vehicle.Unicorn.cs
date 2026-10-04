@@ -66,14 +66,23 @@ namespace RockGame
             float sp = Mathf.Abs(v);
             float k = Mathf.Clamp01(sp / 3f);
             bool gallop = sp > 7f;
-            float up = Mathf.Abs(Mathf.Sin(m_Anim)) * (gallop ? 0.12f : 0.06f) * k;
-            float rock = Mathf.Sin(m_Anim + 0.6f) * (gallop ? 4.5f : 2f) * k;
+            // (its own phase: at a walk it bounces BounceMul times as fast as the stride; the gallop keeps the stride's time)
+            m_BobPhase += dt * sp * 1.6f * BounceRate(sp);
+            if (m_BobPhase > 400f * Mathf.PI) m_BobPhase -= 400f * Mathf.PI;
+            float up = Mathf.Abs(Mathf.Sin(m_BobPhase)) * (gallop ? 0.12f : 0.06f) * k;
+            float rock = Mathf.Sin(m_BobPhase + 0.6f) * (gallop ? 4.5f : 2f) * k;
             m_Visual.localPosition = Vector3.Lerp(m_Visual.localPosition, new Vector3(0f, up, 0f), Mathf.Clamp01(dt * 20f));
             m_Visual.localRotation = Quaternion.Slerp(m_Visual.localRotation, Quaternion.Euler(rock, 0f, 0f), Mathf.Clamp01(dt * 12f));
         }
 
         /// <summary>How far a wild horse travels in one hop (m) - a bit shorter than the tree disguise's, it's a smaller thing.</summary>
         public const float HopStride = 2.2f;
+        /// <summary>Below a gallop a horse bounces this many times as fast as it used to (ridden at a walk, or wandering wild).</summary>
+        public const float BounceMul = 2.2f;
+        /// <summary>How much faster than the stride it bounces at this speed: BounceMul at a walk, easing back to 1 at a gallop
+        /// (the sprint keeps its own time).</summary>
+        public static float BounceRate(float speed) => Mathf.Lerp(BounceMul, 1f, Mathf.InverseLerp(5f, 8.5f, speed));
+        float m_BobPhase;
         /// <summary>For the tests: hops finished by this horse (this machine).</summary>
         public int Hops { get; private set; }
         float m_HopPhase, m_HopMove, m_HopSquash;
@@ -95,9 +104,9 @@ namespace RockGame
                 m_Visual.localScale = Vector3.Lerp(m_Visual.localScale, m_VisualScale, k);
                 return;
             }
-            // a hop every ~2.2 m (quicker when it bolts); finish the hop it's in before settling
+            // a hop every ~1 m wandering (BounceRate), every ~2.2 m when it bolts; finish the hop it's in before settling
             float before = m_HopPhase;
-            m_HopPhase += dt * Mathf.Max(speed, 2f) / HopStride * Mathf.PI;
+            m_HopPhase += dt * Mathf.Max(speed, 2f) / HopStride * Mathf.PI * BounceRate(speed);
             bool landed = Mathf.Floor(before / Mathf.PI) != Mathf.Floor(m_HopPhase / Mathf.PI);
             if (landed) Hops++;
             if (m_HopMove <= 0.001f && landed) m_HopPhase = 0f;

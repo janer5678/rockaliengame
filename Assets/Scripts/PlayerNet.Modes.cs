@@ -29,7 +29,7 @@ namespace RockGame
             if (r.Output == Item.Armor && ArmorHp.Value >= Cfg.ArmorHp) { Notify("You're already wearing full armour"); return; }
             if (r.Output == Item.HeavyArmor && ArmorHp.Value >= Cfg.HeavyArmorHp) { Notify("You're already wearing heavy armour"); return; }
             if (r.Output == Item.Helmet && (HelmetHp.Value > 0 || CraftingItem.Value == (byte)Item.Helmet || CraftQueue.Contains((byte)Item.Helmet))) { Notify("You're already wearing a helmet"); return; }
-            if (r.Output == Item.FortifyBuff && Cfg.FortifyLevel(Team.Value) >= Cfg.MaxFortify) { Notify("Your walls are already refined - fully fortified"); return; }
+            if (r.Output == Item.FortifyBuff && Cfg.FortifyLevel(Team.Value) >= Cfg.MaxFortify) { Notify("Your walls are already metal - fully fortified"); return; }
             if (r.Output == Item.WoodGenBuff && Cfg.WoodGenLevel(Team.Value) >= Cfg.MaxWoodGen) { Notify("Your wood gen is already maxed out"); return; }
             if (!CanAfford(r)) { Notify($"Not enough resources for {r.Name}"); return; }
             bool noItem = r.Output == Item.Armor || r.Output == Item.HeavyArmor || r.Output == Item.Helmet || r.Output == Item.FortifyBuff || r.Output == Item.WoodGenBuff;

@@ -6,12 +6,14 @@ namespace RockGame
 {
     /// <summary>
     /// The victory cutscene: when a team wins with its ball in its machine's socket as the battle timer runs out, everyone
-    /// watches the winners escape. The map's glass dome shimmers away (MapDome.SetFade: the sky's open for the UFO and the
-    /// camera); a UFO like the airdrop ship (AirdropShip.BuildShip) flies in under the clouds and hovers over the winners'
-    /// bedrock, opens its hatch and its beam comes down; one by one the winners float up the beam, spinning, and are
-    /// sucked in through the hatch (the beam goes see-through round them, so you see them inside the light); then the beam
-    /// goes off, the hatch shuts, the ship dips, tilts and spins up, and shoots off over the edge of the map, vanishing
-    /// in a twinkle of light. Then the victory screen comes up.
+    /// watches the winners escape. The map's glass dome isn't there for any of it (MapDome.SetFade(0) from the first
+    /// frame: the sky's open for the UFO and the camera, nothing for the ship to clip through), and the ball's beam of
+    /// light is off (Ball.LateUpdate: it used to run straight up through the UFO); a UFO like the airdrop ship
+    /// (AirdropShip.BuildShip) flies in under the clouds and hovers over the winners' bedrock, opens its hatch and its
+    /// beam comes down; one by one the winners float up the beam, spinning, and are sucked in through the hatch (the beam
+    /// goes see-through round them, so you see them inside the light); then the beam goes off, the hatch shuts, the ship
+    /// dips, tilts, spins up and lifts high up over the mountains' tops (CruiseY), and only then shoots off over the edge
+    /// of the map (over the mountains, not into them), vanishing in a twinkle of light. Then the victory screen comes up.
     ///
     /// The camera films it from a hill near the base, not from inside it (a base they've built there hides everything):
     /// PlanCamera tries spots all round the base (further out, higher up, on the higher ground first) and sphere-casts from
@@ -29,21 +31,24 @@ namespace RockGame
     /// </summary>
     public static class VictoryCutscene
     {
-        /// <summary>The timeline (seconds after the start): the dome fades away by DomeGone; the ship comes in and hovers by
+        /// <summary>The timeline (seconds after the start; the dome is gone from the start): the ship comes in and hovers by
         /// Arrive; its hatch opens at HatchAt; the beam comes on at BeamOn; rider i starts floating up at
         /// LiftStart + i * LiftStagger and is in the ship LiftTime later; the beam goes off at BeamOff; the hatch shuts and
-        /// the ship winds up from LeaveStart (dips, tilts, spins up) and dashes off at DashStart, gone at Gone; the
-        /// victory screen comes up at Length.</summary>
-        public const float DomeGone = 1.8f, Arrive = 4.2f, HatchAt = 3.9f, HatchTime = 0.8f, BeamOn = 4.9f;
+        /// the ship winds up from LeaveStart (dips, tilts, spins up, lifts up over the mountains) and dashes off at
+        /// DashStart, gone at Gone; the victory screen comes up at Length.</summary>
+        public const float Arrive = 4.2f, HatchAt = 3.9f, HatchTime = 0.8f, BeamOn = 4.9f;
         public const float LiftStart = 6.3f, LiftStagger = 0.6f, LiftTime = 3.2f;
         public const int MaxRiders = 8;
         public const float BeamOff = LiftStart + (4 - 1) * LiftStagger + LiftTime + 0.6f;
-        public const float LeaveStart = BeamOff + 0.9f, WindUp = 1.1f, DashStart = LeaveStart + WindUp, LeaveTime = 3.3f;
+        public const float LeaveStart = BeamOff + 0.9f, WindUp = 3f, DashStart = LeaveStart + WindUp, DashTime = 2.2f, LeaveTime = WindUp + DashTime;
         public const float Gone = LeaveStart + LeaveTime, Length = Gone + 0.9f;
         /// <summary>How high the UFO hovers over the winners.</summary>
         public const float HoverUp = 26f;
-        /// <summary>How far it dashes off (out over the edge) and climbs as it goes (staying well under the clouds).</summary>
-        const float DashOut = 240f, DashUp = 40f;
+        /// <summary>How far it dashes off (out over the edge) and climbs as it goes.</summary>
+        const float DashOut = 240f, DashUp = 20f;
+        /// <summary>How high it lifts before it dashes off: clear over the tops of the nearest mountains (it used to fly
+        /// off low and clip into them), and always a good way up from where it hovered.</summary>
+        public static float CruiseY => Mathf.Max(s_Hover.y + 14f, MapScenery.RangeTop(0) + 14f);
 
         static AirdropShip.Parts s_Ship;
         static GameObject s_Beam, s_Glow, s_Twinkle;
@@ -123,8 +128,9 @@ namespace RockGame
             float e = Elapsed;
             if (s_Ship == null || s_Built != g.CutsceneAt.Value) Build(g);
 
-            // the glass dome over the map shimmers away: the sky's open for the UFO (and nothing's in the camera's way)
-            MapDome.SetFade(1f - Mathf.SmoothStep(0f, 1f, e / DomeGone));
+            // no glass dome over the map for the whole cutscene: the sky's open for the UFO (it used to fly in through
+            // the dome while it was still fading) and nothing's in the camera's way
+            MapDome.SetFade(0f);
 
             var pos = ShipPos(e, out float scale, out var rot);
             var t = s_Ship.Root.transform;
@@ -200,7 +206,6 @@ namespace RockGame
         static void Cues(float e, Vector3 shipPos)
         {
             bool Cue(int id, float at) => e >= at && s_Cues.Add(id);
-            if (Cue(0, 0.05f)) Sfx.Play2D(Sfx.Glass, 0.45f, 0f); // (the dome shimmering away)
             if (Cue(1, 0.3f) && s_Ship != null) s_HumLoop = Sfx.Loop(Sfx.Hum, s_Ship.Root.transform, 1f, 0.75f, 600f, 0.4f);
             if (Cue(2, HatchAt)) Sfx.Play2D(Sfx.Door, 0.6f, 0f);
             if (Cue(3, BeamOn - 0.15f)) { Sfx.Play2D(Sfx.Zap, 0.7f, 0f); Sfx.Play2D(Sfx.Hum, 0.6f, 0f); }
@@ -241,26 +246,26 @@ namespace RockGame
         }
 
         /// <summary>Where the ship is e seconds in, how big, and how it's turned: in over the edge like an airdrop ship,
-        /// hovering, then the departure - it dips and tilts towards the way out while its rim spins up, then shoots off
-        /// over the edge (and up, under the clouds), stretching, shrinking away to a point of light.</summary>
+        /// hovering, then the departure - it dips and tilts towards the way out while its rim spins up, lifts up to
+        /// CruiseY (over the mountains' tops), then shoots off over the edge, stretching, shrinking away to a point of light.</summary>
         static Vector3 ShipPos(float e, out float scale, out Quaternion rot)
         {
             rot = Quaternion.identity;
             if (e < LeaveStart) return AirdropShip.FlightPos(s_Hover, s_Out, e, Arrive, float.MaxValue, 1f, out scale);
             scale = 1f;
             var side = Vector3.Cross(Vector3.up, s_Out).normalized;
-            // the wind-up: a dip, a lean towards the way out
+            // the wind-up: a little dip, a lean towards the way out, then up it goes - high over the mountains' tops
             float w = Mathf.Clamp01((e - LeaveStart) / WindUp);
-            float dip = Mathf.Sin(w * Mathf.PI) * 2.2f + w * 1.5f;
-            rot = Quaternion.AngleAxis(-14f * Mathf.SmoothStep(0f, 1f, w), side);
-            var p = s_Hover + Vector3.down * dip;
+            float dip = Mathf.Sin(Mathf.Clamp01(w / 0.35f) * Mathf.PI) * 1.8f;
+            float rise = (CruiseY - s_Hover.y) * Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((w - 0.2f) / 0.8f));
+            rot = Quaternion.AngleAxis(-14f * Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(w * 2f)), side);
+            var p = s_Hover + Vector3.up * (rise - dip);
             if (e < DashStart) return p;
             // the dash: off over the edge, faster and faster, shrinking away to nothing
             float u = Mathf.Clamp01((e - DashStart) / (Gone - DashStart));
             float k = u * u * (1.6f - 0.6f * u);
             scale = Mathf.Pow(1f - u, 1.25f);
-            float climb = Mathf.Clamp(AirdropShip.LeaveCeiling - 6f - s_Hover.y, 0f, DashUp); // (under the clouds)
-            return p + Vector3.up * (1.5f * Mathf.Sin(Mathf.Min(1f, u * 3f) * Mathf.PI * 0.5f)) + (s_Out * DashOut + Vector3.up * climb) * k;
+            return p + (s_Out * DashOut + Vector3.up * DashUp) * k;
         }
 
         static Color BeamColour(NetGame g) => Color.Lerp(AirdropShip.Glow, Cfg.TeamColor[Mathf.Clamp(g.Winner.Value, 0, 3)], 0.45f);
@@ -372,7 +377,7 @@ namespace RockGame
                 (s_Spot + up * 1.2f, 3f), (s_Spot + up * 3.5f, 2f), (s_Spot + up * (h * 0.3f), 1.5f), (s_Spot + up * (h * 0.6f), 1.5f),
                 (s_Hover + up * AirdropShip.HatchY, 2f), (s_Hover + up * 2f, 1f),
                 (s_Hover + s_Out * AirdropShip.ArriveOut * 0.35f + up * AirdropShip.ArriveUp * 0.35f, 0.7f),
-                (s_Hover + s_Out * DashOut * 0.12f + up * DashUp * 0.12f, 0.7f),
+                (new Vector3(s_Hover.x, CruiseY, s_Hover.z), 0.7f),
             };
             float total = 0f;
             foreach (var tg in targets) total += tg.w;

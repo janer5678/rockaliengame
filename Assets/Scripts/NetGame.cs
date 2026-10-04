@@ -151,6 +151,7 @@ namespace RockGame
             GraveFx.Sync(this);
             TickBenchUnlockNotice(); // "WORK BENCHES UNLOCKED" when our team captures the ball (NetGame.Bench.cs)
             if (!IsServer) return;
+            ResourceNode.ServerFlocksTick(); // (flocks of birds sitting in a few trees, there before anyone hits them)
             if (Time.time >= m_NextItemCheck) { m_NextItemCheck = Time.time + 0.5f; ServerSettleItems(); }
             double now = NetworkManager.ServerTime.Time;
             if (TimerPaused.Value)

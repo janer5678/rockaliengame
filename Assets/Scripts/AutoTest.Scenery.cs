@@ -181,6 +181,45 @@ namespace RockGame
                 }
             }
 
+            // ---------------- butterflies: little ones fluttering about out in the wild ----------------
+            {
+                var bf = Butterflies.Current;
+                Check(bf != null && bf.Count >= 40, $"butterflies about the map ({(bf != null ? bf.Count : 0)})");
+                if (bf != null && bf.Count > 0)
+                {
+                    int inBase = 0, inMiddle = 0;
+                    for (int i = 0; i < bf.Count; i++)
+                    {
+                        var h = bf.HomeOf(i);
+                        if (Cfg.BaseTeamAt(h) >= 0) inBase++;
+                        if (new Vector2(h.x, h.z).magnitude < 16f) inMiddle++;
+                    }
+                    Check(inBase == 0 && inMiddle == 0, $"none live in a base or in the crash in the middle ({inBase} / {inMiddle})");
+                    // stand next to one: it's switched on, flapping, moving, a little way over the ground
+                    var home = bf.HomeOf(0);
+                    pc.LocalTeleport(Ground(home.x + 7f, home.z) + Vector3.up * 0.1f, -90f);
+                    yield return new WaitForSeconds(0.5f);
+                    bool on = bf.Get(0, out var p0, out float w0);
+                    float wingMin = w0, wingMax = w0, up = 0f;
+                    var pPrev = p0;
+                    float moved = 0f;
+                    for (int k = 0; k < 40; k++)
+                    {
+                        yield return null;
+                        bf.Get(0, out var p1, out float w1);
+                        wingMin = Mathf.Min(wingMin, w1); wingMax = Mathf.Max(wingMax, w1);
+                        moved += Vector3.Distance(p1, pPrev);
+                        pPrev = p1;
+                        up = p1.y - MapBuilder.Height(p1.x, p1.z);
+                    }
+                    Check(on && bf.ShownCount >= 1 && bf.ShownCount < bf.Count, $"the ones near you are switched on, the rest aren't ({bf.ShownCount} of {bf.Count})");
+                    Check(wingMax - wingMin > 40f && moved > 0.2f && up > 0.1f && up < 3.5f && Vector3.Distance(pPrev, home) < 9f,
+                        $"it flaps ({wingMin:0} to {wingMax:0} degrees), flies about its spot ({moved:0.0} m in 40 frames) {up:0.0} m over the ground");
+                    yield return LookShot("butterfly", Eye(pPrev.x + 2.2f, pPrev.z + 0.6f, 1.2f), pPrev);
+                    yield return LookShot("butterflies", Eye(home.x + 9f, home.z + 3f), home + Vector3.up * 1.5f);
+                }
+            }
+
             // ---------------- the emergency flare tip by the glass wall (build phase, every mode) ----------------
             {
                 var spot = Tutorial.WallSpot(team);

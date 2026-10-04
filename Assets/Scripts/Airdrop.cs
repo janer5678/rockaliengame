@@ -7,9 +7,10 @@ namespace RockGame
     /// <summary>
     /// The giant alien ship that beams airdrops down (local visuals only, driven by the lane's synced start time and spot on
     /// every peer, so they all see the same thing at the same moment): it drops out of the sky, hovers high above the drop
-    /// spot - over the map's glass dome (HoverAt) - opens a round hatch in its belly, and its purple beam comes down onto
-    /// the glass and cuts a round hole in it (MapDome.SetHole: a rim in the frame's style round it, its edge glowing as it
-    /// opens), then carries on down to the ground; the crate comes down the beam (slowly) through the hole. Once the crate
+    /// spot - over the map's glass dome (HoverAt) - opens a round hatch in its belly while a round hole opens in the glass
+    /// under it (MapDome.SetHole: a rim in the frame's style round it, its edge glowing as it opens); only once the hole
+    /// is all the way open does its purple beam come out, straight down through the hole to the ground (it never touches
+    /// the glass); the crate comes down the beam (slowly) through the hole. Once the crate
     /// is down and the beam is off, the hole closes up again (patched, its edge glowing), the hatch shuts, and only then
     /// does the ship fly off over the nearest edge of the map - shrinking away to nothing.
     /// The server spawns the real (networked) crate on the ground when the beam gets there; the dome's collider stays
@@ -32,10 +33,13 @@ namespace RockGame
         public const float ArriveOut = 90f, ArriveUp = 110f;
         /// <summary>The way out: this far on out over the edge, climbing this much (never above LeaveCeiling: under the clouds).</summary>
         public const float LeaveOut = 75f, LeaveUp = 18f, LeaveCeiling = 98f;
-        /// <summary>The hole in the glass (seconds after the lane starts): the beam is down on the glass just before
-        /// CutStart and starts cutting then, the hole is all the way open OpenTime later; once the crate's down and the beam's off it closes up
-        /// from SealStart to SealEnd; the ship leaves at LeaveStart and is gone at Gone.</summary>
-        public const float CutStart = NetGame.DropArrive + 0.2f, OpenTime = 0.9f;
+        /// <summary>The hole in the glass (seconds after the lane starts): it starts opening at CutStart (the ship's just
+        /// got there, its hatch is swinging open) and is all the way open OpenTime later - before the beam comes out
+        /// (BeamStart); once the crate's down and the beam's off it closes up from SealStart to SealEnd; the ship leaves
+        /// at LeaveStart and is gone at Gone.</summary>
+        public const float BeamStart = NetGame.DropArrive - 0.2f, OpenTime = 0.7f, CutStart = BeamStart - 0.05f - OpenTime;
+        /// <summary>Seconds for the beam to get from the hatch down to the ground.</summary>
+        public const float BeamReach = 0.6f;
         public const float SealStart = NetGame.DropLand + 0.8f, SealEnd = SealStart + 1.4f;
         public const float LeaveStart = SealEnd + 0.4f, Gone = LeaveStart + Leave;
         /// <summary>How wide the hole is (a little wider than the beam).</summary>
@@ -197,12 +201,12 @@ namespace RockGame
             m_Ship.Rim.Rotate(0, 60f * Time.deltaTime, 0, Space.Self);
 
             // the round hatch underneath: swings open once the ship is hovering, shuts again after the beam
-            float open = Mathf.Clamp01(Mathf.Min((e - (beamT - 0.2f - HatchTime)) / HatchTime, 1f - (e - (land + 0.6f)) / HatchTime));
+            float open = Mathf.Clamp01(Mathf.Min((e - (BeamStart - HatchTime)) / HatchTime, 1f - (e - (land + 0.6f)) / HatchTime));
             open = open * open * (3f - 2f * open);
             m_LastHatch = open;
             SetHatch(m_Ship, open, scale, pos.y - ground.y);
 
-            // the hole in the glass under it: cut open when the beam gets there, patched once the crate's down and the
+            // the hole in the glass under it: opened before the beam comes out, patched once the crate's down and the
             // beam's off (its edge glows while it's opening or closing). Its own hole: nothing else touches it.
             bool glass = m_GlassY > ground.y + 1f;
             float holeK = 0f;
@@ -217,20 +221,17 @@ namespace RockGame
             }
             if (this == Lane0) HoleOpen = holeK;
 
-            // the beam out of the open hatch: down onto the glass, where it waits for the hole, then on down to the
-            // ground, with the crate sliding down it
-            bool beaming = e >= beamT - 0.2f && e < land + 0.8f;
+            // the beam out of the open hatch: straight down through the hole (already open) to the ground, with the
+            // crate sliding down it
+            bool beaming = e >= BeamStart && e < land + 0.8f;
             m_Beam.SetActive(beaming);
             float groundGlow = 0f;
             if (beaming)
             {
                 float top = pos.y + HatchY * scale;
-                float stop = glass && MapDome.Shown ? m_GlassY : ground.y;
-                float reach = Mathf.Clamp01((e - (beamT - 0.2f)) / (CutStart - 0.15f - beamT + 0.2f)); // (on the glass a moment before it cuts)
-                float bottom = Mathf.Lerp(top, stop, reach);
-                if (stop > ground.y) bottom = Mathf.Lerp(bottom, ground.y, Mathf.Clamp01((e - CutStart - OpenTime * 0.5f) / 0.5f));
+                float bottom = Mathf.Lerp(top, ground.y, Mathf.Clamp01((e - BeamStart) / BeamReach));
                 if (this == Lane0) BeamBottom = bottom;
-                float a = Mathf.Clamp01(e < beamT ? (e - beamT + 0.2f) / 0.2f : e > land ? 1f - (e - land) / 0.8f : 1f);
+                float a = Mathf.Clamp01(e < beamT ? (e - BeamStart) / 0.2f : e > land ? 1f - (e - land) / 0.8f : 1f);
                 float flicker = 0.9f + 0.1f * Mathf.Sin(Time.time * 12f);
                 PlaceBeam(m_Beam.transform, m_Main, m_Core, m_Halo, new Vector3(ground.x, 0f, ground.z), top, bottom, HatchR * 0.95f * scale);
                 BeamFx.Set(m_BeamMat, Glow, 1.3f * a * flicker);

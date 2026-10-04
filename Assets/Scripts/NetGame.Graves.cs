@@ -50,10 +50,14 @@ namespace RockGame
         }
     }
 
-    /// <summary>Draws NetGame.Graves: every grave is the same little low-poly stone cross (the same shape and stone colour
-    /// for everyone), with a small band in the dead player's team colour, a dirt mound and a slight random lean. No colliders.</summary>
+    /// <summary>Draws NetGame.Graves: every grave is the same low-poly stone cross (the same shape and stone colour for
+    /// everyone; Scale times the size it was first made - about 1.7 m tall), with a band in the dead player's team colour,
+    /// a dirt mound and a slight random lean. No colliders. It's all there is where someone died: no body is left.</summary>
     public static class GraveFx
     {
+        /// <summary>How big the graves are (1 = the little 0.95 m cross they used to be).</summary>
+        public const float Scale = 1.8f;
+
         static readonly List<GameObject> s_Shown = new List<GameObject>();
         static Transform s_Root;
 
@@ -88,6 +92,7 @@ namespace RockGame
             var go = new GameObject("Grave");
             go.transform.SetParent(s_Root, false);
             go.transform.SetPositionAndRotation(gi.Pos, Quaternion.Euler(0f, gi.Yaw, 0f));
+            go.transform.localScale = Vector3.one * Scale;
             // a low mound of dirt in front of the stone
             Art.Box(go.transform, Dirt, new Vector3(0f, 0.04f, 0.45f), new Vector3(0.6f, 0.14f, 1.0f), new Vector3(0f, 0f, 0f));
             var stone = new GameObject("stone").transform;

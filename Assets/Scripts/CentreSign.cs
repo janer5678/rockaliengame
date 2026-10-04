@@ -15,7 +15,10 @@ namespace RockGame
     {
         /// <summary>How far from the middle it stands (m: inside the ball's dome, MapBuilder.DomeRadius 11), how tall the
         /// pole is, and the arrows' length / board height.</summary>
-        public const float Dist = 7.5f, PoleH = 5.2f, ArrowLen = 1.6f, ArrowH = 0.36f;
+        public const float Dist = 7.5f, PoleH = 5.4f, ArrowLen = 2.1f, ArrowH = 0.48f;
+        /// <summary>How far apart (up the pole) the arrows are, and how far out from the pole's middle each board is nailed
+        /// (the pole is 0.1 m round: the board and its paint sit clear in front of it, not in it).</summary>
+        public const float ArrowGap = 0.62f, ArrowOut = 0.19f;
 
         public static GameObject Current { get; private set; }
         /// <summary>(tests) Each arrow: its team and which way it points (flat, unit), and its height on the pole.</summary>
@@ -81,8 +84,8 @@ namespace RockGame
 
             // the arrows, one above the other near the top: each team's colour, pointing at its base
             if (s_Arrow == null) s_Arrow = ArrowMesh();
-            float y = PoleH - 0.42f;
-            for (int team = 0; team < Cfg.TeamCount; team++, y -= 0.5f) // (next to each other they alternate sides of the post, so their heads pass)
+            float y = PoleH - 0.45f;
+            for (int team = 0; team < Cfg.TeamCount; team++, y -= ArrowGap) // (next to each other they alternate sides of the post, so their heads pass)
             {
                 var to = Cfg.BaseCenter[team] - at;
                 to.y = 0f;
@@ -95,10 +98,10 @@ namespace RockGame
                 arm.localRotation = Quaternion.Euler(0, yaw, 0);
                 // a dark wooden board with the team-colour arrow painted on both faces, nailed to the side of the post
                 // (every other one on the other side)
-                float side = team % 2 == 0 ? 0.14f : -0.14f;
+                float side = team % 2 == 0 ? ArrowOut : -ArrowOut;
                 Art.Part(arm, s_Arrow, Art.DarkWood, new Vector3(0f, 0f, side), new Vector3(1f, 1f, 0.07f), default, false, null, "board");
-                Art.Part(arm, s_Arrow, Cfg.TeamColor[team], new Vector3(0.04f, 0f, side), new Vector3(0.9f, 0.78f, 0.1f), default, false, null, "paint");
-                Art.Part(arm, Art.Cylinder, Art.Metal, new Vector3(0f, 0f, side * 0.6f), new Vector3(0.05f, 0.09f, 0.05f), new Vector3(90f, 0, 0), false, null, "nail");
+                Art.Part(arm, s_Arrow, Cfg.TeamColor[team], new Vector3(0.05f, 0f, side), new Vector3(0.9f, 0.78f, 0.1f), default, false, null, "paint");
+                Art.Part(arm, Art.Cylinder, Art.Metal, new Vector3(0f, 0f, side * 0.62f), new Vector3(0.06f, 0.11f, 0.06f), new Vector3(90f, 0, 0), false, null, "nail");
                 Arrows.Add((team, to, y));
             }
             foreach (var r in go.GetComponentsInChildren<MeshRenderer>()) r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
@@ -107,13 +110,13 @@ namespace RockGame
             return go;
         }
 
-        /// <summary>An arrow board along +x (unit thickness along z, centred): a shaft from just behind the post (x -0.3)
-        /// to the head, which comes to a point at ArrowLen - 0.3, ArrowH tall (the head a little taller). Flat-shaded.</summary>
+        /// <summary>An arrow board along +x (unit thickness along z, centred): a shaft from just behind the post (x -0.4)
+        /// to the head, which comes to a point at ArrowLen - 0.4, ArrowH tall (the head a little taller). Flat-shaded.</summary>
         static Mesh ArrowMesh()
         {
-            float x0 = -0.3f, x2 = ArrowLen - 0.3f, x1 = x2 - 0.42f, h = ArrowH * 0.5f, hh = ArrowH * 0.85f;
+            float x0 = -0.4f, x2 = ArrowLen - 0.4f, x1 = x2 - 0.55f, h = ArrowH * 0.5f, hh = ArrowH * 0.85f;
             // the outline, round the front face
-            var pts = new[] { new Vector2(x0, -h), new Vector2(x1, -h), new Vector2(x1, -hh), new Vector2(x2, 0f), new Vector2(x1, hh), new Vector2(x1, h), new Vector2(x0, h), new Vector2(x0 + 0.12f, 0f) };
+            var pts = new[] { new Vector2(x0, -h), new Vector2(x1, -h), new Vector2(x1, -hh), new Vector2(x2, 0f), new Vector2(x1, hh), new Vector2(x1, h), new Vector2(x0, h), new Vector2(x0 + 0.17f, 0f) };
             var v = new List<Vector3>();
             var n = new List<Vector3>();
             var tris = new List<int>();

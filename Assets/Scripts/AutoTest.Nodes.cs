@@ -500,9 +500,9 @@ namespace RockGame
 
             // ---------------- 13. birds: out of a hit tree, into another, and on again ----------------
             {
+                // (a pine with no birds in it or on their way to it: the test puts a flock in it)
                 var t = pines[0];
-                foreach (var f in BirdFlock.All.ToArray()) if (f) Destroy(f.gameObject);
-                yield return null;
+                foreach (var p in pines) if (p.Birds.Value == 0 && !p.BirdsComing && p.Amount.Value > 0) { t = p; break; }
                 int before = BirdFlock.All.Count;
                 t.ServerSendBirds();
                 yield return new WaitForSeconds(0.2f);
@@ -542,21 +542,97 @@ namespace RockGame
                         to.ServerRegrow();
                     }
                 }
-                // and a hit only sometimes sends a new flock up
-                int sent = 0;
+                // a tree with no birds in it never sends any up, however often it's hit; the flocks about sit in trees
+                // (seen on the branches before the tree is hit) and fly a long way when theirs is hit
                 var others = Of(ResourceNode.Tree);
-                foreach (var f in BirdFlock.All.ToArray()) if (f) Destroy(f.gameObject);
-                yield return null;
-                int flocks0 = BirdFlock.All.Count;
-                for (int i = 0; i < 40 && i < others.Count; i++)
+                int flying0 = 0, hit = 0;
+                foreach (var f in BirdFlock.All) if (f && f.Flying) flying0++;
+                for (int i = 0; i < others.Count && hit < 40; i++)
                 {
+                    if (others[i].Birds.Value > 0 || others[i].BirdsComing) continue;
                     others[i].ServerHarvest(1, false, others[i].transform.position + Vector3.forward * 3f);
                     others[i].ServerRegrow();
+                    hit++;
                 }
                 yield return new WaitForSeconds(0.2f);
-                sent = BirdFlock.All.Count - flocks0;
-                Log($"40 hits on trees sent {sent} flocks up ({ResourceNode.ServerFlockCount()} about; chance {ResourceNode.BirdChance * 100f:0}% a hit, at most {ResourceNode.FlocksPerTeam * Cfg.Copies})");
-                Check(sent >= 1 && ResourceNode.ServerFlockCount() <= ResourceNode.FlocksPerTeam * Cfg.Copies, $"hits now and then send birds up, never too many ({sent} from 40 hits)");
+                int flying1 = 0;
+                foreach (var f in BirdFlock.All) if (f && f.Flying) flying1++;
+                Check(hit >= 10 && flying1 <= flying0, $"hits on trees with no birds in them send none up ({hit} hits, {flying0} -> {flying1} flocks in the air)");
+                float until2 = Time.time + 8f;
+                while (Time.time < until2 && ResourceNode.ServerFlockCount() < 2) yield return null;
+                yield return new WaitForSeconds(0.3f);
+                int sitting = 0, drawn = 0;
+                ResourceNode perch = null;
+                foreach (var o in others) if (o.Birds.Value > 0) { sitting++; perch = o; }
+                foreach (var f in BirdFlock.All) if (f && !f.Flying && f.Tree != null && f.Tree.Birds.Value == f.Count) drawn++;
+                Check(sitting >= 1 && drawn >= sitting && ResourceNode.ServerFlockCount() <= ResourceNode.FlocksPerTeam * Cfg.Copies + 1 /* (the one this test sent up) */,
+                    $"flocks sit in trees before they're hit, drawn on the branches ({sitting} trees with birds, {drawn} flocks drawn sitting, at most {ResourceNode.FlocksPerTeam * Cfg.Copies})");
+                if (perch != null)
+                {
+                    BirdFlock pf = null;
+                    foreach (var f in BirdFlock.All) if (f && f.Tree == perch) pf = f;
+                    perch.ServerHarvest(1, false, perch.transform.position + Vector3.forward * 3f);
+                    yield return new WaitForSeconds(0.3f);
+                    var dest = pf != null ? pf.Tree : null;
+                    float d = dest != null ? Vector3.Distance(dest.transform.position, perch.transform.position) : 0f;
+                    Check(pf != null && pf.Flying && dest != null && dest != perch && d >= ResourceNode.BirdFlyMin - 1f,
+                        $"the first hit on their tree sends them off to a tree a long way away ({d:0} m)");
+                    perch.ServerRegrow();
+                }
+            }
+
+            // ---------------- 14. the death wand on a tree (all its wood, straight to you) and on a building piece ----------------
+            {
+                ResourceNode target = null;
+                foreach (var o in Of(ResourceNode.Tree)) if (o.Amount.Value > 0 && o.Birds.Value == 0 && Cfg.BaseTeamAt(o.transform.position) < 0) { target = o; break; }
+                Check(target != null, "a standing tree for the wand");
+                if (target != null)
+                {
+                    target.ServerRegrow();
+                    var tp = target.transform.position;
+                    var from = Ground(tp.x, tp.z - 5f) + Vector3.up * 0.1f;
+                    pc.LocalTeleport(from, 0f);
+                    me.ServerGive(Item.DeathWand, 1);
+                    yield return new WaitForSeconds(0.3f);
+                    yield return Hold(me, Item.DeathWand);
+                    yield return new WaitForSeconds(0.5f);
+                    int wood0 = me.Count(Cfg.GatherItem(Item.Wood));
+                    int full = target.Amount.Value;
+                    me.WandRpc((tp + Vector3.up * 1.2f - me.EyePos).normalized);
+                    float untilFelled = Time.time + 1.5f;
+                    bool felled = false;
+                    while (Time.time < untilFelled && !felled) { felled = target.Amount.Value <= 0; yield return null; }
+                    yield return new WaitForSeconds(0.3f);
+                    int got = me.Count(Cfg.GatherItem(Item.Wood)) - wood0;
+                    Check(felled && got >= Cfg.GatherCount(Item.Wood, full) && me.Count(Item.DeathWand) == 0,
+                        $"the death wand fells a whole tree in one shot and all its wood goes into your inventory (+{got}, the tree held {full}; felled {felled}; the wand is used up)");
+                    target.ServerRegrow();
+
+                    // a metal wall, out in the open: one shot destroys that piece, and only that one
+                    var spot = Ground(tp.x + 14f, tp.z - 14f);
+                    Structure Wall(Vector3 at)
+                    {
+                        var go = Instantiate(Bootstrap.I.structurePrefab, at, Quaternion.identity);
+                        var s = go.GetComponent<Structure>();
+                        s.ServerInit(PieceType.Wall, 1 - me.Team.Value, default, false);
+                        go.GetComponent<Unity.Netcode.NetworkObject>().Spawn(true);
+                        s.ServerUpgrade(2);
+                        return s;
+                    }
+                    var wall = Wall(spot);
+                    var beside = Wall(spot + new Vector3(3f, 0, 0));
+                    pc.LocalTeleport(Ground(spot.x, spot.z - 3f) + Vector3.up * 0.1f, 0f); // (right in front of it: nothing in between)
+                    me.ServerGive(Item.DeathWand, 1);
+                    yield return new WaitForSeconds(0.3f);
+                    yield return Hold(me, Item.DeathWand);
+                    yield return new WaitForSeconds(0.5f);
+                    me.WandRpc((spot + Vector3.up * 1.5f - me.EyePos).normalized);
+                    yield return new WaitForSeconds(0.6f);
+                    bool Gone(Structure s) => s == null || !s.IsSpawned;
+                    Check(Gone(wall) && !Gone(beside) && me.Count(Item.DeathWand) == 0, $"the death wand destroys one building piece, whatever it's made of (the metal wall gone: {Gone(wall)}, the one beside it still up: {!Gone(beside)})");
+                    if (!Gone(beside)) beside.ServerDamage(99999f);
+                    if (!Gone(wall)) wall.ServerDamage(99999f);
+                }
             }
 
             cam.fieldOfView = 70f;
