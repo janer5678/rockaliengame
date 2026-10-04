@@ -54,6 +54,10 @@ namespace RockGame
         }
         public static int VoiceMode = VoicePushToTalk;
         public static string MicDevice = "";
+        /// <summary>Settings > Voice chat > ALIEN VOICE: your mic goes through the alien filter before it's sent (everyone hears it).</summary>
+        public static bool AlienVoice;
+        /// <summary>Settings > Voice chat > HEAR MYSELF: plays your own voice back (after the codec), not saved.</summary>
+        public static bool HearMyself;
         static bool s_Loaded;
 
         public static void Load()
@@ -71,6 +75,7 @@ namespace RockGame
             MicThreshold = PlayerPrefs.GetFloat("RockGame.MicThreshold", 0.02f);
             VoiceMode = PlayerPrefs.GetInt("RockGame.VoiceMode", VoicePushToTalk);
             MicDevice = PlayerPrefs.GetString("RockGame.MicDevice", "");
+            AlienVoice = PlayerPrefs.GetInt("RockGame.AlienVoice", 0) == 1;
             Apply();
         }
 
@@ -84,6 +89,7 @@ namespace RockGame
             PlayerPrefs.SetFloat("RockGame.MicThreshold", MicThreshold);
             PlayerPrefs.SetInt("RockGame.VoiceMode", VoiceMode);
             PlayerPrefs.SetString("RockGame.MicDevice", MicDevice);
+            PlayerPrefs.SetInt("RockGame.AlienVoice", AlienVoice ? 1 : 0);
             PlayerPrefs.Save();
             Apply();
         }
@@ -172,25 +178,37 @@ namespace RockGame
     }
 
     /// <summary>
-    /// Proximity voice chat: the mic is captured, cut to 8 kHz and mu-law compressed into 100 ms chunks that go through the
-    /// server to everyone else; each player's voice plays from their head in 3D, so you only hear people near you.
+    /// Proximity voice chat. The mic is captured (48 kHz when it can), resampled to 16 kHz, cleaned up (rumble filter, noise
+    /// gate, automatic gain, soft limiter, optionally the alien voice) and sent in 20 ms IMA ADPCM packets (66 kbit/s while
+    /// talking) by an unreliable RPC; the server passes each packet on only to players within RelayRange. Each player's voice
+    /// plays from their head in 3D through a small adaptive jitter buffer (VoiceJitterBuffer, usually 50-70 ms).
+    /// The signal path itself is in VoiceDsp.cs.
     /// </summary>
     public class VoiceChat : MonoBehaviour
     {
-        const int Rate = 8000, ChunkSamples = 800;
+        const int Rate = VoiceCodec.Rate, Frame = VoiceCodec.FrameSamples;
+        /// <summary>The server only relays a voice packet to players this close to the talker (you hear voices out to 45 m).</summary>
+        public const float RelayRange = 60f;
         static readonly Dictionary<PlayerNet, Speaker> s_Speakers = new Dictionary<PlayerNet, Speaker>();
+        static Speaker s_Self;
 
         public static float Level;          // mic loudness 0..1 (for the level meter)
         public static bool Transmitting;
         public static string ActiveDevice = "";
+        /// <summary>Packets and bytes sent (for the tests).</summary>
+        public static int SentPackets, SentBytes;
 
         AudioClip m_Mic;
         string m_Device;
         int m_MicRate, m_LastPos;
         float[] m_Read = new float[4096];
-        readonly List<float> m_Pending = new List<float>();
-        float m_Acc;
-        int m_AccN;
+        VoiceResampler m_Rs;
+        readonly VoiceTx m_Tx = new VoiceTx();
+        readonly List<float> m_Pcm = new List<float>();
+        readonly Queue<float[]> m_PreRoll = new Queue<float[]>();
+        VoiceCodec.State m_Enc;
+        ushort m_Seq;
+        bool m_WasTalking;
         float m_Hang;
 
         void Start() => GameSettings.Load();
@@ -200,13 +218,28 @@ namespace RockGame
         void Update()
         {
             var me = PlayerNet.Local;
-            bool want = GameSettings.VoiceMode != GameSettings.VoiceOff && me != null && me.IsSpawned && Microphone.devices.Length > 0;
+            bool spawned = me != null && me.IsSpawned;
+            bool want = GameSettings.VoiceMode != GameSettings.VoiceOff && (spawned || GameSettings.HearMyself) && Microphone.devices.Length > 0;
             string dev = PickDevice();
             if (!want || dev != m_Device) StopMic();
             if (want && m_Mic == null) StartMic(dev);
             Transmitting = false;
-            if (m_Mic == null) { Level = Mathf.MoveTowards(Level, 0, Time.deltaTime); return; }
-            Capture(me);
+            if (!GameSettings.HearMyself && s_Self != null) { s_Self.Destroy(); s_Self = null; }
+            if (Time.frameCount % 300 == 0) Prune();
+            if (m_Mic == null)
+            {
+                Level = Mathf.MoveTowards(Level, 0, Time.deltaTime);
+                if (m_WasTalking) EndTalk(spawned ? me : null);
+                return;
+            }
+            Capture(spawned ? me : null);
+        }
+
+        static void Prune()
+        {
+            List<PlayerNet> dead = null;
+            foreach (var kv in s_Speakers) if (kv.Key == null || kv.Value.Source == null) (dead ??= new List<PlayerNet>()).Add(kv.Key);
+            if (dead != null) foreach (var p in dead) s_Speakers.Remove(p);
         }
 
         static string PickDevice()
@@ -221,12 +254,16 @@ namespace RockGame
         {
             if (dev == null) return;
             Microphone.GetDeviceCaps(dev, out int min, out int max);
-            m_MicRate = max == 0 ? 16000 : Mathf.Clamp(16000, min, max);
+            m_MicRate = max == 0 ? 48000 : Mathf.Clamp(48000, min, max);
             m_Mic = Microphone.Start(dev, true, 1, m_MicRate);
+            if (m_Mic == null) return;
+            m_MicRate = m_Mic.frequency;
             m_Device = dev;
             ActiveDevice = dev;
             m_LastPos = 0;
-            m_Pending.Clear();
+            m_Rs = new VoiceResampler(m_MicRate, Rate);
+            m_Pcm.Clear();
+            m_PreRoll.Clear();
         }
 
         void StopMic()
@@ -243,53 +280,76 @@ namespace RockGame
             int pos = Microphone.GetPosition(m_Device);
             int n = pos - m_LastPos;
             if (n < 0) n += m_Mic.samples;
-            if (n <= 0) return;
+            if (n <= 0) { Transmitting = m_WasTalking; return; }
             if (n > m_Read.Length) m_Read = new float[n];
             m_Mic.GetData(m_Read, m_LastPos); // wraps around the looping clip
             m_LastPos = pos;
 
-            // gain + downsample to 8 kHz (box filter), loudness for the meter / voice activation
             float sum = 0;
-            float step = m_MicRate / (float)Rate;
-            var fresh = new List<float>(n / Mathf.Max(1, (int)step) + 2);
-            for (int i = 0; i < n; i++)
-            {
-                float x = Mathf.Clamp(m_Read[i] * GameSettings.MicGain, -1f, 1f);
-                sum += x * x;
-                m_Acc += x;
-                m_AccN++;
-                if (m_AccN >= step) { fresh.Add(m_Acc / m_AccN); m_Acc = 0; m_AccN = 0; }
-            }
+            for (int i = 0; i < n; i++) { float x = m_Read[i] * GameSettings.MicGain; sum += x * x; }
             float rms = Mathf.Sqrt(sum / n);
-            Level = Mathf.Max(rms * 3f, Level - Time.deltaTime);
+            Level = Mathf.Max(Mathf.Min(1f, rms * 3f), Level - Time.deltaTime);
+            m_Rs.Process(m_Read, n, m_Pcm);
 
-            bool talk;
-            if (GameSettings.VoiceMode == GameSettings.VoicePushToTalk) talk = Binds.Held(Bind.PushToTalk);
-            else
+            bool ptt = GameSettings.VoiceMode == GameSettings.VoicePushToTalk;
+            float gate = ptt ? 0.006f : Mathf.Max(0.003f, GameSettings.MicThreshold * 0.5f);
+            while (m_Pcm.Count >= Frame)
             {
-                if (rms > GameSettings.MicThreshold) m_Hang = 0.4f;
-                m_Hang -= Time.deltaTime;
-                talk = m_Hang > 0;
+                var f = new float[Frame];
+                m_Pcm.CopyTo(0, f, 0, Frame);
+                m_Pcm.RemoveRange(0, Frame);
+                m_Tx.Process(f, GameSettings.MicGain, gate, GameSettings.AlienVoice);
+                bool talk;
+                if (ptt) talk = Binds.Held(Bind.PushToTalk);
+                else
+                {
+                    if (m_Tx.LastRms > GameSettings.MicThreshold) m_Hang = 0.4f;
+                    m_Hang -= VoiceCodec.FrameSec;
+                    talk = m_Hang > 0;
+                }
+                if (!talk)
+                {
+                    if (m_WasTalking) EndTalk(me);
+                    // keep 40 ms so open mic doesn't cut off the start of the first word
+                    m_PreRoll.Enqueue(f);
+                    while (m_PreRoll.Count > (ptt ? 0 : 2)) m_PreRoll.Dequeue();
+                    continue;
+                }
+                while (m_PreRoll.Count > 0) Send(me, m_PreRoll.Dequeue());
+                Send(me, f);
+                m_WasTalking = true;
             }
-            if (!talk) { m_Pending.Clear(); return; }
-            Transmitting = true;
-            m_Pending.AddRange(fresh);
-            while (m_Pending.Count >= ChunkSamples)
-            {
-                var bytes = new byte[ChunkSamples];
-                for (int i = 0; i < ChunkSamples; i++) bytes[i] = MuLawEncode(m_Pending[i]);
-                m_Pending.RemoveRange(0, ChunkSamples);
-                me.VoiceRpc(bytes);
-            }
+            Transmitting = m_WasTalking;
         }
 
-        /// <summary>A chunk of someone's voice arrived: queue it on their speaker.</summary>
+        void Send(PlayerNet me, float[] f)
+        {
+            var pkt = VoiceCodec.Encode(f, m_Seq++, ref m_Enc);
+            if (me != null) { me.VoiceRpc(pkt); SentPackets++; SentBytes += pkt.Length; }
+            if (GameSettings.HearMyself) Self().Push(pkt);
+        }
+
+        void EndTalk(PlayerNet me)
+        {
+            m_WasTalking = false;
+            var end = VoiceCodec.EndPacket((ushort)(m_Seq - 1));
+            if (me != null) me.VoiceRpc(end);
+            if (GameSettings.HearMyself && s_Self != null) s_Self.Push(end);
+        }
+
+        Speaker Self()
+        {
+            if (s_Self == null || s_Self.Source == null) s_Self = new Speaker(transform, false);
+            return s_Self;
+        }
+
+        /// <summary>A packet of someone's voice arrived: give it to their speaker.</summary>
         public static void Receive(PlayerNet from, byte[] data)
         {
             if (from == null || data == null) return;
             if (!s_Speakers.TryGetValue(from, out var sp) || sp.Source == null)
             {
-                sp = new Speaker(from);
+                sp = new Speaker(from.transform, true);
                 s_Speakers[from] = sp;
             }
             sp.Push(data);
@@ -298,89 +358,80 @@ namespace RockGame
         /// <summary>Who is talking right now (for the HUD).</summary>
         public static bool IsTalking(PlayerNet p) => s_Speakers.TryGetValue(p, out var sp) && Time.time - sp.LastPacket < 0.3f;
 
-        // ---------------- mu-law ----------------
+        /// <summary>The playback buffer of a player's voice (null when they haven't spoken), for the tests.</summary>
+        public static VoiceJitterBuffer BufferOf(PlayerNet p) => s_Speakers.TryGetValue(p, out var sp) ? sp.Buffer : null;
 
-        static byte MuLawEncode(float f)
+        // ---------------- playback ----------------
+
+        static AudioClip s_Carrier;
+
+        /// <summary>
+        /// The AudioSource plays a steady 1.0 (so Unity spatialises it: distance fade and panning) and VoiceTap, a filter
+        /// right after it, multiplies that by the voice from the jitter buffer on the audio thread - no streaming-clip
+        /// read-ahead: the voice is pulled the moment the mixer needs it.
+        /// </summary>
+        public static VoiceTap MakeSource(Transform parent, bool spatial, VoiceJitterBuffer buf, out AudioSource src)
         {
-            int s = Mathf.Clamp((int)(f * 32767f), -32767, 32767);
-            int sign = (s >> 8) & 0x80;
-            if (sign != 0) s = -s;
-            s = Mathf.Min(s + 132, 32635);
-            int exp = 7;
-            for (int mask = 0x4000; (s & mask) == 0 && exp > 0; mask >>= 1) exp--;
-            int mant = (s >> (exp + 3)) & 0x0F;
-            return (byte)~(sign | (exp << 4) | mant);
+            int outRate = AudioSettings.outputSampleRate;
+            if (s_Carrier == null)
+            {
+                s_Carrier = AudioClip.Create("voice-carrier", outRate, 1, outRate, false);
+                var ones = new float[outRate];
+                for (int i = 0; i < ones.Length; i++) ones[i] = 1f;
+                s_Carrier.SetData(ones, 0);
+            }
+            var go = new GameObject("voice");
+            go.transform.SetParent(parent, false);
+            go.transform.localPosition = spatial ? Vector3.up * 1.6f : Vector3.zero;
+            src = go.AddComponent<AudioSource>();
+            src.spatialBlend = spatial ? 1f : 0f;
+            src.rolloffMode = AudioRolloffMode.Linear;
+            src.minDistance = 3f;
+            src.maxDistance = 45f;
+            src.dopplerLevel = 0f;
+            src.loop = true;
+            src.clip = s_Carrier;
+            src.priority = 32;
+            var tap = go.AddComponent<VoiceTap>();
+            tap.Buffer = buf;
+            tap.OutRate = outRate;
+            tap.Volume = GameSettings.VoiceVolume;
+            src.Play();
+            return tap;
         }
 
-        static float MuLawDecode(byte b)
-        {
-            int u = ~b & 0xFF;
-            int sign = u & 0x80, exp = (u >> 4) & 7, mant = u & 0x0F;
-            int s = ((mant << 3) + 132) << exp;
-            s -= 132;
-            return (sign != 0 ? -s : s) / 32767f;
-        }
-
-        /// <summary>A 3D audio source on a player's head fed from a small jitter buffer.</summary>
         class Speaker
         {
             public AudioSource Source;
+            public readonly VoiceJitterBuffer Buffer = new VoiceJitterBuffer();
             public float LastPacket;
-            readonly float[] m_Ring = new float[Rate * 2];
-            int m_Write, m_Read, m_Count;
-            bool m_Playing;
-            readonly object m_Lock = new object();
 
-            public Speaker(PlayerNet p)
-            {
-                var go = new GameObject("voice");
-                go.transform.SetParent(p.transform, false);
-                go.transform.localPosition = Vector3.up * 1.6f;
-                Source = go.AddComponent<AudioSource>();
-                Source.spatialBlend = 1f;
-                Source.rolloffMode = AudioRolloffMode.Linear;
-                Source.minDistance = 3f;
-                Source.maxDistance = 45f;
-                Source.dopplerLevel = 0f;
-                Source.loop = true;
-                Source.clip = AudioClip.Create("voice", Rate, 1, Rate, true, OnRead);
-                Source.Play();
-            }
+            public Speaker(Transform parent, bool spatial) => MakeSource(parent, spatial, Buffer, out Source);
 
             public void Push(byte[] data)
             {
-                LastPacket = Time.time;
-                float vol = GameSettings.VoiceVolume;
-                lock (m_Lock)
-                {
-                    foreach (var b in data)
-                    {
-                        if (m_Count >= m_Ring.Length) { m_Read = (m_Read + 1) % m_Ring.Length; m_Count--; }
-                        m_Ring[m_Write] = MuLawDecode(b) * vol;
-                        m_Write = (m_Write + 1) % m_Ring.Length;
-                        m_Count++;
-                    }
-                }
+                if (data.Length > 3) LastPacket = Time.time;
+                Buffer.Push(data, Time.realtimeSinceStartupAsDouble);
             }
 
-            void OnRead(float[] data)
-            {
-                lock (m_Lock)
-                {
-                    // wait until ~200 ms are buffered before playing, so small network hiccups don't crackle
-                    if (!m_Playing && m_Count >= Rate / 5) m_Playing = true;
-                    for (int i = 0; i < data.Length; i++)
-                    {
-                        if (m_Playing && m_Count > 0)
-                        {
-                            data[i] = m_Ring[m_Read];
-                            m_Read = (m_Read + 1) % m_Ring.Length;
-                            m_Count--;
-                        }
-                        else { data[i] = 0f; m_Playing = false; }
-                    }
-                }
-            }
+            public void Destroy() { if (Source != null) Object.Destroy(Source.gameObject); }
         }
     }
+
+    /// <summary>The audio-thread end of a voice: fills the AudioSource's output from its jitter buffer.</summary>
+    public class VoiceTap : MonoBehaviour
+    {
+        public VoiceJitterBuffer Buffer;
+        public volatile int OutRate = 48000;
+        public volatile float Volume = 1f;
+
+        void Update()
+        {
+            Volume = GameSettings.VoiceVolume;
+            OutRate = AudioSettings.outputSampleRate;
+        }
+
+        void OnAudioFilterRead(float[] data, int channels) => Buffer?.Read(data, channels, OutRate, Volume, true);
+    }
 }
+

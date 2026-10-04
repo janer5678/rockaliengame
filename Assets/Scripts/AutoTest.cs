@@ -22,6 +22,7 @@ namespace RockGame
             GameSettings.Muted = true;
             GameSettings.Apply();
             if (m_Mode == "menushot") { StartCoroutine(MenuShots()); return; }
+            if (m_Mode == "voice") { StartCoroutine(VoiceRoutine()); return; }
             StartCoroutine(Run());
         }
 
@@ -126,6 +127,7 @@ namespace RockGame
             if (NetGame.Instance.S == GameState.Waiting)
                 Check(Vector3.Distance(me.transform.position, Cfg.ArenaCenter) < 30f && me.HeldItem == Item.Rock, "waiting for players in the stadium with a rock");
             if (m_Mode == "arena") { yield return ArenaRoutine(me, pc); yield break; }
+            if (m_Mode == "voicenet") { yield return VoiceNetRoutine(me); yield break; }
             while (NetGame.Instance.S == GameState.Waiting) yield return null;
             if ((m_Mode == "dome" || m_Mode == "scenery" || m_Mode == "nodes") && nm.IsServer) NetGame.Instance.TimerPaused.Value = true; // (it needs the glass wall up for a while)
             yield return new WaitForSeconds(0.8f);
