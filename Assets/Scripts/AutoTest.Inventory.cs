@@ -180,6 +180,11 @@ namespace RockGame
             Check(pickLine && Hud.LastKillLine.Contains("captured the ball") && Hud.LastKillLine.Contains(Cfg.TeamName[team]) && me.Deaths.Value == d0 + 1,
                 $"the kill feed shows the ball picked up and captured, with who and which team ({pickText} / {Hud.LastKillLine})");
             yield return Pic("killfeed_ball", 0.2f);
+            // flood protection: picking it up / capturing it again straight away doesn't add more lines
+            int floodLines = Hud.KillLines;
+            for (int spam = 0; spam < 4; spam++) { g.ServerBallFeed(me, team, false); g.ServerBallFeed(me, team, true); }
+            yield return new WaitForSeconds(0.3f);
+            Check(Hud.KillLines == floodLines, $"spamming the ball (pick up / capture again and again) adds nothing to the kill feed ({Hud.KillLines - floodLines} more lines)");
 
             // ---- whispers: only the two it's between get the line; clicking one answers it ----
             Check(me.DisplayName == (GameSettings.PlayerName != "" ? GameSettings.PlayerName : PlayerNet.DefaultName(me.Team.Value, me.Slot.Value)), $"your name is the one typed on the main menu, or your team colour and number ({me.DisplayName})");

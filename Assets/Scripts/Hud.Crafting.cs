@@ -106,11 +106,13 @@ namespace RockGame
                 case Item.Arrow: return $"Arrows: {Mathf.Max(1, Cfg.ArrowsPerCraft)} a craft, for the bow and the crossbow.";
                 case Item.Ram: return $"Battering Ram ({Cfg.RamUses} hit{(Cfg.RamUses == 1 ? "" : "s")}): hold LMB at an enemy piece - wood breaks, stone and up drop a step.";
                 case Item.Barrier: return "High External Wall: a tall log wall for your base or out in the open.";
+                // (every description is "Name: what it does" - the name goes on top, the rest wraps under it; without the
+                // name the whole lot would be the one-line title and run off the edge)
                 case Item.Workbench:
-                    return "Lets you obtain more stuff by trading resources intergalactically."
-                        + (Cfg.BenchUnlocked(team) ? "" : $" LOCKED for everyone until the ball is captured: any team puts it in its machine once, or keeps it in its base for {Cfg.BenchUnlockSeconds:0} s"
-                            + (NetGame.Instance != null ? $" (your base {Mathf.Min(NetGame.Instance.BallInBaseSecondsOf(team), Mathf.RoundToInt(Cfg.BenchUnlockSeconds))} s, the nearest team {Mathf.Min(NetGame.Instance.BallInBaseSecondsBest, Mathf.RoundToInt(Cfg.BenchUnlockSeconds))} / {Cfg.BenchUnlockSeconds:0} s so far)." : "."));
-                case Item.Workbench2: return "Lets you obtain EVEN MORE STUFF by trading resources intergalactically.";
+                    return $"{Cfg.ItemName(id)}: lets you obtain more stuff by trading resources intergalactically."
+                        + (Cfg.BenchUnlocked(team) ? "" : $" LOCKED for everyone until the ball is captured - put in a machine once, or kept in a base for {Cfg.BenchUnlockSeconds:0} s"
+                            + (NetGame.Instance != null ? $" (yours {Mathf.Min(NetGame.Instance.BallInBaseSecondsOf(team), Mathf.RoundToInt(Cfg.BenchUnlockSeconds))} s, best {Mathf.Min(NetGame.Instance.BallInBaseSecondsBest, Mathf.RoundToInt(Cfg.BenchUnlockSeconds))} s)." : "."));
+                case Item.Workbench2: return $"{Cfg.ItemName(id)}: lets you obtain EVEN MORE STUFF by trading resources intergalactically.";
                 case Item.Crossbow: return $"Crossbow: {Cfg.CrossbowDamage:0} damage, faster and flatter than the bow. Reloads itself from your arrows.";
                 case Item.Armor: return $"Armour: {Cfg.ArmorHp} extra health used up before your own.";
                 case Item.Chainsaw: return $"Chainsaw: rips through wood and stone. {Cfg.ChainsawUses} uses.";
@@ -118,9 +120,9 @@ namespace RockGame
                 case Item.Boat: return "Boat: put it on open water and E to drive it.";
                 case Item.Sword: return $"Sword: a slow heavy swing, {Cfg.SwordBodyDamage:0} body / {Cfg.SwordHeadDamage:0} head.";
                 case Item.Shotgun: return "Waterpipe Shotgun: one shell at a time, huge up close.";
-                case Item.ShotgunShell: return "One shotgun shell.";
+                case Item.ShotgunShell: return $"{Cfg.ItemName(id)}: ammo for the waterpipe shotgun, loaded one shell at a time.";
                 case Item.Revolver: return $"Revolver: {Cfg.RevolverMag} rounds, hitscan.";
-                case Item.RevolverAmmo: return "One revolver bullet.";
+                case Item.RevolverAmmo: return $"{Cfg.ItemName(id)}: ammo for the revolver ({Cfg.RevolverMag} fill the cylinder; R reloads).";
                 case Item.C4: return "C4: throw it at enemy buildings.";
                 case Item.Helmet: return "Alien Helmet: goes straight on - stops one headshot completely.";
                 default: return Cfg.ItemName(id) + (Cfg.PowerIndex(id) >= 0 ? ": " + Cfg.PowerBlurb(id, team) : "");
@@ -137,11 +139,21 @@ namespace RockGame
             else { m_HoverTitle = full; m_HoverText = ""; }
         }
 
+        /// <summary>An item (a crafting row): the shared format - a short name on top, what it does under it. A description
+        /// that came without a "Name: " goes under the item's name instead of being one long title.</summary>
+        void SetHoverItem(Item id, int team)
+        {
+            SetHover(CraftDescription(id, team));
+            if (m_HoverText != "") return;
+            string name = Cfg.ItemName(id);
+            m_HoverText = m_HoverTitle != name ? m_HoverTitle : ItemNote(id);
+            m_HoverTitle = name;
+        }
+
         /// <summary>An item in the bag or a chest: its name (and how many) and what it does.</summary>
         void SetHover(ItemStack s, int team)
         {
-            SetHover(CraftDescription(s.Id, team));
-            if (m_HoverText == "") m_HoverText = ItemNote(s.Id);
+            SetHoverItem(s.Id, team);
             m_HoverTitle = Cfg.ItemName(s.Id) + (s.Count > 1 ? $"  x{s.Count}" : "");
             string state = ItemBlurb(s);
             if (s.Id != Item.Berry && state.StartsWith("  (")) m_HoverText = state.Trim() + (m_HoverText != "" ? "  " + m_HoverText : "");
@@ -172,10 +184,17 @@ namespace RockGame
             if (Event.current.type == EventType.Repaint) HoverShown = string.IsNullOrEmpty(m_HoverTitle) ? "" : m_HoverTitle + " | " + m_HoverText;
             if (string.IsNullOrEmpty(m_HoverTitle)) return false;
             float th = 22 * k;
-            Shadowed(new Rect(r.x, r.y, r.width, th), $"<b>{m_HoverTitle}</b>", CraftStyle(16 * k, FontStyle.Bold, TextAnchor.UpperLeft, Color.white));
+            // the same for everything: the name on one line (shrunk if it's too long for it), then the description wrapped
+            // under it - shrunk a little at a time until it all fits in the box, so nothing is ever cut off
+            Shadowed(new Rect(r.x, r.y, r.width, th), $"<b>{m_HoverTitle}</b>", FitStyle($"<b>{m_HoverTitle}</b>", r.width, 16 * k, FontStyle.Bold, TextAnchor.UpperLeft, Color.white));
             if (m_HoverText != "")
-                Shadowed(new Rect(r.x, r.y + th, r.width, Mathf.Max(20 * k, r.height - th)), $"<color=#c8c8c8>{m_HoverText}</color>",
-                    CraftStyle(13 * k, FontStyle.Normal, TextAnchor.UpperLeft, Color.white, true));
+            {
+                var body = new Rect(r.x, r.y + th, r.width, Mathf.Max(20 * k, r.height - th));
+                string text = $"<color=#c8c8c8>{m_HoverText}</color>";
+                var st = CraftStyle(13 * k, FontStyle.Normal, TextAnchor.UpperLeft, Color.white, true);
+                while (st.fontSize > 8 && st.CalcHeight(new GUIContent(text), body.width) > body.height) st.fontSize--;
+                Shadowed(body, text, st);
+            }
             return true;
         }
 
@@ -394,7 +413,7 @@ namespace RockGame
             bool ok = problem == null, here = problem != "in your base" && !locked;
             bool over = canClick && rr.Contains(ev.mousePosition);
             Fill(rr, ok ? k_RowOk : k_RowNo);
-            if (over) { Fill(rr, new Color(1, 1, 1, 0.06f)); SetHover(CraftDescription(rec.Output, team)); }
+            if (over) { Fill(rr, new Color(1, 1, 1, 0.06f)); SetHoverItem(rec.Output, team); }
             var edge = locked ? new Color(0.35f, 0.35f, 0.34f) : tier > 0 ? k_TierCol[tier] : ok ? new Color(0.5f, 0.9f, 0.3f) : new Color(0.4f, 0.4f, 0.38f);
             if (tier > 0 && !ok) edge *= 0.6f;
             Fill(new Rect(rr.x, rr.y, 4 * k, rr.height), edge);

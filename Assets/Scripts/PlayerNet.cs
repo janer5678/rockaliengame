@@ -1116,6 +1116,7 @@ namespace RockGame
         {
             if (m_PendingArrows.Count == 0) return;
             float damage = m_PendingArrows.Dequeue();
+            if (target.TryGet(out var tree)) ResourceNode.ServerStruck(tree); // (an arrow in a tree sends its birds up, like a chop)
             if (!target.TryGet(out var no) || !GameAllowsCombat) return;
             if (no.TryGetComponent(out PlayerNet p))
             {
@@ -1170,6 +1171,7 @@ namespace RockGame
             if (game == null) return;
             if (Vector3.Distance(point, transform.position) > 250f) point = transform.position + Vector3.up; // nonsense report
             if (dir.sqrMagnitude < 0.01f) dir = transform.forward;
+            if (hasTarget && target.TryGet(out var tree)) ResourceNode.ServerStruck(tree); // (a spear in a tree sends its birds up)
 
             if (hasTarget && target.TryGet(out var no) && GameAllowsCombat)
             {
@@ -1857,8 +1859,7 @@ namespace RockGame
             if (Dead.Value || b == null || b.IsCarried || InSuddenDeath) return;
             if (NetGame.Instance != null && NetGame.Instance.WallUp) return; // under the glass dome until the wall drops
             if (Vector3.Distance(b.transform.position, EyePos) > Cfg.InteractRange + 2f) return;
-            if (b.ServerPickup(this) && NetGame.Instance != null)
-                NetGame.Instance.Broadcast($"{DisplayName} ({Cfg.TeamName[Team.Value]}) picked up the ball!");
+            b.ServerPickup(this); // (the kill feed says who picked it up - no top-right message as well)
         }
 
         /// <summary>Builder: E while carrying the ball plants it on the ground in front of you - it's your team's ball then.</summary>

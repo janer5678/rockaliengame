@@ -58,6 +58,7 @@ namespace RockGame
         public const float HudOpacity = 1f;                 // ui.hud.opacity           (0.25..1)
         public const int UiAccent = 0;                      // ui.accent                (0 = Gold; by name in the code)
         public const bool ShowFps = true;                   // fps.counter              (was off)
+        public const bool UncappedFps = false;              // fps.uncapped             (vsync off, no frame rate cap)
 
         // ---- main menu ----
         public const bool MenuTrees = true;                 // menu.trees               (trees in the play space behind the main menu - always now; not a setting any more)
@@ -75,6 +76,10 @@ namespace RockGame
         public const float GrassDensity = 1f;               // grass.density            (0.2..1)
         public const float GrassFalloff = 0.65f;            // grass.falloff            (0.25..2.5: lower = thicker far away; was 1.35)
         public const float GrassHeight = 1.55f;             // grass.height             (0.6..2.5; was 1)
+
+        // ---- sky lines and the wall (EnergyWall.cs) ----
+        public const float FarLineThickness = 1f;           // post.outlines.far        (0..3 x the outline thickness on clouds, planets, far mountains; 1 = the usual look)
+        public const bool EnergyWall = false;               // world.energywall         (the glass wall between the halves as an energy field)
 
         // (elsewhere: beams.falloff 125 (was 70) - BeamFx.cs; treex.glow 2.85 (was 1.6) - TreeX.cs; basefloor.after
         //  Colour grid (was Flat grass) and basefloor.teammix 0.5 (was 0.35) - BaseFloor.cs; the world colours, and the
@@ -243,6 +248,7 @@ namespace RockGame
             Choice("ui.accent", GInterface, GameSettings.AccentNames, DisplayDefaults.UiAccent, () => GameSettings.UiAccent,
                 (v, s) => GameSettings.SetInterface(GameSettings.UiFont, GameSettings.UiScale, GameSettings.HudOpacity, v, s));
             Bool("fps.counter", GInterface, DisplayDefaults.ShowFps, () => GameSettings.ShowFps, (v, s) => GameSettings.SetShowFps(v, s));
+            Bool("fps.uncapped", GInterface, DisplayDefaults.UncappedFps, () => GameSettings.UncappedFps, (v, s) => GameSettings.SetUncappedFps(v, s));
             // ---- alien glow ----
             Float("glow.strength", GGlow, DisplayDefaults.GlowStrength, () => Cfg.AlienOutlineStrength, (v, s) => GameSettings.SetAlienGlow(v, Cfg.AlienOutlineWidth, s));
             Float("glow.width", GGlow, DisplayDefaults.GlowWidth, () => Cfg.AlienOutlineWidth, (v, s) => GameSettings.SetAlienGlow(Cfg.AlienOutlineStrength, v, s));

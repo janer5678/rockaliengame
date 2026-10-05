@@ -27,7 +27,8 @@ namespace RockGame
         Health,     // the health bar (and armour / buffs under it)
         Eat,        // RMB with food
         Upgrade,    // F: stone upgrades (no step teaches it - the tutorial has no stone: once you're done)
-        Station,    // E on the upgrade station: the UPGRADES screen (new ones go on the end)
+        Station,    // E on the upgrade station: the UPGRADES screen (the wood gen)
+        Fortify,    // Fortify All Walls on the UPGRADES screen (its own step, after the wood gen) (new ones go on the end)
     }
 
     /// <summary>
@@ -36,10 +37,12 @@ namespace RockGame
     /// on (no skipping). Nothing in it needs stone. The order: the basics (look, move, chop, the bag, crafting, building,
     /// the spear), then a bow and arrows and the training dummies (destroy one with the bow, then a headshot: their alien
     /// heads are the head hitbox, their straw bodies the body hitbox), food, a storage chest, a real airdrop into your own
-    /// base (the glass wall is still up), then the glass wall drops and you raid the enemy's base: break into their hut,
-    /// empty its chest - and, playing solo, the ball is in their machine: take it out and home into yours. Capturing the
-    /// ball is what unlocks the Trade Station (like in a match), so the trade station steps come after it; then the
-    /// upgrade station, and the finale: the clock runs out with the ball in your machine and the real victory cutscene.
+    /// base (the glass wall is still up; it always holds C4), then the glass wall drops and you raid the enemy's base:
+    /// blow their padlocked door open with the C4 (no C4 left and still locked out: you're handed another), empty their
+    /// chest - and, playing solo, the ball is in their machine, walled in round their bedrock: take it out and home into
+    /// yours. Capturing the ball is what unlocks the Trade Station (like in a match), so the trade station steps come
+    /// after it; then armour, the upgrade station (the wood gen, then Fortify All Walls), and the finale: the clock runs
+    /// out with the ball in your machine and the real victory cutscene.
     /// The game is revealed a bit at a time: at the start you can only look around; each control, HUD part and craftable
     /// item unlocks on the step that teaches it (Allows / AllowsItem, checked by Binds, PlayerController, the HUD and -
     /// for crafting, building, the trade station and upgrades - the server, using each player's own synced step
@@ -82,7 +85,13 @@ namespace RockGame
         /// <summary>PlayerNet.TutStep when the tutorial is finished (everything unlocked).</summary>
         public const byte FinishedStep = 255;
         /// <summary>What a guide asks the server for (PlayerNet.TutorialRpc -> ServerAction).</summary>
-        public const byte AskWall = 1, AskHungry = 2, AskDummies = 3, AskAirdrop = 4, AskHut = 5, AskUpgradeWood = 6, AskFinale = 7, AskKit = 8;
+        public const byte AskWall = 1, AskHungry = 2, AskDummies = 3, AskAirdrop = 4, AskHut = 5, AskUpgradeWood = 6, AskFinale = 7, AskKit = 8, AskFortifyWood = 9, AskC4 = 10;
+        /// <summary>The raid step: this long after your C4 is gone (thrown, dropped) with the door still on, you're handed
+        /// another one (its fuse, plus a moment for the blast to count).</summary>
+        public static float C4RefillAfter => Cfg.C4Fuse + 2.5f;
+        /// <summary>The solo raid: the enemy's machine is walled in round the edges of its bedrock - the "hut" is this
+        /// far across from its middle (its pieces and its chest are found within it).</summary>
+        const float SoloBaseReach = 4.7f, HutReach = 3f;
         /// <summary>The finale: how long the clock runs before the match ends - alone (the ball is already in your machine),
         /// and with a friend (a real short match for it); and how much longer if nobody has it in a machine at 0.</summary>
         public const float SoloFinaleSeconds = 10f, FriendMatchSeconds = 120f, OvertimeSeconds = 20f;
@@ -119,6 +128,8 @@ namespace RockGame
         // props seen once (so "it's gone" means it was dealt with, not that it hasn't arrived yet)
         static bool s_DropSeen, s_HutSeen, s_HutChestSeen;
         static int s_HutMax;
+        /// <summary>The raid step: when you last had no C4 left (-1: you've got one), for handing out another.</summary>
+        static float s_NoC4Since = -1f;
         // server
         static float s_FirstAtWall = -1f;
         static readonly Dictionary<ulong, float> s_NextHome = new Dictionary<ulong, float>();
@@ -167,6 +178,7 @@ namespace RockGame
             DummyHits = DummyBowHits = DummyKillsNear = DummyKillsFar = DummyHeadHits = DummyBowKills = DummyBowHeads = 0;
             s_DropSeen = s_HutSeen = s_HutChestSeen = false;
             s_HutMax = 0;
+            s_NoC4Since = -1f;
             s_NextAsk = 0f;
             s_FirstAtWall = -1f;
             s_NextHome.Clear();
@@ -258,6 +270,7 @@ namespace RockGame
                 case TutFeature.Eat: return $"{K(Bind.Aim)} eat";
                 case TutFeature.Upgrade: return $"{K(Bind.Upgrade)} upgrade";
                 case TutFeature.Station: return "the upgrade station";
+                case TutFeature.Fortify: return Cfg.ItemName(Item.FortifyBuff);
             }
             return f.ToString();
         }
@@ -539,24 +552,29 @@ namespace RockGame
 
         static bool InHut(Vector3 p, float r) { var at = HutAt; return at.HasValue && Flat(p, at.Value) < r; }
 
-        /// <summary>The hut's doorway while its door is still on (null: broken off, or no hut yet).</summary>
+        /// <summary>How far out from HutAt its pieces stand: a hut (with a friend), or the walls round the enemy's machine
+        /// (solo: ServerHut).</summary>
+        static float HutR => Friend ? HutReach : SoloBaseReach;
+
+        /// <summary>The hut's doorway while its door is still on (null: broken off or blown up, or no hut yet).</summary>
         public static Structure HutDoor
         {
             get
             {
                 foreach (var s in Structure.All)
-                    if (s != null && s.IsSpawned && s.Team.Value != Team && s.PType == PieceType.Doorway && s.HasDoor && InHut(s.transform.position, 3f)) return s;
+                    if (s != null && s.IsSpawned && s.Team.Value != Team && s.PType == PieceType.Doorway && s.HasDoor && InHut(s.transform.position, HutR)) return s;
                 return null;
             }
         }
 
-        static int HutPieces
+        /// <summary>The walls and doorways of the hut (solo: of the walls round the enemy's machine) still standing.</summary>
+        public static int HutPieces
         {
             get
             {
                 int n = 0;
                 foreach (var s in Structure.All)
-                    if (s != null && s.IsSpawned && s.Team.Value != Team && (s.PType == PieceType.Wall || s.PType == PieceType.Doorway) && InHut(s.transform.position, 3f)) n++;
+                    if (s != null && s.IsSpawned && s.Team.Value != Team && (s.PType == PieceType.Wall || s.PType == PieceType.Doorway) && InHut(s.transform.position, HutR)) n++;
                 return n;
             }
         }
@@ -831,7 +849,7 @@ namespace RockGame
                 {
                     Id = "breakwall", Title = "Oops? Break it!",
                     BodyF = () => (s_WallMax == 0 ? "Build a wall first. " : "")
-                        + "You can take down " + Hi("your own") + $" walls. Hold the plan, hold {K(Bind.Aim)} and pick " + Hi("Demolish") + $" at the bottom of the wheel - your pieces nearby turn red - then click {K(Bind.Attack)} on one (half the wood back). You can build there again straight away. "
+                        + "You can take down " + Hi("your own") + $" walls. Hold the plan, hold {K(Bind.Aim)} and pick " + Hi("Demolish") + $" at the bottom of the wheel - the piece you aim at turns red - then click {K(Bind.Attack)} on one (half the wood back). You can build there again straight away. "
                         + $"Wood is weak: hitting breaks it too, but where a piece is " + Hi("broken") + $" nothing can be built again for {Cfg.WallRebuildCooldown:0} seconds.",
                     Goal = "Take down one of your walls",
                     Hint = $"Hold the building plan, hold {K(Bind.Aim)}, move the mouse down onto Demolish and let go, then look at your wall and click {K(Bind.Attack)}.",
@@ -964,7 +982,8 @@ namespace RockGame
                 new Step
                 {
                     Id = "loot", Title = "Take the loot",
-                    Body = $"Press {K(Bind.Interact)} on the crate and take what's inside (click {MouseL} it, or {ShiftClick}). An airdrop holds " + Hi("one powerful item") + " - rockets, C4, a jetpack... Hold it to see what it does.",
+                    Body = $"Press {K(Bind.Interact)} on the crate and take what's inside (click {MouseL} it, or {ShiftClick}). An airdrop holds " + Hi("one powerful item") + " - rockets, C4, a jetpack... "
+                        + "This one has " + Hi("C4") + ": an explosive that blows enemy buildings apart. Keep it for the raid!",
                     Goal = "Empty the airdrop crate",
                     Hint = $"Look at the crate from close by and press {K(Bind.Interact)}. Make room in your bag if it's full.",
                     Done = () => s_DropSeen && MyDrop == null && !DropComing,
@@ -1013,14 +1032,18 @@ namespace RockGame
                 new Step
                 {
                     Id = "raid", Title = "Raid!",
-                    BodyF = () => (Friend ? "Raid your friend's base! A " + Hi("hut") + " has gone up in it - "
-                            : "Raid the enemy's base! The ball is in their machine - but first, their " + Hi("hut") + ": ")
-                        + "its door is locked. " + $"Hit the door ({K(Bind.Attack)}) with your axe until it breaks, or use your " + Hi("battering ram") + ".",
-                    Goal = "Break into the enemy hut",
-                    Hint = "Stand right at the door and keep hitting the door itself, not the frame round it.",
+                    BodyF = () => (Friend ? "Raid your friend's base! A " + Hi("hut") + " has gone up in it, and its door is padlocked. "
+                            : "Raid the enemy's base! They've " + Hi("walled their machine in") + " - the ball is in there - and their door is padlocked. ")
+                        + $"Hold your " + Hi("C4") + $", look at the door and click {K(Bind.Attack)} to throw it: it sticks, beeps for {Cfg.C4Fuse:0} seconds and " + Hi("blows the wall open") + " - stand back! "
+                        + "Out of C4 and still locked out? You get another. (Your axe or a " + Hi("battering ram") + " on the door works too - slowly.)",
+                    Goal = "Blow their door open",
+                    Progress = () => Count(Item.C4) > 0 ? $"C4 {Count(Item.C4)}"
+                        : s_NoC4Since >= 0f && Time.time - s_NoC4Since < Cfg.C4Fuse + 0.5f ? "C4 ticking - stand back!"
+                        : HutDoor != null ? "no C4 - another one is coming" : "",
+                    Hint = $"Pick the C4 on your hotbar, stand a few steps from the door, look right at it and click {K(Bind.Attack)}. Then back off until it goes off.",
                     Enter = () => Ask(AskHut),
                     Done = () => s_HutSeen && (HutDoor == null || HutPieces < s_HutMax),
-                    Target = () => HutSpot, TargetLabel = "ENEMY HUT",
+                    Target = () => HutSpot, TargetLabel = "BREAK IN",
                     Items = new[] { Item.Ram },
                 },
                 new Step
@@ -1037,7 +1060,7 @@ namespace RockGame
                 {
                     Id = "toball", Title = "Get the ball",
                     BodyF = () => Friend ? "The " + Hi("ball") + " is loose in the middle - its beam of light shows where from anywhere. Race your friend to it!"
-                        : "Now the " + Hi("ball") + ": it's in the enemy's " + Hi("machine") + ", in the middle of their base - its beam of light shows where. Go to it!",
+                        : "Now the " + Hi("ball") + ": it's in the enemy's " + Hi("machine") + ", right inside the walls you just broke into - its beam of light shows where. Go to it!",
                     Goal = "Run to the ball",
                     Done = () => Me.CarryingBall || (Ball.Instance != null && Vector3.Distance(Ball.Instance.transform.position, Me.transform.position) < 6f) || (Friend && Captured),
                     Target = () => BallSpot, TargetLabel = "BALL",
@@ -1115,20 +1138,44 @@ namespace RockGame
                     Target = () => InBase ? null : BaseSpot, TargetLabel = "YOUR BASE",
                     Unlocks = new[] { TutFeature.Workbench },
                 },
-                // ---- the upgrade station ----
+                // ---- armour (from the trade station's list), before the upgrades ----
+                new Step
+                {
+                    Id = "armour", Title = "Armour up",
+                    Body = "The trade station's list has " + Hi(Cfg.ItemName(Item.Armor)) + $": {Cfg.ArmorHp} extra health that goes " + Hi("before your own") + " - it goes straight on when you craft it. "
+                        + "Raids get you shot at, so never go out without it!",
+                    Goal = "Craft " + Cfg.ItemName(Item.Armor),
+                    Progress = () => WoodNeed(WoodOf(Item.Armor)),
+                    Hint = $"Open your bag ({BagKey}) inside your base - armour is in the TRADE STATION list. It costs {Price(Item.Armor)}.",
+                    Done = () => Me.ArmorHp.Value > 0,
+                    Target = () => TreeIfShort(WoodOf(Item.Armor), InBase ? null : BaseSpot), TargetLabel = "",
+                },
+                // ---- the upgrade station: the wood gen, then your walls ----
                 new Step
                 {
                     Id = "upgrade", Title = "The upgrade station",
                     Body = "Left of your machine stands the " + Hi("upgrade station") + $" (the big arrow in your colour). Press {K(Bind.Interact)} on it: " + Hi("UPGRADES") + ", for your whole team. "
-                        + "Buy the " + Hi(Cfg.ItemName(Item.WoodGenBuff)) + ": it builds a " + Hi("wood machine") + " that makes wood by itself (two more upgrades speed it up). "
-                        + "Fortify All Walls turns every piece you have to stone, then metal, then armoured. You've been given the wood for the first one.",
+                        + "Buy the " + Hi(Cfg.ItemName(Item.WoodGenBuff)) + ": it builds a " + Hi("wood machine") + " that makes wood by itself (two more upgrades speed it up). You've been given the wood for it.",
                     Goal = "Buy the wood gen upgrade",
-                    Progress = () => WoodNeed(Cfg.WoodGenWood(1)),
+                    Progress = () => WoodNeed(Cfg.BaseUpgradeRecipe(Item.WoodGenBuff, Team).Wood),
                     Hint = $"Stand at the terminal with the big arrow in your colour, press {K(Bind.Interact)} and click UPGRADE next to " + Cfg.ItemName(Item.WoodGenBuff) + ".",
                     Enter = () => Ask(AskUpgradeWood),
                     Done = () => Cfg.WoodGenLevel(Team) >= 1,
                     Target = () => StationSpot, TargetLabel = "UPGRADES",
                     Unlocks = new[] { TutFeature.Station },
+                },
+                new Step
+                {
+                    Id = "fortify", Title = "Stronger walls",
+                    Body = "You just blew a wooden base open - yours is wooden too. Back at the " + Hi("upgrade station") + ", buy " + Hi(Cfg.ItemName(Item.FortifyBuff)) + ": "
+                        + "every piece your team has built turns to " + Hi("stone") + " (more hits to break). Buy it again for metal, then armoured - those even shrug off most of a C4 blast. You've been given the wood.",
+                    Goal = "Upgrade your base's walls",
+                    Progress = () => WoodNeed(Cfg.BaseUpgradeRecipe(Item.FortifyBuff, Team).Wood),
+                    Hint = $"Press {K(Bind.Interact)} on the upgrade station and click UPGRADE next to " + Cfg.ItemName(Item.FortifyBuff) + ".",
+                    Enter = () => Ask(AskFortifyWood),
+                    Done = () => Cfg.FortifyLevel(Team) >= 1,
+                    Target = () => StationSpot, TargetLabel = "UPGRADES",
+                    Unlocks = new[] { TutFeature.Fortify },
                 },
                 // ---- with a friend, the last part is a tiny real game: a fight, then a short match for the ball ----
                 new Step
@@ -1196,6 +1243,8 @@ namespace RockGame
             s_WallMax = WallPieces;
             s_SprintTime = s_GuardTime = s_CrouchTime = 0f;
             s_Jumped = s_Slid = s_Ate = s_DuelBoth = false;
+            // (starting the raid with no C4 at all - a friend who joined, or it got dropped: one comes straight away)
+            s_NoC4Since = me != null && me.Count(Item.C4) == 0 ? Time.time - C4RefillAfter : -1f;
             s_NextAsk = Time.time + 3f;
             SyncStep();
             s_Steps[s_Index].Enter?.Invoke();
@@ -1295,6 +1344,15 @@ namespace RockGame
                     s_HutMax = Mathf.Max(s_HutMax, HutPieces);
                     if (HutChest != null) s_HutChestSeen = true;
                     if (ask && st.Id == "raid" && !s_HutSeen) me.TutorialRpc(AskHut);
+                    // the raid always has explosives: no C4 left (thrown and it didn't get you in, dropped, never had
+                    // one) with their door still on - another one comes once a thrown one has had time to go off
+                    if (st.Id == "raid")
+                    {
+                        if (me.Count(Item.C4) > 0) s_NoC4Since = -1f;
+                        else if (s_NoC4Since < 0f) s_NoC4Since = Time.time;
+                        if (ask && s_HutSeen && HutDoor != null && s_NoC4Since >= 0f && Time.time - s_NoC4Since > C4RefillAfter && !me.Dead.Value)
+                            me.TutorialRpc(AskC4);
+                    }
                     break;
                 }
             }
@@ -1460,9 +1518,11 @@ namespace RockGame
                 case AskDummies: ServerDummies(p); break;
                 case AskAirdrop: ServerAirdrop(p); break;
                 case AskHut: ServerHut(p); break;
-                case AskUpgradeWood: ServerUpgradeWood(p); break;
+                case AskUpgradeWood: ServerUpgradeWood(p, Item.WoodGenBuff); break;
+                case AskFortifyWood: ServerUpgradeWood(p, Item.FortifyBuff); break;
                 case AskFinale: if (s_Finale == 0) { s_Finale = 1; s_FinaleTeam = p.Team.Value; } break;
                 case AskKit: ServerKit(p); break;
+                case AskC4: ServerC4(p); break;
             }
         }
 
@@ -1559,11 +1619,13 @@ namespace RockGame
         }
 
         /// <summary>
-        /// Server: the hut the raid steps break into - a foundation, three wooden walls, a doorway (its door shut and
-        /// padlocked: it belongs to the other team) and a roof, with a chest of loot inside - in the front half of the
-        /// enemy's base, the door towards the middle of the map. (Solo, the enemy's machine has the ball in it too:
-        /// ServerTick.) Once per raiding team; where it is goes to the player (PlayerNet.TutHut). The player is handed
-        /// a battering ram as well.
+        /// Server: what the raid steps break into, with a chest of loot inside; once per raiding team, where it is goes
+        /// to the player (PlayerNet.TutHut), and the player is handed a battering ram as well. Every piece is wooden and
+        /// belongs to the enemy, so its doorway's door is shut and padlocked.
+        /// Solo: the enemy's base round the ball - its machine (with the ball in it: ServerTick) is walled in round the
+        /// edges of its bedrock, the padlocked doorway in the front wall (towards the middle of the map); no roof, so the
+        /// ball's beam still shows where it is. With a friend: a hut (a foundation, three walls, a doorway and a roof) in
+        /// the front half of the friend's base - walling their bedrock in would shut them in where they spawn.
         /// </summary>
         static void ServerHut(PlayerNet p)
         {
@@ -1571,39 +1633,76 @@ namespace RockGame
             if (team < 0 || team >= s_HutBuilt.Length || s_HutBuilt[team] || Bootstrap.I == null) return;
             s_HutBuilt[team] = true;
             int enemy = EnemyOf(team);
-            var at = ServerBaseSpot(enemy, new[] { 10f, 13f, 7f }, new[] { 9f, -9f, 12f, -12f, 6f, -6f }, Vector3.up * 2.2f, new Vector3(2.4f, 1.9f, 2.4f));
-            p.TutHut.Value = at;
             var rot = Quaternion.LookRotation(-Cfg.BackDir(enemy)); // (its +z, the door's side, faces the middle of the map)
-            var floor = at + Vector3.down * 0.25f;                // (sunk in a little, so it sits on uneven ground)
-            var top = floor + Vector3.up * 1f;
             var side = rot * Quaternion.Euler(0, 90f, 0);
-            ServerPiece(PieceType.Foundation, enemy, floor, rot);
-            ServerPiece(PieceType.Doorway, enemy, top + rot * new Vector3(0, 0, 1.5f), rot);
-            ServerPiece(PieceType.Wall, enemy, top + rot * new Vector3(0, 0, -1.5f), rot);
-            ServerPiece(PieceType.Wall, enemy, top + rot * new Vector3(1.5f, 0, 0), side);
-            ServerPiece(PieceType.Wall, enemy, top + rot * new Vector3(-1.5f, 0, 0), side);
-            ServerPiece(PieceType.Floor, enemy, top + Vector3.up * 3f, rot);
-            var cgo = UnityEngine.Object.Instantiate(Bootstrap.I.containerPrefab, top + rot * new Vector3(0, 0, -0.8f), rot);
+            Vector3 at, chestAt;
+            if (Bootstrap.Solo)
+            {
+                // round the bedrock (2 x 2 build cells): two pieces along each edge, standing on it like the player's own
+                at = Cfg.BaseCenter[enemy];
+                at.y = Cfg.BaseY;
+                float e = Cfg.BedrockHalf, h = Cfg.BedrockHalf * 0.5f;
+                ServerPiece(PieceType.Doorway, enemy, at + rot * new Vector3(-h, 0, e), rot); // (the front, on the side away from the upgrade station)
+                ServerPiece(PieceType.Wall, enemy, at + rot * new Vector3(h, 0, e), rot);
+                ServerPiece(PieceType.Wall, enemy, at + rot * new Vector3(-h, 0, -e), rot);
+                ServerPiece(PieceType.Wall, enemy, at + rot * new Vector3(h, 0, -e), rot);
+                ServerPiece(PieceType.Wall, enemy, at + rot * new Vector3(e, 0, -h), side);
+                ServerPiece(PieceType.Wall, enemy, at + rot * new Vector3(e, 0, h), side);
+                ServerPiece(PieceType.Wall, enemy, at + rot * new Vector3(-e, 0, -h), side);
+                ServerPiece(PieceType.Wall, enemy, at + rot * new Vector3(-e, 0, h), side);
+                chestAt = at + rot * new Vector3(-1.7f, 0f, 1.1f); // (inside, front right: clear of the spawn, the machine and where a wood machine would go)
+            }
+            else
+            {
+                at = ServerBaseSpot(enemy, new[] { 10f, 13f, 7f }, new[] { 9f, -9f, 12f, -12f, 6f, -6f }, Vector3.up * 2.2f, new Vector3(2.4f, 1.9f, 2.4f));
+                var floor = at + Vector3.down * 0.25f;                // (sunk in a little, so it sits on uneven ground)
+                var top = floor + Vector3.up * 1f;
+                ServerPiece(PieceType.Foundation, enemy, floor, rot);
+                ServerPiece(PieceType.Doorway, enemy, top + rot * new Vector3(0, 0, 1.5f), rot);
+                ServerPiece(PieceType.Wall, enemy, top + rot * new Vector3(0, 0, -1.5f), rot);
+                ServerPiece(PieceType.Wall, enemy, top + rot * new Vector3(1.5f, 0, 0), side);
+                ServerPiece(PieceType.Wall, enemy, top + rot * new Vector3(-1.5f, 0, 0), side);
+                ServerPiece(PieceType.Floor, enemy, top + Vector3.up * 3f, rot);
+                chestAt = top + rot * new Vector3(0, 0, -0.8f);
+            }
+            p.TutHut.Value = at;
+            var cgo = UnityEngine.Object.Instantiate(Bootstrap.I.containerPrefab, chestAt, rot);
             cgo.GetComponent<Container>().ServerInit(Container.Chest, enemy, Cfg.ChestSlots, new List<ItemStack>
             {
                 ItemStack.Of(Cfg.GatherItem(Item.Wood), 300), ItemStack.Of(Item.Arrow, 10), ItemStack.Of(Item.Berry, 5),
             });
             cgo.GetComponent<NetworkObject>().Spawn(true);
-            Fx.Server(FxKind.Spawn, top, Vector3.up);
+            Fx.Server(FxKind.Spawn, at + Vector3.up, Vector3.up);
             if (p.Count(Item.Ram) == 0 && p.ServerGive(Item.Ram, 1, Mathf.Clamp(Cfg.MaxData(Item.Ram), 0, 255)) == 0)
                 p.NotifyPublic("You've been given a battering ram");
         }
 
-        /// <summary>Server: the upgrade step - top the player's wood up to what the wood machine costs (until their team has one).</summary>
-        static void ServerUpgradeWood(PlayerNet p)
+        /// <summary>Server: the upgrade steps - top the player's wood up to what the first level of that upgrade costs (the
+        /// wood gen, then Fortify All Walls; the price comes from the config), until their team has bought it.</summary>
+        static void ServerUpgradeWood(PlayerNet p, Item upgrade)
         {
             int team = p.Team.Value;
-            if (Cfg.WoodGenLevel(team) > 0) return;
+            if (Cfg.BaseUpgradeLevel(upgrade, team) > 0) return;
             var wood = Cfg.GatherItem(Item.Wood);
-            int need = Cfg.BaseUpgradeRecipe(Item.WoodGenBuff, team).Wood - p.Count(wood);
+            int need = Cfg.BaseUpgradeRecipe(upgrade, team).Wood - p.Count(wood);
             if (need <= 0) return;
             p.ServerGive(wood, need);
-            p.NotifyPublic($"You've been given {need} wood for the upgrade");
+            p.NotifyPublic($"You've been given {need} wood for {Cfg.ItemName(upgrade)}");
+        }
+
+        /// <summary>The tutorial's airdrop always holds C4, for the raid (NetGame.ServerTickLane).</summary>
+        public static ItemStack DropLoot => ItemStack.Of(Item.C4, 1, Mathf.Clamp(Cfg.MaxData(Item.C4), 0, 255));
+
+        /// <summary>Server: the raid step - this player has no C4 left and the door is still on (their guide says so):
+        /// another one, unless a charge is still ticking somewhere.</summary>
+        static void ServerC4(PlayerNet p)
+        {
+            var g = G;
+            if (p.Dead.Value || p.Count(Item.C4) > 0 || g == null || g.C4Pending > 0) return;
+            int raid = StepAt("raid");
+            if (p.TutStep.Value != raid) return;
+            if (p.ServerGive(Item.C4, 1, Mathf.Clamp(Cfg.MaxData(Item.C4), 0, 255)) > 0) { p.NotifyPublic("No room in your bag for C4 - make some space"); return; }
+            p.NotifyPublic("No C4, and their door's still locked - here's one. Throw it right at the door!");
         }
 
         /// <summary>Server: whoever joins a friend's tutorial skips the gathering steps, so they're handed what those would have made.</summary>
@@ -1619,6 +1718,15 @@ namespace RockGame
         }
 
         // ------------------------------------------------------------------ drawing
+
+        /// <summary>The panel's width (before the UI scale) and how much bigger its text is than the HUD's.</summary>
+        const float PanelW = 410f, PanelText = 1.12f;
+
+        static GUIStyle Bigger(GUIStyle st, float by)
+        {
+            int fs = st.fontSize > 0 ? st.fontSize : 13;
+            return new GUIStyle(st) { wordWrap = true, richText = true, fontSize = Mathf.RoundToInt(fs * by) };
+        }
 
         /// <summary>Hud.DrawGameOver: the "tutorial complete" card goes on top of the victory screen (drawn under it, the
         /// winners' all-black screen would hide it).</summary>
@@ -1639,8 +1747,8 @@ namespace RockGame
             if (s_Finished)
             {
                 if (pc.MenuOpen || pc.Paused) return;
-                float fw = 340 * k, fx = 14, fy = 230 * k;
-                var fb = new GUIStyle(small) { wordWrap = true, richText = true };
+                float fw = PanelW * k, fx = 14, fy = 230 * k;
+                var fb = Bigger(small, PanelText);
                 // (kept short: it sits over the victory screen)
                 string txt = "Win a match with the ball " + Hi("in your machine") + " when the clock ends.\n"
                     + $"Hold {K(Bind.Scoreboard)} for the scoreboard.\n"
@@ -1673,10 +1781,10 @@ namespace RockGame
             }
 
             // (the body, the NEW line, the goal and the hint are laid out by RichDraw: keys and mouse buttons as icons)
-            float w = 340 * k, x = 14, y = 230 * k;
+            float w = PanelW * k, x = 14, y = 230 * k;
             string bodyText = SafeBody(st);
-            var body = new GUIStyle(small) { wordWrap = true, richText = true };
-            var titleSt = new GUIStyle(label) { wordWrap = true, richText = true };
+            var body = Bigger(small, PanelText);
+            var titleSt = Bigger(label, PanelText);
             float bodyH = RichHeight(bodyText, body, w - 24 * k);
             // what this step just unlocked
             string newText = null;
@@ -1690,7 +1798,7 @@ namespace RockGame
             string extra = locked ? "<color=#ff9f7a><b>Not yet!</b> You'll learn that soon.</color>" : hint ? $"<color=#aaaaaa><i>Hint: {st.Hint}</i></color>" : null;
             float extraH = extra != null ? RichHeight(extra, body, w - 24 * k) + 2 * k : 0f;
             float goalH = Mathf.Max(26 * k, RichHeight(goal, body, w - 24 * k));
-            float h = 26 * k + 28 * k + bodyH + newH + 4 * k + goalH + extraH + 6 * k;
+            float h = 26 * k + 32 * k + bodyH + newH + 4 * k + goalH + extraH + 8 * k;
             fill(new Rect(x, y, w, h), new Color(0.04f, 0.06f, 0.1f, 0.82f));
             fill(new Rect(x, y, 4 * k, h), new Color(1f, 0.82f, 0.29f, 0.9f));
             // (the steps that aren't part of this run - the friend ones, playing solo - aren't counted)
@@ -1698,8 +1806,8 @@ namespace RockGame
             float pct = (float)shownAt / shownAll;
             fill(new Rect(x, y + h - 3 * k, w * pct, 3 * k), new Color(1f, 0.82f, 0.29f, 0.8f));
             shadowed(new Rect(x + 14 * k, y + 5 * k, w - 24 * k, 22 * k), $"<size={Mathf.RoundToInt(12 * k)}><color=#ffd24a>TUTORIAL  {shownAt + 1} / {shownAll}</color></size>", small);
-            shadowed(new Rect(x + 14 * k, y + 24 * k, w - 24 * k, 30 * k), $"<b>{st.Title}</b>", titleSt);
-            float ty = y + 54 * k;
+            shadowed(new Rect(x + 14 * k, y + 24 * k, w - 24 * k, 34 * k), $"<b>{st.Title}</b>", titleSt);
+            float ty = y + 58 * k;
             RichDraw(new Rect(x + 14 * k, ty, w - 24 * k, bodyH), bodyText, body);
             ty += bodyH;
             if (newText != null) { RichDraw(new Rect(x + 14 * k, ty + 2 * k, w - 24 * k, newH), newText, body); ty += newH; }

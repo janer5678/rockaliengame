@@ -739,8 +739,9 @@ namespace RockGame
             Check(clip.StartsWith(DisplayCode.Header + DisplayCode.Version) && Body(clip) == Body(was) && note.StartsWith("Copied"), $"COPY SETTINGS puts the display settings code on the clipboard ({note})");
             bool keysOk = true;
             foreach (var key in new[] { "post", "post.bloom.strength", "post.extra.outlines", "post.extra.celbanding.strength", "ui.post", "ui.post.world", "ui.cel", "ui.outline.width",
-                "ui.outline.colour", "ui.bloom", "ui.saturation", "shadows.darkness", "shadows.distance", "ui.font", "ui.scale", "ui.accent", "fps.counter", "glow.strength",
-                "grass.distance", "grass.height", "colour.Sky", "colour.Hands", "colour.hands.team", "shade.smooth.hands", "shade.smooth.aliens", "colour.BuildPlan" })
+                "ui.outline.colour", "ui.bloom", "ui.saturation", "shadows.darkness", "shadows.distance", "ui.font", "ui.scale", "ui.accent", "fps.counter", "fps.uncapped", "glow.strength",
+                "grass.distance", "grass.height", "colour.Sky", "colour.Hands", "colour.hands.team", "shade.smooth.hands", "shade.smooth.aliens", "colour.BuildPlan",
+                "post.outlines.far", "world.energywall" })
                 if (!clip.Contains("\n" + key + " = ")) { keysOk = false; Log("missing from the code: " + key); }
             if (clip.Contains("\nmenu.trees = ")) { keysOk = false; Log("menu.trees is still in the code (the menu's trees aren't a setting any more)"); }
             bool noScreen = !clip.ToLowerInvariant().Contains("resolution") && !clip.ToLowerInvariant().Contains("refresh") && !clip.ToLowerInvariant().Contains("window") && !clip.ToLowerInvariant().Contains("vsync");

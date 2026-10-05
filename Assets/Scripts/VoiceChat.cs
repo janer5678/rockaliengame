@@ -146,7 +146,7 @@ namespace RockGame
             var fs = mode == WindowMode.Fullscreen ? FullScreenMode.ExclusiveFullScreen : mode == WindowMode.Borderless ? FullScreenMode.FullScreenWindow : FullScreenMode.Windowed;
             ChosenRate = rate;
             Screen.SetResolution(size.x, size.y, fs, rate);
-            Application.targetFrameRate = Mathf.Max(60, Mathf.RoundToInt((float)rate.value));
+            ApplyFrameCap(); // (the refresh rate, unless Uncapped framerate is on: Hud.Fps.cs)
             PlayerPrefs.SetInt("RockGame.ScreenW", size.x);
             PlayerPrefs.SetInt("RockGame.ScreenH", size.y);
             PlayerPrefs.SetInt("RockGame.ScreenMode", (int)mode);
@@ -163,7 +163,7 @@ namespace RockGame
         {
             var rates = RefreshRates(new Vector2Int(Screen.currentResolution.width, Screen.currentResolution.height));
             ChosenRate = rates[0];
-            Application.targetFrameRate = Mathf.Max(60, Mathf.RoundToInt((float)ChosenRate.value));
+            ApplyFrameCap(); // (the refresh rate, unless Uncapped framerate is on: Hud.Fps.cs)
             if (keepWindow || Application.isEditor) return;
             if (PlayerPrefs.HasKey("RockGame.ScreenW"))
             {

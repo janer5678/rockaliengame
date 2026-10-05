@@ -147,8 +147,11 @@ namespace RockGame
             Check(BuildGrid.Registry.ContainsKey(Edge(ci + 2, cj, 1)) && pc.RecentPieces.Count == 2 && pc.RecentPieces[1].Equals(Edge(ci + 2, cj, 1)),
                 $"live: clicking builds it there and it becomes the newest of your last two ({(pc.RecentPieces.Count > 0 ? pc.RecentPieces[pc.RecentPieces.Count - 1].ToString() : "none")})");
 
-            // Demolish is back on the wheel, straight down at the bottom (no X key): picked, your pieces light up red, the
-            // one in the crosshair is the aimed one, and LMB takes it down
+            // Demolish is back on the wheel, straight down at the bottom (no X key): picked, only the piece in the crosshair
+            // lights up red, and LMB takes it down. (Wall sits on the right of the wheel, Ceiling under it.)
+            int wallSlice = System.Array.FindIndex(PlayerController.WheelOptions, o => o.Piece == PieceType.Wall && !o.Demolish);
+            Check(wallSlice >= 0 && Mathf.Abs(Mathf.DeltaAngle(PlayerController.WheelAngle(wallSlice), 90f)) < 30f,
+                $"the Wall slice is on the right of the wheel ({(wallSlice >= 0 ? PlayerController.WheelAngle(wallSlice) : -1f):0} deg)");
             int demo = System.Array.FindIndex(PlayerController.WheelOptions, o => o.Demolish);
             Check(demo >= 0 && Mathf.Abs(Mathf.DeltaAngle(PlayerController.WheelAngle(demo), 180f)) < 0.5f && Binds.Get(Bind.Demolish) == KeyCode.None,
                 $"the wheel has Demolish straight down at the bottom ({(demo >= 0 ? PlayerController.WheelAngle(demo) : -1f):0} deg), and there's no demolish key");
@@ -160,7 +163,7 @@ namespace RockGame
             int lit = pc.DemolishLitCount;
             bool aimedOk = wall != null && pc.DemolishAimed == wall.NetworkObject;
             yield return Snap("buildbias_demolish_highlight");
-            Check(pc.DemolishMode && lit >= 5 && aimedOk, $"Demolish on the wheel: your pieces nearby light up red ({lit}) and the wall in the crosshair is the one aimed at ({aimedOk})");
+            Check(pc.DemolishMode && lit == 1 && aimedOk, $"Demolish on the wheel: only the wall in the crosshair lights up red ({lit} lit, the aimed one: {aimedOk})");
             Binds.TestHold(Bind.Attack, true);
             yield return null;
             yield return null;

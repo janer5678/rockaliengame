@@ -9,9 +9,11 @@ namespace RockGame
     /// plays the whole tutorial step by step, mostly with pretend key presses (Binds.TestHold / TestPress) that go
     /// through the same gates as real keys, and checks that every control is locked until the step that teaches it.
     /// No stone anywhere; the bow and the training dummies (a kill with the bow, then a headshot - their alien heads are
-    /// the head hitbox), food, the chest, a real airdrop into our own base with the glass wall still up, then the wall
-    /// drops and we raid the enemy's base (their hut; solo, the ball is in their machine and we take it home - that
-    /// capture is what unlocks the trade station), the trade station and the upgrade station. Solo (-solo) it ends with
+    /// the head hitbox), food, the chest, a real airdrop into our own base with the glass wall still up (it holds C4),
+    /// then the wall drops and we raid the enemy's base (solo: their machine walled in round its bedrock, with the ball
+    /// in it; with a friend, a hut) - a C4 thrown away gets replaced, one thrown at the door blows it open - and, solo,
+    /// take the ball home (that capture is what unlocks the trade station), the trade station, armour, and the upgrade
+    /// station (the wood gen, then Fortify All Walls). Solo (-solo) it ends with
     /// the finale: the clock runs out with the ball in our machine and the victory cutscene plays. Without -solo it's
     /// "with a friend": the host stops at the friend step (after the airdrop) until the client has joined; the client
     /// (TutorialJoinerTests) starts at that step with a starter kit; the wall drops once both are at it, each raids a
@@ -181,10 +183,10 @@ namespace RockGame
                 Check(I("eat") < I("chest") && I("chest") < I("placechest") && I("placechest") < I("usechest") && I("usechest") < I("airdrop") && I("airdrop") < I("loot")
                     && I("loot") < I("friend") && I("friend") < I("glass") && I("glass") < I("drop") && I("drop") < I("raid") && I("raid") < I("raidloot") && I("raidloot") < I("toball")
                     && I("toball") < I("grab") && I("grab") < I("score") && I("score") < I("guard") && I("guard") < I("bench") && I("bench") < I("placebench") && I("placebench") < I("newcrafts")
-                    && I("newcrafts") < I("upgrade") && I("upgrade") < I("duel") && I("duel") < I("win") && I("win") == ids.Count - 1,
-                    "then: a chest > an airdrop (wall still up) > with a friend > the wall > the raid > take the ball home > the trade station > the upgrade station > the duel > the finale");
-                Check(Tutorial.UnlockStep(TutFeature.Station) == I("upgrade") && Tutorial.UnlockStep(TutFeature.Deploy) == I("placechest") && I("chest") < I("bench"),
-                    "the upgrade station unlocks on its own step; putting things down with the chest, which comes before the trade station");
+                    && I("newcrafts") < I("armour") && I("armour") < I("upgrade") && I("upgrade") < I("fortify") && I("fortify") < I("duel") && I("duel") < I("win") && I("win") == ids.Count - 1,
+                    "then: a chest > an airdrop (wall still up) > with a friend > the wall > the raid > take the ball home > the trade station > armour > the wood gen > the walls > the duel > the finale");
+                Check(Tutorial.UnlockStep(TutFeature.Station) == I("upgrade") && Tutorial.UnlockStep(TutFeature.Fortify) == I("fortify") && Tutorial.UnlockStep(TutFeature.Deploy) == I("placechest") && I("chest") < I("bench"),
+                    "the upgrade station unlocks on its own step (Fortify All Walls on the one after); putting things down with the chest, which comes before the trade station");
             }
             Check(!ids.Contains("stone") && !ids.Contains("mine") && !ids.Contains("pickaxe") && !ids.Contains("ram"), $"no stone steps in the tutorial ({string.Join(" ", ids)})");
             {
@@ -365,7 +367,7 @@ namespace RockGame
             Binds.TestHold(Bind.Aim, true);
             yield return new WaitForSeconds(0.3f);
             Check(pc.WheelOpen, $"({who}) holding RMB opens the building wheel on the wall step");
-            pc.SelectWheel(2); // (the mouse onto Wall)
+            pc.SelectWheel(System.Array.FindIndex(PlayerController.WheelOptions, o => o.Piece == PieceType.Wall && !o.Demolish)); // (the mouse onto Wall)
             Binds.TestHold(Bind.Aim, false);
             yield return new WaitForSeconds(0.3f);
             Check(!pc.WheelOpen && pc.BuildPiece == PieceType.Wall, $"({who}) letting go picks the Wall ({pc.BuildPiece})");
@@ -636,8 +638,8 @@ namespace RockGame
                 until = Time.time + NetGame.DropLand + 8f;
                 while (Tutorial.MyDrop == null && Time.time < until) yield return null;
                 var crate = Tutorial.MyDrop;
-                Check(crate != null && crate.IsAirdrop && !crate.Empty && Cfg.BaseTeamAt(crate.transform.position) == team,
-                    $"({who}) the crate landed in our base with something in it ({(crate != null ? Cfg.ItemName(crate.Slots[0].Id) : "no crate")})");
+                Check(crate != null && crate.IsAirdrop && !crate.Empty && Cfg.BaseTeamAt(crate.transform.position) == team && crate.Slots[0].Id == Item.C4,
+                    $"({who}) the crate landed in our base with C4 in it, for the raid ({(crate != null ? Cfg.ItemName(crate.Slots[0].Id) : "no crate")})");
                 if (crate != null)
                 {
                     var by = crate.transform.position + Cfg.BackDir(team) * 2.2f;
@@ -656,7 +658,7 @@ namespace RockGame
                     string next = Bootstrap.Solo ? "glass" : "friend";
                     yield return TutWaitStep(next, 5f);
                     pc.CloseMenu();
-                    Check(Tutorial.StepId == next && me.Count(loot.Id) >= 1 && Tutorial.MyDrop == null && g.S == GameState.PreBall,
+                    Check(Tutorial.StepId == next && me.Count(loot.Id) >= 1 && me.Count(Item.C4) == 1 && Tutorial.MyDrop == null && g.S == GameState.PreBall,
                         $"({who}) took the {Cfg.ItemName(loot.Id)} out of the crate (opened by the key: {opened}): the crate goes, on to {next} - the wall is still up ({Tutorial.StepId})");
                 }
             }
@@ -710,7 +712,9 @@ namespace RockGame
             }
             yield return TutShot("walldown");
 
-            // ---- the raid: a hut in the enemy's base - its padlocked door has its own, weaker health; then its chest ----
+            // ---- the raid: solo, the enemy's machine walled in round its bedrock (with a friend, a hut in their base) - its
+            // padlocked door has its own, weaker health; the C4 from the airdrop blows it open (a miss gets another); then
+            // its chest ----
             until = Time.time + 8f;
             while ((Tutorial.HutDoor == null || Tutorial.HutChest == null) && Time.time < until) yield return null;
             {
@@ -718,8 +722,19 @@ namespace RockGame
                 var theirs = Tutorial.HutChest;
                 Check(door != null && theirs != null && door.Team.Value == enemy && theirs.Team.Value == enemy && door.HasDoor && Mathf.Approximately(door.DoorHealth.Value, Cfg.DoorLeafHp(0))
                     && door.DoorHealth.Value < door.Health.Value && Cfg.BaseTeamAt(door.transform.position) == enemy && me.TutHut.Value != Vector3.zero && !theirs.Empty,
-                    $"({who}) the raid step builds a hut in the enemy's base: a padlocked door (its own {(door != null ? door.DoorHealth.Value : 0f):0} HP, the frame {(door != null ? door.Health.Value : 0f):0}) and a chest of loot inside");
-                Check(me.Count(Item.Ram) == 1 && Tutorial.AllowsItem(Item.Ram), $"({who}) a battering ram was handed over (and can be crafted now) ({me.Count(Item.Ram)})");
+                    $"({who}) the raid step builds in the enemy's base: a padlocked door (its own {(door != null ? door.DoorHealth.Value : 0f):0} HP, the frame {(door != null ? door.Health.Value : 0f):0}) and a chest of loot inside");
+                if (Bootstrap.Solo)
+                {
+                    // the walls stand round the enemy's bedrock, with their machine (and the ball in it) inside
+                    var mid = Cfg.BaseCenter[enemy];
+                    int walls = 0;
+                    foreach (var s in Structure.All)
+                        if (s != null && s.IsSpawned && s.Team.Value == enemy && (s.PType == PieceType.Wall || s.PType == PieceType.Doorway) && Flat(s.transform.position, mid) < Cfg.BedrockHalf + 1.5f) walls++;
+                    Check(walls == 8 && Tutorial.HutPieces == 8 && Flat(me.TutHut.Value, mid) < 0.1f && ball != null && Flat(ball.transform.position, mid) < Cfg.BedrockHalf - 0.5f
+                        && Flat(theirs.transform.position, mid) < Cfg.BedrockHalf - 0.5f && Flat(door.transform.position, mid) > Cfg.BedrockHalf - 0.2f,
+                        $"({who}) solo: the enemy's base is walled in round the ball - {walls} walls and a doorway on the edges of their bedrock, the ball in their machine and their chest inside");
+                }
+                Check(me.Count(Item.Ram) == 1 && Tutorial.AllowsItem(Item.Ram) && me.Count(Item.C4) == 1, $"({who}) a battering ram was handed over (and can be crafted now), and we still have the airdrop's C4 ({me.Count(Item.Ram)} ram, {me.Count(Item.C4)} C4)");
                 if (door != null && theirs != null)
                 {
                     var face = -Cfg.BackDir(enemy); // (the door faces the middle of the map)
@@ -732,17 +747,54 @@ namespace RockGame
                     yield return TutShot("raid_hut");
                     yield return TutPress(Bind.Interact, 0.6f);
                     Check(!door.DoorOpen.Value && Tutorial.StepId == "raid", $"({who}) E doesn't open the enemy's padlocked door");
-                    yield return TutSelect(me, Item.Hatchet);
-                    Binds.TestHold(Bind.Attack, true);
-                    until = Time.time + 16f;
-                    while (door != null && door.IsSpawned && door.HasDoor && Time.time < until) { LookAt(pc, me, doorAim); yield return null; }
-                    Binds.TestHold(Bind.Attack, false);
-                    bool byHitting = door != null && door.IsSpawned && !door.HasDoor;
-                    if (door != null && door.IsSpawned && door.HasDoor) { Log("(hitting it didn't break the door - breaking it on the server)"); door.ServerDamageDoor(9999f); }
+
+                    // a C4 that misses (thrown away from the base): the door's still on, so another one comes
+                    yield return TutSelect(me, Item.C4);
+                    Check(me.HeldItem == Item.C4, $"({who}) holding the C4 ({me.HeldItem})");
+                    pc.SetLook(Quaternion.LookRotation(face).eulerAngles.y, 0f); // (it lands well over 5 m - its blast - from their walls)
+                    yield return new WaitForSeconds(0.2f);
+                    yield return TutPress(Bind.Attack, 0.5f);
+                    bool thrown = me.Count(Item.C4) == 0;
+                    if (!thrown) { Log("(LMB didn't throw the C4 - throwing it by RPC)"); me.ThrowC4Rpc(me.EyePos, face * 16f + Vector3.up * 2.5f); yield return new WaitForSeconds(0.5f); }
+                    Check(me.Count(Item.C4) == 0, $"({who}) LMB throws the C4 (by the key: {thrown})");
+                    pc.LocalTeleport(front + face * 3f, Quaternion.LookRotation(-face).eulerAngles.y); // (out of its way)
+                    until = Time.time + Tutorial.C4RefillAfter + 8f;
+                    while (me.Count(Item.C4) == 0 && Time.time < until) yield return null;
+                    Check(me.Count(Item.C4) == 1 && door != null && door.IsSpawned && door.HasDoor && Tutorial.StepId == "raid",
+                        $"({who}) the C4 missed and the door's still on: another one is handed over ({me.Count(Item.C4)} C4)");
+
+                    // now right at the door - and back off while it ticks
+                    var throwFrom = door.transform.position + face * 4.5f;
+                    throwFrom.y = MapBuilder.Height(throwFrom.x, throwFrom.z) + 0.1f;
+                    pc.LocalTeleport(throwFrom, Quaternion.LookRotation(-face).eulerAngles.y);
+                    yield return new WaitForSeconds(0.4f);
+                    yield return TutSelect(me, Item.C4);
+                    LookAt(pc, me, doorAim);
+                    yield return new WaitForSeconds(0.15f);
+                    yield return TutPress(Bind.Attack, 0.6f);
+                    thrown = me.Count(Item.C4) == 0;
+                    if (!thrown && door != null && door.IsSpawned) { Log("(LMB didn't throw the C4 at the door - arming one on it on the server)"); g.ServerArmC4(doorAim, face, me); }
+                    var away = door.transform.position + face * 10f;
+                    away.y = MapBuilder.Height(away.x, away.z) + 0.1f;
+                    pc.LocalTeleport(away, Quaternion.LookRotation(-face).eulerAngles.y);
+                    yield return TutShot("raid_c4");
+                    until = Time.time + Cfg.C4Fuse + 4f;
+                    while (door != null && door.IsSpawned && door.HasDoor && Time.time < until) yield return null;
+                    bool blown = door == null || !door.IsSpawned;
+                    if (door != null && door.IsSpawned && door.HasDoor) { Log("(the C4 didn't get the door - breaking it on the server)"); door.ServerDamageDoor(9999f); }
                     yield return TutWaitStep("raidloot", 4f);
-                    Check(Tutorial.StepId == "raidloot" && door != null && door.IsSpawned && !door.HasDoor && door.Health.Value > 0f,
-                        $"({who}) the hatchet breaks the door off (by hitting it: {byHitting}) - the frame still stands - and that ticks the raid step off ({Tutorial.StepId})");
+                    Check(Tutorial.StepId == "raidloot" && blown && !me.Dead.Value,
+                        $"({who}) the C4 thrown at the door blows it (and the wall round it) open from a safe distance (by the throw: {thrown}, blown: {blown}) - that ticks the raid step off ({Tutorial.StepId}, {Tutorial.HutPieces} pieces left)");
+                    pc.LocalTeleport(front, Quaternion.LookRotation(-face).eulerAngles.y); // (back in through the hole)
+                    yield return new WaitForSeconds(0.4f);
                     yield return TutShot("raid_open");
+                    if (theirs != null && theirs.IsSpawned)
+                    {
+                        var by = theirs.Center + face * 1.6f;
+                        by.y = theirs.transform.position.y + 0.1f; // (on the floor it stands on: their bedrock, or the hut's)
+                        pc.LocalTeleport(by, Quaternion.LookRotation(-face).eulerAngles.y);
+                        yield return new WaitForSeconds(0.3f);
+                    }
                     for (int i = 0; i < theirs.Slots.Count; i++)
                         if (!theirs.Slots[i].Empty) me.MoveItemRpc(1, (byte)i, 0, 255, theirs.Slots[i].Count, theirs.NetworkObject);
                     yield return TutWaitStep("toball", 5f);
@@ -791,25 +843,8 @@ namespace RockGame
             Check(me.Count(Item.Crossbow) == 0, $"({who}) no crossbow before there's a trade station");
             yield return TutBenchSteps(me, pc, team, who, grassSpot, nearGrass);
 
-            // ---- the upgrade station: given the wood, E opens UPGRADES, the wood gen builds the wood machine ----
-            yield return new WaitForSeconds(0.6f);
-            Check(Tutorial.StepId == "upgrade" && Tutorial.Allows(TutFeature.Station) && me.Count(Item.Wood) >= Cfg.WoodGenWood(1) && Cfg.WoodGenLevel(team) == 0,
-                $"({who}) the upgrade step unlocks the station and tops the wood up to the wood machine's price ({me.Count(Item.Wood)} / {Cfg.WoodGenWood(1)})");
-            pc.LocalTeleport(stationAt, Quaternion.LookRotation(Cfg.BackDir(team)).eulerAngles.y);
-            yield return new WaitForSeconds(0.4f);
-            LookAt(pc, me, stationAim);
-            yield return new WaitForSeconds(0.1f);
-            yield return TutPress(Bind.Interact, 0.5f);
-            {
-                bool opened = pc.UpgradesOpen;
-                if (!opened) { Log("(E didn't open the upgrade station - opening it directly)"); pc.OpenUpgrades(); yield return null; }
-                yield return TutShot("upgrades");
-                me.BaseUpgradeRpc(Item.WoodGenBuff);
-                string next = Bootstrap.Solo ? "win" : "duel";
-                yield return TutWaitStep(next, 5f);
-                pc.CloseMenu();
-                Check(Cfg.WoodGenLevel(team) == 1 && Tutorial.StepId == next, $"({who}) bought the wood gen (E opened UPGRADES: {opened}): our wood machine is built, and the guide moves on to {next} ({Tutorial.StepId})");
-            }
+            // ---- armour, then the upgrade station: the wood gen, then our walls ----
+            yield return TutArmourAndUpgrades(me, pc, team, who, Bootstrap.Solo ? "win" : "duel");
 
             if (Bootstrap.Solo)
             {
@@ -923,9 +958,66 @@ namespace RockGame
             yield return TutPress(Bind.Inventory);
             yield return new WaitForSeconds(0.4f);
             yield return TutShot("bag_t1");
-            yield return TutWaitStep("upgrade", 4f);
-            Check(Tutorial.StepId == "upgrade" && !Tutorial.Finished, $"({who}) opening the bag in the base shows the trade station's list; on to the upgrade station ({Tutorial.StepId})");
+            yield return TutWaitStep("armour", 4f);
+            Check(Tutorial.StepId == "armour" && !Tutorial.Finished, $"({who}) opening the bag in the base shows the trade station's list; on to armour ({Tutorial.StepId})");
             yield return TutPress(Bind.Inventory); // (close the bag)
+        }
+
+        /// <summary>After the trade station (host and joiner alike): craft armour (it goes straight on), then at the upgrade
+        /// station - given the wood each time, the price from the config - the wood gen (Fortify All Walls is refused
+        /// until its own step), then Fortify All Walls (our pieces turn to stone); then the guide is on `next`.</summary>
+        IEnumerator TutArmourAndUpgrades(PlayerNet me, PlayerController pc, int team, string who, string next)
+        {
+            // ---- armour: from the trade station's list ----
+            yield return new WaitForSeconds(0.3f);
+            Check(Tutorial.StepId == "armour" && Tutorial.AllowsItem(Item.Armor) && me.ArmorHp.Value == 0 && Cfg.WoodGenLevel(team) == 0 && !Tutorial.Allows(TutFeature.Station),
+                $"({who}) the armour step comes before the upgrade station ({Tutorial.StepId}, armour {me.ArmorHp.Value})");
+            int armourWood = Cfg.GetRecipe(Cfg.RecipeIndex(Item.Armor)).Wood;
+            if (me.Count(Item.Wood) < armourWood) { me.DevRpc(DevCmd.GiveWood); yield return new WaitForSeconds(0.4f); }
+            if (Cfg.BaseTeamAt(me.transform.position) != team) { pc.LocalTeleport(Cfg.SpawnPos(team, me.Slot.Value), Cfg.SpawnYaw(team)); yield return new WaitForSeconds(0.4f); }
+            me.CraftRpc(Cfg.CraftIndexOf(Item.Armor));
+            yield return TutWaitStep("upgrade", 5f);
+            Check(Tutorial.StepId == "upgrade" && me.ArmorHp.Value == Cfg.ArmorHp, $"({who}) crafting armour puts it straight on ({me.ArmorHp.Value} armour HP) and ticks the step off ({Tutorial.StepId})");
+
+            // ---- the wood gen: given the wood, E opens UPGRADES ----
+            yield return new WaitForSeconds(0.6f);
+            int genWood = Cfg.BaseUpgradeRecipe(Item.WoodGenBuff, team).Wood;
+            Check(Tutorial.StepId == "upgrade" && Tutorial.Allows(TutFeature.Station) && !Tutorial.Allows(TutFeature.Fortify) && me.Count(Item.Wood) >= genWood && Cfg.WoodGenLevel(team) == 0,
+                $"({who}) the upgrade step unlocks the station and tops the wood up to the wood machine's price ({me.Count(Item.Wood)} / {genWood})");
+            var stationAt = Cfg.UpgradeStationPos(team) - Cfg.BackDir(team) * 1.7f;
+            stationAt.y = Cfg.SpawnPos(team).y;
+            var stationAim = Cfg.UpgradeStationPos(team) + Vector3.up * 1.1f;
+            pc.LocalTeleport(stationAt, Quaternion.LookRotation(Cfg.BackDir(team)).eulerAngles.y);
+            yield return new WaitForSeconds(0.4f);
+            LookAt(pc, me, stationAim);
+            yield return new WaitForSeconds(0.1f);
+            yield return TutPress(Bind.Interact, 0.5f);
+            bool opened = pc.UpgradesOpen;
+            if (!opened) { Log("(E didn't open the upgrade station - opening it directly)"); pc.OpenUpgrades(); yield return null; }
+            yield return TutShot("upgrades");
+            // Fortify isn't this step's: refused even with the wood for it
+            me.DevRpc(DevCmd.GiveWood);
+            yield return new WaitForSeconds(0.4f);
+            me.BaseUpgradeRpc(Item.FortifyBuff);
+            yield return new WaitForSeconds(0.6f);
+            Check(Cfg.FortifyLevel(team) == 0 && Tutorial.StepId == "upgrade", $"({who}) the server refuses Fortify All Walls before its step (level {Cfg.FortifyLevel(team)})");
+            me.BaseUpgradeRpc(Item.WoodGenBuff);
+            yield return TutWaitStep("fortify", 5f);
+            Check(Cfg.WoodGenLevel(team) == 1 && Tutorial.StepId == "fortify" && Tutorial.Allows(TutFeature.Fortify),
+                $"({who}) bought the wood gen (E opened UPGRADES: {opened}): our wood machine is built; on to the walls ({Tutorial.StepId})");
+
+            // ---- our walls: Fortify All Walls, given the wood ----
+            yield return new WaitForSeconds(0.8f);
+            int fortWood = Cfg.BaseUpgradeRecipe(Item.FortifyBuff, team).Wood;
+            Check(me.Count(Item.Wood) >= fortWood, $"({who}) the walls step tops the wood up to Fortify's price ({me.Count(Item.Wood)} / {fortWood})");
+            me.BaseUpgradeRpc(Item.FortifyBuff);
+            yield return TutWaitStep(next, 5f);
+            pc.CloseMenu();
+            int pieces = 0, stone = 0;
+            foreach (var s in Structure.All)
+                if (s != null && s.IsSpawned && s.Team.Value == team && s.Upgradable) { pieces++; if (s.Tier.Value >= 1) stone++; }
+            Check(Cfg.FortifyLevel(team) == 1 && stone == pieces && Tutorial.StepId == next,
+                $"({who}) bought Fortify All Walls: our pieces are stone ({stone} / {pieces}), and the guide moves on to {next} ({Tutorial.StepId})");
         }
 
         /// <summary>
@@ -977,6 +1069,10 @@ namespace RockGame
             var theirs = Tutorial.HutChest;
             Check(door != null && theirs != null && door.Team.Value == enemy && Cfg.BaseTeamAt(door.transform.position) == enemy,
                 $"({who}) our raid's hut is in the host's base ({(door != null ? door.transform.position.ToString() : "no hut")})");
+            // we never had the airdrop: the raid hands us C4 straight away (the axe still works too - that's what we use)
+            until = Time.time + 16f; // (not while the host's C4 is ticking)
+            while (me.Count(Item.C4) == 0 && Time.time < until) yield return null;
+            Check(me.Count(Item.C4) == 1, $"({who}) the raid step hands C4 to whoever has none ({me.Count(Item.C4)})");
             if (door != null && theirs != null)
             {
                 var face = -Cfg.BackDir(enemy);
@@ -1007,15 +1103,8 @@ namespace RockGame
             nearGrass.y = MapBuilder.Height(nearGrass.x, nearGrass.z) + 0.1f;
             yield return TutBenchSteps(me, pc, team, who, grassSpot, nearGrass);
 
-            // the upgrade station
-            yield return new WaitForSeconds(0.6f);
-            var stationAt = Cfg.UpgradeStationPos(team) - Cfg.BackDir(team) * 1.7f;
-            stationAt.y = Cfg.SpawnPos(team).y;
-            pc.LocalTeleport(stationAt, Quaternion.LookRotation(Cfg.BackDir(team)).eulerAngles.y);
-            yield return new WaitForSeconds(0.4f);
-            me.BaseUpgradeRpc(Item.WoodGenBuff);
-            yield return TutWaitStep("duel", 6f);
-            Check(Tutorial.StepId == "duel" && Cfg.WoodGenLevel(team) == 1, $"({who}) bought the wood gen: on to the duel ({Tutorial.StepId})");
+            // armour, the wood gen and our walls
+            yield return TutArmourAndUpgrades(me, pc, team, who, "duel");
 
             until = Time.time + 120f;
             while (Tutorial.StepId == "duel" && Time.time < until) yield return null;

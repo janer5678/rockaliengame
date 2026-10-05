@@ -355,6 +355,48 @@ namespace RockGame
                 }
                 return false;
             }
+            // leaves sticking out of the blobs all over (so it reads as a leafy bush, not a pile of green balls): each a
+            // pointed two-sided leaf folded along its midrib, leaning out and up from the blob's surface, its own shade of
+            // the bush's green and fluttering in the wind more than the blobs
+            {
+                Color.RGBToHSV(leaf, out float lh, out float ls, out float lv);
+                for (int bi = 0; bi < blobs.Count; bi++)
+                {
+                    var (c, r, squash) = blobs[bi];
+                    int n = Mathf.RoundToInt(r * 34f) + rng.Next(3);
+                    for (int k = 0, tries = 0; k < n && tries < n * 4; tries++)
+                    {
+                        var dir = new Vector3(R(-1f, 1f), R(-0.25f, 1f), R(-1f, 1f));
+                        if (dir.sqrMagnitude < 0.05f) continue;
+                        dir.Normalize();
+                        var at = c + new Vector3(dir.x * r, dir.y * r * squash, dir.z * r) * 0.9f;
+                        if (at.y < 0.12f || Buried(at, bi)) continue;
+                        k++;
+                        float len = R(0.17f, 0.25f), wid = len * R(0.36f, 0.46f);
+                        var fwd = (dir + Vector3.up * 0.35f + new Vector3(R(-0.3f, 0.3f), R(-0.1f, 0.2f), R(-0.3f, 0.3f))).normalized;
+                        var side = Vector3.Cross(fwd, Vector3.up);
+                        if (side.sqrMagnitude < 0.01f) side = Vector3.Cross(fwd, Vector3.right);
+                        side = Quaternion.AngleAxis(R(-35f, 35f), fwd) * side.normalized;
+                        var nrm = Vector3.Cross(side, fwd).normalized;
+                        if (Vector3.Dot(nrm, Vector3.up) < 0f) nrm = -nrm; // (the face looks up / out)
+                        var tip = at + fwd * len - nrm * len * 0.12f;    // (curling down a little at the tip)
+                        var mid = at + fwd * len * 0.42f;
+                        var lft = mid - side * wid * 0.5f + nrm * wid * 0.22f; // (folded up along the midrib)
+                        var rgt = mid + side * wid * 0.5f + nrm * wid * 0.22f;
+                        var col = Color.HSVToRGB(Mathf.Repeat(lh + R(-0.03f, 0.03f), 1f), ls * R(0.85f, 1.05f), lv * R(0.95f, 1.25f))
+                                  * Mathf.Lerp(0.82f, 1.08f, Mathf.Clamp01(at.y / 0.9f));
+                        col.a = 1f;
+                        var dark = col * 0.8f;
+                        dark.a = 1f;
+                        var sa = Sway(at, 0.6f); var st = Sway(tip, 1f); var sl = Sway(lft, 0.85f); var sr = Sway(rgt, 0.85f);
+                        // top face (two halves of the fold), then the underside
+                        leaves.Tri(at, tip, lft, dark, col, col, sa, st, sl);
+                        leaves.Tri(at, rgt, tip, dark, col, col, sa, sr, st);
+                        leaves.Tri(at, lft, tip, dark, dark, dark, sa, sl, st);
+                        leaves.Tri(at, tip, rgt, dark, dark, dark, sa, st, sr);
+                    }
+                }
+            }
             // (bigger berries than they were - BerrySize - and a few fewer of them)
             int want = 15 + rng.Next(5), made = 0;
             for (int tries = 0; tries < 300 && made < want; tries++)
@@ -388,9 +430,9 @@ namespace RockGame
             MeshKit.Spawn(tr, "bush", new[] { WorldLook.BushLeaves, WorldLook.Berries }, true, leaves, berries);
         }
 
-        /// <summary>The Normal berry bush is this much bigger than the old one (about 3 m across, 1.9 m high - it was 1.25:
-        /// 2.2 m across). The trigger you pick it by grows with it.</summary>
-        public const float BushSize = 1.7f;
+        /// <summary>The Normal berry bush is this much bigger than the old one (about 3.3 m across, 2 m high with its leaves
+        /// - it was 1.25: 2.2 m across, then 1.7). The trigger you pick it by grows with it.</summary>
+        public const float BushSize = 1.85f;
         /// <summary>The PSX / AI PSX bush (the old one) is this much bigger than it first was, its trigger too.</summary>
         public const float OldBushSize = 1.35f;
         /// <summary>The berries on the bushes are this much bigger than they first were (radius 6.5 .. 8.5 cm then).</summary>
@@ -1427,6 +1469,19 @@ namespace RockGame
                 n = (byte)Random.Range(5, 10);
             }
             ServerBirdsTakeOff(n);
+        }
+
+        /// <summary>(server) Something that isn't a harvesting swing hit this - an arrow, bolt, thrown spear or bullet: a
+        /// standing tree's birds fly off, just as they do when it's chopped.</summary>
+        public void ServerStruck()
+        {
+            if (IsSpawned && Kind.Value == Tree && Amount.Value > 0) ServerBirdsOnHit();
+        }
+
+        /// <summary>(server) The tree (if any) behind a projectile's reported target: its birds take off (ServerStruck).</summary>
+        public static void ServerStruck(NetworkObject no)
+        {
+            if (no != null && no.TryGetComponent(out ResourceNode n)) n.ServerStruck();
         }
 
         /// <summary>(tests) A flock flies out of this tree now (as if a hit had sent one up).</summary>

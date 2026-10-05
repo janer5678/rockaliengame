@@ -320,8 +320,7 @@ namespace RockGame
             MoveTo(ground + Vector3.up * (PlinthH + Radius));
             transform.rotation = Quaternion.identity;
             SocketTeam.Value = (sbyte)by.Team.Value;
-            if (NetGame.Instance != null) NetGame.Instance.Broadcast($"{Cfg.TeamLabel(by.Team.Value)} planted the ball - it's theirs until someone picks it up!");
-            if (NetGame.Instance != null) NetGame.Instance.ServerBallFeed(by, by.Team.Value, true); // (Builder's capture: a kill feed line)
+            if (NetGame.Instance != null) NetGame.Instance.ServerBallFeed(by, by.Team.Value, true); // (Builder's capture: a kill feed line - and no top-right message as well)
         }
 
         /// <summary>The block (in the owner's colour) that grows up under a planted ball, and the flag that grows out of its top.</summary>
@@ -441,8 +440,7 @@ namespace RockGame
             m_Rb.isKinematic = true;
             transform.SetPositionAndRotation(Cfg.SocketPos(team), Quaternion.identity);
             SocketTeam.Value = (sbyte)team;
-            if (NetGame.Instance != null) NetGame.Instance.Broadcast($"The ball is in the {Cfg.TeamName[team]} machine!");
-            // the kill feed: who captured it (whoever last picked it up, if they're on that team), or just the team
+            // the kill feed (and only it - no top-right message saying the same): who captured it (whoever last picked it up, if they're on that team), or just the team
             if (NetGame.Instance != null) NetGame.Instance.ServerBallFeed(m_LastHolder != null && m_LastHolder.IsSpawned && m_LastHolder.Team.Value == team ? m_LastHolder : null, team, true);
         }
 

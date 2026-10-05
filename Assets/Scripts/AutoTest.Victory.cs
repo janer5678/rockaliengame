@@ -89,7 +89,8 @@ namespace RockGame
             bool domeGone = true, ballBeamOff = true, tagSeen = false;
             float maxClose = 0f;
             float dashY = 0f;
-            int camFrames = 0, camBlocked = 0;
+            int camFrames = 0, camBlocked = 0, treeLooks = 0, treeBlocked = 0;
+            bool pathChecked = false;
             int taken = 0;
             float hoverY = 0f;
             var shots = new Queue<(float at, string name)>(new[]
@@ -103,6 +104,28 @@ namespace RockGame
                 float e = VictoryCutscene.Elapsed;
                 lastE = e;
                 taken = Mathf.Max(taken, VictoryCutscene.Taken);
+                // the camera's whole move (planned once the ship's built), sampled at 30 fps: no lurch - its top speed and
+                // acceleration stay modest (the push in on the winners used to hit ~28 m/s) - and the push in/out ramp has no jumps
+                if (!pathChecked && VictoryCutscene.Ship != null)
+                {
+                    pathChecked = true;
+                    const float dt = 1f / 30f;
+                    float maxV = 0f, maxA = 0f, maxDClose = 0f, atV = 0f;
+                    var p0 = VictoryCutscene.CamPathAt(0f);
+                    var v0 = Vector3.zero;
+                    for (float t = dt; t <= VictoryCutscene.Length; t += dt)
+                    {
+                        var p1 = VictoryCutscene.CamPathAt(t);
+                        var v1 = (p1 - p0) / dt;
+                        if (v1.magnitude > maxV) { maxV = v1.magnitude; atV = t; }
+                        if (t > dt * 1.5f) maxA = Mathf.Max(maxA, (v1 - v0).magnitude / dt);
+                        maxDClose = Mathf.Max(maxDClose, Mathf.Abs(VictoryCutscene.CloseUp(t) - VictoryCutscene.CloseUp(t - dt)));
+                        p0 = p1;
+                        v0 = v1;
+                    }
+                    Check(maxV < 16f && maxA < 30f && maxDClose < 0.04f,
+                        $"victory: the camera's move is smooth (top speed {maxV:0.0} m/s at {atV:0.0} s, top acceleration {maxA:0.0} m/s², biggest push-in step per frame {maxDClose:0.000}; pushes in {VictoryCutscene.CamPush * 100f:0}%, {VictoryCutscene.TreesHidden} trees hidden)");
+                }
                 if (Hud.GameOverShownAt != screenBefore) early = true;
                 // locked: no free cursor, no pause, the camera's the cutscene's (away from our eyes)
                 lockedAll &= Cursor.lockState == CursorLockMode.Locked && !pc.Paused && !pc.MenuOpen;
@@ -139,6 +162,12 @@ namespace RockGame
                         foreach (var hit in Physics.SphereCastAll(vp, 0.2f, dv.normalized, dv.magnitude - 1f, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore))
                             if (hit.collider.GetComponentInParent<PlayerNet>() == null) { camBlocked++; break; }
                     }
+                    // no tree's needles (they've no colliders) in front of the winners or the beam
+                    foreach (var target in new[] { spotNow + Vector3.up * 1.2f, Vector3.Lerp(spotNow, hov, 0.5f), hov + Vector3.up * AirdropShip.HatchY })
+                    {
+                        treeLooks++;
+                        if (VictoryCutscene.TreeInWay(vp, target)) treeBlocked++;
+                    }
                     camFromBase = Mathf.Min(camFromBase, new Vector2(vp.x - spotNow.x, vp.z - spotNow.z).magnitude);
                 }
                 if (shots.Count > 0 && e >= shots.Peek().at)
@@ -162,6 +191,8 @@ namespace RockGame
             Check(dashY > MapScenery.RangeTop(0) + 8f && dashY > hoverY + 10f, $"victory: the UFO lifts up over the mountains before it flies off ({dashY:0} m up; it hovered at {hoverY:0} m, the nearest peaks reach {MapScenery.RangeTop(0):0} m)");
             Check(camFrames > 20 && camBlocked == 0 && camFromBase > 20f && VictoryCutscene.CamClear > 0.5f,
                 $"victory: the camera films from outside the walled-in base ({camFromBase:0} m out, {walls} walls round it) with nothing in the way of the beam ({camBlocked} of {camFrames} looks blocked; it sees {VictoryCutscene.CamClear * 100f:0}% of the action, {VictoryCutscene.CamTried} spots tried)");
+            Check(pathChecked && treeLooks > 30 && treeBlocked == 0,
+                $"victory: no tree stands between the camera and the winners or the beam ({treeBlocked} of {treeLooks} looks blocked; {VictoryCutscene.TreesHidden} trees hidden as a fallback)");
             Check(maxClose > 0.95f && VictoryCutscene.CamPush > 0.05f && tagSeen && VictoryCutscene.CloseUp(VictoryCutscene.BeamOff - 0.9f) < 0.05f,
                 $"victory: the camera pushes in close on the winners ({VictoryCutscene.CamPush * 100f:0}% of the way in) with their name tags on screen ({tagSeen}), and is back out before they're all in the ship");
             var beamCol = VictoryCutscene.BeamColour(g);

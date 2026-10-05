@@ -41,9 +41,10 @@ namespace RockGame
         /// <summary>The build wheel's slices, clockwise from just right of the top (see WheelAngle).</summary>
         public static readonly (string Label, PieceType Piece, bool Demolish, bool Upgrade)[] WheelOptions =
         {
-            // clockwise: three pieces down the right (the wall on the right), DEMOLISH straight down at the bottom (like
-            // Rust), then three pieces up the left. Upgrades are at the upgrade station; they aren't a slice any more
-            ("Foundation", PieceType.Foundation, false, false), ("Ceiling", PieceType.Floor, false, false), ("Wall", PieceType.Wall, false, false),
+            // clockwise: three pieces down the right (the wall straight out to the right, the ceiling under it), DEMOLISH
+            // straight down at the bottom (like Rust), then three pieces up the left. Upgrades are at the upgrade station;
+            // they aren't a slice any more
+            ("Foundation", PieceType.Foundation, false, false), ("Wall", PieceType.Wall, false, false), ("Ceiling", PieceType.Floor, false, false),
             ("Demolish", PieceType.Wall, true, false),
             ("Window", PieceType.Window, false, false), ("Stairs", PieceType.Stairs, false, false), ("Doorway", PieceType.Doorway, false, false),
         };
@@ -995,6 +996,12 @@ namespace RockGame
                 Fx.Shake(head ? 0.3f : 0.18f);
                 Fx.Punch(head ? -3f : -1.5f);
             }
+            else if (no != null && no.TryGetComponent(out Vehicle hv) && (hv.IsHorse || hv.IsSlender))
+            {
+                // a horse (or Slenderman): a damage number and a hit marker too (the server does the same sum: PlayerNet.MeleeRpc)
+                Hud.AnimalHit(hv, hit.point, st.PlayerDamage * hv.HeadMul(hit.point));
+                Fx.Shake(0.15f);
+            }
             else if (no != null && no.TryGetComponent(out ResourceNode n) && !n.IsBush)
             {
                 weak = n.IsWeakSpotAimed(ray, hit.point, 0.45f);
@@ -1636,10 +1643,7 @@ namespace RockGame
                 case TargetKind.WorldItem: m_Net.PickupItemRpc(t.ItemId); m_VM.Use(); break;
                 case TargetKind.SelfSpear: m_Net.PullSpearRpc(m_Net.NetworkObject); Sfx.Play2D(Sfx.Flesh, 0.6f); break;
                 case TargetKind.Machine:
-                    if (t.MachineTeam != m_Net.Team.Value) { Hud.Push(carrying ? "Put the ball in YOUR machine to win" : "That's the enemy's machine"); break; }
-                    Hud.Push(carrying ? "Throw the ball (LMB) into the socket - it snaps in when it gets close" : "Throw the ball into this socket to win. (Craft anywhere in your base with " + Binds.Name(Bind.Inventory)
-                        + (Cfg.HasBaseUpgrades ? "; upgrades are at the upgrade station to the left of it)" : ")"));
-                    break;
+                    break; // (no top-right message: the look-at line under the crosshair already says what to do with it)
                 case TargetKind.UpgradeStation:
                     // your own upgrade station: the UPGRADES screen (fortify, the wood gen)
                     if (t.MachineTeam != m_Net.Team.Value) { Hud.Push("That's the enemy's upgrade station"); break; }

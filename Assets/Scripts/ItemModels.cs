@@ -13,8 +13,13 @@ namespace RockGame
         /// <summary>The darker, harder wood the hatchet's blade and the spear / arrow points are carved from (they used to be stone).</summary>
         public static readonly Color HardWood = new Color(0.24f, 0.15f, 0.08f);
         /// <summary>The hatchet's blade: the hard wood a little lighter and greyer (in the hard wood's own red-brown it
-        /// looked like a bronze axe head).</summary>
-        public static readonly Color HatchetHead = new Color(0.36f, 0.28f, 0.2f);
+        /// looked like a bronze axe head; a pale weathered grey-brown now, well clear of bronze).</summary>
+        public static readonly Color HatchetHead = new Color(0.52f, 0.48f, 0.43f);
+
+        /// <summary>The up arrow on the base upgrades' models (Fortify, Wood Gen): the orangey upgrade colour, or - while
+        /// ItemIcons renders a team's copy of their icons for the UPGRADES screen - a light shade of that team's colour.</summary>
+        internal static Color? ArrowTint;
+        static Color UpgradeArrow => ArrowTint ?? UpgradeStation.Green;
 
         static Mesh s_Leaf;
         /// <summary>
@@ -498,14 +503,14 @@ namespace RockGame
                         Art.Part(t, Art.Cylinder, k == 1 ? Art.Wood * 0.9f : Art.Wood, new Vector3(-0.08f + k * 0.08f, 0.04f, 0), new Vector3(0.07f, 0.12f, 0.07f), new Vector3(90, 0, 0));
                     Art.Part(t, Art.Cylinder, Art.Wood, new Vector3(-0.04f, 0.11f, 0), new Vector3(0.07f, 0.12f, 0.07f), new Vector3(90, 0, 0));
                     Art.Part(t, Art.Cylinder, Art.Wood * 0.9f, new Vector3(0.04f, 0.11f, 0), new Vector3(0.07f, 0.12f, 0.07f), new Vector3(90, 0, 0));
-                    Art.Box(t, UpgradeStation.Green, new Vector3(0, 0.3f, 0), new Vector3(0.065f, 0.12f, 0.065f));
-                    Art.Part(t, Art.Cone, UpgradeStation.Green, new Vector3(0, 0.385f, 0), new Vector3(0.18f, 0.11f, 0.18f));
+                    Art.Box(t, UpgradeArrow, new Vector3(0, 0.3f, 0), new Vector3(0.065f, 0.12f, 0.065f));
+                    Art.Part(t, Art.Cone, UpgradeArrow, new Vector3(0, 0.385f, 0), new Vector3(0.18f, 0.11f, 0.18f));
                     break;
                 case Item.FortifyBuff:
                     // a stone brick with the same big orange-yellow up arrow well above it
                     Art.Box(t, Art.Stone, new Vector3(0, 0.07f, 0), new Vector3(0.24f, 0.14f, 0.14f));
-                    Art.Box(t, UpgradeStation.Green, new Vector3(0, 0.29f, 0), new Vector3(0.065f, 0.12f, 0.065f));
-                    Art.Part(t, Art.Cone, UpgradeStation.Green, new Vector3(0, 0.375f, 0), new Vector3(0.18f, 0.11f, 0.18f));
+                    Art.Box(t, UpgradeArrow, new Vector3(0, 0.29f, 0), new Vector3(0.065f, 0.12f, 0.065f));
+                    Art.Part(t, Art.Cone, UpgradeArrow, new Vector3(0, 0.375f, 0), new Vector3(0.18f, 0.11f, 0.18f));
                     break;
                 case Item.Boat:
                     // a toy rowing boat

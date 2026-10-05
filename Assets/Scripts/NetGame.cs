@@ -319,6 +319,7 @@ namespace RockGame
         void OnClientDisconnect(ulong clientId)
         {
             if (clientId == NetworkManager.ServerClientId) return;
+            if (Spectator.ServerIs(clientId)) return; // a spectator going changes nothing (Spectator.cs)
             if (Cfg.Tutorial) return; // nobody wins a tutorial by the others leaving
             if (S != GameState.PreBall && S != GameState.BallLive && S != GameState.SuddenDeath) return;
             // whoever is left: if only one team still has players, they win
@@ -777,7 +778,7 @@ namespace RockGame
                 var pos = LanePosAt(i);
                 var go = Instantiate(Bootstrap.I.containerPrefab, pos, Quaternion.Euler(0, Random.Range(0f, 360f), 0));
                 lane.Crate = go.GetComponent<Container>();
-                lane.Crate.ServerInit(Container.Airdrop, 7, 1, new List<ItemStack> { RollAirdropLoot() });
+                lane.Crate.ServerInit(Container.Airdrop, 7, 1, new List<ItemStack> { Cfg.Tutorial ? Tutorial.DropLoot : RollAirdropLoot() }); // (the tutorial's: C4 for its raid)
                 go.GetComponent<NetworkObject>().Spawn(true);
                 Fx.Server(FxKind.Spawn, pos, Vector3.up);
                 return;

@@ -59,7 +59,7 @@ namespace RockGame
                 y += row + gap;
             }
             string hint = "Upgrades are here from the start - no trade station needed. Press "
-                + $"{Binds.Name(Bind.Interact)} on your upgrade station (the orange arrow, left of your alien machine) to open this; {Binds.Name(Bind.Inventory)} or Esc closes it.";
+                + $"{Binds.Name(Bind.Interact)} on your upgrade station (the up arrow in your team's colour, left of your alien machine) to open this; {Binds.Name(Bind.Inventory)} or Esc closes it.";
             var hintStyle = CraftStyle(13 * k, FontStyle.Normal, TextAnchor.UpperLeft, Color.white, true);
             // what the mouse is over (an upgrade or an item in the bag), otherwise how this screen works
             if (!DrawHoverInfo(new Rect(x, y + 4 * k, colW, Mathf.Max(40 * k, bottom - y)), k))
@@ -83,7 +83,8 @@ namespace RockGame
             float pad = 8 * k, isz = Mathf.Min(row - 2 * pad, 72 * k);
             var ib = new Rect(rr.x + 10 * k, rr.y + (row - isz) * 0.5f, isz, isz);
             Fill(ib, new Color(0, 0, 0, 0.3f));
-            Icon(new Rect(ib.x + 3, ib.y + 3, ib.width - 6, ib.height - 6), id);
+            var tIcon = ItemIcons.GetForTeam(id, team); // (its arrow in a light shade of your team's colour)
+            if (tIcon != null) GUI.DrawTexture(new Rect(ib.x + 3, ib.y + 3, ib.width - 6, ib.height - 6), tIcon, ScaleMode.ScaleToFit, true);
             // UPGRADE (MAXED when it's all the way up)
             float bw = Mathf.Min(120 * k, rr.width * 0.26f);
             var br = new Rect(rr.xMax - bw - 8 * k, rr.y + row * 0.24f, bw, row * 0.52f);

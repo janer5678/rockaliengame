@@ -580,6 +580,26 @@ namespace RockGame
                         $"the first hit on their tree sends them off to a tree a long way away ({d:0} m)");
                     perch.ServerRegrow();
                 }
+                // an arrow / bolt / spear / bullet in a tree (what ArrowHitRpc, SpearLandRpc, FirePistolRpc and
+                // SniperFireRpc call with the reported target) sends its birds up just like a chop
+                ResourceNode shotTree = null;
+                float until3 = Time.time + 8f;
+                while (Time.time < until3 && shotTree == null)
+                {
+                    foreach (var o in Of(ResourceNode.Tree)) if (o != perch && o.Birds.Value > 0 && o.Amount.Value > 0) { shotTree = o; break; }
+                    if (shotTree == null) yield return null;
+                }
+                if (shotTree != null)
+                {
+                    int amount = shotTree.Amount.Value;
+                    BirdFlock sf = null;
+                    foreach (var f in BirdFlock.All) if (f && !f.Flying && f.Tree == shotTree) sf = f;
+                    ResourceNode.ServerStruck(shotTree.NetworkObject);
+                    yield return new WaitForSeconds(0.3f);
+                    bool off = sf != null && sf.Flying && sf.Tree != shotTree;
+                    Check(shotTree.Birds.Value == 0 && off && shotTree.Amount.Value == amount, "an arrow or bullet hitting a tree sends its birds flying too (and takes no wood)");
+                }
+                else Check(false, "(no flock settled in a tree to shoot at)");
             }
 
             // ---------------- 14. the death wand on a tree (all its wood, straight to you) and on a building piece ----------------

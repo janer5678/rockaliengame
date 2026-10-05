@@ -72,7 +72,31 @@ namespace RockGame
         // ------------------------------------------------------------------ the textures
 
         static Texture2D s_CapTex, s_MouseTex, s_MouseLTex, s_MouseRTex, s_MouseWTex;
-        static GUIStyle s_CapStyle;
+        /// <summary>The keycap texture's size, and its ends (left / right, in texture pixels) that keep their shape when a
+        /// wide key (Shift, Space) stretches its middle.</summary>
+        const int CapTexSize = 48, CapEnd = 14;
+        /// <summary>The middle of the keycap's face, from its top (a fraction of its height): the lip along the bottom is
+        /// left out, so the name sits on the face.</summary>
+        const float CapFaceMid = 22f / 48f;
+        /// <summary>Key and mouse icons, as a multiple of a line of text's height.</summary>
+        const float IconScale = 1.45f;
+
+        /// <summary>A keycap in `r`: scaled to the rect's height as a whole (the old 9-sliced GUIStyle kept its borders at
+        /// texture size, so a key shorter than them came out squashed with its top cut off), only the middle stretched
+        /// for a key wider than it is tall.</summary>
+        static void DrawCap(Rect r)
+        {
+            float s = r.height / CapTexSize, end = Mathf.Min(CapEnd * s, r.width * 0.5f);
+            float u = (float)CapEnd / CapTexSize;
+            if (r.width <= r.height + 0.5f)
+            {
+                GUI.DrawTexture(r, s_CapTex, ScaleMode.StretchToFill, true);
+                return;
+            }
+            GUI.DrawTextureWithTexCoords(new Rect(r.x, r.y, end, r.height), s_CapTex, new Rect(0f, 0f, u, 1f));
+            GUI.DrawTextureWithTexCoords(new Rect(r.x + end, r.y, r.width - 2f * end, r.height), s_CapTex, new Rect(u, 0f, 1f - 2f * u, 1f));
+            GUI.DrawTextureWithTexCoords(new Rect(r.xMax - end, r.y, end, r.height), s_CapTex, new Rect(1f - u, 0f, u, 1f));
+        }
 
         static void EnsureIcons()
         {
@@ -97,8 +121,6 @@ namespace RockGame
                 }
             s_CapTex.SetPixels(px);
             s_CapTex.Apply();
-            s_CapStyle = new GUIStyle { border = new RectOffset(14, 14, 12, 16) };
-            s_CapStyle.normal.background = s_CapTex;
 
             s_MouseTex = MouseTex(0);
             s_MouseLTex = MouseTex(1);
@@ -258,7 +280,7 @@ namespace RockGame
             };
         }
 
-        static int CapFont(GUIStyle ws) => Mathf.Max(8, Mathf.RoundToInt((ws.fontSize > 0 ? ws.fontSize : 13) * 0.8f));
+        static int CapFont(GUIStyle ws) => Mathf.Max(8, Mathf.RoundToInt((ws.fontSize > 0 ? ws.fontSize : 13) * 0.85f));
 
         static Laid Lay(string text, GUIStyle st, float width)
         {
@@ -268,8 +290,8 @@ namespace RockGame
             var ws = WordStyle(st);
             var laid = new Laid();
             float line = ws.CalcSize(new GUIContent("Ag")).y;
-            float iconH = Mathf.Round(line * 1.08f);
-            float row = Mathf.Max(line, iconH) + Mathf.Max(1f, line * 0.12f);
+            float iconH = Mathf.Round(line * IconScale);
+            float row = Mathf.Max(line, iconH) + Mathf.Max(2f, line * 0.18f);
             float space = Mathf.Max(2f, ws.CalcSize(new GUIContent("a a")).x - ws.CalcSize(new GUIContent("aa")).x);
             float gap = Mathf.Max(1f, iconH * 0.1f);
             var capSt = new GUIStyle(ws) { fontSize = CapFont(ws), fontStyle = FontStyle.Bold, richText = false };
@@ -286,7 +308,8 @@ namespace RockGame
                 if (p.Kind == 1)
                 {
                     h = iconH;
-                    w = p.Text.StartsWith("#M") ? Mathf.Round(iconH * 0.72f) : Mathf.Max(iconH * 0.95f, capSt.CalcSize(new GUIContent(p.Text)).x + iconH * 0.55f);
+                    // (a keycap is square - a single letter, a digit - unless its name needs more room: Shift, Space)
+                    w = p.Text.StartsWith("#M") ? Mathf.Round(iconH * 0.72f) : Mathf.Round(Mathf.Max(iconH, capSt.CalcSize(new GUIContent(p.Text)).x + iconH * 0.45f));
                     if (pend == 0f && x > 0f) pend = gap; // (icons side by side, or against a word, get a hair of room)
                 }
                 else
@@ -338,9 +361,11 @@ namespace RockGame
                 }
                 else
                 {
-                    s_CapStyle.Draw(rr, GUIContent.none, false, false, false, false);
-                    // (the name sits on the face, a touch above the lip)
-                    GUI.Label(new Rect(rr.x, rr.y - rr.height * 0.06f, rr.width, rr.height), id, capSt);
+                    DrawCap(rr);
+                    // (the name sits in the middle of the face, above the lip - in a rect tall enough for the whole
+                    // glyph, so nothing is cut off at the top)
+                    float th = Mathf.Max(rr.height, capSt.CalcSize(new GUIContent(id)).y + 4f);
+                    GUI.Label(new Rect(rr.x, rr.y + rr.height * CapFaceMid - th * 0.5f, rr.width, th), id, capSt);
                 }
             }
         }

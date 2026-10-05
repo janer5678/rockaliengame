@@ -314,17 +314,17 @@ namespace RockGame
 
         // ------------------------------------------------------------------ demolish highlight
 
-        // Demolish picked on the building wheel: every piece / chest of yours nearby that LMB could take down is tinted red
-        // (on your screen only, with a MaterialPropertyBlock - the shared materials aren't touched), and the one in your
-        // crosshair (in reach) a deeper red. The set is looked up a few times a second; letting go of the mode clears it.
-        const float DemolishLitRange = 30f;
-        static readonly Color k_DemoNear = new Color(1f, 0.32f, 0.26f), k_DemoAimed = new Color(1f, 0.08f, 0.05f);
+        // Demolish picked on the building wheel: only the ONE piece / chest in your crosshair that LMB would take down (yours,
+        // in reach) is tinted red - nothing else. On your screen only, with a MaterialPropertyBlock (the shared materials
+        // aren't touched); any block a renderer already had is put back afterwards. Glowing, see-through and unlit parts
+        // (lamps, crystals, beacons, screens) are left alone so no light turns red. Letting go of the mode clears it.
+        static readonly Color k_DemoAimed = new Color(1f, 0.08f, 0.05f);
         static readonly int k_BaseColorId = Shader.PropertyToID("_BaseColor"), k_ColorId = Shader.PropertyToID("_Color");
         static MaterialPropertyBlock s_DemoMpb;
-        readonly List<(Renderer r, Unity.Netcode.NetworkObject owner)> m_DemoLit = new List<(Renderer, Unity.Netcode.NetworkObject)>();
+        readonly List<(Renderer r, Unity.Netcode.NetworkObject owner, MaterialPropertyBlock prev)> m_DemoLit = new List<(Renderer, Unity.Netcode.NetworkObject, MaterialPropertyBlock)>();
         Unity.Netcode.NetworkObject m_DemoAimed;
         float m_DemoScanAt = -1f;
-        /// <summary>(tests) how many pieces / chests are lit red right now, and the one in the crosshair (null: none).</summary>
+        /// <summary>(tests) how many pieces / chests are lit red right now (0 or 1: the aimed one), and that one (null: none).</summary>
         public int DemolishLitCount { get; private set; }
         public Unity.Netcode.NetworkObject DemolishAimed => m_DemoAimed;
 
@@ -352,48 +352,57 @@ namespace RockGame
                 return;
             }
             var aimed = DemolishTarget();
-            bool rescan = Time.time >= m_DemoScanAt;
-            if (!rescan && aimed == m_DemoAimed) return;
-            if (rescan)
-            {
-                m_DemoScanAt = Time.time + 0.25f;
-                ClearDemolishLit();
-                var me = transform.position;
-                float r2 = DemolishLitRange * DemolishLitRange;
-                foreach (var s in Structure.All)
-                    if (s != null && s.IsSpawned && s.Team.Value == m_Net.Team.Value && (s.transform.position - me).sqrMagnitude < r2) AddDemolishLit(s.NetworkObject);
-                foreach (var c in Container.All)
-                    if (c != null && c.IsSpawned && c.Breakable && c.Team.Value == m_Net.Team.Value && (c.transform.position - me).sqrMagnitude < r2) AddDemolishLit(c.NetworkObject);
-            }
+            // the same one still aimed at: just re-tint now and then (an upgrade or the PSX look can rebuild its renderers)
+            if (aimed == m_DemoAimed && Time.time < m_DemoScanAt) return;
+            m_DemoScanAt = Time.time + 0.25f;
+            ClearDemolishLit();
+            if (aimed == null) return;
             m_DemoAimed = aimed;
-            if (aimed != null && !m_DemoLit.Exists(x => x.owner == aimed)) AddDemolishLit(aimed);
-            // tint: the shared material's colour pulled towards red (deeper for the one in the crosshair)
+            AddDemolishLit(aimed);
+            // tint: the material's own colour pulled hard towards red
             if (s_DemoMpb == null) s_DemoMpb = new MaterialPropertyBlock();
-            var owners = new HashSet<Unity.Netcode.NetworkObject>();
-            foreach (var (r, owner) in m_DemoLit)
+            foreach (var (r, _, prev) in m_DemoLit)
             {
                 if (r == null) continue;
-                owners.Add(owner);
-                var baseC = r.sharedMaterial != null && r.sharedMaterial.HasProperty(k_BaseColorId) ? r.sharedMaterial.GetColor(k_BaseColorId) : Color.white;
-                var c = owner == aimed ? Color.Lerp(baseC, k_DemoAimed, 0.8f) : Color.Lerp(baseC, k_DemoNear, 0.5f);
+                var baseC = r.sharedMaterial.HasProperty(k_BaseColorId) ? r.sharedMaterial.GetColor(k_BaseColorId) : Color.white;
+                var c = Color.Lerp(baseC, k_DemoAimed, 0.8f);
                 c.a = baseC.a;
                 s_DemoMpb.Clear();
+                if (prev != null) r.GetPropertyBlock(s_DemoMpb); // (keep whatever else it had set)
                 s_DemoMpb.SetColor(k_BaseColorId, c);
                 s_DemoMpb.SetColor(k_ColorId, c);
                 r.SetPropertyBlock(s_DemoMpb);
             }
-            DemolishLitCount = owners.Count;
+            DemolishLitCount = 1;
         }
 
         void AddDemolishLit(Unity.Netcode.NetworkObject no)
         {
             foreach (var r in no.GetComponentsInChildren<Renderer>())
-                if (r is MeshRenderer || r is SkinnedMeshRenderer) m_DemoLit.Add((r, no));
+            {
+                if (!(r is MeshRenderer || r is SkinnedMeshRenderer) || !DemolishTintable(r)) continue;
+                MaterialPropertyBlock prev = null;
+                if (r.HasPropertyBlock()) { prev = new MaterialPropertyBlock(); r.GetPropertyBlock(prev); }
+                m_DemoLit.Add((r, no, prev));
+            }
+        }
+
+        /// <summary>Plain solid surfaces only: not lights, glows, beams or anything see-through.</summary>
+        static bool DemolishTintable(Renderer r)
+        {
+            var m = r.sharedMaterial;
+            if (m == null || !r.enabled) return false;
+            if (m.renderQueue >= 2500) return false;                                      // transparent: beams, glass, halos
+            if (m.IsKeywordEnabled("_EMISSION")) return false;                            // glowing: lamps, crystals, screens
+            string sh = m.shader != null ? m.shader.name : "";
+            if (sh.IndexOf("Unlit", System.StringComparison.OrdinalIgnoreCase) >= 0) return false; // flat glow colours
+            if (r.GetComponentInParent<Light>() != null || r.GetComponentInChildren<Light>() != null) return false; // a lamp's bulb
+            return true;
         }
 
         void ClearDemolishLit()
         {
-            foreach (var (r, _) in m_DemoLit) if (r != null) r.SetPropertyBlock(null);
+            foreach (var (r, _, prev) in m_DemoLit) if (r != null) r.SetPropertyBlock(prev); // (null: back to none)
             m_DemoLit.Clear();
             m_DemoAimed = null;
             DemolishLitCount = 0;

@@ -33,6 +33,7 @@ namespace RockGame
                 Fx.DamageNumber(point, head ? Cfg.GunHead(gun) : Cfg.GunBody(gun), head);
                 Hud.HitMarker(!(head && p.HelmetHp.Value > 0), head);
             }
+            else if (no != null && no.TryGetComponent(out Vehicle hv)) Hud.AnimalHit(hv, point, Cfg.GunBody(gun) * hv.HeadMul(point)); // (as PlayerNet.FirePistolRpc)
             m_Net.FirePistolRpc(no != null, no != null ? new Unity.Netcode.NetworkObjectReference(no) : default, point, ray.direction);
             Fx.Tracer(ray.origin + ray.direction * 0.5f - Vector3.up * 0.15f, point, Fx.Gun.Sniper, true, false);
             // the shot: its own crack in your ears and a flash at the muzzle; the revolver bucks (the view model snaps up
@@ -138,7 +139,11 @@ namespace RockGame
                 else Fx.Chips(h.point, h.normal, new Color(0.35f, 0.3f, 0.22f), 2, 1.5f);
             }
             foreach (var kv in animals)
+            {
+                // (the same sum as the server's: PlayerNet.ShotgunHitRpc)
+                Hud.AnimalHit(kv.Key, kv.Value.point, Cfg.ShotgunPelletDamage * kv.Value.n * Cfg.ShotgunFalloff(Vector3.Distance(ray.origin, kv.Key.transform.position)), false);
                 m_Net.ShotgunHitRpc(new Unity.Netcode.NetworkObjectReference(kv.Key.NetworkObject), kv.Value.point, (byte)kv.Value.n, 0);
+            }
             foreach (var kv in hits)
             {
                 var p = kv.Key;

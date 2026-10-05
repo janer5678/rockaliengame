@@ -26,7 +26,7 @@ namespace RockGame
         public static int WheelHover = -1;
         static Vector2 s_WheelLastMouse;
         static Vector2 s_WheelCenter;
-        public static void WheelOpened() { s_WheelCenter = new Vector2(Screen.width / 2f, Screen.height / 2f); WheelHover = PlayerController.Local != null ? PlayerController.Local.WheelIndex : 0; }
+        public static void WheelOpened() { s_WheelCenter = new Vector2(Screen.width / 2f, Screen.height / 2f); s_WheelLastMouse = Input.mousePosition; WheelHover = PlayerController.Local != null ? PlayerController.Local.WheelIndex : 0; }
         float m_LastHealth = 100f, m_DamageFlash;
         GUIStyle m_Label, m_Center, m_Big, m_Small, m_Button, m_Box, m_Field;
         float m_Scale = 1f;
@@ -51,8 +51,52 @@ namespace RockGame
         public static void HitMarker(bool kill, bool head)
         {
             if (!kill) Sfx.Play2D(Sfx.Hit, head ? 0.7f : 0.5f, 0.05f);
+            else Fx.MarkLastNumberKill(); // (the damage number for it turns red and pops)
             if (kill || Time.time - s_HitTime > 0.05f || !s_HitKill) { s_HitKill = kill; s_HitHead = head; }
             s_HitTime = Time.time;
+        }
+
+        /// <summary>A hit on a horse (or Slenderman) you predicted locally: a damage number and a hit marker, like a player
+        /// (a kill marker when this hit takes its last health). Not the horse you're riding (you can't hurt it).</summary>
+        public static void AnimalHit(Vehicle v, Vector3 point, float dmg, bool headCounts = true)
+        {
+            if (v == null || !v.IsSpawned || !(v.IsHorse || v.IsSlender) || v.Hp.Value <= 0f || dmg <= 0f) return;
+            var me = PlayerNet.Local;
+            if (me != null && v.HasDriver && v.DriverId.Value == me.NetworkObjectId) return;
+            bool head = headCounts && v.HeadMul(point) > 1f;
+            bool kill = v.Hp.Value - dmg <= 0f;
+            Fx.DamageNumber(point, dmg, head, kill);
+            HitMarker(kill, head);
+            if (kill) Sfx.Play2D(Sfx.Kill, 0.6f, 0f);
+        }
+
+        /// <summary>The hit marker: four short diagonal ticks AROUND the crosshair (it stays as it is) that pop out and fade -
+        /// white for a hit, gold for a headshot, red and bigger for a kill.</summary>
+        void DrawHitMarker(float cx, float cy, float k)
+        {
+            float age = Time.time - s_HitTime;
+            float dur = s_HitKill ? 0.55f : 0.32f;
+            if (age >= dur || age < 0f) return;
+            var hc = s_HitKill ? new Color(1f, 0.2f, 0.15f) : s_HitHead ? new Color(1f, 0.78f, 0.12f) : Color.white;
+            float a = Mathf.Clamp01((dur - age) / 0.16f);
+            // pops out past where it settles in the first moment, then eases back in (a kill keeps drifting out a little)
+            float pop = 1f - Mathf.Clamp01(age / 0.09f);
+            float gap = (s_HitKill ? 8f : 6f) * k + pop * 6f * k + (s_HitKill ? age * 18f * k : 0f);
+            float len = (s_HitKill ? 11f : s_HitHead ? 9f : 7f) * k * (1f + pop * 0.35f);
+            float thick = Mathf.Max(2f, (s_HitKill ? 3f : 2f) * k);
+            var oldM = GUI.matrix;
+            for (int pass = 0; pass < 2; pass++) // (a dark outline under, so it reads on a bright sky too)
+            for (int i = 0; i < 4; i++)
+            {
+                float ang = 45f + i * 90f;
+                float rad = ang * Mathf.Deg2Rad;
+                var c = new Vector2(cx, cy) + new Vector2(Mathf.Cos(rad), Mathf.Sin(rad)) * (gap + len * 0.5f);
+                GUI.matrix = oldM;
+                GUIUtility.RotateAroundPivot(ang, c);
+                if (pass == 0) Fill(new Rect(c.x - len / 2 - 1, c.y - thick / 2 - 1, len + 2, thick + 2), new Color(0, 0, 0, 0.55f * a));
+                else Fill(new Rect(c.x - len / 2, c.y - thick / 2, len, thick), new Color(hc.r, hc.g, hc.b, a));
+            }
+            GUI.matrix = oldM;
         }
         public static void Wake() => s_WakeTime = Time.time;
         public static void Banner(string title, string sub) { s_BannerTitle = title; s_BannerSub = sub; s_BannerTime = Time.time; }
@@ -174,6 +218,7 @@ namespace RockGame
             if (!boot.InSession) { DrawMainMenu(boot); return; }
             var me = PlayerNet.Local;
             var pc = PlayerController.Local;
+            if (me == null && Spectator.Active) { DrawSpectator(boot); return; } // (watching, not playing: Hud.Spectator.cs)
             if (me == null || pc == null)
             {
                 Shadowed(new Rect(0, Screen.height / 2 - 40, Screen.width, 80), boot.Status != "" ? boot.Status : "Connecting...", m_Big);
@@ -257,8 +302,8 @@ namespace RockGame
             Shadowed(new Rect(18, 12, 230 * k, 28 * k), $"<b>YOU ARE {Cfg.TeamName[team]}</b>", m_Label);
             // the radar for your own base, right under YOU ARE ... (the FPS counter goes under it): a short panel with a little
             // arrow that points at your base from where the camera faces (it turns as you look round), and how far it is.
-            // Not in Builder (no bases) or up in the sudden death arena.
-            if (!Cfg.Builder && !me.Dead.Value && (game == null || game.S != GameState.SuddenDeath))
+            // Not in Builder (no bases), up in the sudden death arena, or while you're inside your own base (you're home).
+            if (!Cfg.Builder && !me.Dead.Value && (game == null || game.S != GameState.SuddenDeath) && Cfg.BaseTeamAt(me.transform.position) != team)
                 DrawBaseRadar(me, team, tc, k);
             // ---- the gun's rounds, big, top left (pistol, revolver, shotgun) ----
             if ((Cfg.IsGun(me.HeldItem) || me.HeldItem == Item.Shotgun) && !me.Dead.Value)
@@ -291,16 +336,7 @@ namespace RockGame
                 Fill(new Rect(cx - 1, cy - 8, 2, 16), new Color(1, 1, 1, 0.8f));
                 Fill(new Rect(cx - 8, cy - 1, 16, 2), new Color(1, 1, 1, 0.8f));
             }
-            float hitAge = Time.time - s_HitTime;
-            if (hitAge < 0.3f)
-            {
-                float grow = 1f + (0.3f - hitAge) * (s_HitKill ? 3f : 1.5f);
-                var hc = s_HitKill ? new Color(1, 0.15f, 0.15f) : s_HitHead ? new Color(1f, 0.75f, 0.1f) : Color.white;
-                int size = Mathf.RoundToInt((s_HitKill ? 40 : s_HitHead ? 32 : 24) * k * grow);
-                var st = new GUIStyle(m_Center) { fontSize = size, fontStyle = FontStyle.Bold };
-                st.normal.textColor = new Color(hc.r, hc.g, hc.b, Mathf.Clamp01((0.3f - hitAge) * 5f));
-                GUI.Label(new Rect(cx - 50, cy - 50, 100, 100), "X", st);
-            }
+            DrawHitMarker(cx, cy, k); // (ticks round the crosshair - it isn't replaced)
             if (pc.Scoped) DrawScope();
             float charge = Mathf.Max(pc.DrawAmount, pc.RamCharge, pc.EatProgress, pc.PackUpProgress); // (the last: holding E to pick up a chest / workbench)
             if (charge > 0)
@@ -506,22 +542,30 @@ namespace RockGame
         {
             var cam = Camera.main;
             if (cam == null) return;
+            // each number pops in (small, overshoots big, settles), drifts up and a little to the side, then fades; white for
+            // a hit, gold with a "!" for a headshot, red for a kill; rapid hits add up into one that pops again (Fx.DamageNumber)
+            const float Life = 1.0f;
             for (int i = Fx.Numbers.Count - 1; i >= 0; i--)
             {
                 var n = Fx.Numbers[i];
-                float age = Time.time - n.Time;
-                if (age > 0.9f) { Fx.Numbers.RemoveAt(i); continue; }
-                var sp = cam.WorldToScreenPoint(n.Pos + Vector3.up * (0.3f + age * 0.8f));
+                float age = Time.time - n.Time, life = Time.time - n.Born;
+                if (age > Life) { Fx.Numbers.RemoveAt(i); continue; }
+                var sp = cam.WorldToScreenPoint(n.Pos + Vector3.up * 0.35f);
                 if (sp.z < 0) continue;
-                float a = Mathf.Clamp01((0.9f - age) * 3f);
-                float pop = 1f + Mathf.Max(0, 0.15f - age) * 4f;
-                var st = new GUIStyle(m_Center) { fontSize = Mathf.RoundToInt((n.Head ? 26 : 20) * k * pop), fontStyle = FontStyle.Bold };
-                var c = n.Head ? new Color(1f, 0.8f, 0.15f, a) : new Color(1f, 1f, 1f, a);
+                float a = Mathf.Clamp01((Life - age) / 0.3f);
+                float pop = age < 0.06f ? Mathf.Lerp(0.55f, 1.5f, age / 0.06f) : Mathf.Lerp(1.5f, 1f, Mathf.SmoothStep(0f, 1f, (age - 0.06f) / 0.16f));
+                float rise = (1f - Mathf.Exp(-Mathf.Min(life, 2f) * 2.2f)) * 55f * k;     // eases up and slows down
+                float side = n.Jitter * k * Mathf.Clamp01(life * 3f);
+                float baseSize = n.Kill ? 30f : n.Head ? 25f : 20f;
+                baseSize += Mathf.Min(8f, (n.Hits - 1) * 1.5f);                             // a pile of hits reads bigger
+                var st = new GUIStyle(m_Center) { fontSize = Mathf.Max(8, Mathf.RoundToInt(baseSize * k * pop)), fontStyle = FontStyle.Bold, clipping = TextClipping.Overflow };
+                var c = n.Kill ? new Color(1f, 0.28f, 0.2f, a) : n.Head ? new Color(1f, 0.82f, 0.16f, a) : new Color(1f, 1f, 1f, a);
                 string txt = Mathf.RoundToInt(n.Value) + (n.Head ? "!" : "");
-                var r = new Rect(sp.x - 60, Screen.height - sp.y - 20, 120, 40);
-                st.normal.textColor = new Color(0, 0, 0, a * 0.8f);
+                var r = new Rect(sp.x - 80 + side, Screen.height - sp.y - 25 - rise, 160, 50);
+                st.normal.textColor = new Color(0, 0, 0, a * 0.85f);
                 GUI.Label(new Rect(r.x + 2, r.y + 2, r.width, r.height), txt, st);
-                st.normal.textColor = c;
+                // a white flash over it as it lands
+                st.normal.textColor = Color.Lerp(c, new Color(1f, 1f, 1f, a), Mathf.Clamp01(1f - age / 0.1f) * 0.7f);
                 GUI.Label(r, txt, st);
             }
         }
@@ -966,8 +1010,14 @@ namespace RockGame
             var d = mouse - c;
             // always snapped to a slice: the one in the mouse's direction, or the current one while the mouse is still in the middle
             // (only when the mouse moves: a slice picked another way - SelectWheel - stays put under a still mouse)
-            bool moved = (mouse - s_WheelLastMouse).sqrMagnitude > 0.25f;
-            s_WheelLastMouse = mouse;
+            // (once a frame, on the repaint, from the real mouse: OnGUI's other events can report it a hair apart)
+            bool moved = false;
+            if (Event.current.type == EventType.Repaint)
+            {
+                Vector2 raw = Input.mousePosition;
+                moved = (raw - s_WheelLastMouse).sqrMagnitude > 4f;
+                s_WheelLastMouse = raw;
+            }
             if (moved && d.magnitude > 18f * k)
             {
                 float ang = Mathf.Atan2(d.x, -d.y) * Mathf.Rad2Deg;

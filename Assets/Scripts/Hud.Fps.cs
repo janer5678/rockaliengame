@@ -2,7 +2,7 @@ using UnityEngine;
 
 namespace RockGame
 {
-    /// <summary>Settings > Display > FPS counter (off to start with, just on this PC, saved).</summary>
+    /// <summary>Settings > Display > FPS counter (just on this PC, saved), and the uncapped framerate switch.</summary>
     public static partial class GameSettings
     {
         static int s_ShowFps = -1;
@@ -17,6 +17,38 @@ namespace RockGame
         {
             s_ShowFps = on ? 1 : 0;
             if (save) { PlayerPrefs.SetInt("RockGame.ShowFps", s_ShowFps); PlayerPrefs.Save(); }
+        }
+
+        // ---- Settings > Display > Uncapped framerate (fps.uncapped; off to start with, just on this PC) ----
+        static int s_Uncapped = -1, s_VsyncBefore = -1;
+
+        /// <summary>Run as fast as the PC can: vsync off and no frame rate cap. Off: capped at the screen's refresh rate.</summary>
+        public static bool UncappedFps
+        {
+            get { if (s_Uncapped < 0) s_Uncapped = PlayerPrefs.GetInt("RockGame.UncappedFps", DisplayDefaults.UncappedFps ? 1 : 0); return s_Uncapped == 1; }
+        }
+
+        public static void SetUncappedFps(bool on, bool save = true)
+        {
+            s_Uncapped = on ? 1 : 0;
+            if (save) { PlayerPrefs.SetInt("RockGame.UncappedFps", s_Uncapped); PlayerPrefs.Save(); }
+            ApplyFrameCap();
+        }
+
+        /// <summary>The frame rate cap as the settings say: uncapped (vsync off, targetFrameRate -1), or the refresh rate
+        /// we run at (at least 60) with vsync as the project had it. Called at startup, on a display change and on the toggle.</summary>
+        public static void ApplyFrameCap()
+        {
+            if (UncappedFps)
+            {
+                if (s_VsyncBefore < 0) s_VsyncBefore = QualitySettings.vSyncCount;
+                QualitySettings.vSyncCount = 0;
+                Application.targetFrameRate = -1;
+                return;
+            }
+            if (s_VsyncBefore >= 0) { QualitySettings.vSyncCount = s_VsyncBefore; s_VsyncBefore = -1; }
+            double hz = ChosenRate.denominator > 0 ? ChosenRate.value : 60.0;
+            Application.targetFrameRate = Mathf.Max(60, Mathf.RoundToInt((float)hz));
         }
     }
 

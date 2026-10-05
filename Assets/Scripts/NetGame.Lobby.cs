@@ -32,7 +32,7 @@ namespace RockGame
         bool ServerReadyToStart(int players, double now)
         {
             if ((Bootstrap.Solo || Cfg.Tutorial) && players >= 1) return true;
-            bool everyone = players >= Cfg.PlayersNeeded && players >= NetworkManager.ConnectedClientsIds.Count;
+            bool everyone = players >= Cfg.PlayersNeeded && players >= Spectator.ServerPlayerClients(NetworkManager); // (spectators aren't waited for)
             if (everyone)
                 foreach (var p in PlayerNet.All)
                     if (p == null || !p.ServerInStadium) { everyone = false; break; }

@@ -268,10 +268,10 @@ namespace RockGame
             foreach (var s in Structure.All) if (s.Team.Value == team && s.Upgradable && s.Tier.Value == 0) wood++;
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
             yield return new WaitForSeconds(0.3f);
-            // fortify (UPGRADES at the upgrade station) goes up a step every time it's bought: stone 2500, metal 2000, armoured 3000 (the top)
-            int[] price = { 2500, 2000, 3000 };
+            // fortify (UPGRADES at the upgrade station) goes up a step every time it's bought: stone 1000, metal 2000, armoured 3000 (the top)
+            int[] price = { 1000, 2000, 3000 };
             string[] names = { "Stone Wall", "Metal Wall", "Armoured Wall" };
-            for (int i = 0; i < 5; i++) me.ServerGive(Item.Wood, 1000); // (the three steps cost 7500 between them)
+            for (int i = 0; i < 5; i++) me.ServerGive(Item.Wood, 1000); // (the three steps cost 6000 between them)
             Check(Cfg.PieceHp(PieceType.Wall, 3) > Cfg.PieceHp(PieceType.Wall, 2) && Cfg.PieceHp(PieceType.Wall, 3) <= Cfg.PieceHp(PieceType.Wall, 2) * 1.3f
                 && Cfg.TierMeleeMul(3) < Cfg.TierMeleeMul(2) && Cfg.TierMeleeMul(3) >= Cfg.TierMeleeMul(2) * 0.6f,
                 $"armoured is only slightly better than sheet metal ({Cfg.PieceHp(PieceType.Wall, 3):0} HP against {Cfg.PieceHp(PieceType.Wall, 2):0}, melee {Cfg.TierMeleeMul(3):0.00} against {Cfg.TierMeleeMul(2):0.00})");
@@ -537,7 +537,7 @@ namespace RockGame
             for (int i = 0; i < 5; i++) me.ServerGive(Item.Wood, 1000);
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
             yield return new WaitForSeconds(0.3f);
-            int[] cost = { 1000, 3000 };
+            int[] cost = { 2000, 3000 };
             var wm = FindAnyObjectByType<WoodMachine>();
             Check(wm != null, "the wood machine stands next to the alien machine");
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));

@@ -319,7 +319,8 @@ namespace RockGame
         }
 
         static readonly int k_Outline = Shader.PropertyToID("_RgOutline"), k_Haze = Shader.PropertyToID("_RgHaze"),
-                            k_HazeColor = Shader.PropertyToID("_RgHazeColor"), k_Look = Shader.PropertyToID("_RgLook");
+                            k_HazeColor = Shader.PropertyToID("_RgHazeColor"), k_Look = Shader.PropertyToID("_RgLook"),
+                            k_FarLine = Shader.PropertyToID("_RgFarLine");
 
         /// <summary>
         /// How thick the world outlines are at 1440p (pixels) for an Outlines strength. Exactly what 1440p showed before
@@ -341,6 +342,11 @@ namespace RockGame
             // lines are the same share of the screen at any resolution (the shader blends between whole pixels).
             float px = GameSettings.ScreenPx(OutlinePxAt1440(o));
             m_StylizeMat.SetVector(k_Outline, o > 0f ? new Vector4(0.5f + o * 0.5f, px, 0.11f - o * 0.04f, 0.55f) : Vector4.zero);
+            // the far things' lines (clouds, planets, far mountains: Settings > Display > Far line thickness): x their
+            // thickness as a share of the usual (1 = the usual look), y how much their silhouettes against the sky keep a
+            // line past the usual distance fade (0 up to 100%, all of it by 200%)
+            float far = GameSettings.FarLineThickness.Value;
+            m_StylizeMat.SetVector(k_FarLine, new Vector4(far, Mathf.Clamp01(far - 1f), 0f, 0f));
             // haze: how much at most, where it starts and how far until it's all there (m)
             m_StylizeMat.SetVector(k_Haze, h > 0f ? new Vector4(0.12f + h * 0.4f, 35f, Mathf.Lerp(520f, 200f, h), 0f) : Vector4.zero);
             var sky = ColorSlots.Sky.Value;

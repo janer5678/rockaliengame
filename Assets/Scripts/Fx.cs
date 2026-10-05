@@ -36,13 +36,44 @@ namespace RockGame
         }
 
         // ---------------- damage numbers ----------------
-        public struct Number { public Vector3 Pos; public float Value, Time; public bool Head, Kill; }
+        /// <summary>A floating damage number. Time: the last hit that went into it (it pops again on each); Born: when it
+        /// first showed (it drifts up from then); Hits: how many hits it adds up; Jitter: a little sideways offset (px).</summary>
+        public struct Number { public Vector3 Pos; public float Value, Time, Born, Jitter; public int Hits; public bool Head, Kill; }
         public static readonly List<Number> Numbers = new List<Number>();
+        /// <summary>Hits this close together (in time and space) add up into one number instead of a pile of them.</summary>
+        public const float NumberMergeTime = 0.45f, NumberMergeDist = 2.5f;
 
         public static void DamageNumber(Vector3 pos, float value, bool head, bool kill = false)
         {
-            Numbers.Add(new Number { Pos = pos, Value = value, Time = Time.time, Head = head, Kill = kill });
+            float now = Time.time;
+            // rapid hits on the same target (the chainsaw, a quick double tap): one number that counts up and pops again
+            if (Numbers.Count > 0)
+            {
+                var last = Numbers[Numbers.Count - 1];
+                if (now - last.Time < NumberMergeTime && (last.Pos - pos).sqrMagnitude < NumberMergeDist * NumberMergeDist)
+                {
+                    last.Value += value;
+                    last.Time = now;
+                    last.Hits++;
+                    last.Head |= head;
+                    last.Kill |= kill;
+                    Numbers[Numbers.Count - 1] = last;
+                    return;
+                }
+            }
+            Numbers.Add(new Number { Pos = pos, Value = value, Time = now, Born = now, Hits = 1, Jitter = Random.Range(-16f, 16f), Head = head, Kill = kill });
             if (Numbers.Count > 20) Numbers.RemoveAt(0);
+        }
+
+        /// <summary>The server confirmed a kill: the newest damage number (if it's recent) turns into a kill number and pops.</summary>
+        public static void MarkLastNumberKill()
+        {
+            if (Numbers.Count == 0) return;
+            var last = Numbers[Numbers.Count - 1];
+            if (Time.time - last.Time > 1f) return;
+            last.Kill = true;
+            last.Time = Time.time;
+            Numbers[Numbers.Count - 1] = last;
         }
 
         // ---------------- networked trigger ----------------

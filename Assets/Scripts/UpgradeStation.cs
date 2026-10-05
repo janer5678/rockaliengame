@@ -10,7 +10,8 @@ namespace RockGame
     /// (WoodMachine.cs): a silver housing with trim in the team's colour on a metal plinth, a slanted keypad, a flat lid with a
     /// pair of team-colour lenses - and on its front a big screen with a glowing UP ARROW in the team's colour (not a plus:
     /// that read as healing), with a small holographic arrow turning over the lid, so you can tell from across the base
-    /// that it's where upgrades are bought.
+    /// that it's where upgrades are bought. Once the team has bought anything, the arrow steps aside and the screen shows
+    /// each upgrade's level squares (lit per level bought, like the UPGRADES screen's pips: BuildStatus / UpdateStatus).
     /// When anyone on the team buys an upgrade, every client plays it (PlayerNet.UpgradeFxRpc -> Celebrate): team-colour up
     /// arrows burst out of it and float up, the screen flashes, and the whole machine bounces (squash and stretch).
     /// Local scenery like the wood machine (built by MapBuilder.BuildBedrock); its body has a solid collider so chests and
@@ -38,8 +39,9 @@ namespace RockGame
         /// stations themselves are in their team's colour now (Accent); this is left for the upgrade items' icons.</summary>
         public static readonly Color Green = new Color(1f, 0.7f, 0.16f);
         /// <summary>A team's station's colour - its lights, trim, the arrow on its screen and over its lid, and the arrows
-        /// that burst out of it when an upgrade is bought: the team's colour.</summary>
-        public static Color Accent(int team) => Cfg.TeamColor[Mathf.Clamp(team, 0, 3)];
+        /// that burst out of it when an upgrade is bought: the team's colour lightened the same way as the alien machine's
+        /// glow (MapBuilder.BuildBedrock) - the pure team colour looked darker and heavier than the machine beside it.</summary>
+        public static Color Accent(int team) => Color.Lerp(Cfg.TeamColor[Mathf.Clamp(team, 0, 3)], Color.white, 0.35f);
         Color m_Accent = Green, m_ScreenBase;
 
         /// <summary>The body's half size (what you bump into), for the layout checks.</summary>
@@ -96,11 +98,11 @@ namespace RockGame
             m_Visual = new GameObject("visual").transform;
             m_Visual.SetParent(transform, false);
             var t = m_Visual;
-            var teamGlow = Color.Lerp(Cfg.TeamColor[Mathf.Clamp(Team, 0, 3)], Color.white, 0.35f);
+            var teamGlow = Color.Lerp(Cfg.TeamColor[Mathf.Clamp(Team, 0, 3)], Color.white, 0.55f);
             var gTeam = Workbench.Glow(teamGlow);
             var gGreen = Workbench.Glow(m_Accent);
             m_PlusMat = Emissive(m_Accent, 2f);
-            m_ScreenBase = m_Accent * 0.24f;
+            m_ScreenBase = m_Accent * 0.32f;
             m_ScreenBase.a = 0.92f;
             m_ScreenMat = new Material(Art.Ghost(m_ScreenBase));
             m_ScreenMat.SetColor("_BaseColor", m_ScreenBase);
@@ -148,6 +150,9 @@ namespace RockGame
             plus.SetParent(t, false);
             plus.localPosition = new Vector3(0, sy, sz + 0.022f);
             BuildArrow(plus, m_Accent, m_PlusMat, 0.42f, 0.01f);
+            m_Arrow = plus;
+            m_ArrowHome = plus.localPosition;
+            BuildStatus(t, sy, sz);
             // little corner ticks on the screen, like a HUD
             for (int sx = -1; sx <= 1; sx += 2)
                 for (int sy2 = -1; sy2 <= 1; sy2 += 2)
@@ -206,6 +211,87 @@ namespace RockGame
             if (AiPsxArt.On) AiPsxArt.Apply(t);
         }
 
+        // ---- the screen's upgrade status: once the team has bought anything, the arrow moves over to the left and the
+        // right of the screen shows one row per upgrade - a little symbol (a stone brick for Fortify, logs for the Wood Gen)
+        // and its level squares, lit for each level bought, like the pips on the UPGRADES screen (Hud.Upgrades.cs) ----
+
+        /// <summary>The UPGRADES screen's lit pip colour (Hud.Upgrades k_UpEdge).</summary>
+        static readonly Color k_PipLit = new Color(1f, 0.82f, 0.29f), k_PipOff = new Color(0.13f, 0.13f, 0.15f);
+        Transform m_Arrow, m_Status;
+        Vector3 m_ArrowHome;
+        readonly List<Item> m_StatusIds = new List<Item>();
+        readonly List<MeshRenderer[]> m_Pips = new List<MeshRenderer[]>();
+        readonly List<int> m_PipShown = new List<int>();
+        float m_NextStatus;
+
+        /// <summary>Test hooks: is the status showing, how many rows it has and how many squares are lit.</summary>
+        public bool StatusShown => m_Status != null && m_Status.gameObject.activeSelf;
+        public int StatusRows => m_StatusIds.Count;
+        public int StatusLit { get { int n = 0; foreach (var k in m_PipShown) n += Mathf.Max(0, k); return n; } }
+
+        void BuildStatus(Transform t, float sy, float sz)
+        {
+            Cfg.BaseUpgrades(m_StatusIds);
+            m_Status = new GameObject("status").transform;
+            m_Status.SetParent(t, false);
+            m_Status.localPosition = new Vector3(0, sy, sz + 0.022f);
+            m_PipLitMat = Workbench.Glow(k_PipLit);
+            m_PipOffMat = Art.Mat(k_PipOff);
+            // (the glass is 0.7 wide: the symbol sits just right of the middle, the squares run out towards the right edge)
+            const float pip = 0.06f, gap = 0.02f, x0 = 0.075f, rowStep = 0.15f;
+            int rows = m_StatusIds.Count;
+            for (int r = 0; r < rows; r++)
+            {
+                var id = m_StatusIds[r];
+                float y = (rows - 1) * 0.5f * rowStep - r * rowStep;
+                // the row's symbol
+                if (id == Item.WoodGenBuff)
+                {
+                    Art.Box(m_Status, Art.Wood, new Vector3(-0.005f, y - 0.016f, 0), new Vector3(0.07f, 0.026f, 0.008f));
+                    Art.Box(m_Status, Art.Wood * 0.85f, new Vector3(-0.005f, y + 0.014f, 0), new Vector3(0.07f, 0.026f, 0.008f));
+                }
+                else Art.Box(m_Status, Art.Stone, new Vector3(-0.005f, y, 0), new Vector3(0.07f, 0.05f, 0.008f));
+                int max = Cfg.BaseUpgradeMax(id);
+                var pips = new MeshRenderer[max];
+                for (int i = 0; i < max; i++)
+                {
+                    var x = x0 + pip * 0.5f + i * (pip + gap);
+                    Art.Box(m_Status, k_PipOff * 0.6f, new Vector3(x, y, -0.001f), new Vector3(pip, pip, 0.006f)); // (the square's dark frame)
+                    pips[i] = Art.Box(m_Status, k_PipOff, new Vector3(x, y, 0.002f), new Vector3(pip * 0.72f, pip * 0.72f, 0.006f)).GetComponent<MeshRenderer>();
+                }
+                m_Pips.Add(pips);
+                m_PipShown.Add(-1);
+            }
+            foreach (var mr in m_Status.GetComponentsInChildren<MeshRenderer>()) mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            m_Status.gameObject.SetActive(false);
+        }
+
+        Material m_PipLitMat, m_PipOffMat;
+
+        /// <summary>Keeps the screen's status in step with the team's levels (a few times a second; they're synced by NetGame).</summary>
+        void UpdateStatus(float time)
+        {
+            if (m_Status == null || time < m_NextStatus) return;
+            m_NextStatus = time + 0.25f;
+            bool any = false;
+            for (int r = 0; r < m_StatusIds.Count; r++)
+            {
+                int lvl = Cfg.BaseUpgradeLevel(m_StatusIds[r], Team);
+                if (lvl > 0) any = true;
+                if (lvl == m_PipShown[r]) continue;
+                m_PipShown[r] = lvl;
+                var pips = m_Pips[r];
+                for (int i = 0; i < pips.Length; i++) if (pips[i]) pips[i].sharedMaterial = i < lvl ? m_PipLitMat : m_PipOffMat;
+            }
+            if (m_Status.gameObject.activeSelf != any) m_Status.gameObject.SetActive(any);
+            if (m_Arrow)
+            {
+                // the arrow steps aside (smaller, on the left) while the status shows
+                m_Arrow.localPosition = any ? m_ArrowHome + new Vector3(-0.2f, 0, 0) : m_ArrowHome;
+                m_Arrow.localScale = Vector3.one * (any ? 0.72f : 1f);
+            }
+        }
+
         /// <summary>Everyone: an upgrade was bought at this team's station (PlayerNet.UpgradeFxRpc).</summary>
         public static void Celebrate(int team)
         {
@@ -234,6 +320,7 @@ namespace RockGame
         void Update()
         {
             float time = Time.time, dt = Time.deltaTime;
+            UpdateStatus(time);
             // the hologram turns and bobs
             if (m_Holo)
             {

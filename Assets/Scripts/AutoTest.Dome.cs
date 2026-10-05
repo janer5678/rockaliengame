@@ -79,6 +79,37 @@ namespace RockGame
             foreach (var bc in root.GetComponentsInChildren<BoxCollider>())
                 if (bc.name == "map wall") { walls++; if (bc.GetComponent<Renderer>().enabled) wallsDrawn++; }
             Check(walls == 4 && wallsDrawn == 0, $"the old boundary walls still collide but aren't drawn ({walls} walls, {wallsDrawn} drawn)");
+            // Settings > Display > Energy wall: the glass wall (and the ball's dome) drawn as an energy field, colliders untouched
+            {
+                var gw = MapBuilder.GlassWallRoot;
+                if (gw != null && !gw.activeInHierarchy) { Log("(the glass wall is down already: energy wall check skipped)"); gw = null; }
+                var ew = gw != null ? gw.GetComponent<EnergyWall>() : null;
+                bool was = GameSettings.EnergyWall.Value;
+                int cols0 = gw != null ? gw.GetComponentsInChildren<Collider>().Length : 0;
+                GameSettings.EnergyWall.Set(true, false);
+                yield return null;
+                int energyMats = 0, hiddenLines = 0;
+                if (gw != null)
+                    foreach (var r in gw.GetComponentsInChildren<Renderer>())
+                    {
+                        if (EnergyWall.Material != null && r.sharedMaterial == EnergyWall.Material) energyMats++;
+                        if (r.forceRenderingOff) hiddenLines++;
+                    }
+                int cols1 = gw != null ? gw.GetComponentsInChildren<Collider>().Length : 0;
+                if (gw != null) Check(ew != null && ew.Energy && energyMats >= 2 && hiddenLines >= 2 && cols1 == cols0 && cols0 > 0,
+                    $"Energy wall on: the glass wall and the ball's dome take the energy look ({energyMats} energy surfaces, {hiddenLines} frame lines hidden, colliders {cols0} -> {cols1})");
+                if (gw != null)
+                {
+                    var eye = Ground(-half * 0.3f, 12f) + Vector3.up * 1.7f;
+                    yield return LookShot("energy_wall", eye, Ground(-half * 0.12f, 0f) + Vector3.up * 5f, 0.8f);
+                }
+                GameSettings.EnergyWall.Set(false, false);
+                yield return null;
+                int glassBack = 0;
+                if (gw != null) foreach (var r in gw.GetComponentsInChildren<Renderer>()) if (r.sharedMaterial != EnergyWall.Material && !r.forceRenderingOff) glassBack++;
+                if (gw != null) Check(ew != null && !ew.Energy && glassBack >= 4, $"and off again it's glass ({glassBack} glass surfaces and frame lines)");
+                GameSettings.EnergyWall.Set(was, false);
+            }
             // the shoulder is over the ground all round the edge
             float worstClear = float.MaxValue;
             for (int i = 0; i < 64; i++)

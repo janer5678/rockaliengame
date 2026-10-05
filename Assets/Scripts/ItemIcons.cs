@@ -11,11 +11,25 @@ namespace RockGame
         static readonly Dictionary<Item, Texture2D> s_Icons = new Dictionary<Item, Texture2D>();
         static readonly Dictionary<int, Texture2D> s_Wheel = new Dictionary<int, Texture2D>();
 
-        /// <summary>Icon for a build wheel slice (see PlayerController.WheelOptions).</summary>
-        public static Texture2D Wheel(int option) => s_Wheel.TryGetValue(option, out var t) ? t : null;
+        /// <summary>Icon for a build wheel slice (see PlayerController.WheelOptions): a flat white pictogram, made on first use.</summary>
+        public static Texture2D Wheel(int option)
+        {
+            if (s_Wheel.TryGetValue(option, out var t) && t != null) return t;
+            t = MakeWheelIcon(option);
+            if (t != null) s_Wheel[option] = t;
+            return t;
+        }
         static bool s_Tried;
 
         public static Texture2D Get(Item i) => s_Icons.TryGetValue(i, out var t) ? t : null;
+
+        static readonly Item[] k_TeamArrowItems = { Item.FortifyBuff, Item.WoodGenBuff };
+        static readonly Dictionary<(Item, int), Texture2D> s_TeamIcons = new Dictionary<(Item, int), Texture2D>();
+        /// <summary>The base upgrades' arrow colour for a team: a light shade of its colour (not the orange upgrade colour).</summary>
+        public static Color UpgradeArrowColor(int team) => Color.Lerp(Cfg.TeamColor[Mathf.Clamp(team, 0, 3)], Color.white, 0.45f);
+        /// <summary>A team's own copy of an icon (the base upgrades, their arrow in the team's light shade); otherwise the usual one.</summary>
+        public static Texture2D GetForTeam(Item i, int team)
+            => team >= 0 && team < 4 && s_TeamIcons.TryGetValue((i, team), out var t) ? t : Get(i);
 
         /// <summary>Call outside OnGUI (e.g. from Update) once graphics are up.</summary>
         public static void EnsureRendered()
@@ -87,6 +101,20 @@ namespace RockGame
                 var tex = Snap(model, item.ToString());
                 if (tex != null) s_Icons[item] = tex;
             }
+            // the base upgrades again for each team, their up arrow in a light shade of the team's colour (UPGRADES screen)
+            try
+            {
+                foreach (var item in k_TeamArrowItems)
+                    for (int team = 0; team < 4; team++)
+                    {
+                        ItemModels.ArrowTint = UpgradeArrowColor(team);
+                        var model = ItemModels.Create(item, rig.transform);
+                        PoseForIcon(item, model.transform);
+                        var tex = Snap(model, item + "_team" + team);
+                        if (tex != null) s_TeamIcons[(item, team)] = tex;
+                    }
+            }
+            finally { ItemModels.ArrowTint = null; }
             // hand-drawn icons in Resources/Icons replace the rendered ones (e.g. "hatchet.png")
             foreach (Item item in System.Enum.GetValues(typeof(Item)))
             {
@@ -94,40 +122,127 @@ namespace RockGame
                 if (drawn != null) s_Icons[item] = drawn;
             }
 
-            // build wheel: each piece as it looks in the world, plus demolish (a trash can) and upgrade (a stone wall)
-            var opts = PlayerController.WheelOptions;
-            for (int i = 0; i < opts.Length; i++)
-            {
-                var holder = new GameObject("piece");
-                holder.transform.SetParent(rig.transform, false);
-                var o = opts[i];
-                if (o.Demolish) BuildTrashCan(holder.transform);
-                else Structure.CreateVisual(o.Piece, o.Upgrade ? 1 : 0, holder.transform, false, null, out _);
-                holder.transform.localRotation = Quaternion.Euler(0, o.Piece == PieceType.Stairs ? 140f : 20f, 0);
-                var tex = Snap(holder, o.Label);
-                if (tex != null) s_Wheel[i] = tex;
-            }
             cam.targetTexture = null;
             rt.Release();
             Object.DestroyImmediate(rig);
         }
 
-        /// <summary>A metal bin with a lid and ribs (the demolish icon).</summary>
-        static void BuildTrashCan(Transform t)
+        // ---------------- build wheel icons: flat white pictograms ----------------
+        // Each slice is one plain white silhouette of what it builds (drawn here, not rendered: no graphics needed), with
+        // thin see-through gaps where two faces of a piece meet so the shapes read as 3D: a thick slab (foundation), a thin
+        // one (ceiling), an upright panel (wall), the panel with a big opening (window) or a door gap (doorway), a staircase,
+        // and a trash can (demolish). The wheel tints nothing - it draws them white (faded while a slice is locked).
+
+        const int WheelSize = 128;
+
+        static Texture2D MakeWheelIcon(int option)
         {
-            var metal = new Color(0.72f, 0.74f, 0.78f);
-            var dark = new Color(0.45f, 0.47f, 0.5f);
-            Art.Part(t, Art.Cylinder, metal, new Vector3(0, 0.6f, 0), new Vector3(0.9f, 0.6f, 0.9f));        // body
-            for (int i = 0; i < 8; i++)
+            var opts = PlayerController.WheelOptions;
+            if (option < 0 || option >= opts.Length) return null;
+            var o = opts[option];
+            var ops = new List<(Vector2[] poly, bool add)>();
+            void Add(params Vector2[] p) => ops.Add((p, true));
+            void Cut(params Vector2[] p) => ops.Add((p, false));
+            Vector2 V(float x, float y) => new Vector2(x, y);
+            Vector2[] Rect(float x0, float y0, float x1, float y1) => new[] { V(x0, y0), V(x1, y0), V(x1, y1), V(x0, y1) };
+            Vector2[] Line(Vector2 a, Vector2 b, float w)
             {
-                float a = i * 45f * Mathf.Deg2Rad;
-                Art.Box(t, dark, new Vector3(Mathf.Sin(a) * 0.455f, 0.6f, Mathf.Cos(a) * 0.455f), new Vector3(0.06f, 1.05f, 0.04f), new Vector3(0, i * 45f, 0)); // ribs
+                var n = new Vector2(-(b - a).y, (b - a).x).normalized * (w * 0.5f);
+                return new[] { a + n, b + n, b - n, a - n };
             }
-            Art.Part(t, Art.Cylinder, dark, new Vector3(0, 1.22f, 0), new Vector3(1.02f, 0.05f, 1.02f));    // lid
-            Art.Part(t, Art.Cylinder, metal, new Vector3(0, 1.3f, 0), new Vector3(0.9f, 0.04f, 0.9f));
-            Art.Box(t, dark, new Vector3(0, 1.42f, 0), new Vector3(0.4f, 0.08f, 0.1f));                   // handle
-            Art.Box(t, dark, new Vector3(-0.17f, 1.37f, 0), new Vector3(0.06f, 0.12f, 0.1f));
-            Art.Box(t, dark, new Vector3(0.17f, 1.37f, 0), new Vector3(0.06f, 0.12f, 0.1f));
+            const float gap = 0.035f; // the see-through seams between faces
+            // a box seen from the front, a little from the right and above: front face x0..x1, y0..y1, depth (dx, dy)
+            void Box(float x0, float y0, float x1, float y1, float dx, float dy)
+            {
+                Add(Rect(x0, y0, x1, y1));                                              // front
+                Add(V(x0, y1), V(x1, y1), V(x1 + dx, y1 + dy), V(x0 + dx, y1 + dy));     // top
+                Add(V(x1, y0), V(x1 + dx, y0 + dy), V(x1 + dx, y1 + dy), V(x1, y1));     // side
+                Cut(Line(V(x0 - 0.02f, y1), V(x1, y1), gap));
+                Cut(Line(V(x1, y0 - 0.02f), V(x1, y1), gap));
+                Cut(Line(V(x1, y1), V(x1 + dx + 0.02f, y1 + dy + 0.02f * dy / Mathf.Max(0.001f, dx)), gap));
+            }
+            if (o.Demolish)
+            {
+                // the trash can: a tapered bin with three slots, a lid with a handle on top
+                Add(V(0.27f, 0.1f), V(0.73f, 0.1f), V(0.78f, 0.68f), V(0.22f, 0.68f));
+                Cut(Rect(0.355f, 0.2f, 0.405f, 0.58f));
+                Cut(Rect(0.475f, 0.2f, 0.525f, 0.58f));
+                Cut(Rect(0.595f, 0.2f, 0.645f, 0.58f));
+                Add(Rect(0.16f, 0.72f, 0.84f, 0.8f));
+                Add(Rect(0.39f, 0.8f, 0.61f, 0.9f));
+                Cut(Rect(0.44f, 0.8f, 0.56f, 0.855f));
+            }
+            else switch (o.Piece)
+            {
+                case PieceType.Foundation:
+                    Box(0.1f, 0.3f, 0.66f, 0.52f, 0.24f, 0.18f); // a thick slab on the ground
+                    break;
+                case PieceType.Floor:
+                    Box(0.1f, 0.44f, 0.66f, 0.5f, 0.24f, 0.18f); // a thin slab, up in the air
+                    Add(Rect(0.14f, 0.18f, 0.2f, 0.4f));          // on two short posts (it sits on walls)
+                    Add(Rect(0.56f, 0.18f, 0.62f, 0.4f));
+                    break;
+                case PieceType.Wall:
+                    Box(0.18f, 0.12f, 0.72f, 0.8f, 0.1f, 0.08f);
+                    break;
+                case PieceType.Window:
+                    Box(0.18f, 0.12f, 0.72f, 0.8f, 0.1f, 0.08f);
+                    Cut(Rect(0.26f, 0.36f, 0.64f, 0.7f));         // the big opening
+                    Add(Rect(0.435f, 0.36f, 0.465f, 0.7f));       // a bar down the middle
+                    break;
+                case PieceType.Doorway:
+                    Box(0.18f, 0.12f, 0.72f, 0.8f, 0.1f, 0.08f);
+                    Cut(Rect(0.34f, 0.08f, 0.56f, 0.6f));         // the door gap, down to the ground
+                    break;
+                case PieceType.Stairs:
+                {
+                    // a staircase from the side: four steps up to the right
+                    var p = new List<Vector2> { V(0.12f, 0.12f), V(0.86f, 0.12f), V(0.86f, 0.86f) };
+                    for (int s = 3; s >= 0; s--)
+                    {
+                        float x = 0.12f + s * 0.185f, y = 0.12f + (s + 1) * 0.185f;
+                        p.Add(V(x, y));
+                        if (s > 0) p.Add(V(x, y - 0.185f));
+                    }
+                    Add(p.ToArray());
+                    break;
+                }
+                default:
+                    Add(Rect(0.2f, 0.2f, 0.8f, 0.8f));
+                    break;
+            }
+            // rasterise: 4x4 samples a pixel for smooth edges; each sample goes through the adds and cuts in order
+            const int N = WheelSize, SS = 4;
+            var px = new Color32[N * N];
+            for (int y = 0; y < N; y++)
+            for (int x = 0; x < N; x++)
+            {
+                int hit = 0;
+                for (int sy = 0; sy < SS; sy++)
+                for (int sx = 0; sx < SS; sx++)
+                {
+                    var q = new Vector2((x + (sx + 0.5f) / SS) / N, (y + (sy + 0.5f) / SS) / N);
+                    bool inside = false;
+                    foreach (var (poly, add) in ops)
+                        if (Inside(poly, q)) inside = add;
+                    if (inside) hit++;
+                }
+                px[y * N + x] = new Color32(255, 255, 255, (byte)(hit * 255 / (SS * SS)));
+            }
+            var tex = new Texture2D(N, N, TextureFormat.RGBA32, false) { name = "wheel_" + o.Label, wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear };
+            tex.SetPixels32(px); // (row 0 is the bottom: y up, as drawn above)
+            tex.Apply();
+            return tex;
+        }
+
+        /// <summary>Even-odd point in polygon (any shape, convex or not).</summary>
+        static bool Inside(Vector2[] poly, Vector2 p)
+        {
+            bool c = false;
+            for (int i = 0, j = poly.Length - 1; i < poly.Length; j = i++)
+                if ((poly[i].y > p.y) != (poly[j].y > p.y) && p.x < (poly[j].x - poly[i].x) * (p.y - poly[i].y) / (poly[j].y - poly[i].y) + poly[i].x)
+                    c = !c;
+            return c;
         }
 
         static bool Render(Camera cam, RenderTexture rt)

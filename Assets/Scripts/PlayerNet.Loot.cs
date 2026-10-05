@@ -26,6 +26,7 @@ namespace RockGame
             else Inv[HeldSlot.Value] = ItemStack.Of(Item.Sniper, 1, left);
             if (Vector3.Distance(point, EyePos) > 400f) point = EyePos + dir.normalized * 100f;
             Fx.Server(FxKind.SniperTracer, EyePos + dir.normalized * 0.5f - Vector3.up * 0.15f, point, OwnerClientId); // (the shooter drew its own)
+            if (hasTarget && target.TryGet(out var tree)) ResourceNode.ServerStruck(tree); // (a bullet in a tree sends its birds up)
             if (!hasTarget || !target.TryGet(out var no) || !GameAllowsCombat) return;
             if (no.TryGetComponent(out PlayerNet p) && p != this && !p.Dead.Value)
             {

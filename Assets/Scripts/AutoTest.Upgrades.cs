@@ -379,6 +379,7 @@ namespace RockGame
             Check(pc.Target.Kind == PlayerController.TargetKind.UpgradeStation && pc.Target.MachineTeam == team, $"looking at our upgrade station ({pc.Target.Kind})");
             Check(pc.AimText.Contains("UPGRADE STATION") && pc.AimText.Contains("to open"), $"its prompt names it (\"{pc.AimText}\")");
             yield return Snap($"upgrade_station_{rn}");
+            Check(UpgradeStation.ByTeam[team] != null && !UpgradeStation.ByTeam[team].StatusShown, "before anything's bought its screen is just the big up arrow (no level squares yet)");
             Check(ups.Contains(Item.FortifyBuff) && ups.Contains(Item.WoodGenBuff) == Cfg.AutoWood, $"UPGRADES has {string.Join(", ", ups)} (the wood gen only in Auto Wood)");
             Check(Cfg.CraftIndexOf(Item.FortifyBuff) < 0 && Cfg.CraftIndexOf(Item.WoodGenBuff) < 0 && Cfg.PowerIndex(Item.FortifyBuff) < 0, "neither is a crafted (POWER ITEMS) item any more");
             // no workbench needed: here from the start
@@ -392,7 +393,7 @@ namespace RockGame
             Check(pc.UpgradesOpen && pc.MenuOpen && pc.LootTarget == null, "E on our upgrade station opens UPGRADES");
             Check(Row(Item.FortifyBuff) == "can't afford" && Hud.CraftRowsShown.Count == 0, $"with no {Cfg.CurrencyName} its rows say so ({Row(Item.FortifyBuff)}), and the crafting list isn't drawn ({Hud.CraftRowsShown.Count} rows)");
             yield return Snap($"upgrades_{rn}_poor");
-            for (int i = 0; i < 14; i++) me.ServerGive(cur, 1000); // (every level of both: 7500 + 4500)
+            for (int i = 0; i < 14; i++) me.ServerGive(cur, 1000); // (every level of both: 6000 + 6000)
             yield return new WaitForSeconds(0.3f);
             yield return Frames();
             bool allOk = true;
@@ -435,6 +436,9 @@ namespace RockGame
                         yield return Snap($"upgrade_station_{rn}_celebrate2");
                         yield return new WaitForSeconds(2f);
                         Check(st != null && !st.Animating && st.transform.GetChild(0).localScale == Vector3.one, "and it settles back down");
+                        Check(st != null && st.StatusShown && st.StatusRows == ups.Count && st.StatusLit == 1,
+                            $"its screen now shows the upgrades' level squares, like the UPGRADES screen ({(st != null ? st.StatusRows : 0)} rows, {(st != null ? st.StatusLit : 0)} lit)");
+                        yield return Snap($"upgrade_station_{rn}_status");
                         Binds.TestPress(Bind.Interact);
                         yield return new WaitForSeconds(0.3f);
                     }
@@ -453,9 +457,9 @@ namespace RockGame
                     Check(pc.UpgradesOpen, "(UPGRADES still open)");
                 }
             }
-            Check(Cfg.FortifyStoneWood == 2500 && Cfg.FortifyMetalWood == 2000 && Cfg.FortifyArmouredWood == 3000 && Cfg.MaxFortify == 3
-                && (!Cfg.AutoWood || (Cfg.MaxWoodGen == 3 && Cfg.WoodGenBuildWood == 500 && Cfg.WoodGen1Wood == 1000 && Cfg.WoodGen2Wood == 3000)),
-                "the prices are the CHANGE VALUES entries (fortify 2500 / 2000 / 3000 - stone, metal, armoured - wood gen 500 to build it, then 1000 / 3000)");
+            Check(Cfg.FortifyStoneWood == 1000 && Cfg.FortifyMetalWood == 2000 && Cfg.FortifyArmouredWood == 3000 && Cfg.MaxFortify == 3
+                && (!Cfg.AutoWood || (Cfg.MaxWoodGen == 3 && Cfg.WoodGenBuildWood == 1000 && Cfg.WoodGen1Wood == 2000 && Cfg.WoodGen2Wood == 3000)),
+                "the prices are the CHANGE VALUES entries (fortify 1000 / 2000 / 3000 - stone, metal, armoured - wood gen 1000 to build it, then 2000 / 3000)");
             yield return Snap($"upgrades_{rn}_maxed");
             // TAB closes it (and opens plain crafting next time)
             Binds.TestPress(Bind.Inventory);

@@ -321,15 +321,16 @@ namespace RockGame
                     break;
                 }
                 case PieceType.Window:
-                    // a wall with a square opening at chest height, crossed by two bars (like Rust)
-                    Art.Box(tr, c, new Vector3(-0.975f, 1.5f, 0), new Vector3(1.05f, 3, 0.3f), default, col);
-                    Art.Box(tr, c, new Vector3(0.975f, 1.5f, 0), new Vector3(1.05f, 3, 0.3f), default, col);
-                    Art.Box(tr, c, new Vector3(0, 0.55f, 0), new Vector3(0.9f, 1.1f, 0.3f), default, col);
-                    Art.Box(tr, c, new Vector3(0, 2.55f, 0), new Vector3(0.9f, 0.9f, 0.3f), default, col);
-                    Art.Box(tr, trim, new Vector3(0, 1.12f, 0), new Vector3(1.0f, 0.08f, 0.36f));
-                    Art.Box(tr, trim, new Vector3(0, 2.08f, 0), new Vector3(1.0f, 0.08f, 0.36f));
-                    Art.Box(tr, stone ? Art.Metal : trim, new Vector3(-0.2f, 1.6f, 0), new Vector3(0.05f, 0.95f, 0.05f));
-                    Art.Box(tr, stone ? Art.Metal : trim, new Vector3(0.2f, 1.6f, 0), new Vector3(0.05f, 0.95f, 0.05f));
+                    // a wall with a big opening (1.9 m wide, 1.5 m tall, from waist height up), crossed by two thin bars
+                    // (like Rust). The colliders are the frame round it, so the whole opening is open to look and shoot through
+                    Art.Box(tr, c, new Vector3(-1.225f, 1.5f, 0), new Vector3(0.55f, 3, 0.3f), default, col);
+                    Art.Box(tr, c, new Vector3(1.225f, 1.5f, 0), new Vector3(0.55f, 3, 0.3f), default, col);
+                    Art.Box(tr, c, new Vector3(0, 0.45f, 0), new Vector3(1.9f, 0.9f, 0.3f), default, col);
+                    Art.Box(tr, c, new Vector3(0, 2.7f, 0), new Vector3(1.9f, 0.6f, 0.3f), default, col);
+                    Art.Box(tr, trim, new Vector3(0, 0.92f, 0), new Vector3(2.0f, 0.08f, 0.36f));
+                    Art.Box(tr, trim, new Vector3(0, 2.38f, 0), new Vector3(2.0f, 0.08f, 0.36f));
+                    Art.Box(tr, stone ? Art.Metal : trim, new Vector3(-0.45f, 1.65f, 0), new Vector3(0.05f, 1.45f, 0.05f));
+                    Art.Box(tr, stone ? Art.Metal : trim, new Vector3(0.45f, 1.65f, 0), new Vector3(0.05f, 1.45f, 0.05f));
                     if (!stone)
                     {
                         Art.Box(tr, trim, new Vector3(-1.2f, 1.5f, 0), new Vector3(0.12f, 2.95f, 0.36f));

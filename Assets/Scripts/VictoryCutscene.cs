@@ -23,8 +23,10 @@ namespace RockGame
     /// PlanCamera tries spots all round the base (further out, higher up, on the higher ground first) and sphere-casts from
     /// each - and from points along the camera's move - to the winners on the ground, up the beam to the hatch and to the
     /// ship coming in, keeping the spot that sees the most of it with nothing (no wall, no roof, no hill, no tree) in the way.
-    /// It drifts in and round a little over the cutscene, tracking the ship as it comes in, the winners as they float up and
-    /// the ship again as it leaves.
+    /// (Trees' needles have no colliders: they're checked as cones from the trees' own bounds; any tree still in the way
+    /// of the winners or the beam from the chosen move is hidden for the cutscene.) It drifts in and round a little over the
+    /// cutscene, eases in close on the winners and back out (CloseUp: one smooth ramp for the dolly and the lens), and
+    /// eases its aim (critically damped) from the ship coming in, to the winners as they float up, to the ship as it leaves.
     ///
     /// Networked like the airdrops: the server picks the winners to beam up (alive and connected - the dead and the gone are
     /// skipped), sends them home onto their bedrock, and sets NetGame.CutsceneAt / CutsceneSpot / CutsceneRiders together
@@ -49,7 +51,7 @@ namespace RockGame
         public const float LeaveStart = BeamOff + 0.45f, WindUp = 2.5f, DashStart = LeaveStart + WindUp, DashTime = 2.2f, LeaveTime = WindUp + DashTime;
         /// <summary>The camera's lens: wide (WideFov), a little tighter once the beam's on (BeamFov), right in on the winners
         /// as they stand in the beam and start up it (ZoomFov, CloseUp), then back out.</summary>
-        public const float WideFov = 62f, BeamFov = 54f, ZoomFov = 30f;
+        public const float WideFov = 62f, BeamFov = 54f, ZoomFov = 26f;
         public const float Gone = LeaveStart + LeaveTime, Length = Gone + 0.9f;
         /// <summary>How high the UFO hovers over the winners.</summary>
         public const float HoverUp = 26f;
@@ -415,6 +417,8 @@ namespace RockGame
             s_HumLoop = null;
             s_Built = -1;
             s_LookSet = false;
+            s_LookVel = Vector3.zero;
+            ShowTrees();
             s_Puffed.Clear();
             s_Taken.Clear();
             s_Cues.Clear();
@@ -479,6 +483,8 @@ namespace RockGame
         {
             var up = Vector3.up;
             float h = s_Hover.y - s_Spot.y;
+            // the trees round about (their needles have no colliders: the casts would see straight through them)
+            GatherTrees();
             // what it wants to see, and how much each matters
             var targets = new List<(Vector3 p, float w)>
             {
@@ -519,12 +525,12 @@ namespace RockGame
                         for (int s = 0; s < 3 && ok; s++)
                         {
                             var at = Vector3.Lerp(from, to, s * 0.5f);
-                            if (Physics.CheckSphere(at, 0.8f, Mask, QueryTriggerInteraction.Ignore)) { ok = false; break; }
+                            if (Physics.CheckSphere(at, 0.8f, Mask, QueryTriggerInteraction.Ignore) || InTree(at)) { ok = false; break; }
                             float v = 0f;
                             foreach (var tg in targets) if (Clear(at, tg.p)) v += tg.w;
                             seen = Mathf.Min(seen, v / total);
                         }
-                        if (!ok || Blocked(from, to)) continue;
+                        if (!ok || Blocked(from, to) || TreeInWay(from, to)) continue;
                         float hill = Mathf.Clamp(ground - s_Spot.y, -5f, 12f);
                         float score = seen * 10f + hill * 0.12f - lift * 0.05f - Mathf.Abs(dist - 66f) * 0.02f + facing * 0.4f;
                         if (score > bestScore) { bestScore = score; bestFrom = from; bestTo = to; bestClear = seen; }
@@ -537,8 +543,8 @@ namespace RockGame
             s_CamTo = CamTo = bestTo;
 
             // the push in on the winners (CameraPose): as far in along its line to them as it can go - still seeing them,
-            // up the beam and the hatch, inside nothing, and PushKeep out - checked from where it'll be on its move then
-            // (toward their feet; or, if walls hide those, toward the bottom of the beam over the walls)
+            // up the beam and the hatch, inside nothing (no tree's needles either), and PushKeep out - checked from where
+            // it'll be on its move then (toward their feet; or, if walls hide those, toward the bottom of the beam over the walls)
             var beamMid = s_Spot + up * (h * 0.5f);
             var hatch = s_Hover + up * AirdropShip.HatchY;
             CamPush = 0f;
@@ -547,36 +553,202 @@ namespace RockGame
                 for (float f = MaxPush; f > 0.04f && CamPush <= 0f; f -= 0.08f)
                 {
                     bool ok = true;
-                    foreach (float k in new[] { 0.3f, 0.42f, 0.55f })
+                    foreach (float de in new[] { -1f, 0f, 1f, 2f })
                     {
-                        var at = Vector3.Lerp(bestFrom, bestTo, k);
-                        var near = Vector3.Lerp(at, aim, f);
-                        if (new Vector2(near.x - s_Spot.x, near.z - s_Spot.z).magnitude < PushKeep || !Clear(at, aim)
+                        var at = BaseAt(PushPeak + de);
+                        var d = aim - at;
+                        var near = at + d.normalized * Mathf.Min(f * d.magnitude, PushDist);
+                        if (new Vector2(near.x - s_Spot.x, near.z - s_Spot.z).magnitude < PushKeep || !Clear(at, aim) || InTree(near)
                             || Physics.CheckSphere(near, 0.8f, Mask, QueryTriggerInteraction.Ignore) || !Clear(near, beamMid) || !Clear(near, hatch)) { ok = false; break; }
                     }
                     if (ok) { CamPush = f; s_PushAim = aim; }
                 }
                 if (CamPush > 0f) break;
             }
+
+            // the fallback: any tree still in the way of the winners, the beam or the hatch from anywhere on the camera's
+            // whole move (the clearest spot can still have one) - or that the camera passes through - is hidden for the cutscene
+            HideTreesInWay(new[] { s_Spot + up * 1.2f, s_Spot + up * 3.5f, beamMid, hatch });
+        }
+
+        // ------------------------------------------------------------------ trees in the way
+
+        /// <summary>A tree near the base, as the camera sees it: an upright cone of needles (`r` wide at the bottom of its
+        /// crown, to a point at `top`) over a trunk. The trees' colliders are only their trunks, so the casts miss their needles.</summary>
+        struct TreeShape { public Vector3 Foot; public float R, Top; public ResourceNode Node; public bool Hidden; }
+        static readonly List<TreeShape> s_Trees = new List<TreeShape>();
+        static readonly List<Renderer> s_HiddenTrees = new List<Renderer>();
+        /// <summary>Test hook: how many trees the cutscene hid because no angle saw past them.</summary>
+        public static int TreesHidden { get; private set; }
+
+        /// <summary>The standing trees within reach of the shot (from their renderers' bounds; a tree with none showing: the map's usual size).</summary>
+        static void GatherTrees()
+        {
+            s_Trees.Clear();
+            TreesHidden = 0;
+            foreach (var n in ResourceNode.All)
+            {
+                if (n == null || !n.IsSpawned || n.Kind.Value != ResourceNode.Tree || n.Amount.Value <= 0) continue;
+                var p = n.transform.position;
+                if (new Vector2(p.x - s_Spot.x, p.z - s_Spot.z).magnitude > 140f) continue;
+                bool any = false;
+                Bounds b = default;
+                foreach (var r in n.GetComponentsInChildren<Renderer>())
+                {
+                    if (!r.enabled || !r.gameObject.activeInHierarchy || r is ParticleSystemRenderer) continue;
+                    if (any) b.Encapsulate(r.bounds); else { b = r.bounds; any = true; }
+                }
+                var t = new TreeShape { Foot = p, Node = n };
+                if (any)
+                {
+                    t.Foot = new Vector3(b.center.x, Mathf.Min(p.y, b.min.y), b.center.z);
+                    t.R = Mathf.Max(b.extents.x, b.extents.z) * 0.9f + 0.3f;
+                    t.Top = b.max.y;
+                }
+                else { t.R = 3.6f; t.Top = p.y + (PsxArt.On ? 20f : 10.5f); }
+                if (t.Top - t.Foot.y < 1f) continue;
+                s_Trees.Add(t);
+            }
+        }
+
+        /// <summary>How wide tree t is at height y: its crown is a cone, full width over its bottom 40%, to a point at the top
+        /// (never thinner than its trunk); 0 above it or under the ground.</summary>
+        static float TreeRadiusAt(in TreeShape t, float y)
+        {
+            float hgt = t.Top - t.Foot.y;
+            if (y > t.Top || y < t.Foot.y - 0.5f) return 0f;
+            return Mathf.Max(0.8f, t.R * Mathf.Clamp01((t.Top - y) / (0.6f * hgt)));
+        }
+
+        /// <summary>Does the line a..b pass through tree t's needles (or trunk)?</summary>
+        static bool Crosses(in TreeShape t, Vector3 a, Vector3 b)
+        {
+            float fx = a.x - t.Foot.x, fz = a.z - t.Foot.z, dx = b.x - a.x, dz = b.z - a.z;
+            float A = dx * dx + dz * dz, B = 2f * (fx * dx + fz * dz), C = fx * fx + fz * fz - t.R * t.R;
+            float t0 = 0f, t1 = 1f;
+            if (A > 1e-5f)
+            {
+                float disc = B * B - 4f * A * C;
+                if (disc < 0f) return false;
+                float s = Mathf.Sqrt(disc);
+                t0 = Mathf.Max(0f, (-B - s) / (2f * A));
+                t1 = Mathf.Min(1f, (-B + s) / (2f * A));
+                if (t0 > t1) return false;
+            }
+            else if (C > 0f) return false;
+            const int steps = 8;
+            for (int i = 0; i <= steps; i++)
+            {
+                var p = Vector3.Lerp(a, b, Mathf.Lerp(t0, t1, i / (float)steps));
+                float r = TreeRadiusAt(t, p.y);
+                float qx = p.x - t.Foot.x, qz = p.z - t.Foot.z;
+                if (r > 0f && qx * qx + qz * qz < r * r) return true;
+            }
+            return false;
+        }
+
+        /// <summary>Is a tree (not one the cutscene hid) in the way between a and b? Also a test hook.</summary>
+        public static bool TreeInWay(Vector3 a, Vector3 b)
+        {
+            for (int i = 0; i < s_Trees.Count; i++) if (!s_Trees[i].Hidden && Crosses(s_Trees[i], a, b)) return true;
+            return false;
+        }
+
+        /// <summary>Is this point inside a tree's crown (with a little room round it)?</summary>
+        static bool InTree(Vector3 p)
+        {
+            foreach (var t in s_Trees)
+            {
+                float r = TreeRadiusAt(t, p.y) + 0.8f;
+                float qx = p.x - t.Foot.x, qz = p.z - t.Foot.z;
+                if (!t.Hidden && p.y < t.Top + 0.8f && p.y > t.Foot.y - 0.5f && qx * qx + qz * qz < r * r) return true;
+            }
+            return false;
+        }
+
+        /// <summary>Hide (just their pictures) the trees still in the way of these targets from anywhere on the camera's move,
+        /// or that it passes through.</summary>
+        static void HideTreesInWay(Vector3[] targets)
+        {
+            const float step = 0.1f;
+            for (float e = 0f; e <= Gone + 0.01f; e += step)
+            {
+                var cam = CamPathAt(e);
+                var prev = CamPathAt(Mathf.Max(0f, e - step));
+                for (int i = 0; i < s_Trees.Count; i++)
+                {
+                    var t = s_Trees[i];
+                    if (t.Hidden) continue;
+                    bool hit = Crosses(t, prev, cam);
+                    foreach (var tg in targets) if (!hit && Crosses(t, cam, tg)) hit = true;
+                    if (!hit) continue;
+                    t.Hidden = true;
+                    s_Trees[i] = t;
+                    if (t.Node == null) continue;
+                    foreach (var r in t.Node.GetComponentsInChildren<Renderer>())
+                        if (r.enabled) { r.enabled = false; s_HiddenTrees.Add(r); }
+                    TreesHidden++;
+                }
+            }
+        }
+
+        /// <summary>Show the trees the cutscene hid again.</summary>
+        static void ShowTrees()
+        {
+            foreach (var r in s_HiddenTrees) if (r != null) r.enabled = true;
+            s_HiddenTrees.Clear();
+            s_Trees.Clear();
         }
 
         static Vector3 s_PushAim;
 
-        /// <summary>The push in on the winners: at most this much of the way in to them, and never nearer than PushKeep (m, flat).</summary>
-        const float MaxPush = 0.5f, PushKeep = 28f;
+        /// <summary>The push in on the winners: at most this much of the way in to them (and at most PushDist m - a long
+        /// dolly in a couple of seconds is a lurch: the lens does the rest), never nearer than PushKeep (m, flat).</summary>
+        const float MaxPush = 0.5f, PushDist = 20f, PushKeep = 28f;
+        /// <summary>The push in's timing: it starts (very gently) as the beam comes down, so the blast is still seen wide,
+        /// and is all the way in at PushPeak, as the first winner starts up the beam; the way back out takes OutTime.</summary>
+        const float PushFrom = BeamOn - 0.2f, PushPeak = LiftStart + 0.5f, OutTime = 2.4f;
         /// <summary>Test hook: how far in (0..MaxPush of the way) the camera pushes in on the winners.</summary>
         public static float CamPush { get; private set; }
 
-        /// <summary>How far in on the winners the camera is (0..1): it goes in once the base has blown up, as they stand
-        /// in the beam and start up it, and starts back out once the last of them is a little way up (it used to stay in
-        /// until they were all in the ship).</summary>
+        /// <summary>How far in on the winners the camera is (0..1) - one parameter for both the dolly and the lens: it eases
+        /// in from as the beam comes down to as the first of them starts up it, and eases back out once the last of them is a little
+        /// way up (it used to stay in until they were all in the ship), all the way out a little before the beam goes off.
+        /// Both ways it's a smooth ramp (Ease: no jolt as it starts or stops, no sprint in the middle).</summary>
         public static float CloseUp(float e)
         {
             var g = G;
             int n = Mathf.Clamp(g != null ? g.CutsceneRiders.Count : 1, 1, 4);
-            float outAt = Mathf.Min(LiftStart + (n - 1) * LiftStagger + LiftTime * 0.4f, BeamOff - 0.9f);
-            return Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((e - (BlastAt + 0.8f)) / 1.6f)) * (1f - Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((e - outAt) / 2f)));
+            float outAt = Mathf.Clamp(LiftStart + (n - 1) * LiftStagger + LiftTime * 0.4f, PushPeak + 0.5f, BeamOff - 0.9f - OutTime);
+            return Ease((e - PushFrom) / (PushPeak - PushFrom)) * (1f - Ease((e - outAt) / OutTime));
         }
+
+        /// <summary>A smooth 0..1 ramp for camera moves: its speed rises smoothly over the first 40% (no jolt: the speed and
+        /// the acceleration both start at 0), holds, and falls smoothly over the last 40% - so its top speed is only 1.67x the
+        /// average (smoothstep's acceleration jumps at the ends; smootherstep peaks at 1.9x).</summary>
+        public static float Ease(float x)
+        {
+            const float a = 0.4f;
+            x = Mathf.Clamp01(x);
+            static float Ramp(float y) => y * y * y - 0.5f * y * y * y * y; // (the integral of smoothstep)
+            float p = x < a ? a * Ramp(x / a)
+                : x <= 1f - a ? a * 0.5f + (x - a)
+                : (1f - a) - a * Ramp((1f - x) / a);
+            return p / (1f - a);
+        }
+
+        /// <summary>Where the camera is e seconds in (without its hand-held sway): the slow drift in and round from
+        /// CamFrom to CamTo, and the push in on the winners along its clear line to them (PlanCamera checked it).</summary>
+        public static Vector3 CamPathAt(float e)
+        {
+            var pos = BaseAt(e);
+            var d = s_PushAim - pos;
+            float len = d.magnitude;
+            if (len < 0.01f) return pos;
+            return pos + d / len * Mathf.Min(CamPush * len, PushDist) * CloseUp(e);
+        }
+
+        static Vector3 BaseAt(float e) => Vector3.Lerp(s_CamFrom, s_CamTo, Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(e / Gone)));
 
         /// <summary>
         /// The winners' name tags (Hud.DrawVictoryCutscene): each one's name in their team's colour over their head as the
@@ -643,6 +815,8 @@ namespace RockGame
                 var x = Vector3.Lerp(cam, p, (py - cam.y) / (p.y - cam.y));
                 if (new Vector2(x.x - s_Hover.x, x.z - s_Hover.z).magnitude < 15.5f) return false;
             }
+            // a tree's needles (no collider) hide it as well as a wall does
+            if (TreeInWay(cam, p)) return false;
             return !Blocked(cam, cam + d / len * Mathf.Max(0.1f, len - 1.2f));
         }
 
@@ -654,43 +828,67 @@ namespace RockGame
             fov = 60f;
             if (!Active || s_Ship == null) return false;
             float e = Elapsed;
-            // the move: a slow drift in and round (eased), a gentle sway like a hand-held camera
-            float k = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(e / Gone));
-            pos = Vector3.Lerp(s_CamFrom, s_CamTo, k);
-            pos += new Vector3(Mathf.Sin(e * 0.7f) * 0.12f, Mathf.Sin(e * 0.9f + 1f) * 0.08f, Mathf.Cos(e * 0.6f) * 0.12f);
-            // in close on the winners (along its clear line to them: PlanCamera checked it), then back out
+            // the move: a slow drift in and round, in close on the winners and back out (CamPathAt), a gentle sway like a
+            // hand-held camera
+            pos = CamPathAt(e) + new Vector3(Mathf.Sin(e * 0.7f) * 0.12f, Mathf.Sin(e * 0.9f + 1f) * 0.08f, Mathf.Cos(e * 0.6f) * 0.12f);
             float close = CloseUp(e);
-            pos = Vector3.Lerp(pos, s_PushAim, CamPush * close);
-            // what it looks at: the ship coming in, the winners as the beam takes them up, then the ship leaving
+            // what it looks at: the ship coming in, the winners as the beam takes them up, then the ship leaving - one
+            // point between them that slides smoothly from one to the next (it used to jump at each step of the timeline)
             var shipPos = s_Ship.Root.activeSelf ? s_Ship.Root.transform.position : s_TwinklePos;
-            var ground = s_Spot + Vector3.up * 1.4f;
-            var g = G;
-            var riser = ground;
-            if (g != null && e >= LiftStart && e < BeamOff)
-            {
-                // the newest winner floating up (the beam above them)
-                int n = Mathf.Max(1, g.CutsceneRiders.Count);
-                int i = Mathf.Clamp(Mathf.FloorToInt((e - LiftStart) / LiftStagger), 0, n - 1);
-                float hatch = s_Hover.y + AirdropShip.HatchY;
-                float u = LiftOf(i);
-                riser = new Vector3(s_Spot.x, Mathf.Lerp(ground.y, hatch, u * u * (3f - 2f * u) * 0.85f), s_Spot.z);
-            }
-            Vector3 want;
-            if (e < Arrive - 0.6f) want = Vector3.Lerp(ground, shipPos, 0.75f);
-            // (in close, it looks down at the winners more and up at the ship less: they and their name tags fill the shot)
-            else if (e < LiftStart) want = Vector3.Lerp(ground, shipPos, Mathf.Lerp(0.6f, 0.3f, (e - Arrive + 0.6f) / (LiftStart - Arrive + 0.6f)) * (1f - 0.75f * close));
-            else if (e < BeamOff) want = Vector3.Lerp(riser, shipPos, 0.22f * (1f - 0.6f * close));
-            else if (e < DashStart) want = Vector3.Lerp(ground, shipPos, 0.7f);
-            else want = shipPos;
-            if (!s_LookSet) { s_Look = want; s_LookSet = true; }
-            s_Look = Vector3.Lerp(s_Look, want, 1f - Mathf.Exp(-Time.deltaTime * (e > DashStart ? 4f : 2.2f)));
+            var want = Vector3.Lerp(Riser(e), shipPos, LookToShip(e, close));
+            if (!s_LookSet) { s_Look = want; s_LookVel = Vector3.zero; s_LookSet = true; }
+            // (critically damped: it eases onto what it looks at - no snap, no overshoot)
+            float dt = Mathf.Min(Time.deltaTime, 0.1f);
+            s_Look = Vector3.SmoothDamp(s_Look, want, ref s_LookVel, Mathf.Lerp(0.45f, 0.25f, Smoother((e - DashStart) / 0.6f)), float.PositiveInfinity, dt);
             rot = Quaternion.LookRotation(s_Look - pos);
-            // the lens: wide as it comes in, a little tighter once the beam's on, right in on the winners (with the push
-            // in above) as they stand in the beam and start up it, then - once the last is a little way up, well before
-            // they're all in - back out to where it was to see the ship go
-            float tight = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((e - BeamOn) / 1.5f)) * (1f - Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((e - BeamOff) / 1.2f)));
+            // the lens: wide as it comes in, a little tighter as the beam comes on, right in on the winners (with the push
+            // in above, on the same ramp) as they stand in the beam and start up it, then - once the last is a little way
+            // up, well before they're all in - back out to where it was to see the ship go
+            float tight = Smoother((e - (BeamOn - 0.8f)) / 1.6f) * (1f - Smoother((e - BeamOff) / 1.4f));
             fov = Mathf.Lerp(Mathf.Lerp(WideFov, BeamFov, tight), ZoomFov, close);
             return true;
+        }
+
+        static Vector3 s_LookVel;
+
+        /// <summary>0..1 with no jolt at either end (smootherstep), clamped.</summary>
+        static float Smoother(float x)
+        {
+            x = Mathf.Clamp01(x);
+            return x * x * x * (x * (6f * x - 15f) + 10f);
+        }
+
+        /// <summary>The bottom of what the camera looks at: the winners on the ground, raised towards the ones floating up the
+        /// beam (each counts more the further up it they are, none at the ground or the hatch - so it never jumps from one
+        /// to the next as the camera used to).</summary>
+        static Vector3 Riser(float e)
+        {
+            var ground = s_Spot + Vector3.up * 1.4f;
+            var g = G;
+            if (g == null || e < LiftStart || e >= BeamOff) return ground;
+            float hatch = s_Hover.y + AirdropShip.HatchY;
+            float sum = 0.15f, y = ground.y * 0.15f;
+            for (int i = 0; i < Mathf.Min(g.CutsceneRiders.Count, MaxRiders); i++)
+            {
+                float u = LiftOf(i);
+                if (u <= 0f || u >= 1f) continue;
+                float w = Mathf.Sin(u * Mathf.PI);
+                sum += w;
+                y += w * Mathf.Lerp(ground.y, hatch, u * u * (3f - 2f * u) * 0.85f);
+            }
+            return new Vector3(s_Spot.x, y / sum, s_Spot.z);
+        }
+
+        /// <summary>How far from the winners (Riser) up towards the ship the camera looks: mostly the ship as it comes in,
+        /// down towards the winners as the beam comes on (more so in close, so they and their name tags fill the shot), up
+        /// at the ship again once the beam's off, and all on it as it dashes off - each step blended smoothly into the next.</summary>
+        static float LookToShip(float e, float close)
+        {
+            float f = Mathf.Lerp(0.75f, 0.3f, Smoother((e - (Arrive - 0.6f)) / (LiftStart - Arrive + 0.6f)));
+            f = Mathf.Lerp(f, 0.22f, Smoother((e - LiftStart) / 0.8f));
+            f *= 1f - 0.7f * close;
+            f = Mathf.Lerp(f, 0.7f, Smoother((e - (BeamOff - 0.2f)) / 1.2f));
+            return Mathf.Lerp(f, 1f, Smoother((e - (DashStart - 0.3f)) / 0.7f));
         }
     }
 

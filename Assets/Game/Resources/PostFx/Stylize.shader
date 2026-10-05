@@ -29,6 +29,7 @@ Shader "Hidden/RockGame/Stylize"
             float4 _RgHaze;      // x most haze (0 = off), y start (m), z distance until it's all there (m)
             float4 _RgHazeColor; // linear
             float4 _RgLook;      // x sharpen (0 = off), y cel banding steps (0 = off)
+            float4 _RgFarLine;   // x the far things' line thickness (x the usual; 1 = as near), y how much silhouettes against the sky keep their line at any distance (0..1)
 
             half3 Col(float2 uv) { return SAMPLE_TEXTURE2D_X_LOD(_BlitTexture, sampler_PointClamp, uv, 0).rgb; }
             float Eye(float2 uv) { return LinearEyeDepth(SampleSceneDepth(uv), _ZBufferParams); }
@@ -47,7 +48,8 @@ Shader "Hidden/RockGame/Stylize"
             float Edge(float2 uv, float2 o, float d, float raw)
             {
                 float2 a = uv + float2(-o.x, -o.y), b = uv + float2(o.x, o.y), e = uv + float2(o.x, -o.y), f = uv + float2(-o.x, o.y);
-                float da = Eye(a), db = Eye(b), de = Eye(e), df = Eye(f);
+                float ra = SampleSceneDepth(a), rb = SampleSceneDepth(b), re = SampleSceneDepth(e), rf = SampleSceneDepth(f);
+                float da = LinearEyeDepth(ra, _ZBufferParams), db = LinearEyeDepth(rb, _ZBufferParams), de = LinearEyeDepth(re, _ZBufferParams), df = LinearEyeDepth(rf, _ZBufferParams);
                 float near = min(min(da, db), min(min(de, df), d));
                 float jump = max(abs(da - db), abs(de - df)) / max(near, 0.01);
                 float edge = smoothstep(_RgOutline.z, _RgOutline.z * 2.2, jump);
@@ -56,8 +58,16 @@ Shader "Hidden/RockGame/Stylize"
                 edge = max(edge, smoothstep(_RgOutline.w, _RgOutline.w + 0.35, fold) * (Sky(raw) ? 0 : 1));
                 // none on (or against) the faded grass right round the camera
                 edge *= 1 - max(max(max(NoInk(a), NoInk(b)), max(NoInk(e), NoInk(f))), NoInk(uv));
-                // fade out with distance (the nearest of the samples: a silhouette against the sky keeps its line)
-                edge *= 1 - smoothstep(45.0, 130.0, near);
+                // fade out with distance (the nearest of the samples) - except, with the far lines turned up past 100%
+                // (_RgFarLine.y), an outline against the sky: a cloud's, a planet's or a far mountain's silhouette
+                float fade = 1 - smoothstep(45.0, 130.0, near);
+                if (_RgFarLine.y > 0)
+                {
+                    bool anySky = Sky(ra) || Sky(rb) || Sky(re) || Sky(rf) || Sky(raw);
+                    bool allSky = Sky(ra) && Sky(rb) && Sky(re) && Sky(rf) && Sky(raw);
+                    if (anySky && !allSky) fade = max(fade, _RgFarLine.y);
+                }
+                edge *= fade;
                 return edge;
             }
 
@@ -86,6 +96,9 @@ Shader "Hidden/RockGame/Stylize"
                 if (_RgOutline.x > 0)
                 {
                     float t = _RgOutline.y;
+                    // the far things - clouds, planets, far mountains, and the sky round them - get their own
+                    // thickness (Settings > Display > Far line thickness: x 1 = the same as near)
+                    t *= lerp(1.0, _RgFarLine.x, smoothstep(40.0, 110.0, d));
                     float k0 = floor(t), w = t - k0;
                     float edge = k0 >= 1 ? Edge(uv, texel * k0, d, raw) : 0;
                     if (w > 0.01) edge = lerp(edge, Edge(uv, texel * (k0 + 1), d, raw), w);

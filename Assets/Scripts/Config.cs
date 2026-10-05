@@ -306,7 +306,7 @@ namespace RockGame
         [Tune("Airdrop")] public static int SniperAmmo = 3, JetpackFuel = 100, PortalShots = 2, RocketAmmo = 3; // (the portal gun: two shots = one linked pair)
         [Tune("Airdrop")] public static float JetpackSeconds = 8f, JetpackThrust = 9f, GiantTime = 30f, GiantScale = 3f;
         [Tune("Airdrop")] public static float SlenderSpeed = 4.6f, SlenderHp = 150f, SlenderLife = 60f;
-        [Tune("Airdrop")] public static float RocketSpeed = 32f, RocketRadius = 3.5f, RocketStructureDamage = 1500f, RocketPlayerDamage = 200f;
+        [Tune("Airdrop")] public static float RocketSpeed = 32f, RocketRadius = 3.5f, RocketStructureDamage = 1800f, RocketPlayerDamage = 200f;
         [Tune("Airdrop")] public static float BombBushDamage = 150f, AirstrikeRadius = 14f, AirstrikeDelay = 4f, EggBlockHp = 60f;
         [Tune("Airdrop")] public static float WandRange = 90f, WandRadius = 3f;
         [Tune("Airdrop")] public static float InvisTime = 30f, InvisRevealTime = 1.2f;
@@ -434,7 +434,7 @@ namespace RockGame
         [Tune("Arsenal and Builder")] public static int FortifyWood = 5000, PistolWood = 5000;
         /// <summary>Fortify All Walls goes up a step every time your team buys it: stone, then sheet metal, then armoured
         /// (the old "refined" tier, back as the top step - only a little better than sheet metal).</summary>
-        [Tune("Arsenal and Builder")] public static int FortifyStoneWood = 2500, FortifyMetalWood = 2000, FortifyArmouredWood = 3000;
+        [Tune("Arsenal and Builder")] public static int FortifyStoneWood = 1000, FortifyMetalWood = 2000, FortifyArmouredWood = 3000;
         [Tune("Arsenal and Builder")] public static int SwordWood = 500, C4Wood = 2500, HelmetWood = 800, ShotgunWood = 2000, ShellWood = 250, RevolverWood = 2500, RevolverAmmoWood = 200;
         /// <summary>Sword: a slow, heavy swing (the swing time is adjustable) - its own head / body damage instead of the usual x2.</summary>
         [Tune("Arsenal and Builder")] public static float SwordSwingTime = 1.5f, SwordHeadDamage = 150f, SwordBodyDamage = 95f, SwordRange = 2.9f;
@@ -456,7 +456,7 @@ namespace RockGame
         /// <summary>The wood gen upgrade has three levels: the first builds the wood machine (Auto Wood Per Second), the
         /// next two speed it up - wood a second at each, and what each costs.</summary>
         [Tune("Auto Wood")] public static int AutoWoodLevel1 = 12, AutoWoodLevel2 = 25;
-        [Tune("Auto Wood")] public static int WoodGenBuildWood = 500, WoodGen1Wood = 1000, WoodGen2Wood = 3000;
+        [Tune("Auto Wood")] public static int WoodGenBuildWood = 1000, WoodGen1Wood = 2000, WoodGen2Wood = 3000;
         /// <summary>Pistol: hitscan, this much damage a shot (a headshot has its own number instead of the usual x2).</summary>
         [Tune("Arsenal and Builder")] public static float PistolHeadDamage = 200f, PistolBodyDamage = 95f;
         /// <summary>Metal (Fortify All Walls' top step): its HP is the ...MetalHp numbers (MetalHpMul isn't used any more); melee does this share of its damage.</summary>
@@ -1055,6 +1055,7 @@ namespace RockGame
             (7, new[] { "RevolverMag" }),
             (8, new[] { "FortifyStoneWood", "RefinedHpMul", "RefinedMeleeMul", "RefinedRocketMul" }),
             (9, new[] { "RocketPlayerDamage", "RocketStructureDamage", "ChainsawUses", "SwordSwingTime" }),
+            (10, new[] { "FortifyStoneWood", "FortifyMetalWood", "FortifyArmouredWood", "WoodGenBuildWood", "WoodGen1Wood", "WoodGen2Wood", "RocketStructureDamage" }),
         };
         const string MigrateKey = "RockGame.Tunables.migrated";
 

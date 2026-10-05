@@ -602,6 +602,9 @@ namespace RockGame
             if (Cfg.HasBaseUpgrades) UpgradeStation.Create(root, team); // Arsenal / Auto Wood: the upgrade station, left of it
         }
 
+        /// <summary>The point light over the alien machine's crystal: a light shade of the owning team's colour.</summary>
+        public static Color MachineLightColor(int team) => Color.Lerp(Cfg.TeamColor[Mathf.Clamp(team, 0, 3)], Color.white, 0.45f);
+
         static void BuildMachine(Transform root, int team, Color glow)
         {
             using var tint = ColorSlots.Use(ColorSlots.AlienMachine); // (Settings > Display colours)
@@ -611,7 +614,6 @@ namespace RockGame
             go.transform.SetPositionAndRotation(Cfg.MachinePos(team), Quaternion.LookRotation(-Cfg.BackDir(team)));
             var t = go.transform;
             var metal = new Color(0.3f, 0.33f, 0.36f);
-            var alien = new Color(0.45f, 0.95f, 0.55f);
             var screen = Art.Ghost(new Color(0.4f, 1f, 0.8f, 0.7f));
 
             // heavy base and the main column
@@ -694,11 +696,11 @@ namespace RockGame
                 Art.Box(socket, i % 2 == 0 ? k_Silver : metal, new Vector3(Mathf.Sin(a) * 0.82f, 0.16f, Mathf.Cos(a) * 0.82f), new Vector3(0.5f, 0.32f, 0.14f), new Vector3(0, i * 36f, 0), true);
             }
             var pad = Art.Part(socket, Art.Cylinder, glow, new Vector3(0, 0.012f, 0), new Vector3(1.4f, 0.01f, 1.4f));
-            // arch over the socket with an emitter pointing down into the hole
+            // arch over the socket (its faint beam shines down into the hole)
             for (int k = -1; k <= 1; k += 2)
                 Art.Box(socket, metal, new Vector3(k * 1.05f, 1.0f, 0), new Vector3(0.14f, 2f, 0.14f), default, true);
             Art.Box(socket, metal, new Vector3(0, 2.02f, 0), new Vector3(2.24f, 0.16f, 0.2f));
-            Art.Part(socket, Art.Cone, glow, new Vector3(0, 1.72f, 0), new Vector3(0.3f, 0.25f, 0.3f), new Vector3(180, 0, 0));
+            // (no coloured emitter cone hanging under the arch any more: the team's crystal behind already says whose it is)
             var beam = Art.Part(socket, Art.Cylinder, Color.white, new Vector3(0, 1.0f, 0), new Vector3(0.9f, 0.95f, 0.9f), default, false, Art.Ghost(new Color(glow.r, glow.g, glow.b, 0.22f)));
             beam.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
 
@@ -707,7 +709,7 @@ namespace RockGame
             lg.transform.localPosition = new Vector3(0, 2.2f, 0.6f);
             var l = lg.AddComponent<Light>();
             l.type = LightType.Point;
-            l.color = alien;
+            l.color = MachineLightColor(team); // (a light shade of the team's colour - it was alien green for everyone)
             l.range = 7f;
             l.intensity = 1.8f;
 
@@ -739,10 +741,13 @@ namespace RockGame
                     arm.localRotation = Quaternion.Euler(0, 45f + 90f * k, 0);
                     BuildGlassPanel(arm, arm.localRotation * Vector3.right);
                 }
-                return;
             }
-            BuildGlassPanel(s_Glass.transform, Vector3.right);
+            else BuildGlassPanel(s_Glass.transform, Vector3.right);
+            EnergyWall.Attach(s_Glass); // (Settings > Display > Energy wall: drawn as an energy field instead of glass)
         }
+
+        /// <summary>The glass wall between the halves with the ball's dome (null before a map is built; tests).</summary>
+        public static GameObject GlassWallRoot => s_Glass;
 
         /// <summary>
         /// One glass wall right across the map (along local x, which is `dir` in the world), with a round notch in the middle

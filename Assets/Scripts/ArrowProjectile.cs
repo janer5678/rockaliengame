@@ -224,6 +224,13 @@ namespace RockGame
         /// <summary>Shooter-side instant feedback (the server confirms kills).</summary>
         void PredictHit(NetworkObject no, RaycastHit h, Vector3 dir)
         {
+            // a horse (or Slenderman): its damage number and hit marker too (the server's sum: PlayerNet.ArrowHitRpc / SpearLandRpc)
+            if (no != null && m_Thrown == Item.None && no.TryGetComponent(out Vehicle v))
+            {
+                float vd = m_Damage >= 0f ? m_Damage : m_Spear ? Cfg.SpearThrowDamage * m_Power : Cfg.BowDamage(m_Power);
+                Hud.AnimalHit(v, h.point, vd * v.HeadMul(h.point));
+                return;
+            }
             if (no == null || !no.TryGetComponent(out PlayerNet p) || p == m_Shooter || p.Dead.Value) return;
             bool head = p.IsHeadshot(h.point);
             float dmg = (m_Damage >= 0f ? m_Damage : m_Spear ? Cfg.SpearThrowDamage * m_Power : Cfg.BowDamage(m_Power)) * (head ? Cfg.HeadshotMul : 1f);

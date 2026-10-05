@@ -19,12 +19,23 @@ namespace RockGame
 
     public partial class NetGame
     {
+        /// <summary>Seconds before the same player's same ball line (picked up / captured) can show in the kill feed again.</summary>
+        public const float BallFeedCooldown = 10f;
+        readonly Dictionary<(ulong, bool), float> m_BallFeedAt = new Dictionary<(ulong, bool), float>();
+
         /// <summary>Server: a ball line in everyone's kill feed - `who` picked it up, or it was captured for `team` (by `who`,
         /// when it's known who brought it in; null = just the team). Sent as a kill feed line with a ball cause: the
-        /// "killer" is the player, the "victim" side is the team (it's drawn as words, not a name - Hud.AddKill).</summary>
+        /// "killer" is the player, the "victim" side is the team (it's drawn as words, not a name - Hud.AddKill).
+        /// The same line for the same player comes at most once every BallFeedCooldown seconds.</summary>
         public void ServerBallFeed(PlayerNet who, int team, bool capture)
         {
             if (!IsServer || !IsSpawned || team < 0) return;
+            // flood protection: one player (or, for a capture nobody's named in, one team) gets the same ball line at most
+            // once every BallFeedCooldown seconds - spam picking it up / dropping it, or popping it in and out of the
+            // machine, doesn't fill the feed
+            var key = (who != null ? who.NetworkObjectId : ulong.MaxValue - (ulong)team, capture);
+            if (m_BallFeedAt.TryGetValue(key, out float last) && Time.time - last < BallFeedCooldown) return;
+            m_BallFeedAt[key] = Time.time;
             KillFeedRpc(who != null ? who.Team.Value : (byte)255, who != null ? who.Slot.Value : (byte)0, (byte)team, 0,
                 capture ? KillCause.BallCapture : KillCause.BallPickup, false, new Unity.Collections.FixedString32Bytes(who != null ? who.DisplayName : ""), default);
         }

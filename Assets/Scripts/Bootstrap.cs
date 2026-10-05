@@ -36,6 +36,7 @@ namespace RockGame
             Cfg.LoadPrefs();
             GameSettings.Load();
             if (GetComponent<VoiceChat>() == null) gameObject.AddComponent<VoiceChat>();
+            if (GetComponent<Spectator>() == null) gameObject.AddComponent<Spectator>(); // (watching a match you couldn't join)
             // the refresh rate: the highest the screen has (or what was picked in Settings > Display)
             bool test = System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-autotest") >= 0;
             GameSettings.ApplyDisplayAtStartup(test);
@@ -167,6 +168,8 @@ namespace RockGame
         {
             Status = "Connecting to " + Ip + ":" + ParsedPort + " ...";
             m_Ut.SetConnectionData(Ip.Trim(), ParsedPort);
+            // our name goes with the request: if we end up spectating it's what the others see (Spectator.cs)
+            m_Nm.NetworkConfig.ConnectionData = System.Text.Encoding.UTF8.GetBytes(GameSettings.PlayerName);
             if (!m_Nm.StartClient()) Status = "Could not start client";
         }
 
@@ -193,17 +196,22 @@ namespace RockGame
         void Approve(NetworkManager.ConnectionApprovalRequest req, NetworkManager.ConnectionApprovalResponse resp)
         {
             bool isHost = req.ClientNetworkId == NetworkManager.ServerClientId;
-            int count = m_Nm.ConnectedClientsIds.Count;
+            if (isHost) Spectator.ServerReset(); // (a new session: nobody's watching)
+            int count = Spectator.ServerPlayerClients(m_Nm); // (the players: spectators don't take a place)
             bool waiting = NetGame.Instance == null || NetGame.Instance.S == GameState.Waiting;
             // the tutorial: join any time, straight in - unless the host is playing it solo (Tutorial.Friend)
             bool soloTutorial = Cfg.Tutorial && Solo;
             bool ok = isHost || (count < Cfg.PlayersNeeded && !soloTutorial && (waiting || Cfg.Tutorial));
-            resp.Approved = ok;
+            // can't play (the match has started, or it's full): in as a spectator instead - no player object (Spectator.cs)
+            // (not a solo tutorial: that's nobody else's to watch)
+            bool watch = !ok && !soloTutorial && NetGame.Instance != null && Spectator.ServerHasRoom;
+            if (watch) Spectator.ServerApprove(req.ClientNetworkId, req.Payload);
+            resp.Approved = ok || watch;
             resp.CreatePlayerObject = ok;
             // everyone starts in the stadium (waiting area); the player places itself properly once it's spawned
             resp.Position = Cfg.ArenaCenter + new Vector3(Random.Range(-6f, 6f), 0.1f, Random.Range(-6f, 6f));
             resp.Rotation = Quaternion.identity;
-            if (!ok) resp.Reason = soloTutorial ? "That tutorial is being played solo" : count >= Cfg.PlayersNeeded ? $"Game is full ({Cfg.ModeLabel})" : "Match already in progress";
+            if (!ok && !watch) resp.Reason = soloTutorial ? "That tutorial is being played solo" : !Spectator.ServerHasRoom ? "Game is full (no room to spectate either)" : count >= Cfg.PlayersNeeded ? $"Game is full ({Cfg.ModeLabel})" : "Match already in progress";
         }
 
         void OnServerStarted()
@@ -226,7 +234,7 @@ namespace RockGame
         void Update()
         {
             // Menu camera: one long, slow cinematic loop through the map while not in a match (and the menu's trees) - MenuScene.cs
-            if (PlayerController.Local == null && Camera.main != null && InSession)
+            if (PlayerController.Local == null && Camera.main != null && InSession && !Spectator.Active) // (a spectator's camera: Spectator.cs)
             {
                 // (connecting / waiting to spawn: the old slow orbit over the map)
                 m_MenuOrbit += Time.deltaTime * 4f;

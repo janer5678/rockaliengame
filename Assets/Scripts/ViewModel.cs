@@ -449,7 +449,8 @@ namespace RockGame
         {
             float e = Smooth(s.Draw);
             if (m_Item && m_Item.transform.childCount > 3) m_Item.transform.GetChild(3).gameObject.SetActive(false); // we draw the string ourselves
-            var grip = shared + Vector3.Lerp(new Vector3(0.2f, -0.22f, 0.62f), new Vector3(0.045f, -0.12f, 0.6f), e);
+            // (the bow hand is held well out in front - it used to sit 0.1 nearer, cramped against the view)
+            var grip = shared + Vector3.Lerp(new Vector3(0.2f, -0.22f, 0.72f), new Vector3(0.045f, -0.12f, 0.69f), e);
             var bowRot = sharedRot * Quaternion.Euler(Mathf.Lerp(-6f, 0f, e), Mathf.Lerp(-12f, -4f, e), Mathf.Lerp(-14f, -26f, e));
             AttachItemToRoot(grip, bowRot, 1f);
 

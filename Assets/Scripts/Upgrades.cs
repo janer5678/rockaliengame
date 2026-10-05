@@ -99,6 +99,7 @@ namespace RockGame
             if (Dead.Value || g == null || InSuddenDeath || g.S == GameState.GameOver || !Cfg.BaseUpgradeOn(id)) return;
             int team = Team.Value;
             if (!Tutorial.AllowsFor(this, TutFeature.Station)) { Notify("Not yet - the tutorial gets to the upgrade station soon"); return; }
+            if (id == Item.FortifyBuff && !Tutorial.AllowsFor(this, TutFeature.Fortify)) { Notify("Not yet - the wood gen first, then the tutorial gets to your walls"); return; }
             if (!Cfg.AtOwnStation(team, transform.position)) { Notify("Upgrades are bought at your upgrade station (E on it - the orange arrow, left of your alien machine)"); return; }
             if (Cfg.BaseUpgradeMaxed(id, team)) { Notify(id == Item.WoodGenBuff ? "Your wood gen is already maxed out" : "Your walls are already armoured - fully fortified"); return; }
             var r = Cfg.BaseUpgradeRecipe(id, team);

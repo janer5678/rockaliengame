@@ -28,6 +28,16 @@ namespace RockGame
             if (p != null) Chat.BeginWhisper(p.OwnerClientId, p.DisplayName, p.Team.Value);
         }
 
+        /// <summary>Who's spectating (Spectator.cs), comma separated ("" = nobody).</summary>
+        static string SpectatorNames()
+        {
+            var g = NetGame.Instance;
+            if (g == null || !g.IsSpawned || g.Spectators.Count == 0) return "";
+            var sb = new System.Text.StringBuilder();
+            foreach (var s in g.Spectators) { if (sb.Length > 0) sb.Append(", "); sb.Append(s.Name.ToString()); }
+            return sb.ToString();
+        }
+
         void DrawScoreboard(PlayerNet me, PlayerController pc)
         {
             bool open = pc.ScoreboardOpen || TestScoreboard;
@@ -53,6 +63,8 @@ namespace RockGame
                 shownRows += Mathf.Max(1, n);
             }
             float h = titleH + colsH + shownTeams * (headH + gap) + shownRows * rowH + 34 * k;
+            string watchers = SpectatorNames();
+            if (watchers != "") h += 26 * k; // (a line of its own for anyone spectating)
             float x = (sw - w) / 2, y = Mathf.Max(70 * k, (sh - h) * 0.4f) - (1f - ease) * 16 * k;
             var panel = new Rect(x, y, w, h);
             if (panel.Contains(e.mousePosition)) MouseOverUI = true;
@@ -149,6 +161,12 @@ namespace RockGame
                     cy += rowH;
                 }
                 cy += gap;
+            }
+            if (watchers != "")
+            {
+                var ws = new GUIStyle(m_Small) { alignment = TextAnchor.MiddleLeft, richText = false, clipping = TextClipping.Clip };
+                ws.normal.textColor = new Color(0.75f, 0.75f, 0.8f, ease);
+                GUI.Label(new Rect(nameX, cy, w - 40 * k, 24 * k), "SPECTATORS: " + watchers, ws);
             }
             var foot = new GUIStyle(m_Small) { alignment = TextAnchor.MiddleCenter };
             foot.normal.textColor = new Color(0.65f, 0.65f, 0.7f, ease);

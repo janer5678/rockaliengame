@@ -23,6 +23,7 @@ namespace RockGame
             GameSettings.Apply();
             if (m_Mode == "menushot") { StartCoroutine(MenuShots()); return; }
             if (m_Mode == "voice") { StartCoroutine(VoiceRoutine()); return; }
+            if (m_Mode == "spectate") { StartCoroutine(SpectateRoutine()); return; } // (AutoTest.Spectate.cs)
             StartCoroutine(Run());
         }
 

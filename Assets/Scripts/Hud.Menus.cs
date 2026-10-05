@@ -863,6 +863,13 @@ namespace RockGame
             GUILayout.Label("<color=#bbbbbb>  frames per second, top left</color>", m_Small, GUILayout.Height(30 * k));
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            RowLabel("Uncapped framerate", lw);
+            bool unc = ToggleBtn(GameSettings.UncappedFps, GameSettings.UncappedFps ? "On" : "Off", GUILayout.Width(90 * k), GUILayout.Height(30 * k));
+            if (unc != GameSettings.UncappedFps) GameSettings.SetUncappedFps(unc);
+            GUILayout.Label("<color=#bbbbbb>  vsync off, no frame cap - as fast as your PC can go</color>", m_Small, GUILayout.Height(30 * k));
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
 
             // ---- shadows ----
             Caption("SHADOWS  ·  just on this PC");
@@ -891,6 +898,7 @@ namespace RockGame
             DrawBaseFloorSettings(); // (Hud.BaseFloor.cs)
             DrawAimPreviewSettings(); // (PlayerController.Preview.cs: the trajectory line)
             DrawBeamSettings(); // (Hud.Beams.cs)
+            DrawSkyLinesAndWall(); // (Hud.SkyLines.cs: far line thickness, energy wall)
         }
 
         bool m_CopyNoteBad;
