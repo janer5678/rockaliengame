@@ -18,6 +18,21 @@ namespace RockGame
         static GameObject s_Glass;
         /// <summary>Highlands: where the hill rocks go (one half; NetGame mirrors them). They are real stone nodes.</summary>
         public static readonly List<Vector3> WildRocks = new List<Vector3>();
+        /// <summary>The ring of mountain rocks round the map (built below): each one's middle and how far it reaches each
+        /// way (x, y, z - its faceted ball's furthest corners). The nearest poke in past the boundary wall.</summary>
+        public static readonly List<(Vector3 c, Vector3 r)> MountainRocks = new List<(Vector3, Vector3)>();
+
+        /// <summary>Is p inside one of the ring's mountain rocks, or within `pad` metres of one?</summary>
+        public static bool InMountain(Vector3 p, float pad = 0f)
+        {
+            foreach (var (c, r) in MountainRocks)
+            {
+                var d = p - c;
+                d.x /= r.x + pad; d.y /= r.y + pad; d.z /= r.z + pad;
+                if (d.sqrMagnitude < 1f) return true;
+            }
+            return false;
+        }
 
         public static Transform Root => s_Root;
 
@@ -30,6 +45,7 @@ namespace RockGame
             s_Dropping = null;
             s_BaseFloors.Clear();
             WildRocks.Clear();
+            MountainRocks.Clear();
             s_Root = new GameObject("World").transform;
             BuiltKey = Cfg.MapKey;
             BuiltSeed = Cfg.MapSeed;
@@ -166,6 +182,8 @@ namespace RockGame
                 var m = Art.Part(root, Art.MakeRock(i, 0.35f), Color.Lerp(new Color(0.42f, 0.45f, 0.42f), new Color(0.55f, 0.55f, 0.6f), R(0, 1)),
                     new Vector3(Mathf.Cos(a) * d, sc * 0.2f, Mathf.Sin(a) * d), new Vector3(sc, sc * R(0.6f, 1.1f), sc), new Vector3(0, R(0, 360), 0), true);
                 m.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
+                // (Art.MakeRock: a ball of radius 1, its corners pushed in and out by 0.35 - few reach right out)
+                MountainRocks.Add((m.transform.position, m.transform.localScale * 1.25f));
                 PsxModels.Replace(m.transform, "bigrock" + (i % 6), PsxModels.Fit.Uniform);
             }
             // further out, layers of mountain ranges, each taller and paler; and big boulders about the map (MapScenery)
@@ -599,7 +617,38 @@ namespace RockGame
             // heavy base and the main column
             Art.Box(t, metal, new Vector3(0, 0.25f, 0), new Vector3(2.7f, 0.5f, 1.2f), default, true);
             Art.Box(t, k_SilverDark, new Vector3(0, 0.52f, 0), new Vector3(2.5f, 0.06f, 1.05f));
-            Art.Part(t, Art.Cylinder, k_Silver, new Vector3(0, 1.45f, -0.05f), new Vector3(0.9f, 0.95f, 0.9f), default, true);
+            // (the column is hollow in the middle, with a window in its front: the team's crystal glows inside it)
+            const float colR = 0.45f, winLo = 1.2f, winHi = 2.05f, winMid = (winLo + winHi) * 0.5f;
+            var colAt = new Vector3(0, 0, -0.05f);
+            var k_Dark = new Color(0.08f, 0.09f, 0.11f);
+            Workbench.Cyl(t, k_Silver, colAt + Vector3.up * (0.5f + winLo) * 0.5f, colR, winLo - 0.5f);
+            Workbench.Cyl(t, k_Silver, colAt + Vector3.up * (winHi + 2.4f) * 0.5f, colR, 2.4f - winHi);
+            var colBody = new GameObject("column"); // (what you bump into: the whole column, window and all)
+            colBody.transform.SetParent(t, false);
+            var colBox = colBody.AddComponent<BoxCollider>();
+            colBox.center = colAt + Vector3.up * 1.45f;
+            colBox.size = new Vector3(colR * 1.8f, 1.9f, colR * 1.8f);
+            const int colN = 16;
+            float slatW = 2f * colR * Mathf.Tan(Mathf.PI / colN) + 0.01f;
+            for (int i = 2; i <= colN - 2; i++) // (the three slats at the front are left out: that's the window)
+            {
+                float a = i * Mathf.PI * 2f / colN;
+                var dir = new Vector3(Mathf.Sin(a), 0, Mathf.Cos(a));
+                var rot = new Vector3(0, a * Mathf.Rad2Deg, 0);
+                Art.Box(t, k_Silver, colAt + dir * (colR - 0.03f) + Vector3.up * winMid, new Vector3(slatW, winHi - winLo, 0.06f), rot);
+                Art.Box(t, k_Dark, colAt + dir * (colR - 0.065f) + Vector3.up * winMid, new Vector3(slatW, winHi - winLo, 0.012f), rot); // (dark inside)
+            }
+            Workbench.Cyl(t, k_Dark, colAt + Vector3.up * (winLo + 0.006f), colR - 0.07f, 0.012f);
+            Workbench.Cyl(t, k_Dark, colAt + Vector3.up * (winHi - 0.006f), colR - 0.07f, 0.012f);
+            Workbench.Cyl(t, glow, colAt + Vector3.up * (winLo + 0.02f), 0.16f, 0.02f, default, Workbench.Glow(glow)); // (a lit pad under the crystal)
+            // the window's frame and its glass
+            Workbench.Cyl(t, metal, colAt + Vector3.up * winLo, colR + 0.025f, 0.05f);
+            Workbench.Cyl(t, metal, colAt + Vector3.up * winHi, colR + 0.025f, 0.05f);
+            float winA = 1.5f * Mathf.PI * 2f / colN, winX = Mathf.Sin(winA) * colR, winZ = Mathf.Cos(winA) * colR;
+            for (int k = -1; k <= 1; k += 2)
+                Art.Box(t, metal, colAt + new Vector3(k * winX, winMid, winZ), new Vector3(0.05f, winHi - winLo, 0.05f), new Vector3(0, k * winA * Mathf.Rad2Deg, 0));
+            var pane = Art.Box(t, Color.white, colAt + new Vector3(0, winMid, winZ), new Vector3(winX * 2f, winHi - winLo, 0.008f), default, false, Art.Ghost(new Color(glow.r, glow.g, glow.b, 0.1f)));
+            pane.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
             Art.Part(t, Art.Cylinder, metal, new Vector3(0, 2.45f, -0.05f), new Vector3(1.15f, 0.08f, 1.15f));
             // side pylons with glowing tips
             for (int k = -1; k <= 1; k += 2)
@@ -629,9 +678,11 @@ namespace RockGame
                     Art.Box(ring, i % 3 == 0 ? glow : k_Silver, new Vector3(Mathf.Sin(a) * 0.72f, 0, Mathf.Cos(a) * 0.72f), new Vector3(0.2f, 0.05f, 0.08f), new Vector3(0, i * 30f + 90f, 0));
                 }
             }
-            // floating orb on top
-            var orb = Art.Part(t, Art.Ico, alien, new Vector3(0, 2.85f, -0.05f), Vector3.one * 0.32f).transform;
-            Art.Part(orb, Art.Ico, Color.white, Vector3.zero, Vector3.one * 1.5f, default, false, Art.Ghost(new Color(0.5f, 1f, 0.6f, 0.3f)));
+            // the crystal: in the team's colour, glowing, floating inside the column behind the window (it used to be a green
+            // one up above the machine)
+            var orb = Art.Part(t, Art.Ico, glow, new Vector3(0, winMid + 0.02f, -0.05f), new Vector3(0.2f, 0.3f, 0.2f), default, false, Workbench.Glow(glow, 2.2f)).transform;
+            var halo = Art.Part(orb, Art.Ico, Color.white, Vector3.zero, Vector3.one * 1.4f, default, false, Art.Ghost(new Color(glow.r, glow.g, glow.b, 0.28f)));
+            halo.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
 
             // the socket: a cradle in front of the machine where the ball has to sit to win
             var socket = new GameObject("socket").transform;
@@ -862,15 +913,15 @@ namespace RockGame
 
         /// <summary>
         /// The build phase is over: the glass wall and the ball's dome slide down into the ground (every peer runs it from
-        /// the moment its match state turns, so everyone sees the same thing). It counts as down straight away: its
-        /// colliders go at once (the ball's free, nobody is stopped by glass that's on its way down), and the wall slides
+        /// the moment its match state turns, so everyone sees the same thing). It counts as down straight away for the
+        /// rules (GlassUp), but the glass you still see stays solid: its colliders ride down with it and only go when it's
+        /// switched off at the end (just the ball passes through it, so the sinking dome can't squash or trap it). It slides
         /// down - a shudder, then faster and faster, easing in at the bottom - with dust rolling out along its foot and a
         /// rumble, a crack of glass at the start and a thud at the end. Then it's switched off.
         /// </summary>
         public static void DropGlassWall()
         {
             if (s_Glass == null || !s_Glass.activeSelf || s_Dropping != null) return;
-            foreach (var c in s_Glass.GetComponentsInChildren<Collider>()) c.enabled = false;
             s_Dropping = s_Glass.AddComponent<GlassWallDrop>();
         }
 
@@ -927,10 +978,22 @@ namespace RockGame
                 return s + (1f - s) * (1f - u * u);
             }
 
+            Ball m_BallFreed;
+
+            /// <summary>The glass stays solid on its way down, except to the ball (free the moment the wall starts to drop).</summary>
+            void IgnoreBall(Ball ball, bool ignore)
+            {
+                if (ball == null) return;
+                foreach (var bc in ball.GetComponentsInChildren<Collider>(true))
+                    foreach (var gc in GetComponentsInChildren<Collider>(true))
+                        if (bc != null && gc != null) Physics.IgnoreCollision(bc, gc, ignore);
+            }
+
             void Update()
             {
                 float t = Time.time - m_T0;
                 float k = Progress(t);
+                if (Ball.Instance != null && Ball.Instance != m_BallFreed) { m_BallFreed = Ball.Instance; IgnoreBall(m_BallFreed, true); }
                 var shake = Vector3.zero;
                 if (t < Duration)
                 {
@@ -972,6 +1035,8 @@ namespace RockGame
             public void Stop()
             {
                 transform.localPosition = m_Start;
+                IgnoreBall(m_BallFreed, false);
+                m_BallFreed = null;
                 foreach (var c in GetComponentsInChildren<Collider>(true)) c.enabled = true;
                 Destroy(this);
             }
@@ -1034,7 +1099,12 @@ namespace RockGame
             if (m_Rings)
                 for (int i = 0; i < m_Rings.childCount; i++)
                     m_Rings.GetChild(i).Rotate(0, (i == 0 ? spin : -spin * 1.3f) * Time.deltaTime, 0, Space.Self);
-            if (m_Orb) m_Orb.localPosition = m_OrbBase + Vector3.up * Mathf.Sin(Time.time * 2f) * 0.08f;
+            if (m_Orb)
+            {
+                // (the crystal in the column's window bobs a little and turns)
+                m_Orb.localPosition = m_OrbBase + Vector3.up * Mathf.Sin(Time.time * 2f) * 0.05f;
+                m_Orb.Rotate(0, (35f + m_Busy * 400f) * Time.deltaTime, 0, Space.Self);
+            }
             var ball = Ball.Instance;
             bool socketed = ball != null && ball.IsSpawned && ball.SocketTeam.Value == Team;
             if (m_Beam && m_Beam.activeSelf == socketed) m_Beam.SetActive(!socketed);

@@ -31,6 +31,7 @@ namespace RockGame
                 sb.AppendLine("# Send this file over and say what it's for (new default settings, or the base of a new game mode).");
                 sb.AppendLine();
                 sb.AppendLine("[Main menu]");
+                sb.AppendLine("PlayerName = " + GameSettings.PlayerName); // (empty = your team colour and number, like Blue1)
                 sb.AppendLine("Players = " + Cfg.ModeName(mode));
                 sb.AppendLine("Map = " + (MapKind)(key & 15));
                 sb.AppendLine("Size = " + Cfg.SizeLabel(size));
@@ -85,6 +86,13 @@ namespace RockGame
                 foreach (var raw in File.ReadAllLines(FilePath))
                 {
                     string line = raw;
+                    // your name (the main menu's name box): the whole rest of the line, whatever is in it
+                    if (line.TrimStart().StartsWith("PlayerName", StringComparison.OrdinalIgnoreCase) && line.IndexOf('=') > 0)
+                    {
+                        GameSettings.PlayerName = line.Substring(line.IndexOf('=') + 1);
+                        n++;
+                        continue;
+                    }
                     int hash = line.IndexOf('#');
                     if (hash >= 0) line = line.Substring(0, hash);
                     int eq = line.IndexOf('=');

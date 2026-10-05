@@ -11,7 +11,7 @@ namespace RockGame
         /// by one of that team - each team's seconds add up over the match, they don't have to be in one go). The first
         /// capture unlocks every team's workbench at once. Builder has no bases or machines: always unlocked.
         /// </summary>
-        [Tune("Crafting")] public static float BenchUnlockSeconds = 30f;
+        [Tune("Crafting")] public static float BenchUnlockSeconds = 10f; // (it used to be 30)
 
         /// <summary>Can this team craft its Workbench T1 yet? (synced: NetGame.BenchUnlocks - every team's bit comes on together)</summary>
         public static bool BenchUnlocked(int team) => Builder || NetGame.Instance == null || NetGame.Instance.BenchUnlockedFor(team);
@@ -69,13 +69,13 @@ namespace RockGame
         {
             if (!IsServer || team < 0 || team >= 4 || BenchUnlockedFor(team)) return;
             BenchUnlockedBy.Value = (sbyte)team;
-            BenchUnlocks.Value = 0x0F;
-            Debug.Log($"[RockGame] Workbench T1 unlocked for everyone: {Cfg.TeamLabel(team)} {why}"); // (every client says so: TickBenchUnlockNotice)
+            BenchUnlocks.Value = 0xFF; // (every team's bit: a synced NetworkVariable, so every client - late joiners too - has it)
+            Debug.Log($"[RockGame] Trade Station unlocked for everyone: {Cfg.TeamLabel(team)} {why}"); // (every client says so: TickBenchUnlockNotice)
         }
 
         // ---- the client: say so when our own team's bench unlocks ----
 
-        /// <summary>Test hook: how many times this client has shown "WORK BENCHES UNLOCKED".</summary>
+        /// <summary>Test hook: how many times this client has shown "TRADE STATION UNLOCKED".</summary>
         public static int BenchUnlockNotices;
         int m_SeenUnlockTeam = -1;
         bool m_SeenUnlock, m_UnlockPending;
@@ -95,8 +95,8 @@ namespace RockGame
             BenchUnlockNotices++;
             int by = BenchUnlockedBy.Value;
             string who = by < 0 ? "the ball has been captured" : by == team ? "your team captured the ball" : $"{Cfg.TeamLabel(by)} captured the ball - everyone gets it";
-            Hud.Banner("WORK BENCHES UNLOCKED", $"Craft it in your bag ({Binds.Name(Bind.Inventory)}) - {who}");
-            Hud.Push("Work Benches Unlocked: craft a Workbench T1 in your bag");
+            Hud.Banner("TRADE STATION UNLOCKED", $"Craft it in your bag ({Binds.Name(Bind.Inventory)}) - {who}");
+            Hud.Push("Trade Station Unlocked: craft one in your bag");
             Sfx.Play2D(Sfx.Unlock, 0.8f, 0f);
         }
     }

@@ -60,10 +60,12 @@ namespace RockGame
         /// <summary>Somewhere around the arena (as opposed to the map, 1 km away).</summary>
         public static bool NearArena(Vector3 world) => Mathf.Abs(world.z - Cfg.ArenaCenter.z) < 400f && Mathf.Abs(world.x - Cfg.ArenaCenter.x) < 400f;
 
-        /// <summary>Server, every frame: in sudden death, anyone who fell off the platform is lost in space.</summary>
+        /// <summary>Server, every frame: in sudden death - and in the waiting stadium, warming up - anyone who fell off
+        /// the platform is lost in space: a death (in the warm-up you're back on the platform, at full health, after the
+        /// usual respawn time).</summary>
         public static void ServerTick(NetGame g)
         {
-            if (g == null || g.S != GameState.SuddenDeath) return;
+            if (g == null || (g.S != GameState.SuddenDeath && g.S != GameState.Waiting)) return;
             float killY = Cfg.ArenaCenter.y - KillDepth;
             for (int i = PlayerNet.All.Count - 1; i >= 0; i--)
             {
@@ -1735,7 +1737,7 @@ namespace RockGame
                     if (word != "") text = word;
                     else { int s = Mathf.CeilToInt(game.TimeLeft); text = $"SUDDEN DEATH\n{s / 60}:{s % 60:00}"; }
                 }
-                else if (game.S == GameState.Waiting) text = "WAITING FOR\nPLAYERS";
+                else if (game.S == GameState.Waiting) text = game.StartCounting ? $"STARTING IN\n{Mathf.CeilToInt(game.StartsIn)}" : "WAITING FOR\nPLAYERS";
                 else if (game.S == GameState.GameOver) text = game.Winner.Value >= 0 ? $"{Cfg.TeamLabel(game.Winner.Value)}\nWINS!" : "DRAW";
             }
             // each screen has its text on both faces: only the one facing you is drawn (the font shows through things)

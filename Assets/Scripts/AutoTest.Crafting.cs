@@ -173,7 +173,7 @@ namespace RockGame
                 var ball = Ball.Instance;
                 if (ball != null) ball.ServerSocket(team);
                 yield return new WaitForSeconds(0.6f);
-                Check(Cfg.BenchUnlocked(team) && NetGame.BenchUnlockNotices == notices + 1 && Hud.LastBanner.Contains("WORK BENCHES UNLOCKED"),
+                Check(Cfg.BenchUnlocked(team) && NetGame.BenchUnlockNotices == notices + 1 && Hud.LastBanner.Contains("TRADE STATION UNLOCKED"),
                     $"the ball in our machine unlocks it - \"{Hud.LastBanner}\"");
                 yield return Snap(P("bench_unlocked"));
                 if (ball != null) ball.ServerPlaceInDome();
@@ -221,7 +221,7 @@ namespace RockGame
             var bench = Workbench.ForTeam(team, 1);
             Check(bench != null && me.Count(Item.Workbench) == 0 && Cfg.BenchTier(team) == 1, "placed the Workbench T1");
             if (bench == null) { Application.Quit(1); yield break; }
-            Check(PlayerNet.DeployProblem(Item.Workbench, team, Workbench.DefaultPos(team), yaw) == "Your team already has a Workbench T1", "one Workbench T1 per team");
+            Check(PlayerNet.DeployProblem(Item.Workbench, team, Workbench.DefaultPos(team), yaw) == "Your team already has a Trade Station", "one Workbench T1 (Trade Station) per team");
             bench.ServerDamage(99999f);
             yield return new WaitForSeconds(0.3f);
             Check(bench != null && bench.IsSpawned && !bench.Breakable, "the workbench can't be broken");

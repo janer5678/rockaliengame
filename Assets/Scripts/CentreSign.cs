@@ -14,11 +14,15 @@ namespace RockGame
     public static class CentreSign
     {
         /// <summary>How far from the middle it stands (m: inside the ball's dome, MapBuilder.DomeRadius 11), how tall the
-        /// pole is, and the arrows' length / board height.</summary>
-        public const float Dist = 7.5f, PoleH = 5.4f, ArrowLen = 2.1f, ArrowH = 0.48f;
+        /// pole is, and the arrows' length / board height. The arrows are big (3 m long, they were 2.1): the sign stands
+        /// a little nearer the middle (it was 7.5 m out) and taller (5.4 m), so the highest arrow's point is still under
+        /// the half-sphere of glass and the lowest (four teams) still over your head.</summary>
+        public const float Dist = 5.8f, PoleH = 6.05f, ArrowLen = 3f, ArrowH = 0.7f;
         /// <summary>How far apart (up the pole) the arrows are, and how far out from the pole's middle each board is nailed
         /// (the pole is 0.1 m round: the board and its paint sit clear in front of it, not in it).</summary>
-        public const float ArrowGap = 0.62f, ArrowOut = 0.19f;
+        public const float ArrowGap = 0.88f, ArrowOut = 0.19f;
+        /// <summary>How long an arrow's head is, and how deep the notch in its tail.</summary>
+        const float HeadLen = 0.8f, TailNotch = 0.24f;
 
         public static GameObject Current { get; private set; }
         /// <summary>(tests) Each arrow: its team and which way it points (flat, unit), and its height on the pole.</summary>
@@ -84,7 +88,7 @@ namespace RockGame
 
             // the arrows, one above the other near the top: each team's colour, pointing at its base
             if (s_Arrow == null) s_Arrow = ArrowMesh();
-            float y = PoleH - 0.45f;
+            float y = PoleH - 0.5f;
             for (int team = 0; team < Cfg.TeamCount; team++, y -= ArrowGap) // (next to each other they alternate sides of the post, so their heads pass)
             {
                 var to = Cfg.BaseCenter[team] - at;
@@ -114,9 +118,9 @@ namespace RockGame
         /// to the head, which comes to a point at ArrowLen - 0.4, ArrowH tall (the head a little taller). Flat-shaded.</summary>
         static Mesh ArrowMesh()
         {
-            float x0 = -0.4f, x2 = ArrowLen - 0.4f, x1 = x2 - 0.55f, h = ArrowH * 0.5f, hh = ArrowH * 0.85f;
+            float x0 = -0.4f, x2 = ArrowLen - 0.4f, x1 = x2 - HeadLen, h = ArrowH * 0.5f, hh = ArrowH * 0.85f;
             // the outline, round the front face
-            var pts = new[] { new Vector2(x0, -h), new Vector2(x1, -h), new Vector2(x1, -hh), new Vector2(x2, 0f), new Vector2(x1, hh), new Vector2(x1, h), new Vector2(x0, h), new Vector2(x0 + 0.17f, 0f) };
+            var pts = new[] { new Vector2(x0, -h), new Vector2(x1, -h), new Vector2(x1, -hh), new Vector2(x2, 0f), new Vector2(x1, hh), new Vector2(x1, h), new Vector2(x0, h), new Vector2(x0 + TailNotch, 0f) };
             var v = new List<Vector3>();
             var n = new List<Vector3>();
             var tris = new List<int>();
@@ -143,7 +147,7 @@ namespace RockGame
                 var side = new Vector3(b.y - a.y, -(b.x - a.x), 0f).normalized;
                 // (outward: away from the shaft's middle line)
                 var mid = new Vector3((a.x + b.x) * 0.5f, (a.y + b.y) * 0.5f, 0f);
-                if (Vector3.Dot(side, mid - new Vector3(Mathf.Clamp(mid.x, x0 + 0.2f, x1), 0f, 0f)) < 0f) side = -side;
+                if (Vector3.Dot(side, mid - new Vector3(Mathf.Clamp(mid.x, x0 + TailNotch + 0.03f, x1), 0f, 0f)) < 0f) side = -side;
                 Vector3 a0 = new Vector3(a.x, a.y, 0.5f), a1 = new Vector3(a.x, a.y, -0.5f), b0 = new Vector3(b.x, b.y, 0.5f), b1 = new Vector3(b.x, b.y, -0.5f);
                 Tri(a0, b0, b1, side);
                 Tri(a0, b1, a1, side);

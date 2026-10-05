@@ -75,6 +75,8 @@ namespace RockGame
         public static bool WoodKind(byte k) => k == Tree || k == Log;
         public int MaxAmount => AmountOf(Kind.Value);
         static int AmountOf(byte k) => k == Tree ? Cfg.TreeAmount : k == Log ? Mathf.Max(1, Cfg.TreeAmount / 2) : k == Boulder ? Cfg.StoneAmount : 1;
+        /// <summary>How much there is in a whole one of these (a tree's wood, a log's, a rock's stone).</summary>
+        public int FullAmount => AmountOf(Kind.Value);
         public string DisplayName => Kind.Value == Tree ? "Tree" : Kind.Value == Log ? "Fallen Log" : Kind.Value == Boulder ? "Stone" : "Berry Bush";
         public Item Yield => IsWood ? Item.Wood : Kind.Value == Boulder ? Item.Stone : Item.Berry;
 
@@ -255,9 +257,9 @@ namespace RockGame
                 m_PaintedBush = false;
                 Color leaf = Color.Lerp(ItemModels.Leaf, new Color(0.18f, 0.4f, 0.16f), r());
                 var bushTint = ColorSlots.Use(ColorSlots.Bushes);
-                Art.Part(tr, Art.MakeRock(Seed.Value, 0.2f), leaf, new Vector3(0, 0.45f, 0), new Vector3(0.75f, 0.5f, 0.7f), new Vector3(0, r() * 360, 0));
-                Art.Part(tr, Art.MakeRock(Seed.Value + 1, 0.2f), leaf * 0.9f, new Vector3(0.4f, 0.35f, 0.2f), new Vector3(0.45f, 0.38f, 0.45f));
-                Art.Part(tr, Art.MakeRock(Seed.Value + 2, 0.2f), leaf * 1.1f, new Vector3(-0.35f, 0.3f, -0.2f), new Vector3(0.45f, 0.35f, 0.4f));
+                Art.Part(tr, Art.MakeRock(Seed.Value, 0.2f), leaf, new Vector3(0, 0.45f, 0) * OldBushSize, new Vector3(0.75f, 0.5f, 0.7f) * OldBushSize, new Vector3(0, r() * 360, 0));
+                Art.Part(tr, Art.MakeRock(Seed.Value + 1, 0.2f), leaf * 0.9f, new Vector3(0.4f, 0.35f, 0.2f) * OldBushSize, new Vector3(0.45f, 0.38f, 0.45f) * OldBushSize);
+                Art.Part(tr, Art.MakeRock(Seed.Value + 2, 0.2f), leaf * 1.1f, new Vector3(-0.35f, 0.3f, -0.2f) * OldBushSize, new Vector3(0.45f, 0.35f, 0.4f) * OldBushSize);
                 bushTint.Dispose();
                 // loaded with berries
                 m_Berries = new GameObject[14];
@@ -266,7 +268,7 @@ namespace RockGame
                     float a = i * 0.9f + r();
                     float y = 0.3f + r() * 0.6f;
                     float rad = 0.45f + r() * 0.3f;
-                    var p = new Vector3(Mathf.Cos(a) * rad, y, Mathf.Sin(a) * rad * 0.95f);
+                    var p = new Vector3(Mathf.Cos(a) * rad, y, Mathf.Sin(a) * rad * 0.95f) * OldBushSize;
                     using (ColorSlots.Use(ColorSlots.Berries))
                     m_Berries[i] = Art.Part(tr, Art.Sphere, i % 4 == 0 ? ItemModels.Berry * 0.8f : ItemModels.Berry, p, Vector3.one * (0.12f + r() * 0.05f) * BerrySize);
                 }
@@ -275,8 +277,8 @@ namespace RockGame
                     // interaction only (you walk through bushes)
                     var sc = gameObject.AddComponent<SphereCollider>();
                     sc.isTrigger = true;
-                    sc.center = new Vector3(0, 0.5f, 0);
-                    sc.radius = 0.8f;
+                    sc.center = new Vector3(0, 0.5f * OldBushSize, 0);
+                    sc.radius = 0.8f * OldBushSize;
                 }
             }
             m_VisualBase = tr.localPosition;
@@ -386,8 +388,11 @@ namespace RockGame
             MeshKit.Spawn(tr, "bush", new[] { WorldLook.BushLeaves, WorldLook.Berries }, true, leaves, berries);
         }
 
-        /// <summary>The Normal berry bush is this much bigger than the old one (about 2.2 m across, 1.4 m high).</summary>
-        public const float BushSize = 1.25f;
+        /// <summary>The Normal berry bush is this much bigger than the old one (about 3 m across, 1.9 m high - it was 1.25:
+        /// 2.2 m across). The trigger you pick it by grows with it.</summary>
+        public const float BushSize = 1.7f;
+        /// <summary>The PSX / AI PSX bush (the old one) is this much bigger than it first was, its trigger too.</summary>
+        public const float OldBushSize = 1.35f;
         /// <summary>The berries on the bushes are this much bigger than they first were (radius 6.5 .. 8.5 cm then).</summary>
         public const float BerrySize = 1.45f;
 
@@ -1479,8 +1484,11 @@ namespace RockGame
             else ServerBirdsTakeOff(n); // (felled while they were on their way: on to another)
         }
 
-        /// <summary>Where bird i of a flock sits in this tree (world space): on the branch tips of a pine's lower tiers
-        /// (from its seed, so every peer puts them in the same places), or out in the crown of any other tree.</summary>
+        /// <summary>Where bird i of a flock sits in this tree (world space; from its seed, so every peer puts them in the same
+        /// places). A pine: on one of the branches of its two lowest tiers - right on the ridge that runs from a branch tip
+        /// up to the ring part way up the tier (an edge of the needles' own mesh, so the bird is in the needles, never in
+        /// the air between two branch tips as some used to be), well in from the tip, each bird on a branch of its own.
+        /// Any other tree: in the middle of its crown.</summary>
         public Vector3 BirdPerch(int i)
         {
             var rng = new System.Random(Seed.Value * 97 + i * 7919 + 3);
@@ -1490,12 +1498,23 @@ namespace RockGame
             var vt = m_Visual != null ? m_Visual.transform : transform;
             if (m_Pine != null)
             {
-                int k = Mathf.Min(m_Pine.Tiers - 1, rng.Next(Mathf.Max(1, m_Pine.Tiers - 1)));
-                float rr = m_Pine.R[k] * R(0.6f, 0.85f);
-                // on the skirt's upper side: from the branch tips (Y, R) rising to the ring part way up (MidY, MidR)
-                float t = Mathf.InverseLerp(m_Pine.R[k], m_Pine.R[k] * m_Pine.MidR, rr);
-                float y = Mathf.Lerp(m_Pine.Y[k] + m_Pine.H[k] * m_Pine.NotchUp, m_Pine.MidY(k), t) + 0.02f;
-                return vt.TransformPoint(dir * rr + Vector3.up * y);
+                // the branches (tier, tip) of the two lowest tiers, in an order of this tree's own: bird i takes the i-th
+                int tiers = Mathf.Min(2, m_Pine.Tiers), S = m_Pine.Sides, slots = tiers * S;
+                var order = new System.Random(Seed.Value * 131 + 11);
+                int first = order.Next(slots), stride = 1 + order.Next(slots - 1);
+                while (Gcd(stride, slots) != 1) stride++;
+                int slot = (first + i * stride) % slots;
+                int k = slot / S, s = slot % S;
+                // (each tier is turned by its own angle: the same numbers BuildTreeVisual draws)
+                var spinRng = new System.Random(Seed.Value ^ 0x3c6ef372);
+                float spin = 0f;
+                for (int q = 0; q <= k; q++) spin = (float)spinRng.NextDouble() * Mathf.PI * 2f;
+                float a = spin + s * Mathf.PI * 2f / S;
+                // (a second time round the branches - more birds than branches - sits further in)
+                float t = i < slots ? R(0.4f, 0.8f) : R(0.85f, 1f);
+                float rr = Mathf.Lerp(m_Pine.R[k], m_Pine.R[k] * m_Pine.MidR, t);
+                float y = Mathf.Lerp(m_Pine.Y[k], m_Pine.MidY(k), t) - BirdSink;
+                return vt.TransformPoint(new Vector3(Mathf.Cos(a) * rr, y, Mathf.Sin(a) * rr));
             }
             bool any = false;
             var b = default(Bounds);
@@ -1505,9 +1524,39 @@ namespace RockGame
                     if (!r.enabled || (m_Marker != null && r.transform.IsChildOf(m_Marker))) continue;
                     if (!any) { b = r.bounds; any = true; } else b.Encapsulate(r.bounds);
                 }
-            if (!any || b.size.y < 1f) return transform.position + dir * 1.5f + Vector3.up * 7f;
-            float rad = Mathf.Min(b.extents.x, b.extents.z) * R(0.45f, 0.8f);
-            return new Vector3(transform.position.x, 0, transform.position.z) + dir * rad + Vector3.up * Mathf.Lerp(b.min.y, b.max.y, R(0.55f, 0.8f));
+            if (!any || b.size.y < 1f) return transform.position + dir * 0.8f + Vector3.up * 7f;
+            // (well inside the crown: the PSX trees' leaves are cut-out cards, thin out at the sides)
+            float rad = Mathf.Min(b.extents.x, b.extents.z) * R(0.12f, 0.4f);
+            return new Vector3(transform.position.x, 0, transform.position.z) + dir * rad + Vector3.up * Mathf.Lerp(b.min.y, b.max.y, R(0.55f, 0.75f));
+        }
+
+        /// <summary>A sitting bird's feet are this far down in the needles (m): it nestles in them, it doesn't stand on top.</summary>
+        public const float BirdSink = 0.05f;
+
+        static int Gcd(int a, int b) { while (b != 0) (a, b) = (b, a % b); return Mathf.Abs(a); }
+
+        /// <summary>The underside of this tree's leaves (world space): the middle of it, and how far out the leaves reach
+        /// there - a flock bursts out all round under it (BirdFlock.Fly). A pine: its lowest tier's branch tips.</summary>
+        public void BirdCanopy(out Vector3 under, out float radius)
+        {
+            var vt = m_Visual != null ? m_Visual.transform : transform;
+            if (m_Pine != null)
+            {
+                under = vt.TransformPoint(new Vector3(0f, m_Pine.Y[0], 0f));
+                radius = m_Pine.R[0];
+                return;
+            }
+            bool any = false;
+            var b = default(Bounds);
+            if (m_Visual != null)
+                foreach (var r in m_Visual.GetComponentsInChildren<Renderer>())
+                {
+                    if (!r.enabled || (m_Marker != null && r.transform.IsChildOf(m_Marker))) continue;
+                    if (!any) { b = r.bounds; any = true; } else b.Encapsulate(r.bounds);
+                }
+            if (!any || b.size.y < 1f) { under = transform.position + Vector3.up * 4f; radius = 2f; return; }
+            under = new Vector3(transform.position.x, Mathf.Lerp(b.min.y, b.max.y, 0.4f), transform.position.z);
+            radius = Mathf.Clamp(Mathf.Min(b.extents.x, b.extents.z) * 0.8f, 1f, 5f);
         }
 
         /// <summary>Local-space direction and height of weak spot `i` (a ring around the trunk / rock).</summary>

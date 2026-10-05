@@ -246,8 +246,11 @@ namespace RockGame
             {
                 var walked = me.transform.position - from; walked.y = 0f;
                 float perHop = walked.magnitude / Mathf.Max(1, me.TreeHops - hops0);
-                Check(Mathf.Abs(perHop - PlayerNet.TreeHopStride) < 0.8f && PlayerNet.TreeHopStride >= 2.5f,
-                    $"... at half the old rate: a hop every {perHop:0.0} m ({me.TreeHops - hops0} hops in {walked.magnitude:0.0} m; it was 1.3 m)");
+                // (walking, the hops are TreeWalkHopMul times quicker than the sprint's 2.6 m stride)
+                float want = PlayerNet.TreeHopStride / PlayerNet.TreeHopRate(Cfg.WalkSpeed);
+                Check(Mathf.Abs(perHop - want) < 0.6f && PlayerNet.TreeHopStride >= 2.5f,
+                    $"... in quick little hops at a walk: a hop every {perHop:0.0} m ({me.TreeHops - hops0} hops in {walked.magnitude:0.0} m; {want:0.0} m wanted, {PlayerNet.TreeHopStride} m at a sprint)");
+                Check(me.TreeHopSounds > 0 && me.TreeCamoOns > 0, $"... each landing rustles, and the disguise went on with its sound ({me.TreeHopSounds} hop sounds)");
             }
             Binds.TestReleaseAll();
             yield return new WaitForSeconds(1.4f);
@@ -278,8 +281,8 @@ namespace RockGame
             var look = Quaternion.LookRotation(uni.transform.position + Vector3.up * 1.2f - me.EyePos).eulerAngles;
             pc.SetLook(look.y, look.x > 180f ? look.x - 360f : look.x);
             float until = Time.time + 1.5f;
-            while (Time.time < until && !pc.AimText.Contains("Wild Unicorn")) { pc.LocalTeleport(OnGround(uni.transform.position - fwd * 3f, 0.1f), laneYaw); look = Quaternion.LookRotation(uni.transform.position + Vector3.up * 1.2f - me.EyePos).eulerAngles; pc.SetLook(look.y, look.x > 180f ? look.x - 360f : look.x); yield return new WaitForSeconds(0.2f); }
-            Check(pc.AimText.Contains("Wild Unicorn"), $"looking at it says Wild Unicorn (\"{pc.AimText}\")");
+            while (Time.time < until && !pc.AimText.Contains("WILD UNICORN")) { pc.LocalTeleport(OnGround(uni.transform.position - fwd * 3f, 0.1f), laneYaw); look = Quaternion.LookRotation(uni.transform.position + Vector3.up * 1.2f - me.EyePos).eulerAngles; pc.SetLook(look.y, look.x > 180f ? look.x - 360f : look.x); yield return new WaitForSeconds(0.2f); }
+            Check(pc.AimText.Contains("WILD UNICORN"), $"looking at it says Wild Unicorn (\"{pc.AimText}\")");
             yield return Snap("unicorn_standing");
 
             // both bolt (hurt from behind): they bob as they run, the unicorn's quicker and leaves a rainbow

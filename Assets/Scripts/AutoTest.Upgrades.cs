@@ -392,7 +392,7 @@ namespace RockGame
             Check(pc.UpgradesOpen && pc.MenuOpen && pc.LootTarget == null, "E on our upgrade station opens UPGRADES");
             Check(Row(Item.FortifyBuff) == "can't afford" && Hud.CraftRowsShown.Count == 0, $"with no {Cfg.CurrencyName} its rows say so ({Row(Item.FortifyBuff)}), and the crafting list isn't drawn ({Hud.CraftRowsShown.Count} rows)");
             yield return Snap($"upgrades_{rn}_poor");
-            for (int i = 0; i < 12; i++) me.ServerGive(cur, 1000);
+            for (int i = 0; i < 14; i++) me.ServerGive(cur, 1000); // (every level of both: 7500 + 4500)
             yield return new WaitForSeconds(0.3f);
             yield return Frames();
             bool allOk = true;
@@ -426,8 +426,8 @@ namespace RockGame
                         float until = Time.time + 3f;
                         while (UpgradeStation.Celebrations == cel && Time.time < until) yield return null;
                         var st = UpgradeStation.ByTeam[team];
-                        Check(UpgradeStation.Celebrations == cel + 1 && st != null && st.Animating && FindObjectsByType<PlusParticle>(FindObjectsSortMode.None).Length > 0,
-                            "buying an upgrade sets the station off: green plus signs, the screen flash and the bounce");
+                        Check(UpgradeStation.Celebrations == cel + 1 && st != null && st.Animating && FindObjectsByType<UpgradeArrowParticle>(FindObjectsSortMode.None).Length > 0,
+                            "buying an upgrade sets the station off: orange up arrows, the screen flash and the bounce");
                         pc.CloseMenu();
                         yield return new WaitForSeconds(0.12f);
                         yield return Snap($"upgrade_station_{rn}_celebrate");
@@ -453,8 +453,9 @@ namespace RockGame
                     Check(pc.UpgradesOpen, "(UPGRADES still open)");
                 }
             }
-            Check(Cfg.FortifyStoneWood == 1000 && Cfg.FortifyMetalWood == 2000 && Cfg.MaxFortify == 2 && (!Cfg.AutoWood || (Cfg.WoodGen1Wood == 1000 && Cfg.WoodGen2Wood == 3000)),
-                "the prices are the CHANGE VALUES entries (fortify 1000 / 2000 - two steps, no refined - wood gen 1000 / 3000)");
+            Check(Cfg.FortifyStoneWood == 2500 && Cfg.FortifyMetalWood == 2000 && Cfg.FortifyArmouredWood == 3000 && Cfg.MaxFortify == 3
+                && (!Cfg.AutoWood || (Cfg.MaxWoodGen == 3 && Cfg.WoodGenBuildWood == 500 && Cfg.WoodGen1Wood == 1000 && Cfg.WoodGen2Wood == 3000)),
+                "the prices are the CHANGE VALUES entries (fortify 2500 / 2000 / 3000 - stone, metal, armoured - wood gen 500 to build it, then 1000 / 3000)");
             yield return Snap($"upgrades_{rn}_maxed");
             // TAB closes it (and opens plain crafting next time)
             Binds.TestPress(Bind.Inventory);

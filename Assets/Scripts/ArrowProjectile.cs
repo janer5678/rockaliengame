@@ -36,9 +36,9 @@ namespace RockGame
             var go = new GameObject("Arrow");
             go.transform.SetPositionAndRotation(pos, Quaternion.LookRotation(vel));
             Art.Box(go.transform, Art.Wood, new Vector3(0, 0, -0.35f), new Vector3(0.03f, 0.03f, 0.75f));
-            Art.Box(go.transform, Art.Stone, new Vector3(0, 0, 0.04f), new Vector3(0.07f, 0.07f, 0.12f), new Vector3(0, 0, 45));
-            Art.Box(go.transform, Color.white, new Vector3(0, 0, -0.66f), new Vector3(0.13f, 0.01f, 0.12f));
-            Art.Box(go.transform, Color.white, new Vector3(0, 0, -0.66f), new Vector3(0.01f, 0.13f, 0.12f));
+            Art.Box(go.transform, ItemModels.HardWood, new Vector3(0, 0, 0.04f), new Vector3(0.07f, 0.07f, 0.12f), new Vector3(0, 0, 45));
+            Art.Box(go.transform, Art.Wood, new Vector3(0, 0, -0.66f), new Vector3(0.13f, 0.01f, 0.12f));
+            Art.Box(go.transform, Art.DarkWood, new Vector3(0, 0, -0.66f), new Vector3(0.01f, 0.13f, 0.12f));
             var a = go.AddComponent<ArrowProjectile>();
             a.m_Vel = vel;
             a.m_Shooter = shooter;
@@ -85,7 +85,14 @@ namespace RockGame
             a.m_Thrown = kind;
             a.m_Gravity = kind == Item.RocketLauncher ? 1.5f : 9.81f;
             a.m_Life = 8f;
-            if (kind == Item.RocketLauncher) { Sfx.Play(Sfx.Rocket, pos, 1f, 0.05f, 150f); a.m_Whoosh = Sfx.Loop(Sfx.Jet, go.transform, 0.8f, 0.8f, 110f, 1f); }
+            if (kind == Item.RocketLauncher)
+            {
+                // the launch: a thump out of the tube and the motor tearing away, heard a long way off, and a burst of flame
+                // (the shooter's own is at the launcher's mouth: PlayerController.HandleLootThrow)
+                Sfx.Play(Sfx.Rocket, pos, 1f, 0.05f, 220f);
+                a.m_Whoosh = Sfx.Loop(Sfx.Jet, go.transform, 0.8f, 0.8f, 110f, 1f);
+                if (shooter == null || !shooter.IsOwner) Fx.MuzzleFlash(pos, vel, new Color(1f, 0.6f, 0.25f), 2.2f, 10);
+            }
             else a.StartWhoosh(0.6f, 0.6f);
         }
 
@@ -172,6 +179,12 @@ namespace RockGame
                 var hitPlayer = no != null ? no.GetComponent<PlayerNet>() : null;
                 if (reporter && m_Thrown == Item.RocketLauncher && hitPlayer != null && hitPlayer != m_Shooter && !hitPlayer.Dead.Value)
                     m_Shooter.RocketDirectHitRpc(no, h.point);
+                else if (reporter && m_Thrown == Item.C4 && no != null && no != m_Shooter.NetworkObject && (hitPlayer != null ? !hitPlayer.Dead.Value : no.GetComponent<Vehicle>() != null))
+                {
+                    // C4 on a player or a horse sticks to them (in their own space, so it goes where they go)
+                    var on = no.transform;
+                    m_Shooter.C4StickRpc(no, on.InverseTransformPoint(h.point + h.normal * 0.03f), on.InverseTransformDirection(h.normal));
+                }
                 else if (reporter) ReportThrownLanded(h.point + h.normal * 0.03f, h.normal);
                 Destroy(gameObject);
                 return;

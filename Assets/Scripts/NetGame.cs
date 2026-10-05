@@ -45,7 +45,8 @@ namespace RockGame
         public readonly NetworkVariable<double> FightAt = new NetworkVariable<double>(-1);
         /// <summary>Dev setting: the match timer (and the airdrop timers) are frozen.</summary>
         public readonly NetworkVariable<bool> TimerPaused = new NetworkVariable<bool>();
-        /// <summary>When the next scheduled airdrop lands (server time), set when it's announced (DropWarning s ahead); -1 when none is coming.</summary>
+        /// <summary>When the next scheduled airdrop's ship comes in (server time: the announcement counts down to the UFO
+        /// showing up, not to the crate landing), set when it's announced (DropWarning s ahead); -1 when none is coming.</summary>
         public readonly NetworkVariable<double> NextDropLands = new NetworkVariable<double>(-1);
         /// <summary>The victory cutscene (VictoryCutscene.cs): when it started (server time; -1 none), the spot under the
         /// UFO (the winners' bedrock) and the winners it beams up (their NetworkObjectIds, by slot).</summary>
@@ -126,7 +127,7 @@ namespace RockGame
         {
             switch ((GameState)cur)
             {
-                case GameState.PreBall: if (Cfg.FunRules) break; if (Cfg.Tutorial) { Hud.Banner("TUTORIAL", "Do each step on the left. The clock is stopped."); break; } Hud.Banner("GATHER & BUILD", $"The ball waits under the glass dome - the walls drop in {Clock(Bootstrap.Fast ? Cfg.FastBallDropDelay : Cfg.BallDropDelay)}. " + (Cfg.Builder ? "BUILDER: build and craft anywhere (TAB)." : "Craft anywhere inside your base (TAB).")); break;
+                case GameState.PreBall: if (Cfg.FunRules) break; if (Cfg.Tutorial) { Hud.Banner("TUTORIAL", "Do each step on the left. The clock is stopped."); break; } Hud.Banner("GATHER & BUILD", $"The ball waits under the glass dome - the walls drop in {Clock(Bootstrap.Fast ? Cfg.FastBallDropDelay : Cfg.BallDropDelay)}. " + (Cfg.Builder ? $"BUILDER: build and craft anywhere ({Binds.Name(Bind.Inventory)})." : $"Craft anywhere inside your base ({Binds.Name(Bind.Inventory)}).")); break;
                 case GameState.BallLive:
                     // the build phase is over: the glass wall and the dome slide down into the ground (fun modes: no build phase, gone at once)
                     if ((GameState)prev == GameState.PreBall && !Cfg.FunRules) MapBuilder.DropGlassWall();
@@ -149,6 +150,7 @@ namespace RockGame
             VictoryCutscene.Tick(this); // the winners beamed up into a UFO (when the ball in their socket won it)
             PortalFx.Sync(this);
             GraveFx.Sync(this);
+            TickStartCountdown(); // the waiting stadium's 10 s countdown once everyone's in (NetGame.Lobby.cs)
             TickBenchUnlockNotice(); // "WORK BENCHES UNLOCKED" when our team captures the ball (NetGame.Bench.cs)
             if (!IsServer) return;
             ResourceNode.ServerFlocksTick(); // (flocks of birds sitting in a few trees, there before anyone hits them)
@@ -167,14 +169,16 @@ namespace RockGame
             ServerTickModes(now);
             ServerTickBenchUnlock(); // the Workbench T1 unlocks once a team has captured the ball
             Tutorial.ServerTick(this); // tutorial: clock stopped, late joiners in, the wall drops once everyone reaches it
-            SpaceArena.ServerTick(this); // sudden death: falling off the platform into space
+            SpaceArena.ServerTick(this); // sudden death and the waiting stadium: falling off the platform into space
+            ServerTickGraves(now); // old gravestones go (NetGame.Graves.cs)
             ThemeMaps.ServerTick(); // THEME MAPS
             int players = PlayerNet.All.Count;
             bool fast = Bootstrap.Fast;
             switch (S)
             {
                 case GameState.Waiting:
-                    if (players >= Cfg.PlayersNeeded || ((Bootstrap.Solo || Cfg.Tutorial) && players >= 1))
+                    // (a full lobby, everyone in the stadium, then the start countdown: NetGame.Lobby.cs)
+                    if (ServerReadyToStart(players, now))
                     {
                         float delay = Cfg.FunRules ? 0f : fast ? Cfg.FastBallDropDelay : Cfg.BallDropDelay; // fun modes: wall down and ball in from the start
                         SetPhase(GameState.PreBall, delay);
@@ -328,11 +332,25 @@ namespace RockGame
             }
         }
 
-        public void ServerCollapseCheck()
+        /// <summary>destroyed: the pieces that come down count as destroyed (no rebuilding in their spots for a while -
+        /// Structure.ServerNoteDestroyed); false when the owner took the supporting piece down themselves (demolish).</summary>
+        public void ServerCollapseCheck(bool destroyed = true)
         {
             var unsupported = BuildGrid.FindUnsupported();
             foreach (var s in unsupported)
-                if (s != null && s.IsSpawned) s.NetworkObject.Despawn(true);
+                if (s != null && s.IsSpawned)
+                {
+                    if (destroyed) s.ServerNoteDestroyed();
+                    s.NetworkObject.Despawn(true);
+                }
+        }
+
+        /// <summary>A piece of a base was destroyed at this grid slot: every peer notes when, so the building ghost there
+        /// shows red with the seconds left until it can be rebuilt (Structure.RebuildWait; the server refuses it anyway).</summary>
+        [Rpc(SendTo.ClientsAndHost)]
+        public void PieceBrokenRpc(byte kind, int i, int j, int l, int d)
+        {
+            Structure.NoteBroken(new PieceKey(kind, i, j, l, d));
         }
 
         // ------------------------------------------------------------------ items in the world
@@ -452,11 +470,12 @@ namespace RockGame
                 }
                 go.transform.SetPositionAndRotation(pos, rot);
                 ItemBounce(it, go.transform, fresh); // (a stack that's been added to bounces)
+                ItemGlint(it, go.transform, t < 1f); // (and it glints now and then when you're near: NetGame.ItemGlint.cs)
             }
             if (m_ItemVisuals.Count == m_Seen.Count) return;
             var gone = new List<int>();
             foreach (var kv in m_ItemVisuals) if (!m_Seen.Contains(kv.Key)) gone.Add(kv.Key);
-            foreach (var id in gone) { if (m_ItemVisuals[id]) Destroy(m_ItemVisuals[id]); m_ItemVisuals.Remove(id); m_ItemSeenAt.Remove(id); ForgetItemBounce(id); }
+            foreach (var id in gone) { if (m_ItemVisuals[id]) Destroy(m_ItemVisuals[id]); m_ItemVisuals.Remove(id); m_ItemSeenAt.Remove(id); ForgetItemBounce(id); ForgetItemGlint(id); }
         }
 
         public void Broadcast(string msg) => BroadcastRpc(new FixedString128Bytes(msg.Length > 120 ? msg.Substring(0, 120) : msg));
@@ -638,7 +657,7 @@ namespace RockGame
         // ------------------------------------------------------------------ airdrops
 
         /// <summary>The ship arrives and opens its hatch (DropArrive), then beams the crate down - slowly (DropBeam).</summary>
-        public const float DropArrive = 5f, DropBeam = 8f;
+        public const float DropArrive = AirdropShip.Arrive + 1f, DropBeam = 8f;
         /// <summary>Seconds after a lane's start when the crate touches down (the ship arrives, then beams it down).</summary>
         public const float DropLand = DropArrive + DropBeam;
         /// <summary>Lanes 0-3: the world airdrops (one for the whole map, or one per team's side).</summary>
@@ -684,11 +703,12 @@ namespace RockGame
             if (m_BallStart < 0 || m_DropsDone >= n) return;
             double launch = m_BallStart + (m_DropsDone + 1) * (double)BallPhase / (n + 1);
             if (launch + DropLand > PhaseEnd.Value - 1.0) return; // it couldn't land before the clock runs out: no warning, no ship
-            // 15 seconds before it lands: the one and only airdrop announcement (where it's coming down)
-            if (m_DropsWarned <= m_DropsDone && now >= launch + DropLand - DropWarning)
+            // 15 seconds before the ship comes in (not before the crate lands): the one and only airdrop announcement
+            // (where it's coming down)
+            if (m_DropsWarned <= m_DropsDone && now >= launch - DropWarning)
             {
                 m_DropsWarned = m_DropsDone + 1;
-                ServerAirdropWarning(launch + DropLand);
+                ServerAirdropWarning(launch);
             }
             if (now < launch) return;
             bool split = Cfg.AirdropSides && !Cfg.AirdropCenter;
@@ -711,16 +731,16 @@ namespace RockGame
             : Cfg.AirdropSides ? "One is dropping on every side of the map - watch for the purple beams"
             : "Somewhere on the map - watch for the purple beam";
 
-        /// <summary>Server: the airdrop warning, DropWarning seconds before it lands - the only notification an airdrop gets.</summary>
-        public void ServerAirdropWarning(double landsAt)
+        /// <summary>Server: the airdrop warning, DropWarning seconds before its ship comes in - the only notification an airdrop gets.</summary>
+        public void ServerAirdropWarning(double shipAt)
         {
-            NextDropLands.Value = landsAt;
-            int secs = Mathf.Max(1, Mathf.RoundToInt((float)(landsAt - NetworkManager.ServerTime.Time)));
+            NextDropLands.Value = shipAt;
+            int secs = Mathf.Max(1, Mathf.RoundToInt((float)(shipAt - NetworkManager.ServerTime.Time)));
             BannerRpc(new FixedString64Bytes($"AIRDROP IN {secs} SECONDS"), new FixedString128Bytes(DropWhere));
             Broadcast($"Airdrop in {secs} seconds! " + DropWhere);
         }
 
-        /// <summary>Server: forget the countdown once that airdrop is down.</summary>
+        /// <summary>Server: forget the countdown once that airdrop's ship is here.</summary>
         void ServerTickDropWarning(double now)
         {
             if (NextDropLands.Value > 0 && now > NextDropLands.Value + 1) NextDropLands.Value = -1;
@@ -882,6 +902,21 @@ namespace RockGame
             }
         }
 
+        /// <summary>Tutorial (the airdrop step - Tutorial.ServerAction): a real airdrop for this team, on its own lane, coming
+        /// down at pos - the ship flies in and beams the crate down like any other, announced like the dev setting's.
+        /// False if that team's one is still on its way or its crate hasn't been emptied yet.</summary>
+        public bool ServerTutorialDrop(int team, Vector3 pos)
+        {
+            if (!IsServer || team < 0 || team >= LaneTotal || (S != GameState.PreBall && S != GameState.BallLive)) return false;
+            var lane = m_Lanes[team];
+            if (lane.Incoming || (lane.Crate != null && lane.Crate.IsSpawned && !lane.Crate.Empty)) return false;
+            if (lane.Crate != null && lane.Crate.IsSpawned) lane.Crate.NetworkObject.Despawn(true);
+            lane.Crate = null;
+            lane.Region = team;
+            ServerLaunchDrop(team, NetworkManager.ServerTime.Time, pos, true);
+            return true;
+        }
+
         public void DevStartSuddenDeath()
         {
             if (S == GameState.PreBall || S == GameState.BallLive) StartSuddenDeath();
@@ -934,7 +969,7 @@ namespace RockGame
 
         // ------------------------------------------------------------------ explosions (C4, rockets, bomb bush, airstrike)
 
-        struct PendingC4 { public Vector3 Pos, Normal; public int Team; public PlayerNet Thrower; public double At; public Structure On; public Container OnBox; }
+        struct PendingC4 { public Vector3 Pos, Normal; public int Team; public PlayerNet Thrower; public double At; public Structure On; public Container OnBox; public NetworkObject Stuck; public Vector3 Local; }
         readonly List<PendingC4> m_C4 = new List<PendingC4>();
 
         /// <summary>
@@ -978,6 +1013,29 @@ namespace RockGame
         }
 
         /// <summary>
+        /// C4 stuck onto a player or a horse (a car, Slenderman): it rides along with them (every peer parents its beeping
+        /// charge to them - C4StuckRpc) and goes off wherever they are when the fuse runs out. If they die or are gone
+        /// before that, it goes off where they last were.
+        /// </summary>
+        public void ServerArmC4On(NetworkObject target, Vector3 local, Vector3 localNormal, PlayerNet thrower)
+        {
+            if (localNormal.sqrMagnitude < 0.01f) localNormal = Vector3.up;
+            m_C4.Add(new PendingC4 { Pos = target.transform.TransformPoint(local), Normal = Vector3.up, Team = thrower.Team.Value, Thrower = thrower, At = NetworkManager.ServerTime.Time + Cfg.C4Fuse, Stuck = target, Local = local });
+            C4StuckRpc(target, local, localNormal.normalized);
+        }
+
+        /// <summary>Everyone sees (and hears) the charge on whoever it's stuck to, moving with them.</summary>
+        [Rpc(SendTo.ClientsAndHost)]
+        public void C4StuckRpc(NetworkObjectReference target, Vector3 local, Vector3 localNormal)
+        {
+            if (target.TryGet(out var no)) C4Bomb.SpawnOn(no.transform, local, localNormal);
+        }
+
+        /// <summary>For the tests: charges ticking right now, and how many of them are stuck to someone.</summary>
+        public int C4Pending => m_C4.Count;
+        public int C4StuckPending { get { int n = 0; foreach (var c in m_C4) if (c.Stuck != null) n++; return n; } }
+
+        /// <summary>
         /// What a blast does to a piece, by how far it's been fortified. C4: wood and stone go; sheet metal goes only in the
         /// layer the C4 is on (the piece it's stuck to and the ones next to it on the same side - not the ones behind);
         /// refined only the piece it's stuck to. Rockets do less to metal and refined. An airstrike flattens wood and stone
@@ -1015,11 +1073,19 @@ namespace RockGame
         {
             for (int i = m_C4.Count - 1; i >= 0; i--)
             {
+                // stuck to someone: it's wherever they are (where they last were, once they're dead or gone)
+                var on = m_C4[i].Stuck;
+                if (on != null && on.IsSpawned && !(on.TryGetComponent(out PlayerNet sp) && sp.Dead.Value))
+                {
+                    var moved = m_C4[i];
+                    moved.Pos = on.transform.TransformPoint(moved.Local);
+                    m_C4[i] = moved;
+                }
                 if (now < m_C4[i].At) continue;
                 var c = m_C4[i];
                 m_C4.RemoveAt(i);
-                // (everyone's buildings - your own C4 blows up your own base too)
-                int n = ServerBlast(c.Pos, Cfg.C4Radius, -1, Cfg.C4PlayerDamage, -1f, Cfg.C4KillRadius, c.Thrower, false, false, BlastKind.C4, c.On, c.Normal, c.OnBox);
+                // (everyone's buildings - your own C4 blows up your own base too; trees in the blast are felled, like a rocket's)
+                int n = ServerBlast(c.Pos, Cfg.C4Radius, -1, Cfg.C4PlayerDamage, -1f, Cfg.C4KillRadius, c.Thrower, false, true, BlastKind.C4, c.On, c.Normal, c.OnBox);
                 if (c.Thrower != null && n > 0) c.Thrower.NotifyPublic($"Your C4 destroyed {n} piece{(n == 1 ? "" : "s")}!");
             }
         }
@@ -1106,7 +1172,7 @@ namespace RockGame
             pos.y = MapBuilder.Height(pos.x, pos.z);
             m_Strikes.Add((pos, NetworkManager.ServerTime.Time + Cfg.AirstrikeDelay, by));
             Fx.Server(FxKind.AirstrikeWarn, pos, new Vector3(Cfg.AirstrikeRadius, Cfg.AirstrikeDelay, 0));
-            BannerRpc(new FixedString64Bytes("AIRSTRIKE INBOUND"), new FixedString128Bytes($"{(by != null ? Cfg.TeamLabel(by.Team.Value) : "Someone")} called an airstrike - get out of the red zone!"));
+            BannerRpc(new FixedString64Bytes("AIRSTRIKE INBOUND"), new FixedString128Bytes($"{(by != null ? by.DisplayName : "Someone")} called an airstrike - get out of the red zone!"));
         }
 
         void ServerTickAirstrikes(double now)
@@ -1192,6 +1258,8 @@ namespace RockGame
         public const int MaxPortals = 24;
 
         public int ServerNewPortalPair() => m_NextPortalPair++;
+        /// <summary>How many portal pairs have been started (the server's count; 0 on a client - the portal gun's preview guesses from the portals it can see).</summary>
+        public int PortalPairsMade => m_NextPortalPair;
         int m_NextPortalPair;
 
         /// <summary>
@@ -1245,7 +1313,9 @@ namespace RockGame
         public byte Index;
         public bool Equals(PortalInfo o) => Pos == o.Pos && Normal == o.Normal && Pair == o.Pair && Index == o.Index;
         /// <summary>Every portal gets its own colour: the first pair is Portal's blue and orange.</summary>
-        public Color Color => Palette[(Pair * 2 + Index) % Palette.Length];
+        public Color Color => ColorOf(Pair, Index);
+        /// <summary>The colour of portal `index` (0 or 1) of pair `pair` (the portal gun's preview shows it before the shot).</summary>
+        public static Color ColorOf(int pair, int index) => Palette[(Mathf.Max(0, pair) * 2 + index) % Palette.Length];
         static readonly Color[] Palette =
         {
             new Color(0.15f, 0.55f, 1f), new Color(1f, 0.55f, 0.1f), new Color(0.6f, 0.2f, 1f), new Color(0.4f, 1f, 0.2f),

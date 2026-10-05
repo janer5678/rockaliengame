@@ -15,6 +15,12 @@ namespace RockGame
         PausePage m_PausePage;
         SettingsTab m_Tab;
         bool m_ShowPort, m_ShowModes, m_ShowMoreRules, m_ShowMoreMaps;
+        /// <summary>The main menu's PLAY TUTORIAL was pressed: it's asking "Solo" or "With a friend".</summary>
+        bool m_TutAsk;
+        /// <summary>(tests) is the main menu asking how to play the tutorial / make it ask (or stop).</summary>
+        public static bool TutorialAsking { get => s_I != null && s_I.m_TutAsk; set { if (s_I != null) s_I.m_TutAsk = value; } }
+        /// <summary>The main menu's name box as it's being typed (GameSettings.PlayerName is the cleaned-up, saved one).</summary>
+        string m_NameEdit;
         Vector2 m_MenuScroll, m_ValuesScroll, m_SettingsScroll;
         readonly Dictionary<string, string> m_EditBuffers = new Dictionary<string, string>();
         string m_FileMsg = "";
@@ -91,11 +97,53 @@ namespace RockGame
             float k = m_Scale;
             float w = 540 * k, h = Mathf.Min(Screen.height - 20, 860 * k);
             var r = new Rect((Screen.width - w) / 2, (Screen.height - h) / 2, w, h);
+            // (the camera behind the menu cuts between its shots through a quick fade to black: MenuScene.cs)
+            if (MenuScene.Fade > 0.001f) Fill(new Rect(0, 0, Screen.width, Screen.height), new Color(0, 0, 0, MenuScene.Fade));
             Fill(r, new Color(0, 0, 0, 0.72f));
             GUILayout.BeginArea(new Rect(r.x + 20 * k, r.y + 14 * k, r.width - 40 * k, r.height - 24 * k));
             m_MenuScroll = GUILayout.BeginScrollView(m_MenuScroll, GUIStyle.none, GUIStyle.none);
             GUILayout.Label($"<b>{MainTitle}</b>", m_Big);
             GUILayout.Label("1v1 · gather · build · raid · steal the ball", m_Center);
+
+            // ---- at the very top: your name, the menu's trees, and joining a friend's game ----
+            // your name: what you're called on the scoreboard, in the kill feed, the chat... (left empty: your team
+            // colour and number, like Blue1). Saved; the server gets it when you spawn (PlayerNet.Identity.cs)
+            GUILayout.Space(4 * k);
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Your name", m_Label, GUILayout.Width(100 * k), GUILayout.Height(30 * k));
+            if (m_NameEdit == null) m_NameEdit = GameSettings.PlayerName;
+            string typedName = GUILayout.TextField(m_NameEdit, GameSettings.PlayerNameMax, m_Field, GUILayout.Height(30 * k));
+            var nameRect = GUILayoutUtility.GetLastRect();
+            if (typedName != m_NameEdit)
+            {
+                m_NameEdit = typedName.Replace("<", "").Replace(">", ""); // (as typed - a space at the end stays while you type; what's saved is cleaned up)
+                GameSettings.PlayerName = m_NameEdit;
+            }
+            GUILayout.EndHorizontal();
+            if (m_NameEdit.Length == 0 && Event.current.type == EventType.Repaint)
+                GUI.Label(new Rect(nameRect.x + 6 * k, nameRect.y, nameRect.width, nameRect.height), "<color=#888888>your team colour + number (Blue1, Red2...)</color>", new GUIStyle(m_Small) { alignment = TextAnchor.MiddleLeft });
+            // Display: trees in the play space of the map behind this menu (saved with the other display settings)
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Display", m_Label, GUILayout.Width(100 * k), GUILayout.Height(30 * k));
+            bool menuTrees = ToggleBtn(GameSettings.MenuTrees.Value, "Show trees on the main menu", GUILayout.Height(30 * k));
+            if (menuTrees != GameSettings.MenuTrees.Value) GameSettings.MenuTrees.Set(menuTrees);
+            GUILayout.EndHorizontal();
+            // joining: the host's IP, then JOIN GAME
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Host IP", m_Label, GUILayout.Width(100 * k), GUILayout.Height(30 * k));
+            boot.Ip = GUILayout.TextField(boot.Ip, m_Field, GUILayout.Height(30 * k));
+            if (Btn($"port {boot.Port}  {(m_ShowPort ? "▲" : "▼")}", GUILayout.Width(120 * k), GUILayout.Height(30 * k))) m_ShowPort = !m_ShowPort;
+            GUILayout.EndHorizontal();
+            if (m_ShowPort)
+            {
+                GUILayout.BeginHorizontal();
+                GUILayout.Label("Port", m_Label, GUILayout.Width(100 * k), GUILayout.Height(30 * k));
+                boot.Port = GUILayout.TextField(boot.Port, m_Field, GUILayout.Width(110 * k), GUILayout.Height(30 * k));
+                GUILayout.Label("<color=#bbbbbb>UDP · 7777 unless the host changed it</color>", m_Small, GUILayout.Height(30 * k));
+                GUILayout.EndHorizontal();
+            }
+            if (Btn("JOIN GAME", m_Primary, GUILayout.Height(44 * k))) boot.Join();
+            if (!string.IsNullOrEmpty(boot.Status)) GUILayout.Label("<color=#ffcc66>" + boot.Status + "</color>", m_LabelWrap);
 
             int key = Bootstrap.MapChoice;
             var mode = (GameMode)((key >> Cfg.ModeShift) & Cfg.ModeMask);
@@ -285,29 +333,37 @@ namespace RockGame
             GUILayout.Label($"<color=#bbbbbb>{ModeOptionsSummary(key)}</color>", m_SmallWrap);
 
             Caption("PLAY");
-            if (Btn("HOST GAME", m_Primary, GUILayout.Height(44 * k))) boot.Host(false);
-            GUILayout.Space(4 * k);
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("Host IP", m_Label, GUILayout.Width(70 * k), GUILayout.Height(30 * k));
-            boot.Ip = GUILayout.TextField(boot.Ip, m_Field, GUILayout.Height(30 * k));
-            if (Btn($"port {boot.Port}  {(m_ShowPort ? "▲" : "▼")}", GUILayout.Width(120 * k), GUILayout.Height(30 * k))) m_ShowPort = !m_ShowPort;
-            GUILayout.EndHorizontal();
-            if (m_ShowPort)
+            if (rules == GameRules.Tutorial)
             {
-                GUILayout.BeginHorizontal();
-                GUILayout.Label("Port", m_Label, GUILayout.Width(70 * k), GUILayout.Height(30 * k));
-                boot.Port = GUILayout.TextField(boot.Port, m_Field, GUILayout.Width(110 * k), GUILayout.Height(30 * k));
-                GUILayout.Label("<color=#bbbbbb>UDP · 7777 unless the host changed it</color>", m_Small, GUILayout.Height(30 * k));
-                GUILayout.EndHorizontal();
+                // the tutorial: one PLAY button, which asks first - on your own, or with a friend (Tutorial.cs: with a
+                // friend you play up to the "with a friend" step alone, then it waits for them to join your IP)
+                if (!m_TutAsk)
+                {
+                    if (Btn("PLAY TUTORIAL", m_Primary, GUILayout.Height(44 * k))) m_TutAsk = true;
+                    GUILayout.Label("<color=#bbbbbb>Learn the whole game a step at a time - on your own or with a friend</color>", m_SmallWrap);
+                }
+                else
+                {
+                    GUILayout.Label("<b>How do you want to play the tutorial?</b>", m_LabelWrap);
+                    GUILayout.BeginHorizontal();
+                    if (Btn("SOLO", m_Primary, GUILayout.Height(44 * k))) { m_TutAsk = false; boot.Host(true); }
+                    if (Btn("WITH A FRIEND", m_Primary, GUILayout.Height(44 * k))) { m_TutAsk = false; boot.Host(false); }
+                    GUILayout.EndHorizontal();
+                    GUILayout.Label("<color=#bbbbbb><b>Solo</b>: the whole tutorial on your own - training dummies stand in for enemies, and it ends with you winning a match.</color>", m_SmallWrap);
+                    GUILayout.Label("<color=#bbbbbb><b>With a friend</b>: you play the same steps alone first; before the end it stops and waits for your friend to join your IP (it shows it), then you fight each other and play a short match for the ball. Your friend starts where you are, with a starter kit.</color>", m_SmallWrap);
+                    if (Btn("BACK", GUILayout.Height(30 * k))) m_TutAsk = false;
+                }
             }
-            if (Btn("JOIN GAME", m_Primary, GUILayout.Height(44 * k))) boot.Join();
-            // solo test: hosts, and the match starts without an opponent
-            GUILayout.Space(4 * k);
-            GUILayout.BeginHorizontal();
-            if (Btn("SOLO TEST", GUILayout.Width(180 * k), GUILayout.Height(34 * k))) boot.Host(true);
-            GUILayout.Label("<color=#bbbbbb>  host a match on your own: it starts straight away, no opponent needed</color>", m_SmallWrap, GUILayout.MinHeight(34 * k));
-            GUILayout.EndHorizontal();
-            if (!string.IsNullOrEmpty(boot.Status)) GUILayout.Label("<color=#ffcc66>" + boot.Status + "</color>", m_LabelWrap);
+            else
+            {
+                m_TutAsk = false;
+                // (the host's IP and JOIN GAME are at the top of the menu now; HOST stays down here, with SOLO TEST under it)
+                if (Btn("HOST GAME", m_Primary, GUILayout.Height(44 * k))) boot.Host(false);
+                // solo test: hosts, and the match starts without an opponent (the same size as JOIN GAME)
+                GUILayout.Space(4 * k);
+                if (Btn("SOLO TEST", m_Primary, GUILayout.Height(44 * k))) boot.Host(true);
+                GUILayout.Label("<color=#bbbbbb>Solo test: host a match on your own - it starts straight away, no opponent needed</color>", m_SmallWrap);
+            }
 
             GUILayout.Space(8 * k);
             GUILayout.BeginHorizontal();
@@ -838,6 +894,7 @@ namespace RockGame
             DrawWorldLook();
             DrawTreeXSettings(); // (TreeX.cs)
             DrawBaseFloorSettings(); // (Hud.BaseFloor.cs)
+            DrawAimPreviewSettings(); // (PlayerController.Preview.cs: the trajectory line)
             DrawBeamSettings(); // (Hud.Beams.cs)
         }
 
@@ -1264,7 +1321,7 @@ namespace RockGame
                 }),
                 ("ME", new[]
                 {
-                    new[] { ("+1000 wood", DevCmd.GiveWood), ("+1000 stone", DevCmd.GiveStone), ("+50 arrows", DevCmd.GiveArrows), ("Unlock workbench", DevCmd.UnlockBench) },
+                    new[] { ("+1000 wood", DevCmd.GiveWood), ("+1000 stone", DevCmd.GiveStone), ("+50 arrows", DevCmd.GiveArrows), ("Unlock trade station", DevCmd.UnlockBench) },
                     new[] { ("All airdrop items", DevCmd.GiveOpItems), ("One of every craftable", DevCmd.GiveCraftables), ("Clear inventory", DevCmd.ClearInventory) },
                     new[] { ("Heal", DevCmd.HealFull), ("God mode on/off", DevCmd.ToggleGod), ("Kill me", DevCmd.KillMe) },
                 }),

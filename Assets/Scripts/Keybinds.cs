@@ -9,6 +9,7 @@ namespace RockGame
         Attack, Aim, Interact, Inventory,
         Rotate, Demolish, Upgrade,
         PushToTalk,
+        Scoreboard,
         Hotbar1, Hotbar2, Hotbar3, Hotbar4, Hotbar5, Hotbar6,
     }
 
@@ -31,13 +32,14 @@ namespace RockGame
             new Info { Bind = Bind.Right, Group = "MOVEMENT", Label = "Move right", Main = KeyCode.D },
             new Info { Bind = Bind.Jump, Group = "MOVEMENT", Label = "Jump", Hint = "also climbs ladders and flies the jetpack", Main = KeyCode.Space },
             new Info { Bind = Bind.Sprint, Group = "MOVEMENT", Label = "Sprint", Hint = "gallop on a horse", Main = KeyCode.LeftShift },
-            new Info { Bind = Bind.Crouch, Group = "MOVEMENT", Label = "Crouch", Hint = "crouch only (never slides)", Main = KeyCode.LeftControl },
-            new Info { Bind = Bind.Slide, Group = "MOVEMENT", Label = "Slide", Hint = "press it while running to slide (crouches when standing still)", Main = KeyCode.C },
+            new Info { Bind = Bind.Crouch, Group = "MOVEMENT", Label = "Crouch", Hint = "crouch only (never slides); gets you off a horse / out of a car", Main = KeyCode.LeftControl },
+            new Info { Bind = Bind.Slide, Group = "MOVEMENT", Label = "Slide", Hint = "press it while running to slide (crouches when standing still; gets you off a horse too)", Main = KeyCode.C },
 
             new Info { Bind = Bind.Attack, Group = "ACTIONS", Label = "Attack / use", Hint = "hit, gather, place, throw the ball; hold to draw the bow", Main = KeyCode.Mouse0 },
             new Info { Bind = Bind.Aim, Group = "ACTIONS", Label = "Aim / eat", Hint = "eat, aim the crossbow / sniper; hold + Attack throws a spear", Main = KeyCode.Mouse1 },
             new Info { Bind = Bind.Interact, Group = "ACTIONS", Label = "Interact", Hint = "ball, doors, chests, bushes, items, horses, cars", Main = KeyCode.E },
-            new Info { Bind = Bind.Inventory, Group = "ACTIONS", Label = "Inventory & crafting", Hint = "crafting works in your base (spears & hatchets anywhere)", Main = KeyCode.Tab },
+            new Info { Bind = Bind.Inventory, Group = "ACTIONS", Label = "Inventory & crafting", Hint = "crafting works in your base (spears & hatchets anywhere)", Main = KeyCode.I }, // (it was Tab until the scoreboard took that)
+            new Info { Bind = Bind.Scoreboard, Group = "ACTIONS", Label = "Scoreboard", Hint = "hold it: every player, kills, deaths, ping - and a MESSAGE button to whisper to one", Main = KeyCode.Tab },
 
             new Info { Bind = Bind.Rotate, Group = "BUILDING  (holding the building plan)", Label = "Rotate", Hint = "turns stairs · hold Aim for the building wheel", Main = KeyCode.R },
             new Info { Bind = Bind.Demolish, Group = "BUILDING  (holding the building plan)", Label = "Demolish", Hint = "take down your own piece (half the wood back)", Main = KeyCode.X },
@@ -55,6 +57,7 @@ namespace RockGame
 
         const int Count = (int)Bind.Hotbar6 + 1;
         const string SlideMigrateKey = "RockGame.Keys.SlideSplit";
+        const string ScoreboardMigrateKey = "RockGame.Keys.ScoreboardTab";
         static readonly KeyCode[] s_Main = new KeyCode[Count], s_Alt = new KeyCode[Count];
         static bool s_Loaded;
 
@@ -78,6 +81,22 @@ namespace RockGame
                 bool cTaken = false;
                 for (int i = 0; i < Count; i++) if (i != sl && (s_Main[i] == KeyCode.C || s_Alt[i] == KeyCode.C)) cTaken = true;
                 if (!cTaken && s_Main[sl] == KeyCode.None) s_Main[sl] = KeyCode.C;
+                Save();
+            }
+            // once: Tab used to open the inventory; now holding Tab is the scoreboard and the inventory is on I. Keys
+            // saved before that still have the inventory on Tab: it moves to I (if I is free), and anything else the
+            // player had put on Tab themselves keeps it (the scoreboard is then unbound until they pick a key)
+            if (PlayerPrefs.GetInt(ScoreboardMigrateKey, 0) == 0)
+            {
+                PlayerPrefs.SetInt(ScoreboardMigrateKey, 1);
+                int inv = (int)Bind.Inventory, sb = (int)Bind.Scoreboard;
+                bool iTaken = false;
+                for (int i = 0; i < Count; i++) if (i != inv && (s_Main[i] == KeyCode.I || s_Alt[i] == KeyCode.I)) iTaken = true;
+                if (s_Alt[inv] == KeyCode.Tab) s_Alt[inv] = KeyCode.None;
+                if (s_Main[inv] == KeyCode.Tab) { s_Main[inv] = s_Alt[inv] != KeyCode.None ? s_Alt[inv] : iTaken ? KeyCode.None : KeyCode.I; if (s_Main[inv] == s_Alt[inv]) s_Alt[inv] = KeyCode.None; }
+                bool tabTaken = false;
+                for (int i = 0; i < Count; i++) if (i != sb && (s_Main[i] == KeyCode.Tab || s_Alt[i] == KeyCode.Tab)) tabTaken = true;
+                if (tabTaken) { if (s_Main[sb] == KeyCode.Tab) s_Main[sb] = KeyCode.None; if (s_Alt[sb] == KeyCode.Tab) s_Alt[sb] = KeyCode.None; }
                 Save();
             }
         }

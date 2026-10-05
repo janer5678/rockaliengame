@@ -321,6 +321,12 @@ namespace RockGame
         public const float StraightBonus = 0.25f;
         /// <summary>Score bonus (m) for extending the very last piece (over the one before).</summary>
         public const float NewestBonus = 0.1f;
+        /// <summary>Score bonus (m) for a wall that carries your last wall on in the same rotation (along its line), over one
+        /// that's connected to it but turned (round the corner): the line wins unless you aim clearly at the turned one.</summary>
+        public const float SameRotationBonus = 0.6f;
+        /// <summary>...and how much farther (m) from the aim than the slot you'd otherwise get such a wall may be, when that
+        /// other slot is a turned one (instead of RecentBias).</summary>
+        public const float SameRotationBias = 1.2f;
 
         static PieceType ShapeOf(byte kind) => kind == PieceKey.KFoundation ? PieceType.Foundation : kind == PieceKey.KEdge ? PieceType.Wall : kind == PieceKey.KFloor ? PieceType.Floor : PieceType.Stairs;
 
@@ -457,8 +463,11 @@ namespace RockGame
                     var a = aimAt(k);
                     if (!a.ok) continue;
                     float d = DistToPiece(a.p, k);
-                    if (d > RecentReach || d > curDist + RecentBias) continue;
-                    float score = d - (straight[s] && r.Kind == want ? StraightBonus : 0f) - (age == 0 ? NewestBonus : 0f);
+                    // a wall in the same rotation as your last wall, on its line: strongly preferred over a turned one
+                    bool sameRot = want == PieceKey.KEdge && r.Kind == PieceKey.KEdge && straight[s] && k.D == r.D && k.L == r.L;
+                    float bias = sameRot && age == 0 && currentOk && current.D != r.D ? SameRotationBias : RecentBias;
+                    if (d > RecentReach || d > curDist + bias) continue;
+                    float score = d - (sameRot ? SameRotationBonus : straight[s] && r.Kind == want ? StraightBonus : 0f) - (age == 0 ? NewestBonus : 0f);
                     if (score >= best || !valid(k)) continue;
                     best = score;
                     key = k;

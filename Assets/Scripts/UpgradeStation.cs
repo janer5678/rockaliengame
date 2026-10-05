@@ -7,11 +7,12 @@ namespace RockGame
     /// The UPGRADE STATION: a terminal on the bedrock to the LEFT of the alien machine (as you look at it from your spawn),
     /// in every base in the modes that have base upgrades (Arsenal, Auto Wood - Cfg.HasBaseUpgrades). E on your own one
     /// opens the UPGRADES screen (Hud.Upgrades.cs; Fortify All Walls, the Wood Gen). It's built in the wood machine's style
-    /// (WoodMachine.cs): a silver housing with green trim on a metal plinth, a slanted keypad, a flat lid with a team-colour
-    /// and a green lens - and on its front a big screen with a glowing GREEN PLUS, with a small holographic plus turning
-    /// over the lid, so you can tell from across the base that it's where upgrades are bought.
-    /// When anyone on the team buys an upgrade, every client plays it (PlayerNet.UpgradeFxRpc -> Celebrate): green plus
-    /// signs burst out of it and float up, the screen flashes, and the whole machine bounces (squash and stretch).
+    /// (WoodMachine.cs): a silver housing with orange-yellow trim on a metal plinth, a slanted keypad, a flat lid with a
+    /// team-colour and an orange lens - and on its front a big screen with a glowing ORANGE-YELLOW UP ARROW (not a plus:
+    /// that read as healing), with a small holographic arrow turning over the lid, so you can tell from across the base
+    /// that it's where upgrades are bought.
+    /// When anyone on the team buys an upgrade, every client plays it (PlayerNet.UpgradeFxRpc -> Celebrate): orange up
+    /// arrows burst out of it and float up, the screen flashes, and the whole machine bounces (squash and stretch).
     /// Local scenery like the wood machine (built by MapBuilder.BuildBedrock); its body has a solid collider so chests and
     /// benches can't be put down inside it. It stands on the bedrock, where nothing can be built anyway.
     /// </summary>
@@ -33,8 +34,9 @@ namespace RockGame
 
         static readonly Color k_Metal = new Color(0.3f, 0.33f, 0.36f), k_Silver = new Color(0.72f, 0.74f, 0.78f), k_SilverDark = new Color(0.5f, 0.52f, 0.56f);
         static readonly Color k_Dark = new Color(0.08f, 0.09f, 0.11f);
-        public static readonly Color Green = new Color(0.35f, 1f, 0.45f);
-        static readonly Color k_ScreenBase = new Color(0.05f, 0.22f, 0.12f, 0.92f);
+        /// <summary>The station's colour: an orangey yellow (it was green, which read as healing). The name is from then.</summary>
+        public static readonly Color Green = new Color(1f, 0.7f, 0.16f);
+        static readonly Color k_ScreenBase = new Color(0.24f, 0.13f, 0.03f, 0.92f);
 
         /// <summary>The body's half size (what you bump into), for the layout checks.</summary>
         public const float HalfX = 0.55f, HalfZ = 0.5f;
@@ -72,6 +74,17 @@ namespace RockGame
             return m;
         }
 
+        /// <summary>An up arrow (the "upgrade" sign, so it isn't mistaken for a healing plus): a shaft under a stepped
+        /// arrowhead, `size` tall and 0.9 x `size` wide, centred on the parent, no shadows.</summary>
+        public static void BuildArrow(Transform parent, Color c, Material mat, float size, float depth)
+        {
+            void Bar(float y, float w, float h)
+                => Art.Box(parent, c, new Vector3(0, y * size, 0), new Vector3(w * size, h * size, depth), default, false, mat)
+                    .GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            Bar(-0.24f, 0.3f, 0.52f); // the shaft
+            for (int i = 0; i < 4; i++) Bar(0.075f + i * 0.125f, 0.9f - i * 0.225f, 0.13f); // the head, narrowing to the tip
+        }
+
         void Build()
         {
             using var tint = ColorSlots.Use(ColorSlots.WoodMachine); // (the wood machine's colour slot: Settings > Display colours)
@@ -84,8 +97,8 @@ namespace RockGame
             m_PlusMat = Emissive(Green, 2f);
             m_ScreenMat = new Material(Art.Ghost(k_ScreenBase));
             m_ScreenMat.SetColor("_BaseColor", k_ScreenBase);
-            m_HoloMat = new Material(Art.Ghost(new Color(0.4f, 1f, 0.5f, 0.55f)));
-            m_FlashMat = new Material(Art.Ghost(new Color(0.8f, 1f, 0.8f, 0f)));
+            m_HoloMat = new Material(Art.Ghost(new Color(1f, 0.74f, 0.22f, 0.6f)));
+            m_FlashMat = new Material(Art.Ghost(new Color(1f, 0.93f, 0.75f, 0f)));
 
             const float hx = 0.44f, hz = 0.36f, baseTop = 0.26f, houseTop = 1.36f;
             float hy = (baseTop + houseTop) * 0.5f, hh = houseTop - baseTop;
@@ -127,8 +140,7 @@ namespace RockGame
             var plus = new GameObject("plus").transform;
             plus.SetParent(t, false);
             plus.localPosition = new Vector3(0, sy, sz + 0.022f);
-            Art.Box(plus, Green, Vector3.zero, new Vector3(0.36f, 0.11f, 0.01f), default, false, m_PlusMat);
-            Art.Box(plus, Green, Vector3.zero, new Vector3(0.11f, 0.36f, 0.01f), default, false, m_PlusMat);
+            BuildArrow(plus, Green, m_PlusMat, 0.42f, 0.01f);
             // little corner ticks on the screen, like a HUD
             for (int sx = -1; sx <= 1; sx += 2)
                 for (int sy2 = -1; sy2 <= 1; sy2 += 2)
@@ -170,10 +182,9 @@ namespace RockGame
             m_Holo = new GameObject("holo").transform;
             m_Holo.SetParent(t, false);
             m_Holo.localPosition = new Vector3(0, capY + 0.38f, -0.08f);
-            Art.Box(m_Holo, Color.white, Vector3.zero, new Vector3(0.3f, 0.09f, 0.04f), default, false, m_HoloMat).GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            Art.Box(m_Holo, Color.white, Vector3.zero, new Vector3(0.09f, 0.3f, 0.04f), default, false, m_HoloMat).GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            BuildArrow(m_Holo, Color.white, m_HoloMat, 0.34f, 0.04f);
             // a faint beam from the emitter up to it
-            var beam = Workbench.Cyl(t, Color.white, new Vector3(0, capY + 0.24f, -0.08f), 0.07f, 0.26f, default, Art.Ghost(new Color(0.4f, 1f, 0.5f, 0.12f)));
+            var beam = Workbench.Cyl(t, Color.white, new Vector3(0, capY + 0.24f, -0.08f), 0.07f, 0.26f, default, Art.Ghost(new Color(1f, 0.74f, 0.22f, 0.12f)));
             beam.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
 
             // a green light in front of the screen
@@ -205,10 +216,10 @@ namespace RockGame
             {
                 var from = s.transform.TransformPoint(new Vector3(Random.Range(-0.35f, 0.35f), Random.Range(0.7f, 1.5f), Random.Range(0f, 0.4f)));
                 var vel = s.transform.TransformDirection(new Vector3(Random.Range(-1.2f, 1.2f), Random.Range(1.6f, 3.2f), Random.Range(0.3f, 1.6f)));
-                PlusParticle.Spawn(from, vel, Random.Range(0.12f, 0.24f), Random.Range(1.1f, 1.8f));
+                UpgradeArrowParticle.Spawn(from, vel, Random.Range(0.12f, 0.24f), Random.Range(1.1f, 1.8f));
             }
             for (int i = 0; i < 6; i++)
-                FxParticle.Puff(top + Random.insideUnitSphere * 0.4f, new Color(0.45f, 1f, 0.55f, 0.45f), Random.Range(0.3f, 0.55f));
+                FxParticle.Puff(top + Random.insideUnitSphere * 0.4f, new Color(1f, 0.76f, 0.3f, 0.45f), Random.Range(0.3f, 0.55f));
         }
 
         void Update()
@@ -225,12 +236,12 @@ namespace RockGame
             float beat = 0.5f + 0.5f * Mathf.Sin(time * 2.4f);
             float f = m_Flash * m_Flash;
             if (m_PlusMat && m_PlusMat.HasProperty("_EmissionColor")) m_PlusMat.SetColor("_EmissionColor", Green * (1.4f + 0.8f * beat + 6f * f));
-            if (m_ScreenMat) m_ScreenMat.SetColor("_BaseColor", Color.Lerp(k_ScreenBase, new Color(0.6f, 1f, 0.65f, 0.95f), f));
+            if (m_ScreenMat) m_ScreenMat.SetColor("_BaseColor", Color.Lerp(k_ScreenBase, new Color(1f, 0.86f, 0.5f, 0.95f), f));
             if (m_FlashPanel)
             {
                 bool on = m_Flash > 0.01f;
                 if (m_FlashPanel.activeSelf != on) m_FlashPanel.SetActive(on);
-                if (on && m_FlashMat) m_FlashMat.SetColor("_BaseColor", new Color(0.85f, 1f, 0.85f, 0.85f * f));
+                if (on && m_FlashMat) m_FlashMat.SetColor("_BaseColor", new Color(1f, 0.94f, 0.8f, 0.85f * f));
             }
             if (m_Light) m_Light.intensity = m_LightBase * (0.85f + 0.3f * beat) + 4f * f;
             // squash and stretch: a quick squash down, then springy bounces that settle
@@ -247,8 +258,8 @@ namespace RockGame
         public bool Animating => m_Pop < 1f || m_Flash > 0f;
     }
 
-    /// <summary>A glowing green plus sign that floats up, spins and shrinks away (UpgradeStation.Celebrate).</summary>
-    public class PlusParticle : MonoBehaviour
+    /// <summary>A glowing orange up arrow that floats up, spins and shrinks away (UpgradeStation.Celebrate).</summary>
+    public class UpgradeArrowParticle : MonoBehaviour
     {
         static Material s_Mat;
         static int s_Alive;
@@ -262,12 +273,8 @@ namespace RockGame
             var go = new GameObject("plusFx");
             go.transform.position = pos;
             go.transform.localScale = Vector3.one * 0.01f;
-            for (int i = 0; i < 2; i++)
-            {
-                var bar = Art.Box(go.transform, UpgradeStation.Green, Vector3.zero, i == 0 ? new Vector3(1f, 0.3f, 0.3f) : new Vector3(0.3f, 1f, 0.3f), default, false, s_Mat);
-                bar.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            }
-            var p = go.AddComponent<PlusParticle>();
+            UpgradeStation.BuildArrow(go.transform, UpgradeStation.Green, s_Mat, 1f, 0.3f);
+            var p = go.AddComponent<UpgradeArrowParticle>();
             p.m_Vel = vel; p.m_Life = p.m_Max = life; p.m_Size = size; p.m_Spin = Random.Range(-240f, 240f);
             go.transform.rotation = Quaternion.Euler(0, Random.Range(0f, 360f), 0);
             s_Alive++;

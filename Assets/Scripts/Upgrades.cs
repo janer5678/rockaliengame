@@ -6,12 +6,12 @@ namespace RockGame
 {
     /// <summary>
     /// Base upgrades: Fortify All Walls (every piece your team has built, and builds from then on, goes up to stone, then
-    /// metal) and, in Auto Wood, the wood gen (your wood machine makes wood faster). They aren't crafted:
-    /// press E on your own UPGRADE STATION (UpgradeStation.cs, the green-plus terminal to the left of the alien machine) and the UPGRADES screen opens (Hud.Upgrades.cs) - laid out like the crafting
+    /// metal, then armoured) and, in Auto Wood, the wood gen (the first level builds your wood machine, the next two make it faster). They aren't crafted:
+    /// press E on your own UPGRADE STATION (UpgradeStation.cs, the orange-arrow terminal to the left of the alien machine) and the UPGRADES screen opens (Hud.Upgrades.cs) - laid out like the crafting
     /// screen, with your inventory on the left - and each one has an UPGRADE button. They're there from the start (no
-    /// workbench needed), cost what CHANGE VALUES says (Fortify Stone / Metal Wood, Wood Gen 1 / 2 Wood), are for
+    /// workbench needed), cost what CHANGE VALUES says (Fortify Stone / Metal / Armoured Wood, Wood Gen Build / 1 / 2 Wood), are for
     /// the whole team for the rest of the match, and the server checks everything (BaseUpgradeRpc). When one is bought,
-    /// every client sees the team's station celebrate (UpgradeFxRpc -> UpgradeStation.Celebrate: green plus signs, a screen
+    /// every client sees the team's station celebrate (UpgradeFxRpc -> UpgradeStation.Celebrate: orange up arrows, a screen
     /// flash, a squash-and-stretch bounce).
     /// Which modes have them: Fortify wherever there's a POWER ITEMS menu (Arsenal, Auto Wood), the wood gen in Auto Wood
     /// only. Builder has no bases (no stations), so its Fortify stays a POWER ITEMS craft.
@@ -32,7 +32,7 @@ namespace RockGame
         public static Quaternion UpgradeStationRot(int team) => Quaternion.LookRotation(-BackDir(team)) * Quaternion.Euler(0, UpgradeStationTurn, 0);
 
         /// <summary>This mode has base upgrades, and an upgrade station in every base (E on it opens UPGRADES).</summary>
-        public static bool HasBaseUpgrades => PowerMenu && !Builder;
+        public static bool HasBaseUpgrades => (PowerMenu || Tutorial) && !Builder; // (the tutorial teaches the station: Tutorial.cs, the "upgrade" step)
 
         /// <summary>Is this upgrade in this mode?</summary>
         public static bool BaseUpgradeOn(Item id) => id == Item.FortifyBuff ? HasBaseUpgrades : id == Item.WoodGenBuff && AutoWood && HasBaseUpgrades;
@@ -53,8 +53,8 @@ namespace RockGame
         public static Recipe BaseUpgradeRecipe(Item id, int team)
         {
             int lvl = BaseUpgradeLevel(id, team);
-            if (id == Item.WoodGenBuff) return DnaPriced(new Recipe { Output = id, Count = 1, Wood = lvl >= 1 ? WoodGen2Wood : WoodGen1Wood });
-            return DnaPriced(new Recipe { Output = Item.FortifyBuff, Count = 1, Wood = lvl >= 1 ? FortifyMetalWood : FortifyStoneWood });
+            if (id == Item.WoodGenBuff) return DnaPriced(new Recipe { Output = id, Count = 1, Wood = WoodGenWood(lvl + 1) });
+            return DnaPriced(new Recipe { Output = Item.FortifyBuff, Count = 1, Wood = FortifyWoodFor(lvl + 1) });
         }
 
         /// <summary>What the next level does (or that it's maxed out).</summary>
@@ -64,17 +64,18 @@ namespace RockGame
             if (id == Item.WoodGenBuff)
             {
                 if (lvl >= MaxWoodGen) return $"maxed out: {WoodGenRate(lvl)} wood a second";
+                if (lvl == 0) return $"builds a wood machine in your base: {WoodGenRate(1)} wood a second";
                 return $"level {lvl + 1}: your base makes {WoodGenRate(lvl + 1)} wood a second (now {WoodGenRate(lvl)})";
             }
-            if (lvl >= MaxFortify) return "your pieces are all metal - fully fortified";
+            if (lvl >= MaxFortify) return "your pieces are all armoured - fully fortified";
             return $"all your team's pieces from {TierName(lvl).ToLower()} to {TierName(lvl + 1).ToLower()} ({lvl + 2} ram hits each)";
         }
 
-        /// <summary>Where the team's upgrade stands now, in a few words: "Stone walls", "12 wood a second".</summary>
+        /// <summary>Where the team's upgrade stands now, in a few words: "Stone walls", "12 wood a second", "no wood machine yet".</summary>
         public static string BaseUpgradeNow(Item id, int team)
         {
             int lvl = BaseUpgradeLevel(id, team);
-            return id == Item.WoodGenBuff ? $"{WoodGenRate(lvl)} wood a second" : $"{TierName(lvl)} walls";
+            return id == Item.WoodGenBuff ? (lvl == 0 ? "no wood machine yet" : $"{WoodGenRate(lvl)} wood a second") : $"{TierName(lvl)} walls";
         }
 
         /// <summary>Is a player of this team standing at p close enough to its upgrade station to buy upgrades?</summary>
@@ -97,8 +98,9 @@ namespace RockGame
             var g = NetGame.Instance;
             if (Dead.Value || g == null || InSuddenDeath || g.S == GameState.GameOver || !Cfg.BaseUpgradeOn(id)) return;
             int team = Team.Value;
-            if (!Cfg.AtOwnStation(team, transform.position)) { Notify("Upgrades are bought at your upgrade station (E on it - the green plus, left of your alien machine)"); return; }
-            if (Cfg.BaseUpgradeMaxed(id, team)) { Notify(id == Item.WoodGenBuff ? "Your wood gen is already maxed out" : "Your walls are already metal - fully fortified"); return; }
+            if (!Tutorial.AllowsFor(this, TutFeature.Station)) { Notify("Not yet - the tutorial gets to the upgrade station soon"); return; }
+            if (!Cfg.AtOwnStation(team, transform.position)) { Notify("Upgrades are bought at your upgrade station (E on it - the orange arrow, left of your alien machine)"); return; }
+            if (Cfg.BaseUpgradeMaxed(id, team)) { Notify(id == Item.WoodGenBuff ? "Your wood gen is already maxed out" : "Your walls are already armoured - fully fortified"); return; }
             var r = Cfg.BaseUpgradeRecipe(id, team);
             if (!CanAfford(r)) { Notify($"Not enough {Cfg.CurrencyName} for {Cfg.ItemName(id)}"); return; }
             ServerPay(r);
@@ -120,7 +122,8 @@ namespace RockGame
             if (id == Item.WoodGenBuff)
             {
                 int lvl = g.ServerWoodGenUp(team);
-                g.Broadcast($"{Cfg.TeamLabel(team)} upgraded their wood gen to level {lvl}: {Cfg.WoodGenRate(lvl)} wood a second!");
+                g.Broadcast(lvl <= 1 ? $"{Cfg.TeamLabel(team)} built a wood machine: {Cfg.WoodGenRate(lvl)} wood a second!"
+                    : $"{Cfg.TeamLabel(team)} upgraded their wood gen to level {lvl}: {Cfg.WoodGenRate(lvl)} wood a second!");
             }
             else
             {

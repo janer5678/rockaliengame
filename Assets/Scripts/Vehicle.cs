@@ -15,6 +15,12 @@ namespace RockGame
     public partial class Vehicle : NetworkBehaviour
     {
         public const byte Car = 0, Horse = 1, Slender = 2;
+        /// <summary>A training dummy (the tutorial's combat steps - Tutorial.cs): a straw man on a post that stands where
+        /// it's put, takes damage from everything a horse does (melee, arrows, thrown spears, guns) and falls apart at 0.
+        /// Nobody rides it. (3 is the boat: ThemeMaps/Vehicle.Boat.cs.)</summary>
+        public const byte Dummy = 4;
+        public const float DummyHp = 60f;
+        public bool IsDummy => Kind.Value == Dummy;
         const ulong NoDriver = ulong.MaxValue;
         public static readonly List<Vehicle> All = new List<Vehicle>();
 
@@ -28,10 +34,10 @@ namespace RockGame
         public bool IsHorse => Kind.Value == Horse;
         public bool IsSlender => Kind.Value == Slender;
         public bool IsCar => Kind.Value == Car;
-        public float MaxHp => IsSlender ? Cfg.SlenderHp : Cfg.HorseHp * (IsUnicorn ? Mathf.Max(0.1f, Cfg.UnicornHpMul) : 1f);
-        public bool Rideable => Kind.Value != Slender;
+        public float MaxHp => IsDummy ? DummyHp : IsSlender ? Cfg.SlenderHp : Cfg.HorseHp * (IsUnicorn ? Mathf.Max(0.1f, Cfg.UnicornHpMul) : 1f);
+        public bool Rideable => Kind.Value != Slender && Kind.Value != Dummy;
         public bool HasDriver => DriverId.Value != NoDriver;
-        public string DisplayName => IsBoat ? "Boat" /* THEME MAPS */ : IsSlender ? "Slenderman" : IsHorse ? (Saddled.Value ? (IsUnicorn ? "Saddled Unicorn" : "Saddled Horse") : (IsUnicorn ? "Wild Unicorn" : "Wild Horse")) : "Wooden Car";
+        public string DisplayName => IsDummy ? "Training Dummy" : IsBoat ? "Boat" /* THEME MAPS */ : IsSlender ? "Slenderman" : IsHorse ? (Saddled.Value ? (IsUnicorn ? "Saddled Unicorn" : "Saddled Horse") : (IsUnicorn ? "Wild Unicorn" : "Wild Horse")) : "Wooden Car";
         /// <summary>Where the rider's feet go (local space).</summary>
         public Vector3 SeatLocal => IsHorse ? new Vector3(0, 0.95f, -0.1f) : new Vector3(0, 0.3f, -0.25f);
         public Vector3 SeatWorld => transform.TransformPoint(SeatLocal + (IsHorse && m_Visual ? m_Visual.localPosition * 0.7f : Vector3.zero)); // (bobs a little with the horse's stride)
@@ -74,6 +80,9 @@ namespace RockGame
 
         /// <summary>Hurt a horse / Slenderman. A dead horse drops meat (and its saddle); the rider falls off.</summary>
         Collider m_HeadCol;
+        /// <summary>A hit on a training dummy from further away than this counts as a ranged one (a spear's poke reaches 3.4 m).</summary>
+        public const float DummyFar = 4.5f;
+        float m_DummyHitAt = -10f;
 
         /// <summary>A hit on a horse's head does double damage.</summary>
         public float HeadMul(Vector3 point)
@@ -87,7 +96,15 @@ namespace RockGame
         public void ServerDamage(float dmg, PlayerNet attacker)
         {
             if (!IsServer || !IsSpawned || Kind.Value == Car || IsBoat /* THEME MAPS */ || dmg <= 0) return;
+            if (attacker != null && HasDriver && attacker.NetworkObjectId == DriverId.Value) return; // you can't hurt the horse you're on
             Hp.Value = Mathf.Max(0f, Hp.Value - dmg);
+            if (IsDummy)
+            {
+                // straw and splinters, and the tutorial's guide hears about it (a hit, or the hit that finished it; from range or up close)
+                Fx.Server(FxKind.WoodChips, transform.position + Vector3.up * 1.2f, Vector3.up);
+                if (attacker != null)
+                    attacker.TutEventRpc((byte)(Hp.Value > 0 ? 1 : 2), (byte)(Vector3.Distance(attacker.transform.position, transform.position) > DummyFar ? 1 : 0));
+            }
             if (IsHorse)
             {
                 // it bleeds, and a wild horse bolts away from whoever hurt it
@@ -107,7 +124,7 @@ namespace RockGame
                 if (Saddled.Value) drops.Add(ItemStack.Of(Item.Saddle, 1, SaddleTeam.Value + 1));
                 g.ServerScatter(drops, at);
             }
-            Fx.Server(IsSlender ? FxKind.Drink : FxKind.Blood, at, Vector3.up);
+            Fx.Server(IsDummy ? FxKind.Break : IsSlender ? FxKind.Drink : FxKind.Blood, at, Vector3.up);
             if (IsSlender && g != null) g.Broadcast("Slenderman was destroyed!");
             NetworkObject.Despawn(true);
         }
@@ -132,6 +149,11 @@ namespace RockGame
             m_CC.slopeLimit = 50f;
             m_CC.skinWidth = 0.06f;
             if (IsSlender) { m_CC.radius = 0.4f; m_CC.height = 2.6f; m_CC.center = new Vector3(0, 1.3f, 0); }
+            if (IsDummy)
+            {
+                m_CC.radius = 0.38f; m_CC.height = 1.9f; m_CC.center = new Vector3(0, 0.95f, 0);
+                Hp.OnValueChanged += (was, now) => { if (now < was) m_DummyHitAt = Time.time; }; // (it rocks when it's hit)
+            }
             m_Visual = CreateVisual(Kind.Value, transform, null, out m_Saddle, out m_Fan, out m_Head, out m_Tail, m_Wheels, m_Legs, IsUnicorn).transform;
             if (IsHorse && AiPsxArt.On) AiPsxArt.ApplyAnimal(m_Visual);
             // PSX graphics: the PS1 horse (a unicorn keeps its own white model and horn, so it's always plain to see)
@@ -215,6 +237,17 @@ namespace RockGame
             {
                 if (IsServer) Hunt(dt);
                 AnimateSlender();
+                return;
+            }
+            if (IsDummy)
+            {
+                // it stands where it was put (the server keeps it on the ground) and rocks back when something hits it
+                if (IsServer) Idle(dt);
+                if (m_Visual)
+                {
+                    float since = Time.time - m_DummyHitAt;
+                    m_Visual.localRotation = since < 0.8f ? Quaternion.Euler(-Mathf.Sin(since * 22f) * 14f * (1f - since / 0.8f), 0, 0) : Quaternion.identity;
+                }
                 return;
             }
             if (m_Saddle && m_Saddle.gameObject.activeSelf != Saddled.Value) m_Saddle.gameObject.SetActive(Saddled.Value);
@@ -454,10 +487,13 @@ namespace RockGame
             }
             m_Anim += dt * Mathf.Abs(v) * 1.6f;
             float amp = Mathf.Clamp01(Mathf.Abs(v) / 3f) * (Mathf.Abs(v) > 7f ? 45f : 30f);
+            // the legs keep time with the hops (Bob / WildHop: one hop per PI): every hop the pairs swap over - out in
+            // the air, back under it as it lands, the other way round on the next hop
+            float legs = HasDriver ? m_BobPhase : m_HopPhase;
             for (int i = 0; i < m_Legs.Count; i++)
             {
                 // diagonal pairs move together (trot)
-                float ph = m_Anim + (i == 0 || i == 3 ? 0f : Mathf.PI);
+                float ph = legs + (i == 0 || i == 3 ? 0f : Mathf.PI);
                 m_Legs[i].localRotation = Quaternion.Euler(Mathf.Sin(ph) * amp, 0, 0);
             }
             if (m_Head) m_Head.localRotation = Quaternion.Euler(Mathf.Abs(v) < 0.3f ? 35f + Mathf.Sin(Time.time) * 5f : Mathf.Sin(m_Anim * 2f) * 6f, 0, 0);
@@ -474,6 +510,23 @@ namespace RockGame
             root.transform.SetParent(parent, false);
             var t = root.transform;
             if (kind == Boat) fan = BuildBoat(t); // THEME MAPS
+            else if (kind == Dummy)
+            {
+                // a straw man on a post: sack body and head, a cross bar for arms, a painted target on its chest
+                var straw = new Color(0.86f, 0.72f, 0.38f);
+                var sack = new Color(0.72f, 0.6f, 0.4f);
+                Art.Box(t, Art.DarkWood, new Vector3(0, 0.55f, 0), new Vector3(0.14f, 1.1f, 0.14f));
+                Art.Box(t, Art.DarkWood, new Vector3(0, 0.05f, 0), new Vector3(0.7f, 0.1f, 0.7f));
+                Art.Box(t, sack, new Vector3(0, 1.15f, 0), new Vector3(0.6f, 0.75f, 0.36f));
+                Art.Box(t, Art.Wood, new Vector3(0, 1.38f, 0), new Vector3(1.5f, 0.1f, 0.1f));
+                for (int k = -1; k <= 1; k += 2) Art.Box(t, straw, new Vector3(k * 0.78f, 1.38f, 0), new Vector3(0.16f, 0.2f, 0.2f));
+                Art.Part(t, Art.Sphere, sack, new Vector3(0, 1.72f, 0), new Vector3(0.4f, 0.42f, 0.4f));
+                Art.Box(t, straw, new Vector3(0, 1.95f, 0), new Vector3(0.34f, 0.08f, 0.34f));
+                for (int k = -1; k <= 1; k += 2) Art.Box(t, Color.black, new Vector3(k * 0.08f, 1.76f, 0.2f), new Vector3(0.05f, 0.05f, 0.02f));
+                Art.Part(t, Art.Cylinder, Color.white, new Vector3(0, 1.15f, 0.185f), new Vector3(0.42f, 0.01f, 0.42f), new Vector3(90, 0, 0));
+                Art.Part(t, Art.Cylinder, new Color(0.85f, 0.15f, 0.12f), new Vector3(0, 1.15f, 0.2f), new Vector3(0.28f, 0.01f, 0.28f), new Vector3(90, 0, 0));
+                Art.Part(t, Art.Cylinder, Color.white, new Vector3(0, 1.15f, 0.215f), new Vector3(0.12f, 0.01f, 0.12f), new Vector3(90, 0, 0));
+            }
             else if (kind == Car)
             {
                 var plank = Art.Wood;

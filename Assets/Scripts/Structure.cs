@@ -15,6 +15,15 @@ namespace RockGame
         public readonly NetworkVariable<byte> Team = new NetworkVariable<byte>();
         public readonly NetworkVariable<float> Health = new NetworkVariable<float>();
         public readonly NetworkVariable<bool> DoorOpen = new NetworkVariable<bool>();
+        /// <summary>A doorway's door leaf has health of its own (Cfg.DoorLeafHp: less than the frame's). At 0 the door is
+        /// broken off: the frame stays standing, open to everyone.</summary>
+        public readonly NetworkVariable<float> DoorHealth = new NetworkVariable<float>();
+
+        /// <summary>A doorway whose door is still on its hinges.</summary>
+        public bool HasDoor => PType == PieceType.Doorway && DoorHealth.Value > 0f;
+        public float DoorMaxHp => Cfg.DoorLeafHp(Tier.Value);
+        /// <summary>For the tests: doors broken off their frames on this screen.</summary>
+        public static int DoorsBroken;
 
         [NonSerialized] public PieceKey Key;
         [NonSerialized] public bool HasKey;
@@ -34,6 +43,7 @@ namespace RockGame
             m_Rise = 0f;
             Tier.OnValueChanged += OnTierChanged;
             DoorOpen.OnValueChanged += OnDoorChanged;
+            DoorHealth.OnValueChanged += OnDoorHealthChanged;
             ClearGrass();
             // placed right where someone stands: pop them out on top instead of trapping them inside
             if (PlayerController.Local != null) PlayerController.Local.ResolveOverlap(transform);
@@ -48,6 +58,7 @@ namespace RockGame
             GrassField.Unblock(GetInstanceID());
             Tier.OnValueChanged -= OnTierChanged;
             DoorOpen.OnValueChanged -= OnDoorChanged;
+            DoorHealth.OnValueChanged -= OnDoorHealthChanged;
             if (IsServer && HasKey && BuildGrid.Registry.TryGetValue(Key, out var s) && s == this)
                 BuildGrid.Registry.Remove(Key);
         }
@@ -69,6 +80,37 @@ namespace RockGame
             LastDoorSoundOpen = open;
             var at = transform.position + transform.rotation * new Vector3(0f, 1.2f, 0f);
             Sfx.Play(Sfx.DoorSound(tier, open), at, 0.85f, 0.05f, 45f);
+        }
+
+        /// <summary>The door leaf was broken off (every screen): it goes, with a burst of splinters; the frame stays.</summary>
+        void OnDoorHealthChanged(float was, float now)
+        {
+            if (PType != PieceType.Doorway) return;
+            if (was > 0f && now <= 0f)
+            {
+                RemoveDoorLeaf();
+                DoorsBroken++;
+                Fx.Play(FxKind.Break, transform.position + transform.rotation * new Vector3(0f, 1.2f, 0f), Vector3.up);
+            }
+            else if (was <= 0f && now > 0f && m_Hinge == null) Rebuild(); // (a door again)
+        }
+
+        void RemoveDoorLeaf()
+        {
+            if (m_Hinge == null) return;
+            m_Hinge.gameObject.SetActive(false); // (its collider goes now, not at the end of the frame)
+            Destroy(m_Hinge.gameObject);
+            m_Hinge = null;
+        }
+
+        /// <summary>Whether a hit at this point in the world landed on the door leaf (not the frame round it).</summary>
+        public bool IsDoorHit(Vector3 point)
+        {
+            if (!HasDoor) return false;
+            // into the leaf's own space: it hangs from x = -0.6 and swings 100 degrees open
+            var l = transform.InverseTransformPoint(point) - new Vector3(-0.6f, 0f, 0f);
+            l = Quaternion.Inverse(Quaternion.Euler(0f, DoorOpen.Value ? 100f : 0f, 0f)) * l;
+            return l.x > -0.05f && l.x < 1.25f && l.y > -0.1f && l.y < 2.42f && Mathf.Abs(l.z) < 0.12f;
         }
 
         /// <summary>A collider that's part of a door leaf (it swings: nothing should stick to it in mid-air).</summary>
@@ -95,6 +137,7 @@ namespace RockGame
             if (PType == PieceType.EggBlock)
                 foreach (var r in m_Visual.GetComponentsInChildren<Renderer>()) r.sharedMaterial = Art.Mat(Color.Lerp(Color.white, Cfg.TeamColor[Mathf.Clamp(Team.Value, 0, Cfg.TeamColor.Length - 1)], 0.6f));
             m_DoorAngle = DoorOpen.Value ? 100f : 0f;
+            if (PType == PieceType.Doorway && !HasDoor) RemoveDoorLeaf(); // (its door was broken off)
         }
 
         void Update()
@@ -121,21 +164,68 @@ namespace RockGame
             Team.Value = (byte)team;
             Tier.Value = 0;
             Health.Value = Cfg.PieceHp(t, 0);
+            DoorHealth.Value = t == PieceType.Doorway ? Cfg.DoorLeafHp(0) : 0f;
             Key = key;
             HasKey = hasKey;
         }
 
         public void ServerDamage(float dmg) => ServerDamage(dmg, true);
 
+        /// <summary>A hit that landed at `point`: on a doorway's door leaf it hurts just the door (which breaks off on its
+        /// own, long before the frame would); anywhere else, the piece.</summary>
+        public void ServerDamageAt(float dmg, Vector3 point)
+        {
+            if (IsDoorHit(point)) ServerDamageDoor(dmg);
+            else ServerDamage(dmg);
+        }
+
+        /// <summary>Server: damage to the door leaf alone. At 0 it's broken off and the doorway stands open.</summary>
+        public void ServerDamageDoor(float dmg)
+        {
+            if (!IsServer || !IsSpawned || dmg <= 0 || !HasDoor) return;
+            DoorHealth.Value = Mathf.Max(0f, DoorHealth.Value - dmg);
+            if (DoorHealth.Value <= 0f) DoorOpen.Value = false;
+        }
+
+        /// <summary>Where a piece of a base was destroyed, and when (Time.time) - on the server, and on every client (told by
+        /// NetGame.PieceBrokenRpc, so the placement ghost can show it).</summary>
         static readonly Dictionary<PieceKey, float> s_BrokenAt = new Dictionary<PieceKey, float>();
 
-        /// <summary>Server: how long until a wall (doorway, window) can go back where one was just broken (0 = now).</summary>
+        /// <summary>How long until something can be built again where a piece was just destroyed (0 = now).</summary>
         public static float RebuildWait(PieceKey key)
         {
-            if (key.Kind != PieceKey.KEdge || !s_BrokenAt.TryGetValue(key, out var at)) return 0f;
+            if (key.Kind == PieceKey.KStairs)
+            {
+                // (stairs: whichever way the ones that stood in that cell faced)
+                float most = 0f;
+                for (int d = 0; d < 4; d++) most = Mathf.Max(most, RebuildWaitAt(new PieceKey(PieceKey.KStairs, key.I, key.J, key.L, d)));
+                return most;
+            }
+            return RebuildWaitAt(key);
+        }
+
+        static float RebuildWaitAt(PieceKey key)
+        {
+            if (!s_BrokenAt.TryGetValue(key, out var at)) return 0f;
             float w = at + Cfg.WallRebuildCooldown - Time.time;
-            if (w <= 0f) { s_BrokenAt.Remove(key); return 0f; }
+            if (w <= 0f || w > Cfg.WallRebuildCooldown) { s_BrokenAt.Remove(key); return 0f; } // (over, or left from another match)
             return w;
+        }
+
+        /// <summary>What the player is told (the ghost's hint, and the server's refusal).</summary>
+        public static string RebuildWaitText(float wait) => $"Destroyed here - you can rebuild in this spot in {Mathf.CeilToInt(wait)} s";
+
+        /// <summary>A piece was destroyed at this slot just now (every peer): nothing can be rebuilt there for a while.</summary>
+        public static void NoteBroken(PieceKey key) => s_BrokenAt[key] = Time.time;
+
+        /// <summary>Server: this piece is being destroyed (broken down, blown up, or collapsed with what held it up) - its
+        /// slot can't be rebuilt in for Cfg.WallRebuildCooldown seconds, and every client is told (PlayerNet.PlaceRpc
+        /// refuses; the ghost goes red with the seconds left).</summary>
+        public void ServerNoteDestroyed()
+        {
+            if (!HasKey || Cfg.WallRebuildCooldown <= 0f) return;
+            NoteBroken(Key);
+            if (NetGame.Instance != null && NetGame.Instance.IsSpawned) NetGame.Instance.PieceBrokenRpc(Key.Kind, Key.I, Key.J, Key.L, Key.D);
         }
 
         /// <summary>collapse = check whether other pieces lost their support (explosions do it once at the end).</summary>
@@ -145,8 +235,8 @@ namespace RockGame
             Health.Value = Mathf.Max(0, Health.Value - dmg);
             if (Health.Value <= 0)
             {
-                // a wall broken down: nobody can put a new wall in the same spot for a few seconds (PlayerNet.PlaceRpc)
-                if (HasKey && Key.Kind == PieceKey.KEdge) s_BrokenAt[Key] = Time.time;
+                // a piece broken down: nobody can build in the same spot again for a while (PlayerNet.PlaceRpc)
+                ServerNoteDestroyed();
                 NetworkObject.Despawn(true);
                 if (collapse && NetGame.Instance) NetGame.Instance.ServerCollapseCheck();
             }
@@ -156,6 +246,7 @@ namespace RockGame
         {
             Tier.Value = (byte)tier;
             Health.Value = MaxHp;
+            if (HasDoor) DoorHealth.Value = DoorMaxHp; // (a door that was broken off stays off)
         }
 
         /// <summary>Battering ram hit: one tier down at full health (refined to metal, metal to stone, stone to wood).</summary>
@@ -163,6 +254,7 @@ namespace RockGame
         {
             Tier.Value = (byte)Mathf.Max(0, Tier.Value - 1);
             Health.Value = MaxHp;
+            if (HasDoor) DoorHealth.Value = DoorMaxHp;
         }
 
         // ---------------- Visuals (also used for placement ghosts) ----------------
@@ -289,6 +381,9 @@ namespace RockGame
                 Art.Box(tr, trim, new Vector3(0, -0.6f, 0), new Vector3(3f, 1.2f, 0.3f), default, col);
 
             if (ghost == null) ApplyPsxLook(root, t, tier, c, trim, hinge);
+            // every door wears a padlock (both faces): only the team that built it can open it. (Put on after the PSX
+            // look, so it shows on the PSX door model as well.)
+            if (hinge != null) DoorLock(hinge);
 
             if (ghost != null)
             {
@@ -300,6 +395,28 @@ namespace RockGame
                 }
             }
             return root;
+        }
+
+        /// <summary>A big brass padlock under the handle on each face of a door leaf: body, steel shackle and a dark keyhole.</summary>
+        static void DoorLock(Transform hinge)
+        {
+            var brass = new Color(0.86f, 0.68f, 0.2f);
+            var hole = new Color(0.08f, 0.07f, 0.06f);
+            var holder = new GameObject("lock").transform;
+            holder.SetParent(hinge, false);
+            for (int side = -1; side <= 1; side += 2)
+            {
+                float z = side * 0.105f;
+                Art.Box(holder, brass, new Vector3(1.0f, 0.76f, z), new Vector3(0.26f, 0.22f, 0.09f)).name = "lock body";
+                Art.Box(holder, brass * 0.8f, new Vector3(1.0f, 0.76f, z), new Vector3(0.28f, 0.05f, 0.095f)).name = "lock band";
+                // the shackle: two posts and the bar across the top
+                Art.Box(holder, Art.Metal, new Vector3(0.93f, 0.92f, z), new Vector3(0.035f, 0.13f, 0.035f)).name = "lock shackle";
+                Art.Box(holder, Art.Metal, new Vector3(1.07f, 0.92f, z), new Vector3(0.035f, 0.13f, 0.035f)).name = "lock shackle";
+                Art.Box(holder, Art.Metal, new Vector3(1.0f, 0.985f, z), new Vector3(0.175f, 0.035f, 0.035f)).name = "lock shackle";
+                // keyhole
+                Art.Box(holder, hole, new Vector3(1.0f, 0.78f, z + side * 0.046f), new Vector3(0.05f, 0.05f, 0.01f)).name = "lock keyhole";
+                Art.Box(holder, hole, new Vector3(1.0f, 0.73f, z + side * 0.046f), new Vector3(0.025f, 0.07f, 0.01f)).name = "lock keyhole";
+            }
         }
 
         /// <summary>

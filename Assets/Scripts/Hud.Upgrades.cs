@@ -33,8 +33,8 @@ namespace RockGame
         {
             int lvl = Cfg.BaseUpgradeLevel(id, team), max = Cfg.BaseUpgradeMax(id);
             if (id == Item.WoodGenBuff)
-                return $"Wood Gen: your wood machine makes wood faster - {Cfg.WoodGenRate(0)}, then {Cfg.WoodGenRate(1)}, then {Cfg.WoodGenRate(2)} a second. Level {lvl} of {max}.";
-            return $"Fortify All Walls: every piece your team has built goes up a step at full health - stone, then metal - and pieces you build after come out that strong too. Level {lvl} of {max}.";
+                return $"Wood Gen: the first level builds a wood machine in your base ({Cfg.WoodGenRate(1)} wood a second), the next two make it faster - {Cfg.WoodGenRate(2)}, then {Cfg.WoodGenRate(3)} a second. Level {lvl} of {max}.";
+            return $"Fortify All Walls: every piece your team has built goes up a step at full health - stone, then metal, then armoured - and pieces you build after come out that strong too. Level {lvl} of {max}.";
         }
 
         /// <summary>Right of the inventory: the UPGRADES header and one row per upgrade, then a footer.</summary>
@@ -58,8 +58,8 @@ namespace RockGame
                 DrawUpgradeRow(me, new Rect(x, y, colW, row), id, k, ev);
                 y += row + gap;
             }
-            string hint = "Upgrades are here from the start - no workbench needed. Press "
-                + $"{Binds.Name(Bind.Interact)} on your upgrade station (the green plus, left of your alien machine) to open this; {Binds.Name(Bind.Inventory)} or Esc closes it.";
+            string hint = "Upgrades are here from the start - no trade station needed. Press "
+                + $"{Binds.Name(Bind.Interact)} on your upgrade station (the orange arrow, left of your alien machine) to open this; {Binds.Name(Bind.Inventory)} or Esc closes it.";
             var hintStyle = CraftStyle(13 * k, FontStyle.Normal, TextAnchor.UpperLeft, Color.white, true);
             // what the mouse is over (an upgrade or an item in the bag), otherwise how this screen works
             if (!DrawHoverInfo(new Rect(x, y + 4 * k, colW, Mathf.Max(40 * k, bottom - y)), k))

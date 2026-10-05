@@ -34,10 +34,13 @@ namespace RockGame
                 Hud.HitMarker(!(head && p.HelmetHp.Value > 0), head);
             }
             m_Net.FirePistolRpc(no != null, no != null ? new Unity.Netcode.NetworkObjectReference(no) : default, point, ray.direction);
-            Fx.Tracer(ray.origin + ray.direction * 0.5f - Vector3.up * 0.15f, point);
+            Fx.Tracer(ray.origin + ray.direction * 0.5f - Vector3.up * 0.15f, point, Fx.Gun.Sniper, true, false);
+            // the shot: its own crack in your ears and a flash at the muzzle; the revolver bucks (the view model snaps up
+            // at the wrist) with a little punch out of the view
+            Fx.Gunshot(gun == Item.Revolver ? Fx.Gun.Revolver : Fx.Gun.Pistol, m_VM.Muzzle(), ray.direction, true);
             m_VM.Use();
-            Sfx.Play2D(Sfx.Sniper, gun == Item.Revolver ? 0.55f : 0.45f, 0.08f);
-            Fx.Kick(gun == Item.Revolver ? 3f : 2f);
+            Fx.Kick(gun == Item.Revolver ? 3.6f : 2f);
+            if (gun == Item.Revolver) { Fx.Punch(1.8f); Fx.Shake(0.12f); }
         }
 
         void StartPistolReload(Item gun)
@@ -117,7 +120,7 @@ namespace RockGame
                 var pr = new Ray(ray.origin, dir);
                 bool hit = AimWithAssist(pr, Cfg.ShotgunRange, 0.04f, out var h);
                 var end = hit ? h.point : pr.GetPoint(Cfg.ShotgunRange);
-                if (i % 2 == 0) Fx.Tracer(ray.origin + dir * 0.5f - Vector3.up * 0.15f, end);
+                if (i % 2 == 0) Fx.Tracer(ray.origin + dir * 0.5f - Vector3.up * 0.15f, end, Fx.Gun.Shotgun, true, false); // (one blast for them all, below)
                 if (!hit) continue;
                 var p = h.collider.GetComponentInParent<PlayerNet>();
                 if (p != null && p != m_Net && !p.Dead.Value)
@@ -148,15 +151,17 @@ namespace RockGame
                 Hud.HitMarker(false, head > 0);
                 m_Net.ShotgunHitRpc(new Unity.Netcode.NetworkObjectReference(p.NetworkObject), point, (byte)body, (byte)head);
             }
+            // the blast: one great flat boom, a big flash and sparks at the pipe's mouth, and it shoves back hard
+            Fx.Gunshot(Fx.Gun.Shotgun, m_VM.Muzzle(), ray.direction, true);
             m_VM.Use();
-            Sfx.Play2D(Sfx.Boom, 0.35f, 0.1f);
-            Fx.Kick(6f);
-            Fx.Shake(0.15f);
+            Fx.Kick(7f);
+            Fx.Shake(0.3f);
+            Fx.Punch(3.5f);
         }
 
         void StartShotgunReload()
         {
-            if (m_Net.Count(Item.ShotgunShell) <= 0) { Hud.Push("No shotgun shells - buy them in POWER ITEMS (TAB)"); return; }
+            if (m_Net.Count(Item.ShotgunShell) <= 0) { Hud.Push($"No shotgun shells - buy them in POWER ITEMS ({Binds.Name(Bind.Inventory)})"); return; }
             m_ShotgunReloadStart = Time.time;
             Sfx.Play2D(Sfx.Clink, 0.4f);
         }

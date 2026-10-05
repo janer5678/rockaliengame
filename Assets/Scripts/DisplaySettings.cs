@@ -51,6 +51,9 @@ namespace RockGame
         public const int UiAccent = 0;                      // ui.accent                (0 = Gold; by name in the code)
         public const bool ShowFps = false;                  // fps.counter
 
+        // ---- main menu ----
+        public const bool MenuTrees = true;                 // menu.trees               (trees in the play space behind the main menu)
+
         // ---- alien glow ----
         public const float GlowStrength = 0.3f;             // glow.strength            (0.02..1)
         public const float GlowWidth = 0.03f;               // glow.width               (0.005..0.12 m)

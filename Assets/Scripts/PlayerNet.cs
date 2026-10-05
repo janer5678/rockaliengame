@@ -131,6 +131,7 @@ namespace RockGame
             if (IsOwner)
             {
                 Local = this;
+                SendMyName(); // (the name typed on the main menu: PlayerNet.Identity.cs)
                 Art.SetLayerShadowsOnly(m_VisualRoot.gameObject);
             }
             name = $"Player {OwnerClientId}";
@@ -332,8 +333,14 @@ namespace RockGame
 
         void RebuildTree(bool on)
         {
+            bool had = m_Tree != null;
+            // shaking the disguise off: the tree shrinks away where it stood in a puff of leaves (TreeCamoPoof)
+            if (had && !on) { TreeCamoFx(false); TreeCamoPoof.Begin(m_Tree); m_Tree = null; }
             if (m_Tree) { Destroy(m_Tree); m_Tree = null; }
             if (!on) return;
+            // becoming a tree: it springs up out of the ground (TreeHop grows it), leaves flying
+            m_TreeGrow = had ? 1f : 0f;
+            if (!had) TreeCamoFx(true);
             // everyone sees the tree - you too, from the third-person view you get while holding it
             m_TreePsx = GameSettings.PsxGraphics || GameSettings.AiPsx;
             m_Tree = new GameObject("treeCamo");
@@ -345,7 +352,47 @@ namespace RockGame
             m_Tree.transform.rotation = TreeCamoRotation;
             m_TreeLastPos = transform.position;
             m_TreeMove = m_TreePhase = 0f;
+            m_Tree.transform.localScale = TreeGrowScale(m_TreeGrow);
         }
+
+        /// <summary>Becoming a tree takes this long (it springs up); shaking it off is TreeCamoPoof.Time.</summary>
+        public const float TreeGrowTime = 0.35f;
+        float m_TreeGrow = 1f;
+        /// <summary>For the tests: times this player's disguise went on / came off with its sound and leaves (this machine).</summary>
+        public int TreeCamoOns { get; private set; }
+        public int TreeCamoOffs { get; private set; }
+
+        /// <summary>The tree springing up: thin and small at first, shooting up past its height and settling (0..1).</summary>
+        static Vector3 TreeGrowScale(float k)
+        {
+            if (k >= 1f) return Vector3.one;
+            float back = 1f + 2.6f * Mathf.Pow(k - 1f, 3f) + 1.6f * Mathf.Pow(k - 1f, 2f); // (ease out, a little past 1)
+            return new Vector3(Mathf.Lerp(0.15f, 1f, k * k), Mathf.Max(0.02f, back), Mathf.Lerp(0.15f, 1f, k * k));
+        }
+
+        /// <summary>The disguise going on / coming off: its sound (heard from where the tree is; your own is in your ears)
+        /// and a burst of leaves round the crown.</summary>
+        void TreeCamoFx(bool on)
+        {
+            if (on) TreeCamoOns++; else TreeCamoOffs++;
+            var p = transform.position;
+            var clip = on ? Sfx.TreeOn : Sfx.TreeOff;
+            if (IsOwner) Sfx.Play2D(clip, 0.5f);
+            else Sfx.Play(clip, p + Vector3.up * 1.5f, 0.9f, 0.08f, 45f);
+            var leaf = new Color(0.24f, 0.5f, 0.2f);
+            for (int i = 0; i < 12; i++)
+            {
+                var o = Random.insideUnitSphere * 1.3f;
+                FxLeaf.Spawn(p + new Vector3(o.x, 2.6f + o.y, o.z), leaf * Random.Range(0.8f, 1.2f), Random.Range(0f, 0.2f));
+            }
+        }
+
+        /// <summary>How much faster than TreeHopStride's time the tree hops at this speed: quick little hops at a walk,
+        /// easing back to 1 at a sprint (the sprint keeps its own time).</summary>
+        public const float TreeWalkHopMul = 1.5f;
+        public static float TreeHopRate(float speed) => Mathf.Lerp(TreeWalkHopMul, 1f, TreeSprintK(speed));
+        /// <summary>0 at a walk .. 1 at a sprint.</summary>
+        static float TreeSprintK(float speed) => Mathf.InverseLerp(Cfg.WalkSpeed * 1.1f, Cfg.SprintSpeed * 0.95f, speed);
 
         Transform m_TreeHop;
         Vector3 m_TreeLastPos;
@@ -356,6 +403,10 @@ namespace RockGame
         public const float TreeHopStride = 2.6f;
         /// <summary>For the tests: how many hops the camo tree has finished.</summary>
         public int TreeHops { get; private set; }
+        /// <summary>For the tests: how many of those landed with a sound.</summary>
+        public int TreeHopSounds { get; private set; }
+        /// <summary>Walking as a tree: how far it rocks from side to side and leans into the way it goes (degrees; a sprint is 6 and 9).</summary>
+        public const float TreeWalkWobble = 2f, TreeWalkLean = 4f;
         /// <summary>Server, for the tests: walls refused because one was just broken in that spot.</summary>
         public static int WallRebuildRefusals;
 
@@ -367,6 +418,11 @@ namespace RockGame
         void TreeHop(float dt)
         {
             if (!m_TreeHop || dt <= 0f) return;
+            if (m_TreeGrow < 1f)
+            {
+                m_TreeGrow = Mathf.MoveTowards(m_TreeGrow, 1f, dt / TreeGrowTime);
+                m_Tree.transform.localScale = TreeGrowScale(m_TreeGrow);
+            }
             var p = transform.position;
             var d = p - m_TreeLastPos;
             m_TreeLastPos = p;
@@ -384,10 +440,21 @@ namespace RockGame
                 m_TreeHop.localScale = Vector3.Lerp(m_TreeHop.localScale, Vector3.one, k);
                 return;
             }
-            // a hop every ~2.6 m (quicker when running); finish the hop we're in before settling
+            // a hop every ~2.6 m at a sprint, quicker little ones at a walk (TreeHopRate); finish the hop we're in before settling
             float before = m_TreePhase;
-            m_TreePhase += dt * Mathf.Max(speed, 2.5f) / TreeHopStride * Mathf.PI;
-            if (Mathf.Floor(before / Mathf.PI) != Mathf.Floor(m_TreePhase / Mathf.PI)) TreeHops++;
+            float sprintK = TreeSprintK(speed);
+            m_TreePhase += dt * Mathf.Max(speed, 2.5f) / TreeHopStride * Mathf.PI * TreeHopRate(speed);
+            if (Mathf.Floor(before / Mathf.PI) != Mathf.Floor(m_TreePhase / Mathf.PI))
+            {
+                TreeHops++;
+                // it lands with a rustle and a thump (louder at a run): heard from where the tree is; your own in your ears
+                if (m_TreeMove > 0.2f)
+                {
+                    if (IsOwner) Sfx.Play2D(Sfx.TreeRustle, Mathf.Lerp(0.3f, 0.45f, sprintK), 0.12f);
+                    else Sfx.Play(Sfx.TreeRustle, p, Mathf.Lerp(0.6f, 0.9f, sprintK), 0.12f, Mathf.Lerp(30f, 45f, sprintK));
+                    TreeHopSounds++;
+                }
+            }
             if (m_TreeMove <= 0.001f && Mathf.Floor(before / Mathf.PI) != Mathf.Floor(m_TreePhase / Mathf.PI)) m_TreePhase = 0f;
             float arc = Mathf.Abs(Mathf.Sin(m_TreePhase));
             float hop = arc * (0.28f + 0.1f * Mathf.Clamp01(speed / 7f)) * Mathf.Max(m_TreeMove, m_TreePhase > 0f ? 0.4f : 0f);
@@ -399,8 +466,9 @@ namespace RockGame
             // lean into the way it's going (in the tree's own space: it never turns) and wobble from side to side
             var lean = Vector3.zero;
             if (d.sqrMagnitude > 1e-8f) lean = m_Tree.transform.InverseTransformDirection(d.normalized);
-            float wob = Mathf.Sin(m_TreePhase * 0.5f) * 6f * m_TreeMove;
-            var tilt = Quaternion.AngleAxis(9f * m_TreeMove, Vector3.Cross(Vector3.up, lean).sqrMagnitude > 1e-6f ? Vector3.Cross(Vector3.up, lean).normalized : Vector3.right)
+            // (at a walk it leans and rocks from side to side much less; the sprint is as it was)
+            float wob = Mathf.Sin(m_TreePhase * 0.5f) * Mathf.Lerp(TreeWalkWobble, 6f, sprintK) * m_TreeMove;
+            var tilt = Quaternion.AngleAxis(Mathf.Lerp(TreeWalkLean, 9f, sprintK) * m_TreeMove, Vector3.Cross(Vector3.up, lean).sqrMagnitude > 1e-6f ? Vector3.Cross(Vector3.up, lean).normalized : Vector3.right)
                 * Quaternion.Euler(0f, 0f, wob);
             m_TreeHop.localPosition = new Vector3(0f, hop, 0f);
             m_TreeHop.localRotation = Quaternion.Slerp(m_TreeHop.localRotation, tilt, dt * 10f);
@@ -560,7 +628,7 @@ namespace RockGame
         {
             bool dead = Dead.Value;
             if (!IsOwner) RemoteSounds(dead);
-            if (IsServer) { ServerTickCraft(); ServerTickBaseRegen(); ServerTickBleed(); }
+            if (IsServer) { ServerTickCraft(); ServerTickBaseRegen(); ServerTickBleed(); ServerTickPing(); }
             if (dead && !m_WasDead) m_DeadSince = Time.time;
             m_WasDead = dead;
             // the dead leave no body: it's gone the moment they die - just the gravestone where they fell (GraveFx)
@@ -634,6 +702,7 @@ namespace RockGame
                 // (held items and armour get swapped: give the new ones the glow too)
                 if (Time.time >= m_NextOutlineRefresh) { m_NextOutlineRefresh = Time.time + 1f; SetOutline(true); }
             }
+            TickTeamSee(local, dead); // your teammates show through walls (PlayerNet.TeamSee.cs)
             // jetpack flame
             bool flame = Jetting.Value && !dead;
             if (flame != (m_Flame != null)) RebuildFlame(flame);
@@ -774,6 +843,7 @@ namespace RockGame
                 m_HurtDir = attacker != null && attacker != this ? transform.position - attacker.transform.position : Vector3.up;
             }
             if (Health.Value <= 0) ServerDie(attacker, cause);
+            m_HeadHit = false; // (ServerMarkHead is for one hit)
         }
 
         int m_HurtFrame = -1, m_BledFrame = -1;
@@ -841,8 +911,14 @@ namespace RockGame
             if (NetGame.Instance != null)
             {
                 // the kill feed (top right on everyone's screen): who, with what, and who died
+                // (with the names as they are now - whoever it was may have left by the time it's read - and whether it
+                // was a headshot; the scoreboard's kills and deaths go up too)
                 if (cause == 0) cause = killer != null && killer != this ? (byte)killer.HeldItem : KillCause.Died;
-                NetGame.Instance.KillFeedRpc(killer != null && killer != this ? killer.Team.Value : (byte)255, killer != null ? killer.Slot.Value : (byte)0, Team.Value, Slot.Value, cause);
+                bool byOther = killer != null && killer != this;
+                Deaths.Value = (ushort)Mathf.Min(ushort.MaxValue, Deaths.Value + 1);
+                if (byOther) killer.Kills.Value = (ushort)Mathf.Min(ushort.MaxValue, killer.Kills.Value + 1);
+                NetGame.Instance.KillFeedRpc(byOther ? killer.Team.Value : (byte)255, killer != null ? killer.Slot.Value : (byte)0, Team.Value, Slot.Value, cause,
+                    byOther && m_HeadHit, new Unity.Collections.FixedString32Bytes(byOther ? killer.DisplayName : ""), new Unity.Collections.FixedString32Bytes(DisplayName));
                 NetGame.Instance.ServerOnPlayerKilled(this, killer);
             }
         }
@@ -940,6 +1016,7 @@ namespace RockGame
                 Notify("Their helmet stopped your headshot!");
                 return;
             }
+            p.ServerMarkHead(head);
             p.ServerDamage(dmg, this, cause);
             p.ServerBleed(head, point, dir, OwnerClientId);
             if (p.Dead.Value) KillConfirmRpc();
@@ -971,7 +1048,7 @@ namespace RockGame
             else if (no.TryGetComponent(out Vehicle v))
             {
                 v.ServerDamage(st.PlayerDamage * v.HeadMul(point), this);
-                if (!v.IsHorse) Fx.Server(FxKind.Blood, point, dir, OwnerClientId);
+                if (!v.IsHorse && !v.IsDummy) Fx.Server(FxKind.Blood, point, dir, OwnerClientId); // (a training dummy doesn't bleed)
             }
             else if (no.TryGetComponent(out ResourceNode n))
             {
@@ -995,7 +1072,7 @@ namespace RockGame
             {
                 if (!GameAllowsCombat) return; // your own pieces too: anything an enemy can break, you can
                 float dmg = st.StructureDamage * Cfg.TierMeleeMul(s.Tier.Value);
-                s.ServerDamage(dmg);
+                s.ServerDamageAt(dmg, point); // (on a door leaf: the door's own, lower health)
                 Fx.Server(FxKind.StructureHit, point, -dir, OwnerClientId);
             }
             else if (no.TryGetComponent(out Container c))
@@ -1048,7 +1125,7 @@ namespace RockGame
             }
             if (no.TryGetComponent(out Vehicle v)) { v.ServerDamage(damage * v.HeadMul(point), this); return; }
             if (no.TryGetComponent(out Structure s) && s.Tier.Value == 0)
-                s.ServerDamage(Cfg.ArrowWoodStructureDamage);
+                s.ServerDamageAt(Cfg.ArrowWoodStructureDamage, point);
             DropSpentArrow(point, dir);
         }
 
@@ -1104,7 +1181,7 @@ namespace RockGame
                     return;
                 }
                 if (no.TryGetComponent(out Structure s) && s.Tier.Value == 0)
-                    s.ServerDamage(Cfg.SpearThrowStructureDamage);
+                    s.ServerDamageAt(Cfg.SpearThrowStructureDamage, point);
                 if (no.TryGetComponent(out Vehicle v)) v.ServerDamage(Cfg.SpearThrowDamage * power * v.HeadMul(point), this);
             }
             game.ServerDropItem(ItemStack.Of(Item.Spear, 1), point, dir, point, true);
@@ -1156,7 +1233,7 @@ namespace RockGame
             if (InvOps.Space(Inv, Item.Spear) < 1) { Notify("Inventory full!"); return; }
             p.StuckSpears.Value--;
             ServerGive(Item.Spear, 1);
-            if (p != this) p.Notify($"{Cfg.TeamName[Team.Value]} pulled a spear out of you");
+            if (p != this) p.Notify($"{DisplayName} pulled a spear out of you");
         }
 
         // ---------------- battering ram ----------------
@@ -1249,14 +1326,14 @@ namespace RockGame
             // the Workbench T1 is locked for everyone until a team (any team) has captured the ball (NetGame.Bench.cs)
             if (r.Output == Item.Workbench && !Cfg.BenchUnlocked(Team.Value))
             {
-                Notify("You can only craft the Workbench once the ball has been captured");
+                Notify("You can only craft the Trade Station once the ball has been captured");
                 return;
             }
             // tier 1 / 2 items need your team's workbench of that tier, and you in your base (Builder: anywhere)
             int tier = Cfg.CraftTier(r.Output);
             if (tier > 0)
             {
-                if (Cfg.BenchTier(Team.Value) < tier) { Notify($"The {Cfg.ItemName(r.Output)} needs a Workbench T{tier} in your base"); return; }
+                if (Cfg.BenchTier(Team.Value) < tier) { Notify($"The {Cfg.ItemName(r.Output)} needs a {(tier == 2 ? "Trade Station 2" : "Trade Station")} in your base"); return; }
                 if (!Cfg.CanCraftAt(Team.Value, transform.position)) { Notify($"{r.Name} can only be crafted inside your own base"); return; }
             }
             if (Workbench.IsBench(r.Output) && Workbench.ForTeam(Team.Value, Workbench.TierOfItem(r.Output)) != null) { Notify($"Your team already has a {Cfg.ItemName(r.Output)}"); return; }
@@ -1301,24 +1378,76 @@ namespace RockGame
 
             var key = new PieceKey(BuildGrid.KindOf(t), i, j, l, t == PieceType.Stairs ? (d & 3) : (d & 1));
             if (key.L < 0 || key.L > Cfg.MaxLevel) return;
-            if (!BuildGrid.CanBuildAt(Team.Value, key)) { Notify(Cfg.Builder ? "You can't build in the enemy base" : "You can only build inside your own base area"); return; }
-            if (BuildGrid.OnBedrock(key)) { Notify("The bedrock is already a foundation"); return; }
-            BuildGrid.Pose(t, key, out var pos, out var rot);
-            if (Vector3.Distance(pos, transform.position) > Cfg.BuildRange + 4f) { Notify("Too far away"); return; }
-            if (BuildGrid.IsOccupied(key, BuildGrid.Registry.ContainsKey)) { Notify("Something is already built there"); return; }
-            // a wall was just broken down here: you can't slap a new one straight back in
-            float rebuild = Structure.RebuildWait(key);
-            if (rebuild > 0f) { WallRebuildRefusals++; Notify($"A wall was just broken here - you can build here again in {Mathf.CeilToInt(rebuild)} s"); return; }
-            if (!BuildGrid.IsSupported(key, BuildGrid.Registry.ContainsKey))
+            string problem = ServerPlaceProblem(t, key, false);
+            if (problem != null) { Notify(problem); return; }
+            int cost = Cfg.PieceWood(t);
+            if (Count(Cfg.CurrencyItem) < cost) { Notify($"Need {cost} {Cfg.CurrencyName}"); return; }
+            ServerBuildPiece(t, key);
+        }
+
+        /// <summary>
+        /// A wall, doorway or window aimed at bare ground in your base, where the missing foundation is the only thing in
+        /// the way: the foundation (in cell fi, fj - one of the two the wall stands between) goes down first and the wall
+        /// on it, both paid for. If you can't afford both, or the foundation can't go there, nothing is built.
+        /// </summary>
+        [Rpc(SendTo.Server)]
+        public void PlaceOnNewFoundationRpc(byte type, int i, int j, int d, int fi, int fj)
+        {
+            var t = (PieceType)type;
+            if (BuildGrid.KindOf(t) != PieceKey.KEdge || !Cfg.IsGridPiece(t) || type > (byte)PieceType.Tower) return;
+            if (Dead.Value || CarryingBall || HeldItem != Item.BuildingPlan || InSuddenDeath) return;
+            if (!Tutorial.AllowsFor(this, TutFeature.Build)) return;
+            if (Time.time < m_NextBuild) return;
+
+            var key = new PieceKey(PieceKey.KEdge, i, j, 0, d & 1);
+            var fkey = new PieceKey(PieceKey.KFoundation, fi, fj, 0, 0);
+            int i2 = key.D == 0 ? i + 1 : i, j2 = key.D == 0 ? j : j + 1;
+            if (!((fi == i && fj == j) || (fi == i2 && fj == j2))) return;
+            int wallCost = Cfg.PieceWood(t), cost = wallCost;
+            // (a foundation got there first - someone else's click, or yours twice: just the wall)
+            bool needFoundation = !BuildGrid.IsSupported(key, BuildGrid.Registry.ContainsKey);
+            string problem = needFoundation ? ServerPlaceProblem(PieceType.Foundation, fkey, false) : null;
+            problem = problem ?? ServerPlaceProblem(t, key, needFoundation);
+            if (problem != null) { Notify(problem); return; }
+            if (needFoundation) cost += Cfg.PieceWood(PieceType.Foundation);
+            if (Count(Cfg.CurrencyItem) < cost)
             {
-                Notify(t == PieceType.Floor ? "Floors need a wall below or a floor next to them" :
-                       t == PieceType.Foundation ? "Foundations go on the ground" : "Needs a foundation or floor underneath");
+                Notify(needFoundation ? $"Need {cost} {Cfg.CurrencyName} for the foundation and the {Cfg.PieceName(t).ToLower()}" : $"Need {cost} {Cfg.CurrencyName}");
                 return;
             }
-            if (!AreaClear(t, pos, rot)) { Notify("Placement blocked"); return; }
+            if (needFoundation) { ServerBuildPiece(PieceType.Foundation, fkey); AutoFoundations++; }
+            ServerBuildPiece(t, key);
+        }
+
+        /// <summary>Server, for the tests: foundations put down automatically under a wall aimed at bare ground.</summary>
+        public static int AutoFoundations;
+
+        /// <summary>Server: why this player can't build piece t at key (null = they can; the price isn't looked at here).
+        /// unsupportedOk: don't mind that nothing holds it up yet (its foundation is about to be built).</summary>
+        string ServerPlaceProblem(PieceType t, PieceKey key, bool unsupportedOk)
+        {
+            if (!BuildGrid.CanBuildAt(Team.Value, key)) return Cfg.Builder ? "You can't build in the enemy base" : "You can only build inside your own base area";
+            if (BuildGrid.OnBedrock(key)) return "The bedrock is already a foundation";
+            BuildGrid.Pose(t, key, out var pos, out var rot);
+            if (Vector3.Distance(pos, transform.position) > Cfg.BuildRange + 4f) return "Too far away";
+            if (BuildGrid.IsOccupied(key, BuildGrid.Registry.ContainsKey)) return "Something is already built there";
+            // a piece was just destroyed here: you can't slap a new one straight back in
+            float rebuild = Structure.RebuildWait(key);
+            if (rebuild > 0f) { WallRebuildRefusals++; return Structure.RebuildWaitText(rebuild); }
+            if (!unsupportedOk && !BuildGrid.IsSupported(key, BuildGrid.Registry.ContainsKey))
+                return t == PieceType.Floor ? "Floors need a wall below or a floor next to them" :
+                       t == PieceType.Foundation ? "Foundations go on the ground" : "Needs a foundation or floor underneath";
+            if (!AreaClear(t, pos, rot)) return "Placement blocked";
+            return null;
+        }
+
+        /// <summary>Server: pay for piece t and build it at key (checked with ServerPlaceProblem, and affordable).</summary>
+        void ServerBuildPiece(PieceType t, PieceKey key)
+        {
             int cost = Cfg.PieceWood(t);
-            if (!InvOps.Remove(Inv, Cfg.CurrencyItem, cost)) { Notify($"Need {cost} {Cfg.CurrencyName}"); return; }
+            if (!InvOps.Remove(Inv, Cfg.CurrencyItem, cost)) return;
             SpentRpc((byte)Cfg.CurrencyItem, cost);
+            BuildGrid.Pose(t, key, out var pos, out var rot);
 
             m_NextBuild = Time.time + Cfg.BuildCooldown * 0.85f;
             var go = Instantiate(Bootstrap.I.structurePrefab, pos, rot);
@@ -1380,7 +1509,7 @@ namespace RockGame
                 int stone = s.Tier.Value >= 1 ? Mathf.FloorToInt(Cfg.UpgradeCost(s.PType) * Cfg.DemolishRefund) : 0;
                 Fx.Server(FxKind.Break, s.transform.position + Vector3.up * 1.2f, Vector3.up);
                 s.NetworkObject.Despawn(true);
-                if (NetGame.Instance != null) NetGame.Instance.ServerCollapseCheck();
+                if (NetGame.Instance != null) NetGame.Instance.ServerCollapseCheck(false); // (your own choice: no rebuild wait)
                 if (wood > 0) ServerGive(Cfg.CurrencyItem, wood);
                 if (stone > 0) ServerGive(Cfg.WoodMode ? Item.Wood : Cfg.UpgradeItem, stone);
             }
@@ -1403,6 +1532,9 @@ namespace RockGame
             if (kind == Item.Chest && baseTeam != team && !Cfg.Builder) return "Chests go inside your own base";
             // chests may go on the bedrock around the machine, just not on the spawn spot
             if (kind == Item.Chest && !Cfg.Builder && new Vector2(pos.x - Cfg.SpawnPos(team).x, pos.z - Cfg.SpawnPos(team).z).magnitude < 1.3f) return "Keep the spawn spot clear";
+            // Auto Wood: the wood machine's spot stays free even before the machine is bought (it lands there later)
+            if ((kind == Item.Chest || Workbench.IsBench(kind)) && Cfg.AutoWood && baseTeam == team
+                && new Vector2(pos.x - Cfg.WoodMachinePos(team).x, pos.z - Cfg.WoodMachinePos(team).z).magnitude < 1.4f) return "Keep the wood machine's spot clear";
             if (kind != Item.Chest && !Workbench.IsBench(kind) && Cfg.PointBlocked(pos)) return "Not on the bedrock";
             if (kind != Item.Chest && baseTeam >= 0 && baseTeam != team) return "Not in the enemy base";
             var rot = Quaternion.Euler(0, yaw, 0);
@@ -1619,6 +1751,23 @@ namespace RockGame
             NetGame.Instance.ServerArmC4(point, normal, this);
         }
 
+        /// <summary>The thrown C4 hit a player or a horse (any creature / car): it sticks to them, where it hit (`local`
+        /// and `localNormal` are in the target's own space, so it rides along wherever they go), and goes off there.</summary>
+        [Rpc(SendTo.Server)]
+        public void C4StickRpc(NetworkObjectReference target, Vector3 local, Vector3 localNormal)
+        {
+            if (m_PendingC4 <= 0 || NetGame.Instance == null) return;
+            m_PendingC4--;
+            if (target.TryGet(out var no) && no != NetworkObject && (no.GetComponent<PlayerNet>() != null || no.GetComponent<Vehicle>() != null)
+                && Vector3.Distance(no.transform.position, transform.position) < 200f)
+            {
+                // (kept on the target: never further out than something stuck to them could be)
+                NetGame.Instance.ServerArmC4On(no, Vector3.ClampMagnitude(local, 4f), localNormal, this);
+                return;
+            }
+            NetGame.Instance.ServerArmC4(transform.position + transform.forward, Vector3.up, this);
+        }
+
         /// <summary>Death wand: one bolt along the aim, good for one of three things. Anyone it passes close to, or who is
         /// near where it hits, dies instantly. If it kills nobody and hits a standing tree, the whole tree is felled and
         /// everything in it (and the felling bonus) goes straight into your inventory. If it kills nobody and hits a
@@ -1694,7 +1843,7 @@ namespace RockGame
         public void ToggleDoorRpc(NetworkObjectReference target)
         {
             if (Dead.Value || !target.TryGet(out var no) || !no.TryGetComponent(out Structure s)) return;
-            if (s.PType != PieceType.Doorway) return;
+            if (s.PType != PieceType.Doorway || !s.HasDoor) return; // (a door that was broken off: the doorway just stands open)
             if (s.Team.Value != Team.Value) { Notify("This door is locked"); return; }
             if (Vector3.Distance(s.transform.position, transform.position) > Cfg.InteractRange + 3f) return;
             s.DoorOpen.Value = !s.DoorOpen.Value;
@@ -1708,7 +1857,7 @@ namespace RockGame
             if (NetGame.Instance != null && NetGame.Instance.WallUp) return; // under the glass dome until the wall drops
             if (Vector3.Distance(b.transform.position, EyePos) > Cfg.InteractRange + 2f) return;
             if (b.ServerPickup(this) && NetGame.Instance != null)
-                NetGame.Instance.Broadcast($"{Cfg.TeamName[Team.Value]} picked up the ball!");
+                NetGame.Instance.Broadcast($"{DisplayName} ({Cfg.TeamName[Team.Value]}) picked up the ball!");
         }
 
         /// <summary>Builder: E while carrying the ball plants it on the ground in front of you - it's your team's ball then.</summary>

@@ -365,12 +365,15 @@ namespace RockGame
                 yield return new WaitForSeconds(0.5f);
             }
             Check(me.Riding && me.Count(Item.Berry) > b0, $"riding, E picks up what you look at instead of getting you off (riding {me.Riding}, berries {me.Count(Item.Berry) - b0})");
-            // looking at nothing, E gets you off
+            // looking at nothing, E does nothing: crouch (Ctrl) is what gets you off
             pc.SetLook(laneYaw, -60f);
             yield return new WaitForSeconds(0.3f);
             Binds.TestPress(Bind.Interact);
             yield return new WaitForSeconds(0.6f);
-            Check(!me.Riding, "looking at nothing, E gets you off the horse");
+            Check(me.Riding, "looking at nothing, E doesn't get you off the horse any more");
+            Binds.TestPress(Bind.Crouch);
+            yield return new WaitForSeconds(0.6f);
+            Check(!me.Riding, "crouch (Ctrl) gets you off the horse");
             if (horse != null && horse.IsSpawned) horse.NetworkObject.Despawn(true);
             for (int i = 0; i < Cfg.PlayerSlots; i++) if (me.SlotAt(i).Id == Item.Berry || me.SlotAt(i).Id == Item.Saddle) me.Inv[i] = default;
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));

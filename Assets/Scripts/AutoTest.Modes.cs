@@ -268,12 +268,16 @@ namespace RockGame
             foreach (var s in Structure.All) if (s.Team.Value == team && s.Upgradable && s.Tier.Value == 0) wood++;
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
             yield return new WaitForSeconds(0.3f);
-            // fortify (UPGRADES at the alien machine) goes up a step every time it's bought: stone 1000, metal 2000 (the top)
-            int[] price = { 1000, 2000 };
-            string[] names = { "Stone Wall", "Metal Wall" };
-            Check(Cfg.MaxFortify == 2 && Cfg.PieceHp(PieceType.Wall, 2) < Cfg.PieceHp(PieceType.Wall, 1) * 2f && Cfg.PieceHp(PieceType.Wall, 2) > Cfg.PieceHp(PieceType.Wall, 1),
-                $"fortify has two steps, and metal is weaker than it was ({Cfg.PieceHp(PieceType.Wall, 2):0} HP, stone {Cfg.PieceHp(PieceType.Wall, 1):0})");
-            for (int step = 0; step < 2; step++)
+            // fortify (UPGRADES at the upgrade station) goes up a step every time it's bought: stone 2500, metal 2000, armoured 3000 (the top)
+            int[] price = { 2500, 2000, 3000 };
+            string[] names = { "Stone Wall", "Metal Wall", "Armoured Wall" };
+            for (int i = 0; i < 5; i++) me.ServerGive(Item.Wood, 1000); // (the three steps cost 7500 between them)
+            Check(Cfg.PieceHp(PieceType.Wall, 3) > Cfg.PieceHp(PieceType.Wall, 2) && Cfg.PieceHp(PieceType.Wall, 3) <= Cfg.PieceHp(PieceType.Wall, 2) * 1.3f
+                && Cfg.TierMeleeMul(3) < Cfg.TierMeleeMul(2) && Cfg.TierMeleeMul(3) >= Cfg.TierMeleeMul(2) * 0.6f,
+                $"armoured is only slightly better than sheet metal ({Cfg.PieceHp(PieceType.Wall, 3):0} HP against {Cfg.PieceHp(PieceType.Wall, 2):0}, melee {Cfg.TierMeleeMul(3):0.00} against {Cfg.TierMeleeMul(2):0.00})");
+            Check(Cfg.MaxFortify == 3 &&Cfg.PieceHp(PieceType.Wall, 2) > Cfg.PieceHp(PieceType.Wall, 1) && Cfg.PieceHp(PieceType.Wall, 1) > Cfg.PieceHp(PieceType.Wall, 0) * 2f,
+                $"fortify has three steps: wood is flimsy, stone is the old wood, metal the old stone ({Cfg.PieceHp(PieceType.Wall, 2):0} HP, stone {Cfg.PieceHp(PieceType.Wall, 1):0})");
+            for (int step = 0; step < 3; step++)
             {
                 int before = me.Count(Item.Wood);
                 Check(Cfg.BaseUpgradeRecipe(Item.FortifyBuff, team).Wood == price[step], $"fortify step {step + 1} costs {Cfg.BaseUpgradeRecipe(Item.FortifyBuff, team).Wood}");
@@ -289,16 +293,16 @@ namespace RockGame
                 int before = me.Count(Item.Wood);
                 yield return UpgradeBuy(me, pc, Item.FortifyBuff);
                 yield return new WaitForSeconds(0.2f);
-                Check(me.Count(Item.Wood) == before && Cfg.FortifyLevel(team) == 2, "a third fortify isn't sold (metal is the top - no refined)");
+                Check(me.Count(Item.Wood) == before && Cfg.FortifyLevel(team) == 3, "a fourth fortify isn't sold (armoured is the top)");
             }
-            // a metal piece takes 3 ram hits: each knocks it down one step
+            // an armoured piece takes 4 ram hits: each knocks it down one step
             {
                 var w = Structure.All.Find(s => s.Team.Value == team && s.PType == PieceType.Wall);
                 if (w != null)
                 {
                     w.ServerDowngrade();
-                    Check(w.Tier.Value == 1 && w.DisplayName == "Stone Wall", "a ram hit knocks metal down to stone");
-                    w.ServerUpgrade(2);
+                    Check(w.Tier.Value == 2 && w.DisplayName == "Metal Wall", "a ram hit knocks armoured down to metal");
+                    w.ServerUpgrade(3);
                 }
             }
             // pieces built after fortifying come out fortified too
@@ -310,7 +314,7 @@ namespace RockGame
                 me.PlaceRpc((byte)PieceType.Wall, k2.I, k2.J, k2.L, k2.D);
                 yield return new WaitForSeconds(0.8f);
                 BuildGrid.Registry.TryGetValue(k2, out var fresh);
-                Check(fresh != null && fresh.Tier.Value == 2, $"a wall built after fortifying is metal straight away (tier {(fresh != null ? fresh.Tier.Value : -1)})");
+                Check(fresh != null && fresh.Tier.Value == 3, $"a wall built after fortifying is armoured straight away (tier {(fresh != null ? fresh.Tier.Value : -1)})");
                 yield return Snap("arsenal_fortify_looks");
             }
 
@@ -391,9 +395,9 @@ namespace RockGame
                 yield return new WaitForSeconds(Cfg.C4Fuse + 0.8f);
                 bool Gone(Structure s) => s == null || !s.IsSpawned;
                 if (tier == 2) Check(Gone(mid) && Gone(left) && Gone(right) && !Gone(behind), $"C4 on sheet metal: that wall and the ones beside it go, the one behind stays (mid {Gone(mid)}, left {Gone(left)}, right {Gone(right)}, behind {Gone(behind)})");
-                else Check(Gone(mid) && !Gone(left) && !Gone(right) && !Gone(behind), "C4 on refined: only the wall it's stuck to goes");
+                else Check(Gone(mid) && !Gone(left) && !Gone(right) && !Gone(behind), "C4 on armoured: only the wall it's stuck to goes");
             }
-            Check(Cfg.TierBlastMul(3) < Cfg.TierBlastMul(2) && Cfg.TierBlastMul(2) < 1f, "rockets do less to sheet metal and less again to refined");
+            Check(Cfg.TierBlastMul(3) < Cfg.TierBlastMul(2) && Cfg.TierBlastMul(2) < 1f, "rockets do less to sheet metal and a little less again to armoured");
 
             // our own C4 blows up our own high external wall and our own pieces
             var bc = Cfg.BaseCenter[team];
@@ -465,7 +469,30 @@ namespace RockGame
         {
             Check(Cfg.AutoWood && Cfg.PowerMenu, "Auto Wood: Arsenal's power menu");
             while (g.S != GameState.PreBall && g.S != GameState.BallLive) yield return null;
+            // no base starts with a wood machine: nothing stands there and nothing piles up until the wood gen's first level is bought
+            yield return new WaitForSeconds(2.2f);
+            WoodMachine ours = null;
+            foreach (var w in FindObjectsByType<WoodMachine>(FindObjectsSortMode.None)) if (w.Team == team) ours = w;
+            {
+                bool anyPile = false;
+                foreach (var it in g.Items) if (it.Stack.Id == Item.Wood && Cfg.BaseTeamAt(it.Pos) == team) anyPile = true;
+                Check(!anyPile && g.WoodGenLevelOf(team) == 0 && Cfg.WoodGenRate(0) == 0 && Cfg.MaxWoodGen == 3 && ours != null && !ours.Built && ours.GetComponentInChildren<Collider>() == null && !ours.Humming,
+                    $"no wood machine to start with: nothing there, no pile (level {g.WoodGenLevelOf(team)}, pile {anyPile})");
+                me.ServerGive(Item.Wood, 1000);
+                pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
+                yield return new WaitForSeconds(0.3f);
+                int before = me.Count(Item.Wood);
+                Check(Cfg.BaseUpgradeRecipe(Item.WoodGenBuff, team).Wood == Cfg.WoodGenBuildWood, $"the wood machine costs {Cfg.BaseUpgradeRecipe(Item.WoodGenBuff, team).Wood} wood");
+                yield return UpgradeBuy(me, pc, Item.WoodGenBuff);
+                yield return new WaitForSeconds(0.4f);
+                Check(g.WoodGenLevelOf(team) == 1 && before - me.Count(Item.Wood) == Cfg.WoodGenBuildWood && Cfg.WoodGenRate(1) == Cfg.AutoWoodPerSecond && ours != null && ours.Built && ours.GetComponentInChildren<Collider>() != null,
+                    $"the first wood gen upgrade builds the wood machine for {before - me.Count(Item.Wood)} wood: {Cfg.WoodGenRate(1)} a second (the default speed)");
+                Check(ours != null && ours.AimLine(team).Contains($"{Cfg.WoodGenRate(1)} wood a second") && ours.AimLine(1 - team).Contains("WOOD MACHINE") && !ours.AimLine(1 - team).Contains(Cfg.TeamLabel(team) + "'s"),
+                    $"looking at the wood machine says its rate ({(ours != null ? ours.AimLine(team) : "")})");
+                for (int i = 0; i < me.Inv.Count; i++) if (me.Inv[i].Id == Item.Wood) me.Inv[i] = default; // (the pile checks count from nothing)
+            }
             yield return new WaitForSeconds(3.5f);
+            Check(ours != null && ours.Humming, "the wood machine hums while it works");
             int best = -1, count = 0;
             foreach (var it in g.Items)
                 if (it.Stack.Id == Item.Wood && Cfg.BaseTeamAt(it.Pos) == team && it.Stack.Count > count) { best = it.Id; count = it.Stack.Count; }
@@ -506,7 +533,7 @@ namespace RockGame
                 Check(me.Count(Item.Wood) - wb >= 2500 && stacks1 >= stacks0 + 2, $"picked up {me.Count(Item.Wood) - wb} wood into {stacks1 - stacks0} more stacks");
             }
             else Log("FAIL: no wood pile");
-            // wood gen upgrades (UPGRADES at the alien machine): 1000, then 3000 - faster each time
+            // the wood gen's other two levels (UPGRADES at the upgrade station): 1000, then 3000 - faster each time
             for (int i = 0; i < 5; i++) me.ServerGive(Item.Wood, 1000);
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
             yield return new WaitForSeconds(0.3f);
@@ -518,14 +545,14 @@ namespace RockGame
                 var look = Quaternion.LookRotation(Cfg.WoodMachinePos(team) + Vector3.up * 0.8f - me.EyePos).eulerAngles;
                 pc.SetLook(look.y, look.x > 180f ? look.x - 360f : look.x);
             }
-            yield return Snap("autowood_machine_0");
-            yield return WoodMachineCloseUp(me, pc, team, 0);
-            for (int lvl = 0; lvl < 2; lvl++)
+            yield return Snap("autowood_machine_1");
+            yield return WoodMachineCloseUp(me, pc, team, 1);
+            for (int lvl = 1; lvl < 3; lvl++)
             {
                 int before = me.Count(Item.Wood);
                 yield return UpgradeBuy(me, pc, Item.WoodGenBuff);
                 yield return new WaitForSeconds(0.2f);
-                Check(g.WoodGenLevelOf(team) == lvl + 1 && before - me.Count(Item.Wood) == cost[lvl] && Cfg.WoodGenRate(lvl + 1) > Cfg.WoodGenRate(lvl),
+                Check(g.WoodGenLevelOf(team) == lvl + 1 && before - me.Count(Item.Wood) == cost[lvl - 1] && Cfg.WoodGenRate(lvl + 1) > Cfg.WoodGenRate(lvl),
                     $"wood gen level {lvl + 1} for {before - me.Count(Item.Wood)} wood: {Cfg.WoodGenRate(lvl + 1)} a second");
                 yield return new WaitForSeconds(0.6f);
                 yield return Snap("autowood_machine_" + (lvl + 1));
@@ -535,7 +562,7 @@ namespace RockGame
                 int before = me.Count(Item.Wood);
                 yield return UpgradeBuy(me, pc, Item.WoodGenBuff);
                 yield return new WaitForSeconds(0.2f);
-                Check(me.Count(Item.Wood) == before && g.WoodGenLevelOf(team) == 2, "only two wood gen levels");
+                Check(me.Count(Item.Wood) == before && g.WoodGenLevelOf(team) == 3, "only three wood gen levels");
             }
             for (int i = 0; i < me.Inv.Count; i++) me.Inv[i] = default; // (room for the Arsenal tests that follow)
         }

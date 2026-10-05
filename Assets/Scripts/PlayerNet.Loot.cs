@@ -39,11 +39,12 @@ namespace RockGame
                     Notify("Their helmet stopped your sniper shot!");
                     return;
                 }
+                p.ServerMarkHead(head);
                 p.ServerKill(this);
                 if (p.Dead.Value) KillConfirmRpc();
             }
             else if (no.TryGetComponent(out Vehicle v)) v.ServerDamage(9999f, this);
-            else if (no.TryGetComponent(out Structure s)) s.ServerDamage(60f);
+            else if (no.TryGetComponent(out Structure s)) s.ServerDamageAt(60f, point);
         }
 
         /// <summary>The portal gun's two portals have to be at least this far apart.</summary>
@@ -206,7 +207,7 @@ namespace RockGame
             ServerConsumeHeld();
             target.GiantUntil.Value = NetworkManager.ServerTime.Time + Cfg.GiantTime;
             Fx.Server(FxKind.Drink, target.transform.position, Vector3.up);
-            if (NetGame.Instance != null) NetGame.Instance.Broadcast($"{Cfg.TeamLabel(Team.Value)} turned {Cfg.TeamLabel(target.Team.Value)} into a GIANT!");
+            if (NetGame.Instance != null) NetGame.Instance.Broadcast($"{DisplayName} turned {target.DisplayName} into a GIANT!");
         }
 
         /// <summary>Airstrike: picked on the map; a few seconds later everything in the zone is flattened.</summary>

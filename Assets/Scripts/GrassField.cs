@@ -173,8 +173,9 @@ namespace RockGame
                     if (Cfg.Map == MapKind.Highlands)
                         cover *= Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(RockEdge, RockFull, MapBuilder.RockField(x, z)));
                 }
-                // tall grass patches: the tops of a slow noise (fewer, further apart than they were)
-                bool wheat = Mathf.PerlinNoise(wx + x * WheatFreq, wz + z * WheatFreq) > WheatLevel && Mathf.Max(Mathf.Abs(x), Mathf.Abs(z)) < half - 1.5f;
+                // tall grass patches: the tops of a slow noise (fewer, further apart than they were). None on Plains: it's
+                // the open map - just the meadow's ordinary grass and its flowers, nothing to hide in
+                bool wheat = Cfg.Map != MapKind.Plains && Mathf.PerlinNoise(wx + x * WheatFreq, wz + z * WheatFreq) > WheatLevel && Mathf.Max(Mathf.Abs(x), Mathf.Abs(z)) < half - 1.5f;
                 // (the tall wheat stays clear of the bases and the ball zone: you see who's coming there)
                 if (wheat)
                 {

@@ -195,13 +195,15 @@ namespace RockGame
             bool isHost = req.ClientNetworkId == NetworkManager.ServerClientId;
             int count = m_Nm.ConnectedClientsIds.Count;
             bool waiting = NetGame.Instance == null || NetGame.Instance.S == GameState.Waiting;
-            bool ok = isHost || (count < Cfg.PlayersNeeded && (waiting || Cfg.Tutorial)); // the tutorial: join any time, straight in
+            // the tutorial: join any time, straight in - unless the host is playing it solo (Tutorial.Friend)
+            bool soloTutorial = Cfg.Tutorial && Solo;
+            bool ok = isHost || (count < Cfg.PlayersNeeded && !soloTutorial && (waiting || Cfg.Tutorial));
             resp.Approved = ok;
             resp.CreatePlayerObject = ok;
             // everyone starts in the stadium (waiting area); the player places itself properly once it's spawned
             resp.Position = Cfg.ArenaCenter + new Vector3(Random.Range(-6f, 6f), 0.1f, Random.Range(-6f, 6f));
             resp.Rotation = Quaternion.identity;
-            if (!ok) resp.Reason = count >= Cfg.PlayersNeeded ? $"Game is full ({Cfg.ModeLabel})" : "Match already in progress";
+            if (!ok) resp.Reason = soloTutorial ? "That tutorial is being played solo" : count >= Cfg.PlayersNeeded ? $"Game is full ({Cfg.ModeLabel})" : "Match already in progress";
         }
 
         void OnServerStarted()
@@ -223,15 +225,17 @@ namespace RockGame
 
         void Update()
         {
-            // Menu camera: slow orbit over the map while not in a match
-            if (PlayerController.Local == null && Camera.main != null)
+            // Menu camera: a cycle of slow cinematic shots inside the map while not in a match (and the menu's trees) - MenuScene.cs
+            if (PlayerController.Local == null && Camera.main != null && InSession)
             {
+                // (connecting / waiting to spawn: the old slow orbit over the map)
                 m_MenuOrbit += Time.deltaTime * 4f;
                 var cam = Camera.main.transform;
                 var p = Quaternion.Euler(0, m_MenuOrbit, 0) * new Vector3(0, 55, -120) * (Cfg.MapHalf / 100f);
                 cam.position = p;
                 cam.LookAt(new Vector3(0, 0, 0));
             }
+            MenuScene.Tick(InSession);
         }
     }
 }

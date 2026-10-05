@@ -89,24 +89,33 @@ namespace RockGame
             foot.transform.localScale = Vector3.one * BeaconHalo * 3f;
             SocketTeam.OnValueChanged += OnSocketChanged;
             OnSocketChanged(-1, SocketTeam.Value);
+            m_Ready = true;
         }
 
         public override void OnNetworkDespawn()
         {
             if (m_Plinth) Destroy(m_Plinth.gameObject);
+            EndSocket();
             foreach (var m in new[] { m_BeaconMat, m_HaloMat, m_FootMat }) if (m) Destroy(m);
             SocketTeam.OnValueChanged -= OnSocketChanged;
             if (Instance == this) Instance = null;
         }
 
-        /// <summary>The ball went into / out of a socket: the ding, and the light's colour and strength.</summary>
+        /// <summary>The ball went into / out of a socket: it's pulled in (AnimateSocket) with its whoosh, clunk and
+        /// chord, and the light's colour and strength.</summary>
         void OnSocketChanged(sbyte prev, sbyte cur)
         {
             if (cur >= 0 && prev != cur)
             {
-                Sfx.Play(Sfx.Zap, transform.position, 1f);
-                Sfx.Play(Sfx.Ding, transform.position, 0.8f);
+                if (Cfg.Builder || !m_Ready)
+                {
+                    // (Builder: planted, no machine; or it was in there already when we joined: no pull-in to show)
+                    Sfx.Play(Sfx.Zap, transform.position, 1f);
+                    Sfx.Play(Sfx.Ding, transform.position, 0.8f);
+                }
+                else BeginSocketPull(cur);
             }
+            if (cur < 0) EndSocket();
             // the beacon is always on (so everyone can always find the ball); it takes the colour of the team that has it
             m_Beacon.SetActive(true);
             if (cur >= 0)
@@ -141,8 +150,6 @@ namespace RockGame
         }
 
         int m_BeaconTeam = -2;
-        Vector3 m_LastPos;
-        float m_StillSince;
 
         /// <summary>Beacon colour: the socket's team, else the carrier's team, else gold (loose).</summary>
         void TintBeacon()
@@ -162,11 +169,10 @@ namespace RockGame
         void LateUpdate()
         {
             TintBeacon();
-            // the light shoots up only once the ball has sat still (not carried, not rolling) for 3 seconds
-            if (IsCarried || (transform.position - m_LastPos).sqrMagnitude > 0.0004f) m_StillSince = Time.time;
-            m_LastPos = transform.position;
-            // (and not in the victory cutscene: it ran straight up through the middle of the UFO over the winners' base)
-            bool beacon = !IsCarried && Time.time - m_StillSince >= 3f && !VictoryCutscene.Active;
+            // the beam of light is always on again - carried, rolling, lying still or in a socket (it used to wait until
+            // the ball had sat still for 3 seconds) - so everyone can always find the ball. Only the victory cutscene
+            // turns it off: it ran straight up through the middle of the UFO over the winners' base
+            bool beacon = !VictoryCutscene.Active;
             if (m_Beacon.activeSelf != beacon) m_Beacon.SetActive(beacon);
             // Clients: render the carried ball in the carrier's arms (avoids interpolation lag).
             // The carrier themselves sees it in their first-person hands instead.
@@ -184,6 +190,108 @@ namespace RockGame
             bool show = carrier == null || !carrier.IsOwner;
             if (m_Mesh.activeSelf != show) m_Mesh.SetActive(show);
             if (Cfg.Builder) AnimatePlant();
+            else if (carrier == null && SocketTeam.Value >= 0) AnimateSocket(SocketTeam.Value);
+            m_LastVisual = m_Visual.position;
+        }
+
+        // ---------------- in a machine's socket: pulled in, then turning ----------------
+
+        /// <summary>Seconds for the ball to be pulled into the socket (it shoots a little past and settles back), when in
+        /// that it seats (the flash, as the sound's clunk lands), and how fast it turns while it sits there (degrees a second).</summary>
+        public const float SocketPull = 0.45f, SocketSeat = 0.32f, SocketSpin = 80f;
+        /// <summary>How far past the socket the pull-in overshoots (the "back" ease's constant: about a sixth of the way).</summary>
+        const float SocketOvershoot = 2.2f;
+        bool m_Ready, m_Seated;
+        float m_SocketAt = -100f;
+        Vector3 m_SocketFrom, m_LastVisual;
+        GameObject m_Flash;
+        Material m_FlashMat;
+
+        /// <summary>Test hooks: how far along the pull-in is (0 just caught .. 1 seated; 1 when it isn't in a socket), and
+        /// how far the ball's picture has turned (degrees) while it sits in the socket.</summary>
+        public float SocketPullK => Mathf.Clamp01((Time.time - m_SocketAt) / SocketPull);
+        public float SocketYaw => m_Visual != null ? m_Visual.localEulerAngles.y : 0f;
+
+        /// <summary>On every peer, the moment the ball's caught by a socket: it's pulled in from where it was seen last.</summary>
+        void BeginSocketPull(int team)
+        {
+            var sp = Cfg.SocketPos(Mathf.Clamp(team, 0, 3));
+            m_SocketFrom = m_LastVisual;
+            // (put there from far off - a dev setting: it drops in from just above instead of flying across the map)
+            if ((m_SocketFrom - sp).sqrMagnitude > 5f * 5f || m_SocketFrom == Vector3.zero) m_SocketFrom = sp + Vector3.up * 1.6f;
+            m_SocketAt = Time.time;
+            m_Seated = false;
+            Sfx.Play(Sfx.Socket, sp, 1f, 0f, 110f);
+        }
+
+        /// <summary>
+        /// The ball in a machine's socket (only its picture moves; on every peer): an eased pull-in that shoots a little
+        /// past and settles back, spinning down from a fast whirl; as it seats, a flash - sparks, puffs in the team's
+        /// colour, a ring of light racing out, the ball's light flaring, the ball swelling for a moment - and from then on
+        /// it turns steadily (by the server's clock, so everyone sees it at the same angle) and bobs a little.
+        /// </summary>
+        void AnimateSocket(int team)
+        {
+            team = Mathf.Clamp(team, 0, 3);
+            var sp = Cfg.SocketPos(team);
+            var c = Cfg.TeamColor[team];
+            float t = Time.time - m_SocketAt;
+            float k = Mathf.Clamp01(t / SocketPull), q = k - 1f;
+            float ease = 1f + (SocketOvershoot + 1f) * q * q * q + SocketOvershoot * q * q;
+            float since = t - SocketSeat;
+            if (since >= 0f && !m_Seated)
+            {
+                m_Seated = true;
+                if (t < 2f) SocketFlash(sp, c);
+            }
+            float punch = since > 0f && since < 0.4f ? Mathf.Sin(since / 0.4f * Mathf.PI) * 0.22f : 0f;
+            float bob = k >= 1f ? Mathf.Sin((t - SocketPull) * 1.9f) * 0.05f : 0f;
+            double clock = NetworkManager != null ? NetworkManager.ServerTime.Time : Time.timeAsDouble;
+            float yaw = (float)(clock * SocketSpin % 360.0) - 720f * q * q;
+            m_Visual.position = Vector3.LerpUnclamped(m_SocketFrom, sp, ease) + Vector3.up * bob;
+            m_Visual.rotation = Quaternion.Euler(0f, yaw, 0f);
+            m_Visual.localScale = Vector3.one * (1f + punch);
+            // its light flares as it seats and settles to the socket's steady glow
+            float flare = since > 0f ? Mathf.Exp(-since * 3.5f) : 0f;
+            m_Light.intensity = 6f + 20f * flare;
+            m_Light.range = 14f + 8f * flare;
+            if (m_Flash != null)
+            {
+                float u = since / 0.55f;
+                if (u >= 1f) { Destroy(m_Flash); Destroy(m_FlashMat); m_Flash = null; }
+                else
+                {
+                    m_Flash.transform.localScale = Vector3.one * Mathf.Lerp(1.5f, 9f, 1f - (1f - u) * (1f - u));
+                    BeamFx.Set(m_FlashMat, Color.Lerp(c, Color.white, 0.4f), 3f * (1f - u) * (1f - u));
+                }
+            }
+        }
+
+        /// <summary>The flash as the ball seats in the socket.</summary>
+        void SocketFlash(Vector3 sp, Color c)
+        {
+            Fx.Sparks(sp, Vector3.up, 28);
+            for (int i = 0; i < 10; i++)
+            {
+                var off = Quaternion.Euler(0f, i * 36f, 0f) * Vector3.forward * 0.9f;
+                FxParticle.Puff(sp + off + Vector3.up * Random.Range(-0.2f, 0.5f), new Color(c.r, c.g, c.b, 0.6f), Random.Range(0.7f, 1.2f));
+            }
+            if (m_Flash == null)
+            {
+                m_FlashMat = BeamFx.Glow(c, 0f, 1.2f);
+                m_Flash = BeamFx.Disc(null, m_FlashMat, "socket flash");
+            }
+            m_Flash.transform.position = sp + Vector3.down * (Radius - 0.1f);
+            var cam = Camera.main;
+            if (cam != null && (cam.transform.position - sp).sqrMagnitude < 14f * 14f) Fx.Shake(0.18f);
+        }
+
+        /// <summary>Out of the socket (picked up, knocked out, reset): the picture is the plain ball again.</summary>
+        void EndSocket()
+        {
+            if (m_Visual != null) m_Visual.localScale = Vector3.one;
+            if (m_Flash != null) { Destroy(m_Flash); Destroy(m_FlashMat); m_Flash = null; }
+            m_SocketAt = -100f;
         }
 
         // ---------------- Builder: planting the ball ----------------

@@ -117,14 +117,14 @@ namespace RockGame
         public static string PlaceProblem(Item kind, int team, Vector3 pos, float yaw)
         {
             int tier = TierOfItem(kind);
-            if (ForTeam(team, tier) != null) return $"Your team already has a Workbench T{tier}";
-            if (tier == 2 && ForTeam(team, 1) == null) return "Put a Workbench T1 down first";
+            if (ForTeam(team, tier) != null) return $"Your team already has a {Cfg.ItemName(kind)}";
+            if (tier == 2 && ForTeam(team, 1) == null) return "Put a Trade Station down first";
             if (Cfg.Builder) return null; // Builder: no bases - anywhere
             var rot = Quaternion.Euler(0, yaw, 0);
             for (int sx = -1; sx <= 1; sx += 2)
                 for (int sz = -1; sz <= 1; sz += 2)
                     if (Cfg.BaseTeamAt(pos + rot * new Vector3(sx * HalfX, 0, sz * HalfZ)) != team)
-                        return "Workbenches go inside your own base";
+                        return "Trade stations go inside your own base";
             if (FootprintDistance(pos, rot, Cfg.SpawnPos(team)) < 0.45f) return "Keep the spawn spot clear";
             if (FootprintDistance(pos, rot, Cfg.SocketPos(team)) < 1.0f) return "Keep the ball socket clear";
             return null;
@@ -221,12 +221,14 @@ namespace RockGame
 
         /// <summary>
         /// A workbench, 1.3 x 0.76 m with its top at TopY, front (+z) towards whoever stands at it. `full` adds the light
-        /// (not for ghosts and icons). Nothing stands on the top (no column, rings, orb or pylons): the top is a finished
-        /// slab with a low lip along its back edge.
-        /// T1: a silver fabricator - a metal plinth, two pedestals with green status lights, a console with a screen, a green
-        ///     projector pad, a team-colour strip along the front and the back lip.
+        /// (not for ghosts and icons). The top is a finished slab with a low lip along its back edge; the only things on it
+        /// are the tablets (screens tilted towards you) and the monitors on the back lip (BenchScreen animates them).
+        /// In the game they're called the Trade Station (T1) and Trade Station 2 (T2).
+        /// T1: a silver fabricator - a metal plinth, two pedestals with green status lights, a tablet, a green
+        ///     projector pad, a team-colour strip along the front and the back lip, and one monitor: an alien on a call.
         /// T2: much more - hovering on four splayed legs with pink pads over a pink glow, glowing pink seams and edges, a
-        ///     cyan grille, twin consoles, a cyan projector pad, a pink-lit back lip with cyan lights and pink corner studs.
+        ///     cyan grille, twin tablets, a cyan projector pad, a pink-lit back lip with cyan lights and pink corner studs,
+        ///     and dual monitors: the alien on a call, and a stock-market screen with a moving graph.
         /// </summary>
         public static void BuildModel(Transform parent, int team, bool full, int tier = 1)
         {
@@ -272,9 +274,11 @@ namespace RockGame
             Art.Box(t, k_Silver, new Vector3(0, TopY - 0.05f, 0), new Vector3(1.3f, 0.1f, 0.76f));
             Art.Box(t, k_SilverDark, new Vector3(0, TopY - 0.11f, 0), new Vector3(1.34f, 0.04f, 0.8f));
             Art.Box(t, teamGlow, new Vector3(0, TopY - 0.05f, 0.381f), new Vector3(1.1f, 0.025f, 0.01f), default, false, gTeam);
-            // a slanted console with a glowing screen on the front right, like the machine's
-            Art.Box(t, k_Metal, new Vector3(0.36f, TopY + 0.07f, 0.17f), new Vector3(0.42f, 0.06f, 0.3f), new Vector3(-30, 0, 0));
-            Art.Box(t, Color.white, new Vector3(0.36f, TopY + 0.105f, 0.18f), new Vector3(0.36f, 0.012f, 0.24f), new Vector3(-30, 0, 0), false, screen);
+            // a slanted tablet on the front right, its glowing screen tilted towards whoever stands at the bench (it used
+            // to lean the other way, so you only saw its back)
+            Tablet(t, new Vector3(0.36f, TopY + 0.085f, 0.14f), new Vector3(30, 0, 0), new Vector3(0.42f, 0.06f, 0.3f), screen);
+            // one monitor on the back edge: an alien on a call (BenchScreen)
+            Monitor(t, 0f, 0f, FaceScreen, k_Alien, gAlien);
             // a projector pad on the left of the top
             Cyl(t, k_SilverDark, new Vector3(-0.32f, TopY + 0.015f, 0.08f), 0.17f, 0.03f);
             Cyl(t, k_Alien, new Vector3(-0.32f, TopY + 0.035f, 0.08f), 0.12f, 0.012f, default, gAlien);
@@ -284,6 +288,43 @@ namespace RockGame
             BackLip(t, teamGlow, gTeam, k_Alien, gAlien);
             // the tier: one lit pip on the front
             Art.Part(t, Art.Ico, k_Alien, new Vector3(0, 0.07f, 0.385f), Vector3.one * 0.035f, default, false, gAlien);
+        }
+
+        /// <summary>A tablet lying slanted on the bench top: a metal slab with a glowing screen on its upper face. `euler`
+        /// tilts that face (+x leans it towards the front of the bench, where you stand).</summary>
+        static void Tablet(Transform t, Vector3 at, Vector3 euler, Vector3 size, Material screen)
+        {
+            var tab = new GameObject("tablet").transform;
+            tab.SetParent(t, false);
+            tab.localPosition = at;
+            tab.localRotation = Quaternion.Euler(euler);
+            Art.Box(tab, k_Metal, Vector3.zero, size);
+            Art.Box(tab, Color.white, new Vector3(0, size.y * 0.5f + 0.004f, 0), new Vector3(size.x - 0.06f, 0.01f, size.z - 0.06f), default, false, screen);
+        }
+
+        /// <summary>The names of the monitors' screens (Setup finds them and brings them to life - BenchScreen).</summary>
+        public const string FaceScreen = "faceScreen", StockScreen = "stockScreen";
+        /// <summary>A monitor's screen: 4:3, like BenchScreen's picture.</summary>
+        public const float ScreenW = 0.48f, ScreenH = 0.36f;
+
+        /// <summary>A monitor on a short stand on the back lip of the bench top, at x, turned `yaw` degrees and leaning back
+        /// a little, facing the front of the bench. Its screen is a dark glowing panel here (ghosts and icons stay like
+        /// that); on a placed bench Setup puts the animated picture on it.</summary>
+        static void Monitor(Transform t, float x, float yaw, string screenName, Color trim, Material gTrim)
+        {
+            var m = new GameObject("monitor").transform;
+            m.SetParent(t, false);
+            m.localPosition = new Vector3(x, TopY + 0.11f, -0.33f);
+            m.localRotation = Quaternion.Euler(-6f, yaw, 0);
+            float mid = 0.14f + ScreenH * 0.5f + 0.02f;
+            Art.Box(m, k_Metal, new Vector3(0, 0.012f, 0), new Vector3(0.26f, 0.024f, 0.11f));           // foot
+            Art.Box(m, k_SilverDark, new Vector3(0, 0.09f, -0.01f), new Vector3(0.06f, 0.16f, 0.035f));   // neck
+            Art.Box(m, k_Dark, new Vector3(0, mid, 0), new Vector3(ScreenW + 0.05f, ScreenH + 0.05f, 0.04f)); // bezel
+            Art.Box(m, k_SilverDark, new Vector3(0, mid, -0.022f), new Vector3(ScreenW - 0.1f, ScreenH - 0.1f, 0.02f)); // its back
+            Art.Box(m, trim, new Vector3(0, mid - ScreenH * 0.5f - 0.016f, 0.021f), new Vector3(ScreenW * 0.5f, 0.008f, 0.004f), default, false, gTrim);
+            var scr = Art.Part(m, Art.Cube, new Color(0.05f, 0.14f, 0.13f), new Vector3(0, mid, 0.0215f), new Vector3(ScreenW, ScreenH, 0.004f), default, false,
+                Glow(new Color(0.05f, 0.14f, 0.13f), 1.2f), screenName);
+            scr.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         }
 
         /// <summary>The finished back edge of a bench top: a low metal lip with a glowing strip and two status lights.</summary>
@@ -331,12 +372,12 @@ namespace RockGame
             Art.Box(t, k_Pink, new Vector3(0, TopY - 0.05f, 0.381f), new Vector3(1.3f, 0.025f, 0.01f), default, false, gPink);
             Art.Box(t, k_Pink, new Vector3(0, TopY - 0.05f, -0.381f), new Vector3(1.3f, 0.025f, 0.01f), default, false, gPink);
             for (int k = -1; k <= 1; k += 2) Art.Box(t, k_Pink, new Vector3(k * 0.651f, TopY - 0.05f, 0), new Vector3(0.01f, 0.025f, 0.76f), default, false, gPink);
-            // twin consoles with screens
+            // twin tablets, their screens tilted towards whoever stands at the bench (not away, as they used to be)
             for (int k = -1; k <= 1; k += 2)
-            {
-                Art.Box(t, k_Metal, new Vector3(k * 0.42f, TopY + 0.07f, 0.2f), new Vector3(0.34f, 0.06f, 0.26f), new Vector3(-32, k * -12f, 0));
-                Art.Box(t, Color.white, new Vector3(k * 0.42f, TopY + 0.105f, 0.21f), new Vector3(0.29f, 0.012f, 0.2f), new Vector3(-32, k * -12f, 0), false, screen);
-            }
+                Tablet(t, new Vector3(k * 0.42f, TopY + 0.08f, 0.17f), new Vector3(32, k * -12f, 0), new Vector3(0.34f, 0.06f, 0.26f), screen);
+            // dual monitors on the back edge: an alien on a call on the left, the intergalactic markets on the right (BenchScreen)
+            Monitor(t, -0.33f, 9f, FaceScreen, k_Pink, gPink);
+            Monitor(t, 0.33f, -9f, StockScreen, k_Cyan, gCyan);
             // a projector pad in the middle of the top (flush: no beam or hologram over it any more)
             Cyl(t, k_SilverDark, new Vector3(0, TopY + 0.02f, 0.06f), 0.16f, 0.04f);
             Cyl(t, k_Cyan, new Vector3(0, TopY + 0.045f, 0.06f), 0.11f, 0.012f, default, gCyan);
@@ -367,6 +408,8 @@ namespace RockGame
                 else if (tr.name == "holo") w.m_Holo = tr;
                 else if (tr.name == "orbit") w.m_Orbit = tr;
                 else if (tr.name == "light") w.m_Light = tr.GetComponent<Light>();
+                else if (tr.name == FaceScreen) BenchScreen.Attach(tr.gameObject, BenchScreen.Kind.Face);
+                else if (tr.name == StockScreen) BenchScreen.Attach(tr.gameObject, BenchScreen.Kind.Stocks);
             }
             if (w.m_Orb) w.m_OrbBase = w.m_Orb.localPosition;
             if (w.m_Holo) w.m_HoloBase = w.m_Holo.localPosition;

@@ -24,7 +24,8 @@ namespace RockGame
     /// </summary>
     public class AirdropShip
     {
-        const float Arrive = 4f, Leave = 6f;
+        /// <summary>Seconds to fly in to its hover point (half the speed it used to: 4 s - more time to see it and get there) and to fly off.</summary>
+        public const float Arrive = 8f, Leave = 6f;
         /// <summary>How high it hovers over the drop spot (it used to be 45 m), but never above HoverCeiling - its top stays
         /// well under the clouds (their undersides start about 100 m up) and nowhere near the Highlands' sky planets (over
         /// a kilometre out) - unless the dome's glass makes it go higher.</summary>
@@ -68,6 +69,10 @@ namespace RockGame
 
         Parts m_Ship;
         GameObject m_Beam, m_Crate, m_GroundGlow;
+        /// <summary>The beam's hum while it lowers the crate (a looping 3D sound at the drop spot: louder the nearer you are).</summary>
+        AudioSource m_Hum;
+        /// <summary>How loud the beam's hum is right at the drop, how far off it's heard, and how fast it fades in and out.</summary>
+        const float HumVolume = 0.9f, HumRange = 95f, HumFade = 0.5f;
         Light m_GroundLight, m_CrateLight;
         Material m_BeamMat, m_CoreMat, m_HaloMat, m_GroundMat;
         Transform m_Core, m_Halo, m_Main;
@@ -139,7 +144,8 @@ namespace RockGame
             if (m_Beam) Object.Destroy(m_Beam);
             if (m_Crate) Object.Destroy(m_Crate);
             if (m_GroundGlow) Object.Destroy(m_GroundGlow);
-            if (m_GroundLight) Object.Destroy(m_GroundLight.gameObject);
+            if (m_GroundLight) Object.Destroy(m_GroundLight.gameObject); // (the beam's hum is on it too)
+            m_Hum = null;
             foreach (var m in new[] { m_BeamMat, m_CoreMat, m_HaloMat, m_GroundMat, m_Ship != null ? m_Ship.BellyGlow : null }) if (m) Object.Destroy(m);
             if (hole && !m_HoleDone) MapDome.SetHole(m_HoleId, 0f, 0f, 0f, 0f);
             m_Ship = null;
@@ -258,12 +264,52 @@ namespace RockGame
                     m_CrateLight.transform.position = cp + (toCam.sqrMagnitude > 0.01f ? toCam.normalized : Vector3.up) * 2.4f + Vector3.up * 0.8f;
                 }
             }
+            TickHum(crate, e, beamT, land);
             // the beam goes see-through round the crate coming down it (and the crate's lit up), so you can watch it come
             float clearR = crate ? 1.9f : 0f;
             var cc = m_Crate.transform.position + Vector3.up * 0.7f;
             BeamFx.SetClear(m_BeamMat, 0, cc, clearR);
             BeamFx.SetClear(m_CoreMat, 0, cc, clearR);
             BeamFx.SetClear(m_HaloMat, 0, cc, clearR);
+        }
+
+        /// <summary>The gravity beam hums while it's lowering the crate (only then): a looping 3D sound at the drop spot,
+        /// so it gets louder as you get closer to the drop; it fades in as the crate starts down and out as it lands, and
+        /// rises a little in pitch as the crate nears the ground. (Made from where the flight is in its timeline, so
+        /// someone who joins half way through a drop hears it too.)</summary>
+        void TickHum(bool lowering, float e, float beamT, float land)
+        {
+            if (!lowering)
+            {
+                if (m_Hum != null) { Object.Destroy(m_Hum); m_Hum = null; }
+                return;
+            }
+            if (m_Hum == null && m_GroundLight != null) m_Hum = Sfx.Loop(Sfx.BeamHum, m_GroundLight.transform, 0f, 1f, HumRange);
+            if (m_Hum == null) return;
+            float a = Mathf.Clamp01(Mathf.Min((e - beamT) / HumFade, (land - e) / HumFade));
+            m_Hum.volume = HumVolume * a * GameSettings.SfxVolume;
+            m_Hum.pitch = Mathf.Lerp(0.92f, 1.12f, Mathf.Clamp01((e - beamT) / (land - beamT)));
+        }
+
+        /// <summary>Test hook: how loud the first lane's beam hum is right now (0: not humming).</summary>
+        public static float HumLevel => Lane0 != null && Lane0.m_Hum != null ? Lane0.m_Hum.volume : 0f;
+
+        /// <summary>
+        /// How high a landed crate's beacon may go over `at` right now: up to the belly of a ship that's still over it
+        /// (the beacon used to run straight up through the UFO until it had flown off), float.MaxValue when the sky's clear.
+        /// </summary>
+        public static float BeaconCeiling(Vector3 at)
+        {
+            float top = float.MaxValue;
+            foreach (var f in s_Flights)
+            {
+                if (f.m_Ship == null || !f.m_Ship.Root) continue;
+                var p = f.m_Ship.Root.transform.position;
+                float s = f.m_LastScale;
+                if (s < 0.02f || new Vector2(p.x - at.x, p.z - at.z).magnitude > 15.5f * s + 1f) continue; // (the hull, out to its rim of lights)
+                top = Mathf.Min(top, p.y + (HatchY - 1f) * s);
+            }
+            return top;
         }
 
         /// <summary>A beam (main column, bright core, wide faint halo) straight down from `top` to `bottom` over `at`, radius r.</summary>

@@ -29,7 +29,7 @@ namespace RockGame
         /// <summary>Chests can be damaged and rammed; bags and airdrops can't.</summary>
         public bool Breakable => Kind.Value == Chest;
         public bool TakeOnly => IsBag || IsAirdrop;
-        public string DisplayName => IsWorkbench ? $"Workbench T{BenchTier}" : IsGamble ? "Gambling Machine" : IsBag ? $"{Cfg.TeamName[Mathf.Clamp(Team.Value, 0, 3)]}'s loot bag" : IsAirdrop ? "Alien Airdrop" : "Storage Chest";
+        public string DisplayName => IsWorkbench ? (BenchTier == 2 ? "Trade Station 2" : "Trade Station") : IsGamble ? "Gambling Machine" : IsBag ? $"{Cfg.TeamName[Mathf.Clamp(Team.Value, 0, 3)]}'s loot bag" : IsAirdrop ? "Alien Airdrop" : "Storage Chest";
         public Vector3 Center => transform.position + Vector3.up * (IsBag ? 0.3f : IsAirdrop ? 0.6f : IsGamble ? 1f : IsWorkbench ? 0.9f : 0.4f);
         public bool Empty
         {
@@ -43,7 +43,13 @@ namespace RockGame
         readonly List<ItemStack> m_Pending = new List<ItemStack>();
         int m_PendingSize;
         float m_Pop = 1f;
-        Transform m_Visual, m_Crystal;
+        Transform m_Visual, m_Crystal, m_Beacon;
+        /// <summary>An airdrop crate's beacon: how tall it is right now (it stops under a ship that's still over it), -1 not set yet.</summary>
+        float m_BeaconH = -1f;
+        /// <summary>The beacon's full height (CreateVisual), and how fast it shoots up once the ship over it has gone (m/s).</summary>
+        public const float BeaconHeight = 200f, BeaconGrow = 160f;
+        /// <summary>Test hook: how tall this crate's beacon is right now (metres).</summary>
+        public float BeaconTall => m_BeaconH;
 
         // ---------------- Server setup (before Spawn) ----------------
         public void ServerInit(byte kind, int team, int size, List<ItemStack> contents)
@@ -169,6 +175,15 @@ namespace RockGame
             {
                 if (m_Crystal == null) m_Crystal = m_Visual.Find("crystal");
                 if (m_Crystal) m_Crystal.Rotate(0, 90f * Time.deltaTime, 0, Space.World); // the crystal on top spins
+                // its beacon stops under the belly of the ship that dropped it until that's flown off (it used to run
+                // straight up through the UFO), then shoots up to its full height
+                if (m_Beacon == null) m_Beacon = m_Visual.Find("beacon");
+                if (m_Beacon)
+                {
+                    float want = Mathf.Clamp(AirdropShip.BeaconCeiling(transform.position) - transform.position.y, 0.5f, BeaconHeight);
+                    m_BeaconH = m_BeaconH < 0f || want < m_BeaconH ? want : Mathf.MoveTowards(m_BeaconH, want, BeaconGrow * Time.deltaTime);
+                    m_Beacon.localScale = new Vector3(1f, m_BeaconH / BeaconHeight, 1f);
+                }
             }
             if (m_Pop < 1f && m_Visual)
             {

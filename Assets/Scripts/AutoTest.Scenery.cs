@@ -213,7 +213,7 @@ namespace RockGame
                         up = p1.y - MapBuilder.Height(p1.x, p1.z);
                     }
                     Check(on && bf.ShownCount >= 1 && bf.ShownCount < bf.Count, $"the ones near you are switched on, the rest aren't ({bf.ShownCount} of {bf.Count})");
-                    Check(wingMax - wingMin > 40f && moved > 0.2f && up > 0.1f && up < 3.5f && Vector3.Distance(pPrev, home) < 9f,
+                    Check(wingMax - wingMin > 40f && moved > 0.2f && up > 0.1f && up < 3.5f && new Vector2(pPrev.x - home.x, pPrev.z - home.z).magnitude < 9f, // (its home has no height)
                         $"it flaps ({wingMin:0} to {wingMax:0} degrees), flies about its spot ({moved:0.0} m in 40 frames) {up:0.0} m over the ground");
                     yield return LookShot("butterfly", Eye(pPrev.x + 2.2f, pPrev.z + 0.6f, 1.2f), pPrev);
                     yield return LookShot("butterflies", Eye(home.x + 9f, home.z + 3f), home + Vector3.up * 1.5f);
@@ -264,8 +264,8 @@ namespace RockGame
                 yield return null;
                 int solid = 0;
                 if (glassGo != null) foreach (var c in glassGo.GetComponentsInChildren<Collider>()) if (c.enabled) solid++;
-                Check(MapBuilder.GlassDropping && !MapBuilder.GlassUp && glassGo != null && glassGo.gameObject.activeSelf && solid == 0,
-                    $"the wall is dropping (still there, sliding, not solid: {solid} colliders on; counts as down)");
+                Check(MapBuilder.GlassDropping && !MapBuilder.GlassUp && glassGo != null && glassGo.gameObject.activeSelf && solid > 0,
+                    $"the wall is dropping (still there, sliding, still solid while you can see it: {solid} colliders on; counts as down for the rules)");
                 Check(FlareTip.Wanted(Vector3.zero) == false, "no flare tip once the wall's dropping");
                 int floors = 0;
                 foreach (var f in MapBuilder.BaseFloors) if (f != null && f.activeInHierarchy) floors++;

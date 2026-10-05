@@ -4,7 +4,7 @@ using UnityEngine;
 namespace RockGame
 {
     // new kinds go at the end (they're sent over the network as bytes)
-    public enum FxKind : byte { Blood, BloodHead, WoodChips, StoneChips, WeakSpot, Break, Smash, StructureHit, Spawn, C4Placed, Explosion, WandBeam, HelmetBreak, Craft, Drink, AirstrikeWarn, SniperTracer, PortalOpen, Timber, WeakSpotTree, Heal, BloodKill, LogBreak }
+    public enum FxKind : byte { Blood, BloodHead, WoodChips, StoneChips, WeakSpot, Break, Smash, StructureHit, Spawn, C4Placed, Explosion, WandBeam, HelmetBreak, Craft, Drink, AirstrikeWarn, SniperTracer, PortalOpen, Timber, WeakSpotTree, Heal, BloodKill, LogBreak, PistolTracer, RevolverTracer, ShotgunTracer }
 
     /// <summary>
     /// Game feel: particles (blood, chips, sparks), camera shake/kick, floating damage numbers and sounds.
@@ -79,6 +79,9 @@ namespace RockGame
                 case FxKind.Craft: Machine.Pulse(Mathf.RoundToInt(dir.x)); break;
                 case FxKind.AirstrikeWarn: AirstrikeZone.Spawn(pos, dir.x, dir.y); break;
                 case FxKind.SniperTracer: Tracer(pos, dir); break;
+                case FxKind.PistolTracer: Tracer(pos, dir, Gun.Pistol); break;
+                case FxKind.RevolverTracer: Tracer(pos, dir, Gun.Revolver); break;
+                case FxKind.ShotgunTracer: Tracer(pos, dir, Gun.Shotgun); break;
                 case FxKind.PortalOpen: Sparks(pos, dir, 25); Sfx.Play(Sfx.Portal, pos, 0.9f); break;
                 case FxKind.Timber:
                 {
@@ -138,12 +141,29 @@ namespace RockGame
 
         static AudioClip[] s_TreeNotes;
         static int s_NoteStep;
-        static float s_LastNote = -10f;
+        static float s_LastNote = -10f, s_NoteAmount, s_NoteDelta;
         static Vector3 s_LastNotePos;
+        static ResourceNode s_NoteNode;
+
+        /// <summary>How many notes the tree X chime's scale has: the samples (C D E G A C) with the same notes an octave
+        /// lower in front of them (all but the last, which is the first sample's own note) - C D E G A, C D E G A, C.</summary>
+        public static int TreeNoteCount => s_TreeNotes == null || s_TreeNotes.Length == 0 ? 0 : s_TreeNotes.Length * 2 - 1;
+        /// <summary>(tests) The last tree X chime played: which step of the scale (0 = the lowest), and its pitch (0.5: a
+        /// sample played an octave down).</summary>
+        public static int LastTreeNote { get; private set; } = -1;
+        public static float LastTreeNotePitch { get; private set; } = 1f;
+
+        /// <summary>Which step of an n-note scale a tree that's this far gone (0 = whole, 1 = felled) chimes at: the lowest
+        /// note on a whole tree, the top one as it comes down.</summary>
+        public static int TreeNoteStep(float used, int n) => Mathf.Clamp(Mathf.RoundToInt(Mathf.Clamp01(used) * (n - 1)), 0, Mathf.Max(0, n - 1));
 
         /// <summary>
-        /// Hitting a tree's X: a chime (Resources/TreeHit, from the Samples pack). Hits in a row on the same tree climb up the
-        /// scale (C D E G A C), like a combo; a pause or another tree starts it again from the bottom.
+        /// Hitting a tree's X: a chime (Resources/TreeHit, from the Samples pack). The note climbs a scale as the tree
+        /// comes down - low on a whole tree, the top note (the last sample, as it always was) on the hit that fells it -
+        /// so the climb lasts the whole tree whatever you're hitting it with (10 X hits with a hatchet, one note each;
+        /// 30 with a rock, two or three hits a note). The scale is the samples (C D E G A C) with the same notes an
+        /// octave lower before them (the samples played at half speed): 11 notes. A hit that isn't on a tree (tests)
+        /// climbs it a step a hit, like a combo; a pause or another spot starts that again from the bottom.
         /// </summary>
         static void TreeHitNote(Vector3 pos)
         {
@@ -154,11 +174,44 @@ namespace RockGame
                 s_TreeNotes = l.ToArray();
             }
             if (s_TreeNotes.Length == 0) { Sfx.Play(Sfx.Ding, pos, 0.8f); return; }
-            if (Time.time - s_LastNote > 3f || (pos - s_LastNotePos).sqrMagnitude > 9f) s_NoteStep = 0;
+            int n = TreeNoteCount, low = s_TreeNotes.Length - 1; // (the first `low` notes are the octave below)
+            // the tree (or log) that was hit: the nearest one with wood left - or that this hit has just felled
+            ResourceNode node = null;
+            float best = 3.5f * 3.5f;
+            foreach (var t in ResourceNode.All)
+            {
+                if (t == null || !t.IsSpawned || !t.IsWood) continue;
+                var d = t.transform.position - pos;
+                d.y = 0f;
+                if (d.sqrMagnitude < best) { best = d.sqrMagnitude; node = t; }
+            }
+            int step;
+            if (node != null)
+            {
+                // how much of it is gone once this hit has landed. The server knows; a client hears its own hit before
+                // the tree's amount comes down, so there it's one hit behind: take off what the last hit took
+                float amount = node.Amount.Value;
+                if (node == s_NoteNode && Time.time - s_LastNote < 20f) { if (amount < s_NoteAmount) s_NoteDelta = s_NoteAmount - amount; }
+                else s_NoteDelta = 0f;
+                s_NoteNode = node;
+                s_NoteAmount = amount;
+                float after = node.IsServer ? amount : amount - s_NoteDelta;
+                step = TreeNoteStep(1f - after / Mathf.Max(1f, node.FullAmount), n);
+            }
+            else
+            {
+                if (Time.time - s_LastNote > 3f || (pos - s_LastNotePos).sqrMagnitude > 9f) s_NoteStep = 0;
+                step = Mathf.Min(s_NoteStep, n - 1);
+                s_NoteStep++;
+                s_NoteNode = null;
+            }
             s_LastNote = Time.time;
             s_LastNotePos = pos;
-            Sfx.Play(s_TreeNotes[Mathf.Min(s_NoteStep, s_TreeNotes.Length - 1)], pos, 0.85f, 0f, 60f);
-            s_NoteStep++;
+            LastTreeNote = step;
+            LastTreeNotePitch = step < low ? 0.5f : 1f;
+            // (the low ones a touch louder: an octave down the sample is softer on the ear)
+            if (step < low) Sfx.PlayPitched(s_TreeNotes[step], pos, 0.95f, 0.5f, 60f);
+            else Sfx.Play(s_TreeNotes[step - low], pos, 0.85f, 0f, 60f);
         }
 
         /// <summary>Test hooks: how many explosions this PC has shown, and the last one's camera distance, shake and the
@@ -209,8 +262,67 @@ namespace RockGame
         /// <summary>How many gun tracers have been drawn on this PC (tests: one shot = one tracer).</summary>
         public static int TracerCount;
 
-        /// <summary>Sniper shot: a thin bright line that fades fast.</summary>
-        public static void Tracer(Vector3 from, Vector3 to)
+        /// <summary>The guns (each has its own shot sound and muzzle flash).</summary>
+        public enum Gun : byte { Sniper, Pistol, Revolver, Shotgun }
+
+        /// <summary>Test hooks: gunshots heard on this PC, the last one's distance and how late its far-off pop was (-1: it was close).</summary>
+        public static int Gunshots { get; private set; }
+        public static float LastShotDistance { get; private set; }
+        public static float LastShotSoundDelay { get; private set; } = -1f;
+
+        /// <summary>A gunshot's own crack carries this far (m); from ShotFarFrom on, the far-off pop takes over.</summary>
+        public const float ShotNearRange = 260f, ShotFarFrom = 70f;
+
+        /// <summary>How loud a far-off gunshot's pop is (before the SFX slider): it comes in as the crack thins out and never drops to nothing on the map.</summary>
+        public static float ShotFarVolume(float d) => Mathf.Lerp(0f, 0.6f, Mathf.Clamp01((d - ShotFarFrom) / 110f)) * Mathf.Lerp(1f, 0.45f, Mathf.Clamp01((d - 180f) / 500f));
+
+        /// <summary>How muffled a far-off gunshot is: the low-pass cutoff (Hz).</summary>
+        public static float ShotCutoff(float d) => Mathf.Lerp(4200f, 500f, Mathf.Clamp01((d - ShotFarFrom) / 330f));
+
+        /// <summary>
+        /// A gun going off at `pos`: its own layered shot (in your ears if it's your gun, otherwise from where it is) and a
+        /// muzzle flash. Heard right across the map like the explosions (and like gunfire in Rust): close by it's the full
+        /// crack; further off that thins out and a dull pop takes over, arriving late (sound travels 343 m/s) and more
+        /// muffled (low-passed) and quieter the further away it is - but never silent on the map.
+        /// </summary>
+        public static void Gunshot(Gun gun, Vector3 pos, Vector3 dir, bool mine)
+        {
+            Gunshots++;
+            AudioClip clip = Sfx.Sniper;
+            float vol = 1f, far = 1f, size = 1f;
+            int sparks = 0;
+            switch (gun)
+            {
+                case Gun.Pistol: clip = Sfx.PistolShot; vol = 0.8f; far = 0.75f; size = 0.7f; break;
+                case Gun.Revolver: clip = Sfx.RevolverShot; vol = 1f; far = 1f; size = 1f; sparks = 3; break;
+                case Gun.Shotgun: clip = Sfx.ShotgunShot; vol = 1f; far = 1.15f; size = 1.6f; sparks = 9; break;
+                case Gun.Sniper: far = 1.25f; size = 1.3f; break;
+            }
+            var cam = Camera.main;
+            float d = mine || cam == null ? 0f : Vector3.Distance(cam.transform.position, pos);
+            LastShotDistance = d;
+            LastShotSoundDelay = -1f;
+            if (mine) Sfx.Play2D(clip, vol * 0.75f, 0.04f);
+            else if (d < ShotNearRange) Sfx.Play(clip, pos, vol, 0.04f, ShotNearRange);
+            if (!mine && d >= ShotFarFrom)
+            {
+                LastShotSoundDelay = d / 343f;
+                Sfx.PlayFar(Sfx.FarShot, pos, Mathf.Clamp01(ShotFarVolume(d) * far), LastShotSoundDelay, ShotCutoff(d));
+            }
+            if (d < 150f) MuzzleFlash(pos, dir, new Color(1f, 0.8f, 0.45f), size, sparks);
+        }
+
+        /// <summary>A muzzle flash: a short bright light, a hot ball of flame that's gone in a blink, a few sparks and a wisp of smoke.</summary>
+        public static void MuzzleFlash(Vector3 pos, Vector3 dir, Color c, float size, int sparks = 0, bool smoke = true)
+        {
+            dir = dir.sqrMagnitude > 0.01f ? dir.normalized : Vector3.forward;
+            FxMuzzle.Spawn(pos, dir, c, size);
+            if (sparks > 0) Sparks(pos, dir, sparks);
+            if (smoke) FxParticle.Puff(pos + dir * 0.2f * size, new Color(0.8f, 0.8f, 0.8f, 0.3f), 0.45f * size);
+        }
+
+        /// <summary>A gun's shot: a thin bright line that fades fast, and (`sound`) the shot itself - Gunshot. `mine`: fired by this PC's player.</summary>
+        public static void Tracer(Vector3 from, Vector3 to, Gun gun = Gun.Sniper, bool mine = false, bool sound = true)
         {
             var d = to - from;
             if (d.magnitude < 0.1f) return;
@@ -219,8 +331,8 @@ namespace RockGame
             var go = Art.Part(null, Art.Cube, Color.white, from + d * 0.5f, new Vector3(0.03f, 0.03f, d.magnitude), Quaternion.LookRotation(d).eulerAngles, false, mat);
             go.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             go.AddComponent<FadeOut>().Init(mat, 0.3f);
-            Sfx.Play(Sfx.Sniper, from, 1f, 0.03f, 250f);
-            Sparks(to, -d, 10);
+            if (sound) Gunshot(gun, from, d, mine);
+            Sparks(to, -d, gun == Gun.Shotgun ? 4 : 10);
         }
 
         /// <summary>Death wand bolt from `from` to `to`.</summary>
@@ -235,8 +347,12 @@ namespace RockGame
             go.AddComponent<FadeOut>().Init(mat, 0.45f);
             for (int i = 0; i < 6; i++) FxParticle.Puff(to + Random.insideUnitSphere * 1.2f, new Color(0.4f, 1f, 0.4f, 0.6f), Random.Range(0.8f, 1.6f));
             Sparks(to, -d, 20);
-            Sfx.Play(Sfx.Zap, from, 0.9f);
-            Sfx.Play(Sfx.Zap, to, 0.9f);
+            // the cast: a crackling bolt and a deep thump with an eerie chord hanging after it; a green flash at both ends
+            Sfx.Play(Sfx.WandCast, from, 1f, 0.03f, 160f);
+            Sfx.Play(Sfx.Zap, to, 0.9f, 0.08f, 110f);
+            var green = new Color(0.4f, 1f, 0.45f);
+            MuzzleFlash(from, d, green, 1.5f, 8, false);
+            MuzzleFlash(to, -d, green, 3f, 0, false);
         }
 
         // ---------------- particles ----------------
@@ -312,6 +428,73 @@ namespace RockGame
             dir = dir.sqrMagnitude > 0.01f ? dir.normalized : Vector3.up;
             for (int i = 0; i < n; i++)
                 FxParticle.Spawn(pos, dir * Random.Range(2f, 6f) + Random.insideUnitSphere * 3f, k_Spark, Random.Range(0.02f, 0.05f), Random.Range(0.15f, 0.35f), 6f, false);
+        }
+    }
+
+    /// <summary>
+    /// A muzzle flash (Fx.MuzzleFlash): a point light and a glowing ball of flame stretched along the barrel, with a
+    /// smaller white-hot core - both swell and are gone in under a tenth of a second.
+    /// </summary>
+    public class FxMuzzle : MonoBehaviour
+    {
+        const float Life = 0.085f;
+        Light m_Light;
+        Material m_Mat, m_CoreMat;
+        Transform m_Ball, m_Core;
+        Color m_Color;
+        float m_Age, m_Size, m_Bright;
+
+        /// <summary>For the tests: flashes shown on this PC.</summary>
+        public static int Count { get; private set; }
+
+        public static void Spawn(Vector3 pos, Vector3 dir, Color c, float size)
+        {
+            Count++;
+            var go = new GameObject("muzzle flash");
+            go.transform.SetPositionAndRotation(pos, Quaternion.LookRotation(dir) * Quaternion.Euler(0, 0, Random.Range(0f, 360f)));
+            var f = go.AddComponent<FxMuzzle>();
+            f.m_Color = c;
+            f.m_Size = size;
+            f.m_Light = go.AddComponent<Light>();
+            f.m_Light.type = LightType.Point;
+            f.m_Light.color = c;
+            f.m_Light.range = 7f + 5f * size;
+            f.m_Bright = 5f + 5f * size;
+            f.m_Light.intensity = f.m_Bright;
+            f.m_Light.shadows = LightShadows.None;
+            f.m_Mat = BeamFx.Ball(c, 3.5f, 1.3f);
+            f.m_Ball = BeamFx.Cylinder(go.transform, f.m_Mat, "flash").transform;
+            f.m_Ball.GetComponent<MeshFilter>().sharedMesh = Art.Sphere;
+            f.m_CoreMat = BeamFx.Ball(Color.Lerp(c, Color.white, 0.7f), 5f, 1.1f);
+            f.m_Core = BeamFx.Cylinder(go.transform, f.m_CoreMat, "flash core").transform;
+            f.m_Core.GetComponent<MeshFilter>().sharedMesh = Art.Sphere;
+            f.Pose();
+        }
+
+        void Pose()
+        {
+            float u = Mathf.Clamp01(m_Age / Life);
+            float grow = 0.55f + 0.45f * Mathf.Sqrt(u), fade = (1f - u) * (1f - u);
+            m_Ball.localScale = new Vector3(0.16f, 0.16f, 0.42f) * m_Size * grow;
+            m_Ball.localPosition = Vector3.forward * 0.16f * m_Size * grow;
+            m_Core.localScale = new Vector3(0.09f, 0.09f, 0.16f) * m_Size * grow;
+            m_Core.localPosition = Vector3.forward * 0.05f * m_Size;
+            BeamFx.Set(m_Mat, m_Color, 3.5f * fade);
+            BeamFx.Set(m_CoreMat, Color.Lerp(m_Color, Color.white, 0.7f), 5f * fade);
+            m_Light.intensity = m_Bright * fade;
+        }
+
+        void Update()
+        {
+            m_Age += Time.deltaTime;
+            if (m_Age >= Life) { Destroy(gameObject); return; }
+            Pose();
+        }
+
+        void OnDestroy()
+        {
+            if (m_Mat) Destroy(m_Mat);
+            if (m_CoreMat) Destroy(m_CoreMat);
         }
     }
 
@@ -449,6 +632,27 @@ namespace RockGame
             if (normal.sqrMagnitude < 0.01f) normal = Vector3.up;
             go.transform.SetPositionAndRotation(pos, Quaternion.FromToRotation(Vector3.up, normal));
             var model = ItemModels.Create(Item.C4, go.transform);
+            var b = go.AddComponent<C4Bomb>();
+            b.m_Born = Time.time;
+            var led = model.transform.Find("led");
+            b.m_Led = led != null ? led.gameObject : null;
+            Destroy(go, Cfg.C4Fuse + 0.1f);
+        }
+
+        /// <summary>The same charge stuck onto a player or a horse: it rides along with them (`local` / `localNormal` in their space).</summary>
+        public static void SpawnOn(Transform target, Vector3 local, Vector3 localNormal)
+        {
+            if (target == null) return;
+            var go = new GameObject("C4");
+            go.transform.SetParent(target, false);
+            if (localNormal.sqrMagnitude < 0.01f) localNormal = Vector3.up;
+            go.transform.localPosition = local;
+            go.transform.localRotation = Quaternion.FromToRotation(Vector3.up, localNormal);
+            // (a giant or a scaled horse: the charge stays its own size)
+            var ls = target.lossyScale;
+            go.transform.localScale = new Vector3(1f / Mathf.Max(0.01f, ls.x), 1f / Mathf.Max(0.01f, ls.y), 1f / Mathf.Max(0.01f, ls.z));
+            var model = ItemModels.Create(Item.C4, go.transform);
+            foreach (var c in go.GetComponentsInChildren<Collider>()) Destroy(c);
             var b = go.AddComponent<C4Bomb>();
             b.m_Born = Time.time;
             var led = model.transform.Find("led");
@@ -887,6 +1091,16 @@ namespace RockGame
                 transform.position += step;
                 transform.localScale = Vector3.one * m_Size * Mathf.Clamp01(k * 2f);
             }
+            else if (LandedOn == null || !LandedOn.enabled || !LandedOn.gameObject.activeInHierarchy)
+            {
+                // what it was lying on is gone (a foundation, floor or wall broken under it): it doesn't hang there in
+                // mid-air at that height - it drops again and settles on whatever is below (the ground)
+                m_Landed = false;
+                LandedOn = null;
+                Landed.Remove(this);
+                m_Vel = Vector3.zero;
+                if (m_Grav < 1f) m_Grav = 16f;
+            }
             else transform.localScale = new Vector3(m_Size * 2.2f, m_Size * 2.2f, 0.01f) * Mathf.Clamp01(k * 3f);
         }
     }
@@ -1007,8 +1221,9 @@ namespace RockGame
     {
         public static AudioClip Swing, Flesh, Headshot, Chop, Clink, Thud, Ding, Smash, Twang, Throw, Pop, Eat, Place, Hurt, Kill, Step, Hiss, Boom, Beep, Zap, Saw, Hum,
             Hit, Rocket, Sniper, Portal, Jet, Glass, Door, Click, Crowd, Whiz, Slide, Hoof, UiHover, UiClick, UiSlide, EnemyStep,
-            Workshop, ArmorClank, StoneGrind, Engine, Unlock,
-            DoorWoodOpen, DoorWoodShut, DoorStoneOpen, DoorStoneShut, DoorMetalOpen, DoorMetalShut, DoorRefinedOpen, DoorRefinedShut, BigBoom, FarBoom;
+            Workshop, ArmorClank, StoneGrind, Engine, Unlock, TreeRustle, TreeOn, TreeOff,
+            DoorWoodOpen, DoorWoodShut, DoorStoneOpen, DoorStoneShut, DoorMetalOpen, DoorMetalShut, DoorRefinedOpen, DoorRefinedShut, BigBoom, FarBoom, PistolShot, RevolverShot, ShotgunShot, FarShot, WandCast, PortalShot,
+            BeamHum, Socket, MachineHum;
         static readonly Dictionary<AudioClip, AudioClip[]> s_Variants = new Dictionary<AudioClip, AudioClip[]>();
         const int Rate = 44100;
 
@@ -1077,8 +1292,35 @@ namespace RockGame
             Zap = Make("zap", 0.3f, (t, d) => (Mathf.Sin(t * 2 * Mathf.PI * Mathf.Lerp(1400, 200, t / d)) * 0.5f + N() * 0.3f) * Env(t, 0.2f));
             Saw = Make("saw", 0.2f, (t, d) => (Mathf.Sign(Mathf.Sin(t * 2 * Mathf.PI * 95)) * 0.3f + N() * 0.25f) * (0.7f + 0.3f * Mathf.Sin(t * 2 * Mathf.PI * 25)), lowpass: 0.35f);
             Hum = Make("hum", 1.5f, (t, d) => (Mathf.Sin(t * 2 * Mathf.PI * 55) * 0.5f + Mathf.Sin(t * 2 * Mathf.PI * 110.5f) * 0.3f) * Mathf.Sin(t / d * Mathf.PI), lowpass: 0.5f);
+            // the airdrop ship's gravity beam lowering its crate (loops: whole cycles of every tone in its 2 s, so no bump
+            // at the seam): a deep throbbing hum with a thin shimmer on top
+            BeamHum = Make("beamhum", 2f, (t, d) =>
+                (Mathf.Sin(t * 2 * Mathf.PI * 62f) * 0.5f + Mathf.Sin(t * 2 * Mathf.PI * 93f) * 0.3f + Mathf.Sin(t * 2 * Mathf.PI * 124.5f) * 0.22f
+                 + Mathf.Sin(t * 2 * Mathf.PI * 311f) * 0.07f) * (0.78f + 0.22f * Mathf.Sin(t * 2 * Mathf.PI * 5f))
+                + Mathf.Sin(t * 2 * Mathf.PI * 742f) * 0.035f * (0.5f + 0.5f * Mathf.Sin(t * 2 * Mathf.PI * 1.5f)), lowpass: 0.5f);
+            // the wood machine working (loops: whole cycles of every tone in its 2 s): a soft, gentle mains-style hum
+            MachineHum = Make("machinehum", 2f, (t, d) =>
+                (Mathf.Sin(t * 2 * Mathf.PI * 80f) * 0.45f + Mathf.Sin(t * 2 * Mathf.PI * 120f) * 0.22f + Mathf.Sin(t * 2 * Mathf.PI * 160f) * 0.12f
+                 + Mathf.Sin(t * 2 * Mathf.PI * 240f) * 0.04f) * (0.88f + 0.12f * Mathf.Sin(t * 2 * Mathf.PI * 2f)), lowpass: 0.4f);
+            // the ball locking into a machine's socket: a whoosh in, a heavy clunk as it seats, then a bright chord
+            // ringing up out of it
+            Socket = Make("socket", 1.5f, (t, d) =>
+            {
+                float pull = t < 0.32f ? N() * (t / 0.32f) * (t / 0.32f) * 0.35f + Mathf.Sin(t * 2 * Mathf.PI * Mathf.Lerp(180f, 520f, t / 0.32f)) * (t / 0.32f) * 0.25f : 0f;
+                float k = t - 0.32f;
+                if (k < 0f) return pull;
+                float clunk = Mathf.Sin(k * 2 * Mathf.PI * Mathf.Lerp(120f, 48f, Mathf.Clamp01(k / 0.25f))) * Env(k, 0.3f) * 1.1f + N() * Env(k, 0.025f) * 0.6f;
+                float ring = 0f;
+                float[] notes = { 784f, 1175f, 1568f };
+                for (int i = 0; i < notes.Length; i++)
+                {
+                    float j = k - 0.05f - i * 0.07f;
+                    if (j > 0f) ring += (Mathf.Sin(j * 2 * Mathf.PI * notes[i]) * 0.3f + Mathf.Sin(j * 2 * Mathf.PI * notes[i] * 2.01f) * 0.08f) * Env(j, 0.7f);
+                }
+                return clunk + ring * 0.8f;
+            }, lowpass: 0.6f);
             Hit = Make("hit", 0.05f, (t, d) => Mathf.Sin(t * 2 * Mathf.PI * 2400) * Env(t, 0.03f) * 0.4f);
-            Rocket = Make("rocket", 0.6f, (t, d) => N() * Env(t, 0.4f) * 0.6f, lowpass: 0.2f);
+            // (the rocket launcher's launch: MakeGunSounds)
             Sniper = Make("sniper", 0.5f, (t, d) => N() * Env(t, 0.15f) + Mathf.Sin(t * 2 * Mathf.PI * 70) * Env(t, 0.3f), lowpass: 0.3f);
             Portal = Make("portal", 0.5f, (t, d) => Mathf.Sin(t * 2 * Mathf.PI * Mathf.Lerp(300, 900, t / d)) * Env(t, 0.4f) * 0.4f);
             Jet = Make("jet", 0.3f, (t, d) => N() * 0.4f, lowpass: 0.25f);
@@ -1133,7 +1375,108 @@ namespace RockGame
                 return (motor + saw + N() * 0.15f) * Mathf.Min(1f, (d - t) * 4f);
             }, lowpass: 0.35f);
             Hoof = Make("hoof", 0.09f, (t, d) => Mathf.Sin(t * 2 * Mathf.PI * Mathf.Lerp(520, 260, t / d)) * Env(t, 0.04f) * 0.8f + N() * Env(t, 0.01f) * 0.4f, lowpass: 0.5f);
+            // the tree disguise: a leafy rustle with a soft thump as it lands each hop; rustling up out of nowhere as you
+            // become a tree (a rising swish and a woody pop), and shaking back off again (a falling swish)
+            TreeRustle = Make("treerustle", 0.22f, (t, d) => N() * (0.55f + 0.45f * Mathf.Sin(t * 2 * Mathf.PI * 34f)) * Env(t, 0.1f) * 0.55f
+                + Mathf.Sin(t * 2 * Mathf.PI * Mathf.Lerp(105, 65, t / d)) * Env(t, 0.07f) * 0.55f, lowpass: 0.5f);
+            TreeOn = Make("treeon", 0.5f, (t, d) => N() * (0.6f + 0.4f * Mathf.Sin(t * 2 * Mathf.PI * 27f)) * Mathf.Sin(Mathf.Clamp01(t / 0.38f) * Mathf.PI) * 0.5f
+                + Mathf.Sin(t * 2 * Mathf.PI * Mathf.Lerp(180, 520, Mathf.Clamp01(t / 0.3f))) * Mathf.Sin(Mathf.Clamp01(t / 0.3f) * Mathf.PI) * 0.22f
+                + (t > 0.3f ? Mathf.Sin((t - 0.3f) * 2 * Mathf.PI * 150) * Env(t - 0.3f, 0.09f) * 0.7f : 0f), lowpass: 0.55f);
+            TreeOff = Make("treeoff", 0.4f, (t, d) => N() * (0.6f + 0.4f * Mathf.Sin(t * 2 * Mathf.PI * 31f)) * Env(t, 0.22f) * 0.55f
+                + Mathf.Sin(t * 2 * Mathf.PI * Mathf.Lerp(480, 160, t / d)) * Env(t, 0.18f) * 0.22f, lowpass: 0.55f);
             MakeDoorSounds();
+            MakeGunSounds();
+        }
+
+        /// <summary>
+        /// The guns, each a few layers that the hard clip in Make squashes together into one punchy shot: the revolver a
+        /// hard crack, a hollow bark, a thump and the shot rolling away; the pistol a lighter, snappier one; the waterpipe
+        /// shotgun a great flat blast with a deep thump and a long roll; the rocket launcher a thump out of the tube and
+        /// the motor tearing away; the death wand a crackling bolt falling in pitch over a deep boom and an eerie chord;
+        /// the portal gun a rubbery thoomp and a rising, warbling note. FarShot is any gun from far across the map: a
+        /// dull pop and its echoes (low-passed again by distance when it's played: Sfx.PlayFar).
+        /// </summary>
+        static void MakeGunSounds()
+        {
+            var rng = new System.Random(23);
+            float N() => (float)rng.NextDouble() * 2f - 1f;
+            const float Tau = 2f * Mathf.PI;
+            float Sweep(float t, float f0, float f1, float over) => Mathf.Sin(t * Tau * Mathf.Lerp(f0, f1, Mathf.Clamp01(t / over)));
+            {
+                float bark = 0f, tail = 0f;
+                RevolverShot = Make("revolvershot", 1.1f, (t, d) =>
+                {
+                    float n = N();
+                    bark += (n - bark) * 0.35f;
+                    tail += (n - tail) * 0.07f;
+                    return n * Env(t, 0.012f) * 1.5f + bark * Env(t, 0.09f) * 1.9f + Sweep(t, 160f, 55f, 0.12f) * Env(t, 0.1f) * 0.9f
+                        + Mathf.Sin(t * Tau * 2350f) * Env(t, 0.05f) * 0.12f + (t > 0.11f ? tail * Env(t - 0.11f, 0.7f) * 2.2f : 0f);
+                });
+            }
+            {
+                float bark = 0f, tail = 0f;
+                PistolShot = Make("pistolshot", 0.7f, (t, d) =>
+                {
+                    float n = N();
+                    bark += (n - bark) * 0.5f;
+                    tail += (n - tail) * 0.1f;
+                    return n * Env(t, 0.01f) * 1.3f + bark * Env(t, 0.05f) * 1.4f + Sweep(t, 220f, 90f, 0.07f) * Env(t, 0.06f) * 0.6f
+                        + (t > 0.08f ? tail * Env(t - 0.08f, 0.4f) * 1.3f : 0f);
+                });
+            }
+            {
+                float blast = 0f, roll = 0f;
+                ShotgunShot = Make("shotgunshot", 1.7f, (t, d) =>
+                {
+                    float n = N();
+                    blast += (n - blast) * 0.22f;
+                    roll += (n - roll) * 0.05f;
+                    return n * Env(t, 0.02f) * 1.2f + blast * Env(t, 0.16f) * 2.6f + Sweep(t, 110f, 38f, 0.2f) * Env(t, 0.22f) * 1.3f
+                        + roll * Env(t, 0.9f) * 3.2f * Mathf.Min(1f, t / 0.03f) + (t > 0.19f ? blast * Env(t - 0.19f, 0.35f) * 0.7f : 0f);
+                });
+            }
+            {
+                float a = 0f, b = 0f;
+                FarShot = Make("farshot", 2.2f, (t, d) =>
+                {
+                    a += (N() - a) * 0.08f;
+                    b += (a - b) * 0.08f;
+                    return b * Env(t, 0.12f) * 9f * Mathf.Min(1f, t / 0.004f) + (t > 0.22f ? b * Env(t - 0.22f, 0.3f) * 4.5f : 0f)
+                        + (t > 0.55f ? b * Env(t - 0.55f, 0.6f) * 3f : 0f) + Mathf.Sin(t * Tau * 70f) * Env(t, 0.15f) * 0.4f;
+                });
+            }
+            {
+                float lp = 0f;
+                Rocket = Make("rocket", 1.3f, (t, d) =>
+                {
+                    float n = N();
+                    lp += (n - lp) * 0.12f;
+                    return Sweep(t, 120f, 42f, 0.18f) * Env(t, 0.2f) * 1.2f + n * Env(t, 0.015f) * 0.9f
+                        + lp * Mathf.Min(1f, t / 0.06f) * Env(t, 0.9f) * 3.2f * (0.8f + 0.2f * Mathf.Sin(t * Tau * 38f))
+                        + (n - lp) * 0.25f * Mathf.Min(1f, t / 0.1f) * Env(t, 0.5f);
+                });
+            }
+            {
+                float lp = 0f;
+                WandCast = Make("wandcast", 1.3f, (t, d) =>
+                {
+                    float n = N();
+                    lp += (n - lp) * 0.2f;
+                    float vib = 1f + 0.012f * Mathf.Sin(t * Tau * 6.5f);
+                    float chord = (Mathf.Sin(t * Tau * 311f * vib) + Mathf.Sin(t * Tau * 466f * vib) * 0.7f + Mathf.Sin(t * Tau * 622f * vib) * 0.5f + Mathf.Sin(t * Tau * 933f) * 0.25f)
+                        * 0.16f * Mathf.Min(1f, t / 0.05f) * Env(t, 0.9f);
+                    return Mathf.Sin(t * Tau * Mathf.Lerp(1900f, 160f, Mathf.Sqrt(Mathf.Clamp01(t / 0.35f)))) * Env(t, 0.22f) * 0.55f
+                        + n * (Mathf.Sin(t * Tau * 47f) > 0.2f ? 1f : 0.15f) * Env(t, 0.18f) * 0.45f
+                        + Sweep(t, 85f, 40f, 0.4f) * Env(t, 0.5f) * 0.9f + chord + lp * Env(t, 0.6f) * 0.5f;
+                });
+            }
+            PortalShot = Make("portalshot", 0.7f, (t, d) =>
+            {
+                float k = t - 0.03f;
+                float note = k > 0f ? Mathf.Sin(k * Tau * Mathf.Lerp(520f, 1500f, Mathf.Clamp01(k / 0.22f))) * (0.6f + 0.4f * Mathf.Sin(k * Tau * 31f)) * Env(k, 0.3f) * 0.45f
+                    + Mathf.Sin(k * Tau * 2093f) * Env(k, 0.35f) * 0.1f + Mathf.Sin(k * Tau * 3136f) * Env(k, 0.25f) * 0.06f : 0f;
+                return Sweep(t, 240f, 70f, 0.09f) * Env(t, 0.1f) + note + N() * Env(t, 0.03f) * 0.4f;
+            });
         }
 
         /// <summary>
@@ -1289,6 +1632,21 @@ namespace RockGame
             Spatial(src, range);
             src.Play();
             Object.Destroy(go, clip.length / Mathf.Max(0.5f, src.pitch) + 0.1f);
+        }
+
+        /// <summary>3D sound at a world position at an exact pitch (0.5: an octave down, and twice as long).</summary>
+        public static void PlayPitched(AudioClip clip, Vector3 pos, float volume, float pitch, float range = 70f)
+        {
+            if (clip == null) return;
+            var go = new GameObject("sfx");
+            go.transform.position = pos;
+            var src = go.AddComponent<AudioSource>();
+            src.clip = clip;
+            src.volume = Vol(clip, volume);
+            src.pitch = Mathf.Clamp(pitch, 0.25f, 3f);
+            Spatial(src, range);
+            src.Play();
+            Object.Destroy(go, clip.length / src.pitch + 0.1f);
         }
 
         static AnimationCurve s_FarCurve;

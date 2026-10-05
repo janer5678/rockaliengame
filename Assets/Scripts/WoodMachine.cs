@@ -8,12 +8,17 @@ namespace RockGame
     /// machine's style (a silver housing with a flat lid, a console with a screen, a saw blade) that saws wood out of
     /// nothing and pushes it out of a lit port: each log slides down the chute, drops off the end and lands on the pile
     /// out in front (Cfg.WoodTrayLocal; the pile itself is a world item, NetGame.ServerTickAutoWood). Nothing stands on
-    /// top of it (no column, rings, orb or pylons). It changes in front of you when your team upgrades its wood gen:
-    /// level 0 - silver like the alien machine: green trim round the lid, a team-colour and a green lens, a saw blade on the side;
-    /// level 1 - bigger and YELLOW: yellow light strips on every edge and round the base, hazard stripes on the lid and the
+    /// top of it (no column, rings, orb or pylons). No base starts with one: the spot is empty (no model, no collider, no
+    /// wood) until the team buys the wood gen's first level in UPGRADES (NetGame.WoodGenLevels, a NetworkVariable, so
+    /// clients and late joiners see the same). It changes in front of you each time the wood gen is upgraded:
+    /// level 0 - nothing there yet;
+    /// level 1 - silver like the alien machine: green trim round the lid, a team-colour and a green lens, a saw blade on the side;
+    /// level 2 - bigger and YELLOW: yellow light strips on every edge and round the base, hazard stripes on the lid and the
     ///           chute, two exhaust vents on the back puffing yellow;
-    /// level 2 - bigger again and PINK: hovering over a pink glow on four short tesla legs, pink seams down its sides, a pink
+    /// level 3 - bigger again and PINK: hovering over a pink glow on four short tesla legs, pink seams down its sides, a pink
     ///           diamond and studs on the lid, a second saw, four vents puffing pink.
+    /// While it works it hums quietly (a 3D loop, Sfx.MachineHum), and looking at it says how fast it's making wood
+    /// (AimLine, shown by PlayerController's look-at text).
     /// </summary>
     public class WoodMachine : MonoBehaviour
     {
@@ -27,6 +32,26 @@ namespace RockGame
         Material m_GlowMat;
         Color m_Accent;
         float m_NextPuff, m_Pop = 1f, m_LogT = 1f, m_NextLog, m_LightBase;
+        AudioSource m_Hum;
+        bool m_Synced;
+
+        /// <summary>How loud the working hum is (quiet), and how far it carries.</summary>
+        const float HumVolume = 0.11f, HumRange = 16f;
+
+        public int Team => m_Team;
+        /// <summary>Is the machine there (has the team bought the wood gen's first level)?</summary>
+        public bool Built => m_Level >= 1;
+        /// <summary>Test hook: is the working hum playing right now?</summary>
+        public bool Humming => m_Hum != null && m_Hum.isPlaying && m_Hum.volume > 0.001f;
+
+        /// <summary>What you read when you look at it: its name and the rate it's making wood at.</summary>
+        public string AimLine(int myTeam)
+        {
+            int rate = Cfg.WoodGenRate(m_Level);
+            // (the shared look-at format - PlayerController.Tips.cs: WOOD MACHINE in its team's colour, a dash, the details)
+            return PlayerController.TeamTip("Wood machine", m_Team, m_Team != myTeam ? $"{rate} wood a second"
+                : $"making {rate} wood a second (level {m_Level} of {Cfg.MaxWoodGen})");
+        }
 
         // the alien machine's palette (MapBuilder.BuildMachine) and the level colours
         static readonly Color k_Metal = new Color(0.3f, 0.33f, 0.36f), k_Silver = new Color(0.72f, 0.74f, 0.78f), k_SilverDark = new Color(0.5f, 0.52f, 0.56f);
@@ -40,7 +65,7 @@ namespace RockGame
             go.transform.SetPositionAndRotation(Cfg.WoodMachinePos(team), Quaternion.LookRotation(-Cfg.BackDir(team)));
             var w = go.AddComponent<WoodMachine>();
             w.m_Team = team;
-            w.Build(0);
+            w.Build(0); // (nothing there until the team buys it)
             return w;
         }
 
@@ -72,6 +97,10 @@ namespace RockGame
             m_Vents.Clear();
             m_Saws.Clear();
             m_Level = level;
+            m_Log = null;
+            m_Light = null;
+            if (level <= 0) { m_Visual = null; return; } // not bought yet: no model, no collider
+            level -= 1; // (from here on: the look - 0 silver, 1 yellow, 2 pink)
             m_Visual = new GameObject("visual").transform;
             m_Visual.SetParent(transform, false);
             var t = m_Visual;
@@ -272,7 +301,7 @@ namespace RockGame
 
             // level pips on the front: how far it's been upgraded
             for (int i = 0; i < Cfg.MaxWoodGen; i++)
-                Art.Part(t, Art.Ico, i < level ? m_Accent : k_Metal, new Vector3(-0.1f + i * 0.2f, houseTop - 0.12f, hz - 0.02f), Vector3.one * 0.045f, default, false, i < level ? acc : null);
+                Art.Part(t, Art.Ico, i <= level ? m_Accent : k_Metal, new Vector3((i - (Cfg.MaxWoodGen - 1) * 0.5f) * 0.16f, houseTop - 0.12f, hz - 0.02f), Vector3.one * 0.045f, default, false, i <= level ? acc : null);
 
             // a log being sawn and pushed out of the port
             m_Log = Art.Part(t, Art.Cylinder, Art.Wood, portAt, new Vector3(0.14f, 0.2f, 0.14f), new Vector3(0, 0, 90)).transform;
@@ -283,20 +312,34 @@ namespace RockGame
         void Update()
         {
             int level = Level;
+            bool net = NetGame.Instance != null && NetGame.Instance.IsSpawned;
             if (level != m_Level)
             {
-                bool upgrade = m_Level >= 0 && level > m_Level;
+                // (the first look at a game's levels - joining late - just shows what's there, without the fanfare)
+                bool upgrade = m_Synced && level > m_Level;
+                bool built = upgrade && m_Level <= 0;
                 Build(level);
                 if (upgrade)
                 {
                     m_Pop = 0f;
                     Fx.Play(FxKind.WeakSpot, transform.position + Vector3.up * 1.2f, Vector3.up);
                     Sfx.Play(Sfx.Ding, transform.position + Vector3.up, 1f);
+                    if (built)
+                    {
+                        // just bought: it lands with a thump in a cloud of dust
+                        Sfx.Play(Sfx.Place, transform.position + Vector3.up * 0.5f, 1f);
+                        for (int i = 0; i < 10; i++)
+                            FxParticle.Puff(transform.position + new Vector3(Random.Range(-0.7f, 0.7f), Random.Range(0.1f, 0.9f), Random.Range(-0.6f, 0.6f)), new Color(0.8f, 0.8f, 0.82f, 0.5f), Random.Range(0.3f, 0.6f));
+                    }
                 }
             }
-            bool running = NetGame.Instance != null && NetGame.Instance.IsSpawned && (NetGame.Instance.S == GameState.PreBall || NetGame.Instance.S == GameState.BallLive);
+            m_Synced = net;
+            bool running = m_Level >= 1 && net && (NetGame.Instance.S == GameState.PreBall || NetGame.Instance.S == GameState.BallLive);
             float time = Time.time, dt = Time.deltaTime;
-            float pace = running ? 1f + m_Level * 0.6f : 0.35f;
+            TickHum(running, dt);
+            if (m_Level <= 0) return; // nothing there yet
+            int look = m_Level - 1;
+            float pace = running ? 1f + look * 0.6f : 0.35f;
 
             // pulsing glow and light
             float beat = 0.5f + 0.5f * Mathf.Sin(time * 2.6f * pace);
@@ -304,7 +347,7 @@ namespace RockGame
             if (m_Light) m_Light.intensity = m_LightBase * (0.75f + 0.5f * beat);
 
             // the saws run while it works
-            float saw = running ? 900f + m_Level * 400f : 60f;
+            float saw = running ? 900f + look * 400f : 60f;
             foreach (var sw in m_Saws) if (sw) sw.Rotate(saw * dt, 0, 0, Space.Self);
 
             // the level colour puffing out of the vents on the back
@@ -335,6 +378,23 @@ namespace RockGame
                 m_Visual.localScale = new Vector3(1f - b * 0.5f, 1f + b, 1f - b * 0.5f);
             }
             else if (m_Visual) m_Visual.localScale = Vector3.one;
+        }
+
+        /// <summary>The working hum: a quiet 3D loop on the machine, faded in while it's making wood and out when it stops
+        /// (a touch higher with each level).</summary>
+        void TickHum(bool running, float dt)
+        {
+            if (m_Hum == null)
+            {
+                if (!running) return;
+                m_Hum = Sfx.Loop(Sfx.MachineHum, transform, 0f, 1f, HumRange);
+                if (m_Hum == null) return;
+            }
+            float want = running ? HumVolume * GameSettings.SfxVolume : 0f;
+            m_Hum.volume = Mathf.MoveTowards(m_Hum.volume, want, dt * 0.25f);
+            m_Hum.pitch = 1f + Mathf.Max(0, m_Level - 1) * 0.09f;
+            if (want <= 0f && m_Hum.volume <= 0.001f) { if (m_Hum.isPlaying) m_Hum.Pause(); }
+            else if (!m_Hum.isPlaying) m_Hum.UnPause();
         }
 
         bool m_Landed;

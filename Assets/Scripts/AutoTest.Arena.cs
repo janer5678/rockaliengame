@@ -253,7 +253,7 @@ namespace RockGame
             yield return new WaitForSeconds(0.6f);
             Check(me.transform.position.y < c.y - 1f, $"stepped off the edge and fell (y {me.transform.position.y - c.y:0.0})");
             yield return Snap("arena_10_falling_lobby");
-            float until = Time.time + 6f;
+            float until = Time.time + Cfg.RespawnTime + 8f; // (falling off in the warm-up is a death now: back after the respawn time)
             while (Time.time < until && !(SpaceArena.OverPlatform(me.transform.position) && me.transform.position.y > c.y - 1f)) yield return null;
             Check(SpaceArena.OverPlatform(me.transform.position) && me.transform.position.y > c.y - 1f && !me.Dead.Value && g.S == GameState.Waiting,
                   $"lobby: falling into space puts you back on the platform, alive ({me.transform.position - c})");

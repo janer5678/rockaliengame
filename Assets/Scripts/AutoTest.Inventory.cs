@@ -81,15 +81,15 @@ namespace RockGame
             Check(Hud.FlightsStarted > f0, "shift-click out of the chest flies back to the bag");
             ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), $"inv_{res}_{n++:00}_flight_out_of_chest.png"));
             yield return new WaitForSeconds(0.5f);
-            // a drag (the server's move, as a drop does it)
+            // a drag let go over a slot (a move by hand): it's just there - no flight
             f0 = Hud.FlightsStarted;
-            int stone = SlotOf(Item.Stone);
-            me.MoveItemRpc(0, (byte)stone, 1, 7, 150, chest.NetworkObject);
+            int stone = SlotOf(Item.Stone), mm0 = Hud.ManualMoves;
+            Hud.TestDrop(0, stone, 1, 7, 150);
             yield return null; yield return null; yield return null;
-            Check(Hud.FlightsStarted > f0 && chest.Slots[7].Count == 150, $"dragging half the stone into the chest flies it there ({chest.Slots[7].Id} x{chest.Slots[7].Count})");
+            Check(Hud.FlightsStarted == f0 && Hud.FlightsNow == 0 && Hud.ManualMoves == mm0 + 1 && chest.Slots[7].Count == 150, $"dragging half the stone into the chest by hand puts it there with no flight ({chest.Slots[7].Id} x{chest.Slots[7].Count}, {Hud.FlightsStarted - f0} flights)");
             yield return new WaitForSeconds(0.5f);
             Check(Hud.FlightsNow == 0, "every flight has landed");
-            Check(Hud.LandPopSeconds <= 0.1f && Hud.FlightSeconds >= 0.2f, $"the landing pop is quick ({Hud.LandPopSeconds:0.00} s), the flight itself unchanged ({Hud.FlightSeconds:0.00} s)");
+            Check(Hud.LandPopSeconds <= 0.1f && Hud.FlightSeconds > 0.24f && Hud.FlightSeconds <= 0.4f, $"the landing pop is quick ({Hud.LandPopSeconds:0.00} s), the flight a touch slower than it was ({Hud.FlightSeconds:0.00} s)");
 
             // ---- Shift+drag: every slot passed over is shift-clicked once (bag -> chest, chest -> bag, hotbar -> bag) ----
             {
@@ -132,7 +132,7 @@ namespace RockGame
             pc.MenuOpen = true;
             Hud.TestHover = Item.Hatchet;
             yield return Pic("craft_hover_hatchet");
-            Check(Hud.HoverShown.StartsWith("Stone Hatchet |") && Hud.HoverShown.Contains("chops trees"), $"the hovered item's name and description show under the crafting list ({Hud.HoverShown})");
+            Check(Hud.HoverShown.StartsWith("Hatchet |") && Hud.HoverShown.Contains("chops trees"), $"the hovered item's name and description show under the crafting list ({Hud.HoverShown})");
             Hud.TestHover = Item.Berry;
             yield return Pic("craft_hover_berry");
             Check(Hud.HoverShown.StartsWith("Berries") || Hud.HoverShown.Contains("eat"), $"an item in the bag is described too ({Hud.HoverShown})");
@@ -160,10 +160,34 @@ namespace RockGame
             g.KillFeedRpc((byte)team, 0, 1, 0, (byte)Item.C4);
             g.KillFeedRpc(1, 0, (byte)team, 0, (byte)Item.Rock);
             g.KillFeedRpc(255, 0, 1, 0, KillCause.Lava);
+            g.KillFeedRpc((byte)team, 0, 1, 0, (byte)Item.Sniper, true, new Unity.Collections.FixedString32Bytes("Sharpshooter"), default);
             yield return new WaitForSeconds(0.3f);
+            Check(Hud.LastKillHead && Hud.LastKillLine.Contains("Sharpshooter") && Hud.LastKillLine.Contains("headshot") && Hud.LastKillLine.Contains(PlayerNet.DefaultName(1, 0)),
+                $"the kill feed carries the names (a typed one, and the team colour + number for a player without) and the headshot ({Hud.LastKillLine})");
+            int d0 = me.Deaths.Value;
             me.SuicideRpc();
             yield return new WaitForSeconds(0.5f);
-            Check(Hud.KillLines >= k0 + 5 && Hud.LastKillLine.Contains("suicide"), $"the kill feed: {Hud.KillLines - k0} lines, a real suicide last ({Hud.LastKillLine})");
+            Check(Hud.KillLines >= k0 + 6 && Hud.LastKillLine.Contains("suicide") && !Hud.LastKillHead && Hud.LastKillLine.Contains(me.DisplayName), $"the kill feed: {Hud.KillLines - k0} lines, a real suicide last ({Hud.LastKillLine})");
+            int kills0 = me.Kills.Value;
+            Check(me.Deaths.Value == d0 + 1, $"the scoreboard counts it: a death, and no kill for a suicide ({kills0} / {me.Deaths.Value})");
+
+            // ---- whispers: only the two it's between get the line; clicking one answers it ----
+            Check(me.DisplayName == (GameSettings.PlayerName != "" ? GameSettings.PlayerName : PlayerNet.DefaultName(me.Team.Value, me.Slot.Value)), $"your name is the one typed on the main menu, or your team colour and number ({me.DisplayName})");
+            Check(GameSettings.CleanName("  <b>A   very  long name indeed</b> ") == "bA very long nam" || GameSettings.CleanName("<color=red>x</color>").IndexOf('<') < 0, $"names are cleaned up: no tags, {GameSettings.PlayerNameMax} long at most ({GameSettings.CleanName("  <b>A   very  long name indeed</b> ")})");
+            Chat.AddWhisper("psst", false, 12345, "Red1", 1);
+            Check(Chat.LastLine.Contains("psst") && Chat.LastLine.Contains("Red1") && Chat.LastWhisperFrom == 12345, $"a whisper is marked as one, with who it's from ({Chat.LastLine})");
+            Chat.Begin(false);
+            Check(Chat.ReplyToLastWhisper() && Chat.WhisperTo == 12345 && Chat.Open, "clicking a whisper with the chat open answers it: the line is to them only");
+            yield return Pic("chat_whisper_reply");
+            Chat.Close();
+
+            // ---- the scoreboard (hold Tab): every player by team, kills / deaths / ping, MESSAGE next to the others ----
+            Check(Binds.Get(Bind.Scoreboard) != Binds.Get(Bind.Inventory) || Binds.Get(Bind.Scoreboard) == KeyCode.None, $"the scoreboard and the bag aren't on the same key ({Binds.Name(Bind.Scoreboard)} / {Binds.Name(Bind.Inventory)})");
+            Hud.TestScoreboard = true;
+            yield return Pic("scoreboard", 0.3f);
+            Check(Time.time - Hud.ScoreboardShownAt < 0.5f && Hud.ScoreboardRows == PlayerNet.All.Count && Hud.ScoreboardButtons == PlayerNet.All.Count - 1,
+                $"the scoreboard lists every player, with MESSAGE next to everyone but you ({Hud.ScoreboardRows} rows, {Hud.ScoreboardButtons} buttons, {PlayerNet.All.Count} players)");
+            Hud.TestScoreboard = false;
             yield return Pic("killfeed", 0.2f);
 
             Log("inventory test done");

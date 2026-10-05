@@ -6,20 +6,23 @@ namespace RockGame
     /// <summary>
     /// A flock of little dark birds (every peer's own copy). Flocks sit on the branches of a few trees (the server puts
     /// them there - ResourceNode.ServerFlocksTick - so you can always see beforehand that a tree has birds in it). The
-    /// first hit on their tree sends them flapping up out of it; they fly in an arc to another tree, further away, and
-    /// settle on its branches. When that tree is hit, they fly on to another, and so on. A tree with no birds in it
+    /// first hit on their tree sends them bursting out from under its leaves, all round it at once; a moment later they
+    /// have drawn together into one flock beside the tree, and that flies in an arc to another tree, further away, and
+    /// settles on its branches. When that tree is hit, they fly on to another, and so on. A tree with no birds in it
     /// never sends any up. The server picks the trees and the flight's length and tells everyone
     /// (ResourceNode.BirdsFlyRpc: from, to, how many, a seed); each peer flies its own birds along the same paths, so
     /// everyone sees the same thing without anything being sent while they fly. Sitting birds are kept by the tree
-    /// (ResourceNode.Birds) so someone joining later sees them too. Each bird is a tiny body and two flapping wings
-    /// (three renderers, no shadows); a burst of wing flaps and chirps as they go, a chirp or two as they land.
+    /// (ResourceNode.Birds) so someone joining later sees them too. Each bird is a little low-poly model - a rounded
+    /// body with a head and a fanned tail, a beak, and two wings that fold down its flanks when it sits (four renderers,
+    /// no shadows); sitting, it nestles in the needles of a branch (ResourceNode.BirdPerch), chest up. A burst of wing
+    /// flaps and chirps as they go, a chirp or two as they land.
     /// </summary>
     public class BirdFlock : MonoBehaviour
     {
         class Bird
         {
             public Transform T, WingL, WingR;
-            public Vector3 From, Ctrl, To, Pos, Vel;
+            public Vector3 From, Exit, Out, Swing, Gather, Ctrl, To, Pos, Vel;
             public float Delay, Phase, Look, NextLook;
         }
 
@@ -45,8 +48,19 @@ namespace RockGame
         public static float FlightTime(Vector3 a, Vector3 b)
         {
             a.y = b.y = 0f;
-            return Mathf.Clamp(Vector3.Distance(a, b) / 9f, 2.2f, 8.5f) + 0.6f;
+            return Mathf.Clamp(Vector3.Distance(a, b) / 9f, 2.2f, 8.5f) + 0.6f + BurstTime + GatherTime;
         }
+
+        /// <summary>Taking off (s): the burst out from under the leaves, all round the tree; then drawing together into one
+        /// flock beside it. The flight to the next tree comes after.</summary>
+        public const float BurstTime = 0.7f, GatherTime = 1.1f;
+        /// <summary>How far out from the leaves' edge the burst throws them (m), and how far from it they gather.</summary>
+        public const float BurstOut = 4f, GatherOut = 5.5f;
+        /// <summary>A sitting bird: its middle is this far over its feet (m), and its chest is up by this much (degrees).</summary>
+        public const float SitUp = 0.065f, SitPitch = -22f;
+        /// <summary>(tests) Where each bird came out from under the leaves on the last take-off, and where they gathered.</summary>
+        public IEnumerable<Vector3> Exits { get { foreach (var b in m_Birds) yield return b.Exit; } }
+        public Vector3 GatherPoint { get; private set; }
 
         // ------------------------------------------------------------------ what the tree / the server message say
 
@@ -98,7 +112,7 @@ namespace RockGame
                 if (s_At.TryGetValue(to, out var old) && old != null && old != f) Destroy(old.gameObject);
                 s_At[to] = f;
             }
-            f.Fly(from.transform.position, to, seed, duration);
+            f.Fly(from, from.transform.position, to, seed, duration);
             Sfx.Play(TakeOffClip, from.transform.position + Vector3.up * 5f, 0.85f, 0.1f, 60f);
         }
 
@@ -125,14 +139,20 @@ namespace RockGame
             m_Flying = false;
             foreach (var b in m_Birds)
             {
-                b.T.position = b.Pos;
-                b.T.rotation = Quaternion.Euler(0, b.Look, 0);
+                b.T.position = b.Pos + Vector3.up * SitUp;
+                b.T.rotation = Quaternion.Euler(SitPitch, b.Look, 0);
                 Fold(b, 0f);
                 b.NextLook = Time.time + Random.Range(1f, 5f);
             }
         }
 
-        void Fly(Vector3 fromTree, ResourceNode to, int seed, float duration)
+        /// <summary>
+        /// Off they go, out of `from` (null: it's gone - from round fromTree): every bird dives out under the edge of the
+        /// leaves at a spot of its own, evenly all the way round the tree (the nearest side to where it sat), and is thrown
+        /// outwards; then they all swing round to one spot beside the tree (on the side they're leaving by, above the
+        /// lowest branches) and fly on from there together.
+        /// </summary>
+        void Fly(ResourceNode from, Vector3 fromTree, ResourceNode to, int seed, float duration)
         {
             var rng = new System.Random(seed);
             float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
@@ -144,16 +164,45 @@ namespace RockGame
             m_Dur = Mathf.Max(1f, duration);
             // away: off over the mountains, high up (and gone)
             var awayDir = Quaternion.Euler(0, R(0f, 360f), 0) * Vector3.forward;
-            for (int i = 0; i < m_Birds.Count; i++)
+            // the underside of the leaves they come out from under
+            Vector3 under = fromTree + Vector3.up * 4f;
+            float rad = 2f;
+            if (from != null) from.BirdCanopy(out under, out rad);
+            var going = to != null ? to.transform.position - fromTree : awayDir;
+            going.y = 0f;
+            going = going.sqrMagnitude > 0.01f ? going.normalized : awayDir;
+            var gather = under + going * (rad + GatherOut) + Vector3.up * 4.5f;
+            GatherPoint = gather;
+            int n = m_Birds.Count;
+            // all round the tree, evenly: in the order they sit round it, so each comes out on its own side
+            var order = new List<int>();
+            var sitAng = new float[n];
+            for (int i = 0; i < n; i++)
             {
                 var b = m_Birds[i];
                 b.From = b.T ? b.T.position : b.Pos;
-                b.To = to != null ? to.BirdPerch(i) : fromTree + awayDir * 90f + Vector3.up * 45f + new Vector3(R(-4f, 4f), R(-3f, 3f), R(-4f, 4f));
-                var mid = (b.From + b.To) * 0.5f;
-                float dist = Vector3.Distance(new Vector3(b.From.x, 0, b.From.z), new Vector3(b.To.x, 0, b.To.z));
-                var side = Vector3.Cross(Vector3.up, (b.To - b.From).normalized);
-                b.Ctrl = mid + Vector3.up * (5f + dist * 0.22f + R(-1f, 1.5f)) + side * R(-3f, 3f);
-                b.Delay = R(0f, 0.35f);
+                sitAng[i] = Mathf.Atan2(b.From.z - under.z, b.From.x - under.x);
+                order.Add(i);
+            }
+            order.Sort((x, y) => sitAng[x] != sitAng[y] ? sitAng[x].CompareTo(sitAng[y]) : x.CompareTo(y));
+            float ang0 = n > 0 ? sitAng[order[0]] : 0f;
+            for (int j = 0; j < n; j++)
+            {
+                int i = order[j];
+                var b = m_Birds[i];
+                float a = ang0 + j * Mathf.PI * 2f / n + R(-0.12f, 0.12f);
+                var dir = new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a));
+                b.Exit = under + dir * (rad * 0.82f) - Vector3.up * R(0.35f, 0.6f);
+                b.Out = under + dir * (rad + BurstOut * R(0.8f, 1.2f)) + Vector3.up * R(0.8f, 2f);
+                b.Gather = gather + new Vector3(R(-1.3f, 1.3f), R(-0.8f, 0.8f), R(-1.3f, 1.3f));
+                // (it carries on outwards a little before it swings round to the others)
+                b.Swing = b.Out + dir * 2f + Vector3.up * 2.2f;
+                b.To = to != null ? to.BirdPerch(i) + Vector3.up * SitUp : fromTree + awayDir * 90f + Vector3.up * 45f + new Vector3(R(-4f, 4f), R(-3f, 3f), R(-4f, 4f));
+                var mid = (b.Gather + b.To) * 0.5f;
+                float dist = Vector3.Distance(new Vector3(b.Gather.x, 0, b.Gather.z), new Vector3(b.To.x, 0, b.To.z));
+                var side = Vector3.Cross(Vector3.up, (b.To - b.Gather).normalized);
+                b.Ctrl = mid + Vector3.up * (5f + dist * 0.22f + R(-0.6f, 1f)) + side * R(-1.5f, 1.5f);
+                b.Delay = R(0f, 0.1f); // (all but at once: a burst)
                 b.Phase = R(0f, 10f);
             }
         }
@@ -167,7 +216,7 @@ namespace RockGame
                     // the tree lost its birds and no one said where to: off they go
                     if (m_Node != null && s_At.TryGetValue(m_Node, out var f) && f == this) s_At.Remove(m_Node);
                     var at = m_Node != null ? m_Node.transform.position : transform.position;
-                    Fly(at, null, Random.Range(0, int.MaxValue), 6f);
+                    Fly(m_Node, at, null, Random.Range(0, int.MaxValue), 6f);
                     return;
                 }
                 // sitting: now and then one turns round or hops a little
@@ -176,7 +225,7 @@ namespace RockGame
                     if (Time.time < b.NextLook) continue;
                     b.NextLook = Time.time + Random.Range(1.5f, 6f);
                     b.Look += Random.Range(-120f, 120f);
-                    b.T.rotation = Quaternion.Euler(Random.Range(-12f, 6f), b.Look, 0);
+                    b.T.rotation = Quaternion.Euler(SitPitch + Random.Range(-8f, 8f), b.Look, 0);
                 }
                 return;
             }
@@ -185,14 +234,39 @@ namespace RockGame
             float now = Time.time;
             foreach (var b in m_Birds)
             {
-                float span = m_Dur - 0.4f;
-                float t = Mathf.Clamp01((m_T - b.Delay) / Mathf.Max(0.5f, span));
+                float span = Mathf.Max(0.5f, m_Dur - 0.4f), own = m_T - b.Delay;
+                // (a short flight keeps most of its time for the flight itself)
+                float k = Mathf.Min(1f, span * 0.55f / (BurstTime + GatherTime)), burst = BurstTime * k, group = GatherTime * k;
+                float t = Mathf.Clamp01(own / span);
                 if (t < 1f) all = false;
-                float s = 0.5f - 0.5f * Mathf.Cos(t * Mathf.PI); // (speeding up out of the tree, slowing down to land)
-                var p = Bezier(b.From, b.Ctrl, b.To, s);
-                // a little flutter of their own (none at either end)
-                float w = Mathf.Sin(t * Mathf.PI);
-                p += new Vector3(Mathf.Sin(now * 2.7f + b.Phase), Mathf.Sin(now * 3.4f + b.Phase * 1.7f) * 0.6f, Mathf.Cos(now * 2.2f + b.Phase)) * (0.7f * w);
+                Vector3 p;
+                float w; // (how much it flutters about on its own)
+                bool taking = own < burst + group;
+                if (own <= 0f) { p = b.From; w = 0f; }
+                else if (own < burst)
+                {
+                    // out from under the leaves: a quick dive down to the edge of them, then thrown outwards (fast, easing off)
+                    float x = own / burst;
+                    if (x < 0.28f) { float e = x / 0.28f; p = Vector3.Lerp(b.From, b.Exit, e * e); }
+                    else { float e = (x - 0.28f) / 0.72f; p = Vector3.Lerp(b.Exit, b.Out, 1f - (1f - e) * (1f - e)); }
+                    w = 0.15f * x;
+                }
+                else if (taking)
+                {
+                    // drawing together: round in a curve to their spot in the flock
+                    float x = Mathf.SmoothStep(0f, 1f, (own - burst) / group);
+                    p = Bezier(b.Out, b.Swing, b.Gather, x);
+                    w = 0.3f;
+                }
+                else
+                {
+                    float f = Mathf.Clamp01((own - burst - group) / Mathf.Max(0.3f, span - burst - group));
+                    float s = f * f * (3f - 2f * f); // (speeding up away from the tree, slowing down to land)
+                    p = Bezier(b.Gather, b.Ctrl, b.To, s);
+                    // a little flutter of their own (none as they land)
+                    w = Mathf.Lerp(0.3f, 0.7f, Mathf.Clamp01(f * 4f)) * Mathf.Clamp01((1f - f) * 3f);
+                }
+                p += new Vector3(Mathf.Sin(now * 2.7f + b.Phase), Mathf.Sin(now * 3.4f + b.Phase * 1.7f) * 0.6f, Mathf.Cos(now * 2.2f + b.Phase)) * w;
                 var v = p - b.T.position;
                 b.T.position = p;
                 if (v.sqrMagnitude > 1e-6f)
@@ -206,7 +280,7 @@ namespace RockGame
                 if (t <= 0f || t >= 1f) Fold(b, t >= 1f ? 0f : 0.2f);
                 else
                 {
-                    float beat = t < 0.25f || (t > 0.45f && t < 0.75f) ? 1f : 0.35f;
+                    float beat = taking || t < 0.25f || (t > 0.45f && t < 0.75f) ? 1f : 0.35f;
                     float ang = Mathf.Sin(now * 22f + b.Phase) * 55f * beat + 10f;
                     Spread(b, ang);
                 }
@@ -218,7 +292,7 @@ namespace RockGame
             }
             if (!all && m_T < m_Dur + 1f) return;
             if (m_Node == null) { Destroy(gameObject); return; }
-            foreach (var b in m_Birds) { b.Pos = b.To; b.Look = b.T.eulerAngles.y; }
+            foreach (var b in m_Birds) { b.Pos = b.To - Vector3.up * SitUp; b.Look = b.T.eulerAngles.y; }
             Sit();
         }
 
@@ -236,14 +310,16 @@ namespace RockGame
         {
             var s = new Vector3(Mathf.Lerp(0.32f, 0.7f, open), 1f, 1f);
             b.WingR.localScale = b.WingL.localScale = s;
-            b.WingR.localRotation = Quaternion.Euler(0, 8f, -8f);
-            b.WingL.localRotation = Quaternion.Euler(0, -8f, 8f);
+            // (down along its flanks, the tips back towards the tail)
+            float down = Mathf.Lerp(68f, 25f, open);
+            b.WingR.localRotation = Quaternion.Euler(0, 8f, -down);
+            b.WingL.localRotation = Quaternion.Euler(0, -8f, down);
         }
 
         // ------------------------------------------------------------------ looks
 
-        static Mesh s_Body, s_Wing;
-        static Material s_BodyMat, s_WingMat;
+        static Mesh s_Body, s_Beak, s_Wing;
+        static Material s_BodyMat, s_BeakMat, s_WingMat;
         /// <summary>A bird is this big (its wings about 0.75 m across).</summary>
         public const float Size = 1.25f;
 
@@ -256,8 +332,10 @@ namespace RockGame
             b.T = go.transform;
             b.T.localScale = Vector3.one * Size;
             Part(b.T, s_Body, s_BodyMat, Vector3.zero, Vector3.one).name = "body";
-            b.WingR = Part(b.T, s_Wing, s_WingMat, new Vector3(0.03f, 0.02f, 0.02f), Vector3.one);
-            b.WingL = Part(b.T, s_Wing, s_WingMat, new Vector3(-0.03f, 0.02f, 0.02f), new Vector3(-1f, 1f, 1f));
+            Part(b.T, s_Beak, s_BeakMat, Vector3.zero, Vector3.one).name = "beak";
+            // (the wings: from the shoulders, on the body's sides)
+            b.WingR = Part(b.T, s_Wing, s_WingMat, new Vector3(0.04f, 0.03f, 0.03f), Vector3.one);
+            b.WingL = Part(b.T, s_Wing, s_WingMat, new Vector3(-0.04f, 0.03f, 0.03f), new Vector3(-1f, 1f, 1f));
             return b;
         }
 
@@ -279,35 +357,79 @@ namespace RockGame
             return holder;
         }
 
+        /// <summary>(tests) How big the body's model is (its own space, before Size): it has depth every way - a model,
+        /// not a flat card.</summary>
+        public static Vector3 BodyModelSize { get { if (s_Body == null) BuildMeshes(); return s_Body.bounds.size; } }
+
         static void BuildMeshes()
         {
-            s_BodyMat = Art.NewMat(new Color(0.13f, 0.12f, 0.13f));
+            s_BodyMat = Art.NewMat(new Color(0.15f, 0.14f, 0.16f));
+            s_BeakMat = Art.NewMat(new Color(0.95f, 0.62f, 0.12f));
             s_WingMat = Art.NewMat(new Color(0.08f, 0.08f, 0.1f));
-            // body: a little faceted spindle, beak forward (+z), a fanned tail
-            var nose = new Vector3(0, 0.025f, 0.16f);
-            var head = new Vector3(0, 0.06f, 0.08f);
-            var top = new Vector3(0, 0.055f, -0.01f);
-            var bottom = new Vector3(0, -0.035f, 0.01f);
-            var l = new Vector3(-0.045f, 0.01f, 0.02f);
-            var r = new Vector3(0.045f, 0.01f, 0.02f);
-            var tail = new Vector3(0, 0.02f, -0.1f);
-            var tl = new Vector3(-0.05f, 0.015f, -0.2f);
-            var tr = new Vector3(0.05f, 0.015f, -0.2f);
+            // body: a low-poly model, beak forward (+z) - six-sided rings from the rump to the face (a full round chest,
+            // a neck, a head held a little higher), closed at both ends, with a fanned wedge of a tail. Flat-shaded.
             var v = new List<Vector3>();
-            void T(Vector3 a, Vector3 b, Vector3 c) { v.Add(a); v.Add(b); v.Add(c); v.Add(a); v.Add(c); v.Add(b); } // (both sides)
-            T(nose, head, r); T(nose, l, head); T(nose, r, bottom); T(nose, bottom, l);
-            T(head, top, r); T(head, l, top);
-            T(top, tail, r); T(top, l, tail); T(bottom, r, tail); T(bottom, tail, l);
-            T(tail, tl, tr);
+            // (each face once, wound to look away from `inside`)
+            void T(Vector3 a, Vector3 b, Vector3 c, Vector3 inside)
+            {
+                if (Vector3.Dot(Vector3.Cross(b - a, c - a), (a + b + c) / 3f - inside) < 0f) (b, c) = (c, b);
+                v.Add(a); v.Add(b); v.Add(c);
+            }
+            const int sides = 6;
+            // (how far along, how high its middle is, half its width, half its height)
+            var rings = new[]
+            {
+                new Vector4(-0.1f, 0.012f, 0.022f, 0.02f), new Vector4(-0.045f, 0.006f, 0.05f, 0.044f), new Vector4(0.03f, 0.008f, 0.056f, 0.05f),
+                new Vector4(0.085f, 0.03f, 0.036f, 0.036f), new Vector4(0.12f, 0.052f, 0.04f, 0.038f), new Vector4(0.155f, 0.05f, 0.022f, 0.022f),
+            };
+            Vector3 Ring(int r, int s)
+            {
+                float a = (s + 0.5f) * Mathf.PI * 2f / sides;
+                return new Vector3(Mathf.Cos(a) * rings[r].z, rings[r].y + Mathf.Sin(a) * rings[r].w, rings[r].x);
+            }
+            Vector3 Mid(int r) => new Vector3(0f, rings[r].y, rings[r].x);
+            for (int r = 0; r + 1 < rings.Length; r++)
+                for (int s = 0; s < sides; s++)
+                {
+                    Vector3 a = Ring(r, s), b = Ring(r, s + 1), c = Ring(r + 1, s + 1), d = Ring(r + 1, s);
+                    var inside = (Mid(r) + Mid(r + 1)) * 0.5f;
+                    T(a, b, c, inside); T(a, c, d, inside);
+                }
+            int last = rings.Length - 1;
+            for (int s = 0; s < sides; s++)
+            {
+                T(Ring(0, s), Ring(0, s + 1), Mid(0) - Vector3.forward * 0.012f, Mid(1));
+                T(Ring(last, s), Ring(last, s + 1), Mid(last) + Vector3.forward * 0.012f, Mid(last - 1));
+            }
+            // the tail: a wedge fanning out behind the rump, thick at the root
+            {
+                Vector3 r0 = new Vector3(-0.02f, 0.026f, -0.085f), r1 = new Vector3(0.02f, 0.026f, -0.085f), r2 = new Vector3(0f, 0.002f, -0.085f);
+                Vector3 e0 = new Vector3(-0.05f, 0.012f, -0.215f), e1 = new Vector3(0.05f, 0.012f, -0.215f), e2 = new Vector3(0f, 0.002f, -0.2f);
+                var inside = new Vector3(0f, 0.014f, -0.15f);
+                T(r0, r1, e1, inside); T(r0, e1, e0, inside);       // top
+                T(r0, e0, e2, inside); T(r0, e2, r2, inside);       // underneath, left
+                T(r1, r2, e2, inside); T(r1, e2, e1, inside);       // underneath, right
+                T(e0, e1, e2, inside);                              // the end
+            }
             s_Body = ToMesh("bird body", v);
-            // wing: out along +x from the shoulder, swept back
+            // beak: a little four-sided spike on the face
             v.Clear();
+            {
+                var tip = new Vector3(0f, 0.04f, 0.205f);
+                var inside = new Vector3(0f, 0.048f, 0.16f);
+                var q = new[] { new Vector3(-0.013f, 0.05f, 0.152f), new Vector3(0f, 0.062f, 0.152f), new Vector3(0.013f, 0.05f, 0.152f), new Vector3(0f, 0.038f, 0.152f) };
+                for (int i = 0; i < 4; i++) T(q[i], q[(i + 1) % 4], tip, inside);
+            }
+            s_Beak = ToMesh("bird beak", v);
+            // wing: out along +x from the shoulder, swept back (a flat blade, both faces)
+            v.Clear();
+            void W(Vector3 a, Vector3 b, Vector3 c) { v.Add(a); v.Add(b); v.Add(c); v.Add(a); v.Add(c); v.Add(b); }
             var w0 = new Vector3(0f, 0f, 0.05f);
             var w1 = new Vector3(0f, 0f, -0.06f);
             var w2 = new Vector3(0.17f, 0f, 0.03f);
             var w3 = new Vector3(0.32f, 0f, -0.05f);
             var w4 = new Vector3(0.15f, 0f, -0.1f);
-            T(w0, w2, w1); T(w1, w2, w4); T(w2, w3, w4);
+            W(w0, w2, w1); W(w1, w2, w4); W(w2, w3, w4);
             s_Wing = ToMesh("bird wing", v);
         }
 

@@ -38,7 +38,8 @@ namespace RockGame
                 Hud.HitMarker(!(head && p.HelmetHp.Value > 0), head);
             }
             m_Net.SniperFireRpc(no != null, no != null ? new NetworkObjectReference(no) : default, point, ray.direction);
-            Fx.Tracer(ray.origin + ray.direction * 0.5f - Vector3.up * 0.15f, point);
+            Fx.Tracer(ray.origin + ray.direction * 0.5f - Vector3.up * 0.15f, point, Fx.Gun.Sniper, true, false);
+            Fx.Gunshot(Fx.Gun.Sniper, m_VM.Muzzle(), ray.direction, true);
             m_VM.Use();
             Fx.Kick(6f);
             Fx.Shake(0.25f);
@@ -49,19 +50,18 @@ namespace RockGame
         {
             if (!Binds.Down(Bind.Attack) || Time.time < m_NextSwing) return;
             m_NextSwing = Time.time + 0.5f;
-            var ray = CenterRay();
-            RaycastHit best = default;
-            bool found = false;
-            foreach (var h in Physics.RaycastAll(ray, 120f, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore))
-            {
-                if (h.collider.transform.IsChildOf(transform) || h.collider.GetComponentInParent<PlayerNet>() != null) continue;
-                if (!found || h.distance < best.distance) { best = h; found = true; }
-            }
-            if (!found) { Hud.Push("Nothing to put a portal on there"); return; }
+            // (the ghost on the surface already shows where it will go: UpdatePortalPreview)
+            if (!PortalAim(out var best)) { Hud.Push("Nothing to put a portal on there"); return; }
+            int shots = Mathf.Max(1, Cfg.PortalShots), data = m_Net.HeldStack.Data;
+            if (data <= 0 || data >= shots) { m_PortalFirstShot = best.point; m_PortalFirstShotKnown = true; } // (the gun's first portal: its second links to it)
             m_Net.PortalRpc(best.point, best.normal);
             m_VM.Use();
-            Sfx.Play2D(Sfx.Portal, 0.7f);
-            Fx.Kick(1.5f);
+            // a rubbery thoomp and a rising note, a pulse of the portal's own colour at the emitter, a soft kick
+            Sfx.Play2D(Sfx.PortalShot, 0.8f, 0.03f);
+            Fx.MuzzleFlash(m_VM.Muzzle(), CenterRay().direction, PortalPreviewShown ? PortalPreviewColor : new Color(0.3f, 0.7f, 1f), 1.1f, 6, false);
+            Fx.Kick(2f);
+            Fx.Punch(2.5f);
+            Fx.Shake(0.07f);
         }
 
         /// <summary>Is a player whose middle is at c inside this portal?</summary>
@@ -157,7 +157,17 @@ namespace RockGame
                 : ray.direction * 16f + Vector3.up * 2.5f;
             ArrowProjectile.SpawnThrown(kind, origin, vel, m_Net, kind != Item.BuildEgg);
             m_Net.ThrowItemRpc(kind, origin, vel);
-            if (kind == Item.RocketLauncher) { m_VM.Use(); Fx.Kick(5f); Fx.Shake(0.3f); }
+            if (kind == Item.RocketLauncher)
+            {
+                // the launch: the tube lurches back, a burst of flame at its mouth and the backblast's smoke round you
+                m_VM.Use();
+                Fx.Kick(5.5f);
+                Fx.Shake(0.38f);
+                Fx.Punch(4.5f);
+                Fx.MuzzleFlash(m_VM.Muzzle(), ray.direction, new Color(1f, 0.6f, 0.25f), 2.2f, 10);
+                var back = transform.position + Vector3.up * (m_Eye - 0.15f) - ray.direction * 0.9f;
+                for (int i = 0; i < 5; i++) FxParticle.Puff(back + UnityEngine.Random.insideUnitSphere * 0.35f, new Color(0.75f, 0.75f, 0.75f, 0.4f), UnityEngine.Random.Range(0.7f, 1.3f));
+            }
             else { m_VM.Throw(); Sfx.Play2D(Sfx.Throw, 0.6f); }
         }
 

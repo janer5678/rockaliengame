@@ -97,7 +97,8 @@ namespace RockGame
         /// <summary>Arsenal and Builder: cheap items and the powerful items menu.</summary>
         public static bool PowerMenu => Rules == GameRules.Arsenal || Rules == GameRules.Builder || Rules == GameRules.AutoWood;
         /// <summary>Auto Wood: Arsenal, plus wood piles up at every base by itself.</summary>
-        public static bool AutoWood => Rules == GameRules.AutoWood;
+        /// <summary>(The tutorial has the wood machine too, bought at its upgrade station like in Classic - but none of the POWER ITEMS.)</summary>
+        public static bool AutoWood => Rules == GameRules.AutoWood || Rules == GameRules.Tutorial;
         /// <summary>The graphics everyone plays with, picked by the host (0 Normal, 1 PSX, 2 AI PSX TEST). Synced in the map key.</summary>
         public static int HostGraphics;
         /// <summary>Builder: craft anywhere (with a wait), build anywhere, win with the ball in your own fort.</summary>
@@ -105,7 +106,7 @@ namespace RockGame
         public static bool FunRules => Rules == GameRules.Fun || Rules == GameRules.FunRandom || Rules == GameRules.FunRandomLimited;
         /// <summary>Fun Random Limited and Primitive: only the hatchet, spear, building plan and ram can be crafted.</summary>
         public static bool LimitedCrafting => Rules == GameRules.FunRandomLimited || Rules == GameRules.Primitive || Rules == GameRules.BuildingPrimitive;
-        /// <summary>Tutorial: the classic rules (starter items in the bag, the rest at a workbench) with the clock stopped, no airdrops, and a guide that unlocks the game a step at a time (Tutorial.cs).</summary>
+        /// <summary>Tutorial: the classic rules (starter items in the bag, the rest at a trade station) plus the upgrade station and its wood machine, with the clock stopped until its finale, no scheduled airdrops (one comes on its airdrop step), and a guide that unlocks the game a step at a time (Tutorial.cs).</summary>
         public static bool Tutorial => Rules == GameRules.Tutorial;
         /// <summary>
         /// The names shown in the menu and the HUD. Renamed on request: the Auto Wood rules are now called Classic,
@@ -127,8 +128,8 @@ namespace RockGame
             {
                 case GameRules.Arsenal: return "Normal prices (the crossbow is cheaper), plus a POWER ITEMS menu next to crafting: sword, shotgun, revolver, C4 and headshot helmet. E on the upgrade station beside your alien machine: UPGRADES (fortify all your walls).";
                 case GameRules.Dna: return DnaDesc;
-                case GameRules.Tutorial: return "New here? Start with this. Short, simple steps teach you the whole game - you do each one to go on, and each control unlocks as it's taught. The clock is stopped, friends can join any time, and it's always the small Plains map. Just press HOST GAME.";
-                case GameRules.AutoWood: return "Wood piles up at your base by itself (5 a second) - go and pick it up. Arsenal's prices and POWER ITEMS; speed the wood up in UPGRADES (E on the upgrade station beside your alien machine).";
+                case GameRules.Tutorial: return "New here? Start with this. Short, simple steps teach you the whole game - you do each one to go on, and each control unlocks as it's taught. The clock is stopped and it's always the small Plains map. Press PLAY TUTORIAL and pick Solo or With a friend.";
+                case GameRules.AutoWood: return "Buy a wood machine in UPGRADES (E on the upgrade station beside your alien machine) and wood piles up at your base by itself - go and pick it up; more upgrades speed it up. Arsenal's prices and POWER ITEMS.";
                 case GameRules.Builder: return "No bases. Arsenal's items, but each takes a while to make. Craft and build anywhere - pieces lock onto each other. Plant the ball anywhere (E): whoever's ball it is at the end wins.";
                 case GameRules.Fun: return "No building phase, a short match, and every so often everyone gets the same random item - any item in the game.";
                 case GameRules.FunRandom: return "No building phase, a short match, and every so often each player gets their own random airdrop item.";
@@ -292,6 +293,8 @@ namespace RockGame
         [Tune("Match")] public static float FastMatchLength = 90f;
         [Tune("Match")] public static float RespawnTime = 5f;
         [Tune("Match")] public static float ItemDespawnTime = 300f;
+        /// <summary>Things on the ground glint when you're within this many metres (0 = never), about this often (seconds) - NetGame.ItemGlint.cs.</summary>
+        [Tune("Match")] public static float ItemGlintRange = 7f, ItemGlintEvery = 2f;
 
         // ---------- Airdrops (after the wall drops) ----------
         /// <summary>Mode options: how many airdrops come after the wall drops, evenly spaced (1 = half way through, 2 = at the thirds...).</summary>
@@ -303,11 +306,11 @@ namespace RockGame
         [Tune("Airdrop")] public static int SniperAmmo = 3, JetpackFuel = 100, PortalShots = 2, RocketAmmo = 3; // (the portal gun: two shots = one linked pair)
         [Tune("Airdrop")] public static float JetpackSeconds = 8f, JetpackThrust = 9f, GiantTime = 30f, GiantScale = 3f;
         [Tune("Airdrop")] public static float SlenderSpeed = 4.6f, SlenderHp = 150f, SlenderLife = 60f;
-        [Tune("Airdrop")] public static float RocketSpeed = 32f, RocketRadius = 3.5f, RocketStructureDamage = 900f, RocketPlayerDamage = 140f;
+        [Tune("Airdrop")] public static float RocketSpeed = 32f, RocketRadius = 3.5f, RocketStructureDamage = 1500f, RocketPlayerDamage = 200f;
         [Tune("Airdrop")] public static float BombBushDamage = 150f, AirstrikeRadius = 14f, AirstrikeDelay = 4f, EggBlockHp = 60f;
         [Tune("Airdrop")] public static float WandRange = 90f, WandRadius = 3f;
         [Tune("Airdrop")] public static float InvisTime = 30f, InvisRevealTime = 1.2f;
-        [Tune("Airdrop")] public static int ChainsawUses = 67, AirdropResources = 1000;
+        [Tune("Airdrop")] public static int ChainsawUses = 134, AirdropResources = 1000;
         // how common each item is in airdrops (and respawn loot, Fun Random): a weight - 20 comes twice as often as 10, 0 never
         // (only among the items picked in the mode options; if every picked item is 0 they're all equally likely)
         [Tune("Airdrop rarity")] public static int RarityC4 = 10, RarityDeathWand = 10, RarityPortalGun = 10, RarityRocketLauncher = 10, RarityTreeCamo = 10,
@@ -388,11 +391,17 @@ namespace RockGame
         // ---------- Building ----------
         [Tune("Building")] public static float BuildCooldown = 0f, UpgradeCooldown = 0f, DemolishRefund = 0.5f;
         [Tune("Building")] public static float PackUpHoldTime = 0.8f;   // hold E this long on an empty chest / workbench of yours to pick it up
-        [Tune("Building")] public static float WallRebuildCooldown = 4f; // seconds before a wall can go back where one was just broken
+        [Tune("Building")] public static float WallRebuildCooldown = 25f; // seconds before a piece of a base can go back where one was just destroyed
         [Tune("Building")] public static int FoundationWood = 15, WallWood = 15, DoorwayWood = 20, WindowWood = 15, FloorWood = 12, StairsWood = 20;
         [Tune("Building")] public static int FoundationStone = 50, WallStone = 50, DoorwayStone = 40, WindowStone = 45, FloorStone = 30, StairsStone = 30;
-        [Tune("Building HP")] public static float FoundationHp = 500, WallHp = 400, DoorwayHp = 350, WindowHp = 350, FloorHp = 300, StairsHp = 300;
-        [Tune("Building HP")] public static float FoundationStoneHp = 1800, WallStoneHp = 1500, DoorwayStoneHp = 1200, WindowStoneHp = 1300, FloorStoneHp = 1000, StairsStoneHp = 1000;
+        // wood is flimsy; stone is what wood used to be, and metal what stone used to be (refined keeps its old HP)
+        [Tune("Building HP")] public static float FoundationHp = 190, WallHp = 150, DoorwayHp = 130, WindowHp = 130, FloorHp = 110, StairsHp = 110;
+        [Tune("Building HP")] public static float FoundationStoneHp = 500, WallStoneHp = 400, DoorwayStoneHp = 350, WindowStoneHp = 350, FloorStoneHp = 300, StairsStoneHp = 300;
+        [Tune("Building HP")] public static float FoundationMetalHp = 1800, WallMetalHp = 1500, DoorwayMetalHp = 1200, WindowMetalHp = 1300, FloorMetalHp = 1000, StairsMetalHp = 1000;
+        /// <summary>The door leaf of a doorway: its own (lower) health, a share of the doorway's at that tier. Broken on its
+        /// own it leaves the frame standing, open (Structure.DoorHealth).</summary>
+        [Tune("Building HP")] public static float DoorLeafHpMul = 0.5f;
+        public static float DoorLeafHp(int tier) => Mathf.Max(1f, Mathf.Round(PieceHp(PieceType.Doorway, tier) * DoorLeafHpMul));
         [Tune("Building HP")] public static float BarrierHp = 500, ChestHp = 300, TowerHp = 800;
 
         // ---------- Crafting (at the alien machine) ----------
@@ -421,12 +430,12 @@ namespace RockGame
         /// <summary>Builder: the ball always has a flag pointing at the sky (on), or only grows one while it's planted (off).</summary>
         [Tune("Arsenal and Builder")] public static bool BuilderFlagAlwaysUp = true;
         [Tune("Arsenal and Builder")] public static int FortifyWood = 5000, PistolWood = 5000;
-        /// <summary>Fortify All Walls goes up a step every time your team buys it: stone, then metal (that's the top: the
-        /// refined step isn't sold any more).</summary>
-        [Tune("Arsenal and Builder")] public static int FortifyStoneWood = 1000, FortifyMetalWood = 2000;
+        /// <summary>Fortify All Walls goes up a step every time your team buys it: stone, then sheet metal, then armoured
+        /// (the old "refined" tier, back as the top step - only a little better than sheet metal).</summary>
+        [Tune("Arsenal and Builder")] public static int FortifyStoneWood = 2500, FortifyMetalWood = 2000, FortifyArmouredWood = 3000;
         [Tune("Arsenal and Builder")] public static int SwordWood = 500, C4Wood = 2500, HelmetWood = 800, ShotgunWood = 2000, ShellWood = 250, RevolverWood = 2500, RevolverAmmoWood = 200;
         /// <summary>Sword: a slow, heavy swing (the swing time is adjustable) - its own head / body damage instead of the usual x2.</summary>
-        [Tune("Arsenal and Builder")] public static float SwordSwingTime = 1.25f, SwordHeadDamage = 150f, SwordBodyDamage = 95f, SwordRange = 2.9f;
+        [Tune("Arsenal and Builder")] public static float SwordSwingTime = 1.5f, SwordHeadDamage = 150f, SwordBodyDamage = 95f, SwordRange = 2.9f;
         /// <summary>Waterpipe shotgun: one shell at a time. Each pellet does full damage within PointBlank metres, falling off to FarMul at Range.</summary>
         [Tune("Arsenal and Builder")] public static int ShotgunPellets = 10;
         [Tune("Arsenal and Builder")] public static float ShotgunPelletDamage = 20f, ShotgunSpread = 5f, ShotgunPointBlank = 1f, ShotgunRange = 25f, ShotgunFarMul = 0.15f, ShotgunReload = 2.4f;
@@ -437,20 +446,24 @@ namespace RockGame
         /// <summary>Revolver: 5 rounds, its own head / body damage.</summary>
         [Tune("Arsenal and Builder")] public static int RevolverMag = 5;
         [Tune("Arsenal and Builder")] public static float RevolverBodyDamage = 30f, RevolverHeadDamage = 50f, RevolverFireRate = 0.3f, RevolverReload = 2f;
-        /// <summary>Auto Wood: wood added to the pile at every base each second.</summary>
+        /// <summary>Revolver: RMB aims down the sights (like the crossbow) - the field of view while aiming.</summary>
+        [Tune("Arsenal and Builder")] public static float RevolverZoomFov = 52f;
+        /// <summary>Auto Wood: wood added to a base's pile each second once the team has bought its wood machine (the wood
+        /// gen's first level - no base starts with one).</summary>
         [Tune("Auto Wood")] public static int AutoWoodPerSecond = 5;
-        /// <summary>Auto Wood: the wood gen upgrade's three levels - wood a second at each, and what each costs.</summary>
-        /// <summary>The wood gen upgrade has two levels: wood a second at each, and what each costs.</summary>
+        /// <summary>The wood gen upgrade has three levels: the first builds the wood machine (Auto Wood Per Second), the
+        /// next two speed it up - wood a second at each, and what each costs.</summary>
         [Tune("Auto Wood")] public static int AutoWoodLevel1 = 12, AutoWoodLevel2 = 25;
-        [Tune("Auto Wood")] public static int WoodGen1Wood = 1000, WoodGen2Wood = 3000;
+        [Tune("Auto Wood")] public static int WoodGenBuildWood = 500, WoodGen1Wood = 1000, WoodGen2Wood = 3000;
         /// <summary>Pistol: hitscan, this much damage a shot (a headshot has its own number instead of the usual x2).</summary>
         [Tune("Arsenal and Builder")] public static float PistolHeadDamage = 200f, PistolBodyDamage = 95f;
-        /// <summary>Metal (Fortify All Walls' top step): this many times the stone HP (it used to be 2); melee does this share of its damage.</summary>
+        /// <summary>Metal (Fortify All Walls' top step): its HP is the ...MetalHp numbers (MetalHpMul isn't used any more); melee does this share of its damage.</summary>
         [Tune("Building HP")] public static float MetalHpMul = 1.5f, MetalMeleeMul = 0.15f;
-        /// <summary>Refined (not sold any more - no fortify step reaches it): this many times the stone HP; melee does this share of its damage.</summary>
-        [Tune("Building HP")] public static float RefinedHpMul = 3f, RefinedMeleeMul = 0.05f;
-        /// <summary>Rockets: the share of their damage a piece of this tier takes (sheet metal and refined shrug most of it off).</summary>
-        [Tune("Building HP")] public static float MetalRocketMul = 0.45f, RefinedRocketMul = 0.2f;
+        /// <summary>Armoured (the code's "refined": Fortify All Walls' third and top step) - only slightly better than sheet
+        /// metal: this many times the metal HP; melee does this share of its damage.</summary>
+        [Tune("Building HP")] public static float RefinedHpMul = 1.15f, RefinedMeleeMul = 0.12f;
+        /// <summary>Rockets: the share of their damage a piece of this tier takes (sheet metal and armoured shrug a lot of it off).</summary>
+        [Tune("Building HP")] public static float MetalRocketMul = 0.45f, RefinedRocketMul = 0.38f;
         public static float TierBlastMul(int tier) => tier >= 3 ? RefinedRocketMul : tier == 2 ? MetalRocketMul : 1f;
         /// <summary>The share of melee damage a piece of this tier takes.</summary>
         public static float TierMeleeMul(int tier) => tier >= 3 ? RefinedMeleeMul : tier == 2 ? MetalMeleeMul : tier == 1 ? StoneStructureMeleeMul : 1f;
@@ -474,7 +487,7 @@ namespace RockGame
             switch (i)
             {
                 case Item.BuildingPlan: return "Building Plan";
-                case Item.Hatchet: return "Stone Hatchet";
+                case Item.Hatchet: return "Hatchet";
                 case Item.Pickaxe: return "Stone Pickaxe";
                 case Item.Ram: return "Battering Ram";
                 case Item.Chest: return "Storage Chest";
@@ -519,8 +532,8 @@ namespace RockGame
                 case Item.Revolver: return "Revolver";
                 case Item.RevolverAmmo: return "Revolver Bullet";
                 case Item.Dna: return "DNA";
-                case Item.Workbench: return "Workbench T1";
-                case Item.Workbench2: return "Workbench T2";
+                case Item.Workbench: return "Trade Station";    // (the code still calls them workbenches, T1 and T2)
+                case Item.Workbench2: return "Trade Station 2";
                 case Item.None: return "";
                 default: return i.ToString();
             }
@@ -741,8 +754,17 @@ namespace RockGame
         }
         public static float PieceHp(PieceType t, int tier)
         {
-            if (tier >= 3) return PieceHp(t, 1) * RefinedHpMul; // refined
-            if (tier >= 2) return PieceHp(t, 1) * MetalHpMul; // metal
+            if (tier >= 3) return PieceHp(t, 2) * RefinedHpMul; // refined
+            if (tier >= 2)
+                switch (t) // metal
+                {
+                    case PieceType.Foundation: return FoundationMetalHp;
+                    case PieceType.Wall: return WallMetalHp;
+                    case PieceType.Doorway: return DoorwayMetalHp;
+                    case PieceType.Window: return WindowMetalHp;
+                    case PieceType.Floor: return FloorMetalHp;
+                    case PieceType.Stairs: return StairsMetalHp;
+                }
             bool stone = tier == 1;
             switch (t)
             {
@@ -817,11 +839,13 @@ namespace RockGame
         /// <summary>Fortify All Walls and the wood gen aren't crafted: they're bought in UPGRADES (E on your upgrade station,
         /// Upgrades.cs). Builder has no machines, so there Fortify stays in this list.</summary>
         static Item[] k_Power => Builder ? k_PowerBuilder : k_PowerBase;
-        /// <summary>Auto Wood: how many times a team has upgraded its wood gen (0-3), synced by NetGame.</summary>
+        /// <summary>Auto Wood: how many times a team has upgraded its wood gen (0 = no wood machine yet, 1-3), synced by NetGame.</summary>
         public static int WoodGenLevel(int team) => NetGame.Instance != null && team >= 0 && team < 4 ? NetGame.Instance.WoodGenLevelOf(team) : 0;
-        public const int MaxWoodGen = 2;
-        /// <summary>Wood a second at each wood gen level.</summary>
-        public static int WoodGenRate(int level) => level >= 2 ? AutoWoodLevel2 : level == 1 ? AutoWoodLevel1 : AutoWoodPerSecond;
+        public const int MaxWoodGen = 3;
+        /// <summary>Wood a second at each wood gen level: nothing until the machine is bought (level 1, the default speed), then faster.</summary>
+        public static int WoodGenRate(int level) => level >= 3 ? AutoWoodLevel2 : level == 2 ? AutoWoodLevel1 : level == 1 ? AutoWoodPerSecond : 0;
+        /// <summary>What each wood gen level costs (the level being bought: 1 builds the machine, 2 and 3 speed it up).</summary>
+        public static int WoodGenWood(int level) => level >= 3 ? WoodGen2Wood : level == 2 ? WoodGen1Wood : WoodGenBuildWood;
         /// <summary>Auto Wood: the wood machine stands on the bedrock to the right of the alien machine (as you look at it from your spawn).</summary>
         public static Vector3 WoodMachinePos(int team) => MachinePos(team) + Quaternion.LookRotation(-BackDir(team)) * new Vector3(-2.35f, 0, 0.1f);
         /// <summary>Where the wood machine's logs land and its pile grows, in the machine's own space (+z out of the front):
@@ -834,10 +858,12 @@ namespace RockGame
         /// <summary>Where an item is in the power menu (-1 if it isn't there).</summary>
         public static int PowerIndex(Item id) => System.Array.IndexOf(k_Power, id);
         public static int PowerCount => PowerMenu ? k_Power.Length : 0;
-        /// <summary>How many times a team has bought Fortify All Walls (0 never, 1 stone, 2 metal), synced by NetGame.</summary>
+        /// <summary>How many times a team has bought Fortify All Walls (0 never, 1 stone, 2 metal, 3 armoured), synced by NetGame.</summary>
         public static int FortifyLevel(int team) => NetGame.Instance != null && team >= 0 && team < 4 ? NetGame.Instance.FortifyLevelOf(team) : 0;
-        public const int MaxFortify = 2;
-        public static string TierName(int tier) => tier >= 3 ? "Refined" : tier == 2 ? "Metal" : tier == 1 ? "Stone" : "Wooden";
+        public const int MaxFortify = 3;
+        public static string TierName(int tier) => tier >= 3 ? "Armoured" : tier == 2 ? "Metal" : tier == 1 ? "Stone" : "Wooden";
+        /// <summary>What each Fortify All Walls step costs (the step being bought: 1 stone, 2 metal, 3 armoured).</summary>
+        public static int FortifyWoodFor(int step) => step >= 3 ? FortifyArmouredWood : step == 2 ? FortifyMetalWood : FortifyStoneWood;
 
         /// <summary>A power item's price. Fortify costs more each time the team buys it (team -1: the first step).</summary>
         public static Recipe GetPowerRecipe(int i, int team = -1)
@@ -1025,6 +1051,8 @@ namespace RockGame
             (5, new[] { "BallGatherMul" }),
             (6, new[] { "Workbench2Wood" }),
             (7, new[] { "RevolverMag" }),
+            (8, new[] { "FortifyStoneWood", "RefinedHpMul", "RefinedMeleeMul", "RefinedRocketMul" }),
+            (9, new[] { "RocketPlayerDamage", "RocketStructureDamage", "ChainsawUses", "SwordSwingTime" }),
         };
         const string MigrateKey = "RockGame.Tunables.migrated";
 

@@ -29,7 +29,7 @@ namespace RockGame
             if (r.Output == Item.Armor && ArmorHp.Value >= Cfg.ArmorHp) { Notify("You're already wearing full armour"); return; }
             if (r.Output == Item.HeavyArmor && ArmorHp.Value >= Cfg.HeavyArmorHp) { Notify("You're already wearing heavy armour"); return; }
             if (r.Output == Item.Helmet && (HelmetHp.Value > 0 || CraftingItem.Value == (byte)Item.Helmet || CraftQueue.Contains((byte)Item.Helmet))) { Notify("You're already wearing a helmet"); return; }
-            if (r.Output == Item.FortifyBuff && Cfg.FortifyLevel(Team.Value) >= Cfg.MaxFortify) { Notify("Your walls are already metal - fully fortified"); return; }
+            if (r.Output == Item.FortifyBuff && Cfg.FortifyLevel(Team.Value) >= Cfg.MaxFortify) { Notify("Your walls are already armoured - fully fortified"); return; }
             if (r.Output == Item.WoodGenBuff && Cfg.WoodGenLevel(Team.Value) >= Cfg.MaxWoodGen) { Notify("Your wood gen is already maxed out"); return; }
             if (!CanAfford(r)) { Notify($"Not enough resources for {r.Name}"); return; }
             bool noItem = r.Output == Item.Armor || r.Output == Item.HeavyArmor || r.Output == Item.Helmet || r.Output == Item.FortifyBuff || r.Output == Item.WoodGenBuff;
@@ -119,14 +119,20 @@ namespace RockGame
         public readonly NetworkVariable<byte> TutStep = new NetworkVariable<byte>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
 
         /// <summary>Tutorial mode only: 1 = I'm at the glass wall step (the server drops the wall once every player is);
-        /// 2 = the eat step: make me hungry (half health) so there's something to heal.</summary>
+        /// 2 = the eat step: make me hungry (half health) so there's something to heal; 3 and up: the later steps' props
+        /// (training dummies, an airdrop, the hut to raid, the wood for an upgrade, the finale, a joiner's kit) -
+        /// Tutorial.ServerAction.</summary>
         [Rpc(SendTo.Server)]
         public void TutorialRpc(byte action)
         {
             if (!Cfg.Tutorial || NetGame.Instance == null) return;
-            if (action == 1) Tutorial.ServerAtWall(this);
-            else if (action == 2) Tutorial.ServerHungry(this);
+            Tutorial.ServerAction(this, action);
         }
+
+        /// <summary>Tutorial: the server tells this player's guide that something it's waiting for happened (Tutorial.OnEvent:
+        /// 1 = you hit a training dummy, 2 = you finished one off; arg 1 = from range, 0 = up close).</summary>
+        [Rpc(SendTo.Owner)]
+        public void TutEventRpc(byte what, byte arg) => Tutorial.OnEvent(what, arg);
 
         float m_NextSuicide;
 
@@ -159,7 +165,7 @@ namespace RockGame
             Reveal();
             if (Vector3.Distance(point, EyePos) > 250f) point = EyePos + dir.normalized * 100f;
             // (not back to the shooter: they already drew their own tracer the moment they fired - two of them was the "double tracer")
-            Fx.Server(FxKind.SniperTracer, EyePos + dir.normalized * 0.5f - Vector3.up * 0.15f, point, OwnerClientId);
+            Fx.Server(gun == Item.Revolver ? FxKind.RevolverTracer : FxKind.PistolTracer, EyePos + dir.normalized * 0.5f - Vector3.up * 0.15f, point, OwnerClientId);
             if (!hasTarget || !target.TryGet(out var no) || !GameAllowsCombat) return;
             if (no.TryGetComponent(out PlayerNet p) && p != this && !p.Dead.Value)
             {
@@ -173,12 +179,13 @@ namespace RockGame
                     Notify("Their helmet stopped your headshot!");
                     return;
                 }
+                p.ServerMarkHead(head);
                 p.ServerDamage(head ? Cfg.GunHead(gun) : Cfg.GunBody(gun), this);
                 p.ServerBleed(head, point, dir, OwnerClientId);
                 if (p.Dead.Value) KillConfirmRpc();
             }
             else if (no.TryGetComponent(out Vehicle v)) v.ServerDamage(Cfg.GunBody(gun) * v.HeadMul(point), this);
-            else if (no.TryGetComponent(out Structure s) && s.Tier.Value == 0) s.ServerDamage(10f);
+            else if (no.TryGetComponent(out Structure s) && s.Tier.Value == 0) s.ServerDamageAt(10f, point);
         }
 
         /// <summary>Fills the pistol's / revolver's magazine from its ammo.</summary>
@@ -218,7 +225,7 @@ namespace RockGame
             m_ShotgunFrom = EyePos;
             Reveal();
             // everyone else sees one tracer; the shooter already drew its own pellets
-            Fx.Server(FxKind.SniperTracer, EyePos + dir.normalized * 0.5f - Vector3.up * 0.15f, EyePos + dir.normalized * Mathf.Min(Cfg.ShotgunRange, 30f), OwnerClientId);
+            Fx.Server(FxKind.ShotgunTracer, EyePos + dir.normalized * 0.5f - Vector3.up * 0.15f, EyePos + dir.normalized * Mathf.Min(Cfg.ShotgunRange, 30f), OwnerClientId);
         }
 
         /// <summary>Pellets from the last shot that hit a player: the server works out the damage from how far away they were.</summary>
@@ -252,6 +259,7 @@ namespace RockGame
                     else dmg += per * Cfg.ShotgunHeadMul * head;
                 }
                 if (dmg <= 0f) return;
+                p.ServerMarkHead(head > 0);
                 p.ServerDamage(dmg, this);
                 p.ServerBleed(head > 0, point, (point - m_ShotgunFrom).normalized, OwnerClientId);
                 if (p.Dead.Value) KillConfirmRpc();

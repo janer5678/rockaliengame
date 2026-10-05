@@ -62,12 +62,17 @@ namespace RockGame
             if (s_WingR == null) BuildMeshes();
             var rng = new System.Random(Cfg.MapSeed * 13 + 71);
             float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
-            float half = Cfg.MapHalf - 5f;
+            // (they stay on the map's own ground: well inside the glass, off the rocky rise at the edge of Highlands - it
+            // starts 14 m in - and clear of the ring of mountain rocks, the nearest of which poke in over the edge)
+            float half = Cfg.MapHalf - EdgeMargin;
+            s_Edge = half;
             int want = Mathf.RoundToInt(PerMap * Mathf.Clamp(Cfg.MapHalf * Cfg.MapHalf / 10000f, 0.4f, 2.5f));
             for (int tries = 0; tries < want * 4 && m_Flies.Count < want; tries++)
             {
-                var home = new Vector3(R(-half, half), 0f, R(-half, half));
                 float radius = R(2.5f, 6f);
+                // (the whole loop inside the edge, not just its middle)
+                var home = new Vector3(R(-half + radius, half - radius), 0f, R(-half + radius, half - radius));
+                if (NearMountain(home, radius)) continue;
                 // (out in the wild: their loops stay out of the bases and out of the burning crash in the middle)
                 if (new Vector2(home.x, home.z).magnitude < 16f + radius) continue;
                 bool inBase = false;
@@ -90,6 +95,25 @@ namespace RockGame
                 t.gameObject.SetActive(false);
                 m_Flies.Add(f);
             }
+        }
+
+        /// <summary>How far in from the edge of the map their loops stay (m).</summary>
+        public static float EdgeMargin => Cfg.Map == MapKind.Highlands ? 17f : 7f;
+        /// <summary>They keep this far from the mountain rocks round the map (m).</summary>
+        public const float MountainClear = 4f;
+        static float s_Edge = 1e6f;
+
+        /// <summary>Would a loop of this radius round `home` come near one of the mountain rocks round the map?</summary>
+        static bool NearMountain(Vector3 home, float radius)
+        {
+            for (int k = 0; k < 9; k++)
+            {
+                float a = k * Mathf.PI / 4f, r = k == 8 ? 0f : radius;
+                var p = home + new Vector3(Mathf.Cos(a) * r, 0f, Mathf.Sin(a) * r);
+                p.y = MapBuilder.Height(p.x, p.z) + 1.5f;
+                if (MapBuilder.InMountain(p, MountainClear)) return true;
+            }
+            return false;
         }
 
         static Transform Part(Transform parent, Mesh mesh, Material mat, string name)
@@ -151,6 +175,9 @@ namespace RockGame
             float a = t * f.Speed;
             float x = f.Home.x + (Mathf.Sin(a + f.P1) * 0.62f + Mathf.Sin(a * 2.3f + f.P2) * 0.38f) * f.Radius;
             float z = f.Home.z + (Mathf.Cos(a * 0.83f + f.P2) * 0.62f + Mathf.Sin(a * 1.9f + f.P1) * 0.38f) * f.Radius;
+            // (never out over the edge, whatever its loop does)
+            x = Mathf.Clamp(x, -s_Edge, s_Edge);
+            z = Mathf.Clamp(z, -s_Edge, s_Edge);
             float y = MapBuilder.Height(x, z) + f.Height + Mathf.Sin(t * 0.9f + f.P2) * 0.4f - Mathf.Sin(t * f.Flap + f.P1) * 0.035f;
             return new Vector3(x, y, z);
         }

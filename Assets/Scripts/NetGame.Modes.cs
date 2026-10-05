@@ -13,11 +13,11 @@ namespace RockGame
         public readonly NetworkVariable<double> NextFunItem = new NetworkVariable<double>(-1);
 
 
-        /// <summary>How many times each team has bought Fortify All Walls (2 bits a team: 0 never, 1 stone, 2 metal).</summary>
+        /// <summary>How many times each team has bought Fortify All Walls (2 bits a team: 0 never, 1 stone, 2 metal, 3 armoured).</summary>
         public readonly NetworkVariable<int> FortifyLevels = new NetworkVariable<int>();
         public int FortifyLevelOf(int team) => (FortifyLevels.Value >> (team * 2)) & 3;
 
-        /// <summary>Auto Wood: each team's wood gen upgrade level (2 bits a team, 0-3).</summary>
+        /// <summary>Auto Wood: each team's wood gen upgrade level (2 bits a team: 0 no wood machine yet, 1-3).</summary>
         public readonly NetworkVariable<int> WoodGenLevels = new NetworkVariable<int>();
         public int WoodGenLevelOf(int team) => (WoodGenLevels.Value >> (team * 2)) & 3;
 

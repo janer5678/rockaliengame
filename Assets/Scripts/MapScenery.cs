@@ -105,7 +105,10 @@ namespace RockGame
         {
             if (Cfg.Map != MapKind.Plains && Cfg.Map != MapKind.Highlands) return;
             BuildRanges(root);
-            BuildBoulders(root);
+            // (Plains is the open map: no big boulders standing about on it - the stone nodes are NetGame's, and stay)
+            Boulders.Clear();
+            BoulderRadius.Clear();
+            if (Cfg.Map != MapKind.Plains) BuildBoulders(root);
             BuildOutskirts(root);
         }
 
@@ -293,13 +296,38 @@ namespace RockGame
                     // a spot on the inner two rows of the band (the side that faces the map)
                     float u = T(0f, 1f), v = T(0f, 1f);
                     int j = trng.NextDouble() < 0.6 ? 0 : 1;
-                    var q0 = Vector3.Lerp(p[i, j], p[i1, j], u);
-                    var q1 = Vector3.Lerp(p[i, j + 1], p[i1, j + 1], u);
-                    var at = Vector3.Lerp(q0, q1, v);
+                    // (on the face it's on, exactly: the band's squares aren't flat - each is two faces, cut the same way
+                    // as above - and a spot between the four corners could be metres under the rock, or over it)
+                    Vector3 a0 = p[i, j], b0 = p[i1, j], c0 = p[i1, j + 1], d0 = p[i, j + 1], at, fn;
+                    if (((i + j) & 1) == 0)
+                    {
+                        if (v <= u) { at = a0 + u * (b0 - a0) + v * (c0 - b0); fn = Vector3.Cross(b0 - a0, c0 - a0); }
+                        else { at = a0 + u * (c0 - d0) + v * (d0 - a0); fn = Vector3.Cross(c0 - a0, d0 - a0); }
+                    }
+                    else if (u + v <= 1f) { at = a0 + u * (b0 - a0) + v * (d0 - a0); fn = Vector3.Cross(b0 - a0, d0 - a0); }
+                    else { at = c0 + (1f - u) * (d0 - c0) + (1f - v) * (b0 - c0); fn = Vector3.Cross(c0 - b0, d0 - b0); }
                     if (at.y < -1f || at.y > treeLine * T(0.6f, 1f)) continue;
-                    trees.Add(new PineSpot { Foot = at - Vector3.up * 0.8f, Height = treeH * T(0.7f, 1.3f), Yaw = T(0f, 360f), Pick = trng.Next() });
+                    // not on a face so steep that the rock behind the tree would come up through its needles
+                    if (Mathf.Abs(fn.normalized.y) < RangeTreeMinUp) continue;
+                    float th = treeH * T(0.7f, 1.3f);
+                    var spot = new PineSpot { Foot = at - Vector3.up * 0.8f, Height = th, Yaw = T(0f, 360f), Pick = trng.Next() };
+                    // nor in one of the ring's mountain rocks, which stand in front of the nearest range
+                    if (PineInMountain(spot.Foot, th, th * 0.22f)) continue;
+                    trees.Add(spot);
                 }
             }
+        }
+
+        /// <summary>The forests on the ranges keep to faces that look at least this much upwards (the face's normal's y:
+        /// 0.55 is a slope of about 57 degrees).</summary>
+        public const float RangeTreeMinUp = 0.55f;
+
+        /// <summary>Would a pine standing on `foot` (h tall, its lowest tier reaching r out) be in one of the ring's
+        /// mountain rocks (MapBuilder.MountainRocks)? Its trunk, its widest needles and its top are checked.</summary>
+        public static bool PineInMountain(Vector3 foot, float h, float r)
+        {
+            return MapBuilder.InMountain(foot + Vector3.up * 0.5f, 0.6f) || MapBuilder.InMountain(foot + Vector3.up * (h * 0.3f), r + 0.3f)
+                || MapBuilder.InMountain(foot + Vector3.up * (h * 0.6f), r * 0.6f + 0.3f) || MapBuilder.InMountain(foot + Vector3.up * h, 0.5f);
         }
 
         // =====================================================================
@@ -326,6 +354,7 @@ namespace RockGame
             var rocks = new MeshBatch();
             var rocksDark = new MeshBatch();
             var pines = new List<PineSpot>();
+            var rockSpots = new List<(Vector3 top, float reach)>(); // (each rock: the top of it, and how far it reaches round)
             float inner = half + 6f, outer = half + 27f; // (the ground reaches half + 30)
             // (a pine's reach round its trunk: its lowest tier, at the biggest it's drawn)
             float pineReach = PineReach * 1.2f;
@@ -357,6 +386,8 @@ namespace RockGame
                         gy = MapBuilder.Height(x, z);
                     }
                     AddRock(i % 3 == 0 ? rocksDark : rocks, new Vector3(x, gy + size.y * 0.2f, z), Quaternion.Euler(R(-15f, 15f), R(0f, 360f), R(-15f, 15f)), size, rng.Next());
+                    // (its corners reach up to 1.2 x half its size out - AddRock's jitter)
+                    rockSpots.Add((new Vector3(x, gy + size.y * 0.8f, z), reach));
                     OutskirtRocks++;
                 }
             }
@@ -372,6 +403,9 @@ namespace RockGame
                 float out01 = Mathf.InverseLerp(inner, outer, m);
                 TryPine(pines, x, z, m, R(0.8f, 1.15f) * (0.9f + out01 * 0.3f), R(0f, 360f), rng.Next(), half, pineReach);
             }
+            // no pine standing in a rock, a mountain rock or the rocky rise (they were, here and there: trunks coming up
+            // through boulders, needles through the mountains' sides)
+            pines.RemoveAll(sp => PineClips(sp, rockSpots));
             OutskirtTrees = pines.Count;
             var go = new GameObject("Outskirts");
             go.transform.SetParent(root, false);
@@ -387,6 +421,31 @@ namespace RockGame
             PsxPines.Add(go, pines, pineRs, 1);
         }
 
+        /// <summary>
+        /// Is this outskirts pine in the rock? Its trunk in one of the outskirts' rocks (or its needles in one tall enough to
+        /// reach them); any of it in one of the ring's mountain rocks; or (Highlands) on a crag of the rocky rise so steep
+        /// that the ground beside it comes up into its needles.
+        /// </summary>
+        static bool PineClips(PineSpot sp, List<(Vector3 top, float reach)> rocks)
+        {
+            var tpl = Pines()[(sp.Pick & 0x7fffffff) % Pines().Count];
+            float s = sp.Height / Mathf.Max(1f, tpl.Top), r = tpl.Reach * s;
+            float needles = sp.Foot.y + sp.Height * 0.2f; // (about where its lowest branch tips hang)
+            foreach (var (top, reach) in rocks)
+            {
+                float d = new Vector2(top.x - sp.Foot.x, top.z - sp.Foot.z).magnitude;
+                if (d < reach + 0.45f) return true;
+                if (top.y > needles && d < reach + r * 0.85f) return true;
+            }
+            if (PineInMountain(sp.Foot, sp.Height, r)) return true;
+            for (int k = 0; k < 8; k++)
+            {
+                float a = k * Mathf.PI / 4f;
+                if (MapBuilder.GroundHeight(sp.Foot.x + Mathf.Cos(a) * r * 0.8f, sp.Foot.z + Mathf.Sin(a) * r * 0.8f) > needles + 0.3f) return true;
+            }
+            return false;
+        }
+
         /// <summary>A pine out past the edge at (x, z) (m: how far out it is, the larger of |x| and |z|), pushed straight out
         /// until none of it reaches back in towards the dome, and not right on top of another one.</summary>
         static void TryPine(List<PineSpot> pines, float x, float z, float m, float scale, float yaw, int pick, float half, float reach)
@@ -400,7 +459,7 @@ namespace RockGame
             foreach (var o in pines)
                 if (new Vector2(o.Foot.x - x, o.Foot.z - z).sqrMagnitude < 2.6f * 2.6f) return;
             var tpl = Pines()[(pick & 0x7fffffff) % Pines().Count];
-            pines.Add(new PineSpot { Foot = new Vector3(x, MapBuilder.Height(x, z) - 0.15f, z), Height = tpl.Top * scale, Yaw = yaw, Pick = pick });
+            pines.Add(new PineSpot { Foot = new Vector3(x, Mathf.Min(MapBuilder.Height(x, z), MapBuilder.GroundHeight(x, z)) - 0.15f, z), Height = tpl.Top * scale, Yaw = yaw, Pick = pick });
         }
 
         // =====================================================================

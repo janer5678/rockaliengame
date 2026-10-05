@@ -10,6 +10,9 @@ namespace RockGame
     {
         public static readonly Color Berry = new Color(0.75f, 0.08f, 0.2f), Leaf = new Color(0.25f, 0.5f, 0.2f), Twine = new Color(0.8f, 0.7f, 0.5f);
 
+        /// <summary>The darker, harder wood the hatchet's blade and the spear / arrow points are carved from (they used to be stone).</summary>
+        public static readonly Color HardWood = new Color(0.24f, 0.15f, 0.08f);
+
         static Mesh s_Leaf;
         /// <summary>
         /// A leaf, 1 long along +Z from its stalk end: pointed at both ends and widest a third of the way up, folded into a
@@ -68,13 +71,14 @@ namespace RockGame
                     break;
                 case Item.Hatchet:
                 {
-                    // light handle, one big flat slate blade sticking out forward, leather wrap
-                    var slate = new Color(0.38f, 0.4f, 0.44f);
+                    // all wood: a light handle and one big flat blade carved from a darker, harder wood sticking out
+                    // forward (where the stone used to be), its edge whittled a shade paler, a dark wood collar and grip
+                    var hard = HardWood;
                     Art.Box(t, new Color(0.72f, 0.55f, 0.32f), new Vector3(0, 0.25f, 0), new Vector3(0.05f, 0.62f, 0.05f));
-                    Art.Box(t, new Color(0.35f, 0.2f, 0.1f), new Vector3(0, 0.02f, 0), new Vector3(0.06f, 0.14f, 0.06f));
-                    Art.Box(t, slate, new Vector3(0, 0.5f, 0.12f), new Vector3(0.035f, 0.2f, 0.2f));
-                    Art.Box(t, slate * 1.25f, new Vector3(0, 0.5f, 0.23f), new Vector3(0.03f, 0.26f, 0.04f));
-                    Art.Box(t, new Color(0.35f, 0.2f, 0.1f), new Vector3(0, 0.5f, 0.0f), new Vector3(0.07f, 0.1f, 0.07f));
+                    Art.Box(t, hard * 0.85f, new Vector3(0, 0.02f, 0), new Vector3(0.06f, 0.14f, 0.06f));
+                    Art.Box(t, hard, new Vector3(0, 0.5f, 0.12f), new Vector3(0.035f, 0.2f, 0.2f));
+                    Art.Box(t, hard * 1.35f, new Vector3(0, 0.5f, 0.23f), new Vector3(0.03f, 0.26f, 0.04f));
+                    Art.Box(t, hard * 0.85f, new Vector3(0, 0.5f, 0.0f), new Vector3(0.07f, 0.1f, 0.07f));
                     break;
                 }
                 case Item.Pickaxe:
@@ -91,13 +95,15 @@ namespace RockGame
                 }
                 case Item.Spear:
                 {
-                    // long dark shaft with white bands, a big bone-white leaf blade and red feathers under it
-                    Art.Box(t, new Color(0.3f, 0.2f, 0.12f), new Vector3(0, 0.3f, 0), new Vector3(0.04f, 1.5f, 0.04f));
-                    for (int k = 0; k < 3; k++) Art.Box(t, new Color(0.9f, 0.88f, 0.8f), new Vector3(0, -0.2f + k * 0.35f, 0), new Vector3(0.05f, 0.04f, 0.05f));
-                    Art.Part(t, Art.Cone, new Color(0.92f, 0.9f, 0.82f), new Vector3(0, 0.93f, 0), new Vector3(0.13f, 0.35f, 0.05f));
-                    Art.Box(t, new Color(0.85f, 0.12f, 0.1f), new Vector3(0.04f, 0.86f, 0), new Vector3(0.02f, 0.14f, 0.05f), new Vector3(0, 0, -25));
-                    Art.Box(t, new Color(0.85f, 0.12f, 0.1f), new Vector3(-0.04f, 0.86f, 0), new Vector3(0.02f, 0.14f, 0.05f), new Vector3(0, 0, 25));
-                    Art.Box(t, Twine, new Vector3(0, 0.92f, 0), new Vector3(0.06f, 0.06f, 0.06f));
+                    // all wood: a long pale shaft with carved rings, a big leaf blade of darker, harder wood (where the
+                    // stone point used to be) with two barbs under it and a dark wood collar
+                    var hard = HardWood;
+                    Art.Box(t, new Color(0.62f, 0.45f, 0.26f), new Vector3(0, 0.3f, 0), new Vector3(0.04f, 1.5f, 0.04f));
+                    for (int k = 0; k < 3; k++) Art.Box(t, Art.DarkWood, new Vector3(0, -0.2f + k * 0.35f, 0), new Vector3(0.05f, 0.04f, 0.05f));
+                    Art.Part(t, Art.Cone, hard, new Vector3(0, 0.93f, 0), new Vector3(0.13f, 0.35f, 0.05f));
+                    Art.Box(t, hard * 1.3f, new Vector3(0.04f, 0.86f, 0), new Vector3(0.02f, 0.14f, 0.05f), new Vector3(0, 0, -25));
+                    Art.Box(t, hard * 1.3f, new Vector3(-0.04f, 0.86f, 0), new Vector3(0.02f, 0.14f, 0.05f), new Vector3(0, 0, 25));
+                    Art.Box(t, hard * 0.8f, new Vector3(0, 0.92f, 0), new Vector3(0.06f, 0.06f, 0.06f));
                     break;
                 }
                 case Item.Bow:
@@ -155,11 +161,11 @@ namespace RockGame
                     break;
                 case Item.Dna: DnaArt.Helix(t, 0.34f); break;
                 case Item.Arrow:
-                    // thin pale shaft, small dark tip, bright red and white fletching
+                    // all wood: a thin pale shaft, a small point of darker, harder wood, thin wooden vanes for fletching
                     Art.Box(t, new Color(0.85f, 0.75f, 0.55f), new Vector3(0, 0.2f, 0), new Vector3(0.018f, 0.7f, 0.018f));
-                    Art.Part(t, Art.Cone, new Color(0.25f, 0.25f, 0.28f), new Vector3(0, 0.55f, 0), new Vector3(0.045f, 0.1f, 0.045f));
-                    Art.Box(t, new Color(0.9f, 0.15f, 0.12f), new Vector3(0, -0.1f, 0), new Vector3(0.09f, 0.12f, 0.005f));
-                    Art.Box(t, Color.white, new Vector3(0, -0.1f, 0), new Vector3(0.005f, 0.12f, 0.09f));
+                    Art.Part(t, Art.Cone, HardWood, new Vector3(0, 0.55f, 0), new Vector3(0.045f, 0.1f, 0.045f));
+                    Art.Box(t, Art.Wood, new Vector3(0, -0.1f, 0), new Vector3(0.09f, 0.12f, 0.005f));
+                    Art.Box(t, Art.DarkWood, new Vector3(0, -0.1f, 0), new Vector3(0.005f, 0.12f, 0.09f));
                     break;
                 case Item.Berry:
                     // two real leaves (pointed, folded along the middle, curling up) on a little stem over the berries
@@ -207,6 +213,33 @@ namespace RockGame
                     Art.Box(t, new Color(0.35f, 1f, 0.5f), new Vector3(0, 0.19f, 0), new Vector3(0.04f, 0.04f, 0.3f));
                     Art.Box(t, shell * 0.8f, new Vector3(0.17f, 0.02f, 0), new Vector3(0.04f, 0.1f, 0.1f));
                     Art.Box(t, shell * 0.8f, new Vector3(-0.17f, 0.02f, 0), new Vector3(0.04f, 0.1f, 0.1f));
+                    // the detail (all inside the dome's footprint, so PlayerNet.FitHelmet sizes it as before): a rim round the
+                    // bottom, a brow over the visor, two slanted glowing eye slits, a breather under it, armour plates up
+                    // the crest, a light on each ear pod with an antenna behind it, and a power pack on the back
+                    var dark = new Color(0.2f, 0.22f, 0.27f);
+                    var glow = new Color(0.35f, 1f, 0.5f);
+                    Art.Part(t, Art.Cylinder, shell * 0.7f, new Vector3(0, -0.055f, 0), new Vector3(0.345f, 0.012f, 0.385f));
+                    Art.Box(t, shell * 0.85f, new Vector3(0, 0.075f, 0.165f), new Vector3(0.26f, 0.03f, 0.06f), new Vector3(-18, 0, 0));
+                    for (int k = -1; k <= 1; k += 2)
+                    {
+                        Art.Box(t, glow, new Vector3(k * 0.062f, 0.012f, 0.211f), new Vector3(0.075f, 0.022f, 0.012f), new Vector3(0, k * 22f, k * 16f));
+                        Art.Part(t, Art.Cylinder, dark, new Vector3(k * 0.182f, 0.02f, 0), new Vector3(0.07f, 0.008f, 0.07f), new Vector3(0, 0, 90));
+                        Art.Part(t, Art.Ico, glow, new Vector3(k * 0.18f, 0.02f, 0), Vector3.one * 0.012f);
+                        Art.Box(t, dark, new Vector3(k * 0.16f, 0.15f, -0.05f), new Vector3(0.012f, 0.2f, 0.012f), new Vector3(-14, 0, -k * 5f));
+                        Art.Part(t, Art.Ico, glow, new Vector3(k * 0.169f, 0.25f, -0.075f), Vector3.one * 0.018f);
+                        // cheek plates either side of the breather
+                        Art.Box(t, shell * 0.75f, new Vector3(k * 0.1f, -0.045f, 0.13f), new Vector3(0.07f, 0.05f, 0.1f), new Vector3(0, k * 28f, 0));
+                    }
+                    Art.Box(t, dark, new Vector3(0, -0.06f, 0.165f), new Vector3(0.1f, 0.05f, 0.07f));
+                    for (int k = -1; k <= 1; k++) Art.Box(t, shell * 0.55f, new Vector3(k * 0.028f, -0.06f, 0.202f), new Vector3(0.012f, 0.036f, 0.006f));
+                    for (int k = 0; k < 4; k++)
+                    {
+                        float z = -0.12f + k * 0.075f;
+                        Art.Box(t, shell * 0.7f, new Vector3(0, 0.185f - Mathf.Abs(z) * 0.22f, z), new Vector3(0.085f, 0.022f, 0.05f), new Vector3(z * 110f, 0, 0));
+                    }
+                    Art.Box(t, dark, new Vector3(0, 0.03f, -0.175f), new Vector3(0.14f, 0.11f, 0.045f), new Vector3(12, 0, 0));
+                    Art.Box(t, glow, new Vector3(0, 0.045f, -0.199f), new Vector3(0.09f, 0.014f, 0.01f), new Vector3(12, 0, 0));
+                    Art.Box(t, glow * 0.7f, new Vector3(0, 0.015f, -0.193f), new Vector3(0.05f, 0.014f, 0.01f), new Vector3(12, 0, 0));
                     break;
                 }
                 case Item.InvisPotion:
@@ -233,7 +266,7 @@ namespace RockGame
                     var bolt = new GameObject("bolt").transform;
                     bolt.SetParent(t, false);
                     Art.Box(bolt, Art.Wood, new Vector3(0, 0.055f, 0.2f), new Vector3(0.015f, 0.015f, 0.4f));
-                    Art.Part(bolt, Art.Cone, Art.Stone, new Vector3(0, 0.055f, 0.42f), new Vector3(0.035f, 0.07f, 0.035f), new Vector3(90, 0, 0));
+                    Art.Part(bolt, Art.Cone, HardWood, new Vector3(0, 0.055f, 0.42f), new Vector3(0.035f, 0.07f, 0.035f), new Vector3(90, 0, 0));
                     break;
                 }
                 case Item.Armor:
@@ -413,6 +446,9 @@ namespace RockGame
                     Art.Box(t, gun, new Vector3(0, 0.03f, -0.05f), new Vector3(0.04f, 0.06f, 0.06f));
                     Art.Box(t, new Color(0.45f, 0.28f, 0.14f), new Vector3(0, -0.05f, -0.07f), new Vector3(0.04f, 0.12f, 0.055f), new Vector3(-18, 0, 0));
                     Art.Box(t, gun, new Vector3(0, -0.015f, -0.01f), new Vector3(0.01f, 0.035f, 0.04f));
+                    // the sights you look down with RMB: a blade at the muzzle, a notch over the hammer
+                    Art.Box(t, gun * 1.6f, new Vector3(0, 0.092f, 0.25f), new Vector3(0.006f, 0.016f, 0.014f));
+                    for (int k = -1; k <= 1; k += 2) Art.Box(t, gun * 0.8f, new Vector3(k * 0.009f, 0.075f, -0.072f), new Vector3(0.007f, 0.03f, 0.012f));
                     break;
                 }
                 case Item.ShotgunShell:
@@ -454,18 +490,19 @@ namespace RockGame
                     break;
                 }
                 case Item.WoodGenBuff:
-                    // a little stack of logs with a green up arrow
+                    // a little stack of logs with a big orange-yellow up arrow well above it (an upgrade, not a heal)
                     for (int k = 0; k < 3; k++)
                         Art.Part(t, Art.Cylinder, k == 1 ? Art.Wood * 0.9f : Art.Wood, new Vector3(-0.08f + k * 0.08f, 0.04f, 0), new Vector3(0.07f, 0.12f, 0.07f), new Vector3(90, 0, 0));
                     Art.Part(t, Art.Cylinder, Art.Wood, new Vector3(-0.04f, 0.11f, 0), new Vector3(0.07f, 0.12f, 0.07f), new Vector3(90, 0, 0));
                     Art.Part(t, Art.Cylinder, Art.Wood * 0.9f, new Vector3(0.04f, 0.11f, 0), new Vector3(0.07f, 0.12f, 0.07f), new Vector3(90, 0, 0));
-                    Art.Box(t, new Color(0.3f, 0.9f, 0.3f), new Vector3(0, 0.24f, 0), new Vector3(0.04f, 0.1f, 0.04f));
-                    Art.Part(t, Art.Cone, new Color(0.3f, 0.9f, 0.3f), new Vector3(0, 0.31f, 0), new Vector3(0.1f, 0.06f, 0.1f));
+                    Art.Box(t, UpgradeStation.Green, new Vector3(0, 0.3f, 0), new Vector3(0.065f, 0.12f, 0.065f));
+                    Art.Part(t, Art.Cone, UpgradeStation.Green, new Vector3(0, 0.385f, 0), new Vector3(0.18f, 0.11f, 0.18f));
                     break;
                 case Item.FortifyBuff:
-                    // a stone brick with a gold star
+                    // a stone brick with the same big orange-yellow up arrow well above it
                     Art.Box(t, Art.Stone, new Vector3(0, 0.07f, 0), new Vector3(0.24f, 0.14f, 0.14f));
-                    Art.Part(t, Art.Ico, new Color(1f, 0.85f, 0.3f), new Vector3(0, 0.17f, 0), Vector3.one * 0.06f);
+                    Art.Box(t, UpgradeStation.Green, new Vector3(0, 0.29f, 0), new Vector3(0.065f, 0.12f, 0.065f));
+                    Art.Part(t, Art.Cone, UpgradeStation.Green, new Vector3(0, 0.375f, 0), new Vector3(0.18f, 0.11f, 0.18f));
                     break;
                 case Item.Boat:
                     // a toy rowing boat

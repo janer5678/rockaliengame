@@ -10,8 +10,11 @@ namespace RockGame
     /// frame: the sky's open for the UFO and the camera, nothing for the ship to clip through), and the ball's beam of
     /// light is off (Ball.LateUpdate: it used to run straight up through the UFO); a UFO like the airdrop ship
     /// (AirdropShip.BuildShip) flies in under the clouds and hovers over the winners' bedrock, opens its hatch and its
-    /// beam comes down; one by one the winners float up the beam, spinning, and are sucked in through the hatch (the beam
-    /// goes see-through round them, so you see them inside the light); then the beam goes off, the hatch shuts, the ship
+    /// beam comes down - and when it hits, the winners' base blows up like a rocket hit it (Blast: only a picture, on every
+    /// peer - explosions, its pieces gone, chunks of them flying); then, one by one, the winners float up the beam,
+    /// spinning, and rise full size right up through the hatch into the ship's hull (the beam goes see-through round them,
+    /// so you see them inside the light) while the camera's lens closes in on the beam and opens out again; then the beam
+    /// goes off, the hatch shuts, the ship
     /// dips, tilts, spins up and lifts high up over the mountains' tops (CruiseY), and only then shoots off over the edge
     /// of the map (over the mountains, not into them), vanishing in a twinkle of light. Then the victory screen comes up.
     ///
@@ -32,15 +35,20 @@ namespace RockGame
     public static class VictoryCutscene
     {
         /// <summary>The timeline (seconds after the start; the dome is gone from the start): the ship comes in and hovers by
-        /// Arrive; its hatch opens at HatchAt; the beam comes on at BeamOn; rider i starts floating up at
-        /// LiftStart + i * LiftStagger and is in the ship LiftTime later; the beam goes off at BeamOff; the hatch shuts and
+        /// Arrive; its hatch opens at HatchAt; the beam comes on at BeamOn and blows the base up when it hits the ground
+        /// (BlastAt); rider i starts floating up at LiftStart + i * LiftStagger (after the blast) and is in the ship
+        /// LiftTime later; the beam goes off at BeamOff - right after the last one's in; the hatch shuts and
         /// the ship winds up from LeaveStart (dips, tilts, spins up, lifts up over the mountains) and dashes off at
         /// DashStart, gone at Gone; the victory screen comes up at Length.</summary>
         public const float Arrive = 4.2f, HatchAt = 3.9f, HatchTime = 0.8f, BeamOn = 4.9f;
-        public const float LiftStart = 6.3f, LiftStagger = 0.6f, LiftTime = 3.2f;
+        public const float BlastAt = BeamOn + 0.35f;
+        public const float LiftStart = 6.9f, LiftStagger = 0.6f, LiftTime = 3.2f;
         public const int MaxRiders = 8;
-        public const float BeamOff = LiftStart + (4 - 1) * LiftStagger + LiftTime + 0.6f;
-        public const float LeaveStart = BeamOff + 0.9f, WindUp = 3f, DashStart = LeaveStart + WindUp, DashTime = 2.2f, LeaveTime = WindUp + DashTime;
+        public const float BeamOff = LiftStart + (4 - 1) * LiftStagger + LiftTime + 0.3f;
+        public const float LeaveStart = BeamOff + 0.45f, WindUp = 2.5f, DashStart = LeaveStart + WindUp, DashTime = 2.2f, LeaveTime = WindUp + DashTime;
+        /// <summary>The camera's lens: wide (WideFov), a little tighter once the beam's on (BeamFov), right in on the beam
+        /// while the winners go up it (ZoomFov), then back out.</summary>
+        public const float WideFov = 62f, BeamFov = 54f, ZoomFov = 30f;
         public const float Gone = LeaveStart + LeaveTime, Length = Gone + 0.9f;
         /// <summary>How high the UFO hovers over the winners.</summary>
         public const float HoverUp = 26f;
@@ -121,6 +129,8 @@ namespace RockGame
             if (!Active)
             {
                 if (s_Ship != null) Clear();
+                // (the blown-up base stays gone behind the victory screen; its pieces show again if the game moves on with them still there)
+                if (s_Blown.Count > 0 && (g == null || g.S != GameState.GameOver)) Unblast();
                 // the dome comes back once the game's moved on (a new map builds a new one anyway)
                 if (MapDome.Fade < 1f && (g == null || g.S != GameState.GameOver)) MapDome.SetFade(1f);
                 return;
@@ -198,8 +208,96 @@ namespace RockGame
             }
             for (; slot < 4; slot++) foreach (var m in new[] { s_BeamMat, s_CoreMat, s_HaloMat }) BeamFx.SetClear(m, slot, Vector3.zero, 0f);
 
+            Blast(g, e);
             Cues(e, pos);
             Twinkle(e);
+        }
+
+        // ------------------------------------------------------------------ the base blows up
+
+        /// <summary>The blast's explosions: when (after BlastAt) and where (out from the middle of the base, as a part of its half width).</summary>
+        static readonly (float at, Vector2 off)[] k_Blasts = { (0f, Vector2.zero), (0.14f, new Vector2(0.55f, 0.3f)), (0.28f, new Vector2(-0.45f, -0.5f)), (0.42f, new Vector2(-0.3f, 0.6f)) };
+        /// <summary>How many chunks of the base fly at most, how long they last (s) and how hard gravity pulls them.</summary>
+        const int MaxChunks = 70;
+        const float ChunkLife = 3.2f, ChunkGravity = 14f;
+        static readonly List<Renderer> s_Blown = new List<Renderer>();
+        static int s_Blasts;
+        /// <summary>Test hooks: how many of the base's renderers the blast has hidden on this peer, and how many of its explosions have gone off.</summary>
+        public static int BlownCount => s_Blown.Count;
+        public static int Blasts => s_Blasts;
+
+        /// <summary>
+        /// The beam hits the winners' base and it blows up like a rocket hit it - before anyone goes up the beam. Only a
+        /// picture, the same on every peer (the match is over; nothing on the server changes): a few of the rocket's
+        /// explosions (Fx.Explosion: flash, fireball, smoke, shockwave, shake, boom) across the base, every building piece
+        /// and chest in it gone, and chunks of them thrown up and out.
+        /// </summary>
+        static void Blast(NetGame g, float e)
+        {
+            if (e < BlastAt || s_Blasts >= k_Blasts.Length) return;
+            if (e > BlastAt + 2f)
+            {
+                // (joined late: no bangs, but the base is gone)
+                if (s_Blasts == 0) HideBase(g, false);
+                s_Blasts = k_Blasts.Length;
+                return;
+            }
+            int team = Mathf.Clamp(g.Winner.Value, 0, 3);
+            var back = Cfg.BackDir(team);
+            var side = Vector3.Cross(Vector3.up, back);
+            while (s_Blasts < k_Blasts.Length && e >= BlastAt + k_Blasts[s_Blasts].at)
+            {
+                var o = k_Blasts[s_Blasts].off * Cfg.BaseHalf;
+                var at = s_Spot + side * o.x + back * o.y;
+                if (s_Blasts == 0) HideBase(g, true);
+                Fx.Explosion(new Vector3(at.x, Mathf.Max(at.y, MapBuilder.Height(at.x, at.z)) + 0.8f, at.z));
+                s_Blasts++;
+            }
+        }
+
+        /// <summary>Is this spot part of the winners' base (in it, or built on out from it)?</summary>
+        static bool InBase(Vector3 p, int team) =>
+            Cfg.BaseTeamAt(p) == team || new Vector2(p.x - s_Spot.x, p.z - s_Spot.z).magnitude < Cfg.BaseHalf + 5f;
+
+        /// <summary>Hide every building piece and chest of the winners' base (their renderers: the objects stay), and - chunks - throw bits of them up and out.</summary>
+        static void HideBase(NetGame g, bool chunks)
+        {
+            int team = Mathf.Clamp(g.Winner.Value, 0, 3);
+            var roots = new List<Transform>();
+            foreach (var s in Structure.All) if (s != null && InBase(s.transform.position, team)) roots.Add(s.transform);
+            foreach (var c in Container.All) if (c != null && !c.IsAirdrop && InBase(c.transform.position, team)) roots.Add(c.transform);
+            int budget = MaxChunks, per = Mathf.Clamp(MaxChunks / Mathf.Max(1, roots.Count), 1, 4);
+            foreach (var root in roots)
+            {
+                Material mat = null;
+                Bounds b = default;
+                bool any = false;
+                foreach (var r in root.GetComponentsInChildren<Renderer>())
+                {
+                    if (!r.enabled) continue;
+                    if (r is MeshRenderer && r.sharedMaterial != null && mat == null) mat = r.sharedMaterial;
+                    if (any) b.Encapsulate(r.bounds); else { b = r.bounds; any = true; }
+                    r.enabled = false;
+                    s_Blown.Add(r);
+                }
+                if (!chunks || !any || mat == null) continue;
+                for (int i = 0; i < per && budget > 0; i++, budget--)
+                {
+                    var from = new Vector3(Random.Range(b.min.x, b.max.x), Random.Range(b.min.y, b.max.y), Random.Range(b.min.z, b.max.z));
+                    var away = from - s_Spot;
+                    away.y = 0f;
+                    away = away.sqrMagnitude > 0.05f ? away.normalized : Random.onUnitSphere;
+                    var vel = away * Random.Range(4f, 13f) + Vector3.up * Random.Range(7f, 17f) + Random.insideUnitSphere * 3f;
+                    VictoryChunk.Spawn(from, vel, mat, new Vector3(Random.Range(0.35f, 1.3f), Random.Range(0.15f, 0.5f), Random.Range(0.35f, 1.1f)), ChunkLife * Random.Range(0.7f, 1f), ChunkGravity);
+                }
+            }
+        }
+
+        /// <summary>Show the base's pieces again (the ones still there).</summary>
+        static void Unblast()
+        {
+            foreach (var r in s_Blown) if (r != null) r.enabled = true;
+            s_Blown.Clear();
         }
 
         /// <summary>The sounds on the timeline (each once on every peer).</summary>
@@ -213,7 +311,7 @@ namespace RockGame
             if (Cue(5, BeamOff + 0.2f)) Sfx.Play2D(Sfx.Door, 0.6f, 0f);
             if (Cue(6, LeaveStart)) Sfx.Play2D(Sfx.Engine, 0.45f, 0f);
             if (Cue(7, DashStart)) { Sfx.Play2D(Sfx.Rocket, 0.8f, 0f); Sfx.Play2D(Sfx.Whiz, 0.6f, 0f); }
-            if (Cue(8, Gone - 0.05f)) { Sfx.Play2D(Sfx.Zap, 0.6f, 0f); Sfx.Play2D(Sfx.Unlock, 0.5f, 0f); }
+            // (no sound as it vanishes any more: just the twinkle)
         }
 
         /// <summary>The twinkle as it vanishes: a star of light that flares and fades where it went.</summary>
@@ -318,23 +416,32 @@ namespace RockGame
             s_Puffed.Clear();
             s_Taken.Clear();
             s_Cues.Clear();
+            s_Blasts = 0;
         }
 
         // ------------------------------------------------------------------ the riders
 
-        /// <summary>How far up rider p's body is floated u of the way up the beam (only the picture moves).</summary>
+        /// <summary>How far over the hatch a rider's feet end up: their whole body inside the hull (it's about 2.2 m from
+        /// the hatch up to the ship's middle), hidden by it.</summary>
+        const float InsideUp = 0.35f;
+
+        /// <summary>How far up rider p's body is floated u of the way up the beam (only the picture moves): slowly off the
+        /// ground, then faster and faster, still going as it passes up through the hatch into the hull.</summary>
         static float RiderUp(PlayerNet p, float u)
         {
             if (u <= 0f) return 0f;
-            float hatch = s_Hover.y + AirdropShip.HatchY - 0.6f;
-            float ease = u * u * (3f - 2f * u);
-            return Mathf.Max(0f, hatch - p.transform.position.y - 1.2f) * ease + Mathf.Sin(u * Mathf.PI) * 0.4f;
+            // (where the ship really is: it bobs a little as it hovers)
+            float shipY = s_Ship != null && s_Ship.Root ? s_Ship.Root.transform.position.y : s_Hover.y;
+            float inside = shipY + AirdropShip.HatchY + InsideUp;
+            float ease = u * u * (1.6f - 0.6f * u);
+            return Mathf.Max(0f, inside - p.transform.position.y) * ease + Mathf.Sin(u * Mathf.PI) * 0.4f;
         }
 
         /// <summary>
         /// Is this player being beamed up right now (and how)? Their body (only the picture - the player stays where they
-        /// are) floats up the beam towards the hatch, turning faster and faster, shrinking as it's sucked in; gone: it's
-        /// in the ship (hide it). Everyone else - and everyone outside the cutscene - false.
+        /// are) floats up the beam, turning faster and faster, and - full size (it used to shrink away at the top) - rises
+        /// on up through the hatch into the ship's hull, so they're seen going inside; gone: it's in the ship (hide it).
+        /// Everyone else - and everyone outside the cutscene - false.
         /// </summary>
         public static bool Lift(PlayerNet p, out float up, out float spin, out float scale, out bool gone)
         {
@@ -351,7 +458,6 @@ namespace RockGame
             if (u >= 1f) { gone = true; return true; }
             up = RiderUp(p, u);
             spin = 540f * u * u;
-            scale = u < 0.7f ? 1f : Mathf.Lerp(1f, 0.15f, (u - 0.7f) / 0.3f);
             return true;
         }
 
@@ -501,10 +607,43 @@ namespace RockGame
             if (!s_LookSet) { s_Look = want; s_LookSet = true; }
             s_Look = Vector3.Lerp(s_Look, want, 1f - Mathf.Exp(-Time.deltaTime * (e > DashStart ? 4f : 2.2f)));
             rot = Quaternion.LookRotation(s_Look - pos);
-            // the lens: wide as it comes in, closing in on the winners going up, wide again to see it go
+            // the lens: wide as it comes in, a little tighter once the beam's on, right in on the beam while the winners go
+            // up it, then back out to where it was to see the ship go
             float tight = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((e - BeamOn) / 1.5f)) * (1f - Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((e - BeamOff) / 1.2f)));
-            fov = Mathf.Lerp(62f, 52f, tight);
+            float zoom = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((e - (LiftStart - 0.4f)) / 1.6f)) * (1f - Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((e - (BeamOff - 0.9f)) / 1.5f)));
+            fov = Mathf.Lerp(Mathf.Lerp(WideFov, BeamFov, tight), ZoomFov, zoom);
             return true;
+        }
+    }
+
+    /// <summary>A chunk of the winners' base thrown out by the cutscene's blast: it flies, tumbles, falls, and shrinks away at the end.</summary>
+    public class VictoryChunk : MonoBehaviour
+    {
+        Vector3 m_Vel, m_Spin, m_Size;
+        float m_Age, m_Life, m_Grav;
+
+        public static void Spawn(Vector3 pos, Vector3 vel, Material mat, Vector3 size, float life, float grav)
+        {
+            var go = Art.Part(null, Art.Cube, Color.white, pos, size, Random.rotation.eulerAngles, false, mat, "VictoryChunk");
+            go.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            var c = go.AddComponent<VictoryChunk>();
+            c.m_Vel = vel; c.m_Size = size; c.m_Life = life; c.m_Grav = grav;
+            c.m_Spin = Random.insideUnitSphere * 420f;
+        }
+
+        void Update()
+        {
+            float dt = Time.deltaTime;
+            m_Age += dt;
+            if (m_Age >= m_Life) { Destroy(gameObject); return; }
+            m_Vel += Vector3.down * m_Grav * dt;
+            var p = transform.position + m_Vel * dt;
+            // it lands (and stays put) rather than falling through the ground
+            float ground = MapBuilder.Height(p.x, p.z) + 0.05f;
+            if (p.y < ground && m_Vel.y < 0f) { p.y = ground; m_Vel = Vector3.zero; m_Spin = Vector3.zero; }
+            transform.position = p;
+            transform.Rotate(m_Spin * dt, Space.Self);
+            transform.localScale = m_Size * Mathf.Clamp01((m_Life - m_Age) / 0.5f);
         }
     }
 }

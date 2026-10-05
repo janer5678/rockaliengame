@@ -218,6 +218,8 @@ namespace RockGame
                     case GameState.Waiting:
                         phase = $"Waiting for players  {PlayerNet.All.Count}/{Cfg.PlayersNeeded}  ({Cfg.ModeLabel})";
                         sub = "Rock brawl in the stadium while you wait!" + (boot.IsHost && PlayerNet.All.Count < 2 ? "  Friends join your IP." : "");
+                        // everyone's in: the countdown to the start (NetGame.Lobby.cs)
+                        if (game.StartCounting) { phase = $"Match starts in {Mathf.CeilToInt(game.StartsIn)}"; sub = "Everyone's here - get ready!"; }
                         break;
                     case GameState.PreBall when Cfg.Tutorial:
                         phase = "Tutorial";
@@ -251,6 +253,14 @@ namespace RockGame
             var tc = Cfg.TeamColor[team];
             Fill(new Rect(10, 10, 230 * k, 30 * k), new Color(tc.r, tc.g, tc.b, 0.6f));
             Shadowed(new Rect(18, 12, 230 * k, 28 * k), $"<b>YOU ARE {Cfg.TeamName[team]}</b>", m_Label);
+            // the radar for your own base, back under YOU ARE ... (under the FPS counter when that's on): how far it is and
+            // which way from where you're facing. Not in Builder (no bases) or up in the sudden death arena.
+            if (!Cfg.Builder && !me.Dead.Value && (game == null || game.S != GameState.SuddenDeath))
+            {
+                var rr = new Rect(10, 10 + 34 * k + (GameSettings.ShowFps ? 26 * k : 0f), 230 * k, 24 * k);
+                Fill(rr, new Color(0f, 0f, 0f, 0.4f));
+                Shadowed(new Rect(rr.x + 8, rr.y + 1, rr.width, rr.height), $"<color=#{ColorUtility.ToHtmlStringRGB(Color.Lerp(tc, Color.white, 0.45f))}>Your base:</color> {Direction(me.transform, Cfg.BaseCenter[team])}", m_Small);
+            }
             // ---- the gun's rounds, big, top left (pistol, revolver, shotgun) ----
             if ((Cfg.IsGun(me.HeldItem) || me.HeldItem == Item.Shotgun) && !me.Dead.Value)
             {
@@ -424,6 +434,7 @@ namespace RockGame
             FlareTip.Draw(k, m_Label, m_Small, Fill, Shadowed); // (by the glass wall while it's up: the ball is the emergency flare)
             Tutorial.Draw(k, m_Label, m_Small, Fill, Shadowed);
             if (!pc.Paused) Chat.Draw(k, m_Small, Fill, Shadowed);
+            DrawScoreboard(me, pc); // (while its key is held: Hud.Scoreboard.cs)
             DrawDragAndFlights(me, pc); // (on top of the bag, the tutorial panel and the chat)
             if (pc.WheelOpen) DrawWheel(pc);
             if (pc.AirstrikeMapOpen) DrawAirstrikeMap(me, pc);
@@ -557,10 +568,11 @@ namespace RockGame
             NoteSlotRect(kind, index, r);
             bool hover = r.Contains(e.mousePosition);
             bool isSource = m_Dragging && m_DragFrom.Kind == kind && m_DragFrom.Index == index;
-            // the slot a drag came from shows what's left behind (nothing, or the other half of a split); a slot something
-            // is flying into shows what it had before it lands (Hud.Flights.cs)
+            // the slot a drag came from shows what's left behind (nothing, or the other half of a split); the two slots of a
+            // drag just let go show what it makes of them until the server answers; a slot something is flying into shows
+            // what it had before it lands (Hud.Flights.cs)
             var shown = isSource ? (m_DragHalf ? s.WithCount(s.Count - DragAmount) : default)
-                : DropWaiting(kind, index) ? (s.Equals(m_DropStack) ? s.WithCount(s.Count - m_DropAmount) : s)
+                : ManualView(kind, index, s, out var moved) ? moved
                 : FlightView(kind, index, s);
             DrawSlotVisual(r, shown, selected, me, LandPop(kind, index));
             if (hover) { Fill(r, new Color(1, 1, 1, 0.08f)); if (!s.Empty) SetHover(s, me.Team.Value); }
@@ -585,7 +597,8 @@ namespace RockGame
                 int amount = DragAmount;
                 if (!(m_DragFrom.Kind == kind && m_DragFrom.Index == index))
                 {
-                    NoteDrop(m_DragFrom.Kind, m_DragFrom.Index, e.mousePosition, m_DragStack, amount);
+                    // (moved by hand: it doesn't fly there - it's just there)
+                    NoteManualMove(m_DragFrom.Kind, m_DragFrom.Index, kind, index, SlotNow(m_DragFrom.Kind, m_DragFrom.Index, me, pc), s, amount, pc.LootTarget);
                     me.MoveItemRpc(m_DragFrom.Kind, (byte)m_DragFrom.Index, kind, (byte)index, (ushort)amount, LootRef(pc));
                     Sfx.Play2D(Sfx.Pop, 0.3f, 0.2f);
                 }
@@ -594,6 +607,14 @@ namespace RockGame
                 m_Dragging = false;
                 e.Use();
             }
+        }
+
+        /// <summary>What a slot holds right now (kind 0 = my inventory, 1 = the open container).</summary>
+        static ItemStack SlotNow(byte kind, int index, PlayerNet me, PlayerController pc)
+        {
+            if (kind == 0) return me.SlotAt(index);
+            var c = pc.LootTarget;
+            return c != null && c.IsSpawned && index >= 0 && index < c.Slots.Count ? c.Slots[index] : default;
         }
 
         static NetworkObjectReference LootRef(PlayerController pc) =>
@@ -635,6 +656,7 @@ namespace RockGame
             if (pc.LootTarget != null)
             {
                 if (kind == 0 && pc.LootTarget.TakeOnly) return;
+                ExpectFlight(SlotNow(kind, index, me, pc).Id);
                 me.MoveItemRpc(kind, (byte)index, (byte)(1 - kind), 255, 0, LootRef(pc));
                 Sfx.Play2D(Sfx.Pop, 0.3f, 0.2f);
                 return;
@@ -648,6 +670,7 @@ namespace RockGame
             for (int i = start; i < end && target < 0; i++) if (!m_Swept.Contains(SlotKey(0, i)) && me.SlotAt(i).Empty) target = i;
             if (target >= 0)
             {
+                ExpectFlight(s.Id);
                 me.MoveItemRpc(0, (byte)index, 0, (byte)target, s.Count, default);
                 m_Swept.Add(SlotKey(0, target)); // (and a sweep doesn't carry it straight back when it passes over it)
             }
@@ -728,7 +751,10 @@ namespace RockGame
             const int cols = Cfg.HotbarSize;
             float slot = Mathf.Min(76 * k, (sw - 120) / 21f), gap = 6 * k;
             float gridW = cols * slot + (cols - 1) * gap;
-            bool loot = pc.LootTarget != null;
+            // (a crate that went the moment it was emptied - an airdrop - keeps its panel, empty, until the bag is closed:
+            // the bag used to jump over to the crafting layout in the middle of the move. Hud.Flights.cs)
+            bool ghost = pc.LootTarget == null && m_GhostLoot;
+            bool loot = pc.LootTarget != null || ghost;
             float top = sh * 0.14f;
             // the crafting list: one column (Hud.Crafting.cs)
             bool upgrades = !loot && pc.UpgradesOpen; // E on your alien machine: UPGRADES instead of crafting (Hud.Upgrades.cs)
@@ -746,7 +772,18 @@ namespace RockGame
             float lootBottom = top;
 
             // ---- loot container (right of the inventory) ----
-            if (loot)
+            if (ghost)
+            {
+                Shadowed(new Rect(lootX, top - 34 * k, lootW, 30 * k), $"<b>{m_GhostName.ToUpper()}</b>  <color=#bbbbbb>(empty)</color>", m_Label);
+                for (int i = 0; i < m_GhostSlots; i++)
+                {
+                    var r = new Rect(lootX + (i % cols) * (slot + gap), top + (i / cols) * (slot + gap), slot, slot);
+                    NoteSlotRect(1, i, r); // (what was taken out of it can still fly from here)
+                    DrawSlotVisual(r, default, false, me);
+                }
+                lootBottom = top + Mathf.Max(1, (m_GhostSlots + cols - 1) / cols) * (slot + gap);
+            }
+            else if (loot)
             {
                 var c = pc.LootTarget;
                 Shadowed(new Rect(lootX, top - 34 * k, lootW, 30 * k), $"<b>{c.DisplayName.ToUpper()}</b>" + (c.TakeOnly ? "  <color=#bbbbbb>(take only)</color>" : ""), m_Label);
@@ -820,7 +857,7 @@ namespace RockGame
         void DrawDragAndFlights(PlayerNet me, PlayerController pc)
         {
             var e = Event.current;
-            if (!pc.MenuOpen) { m_Dragging = false; m_Sweeping = false; m_Flights.Clear(); return; }
+            if (!pc.MenuOpen) { m_Dragging = false; m_Sweeping = false; m_Flights.Clear(); m_Manual.Clear(); ClearGhostLoot(); return; }
             // (the mouse buttons were let go somewhere the bag never heard about: drop the drag / the shift-drag)
             if (m_Dragging && e.type == EventType.Repaint && !TestDragHeld && !Input.GetMouseButton(0) && !Input.GetMouseButton(1)) m_Dragging = false;
             if (m_Sweeping && e.type == EventType.Repaint && !Input.GetMouseButton(0)) m_Sweeping = false;
@@ -947,7 +984,7 @@ namespace RockGame
                 GUI.DrawTexture(area, s_Wedges[i]);
                 float a = i * (360f / opts.Length) * Mathf.Deg2Rad;
                 var p = c + new Vector2(Mathf.Sin(a), -Mathf.Cos(a)) * R * 0.67f;
-                float isz = 78f * k;
+                float isz = (opts.Length <= 6 ? 96f : 78f) * k; // (six wide slices: bigger icons)
                 GUI.color = disabled ? new Color(1, 1, 1, 0.25f) : Color.white;
                 var icon = ItemIcons.Wheel(i);
                 if (icon != null) GUI.DrawTexture(new Rect(p.x - isz / 2, p.y - isz / 2, isz, isz), icon, ScaleMode.ScaleToFit, true);
@@ -1259,6 +1296,8 @@ namespace RockGame
             Shadowed(new Rect(0, sh * 0.3f + 80 * k, sw, 30 * k), game.EndReason.Value.ToString(), m_Center);
             if (won && game.CutsceneAt.Value >= 0) GUI.Label(new Rect(0, sh * 0.3f - 34 * k, sw, 28 * k), "<color=#9a9aaa>You escaped.</color>", m_Center);
             DrawLeaveButton(boot, new Rect(sw / 2 - 110 * k, sh * 0.3f + 140 * k, 220 * k, 46 * k));
+            // the tutorial ends with this screen: its "tutorial complete" card goes on top of it
+            if (Cfg.Tutorial) Tutorial.DrawOverGameOver(k, m_Label, m_Small, Fill, Shadowed);
         }
     }
 }

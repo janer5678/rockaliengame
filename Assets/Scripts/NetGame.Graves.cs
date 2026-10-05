@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace RockGame
 {
-    /// <summary>A gravestone where somebody died. They pile up for the whole match.</summary>
+    /// <summary>A gravestone where somebody died. Each one stands for Cfg.GraveLifetime seconds, then sinks away.</summary>
     public struct GraveInfo : INetworkSerializeByMemcpy, System.IEquatable<GraveInfo>
     {
         public Vector3 Pos;   // on the ground
@@ -14,11 +14,19 @@ namespace RockGame
         public bool Equals(GraveInfo o) => Pos == o.Pos && Yaw == o.Yaw && Team == o.Team && Seed == o.Seed;
     }
 
+    public static partial class Cfg
+    {
+        /// <summary>How long a gravestone stands before it sinks away (seconds; 0 = for the whole match).</summary>
+        [Tune("Match")] public static float GraveLifetime = 180f;
+    }
+
     public partial class NetGame
     {
         /// <summary>
-        /// Every grave this match: one goes down wherever a player dies (any mode, the space arena too) and none is ever
-        /// taken away - they're gone when the match ends (a new match is a new NetGame). Synced to late joiners.
+        /// The graves standing right now, oldest first: one goes down wherever a player dies (any mode, the space arena
+        /// too) and the server takes it away again Cfg.GraveLifetime seconds later (ServerTickGraves); the rest are gone
+        /// when the match ends (a new match is a new NetGame). Synced to late joiners. A grave holds nothing: what the
+        /// dead player carried was scattered on the ground when they died, and that loot stays where it is.
         /// </summary>
         public readonly NetworkList<GraveInfo> Graves = new NetworkList<GraveInfo>();
 
@@ -31,6 +39,25 @@ namespace RockGame
             if (!IsServer || Graves.Count >= MaxGraves) return;
             if (!GroundUnder(at, out var ground)) return;
             Graves.Add(new GraveInfo { Pos = ground, Yaw = yaw, Team = (byte)team, Seed = (byte)Random.Range(0, 256) });
+            m_GraveBorn.Add(NetworkManager.ServerTime.Time);
+        }
+
+        /// <summary>Server: when each grave in Graves went down (server time; the same order - oldest first).</summary>
+        readonly List<double> m_GraveBorn = new List<double>();
+        /// <summary>Server, for the tests: graves taken away because they got old.</summary>
+        public static int GravesExpired;
+
+        /// <summary>Server, every frame: gravestones older than Cfg.GraveLifetime go (every screen sinks them away: GraveFx.Sync).</summary>
+        void ServerTickGraves(double now)
+        {
+            if (Cfg.GraveLifetime <= 0f) return;
+            while (m_GraveBorn.Count > Graves.Count) m_GraveBorn.RemoveAt(0); // (kept in step, whatever happens)
+            while (Graves.Count > 0 && m_GraveBorn.Count == Graves.Count && now - m_GraveBorn[0] >= Cfg.GraveLifetime)
+            {
+                Graves.RemoveAt(0);
+                m_GraveBorn.RemoveAt(0);
+                GravesExpired++;
+            }
         }
 
         static readonly RaycastHit[] s_GraveHits = new RaycastHit[16];
@@ -59,6 +86,7 @@ namespace RockGame
         public const float Scale = 1.8f;
 
         static readonly List<GameObject> s_Shown = new List<GameObject>();
+        static readonly List<GraveInfo> s_Info = new List<GraveInfo>(); // (what each one in s_Shown is)
         static Transform s_Root;
 
         public static int Shown => s_Shown.Count;
@@ -67,14 +95,22 @@ namespace RockGame
         public static void Sync(NetGame g)
         {
             int n = g.Graves.Count;
-            while (s_Shown.Count > n) { if (s_Shown[s_Shown.Count - 1]) Object.Destroy(s_Shown[s_Shown.Count - 1]); s_Shown.RemoveAt(s_Shown.Count - 1); }
-            for (int i = s_Shown.Count; i < n; i++) s_Shown.Add(Build(g.Graves[i]));
+            // old graves are taken off the front of the list (the oldest first): those sink away into the ground
+            while (s_Shown.Count > 0 && (n == 0 || !s_Info[0].Equals(g.Graves[0])))
+            {
+                if (s_Shown[0]) s_Shown[0].AddComponent<GraveSink>();
+                s_Shown.RemoveAt(0);
+                s_Info.RemoveAt(0);
+            }
+            while (s_Shown.Count > n) { if (s_Shown[s_Shown.Count - 1]) Object.Destroy(s_Shown[s_Shown.Count - 1]); s_Shown.RemoveAt(s_Shown.Count - 1); s_Info.RemoveAt(s_Info.Count - 1); }
+            for (int i = s_Shown.Count; i < n; i++) { s_Shown.Add(Build(g.Graves[i])); s_Info.Add(g.Graves[i]); }
         }
 
         public static void Clear()
         {
             foreach (var go in s_Shown) if (go) Object.Destroy(go);
             s_Shown.Clear();
+            s_Info.Clear();
             if (s_Root) Object.Destroy(s_Root.gameObject);
             s_Root = null;
         }
@@ -103,6 +139,24 @@ namespace RockGame
             Art.Box(stone, Stone, new Vector3(0f, 0.68f, 0f), new Vector3(0.56f, 0.14f, 0.14f)).name = "cross bar";
             Art.Box(stone, team, new Vector3(0f, 0.68f, 0f), new Vector3(0.18f, 0.16f, 0.16f)).name = "team band";
             return go;
+        }
+    }
+
+    /// <summary>A gravestone that has had its time: it sinks into the ground and is gone (only a picture, on every screen).</summary>
+    public class GraveSink : MonoBehaviour
+    {
+        public const float Time = 1.6f;
+        float m_Age;
+        Vector3 m_From;
+
+        void Start() => m_From = transform.position;
+
+        void Update()
+        {
+            m_Age += UnityEngine.Time.deltaTime;
+            float k = Mathf.Clamp01(m_Age / Time);
+            transform.position = m_From + Vector3.down * (k * k * 1.1f * GraveFx.Scale);
+            if (k >= 1f) Destroy(gameObject);
         }
     }
 }

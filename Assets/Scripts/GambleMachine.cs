@@ -84,7 +84,7 @@ namespace RockGame
             yield return new WaitForSeconds(after);
             var g = NetGame.Instance;
             if (c == null || !c.IsSpawned || g == null) yield break;
-            string who = p != null ? Cfg.TeamLabel(p.Team.Value) : "Someone";
+            string who = p != null ? p.DisplayName : "Someone";
             if (!win) { g.Broadcast($"{who} gambled {bet} DNA and LOST it all"); yield break; }
             // double the bet comes flying out of the hatch, in full stacks
             int left = bet * 2, n = 0;

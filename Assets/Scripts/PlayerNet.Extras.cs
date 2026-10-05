@@ -124,9 +124,9 @@ namespace RockGame
         {
             if (c == null || !c.IsSpawned) return "";
             if (!(c.Breakable || c.IsWorkbench)) return "";
-            if (c.Team.Value != Team.Value) return c.IsWorkbench ? "That's the enemy's workbench" : "That's the enemy's chest";
+            if (c.Team.Value != Team.Value) return c.IsWorkbench ? "That's the enemy's trade station" : "That's the enemy's chest";
             if (!c.Empty) return "Empty the chest first";
-            if (c.IsWorkbench && c.BenchTier == 1 && Workbench.ForTeam(Team.Value, 2) != null) return "Pick up your Workbench T2 first";
+            if (c.IsWorkbench && c.BenchTier == 1 && Workbench.ForTeam(Team.Value, 2) != null) return "Pick up your Trade Station 2 first";
             return null;
         }
 
@@ -197,7 +197,7 @@ namespace RockGame
         {
             var g = NetGame.Instance;
             if (g == null) return;
-            string who = Cfg.TeamName[Team.Value];
+            string who = DisplayName;
             string what = cmd.ToString();
             switch (cmd)
             {
@@ -233,7 +233,7 @@ namespace RockGame
                 case DevCmd.StartSuddenDeath: g.DevStartSuddenDeath(); break;
                 case DevCmd.WinNow: g.EndGame(Team.Value, $"{who} used the dev win button"); break;
                 case DevCmd.RegrowNodes: g.DevRegrowNodes(); break;
-                case DevCmd.UnlockBench: g.ServerUnlockBench(Team.Value, "used the dev setting"); what = "unlocked their workbench"; break;
+                case DevCmd.UnlockBench: g.ServerUnlockBench(Team.Value, "used the dev setting"); what = "unlocked their trade station"; break;
                 case DevCmd.TpAirdrop:
                 {
                     var d = g.ActiveDrop;

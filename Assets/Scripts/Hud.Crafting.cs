@@ -97,7 +97,7 @@ namespace RockGame
         {
             switch (id)
             {
-                case Item.Hatchet: return "Stone Hatchet: chops trees much faster than your rock. Can be crafted anywhere.";
+                case Item.Hatchet: return "Hatchet: chops trees much faster than your rock. Can be crafted anywhere.";
                 case Item.Pickaxe: return "Stone Pickaxe: mines rocks for stone much faster than your rock.";
                 case Item.Spear: return "Spear: LMB stabs; hold RMB and press LMB to throw it (E picks it back up). Can be crafted anywhere.";
                 case Item.BuildingPlan: return "Building Plan: hold it to build. Hold RMB for the building wheel.";
@@ -107,10 +107,10 @@ namespace RockGame
                 case Item.Ram: return $"Battering Ram ({Cfg.RamUses} hit{(Cfg.RamUses == 1 ? "" : "s")}): hold LMB at an enemy piece - wood breaks, stone and up drop a step.";
                 case Item.Barrier: return "High External Wall: a tall log wall for your base or out in the open.";
                 case Item.Workbench:
-                    return "Workbench T1: put it down anywhere in your base. The sword, crossbow, armour, chainsaw, high walls, saddle and more show up in this list (crafted in your base). Only C4 stuck right on it breaks it (it drops)."
+                    return "Lets you obtain more stuff by trading resources intergalactically."
                         + (Cfg.BenchUnlocked(team) ? "" : $" LOCKED for everyone until the ball is captured: any team puts it in its machine once, or keeps it in its base for {Cfg.BenchUnlockSeconds:0} s"
                             + (NetGame.Instance != null ? $" (your base {Mathf.Min(NetGame.Instance.BallInBaseSecondsOf(team), Mathf.RoundToInt(Cfg.BenchUnlockSeconds))} s, the nearest team {Mathf.Min(NetGame.Instance.BallInBaseSecondsBest, Mathf.RoundToInt(Cfg.BenchUnlockSeconds))} / {Cfg.BenchUnlockSeconds:0} s so far)." : "."));
-                case Item.Workbench2: return "Workbench T2 (needs the T1): put it down in your base for the ammo, guns, the alien helmet, C4 and more. Only C4 stuck right on it breaks it (it drops).";
+                case Item.Workbench2: return "Lets you obtain EVEN MORE STUFF by trading resources intergalactically.";
                 case Item.Crossbow: return $"Crossbow: {Cfg.CrossbowDamage:0} damage, faster and flatter than the bow. Reloads itself from your arrows.";
                 case Item.Armor: return $"Armour: {Cfg.ArmorHp} extra health used up before your own.";
                 case Item.Chainsaw: return $"Chainsaw: rips through wood and stone. {Cfg.ChainsawUses} uses.";
@@ -349,9 +349,9 @@ namespace RockGame
                 {
                     if (visible)
                     {
-                        // the heading: WORKBENCH T1 / T2 (or BASICS) with a line in its colour
+                        // the heading: TRADE STATION / TRADE STATION 2 (or BASICS) with a line in its colour
                         var col = k_TierCol[Mathf.Clamp(tier, 0, 2)];
-                        string title = tier == 0 ? "BASICS" : $"WORKBENCH T{tier}";
+                        string title = tier == 0 ? "BASICS" : tier == 2 ? "TRADE STATION 2" : "TRADE STATION";
                         Shadowed(new Rect(2 * k, y, rowW, headH - 3 * k), $"<b>{title}</b>", CraftStyle(Mathf.Min(15 * k, headH * 0.7f), FontStyle.Bold, TextAnchor.MiddleLeft, col));
                         Fill(new Rect(0, y + headH - 4 * k, rowW, 2 * k), new Color(col.r, col.g, col.b, 0.6f));
                     }

@@ -92,7 +92,7 @@ namespace RockGame
             yield return new WaitForSeconds(0.5f);
             Check(me.Count(Item.Workbench) == b0 && me.Count(cur) == w0, "the server won't make a locked Workbench T1 (nothing paid)");
 
-            // ---- unlocking: classic checks 30 s with the ball in the base, the others the machine socket ----
+            // ---- unlocking: classic checks 10 s (Cfg.BenchUnlockSeconds) with the ball in the base, the others the machine socket ----
             var ball = Ball.Instance;
             int notices = NetGame.BenchUnlockNotices;
             if (ball == null) { Check(false, "no ball for the workbench unlock"); yield break; }
@@ -100,10 +100,11 @@ namespace RockGame
             {
                 ball.ServerDrop(Cfg.BaseCenter[team] - back * 5f + side * 3f + Vector3.up * 1.5f, Vector3.zero); // (lying in our base, away from the socket)
                 float t0 = Time.time;
-                yield return new WaitForSeconds(12f);
+                float part = Cfg.BenchUnlockSeconds * 0.5f; // (half way there: 5 s of the 10)
+                yield return new WaitForSeconds(part);
                 int secs = g.BallInBaseSecondsOf(team);
-                Check(!Cfg.BenchUnlocked(team) && secs >= 9 && secs <= 13 && Cfg.BaseTeamAt(ball.transform.position) == team,
-                    $"the ball lying in our base counts towards the unlock ({secs} s after 12 s), still locked");
+                Check(!Cfg.BenchUnlocked(team) && secs >= part - 3f && secs <= part + 1f && Cfg.BaseTeamAt(ball.transform.position) == team,
+                    $"the ball lying in our base counts towards the unlock ({secs} s after {part:0} s), still locked");
                 yield return BagRows(pc);
                 yield return Snap($"bench_locked_counting_{rn}");
                 pc.CloseMenu();
@@ -119,7 +120,7 @@ namespace RockGame
                 Check(Cfg.BenchUnlocked(team) && Cfg.BenchUnlocked(1 - team) && g.BenchUnlockedBy.Value == team, $"putting the ball in our machine once unlocks the Workbench T1 for every team, not just ours (the other team: {Cfg.BenchUnlocked(1 - team)})");
             }
             yield return new WaitForSeconds(0.3f);
-            Check(NetGame.BenchUnlockNotices == notices + 1 && Hud.LastBanner.Contains("WORK BENCHES UNLOCKED") && Hud.LastBanner.Contains("bag"),
+            Check(NetGame.BenchUnlockNotices == notices + 1 && Hud.LastBanner.Contains("TRADE STATION UNLOCKED") && Hud.LastBanner.Contains("bag"),
                 $"it tells us (with a sound): \"{Hud.LastBanner}\"");
             pc.LocalTeleport(spawn, yaw);
             yield return Snap($"bench_unlocked_{rn}");
@@ -420,7 +421,7 @@ namespace RockGame
                 Check(locked == "locked" && me.Count(Item.Workbench) == 0 && me.Count(cur) == w0, $"(client) the Workbench T1 is locked until the ball's been captured ({locked})");
                 me.DevRpc(DevCmd.UnlockBench);
                 yield return new WaitForSeconds(0.8f);
-                Check(Cfg.BenchUnlocked(team) && NetGame.BenchUnlockNotices == notices + 1 && Hud.LastBanner.Contains("WORK BENCHES UNLOCKED"), $"(client) unlocked, and the client is told ({Hud.LastBanner})");
+                Check(Cfg.BenchUnlocked(team) && NetGame.BenchUnlockNotices == notices + 1 && Hud.LastBanner.Contains("TRADE STATION UNLOCKED"), $"(client) unlocked, and the client is told ({Hud.LastBanner})");
             }
             // standing on the foundation we built
             var on = foundation;

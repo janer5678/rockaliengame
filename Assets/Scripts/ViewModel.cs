@@ -105,6 +105,36 @@ namespace RockGame
             m_FreezeUntil = Time.time + HitStop;
             m_SwingStart += HitStop; // the rest of the swing continues after the freeze
         }
+        /// <summary>Where the held gun's muzzle is in the world (the wand's tip, the launcher's mouth): its flash goes here.</summary>
+        public Vector3 Muzzle()
+        {
+            switch (m_ItemId)
+            {
+                case Item.Revolver: return m_ItemHolder.TransformPoint(new Vector3(0, 0.05f, 0.3f));
+                case Item.Pistol: return m_ItemHolder.TransformPoint(new Vector3(0, 0.035f, 0.25f));
+                case Item.Shotgun: return m_ItemHolder.TransformPoint(new Vector3(0, 0.04f, 0.56f));
+                case Item.Sniper: return m_ItemHolder.TransformPoint(new Vector3(0, 0.02f, 0.9f));
+                case Item.RocketLauncher: return m_ItemHolder.TransformPoint(new Vector3(0, 0.02f, 0.68f));
+                case Item.PortalGun: return m_ItemHolder.TransformPoint(new Vector3(0, 0.02f, 0.34f));
+                case Item.DeathWand: return m_ItemHolder.TransformPoint(new Vector3(0, 0.58f, 0));
+                default: return m_ItemHolder.TransformPoint(new Vector3(0, 0, 0.3f));
+            }
+        }
+
+        /// <summary>
+        /// A shot's kick, 0..1 by how long ago it was fired: it snaps to full in the first moments, then springs back and
+        /// settles (dipping a touch past rest on the way). `dur`: how long the whole thing takes - a heavier gun's is longer.
+        /// </summary>
+        float Recoil(float dur)
+        {
+            float t = Time.time - m_UseStart;
+            if (t < 0f || t >= dur) return 0f;
+            float k = t / dur;
+            if (k < 0.1f) return Smooth(k / 0.1f);
+            float u = (k - 0.1f) / 0.9f;
+            return Mathf.Exp(-u * 4.5f) * Mathf.Cos(u * 5.2f) * (1f - u);
+        }
+
         public void Throw() => m_ThrowStart = Time.time;
         public void Eat() => m_EatStart = Time.time;
         public void Use() => m_UseStart = Time.time;
@@ -227,8 +257,8 @@ namespace RockGame
             switch (s.Item)
             {
                 case Item.Rock: PoseRock(shared, sharedRot, swinging, swingE); break;
+                case Item.Sword: PoseSword(shared, sharedRot, swinging, swingE); break;
                 case Item.Hatchet:
-                case Item.Sword:
                 case Item.TreeCracker:
                 case Item.Pickaxe: PoseTool(shared, sharedRot, swinging, swingE); break;
                 case Item.Spear: PoseSpear(s, shared, sharedRot, swinging, swingE); break;
@@ -273,10 +303,10 @@ namespace RockGame
         }
 
         /// <summary>Raise -> slam -> (hit: bounce back up | miss: follow through down) -> recover.</summary>
-        KP Chop(KP idle, KP raised, KP slam, KP recoil, KP follow, bool swinging, float e)
+        KP Chop(KP idle, KP raised, KP slam, KP recoil, KP follow, bool swinging, float e, float upShare = 1f, float followTime = 0.08f)
         {
             if (!swinging) return idle;
-            float up = m_Up, down = m_Down;
+            float up = m_Up * upShare, down = m_Down;
             float end = Mathf.Max(0.45f, m_SwingDur * 0.9f);
             if (e < up) return KP.Lerp(idle, raised, Smooth(e / up));
             if (e < down) return KP.Lerp(raised, slam, Smooth((e - up) / (down - up)));
@@ -285,9 +315,9 @@ namespace RockGame
                 if (e < down + 0.1f) return KP.Lerp(slam, recoil, Smooth((e - down) / 0.1f));
                 return KP.Lerp(recoil, idle, Smooth((e - down - 0.1f) / Mathf.Max(0.1f, end - down - 0.1f)));
             }
-            if (e < down + 0.08f) return KP.Lerp(slam, follow, Smooth((e - down) / 0.08f));
-            if (e < down + 0.16f) return follow;
-            return KP.Lerp(follow, idle, Smooth((e - down - 0.16f) / Mathf.Max(0.1f, end - down - 0.16f)));
+            if (e < down + followTime) return KP.Lerp(slam, follow, Smooth((e - down) / followTime));
+            if (e < down + followTime + 0.08f) return follow;
+            return KP.Lerp(follow, idle, Smooth((e - down - followTime - 0.08f) / Mathf.Max(0.1f, end - down - followTime - 0.08f)));
         }
 
         /// <summary>A big rock held in both hands in front of you, brought down two-handed.</summary>
@@ -320,6 +350,28 @@ namespace RockGame
             float swingK = swinging ? 1f : 0f;
             Set(m_R, shared + k.Pos, sharedRot * Quaternion.Euler(k.HandX, -18f + swingK * 6f, -8f));
             AttachItemToRight(new Vector3(0, -0.06f, 0.01f), new Vector3(k.ItemX, 0, 0));
+            HideLeft();
+        }
+
+        /// <summary>
+        /// The sword: a slash from the side. It's drawn back out to the right with the blade laid over, then swept flat
+        /// across in a long, slow arc - the blade crossing the crosshair as it lands - and on through to the left on a
+        /// miss (a hit stops it there and it comes back). The wind-up is the shorter part; most of the time before the
+        /// hit is the arc itself.
+        /// </summary>
+        void PoseSword(Vector3 shared, Quaternion sharedRot, bool swinging, float e)
+        {
+            // (Pos, the hand's yaw, the blade's yaw across the view: + is out to the right, -90 straight ahead)
+            var k = Chop(new KP(new Vector3(0.27f, -0.3f, 0.5f), -18f, -20f), new KP(new Vector3(0.44f, -0.2f, 0.36f), 14f, 15f),
+                new KP(new Vector3(0.1f, -0.25f, 0.6f), -35f, -92f), new KP(new Vector3(0.18f, -0.25f, 0.55f), -25f, -55f),
+                new KP(new Vector3(-0.12f, -0.33f, 0.52f), -55f, -155f), swinging, e, 0.7f, 0.2f);
+            // (-, how far the blade is laid over on its side, how far it leans forward at rest)
+            var b = Chop(new KP(Vector3.zero, -12f, 20f), new KP(Vector3.zero, -70f, 0f), new KP(Vector3.zero, -82f, 0f), new KP(Vector3.zero, -70f, 0f),
+                new KP(Vector3.zero, -88f, 0f), swinging, e, 0.7f, 0.2f);
+            Set(m_R, shared + k.Pos, sharedRot * Quaternion.Euler(-8f, k.HandX, b.HandX));
+            var blade = sharedRot * Quaternion.Euler(0f, k.ItemX, 0f) * Quaternion.Euler(b.ItemX, 0f, b.HandX);
+            // the grip (0.06 up the hilt) stays in the fist whichever way the blade points
+            AttachItemToRoot(m_R.localPosition - blade * new Vector3(0f, 0.06f, 0f), blade);
             HideLeft();
         }
 
@@ -401,19 +453,23 @@ namespace RockGame
             var bowRot = sharedRot * Quaternion.Euler(Mathf.Lerp(-6f, 0f, e), Mathf.Lerp(-12f, -4f, e), Mathf.Lerp(-14f, -26f, e));
             AttachItemToRoot(grip, bowRot, 1f);
 
-            // bow hand: fist on the grip, forearm reaching back to the lower left
+            // bow hand: the fist round the grip itself (the bow's wood is 0.06 in front of the model's origin - the string
+            // side), on its lower half so the arrow has the top of the fist to rest on; the forearm reaches back to the
+            // lower left
             var shoulder = new Vector3(-0.3f, -0.55f, -0.1f);
-            var armDir = (grip - shoulder).normalized;
-            m_L.localPosition = grip + armDir * -0.02f + bowRot * new Vector3(-0.01f, -0.01f, 0f);
+            var hold = grip + bowRot * new Vector3(0f, -0.035f, 0.06f);
+            var armDir = (hold - shoulder).normalized;
+            m_L.localPosition = hold;
             m_L.localRotation = Quaternion.LookRotation(armDir, bowRot * Vector3.up) * Quaternion.Euler(0, 0, 70f);
 
-            // arrow: rests on the grip. Idle it points ahead and a bit left; drawn it runs straight along the view, so it
-            // lines up with the crosshair and the shaft reaches from the grip down towards the bottom of the screen
-            var tipIdle = grip + bowRot * new Vector3(-0.02f, 0.01f, 0.28f);
+            // arrow: always runs through the rest - a point on the bow just above the fist and beside the wood - so it never
+            // passes through the hand, at rest or anywhere in the draw. Idle it points ahead and a bit left with most of
+            // the shaft out in front; drawing slides it back through the rest and swings it straight along the view, so it
+            // lines up with the crosshair and the fletching ends up by your face, out of view
+            var rest = grip + bowRot * new Vector3(-0.032f, 0.062f, 0.06f);
             var dirIdle = (bowRot * new Vector3(-0.08f, 0.06f, 1f)).normalized;
-            var tipDrawn = grip + new Vector3(-0.02f, 0.065f, 0.07f); // rests on top of the fist; the fletching ends up by your face, out of view
             var dir = Vector3.Slerp(dirIdle, Vector3.forward, e).normalized;
-            var tip = Vector3.Lerp(tipIdle, tipDrawn, e);
+            var tip = rest + dir * Mathf.Lerp(0.22f, 0.07f, e);
             const float arrowLen = 0.72f;
             var nock = tip - dir * arrowLen;
             if (m_Arrow)
@@ -454,9 +510,25 @@ namespace RockGame
         void PoseCrossbow(State s, Vector3 shared, Quaternion sharedRot)
         {
             float aim = m_AimK = Mathf.MoveTowards(m_AimK, s.Aim ? 1f : 0f, Time.deltaTime * 7f);
-            float kick = Mathf.Clamp01(1f - (Time.time - m_UseStart) / 0.25f);
-            var pos = shared + Vector3.Lerp(new Vector3(0.2f, -0.2f, 0.42f), new Vector3(0f, -0.075f, 0.3f), Smooth(aim)) + new Vector3(0, 0.02f, -0.07f) * kick;
-            var rot = sharedRot * Quaternion.Euler(Mathf.Lerp(0f, 0f, aim) - kick * 8f, Mathf.Lerp(-6f, 0f, aim), 0);
+            // the shot's kick, each gun its own: the revolver snaps up at the wrist, the shotgun shoves back hard into the
+            // shoulder and bucks, the rocket launcher lurches back and takes a while to settle, the portal gun gives a
+            // soft pulse (the rest: the short knock back they always had)
+            var kickPos = new Vector3(0, 0.02f, -0.07f);
+            var kickRot = new Vector3(-8f, 0, 0);
+            float kick;
+            switch (s.Item)
+            {
+                case Item.Revolver: kick = Recoil(0.42f); kickPos = new Vector3(0, 0.045f, -0.06f); kickRot = new Vector3(-30f, 2f, -5f); break;
+                case Item.Shotgun: kick = Recoil(0.55f); kickPos = new Vector3(0.01f, 0.035f, -0.17f); kickRot = new Vector3(-15f, -2f, 4f); break;
+                case Item.RocketLauncher: kick = Recoil(0.8f); kickPos = new Vector3(0, -0.02f, -0.2f); kickRot = new Vector3(-7f, 3f, -7f); break;
+                case Item.PortalGun: kick = Recoil(0.4f); kickPos = new Vector3(0, 0.01f, -0.08f); kickRot = new Vector3(-5f, 0, 0); break;
+                default: kick = Mathf.Clamp01(1f - (Time.time - m_UseStart) / 0.25f); break;
+            }
+            kick *= 1f - 0.35f * aim; // (steadier down the sights)
+            // the sights at the eye: the revolver's sit higher above its grip than the crossbow's
+            var aimed = s.Item == Item.Revolver ? new Vector3(0f, -0.094f, 0.36f) : new Vector3(0f, -0.075f, 0.3f);
+            var pos = shared + Vector3.Lerp(new Vector3(0.2f, -0.2f, 0.42f), aimed, Smooth(aim)) + kickPos * kick;
+            var rot = sharedRot * Quaternion.Euler(kickRot.x * kick, Mathf.Lerp(-6f, 0f, aim) + kickRot.y * kick, kickRot.z * kick);
             float r = s.Reload >= 0f ? Mathf.Sin(Mathf.Clamp01(s.Reload) * Mathf.PI) : 0f;
             if (r > 0f)
             {
@@ -476,6 +548,16 @@ namespace RockGame
             var leftPull = new Vector3(-0.04f, 0.04f, -0.05f);
             m_L.localPosition = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(Vector3.Lerp(leftHold, leftPull, r)));
             m_L.localRotation = rot * Quaternion.Euler(-20f - 40f * r, 20f, 70f);
+            if (s.Item == Item.Revolver)
+            {
+                // the revolver: one hand (the right, round the grip) from the hip; the left only comes up to cup the grip
+                // from below while you aim down the sights
+                var cupPos = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(-0.035f, -0.135f, -0.045f)));
+                var cupRot = rot * Quaternion.Euler(-25f, 30f, 55f);
+                HideLeft();
+                float two = Smooth(aim);
+                Set(m_L, Vector3.Lerp(m_L.localPosition, cupPos, two), Quaternion.Slerp(m_L.localRotation, cupRot, two));
+            }
         }
 
         void PoseRam(State s, Vector3 shared, Quaternion sharedRot)
@@ -528,6 +610,7 @@ namespace RockGame
             float toMouth = eatK < 1f ? Mathf.Sin(eatK * Mathf.PI) : 0f;
             float useK = Mathf.Clamp01((Time.time - m_UseStart) / 0.3f);
             float use = useK < 1f ? Mathf.Sin(useK * Mathf.PI) : 0f;
+            if (item == Item.DeathWand) use = Recoil(0.5f) * 1.5f; // the cast: flicked out hard, springing back
             Vector3 idle = new Vector3(0.26f, -0.27f, 0.45f);
             Vector3 pos = Vector3.Lerp(idle, new Vector3(0.04f, -0.13f, 0.22f), toMouth) + new Vector3(0, -0.05f, 0.12f) * use;
             float throwK = Mathf.Clamp01((Time.time - m_ThrowStart) / 0.35f);
@@ -544,7 +627,8 @@ namespace RockGame
                 case Item.FortTower: AttachItemToRight(new Vector3(0, 0.02f, 0.06f), new Vector3(0, 20, 0), 1f); break;
                 case Item.Car: AttachItemToRight(new Vector3(0, 0.02f, 0.08f), new Vector3(0, 20, 0), 0.9f); break;
                 case Item.Saddle: AttachItemToRight(new Vector3(0, 0.02f, 0.06f), new Vector3(0, 20, 0), 0.9f); break;
-                case Item.BuildingPlan: AttachItemToRight(new Vector3(0, 0.03f, 0.05f), Vector3.zero, 0.55f); break;
+                // (the plan's board is modelled leaning 30 degrees back towards you: tipped 60 forward here, it leans away instead)
+                case Item.BuildingPlan: AttachItemToRight(new Vector3(0, 0.03f, 0.05f), new Vector3(60, 0, 0), 0.55f); break;
                 case Item.Chest: AttachItemToRight(new Vector3(0, 0.06f, 0.08f), new Vector3(0, 20, 0), 0.9f); break;
                 // (the workbenches came later: held like the chest, turned so their front faces you)
                 case Item.Workbench:
