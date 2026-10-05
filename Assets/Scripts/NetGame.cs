@@ -216,13 +216,13 @@ namespace RockGame
                             {
                                 // Builder: whoever's ball it is (planted, not carried or loose) wins
                                 int pt = Ball.Instance != null && !Ball.Instance.IsCarried ? Ball.Instance.SocketTeam.Value : -1;
-                                if (pt >= 0) { EndGame(pt, $"The ball was planted for {Cfg.TeamLabel(pt)} when time ran out!"); break; }
+                                if (pt >= 0) { EndGame(pt, $"Ball planted for {Cfg.TeamLabel(pt)}"); break; }
                             }
                             else
                             {
                                 // only the machine socket counts - a ball lying around in your base doesn't win
                                 int t = Ball.Instance != null ? Ball.Instance.SocketTeam.Value : -1;
-                                if (t >= 0) { ServerVictoryCutscene(t, $"{Cfg.TeamName[t]} had the ball in their machine when time ran out!"); break; }
+                                if (t >= 0) { ServerVictoryCutscene(t, $"{Cfg.TeamName[t]} captured the ball"); break; }
                             }
                             // nobody has it: the countdown sits on 0 for a moment, then everyone goes to the arena
                             m_SuddenDeathAt = now + ZeroHold;
@@ -232,9 +232,9 @@ namespace RockGame
                     break;
                 case GameState.SuddenDeath:
                     if (!Bootstrap.Solo && !Cfg.Tutorial && AliveTeams(out int last) <= 1)
-                        EndGame(last, last >= 0 ? $"{Cfg.TeamName[last]} is the last one standing!" : "Nobody survived sudden death - DRAW");
+                        EndGame(last, last >= 0 ? $"{Cfg.TeamName[last]}: last one standing" : "Nobody survived");
                     else if (now >= PhaseEnd.Value)
-                        EndGame(-1, "Nobody won the sudden death duel in time - DRAW");
+                        EndGame(-1, "Sudden death ran out of time");
                     break;
             }
         }
@@ -313,7 +313,7 @@ namespace RockGame
             if (S != GameState.SuddenDeath) return;
             // sudden death: no respawns; the last team with someone standing wins
             if (AliveTeams(out int w) <= 1 && !Bootstrap.Solo && !Cfg.Tutorial)
-                EndGame(w, w < 0 ? "Everyone died in sudden death - DRAW" : PlayerNet.All.Count <= 2 ? $"{Cfg.TeamName[w]} won the sudden death duel!" : $"{Cfg.TeamName[w]} is the last one standing!");
+                EndGame(w, w < 0 ? "Nobody survived" : PlayerNet.All.Count <= 2 ? $"{Cfg.TeamName[w]} won the duel" : $"{Cfg.TeamName[w]}: last one standing");
         }
 
         void OnClientDisconnect(ulong clientId)
@@ -328,7 +328,7 @@ namespace RockGame
             {
                 int w = -1;
                 foreach (var t in teams) w = t;
-                EndGame(w < 0 ? 0 : w, "Everyone else left the game");
+                EndGame(w < 0 ? 0 : w, "Everyone else left");
             }
         }
 

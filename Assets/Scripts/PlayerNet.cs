@@ -1495,7 +1495,8 @@ namespace RockGame
             s.ServerUpgrade();
         }
 
-        /// <summary>Building plan + X: take down one of your own pieces (barriers and chests too) and get part of the wood back.</summary>
+        /// <summary>Building plan with Demolish picked on the wheel + LMB: take down one of your own pieces (barriers and chests
+        /// too) and get part of the wood back.</summary>
         [Rpc(SendTo.Server)]
         public void DemolishRpc(NetworkObjectReference target)
         {

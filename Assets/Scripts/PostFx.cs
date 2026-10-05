@@ -78,7 +78,7 @@ namespace RockGame
         /// <summary>Post processing back to the defaults (all on, middle strengths, every extra look off).</summary>
         public static void ResetPostFx(bool save = true)
         {
-            for (int i = 0; i < PostExtraCount; i++) SetPostExtra((PostExtra)i, DisplayDefaults.PostExtraOn, DisplayDefaults.PostExtraStrength, save);
+            for (int i = 0; i < PostExtraCount; i++) SetPostExtra((PostExtra)i, DisplayDefaults.PostExtraOn(i), DisplayDefaults.PostExtraStrength(i), save);
             SetPostFx(DisplayDefaults.PostFx, DisplayDefaults.Bloom, DisplayDefaults.Vignette, DisplayDefaults.Grading,
                 DisplayDefaults.BloomStrength, DisplayDefaults.VignetteStrength, DisplayDefaults.GradingStrength, save);
         }
@@ -90,7 +90,7 @@ namespace RockGame
         public const int PostExtraCount = 8;
         public static readonly string[] PostExtraNames = { "Outlines", "Ambient occlusion", "Distance haze", "Depth of field", "Film grain", "Chromatic aberration", "Sharpen", "Cel banding" };
         static readonly bool[] s_Extra = new bool[PostExtraCount];
-        static readonly float[] s_ExtraStr = { 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f }; // (loaded: DisplayDefaults.PostExtraStrength)
+        static readonly float[] s_ExtraStr = { 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f }; // (loaded: DisplayDefaults.PostExtraStrength(i))
         static bool s_ExtraLoaded;
 
         static void LoadExtras()
@@ -100,8 +100,8 @@ namespace RockGame
             for (int i = 0; i < PostExtraCount; i++)
             {
                 string key = "RockGame.PostX." + (PostExtra)i;
-                s_Extra[i] = PlayerPrefs.GetInt(key, B(DisplayDefaults.PostExtraOn)) == 1;
-                s_ExtraStr[i] = Mathf.Clamp01(PlayerPrefs.GetFloat(key + "Str", DisplayDefaults.PostExtraStrength));
+                s_Extra[i] = PlayerPrefs.GetInt(key, B(DisplayDefaults.PostExtraOn(i))) == 1;
+                s_ExtraStr[i] = Mathf.Clamp01(PlayerPrefs.GetFloat(key + "Str", DisplayDefaults.PostExtraStrength(i)));
             }
         }
 

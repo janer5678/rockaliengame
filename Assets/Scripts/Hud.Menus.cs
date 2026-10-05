@@ -97,7 +97,7 @@ namespace RockGame
             float k = m_Scale;
             float w = 540 * k, h = Mathf.Min(Screen.height - 20, 860 * k);
             var r = new Rect((Screen.width - w) / 2, (Screen.height - h) / 2, w, h);
-            // (the camera behind the menu cuts between its shots through a quick fade to black: MenuScene.cs)
+            // (the camera behind the menu fades in from black as the menu comes up: MenuScene.cs)
             if (MenuScene.Fade > 0.001f) Fill(new Rect(0, 0, Screen.width, Screen.height), new Color(0, 0, 0, MenuScene.Fade));
             Fill(r, new Color(0, 0, 0, 0.72f));
             GUILayout.BeginArea(new Rect(r.x + 20 * k, r.y + 14 * k, r.width - 40 * k, r.height - 24 * k));
@@ -122,12 +122,7 @@ namespace RockGame
             GUILayout.EndHorizontal();
             if (m_NameEdit.Length == 0 && Event.current.type == EventType.Repaint)
                 GUI.Label(new Rect(nameRect.x + 6 * k, nameRect.y, nameRect.width, nameRect.height), "<color=#888888>your team colour + number (Blue1, Red2...)</color>", new GUIStyle(m_Small) { alignment = TextAnchor.MiddleLeft });
-            // Display: trees in the play space of the map behind this menu (saved with the other display settings)
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("Display", m_Label, GUILayout.Width(100 * k), GUILayout.Height(30 * k));
-            bool menuTrees = ToggleBtn(GameSettings.MenuTrees.Value, "Show trees on the main menu", GUILayout.Height(30 * k));
-            if (menuTrees != GameSettings.MenuTrees.Value) GameSettings.MenuTrees.Set(menuTrees);
-            GUILayout.EndHorizontal();
+            // (the trees behind this menu are always shown now - there's no "show trees" toggle any more: MenuScene)
             // joining: the host's IP, then JOIN GAME
             GUILayout.BeginHorizontal();
             GUILayout.Label("Host IP", m_Label, GUILayout.Width(100 * k), GUILayout.Height(30 * k));

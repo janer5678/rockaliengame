@@ -86,7 +86,8 @@ namespace RockGame
             g.CutsceneRiders.Add(987654321UL);
             bool early = false, lockedAll = true, camAll = true, homeOk = false, liftSeen = false, goneSeen = false;
             float lastE = 0f, maxLift = 0f, maxShip = 0f, camFromBase = float.MaxValue;
-            bool domeGone = true, ballBeamOff = true;
+            bool domeGone = true, ballBeamOff = true, tagSeen = false;
+            float maxClose = 0f;
             float dashY = 0f;
             int camFrames = 0, camBlocked = 0;
             int taken = 0;
@@ -106,7 +107,15 @@ namespace RockGame
                 // locked: no free cursor, no pause, the camera's the cutscene's (away from our eyes)
                 lockedAll &= Cursor.lockState == CursorLockMode.Locked && !pc.Paused && !pc.MenuOpen;
                 var cam = Camera.main.transform;
-                if (e > 0.3f && VictoryCutscene.CameraPose(out var cp, out _, out _)) camAll &= Vector3.Distance(cam.position, cp) < 1.5f /* (still last frame's pose: it drifts ~1 m/s, and a screenshot frame is long) */ && Vector3.Distance(cam.position, me.EyePos) > 6f;
+                if (e > 0.3f && VictoryCutscene.CameraPose(out var cp, out _, out _)) camAll &= Vector3.Distance(cam.position, cp) < 1.5f + 35f * Time.unscaledDeltaTime /* (still last frame's pose: it drifts ~1 m/s - faster as it pushes in on the winners - and a screenshot frame is long) */ && Vector3.Distance(cam.position, me.EyePos) > 6f;
+                // in close on the winners: our name tag (over our head) is on screen between the letterbox bars
+                float closeNow = VictoryCutscene.CloseUp(e);
+                maxClose = Mathf.Max(maxClose, closeNow);
+                if (closeNow > 0.9f && body != null && body.gameObject.activeSelf)
+                {
+                    var tp = Camera.main.WorldToScreenPoint(me.transform.position + Vector3.up * (body.localPosition.y + 2.5f));
+                    tagSeen |= tp.z > 0.5f && tp.x > 0f && tp.x < Screen.width && tp.y > Screen.height * 0.12f && tp.y < Screen.height * 0.88f;
+                }
                 if (e > 1.2f && e < VictoryCutscene.LiftStart) homeOk |= Vector3.Distance(me.transform.position, Cfg.SpawnPos(team, me.Slot.Value)) < 1.6f;
                 if (body != null && body.gameObject.activeSelf) maxLift = Mathf.Max(maxLift, body.localPosition.y);
                 liftSeen |= VictoryCutscene.LiftOf(0) > 0.3f && VictoryCutscene.LiftOf(0) < 0.9f && body != null && body.localPosition.y > 2f;
@@ -153,6 +162,10 @@ namespace RockGame
             Check(dashY > MapScenery.RangeTop(0) + 8f && dashY > hoverY + 10f, $"victory: the UFO lifts up over the mountains before it flies off ({dashY:0} m up; it hovered at {hoverY:0} m, the nearest peaks reach {MapScenery.RangeTop(0):0} m)");
             Check(camFrames > 20 && camBlocked == 0 && camFromBase > 20f && VictoryCutscene.CamClear > 0.5f,
                 $"victory: the camera films from outside the walled-in base ({camFromBase:0} m out, {walls} walls round it) with nothing in the way of the beam ({camBlocked} of {camFrames} looks blocked; it sees {VictoryCutscene.CamClear * 100f:0}% of the action, {VictoryCutscene.CamTried} spots tried)");
+            Check(maxClose > 0.95f && VictoryCutscene.CamPush > 0.05f && tagSeen && VictoryCutscene.CloseUp(VictoryCutscene.BeamOff - 0.9f) < 0.05f,
+                $"victory: the camera pushes in close on the winners ({VictoryCutscene.CamPush * 100f:0}% of the way in) with their name tags on screen ({tagSeen}), and is back out before they're all in the ship");
+            var beamCol = VictoryCutscene.BeamColour(g);
+            Check(beamCol == Cfg.TeamColor[team], $"victory: the UFO's beam is the winning team's colour ({beamCol} vs {Cfg.TeamColor[team]})");
             yield return new WaitForSeconds(1.2f);
             Check(Hud.GameOverShownAt > t0 + VictoryCutscene.Length - 0.5f && !VictoryCutscene.Active && VictoryCutscene.Ship == null,
                 $"victory: then the victory screen comes up ({Hud.GameOverShownAt - t0:0.0} s after the end) and the UFO is gone");

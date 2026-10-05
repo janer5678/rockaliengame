@@ -118,6 +118,10 @@ namespace RockGame
         /// so the server knows what's unlocked for them (crafting, building, the workbench - Tutorial.AllowsFor).</summary>
         public readonly NetworkVariable<byte> TutStep = new NetworkVariable<byte>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
 
+        /// <summary>Tutorial: where the server built the enemy hut this player's raid steps break into (in the enemy's base;
+        /// zero = not yet), so their guide can tell its pieces from anything else of that team's (Tutorial.ServerHut).</summary>
+        public readonly NetworkVariable<Vector3> TutHut = new NetworkVariable<Vector3>();
+
         /// <summary>Tutorial mode only: 1 = I'm at the glass wall step (the server drops the wall once every player is);
         /// 2 = the eat step: make me hungry (half health) so there's something to heal; 3 and up: the later steps' props
         /// (training dummies, an airdrop, the hut to raid, the wood for an upgrade, the finale, a joiner's kit) -
@@ -130,7 +134,7 @@ namespace RockGame
         }
 
         /// <summary>Tutorial: the server tells this player's guide that something it's waiting for happened (Tutorial.OnEvent:
-        /// 1 = you hit a training dummy, 2 = you finished one off; arg 1 = from range, 0 = up close).</summary>
+        /// 1 = you hit a training dummy, 2 = you finished one off; arg bit 1 = from range (else up close), bit 2 = on the head).</summary>
         [Rpc(SendTo.Owner)]
         public void TutEventRpc(byte what, byte arg) => Tutorial.OnEvent(what, arg);
 

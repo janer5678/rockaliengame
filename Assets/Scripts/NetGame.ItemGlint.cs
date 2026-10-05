@@ -84,14 +84,26 @@ namespace RockGame
             if (s_GlintMesh == null) s_GlintMesh = GlintMesh();
             if (s_GlintMat == null)
             {
-                // a plain bright material that glows whatever the light (the same way the other glowing parts do it)
+                // unlit (RockGame/Glow, like the tree X): always the same bright light colour, in the shade of a tree or a
+                // wall just as in the sun - a lit one went grey in shadow. HDR, so it blooms with post processing on
                 var c = new Color(1f, 0.97f, 0.82f);
-                s_GlintMat = Art.NewMat(c);
-                s_GlintMat.name = "item glint";
-                if (s_GlintMat.HasProperty("_EmissionColor"))
+                var sh = Resources.Load<Shader>("World/Glow");
+                if (sh != null && sh.isSupported)
                 {
-                    s_GlintMat.EnableKeyword("_EMISSION");
-                    s_GlintMat.SetColor("_EmissionColor", c * 2.2f);
+                    s_GlintMat = new Material(sh) { name = "item glint" };
+                    s_GlintMat.SetColor("_Color", c);
+                    s_GlintMat.SetFloat("_Intensity", 1.8f);
+                }
+                else
+                {
+                    // (no shader: a plain bright material that glows whatever the light)
+                    s_GlintMat = Art.NewMat(c);
+                    s_GlintMat.name = "item glint";
+                    if (s_GlintMat.HasProperty("_EmissionColor"))
+                    {
+                        s_GlintMat.EnableKeyword("_EMISSION");
+                        s_GlintMat.SetColor("_EmissionColor", c * 2.2f);
+                    }
                 }
             }
             var go = new GameObject("glint");

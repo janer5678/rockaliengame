@@ -4,4 +4,5 @@
 - Unity 6 (6000.0.42f1), URP, Netcode for GameObjects. Build headless with
   `"C:/Program Files/Unity/Hub/Editor/6000.0.42f1/Editor/Unity.exe" -batchmode -quit -projectPath . -executeMethod RockGame.EditorTools.ProjectSetup.BuildWindows -logFile Logs/batch_build.log`
   and check it with the `-autotest` modes described in README.md.
-- When you change a game mechanic, update the tutorial (Tutorial.cs steps and gates) to match.
+- The game's mechanics are settled. Only change the tutorial (Tutorial.cs) when a request asks for tutorial changes; don't rework it to match other mechanic changes.
+- Unity may be installed at `C:/Unity/6000.0.42f1/Editor/Unity.exe` instead of the Hub path above; use whichever exists. `Tools/compile_check.ps1` is a fast compile check that works while the editor is open.

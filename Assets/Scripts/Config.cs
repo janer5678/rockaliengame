@@ -294,7 +294,7 @@ namespace RockGame
         [Tune("Match")] public static float RespawnTime = 5f;
         [Tune("Match")] public static float ItemDespawnTime = 300f;
         /// <summary>Things on the ground glint when you're within this many metres (0 = never), about this often (seconds) - NetGame.ItemGlint.cs.</summary>
-        [Tune("Match")] public static float ItemGlintRange = 7f, ItemGlintEvery = 2f;
+        [Tune("Match")] public static float ItemGlintRange = 11f, ItemGlintEvery = 2f; // (the range was 7 m)
 
         // ---------- Airdrops (after the wall drops) ----------
         /// <summary>Mode options: how many airdrops come after the wall drops, evenly spaced (1 = half way through, 2 = at the thirds...).</summary>
@@ -391,6 +391,8 @@ namespace RockGame
         // ---------- Building ----------
         [Tune("Building")] public static float BuildCooldown = 0f, UpgradeCooldown = 0f, DemolishRefund = 0.5f;
         [Tune("Building")] public static float PackUpHoldTime = 0.8f;   // hold E this long on an empty chest / workbench of yours to pick it up
+        [Tune("Building")] public static float PackUpDelay = 0.2f;      // ...after first holding it this long (no bar until then: a tap stays a tap)
+        [Tune("Controls")] public static float TabHoldTime = 0.25f;     // Tab: a tap opens the bag, holding it this long shows the scoreboard
         [Tune("Building")] public static float WallRebuildCooldown = 25f; // seconds before a piece of a base can go back where one was just destroyed
         [Tune("Building")] public static int FoundationWood = 15, WallWood = 15, DoorwayWood = 20, WindowWood = 15, FloorWood = 12, StairsWood = 20;
         [Tune("Building")] public static int FoundationStone = 50, WallStone = 50, DoorwayStone = 40, WindowStone = 45, FloorStone = 30, StairsStone = 30;

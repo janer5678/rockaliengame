@@ -128,8 +128,9 @@ namespace RockGame
                             if (!t.AddHitMark(hit.point)) continue;
                             made++;
                             var m = t.LastHitMark;
-                            // a little X: two gashes (dark + pale each) crossing near square
-                            if (m.childCount == 4 && Vector3.Angle(m.GetChild(0).right, m.GetChild(2).right) > 60f && Vector3.Angle(m.GetChild(0).right, m.GetChild(2).right) < 120f) crossed++;
+                            // a little square: a dark one with a smaller pale one in it
+                            if (m.childCount == 2 && Mathf.Abs(m.GetChild(0).localScale.x - m.GetChild(0).localScale.y) < 1e-4f
+                                && Mathf.Abs(m.GetChild(1).localScale.x - m.GetChild(1).localScale.y) < 1e-4f && m.GetChild(1).localScale.x < m.GetChild(0).localScale.x) crossed++;
                             bool any = false;
                             foreach (Transform box in m)
                                 foreach (var q in BoxCorners(box.localToWorldMatrix, Vector3.one))
@@ -143,7 +144,7 @@ namespace RockGame
                 }
                 Log($"hit marks: {made} made of {tested} hits, {inBark} with a corner in the bark, {floating} floating off it (worst gap {worstGap * 100f:F1} cm); the old way (flat on the collider) {oldIn} of {tested} were in the bark");
                 Check(made >= tested - 2 && made > 20, $"every hit on a pine leaves a mark ({made} of {tested})");
-                Check(crossed == made, $"every hit mark is a little X, two crossing strokes ({crossed} of {made})");
+                Check(crossed == made, $"every hit mark is a little square, pale wood in a dark notch ({crossed} of {made})");
                 Check(inBark == 0, $"no hit mark goes into the bark ({inBark} of {made} do)");
                 Check(floating == 0, $"the hit marks sit on the bark, not off it ({floating} of {made} more than 5 cm off)");
                 Check(pines[0].HitMarkCount <= 10, $"a tree keeps its last ten marks ({pines[0].HitMarkCount})");

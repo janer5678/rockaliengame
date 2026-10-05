@@ -57,6 +57,15 @@ namespace RockGame
             // aimed right by the far side: the far side
             b = BuildGrid.PreferRecent(PieceType.Wall, wRow, Edge(2, -1, 1), true, at(2.5f, 0.1f), any, out k2);
             Check(!b, $"rule: a wall aimed clearly at another edge goes there ({(b ? k2.ToString() : "kept")})");
+            // one wall just built (along z = 1, the +z side of cell (0,0)) and you facing it (looking +z): aimed at the floor
+            // in front of the line, a bit past its end, the next wall carries the line on in the same rotation - not the
+            // turned wall round the corner that's a little nearer the aim
+            var w1 = new List<PieceKey> { Edge(0, 0, 1) };
+            b = BuildGrid.PreferRecent(PieceType.Wall, w1, Edge(0, 0, 0), true, at(1.35f, 0.45f), any, out k2, Vector3.forward);
+            Check(b && k2.Equals(Edge(1, 0, 1)), $"rule: after a wall, facing the line, the next one carries it on in the same rotation ({(b ? k2.ToString() : "kept the turned " + Edge(0, 0, 0))})");
+            // ...but aimed right at the turned wall's spot, the turned one
+            b = BuildGrid.PreferRecent(PieceType.Wall, w1, Edge(0, 0, 0), true, at(1f, 0.3f), any, out k2, Vector3.forward);
+            Check(!b, $"rule: a wall aimed right at the corner's turned spot still goes there ({(b ? k2.ToString() : "kept")})");
             // a floor next to the last floor
             var flRow = new List<PieceKey> { new PieceKey(PieceKey.KFloor, 0, 0, 1, 0), new PieceKey(PieceKey.KFloor, 1, 0, 1, 0) };
             float y1 = BuildGrid.LevelY(1);
@@ -137,6 +146,30 @@ namespace RockGame
             yield return new WaitForSeconds(0.8f);
             Check(BuildGrid.Registry.ContainsKey(Edge(ci + 2, cj, 1)) && pc.RecentPieces.Count == 2 && pc.RecentPieces[1].Equals(Edge(ci + 2, cj, 1)),
                 $"live: clicking builds it there and it becomes the newest of your last two ({(pc.RecentPieces.Count > 0 ? pc.RecentPieces[pc.RecentPieces.Count - 1].ToString() : "none")})");
+
+            // Demolish is back on the wheel, straight down at the bottom (no X key): picked, your pieces light up red, the
+            // one in the crosshair is the aimed one, and LMB takes it down
+            int demo = System.Array.FindIndex(PlayerController.WheelOptions, o => o.Demolish);
+            Check(demo >= 0 && Mathf.Abs(Mathf.DeltaAngle(PlayerController.WheelAngle(demo), 180f)) < 0.5f && Binds.Get(Bind.Demolish) == KeyCode.None,
+                $"the wheel has Demolish straight down at the bottom ({(demo >= 0 ? PlayerController.WheelAngle(demo) : -1f):0} deg), and there's no demolish key");
+            var target = Edge(ci + 2, cj, 1);
+            BuildGrid.Registry.TryGetValue(target, out var wall);
+            pc.SelectWheel(demo);
+            yield return AimAt(me, pc, BuildGrid.PieceCenter(target));
+            yield return new WaitForSeconds(0.35f);
+            int lit = pc.DemolishLitCount;
+            bool aimedOk = wall != null && pc.DemolishAimed == wall.NetworkObject;
+            yield return Snap("buildbias_demolish_highlight");
+            Check(pc.DemolishMode && lit >= 5 && aimedOk, $"Demolish on the wheel: your pieces nearby light up red ({lit}) and the wall in the crosshair is the one aimed at ({aimedOk})");
+            Binds.TestHold(Bind.Attack, true);
+            yield return null;
+            yield return null;
+            Binds.TestReleaseAll();
+            yield return new WaitForSeconds(0.8f);
+            Check(!BuildGrid.Registry.ContainsKey(target), "LMB with Demolish picked takes the wall down");
+            pc.SelectWheel(0);
+            yield return null;
+            Check(pc.DemolishLitCount == 0, $"picking a piece again takes the red off ({pc.DemolishLitCount})");
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
             yield return new WaitForSeconds(0.3f);
         }

@@ -6,8 +6,8 @@ namespace RockGame
     /// <summary>
     /// A flock of little dark birds (every peer's own copy). Flocks sit on the branches of a few trees (the server puts
     /// them there - ResourceNode.ServerFlocksTick - so you can always see beforehand that a tree has birds in it). The
-    /// first hit on their tree sends them bursting out from under its leaves, all round it at once; a moment later they
-    /// have drawn together into one flock beside the tree, and that flies in an arc to another tree, further away, and
+    /// first hit on their tree sends them bursting out from under its leaves, all round it at once; they head straight
+    /// off and draw together into one flock as they go, which flies in an arc to another tree, further away, and
     /// settles on its branches. When that tree is hit, they fly on to another, and so on. A tree with no birds in it
     /// never sends any up. The server picks the trees and the flight's length and tells everyone
     /// (ResourceNode.BirdsFlyRpc: from, to, how many, a seed); each peer flies its own birds along the same paths, so
@@ -52,7 +52,7 @@ namespace RockGame
         }
 
         /// <summary>Taking off (s): the burst out from under the leaves, all round the tree; then drawing together into one
-        /// flock beside it. The flight to the next tree comes after.</summary>
+        /// flock - on the way to the next tree (they're one flock 2.2 x GatherTime after the burst).</summary>
         public const float BurstTime = 0.7f, GatherTime = 1.1f;
         /// <summary>How far out from the leaves' edge the burst throws them (m), and how far from it they gather.</summary>
         public const float BurstOut = 4f, GatherOut = 5.5f;
@@ -149,8 +149,8 @@ namespace RockGame
         /// <summary>
         /// Off they go, out of `from` (null: it's gone - from round fromTree): every bird dives out under the edge of the
         /// leaves at a spot of its own, evenly all the way round the tree (the nearest side to where it sat), and is thrown
-        /// outwards; then they all swing round to one spot beside the tree (on the side they're leaving by, above the
-        /// lowest branches) and fly on from there together.
+        /// outwards; then each heads off for the next tree on its own line and merges into the flock as it goes (the
+        /// flock's path starts at a spot beside the tree, on the side they're leaving by, above the lowest branches).
         /// </summary>
         void Fly(ResourceNode from, Vector3 fromTree, ResourceNode to, int seed, float duration)
         {
@@ -195,9 +195,10 @@ namespace RockGame
                 b.Exit = under + dir * (rad * 0.82f) - Vector3.up * R(0.35f, 0.6f);
                 b.Out = under + dir * (rad + BurstOut * R(0.8f, 1.2f)) + Vector3.up * R(0.8f, 2f);
                 b.Gather = gather + new Vector3(R(-1.3f, 1.3f), R(-0.8f, 0.8f), R(-1.3f, 1.3f));
-                // (it carries on outwards a little before it swings round to the others)
-                b.Swing = b.Out + dir * 2f + Vector3.up * 2.2f;
                 b.To = to != null ? to.BirdPerch(i) + Vector3.up * SitUp : fromTree + awayDir * 90f + Vector3.up * 45f + new Vector3(R(-4f, 4f), R(-3f, 3f), R(-4f, 4f));
+                // its own way there, straight from where the burst threw it: carrying on outwards a little and up (over the
+                // top of the tree, from the far side of it), then turning for the next tree
+                b.Swing = b.Out + dir * 2.5f + Vector3.up * 4.5f + going * Vector3.Distance(b.Out, b.To) * 0.2f;
                 var mid = (b.Gather + b.To) * 0.5f;
                 float dist = Vector3.Distance(new Vector3(b.Gather.x, 0, b.Gather.z), new Vector3(b.To.x, 0, b.To.z));
                 var side = Vector3.Cross(Vector3.up, (b.To - b.Gather).normalized);
@@ -241,7 +242,7 @@ namespace RockGame
                 if (t < 1f) all = false;
                 Vector3 p;
                 float w; // (how much it flutters about on its own)
-                bool taking = own < burst + group;
+                bool taking = own < burst + group; // (still drawing in to the others: flapping hard)
                 if (own <= 0f) { p = b.From; w = 0f; }
                 else if (own < burst)
                 {
@@ -251,18 +252,17 @@ namespace RockGame
                     else { float e = (x - 0.28f) / 0.72f; p = Vector3.Lerp(b.Exit, b.Out, 1f - (1f - e) * (1f - e)); }
                     w = 0.15f * x;
                 }
-                else if (taking)
-                {
-                    // drawing together: round in a curve to their spot in the flock
-                    float x = Mathf.SmoothStep(0f, 1f, (own - burst) / group);
-                    p = Bezier(b.Out, b.Swing, b.Gather, x);
-                    w = 0.3f;
-                }
                 else
                 {
-                    float f = Mathf.Clamp01((own - burst - group) / Mathf.Max(0.3f, span - burst - group));
+                    // on their way, merging as they go: each sets off on its own line for the next tree, straight from
+                    // where the burst threw it, and drifts over onto its place in the flock's path (out of the gathering
+                    // spot beside the tree, arcing over to the next one) a little more every moment, until they're one
+                    // flock (2.2 x GatherTime after the burst). They used to draw together beside the tree first and
+                    // only then set off
+                    float f = Mathf.Clamp01((own - burst) / Mathf.Max(0.3f, span - burst));
                     float s = f * f * (3f - 2f * f); // (speeding up away from the tree, slowing down to land)
-                    p = Bezier(b.Gather, b.Ctrl, b.To, s);
+                    float m = Mathf.SmoothStep(0f, 1f, (own - burst) / Mathf.Max(0.3f, group * 2.2f));
+                    p = Vector3.Lerp(Bezier(b.Out, b.Swing, b.To, s), Bezier(b.Gather, b.Ctrl, b.To, s), m);
                     // a little flutter of their own (none as they land)
                     w = Mathf.Lerp(0.3f, 0.7f, Mathf.Clamp01(f * 4f)) * Mathf.Clamp01((1f - f) * 3f);
                 }

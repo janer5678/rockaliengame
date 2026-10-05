@@ -22,7 +22,11 @@ namespace RockGame
         {
             public int Index;
             public string Id, Label, Group;
+            /// <summary>What it starts at on a PC that never changed it (and what Default / Reset go back to).</summary>
             public Color Default;
+            /// <summary>The colour the models are built in: the tint is picked / Base, per channel. The same as Default
+            /// unless the default was moved off it later (StartAt), so moving a default never changes how a colour looks.</summary>
+            public Color Base;
             public Color[] Presets;
             internal Color m_Value;
             internal readonly List<(Material m, Color c)> Mats = new List<(Material, Color)>();
@@ -30,6 +34,12 @@ namespace RockGame
             /// <summary>Picked something other than the default (hands: a colour of their own instead of the team's).</summary>
             public bool Changed => this == Hands ? !HandsTeam : !Same(Value, Default);
             public string Hex => "#" + ColorUtility.ToHtmlStringRGB(Value);
+            /// <summary>A new default colour (the models stay built in Base: the slot just starts tinted to this).</summary>
+            internal Slot StartAt(string hex)
+            {
+                if (ColorUtility.TryParseHtmlString(hex, out var c)) { c.a = 1f; Default = c; m_Value = c; }
+                return this;
+            }
         }
 
         public static readonly List<Slot> All = new List<Slot>();
@@ -41,7 +51,7 @@ namespace RockGame
 
         static Slot Add(string id, string label, string group, Color def, params Color[] presets)
         {
-            var s = new Slot { Index = All.Count, Id = id, Label = label, Group = group, Default = def, m_Value = def };
+            var s = new Slot { Index = All.Count, Id = id, Label = label, Group = group, Default = def, Base = def, m_Value = def };
             s.Presets = presets.Length > 0 ? presets : AutoPresets(def);
             All.Add(s);
             return s;
@@ -64,19 +74,21 @@ namespace RockGame
         }
 
         // ---- the slots (the first six are the old GameSettings.WorldColor ones, same order and saved keys) ----
+        // (.StartAt: the colour a fresh install starts at, when it's not the one the models are built in - the game's
+        // tuned look, a COPY SETTINGS export of 2026-10-06; the first colour of each Add is the old default / the Base)
         public static readonly Slot
             Ground = Add("Ground", "Ground", GGround, new Color(0.44f, 0.64f, 0.31f),
-                new Color(0.44f, 0.64f, 0.31f), new Color(0.34f, 0.52f, 0.25f), new Color(0.55f, 0.62f, 0.3f), new Color(0.66f, 0.6f, 0.36f), new Color(0.5f, 0.38f, 0.25f), new Color(0.88f, 0.9f, 0.93f), new Color(0.3f, 0.55f, 0.45f)),
+                new Color(0.44f, 0.64f, 0.31f), new Color(0.34f, 0.52f, 0.25f), new Color(0.55f, 0.62f, 0.3f), new Color(0.66f, 0.6f, 0.36f), new Color(0.5f, 0.38f, 0.25f), new Color(0.88f, 0.9f, 0.93f), new Color(0.3f, 0.55f, 0.45f)).StartAt("#72A326"),
             Rock = Add("Rock", "Highlands rock", GGround, new Color(0.58f, 0.56f, 0.52f),
                 new Color(0.58f, 0.56f, 0.52f), new Color(0.45f, 0.43f, 0.4f), new Color(0.7f, 0.68f, 0.64f), new Color(0.62f, 0.5f, 0.38f), new Color(0.5f, 0.52f, 0.6f), new Color(0.35f, 0.33f, 0.36f), new Color(0.75f, 0.62f, 0.5f)),
             Grass = Add("Grass", "Grass", GPlants, new Color(0.36f, 0.6f, 0.16f),
-                new Color(0.36f, 0.6f, 0.16f), new Color(0.25f, 0.5f, 0.15f), new Color(0.48f, 0.66f, 0.18f), new Color(0.66f, 0.62f, 0.25f), new Color(0.2f, 0.45f, 0.3f), new Color(0.75f, 0.45f, 0.2f), new Color(0.45f, 0.35f, 0.65f)),
+                new Color(0.36f, 0.6f, 0.16f), new Color(0.25f, 0.5f, 0.15f), new Color(0.48f, 0.66f, 0.18f), new Color(0.66f, 0.62f, 0.25f), new Color(0.2f, 0.45f, 0.3f), new Color(0.75f, 0.45f, 0.2f), new Color(0.45f, 0.35f, 0.65f)).StartAt("#6CB430"),
             Leaves = Add("Leaves", "Pine needles", GPlants, new Color(0.29f, 0.55f, 0.15f),
-                new Color(0.29f, 0.55f, 0.15f), new Color(0.16f, 0.36f, 0.14f), new Color(0.36f, 0.58f, 0.18f), new Color(0.2f, 0.42f, 0.32f), new Color(0.7f, 0.42f, 0.15f), new Color(0.72f, 0.25f, 0.18f), new Color(0.85f, 0.9f, 0.92f)),
+                new Color(0.29f, 0.55f, 0.15f), new Color(0.16f, 0.36f, 0.14f), new Color(0.36f, 0.58f, 0.18f), new Color(0.2f, 0.42f, 0.32f), new Color(0.7f, 0.42f, 0.15f), new Color(0.72f, 0.25f, 0.18f), new Color(0.85f, 0.9f, 0.92f)).StartAt("#86BD15"),
             Clouds = Add("Clouds", "Clouds", GSky, new Color(0.97f, 0.97f, 1f),
                 new Color(0.97f, 0.97f, 1f), new Color(1f, 0.93f, 0.85f), new Color(1f, 0.8f, 0.85f), new Color(0.8f, 0.83f, 0.9f), new Color(0.55f, 0.57f, 0.62f), new Color(1f, 0.75f, 0.5f), new Color(0.8f, 0.7f, 1f)),
             Sky = Add("Sky", "Sky", GSky, new Color(0.45f, 0.65f, 0.95f),
-                new Color(0.45f, 0.65f, 0.95f), new Color(0.3f, 0.5f, 0.95f), new Color(0.6f, 0.75f, 0.95f), new Color(0.95f, 0.6f, 0.45f), new Color(0.75f, 0.5f, 0.9f), new Color(0.55f, 0.6f, 0.65f), new Color(0.4f, 0.85f, 0.8f)),
+                new Color(0.45f, 0.65f, 0.95f), new Color(0.3f, 0.5f, 0.95f), new Color(0.6f, 0.75f, 0.95f), new Color(0.95f, 0.6f, 0.45f), new Color(0.75f, 0.5f, 0.9f), new Color(0.55f, 0.6f, 0.65f), new Color(0.4f, 0.85f, 0.8f)).StartAt("#004EFF"),
 
             Sun = Add("Sun", "Sun", GSky, new Color(1f, 0.86f, 0.42f),
                 new Color(1f, 0.86f, 0.42f), new Color(1f, 0.95f, 0.75f), new Color(1f, 0.65f, 0.3f), new Color(1f, 0.45f, 0.3f), new Color(0.85f, 0.95f, 1f), new Color(1f, 0.6f, 0.85f), new Color(0.7f, 1f, 0.6f)),
@@ -106,7 +118,12 @@ namespace RockGame
             Horses = Add("Horses", "Horses", GThings, new Color(0.45f, 0.3f, 0.18f)),
             Chests = Add("Chests", "Chests and crates", GThings, new Color(0.55f, 0.37f, 0.2f)),
             CrashSite = Add("CrashSite", "Crashed UFO", GThings, new Color(0.62f, 0.64f, 0.68f)),
-            Hands = Add("Hands", "First-person hands", GYou, new Color(0.78f, 0.82f, 0.74f));
+            Hands = Add("Hands", "First-person hands", GYou, new Color(0.78f, 0.82f, 0.74f)).StartAt("#CED1CA"),
+            // the building plan's see-through preview while the piece can go there (PlayerController.GhostOkColour; the
+            // can't-go-there red stays red). Not a model colour: read straight from the slot
+            BuildPlan = Add("BuildPlan", "Building plan preview", GBuild, new Color(0.3f, 1f, 0.45f)),
+            // the building wheel's blue slices (Hud.DrawWheel; its centre disc is a darker shade of it). Read straight from the slot
+            BuildWheel = Add("BuildWheel", "Building wheel", GBuild, new Color(0.38f, 0.62f, 0.95f));
 
         public static Slot Find(string id) { foreach (var s in All) if (s.Id == id) return s; return null; }
 
@@ -183,14 +200,14 @@ namespace RockGame
         public static Color Ratio(Slot s)
         {
             var c = s.Value;
-            var d = s.Default;
+            var d = s.Base;
             return new Color(c.r / Mathf.Max(0.02f, d.r), c.g / Mathf.Max(0.02f, d.g), c.b / Mathf.Max(0.02f, d.b), 1f);
         }
 
         /// <summary>A model colour shifted by the slot (only in Normal graphics).</summary>
         public static Color Tinted(Slot s, Color c)
         {
-            if (GameSettings.GraphicsMode != 0 || Same(s.Value, s.Default)) return c;
+            if (GameSettings.GraphicsMode != 0 || Same(s.Value, s.Base)) return c;
             var k = Ratio(s);
             return new Color(Mathf.Clamp01(c.r * k.r), Mathf.Clamp01(c.g * k.g), Mathf.Clamp01(c.b * k.b), c.a);
         }
@@ -199,7 +216,7 @@ namespace RockGame
         public static Vector4 LinearRatio(Slot s)
         {
             var c = s.Value.linear;
-            var d = s.Default.linear;
+            var d = s.Base.linear;
             return new Vector4(c.r / Mathf.Max(0.002f, d.r), c.g / Mathf.Max(0.002f, d.g), c.b / Mathf.Max(0.002f, d.b), 1f);
         }
 

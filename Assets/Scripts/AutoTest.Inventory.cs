@@ -170,6 +170,16 @@ namespace RockGame
             Check(Hud.KillLines >= k0 + 6 && Hud.LastKillLine.Contains("suicide") && !Hud.LastKillHead && Hud.LastKillLine.Contains(me.DisplayName), $"the kill feed: {Hud.KillLines - k0} lines, a real suicide last ({Hud.LastKillLine})");
             int kills0 = me.Kills.Value;
             Check(me.Deaths.Value == d0 + 1, $"the scoreboard counts it: a death, and no kill for a suicide ({kills0} / {me.Deaths.Value})");
+            // the ball's moments go in the kill feed too: who picked it up, and who captured it for which team
+            g.ServerBallFeed(me, team, false);
+            yield return new WaitForSeconds(0.3f);
+            bool pickLine = Hud.LastKillLine.Contains(me.DisplayName) && Hud.LastKillLine.Contains("picked up the ball");
+            string pickText = Hud.LastKillLine;
+            g.ServerBallFeed(me, team, true);
+            yield return new WaitForSeconds(0.3f);
+            Check(pickLine && Hud.LastKillLine.Contains("captured the ball") && Hud.LastKillLine.Contains(Cfg.TeamName[team]) && me.Deaths.Value == d0 + 1,
+                $"the kill feed shows the ball picked up and captured, with who and which team ({pickText} / {Hud.LastKillLine})");
+            yield return Pic("killfeed_ball", 0.2f);
 
             // ---- whispers: only the two it's between get the line; clicking one answers it ----
             Check(me.DisplayName == (GameSettings.PlayerName != "" ? GameSettings.PlayerName : PlayerNet.DefaultName(me.Team.Value, me.Slot.Value)), $"your name is the one typed on the main menu, or your team colour and number ({me.DisplayName})");
@@ -189,6 +199,30 @@ namespace RockGame
                 $"the scoreboard lists every player, with MESSAGE next to everyone but you ({Hud.ScoreboardRows} rows, {Hud.ScoreboardButtons} buttons, {PlayerNet.All.Count} players)");
             Hud.TestScoreboard = false;
             yield return Pic("killfeed", 0.2f);
+
+            // ---- Tab is two keys in one: a tap opens / closes the bag, holding it shows the scoreboard ----
+            if (me.Dead.Value) me.ServerRespawn(false); // (the suicide above: the bag doesn't open while dead)
+            yield return new WaitForSeconds(0.3f);
+            if (pc.MenuOpen) pc.CloseMenu();
+            yield return null;
+            Binds.TestPress(Bind.Scoreboard);
+            yield return new WaitForSeconds(0.15f);
+            bool tapBag = pc.MenuOpen && !pc.ScoreboardOpen;
+            Binds.TestPress(Bind.Scoreboard);
+            yield return new WaitForSeconds(0.15f);
+            Check(tapBag && !pc.MenuOpen, $"a tap of {Binds.Name(Bind.Scoreboard)} opens the bag, another closes it ({tapBag})");
+            Binds.TestHold(Bind.Scoreboard, true);
+            yield return new WaitForSeconds(Cfg.TabHoldTime * 0.5f);
+            bool earlyBoard = pc.ScoreboardOpen;
+            yield return new WaitForSeconds(Cfg.TabHoldTime + 0.2f);
+            bool board = pc.ScoreboardOpen;
+            Binds.TestHold(Bind.Scoreboard, false);
+            yield return new WaitForSeconds(0.15f);
+            Check(!earlyBoard && board && !pc.ScoreboardOpen && !pc.MenuOpen, $"holding {Binds.Name(Bind.Scoreboard)} shows the scoreboard (not at once), and letting go doesn't open the bag ({earlyBoard}/{board}/{pc.MenuOpen})");
+            Binds.TestPress(Bind.Inventory);
+            yield return new WaitForSeconds(0.15f);
+            Check(pc.MenuOpen, $"the inventory key ({Binds.Name(Bind.Inventory)}) still opens the bag");
+            if (pc.MenuOpen) pc.CloseMenu();
 
             Log("inventory test done");
             Application.Quit(0);

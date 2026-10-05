@@ -21,7 +21,7 @@ namespace RockGame
     }
 
     /// <summary>The FPS counter: frames per second and the frame time, averaged over half a second (so it's readable),
-    /// in green / yellow / red. In a match it sits just under YOU ARE ..., on the menus in the top left corner.</summary>
+    /// in green / yellow / red. In a match it sits under the base radar (under YOU ARE ...), on the menus in the top left corner.</summary>
     public partial class Hud
     {
         float m_FpsTime, m_FpsShownFps, m_FpsShownMs;
@@ -45,7 +45,9 @@ namespace RockGame
         {
             if (!GameSettings.ShowFps || m_FpsShownFps <= 0f) return;
             float k = m_Scale;
-            var r = new Rect(10, inGame ? 10 + 34 * k : 10, 150 * k, 22 * k);
+            // in a match: under the base radar when that's up (else straight under YOU ARE ...)
+            float y = !inGame ? 10 : m_RadarBottom > 0f ? m_RadarBottom + 4 * k : 10 + 34 * k;
+            var r = new Rect(10, y, 150 * k, 22 * k);
             string col = m_FpsShownFps >= 55f ? "#8dff8d" : m_FpsShownFps >= 30f ? "#ffd24a" : "#ff6a5a";
             Fill(r, new Color(0f, 0f, 0f, 0.45f));
             Shadowed(new Rect(r.x + 6 * k, r.y + 1, r.width, r.height), $"<color={col}><b>{m_FpsShownFps:0} FPS</b></color>  <color=#cccccc>{m_FpsShownMs:0.0} ms</color>", m_Small);

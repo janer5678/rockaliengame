@@ -13,9 +13,10 @@ namespace RockGame
     /// fires burning (animated low-poly flames), smoke and sparks. The ball sits in the open in the crater in front of it, in plain sight
     /// from every base: the saucer lies off the lines from the bases to the ball (2 teams: off to the side, along x; 3: on
     /// the side with no base; 4: on a diagonal, between two bases), and it's low.
-    /// Only the saucer is solid: one convex lump that reaches down into the ground (nothing can roll or crawl under it, so
-    /// the ball can't get stuck there; you can walk up onto it). The dirt, rubble, debris, scorch marks, flames and smoke
-    /// have no colliders, and nothing bigger than gravel lies between a base and the ball.
+    /// Only the saucer and the soil heaped against it are solid: the saucer one convex lump that reaches down into the
+    /// ground (nothing can roll or crawl under it, so the ball can't get stuck there; you can walk up onto it), the heap
+    /// its own surface (you walk up over it). The dirt, rubble, debris, scorch marks, flames and smoke have no colliders,
+    /// and nothing bigger than gravel lies between a base and the ball.
     /// Local visuals, built the same on every peer (MapBuilder.Build). The fire keeps burning all match.
     /// </summary>
     public class CrashSite : MonoBehaviour
@@ -59,6 +60,8 @@ namespace RockGame
         public Vector3 SaucerCentre => m_Saucer != null ? m_Saucer.position : transform.position;
         /// <summary>The saucer's solid lump (null if none).</summary>
         public MeshCollider Collider { get; private set; }
+        /// <summary>The soil heap's surface (you walk on it: BuildSoilCollider).</summary>
+        public MeshCollider SoilCollider { get; private set; }
         public int FlameCount => m_Flames.Count;
 
         public static CrashSite Build(Transform root)
@@ -304,8 +307,47 @@ namespace RockGame
             return HeapH * front * prof * lumps * sight;
         }
 
-        /// <summary>The heap (merged faceted meshes in the crash dirt colour, no collider of its own - its core is part of
-        /// the saucer's solid lump), with clods and lumps of earth tumbled over it.</summary>
+        /// <summary>
+        /// The heap's own collider: its surface, the same faceted grid you see (a plain mesh collider, every face turned
+        /// up), so you walk up and over the soil the way it looks - it used to be only the core of it, in the saucer's
+        /// convex lump, whose sides came straight up out of the ground inside the heap: you waded into the soil up to
+        /// your waist and then walked into a wall in it. (Where there's no heap the surface is just under the ground.)
+        /// </summary>
+        void BuildSoilCollider(Transform t, Vector3[,] grid, int segs, int rings)
+        {
+            var v = new List<Vector3>();
+            var tris = new List<int>();
+            for (int i = 0; i <= segs; i++)
+                for (int k = 0; k <= rings; k++)
+                    v.Add(grid[i, k]);
+            void Tri(int a, int b, int c)
+            {
+                // (faces turned up, whichever way round the grid runs: a mesh collider is only solid from its front)
+                // (Unity's front is clockwise seen from it: Cross(b - a, c - a) points out of the front)
+                if (Vector3.Cross(v[b] - v[a], v[c] - v[a]).y > 0f) { tris.Add(a); tris.Add(b); tris.Add(c); }
+                else { tris.Add(a); tris.Add(c); tris.Add(b); }
+            }
+            for (int i = 0; i < segs; i++)
+                for (int k = 0; k < rings; k++)
+                {
+                    int a = i * (rings + 1) + k, b = (i + 1) * (rings + 1) + k;
+                    Tri(a, b, b + 1);
+                    Tri(a, b + 1, a + 1);
+                }
+            var mesh = new Mesh { name = "soil heap collider" };
+            mesh.SetVertices(v);
+            mesh.SetTriangles(tris, 0);
+            mesh.RecalculateBounds();
+            var go = new GameObject("soil heap collider");
+            go.transform.SetParent(t, false);
+            go.AddComponent<OwnedMesh>().Mesh = mesh;
+            var mc = go.AddComponent<MeshCollider>();
+            mc.sharedMesh = mesh;
+            SoilCollider = mc;
+        }
+
+        /// <summary>The heap (merged faceted meshes in the crash dirt colour, with its own collider - BuildSoilCollider - and
+        /// its core in the saucer's solid lump too), with clods and lumps of earth tumbled over it.</summary>
         void BuildSoilHeap(Transform t, System.Random rng)
         {
             float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
@@ -332,6 +374,7 @@ namespace RockGame
                     var mb = (i * 7 + k * 3) % 5 == 0 ? heapDark : heap;
                     mb.Quad(grid[i, k], grid[i + 1, k], grid[i + 1, k + 1], grid[i, k + 1], Vector3.up);
                 }
+            BuildSoilCollider(t, grid, segs, rings);
             // clods and lumps of earth tumbled over it, thickest along its crest
             var clods = new MeshBatch();
             for (int i = 0; i < 34; i++)

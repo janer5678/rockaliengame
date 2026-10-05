@@ -7,8 +7,9 @@ namespace RockGame
     /// A signpost in the middle of the map, on the other side of the ball from the crashed UFO (inside the ball's glass
     /// dome): a tall wooden pole with an arrow board near its top for every team, each in the team's colour and pointing
     /// at that team's base (1v1: a blue and a red one; 3 or 4 bases: 3 or 4 arrows, one above the other). It stands off
-    /// every line from a base to the ball, so it never blocks the way in or the view of the ball; only the pole is solid
-    /// (a thin capsule - the arrows are well above head height). Built the same on every peer (MapBuilder.Build); none in
+    /// every line from a base to the ball, so it never blocks the way in or the view of the ball. The pole is solid (a thin
+    /// capsule), and so are the arrow boards (their own shape; well above head height, so they're never in the way on
+    /// the ground). Built the same on every peer (MapBuilder.Build); none in
     /// Builder (no bases).
     /// </summary>
     public static class CentreSign
@@ -103,7 +104,12 @@ namespace RockGame
                 // a dark wooden board with the team-colour arrow painted on both faces, nailed to the side of the post
                 // (every other one on the other side)
                 float side = team % 2 == 0 ? ArrowOut : -ArrowOut;
-                Art.Part(arm, s_Arrow, Art.DarkWood, new Vector3(0f, 0f, side), new Vector3(1f, 1f, 0.07f), default, false, null, "board");
+                var board = Art.Part(arm, s_Arrow, Art.DarkWood, new Vector3(0f, 0f, side), new Vector3(1f, 1f, 0.07f), default, false, null, "board");
+                // solid (arrows and spears stick in it, a ball bounces off it, you can stand on it if you get up there):
+                // its own shape, convex (so nothing can catch inside the notch in its tail)
+                var bc = board.AddComponent<MeshCollider>();
+                bc.sharedMesh = s_Arrow;
+                bc.convex = true;
                 Art.Part(arm, s_Arrow, Cfg.TeamColor[team], new Vector3(0.05f, 0f, side), new Vector3(0.9f, 0.78f, 0.1f), default, false, null, "paint");
                 Art.Part(arm, Art.Cylinder, Art.Metal, new Vector3(0f, 0f, side * 0.62f), new Vector3(0.06f, 0.11f, 0.06f), new Vector3(90f, 0, 0), false, null, "nail");
                 Arrows.Add((team, to, y));

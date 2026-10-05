@@ -141,29 +141,12 @@ namespace RockGame
 
         static AudioClip[] s_TreeNotes;
         static int s_NoteStep;
-        static float s_LastNote = -10f, s_NoteAmount, s_NoteDelta;
+        static float s_LastNote = -10f;
         static Vector3 s_LastNotePos;
-        static ResourceNode s_NoteNode;
-
-        /// <summary>How many notes the tree X chime's scale has: the samples (C D E G A C) with the same notes an octave
-        /// lower in front of them (all but the last, which is the first sample's own note) - C D E G A, C D E G A, C.</summary>
-        public static int TreeNoteCount => s_TreeNotes == null || s_TreeNotes.Length == 0 ? 0 : s_TreeNotes.Length * 2 - 1;
-        /// <summary>(tests) The last tree X chime played: which step of the scale (0 = the lowest), and its pitch (0.5: a
-        /// sample played an octave down).</summary>
-        public static int LastTreeNote { get; private set; } = -1;
-        public static float LastTreeNotePitch { get; private set; } = 1f;
-
-        /// <summary>Which step of an n-note scale a tree that's this far gone (0 = whole, 1 = felled) chimes at: the lowest
-        /// note on a whole tree, the top one as it comes down.</summary>
-        public static int TreeNoteStep(float used, int n) => Mathf.Clamp(Mathf.RoundToInt(Mathf.Clamp01(used) * (n - 1)), 0, Mathf.Max(0, n - 1));
 
         /// <summary>
-        /// Hitting a tree's X: a chime (Resources/TreeHit, from the Samples pack). The note climbs a scale as the tree
-        /// comes down - low on a whole tree, the top note (the last sample, as it always was) on the hit that fells it -
-        /// so the climb lasts the whole tree whatever you're hitting it with (10 X hits with a hatchet, one note each;
-        /// 30 with a rock, two or three hits a note). The scale is the samples (C D E G A C) with the same notes an
-        /// octave lower before them (the samples played at half speed): 11 notes. A hit that isn't on a tree (tests)
-        /// climbs it a step a hit, like a combo; a pause or another spot starts that again from the bottom.
+        /// Hitting a tree's X: a chime (Resources/TreeHit, from the Samples pack). Hits in a row on the same tree climb up the
+        /// scale (C D E G A C), like a combo; a pause or another tree starts it again from the bottom.
         /// </summary>
         static void TreeHitNote(Vector3 pos)
         {
@@ -174,44 +157,11 @@ namespace RockGame
                 s_TreeNotes = l.ToArray();
             }
             if (s_TreeNotes.Length == 0) { Sfx.Play(Sfx.Ding, pos, 0.8f); return; }
-            int n = TreeNoteCount, low = s_TreeNotes.Length - 1; // (the first `low` notes are the octave below)
-            // the tree (or log) that was hit: the nearest one with wood left - or that this hit has just felled
-            ResourceNode node = null;
-            float best = 3.5f * 3.5f;
-            foreach (var t in ResourceNode.All)
-            {
-                if (t == null || !t.IsSpawned || !t.IsWood) continue;
-                var d = t.transform.position - pos;
-                d.y = 0f;
-                if (d.sqrMagnitude < best) { best = d.sqrMagnitude; node = t; }
-            }
-            int step;
-            if (node != null)
-            {
-                // how much of it is gone once this hit has landed. The server knows; a client hears its own hit before
-                // the tree's amount comes down, so there it's one hit behind: take off what the last hit took
-                float amount = node.Amount.Value;
-                if (node == s_NoteNode && Time.time - s_LastNote < 20f) { if (amount < s_NoteAmount) s_NoteDelta = s_NoteAmount - amount; }
-                else s_NoteDelta = 0f;
-                s_NoteNode = node;
-                s_NoteAmount = amount;
-                float after = node.IsServer ? amount : amount - s_NoteDelta;
-                step = TreeNoteStep(1f - after / Mathf.Max(1f, node.FullAmount), n);
-            }
-            else
-            {
-                if (Time.time - s_LastNote > 3f || (pos - s_LastNotePos).sqrMagnitude > 9f) s_NoteStep = 0;
-                step = Mathf.Min(s_NoteStep, n - 1);
-                s_NoteStep++;
-                s_NoteNode = null;
-            }
+            if (Time.time - s_LastNote > 3f || (pos - s_LastNotePos).sqrMagnitude > 9f) s_NoteStep = 0;
             s_LastNote = Time.time;
             s_LastNotePos = pos;
-            LastTreeNote = step;
-            LastTreeNotePitch = step < low ? 0.5f : 1f;
-            // (the low ones a touch louder: an octave down the sample is softer on the ear)
-            if (step < low) Sfx.PlayPitched(s_TreeNotes[step], pos, 0.95f, 0.5f, 60f);
-            else Sfx.Play(s_TreeNotes[step - low], pos, 0.85f, 0f, 60f);
+            Sfx.Play(s_TreeNotes[Mathf.Min(s_NoteStep, s_TreeNotes.Length - 1)], pos, 0.85f, 0f, 60f);
+            s_NoteStep++;
         }
 
         /// <summary>Test hooks: how many explosions this PC has shown, and the last one's camera distance, shake and the
@@ -602,6 +552,9 @@ namespace RockGame
                 l.color = c;
                 l.range = 5f;
                 l.intensity = 2f;
+                // no grass growing up through it, or round it (on the ground, or the foot of a wall low down); it grows
+                // back when the portal goes
+                go.AddComponent<GrassClear>().Clear();
                 if (i < s_Shown.Count) s_Shown[i] = go; else s_Shown.Add(go);
             }
         }
@@ -618,6 +571,16 @@ namespace RockGame
             s_Shown.Clear();
             s_Info.Clear();
         }
+    }
+
+    /// <summary>Keeps the grass clear under (and round: GrassField.BuildPad) what this object draws while it's there
+    /// (GrassField.BlockRenderers; a portal, the portal gun's preview ring). Clear() again after it's moved.</summary>
+    public class GrassClear : MonoBehaviour
+    {
+        public void Clear() => GrassField.BlockRenderers(GetInstanceID(), transform);
+        public void Release() => GrassField.Unblock(GetInstanceID());
+        void OnDisable() => Release();
+        void OnDestroy() => Release();
     }
 
     /// <summary>A C4 charge stuck where it landed, beeping faster and faster until it goes off (visual only; the server does the damage).</summary>
@@ -1005,10 +968,11 @@ namespace RockGame
         Material m_PuffMat;
         Color m_PuffColor;
 
-        public static void Spawn(Vector3 pos, Vector3 vel, Color c, float size, float life, float grav, bool stick)
+        /// <summary>`mat`: drawn with this instead of the plain colour (e.g. a shared see-through Art.Ghost one).</summary>
+        public static void Spawn(Vector3 pos, Vector3 vel, Color c, float size, float life, float grav, bool stick, Material mat = null)
         {
             if (s_Alive > 350) return;
-            var go = Art.Part(null, Art.Cube, c, pos, Vector3.one * size, Random.rotation.eulerAngles);
+            var go = Art.Part(null, Art.Cube, c, pos, Vector3.one * size, Random.rotation.eulerAngles, false, mat);
             go.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             var p = go.AddComponent<FxParticle>();
             p.m_Vel = vel; p.m_Life = p.m_Max = life; p.m_Grav = grav; p.m_Size = size; p.m_Stick = stick;

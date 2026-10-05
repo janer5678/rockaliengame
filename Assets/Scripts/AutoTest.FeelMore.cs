@@ -279,7 +279,7 @@ namespace RockGame
             yield return new WaitForSeconds(0.3f);
             int c0 = me.Count(Item.Chest);
             Binds.TestHold(Bind.Interact, true);
-            yield return new WaitForSeconds(Cfg.PackUpHoldTime + 0.4f);
+            yield return new WaitForSeconds(Cfg.PackUpDelay + Cfg.PackUpHoldTime + 0.4f);
             Binds.TestHold(Bind.Interact, false);
             yield return new WaitForSeconds(0.3f);
             Check(chest != null && chest.IsSpawned && me.Count(Item.Chest) == c0, "a chest with things in it can't be picked up");
@@ -289,10 +289,14 @@ namespace RockGame
             LookAt(pc, me, chest.Center);
             yield return new WaitForSeconds(0.2f);
 
-            // empty: hold E - a bar fills up, then it's in our bag
+            // empty: hold E - nothing for the first Cfg.PackUpDelay (no bar on a tap), then a bar fills up, then it's in our bag
             Binds.TestHold(Bind.Interact, true);
-            yield return new WaitForSeconds(Cfg.PackUpHoldTime * 0.5f);
+            yield return new WaitForSeconds(Cfg.PackUpDelay * 0.4f);
+            float early = pc.PackUpProgress;
+            bool earlyBar = pc.PackingUp;
+            yield return new WaitForSeconds(Cfg.PackUpDelay * 0.6f + Cfg.PackUpHoldTime * 0.5f);
             float mid = pc.PackUpProgress;
+            Check(early == 0f && !earlyBar, $"no pick-up bar for the first {Cfg.PackUpDelay:0.0} s of holding E ({early:0.00})");
             bool stillThere = chest != null && chest.IsSpawned;
             ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "pack_up_progress.png"));
             yield return new WaitForSeconds(Cfg.PackUpHoldTime + 0.2f);
@@ -318,7 +322,7 @@ namespace RockGame
                 yield return new WaitForSeconds(0.3f);
                 int w0 = me.Count(Item.Workbench);
                 Binds.TestHold(Bind.Interact, true);
-                yield return new WaitForSeconds(Cfg.PackUpHoldTime + 0.4f);
+                yield return new WaitForSeconds(Cfg.PackUpDelay + Cfg.PackUpHoldTime + 0.4f);
                 Binds.TestHold(Bind.Interact, false);
                 yield return new WaitForSeconds(0.4f);
                 Check(Workbench.ForTeam(team, 1) == null && me.Count(Item.Workbench) == w0 + 1, $"holding E on our workbench picks it up ({me.Count(Item.Workbench) - w0})");

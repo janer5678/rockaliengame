@@ -50,11 +50,12 @@ namespace RockGame
             if (Cfg.Builder || (S != GameState.PreBall && S != GameState.BallLive)) return;
             var b = Ball.Instance;
             if (b == null || !b.IsSpawned) return;
+            // (the tutorial: a team nobody plays for - the solo raid's enemy, holding the ball - captures nothing)
             int st = b.SocketTeam.Value;
-            if (st >= 0 && st < 4 && !BenchUnlockedFor(st)) ServerUnlockBench(st, "put the ball in their machine");
+            if (st >= 0 && st < 4 && !BenchUnlockedFor(st) && Tutorial.TeamCanCapture(st)) ServerUnlockBench(st, "put the ball in their machine");
             var p = b.transform.position;
             int t = p.y < 30f ? Cfg.BaseTeamAt(p) : -1;
-            if (t < 0 || t >= 4 || BenchUnlockedFor(t)) return;
+            if (t < 0 || t >= 4 || BenchUnlockedFor(t) || !Tutorial.TeamCanCapture(t)) return;
             // carried through by an enemy doesn't count
             var carrier = b.IsCarried ? b.Carrier : null;
             if (b.IsCarried && (carrier == null || carrier.Team.Value != t)) return;

@@ -18,6 +18,9 @@ namespace RockGame
         public readonly NetworkVariable<sbyte> SocketTeam = new NetworkVariable<sbyte>(-1);
         /// <summary>Builder: the ground under the ball's block while it's planted (SocketTeam = whose ball it is).</summary>
         public readonly NetworkVariable<Vector3> PlantPos = new NetworkVariable<Vector3>();
+        /// <summary>Someone has picked the ball up this match (the glow on the ground at the beam's foot goes for good:
+        /// it looked odd hanging in the air under a carried or flying ball).</summary>
+        public readonly NetworkVariable<bool> EverPickedUp = new NetworkVariable<bool>(false);
         public const float PlinthH = 1.2f, Radius = 0.62f;
         /// <summary>The beacon pillar, from the ball's centre: from 4 m under the ground the ball sits on, up into the sky.</summary>
         public const float BeaconBottom = -(Radius + 4f), BeaconTop = 300.65f;
@@ -26,7 +29,7 @@ namespace RockGame
         Collider m_Col;
         Transform m_Visual;
         GameObject m_Mesh;
-        GameObject m_Beacon;
+        GameObject m_Beacon, m_Foot;
         Renderer m_BeaconRenderer;
         Material m_BeaconMat, m_HaloMat, m_FootMat;
         /// <summary>The beacon's bright core and its soft halo (radius, metres).</summary>
@@ -87,6 +90,7 @@ namespace RockGame
             var foot = BeamFx.Disc(m_Beacon.transform, m_FootMat, "pillar foot glow");
             foot.transform.localPosition = new Vector3(0, -Radius + 0.06f, 0);
             foot.transform.localScale = Vector3.one * BeaconHalo * 3f;
+            m_Foot = foot;
             SocketTeam.OnValueChanged += OnSocketChanged;
             OnSocketChanged(-1, SocketTeam.Value);
             m_Ready = true;
@@ -172,11 +176,16 @@ namespace RockGame
             // the beam of light is always on again - carried, rolling, lying still or in a socket (it used to wait until
             // the ball had sat still for 3 seconds) - so everyone can always find the ball. Only the victory cutscene
             // turns it off: it ran straight up through the middle of the UFO over the winners' base
-            bool beacon = !VictoryCutscene.Active;
+            // The one carrying it doesn't see it (it filled their screen); everyone else still does
+            var carrier = Carrier;
+            bool beacon = !VictoryCutscene.Active && !(carrier != null && carrier.IsOwner);
             if (m_Beacon.activeSelf != beacon) m_Beacon.SetActive(beacon);
+            // the glow on the ground at its foot: only until the first pickup (after that the ball's off in the air as
+            // often as not, and a disc of light floating under it looked odd)
+            bool foot = !EverPickedUp.Value;
+            if (m_Foot != null && m_Foot.activeSelf != foot) m_Foot.SetActive(foot);
             // Clients: render the carried ball in the carrier's arms (avoids interpolation lag).
             // The carrier themselves sees it in their first-person hands instead.
-            var carrier = Carrier;
             if (carrier != null)
             {
                 m_Visual.position = CarryPoint(carrier);
@@ -312,6 +321,7 @@ namespace RockGame
             transform.rotation = Quaternion.identity;
             SocketTeam.Value = (sbyte)by.Team.Value;
             if (NetGame.Instance != null) NetGame.Instance.Broadcast($"{Cfg.TeamLabel(by.Team.Value)} planted the ball - it's theirs until someone picks it up!");
+            if (NetGame.Instance != null) NetGame.Instance.ServerBallFeed(by, by.Team.Value, true); // (Builder's capture: a kill feed line)
         }
 
         /// <summary>The block (in the owner's colour) that grows up under a planted ball, and the flag that grows out of its top.</summary>
@@ -432,7 +442,12 @@ namespace RockGame
             transform.SetPositionAndRotation(Cfg.SocketPos(team), Quaternion.identity);
             SocketTeam.Value = (sbyte)team;
             if (NetGame.Instance != null) NetGame.Instance.Broadcast($"The ball is in the {Cfg.TeamName[team]} machine!");
+            // the kill feed: who captured it (whoever last picked it up, if they're on that team), or just the team
+            if (NetGame.Instance != null) NetGame.Instance.ServerBallFeed(m_LastHolder != null && m_LastHolder.IsSpawned && m_LastHolder.Team.Value == team ? m_LastHolder : null, team, true);
         }
+
+        /// <summary>Server: who picked the ball up last (the kill feed names them when it goes into their machine).</summary>
+        PlayerNet m_LastHolder;
 
         public void ServerReset()
         {
@@ -453,6 +468,7 @@ namespace RockGame
         {
             SocketTeam.Value = -1;
             CarrierId.Value = NoCarrier;
+            EverPickedUp.Value = false; // (a new match: the foot glow's back)
             m_Rb.isKinematic = true;
             MoveTo(DomeSpot);
             transform.rotation = Quaternion.identity;
@@ -499,7 +515,10 @@ namespace RockGame
             if (IsCarried) return false;
             SocketTeam.Value = -1;
             CarrierId.Value = p.NetworkObjectId;
+            EverPickedUp.Value = true;
             m_Rb.isKinematic = true;
+            m_LastHolder = p;
+            if (NetGame.Instance != null) NetGame.Instance.ServerBallFeed(p, p.Team.Value, false); // (a line in the kill feed)
             return true;
         }
 

@@ -11,11 +11,24 @@ namespace RockGame
     public static class KillCause
     {
         public const byte Died = 200, Suicide = 201, Fall = 202, Lava = 203, Slenderman = 204;
+        /// <summary>Not deaths: the ball's big moments get a line in the kill feed too (who picked it up / captured it).</summary>
+        public const byte BallPickup = 205, BallCapture = 206;
         public static bool IsItem(byte c) => c > 0 && c < Died;
+        public static bool IsBall(byte c) => c == BallPickup || c == BallCapture;
     }
 
     public partial class NetGame
     {
+        /// <summary>Server: a ball line in everyone's kill feed - `who` picked it up, or it was captured for `team` (by `who`,
+        /// when it's known who brought it in; null = just the team). Sent as a kill feed line with a ball cause: the
+        /// "killer" is the player, the "victim" side is the team (it's drawn as words, not a name - Hud.AddKill).</summary>
+        public void ServerBallFeed(PlayerNet who, int team, bool capture)
+        {
+            if (!IsServer || !IsSpawned || team < 0) return;
+            KillFeedRpc(who != null ? who.Team.Value : (byte)255, who != null ? who.Slot.Value : (byte)0, (byte)team, 0,
+                capture ? KillCause.BallCapture : KillCause.BallPickup, false, new Unity.Collections.FixedString32Bytes(who != null ? who.DisplayName : ""), default);
+        }
+
         /// <summary>Someone died: a line in everyone's kill feed. killerTeam 255 = nobody killed them. `head`: a headshot.
         /// The names are the players' as they were (empty = their team colour and number).</summary>
         [Rpc(SendTo.ClientsAndHost)]
@@ -31,13 +44,14 @@ namespace RockGame
     /// headshot icon when it was one, the victim's name, bold and in their team colours. A death nobody caused has its own
     /// icon (a fall, lava, a skull). Each strip pops in from the right with a flash, the ones under it slide down to make
     /// room, and it fades after a few seconds. Your own kills are edged in gold and brighter, your deaths in red.
+    /// The ball gets strips too: "NAME (ball) picked up the ball" and "NAME (ball) captured the ball for TEAM".
     /// </summary>
     public partial class Hud
     {
         struct Kill { public byte KillerTeam, KillerSlot, VictimTeam, VictimSlot, Cause; public bool Head; public string Killer, Victim; public float Time, Y; }
         static readonly List<Kill> s_Kills = new List<Kill>();
         const float KillShow = 6.5f, KillFade = 0.8f, KillPop = 0.22f;
-        static Texture2D s_Skull, s_Flame, s_HeadIcon, s_FallIcon;
+        static Texture2D s_Skull, s_Flame, s_HeadIcon, s_FallIcon, s_BallIcon;
 
         /// <summary>Test hooks: the last kill feed line (plain text), how many lines there have been, and whether the last was a headshot.</summary>
         public static string LastKillLine { get; private set; } = "";
@@ -48,6 +62,12 @@ namespace RockGame
         {
             string killer = killerTeam == 255 ? (cause == KillCause.Slenderman ? "SLENDERMAN" : "") : !string.IsNullOrEmpty(killerName) ? killerName : PlayerNet.DefaultName(killerTeam, killerSlot);
             string victim = !string.IsNullOrEmpty(victimName) ? victimName : PlayerNet.DefaultName(victimTeam, victimSlot);
+            // the ball (NetGame.ServerBallFeed): the player, the ball, then what happened (in the team's colour)
+            if (KillCause.IsBall(cause))
+            {
+                string team = Cfg.TeamName[Mathf.Clamp(victimTeam, 0, Cfg.TeamName.Length - 1)];
+                victim = cause == KillCause.BallPickup ? "picked up the ball" : killer == "" ? $"{team} captured the ball" : $"captured the ball for {team}";
+            }
             s_Kills.Add(new Kill { KillerTeam = killerTeam, KillerSlot = killerSlot, VictimTeam = victimTeam, VictimSlot = victimSlot, Cause = cause, Head = head, Killer = killer, Victim = victim, Time = Time.time, Y = -1f });
             while (s_Kills.Count > 6) s_Kills.RemoveAt(0);
             LastKillLine = (killer + " [" + CauseName(cause) + (head ? ", headshot" : "") + "] " + victim).Trim();
@@ -69,6 +89,7 @@ namespace RockGame
                 case KillCause.Lava: return "lava";
                 case KillCause.Slenderman: return "slenderman";
                 case KillCause.Died: return "died";
+                case KillCause.BallPickup: case KillCause.BallCapture: return "ball";
                 default: return KillCause.IsItem(cause) ? Cfg.ItemName((Item)cause) : "died";
             }
         }
@@ -78,10 +99,11 @@ namespace RockGame
             if (KillCause.IsItem(cause)) { var t = ItemIcons.Get((Item)cause); if (t != null) return t; }
             if (cause == KillCause.Slenderman) { var t = ItemIcons.Get(Item.SlenderEgg); if (t != null) return t; }
             EnsureKillIcons();
-            return cause == KillCause.Lava ? s_Flame : cause == KillCause.Fall ? s_FallIcon : s_Skull;
+            return KillCause.IsBall(cause) ? s_BallIcon : cause == KillCause.Lava ? s_Flame : cause == KillCause.Fall ? s_FallIcon : s_Skull;
         }
 
-        /// <summary>The drawn icons: a skull (died, suicide), a flame (lava), a falling arrow (a fall) and the headshot mark.</summary>
+        /// <summary>The drawn icons: a skull (died, suicide), a flame (lava), a falling arrow (a fall), the golden ball (ball
+        /// lines) and the headshot mark.</summary>
         static void EnsureKillIcons()
         {
             if (s_Skull != null) return;
@@ -124,6 +146,17 @@ namespace RockGame
                 float ground = Box(u, v, -0.8f, 0.72f, 0.8f, 0.9f);
                 float a = Mathf.Max(shaft, Mathf.Max(headA, ground));
                 return ground > 0f && shaft + headA <= 0f ? new Color(0.75f, 0.75f, 0.78f, a) : new Color(0.96f, 0.96f, 0.98f, a);
+            });
+            s_BallIcon = Make((u, v) =>
+            {
+                // the golden ball: a gold disc, lit from the top left, with a white glint
+                float a = Disc(u, v, 0, 0, 0.62f, 0.62f);
+                float lit = Mathf.Clamp01(0.75f - (u + v) * 0.45f);
+                float glint = Disc(u, v, -0.22f, -0.24f, 0.16f, 0.13f);
+                var c = Color.Lerp(new Color(0.78f, 0.52f, 0.08f), new Color(1f, 0.88f, 0.35f), lit);
+                c = Color.Lerp(c, Color.white, glint * 0.85f);
+                c.a = a;
+                return c;
             });
             s_HeadIcon = Make((u, v) =>
             {
@@ -168,7 +201,7 @@ namespace RockGame
                 float x = sw - 10 - w + (1f - back) * (w + 20f);
                 var r = new Rect(x, kl.Y, w, rowH);
                 bool mine = me != null && kl.KillerTeam == me.Team.Value && kl.KillerSlot == me.Slot.Value && kl.KillerTeam != 255;
-                bool myDeath = me != null && kl.VictimTeam == me.Team.Value && kl.VictimSlot == me.Slot.Value;
+                bool myDeath = me != null && kl.VictimTeam == me.Team.Value && kl.VictimSlot == me.Slot.Value && !KillCause.IsBall(kl.Cause); // (a ball line's "victim" is a team)
                 var old = GUI.color;
                 Fill(r, mine ? new Color(0.2f, 0.14f, 0.02f, 0.86f * a) : myDeath ? new Color(0.24f, 0.04f, 0.04f, 0.84f * a) : new Color(0.04f, 0.04f, 0.06f, 0.72f * a));
                 Fill(new Rect(r.x, r.y, r.width, 2 * k), new Color(1, 1, 1, 0.08f * a));

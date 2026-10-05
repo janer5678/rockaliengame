@@ -612,6 +612,8 @@ namespace RockGame
             float use = useK < 1f ? Mathf.Sin(useK * Mathf.PI) : 0f;
             if (item == Item.DeathWand) use = Recoil(0.5f) * 1.5f; // the cast: flicked out hard, springing back
             Vector3 idle = new Vector3(0.26f, -0.27f, 0.45f);
+            // a box (the chest, and the workbenches held like it): the hand under it further forward and a touch lower
+            if (item == Item.Chest || item == Item.Workbench || item == Item.Workbench2) idle += new Vector3(0f, -0.03f, 0.09f);
             Vector3 pos = Vector3.Lerp(idle, new Vector3(0.04f, -0.13f, 0.22f), toMouth) + new Vector3(0, -0.05f, 0.12f) * use;
             float throwK = Mathf.Clamp01((Time.time - m_ThrowStart) / 0.35f);
             if (throwK < 1f) pos += new Vector3(-0.05f, 0.12f, 0.3f) * Mathf.Sin(throwK * Mathf.PI); // lob (C4)

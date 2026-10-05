@@ -10,10 +10,11 @@ namespace RockGame
     /// frame: the sky's open for the UFO and the camera, nothing for the ship to clip through), and the ball's beam of
     /// light is off (Ball.LateUpdate: it used to run straight up through the UFO); a UFO like the airdrop ship
     /// (AirdropShip.BuildShip) flies in under the clouds and hovers over the winners' bedrock, opens its hatch and its
-    /// beam comes down - and when it hits, the winners' base blows up like a rocket hit it (Blast: only a picture, on every
+    /// beam (in the winning team's colour) comes down - and when it hits, the winners' base blows up like a rocket hit it (Blast: only a picture, on every
     /// peer - explosions, its pieces gone, chunks of them flying); then, one by one, the winners float up the beam,
     /// spinning, and rise full size right up through the hatch into the ship's hull (the beam goes see-through round them,
-    /// so you see them inside the light) while the camera's lens closes in on the beam and opens out again; then the beam
+    /// so you see them inside the light) while the camera pushes in close on them - their name tags over their heads
+    /// (DrawTags) - and pulls back out once the last is a little way up; then the beam
     /// goes off, the hatch shuts, the ship
     /// dips, tilts, spins up and lifts high up over the mountains' tops (CruiseY), and only then shoots off over the edge
     /// of the map (over the mountains, not into them), vanishing in a twinkle of light. Then the victory screen comes up.
@@ -46,8 +47,8 @@ namespace RockGame
         public const int MaxRiders = 8;
         public const float BeamOff = LiftStart + (4 - 1) * LiftStagger + LiftTime + 0.3f;
         public const float LeaveStart = BeamOff + 0.45f, WindUp = 2.5f, DashStart = LeaveStart + WindUp, DashTime = 2.2f, LeaveTime = WindUp + DashTime;
-        /// <summary>The camera's lens: wide (WideFov), a little tighter once the beam's on (BeamFov), right in on the beam
-        /// while the winners go up it (ZoomFov), then back out.</summary>
+        /// <summary>The camera's lens: wide (WideFov), a little tighter once the beam's on (BeamFov), right in on the winners
+        /// as they stand in the beam and start up it (ZoomFov, CloseUp), then back out.</summary>
         public const float WideFov = 62f, BeamFov = 54f, ZoomFov = 30f;
         public const float Gone = LeaveStart + LeaveTime, Length = Gone + 0.9f;
         /// <summary>How high the UFO hovers over the winners.</summary>
@@ -366,7 +367,8 @@ namespace RockGame
             return p + (s_Out * DashOut + Vector3.up * DashUp) * k;
         }
 
-        static Color BeamColour(NetGame g) => Color.Lerp(AirdropShip.Glow, Cfg.TeamColor[Mathf.Clamp(g.Winner.Value, 0, 3)], 0.45f);
+        /// <summary>The beam's colour (and its glow on the ground and its light): the winning team's own colour.</summary>
+        public static Color BeamColour(NetGame g) => Cfg.TeamColor[Mathf.Clamp(g != null ? g.Winner.Value : 0, 0, 3)];
 
         static PlayerNet Rider(NetGame g, ulong id) =>
             g.NetworkManager != null && g.NetworkManager.SpawnManager != null && g.NetworkManager.SpawnManager.SpawnedObjects.TryGetValue(id, out var no) && no != null ? no.GetComponent<PlayerNet>() : null;
@@ -383,7 +385,7 @@ namespace RockGame
             s_Beam = new GameObject("VictoryBeam");
             AirdropShip.MakeBeam(s_Beam.transform, BeamColour(g), 0.9f, out s_BeamMat, out s_CoreMat, out s_HaloMat, out s_Main, out s_Core, out s_Halo);
             s_Beam.SetActive(false);
-            s_GlowMat = BeamFx.AsBeam(BeamFx.Glow(AirdropShip.Glow, 0f, 1.6f));
+            s_GlowMat = BeamFx.AsBeam(BeamFx.Glow(BeamColour(g), 0f, 1.6f));
             s_Glow = BeamFx.Disc(null, s_GlowMat, "VictoryGroundGlow");
             s_Glow.transform.position = s_Spot + Vector3.up * 0.1f;
             s_Glow.transform.localScale = Vector3.one * AirdropShip.HatchR * 3.2f;
@@ -392,7 +394,7 @@ namespace RockGame
             gl.transform.position = s_Spot + Vector3.up * 2.5f;
             s_GroundLight = gl.AddComponent<Light>();
             s_GroundLight.type = LightType.Point;
-            s_GroundLight.color = AirdropShip.Glow;
+            s_GroundLight.color = BeamColour(g);
             s_GroundLight.range = 16f;
             s_GroundLight.intensity = 0f;
             PlanCamera();
@@ -533,6 +535,78 @@ namespace RockGame
             CamClear = bestClear;
             s_CamFrom = CamFrom = bestFrom;
             s_CamTo = CamTo = bestTo;
+
+            // the push in on the winners (CameraPose): as far in along its line to them as it can go - still seeing them,
+            // up the beam and the hatch, inside nothing, and PushKeep out - checked from where it'll be on its move then
+            // (toward their feet; or, if walls hide those, toward the bottom of the beam over the walls)
+            var beamMid = s_Spot + up * (h * 0.5f);
+            var hatch = s_Hover + up * AirdropShip.HatchY;
+            CamPush = 0f;
+            foreach (var aim in new[] { s_Spot + up * 1.2f, s_Spot + up * 4.5f, s_Spot + up * (h * 0.3f) })
+            {
+                for (float f = MaxPush; f > 0.04f && CamPush <= 0f; f -= 0.08f)
+                {
+                    bool ok = true;
+                    foreach (float k in new[] { 0.3f, 0.42f, 0.55f })
+                    {
+                        var at = Vector3.Lerp(bestFrom, bestTo, k);
+                        var near = Vector3.Lerp(at, aim, f);
+                        if (new Vector2(near.x - s_Spot.x, near.z - s_Spot.z).magnitude < PushKeep || !Clear(at, aim)
+                            || Physics.CheckSphere(near, 0.8f, Mask, QueryTriggerInteraction.Ignore) || !Clear(near, beamMid) || !Clear(near, hatch)) { ok = false; break; }
+                    }
+                    if (ok) { CamPush = f; s_PushAim = aim; }
+                }
+                if (CamPush > 0f) break;
+            }
+        }
+
+        static Vector3 s_PushAim;
+
+        /// <summary>The push in on the winners: at most this much of the way in to them, and never nearer than PushKeep (m, flat).</summary>
+        const float MaxPush = 0.5f, PushKeep = 28f;
+        /// <summary>Test hook: how far in (0..MaxPush of the way) the camera pushes in on the winners.</summary>
+        public static float CamPush { get; private set; }
+
+        /// <summary>How far in on the winners the camera is (0..1): it goes in once the base has blown up, as they stand
+        /// in the beam and start up it, and starts back out once the last of them is a little way up (it used to stay in
+        /// until they were all in the ship).</summary>
+        public static float CloseUp(float e)
+        {
+            var g = G;
+            int n = Mathf.Clamp(g != null ? g.CutsceneRiders.Count : 1, 1, 4);
+            float outAt = Mathf.Min(LiftStart + (n - 1) * LiftStagger + LiftTime * 0.4f, BeamOff - 0.9f);
+            return Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((e - (BlastAt + 0.8f)) / 1.6f)) * (1f - Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((e - outAt) / 2f)));
+        }
+
+        /// <summary>
+        /// The winners' name tags (Hud.DrawVictoryCutscene): each one's name in their team's colour over their head as the
+        /// camera's in close - standing in the beam and floating up it - fading out as they reach the hatch.
+        /// </summary>
+        public static void DrawTags(float k, GUIStyle style)
+        {
+            var g = G;
+            var cam = Camera.main;
+            if (!Active || g == null || cam == null || s_Ship == null) return;
+            float e = Elapsed;
+            float show = Mathf.Clamp01((e - (BlastAt + 0.5f)) / 0.6f);
+            if (show <= 0f) return;
+            var st = new GUIStyle(style) { fontSize = Mathf.RoundToInt(17 * k), fontStyle = FontStyle.Bold, richText = false };
+            for (int i = 0; i < g.CutsceneRiders.Count; i++)
+            {
+                var p = Rider(g, g.CutsceneRiders[i]);
+                if (p == null) continue;
+                float u = LiftOf(i);
+                float a = show * Mathf.Clamp01((0.85f - u) / 0.2f);
+                if (a <= 0.01f) continue;
+                var sp = cam.WorldToScreenPoint(p.transform.position + Vector3.up * (RiderUp(p, u) + 2.5f));
+                if (sp.z < 0.5f) continue;
+                var r = new Rect(sp.x - 120 * k, Screen.height - sp.y - 14 * k, 240 * k, 28 * k);
+                st.normal.textColor = new Color(0f, 0f, 0f, a * 0.85f);
+                GUI.Label(new Rect(r.x + 2, r.y + 2, r.width, r.height), p.DisplayName, st);
+                var c = PlayerNet.NameColor(p.Team.Value);
+                st.normal.textColor = new Color(c.r, c.g, c.b, a);
+                GUI.Label(r, p.DisplayName, st);
+            }
         }
 
         static int Mask => ~(1 << PlayerNet.HitboxLayer);
@@ -584,6 +658,9 @@ namespace RockGame
             float k = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(e / Gone));
             pos = Vector3.Lerp(s_CamFrom, s_CamTo, k);
             pos += new Vector3(Mathf.Sin(e * 0.7f) * 0.12f, Mathf.Sin(e * 0.9f + 1f) * 0.08f, Mathf.Cos(e * 0.6f) * 0.12f);
+            // in close on the winners (along its clear line to them: PlanCamera checked it), then back out
+            float close = CloseUp(e);
+            pos = Vector3.Lerp(pos, s_PushAim, CamPush * close);
             // what it looks at: the ship coming in, the winners as the beam takes them up, then the ship leaving
             var shipPos = s_Ship.Root.activeSelf ? s_Ship.Root.transform.position : s_TwinklePos;
             var ground = s_Spot + Vector3.up * 1.4f;
@@ -600,18 +677,19 @@ namespace RockGame
             }
             Vector3 want;
             if (e < Arrive - 0.6f) want = Vector3.Lerp(ground, shipPos, 0.75f);
-            else if (e < LiftStart) want = Vector3.Lerp(ground, shipPos, Mathf.Lerp(0.6f, 0.3f, (e - Arrive + 0.6f) / (LiftStart - Arrive + 0.6f)));
-            else if (e < BeamOff) want = Vector3.Lerp(riser, shipPos, 0.22f);
+            // (in close, it looks down at the winners more and up at the ship less: they and their name tags fill the shot)
+            else if (e < LiftStart) want = Vector3.Lerp(ground, shipPos, Mathf.Lerp(0.6f, 0.3f, (e - Arrive + 0.6f) / (LiftStart - Arrive + 0.6f)) * (1f - 0.75f * close));
+            else if (e < BeamOff) want = Vector3.Lerp(riser, shipPos, 0.22f * (1f - 0.6f * close));
             else if (e < DashStart) want = Vector3.Lerp(ground, shipPos, 0.7f);
             else want = shipPos;
             if (!s_LookSet) { s_Look = want; s_LookSet = true; }
             s_Look = Vector3.Lerp(s_Look, want, 1f - Mathf.Exp(-Time.deltaTime * (e > DashStart ? 4f : 2.2f)));
             rot = Quaternion.LookRotation(s_Look - pos);
-            // the lens: wide as it comes in, a little tighter once the beam's on, right in on the beam while the winners go
-            // up it, then back out to where it was to see the ship go
+            // the lens: wide as it comes in, a little tighter once the beam's on, right in on the winners (with the push
+            // in above) as they stand in the beam and start up it, then - once the last is a little way up, well before
+            // they're all in - back out to where it was to see the ship go
             float tight = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((e - BeamOn) / 1.5f)) * (1f - Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((e - BeamOff) / 1.2f)));
-            float zoom = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((e - (LiftStart - 0.4f)) / 1.6f)) * (1f - Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((e - (BeamOff - 0.9f)) / 1.5f)));
-            fov = Mathf.Lerp(Mathf.Lerp(WideFov, BeamFov, tight), ZoomFov, zoom);
+            fov = Mathf.Lerp(Mathf.Lerp(WideFov, BeamFov, tight), ZoomFov, close);
             return true;
         }
     }

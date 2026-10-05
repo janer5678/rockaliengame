@@ -6,7 +6,7 @@ namespace RockGame
     /// <summary>
     /// Settings > Display > BASE FLOOR (just on this PC, saved, live): how each team's building grid on its base looks.
     /// While you build it's always the tinted floor with its grid; after the build phase (once the glass wall drops) it
-    /// stays the colour grid, turns into flat grass (the default: plain ground) or grass with blades on it. Its floor and
+    /// stays the colour grid (the default), turns into flat grass (plain ground) or grass with blades on it. Its floor and
     /// grid colours are the world colour slots "Base floor" / "Base floor grid" (the colour picker, the copy buttons and
     /// Reset all cover them), and Team colour is how much of each team's colour is mixed into both.
     /// </summary>
@@ -14,8 +14,8 @@ namespace RockGame
     {
         public enum BaseFloorStyle { Grid = 0, Grass = 1, GrassBlades = 2 }
         public static readonly string[] BaseFloorStyleNames = { "Colour grid", "Flat grass", "Grass + blades" };
-        public const BaseFloorStyle BaseFloorAfterDefault = BaseFloorStyle.Grass;
-        public const float BaseFloorTeamMixDefault = 0.35f;
+        public const BaseFloorStyle BaseFloorAfterDefault = BaseFloorStyle.Grid;
+        public const float BaseFloorTeamMixDefault = 0.5f;
 
         static bool s_BaseFloorLoaded;
         static BaseFloorStyle s_BaseFloorAfter = BaseFloorAfterDefault;

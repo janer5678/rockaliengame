@@ -25,6 +25,8 @@ namespace RockGame
             new Color(0.25f, 0.9f, 0.3f), new Color(0.25f, 0.55f, 1f), new Color(0.6f, 0.3f, 0.95f),
         };
 
+        /// <summary>How opaque the rainbow's pieces are (they were solid).</summary>
+        public const float RainbowAlpha = 0.4f;
         /// <summary>For the tests: rainbow pieces left behind (all unicorns, this machine).</summary>
         public static int RainbowPieces { get; private set; }
         /// <summary>How far the body is bobbing up right now (m; tests).</summary>
@@ -144,7 +146,10 @@ namespace RockGame
                 for (int i = 0; i < s_Rainbow.Length; i++)
                 {
                     var at = back + Vector3.down * (i * 0.11f) + Random.insideUnitSphere * 0.02f;
-                    FxParticle.Spawn(at, Vector3.up * 0.15f - transform.forward * 0.4f, s_Rainbow[i], 0.16f, 0.8f, 0f, false);
+                    // (see-through: a soft trail, not a wall of solid blocks; Art.Ghost caches one material per stripe)
+                    var c = s_Rainbow[i];
+                    c.a = RainbowAlpha;
+                    FxParticle.Spawn(at, Vector3.up * 0.15f - transform.forward * 0.4f, s_Rainbow[i], 0.16f, 0.8f, 0f, false, Art.Ghost(c));
                     RainbowPieces++;
                 }
             }

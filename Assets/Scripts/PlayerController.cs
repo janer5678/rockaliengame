@@ -38,22 +38,32 @@ namespace RockGame
         /// <summary>Down the sights of the crossbow or the revolver: slower to turn and to walk, no sprinting.</summary>
         public bool SightsUp => CrossbowAiming || RevolverAiming;
 
-        /// <summary>The build wheel's slices, clockwise from the top.</summary>
+        /// <summary>The build wheel's slices, clockwise from just right of the top (see WheelAngle).</summary>
         public static readonly (string Label, PieceType Piece, bool Demolish, bool Upgrade)[] WheelOptions =
         {
-            // clockwise from the top: the wall sits on the right. Just the six pieces, each a sixth of the wheel (demolish
-            // is on its key - X - and upgrades are at the upgrade station; they aren't slices any more)
+            // clockwise: three pieces down the right (the wall on the right), DEMOLISH straight down at the bottom (like
+            // Rust), then three pieces up the left. Upgrades are at the upgrade station; they aren't a slice any more
             ("Foundation", PieceType.Foundation, false, false), ("Ceiling", PieceType.Floor, false, false), ("Wall", PieceType.Wall, false, false),
+            ("Demolish", PieceType.Wall, true, false),
             ("Window", PieceType.Window, false, false), ("Stairs", PieceType.Stairs, false, false), ("Doorway", PieceType.Doorway, false, false),
         };
+        /// <summary>Where a wheel slice's middle is, in degrees clockwise from straight up. The slices are turned half a
+        /// slice so the middle one (demolish) sits exactly at the bottom; a slice covers WheelAngle +- half a slice.</summary>
+        public static float WheelAngle(int i) => (i + 0.5f) * 360f / WheelOptions.Length;
+        /// <summary>Holding the building plan with Demolish picked on the wheel (pieces you could take down light up red).</summary>
+        public bool DemolishAiming => m_Net != null && m_Net.HeldItem == Item.BuildingPlan && DemolishMode;
         public string AimText = "", BuildHint = "";
         /// <summary>The scoreboard key is held: the scoreboard is up and the mouse is free.</summary>
         public bool ScoreboardOpen { get; private set; }
+        float m_TabDownAt = -1f; // when the scoreboard key went down (a tap = the bag, a hold = the scoreboard)
         public float DrawAmount { get; private set; } // bow draw / spear wind-up, 0..1
         public float RamCharge { get; private set; }  // ram wind-up, 0..1
         public bool Crouching { get; private set; }
 
-        static readonly Color k_GhostOk = new Color(0.3f, 1f, 0.45f, 0.4f), k_GhostBad = new Color(1f, 0.3f, 0.3f, 0.4f);
+        static readonly Color k_GhostBad = new Color(1f, 0.3f, 0.3f, 0.4f);
+        /// <summary>The placement preview's colour while it can go there: Settings > Display > World colours > Building plan
+        /// preview (ColorSlots.BuildPlan), see-through.</summary>
+        public static Color GhostOkColour { get { var c = ColorSlots.BuildPlan.Value; c.a = 0.4f; return c; } }
 
         PlayerNet m_Net;
         CharacterController m_CC;
@@ -273,7 +283,18 @@ namespace RockGame
                 else if (MenuOpen) CloseMenu();
                 else Paused = !Paused;
             }
-            if (Binds.Down(Bind.Inventory) && !Chat.Open && !dead && !gameOver && !sd && !Hud.Rebinding)
+            // Tab (the scoreboard key) is two keys in one, like E on a chest: a TAP opens / closes the bag (on letting go,
+            // before Cfg.TabHoldTime), HOLDING it past that shows the scoreboard. The inventory key (I) still opens the bag too
+            bool tabTap = false;
+            if (Binds.Down(Bind.Scoreboard)) m_TabDownAt = Time.time;
+            bool tabHeld = m_TabDownAt >= 0f && Binds.Held(Bind.Scoreboard);
+            if (m_TabDownAt >= 0f && !tabHeld)
+            {
+                // (let go - or muted by the chat opening, e.g. the scoreboard's MESSAGE button: that's no tap)
+                tabTap = Time.time - m_TabDownAt < Cfg.TabHoldTime && !Binds.Muted && Tutorial.BindAllowed(Bind.Inventory);
+                m_TabDownAt = -1f;
+            }
+            if ((Binds.Down(Bind.Inventory) || tabTap) && !Chat.Open && !dead && !gameOver && !sd && !Hud.Rebinding)
             {
                 if (MenuOpen) CloseMenu(); else MenuOpen = true;
                 Paused = false;
@@ -281,7 +302,7 @@ namespace RockGame
             }
             // hold the scoreboard key (Tab): every player with their kills, deaths and ping, the mouse free for its MESSAGE
             // buttons (Hud.Scoreboard.cs). Typing mutes the key, so clicking MESSAGE (the chat opens) puts it away
-            ScoreboardOpen = !cutscene && !Paused && !MenuOpen && !Hud.Rebinding && !AirstrikeMapOpen && Binds.Held(Bind.Scoreboard);
+            ScoreboardOpen = !cutscene && !Paused && !MenuOpen && !Hud.Rebinding && !AirstrikeMapOpen && tabHeld && Time.time - m_TabDownAt >= Cfg.TabHoldTime;
             if (sd || dead) CloseMenu();
             if (LootTarget != null && (!LootTarget.IsSpawned || !LootTarget.InReach(m_Net.EyePos))) LootTarget = null;
             // the UPGRADES screen goes with the menu, and closes if you walk away from your upgrade station
@@ -560,6 +581,7 @@ namespace RockGame
             // picking one of them you couldn't put down a chest or a station either until you picked a piece again)
             bool planMode = held == Item.BuildingPlan && (DemolishMode || UpgradeMode);
             UpdateGhost(input && !carrying && !gameOver && !riding && !planMode ? held : Item.None);
+            UpdateDemolishHighlight(!dead && !gameOver && !cutscene && !riding && DemolishAiming); // (PlayerController.Preview.cs)
             UpdateAimPreviews(input && !carrying && !gameOver && !locked && !frozen ? held : Item.None); // (PlayerController.Preview.cs)
             UpdateAimText(target);
         }
@@ -1336,6 +1358,7 @@ namespace RockGame
             DemolishMode = o.Demolish;
             UpgradeMode = o.Upgrade;
             if (!o.Demolish && !o.Upgrade) BuildPiece = o.Piece;
+            if (WheelOpen) Hud.WheelHover = WheelIndex; // (picked while the wheel is up: it's the slice letting go takes)
         }
 
         void TryUpgrade()
@@ -1368,7 +1391,7 @@ namespace RockGame
         void HandleBuildInput()
         {
             if (!Tutorial.Allows(TutFeature.Build)) return; // (the tutorial: you get the plan a step before you place with it)
-            // hold RMB: Rust-style wheel of building pieces (+ demolish); let go over the one you want
+            // hold RMB: Rust-style wheel of building pieces (+ demolish at the bottom); let go over the one you want
             if (Binds.Down(Bind.Aim)) { WheelOpen = true; Hud.WheelOpened(); }
             if (WheelOpen) return;
             if (Binds.Down(Bind.Rotate)) m_RotOffset = (m_RotOffset + 1) & 3;
@@ -1394,8 +1417,7 @@ namespace RockGame
                 else if (!string.IsNullOrEmpty(BuildHint)) Hud.Push(BuildHint);
             }
 
-            // X: demolish one of your own pieces (barriers and chests too)
-            if (Binds.Down(Bind.Demolish)) TryDemolish();
+            // (no X-to-demolish any more: Demolish is the slice at the bottom of the wheel, then LMB - above)
 
             if (Binds.Down(Bind.Upgrade) && Time.time >= m_NextUpgrade && !Cfg.WoodMode)
             {
@@ -1510,8 +1532,11 @@ namespace RockGame
         // ---- hold E: pick an empty chest / workbench of yours back up ----
         NetworkObject m_PackObj;
         float m_PackStart = -1f;
-        /// <summary>How far through holding E to pick up a chest / workbench (0..1; 0 when not holding). Drawn round the crosshair.</summary>
-        public float PackUpProgress => m_PackStart < 0f ? 0f : Mathf.Clamp01((Time.time - m_PackStart) / Mathf.Max(0.05f, Cfg.PackUpHoldTime));
+        /// <summary>How far through holding E to pick up a chest / workbench (0..1; 0 when not holding). Drawn round the crosshair.
+        /// It stays at 0 for the first Cfg.PackUpDelay seconds, so a normal tap of E never flashes the bar.</summary>
+        public float PackUpProgress => m_PackStart < 0f ? 0f : Mathf.Clamp01((Time.time - m_PackStart - Cfg.PackUpDelay) / Mathf.Max(0.05f, Cfg.PackUpHoldTime));
+        /// <summary>E has been held past the delay: the bar is up (and the aim text says "picking it up...").</summary>
+        public bool PackingUp => m_PackStart >= 0f && Time.time - m_PackStart >= Cfg.PackUpDelay;
         /// <summary>What's being picked up (for the HUD's label).</summary>
         public string PackUpName { get; private set; }
 
@@ -1634,6 +1659,7 @@ namespace RockGame
         public bool GhostAutoFoundation { get; private set; }
         public PieceKey GhostFoundation { get; private set; }
         GameObject m_FoundationGhost;
+        Color m_FoundationGhostColour;
 
         /// <summary>The second ghost: the foundation that goes down under a wall aimed at bare ground.</summary>
         void ShowFoundationGhost(bool show)
@@ -1646,7 +1672,14 @@ namespace RockGame
             if (m_FoundationGhost == null)
             {
                 m_FoundationGhost = new GameObject("FoundationGhost");
-                Structure.CreateVisual(PieceType.Foundation, 0, m_FoundationGhost.transform, false, Art.Ghost(k_GhostOk), out _);
+                Structure.CreateVisual(PieceType.Foundation, 0, m_FoundationGhost.transform, false, Art.Ghost(GhostOkColour), out _);
+                m_FoundationGhostColour = GhostOkColour;
+            }
+            // (the preview colour was changed in Settings > Display since it was made: re-colour it)
+            if (m_FoundationGhostColour != GhostOkColour)
+            {
+                m_FoundationGhostColour = GhostOkColour;
+                foreach (var r in m_FoundationGhost.GetComponentsInChildren<MeshRenderer>(true)) r.sharedMaterial = Art.Ghost(m_FoundationGhostColour);
             }
             BuildGrid.Pose(PieceType.Foundation, GhostFoundation, out var pos, out var rot);
             m_FoundationGhost.transform.SetPositionAndRotation(pos, rot);
@@ -1673,11 +1706,11 @@ namespace RockGame
                 if (want >= 0)
                 {
                     m_Ghost = new GameObject("Ghost");
-                    if (want == 101) Container.CreateVisual(Container.Chest, m_Net.Team.Value, m_Ghost.transform, Art.Ghost(k_GhostOk));
-                    else if (want == 104 || want == 105) Container.CreateVisual(want == 105 ? Container.Workbench2 : Container.Workbench, m_Net.Team.Value, m_Ghost.transform, Art.Ghost(k_GhostOk));
-                    else if (want == 103) Vehicle.CreateVisual(Vehicle.Boat, m_Ghost.transform, Art.Ghost(k_GhostOk), out _, out _, out _, out _, null, null); // THEME MAPS
-                    else if (want == 102) Vehicle.CreateVisual(Vehicle.Car, m_Ghost.transform, Art.Ghost(k_GhostOk), out _, out _, out _, out _, null, null);
-                    else Structure.CreateVisual(want == 100 ? PieceType.Barrier : (PieceType)want, 0, m_Ghost.transform, false, Art.Ghost(k_GhostOk), out _);
+                    if (want == 101) Container.CreateVisual(Container.Chest, m_Net.Team.Value, m_Ghost.transform, Art.Ghost(GhostOkColour));
+                    else if (want == 104 || want == 105) Container.CreateVisual(want == 105 ? Container.Workbench2 : Container.Workbench, m_Net.Team.Value, m_Ghost.transform, Art.Ghost(GhostOkColour));
+                    else if (want == 103) Vehicle.CreateVisual(Vehicle.Boat, m_Ghost.transform, Art.Ghost(GhostOkColour), out _, out _, out _, out _, null, null); // THEME MAPS
+                    else if (want == 102) Vehicle.CreateVisual(Vehicle.Car, m_Ghost.transform, Art.Ghost(GhostOkColour), out _, out _, out _, out _, null, null);
+                    else Structure.CreateVisual(want == 100 ? PieceType.Barrier : (PieceType)want, 0, m_Ghost.transform, false, Art.Ghost(GhostOkColour), out _);
                     m_Ghost.GetComponentsInChildren(m_GhostRenderers);
                 }
             }
@@ -1756,7 +1789,7 @@ namespace RockGame
             m_GhostOk = visible && reason == null;
             BuildHint = reason ?? "";
             if (m_Ghost.activeSelf != visible) m_Ghost.SetActive(visible);
-            var mat = Art.Ghost(m_GhostOk ? k_GhostOk : k_GhostBad);
+            var mat = Art.Ghost(m_GhostOk ? GhostOkColour : k_GhostBad);
             foreach (var r in m_GhostRenderers) r.sharedMaterial = mat;
         }
 
@@ -1798,7 +1831,15 @@ namespace RockGame
             bool floor = t == PieceType.Floor;
             if (!floor && (!hasHit || hit.distance > Cfg.BuildRange + 0.5f)) return false;
             var feet = transform.position;
-            bool currentOk = visible && PlacementProblem(t, m_GhostKey) == null;
+            // (a wall slot on bare ground counts as buildable when the auto foundation can go under it - carrying a wall
+            // line on over open ground is the usual case)
+            var aim = hasHit ? hit.point + hit.normal * 0.05f : ray.GetPoint(Cfg.BuildRange);
+            bool Buildable(PieceKey k)
+            {
+                var p = PlacementProblem(t, k);
+                return p == null || (p == k_NeedsFoundation && AutoFoundationFor(t, k, aim, out _, out _));
+            }
+            bool currentOk = visible && Buildable(m_GhostKey);
             return BuildGrid.PreferRecent(t, recent, m_GhostKey, currentOk, k =>
             {
                 if (!floor) return (true, hit.point);
@@ -1807,7 +1848,7 @@ namespace RockGame
                 if (d < 0.5f || d > Cfg.BuildRange + 1.5f) return (false, default);
                 if (hasHit && hit.distance < d - 0.6f) return (false, default); // (something in the way first)
                 return (true, ray.GetPoint(d));
-            }, k => Vector3.Distance(BuildGrid.PieceCenter(k), feet) <= Cfg.BuildRange + 2.5f && PlacementProblem(t, k) == null, out key);
+            }, k => Vector3.Distance(BuildGrid.PieceCenter(k), feet) <= Cfg.BuildRange + 2.5f && Buildable(k), out key, ray.direction);
         }
 
         const string k_NeedsFoundation = "Needs a foundation or floor underneath";
@@ -1926,6 +1967,8 @@ namespace RockGame
                 case TargetKind.Door:
                 {
                     var s = t.Obj.GetComponent<Structure>();
+                    // (the tutorial: just a door - whose it is and E, without the numbers; its steps explain the rest)
+                    if (Tutorial.On) { AimText = TeamTip("Door", s.Team.Value, s.Team.Value == m_Net.Team.Value ? $"{Binds.Name(Bind.Interact)}: open/close" : "locked"); return; }
                     AimText = TeamTip(s.DisplayName, s.Team.Value, $"{s.Health.Value:0}/{s.MaxHp:0}  ·  door {s.DoorHealth.Value:0}/{s.DoorMaxHp:0}   "
                         + (s.Team.Value == m_Net.Team.Value ? "E: open/close" : "locked - only its team can open it (the door itself breaks easier than the frame)"));
                     return;
@@ -1938,8 +1981,8 @@ namespace RockGame
                     else if (c.IsGamble) detail = "E: bet DNA - double it or lose it";
                     else if (c.IsWorkbench) detail = c.Team.Value == m_Net.Team.Value ? $"its items are in your crafting list ({Binds.Name(Bind.Inventory)}) in your base" : "";
                     else if (c.IsBag) detail = "E: open";
-                    else detail = $"{c.Health.Value:0}/{Cfg.ChestHp:0}   E: open" + (m_Net.HeldItem == Item.BuildingPlan && c.Team.Value == m_Net.Team.Value ? "   X: demolish" : "");
-                    if (m_PackStart >= 0f) detail = "picking it up...";
+                    else detail = $"{c.Health.Value:0}/{Cfg.ChestHp:0}   E: open" + (DemolishAiming && c.Team.Value == m_Net.Team.Value ? "   <color=#ff8a7a>LMB: demolish</color>" : "");
+                    if (PackingUp) detail = "picking it up...";
                     else if (CanPackUp(t, m_Net.CarryingBall)) detail += $"   hold {Binds.Name(Bind.Interact)}: pick up";
                     // an airdrop is purple, the gambling machine its green; a chest, bench or loot bag is its team's colour
                     AimText = c.IsAirdrop ? Tip(c.DisplayName, TipAirdrop, detail) : c.IsGamble ? Tip(c.DisplayName, TipGamble, detail)
@@ -1996,7 +2039,7 @@ namespace RockGame
                 if (m_Net.HeldItem == Item.BuildingPlan && st.Team.Value == m_Net.Team.Value)
                 {
                     if (st.Tier.Value == 0 && st.Upgradable && !Cfg.WoodMode) detail += $"   F: upgrade to stone ({Cfg.UpgradeCost(st.PType)} {Cfg.UpgradeName})";
-                    detail += "   X: demolish";
+                    if (DemolishMode) detail += "   <color=#ff8a7a>LMB: demolish</color>";
                 }
                 if (m_Net.HeldItem == Item.Ram && hit.distance <= Cfg.RamRange)
                     detail += st.Tier.Value >= 1 && st.PType != PieceType.Barrier ? $"   hold LMB: ram down to {Cfg.TierName(st.Tier.Value - 1).ToLower()}" : "   hold LMB: ram to smash";

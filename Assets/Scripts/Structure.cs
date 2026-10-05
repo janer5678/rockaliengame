@@ -136,8 +136,21 @@ namespace RockGame
             m_Visual = CreateVisual(PType, Tier.Value, transform, true, null, out m_Hinge).transform;
             if (PType == PieceType.EggBlock)
                 foreach (var r in m_Visual.GetComponentsInChildren<Renderer>()) r.sharedMaterial = Art.Mat(Color.Lerp(Color.white, Cfg.TeamColor[Mathf.Clamp(Team.Value, 0, Cfg.TeamColor.Length - 1)], 0.6f));
+            if (m_Hinge != null) ColourLock(m_Hinge, Team.Value);
             m_DoorAngle = DoorOpen.Value ? 100f : 0f;
             if (PType == PieceType.Doorway && !HasDoor) RemoveDoorLeaf(); // (its door was broken off)
+        }
+
+        /// <summary>A door's padlocks are in the colour of the team it belongs to (the only team that can open it).</summary>
+        static void ColourLock(Transform hinge, int team)
+        {
+            var c = Cfg.TeamColor[Mathf.Clamp(team, 0, Cfg.TeamColor.Length - 1)];
+            var band = new Color(c.r * 0.7f, c.g * 0.7f, c.b * 0.7f, 1f);
+            foreach (var r in hinge.GetComponentsInChildren<Renderer>(true))
+            {
+                if (r.name == "lock body") r.sharedMaterial = Art.Mat(c);
+                else if (r.name == "lock band") r.sharedMaterial = Art.Mat(band);
+            }
         }
 
         void Update()
@@ -397,7 +410,8 @@ namespace RockGame
             return root;
         }
 
-        /// <summary>A big brass padlock under the handle on each face of a door leaf: body, steel shackle and a dark keyhole.</summary>
+        /// <summary>A big padlock under the handle on each face of a door leaf: body, steel shackle and a dark keyhole. (Brass
+        /// here - on a placement ghost; a placed door's lock is turned its team's colour: ColourLock.)</summary>
         static void DoorLock(Transform hinge)
         {
             var brass = new Color(0.86f, 0.68f, 0.2f);

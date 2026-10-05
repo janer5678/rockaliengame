@@ -118,6 +118,9 @@ namespace RockGame.EditorTools
         public static void BuildWindows()
         {
             EnsurePostFxVariants();
+            // no Unity splash on launch (Unity 6 allows this on every licence)
+            PlayerSettings.SplashScreen.show = false;
+            PlayerSettings.SplashScreen.showUnityLogo = false;
             var opts = new BuildPlayerOptions
             {
                 scenes = new[] { ScenePath },

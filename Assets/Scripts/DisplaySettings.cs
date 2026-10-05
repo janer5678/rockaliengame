@@ -16,57 +16,69 @@ namespace RockGame
     public static class DisplayDefaults
     {
         // ---- post processing ----
+        // (the defaults below are the look the game was tuned to - a COPY SETTINGS export, 2026-10-06; the old default
+        // of each value that changed then is in its comment as "was ...")
+
         public const bool PostFx = true;                    // post
-        public const bool Bloom = true;                     // post.bloom
-        public const float BloomStrength = 0.5f;            // post.bloom.strength      (0..1)
+        public const bool Bloom = false;                    // post.bloom               (was on)
+        public const float BloomStrength = 0.55f;           // post.bloom.strength      (0..1; was 0.5)
         public const bool Vignette = true;                  // post.vignette
-        public const float VignetteStrength = 0.5f;         // post.vignette.strength   (0..1)
+        public const float VignetteStrength = 0f;           // post.vignette.strength   (0..1; was 0.5)
         public const bool Grading = true;                   // post.grading
-        public const float GradingStrength = 0.5f;          // post.grading.strength    (0..1)
-        public const bool PostExtraOn = false;              // post.extra.<name>        (every extra look)
-        public const float PostExtraStrength = 0.5f;        // post.extra.<name>.strength (0..1)
+        public const float GradingStrength = 0.65f;         // post.grading.strength    (0..1; was 0.5)
+        // post.extra.<name> / post.extra.<name>.strength (0..1), one each, in GameSettings.PostExtra's order:
+        //   outlines on 0.45 (was off 0.5) · ambientocclusion off 1 (was 0.5) · haze on 0.8 (was off 0.5) · depthoffield off 0.5
+        //   filmgrain off 0 (was 0.5) · chromatic off 0.5 · sharpen off 0 (was 0.5) · celbanding on 0.5 (was off)
+        static readonly bool[] s_PostExtraOn = { true, false, true, false, false, false, false, true };
+        static readonly float[] s_PostExtraStrength = { 0.45f, 1f, 0.8f, 0.5f, 0f, 0.5f, 0f, 0.5f };
+        public static bool PostExtraOn(int i) => i >= 0 && i < s_PostExtraOn.Length && s_PostExtraOn[i];
+        public static float PostExtraStrength(int i) => i >= 0 && i < s_PostExtraStrength.Length ? s_PostExtraStrength[i] : 0.5f;
 
         // ---- post processing on the UI ----
         public const bool PostOnUi = false;                 // ui.post
         public const bool UiWorldPost = true;               // ui.post.world            (the world's effects go over the UI too)
         public const bool UiCel = false;                    // ui.cel
-        public const float UiCelStrength = 0.5f;           // ui.cel.strength          (0..1: fewer, flatter colour steps)
-        public const bool UiOutline = false;                // ui.outline
-        public const float UiOutlineWidth = 2f;             // ui.outline.width         (0.5..8; x 1.333 = px at 1440p, scaled with the screen height)
+        public const float UiCelStrength = 0.1f;            // ui.cel.strength          (0..1: fewer, flatter colour steps; was 0.5)
+        public const bool UiOutline = true;                 // ui.outline               (was off)
+        public const float UiOutlineWidth = 3.5f;           // ui.outline.width         (0.5..8; x 1.333 = px at 1440p, scaled with the screen height; was 2)
         public const string UiOutlineColour = "#000000";    // ui.outline.colour
         public const float UiOutlineOpacity = 0.9f;         // ui.outline.opacity       (0..1)
         public const bool UiBloom = false;                  // ui.bloom
         public const float UiBloomStrength = 0.5f;          // ui.bloom.strength        (0..1)
-        public const float UiSaturation = 1f;               // ui.saturation            (0..2, 1 = as drawn)
+        public const float UiSaturation = 0.9f;             // ui.saturation            (0..2, 1 = as drawn; was 1)
         public const float UiContrast = 1f;                 // ui.contrast              (0.5..1.6, 1 = as drawn)
 
         // ---- shadows ----
-        public const float ShadowStrength = 1f;             // shadows.darkness         (0..1)
-        public const float ShadowDistance = 50f;            // shadows.distance         (20..300 m)
+        public const float ShadowStrength = 0.75f;          // shadows.darkness         (0..1; was 1)
+        public const float ShadowDistance = 80f;            // shadows.distance         (20..300 m; was 50)
 
         // ---- interface ----
-        public const int UiFont = 0;                        // ui.font                  (0 = Classic; by name in the code)
+        public const int UiFont = 1;                        // ui.font                  (1 = Bahnschrift, GameSettings.FontChoices; by name in the code; was 0 = Classic)
         public const float UiScale = 1f;                    // ui.scale                 (0.75..1.4)
         public const float HudOpacity = 1f;                 // ui.hud.opacity           (0.25..1)
         public const int UiAccent = 0;                      // ui.accent                (0 = Gold; by name in the code)
-        public const bool ShowFps = false;                  // fps.counter
+        public const bool ShowFps = true;                   // fps.counter              (was off)
 
         // ---- main menu ----
-        public const bool MenuTrees = true;                 // menu.trees               (trees in the play space behind the main menu)
+        public const bool MenuTrees = true;                 // menu.trees               (trees in the play space behind the main menu - always now; not a setting any more)
 
         // ---- alien glow ----
-        public const float GlowStrength = 0.3f;             // glow.strength            (0.02..1)
-        public const float GlowWidth = 0.03f;               // glow.width               (0.005..0.12 m)
+        public const float GlowStrength = 0.02f;            // glow.strength            (0.02..1; was 0.3)
+        public const float GlowWidth = 0.005f;              // glow.width               (0.005..0.12 m; was 0.03)
 
         // ---- shading ----
         public const bool SmoothHands = false;              // shade.smooth.hands       (first-person hands + held items)
-        public const bool SmoothAliens = false;             // shade.smooth.aliens      (alien players + the stadium crowd)
+        public const bool SmoothAliens = true;              // shade.smooth.aliens      (alien players + the stadium crowd; was off)
 
         // ---- grass ----
-        public const float GrassDistance = 60f;             // grass.distance           (25..270 m)
+        public const float GrassDistance = 260f;            // grass.distance           (25..270 m; was 60)
         public const float GrassDensity = 1f;               // grass.density            (0.2..1)
-        public const float GrassFalloff = 1.35f;            // grass.falloff            (0.25..2.5: lower = thicker far away)
-        public const float GrassHeight = 1f;                // grass.height             (0.6..2.5)
+        public const float GrassFalloff = 0.65f;            // grass.falloff            (0.25..2.5: lower = thicker far away; was 1.35)
+        public const float GrassHeight = 1.55f;             // grass.height             (0.6..2.5; was 1)
+
+        // (elsewhere: beams.falloff 125 (was 70) - BeamFx.cs; treex.glow 2.85 (was 1.6) - TreeX.cs; basefloor.after
+        //  Colour grid (was Flat grass) and basefloor.teammix 0.5 (was 0.35) - BaseFloor.cs; the world colours, and the
+        //  building plan preview's colour (colour.BuildPlan) - WorldColors.cs: the .StartAt(...) ones were changed)
 
         public static Color Hex(string hex) => ColorUtility.TryParseHtmlString(hex, out var c) ? c : Color.black;
     }
@@ -210,8 +222,8 @@ namespace RockGame
             {
                 var e = (GameSettings.PostExtra)i;
                 string k = "post.extra." + e.ToString().ToLowerInvariant();
-                Bool(k, GPost, DisplayDefaults.PostExtraOn, () => GameSettings.PostExtraOn(e), (v, s) => GameSettings.SetPostExtra(e, v, GameSettings.PostExtraStrength(e), s));
-                Float(k + ".strength", GPost, DisplayDefaults.PostExtraStrength, () => GameSettings.PostExtraStrength(e), (v, s) => GameSettings.SetPostExtra(e, GameSettings.PostExtraOn(e), v, s));
+                Bool(k, GPost, DisplayDefaults.PostExtraOn(i), () => GameSettings.PostExtraOn(e), (v, s) => GameSettings.SetPostExtra(e, v, GameSettings.PostExtraStrength(e), s));
+                Float(k + ".strength", GPost, DisplayDefaults.PostExtraStrength(i), () => GameSettings.PostExtraStrength(e), (v, s) => GameSettings.SetPostExtra(e, GameSettings.PostExtraOn(e), v, s));
             }
             // ---- post processing on the UI ----
             Bool("ui.post", GUiPost, DisplayDefaults.PostOnUi, () => GameSettings.PostOnUi, (v, s) => GameSettings.SetPostOnUi(v, s));

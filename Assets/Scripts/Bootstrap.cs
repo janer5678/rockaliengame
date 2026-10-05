@@ -225,7 +225,7 @@ namespace RockGame
 
         void Update()
         {
-            // Menu camera: a cycle of slow cinematic shots inside the map while not in a match (and the menu's trees) - MenuScene.cs
+            // Menu camera: one long, slow cinematic loop through the map while not in a match (and the menu's trees) - MenuScene.cs
             if (PlayerController.Local == null && Camera.main != null && InSession)
             {
                 // (connecting / waiting to spawn: the old slow orbit over the map)

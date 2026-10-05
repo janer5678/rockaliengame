@@ -10,7 +10,10 @@ namespace RockGame
     public static partial class GameSettings
     {
         /// <summary>Glow amount: the bars' HDR brightness (over 1 blooms with post processing on); the halo follows it.</summary>
-        public const float TreeXGlowMin = 0.3f, TreeXGlowMax = 4f, TreeXGlowDefault = 1.6f;
+        public const float TreeXGlowMin = 0.3f, TreeXGlowMax = 4f, TreeXGlowDefault = 2.85f;
+        /// <summary>The glow amount that counts as 100% (the slider's label, and ResourceNode's halo scale): the old default,
+        /// kept as the yardstick so the default moving up didn't change how any value looks.</summary>
+        public const float TreeXGlowBase = 1.6f;
         /// <summary>Halo size: times the default halo (which is already bigger than it was; 0 = no halo).</summary>
         public const float TreeXHaloMin = 0f, TreeXHaloMax = 2.5f, TreeXHaloDefault = 1f;
         /// <summary>The X's size: times the default (the X moves out off the bark to stay clear of it).</summary>
@@ -86,7 +89,7 @@ namespace RockGame
         {
             float k = m_Scale;
             Caption("TREE X  ·  Normal graphics, just on this PC");
-            float glow = SliderRow("X glow", GameSettings.TreeXGlow, GameSettings.TreeXGlowMin, GameSettings.TreeXGlowMax, $"{GameSettings.TreeXGlow / GameSettings.TreeXGlowDefault * 100f:0}%", 150 * k);
+            float glow = SliderRow("X glow", GameSettings.TreeXGlow, GameSettings.TreeXGlowMin, GameSettings.TreeXGlowMax, $"{GameSettings.TreeXGlow / GameSettings.TreeXGlowBase * 100f:0}%", 150 * k);
             float halo = SliderRow("X glow size", GameSettings.TreeXHalo, GameSettings.TreeXHaloMin, GameSettings.TreeXHaloMax, GameSettings.TreeXHalo < 0.025f ? "off" : $"{GameSettings.TreeXHalo * 100f:0}%", 150 * k);
             float size = SliderRow("X size", GameSettings.TreeXSize, GameSettings.TreeXSizeMin, GameSettings.TreeXSizeMax, $"{GameSettings.TreeXSize * 100f:0}%", 150 * k);
             var colour = GameSettings.TreeXColour;

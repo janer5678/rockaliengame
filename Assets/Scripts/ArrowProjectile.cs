@@ -135,6 +135,10 @@ namespace RockGame
                 {
                     if (m_ShooterRoot != null && h.collider.transform.IsChildOf(m_ShooterRoot)) continue;
                     if (h.collider.transform.IsChildOf(transform)) continue;
+                    // (nor the horse you're riding: it has hit boxes all over it now - Vehicle.CreateVisual - and you
+                    // can't hurt your own mount anyway)
+                    if (m_Shooter != null && m_Shooter.Riding && h.collider.GetComponentInParent<NetworkObject>() is NetworkObject hn
+                        && hn.NetworkObjectId == m_Shooter.RidingId.Value) continue;
                     first = h;
                     break;
                 }

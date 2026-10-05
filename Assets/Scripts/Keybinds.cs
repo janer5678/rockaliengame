@@ -7,7 +7,7 @@ namespace RockGame
     {
         Forward, Back, Left, Right, Jump, Sprint, Crouch, Slide,
         Attack, Aim, Interact, Inventory,
-        Rotate, Demolish, Upgrade,
+        Rotate, Demolish /* unbound: demolish is on the building wheel now */, Upgrade,
         PushToTalk,
         Scoreboard,
         Hotbar1, Hotbar2, Hotbar3, Hotbar4, Hotbar5, Hotbar6,
@@ -38,11 +38,11 @@ namespace RockGame
             new Info { Bind = Bind.Attack, Group = "ACTIONS", Label = "Attack / use", Hint = "hit, gather, place, throw the ball; hold to draw the bow", Main = KeyCode.Mouse0 },
             new Info { Bind = Bind.Aim, Group = "ACTIONS", Label = "Aim / eat", Hint = "eat, aim the crossbow / sniper; hold + Attack throws a spear", Main = KeyCode.Mouse1 },
             new Info { Bind = Bind.Interact, Group = "ACTIONS", Label = "Interact", Hint = "ball, doors, chests, bushes, items, horses, cars", Main = KeyCode.E },
-            new Info { Bind = Bind.Inventory, Group = "ACTIONS", Label = "Inventory & crafting", Hint = "crafting works in your base (spears & hatchets anywhere)", Main = KeyCode.I }, // (it was Tab until the scoreboard took that)
-            new Info { Bind = Bind.Scoreboard, Group = "ACTIONS", Label = "Scoreboard", Hint = "hold it: every player, kills, deaths, ping - and a MESSAGE button to whisper to one", Main = KeyCode.Tab },
+            new Info { Bind = Bind.Inventory, Group = "ACTIONS", Label = "Inventory & crafting", Hint = "crafting works in your base (spears & hatchets anywhere); a tap of the scoreboard key opens it too", Main = KeyCode.I },
+            new Info { Bind = Bind.Scoreboard, Group = "ACTIONS", Label = "Bag (tap) / scoreboard (hold)", Hint = "tap: the bag, like the inventory key · hold: every player, kills, deaths, ping - and a MESSAGE button to whisper to one", Main = KeyCode.Tab },
 
             new Info { Bind = Bind.Rotate, Group = "BUILDING  (holding the building plan)", Label = "Rotate", Hint = "turns stairs · hold Aim for the building wheel", Main = KeyCode.R },
-            new Info { Bind = Bind.Demolish, Group = "BUILDING  (holding the building plan)", Label = "Demolish", Hint = "take down your own piece (half the wood back)", Main = KeyCode.X },
+            // (no Demolish key any more - it's the slice at the bottom of the building wheel; Bind.Demolish stays unbound)
             new Info { Bind = Bind.Upgrade, Group = "BUILDING  (holding the building plan)", Label = "Upgrade to stone", Main = KeyCode.F },
 
             new Info { Bind = Bind.PushToTalk, Group = "VOICE CHAT", Label = "Push to talk", Hint = "when voice chat is set to push to talk", Main = KeyCode.V },

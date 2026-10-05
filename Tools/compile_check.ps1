@@ -1,6 +1,6 @@
 # Fast compile check of Assets/Scripts with Unity's bundled Roslyn (no editor launch, safe to run while others edit).
 # Usage: powershell -NoProfile -File Tools/compile_check.ps1   -> prints "error CS..." lines, or COMPILE OK
-$ed = "C:/Program Files/Unity/Hub/Editor/6000.0.42f1/Editor/Data"
+$ed = @("C:/Program Files/Unity/Hub/Editor/6000.0.42f1/Editor/Data", "C:/Unity/6000.0.42f1/Editor/Data") | Where-Object { Test-Path $_ } | Select-Object -First 1
 $root = Split-Path $PSScriptRoot -Parent
 Set-Location $root
 $rsp = Get-Content "Library/Bee/artifacts/1900b0aE.dag/Assembly-CSharp.rsp"

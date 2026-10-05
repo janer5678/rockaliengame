@@ -22,10 +22,11 @@ namespace RockGame
             string dir = ShotDir();
             GameSettings.SetGraphics(0, false);
             GameSettings.ResetWorldLook(false);
-            // (the base floors as they start: flat grass after the build phase - put back as they were at the end)
+            // (the base floors start as flat grass after the build phase for this test - the default is the colour grid
+            // now, which is checked further on - and are put back as they were at the end)
             var bfAfter0 = GameSettings.BaseFloorAfter;
             float bfMix0 = GameSettings.BaseFloorTeamMix;
-            GameSettings.SetBaseFloor(GameSettings.BaseFloorAfterDefault, GameSettings.BaseFloorTeamMixDefault, false);
+            GameSettings.SetBaseFloor(GameSettings.BaseFloorStyle.Grass, GameSettings.BaseFloorTeamMixDefault, false);
             g.TimerPaused.Value = true;
             float half = Cfg.MapHalf;
             var root = MapBuilder.Root;
@@ -69,7 +70,7 @@ namespace RockGame
                     if (r.name.StartsWith("ground dirt")) dirt.Add(r);
                     if (r.name.StartsWith("rubble ")) rubble.Add(r);
                 }
-                foreach (var col in cs.GetComponentsInChildren<Collider>()) if (col != cs.Collider) rubbleColliders++;
+                foreach (var col in cs.GetComponentsInChildren<Collider>()) if (col != cs.Collider && col != cs.SoilCollider) rubbleColliders++;
             }
             float dirtReach = 0f;
             foreach (var r in dirt) dirtReach = Mathf.Max(dirtReach, r.bounds.extents.x, r.bounds.extents.z);
@@ -77,7 +78,30 @@ namespace RockGame
             int rubbleTris = 0;
             foreach (var r in rubble) rubbleTris += r.GetComponent<MeshFilter>().sharedMesh.triangles.Length / 3;
             Check(rubble.Count >= 6 && rubbleTris > 1500, $"rubble round the crash ({rubble.Count} merged meshes, {rubbleTris} triangles)");
-            Check(rubbleColliders == 0, $"nothing at the crash site is solid but the saucer ({rubbleColliders} other colliders)");
+            Check(rubbleColliders == 0, $"nothing at the crash site is solid but the saucer and its soil heap ({rubbleColliders} other colliders)");
+            // the soil heap: you walk on it (the ground under you is its surface, at the height you see it), never into it
+            if (cs != null)
+            {
+                Check(cs.SoilCollider != null, "the soil heap is solid");
+                int onSoil = 0, off = 0;
+                float worstOff = 0f;
+                if (cs.SoilCollider != null)
+                    foreach (var r in rubble)
+                    {
+                        if (!r.name.StartsWith("rubble soil heap")) continue;
+                        var mesh = r.GetComponent<MeshFilter>().sharedMesh;
+                        var vs = mesh.vertices;
+                        for (int i = 0; i < vs.Length; i += 7)
+                        {
+                            var w = r.transform.TransformPoint(vs[i]);
+                            if (w.y - MapBuilder.Height(w.x, w.z) < 0.4f) continue; // (the heap's own, not the flat edge of it)
+                            if (!cs.SoilCollider.Raycast(new Ray(new Vector3(w.x, w.y + 3f, w.z), Vector3.down), out var sh, 6f)) { off++; continue; }
+                            onSoil++;
+                            worstOff = Mathf.Max(worstOff, Mathf.Abs(sh.point.y - w.y));
+                        }
+                    }
+                Check(onSoil > 10 && off == 0 && worstOff < 0.35f, $"you'd stand on the soil heap where you see it ({onSoil} spots on it, {off} with nothing under them, at most {worstOff:0.00} m off the surface)");
+            }
             // nothing of the rubble between any base and the ball (temporary colliders on its meshes)
             {
                 var temp = new List<MeshCollider>();
@@ -160,8 +184,15 @@ namespace RockGame
                     foreach (var r in sign.GetComponentsInChildren<Renderer>()) reach = Mathf.Max(reach, new Vector2(r.bounds.max.x, r.bounds.max.z).magnitude, new Vector2(r.bounds.min.x, r.bounds.min.z).magnitude);
                     float glass = Mathf.Sqrt(Mathf.Max(0f, MapBuilder.DomeRadius * MapBuilder.DomeRadius - reach * reach));
                     Check(top > 4.5f && top < glass, $"a tall signpost ({top:0.0} m), clear of the dome's glass over it ({glass:0.0} m there)");
-                    var pole = sign.GetComponentsInChildren<Collider>();
-                    Check(pole.Length == 1 && pole[0] is CapsuleCollider && pole[0].bounds.size.x < 0.4f, $"only its pole is solid ({pole.Length} colliders)");
+                    // solid: the pole (a thin capsule) and every arrow board (over head height)
+                    int poles = 0, boards = 0, low = 0;
+                    foreach (var col in sign.GetComponentsInChildren<Collider>())
+                    {
+                        if (col is CapsuleCollider && col.bounds.size.x < 0.4f) poles++;
+                        else if (col is MeshCollider && col.name == "board") { boards++; if (col.bounds.min.y - sp.y < 2.2f) low++; }
+                    }
+                    Check(poles == 1 && boards == CentreSign.Arrows.Count && low == 0 && sign.GetComponentsInChildren<Collider>().Length == poles + boards,
+                        $"its pole and its {boards} arrow boards are solid ({poles} pole, {low} boards low enough to walk into)");
                     // never in the way: off every line from a base to the ball, by a good margin
                     float nearest = float.MaxValue;
                     for (int t = 0; t < Cfg.TeamCount; t++)
@@ -298,7 +329,8 @@ namespace RockGame
                 int Floors() { int n = 0; foreach (var f in MapBuilder.BaseFloors) if (f != null && f.activeInHierarchy) n++; return n; }
                 var inBase = bc + new Vector3(Cfg.BaseHalf * 0.6f, 0f, Cfg.BaseHalf * 0.55f);
                 var gf = GrassField.Current;
-                Check(!GrassField.BaseBlades && (gf == null || gf.CoverAt(inBase.x, inBase.z) < 0.01f), "flat grass (the default): no blades on the base");
+                Check(!GrassField.BaseBlades && (gf == null || gf.CoverAt(inBase.x, inBase.z) < 0.01f), "flat grass: no blades on the base");
+                Check(GameSettings.BaseFloorAfterDefault == GameSettings.BaseFloorStyle.Grid, "the colour grid is the base floor's default after the build phase");
                 GameSettings.SetBaseFloor(GameSettings.BaseFloorStyle.Grid, GameSettings.BaseFloorTeamMixDefault, false);
                 yield return null; yield return null;
                 Check(Floors() == Cfg.TeamCount, $"\"Colour grid\": the base floors and their grid stay after the build phase ({Floors()})");

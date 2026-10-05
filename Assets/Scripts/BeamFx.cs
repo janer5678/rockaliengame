@@ -209,7 +209,7 @@ namespace RockGame
     public static partial class GameSettings
     {
         public const float BeamStrengthMin = 0.2f, BeamStrengthMax = 2f, BeamStrengthDefault = 1f;
-        public const float BeamFalloffMin = 0f, BeamFalloffMax = 200f, BeamFalloffDefault = 70f;
+        public const float BeamFalloffMin = 0f, BeamFalloffMax = 200f, BeamFalloffDefault = 125f;
         static bool s_BeamsLoaded;
         static float s_BeamStrength = BeamStrengthDefault, s_BeamFalloff = BeamFalloffDefault;
 

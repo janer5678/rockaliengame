@@ -179,6 +179,16 @@ namespace RockGame
                 }
             pc.LocalTeleport(spot + Vector3.up * 0.1f, sunYaw + 28f);
             pc.SetLook(sunYaw + 28f, Mathf.Max(-24f, sunPitch + 22f));
+            // the pictures are compared in the old plain look (light sky, no outlines / haze / banding, the UI as drawn):
+            // the tuned defaults of 2026-10-06 - a deep blue sky, cel banding - leave too little for bloom to light up
+            string lookWas = DisplayCode.Export();
+            // (every value the new defaults moved, back at the old one)
+            DisplayCode.Apply(DisplayCode.Header + "1\npost.bloom = on\npost.bloom.strength = 0.5\npost.vignette.strength = 0.5\npost.grading.strength = 0.5\n"
+                + "post.extra.outlines = off\npost.extra.outlines.strength = 0.5\npost.extra.ambientocclusion.strength = 0.5\npost.extra.haze = off\npost.extra.haze.strength = 0.5\n"
+                + "post.extra.filmgrain.strength = 0.5\npost.extra.sharpen.strength = 0.5\npost.extra.celbanding = off\nui.cel.strength = 0.5\nui.outline = off\nui.outline.width = 2\n"
+                + "ui.saturation = 1\nshadows.darkness = 1\nshadows.distance = 50\nshade.smooth.aliens = off\nglow.strength = 0.3\nglow.width = 0.03\ngrass.distance = 60\n"
+                + "grass.falloff = 1.35\ngrass.height = 1\nbeams.falloff = 70\ntreex.glow = 1.6\nbasefloor.after = Flat grass\nbasefloor.teammix = 0.35\n"
+                + "colour.Ground = #70A34F\ncolour.Grass = #5C9929\ncolour.Leaves = #4A8C26\ncolour.Sky = #73A6F2\n", false);
             yield return new WaitForSeconds(1f);
             // time stands still while the pictures are compared (no swaying grass or drifting clouds between them)
             Time.timeScale = 0f;
@@ -506,6 +516,7 @@ namespace RockGame
             }
 
             // ---- put this PC's settings back ----
+            DisplayCode.Apply(lookWas, false);
             ColorSlots.Set(ColorSlots.Sky, skyWas, false);
             ColorSlots.Set(ColorSlots.Hands, handsWas, false);
             ColorSlots.SetHandsTeam(handsTeam, false);
@@ -729,8 +740,9 @@ namespace RockGame
             bool keysOk = true;
             foreach (var key in new[] { "post", "post.bloom.strength", "post.extra.outlines", "post.extra.celbanding.strength", "ui.post", "ui.post.world", "ui.cel", "ui.outline.width",
                 "ui.outline.colour", "ui.bloom", "ui.saturation", "shadows.darkness", "shadows.distance", "ui.font", "ui.scale", "ui.accent", "fps.counter", "glow.strength",
-                "grass.distance", "grass.height", "colour.Sky", "colour.Hands", "colour.hands.team", "shade.smooth.hands", "shade.smooth.aliens" })
+                "grass.distance", "grass.height", "colour.Sky", "colour.Hands", "colour.hands.team", "shade.smooth.hands", "shade.smooth.aliens", "colour.BuildPlan" })
                 if (!clip.Contains("\n" + key + " = ")) { keysOk = false; Log("missing from the code: " + key); }
+            if (clip.Contains("\nmenu.trees = ")) { keysOk = false; Log("menu.trees is still in the code (the menu's trees aren't a setting any more)"); }
             bool noScreen = !clip.ToLowerInvariant().Contains("resolution") && !clip.ToLowerInvariant().Contains("refresh") && !clip.ToLowerInvariant().Contains("window") && !clip.ToLowerInvariant().Contains("vsync");
             int colours = 0;
             foreach (var line in clip.Split('\n')) if (line.StartsWith("colour.") && line.Contains("= #")) colours++;

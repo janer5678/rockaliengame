@@ -327,6 +327,22 @@ namespace RockGame
         /// <summary>...and how much farther (m) from the aim than the slot you'd otherwise get such a wall may be, when that
         /// other slot is a turned one (instead of RecentBias).</summary>
         public const float SameRotationBias = 1.2f;
+        /// <summary>...and how far (m) from the aim such a wall may be at most (instead of RecentReach): building a wall
+        /// line you usually aim at the floor in front of the next slot, not right at it.</summary>
+        public const float SameRotationReach = 2.3f;
+        /// <summary>Extra bias, reach and score bonus (m) for that wall when it faces you (parallel to you: you're looking
+        /// across the line, the way you stand to build one) - the turned one would run away from you.</summary>
+        public const float FacingBias = 0.5f;
+
+        /// <summary>A wall slot faces someone looking along `facing` (flat): its line runs across their view.</summary>
+        public static bool WallFaces(PieceKey k, Vector3 facing)
+        {
+            if (k.Kind != PieceKey.KEdge) return false;
+            facing.y = 0f;
+            if (facing.sqrMagnitude < 1e-4f) return false;
+            facing.Normalize();
+            return Mathf.Abs(k.D == 0 ? facing.x : facing.z) > 0.7f; // (D 0: on an x line, so its face looks along x)
+        }
 
         static PieceType ShapeOf(byte kind) => kind == PieceKey.KFoundation ? PieceType.Foundation : kind == PieceKey.KEdge ? PieceType.Wall : kind == PieceKey.KFloor ? PieceType.Floor : PieceType.Stairs;
 
@@ -427,9 +443,11 @@ namespace RockGame
         /// still goes there. Carrying straight on (the line the two make, or a wall's own line) beats turning a corner.
         /// `aimAt(key)` gives the aim point to measure a slot against (ok false: not aimed near it), `valid(key)` whether
         /// the piece can go there. Returns true (and `key`) when a recent-extension slot should be used instead.
+        /// Walls: one that carries your last wall's line on in the same rotation is preferred hard over a turned one (a
+        /// bigger reach and bias, SameRotation*), the more so when it faces you (`facing`: where you look; FacingBias).
         /// </summary>
         public static bool PreferRecent(PieceType t, IList<PieceKey> recent, PieceKey current, bool currentOk,
-            Func<PieceKey, (bool ok, Vector3 p)> aimAt, Func<PieceKey, bool> valid, out PieceKey key)
+            Func<PieceKey, (bool ok, Vector3 p)> aimAt, Func<PieceKey, bool> valid, out PieceKey key, Vector3 facing = default)
         {
             key = default;
             byte want = KindOf(t);
@@ -465,9 +483,14 @@ namespace RockGame
                     float d = DistToPiece(a.p, k);
                     // a wall in the same rotation as your last wall, on its line: strongly preferred over a turned one
                     bool sameRot = want == PieceKey.KEdge && r.Kind == PieceKey.KEdge && straight[s] && k.D == r.D && k.L == r.L;
-                    float bias = sameRot && age == 0 && currentOk && current.D != r.D ? SameRotationBias : RecentBias;
-                    if (d > RecentReach || d > curDist + bias) continue;
-                    float score = d - (sameRot ? SameRotationBonus : straight[s] && r.Kind == want ? StraightBonus : 0f) - (age == 0 ? NewestBonus : 0f);
+                    // (against a turned wall - or nothing buildable - the line gets the big bias and reach; against a
+                    // wall in the same rotation on another line, just the usual one, so aiming at that line still works)
+                    bool vsTurned = sameRot && age == 0 && (!currentOk || current.Kind != PieceKey.KEdge || current.D != r.D);
+                    bool faces = sameRot && age == 0 && WallFaces(k, facing);
+                    float bias = vsTurned ? SameRotationBias + (faces ? FacingBias : 0f) : RecentBias;
+                    float reach = vsTurned ? SameRotationReach + (faces ? FacingBias : 0f) : RecentReach;
+                    if (d > reach || d > curDist + bias) continue;
+                    float score = d - (sameRot ? SameRotationBonus + (faces ? FacingBias : 0f) : straight[s] && r.Kind == want ? StraightBonus : 0f) - (age == 0 ? NewestBonus : 0f);
                     if (score >= best || !valid(k)) continue;
                     best = score;
                     key = k;

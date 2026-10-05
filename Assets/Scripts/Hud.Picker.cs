@@ -259,23 +259,23 @@ namespace RockGame
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
             if (on) DrawUiPostSettings();
-            // the extra looks: each off to start with (Defaults switches them all off again)
+            // the extra looks: each with its own default (outlines, haze and cel banding on; Defaults puts them back)
             if (on)
             {
                 GUILayout.Space(4 * k);
-                GUILayout.Label("<color=#9ab8d8><b>EXTRA LOOKS</b></color>  <color=#bbbbbb>off to start with · each costs a little more on a laptop</color>", m_SmallWrap);
+                GUILayout.Label("<color=#9ab8d8><b>EXTRA LOOKS</b></color>  <color=#bbbbbb>each costs a little more on a laptop</color>", m_SmallWrap);
                 for (int i = 0; i < GameSettings.PostExtraCount; i++)
                 {
                     var e = (GameSettings.PostExtra)i;
                     bool x = GameSettings.PostExtraOn(e);
                     float xs = GameSettings.PostExtraStrength(e);
                     x = EffectRow(GameSettings.PostExtraNames[i], x, ref xs);
-                    if (defaults) { x = DisplayDefaults.PostExtraOn; xs = DisplayDefaults.PostExtraStrength; }
+                    if (defaults) { x = DisplayDefaults.PostExtraOn(i); xs = DisplayDefaults.PostExtraStrength(i); }
                     GameSettings.SetPostExtra(e, x, Mathf.Round(xs * 20f) / 20f);
                 }
                 GUILayout.Label("<color=#bbbbbb>Outlines: dark ink lines round things and along sharp folds, fading with distance. Ambient occlusion: deeper soft shadows in corners, creases and under things. Distance haze: far things fade into a pale sky colour. Depth of field: far away goes softly out of focus. Film grain: fine animated noise. Chromatic aberration: a hint of colour fringing towards the edges. Sharpen: crisper edges. Cel banding: the light falls in a few flat steps, like a cartoon.</color>", m_SmallWrap);
             }
-            else if (defaults) for (int i = 0; i < GameSettings.PostExtraCount; i++) GameSettings.SetPostExtra((GameSettings.PostExtra)i, DisplayDefaults.PostExtraOn, DisplayDefaults.PostExtraStrength);
+            else if (defaults) for (int i = 0; i < GameSettings.PostExtraCount; i++) GameSettings.SetPostExtra((GameSettings.PostExtra)i, DisplayDefaults.PostExtraOn(i), DisplayDefaults.PostExtraStrength(i));
         }
 
         static readonly Color[] s_InkPresets =

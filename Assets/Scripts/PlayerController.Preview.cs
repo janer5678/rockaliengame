@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace RockGame
@@ -193,6 +194,8 @@ namespace RockGame
         Material m_PortalGhostMat, m_PortalGhostInner;
         Vector3 m_PortalFirstShot;
         bool m_PortalFirstShotKnown;
+        GrassClear m_PortalGhostGrass;
+        Vector3 m_PortalGrassAt = Vector3.positiveInfinity;
 
         /// <summary>For the tests: the portal ghost is showing, where, and in which colour.</summary>
         public bool PortalPreviewShown => m_PortalGhost != null && m_PortalGhost.activeSelf;
@@ -271,12 +274,19 @@ namespace RockGame
             }
             if (!show)
             {
-                if (m_PortalGhost != null && m_PortalGhost.activeSelf) m_PortalGhost.SetActive(false);
+                if (m_PortalGhost != null && m_PortalGhost.activeSelf) m_PortalGhost.SetActive(false); // (its GrassClear lets the grass back)
+                m_PortalGrassAt = Vector3.positiveInfinity;
                 return;
             }
             if (m_PortalGhost == null) BuildPortalGhost();
             if (!m_PortalGhost.activeSelf) m_PortalGhost.SetActive(true);
             m_PortalGhost.transform.SetPositionAndRotation(point, Quaternion.LookRotation(normal));
+            // the spot it'd open on shows no grass, just as the portal won't (on this screen only; moved on every 15 cm)
+            if (!((point - m_PortalGrassAt).sqrMagnitude < 0.15f * 0.15f))
+            {
+                m_PortalGrassAt = point;
+                m_PortalGhostGrass.Clear();
+            }
             PortalPreviewColor = colour;
             float pulse = 0.5f + 0.5f * Mathf.Sin(Time.time * 5f);
             var ring = new Color(colour.r, colour.g, colour.b, 0.45f + 0.2f * pulse);
@@ -299,6 +309,94 @@ namespace RockGame
                 NoShadow(Art.Box(m_PortalGhost.transform, Color.white, new Vector3(Mathf.Cos(a) * 0.65f, Mathf.Sin(a) * 1.0f, 0), new Vector3(0.28f, 0.1f, 0.04f), new Vector3(0, 0, a * Mathf.Rad2Deg + 90f), false, m_PortalGhostMat));
             }
             NoShadow(Art.Part(m_PortalGhost.transform, Art.Cylinder, Color.white, Vector3.zero, new Vector3(1.3f, 0.01f, 2f), new Vector3(90, 0, 0), false, m_PortalGhostInner, "inner"));
+            m_PortalGhostGrass = m_PortalGhost.AddComponent<GrassClear>();
+        }
+
+        // ------------------------------------------------------------------ demolish highlight
+
+        // Demolish picked on the building wheel: every piece / chest of yours nearby that LMB could take down is tinted red
+        // (on your screen only, with a MaterialPropertyBlock - the shared materials aren't touched), and the one in your
+        // crosshair (in reach) a deeper red. The set is looked up a few times a second; letting go of the mode clears it.
+        const float DemolishLitRange = 30f;
+        static readonly Color k_DemoNear = new Color(1f, 0.32f, 0.26f), k_DemoAimed = new Color(1f, 0.08f, 0.05f);
+        static readonly int k_BaseColorId = Shader.PropertyToID("_BaseColor"), k_ColorId = Shader.PropertyToID("_Color");
+        static MaterialPropertyBlock s_DemoMpb;
+        readonly List<(Renderer r, Unity.Netcode.NetworkObject owner)> m_DemoLit = new List<(Renderer, Unity.Netcode.NetworkObject)>();
+        Unity.Netcode.NetworkObject m_DemoAimed;
+        float m_DemoScanAt = -1f;
+        /// <summary>(tests) how many pieces / chests are lit red right now, and the one in the crosshair (null: none).</summary>
+        public int DemolishLitCount { get; private set; }
+        public Unity.Netcode.NetworkObject DemolishAimed => m_DemoAimed;
+
+        /// <summary>The piece / chest in the crosshair that Demolish would take down (yours, in reach), or null.</summary>
+        Unity.Netcode.NetworkObject DemolishTarget()
+        {
+            if (!Aim(CenterRay(), Cfg.BuildRange, out var h)) return null;
+            var no = h.collider.GetComponentInParent<Unity.Netcode.NetworkObject>();
+            return no != null && CanDemolish(no) ? no : null;
+        }
+
+        bool CanDemolish(Unity.Netcode.NetworkObject no)
+        {
+            if (no == null || !no.IsSpawned) return false;
+            if (no.TryGetComponent(out Structure s)) return s.Team.Value == m_Net.Team.Value;
+            return no.TryGetComponent(out Container c) && c.Breakable && c.Team.Value == m_Net.Team.Value;
+        }
+
+        void UpdateDemolishHighlight(bool on)
+        {
+            if (!on)
+            {
+                if (m_DemoLit.Count > 0 || m_DemoAimed != null) ClearDemolishLit();
+                m_DemoScanAt = -1f;
+                return;
+            }
+            var aimed = DemolishTarget();
+            bool rescan = Time.time >= m_DemoScanAt;
+            if (!rescan && aimed == m_DemoAimed) return;
+            if (rescan)
+            {
+                m_DemoScanAt = Time.time + 0.25f;
+                ClearDemolishLit();
+                var me = transform.position;
+                float r2 = DemolishLitRange * DemolishLitRange;
+                foreach (var s in Structure.All)
+                    if (s != null && s.IsSpawned && s.Team.Value == m_Net.Team.Value && (s.transform.position - me).sqrMagnitude < r2) AddDemolishLit(s.NetworkObject);
+                foreach (var c in Container.All)
+                    if (c != null && c.IsSpawned && c.Breakable && c.Team.Value == m_Net.Team.Value && (c.transform.position - me).sqrMagnitude < r2) AddDemolishLit(c.NetworkObject);
+            }
+            m_DemoAimed = aimed;
+            if (aimed != null && !m_DemoLit.Exists(x => x.owner == aimed)) AddDemolishLit(aimed);
+            // tint: the shared material's colour pulled towards red (deeper for the one in the crosshair)
+            if (s_DemoMpb == null) s_DemoMpb = new MaterialPropertyBlock();
+            var owners = new HashSet<Unity.Netcode.NetworkObject>();
+            foreach (var (r, owner) in m_DemoLit)
+            {
+                if (r == null) continue;
+                owners.Add(owner);
+                var baseC = r.sharedMaterial != null && r.sharedMaterial.HasProperty(k_BaseColorId) ? r.sharedMaterial.GetColor(k_BaseColorId) : Color.white;
+                var c = owner == aimed ? Color.Lerp(baseC, k_DemoAimed, 0.8f) : Color.Lerp(baseC, k_DemoNear, 0.5f);
+                c.a = baseC.a;
+                s_DemoMpb.Clear();
+                s_DemoMpb.SetColor(k_BaseColorId, c);
+                s_DemoMpb.SetColor(k_ColorId, c);
+                r.SetPropertyBlock(s_DemoMpb);
+            }
+            DemolishLitCount = owners.Count;
+        }
+
+        void AddDemolishLit(Unity.Netcode.NetworkObject no)
+        {
+            foreach (var r in no.GetComponentsInChildren<Renderer>())
+                if (r is MeshRenderer || r is SkinnedMeshRenderer) m_DemoLit.Add((r, no));
+        }
+
+        void ClearDemolishLit()
+        {
+            foreach (var (r, _) in m_DemoLit) if (r != null) r.SetPropertyBlock(null);
+            m_DemoLit.Clear();
+            m_DemoAimed = null;
+            DemolishLitCount = 0;
         }
 
         /// <summary>Both previews, every frame (`held`: None when you can't shoot - dead, a menu open, carrying the ball...).</summary>
@@ -315,6 +413,7 @@ namespace RockGame
             if (m_PortalGhost) Destroy(m_PortalGhost);
             if (m_PortalGhostMat) Destroy(m_PortalGhostMat);
             if (m_PortalGhostInner) Destroy(m_PortalGhostInner);
+            ClearDemolishLit(); // (the red demolish tint off everything it was on)
         }
     }
 }

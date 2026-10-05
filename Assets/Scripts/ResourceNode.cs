@@ -908,7 +908,7 @@ namespace RockGame
             float[] alpha = { 0.62f, 0.44f, 0.18f, 0f };
             float size = GameSettings.TreeXHalo * HaloRadius;
             // (the glow amount makes the halo stronger / fainter too; size 0 = no halo)
-            float amount = Mathf.Clamp(GameSettings.TreeXGlow / GameSettings.TreeXGlowDefault, 0.25f, 1.5f) * (size < 0.01f ? 0f : 1f);
+            float amount = Mathf.Clamp(GameSettings.TreeXGlow / GameSettings.TreeXGlowBase, 0.25f, 1.5f) * (size < 0.01f ? 0f : 1f);
             size = Mathf.Max(size, 0.001f);
             var v = new List<Vector3>();
             var c = new List<Color>();
@@ -1215,7 +1215,7 @@ namespace RockGame
         static readonly Color k_MarkDark = new Color(0.17f, 0.1f, 0.05f), k_MarkPale = new Color(0.86f, 0.71f, 0.48f);
 
         /// <summary>
-        /// A hit at `point` leaves a mark on the bark you see - a little X of two dark gashes with pale wood showing in them - sitting on the
+        /// A hit at `point` leaves a mark on the bark you see - a little dark square with pale wood showing in it - sitting on the
         /// bark (in front of it, never inside): found the same way as the X (rays onto the trunk's / log's own triangles,
         /// as far out as the bark comes anywhere behind the mark). The point a hit reports is on the collider, which is
         /// round, round a ten-sided trunk, so anything put there was partly inside the bark (or floating off it). Children
@@ -1277,18 +1277,13 @@ namespace RockGame
             g.transform.SetParent(vt, false);
             g.transform.localPosition = pos + n * 0.012f; // (its back 9 mm off the bark: BarkSpot's rays are 5.5 cm apart, and between them a corner of the bark can stand out that much)
             g.transform.localRotation = Quaternion.LookRotation(-n, up) * Quaternion.Euler(0, 0, Random.Range(-35f, 35f));
-            float w = Random.Range(0.14f, 0.19f);
-            // two strokes crossing: a little X (the second the same gash, turned across the first)
-            float cross = Random.Range(75f, 105f);
-            for (int k = 0; k < 2; k++)
-            {
-                float turn = k == 0 ? 0f : cross;
-                var spin = Quaternion.Euler(0, 0, turn);
-                var dark = Art.Box(g.transform, k_MarkDark, Vector3.zero, new Vector3(w, w * 0.3f, 0.006f), new Vector3(0, 0, turn));
-                var pale = Art.Box(g.transform, k_MarkPale, spin * new Vector3(0, w * 0.03f, -0.0042f), new Vector3(w * 0.7f, w * 0.1f, 0.002f), new Vector3(0, 0, turn));
-                dark.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-                pale.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            }
+            // a little square: a dark notch with a smaller square of pale wood showing in it (its half-diagonal, 9 cm at
+            // most, inside MarkHalf so no corner reaches the bark)
+            float w = Random.Range(0.1f, 0.13f);
+            var dark = Art.Box(g.transform, k_MarkDark, Vector3.zero, new Vector3(w, w, 0.006f));
+            var pale = Art.Box(g.transform, k_MarkPale, new Vector3(0, 0, -0.0042f), new Vector3(w * 0.55f, w * 0.55f, 0.002f));
+            dark.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            pale.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             m_Marks.Add(g);
             while (m_Marks.Count > MaxMarks) { if (m_Marks[0] != null) Destroy(m_Marks[0]); m_Marks.RemoveAt(0); }
             return true;

@@ -12,6 +12,9 @@ namespace RockGame
 
         /// <summary>The darker, harder wood the hatchet's blade and the spear / arrow points are carved from (they used to be stone).</summary>
         public static readonly Color HardWood = new Color(0.24f, 0.15f, 0.08f);
+        /// <summary>The hatchet's blade: the hard wood a little lighter and greyer (in the hard wood's own red-brown it
+        /// looked like a bronze axe head).</summary>
+        public static readonly Color HatchetHead = new Color(0.36f, 0.28f, 0.2f);
 
         static Mesh s_Leaf;
         /// <summary>
@@ -76,8 +79,8 @@ namespace RockGame
                     var hard = HardWood;
                     Art.Box(t, new Color(0.72f, 0.55f, 0.32f), new Vector3(0, 0.25f, 0), new Vector3(0.05f, 0.62f, 0.05f));
                     Art.Box(t, hard * 0.85f, new Vector3(0, 0.02f, 0), new Vector3(0.06f, 0.14f, 0.06f));
-                    Art.Box(t, hard, new Vector3(0, 0.5f, 0.12f), new Vector3(0.035f, 0.2f, 0.2f));
-                    Art.Box(t, hard * 1.35f, new Vector3(0, 0.5f, 0.23f), new Vector3(0.03f, 0.26f, 0.04f));
+                    Art.Box(t, HatchetHead, new Vector3(0, 0.5f, 0.12f), new Vector3(0.035f, 0.2f, 0.2f));
+                    Art.Box(t, HatchetHead * 1.3f, new Vector3(0, 0.5f, 0.23f), new Vector3(0.03f, 0.26f, 0.04f));
                     Art.Box(t, hard * 0.85f, new Vector3(0, 0.5f, 0.0f), new Vector3(0.07f, 0.1f, 0.07f));
                     break;
                 }

@@ -24,6 +24,7 @@ namespace RockGame
 
         /// <summary>Build wheel: which slice the mouse is over (-1 = none).</summary>
         public static int WheelHover = -1;
+        static Vector2 s_WheelLastMouse;
         static Vector2 s_WheelCenter;
         public static void WheelOpened() { s_WheelCenter = new Vector2(Screen.width / 2f, Screen.height / 2f); WheelHover = PlayerController.Local != null ? PlayerController.Local.WheelIndex : 0; }
         float m_LastHealth = 100f, m_DamageFlash;
@@ -157,6 +158,7 @@ namespace RockGame
             BeginHoverFrame();
             MouseOverUI = false;
             s_HudAlpha = 1f;
+            m_RadarBottom = -1f; // (DrawGame sets it when the base radar is up: the FPS counter goes under it)
             DrawAll();
             s_HudAlpha = 1f;
             GUI.color = Color.white;
@@ -253,14 +255,11 @@ namespace RockGame
             var tc = Cfg.TeamColor[team];
             Fill(new Rect(10, 10, 230 * k, 30 * k), new Color(tc.r, tc.g, tc.b, 0.6f));
             Shadowed(new Rect(18, 12, 230 * k, 28 * k), $"<b>YOU ARE {Cfg.TeamName[team]}</b>", m_Label);
-            // the radar for your own base, back under YOU ARE ... (under the FPS counter when that's on): how far it is and
-            // which way from where you're facing. Not in Builder (no bases) or up in the sudden death arena.
+            // the radar for your own base, right under YOU ARE ... (the FPS counter goes under it): a short panel with a little
+            // arrow that points at your base from where the camera faces (it turns as you look round), and how far it is.
+            // Not in Builder (no bases) or up in the sudden death arena.
             if (!Cfg.Builder && !me.Dead.Value && (game == null || game.S != GameState.SuddenDeath))
-            {
-                var rr = new Rect(10, 10 + 34 * k + (GameSettings.ShowFps ? 26 * k : 0f), 230 * k, 24 * k);
-                Fill(rr, new Color(0f, 0f, 0f, 0.4f));
-                Shadowed(new Rect(rr.x + 8, rr.y + 1, rr.width, rr.height), $"<color=#{ColorUtility.ToHtmlStringRGB(Color.Lerp(tc, Color.white, 0.45f))}>Your base:</color> {Direction(me.transform, Cfg.BaseCenter[team])}", m_Small);
-            }
+                DrawBaseRadar(me, team, tc, k);
             // ---- the gun's rounds, big, top left (pistol, revolver, shotgun) ----
             if ((Cfg.IsGun(me.HeldItem) || me.HeldItem == Item.Shotgun) && !me.Dead.Value)
             {
@@ -451,8 +450,8 @@ namespace RockGame
             switch (s.Id)
             {
                 case Item.BuildingPlan:
-                    if (pc.DemolishMode) return "<b>Demolish</b>    LMB: take down your own piece (half the wood back)    hold RMB: building wheel";
-                    return $"<b>{Cfg.PieceName(pc.BuildPiece)}</b>  ({Cfg.PieceWood(pc.BuildPiece)} {Cfg.CurrencyName})    hold RMB: building wheel   R: rotate stairs   " + (Cfg.WoodMode || Tutorial.HideStone ? "" : "F: upgrade to stone   ") + "X: demolish yours";
+                    if (pc.DemolishMode) return "<b>Demolish</b>    LMB: take down your own piece (lit up red; half the wood back)    hold RMB: building wheel";
+                    return $"<b>{Cfg.PieceName(pc.BuildPiece)}</b>  ({Cfg.PieceWood(pc.BuildPiece)} {Cfg.CurrencyName})    hold RMB: building wheel (demolish at the bottom)   R: rotate stairs" + (Cfg.WoodMode || Tutorial.HideStone ? "" : "   F: upgrade to stone");
                 case Item.Ram: return $"<b>Battering Ram</b> ({s.Data} hit{(s.Data == 1 ? "" : "s")} left)    hold LMB at an enemy piece: wood breaks instantly, stone / metal drop one step";
                 case Item.Spear: return "<b>Spear</b>    LMB: stab    hold RMB + LMB: throw    E: pick thrown spears back up";
                 case Item.Bow: return $"<b>Bow</b>  ({me.Count(Item.Arrow)} arrows)    hold LMB to draw, release to fire";
@@ -922,7 +921,7 @@ namespace RockGame
             {
                 var tex = new Texture2D(S, S, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
                 var px = new Color32[S * S];
-                float centre = i * 360f / n, half = 180f / n - 1.2f;
+                float centre = (i + 0.5f) * 360f / n, half = 180f / n - 1.2f; // (PlayerController.WheelAngle: half a slice round)
                 for (int y = 0; y < S; y++)
                 for (int x = 0; x < S; x++)
                 {
@@ -966,32 +965,36 @@ namespace RockGame
             var mouse = Event.current.mousePosition;
             var d = mouse - c;
             // always snapped to a slice: the one in the mouse's direction, or the current one while the mouse is still in the middle
-            if (d.magnitude > 18f * k)
+            // (only when the mouse moves: a slice picked another way - SelectWheel - stays put under a still mouse)
+            bool moved = (mouse - s_WheelLastMouse).sqrMagnitude > 0.25f;
+            s_WheelLastMouse = mouse;
+            if (moved && d.magnitude > 18f * k)
             {
                 float ang = Mathf.Atan2(d.x, -d.y) * Mathf.Rad2Deg;
                 if (ang < 0) ang += 360f;
-                WheelHover = Mathf.RoundToInt(ang / (360f / opts.Length)) % opts.Length;
+                WheelHover = Mathf.FloorToInt(ang / (360f / opts.Length)) % opts.Length; // (slices start at straight up: WheelAngle)
             }
             else if (WheelHover < 0) WheelHover = pc.WheelIndex;
             float R = 190f * k;
             var area = new Rect(c.x - R, c.y - R, 2 * R, 2 * R);
             var old = GUI.color;
+            var wheel = ColorSlots.BuildWheel.Value; // (Settings > Display > WORLD COLOURS)
             for (int i = 0; i < opts.Length; i++)
             {
                 bool hover = i == WheelHover;
-                bool disabled = opts[i].Upgrade && Cfg.WoodMode;
-                GUI.color = hover ? new Color(0.85f, 0.55f, 0.2f, 0.92f) : opts[i].Demolish ? new Color(0.35f, 0.1f, 0.08f, 0.75f) : new Color(0.38f, 0.62f, 0.95f, 0.82f);
+                bool disabled = (opts[i].Upgrade && Cfg.WoodMode) || (opts[i].Demolish && !Tutorial.Allows(TutFeature.Demolish)); // (the tutorial: greyed until its step)
+                GUI.color = hover ? new Color(0.85f, 0.55f, 0.2f, 0.92f) : opts[i].Demolish ? new Color(0.35f, 0.1f, 0.08f, 0.75f) : new Color(wheel.r, wheel.g, wheel.b, 0.82f);
                 GUI.DrawTexture(area, s_Wedges[i]);
-                float a = i * (360f / opts.Length) * Mathf.Deg2Rad;
+                float a = PlayerController.WheelAngle(i) * Mathf.Deg2Rad;
                 var p = c + new Vector2(Mathf.Sin(a), -Mathf.Cos(a)) * R * 0.67f;
-                float isz = (opts.Length <= 6 ? 96f : 78f) * k; // (six wide slices: bigger icons)
+                float isz = (opts.Length <= 7 ? 90f : 78f) * k; // (seven wide slices: bigger icons)
                 GUI.color = disabled ? new Color(1, 1, 1, 0.25f) : Color.white;
                 var icon = ItemIcons.Wheel(i);
                 if (icon != null) GUI.DrawTexture(new Rect(p.x - isz / 2, p.y - isz / 2, isz, isz), icon, ScaleMode.ScaleToFit, true);
                 else GUI.Label(new Rect(p.x - 50, p.y - 12, 100, 24), opts[i].Label, m_Center);
             }
             // centre: name and cost
-            GUI.color = new Color(0.22f, 0.45f, 0.8f, 0.9f);
+            GUI.color = new Color(wheel.r * 0.6f, wheel.g * 0.72f, wheel.b * 0.84f, 0.9f); // (the default's darker centre: 0.22, 0.45, 0.8)
             GUI.DrawTexture(new Rect(c.x - R * 0.32f, c.y - R * 0.32f, R * 0.64f, R * 0.64f), s_Disc);
             GUI.color = old;
             var o = opts[Mathf.Clamp(WheelHover, 0, opts.Length - 1)];
@@ -1236,15 +1239,65 @@ namespace RockGame
             return y - top + 4 * k;
         }
 
-        static string Direction(Transform me, Vector3 target)
+        static Texture2D s_RadarArrow;
+        /// <summary>Where the base radar panel ends (its bottom edge) this GUI pass; -1 when it isn't up. The FPS counter goes under it.</summary>
+        float m_RadarBottom = -1f;
+        /// <summary>(tests) the base radar arrow's turn last drawn, degrees clockwise from straight up (0 = the base is ahead).</summary>
+        public static float RadarArrowAngle { get; private set; }
+
+        /// <summary>A small solid arrowhead pointing up (white; tinted when drawn).</summary>
+        static Texture2D RadarArrowTex()
         {
-            Vector3 d = target - me.position;
+            if (s_RadarArrow != null) return s_RadarArrow;
+            const int S = 32;
+            s_RadarArrow = new Texture2D(S, S, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear };
+            var px = new Color32[S * S];
+            for (int y = 0; y < S; y++)
+            for (int x = 0; x < S; x++)
+            {
+                // a dart: the tip at the top, the two back corners at the bottom, a notch cut out between them
+                float u = (x + 0.5f) / S * 2f - 1f, v = (y + 0.5f) / S; // u -1..1 across, v 0 (bottom) .. 1 (top)
+                float halfW = (1f - v) * 0.9f;                          // widens from the tip down
+                float notch = 0.35f * (1f - Mathf.Abs(u) / 0.9f);       // the back cut in
+                float a = Mathf.Clamp01((halfW - Mathf.Abs(u)) * S * 0.5f) * Mathf.Clamp01((v - 0.06f - notch) * S * 0.5f) * Mathf.Clamp01((0.97f - v) * S);
+                px[y * S + x] = new Color32(255, 255, 255, (byte)(a * 255)); // (row 0 is the bottom of a Texture2D)
+            }
+            s_RadarArrow.SetPixels32(px);
+            s_RadarArrow.Apply();
+            return s_RadarArrow;
+        }
+
+        /// <summary>"Your Base" + an arrow toward it (turned by where the camera faces) + the distance, in a short panel.</summary>
+        void DrawBaseRadar(PlayerNet me, int team, Color tc, float k)
+        {
+            Vector3 d = Cfg.BaseCenter[team] - me.transform.position;
             d.y = 0;
             float dist = d.magnitude;
-            if (dist < 3f) return "here";
-            float ang = Vector3.SignedAngle(me.forward, d, Vector3.up);
-            string arrow = Mathf.Abs(ang) < 22.5f ? "ahead" : Mathf.Abs(ang) > 157.5f ? "behind" : ang > 0 ? (ang < 67.5f ? "ahead-right" : ang < 112.5f ? "right" : "behind-right") : (ang > -67.5f ? "ahead-left" : ang > -112.5f ? "left" : "behind-left");
-            return $"{dist:0}m {arrow}";
+            var cam = Camera.main;
+            Vector3 fwd = cam != null ? cam.transform.forward : me.transform.forward;
+            fwd.y = 0;
+            if (fwd.sqrMagnitude < 1e-4f) fwd = me.transform.forward;
+            float ang = Vector3.SignedAngle(fwd, d, Vector3.up); // + = to the right
+            var rr = new Rect(10, 10 + 34 * k, 150 * k, 24 * k);
+            m_RadarBottom = rr.yMax;
+            Fill(rr, new Color(0f, 0f, 0f, 0.4f));
+            string label = $"<color=#{ColorUtility.ToHtmlStringRGB(Color.Lerp(tc, Color.white, 0.45f))}>Your Base</color>";
+            Shadowed(new Rect(rr.x + 8, rr.y + 1, rr.width, rr.height), label, m_Small);
+            float lw = m_Small.CalcSize(new GUIContent("Your Base")).x;
+            float ax = rr.x + 8 + lw + 6 * k, asz = 15 * k;
+            var ar = new Rect(ax, rr.y + (rr.height - asz) / 2f, asz, asz);
+            if (dist >= 3f)
+            {
+                RadarArrowAngle = ang;
+                var oldM = GUI.matrix;
+                var oldC = GUI.color;
+                GUIUtility.RotateAroundPivot(ang, ar.center);
+                GUI.color = new Color(1f, 1f, 1f, 0.95f * s_HudAlpha);
+                GUI.DrawTexture(ar, RadarArrowTex());
+                GUI.matrix = oldM;
+                GUI.color = oldC;
+            }
+            Shadowed(new Rect(ar.xMax + 6 * k, rr.y + 1, rr.xMax - ar.xMax, rr.height), dist < 3f ? "here" : $"{dist:0}m", m_Small);
         }
 
         /// <summary>Test hooks: when the victory / game over screen was last drawn (Time.time; -1 never), and when the cutscene's bars were.</summary>
@@ -1261,6 +1314,7 @@ namespace RockGame
             float sw = Screen.width, sh = Screen.height, k = m_Scale;
             float e = VictoryCutscene.Elapsed;
             float bars = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(e / 0.6f)) * sh * 0.12f;
+            VictoryCutscene.DrawTags(k, m_Center); // (the winners' name tags over their heads, under the bars)
             Fill(new Rect(0, 0, sw, bars), Color.black);
             Fill(new Rect(0, sh - bars, sw, bars), Color.black);
             int w = game.Winner.Value;
@@ -1293,8 +1347,8 @@ namespace RockGame
             Fill(new Rect(0, 0, sw, sh), new Color(0, 0, 0, won ? 1f : 0.6f));
             string title = w < 0 ? "DRAW" : won ? "<color=#77ff77>VICTORY</color>" : "<color=#ff5555>DEFEAT</color>";
             Shadowed(new Rect(0, sh * 0.3f, sw, 70 * k), $"<size={Mathf.RoundToInt(64 * k)}>{title}</size>", m_Big);
+            // (kept short: the title, one line of why - the end reasons are a few words each, NetGame - and the button)
             Shadowed(new Rect(0, sh * 0.3f + 80 * k, sw, 30 * k), game.EndReason.Value.ToString(), m_Center);
-            if (won && game.CutsceneAt.Value >= 0) GUI.Label(new Rect(0, sh * 0.3f - 34 * k, sw, 28 * k), "<color=#9a9aaa>You escaped.</color>", m_Center);
             DrawLeaveButton(boot, new Rect(sw / 2 - 110 * k, sh * 0.3f + 140 * k, 220 * k, 46 * k));
             // the tutorial ends with this screen: its "tutorial complete" card goes on top of it
             if (Cfg.Tutorial) Tutorial.DrawOverGameOver(k, m_Label, m_Small, Fill, Shadowed);

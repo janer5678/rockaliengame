@@ -17,9 +17,11 @@ namespace RockGame
         public const byte Car = 0, Horse = 1, Slender = 2;
         /// <summary>A training dummy (the tutorial's combat steps - Tutorial.cs): a straw man on a post that stands where
         /// it's put, takes damage from everything a horse does (melee, arrows, thrown spears, guns) and falls apart at 0.
-        /// Nobody rides it. (3 is the boat: ThemeMaps/Vehicle.Boat.cs.)</summary>
+        /// Nobody rides it. Its head is an alien head in the enemy's colour, and it's hit like a player: the head is the
+        /// head hitbox (double damage), the straw body the body hitbox (Vehicle.Dummy.cs). (3 is the boat: ThemeMaps/Vehicle.Boat.cs.)</summary>
         public const byte Dummy = 4;
-        public const float DummyHp = 60f;
+        /// <summary>As much health as a player: two full-draw arrows to the body, or one to the head.</summary>
+        public static float DummyHp => Cfg.MaxHealth;
         public bool IsDummy => Kind.Value == Dummy;
         const ulong NoDriver = ulong.MaxValue;
         public static readonly List<Vehicle> All = new List<Vehicle>();
@@ -87,6 +89,7 @@ namespace RockGame
         /// <summary>A hit on a horse's head does double damage.</summary>
         public float HeadMul(Vector3 point)
         {
+            if (IsDummy) return DummyHeadMul(point); // (a player's head and body hitboxes: Vehicle.Dummy.cs)
             if (!IsHorse || m_HeadCol == null) return 1f;
             var b = m_HeadCol.bounds;
             b.Expand(0.25f);
@@ -100,10 +103,12 @@ namespace RockGame
             Hp.Value = Mathf.Max(0f, Hp.Value - dmg);
             if (IsDummy)
             {
-                // straw and splinters, and the tutorial's guide hears about it (a hit, or the hit that finished it; from range or up close)
+                // straw and splinters, and the tutorial's guide hears about it (a hit, or the hit that finished it; from
+                // range or up close; on the head or the body)
                 Fx.Server(FxKind.WoodChips, transform.position + Vector3.up * 1.2f, Vector3.up);
+                bool head = TakeDummyHeadHit();
                 if (attacker != null)
-                    attacker.TutEventRpc((byte)(Hp.Value > 0 ? 1 : 2), (byte)(Vector3.Distance(attacker.transform.position, transform.position) > DummyFar ? 1 : 0));
+                    attacker.TutEventRpc((byte)(Hp.Value > 0 ? 1 : 2), (byte)((Vector3.Distance(attacker.transform.position, transform.position) > DummyFar ? 1 : 0) | (head ? 2 : 0)));
             }
             if (IsHorse)
             {
@@ -155,12 +160,16 @@ namespace RockGame
                 Hp.OnValueChanged += (was, now) => { if (now < was) m_DummyHitAt = Time.time; }; // (it rocks when it's hit)
             }
             m_Visual = CreateVisual(Kind.Value, transform, null, out m_Saddle, out m_Fan, out m_Head, out m_Tail, m_Wheels, m_Legs, IsUnicorn).transform;
+            if (IsDummy) DressDummy(); // (its alien head, in the enemy's colour: Vehicle.Dummy.cs)
             if (IsHorse && AiPsxArt.On) AiPsxArt.ApplyAnimal(m_Visual);
             // PSX graphics: the PS1 horse (a unicorn keeps its own white model and horn, so it's always plain to see)
             if (IsHorse && !IsUnicorn) PsxModels.Replace(m_Visual, "horse", PsxModels.Fit.Uniform);
-            // the head hitbox moves with the head but never trips up the horse's own movement
+            // the head hitbox (and the hit boxes on every other part) move with it but never trip up the horse's own movement
             foreach (var c in m_Visual.GetComponentsInChildren<Collider>())
-                if (c.name == "horse head") { m_HeadCol = c; if (m_CC != null) Physics.IgnoreCollision(m_CC, c); }
+            {
+                if (c.name == "horse head") m_HeadCol = c;
+                if (m_CC != null) Physics.IgnoreCollision(m_CC, c);
+            }
             SaddleTeam.OnValueChanged += (a, b) => ColourSaddle();
             ColourSaddle();
             m_Yaw = transform.eulerAngles.y;
@@ -512,7 +521,8 @@ namespace RockGame
             if (kind == Boat) fan = BuildBoat(t); // THEME MAPS
             else if (kind == Dummy)
             {
-                // a straw man on a post: sack body and head, a cross bar for arms, a painted target on its chest
+                // a straw man on a post: a sack body, a cross bar for arms, a painted target on its chest (its alien head
+                // goes on once it's spawned and its team is known: DressDummy)
                 var straw = new Color(0.86f, 0.72f, 0.38f);
                 var sack = new Color(0.72f, 0.6f, 0.4f);
                 Art.Box(t, Art.DarkWood, new Vector3(0, 0.55f, 0), new Vector3(0.14f, 1.1f, 0.14f));
@@ -520,9 +530,7 @@ namespace RockGame
                 Art.Box(t, sack, new Vector3(0, 1.15f, 0), new Vector3(0.6f, 0.75f, 0.36f));
                 Art.Box(t, Art.Wood, new Vector3(0, 1.38f, 0), new Vector3(1.5f, 0.1f, 0.1f));
                 for (int k = -1; k <= 1; k += 2) Art.Box(t, straw, new Vector3(k * 0.78f, 1.38f, 0), new Vector3(0.16f, 0.2f, 0.2f));
-                Art.Part(t, Art.Sphere, sack, new Vector3(0, 1.72f, 0), new Vector3(0.4f, 0.42f, 0.4f));
-                Art.Box(t, straw, new Vector3(0, 1.95f, 0), new Vector3(0.34f, 0.08f, 0.34f));
-                for (int k = -1; k <= 1; k += 2) Art.Box(t, Color.black, new Vector3(k * 0.08f, 1.76f, 0.2f), new Vector3(0.05f, 0.05f, 0.02f));
+                Art.Box(t, sack * 0.9f, new Vector3(0, 1.5f, 0), new Vector3(0.16f, 0.12f, 0.16f)); // (a neck stub the head sits on)
                 Art.Part(t, Art.Cylinder, Color.white, new Vector3(0, 1.15f, 0.185f), new Vector3(0.42f, 0.01f, 0.42f), new Vector3(90, 0, 0));
                 Art.Part(t, Art.Cylinder, new Color(0.85f, 0.15f, 0.12f), new Vector3(0, 1.15f, 0.2f), new Vector3(0.28f, 0.01f, 0.28f), new Vector3(90, 0, 0));
                 Art.Part(t, Art.Cylinder, Color.white, new Vector3(0, 1.15f, 0.215f), new Vector3(0.12f, 0.01f, 0.12f), new Vector3(90, 0, 0));
@@ -577,17 +585,23 @@ namespace RockGame
                 using var tint = ColorSlots.Use(unicorn ? null : ColorSlots.Horses); // (Settings > Display colours; a unicorn is always white)
                 var coat = unicorn ? UnicornCoat : new Color(0.45f, 0.3f, 0.18f);
                 var mane = unicorn ? UnicornMane : new Color(0.18f, 0.12f, 0.08f);
-                Art.Box(t, coat, new Vector3(0, 1.15f, 0), new Vector3(0.6f, 0.6f, 1.5f));
+                // Hit boxes on every part of it, so an arrow / bullet / spear hits wherever the horse is drawn: the
+                // horse's own capsule (its CharacterController) is a short upright pill round its middle, and with only
+                // the head boxed too, shots went straight through its neck, chest, rump and legs. They're on the
+                // players' hitbox layer, which collides with nothing - shots (raycasts) find them, but they never bump
+                // the horse, its rider, players or the ball. (The head's own box below is the old solid one.)
+                void Hit(GameObject g) { if (ghost != null) return; g.AddComponent<BoxCollider>(); g.layer = PlayerNet.HitboxLayer; }
+                Hit(Art.Box(t, coat, new Vector3(0, 1.15f, 0), new Vector3(0.6f, 0.6f, 1.5f)));
                 // neck + head (head pivots to graze)
                 var neck = new GameObject("neck").transform;
                 neck.SetParent(t, false);
                 neck.localPosition = new Vector3(0, 1.35f, 0.65f);
-                Art.Box(neck, coat, new Vector3(0, 0.3f, 0.12f), new Vector3(0.32f, 0.7f, 0.35f), new Vector3(25, 0, 0));
-                Art.Box(neck, mane, new Vector3(0, 0.35f, -0.02f), new Vector3(0.1f, 0.7f, 0.12f), new Vector3(25, 0, 0));
+                Hit(Art.Box(neck, coat, new Vector3(0, 0.3f, 0.12f), new Vector3(0.32f, 0.7f, 0.35f), new Vector3(25, 0, 0)));
+                Hit(Art.Box(neck, mane, new Vector3(0, 0.35f, -0.02f), new Vector3(0.1f, 0.7f, 0.12f), new Vector3(25, 0, 0)));
                 // the head has its own hitbox (a hit there does double damage)
                 var headBox = Art.Box(neck, coat, new Vector3(0, 0.62f, 0.42f), new Vector3(0.3f, 0.3f, 0.6f), default, ghost == null);
                 headBox.name = "horse head";
-                Art.Box(neck, mane * 1.5f, new Vector3(0, 0.56f, 0.7f), new Vector3(0.26f, 0.2f, 0.12f));
+                Hit(Art.Box(neck, mane * 1.5f, new Vector3(0, 0.56f, 0.7f), new Vector3(0.26f, 0.2f, 0.12f)));
                 Art.Box(neck, Color.black, new Vector3(0.16f, 0.7f, 0.5f), new Vector3(0.02f, 0.06f, 0.06f));
                 Art.Box(neck, Color.black, new Vector3(-0.16f, 0.7f, 0.5f), new Vector3(0.02f, 0.06f, 0.06f));
                 Art.Box(neck, coat, new Vector3(0.09f, 0.82f, 0.25f), new Vector3(0.06f, 0.14f, 0.06f));
@@ -597,7 +611,7 @@ namespace RockGame
                 var tl = new GameObject("tail").transform;
                 tl.SetParent(t, false);
                 tl.localPosition = new Vector3(0, 1.3f, -0.76f);
-                Art.Box(tl, mane, new Vector3(0, -0.3f, -0.05f), new Vector3(0.12f, 0.65f, 0.12f));
+                Hit(Art.Box(tl, mane, new Vector3(0, -0.3f, -0.05f), new Vector3(0.12f, 0.65f, 0.12f)));
                 tail = tl;
                 for (int i = 0; i < 4; i++)
                 {
@@ -605,13 +619,13 @@ namespace RockGame
                     var leg = new GameObject("leg").transform;
                     leg.SetParent(t, false);
                     leg.localPosition = new Vector3(x, 0.9f, z);
-                    Art.Box(leg, coat, new Vector3(0, -0.4f, 0), new Vector3(0.16f, 0.8f, 0.16f));
+                    Hit(Art.Box(leg, coat, new Vector3(0, -0.4f, 0), new Vector3(0.16f, 0.8f, 0.16f)));
                     Art.Box(leg, unicorn ? UnicornHorn : mane, new Vector3(0, -0.85f, 0), new Vector3(0.18f, 0.12f, 0.18f)); // (a unicorn's hooves are gold)
                     legs?.Add(leg);
                 }
                 var sd = new GameObject("saddle").transform;
                 sd.SetParent(t, false);
-                Art.Box(sd, new Color(0.35f, 0.18f, 0.08f), new Vector3(0, 1.47f, -0.05f), new Vector3(0.64f, 0.08f, 0.55f));
+                Hit(Art.Box(sd, new Color(0.35f, 0.18f, 0.08f), new Vector3(0, 1.47f, -0.05f), new Vector3(0.64f, 0.08f, 0.55f)));
                 Art.Box(sd, new Color(0.35f, 0.18f, 0.08f), new Vector3(0, 1.55f, 0.2f), new Vector3(0.3f, 0.12f, 0.08f));
                 var blanket = Art.Box(sd, new Color(0.8f, 0.2f, 0.15f), new Vector3(0, 1.2f, -0.05f), new Vector3(0.66f, 0.5f, 0.45f));
                 blanket.name = "blanket";
