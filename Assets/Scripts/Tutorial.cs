@@ -821,7 +821,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "door", Title = "Build a door",
-                    Body = "Pick " + Hi("Doorway") + $" on the wheel and place it. {K(Bind.Interact)} opens your door - its " + Hi("padlock") + " is in your team's colour: only your team can open it.",
+                    Body = "Pick " + Hi("Doorway") + $" on the wheel and place it. {K(Bind.Interact)} opens your door.",
                     Goal = "Place a doorway",
                     Hint = "Doorways go on a floor's edge, just like walls - aim near your last pieces and it carries them on.",
                     Done = () => Pieces(PieceType.Doorway) >= 1,
@@ -1015,8 +1015,7 @@ namespace RockGame
                     Id = "raid", Title = "Raid!",
                     BodyF = () => (Friend ? "Raid your friend's base! A " + Hi("hut") + " has gone up in it - "
                             : "Raid the enemy's base! The ball is in their machine - but first, their " + Hi("hut") + ": ")
-                        + "its door's " + Hi("padlock") + " is in their colour, so only they can open it. But a door has " + Hi("its own, weaker health") + $" - hit the door ({K(Bind.Attack)}) with your axe until it breaks off. "
-                        + "You've also been given a " + Hi("battering ram") + ": hold " + K(Bind.Attack) + " right at a wooden piece and one hit smashes it. Wood is weak; stone, metal and armoured walls take far more.",
+                        + "its door is locked. " + $"Hit the door ({K(Bind.Attack)}) with your axe until it breaks, or use your " + Hi("battering ram") + ".",
                     Goal = "Break into the enemy hut",
                     Hint = "Stand right at the door and keep hitting the door itself, not the frame round it.",
                     Enter = () => Ask(AskHut),

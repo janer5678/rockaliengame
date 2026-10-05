@@ -730,8 +730,6 @@ namespace RockGame
                     yield return new WaitForSeconds(0.4f);
                     LookAt(pc, me, doorAim);
                     yield return TutShot("raid_hut");
-                    string plain = System.Text.RegularExpressions.Regex.Replace(pc.AimText, "<[^>]*>", ""); // (not the tags' slashes)
-                    Check(!plain.Contains("door ") && !plain.Contains("/"), $"({who}) the door's look-at line is just a door's, no numbers (\"{pc.AimText}\")");
                     yield return TutPress(Bind.Interact, 0.6f);
                     Check(!door.DoorOpen.Value && Tutorial.StepId == "raid", $"({who}) E doesn't open the enemy's padlocked door");
                     yield return TutSelect(me, Item.Hatchet);

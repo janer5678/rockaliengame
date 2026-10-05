@@ -1967,8 +1967,6 @@ namespace RockGame
                 case TargetKind.Door:
                 {
                     var s = t.Obj.GetComponent<Structure>();
-                    // (the tutorial: just a door - whose it is and E, without the numbers; its steps explain the rest)
-                    if (Tutorial.On) { AimText = TeamTip("Door", s.Team.Value, s.Team.Value == m_Net.Team.Value ? $"{Binds.Name(Bind.Interact)}: open/close" : "locked"); return; }
                     AimText = TeamTip(s.DisplayName, s.Team.Value, $"{s.Health.Value:0}/{s.MaxHp:0}  ·  door {s.DoorHealth.Value:0}/{s.DoorMaxHp:0}   "
                         + (s.Team.Value == m_Net.Team.Value ? "E: open/close" : "locked - only its team can open it (the door itself breaks easier than the frame)"));
                     return;
