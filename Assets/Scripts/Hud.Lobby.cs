@@ -16,6 +16,7 @@ namespace RockGame
 
         /// <summary>(tests) the lobby's screen was drawn this frame.</summary>
         public static float LobbyShownAt = -10f;
+        static readonly System.Collections.Generic.List<Container> s_Bags = new System.Collections.Generic.List<Container>();
 
         void DrawLobby(Bootstrap boot, PlayerNet me)
         {

@@ -7,6 +7,9 @@ namespace RockGame
     {
         /// <summary>Once every player is in the waiting stadium, the match starts this many seconds later (0 = at once).</summary>
         [Tune("Match")] public static float StartCountdown = 10f;
+        /// <summary>The clock running out with the ball in nobody's machine: OVERTIME until someone captures it (off: the
+        /// old sudden death arena - the sudden death tests switch it off).</summary>
+        public static bool UseOvertime = true;
     }
 
     /// <summary>

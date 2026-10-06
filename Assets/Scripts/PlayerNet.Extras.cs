@@ -124,9 +124,9 @@ namespace RockGame
         {
             if (c == null || !c.IsSpawned) return "";
             if (!(c.Breakable || c.IsWorkbench)) return "";
-            if (c.Team.Value != Team.Value) return c.IsWorkbench ? "That's the enemy's trade station" : "That's the enemy's chest";
-            if (!c.Empty) return "Empty the chest first";
-            if (c.IsWorkbench && c.BenchTier == 1 && Workbench.ForTeam(Team.Value, 2) != null) return "Pick up your Trade Station 2 first";
+            if (c.Team.Value != Team.Value) return c.IsWorkbench ? "That's the enemy's trade station" : c.IsDeployable ? $"That's the enemy's {Cfg.ItemName(Container.ItemOf(c.Kind.Value)).ToLower()}" : "That's the enemy's chest";
+            if (!c.Empty) return c.Kind.Value == Container.Turret ? "Take its weapon and ammo out first" : "Empty the chest first";
+            if (c.IsWorkbench && c.BenchTier == 1 && Workbench.ForTeam(Team.Value, 2) != null) return "Pick up your Advanced Trade Station first";
             return null;
         }
 
@@ -140,7 +140,7 @@ namespace RockGame
             if (Vector3.Distance(c.Center, EyePos) > Cfg.InteractRange + 3f) return;
             var problem = PackUpProblem(c);
             if (problem != null) { if (problem.Length > 0) Notify(problem); return; }
-            var item = c.IsWorkbench ? (c.BenchTier == 2 ? Item.Workbench2 : Item.Workbench) : Item.Chest;
+            var item = Container.ItemOf(c.Kind.Value); // (a chest, a bench, a bag, a trap, a ladder or a turret)
             var at = c.transform.position;
             c.NetworkObject.Despawn(true);
             int left = ServerGive(item, 1);

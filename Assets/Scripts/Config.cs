@@ -14,7 +14,8 @@ namespace RockGame
         Sword, Shotgun, ShotgunShell, Revolver, RevolverAmmo,
         Dna,
         Workbench,
-        Workbench2 }
+        Workbench2,
+        Ladder, BearTrap, SleepingBag, LargeGate, SpeedJuice, Skull, AutoTurret }
 
     /// <summary>
     /// The game mode (picked in the main menu, next to the players). They don't mix:
@@ -27,7 +28,7 @@ namespace RockGame
     /// </summary>
     public enum GameRules : byte { Classic, Arsenal, Builder, Fun, FunRandom, FunRandomLimited, Primitive, BuildingPrimitive, AutoWood, Tutorial, Dna }
 
-    public enum PieceType : byte { Foundation, Wall, Doorway, Floor, Stairs, Barrier, Window, Tower, EggBlock }
+    public enum PieceType : byte { Foundation, Wall, Doorway, Floor, Stairs, Barrier, Window, Tower, EggBlock, Gate }
 
     public enum GameState : byte { Waiting, PreBall, BallLive, SuddenDeath, GameOver }
 
@@ -330,11 +331,13 @@ namespace RockGame
         [Tune("Airdrop")] public static float BombBushDamage = 150f, AirstrikeRadius = 14f, AirstrikeDelay = 4f, EggBlockHp = 60f;
         [Tune("Airdrop")] public static float WandRange = 90f, WandRadius = 3f;
         [Tune("Airdrop")] public static float InvisTime = 30f, InvisRevealTime = 1.2f;
+        /// <summary>Extreme Speed Juice: how long, and how many times as fast.</summary>
+        [Tune("Airdrop")] public static float SpeedJuiceTime = 5f, SpeedJuiceMul = 2.3f;
         [Tune("Airdrop")] public static int ChainsawUses = 134, AirdropResources = 1000;
         // how common each item is in airdrops (and respawn loot, Fun Random): a weight - 20 comes twice as often as 10, 0 never
         // (only among the items picked in the mode options; if every picked item is 0 they're all equally likely)
         [Tune("Airdrop rarity")] public static int RarityC4 = 10, RarityDeathWand = 10, RarityPortalGun = 10, RarityRocketLauncher = 10, RarityTreeCamo = 10,
-            RarityInvisPotion = 10, RarityJetpack = 10, RarityWallhack = 10, RarityBombBush = 10, RarityEnderPearl = 10;
+            RarityInvisPotion = 10, RarityJetpack = 10, RarityWallhack = 10, RarityBombBush = 10, RarityEnderPearl = 10, RaritySpeedJuice = 10;
         [Tune("Airdrop rarity")] public static int RarityHelmet = 10, RarityArmor = 10, RarityChainsaw = 10, RarityFortTower = 10, RaritySniper = 10,
             RaritySlenderEgg = 10, RarityBuildEgg = 10, RarityGiantStaff = 10, RarityAirstrike = 10, RarityWood = 10;
 
@@ -366,7 +369,7 @@ namespace RockGame
         /// <summary>While your team's ball is in your machine's socket (Builder: planted for your team), everything you gather gives this much more.</summary>
         [Tune("Player")] public static float BallGatherMul = 1.15f;
         [Tune("Player")] public static float BerryHeal = 25f, BerryEatTime = 1.5f, MeatEatTime = 3f;
-        [Tune("Player")] public static int ArmorHp = 50;               // wooden armour: a second health bar, used up first (max 255)
+        [Tune("Player")] public static int ArmorHp = 25;               // wooden armour: a second health bar, used up first (max 255)
         [Tune("Player")] public static float HeadshotMul = 2f;
         [Tune("Player")] public static float ModelWidth = 1.3f;       // alien model width scale
         [Tune("Player")] public static float HitboxRadius = 0.45f;
@@ -433,6 +436,8 @@ namespace RockGame
         [Tune("Crafting")] public static int ArrowWood = 50, ArrowStone = 0, ArrowsPerCraft = 5;
         [Tune("Crafting")] public static int RamWood = 125, RamStone = 50;
         [Tune("Crafting")] public static int ChestWood = 50, BarrierWood = 40;
+        /// <summary>The Trade Station's ladder, bear trap, sleeping bag and large gate, and the Advanced one's auto turret.</summary>
+        [Tune("Crafting")] public static int LadderWood = 250, BearTrapWood = 200, SleepingBagWood = 175, LargeGateWood = 120, AutoTurretWood = 3000;
         [Tune("Crafting")] public static int CrossbowWood = 500, SaddleWood = 750, ArmorWood = 250, ChainsawWood = 500;
         public static int FortTowerWood = 1000; // only used for the demolish refund (the fort is an airdrop item now)
 
@@ -490,7 +495,9 @@ namespace RockGame
         /// <summary>The share of melee damage a piece of this tier takes.</summary>
         public static float TierMeleeMul(int tier) => tier >= 3 ? RefinedMeleeMul : tier == 2 ? MetalMeleeMul : tier == 1 ? StoneStructureMeleeMul : 1f;
         [Tune("Arsenal and Builder")] public static float PistolFireRate = 0.22f, PistolReload = 1.3f;
-        [Tune("Arsenal and Builder")] public static int PistolMag = 5, HeavyArmorHp = 200, TreeCrackerUses = 40;
+        [Tune("Arsenal and Builder")] public static int PistolMag = 5, HeavyArmorHp = 100, TreeCrackerUses = 40;
+        /// <summary>Heavy armour (100) at the Advanced Trade Station: its price.</summary>
+        [Tune("Crafting")] public static int HeavyArmorWood = 1500;
         /// <summary>Builder: every craft takes a while (seconds per 100 wood of its price, between the min and max).</summary>
         [Tune("Arsenal and Builder")] public static float BuilderCraftSecsPer100 = 0.6f, BuilderCraftMin = 2f, BuilderCraftMax = 20f;
         /// <summary>Alien outlines (always on, any mode): enemies have a faint glow in their team colour so they're easier to see.
@@ -513,7 +520,7 @@ namespace RockGame
                 case Item.Pickaxe: return "Stone Pickaxe";
                 case Item.Ram: return "Battering Ram";
                 case Item.Chest: return "Storage Chest";
-                case Item.Barrier: return "High External Wall";
+                case Item.Barrier: return "Large Wall";
                 case Item.Stone: return "Stone";
                 case Item.Arrow: return "Arrow";
                 case Item.Berry: return "Berries";
@@ -521,6 +528,13 @@ namespace RockGame
                 case Item.DeathWand: return "Death Wand";
                 case Item.Helmet: return "Alien Helmet";
                 case Item.InvisPotion: return "Invisibility Potion";
+                case Item.SpeedJuice: return "Extreme Speed Juice";
+                case Item.Ladder: return "Ladder";
+                case Item.BearTrap: return "Bear Trap";
+                case Item.SleepingBag: return "Sleeping Bag";
+                case Item.LargeGate: return "Large Gate";
+                case Item.Skull: return "Skull";
+                case Item.AutoTurret: return "Auto Turret";
                 case Item.Chainsaw: return "Chainsaw";
                 case Item.Crossbow: return "Crossbow";
                 case Item.Armor: return "Armour";
@@ -555,7 +569,7 @@ namespace RockGame
                 case Item.RevolverAmmo: return "Revolver Bullet";
                 case Item.Dna: return "DNA";
                 case Item.Workbench: return "Trade Station";    // (the code still calls them workbenches, T1 and T2)
-                case Item.Workbench2: return "Trade Station 2";
+                case Item.Workbench2: return "Advanced Trade Station";
                 case Item.None: return "";
                 default: return i.ToString();
             }
@@ -573,6 +587,11 @@ namespace RockGame
                 case Item.EnderPearl: return 4;
                 case Item.Berry: return 20;
                 case Item.Barrier: return 5;
+                case Item.LargeGate: return 3;
+                case Item.BearTrap: return 5;
+                case Item.SleepingBag: return 3;
+                case Item.Ladder: return 3;
+                case Item.Skull: return 8;
                 case Item.None: return 0;
                 default: return 1;
             }
@@ -603,13 +622,13 @@ namespace RockGame
         /// <summary>The airdrop items the host can pick from in the mode options (the others are unused for now).</summary>
         public static readonly Item[] AirdropChoices =
         {
-            Item.C4, Item.DeathWand, Item.PortalGun, Item.RocketLauncher, Item.TreeCamo, Item.InvisPotion, Item.Jetpack, Item.Wallhack, Item.BombBush, Item.EnderPearl,
+            Item.C4, Item.DeathWand, Item.PortalGun, Item.RocketLauncher, Item.TreeCamo, Item.InvisPotion, Item.Jetpack, Item.Wallhack, Item.BombBush, Item.EnderPearl, Item.SpeedJuice,
         };
 
         /// <summary>Fun Random: every airdrop item there is, the unused ones too.</summary>
         public static readonly Item[] AllAirdropItems =
         {
-            Item.C4, Item.DeathWand, Item.PortalGun, Item.RocketLauncher, Item.TreeCamo, Item.InvisPotion, Item.Jetpack, Item.Wallhack, Item.BombBush, Item.EnderPearl,
+            Item.C4, Item.DeathWand, Item.PortalGun, Item.RocketLauncher, Item.TreeCamo, Item.InvisPotion, Item.Jetpack, Item.Wallhack, Item.BombBush, Item.EnderPearl, Item.SpeedJuice,
             Item.Helmet, Item.Armor, Item.Chainsaw, Item.FortTower, Item.Sniper, Item.SlenderEgg, Item.BuildEgg, Item.GiantStaff, Item.Airstrike, Item.Wood,
         };
 
@@ -661,6 +680,7 @@ namespace RockGame
                 case Item.RocketLauncher: return RarityRocketLauncher;
                 case Item.TreeCamo: return RarityTreeCamo;
                 case Item.InvisPotion: return RarityInvisPotion;
+                case Item.SpeedJuice: return RaritySpeedJuice;
                 case Item.Jetpack: return RarityJetpack;
                 case Item.Wallhack: return RarityWallhack;
                 case Item.BombBush: return RarityBombBush;
@@ -746,7 +766,7 @@ namespace RockGame
         // ---------- Building ----------
         public static string PieceName(PieceType t) => t == PieceType.Tower ? "Fort Tower" : t.ToString();
         /// <summary>Pieces that sit on the 3 m building grid (placed with the building plan).</summary>
-        public static bool IsGridPiece(PieceType t) => t != PieceType.Barrier && t != PieceType.Tower && t != PieceType.EggBlock;
+        public static bool IsGridPiece(PieceType t) => t != PieceType.Barrier && t != PieceType.Tower && t != PieceType.EggBlock && t != PieceType.Gate;
 
         public static int PieceWood(PieceType t)
         {
@@ -798,13 +818,13 @@ namespace RockGame
                 case PieceType.EggBlock: return EggBlockHp;
                 case PieceType.Floor: return stone ? FloorStoneHp : FloorHp;
                 case PieceType.Stairs: return stone ? StairsStoneHp : StairsHp;
-                case PieceType.Barrier: return BarrierHp;
+                case PieceType.Barrier: case PieceType.Gate: return BarrierHp;
                 default: return 100;
             }
         }
 
         // ---------- Crafting ----------
-        static readonly Item[] k_Recipes = { Item.Hatchet, Item.Pickaxe, Item.Spear, Item.BuildingPlan, Item.Chest, Item.Bow, Item.Arrow, Item.Crossbow, Item.Armor, Item.Chainsaw, Item.Ram, Item.Barrier, Item.Saddle, Item.Workbench, Item.Workbench2 };
+        static readonly Item[] k_Recipes = { Item.Hatchet, Item.Pickaxe, Item.Spear, Item.BuildingPlan, Item.Chest, Item.Bow, Item.Arrow, Item.Crossbow, Item.SleepingBag, Item.Armor, Item.Chainsaw, Item.Ram, Item.Barrier, Item.LargeGate, Item.Ladder, Item.BearTrap, Item.Saddle, Item.Workbench, Item.Workbench2, Item.AutoTurret };
 
         static readonly Item[] k_Limited = { Item.Hatchet, Item.Spear, Item.BuildingPlan, Item.Ram };
         static readonly List<Item> s_Active = new List<Item>();
@@ -843,6 +863,11 @@ namespace RockGame
                 case Item.Chainsaw: r = new Recipe { Output = Item.Chainsaw, Count = 1, Wood = ChainsawWood }; break;
                 case Item.Workbench: r = new Recipe { Output = Item.Workbench, Count = 1, Wood = WorkbenchWood }; break;
                 case Item.Workbench2: r = new Recipe { Output = Item.Workbench2, Count = 1, Wood = Workbench2Wood }; break;
+                case Item.Ladder: r = new Recipe { Output = Item.Ladder, Count = 1, Wood = LadderWood }; break;
+                case Item.BearTrap: r = new Recipe { Output = Item.BearTrap, Count = 1, Wood = BearTrapWood }; break;
+                case Item.SleepingBag: r = new Recipe { Output = Item.SleepingBag, Count = 1, Wood = SleepingBagWood }; break;
+                case Item.LargeGate: r = new Recipe { Output = Item.LargeGate, Count = 1, Wood = LargeGateWood }; break;
+                case Item.AutoTurret: r = new Recipe { Output = Item.AutoTurret, Count = 1, Wood = AutoTurretWood }; break;
                 default: r = new Recipe { Output = Item.Barrier, Count = 1, Wood = BarrierWood }; break;
             }
             if (WoodMode) { r.Wood += r.Stone; r.Stone = 0; } // everything costs wood only
@@ -856,8 +881,8 @@ namespace RockGame
         }
 
         // ---------- Arsenal / Builder / Auto Wood: the powerful items menu ----------
-        static readonly Item[] k_PowerBase = { Item.Sword, Item.Shotgun, Item.ShotgunShell, Item.Revolver, Item.RevolverAmmo, Item.C4, Item.Helmet };
-        static readonly Item[] k_PowerBuilder = { Item.Sword, Item.Shotgun, Item.ShotgunShell, Item.Revolver, Item.RevolverAmmo, Item.C4, Item.Helmet, Item.FortifyBuff };
+        static readonly Item[] k_PowerBase = { Item.Sword, Item.Shotgun, Item.ShotgunShell, Item.Revolver, Item.RevolverAmmo, Item.C4, Item.Helmet, Item.HeavyArmor };
+        static readonly Item[] k_PowerBuilder = { Item.Sword, Item.Shotgun, Item.ShotgunShell, Item.Revolver, Item.RevolverAmmo, Item.C4, Item.Helmet, Item.HeavyArmor, Item.FortifyBuff };
         /// <summary>Fortify All Walls and the wood gen aren't crafted: they're bought in UPGRADES (E on your upgrade station,
         /// Upgrades.cs). Builder has no machines, so there Fortify stays in this list.</summary>
         static Item[] k_Power => Builder ? k_PowerBuilder : k_PowerBase;
@@ -900,6 +925,7 @@ namespace RockGame
                 case Item.RevolverAmmo: return new Recipe { Output = id, Count = 1, Wood = RevolverAmmoWood };
                 case Item.C4: return new Recipe { Output = id, Count = 1, Wood = C4Wood };
                 case Item.Helmet: return new Recipe { Output = id, Count = 1, Wood = HelmetWood };
+                case Item.HeavyArmor: return new Recipe { Output = id, Count = 1, Wood = HeavyArmorWood };
                 default: return BaseUpgradeRecipe(id, team); // (Builder's Fortify All Walls)
             }
         }
@@ -916,6 +942,7 @@ namespace RockGame
                 case Item.RevolverAmmo: return "one bullet for the revolver";
                 case Item.C4: return "thrown: wrecks every building piece nearby";
                 case Item.Helmet: return "goes straight on: stops one headshot completely";
+                case Item.HeavyArmor: return $"{HeavyArmorHp} armour, goes straight on (wooden armour is {ArmorHp})";
                 default: return BaseUpgradeBlurb(id, team);
             }
         }

@@ -145,6 +145,41 @@ namespace RockGame
                     Workbench.BuildModel(mini, 0, false, item == Item.Workbench2 ? 2 : 1);
                     break;
                 }
+                case Item.SleepingBag:
+                case Item.BearTrap:
+                case Item.Ladder:
+                case Item.AutoTurret:
+                {
+                    // the Trade Stations' placeables: a small copy of the real thing (Container.Deployables.cs), the
+                    // ladder rolled down to a short length
+                    var mini = new GameObject("mini").transform;
+                    mini.SetParent(t, false);
+                    byte kind = item == Item.SleepingBag ? Container.SleepBag : item == Item.BearTrap ? Container.Trap : item == Item.Ladder ? Container.Ladder : Container.Turret;
+                    Deployables.Build(kind, PlayerNet.Local != null ? PlayerNet.Local.Team.Value : 0, mini, null);
+                    float s = item == Item.SleepingBag ? 0.2f : item == Item.BearTrap ? 0.45f : item == Item.Ladder ? 0.09f : 0.32f;
+                    mini.localScale = Vector3.one * s;
+                    if (item == Item.SleepingBag) mini.localRotation = Quaternion.Euler(0, 90, 0);
+                    break;
+                }
+                case Item.LargeGate:
+                    for (int k = -2; k <= 2; k++)
+                    {
+                        float h = 0.28f;
+                        Art.Box(t, Mathf.Abs(k) == 2 ? Art.DarkWood : Art.Wood, new Vector3(k * 0.07f, h * 0.5f, 0), new Vector3(0.06f, h, 0.06f));
+                        if (Mathf.Abs(k) < 2) Art.Part(t, Art.Cone, Art.Wood, new Vector3(k * 0.07f, h, 0), new Vector3(0.06f, 0.06f, 0.06f));
+                    }
+                    Art.Box(t, Art.DarkWood, new Vector3(0, 0.3f, 0), new Vector3(0.36f, 0.04f, 0.05f));
+                    Art.Box(t, Art.Metal, new Vector3(0.1f, 0.14f, 0.04f), new Vector3(0.02f, 0.05f, 0.02f));
+                    break;
+                case Item.Skull:
+                {
+                    // an alien's skull: big domed cranium, two huge dark eye sockets, a little jaw
+                    var bone = new Color(0.9f, 0.88f, 0.8f);
+                    Art.Part(t, Art.Sphere, bone, new Vector3(0, 0.16f, 0), new Vector3(0.24f, 0.26f, 0.26f));
+                    Art.Part(t, Art.Sphere, bone * 0.95f, new Vector3(0, 0.05f, 0.05f), new Vector3(0.13f, 0.1f, 0.12f));
+                    for (int s = -1; s <= 1; s += 2) Art.Part(t, Art.Sphere, new Color(0.05f, 0.05f, 0.06f), new Vector3(s * 0.05f, 0.13f, 0.11f), new Vector3(0.07f, 0.09f, 0.04f), new Vector3(0, 0, s * -25f));
+                    break;
+                }
                 case Item.Barrier:
                     for (int k = -2; k <= 2; k++)
                     {
@@ -248,6 +283,17 @@ namespace RockGame
                     Art.Box(t, dark, new Vector3(0, 0.03f, -0.175f), new Vector3(0.14f, 0.11f, 0.045f), new Vector3(12, 0, 0));
                     Art.Box(t, glow, new Vector3(0, 0.045f, -0.199f), new Vector3(0.09f, 0.014f, 0.01f), new Vector3(12, 0, 0));
                     Art.Box(t, glow * 0.7f, new Vector3(0, 0.015f, -0.193f), new Vector3(0.05f, 0.014f, 0.01f), new Vector3(12, 0, 0));
+                    break;
+                }
+                case Item.SpeedJuice:
+                {
+                    // an energy drink: a tall lime can with a black band, a pink lightning bolt and a silver top
+                    float cr = 2f * Art.Cylinder.bounds.extents.x, ch = 2f * Art.Cylinder.bounds.extents.y;
+                    Art.Part(t, Art.Cylinder, new Color(0.62f, 1f, 0.15f), new Vector3(0, 0.1f, 0), new Vector3(0.085f / cr, 0.2f / ch, 0.085f / cr));
+                    Art.Part(t, Art.Cylinder, new Color(0.08f, 0.08f, 0.1f), new Vector3(0, 0.1f, 0), new Vector3(0.088f / cr, 0.06f / ch, 0.088f / cr));
+                    Art.Part(t, Art.Cylinder, new Color(0.8f, 0.82f, 0.86f), new Vector3(0, 0.205f, 0), new Vector3(0.075f / cr, 0.012f / ch, 0.075f / cr));
+                    Art.Box(t, new Color(1f, 0.25f, 0.7f), new Vector3(0, 0.12f, -0.045f), new Vector3(0.018f, 0.05f, 0.006f), new Vector3(0, 0, 25f));
+                    Art.Box(t, new Color(1f, 0.25f, 0.7f), new Vector3(0.006f, 0.085f, -0.045f), new Vector3(0.018f, 0.045f, 0.006f), new Vector3(0, 0, 25f));
                     break;
                 }
                 case Item.InvisPotion:
@@ -446,17 +492,26 @@ namespace RockGame
                 }
                 case Item.Revolver:
                 {
-                    // a six-shooter: long barrel, the drum, a wooden grip (held like the pistol)
+                    // a six-shooter: long barrel, the drum, a wooden grip (held like the pistol). Barrel and drum sit low,
+                    // under the line of the sights, so aiming down them you see over the gun, not into a big round drum
                     var gun = new Color(0.22f, 0.22f, 0.25f);
-                    Art.Part(t, Art.Cylinder, gun, new Vector3(0, 0.05f, 0.15f), new Vector3(0.035f, 0.11f, 0.035f), new Vector3(90, 0, 0));
-                    Art.Box(t, gun, new Vector3(0, 0.075f, 0.15f), new Vector3(0.015f, 0.02f, 0.22f));
-                    Art.Part(t, Art.Cylinder, gun * 1.5f, new Vector3(0, 0.035f, 0.01f), new Vector3(0.07f, 0.04f, 0.07f), new Vector3(90, 0, 0));
-                    Art.Box(t, gun, new Vector3(0, 0.03f, -0.05f), new Vector3(0.04f, 0.06f, 0.06f));
+                    float cr = Art.Cylinder.bounds.extents.x;
+                    Art.Part(t, Art.Cylinder, gun, new Vector3(0, 0.046f, 0.15f), new Vector3(0.019f / cr, 0.11f, 0.019f / cr), new Vector3(90, 0, 0));
+                    Art.Box(t, gun, new Vector3(0, 0.066f, 0.15f), new Vector3(0.012f, 0.012f, 0.22f));
+                    // the drum (the reload swings it out: "drum", turning about its own axis)
+                    var drum = Art.Part(t, Art.Cylinder, gun * 1.5f, new Vector3(0, 0.03f, 0.01f), new Vector3(0.034f / cr, 0.04f, 0.034f / cr), new Vector3(90, 0, 0));
+                    drum.name = "drum";
+                    for (int k = 0; k < 6; k++)
+                    {
+                        float a = k * Mathf.PI / 3f;
+                        Art.Part(drum.transform, Art.Cylinder, new Color(0.85f, 0.65f, 0.25f), new Vector3(Mathf.Cos(a) * 0.55f, -1.02f, Mathf.Sin(a) * 0.55f), new Vector3(0.22f, 0.02f, 0.22f)).name = "round";
+                    }
+                    Art.Box(t, gun, new Vector3(0, 0.03f, -0.05f), new Vector3(0.04f, 0.055f, 0.06f));
                     Art.Box(t, new Color(0.45f, 0.28f, 0.14f), new Vector3(0, -0.05f, -0.07f), new Vector3(0.04f, 0.12f, 0.055f), new Vector3(-18, 0, 0));
                     Art.Box(t, gun, new Vector3(0, -0.015f, -0.01f), new Vector3(0.01f, 0.035f, 0.04f));
-                    // the sights you look down with RMB: a blade at the muzzle, a notch over the hammer
-                    Art.Box(t, gun * 1.6f, new Vector3(0, 0.092f, 0.25f), new Vector3(0.006f, 0.016f, 0.014f));
-                    for (int k = -1; k <= 1; k += 2) Art.Box(t, gun * 0.8f, new Vector3(k * 0.009f, 0.075f, -0.072f), new Vector3(0.007f, 0.03f, 0.012f));
+                    // the sights you look down with RMB: a blade at the muzzle, a notch over the hammer - the highest things on it
+                    Art.Box(t, gun * 1.6f, new Vector3(0, 0.083f, 0.25f), new Vector3(0.006f, 0.022f, 0.012f));
+                    for (int k = -1; k <= 1; k += 2) Art.Box(t, gun * 0.8f, new Vector3(k * 0.009f, 0.08f, -0.072f), new Vector3(0.007f, 0.03f, 0.012f));
                     break;
                 }
                 case Item.ShotgunShell:

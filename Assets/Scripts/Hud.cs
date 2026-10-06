@@ -283,8 +283,8 @@ namespace RockGame
                             : Cfg.DnaRules ? "Mine trees and rocks for DNA, build your base (craft in your base)" : Cfg.WoodMode ? "Gather wood and build your base (craft in your base)" : "Gather wood & stone, build your base (craft in your base)";
                         break;
                     case GameState.BallLive:
-                        phase = "Time left  " + Clock(game.TimeLeft);
-                        sub = BallStatus(team);
+                        phase = game.Overtime.Value ? "<color=#ffcc33>OVERTIME</color>" : "Time left  " + Clock(game.TimeLeft);
+                        sub = game.Overtime.Value ? "First team to get the ball into its machine wins" : BallStatus(team);
                         break;
                     case GameState.SuddenDeath:
                         phase = "<color=#ff5555>SUDDEN DEATH</color>  " + Clock(game.TimeLeft);
@@ -445,7 +445,19 @@ namespace RockGame
             }
 
             // ---- dead ----
-            if (me.Dead.Value && (game == null || game.S != GameState.GameOver))
+            var killer = pc.KillCamTarget;
+            if (me.Dead.Value && killer != null && (game == null || game.S != GameState.GameOver))
+            {
+                // the kill cam (PlayerController.KillCam.cs): who it was, low on the screen so their face shows
+                Fill(new Rect(0, 0, sw, sh), new Color(0.3f, 0, 0, 0.12f));
+                var kc = Cfg.TeamColor[Mathf.Clamp(killer.Team.Value, 0, 3)];
+                string hex = ColorUtility.ToHtmlStringRGB(Color.Lerp(kc, Color.white, 0.3f));
+                var big = new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt(42 * k) };
+                Shadowed(new Rect(0, sh * 0.7f, sw, 54 * k), $"KILLED BY <color=#{hex}>{killer.DisplayName}</color>", big);
+                string with = killer.HeldItem == Item.None || killer.HeldItem == Item.Rock ? "a rock" : Cfg.ItemName(killer.HeldItem);
+                Shadowed(new Rect(0, sh * 0.7f + 52 * k, sw, 30 * k), $"with {with}  ·  <color=#ff8080>{Mathf.CeilToInt(killer.Health.Value)} HP</color> left" + (killer.ArmorHp.Value > 0 ? $" (+{killer.ArmorHp.Value} armour)" : ""), m_Center);
+            }
+            else if (me.Dead.Value && (game == null || game.S != GameState.GameOver))
             {
                 Fill(new Rect(0, 0, sw, sh), new Color(0.3f, 0, 0, 0.35f));
                 float t = Mathf.Max(0, (float)(me.RespawnAt.Value - me.NetworkManager.ServerTime.Time));
@@ -461,6 +473,22 @@ namespace RockGame
                     if (BtnAt(r1, "[1]  RESPAWN IN BASE", m_Button)) pc.ChooseRespawn(false);
                     if (BtnAt(r2, "[2]  RESPAWN IN THE WILD", m_Button)) pc.ChooseRespawn(true);
                     Shadowed(new Rect(0, by2 + bh + 6 * k, sw, 26 * k), "<color=#bbbbbb>The wild drops you somewhere random in the enemy's half of the map</color>", m_Center);
+                    // your team's sleeping bags (Container.Deployables.cs): one more button each, once a minute each
+                    Deployables.BagsOf(me.Team.Value, s_Bags);
+                    double now = me.NetworkManager.ServerTime.Time;
+                    for (int i = 0; i < s_Bags.Count && i < 4; i++)
+                    {
+                        var bag = s_Bags[i];
+                        float wait = Mathf.Max(0f, (float)(bag.ReadyAt.Value - now));
+                        var rb = new Rect(cx - bw * 0.5f, by2 + bh + 40 * k + i * (bh * 0.8f + 6 * k), bw, bh * 0.8f);
+                        if (rb.Contains(Event.current.mousePosition)) MouseOverUI = true;
+                        float dist = Vector3.Distance(bag.transform.position, Cfg.BaseCenter[Mathf.Clamp(me.Team.Value, 0, 3)]);
+                        string label = wait > 0f ? $"[{i + 3}]  SLEEPING BAG  ({Mathf.CeilToInt(wait)} s)" : $"[{i + 3}]  SLEEPING BAG  · {dist:0} m from base";
+                        bool key = Event.current.type == EventType.KeyDown && Event.current.keyCode == KeyCode.Alpha3 + i;
+                        GUI.enabled = wait <= 0f;
+                        if (BtnAt(rb, label, m_Button) || (key && wait <= 0f)) me.RespawnAtBagRpc(bag.NetworkObject);
+                        GUI.enabled = true;
+                    }
                 }
                 else Shadowed(new Rect(0, sh * 0.4f + 60 * k, sw, 30 * k), home
                     ? $"Your stuff spilled out where you died. Respawning on your bedrock in {Mathf.CeilToInt(t)}"
@@ -499,7 +527,13 @@ namespace RockGame
                 case Item.Chest: return "<b>Storage Chest</b>    LMB: place it inside your base";
                 case Item.Workbench:
                 case Item.Workbench2: return $"<b>{Cfg.ItemName(s.Id)}</b>    LMB: put it down anywhere in your base - its items then show in your crafting list ({Binds.Name(Bind.Inventory)})";
-                case Item.Barrier: return $"<b>High External Wall</b> x{s.Count}    LMB: place it - in your base or out in the open (not in the enemy base)";
+                case Item.Barrier: return $"<b>Large Wall</b> x{s.Count}    LMB: place it - in your base or out in the open (not in the enemy base)";
+                case Item.LargeGate: return $"<b>Large Gate</b> x{s.Count}    LMB: place it - a tall log gate your team opens with {Binds.Name(Bind.Interact)}";
+                case Item.SleepingBag: return $"<b>Sleeping Bag</b> x{s.Count}    LMB: put it down (not in an enemy base) - respawn at it when you die";
+                case Item.BearTrap: return $"<b>Bear Trap</b> x{s.Count}    LMB: set it on the ground or a floor - it snaps and holds an enemy who steps on it";
+                case Item.Ladder: return $"<b>Ladder</b> x{s.Count}    LMB: stand it facing a wall - then walk into it and hold W to climb";
+                case Item.AutoTurret: return $"<b>Auto Turret</b>    LMB: place it in your base - {Binds.Name(Bind.Interact)} on it to give it a ranged weapon and ammo";
+                case Item.Skull: return $"<b>Skull</b> x{s.Count}    Assassin: take it to your machine and {Binds.Name(Bind.Interact)}";
                 case Item.Berry: return $"<b>Berries</b> x{s.Count}    RMB: eat ({Cfg.BerryEatTime:0.#}s, +{Cfg.BerryHeal:0} HP)   LMB on a horse: feed it (+{Cfg.HorseBerryHeal:0} HP)";
                 case Item.C4: return "<b>C4</b>    LMB: throw it at enemy buildings - it blows up everything nearby";
                 case Item.DeathWand: return "<b>Death Wand</b> (1 shot)    LMB: fire - kills anyone it passes close to, or fells a tree (all its wood to you), or destroys one building piece";
@@ -526,6 +560,7 @@ namespace RockGame
                 case Item.Airstrike: return "<b>Airstrike</b>    LMB: pick a spot on the map - everything there gets flattened";
                 case Item.Wallhack: return "<b>Wallhack Glasses</b>    hold them to see your enemies through walls";
                 case Item.InvisPotion: return $"<b>Invisibility Potion</b>    LMB: drink ({Cfg.InvisTime:0}s, attacking shows you)";
+                case Item.SpeedJuice: return $"<b>Extreme Speed Juice</b>    LMB: drink ({Cfg.SpeedJuiceTime:0}s of extreme speed)";
                 case Item.Chainsaw: return $"<b>Chainsaw</b> ({s.Data} uses left)    hold LMB: cuts wood and stone fast";
                 case Item.EnderPearl: return "<b>Ender Pearl</b>    LMB: throw it - you teleport to wherever it lands";
                 case Item.Pistol: return $"<b>Pistol</b>  ({s.Data} shot{(s.Data == 1 ? "" : "s")} left)    LMB: shoot" + (me.Count(Item.PistolAmmo) > 0 ? $"   R: reload ({me.Count(Item.PistolAmmo)} spare ammo)" : "");
@@ -1141,7 +1176,7 @@ namespace RockGame
                 float frac = n == 0 ? 1f : game.TimeLeft - Mathf.Floor(game.TimeLeft);
                 if (n != m_LastCount) { m_LastCount = n; Sfx.Play2D(n <= 3 ? Sfx.Ding : Sfx.Beep, n <= 3 ? 0.9f : 0.6f, 0f); Fx.Shake(0.08f + (10 - n) * 0.02f); }
                 // (no coloured border round the screen - just the words and the number)
-                string label = sock < 0 ? "SUDDEN DEATH IN" : sock == myTeam ? "YOU WIN IN" : $"{Cfg.TeamName[sock]} WINS IN";
+                string label = sock < 0 ? (Cfg.UseOvertime && !Cfg.Builder ? "OVERTIME IN" : "SUDDEN DEATH IN") : sock == myTeam ? "YOU WIN IN" : $"{Cfg.TeamName[sock]} WINS IN";
                 var st = new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt(30 * k) };
                 st.normal.textColor = new Color(1f, 0.9f, 0.85f, 0.95f);
                 GUI.Label(new Rect(0, sh * 0.2f, sw, 40 * k), label, st);

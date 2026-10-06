@@ -447,6 +447,8 @@ namespace RockGame
                 if (m_DrawStart >= 0 || SightsUp) speed *= 0.6f;
                 if (held == Item.Ram && !carrying) speed *= Cfg.RamMoveMul;
                 speed *= ThemeMaps.SpeedMul(transform.position); // THEME MAPS
+                if (m_Net.Juiced) speed *= Cfg.SpeedJuiceMul; // (Extreme Speed Juice)
+                if (m_Net.Trapped) speed = 0f; // (caught in a bear trap: held where you stand)
                 if (airCrouch) speed = Mathf.Max(speed, m_TakeoffSpeed);
 
                 bool grounded = m_CC.isGrounded;
@@ -454,7 +456,7 @@ namespace RockGame
                 bool ladder = OnLadder();
                 // jump buffering: a press shortly before you land still jumps the moment you touch down
                 if (move && !TreeLocked && Binds.Down(Bind.Jump)) m_JumpPressedAt = Time.time;
-                bool jumpWanted = move && !TreeLocked && Time.time - m_JumpPressedAt <= Mathf.Max(Time.deltaTime, Cfg.JumpBuffer);
+                bool jumpWanted = move && !TreeLocked && !m_Net.Trapped && Time.time - m_JumpPressedAt <= Mathf.Max(Time.deltaTime, Cfg.JumpBuffer);
                 if (grounded)
                 {
                     if (m_VelY <= 0f) m_JumpedSinceGround = false;
@@ -547,6 +549,11 @@ namespace RockGame
                         case Item.Car:
                         case Item.Workbench:
                         case Item.Workbench2:
+                        case Item.SleepingBag:
+                        case Item.BearTrap:
+                        case Item.Ladder:
+                        case Item.AutoTurret:
+                        case Item.LargeGate:
                         case Item.Boat: /* THEME MAPS */ HandleDeploy(held); break;
                         case Item.Berry:
                         case Item.Meat: HandleBerry(); break;
@@ -565,7 +572,7 @@ namespace RockGame
                         case Item.Helmet:
                         case Item.Armor:
                         case Item.HeavyArmor:
-                        case Item.InvisPotion: HandleUseItem(held); break;
+                        case Item.InvisPotion: case Item.SpeedJuice: HandleUseItem(held); break;
                         default: if (Cfg.IsMelee(held)) HandleMelee(held); break;
                     }
                 }
@@ -603,6 +610,7 @@ namespace RockGame
             if (!IsSpawned || !IsOwner || m_Cam == null) return;
             // the ship lobby has the camera (ShipLobby.cs) and your hands are put away
             if (ShipLobby.Active) { m_VM.Update(new ViewModel.State { Item = m_Net.HeldItem, Visible = false, Visible2 = false }); return; }
+            if (TickKillCam()) { m_VM.Update(new ViewModel.State { Item = m_Net.HeldItem, Visible = false, Visible2 = false }); return; }
             // the victory cutscene has the camera (and your hands are put away)
             if (VictoryCutscene.CameraPose(out var cutPos, out var cutRot, out var cutFov))
             {
@@ -636,7 +644,7 @@ namespace RockGame
                 }
             }
             m_Cam.transform.SetPositionAndRotation(camPos, rot);
-            float fov = 70f - DrawAmount * 18f + Fx.FovPunch;
+            float fov = 70f - DrawAmount * 18f + Fx.FovPunch + (m_Net.Juiced ? 14f : 0f); // (Extreme Speed Juice: the view stretches out)
             if (CrossbowAiming) fov = Cfg.CrossbowZoomFov + Fx.FovPunch;
             if (RevolverAiming) fov = Cfg.RevolverZoomFov + Fx.FovPunch;
             if (Scoped) fov = 15f;
@@ -659,7 +667,7 @@ namespace RockGame
                 Loaded = hs.Id == Item.Crossbow ? XbowLoaded(hs) : hs.Id == Item.Shotgun ? hs.Data > 0 : (hs.Id == Item.Sniper || hs.Id == Item.PortalGun) && hs.Data > 0,
                 Aim = SightsUp || Scoped,
                 Visible2 = !Scoped,
-                Reload = hs.Id == Item.Crossbow && Time.time < m_XbowBusyUntil ? 1f - (m_XbowBusyUntil - Time.time) / Mathf.Max(0.1f, Cfg.CrossbowReload) : hs.Id == Item.Shotgun ? ShotgunReloadProgress : -1f,
+                Reload = hs.Id == Item.Crossbow && Time.time < m_XbowBusyUntil ? 1f - (m_XbowBusyUntil - Time.time) / Mathf.Max(0.1f, Cfg.CrossbowReload) : hs.Id == Item.Shotgun ? ShotgunReloadProgress : hs.Id == Item.Revolver ? PistolReloadProgress : -1f,
                 Bob = m_Bob,
                 Speed = m_Speed,
                 Look = m_LookDelta,
@@ -1347,7 +1355,7 @@ namespace RockGame
             if (!(Binds.Down(Bind.Attack) || Binds.Down(Bind.Aim)) || Time.time < m_NextEat) return;
             m_NextEat = Time.time + 0.8f;
             m_Net.UseItemRpc();
-            if (held == Item.InvisPotion) { m_VM.Eat(); Sfx.Play2D(Sfx.Eat, 0.6f); m_EatFlashUntil = Time.time + 0.9f; }
+            if (held == Item.InvisPotion || held == Item.SpeedJuice) { m_VM.Eat(); Sfx.Play2D(Sfx.Eat, 0.6f); m_EatFlashUntil = Time.time + 0.9f; }
             else { m_VM.Use(); Sfx.Play2D(Sfx.Clink, 0.6f); }
         }
 
@@ -1580,6 +1588,9 @@ namespace RockGame
                     : $"Your {box.DisplayName}: its items are in your crafting list ({Binds.Name(Bind.Inventory)}) anywhere in your base");
                 return;
             }
+            // a bag, a trap or a ladder: nothing inside (hold E to pick yours up); a turret: only its own team gets at it
+            if (box.IsDeployable && box.Kind.Value != Container.Turret) { if (box.Team.Value == m_Net.Team.Value) Hud.Push($"Hold {Binds.Name(Bind.Interact)} to pick up your {box.DisplayName.ToLower()}"); return; }
+            if (box.Kind.Value == Container.Turret && box.Team.Value != m_Net.Team.Value) { Hud.Push("That's the enemy's auto turret"); return; }
             LootTarget = box;
             MenuOpen = true;
             Sfx.Play2D(Sfx.Place, 0.4f);
@@ -1713,6 +1724,11 @@ namespace RockGame
             else if (held == Item.Boat) want = 103; // THEME MAPS
             else if (held == Item.Workbench) want = 104;
             else if (held == Item.Workbench2) want = 105;
+            else if (held == Item.Ladder) want = 106;
+            else if (held == Item.BearTrap) want = 107;
+            else if (held == Item.SleepingBag) want = 108;
+            else if (held == Item.LargeGate) want = 109;
+            else if (held == Item.AutoTurret) want = 110;
 
             if (want != m_GhostId)
             {
@@ -1725,6 +1741,8 @@ namespace RockGame
                     m_Ghost = new GameObject("Ghost");
                     if (want == 101) Container.CreateVisual(Container.Chest, m_Net.Team.Value, m_Ghost.transform, Art.Ghost(GhostOkColour));
                     else if (want == 104 || want == 105) Container.CreateVisual(want == 105 ? Container.Workbench2 : Container.Workbench, m_Net.Team.Value, m_Ghost.transform, Art.Ghost(GhostOkColour));
+                    else if (want >= 106 && want <= 110 && want != 109) Container.CreateVisual(want == 106 ? Container.Ladder : want == 107 ? Container.Trap : want == 108 ? Container.SleepBag : Container.Turret, m_Net.Team.Value, m_Ghost.transform, Art.Ghost(GhostOkColour));
+                    else if (want == 109) Structure.CreateVisual(PieceType.Gate, 0, m_Ghost.transform, false, Art.Ghost(GhostOkColour), out _);
                     else if (want == 103) Vehicle.CreateVisual(Vehicle.Boat, m_Ghost.transform, Art.Ghost(GhostOkColour), out _, out _, out _, out _, null, null); // THEME MAPS
                     else if (want == 102) Vehicle.CreateVisual(Vehicle.Car, m_Ghost.transform, Art.Ghost(GhostOkColour), out _, out _, out _, out _, null, null);
                     else Structure.CreateVisual(want == 100 ? PieceType.Barrier : (PieceType)want, 0, m_Ghost.transform, false, Art.Ghost(GhostOkColour), out _);
@@ -1744,13 +1762,13 @@ namespace RockGame
 
             if (want >= 100)
             {
-                var kind = want == 100 ? Item.Barrier : want == 101 ? Item.Chest : want == 104 ? Item.Workbench : want == 105 ? Item.Workbench2 : want == 103 ? Item.Boat /* THEME MAPS */ : Item.Car;
+                var kind = want == 100 ? Item.Barrier : want == 101 ? Item.Chest : want == 104 ? Item.Workbench : want == 105 ? Item.Workbench2 : want == 103 ? Item.Boat /* THEME MAPS */ : want == 106 ? Item.Ladder : want == 107 ? Item.BearTrap : want == 108 ? Item.SleepingBag : want == 109 ? Item.LargeGate : want == 110 ? Item.AutoTurret : Item.Car;
                 visible = hasHit && hit.distance <= Cfg.DeployRange && hit.normal.y > 0.7f;
                 if (!visible) reason = "Aim at flat ground nearby";
                 else
                 {
                     m_GhostPos = hit.point;
-                    m_GhostYaw = m_Yaw + (kind == Item.Chest || Workbench.IsBench(kind) ? 180f : 0f); // (their fronts face you)
+                    m_GhostYaw = m_Yaw + (kind == Item.Chest || Workbench.IsBench(kind) || kind == Item.SleepingBag ? 180f : 0f); // (their fronts face you; a ladder and a turret face away, towards the wall / where it watches)
                     if (kind == Item.Boat) m_GhostPos.y = ThemeMaps.WaterY - 0.1f; // THEME MAPS
                     PlayerNet.FindDeploySpot(kind, team, ref m_GhostPos, m_GhostYaw, out reason);
                     m_Ghost.transform.SetPositionAndRotation(m_GhostPos, Quaternion.Euler(0, m_GhostYaw, 0));

@@ -527,17 +527,33 @@ namespace RockGame
             }
             kick *= 1f - 0.35f * aim; // (steadier down the sights)
             // the sights at the eye: the revolver's sit higher above its grip than the crossbow's
-            var aimed = s.Item == Item.Revolver ? new Vector3(0f, -0.094f, 0.36f) : new Vector3(0f, -0.075f, 0.3f);
+            var aimed = s.Item == Item.Revolver ? new Vector3(0f, -0.104f, 0.38f) : new Vector3(0f, -0.075f, 0.3f); // (the revolver: the eye just over its notch, the drum and barrel low under the line)
             var pos = shared + Vector3.Lerp(new Vector3(0.2f, -0.2f, 0.42f), aimed, Smooth(aim)) + kickPos * kick;
             var rot = sharedRot * Quaternion.Euler(kickRot.x * kick, Mathf.Lerp(-6f, 0f, aim) + kickRot.y * kick, kickRot.z * kick);
             float r = s.Reload >= 0f ? Mathf.Sin(Mathf.Clamp01(s.Reload) * Mathf.PI) : 0f;
-            if (r > 0f)
+            bool revReload = s.Item == Item.Revolver && s.Reload >= 0f;
+            float rp = Mathf.Clamp01(s.Reload);
+            if (revReload)
+            {
+                // the revolver's reload: roll it over to the left with the muzzle up, the drum swings out, a flick shakes
+                // the empties out, the thumb feeds rounds in one by one, then a flick of the wrist snaps it shut with a spin
+                float open = Smooth(Mathf.InverseLerp(0f, 0.18f, rp)) * (1f - Smooth(Mathf.InverseLerp(0.82f, 0.95f, rp)));
+                float eject = Mathf.InverseLerp(0.18f, 0.32f, rp);
+                float flick = eject > 0f && eject < 1f ? Mathf.Sin(eject * Mathf.PI) : 0f;
+                float snap = Mathf.InverseLerp(0.82f, 0.95f, rp);
+                float snapKick = snap > 0f && snap < 1f ? Mathf.Sin(snap * Mathf.PI) : 0f;
+                pos += new Vector3(-0.1f, -0.03f + 0.05f * flick, -0.04f) * open + new Vector3(0.02f, 0.03f, 0f) * snapKick;
+                rot *= Quaternion.Euler(-30f * open - 25f * flick + 10f * snapKick, 15f * open, 70f * open - 30f * snapKick);
+                r = 0f; // (not the generic tip-down)
+            }
+            else if (r > 0f)
             {
                 // tip it down and pull the string back with the left hand
                 pos += new Vector3(-0.05f, -0.08f, 0) * r;
                 rot *= Quaternion.Euler(35f * r, 10f * r, -15f * r);
             }
             AttachItemToRoot(pos, rot, s.Item == Item.Sniper ? 0.75f : 1f);
+            if (m_Item && s.Item == Item.Revolver) PoseDrum(rp, revReload);
             if (m_Item && s.Item == Item.Crossbow)
             {
                 var bolt = m_Item.transform.Find("bolt");
@@ -558,7 +574,40 @@ namespace RockGame
                 HideLeft();
                 float two = Smooth(aim);
                 Set(m_L, Vector3.Lerp(m_L.localPosition, cupPos, two), Quaternion.Slerp(m_L.localRotation, cupRot, two));
+                if (revReload)
+                {
+                    // reloading: the left hand comes over to the open drum and thumbs a round in for each sixth of the load
+                    float inK = Smooth(Mathf.InverseLerp(0.15f, 0.3f, rp)) * (1f - Smooth(Mathf.InverseLerp(0.8f, 0.9f, rp)));
+                    float load = Mathf.InverseLerp(0.32f, 0.8f, rp) * 6f;
+                    float thumb = rp > 0.32f && rp < 0.8f ? Mathf.Sin((load - Mathf.Floor(load)) * Mathf.PI) : 0f;
+                    var at = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(-0.09f, 0.05f + 0.025f * thumb, -0.02f - 0.02f * thumb)));
+                    Set(m_L, Vector3.Lerp(m_L.localPosition, at, inK), Quaternion.Slerp(m_L.localRotation, rot * Quaternion.Euler(-40f, 40f, 80f), inK));
+                }
             }
+        }
+
+        int m_DrumShown = 6;
+        bool m_DrumSnapped;
+        /// <summary>The revolver's drum through a reload (p 0..1): it swings out to the left, the six rounds go as the empties
+        /// are flicked out, come back one by one as they're thumbed in (a click each, the drum turning a sixth), then it
+        /// snaps shut with a spin and a clack.</summary>
+        void PoseDrum(float p, bool reloading)
+        {
+            var d = m_Item.transform.Find("drum");
+            if (d == null) return;
+            float open = reloading ? Smooth(Mathf.InverseLerp(0f, 0.18f, p)) * (1f - Smooth(Mathf.InverseLerp(0.82f, 0.95f, p))) : 0f;
+            float load = Mathf.InverseLerp(0.32f, 0.8f, p);
+            int rounds = !reloading || p < 0.24f ? 6 : p < 0.32f ? 0 : Mathf.Clamp(Mathf.FloorToInt(load * 6f) + 1, 0, 6);
+            float spin = reloading ? Mathf.Min(5, Mathf.FloorToInt(load * 6f)) * 60f + Smooth(Mathf.InverseLerp(0.82f, 1f, p)) * 720f : 0f;
+            d.localPosition = new Vector3(-0.05f * open, 0.03f - 0.012f * open, 0.01f);
+            d.localRotation = Quaternion.Euler(90f, 0f, 0f) * Quaternion.Euler(0f, spin, 0f);
+            int i = 0;
+            foreach (Transform c in d) if (c.name == "round") c.gameObject.SetActive(i++ < rounds);
+            bool snapped = reloading && p > 0.86f;
+            if (reloading && p > 0.3f && rounds > m_DrumShown) Sfx.Play2D(Sfx.Clink, 0.35f, 0.08f); // (a round in)
+            if (snapped && !m_DrumSnapped) Sfx.Play2D(Sfx.Clink, 0.65f, 0.02f);           // (snapped shut)
+            m_DrumSnapped = snapped;
+            m_DrumShown = rounds;
         }
 
         void PoseRam(State s, Vector3 shared, Quaternion sharedRot)
@@ -625,7 +674,7 @@ namespace RockGame
                 case Item.C4: AttachItemToRight(new Vector3(0, 0.05f, 0.07f), new Vector3(-20, 10, 0), 0.65f); break;
                 case Item.DeathWand: AttachItemToRight(new Vector3(0, 0.0f, 0.03f), new Vector3(35, 0, 0), 1f); break;
                 case Item.Helmet: AttachItemToRight(new Vector3(0, 0.1f, 0.1f), new Vector3(0, 180, 0), 0.8f); break;
-                case Item.InvisPotion: AttachItemToRight(new Vector3(0, 0.03f, 0.05f), new Vector3(toMouth * -70f, 0, 0), 1.1f); break;
+                case Item.InvisPotion: case Item.SpeedJuice: AttachItemToRight(new Vector3(0, 0.03f, 0.05f), new Vector3(toMouth * -70f, 0, 0), 1.1f); break;
                 case Item.Armor: AttachItemToRight(new Vector3(0, 0.02f, 0.08f), new Vector3(0, 160, 0), 0.8f); break;
                 case Item.FortTower: AttachItemToRight(new Vector3(0, 0.02f, 0.06f), new Vector3(0, 20, 0), 1f); break;
                 case Item.Car: AttachItemToRight(new Vector3(0, 0.02f, 0.08f), new Vector3(0, 20, 0), 0.9f); break;

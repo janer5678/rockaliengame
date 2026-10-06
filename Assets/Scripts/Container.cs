@@ -9,9 +9,22 @@ namespace RockGame
     /// breaking it spills everything onto the ground. Also used for airdrop crates (one OP item, take only, unbreakable).
     /// (Kind/Bag support is kept for old saves of the prefab only.)
     /// </summary>
-    public class Container : NetworkBehaviour
+    public partial class Container : NetworkBehaviour
     {
         public const byte Chest = 0, Bag = 1, Airdrop = 2, Gamble = 3, Workbench = 4, Workbench2 = 5; // Gamble: DNA mode's gambling machine (GambleMachine.cs); Workbench / Workbench2: the T1 / T2 benches (Workbench.cs)
+        /// <summary>The Trade Station's placeables and the Advanced one's auto turret (Deployables.cs): a sleeping bag (respawn
+        /// at it), a bear trap, a ladder and the turret (two slots: a weapon, its ammo).</summary>
+        public const byte SleepBag = 6, Trap = 7, Ladder = 8, Turret = 9;
+        /// <summary>A bear trap: 0 armed, 1 sprung. (Deployables.cs)</summary>
+        public readonly NetworkVariable<byte> Flag = new NetworkVariable<byte>();
+        /// <summary>An auto turret's aim (yaw, pitch in degrees, its own space), for every screen to pan it.</summary>
+        public readonly NetworkVariable<Vector2> Aim = new NetworkVariable<Vector2>();
+        /// <summary>A sleeping bag: when you can next respawn at it (server time).</summary>
+        public readonly NetworkVariable<double> ReadyAt = new NetworkVariable<double>();
+        public bool IsDeployable => Kind.Value >= SleepBag && Kind.Value <= Turret;
+        /// <summary>The item a placed thing comes back as when it's picked up.</summary>
+        public static Item ItemOf(byte kind) => kind == SleepBag ? Item.SleepingBag : kind == Trap ? Item.BearTrap : kind == Ladder ? Item.Ladder : kind == Turret ? Item.AutoTurret
+            : kind == Workbench2 ? Item.Workbench2 : kind == Workbench ? Item.Workbench : Item.Chest;
         public static readonly List<Container> All = new List<Container>();
 
         public readonly NetworkList<ItemStack> Slots = new NetworkList<ItemStack>();
@@ -27,10 +40,10 @@ namespace RockGame
         /// <summary>A workbench's tier (1 or 2; 0 for anything else).</summary>
         public int BenchTier => Kind.Value == Workbench2 ? 2 : Kind.Value == Workbench ? 1 : 0;
         /// <summary>Chests can be damaged and rammed; bags and airdrops can't.</summary>
-        public bool Breakable => Kind.Value == Chest;
+        public bool Breakable => Kind.Value == Chest || IsDeployable;
         public bool TakeOnly => IsBag || IsAirdrop;
-        public string DisplayName => IsWorkbench ? (BenchTier == 2 ? "Trade Station 2" : "Trade Station") : IsGamble ? "Gambling Machine" : IsBag ? $"{Cfg.TeamName[Mathf.Clamp(Team.Value, 0, 3)]}'s loot bag" : IsAirdrop ? "Alien Airdrop" : "Storage Chest";
-        public Vector3 Center => transform.position + Vector3.up * (IsBag ? 0.3f : IsAirdrop ? 0.6f : IsGamble ? 1f : IsWorkbench ? 0.9f : 0.4f);
+        public string DisplayName => IsDeployable ? Cfg.ItemName(ItemOf(Kind.Value)) : IsWorkbench ? (BenchTier == 2 ? "Advanced Trade Station" : "Trade Station") : IsGamble ? "Gambling Machine" : IsBag ? $"{Cfg.TeamName[Mathf.Clamp(Team.Value, 0, 3)]}'s loot bag" : IsAirdrop ? "Alien Airdrop" : "Storage Chest";
+        public Vector3 Center => transform.position + Vector3.up * (IsDeployable ? Deployables.CenterUp(Kind.Value) : IsBag ? 0.3f : IsAirdrop ? 0.6f : IsGamble ? 1f : IsWorkbench ? 0.9f : 0.4f);
         public bool Empty
         {
             get
@@ -56,7 +69,7 @@ namespace RockGame
         {
             Kind.Value = kind;
             Team.Value = (byte)team;
-            Health.Value = kind == Chest ? Cfg.ChestHp : 1f;
+            Health.Value = kind == Chest ? Cfg.ChestHp : kind >= SleepBag && kind <= Turret ? Deployables.MaxHp(kind) : 1f;
             m_PendingSize = size;
             m_Pending.Clear();
             if (contents != null) m_Pending.AddRange(contents);
@@ -76,6 +89,7 @@ namespace RockGame
             else if (IsAirdrop) { bc.center = new Vector3(0, 0.6f, 0); bc.size = new Vector3(1.4f, 1.2f, 1.4f); }
             else if (IsGamble) GambleMachine.Setup(this, m_Visual, bc);
             else if (IsWorkbench) RockGame.Workbench.Setup(this, m_Visual, bc);
+            else if (IsDeployable) Deployables.Setup(this, m_Visual, bc); // (the bag, trap, ladder and turret: Deployables.cs)
             else { bc.center = new Vector3(0, 0.33f, 0); bc.size = new Vector3(1.1f, 0.66f, 0.62f); }
             m_Pop = 0f;
             // no grass through a chest, a workbench or a gamble machine (it grows back when it's gone; bags and airdrops lie in it)
@@ -86,6 +100,7 @@ namespace RockGame
         {
             All.Remove(this);
             GrassField.Unblock(GetInstanceID());
+            Deployables.Forget(this);
         }
 
         static Material s_BeaconCore, s_BeaconHalo;
@@ -104,6 +119,7 @@ namespace RockGame
             var root = new GameObject("visual");
             root.transform.SetParent(parent, false);
             var t = root.transform;
+            if (kind >= SleepBag && kind <= Turret) { Deployables.Build(kind, team, t, ghost); return root; }
             if (kind == Bag)
             {
                 var sack = new Color(0.45f, 0.36f, 0.24f);
@@ -185,6 +201,7 @@ namespace RockGame
                     m_Beacon.localScale = new Vector3(1f, m_BeaconH / BeaconHeight, 1f);
                 }
             }
+            if (IsDeployable && m_Visual) Deployables.Tick(this, m_Visual); // (the trap's jaws, the turret panning and firing)
             if (m_Pop < 1f && m_Visual)
             {
                 m_Pop = Mathf.Min(1f, m_Pop + Time.deltaTime * 4f);

@@ -25,12 +25,17 @@ namespace RockGame
         public readonly NetworkVariable<float> Health = new NetworkVariable<float>(Cfg.MaxHealth);
         public readonly NetworkVariable<bool> Dead = new NetworkVariable<bool>();
         public readonly NetworkVariable<double> RespawnAt = new NetworkVariable<double>();
+        /// <summary>Who killed you last (their NetworkObjectId; 0 nobody / yourself): the kill cam looks at them.</summary>
+        public readonly NetworkVariable<ulong> KilledBy = new NetworkVariable<ulong>();
         public readonly NetworkVariable<int> StuckSpears = new NetworkVariable<int>(); // thrown spears stuck in this player
         public readonly NetworkVariable<byte> HelmetHp = new NetworkVariable<byte>();  // 1 = wearing the headshot helmet
         public readonly NetworkVariable<byte> ArmorHp = new NetworkVariable<byte>();   // wooden armour: second health bar
         public readonly NetworkVariable<ulong> RidingId = new NetworkVariable<ulong>(); // vehicle / horse we sit on (0 = none)
         public readonly NetworkVariable<double> GiantUntil = new NetworkVariable<double>(-1); // staff of the giant
         public readonly NetworkVariable<double> InvisUntil = new NetworkVariable<double>(-1);
+        /// <summary>Extreme Speed Juice: very fast until then (server time).</summary>
+        public readonly NetworkVariable<double> SpeedUntil = new NetworkVariable<double>(-1);
+        public bool Juiced => SpeedUntil.Value > Now;
         public readonly NetworkVariable<double> RevealUntil = new NetworkVariable<double>(-1); // attacking shows you for a moment
         public readonly NetworkList<ItemStack> Inv = new NetworkList<ItemStack>();
 
@@ -879,6 +884,7 @@ namespace RockGame
         void ServerDie(PlayerNet killer, byte cause = 0)
         {
             Dead.Value = true;
+            KilledBy.Value = killer != null && killer != this ? killer.NetworkObjectId : 0UL; // (the kill cam)
             Health.Value = 0;
             // a kill: a big burst of blood out of the body, on every screen
             {
@@ -1338,7 +1344,7 @@ namespace RockGame
             int tier = Cfg.CraftTier(r.Output);
             if (tier > 0)
             {
-                if (Cfg.BenchTier(Team.Value) < tier) { Notify($"The {Cfg.ItemName(r.Output)} needs a {(tier == 2 ? "Trade Station 2" : "Trade Station")} in your base"); return; }
+                if (Cfg.BenchTier(Team.Value) < tier) { Notify($"The {Cfg.ItemName(r.Output)} needs a {(tier == 2 ? "Advanced Trade Station" : "Trade Station")} in your base"); return; }
                 if (!Cfg.CanCraftAt(Team.Value, transform.position)) { Notify($"{r.Name} can only be crafted inside your own base"); return; }
             }
             if (Workbench.IsBench(r.Output) && Workbench.ForTeam(Team.Value, Workbench.TierOfItem(r.Output)) != null) { Notify($"Your team already has a {Cfg.ItemName(r.Output)}"); return; }
@@ -1528,6 +1534,9 @@ namespace RockGame
             }
         }
 
+        /// <summary>The Trade Stations' placeables: put down like a chest (Container.Deployables.cs) or, the gate, like a large wall.</summary>
+        public static bool IsPlaceable(Item kind) => kind == Item.SleepingBag || kind == Item.BearTrap || kind == Item.Ladder || kind == Item.AutoTurret || kind == Item.LargeGate;
+
         /// <summary>Client-side and server-side placement rules for chests and barriers. Returns null if OK, else the reason.</summary>
         public static string DeployProblem(Item kind, int team, Vector3 pos, float yaw)
         {
@@ -1535,16 +1544,29 @@ namespace RockGame
             if (kind == Item.Boat) return ThemeMaps.WaterAt(pos.x, pos.z) ? null : "Boats go on open water"; // THEME MAPS
             if (Workbench.IsBench(kind)) { var wp = Workbench.PlaceProblem(kind, team, pos, yaw); if (wp != null) return wp; }
             if (Cfg.Builder) baseTeam = -1; // Builder: no bases - put it anywhere
-            if (kind == Item.Chest && baseTeam != team && !Cfg.Builder) return "Chests go inside your own base";
+            // chests go anywhere but an enemy's base (out in the wild the grass clears round them: Container.OnNetworkSpawn)
+            if ((kind == Item.Chest || kind == Item.SleepingBag) && baseTeam >= 0 && baseTeam != team && !Cfg.Builder) return "Not in the enemy base";
+            if (kind == Item.AutoTurret && baseTeam != team && !Cfg.Builder) return "Auto turrets go in your own base";
+            if (kind == Item.BearTrap)
+            {
+                // on the ground or a floor - not on top of a foundation
+                if (Physics.Raycast(pos + Vector3.up * 0.3f, Vector3.down, out var under, 0.8f, ~(1 << HitboxLayer), QueryTriggerInteraction.Ignore))
+                {
+                    var us = under.collider.GetComponentInParent<Structure>();
+                    if (us != null && us.PType == PieceType.Foundation) return "Bear traps go on the ground or a floor, not a foundation";
+                }
+            }
+            bool anywhere = kind == Item.Ladder || kind == Item.BearTrap; // (ladders and traps: their base too)
             // chests may go on the bedrock around the machine, just not on the spawn spot
             if (kind == Item.Chest && !Cfg.Builder && new Vector2(pos.x - Cfg.SpawnPos(team).x, pos.z - Cfg.SpawnPos(team).z).magnitude < 1.3f) return "Keep the spawn spot clear";
             // Auto Wood: the wood machine's spot stays free even before the machine is bought (it lands there later)
             if ((kind == Item.Chest || Workbench.IsBench(kind)) && Cfg.AutoWood && baseTeam == team
                 && new Vector2(pos.x - Cfg.WoodMachinePos(team).x, pos.z - Cfg.WoodMachinePos(team).z).magnitude < 1.4f) return "Keep the wood machine's spot clear";
-            if (kind != Item.Chest && !Workbench.IsBench(kind) && Cfg.PointBlocked(pos)) return "Not on the bedrock";
-            if (kind != Item.Chest && baseTeam >= 0 && baseTeam != team) return "Not in the enemy base";
+            bool smallThing = kind == Item.Chest || kind == Item.SleepingBag || kind == Item.BearTrap || kind == Item.AutoTurret;
+            if (!smallThing && !Workbench.IsBench(kind) && Cfg.PointBlocked(pos)) return "Not on the bedrock";
+            if (kind != Item.Chest && !anywhere && baseTeam >= 0 && baseTeam != team) return "Not in the enemy base";
             var rot = Quaternion.Euler(0, yaw, 0);
-            if (kind == Item.Barrier)
+            if (kind == Item.Barrier || kind == Item.LargeGate)
             {
                 // the whole 4 m wall stays out of the enemy base (not just its middle)...
                 if (!Cfg.Builder)
@@ -1565,6 +1587,10 @@ namespace RockGame
             if (kind == Item.Chest) { c = new Vector3(0, 0.36f, 0); half = new Vector3(0.5f, 0.3f, 0.27f); }
             else if (Workbench.IsBench(kind)) { c = new Vector3(0, 0.6f, 0); half = new Vector3(Workbench.HalfX - 0.03f, 0.48f, Workbench.HalfZ - 0.03f); }
             else if (kind == Item.Car) { c = new Vector3(0, 0.8f, 0); half = new Vector3(0.8f, 0.55f, 1.3f); }
+            else if (kind == Item.SleepingBag) { c = new Vector3(0, 0.15f, 0); half = new Vector3(0.38f, 0.1f, 0.9f); }
+            else if (kind == Item.BearTrap) { c = new Vector3(0, 0.1f, 0); half = new Vector3(0.3f, 0.06f, 0.3f); }
+            else if (kind == Item.Ladder) { c = new Vector3(0, 0.6f, 0); half = new Vector3(0.35f, 0.45f, 0.12f); } // (just its foot: it leans on the wall)
+            else if (kind == Item.AutoTurret) { c = new Vector3(0, 0.65f, 0); half = new Vector3(0.4f, 0.55f, 0.4f); }
             else { c = new Vector3(0, 2.7f, 0); half = new Vector3(1.95f, 2.45f, 0.2f); } // the high external wall
             foreach (var h in Physics.OverlapBox(pos + rot * c, half, rot, ~0, QueryTriggerInteraction.Ignore))
             {
@@ -1604,7 +1630,7 @@ namespace RockGame
         public void PlaceDeployableRpc(byte kindByte, Vector3 pos, float yaw)
         {
             var kind = (Item)kindByte;
-            if (kind != Item.Chest && kind != Item.Barrier && kind != Item.Car && !Workbench.IsBench(kind) && kind != Item.Boat /* THEME MAPS */) return;
+            if (kind != Item.Chest && kind != Item.Barrier && kind != Item.Car && !Workbench.IsBench(kind) && kind != Item.Boat /* THEME MAPS */ && !IsPlaceable(kind)) return;
             if (Dead.Value || CarryingBall || HeldItem != kind || InSuddenDeath) return;
             if (!Tutorial.AllowsFor(this, TutFeature.Deploy)) return;
             if (Vector3.Distance(pos, transform.position) > Cfg.DeployRange + 3f) return;
@@ -1618,6 +1644,20 @@ namespace RockGame
                 go.GetComponent<NetworkObject>().Spawn(true);
             }
             else if (Workbench.IsBench(kind)) Workbench.ServerSpawn(Team.Value, pos, yaw, Workbench.TierOfItem(kind));
+            else if (kind == Item.SleepingBag || kind == Item.BearTrap || kind == Item.Ladder || kind == Item.AutoTurret)
+            {
+                // the Trade Stations' placeables (Container.Deployables.cs): the turret has two slots, a weapon and its ammo
+                byte ck = kind == Item.SleepingBag ? Container.SleepBag : kind == Item.BearTrap ? Container.Trap : kind == Item.Ladder ? Container.Ladder : Container.Turret;
+                var go = Instantiate(Bootstrap.I.containerPrefab, pos, rot);
+                go.GetComponent<Container>().ServerInit(ck, Team.Value, ck == Container.Turret ? 2 : 0, null);
+                go.GetComponent<NetworkObject>().Spawn(true);
+            }
+            else if (kind == Item.LargeGate)
+            {
+                var go = Instantiate(Bootstrap.I.structurePrefab, pos, rot);
+                go.GetComponent<Structure>().ServerInit(PieceType.Gate, Team.Value, default, false);
+                go.GetComponent<NetworkObject>().Spawn(true);
+            }
             else if (kind == Item.Car) Vehicle.ServerSpawn(Vehicle.Car, pos + Vector3.up * 0.1f, yaw);
             else if (kind == Item.Boat) Vehicle.ServerSpawn(Vehicle.Boat, new Vector3(pos.x, ThemeMaps.WaterY - 0.1f, pos.z), yaw); // THEME MAPS
             else
@@ -1643,6 +1683,14 @@ namespace RockGame
             {
                 if (!containerRef.TryGet(out var no) || !no.TryGetComponent(out c) || !c.InReach(EyePos)) return;
                 if (dstKind == 1 && c.TakeOnly) return;
+                // an auto turret: its own team only; its first slot takes a ranged weapon (or a spear), its second the ammo
+                if (c.Kind.Value == Container.Turret)
+                {
+                    if (c.Team.Value != Team.Value) return;
+                    var moving = srcKind == 1 ? (srcIdx < c.Slots.Count ? c.Slots[srcIdx] : default) : (srcIdx < Inv.Count ? Inv[srcIdx] : default);
+                    if (dstKind == 1 && dstIdx == 0 && !Deployables.TurretWeapon(moving.Id)) { Notify("The turret's first slot takes a ranged weapon or a spear"); return; }
+                    if (dstKind == 1 && dstIdx == 255) return; // (no shift-click: put each in its own slot)
+                }
             }
             var src = srcKind == 1 ? c.Slots : Inv;
             if (srcIdx >= src.Count) return;
@@ -1733,6 +1781,14 @@ namespace RockGame
                 RevealUntil.Value = -1;
                 Fx.Server(FxKind.Drink, transform.position, Vector3.up, OwnerClientId);
                 Notify($"You're invisible for {Cfg.InvisTime:0} seconds (attacking shows you)");
+            }
+            else if (st.Id == Item.SpeedJuice)
+            {
+                m_NextEat = Time.time + 0.8f;
+                ServerConsumeHeld();
+                SpeedUntil.Value = Now + Cfg.SpeedJuiceTime;
+                Fx.Server(FxKind.Drink, transform.position, Vector3.up, OwnerClientId);
+                Notify($"EXTREME SPEED for {Cfg.SpeedJuiceTime:0} seconds!");
             }
         }
 
@@ -1849,7 +1905,7 @@ namespace RockGame
         public void ToggleDoorRpc(NetworkObjectReference target)
         {
             if (Dead.Value || !target.TryGet(out var no) || !no.TryGetComponent(out Structure s)) return;
-            if (s.PType != PieceType.Doorway || !s.HasDoor) return; // (a door that was broken off: the doorway just stands open)
+            if (!s.HasDoor) return; // (doorways and large gates; a door broken off: the gap just stands open)
             if (s.Team.Value != Team.Value) { Notify("This door is locked"); return; }
             if (Vector3.Distance(s.transform.position, transform.position) > Cfg.InteractRange + 3f) return;
             s.DoorOpen.Value = !s.DoorOpen.Value;

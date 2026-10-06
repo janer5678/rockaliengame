@@ -20,13 +20,13 @@ namespace RockGame
         public readonly NetworkVariable<float> DoorHealth = new NetworkVariable<float>();
 
         /// <summary>A doorway whose door is still on its hinges.</summary>
-        public bool HasDoor => PType == PieceType.Doorway && DoorHealth.Value > 0f;
+        public bool HasDoor => (PType == PieceType.Doorway || PType == PieceType.Gate) && DoorHealth.Value > 0f; // (a large gate's leaf too)
         /// <summary>A window whose bars are still in (they share the door's health: DoorHealth, Cfg.DoorLeafHp).</summary>
         public bool HasBars => PType == PieceType.Window && DoorHealth.Value > 0f;
         /// <summary>The window bars' object (its one collider covers the opening).</summary>
         public const string BarsName = "bars";
         Transform m_Bars;
-        public float DoorMaxHp => Cfg.DoorLeafHp(Tier.Value);
+        public float DoorMaxHp => PType == PieceType.Gate ? Cfg.BarrierHp : Cfg.DoorLeafHp(Tier.Value);
         /// <summary>For the tests: doors broken off their frames on this screen.</summary>
         public static int DoorsBroken;
 
@@ -38,7 +38,7 @@ namespace RockGame
 
         public PieceType PType => (PieceType)Type.Value;
         public float MaxHp => Cfg.PieceHp(PType, Tier.Value);
-        public string DisplayName => PType == PieceType.Tower ? "Fort Tower" : PType == PieceType.Barrier ? "High External Wall" : PType == PieceType.EggBlock ? "Egg Block" : Cfg.TierName(Tier.Value) + " " + Cfg.PieceName(PType);
+        public string DisplayName => PType == PieceType.Tower ? "Fort Tower" : PType == PieceType.Barrier ? "Large Wall" : PType == PieceType.Gate ? "Large Gate" : PType == PieceType.EggBlock ? "Egg Block" : Cfg.TierName(Tier.Value) + " " + Cfg.PieceName(PType);
         public bool Upgradable => Cfg.IsGridPiece(PType);
 
         public override void OnNetworkSpawn()
@@ -97,7 +97,7 @@ namespace RockGame
                 else if (was <= 0f && now > 0f && m_Bars == null) Rebuild();
                 return;
             }
-            if (PType != PieceType.Doorway) return;
+            if (PType != PieceType.Doorway && PType != PieceType.Gate) return;
             if (was > 0f && now <= 0f)
             {
                 RemoveDoorLeaf();
@@ -133,6 +133,13 @@ namespace RockGame
                 return Mathf.Abs(w.x) < 0.98f && w.y > 0.88f && w.y < 2.42f && Mathf.Abs(w.z) < 0.2f;
             }
             if (!HasDoor) return false;
+            if (PType == PieceType.Gate)
+            {
+                // a gate's leaf hangs from x = -1.7, 3.4 m wide and 4.7 m tall
+                var gl = transform.InverseTransformPoint(point) - new Vector3(-1.7f, 0f, 0f);
+                gl = Quaternion.Inverse(Quaternion.Euler(0f, DoorOpen.Value ? 100f : 0f, 0f)) * gl;
+                return gl.x > -0.1f && gl.x < 3.5f && gl.y > -0.1f && gl.y < 5.2f && Mathf.Abs(gl.z) < 0.4f;
+            }
             // into the leaf's own space: it hangs from x = -0.6 and swings 100 degrees open
             var l = transform.InverseTransformPoint(point) - new Vector3(-0.6f, 0f, 0f);
             l = Quaternion.Inverse(Quaternion.Euler(0f, DoorOpen.Value ? 100f : 0f, 0f)) * l;
@@ -165,7 +172,7 @@ namespace RockGame
             if (m_Hinge != null) ColourLock(m_Hinge, Team.Value);
             m_DoorAngle = DoorOpen.Value ? 100f : 0f;
             m_Bars = PType == PieceType.Window && m_Visual != null ? m_Visual.Find(BarsName) : null;
-            if (PType == PieceType.Doorway && !HasDoor) RemoveDoorLeaf(); // (its door was broken off)
+            if ((PType == PieceType.Doorway || PType == PieceType.Gate) && !HasDoor) RemoveDoorLeaf(); // (its door was broken off)
             if (PType == PieceType.Window && !HasBars) RemoveBars(); // (its bars were broken out)
         }
 
@@ -205,7 +212,7 @@ namespace RockGame
             Team.Value = (byte)team;
             Tier.Value = 0;
             Health.Value = Cfg.PieceHp(t, 0);
-            DoorHealth.Value = t == PieceType.Doorway || t == PieceType.Window ? Cfg.DoorLeafHp(0) : 0f; // (a window's bars too)
+            DoorHealth.Value = t == PieceType.Doorway || t == PieceType.Window ? Cfg.DoorLeafHp(0) : t == PieceType.Gate ? Cfg.BarrierHp : 0f; // (a window's bars and a gate's leaf too)
             Key = key;
             HasKey = hasKey;
         }
@@ -402,6 +409,32 @@ namespace RockGame
                         float f = (k + 0.5f) / 6f;
                         Art.Box(tr, trim, new Vector3(0, f * 3f + 0.12f, -1.5f + f * 3f), new Vector3(2.5f, 0.06f, 0.1f));
                     }
+                    break;
+                }
+                case PieceType.Gate:
+                {
+                    // a large gate (like Rust's external gate): two big log posts and a beam over the top, and a wide leaf
+                    // of sharpened logs on a hinge at the left post - it swings open like a door (E, your team only),
+                    // with its own health; broken off, the gap's open
+                    for (int k = -1; k <= 1; k += 2)
+                    {
+                        Art.Box(tr, Art.DarkWood, new Vector3(k * 1.95f, 2.85f, 0), new Vector3(0.5f, 5.7f, 0.5f), default, col);
+                        Art.Part(tr, Art.Cone, Art.Wood * 1.05f, new Vector3(k * 1.95f, 5.7f, 0), new Vector3(0.5f, 0.6f, 0.5f));
+                    }
+                    Art.Box(tr, Art.DarkWood, new Vector3(0, 5.15f, 0), new Vector3(4.2f, 0.35f, 0.4f), default, col);
+                    var gh = new GameObject("hinge").transform;
+                    gh.SetParent(tr, false);
+                    gh.localPosition = new Vector3(-1.7f, 0, 0);
+                    for (int k = 0; k < 8; k++)
+                    {
+                        float x = 0.21f + k * 0.42f, h = 4.6f + ((k * 29) % 4) * 0.07f;
+                        Art.Box(gh, k % 2 == 0 ? Art.Wood : Art.Wood * 0.9f, new Vector3(x, h * 0.5f + 0.05f, 0), new Vector3(0.42f, h, 0.36f), new Vector3(0, k * 11f, 0), col);
+                        Art.Part(gh, Art.Cone, Art.Wood * 1.05f, new Vector3(x, h + 0.05f, 0), new Vector3(0.42f, 0.45f, 0.36f));
+                    }
+                    for (int k = 0; k < 2; k++) Art.Box(gh, Art.DarkWood, new Vector3(1.7f, 1.0f + k * 2.6f, 0.22f), new Vector3(3.4f, 0.2f, 0.1f));
+                    Art.Box(gh, Art.DarkWood, new Vector3(1.7f, 2.3f, 0.24f), new Vector3(0.18f, 3.6f, 0.08f), new Vector3(0, 0, 38f));
+                    Art.Box(gh, Art.Metal, new Vector3(3.2f, 2.3f, 0.26f), new Vector3(0.12f, 0.4f, 0.1f)); // (the handle)
+                    hinge = gh;
                     break;
                 }
                 case PieceType.Barrier:

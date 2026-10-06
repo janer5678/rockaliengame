@@ -33,6 +33,8 @@ namespace RockGame
         public readonly NetworkVariable<FixedString128Bytes> EndReason = new NetworkVariable<FixedString128Bytes>();
 
         public readonly NetworkList<DroppedItem> Items = new NetworkList<DroppedItem>();
+        /// <summary>The clock ran out with the ball in nobody's machine: OVERTIME - the first capture wins.</summary>
+        public readonly NetworkVariable<bool> Overtime = new NetworkVariable<bool>();
         public readonly NetworkVariable<int> MapKey = new NetworkVariable<int>();
         public readonly NetworkVariable<int> MapSeed = new NetworkVariable<int>();
         /// <summary>The host's game settings (Cfg tunables), applied on the client.</summary>
@@ -175,6 +177,20 @@ namespace RockGame
             }
         }
 
+
+        float m_LastTimeLeft = -1f;
+        /// <summary>Every peer: "1 MINUTE LEFT" across the middle of the screen as the match clock passes a minute.</summary>
+        void TickMinuteNotice()
+        {
+            if (!IsSpawned || S != GameState.BallLive || Overtime.Value || Cfg.Tutorial) { m_LastTimeLeft = -1f; return; }
+            float tl = TimeLeft;
+            if (m_LastTimeLeft > 60f && tl <= 60f && tl > 50f)
+            {
+                Hud.Banner("1 MINUTE LEFT", "Get the ball into your machine before the clock runs out!");
+                Sfx.Play2D(Sfx.Ding, 0.6f, 0f);
+            }
+            m_LastTimeLeft = tl;
+        }
         static string Clock(float t)
         {
             int s = Mathf.CeilToInt(t);
@@ -191,6 +207,7 @@ namespace RockGame
             GraveFx.Sync(this);
             TickStartCountdown(); // the waiting stadium's 10 s countdown once everyone's in (NetGame.Lobby.cs)
             TickBenchUnlockNotice(); // "WORK BENCHES UNLOCKED" when our team captures the ball (NetGame.Bench.cs)
+            TickMinuteNotice();
             if (!IsServer) return;
             ResourceNode.ServerFlocksTick(); // (flocks of birds sitting in a few trees, there before anyone hits them)
             if (Time.time >= m_NextItemCheck) { m_NextItemCheck = Time.time + 0.5f; ServerSettleItems(); }
@@ -262,6 +279,18 @@ namespace RockGame
                                 // only the machine socket counts - a ball lying around in your base doesn't win
                                 int t = Ball.Instance != null ? Ball.Instance.SocketTeam.Value : -1;
                                 if (t >= 0) { ServerVictoryCutscene(t, $"{Cfg.TeamName[t]} captured the ball"); break; }
+                            }
+                            // nobody has it: OVERTIME - it carries on until a team gets the ball into its machine, and that
+                            // team wins (Cfg.UseOvertime; off: the old way, the countdown sits on 0, then the sudden death arena)
+                            if (Cfg.UseOvertime && !Cfg.Builder)
+                            {
+                                if (!Overtime.Value)
+                                {
+                                    Overtime.Value = true;
+                                    BannerRpc(new FixedString64Bytes("OVERTIME"), new FixedString128Bytes("First team to get the ball into its machine wins!"));
+                                    Broadcast("OVERTIME - first team to get the ball into its machine wins!");
+                                }
+                                break;
                             }
                             // nobody has it: the countdown sits on 0 for a moment, then everyone goes to the arena
                             m_SuddenDeathAt = now + ZeroHold;
@@ -817,7 +846,9 @@ namespace RockGame
                 var pos = LanePosAt(i);
                 var go = Instantiate(Bootstrap.I.containerPrefab, pos, Quaternion.Euler(0, Random.Range(0f, 360f), 0));
                 lane.Crate = go.GetComponent<Container>();
-                lane.Crate.ServerInit(Container.Airdrop, 7, 1, new List<ItemStack> { Cfg.Tutorial ? Tutorial.DropLoot : RollAirdropLoot() }); // (the tutorial's: C4 for its raid)
+                // three slots: an explosive, 500-1000 wood and another airdrop item (the tutorial's: just C4 for its raid)
+                var crate = Cfg.Tutorial ? new List<ItemStack> { Tutorial.DropLoot } : RollAirdropCrate();
+                lane.Crate.ServerInit(Container.Airdrop, 7, Mathf.Max(1, crate.Count), crate);
                 go.GetComponent<NetworkObject>().Spawn(true);
                 Fx.Server(FxKind.Spawn, pos, Vector3.up);
                 return;
@@ -849,6 +880,30 @@ namespace RockGame
             Broadcast("An alien AIRDROP is beaming down! " + where);
         }
 
+
+        static readonly Item[] k_Explosives = { Item.C4, Item.RocketLauncher, Item.BombBush };
+
+        /// <summary>An airdrop crate's contents, three slots: always an explosive of some kind (C4, a rocket launcher or a
+        /// bomb bush - whichever are picked in the mode options, else C4), always 500-1000 wood, and always one more
+        /// airdrop item (not an explosive), by its Airdrop Rarity.</summary>
+        public static List<ItemStack> RollAirdropCrate()
+        {
+            var pool = Cfg.AirdropLoot;
+            var boom = new List<Item>();
+            foreach (var i in k_Explosives) if (pool.Contains(i)) boom.Add(i);
+            if (boom.Count == 0) boom.Add(Item.C4);
+            var b = boom[Random.Range(0, boom.Count)];
+            var other = new List<Item>();
+            foreach (var i in pool) if (i != Item.Wood && i != Item.Stone && System.Array.IndexOf(k_Explosives, i) < 0) other.Add(i);
+            if (other.Count == 0) foreach (var i in Cfg.AirdropChoices) if (System.Array.IndexOf(k_Explosives, i) < 0) other.Add(i);
+            var o = Cfg.PickAirdropItem(other);
+            return new List<ItemStack>
+            {
+                ItemStack.Of(b, 1, Mathf.Clamp(Cfg.MaxData(b), 0, 255)),
+                Cfg.DnaSwap(ItemStack.Of(Item.Wood, Random.Range(500, 1001))),
+                o == Item.Helmet ? ItemStack.Of(Item.Helmet, 1, 1) : ItemStack.Of(o, 1, Mathf.Clamp(Cfg.MaxData(o), 0, 255)),
+            };
+        }
         /// <summary>One random OP item from the picked ones, rarer or commoner by its Airdrop Rarity weight.</summary>
         public static ItemStack RollAirdropLoot()
         {

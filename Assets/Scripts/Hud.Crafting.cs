@@ -105,7 +105,12 @@ namespace RockGame
                 case Item.Bow: return "Bow: hold LMB to draw, let go to fire. Uses arrows.";
                 case Item.Arrow: return $"Arrows: {Mathf.Max(1, Cfg.ArrowsPerCraft)} a craft, for the bow and the crossbow.";
                 case Item.Ram: return $"Battering Ram ({Cfg.RamUses} hit{(Cfg.RamUses == 1 ? "" : "s")}): hold LMB at an enemy piece - wood breaks, stone and up drop a step.";
-                case Item.Barrier: return "High External Wall: a tall log wall for your base or out in the open.";
+                case Item.Barrier: return "Large Wall: a tall log wall for your base or out in the open.";
+                case Item.LargeGate: return "Large Gate: a tall log gate with a door your team opens - goes in your wall line.";
+                case Item.SleepingBag: return $"Sleeping Bag: put it down anywhere but an enemy base and respawn at it (once every {Cfg.SleepingBagCooldown:0} s).";
+                case Item.BearTrap: return $"Bear Trap: in your colour; snaps an enemy who steps on it ({Cfg.BearTrapDamage:0} damage, held {Cfg.BearTrapHold:0.#} s). Ground or floors.";
+                case Item.Ladder: return "Ladder: stand it against any wall - theirs too - and climb over.";
+                case Item.AutoTurret: return $"Auto Turret: give it a ranged weapon (or a spear) and ammo; it fires at enemies in its {Cfg.TurretCone * 2f:0} degree view out to {Cfg.TurretRange:0} m.";
                 // (every description is "Name: what it does" - the name goes on top, the rest wraps under it; without the
                 // name the whole lot would be the one-line title and run off the edge)
                 case Item.Workbench:

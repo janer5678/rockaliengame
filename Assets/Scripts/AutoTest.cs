@@ -25,6 +25,7 @@ namespace RockGame
             if (m_Mode == "newmenu") { StartCoroutine(NewMenuShots()); return; } // (AutoTest.Lobby.cs)
             if (m_Mode == "mapshots") { StartCoroutine(MapShots()); return; }
             if (m_Mode == "lobby") NetGame.TestLobby = true; // (the ship lobby, though it's a test)
+            if (m_Mode == "sd" || m_Mode == "arena") Cfg.UseOvertime = false; // (the clock running out goes to the sudden death arena, as these test)
             if (m_Mode == "voice") { StartCoroutine(VoiceRoutine()); return; }
             if (m_Mode == "spectate") { StartCoroutine(SpectateRoutine()); return; } // (AutoTest.Spectate.cs)
             StartCoroutine(Run());
@@ -142,6 +143,7 @@ namespace RockGame
             if (m_Mode == "tracer") { yield return TracerRoutine(me, pc); yield break; }
             if (m_Mode == "craftui") { yield return CraftUiRoutine(me, pc); yield break; }
             if (m_Mode == "upgrades") { yield return UpgradesRoutine(me, pc); yield break; }
+            if (m_Mode == "deploy") { yield return DeployRoutine(me, pc); yield break; } // (AutoTest.Deploy.cs)
             if (m_Mode == "feel") { yield return FeelRoutine(me, pc); yield break; }
             if (m_Mode == "buildbias") { yield return BuildBiasRoutine(me, pc); yield break; }
             if (m_Mode == "maps") { yield return MapsRoutine(me, pc); yield break; }
@@ -628,8 +630,12 @@ namespace RockGame
                 yield return new WaitForSeconds(0.4f);
                 Check(chest.Slots[3].Empty && me.Count(Item.Stone) == before, "shift-click took it back out");
             }
-            var farPos = new Vector3(0, 0.1f, 0);
-            Check(PlayerNet.DeployProblem(Item.Chest, team, Cfg.BaseCenter[1 - team], 0) != null && PlayerNet.DeployProblem(Item.Chest, team, farPos, 0) != null, "chests only allowed in own base");
+            // chests: anywhere but the enemy's base (in the wild too)
+            var wildPos = Cfg.BaseCenter[team] * 0.55f;
+            wildPos.y = MapBuilder.Height(wildPos.x, wildPos.z) + 0.05f;
+            string wildProblem = PlayerNet.DeployProblem(Item.Chest, team, wildPos, 0);
+            Check(PlayerNet.DeployProblem(Item.Chest, team, Cfg.BaseCenter[1 - team], 0) == "Not in the enemy base" && (wildProblem == null || wildProblem == "Not enough room here"),
+                $"chests go anywhere but the enemy base (in the wild: {wildProblem ?? "fine"})");
             var onRock = Cfg.BedrockCenter(team) + new Vector3(2.3f, Cfg.BaseY, 0);
             Check(PlayerNet.DeployProblem(Item.Chest, team, onRock, 0) == null && PlayerNet.DeployProblem(Item.Chest, team, Cfg.SpawnPos(team), 0) != null, "chests can go on the bedrock by the machine (not on the spawn spot)");
 

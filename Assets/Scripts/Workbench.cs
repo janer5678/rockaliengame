@@ -20,10 +20,10 @@ namespace RockGame
         static readonly Item[] k_Starter = { Item.Hatchet, Item.Spear, Item.BuildingPlan, Item.Bow, Item.Arrow, Item.Chest, Item.Ram, Item.Workbench };
         /// <summary>Tier 1 (Workbench T1 in your base): sword before crossbow, the saddle, then the T2 bench. (Fortify All Walls is only crafted in
         /// Builder, which has no bases or upgrade stations; everywhere else the base upgrades are in UPGRADES - Upgrades.cs.)</summary>
-        static readonly Item[] k_Tier1 = { Item.Sword, Item.Crossbow, Item.Armor, Item.Barrier, Item.Chainsaw, Item.Saddle, Item.FortifyBuff, Item.Workbench2 };
+        static readonly Item[] k_Tier1 = { Item.Sword, Item.Crossbow, Item.SleepingBag, Item.Armor, Item.Barrier, Item.LargeGate, Item.Ladder, Item.BearTrap, Item.Chainsaw, Item.Saddle, Item.FortifyBuff, Item.Workbench2 };
         /// <summary>Tier 2 (Workbench T2 in your base): the ammo, then the guns, the alien helmet, C4, then whatever's left (pickaxe, boat...).
         /// Anything craftable that isn't tier 0 or 1 is tier 2.</summary>
-        static readonly Item[] k_Tier2 = { Item.ShotgunShell, Item.RevolverAmmo, Item.Shotgun, Item.Revolver, Item.Helmet, Item.C4, Item.Pickaxe, Item.Boat, Item.PistolAmmo, Item.Pistol, Item.HeavyArmor };
+        static readonly Item[] k_Tier2 = { Item.ShotgunShell, Item.RevolverAmmo, Item.Shotgun, Item.Revolver, Item.Helmet, Item.HeavyArmor, Item.AutoTurret, Item.C4, Item.Pickaxe, Item.Boat, Item.PistolAmmo, Item.Pistol };
 
         public static bool IsStarter(Item i) => System.Array.IndexOf(k_Starter, i) >= 0;
         public static IReadOnlyList<Item> StarterOrder => k_Starter;
@@ -319,7 +319,12 @@ namespace RockGame
             float mid = 0.14f + ScreenH * 0.5f + 0.02f;
             Art.Box(m, k_Metal, new Vector3(0, 0.012f, 0), new Vector3(0.26f, 0.024f, 0.11f));           // foot
             Art.Box(m, k_SilverDark, new Vector3(0, 0.09f, -0.01f), new Vector3(0.06f, 0.16f, 0.035f));   // neck
-            Art.Box(m, k_Dark, new Vector3(0, mid, 0), new Vector3(ScreenW + 0.05f, ScreenH + 0.05f, 0.04f)); // bezel
+            // the bezel in the bench's own metal (like its lip and legs), a silver lip round the glass and a rivet in each corner
+            Art.Box(m, k_Metal, new Vector3(0, mid, 0), new Vector3(ScreenW + 0.06f, ScreenH + 0.06f, 0.04f));
+            Art.Box(m, k_SilverDark, new Vector3(0, mid, 0.012f), new Vector3(ScreenW + 0.02f, ScreenH + 0.02f, 0.02f));
+            for (int cx = -1; cx <= 1; cx += 2)
+                for (int cy = -1; cy <= 1; cy += 2)
+                    Art.Box(m, k_Silver, new Vector3(cx * (ScreenW * 0.5f + 0.017f), mid + cy * (ScreenH * 0.5f + 0.017f), 0.021f), new Vector3(0.014f, 0.014f, 0.006f));
             Art.Box(m, k_SilverDark, new Vector3(0, mid, -0.022f), new Vector3(ScreenW - 0.1f, ScreenH - 0.1f, 0.02f)); // its back
             Art.Box(m, trim, new Vector3(0, mid - ScreenH * 0.5f - 0.016f, 0.021f), new Vector3(ScreenW * 0.5f, 0.008f, 0.004f), default, false, gTrim);
             var scr = Art.Part(m, Art.Cube, new Color(0.05f, 0.14f, 0.13f), new Vector3(0, mid, 0.0215f), new Vector3(ScreenW, ScreenH, 0.004f), default, false,
