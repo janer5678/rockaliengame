@@ -171,6 +171,7 @@ namespace RockGame
             // (not back to the shooter: they already drew their own tracer the moment they fired - two of them was the "double tracer")
             Fx.Server(gun == Item.Revolver ? FxKind.RevolverTracer : FxKind.PistolTracer, EyePos + dir.normalized * 0.5f - Vector3.up * 0.15f, point, OwnerClientId);
             if (hasTarget && target.TryGet(out var tree)) ResourceNode.ServerStruck(tree); // (a bullet in a tree sends its birds up)
+            if (!hasTarget) NetGame.Instance?.ServerMaybeHitMachine(point, this, false); // (Bedwars: a shot into an enemy machine)
             if (!hasTarget || !target.TryGet(out var no) || !GameAllowsCombat) return;
             if (no.TryGetComponent(out PlayerNet p) && p != this && !p.Dead.Value)
             {

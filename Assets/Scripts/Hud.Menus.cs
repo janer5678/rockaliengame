@@ -183,7 +183,7 @@ namespace RockGame
 
             // game mode: separate ways to play (they don't mix)
             key = Bootstrap.MapChoice;
-            var rules = (GameRules)Mathf.Clamp((key >> Cfg.RulesShift) & Cfg.RulesMask, 0, (int)GameRules.Dna);
+            var rules = (GameRules)Mathf.Clamp((key >> Cfg.RulesShift) & Cfg.RulesMask, 0, (int)Cfg.LastRules);
             int noRules = key & ~(Cfg.RulesMask << Cfg.RulesShift);
             // Tutorial, Classic (the Auto Wood rules) and Primitive (the original game); the rest fold out under "More modes"
             bool moreRule = System.Array.IndexOf(Cfg.MoreRules, rules) >= 0;

@@ -14,7 +14,7 @@ namespace RockGame
         public Vector3 From;       // where it was thrown from (the client animates the toss)
         public bool Equals(DroppedItem o) => Id == o.Id && Stack.Equals(o.Stack) && Pos == o.Pos && Dir == o.Dir;
         /// <summary>Point used for "am I looking at it" tests.</summary>
-        public Vector3 Center => Stack.Id == Item.Spear ? Pos - Dir * 0.6f : Stack.Id == Item.Arrow ? Pos - Dir * 0.3f : Pos + Vector3.up * 0.12f;
+        public Vector3 Center => Stack.Id == Item.Spear ? Pos - Dir * 0.6f : Stack.Id == Item.Arrow ? Pos - Dir * 0.3f : Stack.Id == Item.Skull ? Pos + Vector3.up * 0.6f : Pos + Vector3.up * 0.12f;
         /// <summary>Spears and arrows are drawn tip-first along Dir (stuck in the ground / a wall).</summary>
         public bool Pointed => Stack.Id == Item.Spear || Stack.Id == Item.Arrow;
     }
@@ -223,6 +223,7 @@ namespace RockGame
             ServerTickAirstrikes(now);
             ServerTickBushes(now);
             ServerTickModes(now);
+            ServerTickGameModes(now); // (Bedwars, 3 Goal, Progress, Assassin, Domination: NetGame.GameModes.cs)
             ServerTickBenchUnlock(); // the Workbench T1 unlocks once a team has captured the ball
             Tutorial.ServerTick(this); // tutorial: clock stopped, late joiners in, the wall drops once everyone reaches it
             SpaceArena.ServerTick(this); // sudden death and the waiting stadium: falling off the platform into space
@@ -243,7 +244,7 @@ namespace RockGame
                         SpawnBall();
                         // out of the waiting stadium and into your base
                         foreach (var p in PlayerNet.All) p.ServerSendHome();
-                        Broadcast(Cfg.Tutorial ? "Tutorial started! Do each step on the left - the wall drops when everyone reaches it" : Cfg.FunRules ? "Match started! The wall is down and the ball is in - free items on the way!" : $"Match started! The ball is under the glass dome in the middle - the wall and the dome drop in {Clock(delay)}");
+                        Broadcast(Cfg.Tutorial ? "Tutorial started! Do each step on the left - the wall drops when everyone reaches it" : Cfg.FunRules ? "Match started! The wall is down and the ball is in - free items on the way!" : Cfg.NoBall ? $"Match started! Gather and build - the wall drops in {Clock(delay)}" : $"Match started! The ball is under the glass dome in the middle - the wall and the dome drop in {Clock(delay)}");
                     }
                     break;
                 case GameState.PreBall:
@@ -252,12 +253,13 @@ namespace RockGame
                     {
                         if (Ball.Instance == null) SpawnBall();
                         if (Ball.Instance != null) Ball.Instance.ServerRelease(); // the dome's gone: the ball is up for grabs
+                        if (Cfg.NoBall) ServerUnlockBench(0, "the wall dropped"); // (Bedwars / Assassin: no ball to capture - the Trade Station unlocks now)
                         SetPhase(GameState.BallLive, BallPhase);
                         m_BallStart = now;
                         m_DropsDone = 0;
                         m_DropsWarned = 0;
                         m_SuddenDeathAt = -1;
-                        if (!Cfg.FunRules) Broadcast("The glass wall and the dome are dropping - grab the BALL in the middle!");
+                        if (!Cfg.FunRules) Broadcast(Cfg.Bedwars ? "The glass wall is dropping - go smash the enemy machines!" : Cfg.Assassin ? "The glass wall is dropping - hunt them down and take their skulls!" : "The glass wall and the dome are dropping - grab the BALL in the middle!");
                     }
                     break;
                 case GameState.BallLive:
@@ -273,6 +275,11 @@ namespace RockGame
                                 // Builder: whoever's ball it is (planted, not carried or loose) wins
                                 int pt = Ball.Instance != null && !Ball.Instance.IsCarried ? Ball.Instance.SocketTeam.Value : -1;
                                 if (pt >= 0) { EndGame(pt, $"Ball planted for {Cfg.TeamLabel(pt)}"); break; }
+                            }
+                            else if (Cfg.ClassicMode && !Cfg.Domination)
+                            {
+                                // Bedwars, 3 Goal, Progress, Assassin: the leader wins (NetGame.GameModes.cs); level: overtime
+                                if (ServerModeTimeUp()) break;
                             }
                             else
                             {
@@ -378,6 +385,7 @@ namespace RockGame
 
         public void ServerOnPlayerKilled(PlayerNet victim, PlayerNet killer)
         {
+            ServerModesOnKilled(victim, killer); // (Assassin: their skull drops)
             if (S != GameState.SuddenDeath) return;
             // sudden death: no respawns; the last team with someone standing wins
             if (AliveTeams(out int w) <= 1 && !Bootstrap.Solo && !Cfg.Tutorial)
@@ -521,7 +529,7 @@ namespace RockGame
                         // tools lie flat; small stuff is scaled up a little so it reads on the ground
                         bool longItem = it.Stack.Id == Item.Hatchet || it.Stack.Id == Item.Pickaxe || it.Stack.Id == Item.Bow || it.Stack.Id == Item.BuildingPlan || it.Stack.Id == Item.DeathWand;
                         m.transform.localRotation = longItem ? Quaternion.Euler(90, 0, 0) : Quaternion.identity;
-                        m.transform.localScale = Vector3.one * (it.Stack.Id == Item.Ram || it.Stack.Id == Item.Chainsaw ? 1f : 1.6f);
+                        m.transform.localScale = Vector3.one * (it.Stack.Id == Item.Skull ? 4.5f : it.Stack.Id == Item.Ram || it.Stack.Id == Item.Chainsaw ? 1f : 1.6f); // (Assassin's skulls: big, so they're seen)
                         if (it.Stack.Id == Item.Helmet) m.transform.localPosition = new Vector3(0, 0.25f, 0);
                         if (longItem) m.transform.localPosition = new Vector3(0, 0.05f, -0.2f);
                     }
@@ -557,6 +565,7 @@ namespace RockGame
         void SpawnBall()
         {
             if (Ball.Instance != null && Ball.Instance.IsSpawned) return;
+            if (Cfg.NoBall) return; // (Bedwars and Assassin have no ball)
             var go = Instantiate(Bootstrap.I.ballPrefab, Ball.DomeSpot, Quaternion.identity);
             go.GetComponent<NetworkObject>().Spawn(true);
             go.GetComponent<Ball>().ServerPlaceInDome(); // sitting still under the glass dome until the wall drops
@@ -1203,6 +1212,7 @@ namespace RockGame
             BlastKind kind = BlastKind.Other, Structure on = null, Vector3 normal = default, Container onBox = null)
         {
             Fx.Server(FxKind.Explosion, pos, Vector3.up);
+            ServerMaybeHitMachine(pos, attacker, true); // (Bedwars: an explosive right on an enemy machine destroys it)
             var structures = new HashSet<Structure>();
             var chests = new HashSet<Container>();
             var creatures = new HashSet<Vehicle>();

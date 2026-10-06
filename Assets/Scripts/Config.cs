@@ -26,7 +26,8 @@ namespace RockGame
     /// Auto Wood - Arsenal, but wood piles up by itself at your base.
     /// (Synced in 4 bits of the map key: never reorder.)
     /// </summary>
-    public enum GameRules : byte { Classic, Arsenal, Builder, Fun, FunRandom, FunRandomLimited, Primitive, BuildingPrimitive, AutoWood, Tutorial, Dna }
+    public enum GameRules : byte { Classic, Arsenal, Builder, Fun, FunRandom, FunRandomLimited, Primitive, BuildingPrimitive, AutoWood, Tutorial, Dna,
+        Bedwars, ThreeGoal, Progress, Assassin, Domination } // (the last five: Classic with their own way to win - NetGame.GameModes.cs)
 
     public enum PieceType : byte { Foundation, Wall, Doorway, Floor, Stairs, Barrier, Window, Tower, EggBlock, Gate }
 
@@ -98,10 +99,14 @@ namespace RockGame
         public static GameMode Mode = GameMode.Duel;
         public static GameRules Rules = GameRules.Classic;
         /// <summary>Arsenal and Builder: cheap items and the powerful items menu.</summary>
-        public static bool PowerMenu => Rules == GameRules.Arsenal || Rules == GameRules.Builder || Rules == GameRules.AutoWood;
+        public static bool PowerMenu => Rules == GameRules.Arsenal || Rules == GameRules.Builder || Rules == GameRules.AutoWood || ClassicMode;
+        /// <summary>The five modes that are Classic with another way to win (Bedwars, 3 Goal, Progress, Assassin, Domination).</summary>
+        public static bool ClassicMode => Rules >= GameRules.Bedwars;
+        /// <summary>The last game mode there is (the menus and the map key clamp to it).</summary>
+        public const GameRules LastRules = GameRules.Domination;
         /// <summary>Auto Wood: Arsenal, plus wood piles up at every base by itself.</summary>
         /// <summary>(The tutorial has the wood machine too, bought at its upgrade station like in Classic - but none of the POWER ITEMS.)</summary>
-        public static bool AutoWood => Rules == GameRules.AutoWood || Rules == GameRules.Tutorial;
+        public static bool AutoWood => Rules == GameRules.AutoWood || Rules == GameRules.Tutorial || ClassicMode;
         /// <summary>The graphics everyone plays with, picked by the host (0 Normal, 1 PSX, 2 AI PSX TEST). Synced in the map key.</summary>
         public static int HostGraphics;
         /// <summary>Builder: craft anywhere (with a wait), build anywhere, win with the ball in your own fort.</summary>
@@ -118,19 +123,25 @@ namespace RockGame
         /// the old names.
         /// </summary>
         public static string RulesName(GameRules r) => r == GameRules.Arsenal ? "Arsenal" : r == GameRules.Builder ? "Builder" : r == GameRules.Fun ? "Fun"
-            : r == GameRules.FunRandom ? "Fun Random" : r == GameRules.FunRandomLimited ? "Fun Random Limited" : r == GameRules.Primitive ? "Primitive Limited" : r == GameRules.BuildingPrimitive ? "Building Primitive" : r == GameRules.AutoWood ? "Classic" : r == GameRules.Tutorial ? "Tutorial" : r == GameRules.Dna ? "DNA" : "Primitive";
+            : r == GameRules.FunRandom ? "Fun Random" : r == GameRules.FunRandomLimited ? "Fun Random Limited" : r == GameRules.Primitive ? "Primitive Limited" : r == GameRules.BuildingPrimitive ? "Building Primitive" : r == GameRules.AutoWood ? "Classic" : r == GameRules.Tutorial ? "Tutorial" : r == GameRules.Dna ? "DNA" : r == GameRules.Bedwars ? "Bedwars" : r == GameRules.ThreeGoal ? "3 Goal" : r == GameRules.Progress ? "Progress" : r == GameRules.Assassin ? "Assassin" : r == GameRules.Domination ? "Domination" : "Primitive";
         /// <summary>The mode's -rules name (the enum's, never renamed: classic, autowood, primitive...) - the tests' file names.</summary>
         public static string RulesId(GameRules r) => r.ToString().ToLowerInvariant();
         /// <summary>The game modes on the main menu's first row (the rest are under "More modes").</summary>
         public static readonly GameRules[] MainRules = { GameRules.Tutorial, GameRules.AutoWood, GameRules.Classic };
         /// <summary>The rest of the game modes, under "More modes".</summary>
-        public static readonly GameRules[] MoreRules = { GameRules.Arsenal, GameRules.Builder, GameRules.Primitive, GameRules.BuildingPrimitive, GameRules.Dna, GameRules.Fun, GameRules.FunRandom, GameRules.FunRandomLimited };
+        public static readonly GameRules[] MoreRules = { GameRules.Arsenal, GameRules.Builder, GameRules.Primitive, GameRules.BuildingPrimitive, GameRules.Dna, GameRules.Fun, GameRules.FunRandom, GameRules.FunRandomLimited,
+            GameRules.Bedwars, GameRules.ThreeGoal, GameRules.Progress, GameRules.Assassin, GameRules.Domination };
         public static string RulesDesc(GameRules r)
         {
             switch (r)
             {
                 case GameRules.Arsenal: return "Normal prices (the crossbow is cheaper), plus a POWER ITEMS menu next to crafting: sword, shotgun, revolver, C4 and headshot helmet. E on the upgrade station beside your alien machine: UPGRADES (fortify all your walls).";
                 case GameRules.Dna: return DnaDesc;
+                case GameRules.Bedwars: return "Classic, but no ball: smash the enemy alien machines (3 hits, or one explosive right on it). Your team respawns from its machine's cryochamber - lose it and you're out. Last team standing wins.";
+                case GameRules.ThreeGoal: return "Classic, but score 3 times: get the ball into your machine and a UFO drops it back in the middle. First to 3 wins (most goals when the clock runs out).";
+                case GameRules.Progress: return "Classic, but while the ball sits in your machine your progress bar fills - fill it and you win.";
+                case GameRules.Assassin: return "No ball: kill the enemies - each drops their skull - and hand a skull of every one of them into your machine (E). Skulls only drop in this mode.";
+                case GameRules.Domination: return "Classic, but whoever has the ball (carried or in their machine) gets the Advanced Trade Station's items without building one. Lose the ball, lose them.";
                 case GameRules.Tutorial: return "New here? Start with this. Short, simple steps teach you the whole game - you do each one to go on, and each control unlocks as it's taught. The clock is stopped and it's always the small Plains map. Press PLAY TUTORIAL and pick Solo or With a friend.";
                 case GameRules.AutoWood: return "Buy a wood machine in UPGRADES (E on the upgrade station beside your alien machine) and wood piles up at your base by itself - go and pick it up; more upgrades speed it up. Arsenal's prices and POWER ITEMS.";
                 case GameRules.Builder: return "No bases. Arsenal's items, but each takes a while to make. Craft and build anywhere - pieces lock onto each other. Plant the ball anywhere (E): whoever's ball it is at the end wins.";
@@ -205,7 +216,7 @@ namespace RockGame
             AirdropCenter = (key & CenterBit) != 0;
             RespawnLoot = (key & RespawnLootBit) != 0;
             Mode = (GameMode)((key >> ModeShift) & ModeMask);
-            Rules = (GameRules)Mathf.Clamp((key >> RulesShift) & RulesMask, 0, (int)GameRules.Dna);
+            Rules = (GameRules)Mathf.Clamp((key >> RulesShift) & RulesMask, 0, (int)Cfg.LastRules);
             if (Rules == GameRules.Tutorial)
             {
                 // the tutorial is always the small, flat Plains map with the normal (wood) materials, whatever the menu says

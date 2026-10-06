@@ -54,8 +54,8 @@ namespace RockGame
                 Check(Cfg.Rules == rules0, "the game mode survives the map key round trip");
             }
             // prices and order asked for
-            Check(Cfg.SpearWood == 100 && Cfg.ArmorWood == 250 && Cfg.ArmorHp == 50 && Cfg.SaddleWood == 750 && Cfg.RamUses == 1,
-                $"spear 100, armour 250 (+50 HP), saddle 750, ram 1 hit ({Cfg.SpearWood}, {Cfg.ArmorWood}, {Cfg.ArmorHp}, {Cfg.SaddleWood}, {Cfg.RamUses})");
+            Check(Cfg.SpearWood == 100 && Cfg.ArmorWood == 250 && Cfg.ArmorHp == 25 && Cfg.SaddleWood == 750 && Cfg.RamUses == 1,
+                $"spear 100, armour 250 (+25 HP), saddle 750, ram 1 hit ({Cfg.SpearWood}, {Cfg.ArmorWood}, {Cfg.ArmorHp}, {Cfg.SaddleWood}, {Cfg.RamUses})");
             if (!Cfg.LimitedCrafting) Check(Cfg.RecipeIndex(Item.Chest) >= 0 && Cfg.RecipeIndex(Item.Chest) < Cfg.RecipeIndex(Item.Bow), "the storage chest is above the bow in crafting");
             // the glass wall: nobody hurts anyone on the other side of it
             if (MapBuilder.GlassUp)

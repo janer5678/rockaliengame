@@ -53,7 +53,7 @@ namespace RockGame
             // the game modes: Tutorial, Classic (the Auto Wood rules) and Primitive (the original game) on the menu, the rest folded away
             Check(Cfg.MainRules.Length == 3 && Cfg.RulesName(Cfg.MainRules[0]) == "Tutorial" && Cfg.RulesName(Cfg.MainRules[1]) == "Classic" && Cfg.MainRules[1] == GameRules.AutoWood
                 && Cfg.RulesName(Cfg.MainRules[2]) == "Primitive" && Cfg.MainRules[2] == GameRules.Classic && Cfg.RulesName(GameRules.Primitive) == "Primitive Limited"
-                && Cfg.MainRules.Length + Cfg.MoreRules.Length == (int)GameRules.Dna + 1, "game modes: Tutorial, Classic (auto wood), Primitive (the original) on the menu, the other 8 under More modes");
+                && Cfg.MainRules.Length + Cfg.MoreRules.Length == (int)Cfg.LastRules + 1, "game modes: Tutorial, Classic (auto wood), Primitive (the original) on the menu, the others under More modes");
             Check(Cfg.RulesId(GameRules.Classic) == "classic" && Cfg.RulesId(GameRules.AutoWood) == "autowood", "the -rules names are unchanged (classic = the original game, autowood = the menu's Classic)");
             Check(!GameSettings.ShowGraphicsPicker && GameSettings.GraphicsMode == 0, "graphics: just Normal (no PSX / AI PSX picker)");
             Hud.ShowMore(true, true);
@@ -144,6 +144,7 @@ namespace RockGame
             if (m_Mode == "craftui") { yield return CraftUiRoutine(me, pc); yield break; }
             if (m_Mode == "upgrades") { yield return UpgradesRoutine(me, pc); yield break; }
             if (m_Mode == "deploy") { yield return DeployRoutine(me, pc); yield break; } // (AutoTest.Deploy.cs)
+            if (m_Mode == "gamemodes") { yield return GameModesRoutine(me, pc); yield break; } // (AutoTest.GameModes.cs)
             if (m_Mode == "feel") { yield return FeelRoutine(me, pc); yield break; }
             if (m_Mode == "buildbias") { yield return BuildBiasRoutine(me, pc); yield break; }
             if (m_Mode == "maps") { yield return MapsRoutine(me, pc); yield break; }

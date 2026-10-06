@@ -1060,7 +1060,7 @@ namespace RockGame
     /// The alien machine on a base's bedrock: press E on it to craft; its socket is where the ball has to sit to win.
     /// Purely local visuals (the world is built identically on every peer).
     /// </summary>
-    public class Machine : MonoBehaviour
+    public partial class Machine : MonoBehaviour
     {
         public static readonly Machine[] ByTeam = new Machine[4];
         public int Team;
@@ -1114,6 +1114,7 @@ namespace RockGame
             bool socketed = ball != null && ball.IsSpawned && ball.SocketTeam.Value == Team;
             if (m_Beam && m_Beam.activeSelf == socketed) m_Beam.SetActive(!socketed);
             if (m_Light) m_Light.intensity = (socketed ? 4f : 1.8f) + m_Busy * 3f + Mathf.Sin(Time.time * 3f) * 0.2f;
+            TickModes(); // (Bedwars' cryochamber and damage, Assassin's skulls: Machine.Modes.cs)
         }
     }
 }

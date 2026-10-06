@@ -958,6 +958,7 @@ namespace RockGame
             var g = NetGame.Instance;
             if (!Dead.Value || g == null || NetworkManager.ServerTime.Time < RespawnAt.Value) return;
             if (g.S == GameState.SuddenDeath || g.S == GameState.GameOver) return;
+            if (!g.CanRespawn(Team.Value)) { Notify("Your machine is destroyed - no more respawns"); return; } // (Bedwars)
             ServerRespawn(wild && g.S == GameState.BallLive); // dying behind the wall always brings you back home
         }
 
@@ -1044,7 +1045,12 @@ namespace RockGame
             SwingRpc();
             Reveal();
 
-            if (!hasTarget || !target.TryGet(out var no)) return;
+            if (!hasTarget || !target.TryGet(out var no))
+            {
+                // (Bedwars: a swing at an enemy machine - it isn't a network object, so it comes as just the point)
+                if (Vector3.Distance(EyePos, point) <= st.Range + 2f) NetGame.Instance?.ServerMaybeHitMachine(point, this, false);
+                return;
+            }
             if (item == Item.Chainsaw || item == Item.TreeCracker) WearChainsaw();
             if (Vector3.Distance(EyePos, point) > st.Range + 2f) return;
             var dir = (point - EyePos).normalized;
@@ -1145,6 +1151,7 @@ namespace RockGame
         {
             if (m_PendingArrows.Count == 0) return;
             m_PendingArrows.Dequeue();
+            if (Vector3.Distance(point, transform.position) < 250f) NetGame.Instance?.ServerMaybeHitMachine(point, this, false); // (Bedwars: an arrow into an enemy machine)
             DropSpentArrow(point, dir);
         }
 
@@ -1181,6 +1188,7 @@ namespace RockGame
             if (Vector3.Distance(point, transform.position) > 250f) point = transform.position + Vector3.up; // nonsense report
             if (dir.sqrMagnitude < 0.01f) dir = transform.forward;
             if (hasTarget && target.TryGet(out var tree)) ResourceNode.ServerStruck(tree); // (a spear in a tree sends its birds up)
+            if (!hasTarget) game.ServerMaybeHitMachine(point, this, false); // (Bedwars: a spear into an enemy machine)
 
             if (hasTarget && target.TryGet(out var no) && GameAllowsCombat)
             {

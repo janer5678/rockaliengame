@@ -127,7 +127,8 @@ namespace RockGame
                             string rs = args[i + 1].ToLowerInvariant().Replace("-", "").Replace("_", "");
                             int rv = rs == "arsenal" ? 1 : rs == "builder" ? 2 : rs == "fun" ? 3 : rs == "funrandom" ? 4 : rs == "funrandomlimited" ? 5
                                 : rs == "primitive" || rs == "primitivelimited" || rs == "limited" ? 6 : rs == "buildingprimitive" ? 7 : rs == "autowood" ? 8
-                                : rs == "tutorial" ? 9 : rs == "dna" ? (int)GameRules.Dna : 0; // (classic, original: 0)
+                                : rs == "tutorial" ? 9 : rs == "dna" ? (int)GameRules.Dna : rs == "bedwars" ? (int)GameRules.Bedwars : rs == "threegoal" || rs == "3goal" ? (int)GameRules.ThreeGoal
+                                : rs == "progress" ? (int)GameRules.Progress : rs == "assassin" ? (int)GameRules.Assassin : rs == "domination" ? (int)GameRules.Domination : 0; // (classic, original: 0)
                             MapChoice = (MapChoice & ~(Cfg.RulesMask << Cfg.RulesShift)) | (rv << Cfg.RulesShift);
                         }
                         break;

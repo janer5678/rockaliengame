@@ -442,6 +442,7 @@ namespace RockGame
             SocketTeam.Value = (sbyte)team;
             // the kill feed (and only it - no top-right message saying the same): who captured it (whoever last picked it up, if they're on that team), or just the team
             if (NetGame.Instance != null) NetGame.Instance.ServerBallFeed(m_LastHolder != null && m_LastHolder.IsSpawned && m_LastHolder.Team.Value == team ? m_LastHolder : null, team, true);
+            if (NetGame.Instance != null) NetGame.Instance.ServerOnSocket(team, m_LastHolder != null && m_LastHolder.IsSpawned && m_LastHolder.Team.Value == team ? m_LastHolder : null); // (3 Goal: a goal)
         }
 
         /// <summary>Server: who picked the ball up last (the kill feed names them when it goes into their machine).</summary>

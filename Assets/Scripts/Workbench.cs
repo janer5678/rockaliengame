@@ -32,7 +32,7 @@ namespace RockGame
         public static int CraftTier(Item i) => IsStarter(i) ? 0 : System.Array.IndexOf(k_Tier1, i) >= 0 ? 1 : 2;
 
         /// <summary>The best workbench a team has placed (0 none, 1, 2).</summary>
-        public static int BenchTier(int team) => Workbench.TierOf(team);
+        public static int BenchTier(int team) => Domination && NetGame.Instance != null && NetGame.Instance.BallTeam.Value == team ? 2 : Workbench.TierOf(team); // (Domination: the team with the ball gets the advanced trades)
 
         /// <summary>The highest tier a player of `team` standing at p can craft: their bench's tier inside their base
         /// (Builder: anywhere), otherwise 0 (just the starter items).</summary>

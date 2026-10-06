@@ -27,6 +27,7 @@ namespace RockGame
             var g = NetGame.Instance;
             if (!Dead.Value || g == null || NetworkManager.ServerTime.Time < RespawnAt.Value || g.S != GameState.BallLive) return;
             if (!bagRef.TryGet(out var no) || !no.TryGetComponent(out Container bag) || bag.Kind.Value != Container.SleepBag || bag.Team.Value != Team.Value) return;
+            if (!g.CanRespawn(Team.Value)) return; // (Bedwars: your machine's gone)
             if (bag.ReadyAt.Value > NetworkManager.ServerTime.Time) { Notify("That sleeping bag isn't ready yet"); return; }
             bag.ReadyAt.Value = NetworkManager.ServerTime.Time + Cfg.SleepingBagCooldown;
             ServerRespawn(false);

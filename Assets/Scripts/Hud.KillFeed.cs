@@ -15,6 +15,10 @@ namespace RockGame
         public const byte BallPickup = 205, BallCapture = 206;
         public static bool IsItem(byte c) => c > 0 && c < Died;
         public static bool IsBall(byte c) => c == BallPickup || c == BallCapture;
+        /// <summary>The game modes' moments (NetGame.GameModes.cs): a goal (3 Goal), a machine destroyed (Bedwars), a skull
+        /// handed in (Assassin), the ball changing hands (Domination) - their words come in the line itself.</summary>
+        public const byte Goal = 207, MachineDown = 208, SkullIn = 209, Dominate = 210;
+        public static bool IsEvent(byte c) => c >= Goal && c <= Dominate;
     }
 
     public partial class NetGame
@@ -74,7 +78,8 @@ namespace RockGame
             string killer = killerTeam == 255 ? (cause == KillCause.Slenderman ? "SLENDERMAN" : "") : !string.IsNullOrEmpty(killerName) ? killerName : PlayerNet.DefaultName(killerTeam, killerSlot);
             string victim = !string.IsNullOrEmpty(victimName) ? victimName : PlayerNet.DefaultName(victimTeam, victimSlot);
             // the ball (NetGame.ServerBallFeed): the player, the ball, then what happened (in the team's colour)
-            if (KillCause.IsBall(cause))
+            if (KillCause.IsEvent(cause)) { victim = victimName; if (killerTeam == 255) killer = ""; }
+            else if (KillCause.IsBall(cause))
             {
                 string team = Cfg.TeamName[Mathf.Clamp(victimTeam, 0, Cfg.TeamName.Length - 1)];
                 victim = cause == KillCause.BallPickup ? "picked up the ball" : killer == "" ? $"{team} captured the ball" : $"captured the ball for {team}";
@@ -110,7 +115,7 @@ namespace RockGame
             if (KillCause.IsItem(cause)) { var t = ItemIcons.Get((Item)cause); if (t != null) return t; }
             if (cause == KillCause.Slenderman) { var t = ItemIcons.Get(Item.SlenderEgg); if (t != null) return t; }
             EnsureKillIcons();
-            return KillCause.IsBall(cause) ? s_BallIcon : cause == KillCause.Lava ? s_Flame : cause == KillCause.Fall ? s_FallIcon : s_Skull;
+            return KillCause.IsBall(cause) || cause == KillCause.Goal || cause == KillCause.Dominate ? s_BallIcon : cause == KillCause.MachineDown ? s_Flame : cause == KillCause.SkullIn ? s_Skull : cause == KillCause.Lava ? s_Flame : cause == KillCause.Fall ? s_FallIcon : s_Skull;
         }
 
         /// <summary>The drawn icons: a skull (died, suicide), a flame (lava), a falling arrow (a fall), the golden ball (ball
@@ -212,7 +217,7 @@ namespace RockGame
                 float x = sw - 10 - w + (1f - back) * (w + 20f);
                 var r = new Rect(x, kl.Y, w, rowH);
                 bool mine = me != null && kl.KillerTeam == me.Team.Value && kl.KillerSlot == me.Slot.Value && kl.KillerTeam != 255;
-                bool myDeath = me != null && kl.VictimTeam == me.Team.Value && kl.VictimSlot == me.Slot.Value && !KillCause.IsBall(kl.Cause); // (a ball line's "victim" is a team)
+                bool myDeath = me != null && kl.VictimTeam == me.Team.Value && kl.VictimSlot == me.Slot.Value && !KillCause.IsBall(kl.Cause) && !KillCause.IsEvent(kl.Cause); // (a ball or mode line's "victim" is words)
                 var old = GUI.color;
                 Fill(r, mine ? new Color(0.2f, 0.14f, 0.02f, 0.86f * a) : myDeath ? new Color(0.24f, 0.04f, 0.04f, 0.84f * a) : new Color(0.04f, 0.04f, 0.06f, 0.72f * a));
                 Fill(new Rect(r.x, r.y, r.width, 2 * k), new Color(1, 1, 1, 0.08f * a));

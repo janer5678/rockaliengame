@@ -350,6 +350,7 @@ namespace RockGame
                 Fill(new Rect(cx - 50 * k, cy + 30 * k, 100 * k * charge, 8 * k), charge >= 1f ? new Color(1f, 0.85f, 0.2f) : Color.white);
             }
             DrawDamageNumbers(k);
+            DrawSkullTags(k); // (Assassin, in team games: whose each skull is)
 
             // ---- aim info / held item hints ----
             float by = sh - 150 * k;
@@ -463,7 +464,9 @@ namespace RockGame
                 float t = Mathf.Max(0, (float)(me.RespawnAt.Value - me.NetworkManager.ServerTime.Time));
                 Shadowed(new Rect(0, sh * 0.4f, sw, 60 * k), "YOU DIED", m_Big);
                 bool home = game == null || game.WallUp;
-                if (me.ChoosingRespawn)
+                if (game != null && !game.CanRespawn(me.Team.Value))
+                    Shadowed(new Rect(0, sh * 0.4f + 60 * k, sw, 30 * k), "<color=#ff8080>ELIMINATED</color> - your machine is destroyed, so there's no coming back. Cheer your team on!", m_Center);
+                else if (me.ChoosingRespawn)
                 {
                     Shadowed(new Rect(0, sh * 0.4f + 60 * k, sw, 30 * k), "Your stuff spilled out where you died. Where do you want to respawn?", m_Center);
                     float bw = 260 * k, bh = 50 * k, by2 = sh * 0.4f + 100 * k;
@@ -578,6 +581,32 @@ namespace RockGame
             }
         }
 
+
+        /// <summary>Assassin in team games: each skull's name over it - the ones lying about, and the ones handed in on the
+        /// machines (Machine.SkullSpots).</summary>
+        void DrawSkullTags(float k)
+        {
+            var g = NetGame.Instance;
+            var cam = Camera.main;
+            if (!Cfg.Assassin || g == null || cam == null || Cfg.FreeForAll || Cfg.PlayersNeeded <= Cfg.TeamCount) return;
+            var st = new GUIStyle(m_Center) { fontSize = Mathf.RoundToInt(14 * k), fontStyle = FontStyle.Bold };
+            void Tag(Vector3 at, int data)
+            {
+                if ((at - cam.transform.position).sqrMagnitude > 35f * 35f) return;
+                var sp = cam.WorldToScreenPoint(at);
+                if (sp.z < 0) return;
+                Cfg.SkullWho(data, out int t, out _);
+                string hex = ColorUtility.ToHtmlStringRGB(Color.Lerp(Cfg.TeamColor[Mathf.Clamp(t, 0, 3)], Color.white, 0.35f));
+                Shadowed(new Rect(sp.x - 90, Screen.height - sp.y - 24, 180, 22), $"<color=#{hex}>{Cfg.SkullName(data)}</color>", st);
+            }
+            foreach (var it in g.Items) if (it.Stack.Id == Item.Skull) Tag(it.Pos + Vector3.up * 1.4f, it.Stack.Data);
+            for (int t = 0; t < 4; t++)
+            {
+                var m = Machine.ByTeam[t];
+                if (m == null) continue;
+                foreach (var (pos, data) in m.SkullSpots) Tag(pos, data);
+            }
+        }
         void DrawDamageNumbers(float k)
         {
             var cam = Camera.main;
@@ -1271,6 +1300,53 @@ namespace RockGame
         // ------------------------------------------------------------------ misc
 
         string BallStatus(int myTeam)
+        {
+            // the game modes (NetGame.GameModes.cs): what you're after, and the score
+            string mode = ModeStatus(myTeam);
+            if (mode != null && (Cfg.NoBall || Ball.Instance == null)) return mode;
+            string ball = BallOnly(myTeam);
+            return mode == null ? ball : ball.Length == 0 ? mode : mode + "\n" + ball;
+        }
+
+        /// <summary>The game modes' line: the goal in a few words and where everyone stands (null: Classic / Primitive).</summary>
+        static string ModeStatus(int myTeam)
+        {
+            var g = NetGame.Instance;
+            if (g == null || !Cfg.ClassicMode) return null;
+            var sb = new System.Text.StringBuilder();
+            string Team(int t) => $"<color=#{ColorUtility.ToHtmlStringRGB(Color.Lerp(Cfg.TeamColor[t], Color.white, 0.3f))}>{Cfg.TeamName[t]}</color>";
+            if (Cfg.Bedwars)
+            {
+                sb.Append(g.MachineDown(myTeam) ? "<color=#ff7777>Your machine is gone - no more respawns!</color>  " : "Smash the enemy machines - and guard yours  ");
+                for (int t = 0; t < Cfg.TeamCount; t++) sb.Append($"  {Team(t)} {(g.MachineDown(t) ? "<color=#ff6666>DOWN</color>" : $"{Cfg.MachineHitsToBreak - g.HitsOn(t)}/{Cfg.MachineHitsToBreak}")}");
+            }
+            else if (Cfg.ThreeGoal)
+            {
+                sb.Append($"First to {Cfg.GoalsToWin} goals:  ");
+                for (int t = 0; t < Cfg.TeamCount; t++) sb.Append($"  {Team(t)} <b>{g.GoalsOf(t)}</b>");
+            }
+            else if (Cfg.ProgressMode)
+            {
+                sb.Append("Keep the ball in your machine to fill your bar:  ");
+                for (int t = 0; t < Cfg.TeamCount; t++) sb.Append($"  {Team(t)} <b>{Mathf.FloorToInt(g.ProgressOf(t) * 100f)}%</b>");
+            }
+            else if (Cfg.Assassin)
+            {
+                int enemies = 0;
+                foreach (var p in PlayerNet.All) if (p != null && p.Team.Value != myTeam) enemies++;
+                sb.Append($"Kill the enemies, hand their skulls in at your machine:  ");
+                for (int t = 0; t < Cfg.TeamCount; t++) sb.Append($"  {Team(t)} <b>{g.SkullsOf(t)}</b>");
+                sb.Append($"   <color=#bbbbbb>(one of each of your {enemies} enemies wins)</color>");
+            }
+            else if (Cfg.Domination)
+            {
+                int bt = g.BallTeam.Value;
+                sb.Append(bt < 0 ? "Whoever has the ball gets the Advanced Trade Station's items" : bt == myTeam ? "<color=#77ff77>Your team has the ball: advanced trades unlocked!</color>" : $"{Team(bt)} has the ball and the advanced trades - take it!");
+            }
+            return sb.ToString();
+        }
+
+        string BallOnly(int myTeam)
         {
             var b = Ball.Instance;
             if (b == null) return "";

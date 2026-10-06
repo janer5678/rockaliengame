@@ -1667,6 +1667,8 @@ namespace RockGame
                 case TargetKind.WorldItem: m_Net.PickupItemRpc(t.ItemId); m_VM.Use(); break;
                 case TargetKind.SelfSpear: m_Net.PullSpearRpc(m_Net.NetworkObject); Sfx.Play2D(Sfx.Flesh, 0.6f); break;
                 case TargetKind.Machine:
+                    // Assassin: your own machine takes the skulls you're carrying (NetGame.GameModes.cs)
+                    if (Cfg.Assassin && t.MachineTeam == m_Net.Team.Value) m_Net.DepositSkullsRpc();
                     break; // (no top-right message: the look-at line under the crosshair already says what to do with it)
                 case TargetKind.UpgradeStation:
                     // your own upgrade station: the UPGRADES screen (fortify, the wood gen)
@@ -2020,6 +2022,17 @@ namespace RockGame
                     // an airdrop is purple, the gambling machine its green; a chest, bench or loot bag is its team's colour
                     AimText = c.IsAirdrop ? Tip(c.DisplayName, TipAirdrop, detail) : c.IsGamble ? Tip(c.DisplayName, TipGamble, detail)
                         : TeamTip(c.IsBag ? "Loot bag" : c.DisplayName, c.Team.Value, detail);
+                    return;
+                }
+                case TargetKind.Machine when Cfg.Bedwars || Cfg.Assassin:
+                {
+                    // Bedwars: its state (and smash the enemy's); Assassin: hand skulls in at yours
+                    var g = NetGame.Instance;
+                    bool mine = t.MachineTeam == m_Net.Team.Value;
+                    string d = Cfg.Bedwars
+                        ? (g != null && g.MachineDown(t.MachineTeam) ? "<color=#ff6666>destroyed</color>" : mine ? $"your cryochamber - {Cfg.MachineHitsToBreak - (g != null ? g.HitsOn(t.MachineTeam) : 0)} hits left" : $"smash it! {Cfg.MachineHitsToBreak - (g != null ? g.HitsOn(t.MachineTeam) : 0)} hits left")
+                        : mine ? $"{Binds.Name(Bind.Interact)}: hand in your skulls ({m_Net.Count(Item.Skull)})   {(g != null ? g.SkullsOf(m_Net.Team.Value) : 0)} in" : "";
+                    AimText = TeamTip("Alien machine", t.MachineTeam, d);
                     return;
                 }
                 case TargetKind.Machine:

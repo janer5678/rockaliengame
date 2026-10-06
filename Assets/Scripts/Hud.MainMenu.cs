@@ -20,7 +20,7 @@ namespace RockGame
         static readonly MapKind[] k_Maps = { MapKind.Plains, MapKind.Highlands, MapKind.Beach, MapKind.Canyon, MapKind.Frostlake, MapKind.Volcano, MapKind.Ruins };
 
         /// <summary>The modes the main menu offers (the others are hidden for now; the dev main menu still has them all).</summary>
-        public static readonly GameRules[] MenuModes = { GameRules.AutoWood, GameRules.Classic };
+        public static readonly GameRules[] MenuModes = { GameRules.AutoWood, GameRules.Classic, GameRules.Bedwars, GameRules.ThreeGoal, GameRules.Progress, GameRules.Assassin, GameRules.Domination };
 
         /// <summary>The dev main menu (the old all-in-one page) is up instead of the new one: Tab swaps them.</summary>
         public static bool DevMenuShown => s_I != null && (s_I.m_DevMenu || (Bootstrap.Testing && !TestNewMenu));
@@ -223,7 +223,7 @@ namespace RockGame
         int DrawRulesPicker(int key)
         {
             float k = m_Scale;
-            var rules = (GameRules)Mathf.Clamp((key >> Cfg.RulesShift) & Cfg.RulesMask, 0, (int)GameRules.Dna);
+            var rules = (GameRules)Mathf.Clamp((key >> Cfg.RulesShift) & Cfg.RulesMask, 0, (int)Cfg.LastRules);
             if (System.Array.IndexOf(MenuModes, rules) < 0) { rules = MenuModes[0]; key = (key & ~(Cfg.RulesMask << Cfg.RulesShift)) | ((int)rules << Cfg.RulesShift); }
             GUILayout.BeginHorizontal();
             RowLabel("Game mode");
