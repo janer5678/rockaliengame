@@ -92,6 +92,8 @@ namespace RockGame
         /// <summary>Game option: every time you respawn you get a random airdrop item.</summary>
         public static bool RespawnLoot;
         public const int SmallBit = 16, WoodBit = 32, SidesBit = 64, RespawnLootBit = 128, ModeShift = 8, ModeMask = 7, SizeShift = 12, CenterBit = 1 << 14, RulesShift = 15, RulesMask = 15, GraphicsShift = 19, GraphicsMask = 3;
+        /// <summary>Team sizes (2 bits a team, size - 1) from bit 21, and whether they're set (bit 29).</summary>
+        public const int CapsShift = 21, CapsBit = 1 << 29;
         public static GameMode Mode = GameMode.Duel;
         public static GameRules Rules = GameRules.Classic;
         /// <summary>Arsenal and Builder: cheap items and the powerful items menu.</summary>
@@ -139,8 +141,23 @@ namespace RockGame
                 default: return "The original game, nothing piling up by itself: gather, build your base, craft in it, get the ball into your machine.";
             }
         }
-        /// <summary>Players needed to start (and the most that can join).</summary>
-        public static int PlayersNeeded => ModeTeams(Mode) * ModeTeamSize(Mode);
+        /// <summary>Players needed to start (and the most that can join): every team's room added up.</summary>
+        public static int PlayersNeeded { get { int n = 0; for (int t = 0; t < ModeTeams(Mode); t++) n += TeamCap(t); return n; } }
+        /// <summary>The new menu's PLAYERS screen can pick uneven teams (3 v 2...): each team's room, 1..4 (CapsBit set: from
+        /// the map key's caps bits; otherwise the mode's own team size).</summary>
+        public static int TeamCap(int team) => CustomCaps && team >= 0 && team < 4 ? s_Caps[team] : ModeTeamSize(Mode);
+        public static bool CustomCaps { get; private set; }
+        static readonly int[] s_Caps = { 1, 1, 1, 1 };
+        /// <summary>A map key with these team sizes (each 1..4) in it, and the mode that fits them (two teams: Duel up to
+        /// 4 v 4 by the bigger side, so every player has a spawn spot).</summary>
+        public static int WithCaps(int key, int[] caps)
+        {
+            key &= ~((0xFF << CapsShift) | CapsBit);
+            if (caps == null) return key;
+            key |= CapsBit;
+            for (int t = 0; t < 4; t++) key |= (Mathf.Clamp(t < caps.Length ? caps[t] : 1, 1, 4) - 1) << (CapsShift + 2 * t);
+            return key;
+        }
         public static bool FreeForAll => Mode == GameMode.Ffa3 || Mode == GameMode.Ffa4;
         /// <summary>How many teams (bases) a mode has.</summary>
         public static int ModeTeams(GameMode m) => m == GameMode.Ffa3 || m == GameMode.Trio ? 3 : m == GameMode.Ffa4 || m == GameMode.Quad ? 4 : 2;
@@ -174,7 +191,8 @@ namespace RockGame
         public static bool FourWay => TeamCount > 2;
         public static string ModeLabel => ModeName(Mode);
         /// <summary>Packs the map/mode choice for syncing; the seed is sent separately.</summary>
-        public static int MapKey => (int)Map | ((int)Size << SizeShift) | (WoodMode ? WoodBit : 0) | (AirdropSides ? SidesBit : 0) | (AirdropCenter ? CenterBit : 0) | (RespawnLoot ? RespawnLootBit : 0) | ((int)Mode << ModeShift) | ((int)Rules << RulesShift) | ((HostGraphics & GraphicsMask) << GraphicsShift);
+        public static int MapKey => (int)Map | ((int)Size << SizeShift) | (WoodMode ? WoodBit : 0) | (AirdropSides ? SidesBit : 0) | (AirdropCenter ? CenterBit : 0) | (RespawnLoot ? RespawnLootBit : 0) | ((int)Mode << ModeShift) | ((int)Rules << RulesShift) | ((HostGraphics & GraphicsMask) << GraphicsShift) | (CustomCaps ? CapsBit | CapsBits() : 0);
+        static int CapsBits() { int b = 0; for (int t = 0; t < 4; t++) b |= (s_Caps[t] - 1) << (CapsShift + 2 * t); return b; }
 
         public static void SetMap(int key, int seed)
         {
@@ -196,6 +214,8 @@ namespace RockGame
                 WoodMode = WoodIsNormal;
             }
             HostGraphics = Mathf.Clamp((key >> GraphicsShift) & GraphicsMask, 0, 2);
+            CustomCaps = (key & CapsBit) != 0;
+            for (int t = 0; t < 4; t++) s_Caps[t] = ((key >> (CapsShift + 2 * t)) & 3) + 1;
             TeamCount = ModeTeams(Mode);
             MapSeed = seed;
             // on the 3 m building grid, or the grid wouldn't line up with the base area

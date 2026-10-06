@@ -92,10 +92,17 @@ namespace RockGame
                 if (gw != null)
                     foreach (var r in gw.GetComponentsInChildren<Renderer>())
                     {
-                        if (EnergyWall.Material != null && r.sharedMaterial == EnergyWall.Material) energyMats++;
+                        if (EnergyWall.IsEnergy(r.sharedMaterial)) energyMats++;
                         if (r.forceRenderingOff) hiddenLines++;
                     }
                 int cols1 = gw != null ? gw.GetComponentsInChildren<Collider>().Length : 0;
+                // the big dome over the map takes it too
+                if (MapDome.Root != null)
+                {
+                    int domeEnergy = 0;
+                    foreach (var r in MapDome.Root.GetComponentsInChildren<Renderer>()) if (EnergyWall.IsEnergy(r.sharedMaterial)) domeEnergy++;
+                    Check(EnergyWall.Dome != null && EnergyWall.Dome.Energy && domeEnergy >= 1, $"Energy wall on: the big dome over the map is an energy field too ({domeEnergy} surfaces)");
+                }
                 if (gw != null) Check(ew != null && ew.Energy && energyMats >= 2 && hiddenLines >= 2 && cols1 == cols0 && cols0 > 0,
                     $"Energy wall on: the glass wall and the ball's dome take the energy look ({energyMats} energy surfaces, {hiddenLines} frame lines hidden, colliders {cols0} -> {cols1})");
                 if (gw != null)
@@ -106,7 +113,7 @@ namespace RockGame
                 GameSettings.EnergyWall.Set(false, false);
                 yield return null;
                 int glassBack = 0;
-                if (gw != null) foreach (var r in gw.GetComponentsInChildren<Renderer>()) if (r.sharedMaterial != EnergyWall.Material && !r.forceRenderingOff) glassBack++;
+                if (gw != null) foreach (var r in gw.GetComponentsInChildren<Renderer>()) if (!EnergyWall.IsEnergy(r.sharedMaterial) && !r.forceRenderingOff) glassBack++;
                 if (gw != null) Check(ew != null && !ew.Energy && glassBack >= 4, $"and off again it's glass ({glassBack} glass surfaces and frame lines)");
                 GameSettings.EnergyWall.Set(was, false);
             }

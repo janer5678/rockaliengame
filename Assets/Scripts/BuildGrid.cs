@@ -447,10 +447,11 @@ namespace RockGame
         /// bigger reach and bias, SameRotation*), the more so when it faces you (`facing`: where you look; FacingBias).
         /// </summary>
         public static bool PreferRecent(PieceType t, IList<PieceKey> recent, PieceKey current, bool currentOk,
-            Func<PieceKey, (bool ok, Vector3 p)> aimAt, Func<PieceKey, bool> valid, out PieceKey key, Vector3 facing = default)
+            Func<PieceKey, (bool ok, Vector3 p)> aimAt, Func<PieceKey, bool> valid, out PieceKey key, Vector3 facing = default, Func<PieceKey, bool> exists = null)
         {
             key = default;
             byte want = KindOf(t);
+            exists ??= Registry.ContainsKey; // (what's built: a line wall needs holding up to be pushed)
             if (recent == null || recent.Count == 0 || want == PieceKey.KStairs) return false;
             float curDist = float.MaxValue;
             if (currentOk)
@@ -482,7 +483,11 @@ namespace RockGame
                     if (!a.ok) continue;
                     float d = DistToPiece(a.p, k);
                     // a wall in the same rotation as your last wall, on its line: strongly preferred over a turned one
-                    bool sameRot = want == PieceKey.KEdge && r.Kind == PieceKey.KEdge && straight[s] && k.D == r.D && k.L == r.L;
+                    // (only when something holds it up already - a foundation or a ceiling beside it, or a wall below: a wall
+                    // out over bare ground isn't pushed first)
+                    bool line = want == PieceKey.KEdge && r.Kind == PieceKey.KEdge && straight[s] && k.D == r.D && k.L == r.L;
+                    bool held = !line || IsSupported(k, exists);
+                    bool sameRot = line && held;
                     // (against a turned wall - or nothing buildable - the line gets the big bias and reach; against a
                     // wall in the same rotation on another line, just the usual one, so aiming at that line still works)
                     bool vsTurned = sameRot && age == 0 && (!currentOk || current.Kind != PieceKey.KEdge || current.D != r.D);
@@ -490,7 +495,7 @@ namespace RockGame
                     float bias = vsTurned ? SameRotationBias + (faces ? FacingBias : 0f) : RecentBias;
                     float reach = vsTurned ? SameRotationReach + (faces ? FacingBias : 0f) : RecentReach;
                     if (d > reach || d > curDist + bias) continue;
-                    float score = d - (sameRot ? SameRotationBonus + (faces ? FacingBias : 0f) : straight[s] && r.Kind == want ? StraightBonus : 0f) - (age == 0 ? NewestBonus : 0f);
+                    float score = d - (sameRot ? SameRotationBonus + (faces ? FacingBias : 0f) : straight[s] && r.Kind == want && held ? StraightBonus : 0f) - (age == 0 ? NewestBonus : 0f);
                     if (score >= best || !valid(k)) continue;
                     best = score;
                     key = k;

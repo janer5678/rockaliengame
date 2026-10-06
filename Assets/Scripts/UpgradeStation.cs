@@ -10,7 +10,7 @@ namespace RockGame
     /// (WoodMachine.cs): a silver housing with trim in the team's colour on a metal plinth, a slanted keypad, a flat lid with a
     /// pair of team-colour lenses - and on its front a big screen with a glowing UP ARROW in the team's colour (not a plus:
     /// that read as healing), with a small holographic arrow turning over the lid, so you can tell from across the base
-    /// that it's where upgrades are bought. Once the team has bought anything, the arrow steps aside and the screen shows
+    /// that it's where upgrades are bought. Once the team has bought anything, the arrow goes and the screen shows
     /// each upgrade's level squares (lit per level bought, like the UPGRADES screen's pips: BuildStatus / UpdateStatus).
     /// When anyone on the team buys an upgrade, every client plays it (PlayerNet.UpgradeFxRpc -> Celebrate): team-colour up
     /// arrows burst out of it and float up, the screen flashes, and the whole machine bounces (squash and stretch).
@@ -237,8 +237,9 @@ namespace RockGame
             m_Status.localPosition = new Vector3(0, sy, sz + 0.022f);
             m_PipLitMat = Workbench.Glow(k_PipLit);
             m_PipOffMat = Art.Mat(k_PipOff);
-            // (the glass is 0.7 wide: the symbol sits just right of the middle, the squares run out towards the right edge)
-            const float pip = 0.06f, gap = 0.02f, x0 = 0.075f, rowStep = 0.15f;
+            // (the glass is 0.7 wide; the screen's +x is the viewer's LEFT: the symbol on the left, then the squares filling
+            // from left to right as you look at it - the whole row centred, the arrow is gone by then)
+            const float pip = 0.06f, gap = 0.02f, symX = 0.14f, x0 = 0.035f, rowStep = 0.15f;
             int rows = m_StatusIds.Count;
             for (int r = 0; r < rows; r++)
             {
@@ -247,15 +248,15 @@ namespace RockGame
                 // the row's symbol
                 if (id == Item.WoodGenBuff)
                 {
-                    Art.Box(m_Status, Art.Wood, new Vector3(-0.005f, y - 0.016f, 0), new Vector3(0.07f, 0.026f, 0.008f));
-                    Art.Box(m_Status, Art.Wood * 0.85f, new Vector3(-0.005f, y + 0.014f, 0), new Vector3(0.07f, 0.026f, 0.008f));
+                    Art.Box(m_Status, Art.Wood, new Vector3(symX, y - 0.016f, 0), new Vector3(0.07f, 0.026f, 0.008f));
+                    Art.Box(m_Status, Art.Wood * 0.85f, new Vector3(symX, y + 0.014f, 0), new Vector3(0.07f, 0.026f, 0.008f));
                 }
-                else Art.Box(m_Status, Art.Stone, new Vector3(-0.005f, y, 0), new Vector3(0.07f, 0.05f, 0.008f));
+                else Art.Box(m_Status, Art.Stone, new Vector3(symX, y, 0), new Vector3(0.07f, 0.05f, 0.008f));
                 int max = Cfg.BaseUpgradeMax(id);
                 var pips = new MeshRenderer[max];
                 for (int i = 0; i < max; i++)
                 {
-                    var x = x0 + pip * 0.5f + i * (pip + gap);
+                    var x = x0 - i * (pip + gap); // (towards the viewer's right)
                     Art.Box(m_Status, k_PipOff * 0.6f, new Vector3(x, y, -0.001f), new Vector3(pip, pip, 0.006f)); // (the square's dark frame)
                     pips[i] = Art.Box(m_Status, k_PipOff, new Vector3(x, y, 0.002f), new Vector3(pip * 0.72f, pip * 0.72f, 0.006f)).GetComponent<MeshRenderer>();
                 }
@@ -286,9 +287,8 @@ namespace RockGame
             if (m_Status.gameObject.activeSelf != any) m_Status.gameObject.SetActive(any);
             if (m_Arrow)
             {
-                // the arrow steps aside (smaller, on the left) while the status shows
-                m_Arrow.localPosition = any ? m_ArrowHome + new Vector3(-0.2f, 0, 0) : m_ArrowHome;
-                m_Arrow.localScale = Vector3.one * (any ? 0.72f : 1f);
+                // the arrow goes once the status shows (the screen is just the levels then)
+                if (m_Arrow.gameObject.activeSelf == any) m_Arrow.gameObject.SetActive(!any);
             }
         }
 

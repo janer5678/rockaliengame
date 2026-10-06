@@ -322,6 +322,7 @@ namespace RockGame
             var l = lines.Build(go.transform, "map dome frame", s_LineMat, false);
             l.AddComponent<OwnedMesh>().Mesh = MapUVs(l);
             s_Rs.Add(l.GetComponent<MeshRenderer>());
+            EnergyWall.Attach(go, s_Mask, true); // (Settings > Display > Energy wall: all the glass, the big dome too)
 
             foreach (var r in s_Rs) look.Normal.Add(r); // (PSX / AI PSX: their concrete walls instead)
             go.AddComponent<MapDomeTint>();

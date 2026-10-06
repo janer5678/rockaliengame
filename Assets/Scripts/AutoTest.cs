@@ -22,6 +22,9 @@ namespace RockGame
             GameSettings.Muted = true;
             GameSettings.Apply();
             if (m_Mode == "menushot") { StartCoroutine(MenuShots()); return; }
+            if (m_Mode == "newmenu") { StartCoroutine(NewMenuShots()); return; } // (AutoTest.Lobby.cs)
+            if (m_Mode == "mapshots") { StartCoroutine(MapShots()); return; }
+            if (m_Mode == "lobby") NetGame.TestLobby = true; // (the ship lobby, though it's a test)
             if (m_Mode == "voice") { StartCoroutine(VoiceRoutine()); return; }
             if (m_Mode == "spectate") { StartCoroutine(SpectateRoutine()); return; } // (AutoTest.Spectate.cs)
             StartCoroutine(Run());
@@ -127,6 +130,7 @@ namespace RockGame
             Log($"local player spawned: team={Cfg.TeamName[me.Team.Value]} host={nm.IsHost} mode={Cfg.ModeLabel} nodes={FindObjectsByType<ResourceNode>(FindObjectsSortMode.None).Length}");
             if (NetGame.Instance.S == GameState.Waiting)
                 Check(Vector3.Distance(me.transform.position, Cfg.ArenaCenter) < 30f && me.HeldItem == Item.Rock, "waiting for players in the stadium with a rock");
+            if (m_Mode == "lobby") { yield return LobbyRoutine(me); yield break; }
             if (m_Mode == "arena") { yield return ArenaRoutine(me, pc); yield break; }
             if (m_Mode == "voicenet") { yield return VoiceNetRoutine(me); yield break; }
             while (NetGame.Instance.S == GameState.Waiting) yield return null;

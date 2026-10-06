@@ -119,8 +119,12 @@ namespace RockGame
         static Vector3 s_LookNow;
         static Quaternion s_RotNow = Quaternion.identity;
 
+        /// <summary>(tests) leave the camera alone (AutoTest.Lobby.cs takes the map pictures with it).</summary>
+        public static bool TestHold;
+
         static void TickCamera(Transform cam)
         {
+            if (TestHold) return; // (tests: the camera is theirs - the map pictures)
             float dt = Mathf.Min(Time.unscaledDeltaTime, 0.1f);
             if (MapBuilder.Root == null) return;
             int root = MapBuilder.Root.GetInstanceID();

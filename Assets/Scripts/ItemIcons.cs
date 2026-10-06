@@ -179,8 +179,6 @@ namespace RockGame
                     break;
                 case PieceType.Floor:
                     Box(0.1f, 0.44f, 0.66f, 0.5f, 0.24f, 0.18f); // a thin slab, up in the air
-                    Add(Rect(0.14f, 0.18f, 0.2f, 0.4f));          // on two short posts (it sits on walls)
-                    Add(Rect(0.56f, 0.18f, 0.62f, 0.4f));
                     break;
                 case PieceType.Wall:
                     Box(0.18f, 0.12f, 0.72f, 0.8f, 0.1f, 0.08f);
@@ -189,6 +187,7 @@ namespace RockGame
                     Box(0.18f, 0.12f, 0.72f, 0.8f, 0.1f, 0.08f);
                     Cut(Rect(0.26f, 0.36f, 0.64f, 0.7f));         // the big opening
                     Add(Rect(0.435f, 0.36f, 0.465f, 0.7f));       // a bar down the middle
+                    Add(Rect(0.26f, 0.515f, 0.64f, 0.545f));     // and one across it
                     break;
                 case PieceType.Doorway:
                     Box(0.18f, 0.12f, 0.72f, 0.8f, 0.1f, 0.08f);

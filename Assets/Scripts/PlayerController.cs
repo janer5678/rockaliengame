@@ -31,7 +31,7 @@ namespace RockGame
         /// <summary>Building plan: the Rust-style wheel (hold RMB) is open, and demolish mode picked on it.</summary>
         public bool WheelOpen, DemolishMode, UpgradeMode;
         /// <summary>The build wheel slice that's selected (always one; the foundation to start with).</summary>
-        public int WheelIndex;
+        public int WheelIndex = System.Array.FindIndex(WheelOptions, o => o.Piece == PieceType.Foundation && !o.Demolish); // (it starts on Foundation, like BuildPiece)
         public bool CrossbowAiming { get; private set; }
         /// <summary>Aiming down the revolver's sights (RMB, like the crossbow).</summary>
         public bool RevolverAiming { get; private set; }
@@ -41,12 +41,12 @@ namespace RockGame
         /// <summary>The build wheel's slices, clockwise from just right of the top (see WheelAngle).</summary>
         public static readonly (string Label, PieceType Piece, bool Demolish, bool Upgrade)[] WheelOptions =
         {
-            // clockwise: three pieces down the right (the wall straight out to the right, the ceiling under it), DEMOLISH
-            // straight down at the bottom (like Rust), then three pieces up the left. Upgrades are at the upgrade station;
-            // they aren't a slice any more
-            ("Foundation", PieceType.Foundation, false, false), ("Wall", PieceType.Wall, false, false), ("Ceiling", PieceType.Floor, false, false),
+            // clockwise: the ceiling top right, the wall straight out to the right, the stairs under it, DEMOLISH straight
+            // down at the bottom (like Rust), the window bottom left, the doorway straight out to the left and the
+            // foundation top left. Upgrades are at the upgrade station; they aren't a slice any more
+            ("Ceiling", PieceType.Floor, false, false), ("Wall", PieceType.Wall, false, false), ("Stairs", PieceType.Stairs, false, false),
             ("Demolish", PieceType.Wall, true, false),
-            ("Window", PieceType.Window, false, false), ("Stairs", PieceType.Stairs, false, false), ("Doorway", PieceType.Doorway, false, false),
+            ("Window", PieceType.Window, false, false), ("Doorway", PieceType.Doorway, false, false), ("Foundation", PieceType.Foundation, false, false),
         };
         /// <summary>Where a wheel slice's middle is, in degrees clockwise from straight up. The slices are turned half a
         /// slice so the middle one (demolish) sits exactly at the bottom; a slice covers WheelAngle +- half a slice.</summary>
@@ -256,6 +256,17 @@ namespace RockGame
         {
             if (!IsSpawned || !IsOwner) return;
             if (!m_Placed) { TryPlace(); if (!m_Placed) return; }
+            if (ShipLobby.Active)
+            {
+                // the ship lobby (ShipLobby.cs): you sit there - no moving, the mouse free for its buttons
+                CloseMenu();
+                Paused = false;
+                WheelOpen = false;
+                ScoreboardOpen = false;
+                Cursor.lockState = CursorLockMode.None;
+                Cursor.visible = true;
+                return;
+            }
             var game = NetGame.Instance;
             bool dead = m_Net.Dead.Value;
             bool gameOver = game != null && game.S == GameState.GameOver;
@@ -590,6 +601,8 @@ namespace RockGame
         void LateUpdate()
         {
             if (!IsSpawned || !IsOwner || m_Cam == null) return;
+            // the ship lobby has the camera (ShipLobby.cs) and your hands are put away
+            if (ShipLobby.Active) { m_VM.Update(new ViewModel.State { Item = m_Net.HeldItem, Visible = false, Visible2 = false }); return; }
             // the victory cutscene has the camera (and your hands are put away)
             if (VictoryCutscene.CameraPose(out var cutPos, out var cutRot, out var cutFov))
             {
@@ -2037,7 +2050,7 @@ namespace RockGame
             if (no.TryGetComponent(out Structure st))
             {
                 // (WOODEN DOORWAY in its team's colour - not "Wooden Doorway (BLUE)")
-                string detail = $"{st.Health.Value:0}/{st.MaxHp:0}";
+                string detail = $"{st.Health.Value:0}/{st.MaxHp:0}" + (st.HasBars ? $"  ·  bars {st.DoorHealth.Value:0}/{st.DoorMaxHp:0}" : ""); // (a window: its bars have their own, like a door)
                 if (m_Net.HeldItem == Item.BuildingPlan && st.Team.Value == m_Net.Team.Value)
                 {
                     if (st.Tier.Value == 0 && st.Upgradable && !Cfg.WoodMode) detail += $"   F: upgrade to stone ({Cfg.UpgradeCost(st.PType)} {Cfg.UpgradeName})";

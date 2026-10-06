@@ -113,6 +113,65 @@ namespace RockGame
 
         static float Smooth(float t) { t = Mathf.Clamp01(t); return t * t * (3 - 2 * t); }
 
+        /// <summary>
+        /// The ship lobby (ShipLobby.cs): sitting about, chilling, in one of four poses (variant) - leaning back with the
+        /// arms crossed, elbows on the knees, one leg crossed over with an arm along the seat back, or chatting with a hand
+        /// going - breathing and looking round on its own (t: seconds; each alien has its own offset).
+        /// </summary>
+        public void Lounge(int variant, float t)
+        {
+            float br = Mathf.Sin(t * 1.6f) * 2.5f;                                   // breathing
+            float look = Mathf.Sin(t * 0.37f + variant * 1.7f) * 28f + Mathf.Sin(t * 0.13f) * 12f; // looking round
+            foreach (var b in new[] { m_Hips, m_Neck, m_LHand, m_RHand }) Rot(b, Vector3.zero);
+            // sitting: thighs forward, knees bent, the body down on the seat
+            Rot(m_LUp, new Vector3(-84f, 0, -9f));
+            Rot(m_RUp, new Vector3(-84f, 0, 9f));
+            Rot(m_LLo, new Vector3(86f, 0, 0));
+            Rot(m_RLo, new Vector3(86f, 0, 0));
+            m_Model.localPosition = m_ModelBase + new Vector3(0, -0.47f, 0);
+            switch (((variant % 4) + 4) % 4)
+            {
+                case 0: // leaning back, arms crossed
+                    Rot(m_Spine, new Vector3(10f + br, 0, 0));
+                    Rot(m_Chest, new Vector3(4f, 0, 0));
+                    Rot(m_Head, new Vector3(-6f, look, 0));
+                    Rot(m_LArm, new Vector3(-38f, 0, -8f));
+                    Rot(m_LFore, new Vector3(-100f, 45f, 0));
+                    Rot(m_RArm, new Vector3(-38f, 0, 8f));
+                    Rot(m_RFore, new Vector3(-100f, -45f, 0));
+                    break;
+                case 1: // elbows on the knees, leaning in, head bobbing along to something
+                    Rot(m_Spine, new Vector3(-26f, 0, 0));
+                    Rot(m_Chest, new Vector3(-10f + br, 0, 0));
+                    Rot(m_Head, new Vector3(-12f + Mathf.Sin(t * 2.2f) * 7f, look * 0.5f, 0));
+                    Rot(m_LArm, new Vector3(-58f, 0, -4f));
+                    Rot(m_LFore, new Vector3(-72f, 0, 0));
+                    Rot(m_RArm, new Vector3(-58f, 0, 4f));
+                    Rot(m_RFore, new Vector3(-72f, 0, 0));
+                    break;
+                case 2: // one leg crossed over, an arm along the back of the seat
+                    Rot(m_RUp, new Vector3(-92f, 0, -22f));
+                    Rot(m_RLo, new Vector3(58f, 0, 0));
+                    Rot(m_Spine, new Vector3(6f + br, 0, 0));
+                    Rot(m_Chest, new Vector3(2f, 0, 0));
+                    Rot(m_Head, new Vector3(-2f, look, 0));
+                    Rot(m_LArm, new Vector3(18f, 0, -32f));
+                    Rot(m_LFore, new Vector3(-22f, 0, 0));
+                    Rot(m_RArm, new Vector3(-28f, 0, 10f));
+                    Rot(m_RFore, new Vector3(-62f, 0, 0));
+                    break;
+                default: // chatting: a hand going, nodding, turning to the others
+                    Rot(m_Spine, new Vector3(br, Mathf.Sin(t * 0.5f) * 12f, 0));
+                    Rot(m_Chest, new Vector3(-4f, 0, 0));
+                    Rot(m_Head, new Vector3(Mathf.Sin(t * 2.6f) * 7f, look, 0));
+                    Rot(m_RArm, new Vector3(-36f + Mathf.Sin(t * 3f) * 10f, 0, 16f));
+                    Rot(m_RFore, new Vector3(-78f + Mathf.Sin(t * 3.5f) * 18f, 0, 0));
+                    Rot(m_LArm, new Vector3(-30f, 0, -10f));
+                    Rot(m_LFore, new Vector3(-72f, 0, 0));
+                    break;
+            }
+        }
+
         public void Tick(Pose p, float dt)
         {
             if (dt <= 0) return;

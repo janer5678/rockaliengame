@@ -111,16 +111,19 @@ namespace RockGame
             m_Hitbox = hb.AddComponent<CapsuleCollider>();
             if (IsServer)
             {
-                // join the team with the fewest players (1v1 and free for all: everyone gets their own; 2v2: two each)
-                int best = 0, bestCount = int.MaxValue;
+                // join the team with the most room left (1v1 and free for all: everyone gets their own; 2v2: two each;
+                // uneven teams - Cfg.TeamCap - fill up to their sizes). In the lobby you can swap (LobbyTeamRpc)
+                int best = 0, bestCount = 0;
+                float bestFill = float.MaxValue;
                 for (int t = 0; t < Cfg.TeamCount; t++)
                 {
                     int n = 0;
                     foreach (var p in All) if (p != this && p.Team.Value == t) n++;
-                    if (n < bestCount) { bestCount = n; best = t; }
+                    float fill = n >= Cfg.TeamCap(t) ? 1000f + n : n / (float)Cfg.TeamCap(t);
+                    if (fill < bestFill) { bestFill = fill; bestCount = n; best = t; }
                 }
                 Team.Value = (byte)best;
-                Slot.Value = (byte)bestCount;
+                Slot.Value = (byte)FreeSlot(best);
                 Health.Value = Cfg.MaxHealth;
                 for (int i = 0; i < Cfg.PlayerSlots; i++) Inv.Add(default);
                 Fx.Server(FxKind.Spawn, Cfg.SpawnPos(Team.Value), Vector3.up);

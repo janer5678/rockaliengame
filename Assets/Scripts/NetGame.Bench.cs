@@ -97,7 +97,6 @@ namespace RockGame
             int by = BenchUnlockedBy.Value;
             string who = by < 0 ? "the ball has been captured" : by == team ? "your team captured the ball" : $"{Cfg.TeamLabel(by)} captured the ball - everyone gets it";
             Hud.Banner("TRADE STATION UNLOCKED", $"Craft it in your bag ({Binds.Name(Bind.Inventory)}) - {who}");
-            Hud.Push("Trade Station Unlocked: craft one in your bag");
             Sfx.Play2D(Sfx.Unlock, 0.8f, 0f);
         }
     }

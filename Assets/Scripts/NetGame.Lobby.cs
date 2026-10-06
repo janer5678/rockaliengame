@@ -28,14 +28,21 @@ namespace RockGame
         public static int StartCountdowns;
         int m_StartPlayers;
 
+        /// <summary>The ship lobby (ShipLobby.cs): the match starts once at least two players are in and every one of them
+        /// has pressed READY (it needn't be full). The tests (Bootstrap.Testing) keep the old rule: a full lobby starts.</summary>
+        public static bool ReadyLobby => (!Bootstrap.Testing || TestLobby) && !Bootstrap.Solo && !Cfg.Tutorial;
+        /// <summary>(tests: -autotest lobby) the ship lobby and READY, as in a real game.</summary>
+        public static bool TestLobby;
+
         /// <summary>Server, every frame in the waiting stadium: true when the match should start now.</summary>
         bool ServerReadyToStart(int players, double now)
         {
             if ((Bootstrap.Solo || Cfg.Tutorial) && players >= 1) return true;
-            bool everyone = players >= Cfg.PlayersNeeded && players >= Spectator.ServerPlayerClients(NetworkManager); // (spectators aren't waited for)
+            bool ready = ReadyLobby;
+            bool everyone = (ready ? players >= 2 : players >= Cfg.PlayersNeeded) && players >= Spectator.ServerPlayerClients(NetworkManager); // (spectators aren't waited for)
             if (everyone)
                 foreach (var p in PlayerNet.All)
-                    if (p == null || !p.ServerInStadium) { everyone = false; break; }
+                    if (p == null || !p.ServerInStadium || (ready && !p.LobbyReady.Value)) { everyone = false; break; }
             if (!everyone)
             {
                 // somebody left, or the newest player isn't in yet: no countdown
@@ -43,7 +50,7 @@ namespace RockGame
                 m_StartPlayers = 0;
                 return false;
             }
-            float wait = Bootstrap.Fast ? Mathf.Min(1f, Cfg.StartCountdown) : Cfg.StartCountdown;
+            float wait = Bootstrap.Fast ? Mathf.Min(1f, Cfg.StartCountdown) : ready ? Mathf.Min(3f, Cfg.StartCountdown) : Cfg.StartCountdown; // (everyone READY: a short count)
             if (wait <= 0f) return true;
             if (StartAt.Value < 0 || players != m_StartPlayers)
             {
@@ -67,7 +74,7 @@ namespace RockGame
             if (!StartCounting) { m_StartSecond = -1; return; }
             int s = Mathf.CeilToInt(StartsIn);
             if (s == m_StartSecond || s <= 0) return;
-            if (m_StartSecond < 0 || s > m_StartSecond) Hud.Banner("EVERYONE'S HERE", $"The match starts in {s} seconds - get ready!");
+            if (m_StartSecond < 0 || s > m_StartSecond) Hud.Banner(ReadyLobby ? "EVERYONE'S READY" : "EVERYONE'S HERE", $"The match starts in {s} seconds - get ready!");
             m_StartSecond = s;
             Sfx.Play2D(s <= 3 ? Sfx.Ding : Sfx.Beep, s <= 3 ? 0.45f : 0.35f, 0f);
         }

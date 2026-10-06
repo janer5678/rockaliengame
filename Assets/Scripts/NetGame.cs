@@ -74,6 +74,7 @@ namespace RockGame
             Tutorial.Reset();
             State.OnValueChanged += OnStateChanged;
             Tunables.OnValueChanged += OnTunablesChanged;
+            MapKey.OnValueChanged += OnMapKeyChanged; // (the host changing the options in the lobby)
             if (!IsServer)
             {
                 Cfg.ApplyHost(Tunables.Value.ToString());
@@ -101,6 +102,7 @@ namespace RockGame
         {
             State.OnValueChanged -= OnStateChanged;
             Tunables.OnValueChanged -= OnTunablesChanged;
+            MapKey.OnValueChanged -= OnMapKeyChanged;
             if (IsServer && NetworkManager != null) NetworkManager.OnClientDisconnectCallback -= OnClientDisconnect;
             if (Instance == this) Instance = null;
             AirdropShip.Clear();
@@ -114,6 +116,43 @@ namespace RockGame
         void OnTunablesChanged(FixedString4096Bytes prev, FixedString4096Bytes cur)
         {
             if (!IsServer) Cfg.ApplyHost(cur.ToString());
+        }
+
+        /// <summary>Clients: the host changed the match options in the lobby (the game mode, team sizes...; never the map,
+        /// size or seed: those are fixed once hosted, so nothing is rebuilt).</summary>
+        void OnMapKeyChanged(int prev, int cur)
+        {
+            if (!IsServer && prev != cur) Cfg.SetMap(cur, MapSeed.Value);
+        }
+
+        /// <summary>Server: the host's GAME OPTIONS in the lobby - a new map key (same map, size and seed) and the tunables
+        /// (game length, mode options) go to everyone, everybody's READY is cleared, and anyone on a team that's now too
+        /// small moves to one with room.</summary>
+        public void ServerApplyLobbyOptions(int key)
+        {
+            if (!IsServer || S != GameState.Waiting) return;
+            int keep = Cfg.MapKey & (15 | (3 << Cfg.SizeShift) | Cfg.SmallBit);
+            key = (key & ~(15 | (3 << Cfg.SizeShift) | Cfg.SmallBit)) | keep;
+            Bootstrap.MapChoice = key;
+            Cfg.SetMap(key, Cfg.MapSeed);
+            MapKey.Value = Cfg.MapKey;
+            var data = Cfg.Serialize(true);
+            if (System.Text.Encoding.UTF8.GetByteCount(data) < 4000) Tunables.Value = new FixedString4096Bytes(data);
+            foreach (var p in PlayerNet.All)
+            {
+                if (p == null) continue;
+                int on = 0;
+                foreach (var o in PlayerNet.All) if (o != null && o != p && o.Team.Value == p.Team.Value) on++;
+                if (p.Team.Value < Cfg.TeamCount && on < Cfg.TeamCap(p.Team.Value)) continue;
+                for (int t = 0; t < Cfg.TeamCount; t++)
+                {
+                    int n = 0;
+                    foreach (var o in PlayerNet.All) if (o != null && o != p && o.Team.Value == t) n++;
+                    if (n < Cfg.TeamCap(t)) { p.ServerSetLobbyTeam(t); break; }
+                }
+            }
+            PlayerNet.ServerUnreadyAll();
+            Broadcast("The host changed the match options - READY again");
         }
 
         [Rpc(SendTo.ClientsAndHost)]

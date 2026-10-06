@@ -21,6 +21,11 @@ namespace RockGame
 
         /// <summary>A doorway whose door is still on its hinges.</summary>
         public bool HasDoor => PType == PieceType.Doorway && DoorHealth.Value > 0f;
+        /// <summary>A window whose bars are still in (they share the door's health: DoorHealth, Cfg.DoorLeafHp).</summary>
+        public bool HasBars => PType == PieceType.Window && DoorHealth.Value > 0f;
+        /// <summary>The window bars' object (its one collider covers the opening).</summary>
+        public const string BarsName = "bars";
+        Transform m_Bars;
         public float DoorMaxHp => Cfg.DoorLeafHp(Tier.Value);
         /// <summary>For the tests: doors broken off their frames on this screen.</summary>
         public static int DoorsBroken;
@@ -85,6 +90,13 @@ namespace RockGame
         /// <summary>The door leaf was broken off (every screen): it goes, with a burst of splinters; the frame stays.</summary>
         void OnDoorHealthChanged(float was, float now)
         {
+            if (PType == PieceType.Window)
+            {
+                // the bars were broken out: they go, with a burst; the opening's free to climb through
+                if (was > 0f && now <= 0f) { RemoveBars(); Fx.Play(FxKind.Break, transform.position + transform.rotation * new Vector3(0f, 1.65f, 0f), Vector3.up); }
+                else if (was <= 0f && now > 0f && m_Bars == null) Rebuild();
+                return;
+            }
             if (PType != PieceType.Doorway) return;
             if (was > 0f && now <= 0f)
             {
@@ -93,6 +105,14 @@ namespace RockGame
                 Fx.Play(FxKind.Break, transform.position + transform.rotation * new Vector3(0f, 1.2f, 0f), Vector3.up);
             }
             else if (was <= 0f && now > 0f && m_Hinge == null) Rebuild(); // (a door again)
+        }
+
+        void RemoveBars()
+        {
+            if (m_Bars == null) return;
+            m_Bars.gameObject.SetActive(false); // (its collider goes now)
+            Destroy(m_Bars.gameObject);
+            m_Bars = null;
         }
 
         void RemoveDoorLeaf()
@@ -106,6 +126,12 @@ namespace RockGame
         /// <summary>Whether a hit at this point in the world landed on the door leaf (not the frame round it).</summary>
         public bool IsDoorHit(Vector3 point)
         {
+            if (HasBars)
+            {
+                // the bars fill the window's opening
+                var w = transform.InverseTransformPoint(point);
+                return Mathf.Abs(w.x) < 0.98f && w.y > 0.88f && w.y < 2.42f && Mathf.Abs(w.z) < 0.2f;
+            }
             if (!HasDoor) return false;
             // into the leaf's own space: it hangs from x = -0.6 and swings 100 degrees open
             var l = transform.InverseTransformPoint(point) - new Vector3(-0.6f, 0f, 0f);
@@ -138,7 +164,9 @@ namespace RockGame
                 foreach (var r in m_Visual.GetComponentsInChildren<Renderer>()) r.sharedMaterial = Art.Mat(Color.Lerp(Color.white, Cfg.TeamColor[Mathf.Clamp(Team.Value, 0, Cfg.TeamColor.Length - 1)], 0.6f));
             if (m_Hinge != null) ColourLock(m_Hinge, Team.Value);
             m_DoorAngle = DoorOpen.Value ? 100f : 0f;
+            m_Bars = PType == PieceType.Window && m_Visual != null ? m_Visual.Find(BarsName) : null;
             if (PType == PieceType.Doorway && !HasDoor) RemoveDoorLeaf(); // (its door was broken off)
+            if (PType == PieceType.Window && !HasBars) RemoveBars(); // (its bars were broken out)
         }
 
         /// <summary>A door's padlocks are in the colour of the team it belongs to (the only team that can open it).</summary>
@@ -177,7 +205,7 @@ namespace RockGame
             Team.Value = (byte)team;
             Tier.Value = 0;
             Health.Value = Cfg.PieceHp(t, 0);
-            DoorHealth.Value = t == PieceType.Doorway ? Cfg.DoorLeafHp(0) : 0f;
+            DoorHealth.Value = t == PieceType.Doorway || t == PieceType.Window ? Cfg.DoorLeafHp(0) : 0f; // (a window's bars too)
             Key = key;
             HasKey = hasKey;
         }
@@ -195,7 +223,7 @@ namespace RockGame
         /// <summary>Server: damage to the door leaf alone. At 0 it's broken off and the doorway stands open.</summary>
         public void ServerDamageDoor(float dmg)
         {
-            if (!IsServer || !IsSpawned || dmg <= 0 || !HasDoor) return;
+            if (!IsServer || !IsSpawned || dmg <= 0 || !(HasDoor || HasBars)) return; // (a window's bars the same way)
             DoorHealth.Value = Mathf.Max(0f, DoorHealth.Value - dmg);
             if (DoorHealth.Value <= 0f) DoorOpen.Value = false;
         }
@@ -259,7 +287,7 @@ namespace RockGame
         {
             Tier.Value = (byte)tier;
             Health.Value = MaxHp;
-            if (HasDoor) DoorHealth.Value = DoorMaxHp; // (a door that was broken off stays off)
+            if (HasDoor || HasBars) DoorHealth.Value = DoorMaxHp; // (a door or bars that were broken off stay off)
         }
 
         /// <summary>Battering ram hit: one tier down at full health (refined to metal, metal to stone, stone to wood).</summary>
@@ -267,7 +295,7 @@ namespace RockGame
         {
             Tier.Value = (byte)Mathf.Max(0, Tier.Value - 1);
             Health.Value = MaxHp;
-            if (HasDoor) DoorHealth.Value = DoorMaxHp;
+            if (HasDoor || HasBars) DoorHealth.Value = DoorMaxHp;
         }
 
         // ---------------- Visuals (also used for placement ghosts) ----------------
@@ -321,22 +349,36 @@ namespace RockGame
                     break;
                 }
                 case PieceType.Window:
-                    // a wall with a big opening (1.9 m wide, 1.5 m tall, from waist height up), crossed by two thin bars
-                    // (like Rust). The colliders are the frame round it, so the whole opening is open to look and shoot through
+                {
+                    // a wall with a big opening (1.9 m wide, 1.5 m tall, from waist height up), barred: three bars down it
+                    // and one across. The bars are one solid part with health of its own, like a door (Cfg.DoorLeafHp): you
+                    // can't climb or crouch through until they're broken out, then the opening's free
                     Art.Box(tr, c, new Vector3(-1.225f, 1.5f, 0), new Vector3(0.55f, 3, 0.3f), default, col);
                     Art.Box(tr, c, new Vector3(1.225f, 1.5f, 0), new Vector3(0.55f, 3, 0.3f), default, col);
                     Art.Box(tr, c, new Vector3(0, 0.45f, 0), new Vector3(1.9f, 0.9f, 0.3f), default, col);
                     Art.Box(tr, c, new Vector3(0, 2.7f, 0), new Vector3(1.9f, 0.6f, 0.3f), default, col);
                     Art.Box(tr, trim, new Vector3(0, 0.92f, 0), new Vector3(2.0f, 0.08f, 0.36f));
                     Art.Box(tr, trim, new Vector3(0, 2.38f, 0), new Vector3(2.0f, 0.08f, 0.36f));
-                    Art.Box(tr, stone ? Art.Metal : trim, new Vector3(-0.45f, 1.65f, 0), new Vector3(0.05f, 1.45f, 0.05f));
-                    Art.Box(tr, stone ? Art.Metal : trim, new Vector3(0.45f, 1.65f, 0), new Vector3(0.05f, 1.45f, 0.05f));
+                    var bars = new GameObject(BarsName).transform;
+                    bars.SetParent(tr, false);
+                    var bc = stone ? Art.Metal : trim;
+                    foreach (float x in new[] { -0.45f, 0f, 0.45f })
+                        Art.Box(bars, bc, new Vector3(x, 1.65f, 0), new Vector3(0.05f, 1.45f, 0.05f));
+                    Art.Box(bars, bc, new Vector3(0f, 1.65f, 0), new Vector3(1.9f, 0.05f, 0.05f));
+                    if (col)
+                    {
+                        // the one collider for all of them: the whole opening (nothing gets through, crouching or not)
+                        var box = bars.gameObject.AddComponent<BoxCollider>();
+                        box.center = new Vector3(0f, 1.65f, 0f);
+                        box.size = new Vector3(1.9f, 1.46f, 0.12f);
+                    }
                     if (!stone)
                     {
                         Art.Box(tr, trim, new Vector3(-1.2f, 1.5f, 0), new Vector3(0.12f, 2.95f, 0.36f));
                         Art.Box(tr, trim, new Vector3(1.2f, 1.5f, 0), new Vector3(0.12f, 2.95f, 0.36f));
                     }
                     break;
+                }
                 case PieceType.Tower:
                     BuildTower(tr, col);
                     break;

@@ -8,7 +8,7 @@ namespace RockGame
     {
         enum MenuPage { Main, ModeOptions, Values, Settings }
         enum PausePage { Root, Settings, Dev }
-        enum SettingsTab { Sound, Controls, Display, Voice }
+        enum SettingsTab { Sound, Controls, Display, Voice, Name }
 
         static Hud s_I;
         MenuPage m_Page;
@@ -58,6 +58,7 @@ namespace RockGame
             if (m_PickerDirty && !PickerMouseHeld) { m_PickerDrag = 0; SavePick(); }
             // Esc on the main menu goes back a page
             var boot = Bootstrap.I;
+            NewMenuKeys(boot); // (Tab: the dev main menu; Esc: back a screen on the new one - Hud.MainMenu.cs)
             if (boot != null && !boot.InSession && Input.GetKeyDown(KeyCode.Escape) && !m_Rebinding && m_RebindFrame != Time.frameCount && m_Page != MenuPage.Main)
             {
                 if (DropTyping()) return; // (Esc in a search box lets go of it first)
@@ -94,6 +95,9 @@ namespace RockGame
                 case MenuPage.Values: DrawValues(); return;
                 case MenuPage.Settings: if (DrawSettingsPanel()) m_Page = MenuPage.Main; return;
             }
+            // the first time the game's started: your name first (Hud.Name.cs); then the main menu, or (Tab) the dev one
+            if ((!Bootstrap.Testing && !NameChosen) || TestNameScreen) { DrawNameScreen(); return; }
+            if (!DevMenuShown) { DrawNewMenu(boot); return; }
             float k = m_Scale;
             float w = 540 * k, h = Mathf.Min(Screen.height - 20, 860 * k);
             var r = new Rect((Screen.width - w) / 2, (Screen.height - h) / 2, w, h);
@@ -708,7 +712,7 @@ namespace RockGame
             if (Btn("Back", GUILayout.Width((side ? 96 : 120) * k), GUILayout.Height(34 * k))) back = true;
             GUILayout.EndHorizontal();
             GUILayout.BeginHorizontal();
-            string[] tabs = { "Sound", "Controls", "Display", "Voice chat" };
+            string[] tabs = { "Sound", "Controls", "Display", "Voice chat", "Name" };
             for (int i = 0; i < tabs.Length; i++)
                 if (Choice((int)m_Tab == i, tabs[i], GUILayout.Height(34 * k))) { m_Tab = (SettingsTab)i; m_Rebinding = false; OnTabOpened(); }
             GUILayout.EndHorizontal();
@@ -720,6 +724,7 @@ namespace RockGame
                 case SettingsTab.Controls: DrawControlsTab(); break;
                 case SettingsTab.Display: DrawDisplayTab(); break;
                 case SettingsTab.Voice: DrawVoiceTab(); break;
+                case SettingsTab.Name: DrawNameTab(); break;
             }
             GUILayout.EndScrollView();
             GUILayout.EndArea();
@@ -1265,6 +1270,7 @@ namespace RockGame
             GUILayout.Space(4 * k);
             if (Btn("Settings", GUILayout.Height(38 * k))) { m_PausePage = PausePage.Settings; m_Tab = SettingsTab.Sound; OnTabOpened(); }
             if (Btn("Controls", GUILayout.Height(38 * k))) { m_PausePage = PausePage.Settings; m_Tab = SettingsTab.Controls; OnTabOpened(); }
+            if (Btn("Change name", GUILayout.Height(38 * k))) { m_PausePage = PausePage.Settings; m_Tab = SettingsTab.Name; OnTabOpened(); }
             if (Btn("Dev settings", GUILayout.Height(38 * k))) m_PausePage = PausePage.Dev;
             // suicide: click, then click again within 3 s to be sure
             bool armed = Time.unscaledTime < m_SuicideArmedUntil;
@@ -1315,7 +1321,7 @@ namespace RockGame
                 ("MATCH", new[]
                 {
                     new[] { ("Drop the wall now", DevCmd.DropWallNow), (game != null && game.TimerPaused.Value ? "Resume timer" : "Pause timer", DevCmd.TogglePauseTimer), ("Timer to 10s", DevCmd.TimerTo10s) },
-                    new[] { ("+1 minute", DevCmd.AddMinute), ("-1 minute", DevCmd.SubMinute), ("Start sudden death", DevCmd.StartSuddenDeath), ("Win now", DevCmd.WinNow) },
+                    new[] { ("+1 minute", DevCmd.AddMinute), ("-1 minute", DevCmd.SubMinute), ("Start sudden death", DevCmd.StartSuddenDeath), ("Win now", DevCmd.WinNow), ("End cutscene now", DevCmd.VictoryCutsceneNow) },
                 }),
                 ("WORLD", new[]
                 {

@@ -52,19 +52,22 @@ namespace RockGame
             // walls along z = 1 (the +z sides of cells (0,0), (1,0)): from the middle of cell (2,0) (a little towards -z) the
             // line carries straight on, not round the corner and not the nearer far side
             var wRow = new List<PieceKey> { Edge(0, 0, 1), Edge(1, 0, 1) };
-            b = BuildGrid.PreferRecent(PieceType.Wall, wRow, Edge(2, -1, 1), true, at(2.5f, 0.5f - 0.1f / C), any, out var k2);
+            b = BuildGrid.PreferRecent(PieceType.Wall, wRow, Edge(2, -1, 1), true, at(2.5f, 0.5f - 0.1f / C), any, out var k2, default, _ => true);
             Check(b && k2.Equals(Edge(2, 0, 1)), $"rule: a wall aimed at the middle of the next cell carries the wall line straight on ({(b ? k2.ToString() : "kept " + Edge(2, -1, 1))})");
             // aimed right by the far side: the far side
-            b = BuildGrid.PreferRecent(PieceType.Wall, wRow, Edge(2, -1, 1), true, at(2.5f, 0.1f), any, out k2);
+            b = BuildGrid.PreferRecent(PieceType.Wall, wRow, Edge(2, -1, 1), true, at(2.5f, 0.1f), any, out k2, default, _ => true);
             Check(!b, $"rule: a wall aimed clearly at another edge goes there ({(b ? k2.ToString() : "kept")})");
             // one wall just built (along z = 1, the +z side of cell (0,0)) and you facing it (looking +z): aimed at the floor
             // in front of the line, a bit past its end, the next wall carries the line on in the same rotation - not the
             // turned wall round the corner that's a little nearer the aim
             var w1 = new List<PieceKey> { Edge(0, 0, 1) };
-            b = BuildGrid.PreferRecent(PieceType.Wall, w1, Edge(0, 0, 0), true, at(1.35f, 0.45f), any, out k2, Vector3.forward);
+            b = BuildGrid.PreferRecent(PieceType.Wall, w1, Edge(0, 0, 0), true, at(1.35f, 0.45f), any, out k2, Vector3.forward, _ => true); // (held up: foundations under it)
             Check(b && k2.Equals(Edge(1, 0, 1)), $"rule: after a wall, facing the line, the next one carries it on in the same rotation ({(b ? k2.ToString() : "kept the turned " + Edge(0, 0, 0))})");
+            // ...but not when nothing would hold it up (no foundation, no wall under it): then it isn't pushed first
+            b = BuildGrid.PreferRecent(PieceType.Wall, w1, Edge(0, 0, 0), true, at(1.35f, 0.45f), any, out k2, Vector3.forward, _ => false);
+            Check(!(b && k2.Equals(Edge(1, 0, 1))), $"rule: a wall in line with nothing under it isn't pushed first ({(b ? k2.ToString() : "kept")})");
             // ...but aimed right at the turned wall's spot, the turned one
-            b = BuildGrid.PreferRecent(PieceType.Wall, w1, Edge(0, 0, 0), true, at(1f, 0.3f), any, out k2, Vector3.forward);
+            b = BuildGrid.PreferRecent(PieceType.Wall, w1, Edge(0, 0, 0), true, at(1f, 0.3f), any, out k2, Vector3.forward, _ => true);
             Check(!b, $"rule: a wall aimed right at the corner's turned spot still goes there ({(b ? k2.ToString() : "kept")})");
             // a floor next to the last floor
             var flRow = new List<PieceKey> { new PieceKey(PieceKey.KFloor, 0, 0, 1, 0), new PieceKey(PieceKey.KFloor, 1, 0, 1, 0) };
@@ -148,7 +151,7 @@ namespace RockGame
                 $"live: clicking builds it there and it becomes the newest of your last two ({(pc.RecentPieces.Count > 0 ? pc.RecentPieces[pc.RecentPieces.Count - 1].ToString() : "none")})");
 
             // Demolish is back on the wheel, straight down at the bottom (no X key): picked, only the piece in the crosshair
-            // lights up red, and LMB takes it down. (Wall sits on the right of the wheel, Ceiling under it.)
+            // lights up red, and LMB takes it down. (Wall sits on the right of the wheel.)
             int wallSlice = System.Array.FindIndex(PlayerController.WheelOptions, o => o.Piece == PieceType.Wall && !o.Demolish);
             Check(wallSlice >= 0 && Mathf.Abs(Mathf.DeltaAngle(PlayerController.WheelAngle(wallSlice), 90f)) < 30f,
                 $"the Wall slice is on the right of the wheel ({(wallSlice >= 0 ? PlayerController.WheelAngle(wallSlice) : -1f):0} deg)");

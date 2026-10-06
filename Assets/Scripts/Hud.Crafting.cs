@@ -110,8 +110,7 @@ namespace RockGame
                 // name the whole lot would be the one-line title and run off the edge)
                 case Item.Workbench:
                     return $"{Cfg.ItemName(id)}: lets you obtain more stuff by trading resources intergalactically."
-                        + (Cfg.BenchUnlocked(team) ? "" : $" LOCKED for everyone until the ball is captured - put in a machine once, or kept in a base for {Cfg.BenchUnlockSeconds:0} s"
-                            + (NetGame.Instance != null ? $" (yours {Mathf.Min(NetGame.Instance.BallInBaseSecondsOf(team), Mathf.RoundToInt(Cfg.BenchUnlockSeconds))} s, best {Mathf.Min(NetGame.Instance.BallInBaseSecondsBest, Mathf.RoundToInt(Cfg.BenchUnlockSeconds))} s)." : "."));
+                        + (Cfg.BenchUnlocked(team) ? "" : " LOCKED");
                 case Item.Workbench2: return $"{Cfg.ItemName(id)}: lets you obtain EVEN MORE STUFF by trading resources intergalactically.";
                 case Item.Crossbow: return $"Crossbow: {Cfg.CrossbowDamage:0} damage, faster and flatter than the bow. Reloads itself from your arrows.";
                 case Item.Armor: return $"Armour: {Cfg.ArmorHp} extra health used up before your own.";

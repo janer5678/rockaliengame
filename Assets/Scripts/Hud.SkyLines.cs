@@ -23,9 +23,16 @@ namespace RockGame
             RowLabel("Energy wall", lw);
             bool en = ToggleBtn(GameSettings.EnergyWall.Value, GameSettings.EnergyWall.Value ? "On" : "Off", GUILayout.Width(90 * k), GUILayout.Height(30 * k));
             if (en != GameSettings.EnergyWall.Value) GameSettings.EnergyWall.Set(en);
-            GUILayout.Label("<color=#bbbbbb>  the wall between the halves as a glowing energy field instead of glass</color>", m_Small, GUILayout.Height(30 * k));
+            GUILayout.Label("<color=#bbbbbb>  all the glass (the wall, the ball's dome and the big dome) as a glowing energy field</color>", m_Small, GUILayout.Height(30 * k));
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
+            if (GameSettings.EnergyWall.Value)
+            {
+                float es = GameSettings.EnergyWallStrength.Value;
+                float ns = SliderRow("Energy wall strength", es, 0f, 1f, $"{es * 100f:0}%", lw);
+                ns = Mathf.Round(ns * 20f) / 20f;
+                if (!Mathf.Approximately(ns, es)) GameSettings.EnergyWallStrength.Set(ns);
+            }
             GUILayout.BeginHorizontal();
             GUILayout.Label("<color=#bbbbbb>Far line thickness: the ink lines round the clouds, the planets and the far mountains (with Outlines on in POST PROCESSING). 100% is the usual look; lower is thinner (0 = none), higher is thicker - and past 100% their outlines against the sky stay however far away they are.</color>", m_SmallWrap);
             if (Btn("Defaults", GUILayout.Width(100 * k), GUILayout.Height(28 * k))) GameSettings.ResetSkyLinesAndWall();

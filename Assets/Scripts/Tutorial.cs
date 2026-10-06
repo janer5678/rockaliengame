@@ -639,7 +639,7 @@ namespace RockGame
         static string s_Ip;
 
         /// <summary>This PC's address on the local network, for the "tell your friend your IP" step ("" if it can't be found).</summary>
-        static string LocalIp()
+        public static string LocalIp()
         {
             if (s_Ip != null) return s_Ip;
             s_Ip = "";

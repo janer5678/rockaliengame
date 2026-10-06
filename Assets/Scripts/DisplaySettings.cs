@@ -79,7 +79,8 @@ namespace RockGame
 
         // ---- sky lines and the wall (EnergyWall.cs) ----
         public const float FarLineThickness = 1f;           // post.outlines.far        (0..3 x the outline thickness on clouds, planets, far mountains; 1 = the usual look)
-        public const bool EnergyWall = false;               // world.energywall         (the glass wall between the halves as an energy field)
+        public const bool EnergyWall = false;               // world.energywall         (all the glass - wall, ball dome, map dome - as an energy field)
+        public const float EnergyWallStrength = 0.3f;       // world.energywall.strength (0..1: how bright, opaque and busy the energy wall is)
 
         // (elsewhere: beams.falloff 125 (was 70) - BeamFx.cs; treex.glow 2.85 (was 1.6) - TreeX.cs; basefloor.after
         //  Colour grid (was Flat grass) and basefloor.teammix 0.5 (was 0.35) - BaseFloor.cs; the world colours, and the

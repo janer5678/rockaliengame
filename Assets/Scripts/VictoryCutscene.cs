@@ -45,7 +45,7 @@ namespace RockGame
         /// DashStart, gone at Gone; the victory screen comes up at Length.</summary>
         public const float Arrive = 4.2f, HatchAt = 3.9f, HatchTime = 0.8f, BeamOn = 4.9f;
         public const float BlastAt = BeamOn + 0.35f;
-        public const float LiftStart = 6.9f, LiftStagger = 0.6f, LiftTime = 3.2f;
+        public const float LiftStart = 5.9f, LiftStagger = 0.6f, LiftTime = 3.2f;
         public const int MaxRiders = 8;
         public const float BeamOff = LiftStart + (4 - 1) * LiftStagger + LiftTime + 0.3f;
         public const float LeaveStart = BeamOff + 0.45f, WindUp = 2.5f, DashStart = LeaveStart + WindUp, DashTime = 2.2f, LeaveTime = WindUp + DashTime;
@@ -707,7 +707,7 @@ namespace RockGame
         const float MaxPush = 0.5f, PushDist = 20f, PushKeep = 28f;
         /// <summary>The push in's timing: it starts (very gently) as the beam comes down, so the blast is still seen wide,
         /// and is all the way in at PushPeak, as the first winner starts up the beam; the way back out takes OutTime.</summary>
-        const float PushFrom = BeamOn - 0.2f, PushPeak = LiftStart + 0.5f, OutTime = 2.4f;
+        const float PushFrom = BeamOn - 0.2f, PushPeak = 7.4f, OutTime = 2.4f; // (its own length: the lift starting sooner mustn't rush it)
         /// <summary>Test hook: how far in (0..MaxPush of the way) the camera pushes in on the winners.</summary>
         public static float CamPush { get; private set; }
 

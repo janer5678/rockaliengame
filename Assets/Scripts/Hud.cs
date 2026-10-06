@@ -193,8 +193,12 @@ namespace RockGame
             return $"{s / 60}:{s % 60:00}";
         }
 
+        /// <summary>(tests) draw nothing (the map pictures).</summary>
+        public static bool TestHideAll;
+
         void OnGUI()
         {
+            if (TestHideAll) return;
             // Settings > Display > POST PROCESSING > On the UI too: the repaint goes into a texture the camera's post processing goes over
             bool toTexture = UiLook.BeginUi(out var prevTarget);
             Styles();
@@ -225,6 +229,7 @@ namespace RockGame
                 DrawLeaveButton(boot, new Rect(Screen.width / 2 - 100 * m_Scale, Screen.height / 2 + 60, 200 * m_Scale, 40 * m_Scale));
                 return;
             }
+            if (ShipLobby.Active) { DrawLobby(boot, me); return; } // (before the match: the ship lobby - Hud.Lobby.cs)
             DrawGame(boot, me, pc);
         }
 

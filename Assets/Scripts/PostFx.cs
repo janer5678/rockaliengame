@@ -336,7 +336,7 @@ namespace RockGame
             float h = GameSettings.PostExtraAmount(GameSettings.PostExtra.Haze);
             float sh = GameSettings.PostExtraAmount(GameSettings.PostExtra.Sharpen);
             float cel = GameSettings.PostExtraAmount(GameSettings.PostExtra.CelBanding);
-            if (h > 0f && m_Cam != null && SpaceArena.NearArena(m_Cam.transform.position)) h = 0f;
+            if (h > 0f && m_Cam != null && (SpaceArena.NearArena(m_Cam.transform.position) || MenuSpace.Showing)) h = 0f; // (no haze in space)
             // outlines: how dark (0..1), how thick (pixels), the depth step (relative) and the fold (normals) that count.
             // The thickness is set at 1440p (the reference: OutlinePxAt1440) and scaled with the screen height, so the
             // lines are the same share of the screen at any resolution (the shader blends between whole pixels).

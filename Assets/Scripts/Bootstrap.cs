@@ -14,6 +14,8 @@ namespace RockGame
     {
         public static Bootstrap I;
         public static bool Solo, Fast;
+        /// <summary>Started with -autotest: the tests (no ready-up lobby, no first-launch name screen).</summary>
+        public static bool Testing;
         /// <summary>Map picked in the menu (Cfg.MapKey format). A random seed is rolled when hosting.</summary>
         public static int MapChoice;
         static int s_SeedOverride = -1;
@@ -27,7 +29,9 @@ namespace RockGame
         UnityTransport m_Ut;
         float m_MenuOrbit;
 
-        public bool InSession => m_Nm != null && (m_Nm.IsListening || m_Nm.ShutdownInProgress);
+        /// <summary>This PC is hosting the session (the lobby's GAME OPTIONS, its own IP for COPY ROOM ID).</summary>
+        public bool IsHostSession => m_Nm != null && m_Nm.IsHost;
+        public bool InSession =>m_Nm != null && (m_Nm.IsListening || m_Nm.ShutdownInProgress);
         public bool IsHost => m_Nm != null && m_Nm.IsHost;
 
         void Awake()
@@ -37,8 +41,9 @@ namespace RockGame
             GameSettings.Load();
             if (GetComponent<VoiceChat>() == null) gameObject.AddComponent<VoiceChat>();
             if (GetComponent<Spectator>() == null) gameObject.AddComponent<Spectator>(); // (watching a match you couldn't join)
+            ShipLobby.Ensure(gameObject); // (the ship lobby before a match)
             // the refresh rate: the highest the screen has (or what was picked in Settings > Display)
-            bool test = System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-autotest") >= 0;
+            bool test = Testing = System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-autotest") >= 0;
             GameSettings.ApplyDisplayAtStartup(test);
             Application.runInBackground = true;
             // a first start: the (new) Classic, the Auto Wood rules
@@ -243,7 +248,8 @@ namespace RockGame
                 cam.position = p;
                 cam.LookAt(new Vector3(0, 0, 0));
             }
-            MenuScene.Tick(InSession);
+            MenuSpace.Tick(!InSession && !Hud.DevMenuShown); // (the new main menu: the UFO in space)
+            MenuScene.Tick(InSession || !Hud.DevMenuShown);  // (the dev main menu: the flight over the map)
         }
     }
 }

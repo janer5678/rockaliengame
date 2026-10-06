@@ -356,7 +356,7 @@ namespace RockGame
                 return false;
             }
             // leaves sticking out of the blobs all over (so it reads as a leafy bush, not a pile of green balls): each a
-            // pointed two-sided leaf folded along its midrib, leaning out and up from the blob's surface, its own shade of
+            // rounded two-sided oval leaf, gently domed, leaning out and up from the blob's surface, its own shade of
             // the bush's green and fluttering in the wind more than the blobs
             {
                 Color.RGBToHSV(leaf, out float lh, out float ls, out float lv);
@@ -372,28 +372,38 @@ namespace RockGame
                         var at = c + new Vector3(dir.x * r, dir.y * r * squash, dir.z * r) * 0.9f;
                         if (at.y < 0.12f || Buried(at, bi)) continue;
                         k++;
-                        float len = R(0.17f, 0.25f), wid = len * R(0.36f, 0.46f);
+                        float len = R(0.15f, 0.22f), wid = len * R(0.62f, 0.78f); // (round: nearly as wide as long)
                         var fwd = (dir + Vector3.up * 0.35f + new Vector3(R(-0.3f, 0.3f), R(-0.1f, 0.2f), R(-0.3f, 0.3f))).normalized;
                         var side = Vector3.Cross(fwd, Vector3.up);
                         if (side.sqrMagnitude < 0.01f) side = Vector3.Cross(fwd, Vector3.right);
                         side = Quaternion.AngleAxis(R(-35f, 35f), fwd) * side.normalized;
                         var nrm = Vector3.Cross(side, fwd).normalized;
                         if (Vector3.Dot(nrm, Vector3.up) < 0f) nrm = -nrm; // (the face looks up / out)
-                        var tip = at + fwd * len - nrm * len * 0.12f;    // (curling down a little at the tip)
-                        var mid = at + fwd * len * 0.42f;
-                        var lft = mid - side * wid * 0.5f + nrm * wid * 0.22f; // (folded up along the midrib)
-                        var rgt = mid + side * wid * 0.5f + nrm * wid * 0.22f;
                         var col = Color.HSVToRGB(Mathf.Repeat(lh + R(-0.03f, 0.03f), 1f), ls * R(0.85f, 1.05f), lv * R(0.95f, 1.25f))
                                   * Mathf.Lerp(0.82f, 1.08f, Mathf.Clamp01(at.y / 0.9f));
                         col.a = 1f;
                         var dark = col * 0.8f;
                         dark.a = 1f;
-                        var sa = Sway(at, 0.6f); var st = Sway(tip, 1f); var sl = Sway(lft, 0.85f); var sr = Sway(rgt, 0.85f);
-                        // top face (two halves of the fold), then the underside
-                        leaves.Tri(at, tip, lft, dark, col, col, sa, st, sl);
-                        leaves.Tri(at, rgt, tip, dark, col, col, sa, sr, st);
-                        leaves.Tri(at, lft, tip, dark, dark, dark, sa, sl, st);
-                        leaves.Tri(at, tip, rgt, dark, dark, dark, sa, st, sr);
+                        // a rounded, gently domed oval leaf: a fan round its middle, the far end curling down a little
+                        var centre = at + fwd * len * 0.5f + nrm * wid * 0.12f;
+                        var sc = Sway(centre, 0.8f);
+                        const int Seg = 7;
+                        Vector3 prev = default; Vector2 prevS = default;
+                        for (int s = 0; s <= Seg; s++)
+                        {
+                            float a = s * Mathf.PI * 2f / Seg;
+                            float ca = Mathf.Cos(a), sn = Mathf.Sin(a);
+                            var p = at + fwd * (len * 0.5f * (1f + ca)) + side * (sn * wid * 0.5f) - nrm * (len * 0.08f * Mathf.Max(0f, ca));
+                            var sp = Sway(p, 0.75f + 0.25f * ca);
+                            if (s > 0)
+                            {
+                                // the upper face in the leaf's colour, the underside darker (both sides drawn)
+                                bool up = Vector3.Dot(Vector3.Cross(prev - centre, p - centre), nrm) > 0f;
+                                if (up) { leaves.Tri(centre, prev, p, col, col, col, sc, prevS, sp); leaves.Tri(centre, p, prev, dark, dark, dark, sc, sp, prevS); }
+                                else { leaves.Tri(centre, p, prev, col, col, col, sc, sp, prevS); leaves.Tri(centre, prev, p, dark, dark, dark, sc, prevS, sp); }
+                            }
+                            prev = p; prevS = sp;
+                        }
                     }
                 }
             }
