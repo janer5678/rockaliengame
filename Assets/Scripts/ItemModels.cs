@@ -145,20 +145,47 @@ namespace RockGame
                     Workbench.BuildModel(mini, 0, false, item == Item.Workbench2 ? 2 : 1);
                     break;
                 }
-                case Item.SleepingBag:
-                case Item.BearTrap:
                 case Item.Ladder:
+                {
+                    // a short, chunky ladder: two dark rails, five pale rungs (reads at a glance in the icon)
+                    for (int s = -1; s <= 1; s += 2) Art.Box(t, Art.DarkWood, new Vector3(s * 0.11f, 0.3f, 0), new Vector3(0.05f, 0.62f, 0.05f));
+                    for (int r = 0; r < 5; r++) Art.Box(t, new Color(0.78f, 0.58f, 0.32f), new Vector3(0, 0.06f + r * 0.12f, 0), new Vector3(0.2f, 0.035f, 0.04f));
+                    break;
+                }
+                case Item.SleepingBag:
+                {
+                    // a rolled-up sleeping bag in the team colour, tied with two dark straps, the pale lining showing at the end
+                    var tc = Cfg.TeamColor[PlayerNet.Local != null ? Mathf.Clamp(PlayerNet.Local.Team.Value, 0, 3) : 0];
+                    var cloth = Color.Lerp(tc, new Color(0.35f, 0.3f, 0.25f), 0.3f);
+                    Art.Part(t, Art.Cylinder, cloth, new Vector3(0, 0.12f, 0), new Vector3(0.12f, 0.17f, 0.12f), new Vector3(0, 0, 90)); // (the cylinder mesh is radius 1)
+                    Art.Part(t, Art.Cylinder, new Color(0.92f, 0.9f, 0.84f), new Vector3(0.172f, 0.12f, 0), new Vector3(0.095f, 0.004f, 0.095f), new Vector3(0, 0, 90));
+                    Art.Part(t, Art.Cylinder, cloth * 0.75f, new Vector3(0.176f, 0.12f, 0), new Vector3(0.035f, 0.005f, 0.035f), new Vector3(0, 0, 90));
+                    for (int s = -1; s <= 1; s += 2) Art.Part(t, Art.Cylinder, new Color(0.15f, 0.12f, 0.1f), new Vector3(s * 0.08f, 0.12f, 0), new Vector3(0.126f, 0.012f, 0.126f), new Vector3(0, 0, 90));
+                    break;
+                }
+                case Item.BearTrap:
+                {
+                    // a bear trap laid open: a round steel plate, two jaws flat out to the sides with big pale teeth, a
+                    // trigger plate in the middle, a chain
+                    var steel = new Color(0.45f, 0.46f, 0.5f);
+                    float cr = 2f * Art.Cylinder.bounds.extents.x, ch = 2f * Art.Cylinder.bounds.extents.y;
+                    Art.Part(t, Art.Cylinder, steel * 0.75f, new Vector3(0, 0.01f, 0), new Vector3(0.2f / cr, 0.02f / ch, 0.2f / cr));
+                    Art.Part(t, Art.Cylinder, new Color(0.85f, 0.25f, 0.2f), new Vector3(0, 0.025f, 0), new Vector3(0.09f / cr, 0.012f / ch, 0.09f / cr));
+                    for (int s = -1; s <= 1; s += 2)
+                    {
+                        Art.Box(t, steel, new Vector3(s * 0.15f, 0.02f, 0), new Vector3(0.025f, 0.03f, 0.3f));
+                        for (int k = -2; k <= 2; k++) Art.Box(t, new Color(0.92f, 0.9f, 0.85f), new Vector3(s * 0.13f, 0.045f, k * 0.055f), new Vector3(0.02f, 0.045f, 0.022f), new Vector3(0, 0, s * 25f));
+                    }
+                    for (int k = 0; k < 3; k++) Art.Part(t, Art.Sphere, steel * 0.6f, new Vector3(0, 0.015f, -0.13f - k * 0.04f), new Vector3(0.03f, 0.02f, 0.04f));
+                    break;
+                }
                 case Item.AutoTurret:
                 {
-                    // the Trade Stations' placeables: a small copy of the real thing (Container.Deployables.cs), the
-                    // ladder rolled down to a short length
+                    // the auto turret: a small copy of the real thing (Container.Deployables.cs)
                     var mini = new GameObject("mini").transform;
                     mini.SetParent(t, false);
-                    byte kind = item == Item.SleepingBag ? Container.SleepBag : item == Item.BearTrap ? Container.Trap : item == Item.Ladder ? Container.Ladder : Container.Turret;
-                    Deployables.Build(kind, PlayerNet.Local != null ? PlayerNet.Local.Team.Value : 0, mini, null);
-                    float s = item == Item.SleepingBag ? 0.2f : item == Item.BearTrap ? 0.45f : item == Item.Ladder ? 0.09f : 0.32f;
-                    mini.localScale = Vector3.one * s;
-                    if (item == Item.SleepingBag) mini.localRotation = Quaternion.Euler(0, 90, 0);
+                    Deployables.Build(Container.Turret, PlayerNet.Local != null ? PlayerNet.Local.Team.Value : 0, mini, null);
+                    mini.localScale = Vector3.one * 0.32f;
                     break;
                 }
                 case Item.LargeGate:

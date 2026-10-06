@@ -52,8 +52,8 @@ namespace RockGame
     /// - SLEEPING BAG: anywhere but an enemy base; when you're dead, your team's bags are options on the respawn screen
     ///   (each can be used once a minute: ReadyAt).
     /// - BEAR TRAP: in the team colour, anywhere - your base, the wild or theirs - on the ground or a floor (not on a
-    ///   foundation). An enemy stepping on it is snapped (BearTrapDamage) and held (BearTrapHold: PlayerNet.Trapped);
-    ///   it sets itself again after BearTrapRearm.
+    ///   foundation). Anyone stepping on it - its own team too - is snapped (BearTrapDamage) and held (BearTrapHold);
+    ///   it sets itself again after BearTrapRearm (PlayerNet.Trapped).
     /// - LADDER: anywhere (to scale someone's walls, or your own); a climbable volume like the fort tower's (Ladder).
     /// - AUTO TURRET: in your own base. E on it opens its two slots - a ranged weapon (or a spear) and its ammo. It
     ///   watches a cone in front of it (shown on the placing ghost), hums as it pans, and with an enemy in view gives a
@@ -62,7 +62,7 @@ namespace RockGame
     public static class Deployables
     {
         public const byte FxSnap = 1, FxWarn = 2, FxShot = 3, FxHum = 4;
-        public const float LadderHeight = 6.2f;
+        public const float LadderHeight = 4.65f; // (25% shorter than it was)
 
         public static float CenterUp(byte kind) => kind == Container.SleepBag ? 0.2f : kind == Container.Trap ? 0.15f : kind == Container.Ladder ? 1.4f : 0.9f;
         public static float MaxHp(byte kind) => kind == Container.SleepBag ? 100f : kind == Container.Trap ? 150f : kind == Container.Ladder ? 250f : 500f;
@@ -104,11 +104,11 @@ namespace RockGame
                 }
                 case Container.Ladder:
                 {
-                    // two rails and rungs, leaning in a little towards +z (the wall it's put against)
+                    // two rails and rungs, straight up, its back to +z (the wall it's put against)
                     var wood = new Color(0.5f, 0.34f, 0.18f);
                     var lean = new GameObject("lean").transform;
                     lean.SetParent(t, false);
-                    lean.localRotation = Quaternion.Euler(10f, 0, 0);
+                    lean.localRotation = Quaternion.identity; // (straight up, not leaning)
                     for (int s = -1; s <= 1; s += 2) Art.Box(lean, wood * 0.85f, new Vector3(s * 0.3f, LadderHeight * 0.5f, 0), new Vector3(0.07f, LadderHeight, 0.08f));
                     for (float y = 0.3f; y < LadderHeight; y += 0.36f) Art.Box(lean, wood, new Vector3(0, y, 0), new Vector3(0.6f, 0.045f, 0.05f));
                     Art.Box(lean, Cfg.TeamColor[Mathf.Clamp(team, 0, 3)], new Vector3(0, LadderHeight - 0.15f, 0.045f), new Vector3(0.3f, 0.06f, 0.01f));
@@ -185,15 +185,17 @@ namespace RockGame
                 {
                     // a thin board along the rails to hit / look at; the climbing volume in front of it (Ladder, like the
                     // fort tower's: walk into it and hold W)
-                    bc.center = new Vector3(0, LadderHeight * 0.5f, LadderHeight * 0.5f * Mathf.Sin(10f * Mathf.Deg2Rad));
+                    bc.center = new Vector3(0, LadderHeight * 0.5f, 0f);
                     bc.size = new Vector3(0.75f, LadderHeight, 0.12f);
                     var lg = new GameObject("ladder");
                     lg.transform.SetParent(visual, false);
-                    lg.transform.localPosition = new Vector3(0, (LadderHeight + 1f) * 0.5f, 0.15f);
+                    lg.transform.localPosition = new Vector3(0, (LadderHeight + 1f) * 0.5f, -0.3f); // (in front of it, on your side)
                     var vol = lg.AddComponent<BoxCollider>();
                     vol.isTrigger = true;
-                    vol.size = new Vector3(1f, LadderHeight + 1f, 1.3f);
-                    lg.AddComponent<Ladder>().TopLocalY = LadderHeight - 0.4f;
+                    vol.size = new Vector3(1f, LadderHeight + 1f, 1f);
+                    var lad = lg.AddComponent<Ladder>();
+                    lad.TopLocalY = LadderHeight - 0.3f;
+                    lad.ExitHop = 4.6f; // (a big hop off the top: over a large wall it doesn't quite reach)
                     break;
                 }
                 default: bc.center = new Vector3(0, 0.6f, 0); bc.size = new Vector3(0.6f, 1.2f, 0.6f); break;
@@ -270,7 +272,7 @@ namespace RockGame
             var p0 = c.transform.position;
             foreach (var p in PlayerNet.All)
             {
-                if (p == null || !p.IsSpawned || p.Dead.Value || p.Team.Value == c.Team.Value || p.Riding) continue;
+                if (p == null || !p.IsSpawned || p.Dead.Value || p.Riding) continue; // (anyone - your own team too)
                 var d = p.transform.position - p0;
                 if (Mathf.Abs(d.y) > 0.7f || new Vector2(d.x, d.z).sqrMagnitude > 0.42f * 0.42f) continue;
                 c.Flag.Value = 1;

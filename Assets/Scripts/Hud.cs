@@ -533,8 +533,8 @@ namespace RockGame
                 case Item.Barrier: return $"<b>Large Wall</b> x{s.Count}    LMB: place it - in your base or out in the open (not in the enemy base)";
                 case Item.LargeGate: return $"<b>Large Gate</b> x{s.Count}    LMB: place it - a tall log gate your team opens with {Binds.Name(Bind.Interact)}";
                 case Item.SleepingBag: return $"<b>Sleeping Bag</b> x{s.Count}    LMB: put it down (not in an enemy base) - respawn at it when you die";
-                case Item.BearTrap: return $"<b>Bear Trap</b> x{s.Count}    LMB: set it on the ground or a floor - it snaps and holds an enemy who steps on it";
-                case Item.Ladder: return $"<b>Ladder</b> x{s.Count}    LMB: stand it facing a wall - then walk into it and hold W to climb";
+                case Item.BearTrap: return $"<b>Bear Trap</b> x{s.Count}    LMB: set it on the ground or a floor - it snaps and holds ANYONE who steps on it (you too)";
+                case Item.Ladder: return $"<b>Ladder</b> x{s.Count}    LMB: aim at a wall (yours or theirs, or a large wall) - it stands against it; walk into it and hold W to climb";
                 case Item.AutoTurret: return $"<b>Auto Turret</b>    LMB: place it in your base - {Binds.Name(Bind.Interact)} on it to give it a ranged weapon and ammo";
                 case Item.Skull: return $"<b>Skull</b> x{s.Count}    Assassin: take it to your machine and {Binds.Name(Bind.Interact)}";
                 case Item.Berry: return $"<b>Berries</b> x{s.Count}    RMB: eat ({Cfg.BerryEatTime:0.#}s, +{Cfg.BerryHeal:0} HP)   LMB on a horse: feed it (+{Cfg.HorseBerryHeal:0} HP)";

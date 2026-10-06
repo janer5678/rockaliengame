@@ -1570,7 +1570,7 @@ namespace RockGame
             // Auto Wood: the wood machine's spot stays free even before the machine is bought (it lands there later)
             if ((kind == Item.Chest || Workbench.IsBench(kind)) && Cfg.AutoWood && baseTeam == team
                 && new Vector2(pos.x - Cfg.WoodMachinePos(team).x, pos.z - Cfg.WoodMachinePos(team).z).magnitude < 1.4f) return "Keep the wood machine's spot clear";
-            bool smallThing = kind == Item.Chest || kind == Item.SleepingBag || kind == Item.BearTrap || kind == Item.AutoTurret;
+            bool smallThing = kind == Item.Chest || kind == Item.SleepingBag || kind == Item.BearTrap || kind == Item.AutoTurret || kind == Item.Ladder;
             if (!smallThing && !Workbench.IsBench(kind) && Cfg.PointBlocked(pos)) return "Not on the bedrock";
             if (kind != Item.Chest && !anywhere && baseTeam >= 0 && baseTeam != team) return "Not in the enemy base";
             var rot = Quaternion.Euler(0, yaw, 0);

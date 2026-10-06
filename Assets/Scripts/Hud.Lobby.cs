@@ -43,7 +43,7 @@ namespace RockGame
                 if (!ShipLobby.HeadOnScreen(p, out var at)) continue;
                 var c = Cfg.TeamColor[Mathf.Clamp(p.Team.Value, 0, 3)];
                 string hex = ColorUtility.ToHtmlStringRGB(Color.Lerp(c, Color.white, 0.35f));
-                string tick = p.LobbyReady.Value ? "  <color=#7dff7a>✔</color>" : "";
+                string tick = p.LobbyReady.Value ? $"  <size={Mathf.RoundToInt(38 * k)}><color=#7dff7a>✔</color></size>" : ""; // (big: ready at a glance)
                 Shadowed(new Rect(at.x - 150 * k, at.y - 34 * k, 300 * k, 30 * k), $"<color=#{hex}>{p.DisplayName}</color>{tick}", tag);
             }
 

@@ -289,6 +289,12 @@ namespace RockGame
                 case Item.PortalGun:
                 case Item.RocketLauncher:
                     t.localRotation = Quaternion.Euler(0, 55, 0); break;
+                case Item.Ladder:
+                    t.localRotation = Quaternion.Euler(0, 20, -18); break;
+                case Item.SleepingBag:
+                    t.localRotation = Quaternion.Euler(0, 35, 0); break;
+                case Item.BearTrap:
+                    t.localRotation = Quaternion.Euler(-55, 0, 0); break; // (seen from above: the open jaws)
                 case Item.BuildingPlan:
                     t.localRotation = Quaternion.Euler(20, 0, 0); break;
             }

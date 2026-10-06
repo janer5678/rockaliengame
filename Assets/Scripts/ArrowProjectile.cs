@@ -197,7 +197,7 @@ namespace RockGame
 
             if (m_Spear)
             {
-                if (no == null || no.GetComponent<PlayerNet>() == null) Sfx.Play(Sfx.Thud, h.point, 1f, 0.08f, 90f);
+                if ((no == null || no.GetComponent<PlayerNet>() == null) && !EnergyWall.Hit(h.collider, h.point, h.normal)) Sfx.Play(Sfx.Thud, h.point, 1f, 0.08f, 90f);
                 if (reporter)
                 {
                     if (no != null) m_Shooter.SpearLandRpc(true, no, h.point, dir);
@@ -213,7 +213,7 @@ namespace RockGame
             m_Life = player ? 5f : 0.4f;
             transform.position = h.point - transform.forward * 0.1f;
             if (no != null) transform.SetParent(no.transform, true);
-            if (!player) Sfx.Play(Sfx.Thud, h.point, 0.8f, 0.1f, 80f);
+            if (!player && !EnergyWall.Hit(h.collider, h.point, h.normal)) Sfx.Play(Sfx.Thud, h.point, 0.8f, 0.1f, 80f); // (the energy wall crackles instead)
             if (reporter)
             {
                 if (no != null) m_Shooter.ArrowHitRpc(no, h.point, dir);

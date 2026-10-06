@@ -167,10 +167,10 @@ namespace RockGame
             }
             // the chair under them
             var metal = new Color(0.3f, 0.32f, 0.38f);
-            Art.Box(a.Root, metal, new Vector3(0f, 0.22f, -0.12f), new Vector3(0.62f, 0.07f, 0.56f));
-            Art.Box(a.Root, new Color(0.42f, 0.2f, 0.55f), new Vector3(0f, 0.28f, -0.12f), new Vector3(0.56f, 0.06f, 0.5f));
-            Art.Box(a.Root, metal, new Vector3(0f, 0.7f, -0.42f), new Vector3(0.6f, 0.8f, 0.06f), new Vector3(-8f, 0f, 0f));
-            Art.Box(a.Root, metal * 0.7f, new Vector3(0f, 0.1f, -0.12f), new Vector3(0.12f, 0.22f, 0.12f));
+            Art.Box(a.Root, metal, new Vector3(0f, 0.33f, -0.12f), new Vector3(0.62f, 0.07f, 0.56f));
+            Art.Box(a.Root, new Color(0.42f, 0.2f, 0.55f), new Vector3(0f, 0.39f, -0.12f), new Vector3(0.56f, 0.06f, 0.5f));
+            Art.Box(a.Root, metal, new Vector3(0f, 0.8f, -0.42f), new Vector3(0.6f, 0.8f, 0.06f), new Vector3(-8f, 0f, 0f));
+            Art.Box(a.Root, metal * 0.7f, new Vector3(0f, 0.16f, -0.12f), new Vector3(0.12f, 0.32f, 0.12f));
             Art.Box(a.Root, metal * 0.7f, new Vector3(0f, 0.02f, -0.12f), new Vector3(0.5f, 0.04f, 0.4f));
             return a;
         }

@@ -199,24 +199,63 @@ namespace RockGame
 
         void DrawModePage(float x, ref float y, float w)
         {
+            // in the menu's own look (not the settings panel's): a big drop-down of the modes, the length on chunky
+            // + / - buttons, the options under it, and the big CONTINUE
             float k = m_Scale;
-            var area = new Rect(x, y, w + 120 * k, Screen.height - y - 120 * k);
-            GUILayout.BeginArea(area);
             int key = Bootstrap.MapChoice;
-            key = DrawRulesPicker(key);
+            var rules = (GameRules)Mathf.Clamp((key >> Cfg.RulesShift) & Cfg.RulesMask, 0, (int)Cfg.LastRules);
+            if (System.Array.IndexOf(MenuModes, rules) < 0) { rules = MenuModes[0]; key = (key & ~(Cfg.RulesMask << Cfg.RulesShift)) | ((int)rules << Cfg.RulesShift); }
+            // the drop-down
+            var dr = new Rect(x, y, w, 58 * k);
+            bool hover = dr.Contains(Event.current.mousePosition);
+            if (hover) MouseOverUI = true;
+            Fill(dr, hover ? new Color(k_Acid.r, k_Acid.g, k_Acid.b, 0.25f) : new Color(0.03f, 0.02f, 0.06f, 0.85f));
+            Fill(new Rect(dr.x, dr.y, 10 * k, dr.height), k_Acid);
+            var big = new GUIStyle(m_Label) { fontSize = Mathf.RoundToInt(28 * k), fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
+            GUI.Label(new Rect(dr.x + 28 * k, dr.y, dr.width - 80 * k, dr.height), Cfg.RulesName(rules).ToUpper(), big);
+            GUI.Label(new Rect(dr.xMax - 54 * k, dr.y, 44 * k, dr.height), m_ModesOpen ? "▲" : "▼", new GUIStyle(big) { alignment = TextAnchor.MiddleCenter });
+            if (GUI.Button(dr, GUIContent.none, GUIStyle.none)) { m_ModesOpen = !m_ModesOpen; ClickSound(); }
+            y += 64 * k;
+            if (m_ModesOpen)
+            {
+                foreach (var gr in MenuModes)
+                {
+                    var rr = new Rect(x + 18 * k, y, w - 18 * k, 40 * k);
+                    bool on = gr == rules;
+                    if (on) { Fill(rr, new Color(k_Acid.r, k_Acid.g, k_Acid.b, 0.3f)); Frame(rr, k_Acid, 2f); }
+                    if (SmallBtn(rr, Cfg.RulesName(gr).ToUpper())) { key = (key & ~(Cfg.RulesMask << Cfg.RulesShift)) | ((int)gr << Cfg.RulesShift); m_ModesOpen = false; rules = gr; }
+                    y += 44 * k;
+                }
+                y += 4 * k;
+            }
             Bootstrap.MapChoice = key;
-            DrawLengthRow(key);
-            GUILayout.Space(6 * k);
-            GUILayout.BeginHorizontal();
-            if (Btn("MODE OPTIONS", GUILayout.Height(36 * k))) m_Page = MenuPage.ModeOptions;
-            if (Btn("CHANGE VALUES", GUILayout.Height(36 * k))) m_Page = MenuPage.Values;
-            GUILayout.EndHorizontal();
-            GUILayout.Label($"<color=#bbbbbb>{ModeOptionsSummary(key)}</color>", m_SmallWrap);
-            GUILayout.Space(10 * k);
-            if (Btn("CONTINUE", m_Primary, GUILayout.Height(50 * k))) { m_New = NewPage.Map; m_MapPick = Mathf.Max(0, System.Array.IndexOf(k_Maps, Cfg.Map)); }
-            float used = GUILayoutUtility.GetLastRect().yMax;
-            GUILayout.EndArea();
-            y += used;
+            var desc = new GUIStyle(m_SmallWrap) { fontSize = Mathf.RoundToInt(15 * k) };
+            float dh = desc.CalcHeight(new GUIContent(Cfg.RulesDesc(rules)), w);
+            Shadowed(new Rect(x, y, w, dh), $"<color=#ffd24a>{Cfg.RulesDesc(rules)}</color>", desc);
+            y += dh + 14 * k;
+            // the game length: the build phase behind the glass wall, then the match with the ball
+            var cap = new GUIStyle(m_Label) { fontSize = Mathf.RoundToInt(16 * k), fontStyle = FontStyle.Bold };
+            GUI.Label(new Rect(x, y, w, 24 * k), "GAME LENGTH", cap);
+            y += 28 * k;
+            float bw = 42 * k, bh = 42 * k, lw = 130 * k;
+            var val = new GUIStyle(m_Center) { fontSize = Mathf.RoundToInt(20 * k), fontStyle = FontStyle.Bold };
+            float cx = x;
+            if (SmallBtn(new Rect(cx, y, bw, bh), "−")) { Cfg.BallDropDelay = Mathf.Max(30f, Cfg.BallDropDelay - 30f); Cfg.SavePrefs(); }
+            GUI.Label(new Rect(cx + bw, y, lw, bh), $"{Clock(Cfg.BallDropDelay)} <size={Mathf.RoundToInt(13 * k)}>build</size>", val);
+            if (SmallBtn(new Rect(cx + bw + lw, y, bw, bh), "+")) { Cfg.BallDropDelay = Mathf.Min(1800f, Cfg.BallDropDelay + 30f); Cfg.SavePrefs(); }
+            cx += bw * 2 + lw + 18 * k;
+            if (SmallBtn(new Rect(cx, y, bw, bh), "−")) { Cfg.MatchLength = Mathf.Max(60f, Cfg.MatchLength - 60f); Cfg.SavePrefs(); }
+            GUI.Label(new Rect(cx + bw, y, lw, bh), $"{Clock(Cfg.MatchLength)} <size={Mathf.RoundToInt(13 * k)}>match</size>", val);
+            if (SmallBtn(new Rect(cx + bw + lw, y, bw, bh), "+")) { Cfg.MatchLength = Mathf.Min(3600f, Cfg.MatchLength + 60f); Cfg.SavePrefs(); }
+            y += bh + 14 * k;
+            // the options pages, and what's set
+            float half = (w - 10 * k) * 0.5f;
+            if (SmallBtn(new Rect(x, y, half, 40 * k), "MODE OPTIONS")) m_Page = MenuPage.ModeOptions;
+            if (SmallBtn(new Rect(x + half + 10 * k, y, half, 40 * k), "CHANGE VALUES")) m_Page = MenuPage.Values;
+            y += 46 * k;
+            Shadowed(new Rect(x, y, w, 22 * k), $"<color=#bbbbbb>{ModeOptionsSummary(key)}</color>", m_Small);
+            y += 30 * k;
+            if (BigBtn(ref y, x, w, "CONTINUE", k_Acid)) { m_New = NewPage.Map; m_MapPick = Mathf.Max(0, System.Array.IndexOf(k_Maps, Cfg.Map)); }
         }
 
         /// <summary>The game mode as a drop-down of the menu's modes, with what it is under it. Returns the new map key.</summary>
@@ -359,7 +398,7 @@ namespace RockGame
 
         // ------------------------------------------------------------------ the look
 
-        /// <summary>The title: big, bold and a bit wonky - a pink and a cyan copy knocked off it like a misprint, the
+        /// <summary>The title: big, bold and a bit wonky - white with a hard black shadow (black and white only), the
         /// whole thing tilted and gently rocking.</summary>
         void DrawPunkTitle(string text, Vector2 at, int size)
         {
@@ -369,10 +408,8 @@ namespace RockGame
             float wob = Mathf.Sin(Time.unscaledTime * 1.3f) * 1.2f;
             GUIUtility.RotateAroundPivot(-4f + wob, at + new Vector2(200 * k, 40 * k));
             var r = new Rect(at.x, at.y, Screen.width, size * 1.6f * k);
-            float j = Mathf.Sin(Time.unscaledTime * 7f) * 1.5f * k;
-            GUI.Label(new Rect(r.x - 5 * k + j, r.y + 3 * k, r.width, r.height), $"<color=#{ColorUtility.ToHtmlStringRGB(k_Pink)}>{text}</color>", st);
-            GUI.Label(new Rect(r.x + 4 * k, r.y - 3 * k - j, r.width, r.height), $"<color=#{ColorUtility.ToHtmlStringRGB(k_Cyan)}>{text}</color>", st);
-            GUI.Label(new Rect(r.x + 3 * k, r.y + 6 * k, r.width, r.height), $"<color=#000000cc>{text}</color>", st);
+            // (black and white: a hard black shadow under white letters)
+            GUI.Label(new Rect(r.x + 5 * k, r.y + 6 * k, r.width, r.height), $"<color=#000000ee>{text}</color>", st);
             GUI.Label(r, $"<color=#ffffff>{text}</color>", st);
             GUI.matrix = m;
         }

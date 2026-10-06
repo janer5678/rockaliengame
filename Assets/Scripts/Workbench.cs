@@ -23,7 +23,7 @@ namespace RockGame
         static readonly Item[] k_Tier1 = { Item.Sword, Item.Crossbow, Item.SleepingBag, Item.Armor, Item.Barrier, Item.LargeGate, Item.Ladder, Item.BearTrap, Item.Chainsaw, Item.Saddle, Item.FortifyBuff, Item.Workbench2 };
         /// <summary>Tier 2 (Workbench T2 in your base): the ammo, then the guns, the alien helmet, C4, then whatever's left (pickaxe, boat...).
         /// Anything craftable that isn't tier 0 or 1 is tier 2.</summary>
-        static readonly Item[] k_Tier2 = { Item.ShotgunShell, Item.RevolverAmmo, Item.Shotgun, Item.Revolver, Item.Helmet, Item.HeavyArmor, Item.AutoTurret, Item.C4, Item.Pickaxe, Item.Boat, Item.PistolAmmo, Item.Pistol };
+        static readonly Item[] k_Tier2 = { Item.Shotgun, Item.ShotgunShell, Item.Revolver, Item.RevolverAmmo, Item.Helmet, Item.HeavyArmor, Item.AutoTurret, Item.C4, Item.Pickaxe, Item.Boat, Item.PistolAmmo, Item.Pistol };
 
         public static bool IsStarter(Item i) => System.Array.IndexOf(k_Starter, i) >= 0;
         public static IReadOnlyList<Item> StarterOrder => k_Starter;

@@ -128,7 +128,7 @@ namespace RockGame
             Rot(m_RUp, new Vector3(-84f, 0, 9f));
             Rot(m_LLo, new Vector3(86f, 0, 0));
             Rot(m_RLo, new Vector3(86f, 0, 0));
-            m_Model.localPosition = m_ModelBase + new Vector3(0, -0.47f, 0);
+            m_Model.localPosition = m_ModelBase + new Vector3(0, -0.36f, 0); // (feet on the floor, not through it)
             switch (((variant % 4) + 4) % 4)
             {
                 case 0: // leaning back, arms crossed

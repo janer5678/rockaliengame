@@ -482,7 +482,7 @@ namespace RockGame
                     m_VelY = up ? 3.6f : move && fwdInput < 0 ? -3.6f : 0f;
                     // at the top: step off forwards onto the floor
                     var ld = CurrentLadder;
-                    if (ld != null && transform.position.y > ld.TopWorldY - 0.15f && up) { m_Push = ld.ExitDir * 3f; m_VelY = Mathf.Max(m_VelY, 1.5f); }
+                    if (ld != null && transform.position.y > ld.TopWorldY - 0.15f && up) { m_Push = ld.ExitDir * 3f; m_VelY = Mathf.Max(m_VelY, ld.ExitHop); }
                     if (move && Binds.Down(Bind.Jump)) { m_VelY = 4f; m_Push = -transform.forward * 3f; m_JumpPressedAt = -10f; m_JumpedSinceGround = true; }
                 }
                 else m_VelY -= Cfg.Gravity * Time.deltaTime;
@@ -1035,6 +1035,7 @@ namespace RockGame
                 Fx.Play(FxKind.StructureHit, hit.point, hit.normal);
                 Fx.Shake(0.1f);
             }
+            else if (EnergyWall.Hit(hit.collider, hit.point, hit.normal)) Fx.Shake(0.12f); // (the energy wall: a crackle of energy, not a thud)
             else
             {
                 Fx.Chips(hit.point, hit.normal, new Color(0.35f, 0.3f, 0.22f), 5, 2f);
@@ -1766,7 +1767,24 @@ namespace RockGame
             {
                 var kind = want == 100 ? Item.Barrier : want == 101 ? Item.Chest : want == 104 ? Item.Workbench : want == 105 ? Item.Workbench2 : want == 103 ? Item.Boat /* THEME MAPS */ : want == 106 ? Item.Ladder : want == 107 ? Item.BearTrap : want == 108 ? Item.SleepingBag : want == 109 ? Item.LargeGate : want == 110 ? Item.AutoTurret : Item.Car;
                 visible = hasHit && hit.distance <= Cfg.DeployRange && hit.normal.y > 0.7f;
-                if (!visible) reason = "Aim at flat ground nearby";
+                // a ladder aimed at a wall (a building piece - yours or theirs - or a large wall): it stands straight up
+                // against it, on whatever's at its foot, facing the wall
+                if (kind == Item.Ladder && hasHit && hit.distance <= Cfg.DeployRange + 1f && Mathf.Abs(hit.normal.y) < 0.5f
+                    && hit.collider.GetComponentInParent<Structure>() != null)
+                {
+                    var flatN = new Vector3(hit.normal.x, 0f, hit.normal.z).normalized;
+                    var foot = hit.point + flatN * 0.2f;
+                    if (Physics.Raycast(foot + Vector3.up * 0.3f, Vector3.down, out var under, 9f, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore))
+                    {
+                        m_GhostPos = under.point;
+                        m_GhostYaw = Quaternion.LookRotation(-flatN).eulerAngles.y;
+                        PlayerNet.FindDeploySpot(kind, team, ref m_GhostPos, m_GhostYaw, out reason);
+                        m_Ghost.transform.SetPositionAndRotation(m_GhostPos, Quaternion.Euler(0, m_GhostYaw, 0));
+                        visible = true;
+                        goto ladderPlaced;
+                    }
+                }
+                if (!visible) reason = kind == Item.Ladder ? "Aim at a wall (or flat ground) nearby" : "Aim at flat ground nearby";
                 else
                 {
                     m_GhostPos = hit.point;
@@ -1775,6 +1793,7 @@ namespace RockGame
                     PlayerNet.FindDeploySpot(kind, team, ref m_GhostPos, m_GhostYaw, out reason);
                     m_Ghost.transform.SetPositionAndRotation(m_GhostPos, Quaternion.Euler(0, m_GhostYaw, 0));
                 }
+                ladderPlaced:;
             }
             else
             {

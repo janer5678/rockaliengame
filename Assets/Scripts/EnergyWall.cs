@@ -114,6 +114,21 @@ namespace RockGame
 
         void OnDestroy() { if (m_Mat != null) Destroy(m_Mat); }
 
+        /// <summary>Something struck this collider at `point`: if it's glass drawn as the energy wall, a crackling zap and a
+        /// low buzz, a burst of cyan sparks and a ripple of light (true: it was the energy wall).</summary>
+        public static bool Hit(Collider c, Vector3 point, Vector3 normal)
+        {
+            if (c == null || !GameSettings.EnergyWall.Value) return false;
+            var e = c.GetComponentInParent<EnergyWall>();
+            if (e == null && MapDome.Collider == c) e = Dome;
+            if (e == null || !e.Energy) return false;
+            Sfx.Play(Sfx.Zap, point, 0.75f, 0.15f, 45f);
+            Sfx.PlayPitched(Sfx.Hum, point, 0.6f, 0.55f, 40f);
+            Fx.Chips(point, normal, new Color(0.45f, 0.95f, 1f), 9, 3.5f);
+            FxParticle.Puff(point + normal * 0.05f, new Color(0.5f, 0.95f, 1f, 0.6f), 0.6f);
+            return true;
+        }
+
         Material Mat()
         {
             if (m_Mat != null) return m_Mat;

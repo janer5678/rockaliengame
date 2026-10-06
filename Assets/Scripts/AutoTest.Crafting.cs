@@ -337,8 +337,8 @@ namespace RockGame
                 var shown = new List<Item>();
                 foreach (var r in Hud.CraftRowsShown) shown.Add(r.Id);
                 if (Cfg.PowerMenu)
-                    Check(InOrder(shown, Item.ShotgunShell, Item.RevolverAmmo, Item.Shotgun, Item.Revolver, Item.Helmet, Item.C4),
-                        $"T2: ammo, then the guns, the helmet, then C4 ({string.Join(", ", shown)})");
+                    Check(InOrder(shown, Item.Shotgun, Item.ShotgunShell, Item.Revolver, Item.RevolverAmmo, Item.Helmet, Item.C4),
+                        $"T2: the shotgun, its shells, the revolver, its bullets, the helmet, then C4 ({string.Join(", ", shown)})");
             }
             float max = Hud.CraftScrollMax;
             yield return Snap(P("tab_t2"));

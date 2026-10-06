@@ -650,5 +650,7 @@ namespace RockGame
         public float TopLocalY;
         public float TopWorldY => transform.parent != null ? transform.parent.TransformPoint(new Vector3(0, TopLocalY, 0)).y : TopLocalY;
         public Vector3 ExitDir => transform.forward;
+        /// <summary>How hard you hop off the top (up, m/s).</summary>
+        public float ExitHop = 1.5f;
     }
 }
