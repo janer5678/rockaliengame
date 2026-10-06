@@ -136,7 +136,7 @@ namespace RockGame
         /// <summary>Tutorial: the server tells this player's guide that something it's waiting for happened (Tutorial.OnEvent:
         /// 1 = you hit a training dummy, 2 = you finished one off; arg bit 1 = from range (else up close), bit 2 = on the head).</summary>
         [Rpc(SendTo.Owner)]
-        public void TutEventRpc(byte what, byte arg) => Tutorial.OnEvent(what, arg);
+        public void TutEventRpc(byte what, byte arg) { if (!Bot.Value) Tutorial.OnEvent(what, arg); }
 
         float m_NextSuicide;
 

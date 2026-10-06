@@ -5,7 +5,7 @@ namespace RockGame
     /// <summary>
     /// The big moments on screen, drawn to feel like events:
     /// - THE END COUNTDOWN (the match's last ten seconds, "YOU WIN IN" / "OVERTIME IN"): each second the number slams in
-    ///   big and white-hot, springs and wobbles as it settles into the colour, a shockwave ring and a glow burst out from
+    ///   big and white-hot, springs and wobbles as it settles into the colour, a soft glow bursts out from
     ///   behind it, and a row of pips under it ticks down; the label sits on a dark band with an accent line that fills
     ///   through each second. The last three hit harder and redder.
     /// - THE BANNERS (TRADE STATION UNLOCKED, AIRDROP INCOMING, the wall dropping...): a dark band snaps open across the
@@ -87,13 +87,7 @@ namespace RockGame
             // the glow and the shockwave behind the number
             float gs = (hard ? 520f : 420f) * k * (0.9f + 0.25f * Mathf.Exp(-5f * t));
             Tinted(new Rect(cx - gs / 2f, cy - gs / 2f, gs, gs), s_GlowTex, new Color(accent.r, accent.g, accent.b, 0.4f * (1f - t) + 0.08f));
-            float rs = (160f + 420f * Mathf.Sqrt(t)) * k * (hard ? 1.2f : 1f);
-            Tinted(new Rect(cx - rs / 2f, cy - rs / 2f, rs, rs), s_RingTex, new Color(1f, 1f, 1f, (1f - t) * (1f - t) * 0.9f));
-            if (hard)
-            {
-                float rs2 = (120f + 300f * Mathf.Sqrt(Mathf.Clamp01(t * 1.4f))) * k;
-                Tinted(new Rect(cx - rs2 / 2f, cy - rs2 / 2f, rs2, rs2), s_RingTex, new Color(accent.r, accent.g, accent.b, Mathf.Clamp01(1f - t * 1.4f) * 0.8f));
-            }
+            // (no rings round it)
             // the label on its band, the accent line under it filling through the second
             float bw = 560f * k, bh = 54 * k, by = sh * 0.2f - 6 * k;
             Tinted(new Rect(cx - bw / 2f, by, bw, bh), s_BandTex, new Color(0f, 0f, 0f, 0.6f));
@@ -122,12 +116,91 @@ namespace RockGame
             }
         }
 
+        // the top panel's memory: which phase it's showing, how long that phase was, the last whole second shown
+        GameState m_TopState = (GameState)255;
+        float m_TopTotal = 1f, m_TopSecondAt = -10f;
+        int m_TopSecond = -1;
+
+        /// <summary>
+        /// The top-centre header in a match: a dark plate with the phase's accent along it - its label on a chip ("WALL
+        /// DROPS IN", "TIME LEFT", "OVERTIME", "SUDDEN DEATH"...), the clock big in inked digits that tick in with a little
+        /// pop every second, the mode on a tag at the end - a bar under it draining through the phase with a bright head,
+        /// and the line about what to do under that. In the phase's last 30 seconds the clock and its bar pulse. Returns
+        /// how tall it is (the mode chips go under it).
+        /// </summary>
+        float DrawTopPanel(NetGame game, string label, string clock, string tag, string sub, Color accent, float left, float k)
+        {
+            EnsureNotifyTextures();
+            float sw = Screen.width, cx = sw / 2f, y = 8f;
+            // the phase's length (for the bar): what the clock read when the phase began
+            var st = game != null ? game.S : GameState.Waiting;
+            if (st != m_TopState) { m_TopState = st; m_TopTotal = Mathf.Max(1f, left); }
+            if (left > m_TopTotal) m_TopTotal = left;
+            int sec = left >= 0f ? Mathf.CeilToInt(left) : -1;
+            if (sec != m_TopSecond) { m_TopSecond = sec; m_TopSecondAt = Time.time; }
+            bool urgent = left >= 0f && left <= 30f;
+            float pulse = urgent ? 0.5f + 0.5f * Mathf.Sin(Time.time * 7f) : 0f;
+            // the plate
+            float pw = 640 * k, plateH = 64 * k;
+            Tinted(new Rect(cx - pw * 0.62f, y, pw * 1.24f, plateH), s_BandTex, new Color(0f, 0f, 0f, 0.6f));
+            Fill(new Rect(cx - pw * 0.42f, y, pw * 0.84f, 2 * k), new Color(accent.r, accent.g, accent.b, 0.85f));
+            // the label chip, left of the clock
+            var lst = new GUIStyle(m_Label) { fontSize = Mathf.RoundToInt(19 * k), fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
+            bool hasClock = !string.IsNullOrEmpty(clock);
+            float clockW = hasClock ? 150 * k : 0f;
+            var labelR = hasClock ? new Rect(cx - clockW / 2f - 260 * k, y + 6 * k, 250 * k, plateH - 12 * k) : new Rect(0, y + 6 * k, sw, plateH - 12 * k);
+            if (!hasClock) lst.alignment = TextAnchor.MiddleCenter;
+            if (!hasClock) lst.fontSize = Mathf.RoundToInt(26 * k);
+            InkText(labelR, $"<color=#{ColorUtility.ToHtmlStringRGB(accent)}>{label}</color>", lst, Color.white, new Color(0f, 0f, 0f, 0.8f), 1.5f * k);
+            // the clock: big inked digits, popping in each second (redder in the last 30)
+            if (hasClock)
+            {
+                float since = Time.time - m_TopSecondAt;
+                float pop = 1f + (urgent ? 0.18f : 0.08f) * Mathf.Exp(-9f * since);
+                var cst = new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt(46 * k * pop), alignment = TextAnchor.MiddleCenter, clipping = TextClipping.Overflow };
+                var fill = urgent ? Color.Lerp(Color.white, new Color(1f, 0.35f, 0.25f), 0.4f + 0.6f * pulse) : Color.Lerp(accent, Color.white, Mathf.Exp(-6f * since) * 0.8f + 0.35f);
+                InkText(new Rect(cx - clockW / 2f, y, clockW, plateH), clock, cst, fill, new Color(0f, 0f, 0f, 0.9f), 3f * k);
+            }
+            // the mode's tag, right of the clock
+            if (!string.IsNullOrEmpty(tag) && hasClock)
+            {
+                var tst = new GUIStyle(m_Label) { fontSize = Mathf.RoundToInt(14 * k), fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+                float tw = tst.CalcSize(new GUIContent(tag)).x + 18 * k;
+                var tr = new Rect(cx + clockW / 2f + 14 * k, y + plateH / 2f - 12 * k, tw, 24 * k);
+                Fill(tr, new Color(accent.r * 0.35f, accent.g * 0.35f, accent.b * 0.35f, 0.85f));
+                Frame(tr, new Color(accent.r, accent.g, accent.b, 0.9f), 1.5f);
+                GUI.Label(tr, $"<color=#{ColorUtility.ToHtmlStringRGB(Color.Lerp(accent, Color.white, 0.4f))}>{tag}</color>", tst);
+            }
+            y += plateH;
+            // the bar: draining through the phase, a bright head at its end
+            if (left >= 0f && game != null && game.S != GameState.Waiting)
+            {
+                float bw = pw * 0.84f, frac = Mathf.Clamp01(left / m_TopTotal);
+                var br = new Rect(cx - bw / 2f, y, bw, 5 * k);
+                Fill(br, new Color(0f, 0f, 0f, 0.55f));
+                var bc = urgent ? Color.Lerp(accent, new Color(1f, 0.3f, 0.2f), pulse) : accent;
+                Fill(new Rect(br.x, br.y, br.width * frac, br.height), bc);
+                Tinted(new Rect(br.x + br.width * frac - 14 * k, br.y - 6 * k, 28 * k, br.height + 12 * k), s_GlowTex, new Color(1f, 1f, 1f, 0.7f));
+                y += 7 * k;
+            }
+            // the line about what to do
+            int lines = string.IsNullOrEmpty(sub) ? 0 : sub.Split('\n').Length;
+            if (lines > 0)
+            {
+                float sh2 = lines * 22 * k + 6 * k;
+                Tinted(new Rect(cx - pw * 0.55f, y, pw * 1.1f, sh2), s_BandTex, new Color(0f, 0f, 0f, 0.45f));
+                Shadowed(new Rect(0, y + 3 * k, sw, lines * 22 * k), sub, new GUIStyle(m_Center) { fontSize = Mathf.RoundToInt(16 * k) });
+                y += sh2;
+            }
+            return y - 8f;
+        }
+
         /// <summary>A banner's accent colour, by what the news is.</summary>
         static Color BannerAccent(string title)
         {
             string s = title ?? "";
-            if (s.Contains("UNLOCK")) return new Color(0.45f, 1f, 0.45f);
-            if (s.Contains("AIRDROP")) return new Color(1f, 0.6f, 0.2f);
+            if (s.Contains("UNLOCK")) return new Color(1f, 0.88f, 0.2f);   // (yellow)
+            if (s.Contains("AIRDROP")) return new Color(0.75f, 0.4f, 1f);  // (purple)
             if (s.Contains("WALL") || s.Contains("DROP")) return new Color(0.4f, 0.85f, 1f);
             if (s.Contains("DESTROY") || s.Contains("DOWN") || s.Contains("OUT")) return new Color(1f, 0.3f, 0.25f);
             return new Color(1f, 0.85f, 0.3f);

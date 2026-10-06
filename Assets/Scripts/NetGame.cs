@@ -204,6 +204,7 @@ namespace RockGame
             MapBuilder.SetGlassWall(WallUp);
             AirdropShip.Tick(this);
             VictoryCutscene.Tick(this); // the winners beamed up into a UFO (when the ball in their socket won it)
+            ServerTickBackToLobby(); // (the countdown on every peer; the host does the sending back)
             PortalFx.Sync(this);
             GraveFx.Sync(this);
             TickStartCountdown(); // the waiting stadium's 10 s countdown once everyone's in (NetGame.Lobby.cs)

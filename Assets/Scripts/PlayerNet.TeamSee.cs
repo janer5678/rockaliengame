@@ -53,7 +53,7 @@ namespace RockGame
         /// <summary>Every frame (PlayerNet.Update): teammates of the local player are drawn through walls; nobody else.</summary>
         void TickTeamSee(PlayerNet local, bool dead)
         {
-            bool on = Cfg.TeammateSilhouettes && !IsOwner && local != null && local != this && local.Team.Value == Team.Value && !dead
+            bool on = Cfg.TeammateSilhouettes && !Mine && local != null && local != this && local.Team.Value == Team.Value && !dead
                 && m_VisualRoot != null && m_VisualRoot.gameObject.activeSelf;
             if (on != m_TeamSee) SetTeamSee(on);
             // (held items and armour get swapped: give the new ones the pass too)

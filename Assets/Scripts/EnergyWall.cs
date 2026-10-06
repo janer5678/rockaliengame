@@ -158,6 +158,8 @@ namespace RockGame
             {
                 mat.SetFloat("_Strength", GameSettings.EnergyWallStrength.Value);
                 if (m_Dome) mat.SetFloat("_Fade", MapDome.Fade);
+                // (the big dome's hole mask is made anew with each map: the airdrop's holes in it have to show through)
+                if (m_Mask != null) { mat.SetTexture("_HoleMask", m_Mask); mat.SetFloat("_UseMask", 1f); }
             }
             bool want = mat != null;
             if (want == m_Shown) return;

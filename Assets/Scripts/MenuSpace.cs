@@ -280,7 +280,7 @@ namespace RockGame
                 Art.Part(ship, Art.Cylinder, dark, p, new Vector3(2.6f / cr, 3.4f / ch, 2.6f / cr), new Vector3(90f, 0, 0));
                 Art.Part(ship, Art.Cylinder, hull, p + new Vector3(0, 0, 1.6f), new Vector3(2.9f / cr, 0.4f / ch, 2.9f / cr), new Vector3(90f, 0, 0));
                 Art.Part(ship, Art.Cylinder, hull * 0.7f, p - new Vector3(0, 0, 1.55f), new Vector3(2.4f / cr, 0.35f / ch, 2.4f / cr), new Vector3(90f, 0, 0)); // (the nozzle lip)
-                Art.Part(ship, Art.Cylinder, Color.white, p - new Vector3(0, 0, 1.75f), new Vector3(1.9f / cr, 0.04f / ch, 1.9f / cr), new Vector3(90f, 0, 0), false, Unlit(new Color(1f, 0.85f, 0.55f), 3f));
+                Art.Part(ship, Art.Cylinder, Color.white, p - new Vector3(0, 0, 1.75f), new Vector3(1.9f / cr, 0.04f / ch, 1.9f / cr), new Vector3(90f, 0, 0), false, Unlit(new Color(0.7f, 0.9f, 1f), 3f));
                 var flame = new GameObject("flame").transform;
                 flame.SetParent(ship, false);
                 flame.localPosition = p - new Vector3(0, 0, 1.75f);
@@ -291,17 +291,17 @@ namespace RockGame
                     c.GetComponent<Renderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
                     s_Flames.Add((c.transform, new Vector3(w, len, w)));
                 }
-                Layer(1.1f, 3.2f, Unlit(new Color(1f, 0.95f, 0.75f), 3.2f));
-                Layer(1.8f, 6.5f, Art.Ghost(new Color(1f, 0.6f, 0.15f, 0.75f)));
-                Layer(2.5f, 11f, Art.Ghost(new Color(1f, 0.3f, 0.06f, 0.38f)));
-                Layer(3.1f, 15f, Art.Ghost(new Color(0.9f, 0.18f, 0.04f, 0.16f)));
+                Layer(1.1f, 3.2f, Unlit(new Color(0.88f, 0.96f, 1f), 3.2f));
+                Layer(1.8f, 6.5f, Art.Ghost(new Color(0.35f, 0.75f, 1f, 0.75f)));
+                Layer(2.5f, 11f, Art.Ghost(new Color(0.2f, 0.45f, 1f, 0.38f)));
+                Layer(3.1f, 15f, Art.Ghost(new Color(0.25f, 0.2f, 0.95f, 0.16f)));
                 s_Exhaust.Add(flame);
                 s_ExhaustBase.Add(Vector3.one);
             }
             var l = new GameObject("engine light").AddComponent<Light>();
             l.transform.SetParent(ship, false);
             l.transform.localPosition = new Vector3(0, 0, -21f);
-            l.type = LightType.Point; l.range = 40f; l.intensity = 5f; l.color = new Color(1f, 0.55f, 0.2f);
+            l.type = LightType.Point; l.range = 40f; l.intensity = 5f; l.color = new Color(0.4f, 0.7f, 1f);
         }
 
         /// <summary>Each engine flame layer and its size (they flicker on their own: Animate).</summary>
@@ -340,27 +340,38 @@ namespace RockGame
                 p.GetComponent<Renderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
                 s_Fire.Add((p.transform, s));
             }
-            // (radius-1 spheres: these are half-sizes) layers of heat piled up on the leading edge, white-hot at the front
-            Shell(new Vector3(0, 0, 28.5f), new Vector3(22f, 5.5f, 8f), new Color(1f, 0.2f, 0.04f, 0.18f));
-            Shell(new Vector3(0, 0, 29f), new Vector3(18f, 4.2f, 6.5f), new Color(1f, 0.35f, 0.08f, 0.3f));
+            // (radius-1 spheres: these are half-sizes) layers of heat piled up on the leading edge, white-hot at the front,
+            // a wide haze of heat round it, and a bow of fire pushed out ahead of it
+            Shell(new Vector3(0, 0, 27.5f), new Vector3(28f, 7f, 11f), new Color(1f, 0.25f, 0.05f, 0.12f));
+            Shell(new Vector3(0, 0, 28.5f), new Vector3(22f, 5.5f, 8f), new Color(1f, 0.2f, 0.04f, 0.2f));
+            Shell(new Vector3(0, 0, 29f), new Vector3(18f, 4.2f, 6.5f), new Color(1f, 0.35f, 0.08f, 0.32f));
             Shell(new Vector3(0, 0, 30f), new Vector3(14f, 3.2f, 4.8f), new Color(1f, 0.55f, 0.12f, 0.45f));
             Shell(new Vector3(0, 0, 31f), new Vector3(10f, 2.2f, 3f), new Color(1f, 0.85f, 0.45f, 0.65f));
             Shell(new Vector3(0, 0, 31.8f), new Vector3(6f, 1.3f, 1.6f), new Color(1f, 0.97f, 0.85f, 0.85f));
-            for (int i = 0; i < 44; i++)
-            {
-                // flame tongues licking back round the leading edge and over the top and under the belly (three rows)
-                int row = i % 3;
-                float a = Mathf.Lerp(-100f, 100f, (i / 3) / 14f) + Random.Range(-4f, 4f);
-                var at = Quaternion.Euler(0, a, 0) * new Vector3(0, (row - 1) * 1.4f + Random.Range(-0.4f, 0.4f), 29.5f - Mathf.Abs(a) * 0.04f);
-                var tongue = new GameObject("flame tongue").transform;
-                tongue.SetParent(ship, false);
-                tongue.localPosition = at;
-                tongue.localRotation = Quaternion.LookRotation(-at.normalized + Vector3.back * 1.4f) * Quaternion.Euler(90f, 0, 0);
-                var cone = Art.Part(tongue, Art.Cone, Color.white, new Vector3(0, 5f, 0), new Vector3(2.4f + Random.Range(0f, 1.4f), 16f + Random.Range(0f, 16f), 2.4f + Random.Range(0f, 1.4f)), default, false,
-                    Art.Ghost(Color.Lerp(new Color(1f, 0.45f, 0.1f, 0.45f), new Color(1f, 0.8f, 0.3f, 0.5f), Random.value)));
-                cone.GetComponent<Renderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-                s_Fire.Add((tongue, Vector3.one));
-            }
+            Shell(new Vector3(0, 0, 33.5f), new Vector3(9f, 1.8f, 3.2f), new Color(1f, 0.5f, 0.1f, 0.3f));
+            Shell(new Vector3(0, 0, 35.5f), new Vector3(6f, 1.2f, 2.4f), new Color(1f, 0.7f, 0.25f, 0.25f));
+            // the fire streaming back from the front along the outside of the rim (clear of the hull - nothing pokes
+            // through the ship): sheets of flame on each side, longest at the front, tapering off round the sides
+            for (int side = -1; side <= 1; side += 2)
+                for (int i = 0; i < 12; i++)
+                {
+                    float a = side * Mathf.Lerp(8f, 95f, i / 11f) * Mathf.Deg2Rad;
+                    var radial = new Vector3(Mathf.Sin(a), 0f, Mathf.Cos(a));
+                    var tangent = new Vector3(Mathf.Cos(a), 0f, -Mathf.Sin(a));
+                    if (tangent.z > 0f) tangent = -tangent;
+                    tangent = (tangent - radial * 0.08f).normalized; // (peeling off outwards a little)
+                    float f = i / 11f;
+                    var at = radial * (31.5f + f * 0.8f) + Vector3.up * Random.Range(-0.6f, 0.6f);
+                    var lick = new GameObject("fire trail").transform;
+                    lick.SetParent(ship, false);
+                    lick.localPosition = at;
+                    lick.localRotation = Quaternion.FromToRotation(Vector3.up, tangent);
+                    float w = Mathf.Lerp(4.2f, 1.6f, f), len = Mathf.Lerp(26f, 9f, f) * Random.Range(0.85f, 1.15f);
+                    var cone = Art.Part(lick, Art.Cone, Color.white, Vector3.zero, new Vector3(w, len, w * 0.6f), default, false,
+                        Art.Ghost(Color.Lerp(new Color(1f, 0.75f, 0.3f, 0.5f), new Color(1f, 0.35f, 0.08f, 0.35f), f)));
+                    cone.GetComponent<Renderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                    s_Fire.Add((lick, Vector3.one));
+                }
             var fl = new GameObject("meteor light").AddComponent<Light>();
             fl.transform.SetParent(ship, false);
             fl.transform.localPosition = new Vector3(0, 2f, 34f);

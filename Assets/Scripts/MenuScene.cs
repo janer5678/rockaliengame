@@ -21,10 +21,13 @@ namespace RockGame
         public const float FadeSeconds = 1.2f;
         /// <summary>How fast the camera glides along (m/s): slowly past the crash site and the bases, faster through the wild.</summary>
         public const float SlowSpeed = 3.2f, BaseSpeed = 3.8f, WildSpeed = 6f;
-        /// <summary>The menu's map page (Hud.MapPreview): a quick look round the map - no crash site, low (about a
-        /// player's height) through the wild and past every base, PreviewSpeed times as fast, from the wild at once.</summary>
+        /// <summary>The menu's map page (Hud.MapPreview): a look round the map as a player would see it - at eye height,
+        /// looking ahead and a little up (not down at the ground), through the wild, past every base and under the crashed
+        /// UFO, a bit quicker than the menu's flight and smooth; it starts out in the wild.</summary>
         public static bool Preview;
-        public const float PreviewSpeed = 4f;
+        public const float PreviewSpeed = 1.8f;
+        /// <summary>The preview's eye height over the ground (m).</summary>
+        const float Eye = 1.7f;
         static bool s_BakedPreview;
         /// <summary>How black the screen is right now (0..1; 0 while in a match): only the fade in as the menu comes up.</summary>
         public static float Fade { get; private set; }
@@ -161,9 +164,9 @@ namespace RockGame
             // on round the loop at its (already eased) speed; the look follows its target softly, the head turns softly
             s_Along = Wrap(s_Along + Read(s_Speed, s_Along) * (Preview ? PreviewSpeed : 1f) * dt);
             var pos = Read(s_Pos, s_Along);
-            s_LookNow = Vector3.Lerp(s_LookNow, Read(s_Look, s_Along), 1f - Mathf.Exp((Preview ? -4f : -1.6f) * dt));
+            s_LookNow = Vector3.Lerp(s_LookNow, Read(s_Look, s_Along), 1f - Mathf.Exp((Preview ? -1.4f : -1.6f) * dt));
             var dir = s_LookNow - pos;
-            if (dir.sqrMagnitude > 0.01f) s_RotNow = Quaternion.Slerp(s_RotNow, Quaternion.LookRotation(dir.normalized, Vector3.up), 1f - Mathf.Exp((Preview ? -7f : -4f) * dt));
+            if (dir.sqrMagnitude > 0.01f) s_RotNow = Quaternion.Slerp(s_RotNow, Quaternion.LookRotation(dir.normalized, Vector3.up), 1f - Mathf.Exp((Preview ? -3f : -4f) * dt));
             cam.SetPositionAndRotation(pos, s_RotNow);
         }
 
@@ -224,13 +227,14 @@ namespace RockGame
                     Add(c + (CrashSite.Dir - u * 0.9f).normalized * r, up, crashLook, SlowSpeed, isCrash: true);
                     Add(c + (CrashSite.Dir + u * 0.7f).normalized * r, up + 0.6f, crashLook, SlowSpeed);
                 }
+                else if (k == 0) Add(c + (CrashSite.Dir - u * 0.9f).normalized * 13f, Eye, crash + Vector3.up * 3.5f, SlowSpeed); // (the preview: under the crashed UFO, looking up at it)
                 // out through the wild, low
-                Add(u * (far * 0.42f) + side * (far * 0.18f), Preview ? 2.4f : 4.4f, default, WildSpeed, true);
+                Add(u * (far * 0.42f) + side * (far * 0.18f), Preview ? Eye : 4.4f, default, WildSpeed, true);
                 // across the front of the base, past its machine
-                Add(b - u * (bh + 6f) + side * (bh * 0.45f), Preview ? 2.6f : 4.2f, machine, BaseSpeed);
-                Add(b - u * (bh + 4f) - side * (bh * 0.55f), Preview ? 2.8f : 4.8f, machine, BaseSpeed);
+                Add(b - u * (bh + 6f) + side * (bh * 0.45f), Preview ? Eye : 4.2f, Preview ? machine + Vector3.up * 1.2f : machine, BaseSpeed);
+                Add(b - u * (bh + 4f) - side * (bh * 0.55f), Preview ? Eye : 4.8f, Preview ? machine + Vector3.up * 1.2f : machine, BaseSpeed);
                 // back through the wild on the other side, a little higher
-                Add(u * (far * 0.5f) - side * (far * 0.3f), Preview ? 3.2f : 8f, default, WildSpeed, true);
+                Add(u * (far * 0.5f) - side * (far * 0.3f), Preview ? Eye + 0.3f : 8f, default, WildSpeed, true);
             }
             // the "ahead" stops look down the way the loop goes there, at the ground a way in front
             for (int i = 0; i < stops.Count; i++)
@@ -240,7 +244,7 @@ namespace RockGame
                 var fwd = stops[(i + 1) % stops.Count].At - stops[(i + stops.Count - 1) % stops.Count].At;
                 fwd.y = 0f;
                 var look = s.At + (fwd.sqrMagnitude > 0.01f ? fwd.normalized : Vector3.forward) * 22f;
-                look.y = Ground(look) + 1.5f;
+                look.y = Ground(look) + (Preview ? 4.5f : 1.5f); // (the preview looks ahead and a little up, as you would)
                 s.Look = look;
                 stops[i] = s;
             }
@@ -349,7 +353,7 @@ namespace RockGame
                 {
                     var tp = s_TreePos[q];
                     float dx = p.x - tp.x, dz = p.z - tp.z;
-                    if (dx * dx + dz * dz < (TreeKeep + 1.5f) * (TreeKeep + 1.5f)) floor = Mathf.Max(floor, tp.y + TreeTop + 1f);
+                    if (!Preview && dx * dx + dz * dz < (TreeKeep + 1.5f) * (TreeKeep + 1.5f)) floor = Mathf.Max(floor, tp.y + TreeTop + 1f); // (the preview stays at eye height: it goes round them)
                 }
                 for (int q = 0; q < MapScenery.Boulders.Count && q < MapScenery.BoulderRadius.Count; q++)
                 {
@@ -369,7 +373,7 @@ namespace RockGame
             for (int i = 0; i < n; i++)
             {
                 var p = new Vector3(pos[i].x, y[i], pos[i].z);
-                for (int k = 0; k <= 16; k++)
+                for (int k = 0; k <= (Preview ? 0 : 16); k++) // (the preview stays at eye height)
                 {
                     var at = p + Vector3.up * (k * 1.5f);
                     if (InSolid(at) || !Seen(at, look[i])) continue;

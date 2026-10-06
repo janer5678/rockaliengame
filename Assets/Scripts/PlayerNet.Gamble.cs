@@ -34,7 +34,7 @@ namespace RockGame
         {
             if (!machine.TryGet(out var no) || !no.TryGetComponent(out Container c)) return;
             var gm = GambleMachine.Of(c);
-            if (gm != null) gm.Play(win, bet, seed, IsOwner);
+            if (gm != null) gm.Play(win, bet, seed, Mine);
         }
     }
 }

@@ -28,6 +28,7 @@ namespace RockGame
             if (m_Mode == "sd" || m_Mode == "arena") Cfg.UseOvertime = false; // (the clock running out goes to the sudden death arena, as these test)
             if (m_Mode == "voice") { StartCoroutine(VoiceRoutine()); return; }
             if (m_Mode == "spectate") { StartCoroutine(SpectateRoutine()); return; } // (AutoTest.Spectate.cs)
+            if (m_Mode == "backtolobby") { NetGame.TestLobby = true; StartCoroutine(BackToLobbyRoutine()); return; } // (AutoTest.Bots.cs)
             StartCoroutine(Run());
         }
 
@@ -150,6 +151,7 @@ namespace RockGame
             if (m_Mode == "maps") { yield return MapsRoutine(me, pc); yield break; }
             if (m_Mode == "victory") { yield return VictoryRoutine(me, pc); yield break; }
             if (m_Mode == "looks") { yield return LooksRoutine(me, pc); yield break; } // (AutoTest.Looks.cs)
+            if (m_Mode == "bots") { yield return BotsRoutine(me, pc); yield break; } // (AutoTest.Bots.cs)
             Check(Cfg.BaseTeamAt(me.transform.position) == me.Team.Value, $"spawned inside own base ({me.transform.position})");
             Check(me.Count(Item.Rock) == 0 && me.HeldItem == Item.Rock, "empty hand = holding the rock (no rock item)");
             Check(Vector3.Distance(me.transform.position, Cfg.SpawnPos(me.Team.Value, me.Slot.Value)) < 1.5f, $"sent home to the bedrock when the match started on {Cfg.MapLabel} (seed {Cfg.MapSeed})");

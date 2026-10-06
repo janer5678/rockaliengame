@@ -26,7 +26,7 @@ namespace RockGame
         /// </summary>
         void StartWhoosh(float pitch, float volume)
         {
-            bool mine = m_Shooter != null && m_Shooter.IsOwner;
+            bool mine = m_Shooter != null && m_Shooter.Mine;
             m_Whoosh = Sfx.Loop(Sfx.Whiz, transform, volume * (mine ? 0.35f : 1f), pitch, 55f, 1f);
         }
 

@@ -203,7 +203,7 @@ namespace RockGame
         {
             bool isHost = req.ClientNetworkId == NetworkManager.ServerClientId;
             if (isHost) Spectator.ServerReset(); // (a new session: nobody's watching)
-            int count = Spectator.ServerPlayerClients(m_Nm); // (the players: spectators don't take a place)
+            int count = Spectator.ServerPlayerClients(m_Nm) + PlayerNet.BotCount; // (the players: spectators don't take a place; the host's bots do)
             bool waiting = NetGame.Instance == null || NetGame.Instance.S == GameState.Waiting;
             // the tutorial: join any time, straight in - unless the host is playing it solo (Tutorial.Friend)
             bool soloTutorial = Cfg.Tutorial && Solo;
@@ -224,6 +224,78 @@ namespace RockGame
         {
             var go = Instantiate(netGamePrefab);
             go.GetComponent<NetworkObject>().Spawn(true);
+            if (s_BotsToReAdd != null) StartCoroutine(ReAddBots()); // (back from a match: its bots too)
+        }
+
+        // ------------------------------------------------------------------ back to the lobby after a match
+
+        /// <summary>What the host tells everyone as it restarts after a match (they come straight back in: Rejoin).</summary>
+        public const string BackToLobbyReason = "BACK TO LOBBY";
+        static System.Collections.Generic.List<int> s_BotsToReAdd;
+        bool m_Restarting, m_Rejoining, m_RejoinTried;
+        /// <summary>The host said it's restarting for the lobby (NetGame.BackToLobbyRpc): a disconnect until then is that.</summary>
+        public static float s_RejoinExpectedUntil = -1f;
+        float m_RejoinUntil, m_NextRejoin;
+
+        /// <summary>(tests / HUD) the host is restarting the session for the lobby, or this client is getting back in.</summary>
+        public bool BackingToLobby => m_Restarting || m_Rejoining;
+
+        /// <summary>
+        /// Host, once a match is over and its cutscene done (NetGame.ServerTickBackToLobby): everyone back to the ship lobby
+        /// for the next one. The session restarts with the same settings (a fresh map, a fresh match): the clients are let
+        /// go with BackToLobbyReason and rejoin by themselves (Rejoin), and the host's bots are put back on their teams.
+        /// </summary>
+        public void ServerBackToLobby()
+        {
+            if (m_Nm == null || !m_Nm.IsServer || m_Restarting) return;
+            StartCoroutine(BackToLobby());
+        }
+
+        System.Collections.IEnumerator BackToLobby()
+        {
+            m_Restarting = true;
+            s_BotsToReAdd = PlayerNet.BotTeams();
+            // (tell everyone first: however their connection drops, they know to come back in)
+            if (NetGame.Instance != null && NetGame.Instance.IsSpawned) NetGame.Instance.BackToLobbyRpc();
+            yield return new WaitForSecondsRealtime(0.5f);
+            var ids = new System.Collections.Generic.List<ulong>(m_Nm.ConnectedClientsIds);
+            foreach (var id in ids) if (id != NetworkManager.ServerClientId) m_Nm.DisconnectClient(id, BackToLobbyReason);
+            yield return new WaitForSecondsRealtime(0.4f);
+            m_Nm.Shutdown();
+            while (m_Nm.ShutdownInProgress) yield return null;
+            yield return null;
+            foreach (var a in FindObjectsByType<ArrowProjectile>(FindObjectsSortMode.None)) Destroy(a.gameObject);
+            AirdropShip.Clear();
+            Hud.Clear();
+            Tutorial.Reset();
+            Host(Solo);
+            m_Restarting = false;
+        }
+
+        /// <summary>Host: the bots from the last match back on their teams (once the new session's game is up).</summary>
+        System.Collections.IEnumerator ReAddBots()
+        {
+            var teams = s_BotsToReAdd;
+            s_BotsToReAdd = null;
+            if (teams == null || teams.Count == 0) yield break;
+            for (int i = 0; i < 20 && (NetGame.Instance == null || !NetGame.Instance.IsSpawned); i++) yield return null;
+            foreach (int t in teams) PlayerNet.ServerAddBot(t);
+        }
+
+        /// <summary>Client, let go with BackToLobbyReason: back in to the same host as soon as it's up again.</summary>
+        void TickRejoin()
+        {
+            if (!m_Rejoining) return;
+            if (m_Nm.IsConnectedClient && m_RejoinTried) { m_Rejoining = false; s_RejoinExpectedUntil = -1f; return; } // (back in)
+            if (m_Nm.IsConnectedClient && !m_RejoinTried && !m_Nm.ShutdownInProgress) { m_Nm.Shutdown(); m_NextRejoin = Time.unscaledTime + 0.5f; return; } // (still on the old connection: drop it)
+            if (Time.unscaledTime > m_RejoinUntil) { m_Rejoining = false; Status = "Couldn't get back into the lobby"; return; }
+            if (m_Nm.ShutdownInProgress || Time.unscaledTime < m_NextRejoin) return;
+            if (m_Nm.IsListening) { m_Nm.Shutdown(); m_NextRejoin = Time.unscaledTime + 0.5f; return; } // (the old connection's still open: close it first)
+            m_NextRejoin = Time.unscaledTime + 1.5f;
+            Join();
+            Debug.Log("[RockGame] rejoining the host for the lobby");
+            m_RejoinTried = true;
+            Status = "Back to the lobby...";
         }
 
         void OnClientDisconnect(ulong id)
@@ -232,13 +304,16 @@ namespace RockGame
             if (id == m_Nm.LocalClientId || id == NetworkManager.ServerClientId)
             {
                 string reason = m_Nm.DisconnectReason;
+                Debug.Log($"[RockGame] disconnected (reason \"{reason}\", rejoin expected {Time.unscaledTime < s_RejoinExpectedUntil})");
                 Status = string.IsNullOrEmpty(reason) ? "Disconnected from host" : "Disconnected: " + reason;
                 CleanupLocal();
+                if (reason == BackToLobbyReason || Time.unscaledTime < s_RejoinExpectedUntil) { m_Rejoining = true; m_RejoinTried = false; m_RejoinUntil = Time.unscaledTime + 25f; m_NextRejoin = Time.unscaledTime + 1.2f; Status = "Back to the lobby..."; }
             }
         }
 
         void Update()
         {
+            TickRejoin(); // (back to the lobby after a match)
             // Menu camera: one long, slow cinematic loop through the map while not in a match (and the menu's trees) - MenuScene.cs
             if (PlayerController.Local == null && Camera.main != null && InSession && !Spectator.Active) // (a spectator's camera: Spectator.cs)
             {

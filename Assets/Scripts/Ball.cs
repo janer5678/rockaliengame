@@ -178,7 +178,7 @@ namespace RockGame
             // turns it off: it ran straight up through the middle of the UFO over the winners' base
             // The one carrying it doesn't see it (it filled their screen); everyone else still does
             var carrier = Carrier;
-            bool beacon = !VictoryCutscene.Active && !(carrier != null && carrier.IsOwner);
+            bool beacon = !VictoryCutscene.Active && !(carrier != null && carrier.Mine);
             if (m_Beacon.activeSelf != beacon) m_Beacon.SetActive(beacon);
             // the glow on the ground at its foot: only until the first pickup (after that the ball's off in the air as
             // often as not, and a disc of light floating under it looked odd)
@@ -196,7 +196,7 @@ namespace RockGame
                 m_Visual.localPosition = Vector3.zero;
                 m_Visual.localRotation = Quaternion.identity;
             }
-            bool show = carrier == null || !carrier.IsOwner;
+            bool show = carrier == null || !carrier.Mine;
             if (m_Mesh.activeSelf != show) m_Mesh.SetActive(show);
             if (Cfg.Builder) AnimatePlant();
             else if (carrier == null && SocketTeam.Value >= 0) AnimateSocket(SocketTeam.Value);
@@ -367,7 +367,7 @@ namespace RockGame
             var holder = Carrier;
             bool always = Cfg.BuilderFlagAlwaysUp;
             float flagAmt = always ? 1f : e;
-            bool flagOn = flagAmt > 0.001f && !(holder != null && holder.IsOwner);
+            bool flagOn = flagAmt > 0.001f && !(holder != null && holder.Mine);
             if (m_Flag.gameObject.activeSelf != flagOn) m_Flag.gameObject.SetActive(flagOn);
             m_Flag.localScale = Vector3.one * Mathf.Max(0.001f, flagAmt);
             m_Flag.rotation = Quaternion.Euler(0, Mathf.Sin(Time.time * 1.7f) * 12f, 0);

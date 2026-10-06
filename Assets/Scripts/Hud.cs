@@ -282,47 +282,55 @@ namespace RockGame
                 if (wake < 1.1f) Shadowed(new Rect(0, sh * 0.42f, sw, 40 * k), "<color=#12506a>RESPAWNED</color>", m_Center);
             }
 
-            // ---- top centre: phase & timer ----
-            string phase = "", sub = "";
+            // ---- top centre: phase & timer (Hud.Notify.cs: DrawTopPanel) ----
+            string topLabel = "", topClock = "", sub = "";
+            Color topAccent = Color.white;
+            float topLeft = -1f;
             if (game != null)
             {
                 switch (game.S)
                 {
                     case GameState.Waiting:
-                        phase = $"Waiting for players  {PlayerNet.All.Count}/{Cfg.PlayersNeeded}  ({Cfg.ModeLabel})";
+                        topLabel = "WAITING FOR PLAYERS";
+                        topClock = $"{PlayerNet.All.Count}/{Cfg.PlayersNeeded}";
                         sub = "Rock brawl in the stadium while you wait!" + (boot.IsHost && PlayerNet.All.Count < 2 ? "  Friends join your IP." : "");
+                        topAccent = new Color(0.85f, 0.88f, 0.95f);
                         // everyone's in: the countdown to the start (NetGame.Lobby.cs)
-                        if (game.StartCounting) { phase = $"Match starts in {Mathf.CeilToInt(game.StartsIn)}"; sub = "Everyone's here - get ready!"; }
+                        if (game.StartCounting) { topLabel = "MATCH STARTS IN"; topClock = Mathf.CeilToInt(game.StartsIn).ToString(); sub = "Everyone's here - get ready!"; topAccent = new Color(0.45f, 1f, 0.45f); }
                         break;
                     case GameState.PreBall when Cfg.Tutorial:
-                        phase = "Tutorial";
+                        topLabel = "TUTORIAL";
                         sub = "The clock is stopped - go at your own pace";
+                        topAccent = new Color(0.45f, 1f, 0.45f);
                         break;
                     case GameState.PreBall:
-                        phase = "Wall drops in " + Clock(game.TimeLeft);
+                        topLabel = "WALL DROPS IN";
+                        topClock = Clock(game.TimeLeft);
+                        topLeft = game.TimeLeft;
                         sub = Cfg.Builder ? "Gather, craft and build anywhere - then plant the ball for your team"
                             : Cfg.DnaRules ? "Mine trees and rocks for DNA, build your base (craft in your base)" : Cfg.WoodMode ? "Gather wood and build your base (craft in your base)" : "Gather wood & stone, build your base (craft in your base)";
+                        topAccent = new Color(0.35f, 0.85f, 1f);
                         break;
                     case GameState.BallLive:
-                        phase = game.Overtime.Value ? "<color=#ffcc33>OVERTIME</color>" : "Time left  " + Clock(game.TimeLeft);
+                        topLabel = game.Overtime.Value ? "OVERTIME" : "TIME LEFT";
+                        topClock = game.Overtime.Value ? "" : Clock(game.TimeLeft);
+                        topLeft = game.Overtime.Value ? -1f : game.TimeLeft;
                         sub = game.Overtime.Value ? "First team to get the ball into its machine wins" : BallStatus(team);
+                        topAccent = game.Overtime.Value ? new Color(1f, 0.6f, 0.15f) : new Color(1f, 0.85f, 0.3f);
                         break;
                     case GameState.SuddenDeath:
-                        phase = "<color=#ff5555>SUDDEN DEATH</color>  " + Clock(game.TimeLeft);
+                        topLabel = "SUDDEN DEATH";
+                        topClock = Clock(game.TimeLeft);
+                        topLeft = game.TimeLeft;
                         sub = "Rocks only - first kill wins - don't fall into space";
+                        topAccent = new Color(1f, 0.3f, 0.25f);
                         break;
                 }
             }
-            if (phase != "" && Cfg.Rules != GameRules.Classic)
-                phase += $"   <size={Mathf.RoundToInt(15 * k)}><color=#ffd24a>{Cfg.RulesName(Cfg.Rules).ToUpper()}</color></size>";
-            if (phase != "")
+            if (topLabel != "")
             {
-                // (two lines under the timer - a mode's goal and the ball - make the panel taller so they stay in it)
-                int lines = string.IsNullOrEmpty(sub) ? 0 : sub.Split('\n').Length;
-                float ph = 38 * k + Mathf.Max(1, lines) * 24 * k;
-                Fill(new Rect(sw / 2 - 280 * k, 8, 560 * k, ph), new Color(0, 0, 0, 0.45f));
-                Shadowed(new Rect(0, 10, sw, 30 * k), $"<b><size={Mathf.RoundToInt(24 * k)}>{phase}</size></b>", m_Center);
-                Shadowed(new Rect(0, 40 * k, sw, lines * 24 * k), sub, m_Center);
+                string tag = Cfg.Rules != GameRules.Classic ? Cfg.RulesName(Cfg.Rules).ToUpper() : "";
+                float ph = DrawTopPanel(game, topLabel, topClock, tag, sub, topAccent, topLeft, k);
                 DrawModePanel(game, team, k, 8 + ph + 6 * k); // (the modes' score chips: Hud.ModePanel.cs)
             }
 
@@ -1357,7 +1365,7 @@ namespace RockGame
                 int own = b.IsCarried ? -1 : b.SocketTeam.Value;
                 if (own >= 0)
                     return own == myTeam ? "<color=#77ff77>The ball is planted for YOUR team - don't let anyone pick it up!</color>" : $"<color=#ff7777>The ball is planted for {Cfg.TeamLabel(own)} - pick it up and plant it for your team!</color>";
-                if (b.IsCarried && b.Carrier != null && b.Carrier.IsOwner) return "<color=#ffdd55>You have the ball - LMB to plant it anywhere (then it's your team's)</color>";
+                if (b.IsCarried && b.Carrier != null && b.Carrier.Mine) return "<color=#ffdd55>You have the ball - LMB to plant it anywhere (then it's your team's)</color>";
                 if (b.IsCarried && b.Carrier != null) return $"<color=#ff7777>{Cfg.TeamLabel(b.Carrier.Team.Value)} has the ball!</color>";
                 return "The ball is loose - pick it up and plant it for your team!";
             }
@@ -1365,7 +1373,7 @@ namespace RockGame
             {
                 var c = b.Carrier;
                 if (c == null) return "Ball is being carried";
-                return c.IsOwner ? "<color=#ffdd55>You have the ball - throw it (LMB) into your machine's socket!</color>" : $"<color=#ff7777>{Cfg.TeamName[c.Team.Value]} has the ball!</color>";
+                return c.Mine ? "<color=#ffdd55>You have the ball - throw it (LMB) into your machine's socket!</color>" : $"<color=#ff7777>{Cfg.TeamName[c.Team.Value]} has the ball!</color>";
             }
             int sock = b.SocketTeam.Value;
             if (sock >= 0)
@@ -1518,6 +1526,7 @@ namespace RockGame
             // (kept short: the title, one line of why - the end reasons are a few words each, NetGame - and the button)
             Shadowed(new Rect(0, sh * 0.3f + 80 * k, sw, 30 * k), game.EndReason.Value.ToString(), m_Center);
             DrawLeaveButton(boot, new Rect(sw / 2 - 110 * k, sh * 0.3f + 140 * k, 220 * k, 46 * k));
+            if (game.BackToLobbyIn >= 0f) Shadowed(new Rect(0, sh * 0.3f + 196 * k, sw, 30 * k), $"Back to the lobby in {Mathf.CeilToInt(game.BackToLobbyIn)}...", new GUIStyle(m_Center) { fontSize = Mathf.RoundToInt(20 * k) });
             // the tutorial ends with this screen: its "tutorial complete" card goes on top of it
             if (Cfg.Tutorial) Tutorial.DrawOverGameOver(k, m_Label, m_Small, Fill, Shadowed);
         }

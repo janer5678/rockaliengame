@@ -185,6 +185,7 @@ namespace RockGame
         [Rpc(SendTo.Owner)]
         public void KnockbackRpc(Vector3 velocity)
         {
+            if (Bot.Value) return;
             var pc = GetComponent<PlayerController>();
             if (pc != null) pc.Knockback(velocity);
         }

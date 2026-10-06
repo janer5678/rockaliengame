@@ -122,7 +122,7 @@ namespace RockGame
             m_Net = GetComponent<PlayerNet>();
             m_CC = GetComponent<CharacterController>();
             m_NT = GetComponent<NetworkTransform>();
-            if (!IsOwner) { enabled = false; return; }
+            if (!IsOwner || m_Net.Bot.Value) { enabled = false; return; } // (a bot is run by its BotBrain, not by a player here)
             Local = this;
             m_Cam = Camera.main;
             m_VM = new ViewModel(m_Cam.transform, Cfg.TeamColor[Mathf.Clamp(m_Net.Team.Value, 0, 3)]);

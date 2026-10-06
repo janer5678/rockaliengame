@@ -127,6 +127,7 @@ namespace RockGame
                     float fill = n >= Cfg.TeamCap(t) ? 1000f + n : n / (float)Cfg.TeamCap(t);
                     if (fill < bestFill) { bestFill = fill; bestCount = n; best = t; }
                 }
+                if (Bot.Value && s_NextBotTeam >= 0 && s_NextBotTeam < Cfg.TeamCount) best = s_NextBotTeam; // (a bot: the team the host put it on)
                 Team.Value = (byte)best;
                 Slot.Value = (byte)FreeSlot(best);
                 Health.Value = Cfg.MaxHealth;
@@ -136,14 +137,15 @@ namespace RockGame
 
             BuildBody();
             Team.OnValueChanged += OnTeamChanged;
-            if (IsOwner)
+            if (Mine)
             {
                 Local = this;
                 SendMyName(); // (the name typed on the main menu: PlayerNet.Identity.cs)
                 SetHatRpc((byte)Cosmetics.MyHat); // (the hat picked in the lobby: Cosmetics.cs)
                 Art.SetLayerShadowsOnly(m_VisualRoot.gameObject);
             }
-            name = $"Player {OwnerClientId}";
+            name = Bot.Value ? "Bot" : $"Player {OwnerClientId}";
+            if (IsServer && Bot.Value && GetComponent<BotBrain>() == null) gameObject.AddComponent<BotBrain>(); // (PlayerNet.Bot.cs)
         }
 
         public override void OnNetworkDespawn()
@@ -275,7 +277,7 @@ namespace RockGame
                 go.transform.localPosition = k_StuckPos[i];
                 go.transform.localRotation = Quaternion.LookRotation(k_StuckDir[i]);
                 ItemModels.CreateSpearTipForward(go.transform);
-                if (IsOwner) Art.SetLayerShadowsOnly(go);
+                if (Mine) Art.SetLayerShadowsOnly(go);
                 m_StuckVisuals.Add(go);
             }
         }
@@ -288,7 +290,7 @@ namespace RockGame
             m_Helmet = ItemModels.Create(Item.Helmet, head);
             if (m_Anim != null && m_Anim.HeadBone != null) FitHelmet(m_Helmet, head, m_VisualRoot);
             else m_Helmet.transform.localPosition = new Vector3(0, 0.1f, 0);
-            if (IsOwner) Art.SetLayerShadowsOnly(m_Helmet);
+            if (Mine) Art.SetLayerShadowsOnly(m_Helmet);
         }
 
         /// <summary>Sits a helmet (child of the Head bone, which is at the jaw) over the alien's head, upright in character space.</summary>
@@ -324,7 +326,7 @@ namespace RockGame
             Art.Box(t, Art.Wood, new Vector3(0, 0, -0.14f), new Vector3(w, 0.42f, 0.05f));
             Art.Box(t, Art.Wood, new Vector3(w * 0.55f, 0.2f, 0), new Vector3(0.14f, 0.06f, 0.3f), new Vector3(0, 0, -20));
             Art.Box(t, Art.Wood, new Vector3(-w * 0.55f, 0.2f, 0), new Vector3(0.14f, 0.06f, 0.3f), new Vector3(0, 0, 20));
-            if (IsOwner) Art.SetLayerShadowsOnly(m_Armor);
+            if (Mine) Art.SetLayerShadowsOnly(m_Armor);
         }
 
         GameObject m_Skeleton;
@@ -386,7 +388,7 @@ namespace RockGame
             if (on) TreeCamoOns++; else TreeCamoOffs++;
             var p = transform.position;
             var clip = on ? Sfx.TreeOn : Sfx.TreeOff;
-            if (IsOwner) Sfx.Play2D(clip, 0.5f);
+            if (Mine) Sfx.Play2D(clip, 0.5f);
             else Sfx.Play(clip, p + Vector3.up * 1.5f, 0.9f, 0.08f, 45f);
             var leaf = new Color(0.24f, 0.5f, 0.2f);
             for (int i = 0; i < 12; i++)
@@ -459,7 +461,7 @@ namespace RockGame
                 // it lands with a rustle and a thump (louder at a run): heard from where the tree is; your own in your ears
                 if (m_TreeMove > 0.2f)
                 {
-                    if (IsOwner) Sfx.Play2D(Sfx.TreeRustle, Mathf.Lerp(0.3f, 0.45f, sprintK), 0.12f);
+                    if (Mine) Sfx.Play2D(Sfx.TreeRustle, Mathf.Lerp(0.3f, 0.45f, sprintK), 0.12f);
                     else Sfx.Play(Sfx.TreeRustle, p, Mathf.Lerp(0.6f, 0.9f, sprintK), 0.12f, Mathf.Lerp(30f, 45f, sprintK));
                     TreeHopSounds++;
                 }
@@ -585,7 +587,7 @@ namespace RockGame
             Art.Box(m_Flame.transform, new Color(0.3f, 0.3f, 0.32f), new Vector3(0, 0.3f, 0), new Vector3(0.45f, 0.5f, 0.2f));
             Art.Part(m_Flame.transform, Art.Cone, Color.white, new Vector3(0.12f, 0f, 0), new Vector3(0.14f, -0.5f, 0.14f), default, false, Art.Ghost(new Color(1f, 0.6f, 0.1f, 0.8f)));
             Art.Part(m_Flame.transform, Art.Cone, Color.white, new Vector3(-0.12f, 0f, 0), new Vector3(0.14f, -0.5f, 0.14f), default, false, Art.Ghost(new Color(1f, 0.6f, 0.1f, 0.8f)));
-            if (IsOwner) Art.SetLayerShadowsOnly(m_Flame);
+            if (Mine) Art.SetLayerShadowsOnly(m_Flame);
         }
 
         void RebuildHandItem(Item item)
@@ -595,7 +597,7 @@ namespace RockGame
             m_HandItem = ItemModels.Create(item, m_Hand);
             m_HandItem.transform.localRotation = m_Anim != null ? Quaternion.identity : Quaternion.Euler(20, 0, 0);
             if (item == Item.Rock) m_HandItem.transform.localScale = Vector3.one * 1.3f;
-            if (IsOwner) Art.SetLayerShadowsOnly(m_HandItem);
+            if (Mine) Art.SetLayerShadowsOnly(m_HandItem);
         }
 
         Vector3 m_LastFootPos;
@@ -636,13 +638,13 @@ namespace RockGame
         void Update()
         {
             bool dead = Dead.Value;
-            if (!IsOwner) RemoteSounds(dead);
+            if (!Mine) RemoteSounds(dead);
             if (IsServer) { ServerTickCraft(); ServerTickBaseRegen(); ServerTickBleed(); ServerTickPing(); }
             if (dead && !m_WasDead) { m_DeadSince = Time.time; SpawnRagdoll(); }
             m_WasDead = dead;
             // the dead leave no body of their own: it drops as a ragdoll (Ragdoll.cs) and the real one is hidden
             bool showBody = !dead;
-            if (!IsOwner && Hidden && !dead) showBody = false; // invisibility potion
+            if (!Mine && Hidden && !dead) showBody = false; // invisibility potion
             // tree camo: everyone else sees a tree where you stand
             bool tree = TreeCamo;
             if (tree != (m_Tree != null) || (tree && m_TreePsx != (GameSettings.PsxGraphics || GameSettings.AiPsx))) RebuildTree(tree);
@@ -691,7 +693,7 @@ namespace RockGame
                 m_Lifted = lifted;
             }
             // in the cutscene you see yourself (your own body is normally only a shadow)
-            bool seeSelf = IsOwner && VictoryCutscene.Active;
+            bool seeSelf = Mine && VictoryCutscene.Active;
             if (seeSelf != m_SeeSelf)
             {
                 m_SeeSelf = seeSelf;
@@ -700,10 +702,10 @@ namespace RockGame
             }
             // wallhack glasses: enemies glow through walls while you hold them
             var local = Local;
-            bool esp = !IsOwner && local != null && local.HeldItem == Item.Wallhack && !local.Dead.Value && local.Team.Value != Team.Value && !dead;
+            bool esp = !Mine && local != null && local.HeldItem == Item.Wallhack && !local.Dead.Value && local.Team.Value != Team.Value && !dead;
             if (esp != m_Esp) SetEsp(esp);
             // test: alien outlines (enemies only, not while invisible)
-            bool outline = Cfg.AlienOutlines && !IsOwner && local != null && local.Team.Value != Team.Value && !dead && !Hidden;
+            bool outline = Cfg.AlienOutlines && !Mine && local != null && local.Team.Value != Team.Value && !dead && !Hidden;
             if (outline != m_Outline) SetOutline(outline);
             else if (outline)
             {
@@ -718,7 +720,7 @@ namespace RockGame
             if (m_Flame) m_Flame.transform.localScale = new Vector3(1f, 0.8f + Random.value * 0.5f, 1f);
             if (m_Swing > 0) m_Swing = Mathf.Max(0, m_Swing - Time.deltaTime / 0.55f);
             if (m_Throw > 0) m_Throw = Mathf.Max(0, m_Throw - Time.deltaTime / 0.5f);
-            if (m_Anim == null && !IsOwner) m_Head.localRotation = Quaternion.Euler(Pitch.Value * 0.6f, 0, 0);
+            if (m_Anim == null && !Mine) m_Head.localRotation = Quaternion.Euler(Pitch.Value * 0.6f, 0, 0);
             if (m_Anim == null && m_Swing > 0) m_Hand.localRotation = Quaternion.Euler(Mathf.Sin(m_Swing * Mathf.PI) * 80f, 0, 0);
 
             // before the wall drops you always come back in your base; after that you choose (RespawnChoiceRpc)
@@ -980,7 +982,7 @@ namespace RockGame
         {
             int t = Team.Value;
             if (t >= 0 && t < Machine.ByTeam.Length && Machine.ByTeam[t] != null) Machine.ByTeam[t].PlayRelease();
-            if (IsOwner && PlayerController.Local != null) PlayerController.Local.HoldStill(Machine.PodHold + 0.15f);
+            if (Mine && PlayerController.Local != null) PlayerController.Local.HoldStill(Machine.PodHold + 0.15f);
         }
 
         [Rpc(SendTo.Server)]
@@ -2034,36 +2036,40 @@ namespace RockGame
         [Rpc(SendTo.Owner)]
         public void TeleportRpc(Vector3 pos, float yaw)
         {
+            if (Bot.Value) { BotTeleport(pos, yaw); return; }
             var pc = GetComponent<PlayerController>();
             if (pc != null) pc.LocalTeleport(pos, yaw);
         }
 
         [Rpc(SendTo.Owner)]
-        public void NotifyRpc(FixedString128Bytes msg) => Hud.Push(msg.ToString());
+        public void NotifyRpc(FixedString128Bytes msg) { if (!Bot.Value) Hud.Push(msg.ToString()); }
 
         [Rpc(SendTo.Owner)]
         public void KillConfirmRpc()
         {
+            if (Bot.Value) return;
             Hud.HitMarker(true, false);
             Sfx.Play2D(Sfx.Kill, 0.7f, 0f);
         }
 
         [Rpc(SendTo.Owner)]
-        public void PickedUpRpc() => Sfx.Play2D(Sfx.Pop, 0.5f);
+        public void PickedUpRpc() { if (!Bot.Value) Sfx.Play2D(Sfx.Pop, 0.5f); }
 
         /// <summary>Materials spent on building / crafting: shown in red in the pickup feed.</summary>
         [Rpc(SendTo.Owner)]
-        public void SpentRpc(byte item, int amount) => Hud.Loss((Item)item, amount);
+        public void SpentRpc(byte item, int amount) { if (!Bot.Value) Hud.Loss((Item)item, amount); }
 
         [Rpc(SendTo.Owner)]
         void TimberRpc(int bonus)
         {
+            if (Bot.Value) return;
             Sfx.Play2D(Sfx.Smash, 0.8f);
         }
 
         [Rpc(SendTo.Owner)]
         public void CraftedRpc(byte item)
         {
+            if (Bot.Value) return;
             Hud.Push("Crafted " + Cfg.ItemName((Item)item));
             Sfx.Play2D(Sfx.Pop, 0.5f);
         }

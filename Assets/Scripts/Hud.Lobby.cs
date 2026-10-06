@@ -52,14 +52,16 @@ namespace RockGame
             float bh = 40 * k, by = sh - bh - 22 * k, bx = 24 * k;
             // CUSTOMISE ALIEN: big, over LEAVE and COPY ROOM ID
             {
-                var cr = new Rect(24 * k, by - 70 * k, 300 * k, 60 * k);
+                var fst = new GUIStyle(m_Center) { fontSize = Mathf.RoundToInt(18 * k) };
+                float cw = fst.CalcSize(new GUIContent("BACK")).x + 30 * k + 8 * k + fst.CalcSize(new GUIContent(Time.time - m_CopiedAt < 2f ? "COPIED!" : "COPY ROOM ID")).x + 30 * k;
+                var cr = new Rect(24 * k, by - 58 * k, cw, 50 * k); // (lined up over BACK and COPY ROOM ID)
                 bool hov = cr.Contains(Event.current.mousePosition);
                 if (hov) MouseOverUI = true;
                 Fill(cr, hov ? new Color(0.35f, 0.2f, 0.55f, 0.95f) : new Color(0.22f, 0.12f, 0.36f, 0.9f));
                 Frame(cr, Color.white, 2f);
-                if (GUI.Button(cr, "<b>CUSTOMISE ALIEN</b>", new GUIStyle(m_Center) { fontSize = Mathf.RoundToInt(24 * k) })) { ClickSound(); ShipLobby.Customising = true; m_NameEditLobby = null; }
+                if (GUI.Button(cr, "<b>CUSTOMISE ALIEN</b>", new GUIStyle(m_Center) { fontSize = Mathf.RoundToInt(20 * k) })) { ClickSound(); ShipLobby.Customising = true; m_NameEditLobby = null; }
             }
-            if (FramedBtn(ref bx, by, bh, "LEAVE")) { boot.Leave(); return; }
+            if (FramedBtn(ref bx, by, bh, "BACK")) { boot.Leave(); return; }
             if (FramedBtn(ref bx, by, bh, Time.time - m_CopiedAt < 2f ? "COPIED!" : "COPY ROOM ID"))
             {
                 string ip = boot.IsHostSession ? Tutorial.LocalIp() : boot.Ip.Trim();
@@ -67,6 +69,9 @@ namespace RockGame
                 m_CopiedAt = Time.time;
             }
             if (boot.IsHostSession && !Cfg.Tutorial && FramedBtn(ref bx, by, bh, "GAME OPTIONS")) m_LobbyOptions = !m_LobbyOptions;
+            // the host's AI bots: one more on the team with the most room, or the newest one out (PlayerNet.Bot.cs)
+            if (boot.IsHostSession && !Cfg.Tutorial && FramedBtn(ref bx, by, bh, "+ BOT") && !PlayerNet.ServerAddBot()) Hud.Banner("TEAMS FULL", "There's no room for another bot");
+            if (boot.IsHostSession && PlayerNet.BotCount > 0 && FramedBtn(ref bx, by, bh, "- BOT")) PlayerNet.ServerRemoveBot();
             float leftEnd = bx;
 
             // team games: a JOIN button for each team, with how many are on it
