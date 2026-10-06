@@ -21,6 +21,22 @@ namespace RockGame
 
         /// <summary>A doorway whose door is still on its hinges.</summary>
         public bool HasDoor => (PType == PieceType.Doorway || PType == PieceType.Gate) && DoorHealth.Value > 0f; // (a large gate's leaf too)
+        /// <summary>The large gate's shape: its posts' x, the hinge's x, how many logs wide its leaf is and how tall (m).</summary>
+        public const float GatePostX = 2.45f, GateHingeX = -2.2f, GateLeafH = 4.05f;
+        public const int GateLeafLogs = 10;
+        /// <summary>How far a door swings open (degrees). A doorway's door swings one way; a large gate always swings
+        /// outwards - away from its team's base - whichever way round it was put up.</summary>
+        public float OpenAngle
+        {
+            get
+            {
+                if (PType != PieceType.Gate) return 100f;
+                var toBase = Cfg.BaseCenter[Mathf.Clamp(Team.Value, 0, Cfg.BaseCenter.Length - 1)] - transform.position;
+                toBase.y = 0f;
+                // (+angle swings the leaf to the gate's -z side: that's inwards if the base is that side)
+                return Vector3.Dot(-transform.forward, toBase) > 0f ? -100f : 100f;
+            }
+        }
         /// <summary>A window whose bars are still in (they share the door's health: DoorHealth, Cfg.DoorLeafHp).</summary>
         public bool HasBars => PType == PieceType.Window && DoorHealth.Value > 0f;
         /// <summary>The window bars' object (its one collider covers the opening).</summary>
@@ -135,10 +151,10 @@ namespace RockGame
             if (!HasDoor) return false;
             if (PType == PieceType.Gate)
             {
-                // a gate's leaf hangs from x = -2.6, 5.2 m wide and 3.8 m tall
-                var gl = transform.InverseTransformPoint(point) - new Vector3(-2.6f, 0f, 0f);
-                gl = Quaternion.Inverse(Quaternion.Euler(0f, DoorOpen.Value ? 100f : 0f, 0f)) * gl;
-                return gl.x > -0.1f && gl.x < 5.3f && gl.y > -0.1f && gl.y < 4.1f && Mathf.Abs(gl.z) < 0.55f;
+                // a gate's leaf hangs from its hinge, GateLeafLogs logs wide and GateLeafH tall
+                var gl = transform.InverseTransformPoint(point) - new Vector3(GateHingeX, 0f, 0f);
+                gl = Quaternion.Inverse(Quaternion.Euler(0f, DoorOpen.Value ? OpenAngle : 0f, 0f)) * gl;
+                return gl.x > -0.1f && gl.x < GateLeafLogs * 0.43f + 0.1f && gl.y > -0.1f && gl.y < GateLeafH + 0.4f && Mathf.Abs(gl.z) < 0.55f;
             }
             // into the leaf's own space: it hangs from x = -0.6 and swings 100 degrees open
             var l = transform.InverseTransformPoint(point) - new Vector3(-0.6f, 0f, 0f);
@@ -166,11 +182,11 @@ namespace RockGame
         void Rebuild()
         {
             if (m_Visual) Destroy(m_Visual.gameObject);
-            m_Visual = CreateVisual(PType, Tier.Value, transform, true, null, out m_Hinge).transform;
+            m_Visual = CreateVisual(PType, Tier.Value, transform, true, null, out m_Hinge, Team.Value).transform;
             if (PType == PieceType.EggBlock)
                 foreach (var r in m_Visual.GetComponentsInChildren<Renderer>()) r.sharedMaterial = Art.Mat(Color.Lerp(Color.white, Cfg.TeamColor[Mathf.Clamp(Team.Value, 0, Cfg.TeamColor.Length - 1)], 0.6f));
             if (m_Hinge != null) ColourLock(m_Hinge, Team.Value);
-            m_DoorAngle = DoorOpen.Value ? 100f : 0f;
+            m_DoorAngle = DoorOpen.Value ? OpenAngle : 0f;
             m_Bars = PType == PieceType.Window && m_Visual != null ? m_Visual.Find(BarsName) : null;
             if ((PType == PieceType.Doorway || PType == PieceType.Gate) && !HasDoor) RemoveDoorLeaf(); // (its door was broken off)
             if (PType == PieceType.Window && !HasBars) RemoveBars(); // (its bars were broken out)
@@ -198,8 +214,10 @@ namespace RockGame
             }
             if (m_Hinge)
             {
-                float target = DoorOpen.Value ? 100f : 0f;
-                m_DoorAngle = Mathf.MoveTowards(m_DoorAngle, target, 300f * Time.deltaTime);
+                float target = DoorOpen.Value ? OpenAngle : 0f;
+                // (a large gate is heavy: it swings slowly, easing in and out)
+                if (PType == PieceType.Gate) m_DoorAngle = Mathf.MoveTowards(m_DoorAngle, target, Mathf.Lerp(28f, 85f, Mathf.Sin(Mathf.Clamp01(Mathf.Abs(m_DoorAngle) / 100f) * Mathf.PI)) * Time.deltaTime);
+                else m_DoorAngle = Mathf.MoveTowards(m_DoorAngle, target, 300f * Time.deltaTime);
                 m_Hinge.localRotation = Quaternion.Euler(0, m_DoorAngle, 0);
             }
         }
@@ -285,9 +303,38 @@ namespace RockGame
             {
                 // a piece broken down: nobody can build in the same spot again for a while (PlayerNet.PlaceRpc)
                 ServerNoteDestroyed();
+                ServerBreakLeaning();
                 NetworkObject.Despawn(true);
                 if (collapse && NetGame.Instance) NetGame.Instance.ServerCollapseCheck();
             }
+        }
+
+        /// <summary>Server, as this piece breaks: a ladder leaning on it and a workbench standing on it break with it.</summary>
+        void ServerBreakLeaning()
+        {
+            bool any = false;
+            Bounds b = default;
+            foreach (var c in GetComponentsInChildren<Collider>())
+            {
+                if (c.isTrigger) continue;
+                if (any) b.Encapsulate(c.bounds); else { b = c.bounds; any = true; }
+            }
+            if (!any) return;
+            b.Expand(0.6f);
+            var gone = new System.Collections.Generic.List<Container>();
+            foreach (var c in Container.All)
+            {
+                if (c == null || !c.IsSpawned) continue;
+                var p = c.transform.position;
+                if (c.Kind.Value == Container.Ladder)
+                {
+                    // (a ladder against this wall: its rails touch the wall somewhere up its height)
+                    var top = p + Vector3.up * Deployables.LadderHeight;
+                    if (b.Contains(p + Vector3.up * 0.5f) || b.Contains((p + top) * 0.5f) || b.Contains(top - Vector3.up * 0.3f)) gone.Add(c);
+                }
+                else if (c.IsWorkbench && b.Contains(p + Vector3.down * 0.1f) && (PType == PieceType.Floor || PType == PieceType.Foundation)) gone.Add(c);
+            }
+            foreach (var c in gone) c.ServerBreakWithSupport();
         }
 
         public void ServerUpgrade(int tier = 1)
@@ -307,7 +354,7 @@ namespace RockGame
 
         // ---------------- Visuals (also used for placement ghosts) ----------------
 
-        public static GameObject CreateVisual(PieceType t, int tier, Transform parent, bool colliders, Material ghost, out Transform hinge)
+        public static GameObject CreateVisual(PieceType t, int tier, Transform parent, bool colliders, Material ghost, out Transform hinge, int team = -1)
         {
             hinge = null;
             var root = new GameObject("visual");
@@ -318,7 +365,8 @@ namespace RockGame
             bool refined = tier >= 3;               // Rust's armoured: dark plate with brass trim
             bool sheet = metal && !refined;          // Rust's sheet metal: rusty corrugated sheets, nothing like the grey stone
             Color c = refined ? new Color(0.27f, 0.29f, 0.34f) : sheet ? new Color(0.5f, 0.46f, 0.42f) : stone ? Art.Stone : Art.Wood;
-            Color trim = refined ? new Color(0.8f, 0.64f, 0.28f) : sheet ? new Color(0.42f, 0.24f, 0.13f) : stone ? new Color(0.42f, 0.42f, 0.46f) : Art.DarkWood;
+            // (the last tier's accent - its trims - is in the team's colour once it's built: brass on a ghost)
+            Color trim = refined ? (team >= 0 ? Color.Lerp(Cfg.TeamColor[Mathf.Clamp(team, 0, Cfg.TeamColor.Length - 1)], Color.white, 0.1f) : new Color(0.8f, 0.64f, 0.28f)) : sheet ? new Color(0.42f, 0.24f, 0.13f) : stone ? new Color(0.42f, 0.42f, 0.46f) : Art.DarkWood;
             bool col = colliders;
             // (Settings > Display colours: each tier has its own colour)
             using var tint = ColorSlots.Use(refined ? ColorSlots.BuildRefined : sheet ? ColorSlots.BuildSheetMetal : stone ? ColorSlots.BuildStone : ColorSlots.BuildWood);
@@ -413,37 +461,40 @@ namespace RockGame
                 }
                 case PieceType.Gate:
                 {
-                    // a large gate (like Rust's external gate), as wide and low as the large wall: two big log posts and a
-                    // beam over the top, and a wide leaf of sharpened logs on a hinge at the left post - it swings open like
-                    // a door (E, your team only), with its own health; broken off, the gap's open. A big padlock in the
-                    // team's colour hangs on each side of it, clear of the logs
+                    // a large gate (like Rust's external gate): two big log posts and a beam over the top, a leaf of
+                    // sharpened logs a little narrower and taller than the large wall, on a hinge at the left post - it
+                    // swings open slowly like a heavy gate, always outwards (away from its team's base: Structure.OpenAngle;
+                    // E, your team only, from a good way off), with its own health; broken off, the gap's open. A big
+                    // padlock in the team's colour hangs on each side of it near the free end, clear of the logs
+                    float px = GatePostX;
                     for (int k = -1; k <= 1; k += 2)
                     {
-                        Art.Box(tr, Art.DarkWood, new Vector3(k * 2.85f, 2.25f, 0), new Vector3(0.5f, 4.5f, 0.5f), default, col);
-                        Art.Part(tr, Art.Cone, Art.Wood * 1.05f, new Vector3(k * 2.85f, 4.5f, 0), new Vector3(0.5f, 0.6f, 0.5f));
+                        Art.Box(tr, Art.DarkWood, new Vector3(k * px, 2.45f, 0), new Vector3(0.5f, 4.9f, 0.5f), default, col);
+                        Art.Part(tr, Art.Cone, Art.Wood * 1.05f, new Vector3(k * px, 4.9f, 0), new Vector3(0.5f, 0.6f, 0.5f));
                     }
-                    Art.Box(tr, Art.DarkWood, new Vector3(0, 4.05f, 0), new Vector3(6.2f, 0.35f, 0.42f), default, col);
+                    Art.Box(tr, Art.DarkWood, new Vector3(0, 4.45f, 0), new Vector3(px * 2f + 0.5f, 0.35f, 0.42f), default, col);
                     var gh = new GameObject("hinge").transform;
                     gh.SetParent(tr, false);
-                    gh.localPosition = new Vector3(-2.6f, 0, 0);
-                    for (int k = 0; k < 12; k++)
+                    gh.localPosition = new Vector3(GateHingeX, 0, 0);
+                    float leaf = GateLeafLogs * 0.43f;
+                    for (int k = 0; k < GateLeafLogs; k++)
                     {
-                        float x = 0.215f + k * 0.43f, h = 3.45f + ((k * 29) % 4) * 0.06f;
+                        float x = 0.215f + k * 0.43f, h = GateLeafH - 0.12f + ((k * 29) % 4) * 0.06f;
                         Art.Box(gh, k % 2 == 0 ? Art.Wood : Art.Wood * 0.9f, new Vector3(x, h * 0.5f + 0.05f, 0), new Vector3(0.43f, h, 0.34f), new Vector3(0, k * 11f, 0), col);
                         Art.Part(gh, Art.Cone, Art.Wood * 1.05f, new Vector3(x, h + 0.05f, 0), new Vector3(0.43f, 0.4f, 0.34f));
                     }
-                    for (int k = 0; k < 2; k++) Art.Box(gh, Art.DarkWood, new Vector3(2.58f, 0.8f + k * 1.9f, 0.24f), new Vector3(5.16f, 0.2f, 0.1f));
-                    Art.Box(gh, Art.DarkWood, new Vector3(2.58f, 1.75f, 0.26f), new Vector3(0.18f, 2.6f, 0.08f), new Vector3(0, 0, 50f));
+                    for (int k = 0; k < 2; k++) Art.Box(gh, Art.DarkWood, new Vector3(leaf * 0.5f, 0.9f + k * 2.1f, 0.24f), new Vector3(leaf, 0.2f, 0.1f));
+                    Art.Box(gh, Art.DarkWood, new Vector3(leaf * 0.5f, 1.95f, 0.26f), new Vector3(0.18f, 2.9f, 0.08f), new Vector3(0, 0, 50f));
                     foreach (float side in new[] { -1f, 1f })
                     {
                         // the hasp plate, the lock's body and its shackle, standing proud of the logs
-                        float z = side * 0.42f;
-                        Art.Box(gh, Art.Metal, new Vector3(4.55f, 1.75f, side * 0.31f), new Vector3(0.5f, 0.16f, 0.06f));
-                        Art.Box(gh, Color.white, new Vector3(4.55f, 1.45f, z), new Vector3(0.42f, 0.46f, 0.14f)).name = "lock body";
-                        Art.Box(gh, Color.white, new Vector3(4.55f, 1.45f, z + side * 0.075f), new Vector3(0.3f, 0.08f, 0.02f)).name = "lock band";
-                        Art.Box(gh, Art.Metal, new Vector3(4.42f, 1.8f, z), new Vector3(0.06f, 0.26f, 0.06f));
-                        Art.Box(gh, Art.Metal, new Vector3(4.68f, 1.8f, z), new Vector3(0.06f, 0.26f, 0.06f));
-                        Art.Box(gh, Art.Metal, new Vector3(4.55f, 1.92f, z), new Vector3(0.32f, 0.06f, 0.06f));
+                        float z = side * 0.42f, lx = leaf - 0.4f;
+                        Art.Box(gh, Art.Metal, new Vector3(lx, 1.85f, side * 0.31f), new Vector3(0.5f, 0.16f, 0.06f));
+                        Art.Box(gh, Color.white, new Vector3(lx, 1.55f, z), new Vector3(0.42f, 0.46f, 0.14f)).name = "lock body";
+                        Art.Box(gh, Color.white, new Vector3(lx, 1.55f, z + side * 0.075f), new Vector3(0.3f, 0.08f, 0.02f)).name = "lock band";
+                        Art.Box(gh, Art.Metal, new Vector3(lx - 0.13f, 1.9f, z), new Vector3(0.06f, 0.26f, 0.06f));
+                        Art.Box(gh, Art.Metal, new Vector3(lx + 0.13f, 1.9f, z), new Vector3(0.06f, 0.26f, 0.06f));
+                        Art.Box(gh, Art.Metal, new Vector3(lx, 2.02f, z), new Vector3(0.32f, 0.06f, 0.06f));
                     }
                     hinge = gh;
                     break;
@@ -475,6 +526,7 @@ namespace RockGame
             }
 
             if (sheet) RustSheets(tr, t, c, trim);
+            if (ghost == null && !sheet) AddDetail(tr, t, tier, c, trim); // (plank seams, mortar lines, rivets)
 
             // Builder: walls built straight on the ground (no foundation) reach down into it, so nothing rolls out underneath
             if (Cfg.Builder && (t == PieceType.Wall || t == PieceType.Doorway || t == PieceType.Window) && parent.position.y < Cfg.BaseY + 0.5f)
@@ -543,6 +595,102 @@ namespace RockGame
         }
 
         static bool Near(Color a, Color b) => Mathf.Abs(a.r - b.r) + Mathf.Abs(a.g - b.g) + Mathf.Abs(a.b - b.b) < 0.06f;
+
+
+        /// <summary>
+        /// The finer detail on the walls, foundations and floors (not on the placement ghost): plank seams and nail heads
+        /// on wood, a staggered block pattern of mortar lines on stone, and rivets along the trims of refined metal. All of
+        /// a piece's detail is merged into a mesh or two (one draw each), so a big base stays cheap.
+        /// </summary>
+        static void AddDetail(Transform tr, PieceType t, int tier, Color c, Color trim)
+        {
+            bool wallLike = t == PieceType.Wall || t == PieceType.Doorway || t == PieceType.Window;
+            if (!wallLike && t != PieceType.Foundation && t != PieceType.Floor) return;
+            var seams = new List<Matrix4x4>();
+            var dots = new List<Matrix4x4>();
+            void Box(List<Matrix4x4> l, Vector3 at, Vector3 size) => l.Add(Matrix4x4.TRS(at, Quaternion.identity, size));
+            // is this spot on the wall's solid part (not in the doorway's or the window's opening)?
+            bool Solid(float x, float y) =>
+                t == PieceType.Doorway ? !(Mathf.Abs(x) < 0.62f && y < 2.42f)
+                : t == PieceType.Window ? !(Mathf.Abs(x) < 0.97f && y > 0.88f && y < 2.42f)
+                : true;
+            if (tier == 0)
+            {
+                // wood: planks standing side by side (a dark seam between each), a nail head where each crosses a trim
+                if (wallLike)
+                    for (int i = -3; i <= 3; i++)
+                    {
+                        float x = i * 0.375f;
+                        for (float y = 0.05f; y < 2.95f; y += 0.25f)
+                            if (Solid(x, y + 0.125f))
+                                foreach (float z in new[] { -0.152f, 0.152f }) Box(seams, new Vector3(x, y + 0.125f, z), new Vector3(0.025f, 0.26f, 0.01f));
+                        for (int k = 1; k < 4; k++)
+                            if (Solid(x + 0.19f, k * 0.75f))
+                                foreach (float z in new[] { -0.175f, 0.175f }) Box(dots, new Vector3(x + 0.19f, k * 0.75f, z), new Vector3(0.035f, 0.035f, 0.012f));
+                    }
+                else if (t == PieceType.Floor)
+                    for (int i = -3; i <= 3; i++) Box(seams, new Vector3(i * 0.375f, 0.002f, 0), new Vector3(0.025f, 0.01f, 2.98f));
+                else
+                    for (int i = -3; i <= 3; i++)
+                        foreach (var side in new[] { Vector3.forward, Vector3.back, Vector3.right, Vector3.left })
+                        {
+                            var along = new Vector3(side.z, 0, -side.x);
+                            Box(seams, side * 1.505f + along * (i * 0.375f) + Vector3.up * 0.55f, new Vector3(Mathf.Abs(along.x) * 0.025f + Mathf.Abs(side.x) * 0.01f, 0.5f, Mathf.Abs(along.z) * 0.025f + Mathf.Abs(side.z) * 0.01f));
+                        }
+            }
+            else if (tier == 1)
+            {
+                // stone: courses of blocks (a mortar line along each course, the joints staggered course to course)
+                if (wallLike || t == PieceType.Foundation)
+                {
+                    float top = wallLike ? 3f : 1f;
+                    for (int row = 0; row * 0.5f < top; row++)
+                    {
+                        float y = row * 0.5f;
+                        if (wallLike)
+                        {
+                            for (float x = -1.45f; x < 1.45f; x += 0.1f)
+                                if (y > 0.01f && Solid(x + 0.05f, y)) foreach (float z in new[] { -0.152f, 0.152f }) Box(seams, new Vector3(x + 0.05f, y, z), new Vector3(0.11f, 0.03f, 0.01f));
+                            for (float x = (row % 2 == 0 ? -1.125f : -0.75f); x < 1.4f; x += 0.75f)
+                                if (Solid(x, y + 0.25f)) foreach (float z in new[] { -0.152f, 0.152f }) Box(seams, new Vector3(x, y + 0.25f, z), new Vector3(0.03f, 0.5f, 0.01f));
+                        }
+                        else
+                            foreach (var side in new[] { Vector3.forward, Vector3.back, Vector3.right, Vector3.left })
+                            {
+                                var along = new Vector3(side.z, 0, -side.x);
+                                if (row > 0) Box(seams, side * 1.505f + Vector3.up * y, new Vector3(Mathf.Abs(along.x) * 3f + Mathf.Abs(side.x) * 0.01f, 0.03f, Mathf.Abs(along.z) * 3f + Mathf.Abs(side.z) * 0.01f));
+                                for (float a = (row % 2 == 0 ? -1.125f : -0.75f); a < 1.4f; a += 0.75f)
+                                    Box(seams, side * 1.505f + along * a + Vector3.up * (y + 0.25f), new Vector3(Mathf.Abs(along.x) * 0.03f + Mathf.Abs(side.x) * 0.01f, 0.5f, Mathf.Abs(along.z) * 0.03f + Mathf.Abs(side.z) * 0.01f));
+                            }
+                    }
+                }
+            }
+            else if (tier >= 3 && wallLike)
+            {
+                // refined: rivets all along the trims (both faces)
+                for (int k = 1; k < 4; k++)
+                    for (float x = -1.35f; x <= 1.36f; x += 0.3f)
+                        if (Solid(x, k * 0.75f)) foreach (float z in new[] { -0.175f, 0.175f }) Box(dots, new Vector3(x, k * 0.75f, z), new Vector3(0.045f, 0.045f, 0.015f));
+            }
+            Merge(tr, seams, c * 0.62f, "detail seams");
+            Merge(tr, dots, tier == 0 ? new Color(0.35f, 0.35f, 0.38f) : trim * 1.1f, "detail dots");
+        }
+
+        /// <summary>Boxes (unit cubes placed by these matrices, in `tr`'s space) as one mesh in one colour.</summary>
+        static void Merge(Transform tr, List<Matrix4x4> boxes, Color color, string name)
+        {
+            if (boxes.Count == 0) return;
+            var ci = new CombineInstance[boxes.Count];
+            for (int i = 0; i < ci.Length; i++) ci[i] = new CombineInstance { mesh = Art.Cube, transform = boxes[i] };
+            var mesh = new Mesh { name = name, indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
+            mesh.CombineMeshes(ci, true, true);
+            var go = new GameObject(name);
+            go.transform.SetParent(tr, false);
+            go.AddComponent<MeshFilter>().sharedMesh = mesh;
+            var mr = go.AddComponent<MeshRenderer>();
+            mr.sharedMaterial = Art.Mat(color);
+            mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        }
 
         /// <summary>Sheet metal: corrugated ridges on the walls and foundations, and rust patches and bolts on every piece.</summary>
         static void RustSheets(Transform tr, PieceType t, Color c, Color trim)

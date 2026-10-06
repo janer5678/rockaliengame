@@ -165,6 +165,7 @@ namespace RockGame
         Camera m_Cam;
         Material m_StylizeMat;
         Material m_MaskMat;
+        bool m_MenuPost;
         static readonly List<Renderer> s_VmRends = new List<Renderer>();
         /// <summary>The layer the first-person hands and what they hold are put on while they have looks of their own
         /// (HANDS AND TOOLS): the mask pass draws just that layer. (Nothing else uses it; the camera and lights see every layer.)</summary>
@@ -311,6 +312,9 @@ namespace RockGame
         {
             var cam = Camera.main;
             if (cam != m_Cam) { m_Cam = cam; ApplyCamera(); }
+            // the main menu cutscene has its own post processing (LayerLooks.cs): switch over as it comes and goes
+            bool menu = GameSettings.MenuPostNow;
+            if (menu != m_MenuPost) { m_MenuPost = menu; Apply(); }
             if (m_StylizeOn) UpdateStylize();
             // the hands and what they hold on their own layer while they have looks of their own (what's held changes: every frame)
             var vm = ViewModel.Last;
@@ -356,10 +360,10 @@ namespace RockGame
         /// <summary>The full-screen pass's numbers (the haze follows the sky colour; there's none in space).</summary>
         void UpdateStylize()
         {
-            float o = GameSettings.PostExtraAmount(GameSettings.PostExtra.Outlines);
-            float h = GameSettings.PostExtraAmount(GameSettings.PostExtra.Haze);
-            float sh = GameSettings.PostExtraAmount(GameSettings.PostExtra.Sharpen);
-            float cel = GameSettings.PostExtraAmount(GameSettings.PostExtra.CelBanding);
+            float o = GameSettings.ExtraNow(GameSettings.PostExtra.Outlines);
+            float h = GameSettings.ExtraNow(GameSettings.PostExtra.Haze);
+            float sh = GameSettings.ExtraNow(GameSettings.PostExtra.Sharpen);
+            float cel = GameSettings.ExtraNow(GameSettings.PostExtra.CelBanding);
             if (h > 0f && m_Cam != null && (SpaceArena.NearArena(m_Cam.transform.position) || MenuSpace.Showing)) h = 0f; // (no haze in space)
             // outlines: how dark (0..1), how thick (pixels), the depth step (relative) and the fold (normals) that count.
             // The thickness is set at 1440p (the reference: OutlinePxAt1440) and scaled with the screen height, so the
@@ -392,9 +396,9 @@ namespace RockGame
         {
             if (this == null) return;
             bool on = Active;
-            float b = GameSettings.PostBloom ? GameSettings.PostBloomStrength : 0f;
-            float v = GameSettings.PostVignette ? GameSettings.PostVignetteStrength : 0f;
-            float g = GameSettings.PostGrading ? GameSettings.PostGradingStrength : 0f;
+            float b = GameSettings.BloomNow; // (the main menu cutscene's own while it's on: LayerLooks.cs)
+            float v = GameSettings.VignetteNow;
+            float g = GameSettings.GradingNow;
             // 0.5 = the default look: subtle bloom, a light vignette, a little more colour and contrast. No tone
             // mapping curve: it shifted the bright, saturated colours (the golden wheat turned lemon yellow), so the
             // grading keeps the palette's hues and only adds colour and contrast (the URP asset's own tone mapping is
@@ -408,16 +412,16 @@ namespace RockGame
             m_Color.hueShift.Override(0f);
             m_Color.colorFilter.Override(Color.white);
             // the extra looks (all 0 / off unless switched on)
-            float dof = on ? GameSettings.PostExtraAmount(GameSettings.PostExtra.DepthOfField) : 0f;
+            float dof = on ? GameSettings.ExtraNow(GameSettings.PostExtra.DepthOfField) : 0f;
             m_Dof.mode.Override(dof > 0f ? DepthOfFieldMode.Gaussian : DepthOfFieldMode.Off);
             m_Dof.gaussianStart.Override(Mathf.Lerp(70f, 22f, dof));
             m_Dof.gaussianEnd.Override(Mathf.Lerp(260f, 90f, dof));
             m_Dof.gaussianMaxRadius.Override(Mathf.Lerp(0.5f, 1f, dof));
-            m_Grain.intensity.Override(GameSettings.PostExtraAmount(GameSettings.PostExtra.FilmGrain) * 0.55f);
-            m_Chroma.intensity.Override(GameSettings.PostExtraAmount(GameSettings.PostExtra.Chromatic) * 0.3f);
-            SetAo(on ? GameSettings.PostExtraAmount(GameSettings.PostExtra.AmbientOcclusion) : 0f);
-            m_StylizeOn = on && m_Pass != null && (GameSettings.PostExtraOn(GameSettings.PostExtra.Outlines) || GameSettings.PostExtraOn(GameSettings.PostExtra.Haze)
-                || GameSettings.PostExtraOn(GameSettings.PostExtra.Sharpen) || GameSettings.PostExtraOn(GameSettings.PostExtra.CelBanding) || (m_MaskMat != null && GameSettings.HandsOwn.Value));
+            m_Grain.intensity.Override(GameSettings.ExtraNow(GameSettings.PostExtra.FilmGrain) * 0.55f);
+            m_Chroma.intensity.Override(GameSettings.ExtraNow(GameSettings.PostExtra.Chromatic) * 0.3f);
+            SetAo(on ? GameSettings.ExtraNow(GameSettings.PostExtra.AmbientOcclusion) : 0f);
+            m_StylizeOn = on && m_Pass != null && (GameSettings.ExtraNow(GameSettings.PostExtra.Outlines) > 0f || GameSettings.ExtraNow(GameSettings.PostExtra.Haze) > 0f
+                || GameSettings.ExtraNow(GameSettings.PostExtra.Sharpen) > 0f || GameSettings.ExtraNow(GameSettings.PostExtra.CelBanding) > 0f || (m_MaskMat != null && GameSettings.HandsOwn.Value));
             m_Volume.enabled = on;
             m_Cam = Camera.main;
             ApplyCamera();

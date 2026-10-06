@@ -38,6 +38,7 @@ namespace RockGame
                 Hud.HitMarker(!(head && p.HelmetHp.Value > 0), head);
             }
             else if (no != null && no.TryGetComponent(out Vehicle hv)) Hud.AnimalHit(hv, point, Mathf.Max(1f, hv.Hp.Value), false); // (it kills them outright too)
+            else if (hit) EnergyWall.Hit(h.collider, point, h.normal); // (into the energy wall: it flares and ripples)
             m_Net.SniperFireRpc(no != null, no != null ? new NetworkObjectReference(no) : default, point, ray.direction);
             Fx.Tracer(ray.origin + ray.direction * 0.5f - Vector3.up * 0.15f, point, Fx.Gun.Sniper, true, false);
             Fx.Gunshot(Fx.Gun.Sniper, m_VM.Muzzle(), ray.direction, true);

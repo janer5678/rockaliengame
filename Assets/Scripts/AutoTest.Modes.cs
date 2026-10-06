@@ -125,11 +125,11 @@ namespace RockGame
         {
             var hat = Cfg.GetRecipe(Cfg.RecipeIndex(Item.Hatchet));
             var xbow = Cfg.GetRecipe(Cfg.RecipeIndex(Item.Crossbow));
-            Check(Cfg.PowerMenu && Cfg.PowerCount == 8 && Cfg.PowerIndex(Item.Pistol) < 0 && Cfg.PowerIndex(Item.FortifyBuff) < 0 && hat.Wood == Cfg.HatchetWood && xbow.Wood == 350, $"{Cfg.RulesName(Cfg.Rules)}: power menu ({Cfg.PowerCount} items, no pistol, no fortify - it's in UPGRADES), normal prices (hatchet {hat.Wood} wood), crossbow {xbow.Wood} wood");
-            Check(Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.Sword)).Wood == 500 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.C4)).Wood == 2500 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.Helmet)).Wood == 800
+            Check(Cfg.PowerMenu && Cfg.PowerCount == 7 && Cfg.PowerIndex(Item.Helmet) < 0 && Cfg.PowerIndex(Item.Pistol) < 0 && Cfg.PowerIndex(Item.FortifyBuff) < 0 && hat.Wood == Cfg.HatchetWood && xbow.Wood == 350, $"{Cfg.RulesName(Cfg.Rules)}: power menu ({Cfg.PowerCount} items, no pistol, no fortify - it's in UPGRADES), normal prices (hatchet {hat.Wood} wood), crossbow {xbow.Wood} wood");
+            Check(Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.Sword)).Wood == 500 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.C4)).Wood == 2500
                 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.Shotgun)).Wood == 2000 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.ShotgunShell)).Wood == 250
                 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.Revolver)).Wood == 2500 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.RevolverAmmo)).Wood == 1000,
-                "power prices: sword 500, C4 2500, helmet 800, shotgun 2000 + 250 a shell, revolver 2500 + 1000 for 6 bullets");
+                "power prices: sword 500, C4 2500, shotgun 2000 + 250 a shell, revolver 2500 + 1000 for 6 bullets");
             Check(Cfg.MeleePlayerDamage(Item.Sword, true) == 150f && Cfg.MeleePlayerDamage(Item.Sword, false) == 95f && Cfg.Melee(Item.Sword).Cooldown > Cfg.Melee(Item.Hatchet).Cooldown,
                 "sword: 150 head, 95 body, a slower swing");
             Check(Mathf.Abs(Cfg.ShotgunPellets * Cfg.ShotgunPelletDamage * Cfg.ShotgunFalloff(0.9f) - 200f) < 0.5f && Cfg.ShotgunFalloff(10f) < 0.7f, "shotgun: 200 within a metre, less further out");
@@ -181,15 +181,7 @@ namespace RockGame
             // the sword, C4 and the headshot helmet
             yield return BenchBuy(me, pc, Item.Sword);
             yield return BenchBuy(me, pc, Item.C4);
-            me.HelmetHp.Value = 0;
-            yield return BenchBuy(me, pc, Item.Helmet);
-            Check(me.Count(Item.Sword) == 1 && me.Count(Item.C4) == 1, "bought a sword and C4");
-            Check(me.HelmetHp.Value == 1 && me.Count(Item.Helmet) == 0, $"the alien helmet goes straight on when it's crafted, like armour (wearing {me.HelmetHp.Value}, {me.Count(Item.Helmet)} in the bag)");
-            int hw0 = me.Count(Item.Wood);
-            me.CraftRpc(Cfg.CraftIndexOf(Item.Helmet));
-            yield return new WaitForSeconds(0.4f);
-            Check(me.Count(Item.Wood) == hw0 && me.CraftingItem.Value != (byte)Item.Helmet, "a second helmet is refused while you're wearing one (nothing paid)");
-            me.HelmetHp.Value = 0;
+            Check(me.Count(Item.Sword) == 1 && me.Count(Item.C4) == 1, "bought a sword and C4"); // (the alien helmet is out of the game for now)
             yield return Hold(me, Item.Sword);
             yield return Snap("arsenal_sword");
 

@@ -413,32 +413,33 @@ namespace RockGame
             yield return new WaitForSeconds(0.3f);
         }
 
-        /// <summary>Graves: dying leaves one where you fell (no collider), and it's still there after you're back.</summary>
+        /// <summary>Dying: no gravestone any more - the body drops as a ragdoll where you fell (on every screen), a pool of
+        /// blood spreads under it, and it's gone a while after.</summary>
         IEnumerator GraveTests(PlayerNet me, PlayerController pc, NetGame g, int count0, Vector3 diedAt)
         {
-            Check(g.Graves.Count == count0 + 1, $"dying put a gravestone down ({count0} -> {g.Graves.Count})");
-            if (g.Graves.Count == 0) yield break;
-            var gi = g.Graves[g.Graves.Count - 1];
-            var flat = gi.Pos - diedAt;
-            flat.y = 0;
             yield return null;
-            var go = GraveFx.Get(g.Graves.Count - 1);
-            Check(flat.magnitude < 2f && go != null && go.GetComponentsInChildren<Collider>(true).Length == 0 && go.GetComponentsInChildren<Renderer>().Length >= 3,
-                $"the grave is where you died ({flat.magnitude:0.00} m off), drawn, with no collider");
-            yield return new WaitForSeconds(Cfg.RespawnTime + 1.5f);
-            if (me.Dead.Value) me.ServerRespawn(false);
-            yield return new WaitForSeconds(0.5f);
-            // a few more for the picture (any team colour)
-            for (int t = 0; t < 3; t++) g.ServerAddGrave(gi.Pos + new Vector3(1.4f * (t + 1), 2f, 0.6f * t), gi.Yaw + t * 15f, t + 1 < Cfg.TeamColor.Length ? t + 1 : 0);
-            yield return new WaitForSeconds(0.3f);
-            var look = gi.Pos + Quaternion.Euler(0, gi.Yaw, 0) * Vector3.forward * 4.5f + new Vector3(2f, 0.1f, 0);
+            var hips = Ragdoll.NewestHips;
+            Check(g.Graves.Count == count0 && Ragdoll.Count >= 1 && hips != null, $"dying drops a ragdoll, no gravestone ({Ragdoll.Count} ragdolls, {g.Graves.Count - count0} new graves)");
+            int bodies = hips != null ? hips.root.GetComponentsInChildren<Rigidbody>().Length : 0;
+            int joints = hips != null ? hips.root.GetComponentsInChildren<CharacterJoint>().Length : 0;
+            Check(bodies >= 10 && joints >= 9, $"the ragdoll has limbs of its own ({bodies} bodies, {joints} joints)");
+            // look at it lying there
+            var look = diedAt + new Vector3(3f, 0f, 0f);
             look.y = MapBuilder.Height(look.x, look.z) + 0.1f;
-            var to = gi.Pos + new Vector3(2f, 0, 0) - look;
+            var to = diedAt - look;
             pc.LocalTeleport(look, Quaternion.LookRotation(new Vector3(to.x, 0, to.z)).eulerAngles.y);
-            yield return Snap("graves");
-            Check(!me.Dead.Value && g.Graves.Count == count0 + 4 && GraveFx.Shown == g.Graves.Count && go != null && g.Graves[count0].Equals(gi),
-                $"the grave stays after you come back, and more pile up ({g.Graves.Count - count0} new, {GraveFx.Shown} drawn)");
-            Check(AllGravesCrosses(out string why), $"every grave is the same stone cross, only the team band differs ({why})");
+            yield return new WaitForSeconds(2.5f);
+            yield return Snap("ragdoll");
+            if (hips != null)
+            {
+                var flat = hips.position - diedAt;
+                flat.y = 0f;
+                Check(flat.magnitude < 6f && hips.position.y < diedAt.y + 1.2f && GameObject.Find("blood pool") != null, $"the body has flopped down near where you died ({flat.magnitude:0.0} m off), blood under it");
+            }
+            yield return new WaitForSeconds(Mathf.Max(0f, Cfg.RespawnTime - 2f));
+            if (me.Dead.Value) me.ServerRespawn(false);
+            yield return new WaitForSeconds(Ragdoll.Lie + Ragdoll.Sink);
+            Check(!me.Dead.Value && (hips == null || hips == null), "back up, and the body has sunk away");
         }
 
         /// <summary>Every grave drawn is the stone cross: an upright and a bar in the stone colour, a team-colour band, nothing else.</summary>

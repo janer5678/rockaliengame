@@ -121,6 +121,35 @@ namespace RockGame
                 ShipLobby.TestFocus = -1;
                 ShipLobby.TestPhase = -1f;
                 yield return new WaitForSeconds(0.3f);
+                // looking round the room: the mouse at the left edge turns the camera that way
+                ShipLobby.TestMouse = new Vector2(0.01f, 0.5f);
+                yield return new WaitForSeconds(1.2f);
+                Check(ShipLobby.LookYaw < -20f, $"the mouse at the screen's edge looks round the room ({ShipLobby.LookYaw:0} degrees)");
+                ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "lobby_look_left.png"));
+                yield return null;
+                ShipLobby.TestMouse = new Vector2(0.99f, 0.6f);
+                yield return new WaitForSeconds(2.4f);
+                ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "lobby_look_right.png"));
+                yield return null;
+                ShipLobby.TestMouse = new Vector2(0.5f, 0.5f);
+                yield return new WaitForSeconds(0.3f);
+                ShipLobby.TestMouse = new Vector2(-1f, -1f);
+                // CUSTOMISE ALIEN: close on our head, every hat tried on
+                ShipLobby.Customising = true;
+                yield return new WaitForSeconds(1.2f);
+                for (int h = 0; h < Cosmetics.HatCount; h++)
+                {
+                    me.SetHatRpc((byte)h);
+                    yield return new WaitForSeconds(0.5f);
+                    ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), $"lobby_hat_{h}.png"));
+                    yield return null;
+                }
+                Check(me.Hat.Value == Cosmetics.HatCount - 1, $"the hat is synced ({me.Hat.Value})");
+                me.SetHatRpc(3);
+                ShipLobby.Customising = false;
+                yield return new WaitForSeconds(1f);
+                ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "lobby_with_hat.png"));
+                yield return null;
             }
             if (nm.IsHost)
             {

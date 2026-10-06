@@ -109,6 +109,10 @@ namespace RockGame
                 bool head = TakeDummyHeadHit();
                 if (attacker != null)
                     attacker.TutEventRpc((byte)(Hp.Value > 0 ? 1 : 2), (byte)((Vector3.Distance(attacker.transform.position, transform.position) > DummyFar ? 1 : 0) | (head ? 2 : 0)));
+                // knocked down: a line in the kill feed, like a player
+                if (Hp.Value <= 0f && attacker != null && NetGame.Instance != null)
+                    NetGame.Instance.KillFeedRpc(attacker.Team.Value, attacker.Slot.Value, OwnerTeam.Value, 0, (byte)attacker.HeldItem, head,
+                        new Unity.Collections.FixedString32Bytes(attacker.DisplayName), new Unity.Collections.FixedString32Bytes("Training Dummy"));
             }
             if (IsHorse)
             {

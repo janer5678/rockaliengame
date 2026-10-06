@@ -13,7 +13,9 @@ namespace RockGame
     /// </summary>
     public partial class Machine
     {
-        GameObject m_Cryo, m_Cracks, m_Wreck;
+        GameObject m_Cryo, m_Cracks, m_Wreck, m_Sleeper;
+        Transform m_DoorL, m_DoorR;
+        float m_ReleaseAt = -99f;
         Transform m_SkullRoot;
         int m_Stage = -1, m_SkullCount = -1;
         float m_NextPuff;
@@ -41,6 +43,7 @@ namespace RockGame
                 m_Stage = stage;
                 ShowStage(stage);
             }
+            TickRelease();
             // the cryochamber's cold mist, and the damage: sparks, smoke, then fire
             if (Time.time >= m_NextPuff)
             {
@@ -63,15 +66,32 @@ namespace RockGame
             m_Cryo = new GameObject("cryochamber");
             m_Cryo.transform.SetParent(transform, false);
             m_Cryo.transform.position = Cfg.SocketPos(Team) - Vector3.up * 0.64f;
+            m_Cryo.transform.rotation = Quaternion.LookRotation(-Cfg.BackDir(Team)); // (its doors face out of the base)
             var t = m_Cryo.transform;
             var metal = new Color(0.32f, 0.35f, 0.4f);
             var tc = Cfg.TeamColor[Mathf.Clamp(Team, 0, 3)];
             float cr = 2f * Art.Cylinder.bounds.extents.x, ch = 2f * Art.Cylinder.bounds.extents.y;
             Art.Part(t, Art.Cylinder, metal, new Vector3(0, 0.12f, 0), new Vector3(1.5f / cr, 0.24f / ch, 1.5f / cr));
             Art.Part(t, Art.Cylinder, tc, new Vector3(0, 0.26f, 0), new Vector3(1.55f / cr, 0.04f / ch, 1.55f / cr));
-            // the pod: frosted glass, a sleeper's soft glow inside, a cap with lights on top
-            Art.Part(t, Art.Capsule, Color.white, new Vector3(0, 1.35f, 0), new Vector3(1.05f, 1.05f, 1.05f), default, false, Art.Ghost(new Color(0.75f, 0.92f, 1f, 0.32f)));
-            Art.Part(t, Art.Capsule, Color.white, new Vector3(0, 1.3f, 0), new Vector3(0.45f, 0.75f, 0.45f), default, false, Workbench.Glow(new Color(0.55f, 0.9f, 1f), 1.4f));
+            // the pod: a frosted glass shell round the back, two curved frosted doors at the front that slide apart to let
+            // a respawning player out (PlayRelease), a sleeper's soft glow inside, a cap with lights on top
+            var frost = Art.Ghost(new Color(0.75f, 0.92f, 1f, 0.32f));
+            void Arc(Transform into, float from, float to, int n)
+            {
+                for (int k = 0; k < n; k++)
+                {
+                    float a = Mathf.Lerp(from, to, (k + 0.5f) / n) * Mathf.Deg2Rad;
+                    Art.Box(into, Color.white, new Vector3(Mathf.Sin(a) * 0.52f, 1.32f, Mathf.Cos(a) * 0.52f), new Vector3(2f * 0.52f * Mathf.Sin((to - from) * Mathf.Deg2Rad / n / 2f) + 0.02f, 2.1f, 0.04f), new Vector3(0, a * Mathf.Rad2Deg, 0), false, frost);
+                }
+            }
+            Arc(t, 95f, 265f, 10); // (the back)
+            m_DoorL = new GameObject("door L").transform; m_DoorL.SetParent(t, false);
+            m_DoorR = new GameObject("door R").transform; m_DoorR.SetParent(t, false);
+            Arc(m_DoorL, -90f, 0f, 6);
+            Arc(m_DoorR, 0f, 90f, 6);
+            Art.Box(m_DoorL, metal, new Vector3(-0.02f, 1.32f, 0.53f), new Vector3(0.04f, 2.1f, 0.05f)); // (the doors' meeting edges)
+            Art.Box(m_DoorR, metal, new Vector3(0.02f, 1.32f, 0.53f), new Vector3(0.04f, 2.1f, 0.05f));
+            m_Sleeper = Art.Part(t, Art.Capsule, Color.white, new Vector3(0, 1.3f, 0), new Vector3(0.45f, 0.75f, 0.45f), default, false, Workbench.Glow(new Color(0.55f, 0.9f, 1f), 1.4f));
             Art.Part(t, Art.Cylinder, metal, new Vector3(0, 2.45f, 0), new Vector3(1.1f / cr, 0.14f / ch, 1.1f / cr));
             for (int k = 0; k < 6; k++)
             {
@@ -84,6 +104,40 @@ namespace RockGame
             l.transform.localPosition = new Vector3(0, 1.4f, 0);
             l.type = LightType.Point; l.color = new Color(0.6f, 0.9f, 1f); l.range = 5f; l.intensity = 1.6f;
             foreach (var r in m_Cryo.GetComponentsInChildren<MeshRenderer>()) r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        }
+
+        /// <summary>Every screen: someone respawns in this team's pod (Bedwars) - inside it, behind the frost, for a moment;
+        /// then a hiss of cold mist and its doors slide apart, and they step out; a few seconds later the doors close again.</summary>
+        public void PlayRelease() => m_ReleaseAt = Time.time;
+
+        /// <summary>How long the pod holds you before its doors open (s).</summary>
+        public const float PodHold = 0.9f;
+
+        void TickRelease()
+        {
+            if (m_DoorL == null || m_DoorR == null) return;
+            float t = Time.time - m_ReleaseAt;
+            float open;
+            if (t < PodHold) open = 0f;
+            else if (t < PodHold + 0.6f) open = Mathf.SmoothStep(0f, 1f, (t - PodHold) / 0.6f);
+            else if (t < 3.6f) open = 1f;
+            else if (t < 4.3f) open = 1f - Mathf.SmoothStep(0f, 1f, (t - 3.6f) / 0.7f);
+            else open = 0f;
+            // each door slides out sideways and round the back of the pod
+            m_DoorL.localPosition = new Vector3(-0.08f * open, 0f, -0.05f * open);
+            m_DoorL.localRotation = Quaternion.Euler(0f, -95f * open, 0f);
+            m_DoorR.localPosition = new Vector3(0.08f * open, 0f, -0.05f * open);
+            m_DoorR.localRotation = Quaternion.Euler(0f, 95f * open, 0f);
+            // nobody's asleep in it while it lets someone out
+            if (m_Sleeper) m_Sleeper.SetActive(t > 4.3f || t < 0f);
+            // the hiss of cold mist as the doors part
+            if (t >= PodHold && t < PodHold + 0.45f && m_Cryo != null)
+            {
+                var at = m_Cryo.transform.position + m_Cryo.transform.forward * 0.6f;
+                for (int i = 0; i < 3; i++)
+                    FxParticle.Puff(at + Vector3.up * Random.Range(0.3f, 2f) + m_Cryo.transform.right * Random.Range(-0.5f, 0.5f), new Color(0.88f, 0.96f, 1f, 0.55f), Random.Range(0.4f, 0.9f));
+            }
+            if (t >= PodHold && t - Time.deltaTime < PodHold && m_Cryo != null) Sfx.Play(Sfx.Hiss, m_Cryo.transform.position + Vector3.up, 0.9f, 0.05f, 30f);
         }
 
         /// <summary>The damage steps: 0 whole, 1 cracked, 2 battered (rings askew), 3+ destroyed (a burning wreck).</summary>

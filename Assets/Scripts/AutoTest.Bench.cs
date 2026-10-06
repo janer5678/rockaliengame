@@ -169,8 +169,7 @@ namespace RockGame
                 yield return new WaitForSeconds(0.15f);
                 Check(!me.Dead.Value && Cfg.BaseTeamAt(me.transform.position) == team, "back on our bedrock after dying");
                 yield return BenchCraftAt(me, pc, "right after respawning", null, yaw);
-                bool crosses = AllGravesCrosses(out string gwhy);
-                Check(g.Graves.Count == graves0 + 1 && crosses, $"dying left a grave, and every grave is the stone cross ({gwhy})");
+                Check(g.Graves.Count == graves0 && Ragdoll.Count >= 1, $"dying dropped a ragdoll, not a grave ({Ragdoll.Count} ragdolls)");
             }
             // with a full hotbar (it goes into the bag)
             {

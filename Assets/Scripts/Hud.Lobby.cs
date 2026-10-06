@@ -23,6 +23,7 @@ namespace RockGame
             float k = m_Scale, sw = Screen.width, sh = Screen.height;
             LobbyShownAt = Time.time;
             var g = NetGame.Instance;
+            if (ShipLobby.Customising) { DrawCustomise(me); Chat.Draw(k, m_Small, Fill, Shadowed); return; }
             // the title, top left: what's being played and how full it is
             var title = new GUIStyle(m_Big) { alignment = TextAnchor.UpperLeft, fontSize = Mathf.RoundToInt(40 * k) };
             Shadowed(new Rect(28 * k, 44 * k, sw, 60 * k), "<b>LOBBY</b>", title); // (under the FPS counter)
@@ -49,6 +50,15 @@ namespace RockGame
 
             // the buttons along the bottom left, white-framed like the reference
             float bh = 40 * k, by = sh - bh - 22 * k, bx = 24 * k;
+            // CUSTOMISE ALIEN: big, over LEAVE and COPY ROOM ID
+            {
+                var cr = new Rect(24 * k, by - 70 * k, 300 * k, 60 * k);
+                bool hov = cr.Contains(Event.current.mousePosition);
+                if (hov) MouseOverUI = true;
+                Fill(cr, hov ? new Color(0.35f, 0.2f, 0.55f, 0.95f) : new Color(0.22f, 0.12f, 0.36f, 0.9f));
+                Frame(cr, Color.white, 2f);
+                if (GUI.Button(cr, "<b>CUSTOMISE ALIEN</b>", new GUIStyle(m_Center) { fontSize = Mathf.RoundToInt(24 * k) })) { ClickSound(); ShipLobby.Customising = true; m_NameEditLobby = null; }
+            }
             if (FramedBtn(ref bx, by, bh, "LEAVE")) { boot.Leave(); return; }
             if (FramedBtn(ref bx, by, bh, Time.time - m_CopiedAt < 2f ? "COPIED!" : "COPY ROOM ID"))
             {
@@ -57,12 +67,13 @@ namespace RockGame
                 m_CopiedAt = Time.time;
             }
             if (boot.IsHostSession && !Cfg.Tutorial && FramedBtn(ref bx, by, bh, "GAME OPTIONS")) m_LobbyOptions = !m_LobbyOptions;
+            float leftEnd = bx;
 
             // team games: a JOIN button for each team, with how many are on it
             if (Cfg.TeamCount >= 2 && !Cfg.FreeForAll)
             {
                 float tw = 190 * k, th = 40 * k, gap = 12 * k;
-                float tx = (sw - (tw * Cfg.TeamCount + gap * (Cfg.TeamCount - 1))) / 2f, ty = sh - th - 84 * k;
+                float tx = Mathf.Max(leftEnd + 12 * k, (sw - (tw * Cfg.TeamCount + gap * (Cfg.TeamCount - 1))) / 2f), ty = by; // (along the bottom, with the other buttons)
                 for (int t = 0; t < Cfg.TeamCount; t++)
                 {
                     int n = 0;
@@ -93,6 +104,58 @@ namespace RockGame
 
             if (m_LobbyOptions && boot.IsHostSession) DrawLobbyOptions(boot);
             Chat.Draw(k, m_Small, Fill, Shadowed);
+        }
+
+        string m_NameEditLobby;
+
+        /// <summary>CUSTOMISE ALIEN: the camera's on your alien's head (ShipLobby). Arrows either side of the hat's name
+        /// to try each one on (Cosmetics.cs: saved, and everyone sees it - in the lobby and in the game), your name to
+        /// type, and DONE (or Esc).</summary>
+        void DrawCustomise(PlayerNet me)
+        {
+            float k = m_Scale, sw = Screen.width, sh = Screen.height;
+            var title = new GUIStyle(m_Big) { alignment = TextAnchor.UpperLeft, fontSize = Mathf.RoundToInt(40 * k) };
+            Shadowed(new Rect(28 * k, 44 * k, sw, 60 * k), "<b>CUSTOMISE ALIEN</b>", title);
+            Shadowed(new Rect(30 * k, 92 * k, sw, 26 * k), "Pick a hat and your name - everyone sees them, in here and in the game.", new GUIStyle(m_Small) { fontSize = Mathf.RoundToInt(15 * k) });
+            // the hat: its name between two big arrows, low in the middle (the head's above it)
+            int hat = me.Hat.Value, n = Cosmetics.HatCount;
+            float rowY = sh - 230 * k, nameW = 360 * k, aw = 64 * k, mid = sw / 2f;
+            Fill(new Rect(mid - nameW / 2f - aw - 14 * k, rowY - 10 * k, nameW + 2 * aw + 28 * k, aw + 20 * k), new Color(0f, 0f, 0f, 0.55f));
+            int pick = -1;
+            if (SmallBtn(new Rect(mid - nameW / 2f - aw - 4 * k, rowY, aw, aw), "◀")) pick = (hat + n - 1) % n;
+            if (SmallBtn(new Rect(mid + nameW / 2f + 4 * k, rowY, aw, aw), "▶")) pick = (hat + 1) % n;
+            Shadowed(new Rect(mid - nameW / 2f, rowY, nameW, aw * 0.62f), $"<b>{Cosmetics.HatNames[Mathf.Clamp(hat, 0, n - 1)].ToUpper()}</b>", new GUIStyle(m_Center) { fontSize = Mathf.RoundToInt(28 * k) });
+            Shadowed(new Rect(mid - nameW / 2f, rowY + aw * 0.58f, nameW, aw * 0.4f), $"<color=#bbbbbb>{hat + 1} / {n}</color>", new GUIStyle(m_Center) { fontSize = Mathf.RoundToInt(15 * k) });
+            if (pick >= 0) { Cosmetics.MyHat = pick; me.SetHatRpc((byte)pick); }
+            // your name
+            float fy = rowY + aw + 30 * k, fw = 360 * k;
+            GUI.Label(new Rect(mid - fw / 2f, fy, fw, 24 * k), "<b>YOUR NAME</b>", new GUIStyle(m_Center) { fontSize = Mathf.RoundToInt(16 * k) });
+            if (m_NameEditLobby == null) m_NameEditLobby = GameSettings.PlayerName;
+            var field = new Rect(mid - fw / 2f, fy + 26 * k, fw, 44 * k);
+            if (field.Contains(Event.current.mousePosition)) MouseOverUI = true;
+            GUI.SetNextControlName("lobbyname");
+            string typed = GUI.TextField(field, m_NameEditLobby, GameSettings.PlayerNameMax, new GUIStyle(m_Field) { fontSize = Mathf.RoundToInt(22 * k), alignment = TextAnchor.MiddleCenter });
+            NoteTyping("lobbyname");
+            if (typed != m_NameEditLobby)
+            {
+                m_NameEditLobby = typed;
+                GameSettings.PlayerName = typed;
+                if (GameSettings.PlayerName.Length > 0) MarkNameChosen();
+                me.SetNameRpc(new Unity.Collections.FixedString32Bytes(GameSettings.PlayerName));
+            }
+            // done
+            var dr = new Rect(sw - 230 * k - 26 * k, sh - 64 * k - 22 * k, 230 * k, 64 * k);
+            Fill(dr, new Color(0.08f, 0.45f, 0.14f, 0.92f));
+            Frame(dr, new Color(0.6f, 1f, 0.6f), 3f);
+            if (dr.Contains(Event.current.mousePosition)) MouseOverUI = true;
+            bool esc = Event.current.type == EventType.KeyDown && Event.current.keyCode == KeyCode.Escape;
+            if (GUI.Button(dr, "DONE", new GUIStyle(m_Center) { fontSize = Mathf.RoundToInt(28 * k), fontStyle = FontStyle.Bold }) || esc)
+            {
+                ClickSound();
+                ShipLobby.Customising = false;
+                GUI.FocusControl(null);
+                if (esc) Event.current.Use();
+            }
         }
 
         /// <summary>A white-framed button along the bottom (LEAVE, COPY ROOM ID...), moving x on past it.</summary>

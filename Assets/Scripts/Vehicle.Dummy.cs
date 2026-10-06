@@ -93,6 +93,34 @@ namespace RockGame
             var bc = box.AddComponent<BoxCollider>();
             bc.center = new Vector3(0, DummyHeadHeight * 0.5f, 0);
             bc.size = new Vector3(0.5f, DummyHeadHeight, 0.5f);
+            // the enemy glow, like an enemy player's (PlayerNet.SetOutline): a dummy stands for the other team
+            if (Cfg.AlienOutlines && (PlayerNet.Local == null || PlayerNet.Local.Team.Value != team))
+            {
+                var mat = PlayerNet.OutlineMat(team);
+                if (mat != null)
+                    foreach (var mr in m_Visual.GetComponentsInChildren<MeshRenderer>())
+                    {
+                        var mf = mr.GetComponent<MeshFilter>();
+                        if (mf == null || mf.sharedMesh == null) continue;
+                        if (mf.sharedMesh.subMeshCount > 1)
+                        {
+                            // (several parts: a copy drawn with the glow on every part)
+                            var copy = new GameObject("outline copy");
+                            copy.transform.SetParent(mr.transform, false);
+                            copy.AddComponent<MeshFilter>().sharedMesh = mf.sharedMesh;
+                            var cr = copy.AddComponent<MeshRenderer>();
+                            var ms = new Material[mf.sharedMesh.subMeshCount];
+                            for (int i = 0; i < ms.Length; i++) ms[i] = mat;
+                            cr.sharedMaterials = ms;
+                            cr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                        }
+                        else
+                        {
+                            var list = new List<Material>(mr.sharedMaterials) { mat };
+                            mr.sharedMaterials = list.ToArray();
+                        }
+                    }
+            }
         }
 
         // ---- the alien head, cut out of the players' rigged alien ----

@@ -42,6 +42,10 @@ Shader "RockGame/EnergyWall"
                 float _Strength, _Base, _HexSize, _Speed, _UseMask, _Fade;
             CBUFFER_END
 
+            // the last few things that hit the wall (EnergyWall.Hit): where (xyz) and when (w, shader time) - each sends
+            // a flash and a ring of light rippling out across the honeycomb from where it struck
+            float4 _RgShieldHits[8];
+
             struct Attributes { float4 positionOS : POSITION; float3 normalOS : NORMAL; float2 uv : TEXCOORD0; };
             struct Varyings { float4 positionCS : SV_POSITION; float3 ws : TEXCOORD0; float3 nw : TEXCOORD1; float2 uv : TEXCOORD2; };
 
@@ -91,8 +95,21 @@ Shader "RockGame/EnergyWall"
 
                 float base = _Base * (0.35 + 0.65 * s);
                 float glow = base + (edge * 0.36 + flare * 0.12 + band * 0.14) * s + rim * (0.08 + 0.2 * s);
+                // impacts: a white-hot flash where it struck and a ring racing out from it, lighting the honeycomb up
+                float ripple = 0, flash = 0;
+                [unroll] for (int k = 0; k < 8; k++)
+                {
+                    float age = _Time.y - _RgShieldHits[k].w;
+                    if (age < 0 || age > 1.3) continue;
+                    float d = distance(i.ws, _RgShieldHits[k].xyz);
+                    float rad = age * 6.0;
+                    float fade = 1.0 - age / 1.3;
+                    ripple += exp(-pow((d - rad) / 0.45, 2.0)) * fade * fade;
+                    flash += exp(-d * d * 3.0) * saturate(1.0 - age / 0.35);
+                }
+                glow += ripple * (0.35 + edge * 1.6) + flash * 2.2;
                 half3 col = _Color.rgb * glow * (0.5 + 1.0 * s);
-                half alpha = saturate(base * 1.2 + edge * 0.08 * s + rim * 0.1 * s);
+                half alpha = saturate(base * 1.2 + edge * 0.08 * s + rim * 0.1 * s + ripple * (0.15 + edge * 0.4) + flash * 0.6);
                 float keep = saturate(_Fade);
                 if (_UseMask > 0.5) keep *= SAMPLE_TEXTURE2D(_HoleMask, sampler_HoleMask, i.uv).a;
                 return half4(col, alpha) * keep;

@@ -45,6 +45,29 @@ namespace RockGame
             Hud.Banner("AIRDROP INCOMING", "the usual look again");
             yield return Snap("looks_03_notification_default");
 
+            // the animated banner (caught early, mid-bounce, and settled) and the end countdown
+            yield return new WaitForSeconds(4.2f);
+            Hud.Banner("TRADE STATION UNLOCKED", "Craft it in your bag (I) - the wall dropped");
+            yield return new WaitForSeconds(0.12f);
+            ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "looks_05_banner_in.png"));
+            yield return new WaitForSeconds(0.6f);
+            ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "looks_06_banner_settled.png"));
+            yield return new WaitForSeconds(3.6f);
+            Hud.Banner("AIRDROP INCOMING", "A crate is coming down by the north rocks");
+            yield return new WaitForSeconds(0.9f);
+            ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "looks_07_banner_airdrop.png"));
+            yield return new WaitForSeconds(3.4f);
+            Hud.TestCountdown = 7;
+            yield return new WaitForSeconds(Mathf.Repeat(-Time.time, 1f) + 0.08f);
+            ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "looks_08_countdown_slam.png"));
+            yield return new WaitForSeconds(0.55f);
+            ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "looks_09_countdown_settled.png"));
+            Hud.TestCountdown = 2;
+            yield return new WaitForSeconds(Mathf.Repeat(-Time.time, 1f) + 0.15f);
+            ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "looks_10_countdown_last.png"));
+            yield return new WaitForSeconds(0.3f);
+            Hud.TestCountdown = -1;
+
             // the left mouse button as its icon in a held item's hint
             me.ServerGive(Item.C4, 1);
             yield return Hold(me, Item.C4);

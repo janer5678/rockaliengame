@@ -31,7 +31,8 @@ namespace RockGame
         int m_PreviewKey = -1;
         public static void TestNewPage(int p) { if (s_I != null) { s_I.m_New = (NewPage)p; s_I.m_Battle = p == (int)NewPage.Players ? 1 : s_I.m_Battle; } }
 
-        static readonly Color k_Pink = new Color(1f, 0.25f, 0.65f), k_Acid = new Color(0.65f, 1f, 0.2f), k_Cyan = new Color(0.3f, 0.95f, 1f);
+        // (the menu's accents: the teams' red and blue, the tutorial green; QUIT stays grey)
+        static readonly Color k_Red = new Color(1f, 0.3f, 0.25f), k_Acid = new Color(0.65f, 1f, 0.2f), k_Blue = new Color(0.25f, 0.5f, 1f);
 
         void NewMenuKeys(Bootstrap boot)
         {
@@ -67,25 +68,25 @@ namespace RockGame
             {
                 case NewPage.Root:
                     if (BigBtn(ref y, x, w, "TUTORIAL", k_Acid)) m_New = NewPage.Tutorial;
-                    if (BigBtn(ref y, x, w, "MULTIPLAYER", k_Pink)) m_New = NewPage.Multiplayer;
-                    if (BigBtn(ref y, x, w, "SOLO", k_Cyan)) { m_SoloFlow = true; m_Battle = 0; m_New = NewPage.Battle; }
+                    if (BigBtn(ref y, x, w, "MULTIPLAYER", k_Red)) m_New = NewPage.Multiplayer;
+                    if (BigBtn(ref y, x, w, "SOLO", k_Blue)) { m_SoloFlow = true; m_Battle = 0; m_New = NewPage.Battle; }
                     if (BigBtn(ref y, x, w, "OPTIONS", new Color(1f, 0.8f, 0.2f))) { m_Page = MenuPage.Settings; m_Tab = SettingsTab.Sound; OnTabOpened(); }
                     if (BigBtn(ref y, x, w, "QUIT", new Color(0.7f, 0.7f, 0.75f))) Application.Quit();
                     break;
                 case NewPage.Tutorial:
-                    if (BigBtn(ref y, x, w, "PLAY WITH A FRIEND", k_Pink)) StartTutorial(boot, false);
+                    if (BigBtn(ref y, x, w, "PLAY WITH A FRIEND", k_Red)) StartTutorial(boot, false);
                     if (BigBtn(ref y, x, w, "SOLO", k_Acid)) StartTutorial(boot, true);
                     Note(ref y, x, w, "Learn the whole game a step at a time. With a friend, they join your IP when the tutorial asks.");
                     break;
                 case NewPage.Multiplayer:
-                    if (BigBtn(ref y, x, w, "JOIN", k_Cyan)) m_New = NewPage.Join;
-                    if (BigBtn(ref y, x, w, "HOST", k_Pink)) { m_SoloFlow = false; m_New = NewPage.Battle; }
+                    if (BigBtn(ref y, x, w, "JOIN", k_Blue)) m_New = NewPage.Join;
+                    if (BigBtn(ref y, x, w, "HOST", k_Red)) { m_SoloFlow = false; m_New = NewPage.Battle; }
                     break;
                 case NewPage.Join: DrawJoinPage(boot, x, ref y, w); break;
                 case NewPage.Battle:
                     if (BigBtn(ref y, x, w, "1V1", k_Acid)) { m_Battle = 0; m_New = NewPage.Mode; }
-                    if (BigBtn(ref y, x, w, "TEAMS", k_Pink)) { m_Battle = 1; if (m_SoloFlow) { m_CapA = m_CapB = 2; m_New = NewPage.Mode; } else m_New = NewPage.Players; }
-                    if (BigBtn(ref y, x, w, "FFA", k_Cyan)) { m_Battle = 2; if (m_SoloFlow) { m_FfaN = 4; m_New = NewPage.Mode; } else m_New = NewPage.Players; }
+                    if (BigBtn(ref y, x, w, "TEAMS", k_Red)) { m_Battle = 1; if (m_SoloFlow) { m_CapA = m_CapB = 2; m_New = NewPage.Mode; } else m_New = NewPage.Players; }
+                    if (BigBtn(ref y, x, w, "FFA", k_Blue)) { m_Battle = 2; if (m_SoloFlow) { m_FfaN = 4; m_New = NewPage.Mode; } else m_New = NewPage.Players; }
                     Note(ref y, x, w, "FFA: everyone for themselves, a base each (up to 4).");
                     break;
                 case NewPage.Players: DrawPlayersPage(x, ref y, w); break;
@@ -179,7 +180,7 @@ namespace RockGame
             }
             else
             {
-                Counter(new Rect(x, y, 150 * k, 170 * k), ref m_FfaN, 3, 4, k_Cyan, "PLAYERS");
+                Counter(new Rect(x, y, 150 * k, 170 * k), ref m_FfaN, 3, 4, k_Blue, "PLAYERS");
                 y += 186 * k;
                 Note(ref y, x, w, $"Free for all: {m_FfaN} players, a base each.");
             }

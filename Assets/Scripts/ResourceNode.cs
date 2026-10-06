@@ -363,7 +363,7 @@ namespace RockGame
                 for (int bi = 0; bi < blobs.Count; bi++)
                 {
                     var (c, r, squash) = blobs[bi];
-                    int n = Mathf.RoundToInt(r * 34f) + rng.Next(3);
+                    int n = Mathf.RoundToInt(r * 44f) + rng.Next(3); // (more of them now they're smaller)
                     for (int k = 0, tries = 0; k < n && tries < n * 4; tries++)
                     {
                         var dir = new Vector3(R(-1f, 1f), R(-0.25f, 1f), R(-1f, 1f));
@@ -372,7 +372,7 @@ namespace RockGame
                         var at = c + new Vector3(dir.x * r, dir.y * r * squash, dir.z * r) * 0.9f;
                         if (at.y < 0.12f || Buried(at, bi)) continue;
                         k++;
-                        float len = R(0.15f, 0.22f), wid = len * R(0.62f, 0.78f); // (round: nearly as wide as long)
+                        float len = R(0.09f, 0.13f), wid = len * R(0.9f, 1f); // (small and round: as wide as long)
                         var fwd = (dir + Vector3.up * 0.35f + new Vector3(R(-0.3f, 0.3f), R(-0.1f, 0.2f), R(-0.3f, 0.3f))).normalized;
                         var side = Vector3.Cross(fwd, Vector3.up);
                         if (side.sqrMagnitude < 0.01f) side = Vector3.Cross(fwd, Vector3.right);
@@ -387,7 +387,7 @@ namespace RockGame
                         // a rounded, gently domed oval leaf: a fan round its middle, the far end curling down a little
                         var centre = at + fwd * len * 0.5f + nrm * wid * 0.12f;
                         var sc = Sway(centre, 0.8f);
-                        const int Seg = 7;
+                        const int Seg = 12; // (a smooth round outline)
                         Vector3 prev = default; Vector2 prevS = default;
                         for (int s = 0; s <= Seg; s++)
                         {

@@ -72,6 +72,12 @@ namespace RockGame
         Camera m_Cam;
         ViewModel m_VM;
 
+        int m_LookSkipUntil;
+        float m_NextDrop;
+        float m_HoldUntil;
+
+        /// <summary>Hold the player still (no walking) for a moment: waking up in the Bedwars cryochamber until its doors open.</summary>
+        public void HoldStill(float seconds) => m_HoldUntil = Time.time + seconds;
         float m_Yaw, m_Pitch, m_VelY, m_Bob, m_Eye = Cfg.EyeHeight, m_LastStep, m_Speed;
         float m_NextSwing, m_ImpactAt = -1f, m_NextUpgrade, m_DrawStart = -1f, m_NextEat, m_NextBallThrow, m_LastHealth, m_NextSaw;
         bool m_Grounded = true, m_Sprinting;
@@ -331,12 +337,14 @@ namespace RockGame
 
             // (the chat line frees the mouse too: a whisper in the log can be clicked to answer it)
             bool cursorFree = (MenuOpen || Paused || gameOver || choosing || WheelOpen || AirstrikeMapOpen || ScoreboardOpen || Chat.Open) && !cutscene;
-            Cursor.lockState = cursorFree ? CursorLockMode.None : CursorLockMode.Locked;
+            var lockNow = cursorFree ? CursorLockMode.None : CursorLockMode.Locked;
+            if (lockNow == CursorLockMode.Locked && Cursor.lockState != CursorLockMode.Locked) m_LookSkipUntil = Time.frameCount + 3; // (re-locking the cursor jumps the mouse: not a look)
+            Cursor.lockState = lockNow;
             Cursor.visible = cursorFree && !WheelOpen;
             bool input = !cursorFree && !dead && !Hud.Rebinding && !Chat.Open && !cutscene;
             // you can keep walking, jumping and crouching with the inventory open
             bool frozen = game != null && game.FightFrozen;
-            bool move = !dead && !Paused && !gameOver && !frozen && !AirstrikeMapOpen && !Chat.Open;
+            bool move = !dead && !Paused && !gameOver && !frozen && !AirstrikeMapOpen && !Chat.Open && Time.time >= m_HoldUntil; // (held: waking in the cryochamber)
             bool locked = Time.time < m_InputLockUntil;
 
             // ---- damage / respawn feedback ----
@@ -352,7 +360,10 @@ namespace RockGame
 
             // ---- look ----
             m_LookDelta = Vector2.zero;
-            if (input)
+            // (in the ship lobby the mouse is for the buttons: your view stays level for when the match starts)
+            bool lobby = ShipLobby.Active;
+            if (lobby) m_Pitch = 0f;
+            if (input && !lobby && Time.frameCount > m_LookSkipUntil)
             {
                 m_LookDelta = new Vector2(Input.GetAxisRaw("Mouse X"), Input.GetAxisRaw("Mouse Y")) * GameSettings.MouseSensitivity * (CrossbowAiming ? 0.6f : RevolverAiming ? 0.75f : 1f) * (Scoped ? 0.35f : 1f);
                 m_Yaw += m_LookDelta.x;
@@ -903,6 +914,13 @@ namespace RockGame
                     if (Binds.Down(Bind.Hotbar1 + k)) want = k;
                 float scroll = Tutorial.Allows(TutFeature.Hotbar) ? Input.mouseScrollDelta.y : 0f; // (the tutorial unlocks the hotbar later)
                 if (scroll != 0) want = ((want + (scroll < 0 ? 1 : -1)) % Cfg.HotbarSize + Cfg.HotbarSize) % Cfg.HotbarSize;
+            }
+            // the drop key (Q): one of what you're holding goes on the ground in front of you (not the rock: that's your hand)
+            if (input && !WheelOpen && Binds.Down(Bind.Drop) && !m_Net.HeldStack.Empty && Time.time >= m_NextDrop)
+            {
+                m_NextDrop = Time.time + 0.12f;
+                m_Net.DropItemRpc(0, (byte)cur, 1, default);
+                Sfx.Play2D(Sfx.Throw, 0.35f);
             }
             if (want != cur)
             {
@@ -1486,7 +1504,7 @@ namespace RockGame
             float range = Cfg.InteractRange + 2f;
             float found = range;
 
-            var hits = Physics.RaycastAll(ray, range, ~0, QueryTriggerInteraction.Collide);
+            var hits = Physics.RaycastAll(ray, Cfg.InteractRange + Cfg.GateReachExtra + 0.5f, ~0, QueryTriggerInteraction.Collide);
             System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
             var mount = m_Net.Riding ? RidingVehicle : null;
             foreach (var h in hits)
@@ -1510,7 +1528,9 @@ namespace RockGame
                     break;
                 }
                 var kind = Classify(h.collider, out var obj);
-                if (kind != TargetKind.None && h.distance <= Cfg.InteractRange + 0.5f) { result.Kind = kind; result.Obj = obj; found = h.distance; break; }
+                bool gate = kind == TargetKind.Door && obj != null && obj.TryGetComponent(out Structure gs) && gs.PType == PieceType.Gate; // (a large gate opens from further off)
+                if (kind != TargetKind.None && h.distance <= Cfg.InteractRange + (gate ? Cfg.GateReachExtra : 0.5f)) { result.Kind = kind; result.Obj = obj; found = h.distance; break; }
+                if (h.distance > range) break;
                 if (!h.collider.isTrigger) { found = h.distance; break; } // walls block interaction
             }
 
@@ -1545,6 +1565,49 @@ namespace RockGame
             if (result.Kind == TargetKind.None && m_Net.StuckSpears.Value > 0) result.Kind = TargetKind.SelfSpear;
             return result;
         }
+
+
+        /// <summary>
+        /// Large walls and gates like to join up: aimed near the end of one already standing (yours or anyone's), the new
+        /// one snaps to carry on from it - in line with it, its end against that one's end - so a row of them makes a
+        /// wall with no gaps. Ground under the snapped spot decides its height.
+        /// </summary>
+        void SnapBigWall(Item kind, ref Vector3 pos, ref float yaw)
+        {
+            float myHalf = HalfWidth(kind == Item.LargeGate ? PieceType.Gate : PieceType.Barrier);
+            float best = Cfg.BigWallSnap;
+            Vector3 bestPos = pos;
+            float bestYaw = yaw;
+            bool found = false;
+            foreach (var s in Structure.All)
+            {
+                if (s == null || !s.IsSpawned || (s.PType != PieceType.Barrier && s.PType != PieceType.Gate)) continue;
+                var sp = s.transform.position;
+                if (Mathf.Abs(sp.y - pos.y) > 3f || (new Vector2(sp.x - pos.x, sp.z - pos.z)).magnitude > myHalf + HalfWidth(s.PType) + Cfg.BigWallSnap) continue;
+                var right = s.transform.right;
+                right.y = 0f;
+                right.Normalize();
+                for (int side = -1; side <= 1; side += 2)
+                {
+                    var c = sp + right * side * (HalfWidth(s.PType) + myHalf);
+                    float d = new Vector2(c.x - pos.x, c.z - pos.z).magnitude;
+                    if (d >= best) continue;
+                    // (there's no piece already in that spot)
+                    bool taken = false;
+                    foreach (var o in Structure.All)
+                        if (o != null && o != s && (o.PType == PieceType.Barrier || o.PType == PieceType.Gate) && new Vector2(o.transform.position.x - c.x, o.transform.position.z - c.z).magnitude < 1f) { taken = true; break; }
+                    if (taken) continue;
+                    best = d; bestPos = c; bestYaw = s.transform.eulerAngles.y; found = true;
+                }
+            }
+            if (!found) return;
+            if (Physics.Raycast(bestPos + Vector3.up * 4f, Vector3.down, out var g, 10f, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore)) bestPos.y = g.point.y;
+            pos = bestPos;
+            yaw = bestYaw;
+        }
+
+        /// <summary>Half a large wall's or gate's width, end post to end post (m).</summary>
+        static float HalfWidth(PieceType t) => t == PieceType.Gate ? Structure.GatePostX + 0.25f : 2.75f;
 
         TargetKind Classify(Collider col, out NetworkObject obj)
         {
@@ -1767,7 +1830,8 @@ namespace RockGame
             if (want >= 100)
             {
                 var kind = want == 100 ? Item.Barrier : want == 101 ? Item.Chest : want == 104 ? Item.Workbench : want == 105 ? Item.Workbench2 : want == 103 ? Item.Boat /* THEME MAPS */ : want == 106 ? Item.Ladder : want == 107 ? Item.BearTrap : want == 108 ? Item.SleepingBag : want == 109 ? Item.LargeGate : want == 110 ? Item.AutoTurret : Item.Car;
-                visible = hasHit && hit.distance <= Cfg.DeployRange && hit.normal.y > 0.7f;
+                bool bigWall = kind == Item.Barrier || kind == Item.LargeGate;
+                visible = hasHit && hit.distance <= Cfg.DeployRange + (bigWall ? Cfg.BigWallReachExtra : 0f) && hit.normal.y > 0.7f; // (large walls and gates from a bit further off)
                 // a ladder aimed at a wall (a building piece - yours or theirs - or a large wall): it stands straight up
                 // against it, on whatever's at its foot, facing the wall
                 if (kind == Item.Ladder && hasHit && hit.distance <= Cfg.DeployRange + 1f && Mathf.Abs(hit.normal.y) < 0.5f
@@ -1780,7 +1844,9 @@ namespace RockGame
                     {
                         m_GhostPos = under.point;
                         m_GhostPos.y = Mathf.Max(under.point.y, hit.point.y - Deployables.LadderHeight * 0.5f);
-                        m_GhostYaw = Quaternion.LookRotation(-flatN).eulerAngles.y;
+                        // facing the wall - turned a little your way if you're not square on to it (like Rust's)
+                        float wallYaw = Quaternion.LookRotation(-flatN).eulerAngles.y;
+                        m_GhostYaw = wallYaw + Mathf.Clamp(Mathf.DeltaAngle(wallYaw, m_Yaw), -Deployables.LadderMaxTurn, Deployables.LadderMaxTurn);
                         PlayerNet.FindDeploySpot(kind, team, ref m_GhostPos, m_GhostYaw, out reason);
                         m_Ghost.transform.SetPositionAndRotation(m_GhostPos, Quaternion.Euler(0, m_GhostYaw, 0));
                         visible = true;
@@ -1793,6 +1859,7 @@ namespace RockGame
                     m_GhostPos = hit.point;
                     m_GhostYaw = m_Yaw + (kind == Item.Chest || Workbench.IsBench(kind) || kind == Item.SleepingBag ? 180f : 0f); // (their fronts face you; a ladder and a turret face away, towards the wall / where it watches)
                     if (kind == Item.Boat) m_GhostPos.y = ThemeMaps.WaterY - 0.1f; // THEME MAPS
+                    if (bigWall) SnapBigWall(kind, ref m_GhostPos, ref m_GhostYaw); // (they like to join up end to end)
                     PlayerNet.FindDeploySpot(kind, team, ref m_GhostPos, m_GhostYaw, out reason);
                     m_Ghost.transform.SetPositionAndRotation(m_GhostPos, Quaternion.Euler(0, m_GhostYaw, 0));
                 }

@@ -248,5 +248,14 @@ namespace RockGame
             Fx.Server(FxKind.Break, transform.position + Vector3.up * 0.6f, Vector3.up);
             NetworkObject.Despawn(true);
         }
+
+        /// <summary>The wall a ladder leans on, or the floor a workbench stands on, was broken: it breaks with it - gone in a
+        /// puff of splinters, nothing dropped (a workbench's team can craft and put down another).</summary>
+        public void ServerBreakWithSupport()
+        {
+            if (!IsServer || !IsSpawned) return;
+            Fx.Server(FxKind.Break, transform.position + Vector3.up * 0.6f, Vector3.up);
+            NetworkObject.Despawn(true);
+        }
     }
 }

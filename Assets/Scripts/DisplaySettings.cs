@@ -261,6 +261,9 @@ namespace RockGame
             // ---- hands and tools, notifications: their own looks (LayerLooks.cs) ----
             Pref(GameSettings.HandsOwn, GameSettings.HandsOutline, GameSettings.HandsOutlineStrength, GameSettings.HandsCel, GameSettings.HandsCelStrength,
                 GameSettings.HandsSaturation, GameSettings.HandsContrast);
+            Pref(GameSettings.MenuOwn, GameSettings.MenuBloom, GameSettings.MenuBloomStrength, GameSettings.MenuVignette, GameSettings.MenuVignetteStrength,
+                GameSettings.MenuGrading, GameSettings.MenuGradingStrength, GameSettings.MenuOutlines, GameSettings.MenuOutlinesStrength, GameSettings.MenuCel,
+                GameSettings.MenuCelStrength, GameSettings.MenuGrain, GameSettings.MenuGrainStrength, GameSettings.MenuChromatic, GameSettings.MenuChromaticStrength);
             Pref(GameSettings.NotifOwn, GameSettings.NotifCel, GameSettings.NotifCelStrength, GameSettings.NotifOutline, GameSettings.NotifOutlineWidth,
                 GameSettings.NotifOutlineColour, GameSettings.NotifOutlineOpacity, GameSettings.NotifBloom, GameSettings.NotifBloomStrength,
                 GameSettings.NotifSaturation, GameSettings.NotifContrast);

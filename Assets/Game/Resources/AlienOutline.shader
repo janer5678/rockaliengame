@@ -37,7 +37,10 @@ Shader "RockGame/AlienOutline"
                 Varyings o;
                 float3 ws = TransformObjectToWorld(v.positionOS.xyz);
                 float3 wn = normalize(TransformObjectToWorldNormal(v.normalOS));
-                o.positionCS = TransformWorldToHClip(ws + wn * _Width);
+                // the same look near and far: the width is what it is at 6 m, thinner up close (so it hugs the body
+                // instead of puffing out round it) and wider further off (so it still shows), in step with the distance
+                float dist = length(ws - _WorldSpaceCameraPos);
+                o.positionCS = TransformWorldToHClip(ws + wn * _Width * clamp(dist / 6.0, 0.3, 8.0));
                 return o;
             }
 

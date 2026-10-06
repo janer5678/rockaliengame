@@ -36,6 +36,7 @@ namespace RockGame
                 Hud.HitMarker(!(head && p.HelmetHp.Value > 0), head);
             }
             else if (no != null && no.TryGetComponent(out Vehicle hv)) Hud.AnimalHit(hv, point, Cfg.GunBody(gun) * hv.HeadMul(point)); // (as PlayerNet.FirePistolRpc)
+            else if (hit) EnergyWall.Hit(h.collider, point, h.normal); // (a shot into the energy wall: it flares and ripples)
             m_Net.FirePistolRpc(no != null, no != null ? new Unity.Netcode.NetworkObjectReference(no) : default, point, ray.direction);
             Fx.Tracer(ray.origin + ray.direction * 0.5f - Vector3.up * 0.15f, point, Fx.Gun.Sniper, true, false);
             // the shot: its own crack in your ears and a flash at the muzzle; the revolver bucks (the view model snaps up

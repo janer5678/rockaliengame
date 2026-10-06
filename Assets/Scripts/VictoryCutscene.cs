@@ -224,6 +224,9 @@ namespace RockGame
         const int MaxChunks = 70;
         const float ChunkLife = 3.2f, ChunkGravity = 14f;
         static readonly List<Renderer> s_Blown = new List<Renderer>();
+        /// <summary>The blown-up base's colliders, switched off with it (so the debris falls through to the ground instead of
+        /// landing on invisible walls and floors and hanging in the air).</summary>
+        static readonly List<Collider> s_BlownCols = new List<Collider>();
         static int s_Blasts;
         /// <summary>Test hooks: how many of the base's renderers the blast has hidden on this peer, and how many of its explosions have gone off.</summary>
         public static int BlownCount => s_Blown.Count;
@@ -283,6 +286,8 @@ namespace RockGame
                     r.enabled = false;
                     s_Blown.Add(r);
                 }
+                foreach (var col in root.GetComponentsInChildren<Collider>())
+                    if (col.enabled && !col.isTrigger) { col.enabled = false; s_BlownCols.Add(col); }
                 if (!chunks || !any || mat == null) continue;
                 for (int i = 0; i < per && budget > 0; i++, budget--)
                 {
@@ -301,6 +306,8 @@ namespace RockGame
         {
             foreach (var r in s_Blown) if (r != null) r.enabled = true;
             s_Blown.Clear();
+            foreach (var c in s_BlownCols) if (c != null) c.enabled = true;
+            s_BlownCols.Clear();
         }
 
         /// <summary>The sounds on the timeline (each once on every peer).</summary>
@@ -916,7 +923,7 @@ namespace RockGame
             var p = transform.position + m_Vel * dt;
             // it lands (and stays put) rather than falling through the ground
             float ground = MapBuilder.Height(p.x, p.z) + 0.05f;
-            if (p.y < ground && m_Vel.y < 0f) { p.y = ground; m_Vel = Vector3.zero; m_Spin = Vector3.zero; }
+            if (p.y < ground && m_Vel.y < 0f) { p.y = ground; m_Vel = Vector3.zero; m_Spin = Vector3.zero; if (m_Life - m_Age > 0.8f) m_Life = m_Age + 0.8f; } // (landed: it shrinks away soon after)
             transform.position = p;
             transform.Rotate(m_Spin * dt, Space.Self);
             transform.localScale = m_Size * Mathf.Clamp01((m_Life - m_Age) / 0.5f);

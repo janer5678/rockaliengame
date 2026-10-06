@@ -310,10 +310,15 @@ namespace RockGame
         public const float EyeHeight = 1.6f, CrouchEyeHeight = 1.05f;
         public const float StandHeight = 1.8f, CrouchHeight = 1.2f;
         public const float InteractRange = 3f, LootRange = 4f;
+        /// <summary>How much further off a large gate can be opened than a door (m).</summary>
+        public const float GateReachExtra = 4f;
         public const float MachineRange = 6f; // how close you have to be to the machine to craft / socket the ball
         public const float Cell = 3f, BaseY = 1f, LevelH = 3f;
         public const int MaxLevel = 4;
         public const float BuildRange = 7f, DeployRange = 5f;
+        /// <summary>Large walls and gates can be put down this much further off than other things (m), and snap to one
+        /// already standing when aimed within BigWallSnap of where they'd join it.</summary>
+        public const float BigWallReachExtra = 3f, BigWallSnap = 2.4f;
         public const float SpearMinDraw = 0.25f;
         public const float SpearPickupRange = 3f;
 
@@ -633,6 +638,10 @@ namespace RockGame
         }
 
         /// <summary>The airdrop items the host can pick from in the mode options (the others are unused for now).</summary>
+        /// <summary>Taken out of the game for now (not craftable, not in any shop, airdrop or loot pool): the bear trap,
+        /// the sleeping bag and the alien helmet. Their code stays, so they can come back by taking them off this list.</summary>
+        public static bool Removed(Item i) => i == Item.BearTrap || i == Item.SleepingBag || i == Item.Helmet;
+
         public static readonly Item[] AirdropChoices =
         {
             Item.C4, Item.DeathWand, Item.PortalGun, Item.RocketLauncher, Item.TreeCamo, Item.InvisPotion, Item.Jetpack, Item.Wallhack, Item.BombBush, Item.EnderPearl, Item.SpeedJuice,
@@ -642,7 +651,7 @@ namespace RockGame
         public static readonly Item[] AllAirdropItems =
         {
             Item.C4, Item.DeathWand, Item.PortalGun, Item.RocketLauncher, Item.TreeCamo, Item.InvisPotion, Item.Jetpack, Item.Wallhack, Item.BombBush, Item.EnderPearl, Item.SpeedJuice,
-            Item.Helmet, Item.Armor, Item.Chainsaw, Item.FortTower, Item.Sniper, Item.SlenderEgg, Item.BuildEgg, Item.GiantStaff, Item.Airstrike, Item.Wood,
+            Item.Armor, Item.Chainsaw, Item.FortTower, Item.Sniper, Item.SlenderEgg, Item.BuildEgg, Item.GiantStaff, Item.Airstrike, Item.Wood,
         };
 
         /// <summary>Fun: every item in the game (tools, weapons, loot, the unused ones) - not the rock, materials or buffs.</summary>
@@ -654,6 +663,7 @@ namespace RockGame
                 foreach (Item i in Enum.GetValues(typeof(Item)))
                 {
                     if (i == Item.None || i == Item.Rock || i == Item.FortifyBuff || i == Item.WoodGenBuff || i == Item.AirdropSignal || i == Item.Workbench || i == Item.Workbench2) continue;
+                    if (Removed(i)) continue;
                     if (i == Item.Boat && !ThemeMaps.HasWater) continue; // THEME MAPS
                     l.Add(i);
                 }
@@ -731,6 +741,7 @@ namespace RockGame
         /// <summary>A random airdrop item out of `pool`, weighted by its rarity (all equally likely if they're all 0).</summary>
         public static Item PickAirdropItem(IList<Item> pool)
         {
+            if (pool != null) { bool any = false; foreach (var x in pool) if (Removed(x)) { any = true; break; } if (any) { var kept = new List<Item>(); foreach (var x in pool) if (!Removed(x)) kept.Add(x); pool = kept; } }
             if (pool == null || pool.Count == 0) return Item.C4;
             int total = 0;
             foreach (var i in pool) total += Mathf.Max(0, AirdropRarity(i));
@@ -837,7 +848,7 @@ namespace RockGame
         }
 
         // ---------- Crafting ----------
-        static readonly Item[] k_Recipes = { Item.Hatchet, Item.Pickaxe, Item.Spear, Item.BuildingPlan, Item.Chest, Item.Bow, Item.Arrow, Item.Crossbow, Item.SleepingBag, Item.Armor, Item.Chainsaw, Item.Ram, Item.Barrier, Item.LargeGate, Item.Ladder, Item.BearTrap, Item.Saddle, Item.Workbench, Item.Workbench2, Item.AutoTurret };
+        static readonly Item[] k_Recipes = { Item.Hatchet, Item.Pickaxe, Item.Spear, Item.BuildingPlan, Item.Chest, Item.Bow, Item.Arrow, Item.Crossbow, Item.Armor, Item.Chainsaw, Item.Ram, Item.Barrier, Item.LargeGate, Item.Ladder, Item.Saddle, Item.Workbench, Item.Workbench2, Item.AutoTurret };
 
         static readonly Item[] k_Limited = { Item.Hatchet, Item.Spear, Item.BuildingPlan, Item.Ram };
         static readonly List<Item> s_Active = new List<Item>();
@@ -894,8 +905,8 @@ namespace RockGame
         }
 
         // ---------- Arsenal / Builder / Auto Wood: the powerful items menu ----------
-        static readonly Item[] k_PowerBase = { Item.Sword, Item.Shotgun, Item.ShotgunShell, Item.Revolver, Item.RevolverAmmo, Item.C4, Item.Helmet, Item.HeavyArmor };
-        static readonly Item[] k_PowerBuilder = { Item.Sword, Item.Shotgun, Item.ShotgunShell, Item.Revolver, Item.RevolverAmmo, Item.C4, Item.Helmet, Item.HeavyArmor, Item.FortifyBuff };
+        static readonly Item[] k_PowerBase = { Item.Sword, Item.Shotgun, Item.ShotgunShell, Item.Revolver, Item.RevolverAmmo, Item.C4, Item.HeavyArmor };
+        static readonly Item[] k_PowerBuilder = { Item.Sword, Item.Shotgun, Item.ShotgunShell, Item.Revolver, Item.RevolverAmmo, Item.C4, Item.HeavyArmor, Item.FortifyBuff };
         /// <summary>Fortify All Walls and the wood gen aren't crafted: they're bought in UPGRADES (E on your upgrade station,
         /// Upgrades.cs). Builder has no machines, so there Fortify stays in this list.</summary>
         static Item[] k_Power => Builder ? k_PowerBuilder : k_PowerBase;

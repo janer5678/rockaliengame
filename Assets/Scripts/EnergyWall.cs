@@ -116,6 +116,12 @@ namespace RockGame
 
         /// <summary>Something struck this collider at `point`: if it's glass drawn as the energy wall, a crackling zap and a
         /// low buzz, a burst of cyan sparks and a ripple of light (true: it was the energy wall).</summary>
+        static readonly Vector4[] s_Hits = { new Vector4(0, -9999, 0, -99), new Vector4(0, -9999, 0, -99), new Vector4(0, -9999, 0, -99), new Vector4(0, -9999, 0, -99), new Vector4(0, -9999, 0, -99), new Vector4(0, -9999, 0, -99), new Vector4(0, -9999, 0, -99), new Vector4(0, -9999, 0, -99) };
+        static int s_HitNext;
+        static readonly int k_Hits = UnityEngine.Shader.PropertyToID("_RgShieldHits");
+        /// <summary>(tests) when the energy wall was last struck.</summary>
+        public static float LastHitAt = -10f;
+
         public static bool Hit(Collider c, Vector3 point, Vector3 normal)
         {
             if (c == null || !GameSettings.EnergyWall.Value) return false;
@@ -126,6 +132,11 @@ namespace RockGame
             Sfx.PlayPitched(Sfx.Hum, point, 0.6f, 0.55f, 40f);
             Fx.Chips(point, normal, new Color(0.45f, 0.95f, 1f), 9, 3.5f);
             FxParticle.Puff(point + normal * 0.05f, new Color(0.5f, 0.95f, 1f, 0.6f), 0.6f);
+            // a flash and a ring of light rippling out across the field from where it struck (EnergyWall.shader)
+            s_Hits[s_HitNext] = new Vector4(point.x, point.y, point.z, Time.timeSinceLevelLoad);
+            s_HitNext = (s_HitNext + 1) % s_Hits.Length;
+            UnityEngine.Shader.SetGlobalVectorArray(k_Hits, s_Hits);
+            LastHitAt = Time.time;
             return true;
         }
 

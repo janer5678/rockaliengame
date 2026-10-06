@@ -111,6 +111,7 @@ namespace RockGame
             VictoryCutscene.Clear();
             PortalFx.Clear();
             GraveFx.Clear();
+            Ragdoll.Clear();
             foreach (var v in m_ItemVisuals.Values) if (v) Destroy(v);
             m_ItemVisuals.Clear();
         }

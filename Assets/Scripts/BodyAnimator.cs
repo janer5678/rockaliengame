@@ -50,6 +50,10 @@ namespace RockGame
         /// <summary>The hips' height over the root (the lobby puts each seat under them).</summary>
         public float HipsHeight => m_Hips != null ? m_Root.InverseTransformPoint(m_Hips.position).y : 0.45f;
         public Transform HeadBone => m_Head;
+        /// <summary>The visual root the alien hangs under (character space).</summary>
+        public Transform VisualRoot => m_Root;
+        /// <summary>head bone rotation x this = the head's own frame in character axes (x right, y up, z forward), whatever the pose.</summary>
+        public Quaternion HeadFrameOffset => m_Head != null && m_Rest.TryGetValue(m_Head, out var r) ? Quaternion.Inverse(r.rel) : Quaternion.identity;
         public Transform ChestBone => m_Chest != null ? m_Chest : m_Spine;
 
         public static BodyAnimator TryCreate(Transform visualRoot, float width, out GameObject model)
@@ -182,7 +186,7 @@ namespace RockGame
                     Rot(m_RLo, new Vector3(58f, 0, 0));
                     Rot(m_Spine, new Vector3(12f + br, 0, 0));
                     Rot(m_Chest, new Vector3(4f - d * 4f, 0, 0));
-                    Rot(m_Head, new Vector3(-4f + d * 8f, look * (1f - d), 0));
+                    Rot(m_Head, new Vector3(-4f - d * 10f, look * (1f - d), 0)); // (+x looks down, -x tips the head back)
                     Rot(m_LArm, new Vector3(-30f, 0, -6f));
                     Rot(m_LFore, new Vector3(-95f, 50f, 0));
                     Rot(m_RArm, new Vector3(Mathf.Lerp(-30f, -80f, d), 0, Mathf.Lerp(-2f, 14f, d)));
@@ -194,7 +198,7 @@ namespace RockGame
                     float d = Swig(t);
                     Rot(m_Spine, new Vector3(16f + br - d * 6f, 0, 0));
                     Rot(m_Chest, new Vector3(2f, 0, 0));
-                    Rot(m_Head, new Vector3(-4f + d * 26f, look * (1f - d), 0));
+                    Rot(m_Head, new Vector3(-4f - d * 26f, look * (1f - d), 0)); // (tipped back for the swig)
                     Rot(m_LArm, new Vector3(-30f, 0, 2f));
                     Rot(m_LFore, new Vector3(-72f, 28f, 0));
                     Rot(m_RArm, new Vector3(Mathf.Lerp(-30f, -78f, d), 0, Mathf.Lerp(-2f, 16f, d)));
@@ -207,7 +211,7 @@ namespace RockGame
                     float shake = Mathf.Sin(t * 22f) * 3f * laugh;
                     Rot(m_Spine, new Vector3(-10f + br + shake, 0, 0));
                     Rot(m_Chest, new Vector3(-6f + shake, 0, 0));
-                    Rot(m_Head, new Vector3(-26f + laugh * 18f, look * 0.12f, 0));
+                    Rot(m_Head, new Vector3(34f - laugh * 24f, look * 0.12f, 0)); // (looking down at the phone; a laugh lifts it)
                     Rot(m_LArm, new Vector3(-26f, 0, -4f));
                     Rot(m_LFore, new Vector3(-88f + Mathf.Sin(t * 9f) * 3f, 38f, 0));
                     Rot(m_RArm, new Vector3(-26f, 0, 4f));

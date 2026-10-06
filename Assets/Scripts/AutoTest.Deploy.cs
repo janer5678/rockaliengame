@@ -20,8 +20,8 @@ namespace RockGame
             g.TimerPaused.Value = true;
             Check(Cfg.ArmorHp == 25 && Cfg.HeavyArmorHp == 50, $"wooden armour {Cfg.ArmorHp}, heavy armour {Cfg.HeavyArmorHp}");
             Check(Cfg.ItemName(Item.Workbench2) == "Advanced Trade Station" && Cfg.ItemName(Item.Barrier) == "Large Wall", "renamed: Advanced Trade Station, Large Wall");
-            Check(Cfg.CraftTier(Item.SleepingBag) == 1 && Cfg.CraftTier(Item.BearTrap) == 1 && Cfg.CraftTier(Item.Ladder) == 1 && Cfg.CraftTier(Item.LargeGate) == 1 && Cfg.CraftTier(Item.AutoTurret) == 2,
-                "the bag, trap, ladder and gate are Trade Station items, the turret an Advanced one");
+            Check(Cfg.CraftIndexOf(Item.SleepingBag) < 0 && Cfg.CraftIndexOf(Item.BearTrap) < 0 && Cfg.CraftTier(Item.Ladder) == 1 && Cfg.CraftTier(Item.LargeGate) == 1 && Cfg.CraftTier(Item.AutoTurret) == 2,
+                "the bag and trap are out for now; the ladder and gate are Trade Station items, the turret an Advanced one");
             {
                 var crate = NetGame.RollAirdropCrate();
                 bool boom = crate.Count == 3 && (crate[0].Id == Item.C4 || crate[0].Id == Item.RocketLauncher || crate[0].Id == Item.BombBush);

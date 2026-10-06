@@ -63,7 +63,7 @@ namespace RockGame
         /// (a kill marker when this hit takes its last health). Not the horse you're riding (you can't hurt it).</summary>
         public static void AnimalHit(Vehicle v, Vector3 point, float dmg, bool headCounts = true)
         {
-            if (v == null || !v.IsSpawned || !(v.IsHorse || v.IsSlender) || v.Hp.Value <= 0f || dmg <= 0f) return;
+            if (v == null || !v.IsSpawned || !(v.IsHorse || v.IsSlender || v.IsDummy) || v.Hp.Value <= 0f || dmg <= 0f) return; // (a training dummy too: hit like a player)
             var me = PlayerNet.Local;
             if (me != null && v.HasDriver && v.DriverId.Value == me.NetworkObjectId) return;
             bool head = headCounts && v.HeadMul(point) > 1f;
@@ -214,6 +214,8 @@ namespace RockGame
 
         /// <summary>(tests) draw nothing (the map pictures).</summary>
         public static bool TestHideAll;
+        /// <summary>(tests) show the end countdown on this second (-1: as the game says).</summary>
+        public static int TestCountdown = -1;
 
         void OnGUI()
         {
@@ -464,13 +466,7 @@ namespace RockGame
             float bage = Time.time - s_BannerTime;
             if (bage < 4f && game != null && game.S != GameState.GameOver && !game.FightFrozen && !(game.S == GameState.BallLive && game.TimeLeft <= 10f)) // (not over the final countdown)
             {
-                float a = Mathf.Clamp01(4f - bage);
-                var st = new GUIStyle(m_Big);
-                st.normal.textColor = new Color(1, 0.9f, 0.4f, a);
-                GUI.Label(new Rect(0, sh * 0.22f, sw, 60 * k), s_BannerTitle, st);
-                var st2 = new GUIStyle(m_Center);
-                st2.normal.textColor = new Color(1, 1, 1, a);
-                GUI.Label(new Rect(0, sh * 0.22f + 55 * k, sw, 30 * k), s_BannerSub, st2);
+                DrawBannerFx(s_BannerTitle, s_BannerSub, bage, k); // (animated: Hud.Notify.cs)
             }
             if (notifLayer) UiLook.EndNotif(notifPrev);
 
@@ -717,6 +713,13 @@ namespace RockGame
                 : FlightView(kind, index, s);
             DrawSlotVisual(r, shown, selected, me, LandPop(kind, index));
             if (hover) { Fill(r, new Color(1, 1, 1, 0.08f)); if (!s.Empty) SetHover(s, me.Team.Value); }
+            // the drop key over an item in the bag (or an open chest): one of it goes on the ground
+            if (hover && !s.Empty && !m_Dragging && e.type == EventType.KeyDown && e.keyCode != KeyCode.None && (e.keyCode == Binds.Get(Bind.Drop) || e.keyCode == Binds.Get(Bind.Drop, true)))
+            {
+                me.DropItemRpc(kind, (byte)index, 1, LootRef(pc));
+                Sfx.Play2D(Sfx.Throw, 0.35f);
+                e.Use();
+            }
 
             // Shift+drag: every slot the pointer passes over is shift-clicked, once each (Hud.Sweep below)
             if (m_Sweeping && e.type == EventType.MouseDrag && e.shift && !s.Empty && SweepCrosses(r, e.mousePosition)) SweepSlot(kind, index, me, pc);
@@ -1238,6 +1241,7 @@ namespace RockGame
         void DrawCountdowns(NetGame game, int myTeam)
         {
             float sw = Screen.width, sh = Screen.height, k = m_Scale;
+            if (TestCountdown >= 0) { DrawEndCountdown(TestCountdown, 1f - Mathf.Repeat(Time.time, 1f), "YOU WIN IN", false, k); return; } // (tests)
             if (game == null) return;
             int sock = Ball.Instance != null ? Ball.Instance.SocketTeam.Value : -1;
             if (game.S == GameState.BallLive && game.TimeLeft <= 10f && (game.TimeLeft > 0f || sock < 0))
@@ -1245,14 +1249,9 @@ namespace RockGame
                 int n = Mathf.CeilToInt(game.TimeLeft);
                 float frac = n == 0 ? 1f : game.TimeLeft - Mathf.Floor(game.TimeLeft);
                 if (n != m_LastCount) { m_LastCount = n; Sfx.Play2D(n <= 3 ? Sfx.Ding : Sfx.Beep, n <= 3 ? 0.9f : 0.6f, 0f); Fx.Shake(0.08f + (10 - n) * 0.02f); }
-                // (no coloured border round the screen - just the words and the number)
+                // (no coloured border round the screen - the number, its glow and shockwave, the label, the pips: Hud.Notify.cs)
                 string label = sock < 0 ? (Cfg.UseOvertime && !Cfg.Builder ? "OVERTIME IN" : "SUDDEN DEATH IN") : sock == myTeam ? "YOU WIN IN" : $"{Cfg.TeamName[sock]} WINS IN";
-                var st = new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt(30 * k) };
-                st.normal.textColor = new Color(1f, 0.9f, 0.85f, 0.95f);
-                GUI.Label(new Rect(0, sh * 0.2f, sw, 40 * k), label, st);
-                var big = new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt((150f + (1f - frac) * 60f) * k) };
-                big.normal.textColor = sock < 0 ? new Color(1f, 0.2f, 0.15f, 0.55f + frac * 0.4f) : new Color(1f, 0.9f, 0.3f, 0.55f + frac * 0.4f);
-                GUI.Label(new Rect(0, sh * 0.24f, sw, 220 * k), n.ToString(), big);
+                DrawEndCountdown(n, frac, label, sock < 0, k);
                 return;
             }
             string word = FightWord(game, out float t);

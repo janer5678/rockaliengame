@@ -140,6 +140,7 @@ namespace RockGame
             {
                 Local = this;
                 SendMyName(); // (the name typed on the main menu: PlayerNet.Identity.cs)
+                SetHatRpc((byte)Cosmetics.MyHat); // (the hat picked in the lobby: Cosmetics.cs)
                 Art.SetLayerShadowsOnly(m_VisualRoot.gameObject);
             }
             name = $"Player {OwnerClientId}";
@@ -519,7 +520,7 @@ namespace RockGame
         float m_NextOutlineRefresh;
 
         /// <summary>The team's glow material, kept in step with the strength / width settings.</summary>
-        static Material OutlineMat(int team)
+        internal static Material OutlineMat(int team)
         {
             team = Mathf.Clamp(team, 0, 3);
             if (s_OutlineMats[team] == null)
@@ -637,9 +638,9 @@ namespace RockGame
             bool dead = Dead.Value;
             if (!IsOwner) RemoteSounds(dead);
             if (IsServer) { ServerTickCraft(); ServerTickBaseRegen(); ServerTickBleed(); ServerTickPing(); }
-            if (dead && !m_WasDead) m_DeadSince = Time.time;
+            if (dead && !m_WasDead) { m_DeadSince = Time.time; SpawnRagdoll(); }
             m_WasDead = dead;
-            // the dead leave no body: it's gone the moment they die - just the gravestone where they fell (GraveFx)
+            // the dead leave no body of their own: it drops as a ragdoll (Ragdoll.cs) and the real one is hidden
             bool showBody = !dead;
             if (!IsOwner && Hidden && !dead) showBody = false; // invisibility potion
             // tree camo: everyone else sees a tree where you stand
@@ -733,6 +734,7 @@ namespace RockGame
             // tree camo: a real tree never turns, so the disguise keeps one fixed facing while you look around
             if (m_Tree) { m_Tree.transform.rotation = TreeCamoRotation; TreeHop(Time.deltaTime); }
             if (m_Anim == null || !m_VisualRoot.gameObject.activeSelf) return;
+            TickHat(); // (Cosmetics.cs)
             var item = m_HandItemId;
             m_Anim.Tick(new BodyAnimator.Pose
             {
@@ -892,8 +894,7 @@ namespace RockGame
                 d.y = Mathf.Max(d.y, 0f);
                 Fx.Server(FxKind.BloodKill, BleedPos, d.sqrMagnitude > 0.01f ? d.normalized : Vector3.up);
             }
-            // a gravestone where you fell (stays for the rest of the match)
-            if (NetGame.Instance != null) NetGame.Instance.ServerAddGrave(transform.position, transform.eulerAngles.y + 180f, Team.Value);
+            // (no gravestone any more: the body drops as a ragdoll on every screen - SpawnRagdoll)
             if (CarryingBall) Ball.Instance.ServerDrop(transform.position + Vector3.up * 1.5f, Vector3.up * 3f);
             InvisUntil.Value = -1;
             ServerDismount();
@@ -940,9 +941,14 @@ namespace RockGame
             float yaw;
             if (wild) NetGame.WildSpawnPoint(Team.Value, out pos, out yaw);
             else NetGame.SpawnPoint(Team.Value, InWaitingArena, Slot.Value, out pos, out yaw);
+            // Bedwars: back home you wake up inside your machine's cryochamber, and its doors slide open to let you out
+            Vector3 podPos = default; float podYaw = 0f;
+            bool pod = !wild && !InWaitingArena && CryoSpot(out podPos, out podYaw);
+            if (pod) { pos = podPos; yaw = podYaw; }
             TeleportRpc(pos, yaw);
             Dead.Value = false;
-            Fx.Server(FxKind.Spawn, pos, Vector3.up);
+            if (pod) CryoWakeRpc();
+            else Fx.Server(FxKind.Spawn, pos, Vector3.up);
             // game option: come back with a random airdrop item
             if (Cfg.RespawnLoot && !InWaitingArena)
             {
@@ -950,6 +956,31 @@ namespace RockGame
                 ServerGive(loot.Id, loot.Count, loot.Data);
                 Notify($"Respawn loot: {Cfg.ItemName(loot.Id)}");
             }
+        }
+
+        /// <summary>Bedwars: where you stand inside your team's cryochamber (false: not Bedwars, its machine's gone, or
+        /// something's in the way - then you come back at the usual spot).</summary>
+        bool CryoSpot(out Vector3 pos, out float yaw)
+        {
+            pos = default; yaw = 0f;
+            var g = NetGame.Instance;
+            int t = Team.Value;
+            if (!Cfg.Bedwars || g == null || t < 0 || t >= Machine.ByTeam.Length || Machine.ByTeam[t] == null || g.MachineDown(t)) return false;
+            pos = Cfg.SocketPos(t) - Vector3.up * 0.64f + Vector3.up * 0.3f;
+            yaw = Quaternion.LookRotation(-Cfg.BackDir(t)).eulerAngles.y;
+            foreach (var c in Physics.OverlapCapsule(pos + Vector3.up * 0.45f, pos + Vector3.up * 1.6f, 0.3f, ~(1 << HitboxLayer), QueryTriggerInteraction.Ignore))
+                if (!c.transform.IsChildOf(transform)) return false;
+            return true;
+        }
+
+        /// <summary>Every screen: this player just woke in their cryochamber - its release plays (Machine.PlayRelease); the
+        /// player themselves is held in it until the doors open.</summary>
+        [Rpc(SendTo.ClientsAndHost)]
+        void CryoWakeRpc()
+        {
+            int t = Team.Value;
+            if (t >= 0 && t < Machine.ByTeam.Length && Machine.ByTeam[t] != null) Machine.ByTeam[t].PlayRelease();
+            if (IsOwner && PlayerController.Local != null) PlayerController.Local.HoldStill(Machine.PodHold + 0.15f);
         }
 
         [Rpc(SendTo.Server)]
@@ -1599,7 +1630,8 @@ namespace RockGame
             else if (kind == Item.BearTrap) { c = new Vector3(0, 0.1f, 0); half = new Vector3(0.3f, 0.06f, 0.3f); }
             else if (kind == Item.Ladder) { c = new Vector3(0, 0.6f, 0); half = new Vector3(0.35f, 0.45f, 0.12f); } // (just its foot: it leans on the wall)
             else if (kind == Item.AutoTurret) { c = new Vector3(0, 0.65f, 0); half = new Vector3(0.4f, 0.55f, 0.4f); }
-            else { c = new Vector3(0, 2.1f, 0); half = new Vector3(2.7f, 1.85f, 0.2f); } // the large wall and gate (5.5 m wide, 4 m tall)
+            else if (kind == Item.LargeGate) { c = new Vector3(0, 2.45f, 0); half = new Vector3(Structure.GatePostX + 0.2f, 2.2f, 0.2f); } // the large gate (5.4 m wide, 4.9 m tall)
+            else { c = new Vector3(0, 2.1f, 0); half = new Vector3(2.7f, 1.85f, 0.2f); } // the large wall (5.5 m wide, 4 m tall)
             foreach (var h in Physics.OverlapBox(pos + rot * c, half, rot, ~0, QueryTriggerInteraction.Ignore))
             {
                 if (h.GetComponentInParent<GroundMarker>() != null || h.GetComponentInParent<PlayerNet>() != null) continue;
@@ -1641,7 +1673,7 @@ namespace RockGame
             if (kind != Item.Chest && kind != Item.Barrier && kind != Item.Car && !Workbench.IsBench(kind) && kind != Item.Boat /* THEME MAPS */ && !IsPlaceable(kind)) return;
             if (Dead.Value || CarryingBall || HeldItem != kind || InSuddenDeath) return;
             if (!Tutorial.AllowsFor(this, TutFeature.Deploy)) return;
-            if (Vector3.Distance(pos, transform.position) > Cfg.DeployRange + 3f) return;
+            if (Vector3.Distance(pos, transform.position) > Cfg.DeployRange + 3f + (kind == Item.Barrier || kind == Item.LargeGate ? Cfg.BigWallReachExtra + 1.5f : 0f)) return;
             if (!FindDeploySpot(kind, Team.Value, ref pos, yaw, out var problem)) { Notify(problem); return; }
             ServerConsumeHeld();
             var rot = Quaternion.Euler(0, yaw, 0);
@@ -1927,7 +1959,7 @@ namespace RockGame
             if (Dead.Value || !target.TryGet(out var no) || !no.TryGetComponent(out Structure s)) return;
             if (!s.HasDoor) return; // (doorways and large gates; a door broken off: the gap just stands open)
             if (s.Team.Value != Team.Value) { Notify("This door is locked"); return; }
-            if (Vector3.Distance(s.transform.position, transform.position) > Cfg.InteractRange + 3f) return;
+            if (Vector3.Distance(s.transform.position, transform.position) > Cfg.InteractRange + 3f + (s.PType == PieceType.Gate ? Cfg.GateReachExtra : 0f)) return; // (a large gate from further off)
             s.DoorOpen.Value = !s.DoorOpen.Value;
         }
 

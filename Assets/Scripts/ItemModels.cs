@@ -14,7 +14,7 @@ namespace RockGame
         public static readonly Color HardWood = new Color(0.24f, 0.15f, 0.08f);
         /// <summary>The hatchet's blade: the hard wood a little lighter and greyer (in the hard wood's own red-brown it
         /// looked like a bronze axe head; a pale weathered grey-brown now, well clear of bronze).</summary>
-        public static readonly Color HatchetHead = new Color(0.52f, 0.48f, 0.43f);
+        public static readonly Color HatchetHead = new Color(0.45f, 0.28f, 0.13f); // (a hard, dark wood: no stone in it)
 
         /// <summary>The up arrow on the base upgrades' models (Fortify, Wood Gen): the orangey upgrade colour, or - while
         /// ItemIcons renders a team's copy of their icons for the UPGRADES screen - a light shade of that team's colour.</summary>
@@ -85,8 +85,12 @@ namespace RockGame
                     Art.Box(t, new Color(0.72f, 0.55f, 0.32f), new Vector3(0, 0.25f, 0), new Vector3(0.05f, 0.62f, 0.05f));
                     Art.Box(t, hard * 0.85f, new Vector3(0, 0.02f, 0), new Vector3(0.06f, 0.14f, 0.06f));
                     Art.Box(t, HatchetHead, new Vector3(0, 0.5f, 0.12f), new Vector3(0.035f, 0.2f, 0.2f));
-                    Art.Box(t, HatchetHead * 1.3f, new Vector3(0, 0.5f, 0.23f), new Vector3(0.03f, 0.26f, 0.04f));
+                    for (int g = 0; g < 3; g++) // (the wood's grain along the blade)
+                        Art.Box(t, HatchetHead * 0.78f, new Vector3(0, 0.44f + g * 0.06f, 0.12f), new Vector3(0.037f, 0.008f, 0.19f));
+                    Art.Box(t, new Color(0.7f, 0.52f, 0.3f), new Vector3(0, 0.5f, 0.23f), new Vector3(0.03f, 0.26f, 0.04f)); // (the whittled edge, paler)
                     Art.Box(t, hard * 0.85f, new Vector3(0, 0.5f, 0.0f), new Vector3(0.07f, 0.1f, 0.07f));
+                    for (int g = 0; g < 3; g++) // (rope lashing the blade on)
+                        Art.Box(t, new Color(0.62f, 0.5f, 0.32f), new Vector3(0, 0.46f + g * 0.04f, 0.01f), new Vector3(0.075f, 0.014f, 0.075f), new Vector3(0, 0, g * 8f - 8f));
                     break;
                 }
                 case Item.Pickaxe:

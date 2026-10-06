@@ -351,8 +351,7 @@ namespace RockGame
                             int inArena = 0;
                             foreach (var gr in g.Graves) if (Vector3.Distance(gr.Pos, Cfg.ArenaCenter) < 60f) inArena++;
                             yield return null;
-                            Check(g.Graves.Count >= 2 && inArena >= 2 && GraveFx.Shown == g.Graves.Count,
-                                $"graves synced ({(g.IsServer ? "host" : "client")}): {g.Graves.Count} graves, {inArena} in the arena, {GraveFx.Shown} drawn");
+                            Check(g.Graves.Count == 0, $"no graves any more ({(g.IsServer ? "host" : "client")}: the dead drop as ragdolls)");
                         }
                         // won with the ball in the socket: the victory cutscene plays first, and only then the victory screen
                         if (g.CutsceneAt.Value >= 0)

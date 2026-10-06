@@ -276,11 +276,11 @@ namespace RockGame
                 GUILayout.Label("<color=#bbbbbb>Outlines: dark ink lines round things and along sharp folds, fading with distance. Ambient occlusion: deeper soft shadows in corners, creases and under things. Distance haze: far things fade into a pale sky colour. Depth of field: far away goes softly out of focus. Film grain: fine animated noise. Chromatic aberration: a hint of colour fringing towards the edges. Sharpen: crisper edges. Cel banding: the light falls in a few flat steps, like a cartoon.</color>", m_SmallWrap);
             }
             else if (defaults) for (int i = 0; i < GameSettings.PostExtraCount; i++) GameSettings.SetPostExtra((GameSettings.PostExtra)i, DisplayDefaults.PostExtraOn(i), DisplayDefaults.PostExtraStrength(i));
-            if (defaults) { GameSettings.ResetHandsLook(); GameSettings.ResetNotifLook(); }
+            if (defaults) { GameSettings.ResetHandsLook(); GameSettings.ResetNotifLook(); GameSettings.ResetMenuPost(); }
             if (on) DrawLayerLooks();
         }
 
-        bool m_HandsLooksOpen, m_NotifLooksOpen;
+        bool m_HandsLooksOpen, m_NotifLooksOpen, m_MenuLooksOpen;
         /// <summary>(tests) fold the hands' and the notifications' own looks open in Settings > Display.</summary>
         public static void OpenLayerLooks(bool open) { if (s_I != null) { s_I.m_HandsLooksOpen = open; s_I.m_NotifLooksOpen = open; } }
 
@@ -303,6 +303,27 @@ namespace RockGame
                 GUILayout.BeginHorizontal();
                 GUILayout.Label("<color=#bbbbbb>Your first-person hands and whatever they hold, with their own ink outlines, cel shading and colour instead of the world's.</color>", m_SmallWrap);
                 if (Btn("Defaults", GUILayout.Width(100 * k), GUILayout.Height(28 * k))) GameSettings.ResetHandsLook();
+                GUILayout.EndHorizontal();
+            }
+            // ---- the main menu's cutscene ----
+            if (FoldRow("MAIN MENU CUTSCENE", ref m_MenuLooksOpen, GameSettings.MenuOwn))
+            {
+                void Row(string name, DisplayPref.Bool on, DisplayPref.Float s)
+                {
+                    float v = s.Value;
+                    bool o = EffectRow(name, on.Value, ref v);
+                    on.Set(o); s.Set(Mathf.Round(v * 20f) / 20f);
+                }
+                Row("Bloom", GameSettings.MenuBloom, GameSettings.MenuBloomStrength);
+                Row("Vignette", GameSettings.MenuVignette, GameSettings.MenuVignetteStrength);
+                Row("Colour grading", GameSettings.MenuGrading, GameSettings.MenuGradingStrength);
+                Row("Outlines", GameSettings.MenuOutlines, GameSettings.MenuOutlinesStrength);
+                Row("Cel banding", GameSettings.MenuCel, GameSettings.MenuCelStrength);
+                Row("Film grain", GameSettings.MenuGrain, GameSettings.MenuGrainStrength);
+                Row("Chromatic aberration", GameSettings.MenuChromatic, GameSettings.MenuChromaticStrength);
+                GUILayout.BeginHorizontal();
+                GUILayout.Label("<color=#bbbbbb>The post processing on the main menu's UFO cutscene only - the game keeps the settings above.</color>", m_SmallWrap);
+                if (Btn("Defaults", GUILayout.Width(100 * k), GUILayout.Height(28 * k))) GameSettings.ResetMenuPost();
                 GUILayout.EndHorizontal();
             }
             // ---- notifications ----

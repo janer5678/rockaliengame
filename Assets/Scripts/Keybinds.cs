@@ -11,6 +11,7 @@ namespace RockGame
         PushToTalk,
         Scoreboard,
         Hotbar1, Hotbar2, Hotbar3, Hotbar4, Hotbar5, Hotbar6,
+        Drop,
     }
 
     /// <summary>Key bindings: a main key and an optional second key per action, saved on this PC.</summary>
@@ -39,6 +40,7 @@ namespace RockGame
             new Info { Bind = Bind.Aim, Group = "ACTIONS", Label = "Aim / eat", Hint = "eat, aim the crossbow / sniper; hold + Attack throws a spear", Main = KeyCode.Mouse1 },
             new Info { Bind = Bind.Interact, Group = "ACTIONS", Label = "Interact", Hint = "ball, doors, chests, bushes, items, horses, cars", Main = KeyCode.E },
             new Info { Bind = Bind.Inventory, Group = "ACTIONS", Label = "Inventory & crafting", Hint = "crafting works in your base (spears & hatchets anywhere); a tap of the scoreboard key opens it too", Main = KeyCode.I },
+            new Info { Bind = Bind.Drop, Group = "ACTIONS", Label = "Drop item", Hint = "drops one of what you're holding - or, in the bag, of the item under the mouse", Main = KeyCode.Q },
             new Info { Bind = Bind.Scoreboard, Group = "ACTIONS", Label = "Bag (tap) / scoreboard (hold)", Hint = "tap: the bag, like the inventory key · hold: every player, kills, deaths, ping - and a MESSAGE button to whisper to one", Main = KeyCode.Tab },
 
             new Info { Bind = Bind.Rotate, Group = "BUILDING  (holding the building plan)", Label = "Rotate", Hint = "turns stairs · hold Aim for the building wheel", Main = KeyCode.R },
@@ -55,7 +57,7 @@ namespace RockGame
             new Info { Bind = Bind.Hotbar6, Group = "HOTBAR", Label = "Slot 6", Main = KeyCode.Alpha6 },
         };
 
-        const int Count = (int)Bind.Hotbar6 + 1;
+        const int Count = (int)Bind.Drop + 1;
         const string SlideMigrateKey = "RockGame.Keys.SlideSplit";
         const string ScoreboardMigrateKey = "RockGame.Keys.ScoreboardTab";
         static readonly KeyCode[] s_Main = new KeyCode[Count], s_Alt = new KeyCode[Count];

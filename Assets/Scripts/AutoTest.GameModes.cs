@@ -56,6 +56,27 @@ namespace RockGame
             }
             else if (Cfg.Bedwars)
             {
+                // respawning: you wake up inside the machine's cryochamber, held for a moment, then its doors open
+                {
+                    me.DevRpc(DevCmd.KillMe);
+                    yield return new WaitForSeconds(0.4f);
+                    float podUntil = Time.time + Cfg.RespawnTime + 4f;
+                    while (me.Dead.Value && Time.time < podUntil) yield return null;
+                    if (me.Dead.Value) me.ServerRespawn(false);
+                    yield return new WaitForSeconds(0.25f);
+                    var pod = Cfg.SocketPos(team) - Vector3.up * 0.34f;
+                    float off = new Vector2(me.transform.position.x - pod.x, me.transform.position.z - pod.z).magnitude;
+                    Check(!me.Dead.Value && off < 1.2f, $"Bedwars: respawned inside the cryochamber ({off:0.00} m from its middle)");
+                    yield return Shot("gamemode_bedwars_pod_inside");
+                    var p0 = me.transform.position;
+                    Binds.TestHold(Bind.Forward, true);
+                    yield return new WaitForSeconds(0.4f);
+                    Check(Vector3.Distance(me.transform.position, p0) < 0.2f, "held in the pod until its doors open");
+                    yield return new WaitForSeconds(1.2f);
+                    Binds.TestReleaseAll();
+                    Check(Vector3.Distance(me.transform.position, p0) > 0.6f, $"...then you walk out ({Vector3.Distance(me.transform.position, p0):0.0} m)");
+                    yield return Shot("gamemode_bedwars_pod_out");
+                }
                 var m = Cfg.MachinePos(enemy) + Vector3.up * 1.5f;
                 g.ServerMaybeHitMachine(m, me, false);
                 yield return new WaitForSeconds(0.6f);

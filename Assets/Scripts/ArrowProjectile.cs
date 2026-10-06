@@ -206,6 +206,13 @@ namespace RockGame
                 Destroy(gameObject);
                 return;
             }
+            // the energy wall: it doesn't stick - it's zapped to nothing in a crackle and a ripple of light
+            if ((no == null || no.GetComponent<PlayerNet>() == null) && EnergyWall.Hit(h.collider, h.point, h.normal))
+            {
+                if (m_Whoosh) m_Whoosh.Stop();
+                Destroy(gameObject);
+                return;
+            }
             m_Stuck = true;
             if (m_Whoosh) m_Whoosh.Stop();
             bool player = no != null && no.GetComponent<PlayerNet>() != null;

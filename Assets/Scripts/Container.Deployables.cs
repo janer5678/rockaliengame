@@ -43,7 +43,10 @@ namespace RockGame
         /// <summary>A bear trap: the damage when it snaps, how long it holds you, and how long until it's set again.</summary>
         [Tune("Crafting")] public static float BearTrapDamage = 30f, BearTrapHold = 3.5f, BearTrapRearm = 3f; // (rearm: seconds after it lets you go)
         /// <summary>The auto turret: how far it sees, and its cone either side of where it faces (degrees).</summary>
-        [Tune("Crafting")] public static float TurretRange = 32f, TurretCone = 32f; // (half as wide as it was)
+        [Tune("Crafting")] public static float TurretRange = 24f, TurretCone = 32f; // (half as wide as it was; a bit shorter)
+        /// <summary>How fast a turret's aim catches up with where its target is (1/s: lower = it lags further behind
+        /// someone on the move), and how much wider it sprays at a moving target (degrees per m/s).</summary>
+        [Tune("Crafting")] public static float TurretTrack = 2.6f, TurretMovingSpread = 0.7f;
     }
 
     /// <summary>
@@ -61,8 +64,10 @@ namespace RockGame
     /// </summary>
     public static class Deployables
     {
-        public const byte FxSnap = 1, FxWarn = 2, FxShot = 3, FxHum = 4;
+        public const byte FxSnap = 1, FxWarn = 2, FxShot = 3, FxHum = 4, FxArrow = 5, FxBolt = 6, FxSpear = 7;
         public const float LadderHeight = 2.4f; // (half what it was: you put it as high up the wall as you aim)
+        /// <summary>Put against a wall while not square on to it, a ladder turns this far your way at most (degrees).</summary>
+        public const float LadderMaxTurn = 30f;
 
         public static float CenterUp(byte kind) => kind == Container.SleepBag ? 0.2f : kind == Container.Trap ? 0.15f : kind == Container.Ladder ? 1.4f : 0.9f;
         public static float MaxHp(byte kind) => kind == Container.SleepBag ? 100f : kind == Container.Trap ? 150f : kind == Container.Ladder ? 250f : 500f;
@@ -201,7 +206,7 @@ namespace RockGame
 
         // ------------------------------------------------------------------ alive
 
-        class TurretState { public PlayerNet Target; public float WarnedAt = -10f, NextShot, NextScan, NextHum; public Vector2 Aim; public Item Shown = Item.None; public Transform Model; }
+        class TurretState { public PlayerNet Target; public float WarnedAt = -10f, NextShot, NextScan, NextHum; public Vector2 Aim; public Item Shown = Item.None; public Transform Model; public Vector3 Track, LastPos; public float Speed; }
         static readonly Dictionary<Container, TurretState> s_Turrets = new Dictionary<Container, TurretState>();
         static readonly Dictionary<Container, float> s_TrapSprung = new Dictionary<Container, float>();
 
@@ -252,7 +257,7 @@ namespace RockGame
                             }
                         }
                     }
-                    if (c.IsServer) ServerTurret(c, st);
+                    if (c.IsServer) { ServerTurret(c, st); ServerTickFlying(); }
                     break;
                 }
             }
@@ -329,8 +334,19 @@ namespace RockGame
                     if (best != null) { st.WarnedAt = Time.time; c.DeployFxRpc(FxWarn, eye); } // (a loud warning before it opens up)
                 }
             }
-            // aim: at the target (in the turret's own space), or back to straight ahead
-            var aimTo = st.Target != null ? c.transform.InverseTransformDirection(st.Target.transform.position + Vector3.up * 1.1f - eye) : Vector3.forward;
+            // aim: at where it thinks the target is - a point that follows them but lags behind (someone on the move
+            // is hard for it to hit) - in the turret's own space, or back to straight ahead
+            if (st.Target != null)
+            {
+                var tp = st.Target.transform.position + Vector3.up * 1.1f;
+                float dtt = Mathf.Max(Time.deltaTime, 0.0001f);
+                st.Speed = Mathf.Lerp(st.Speed, new Vector2(tp.x - st.LastPos.x, tp.z - st.LastPos.z).magnitude / dtt, 1f - Mathf.Exp(-6f * dtt));
+                if ((st.Track - tp).sqrMagnitude > 400f || st.LastPos == Vector3.zero) st.Track = tp;
+                st.Track = Vector3.Lerp(st.Track, tp, 1f - Mathf.Exp(-Cfg.TurretTrack * dtt));
+                st.LastPos = tp;
+            }
+            else { st.LastPos = Vector3.zero; st.Speed = 0f; }
+            var aimTo = st.Target != null ? c.transform.InverseTransformDirection(st.Track - eye) : Vector3.forward;
             var want = new Vector2(Mathf.Atan2(aimTo.x, aimTo.z) * Mathf.Rad2Deg, -Mathf.Atan2(aimTo.y, new Vector2(aimTo.x, aimTo.z).magnitude) * Mathf.Rad2Deg);
             st.Aim = new Vector2(Mathf.MoveTowardsAngle(st.Aim.x, want.x, 140f * Time.deltaTime), Mathf.MoveTowardsAngle(st.Aim.y, want.y, 90f * Time.deltaTime));
             if ((st.Aim - c.Aim.Value).sqrMagnitude > 1f) c.Aim.Value = st.Aim;
@@ -354,6 +370,19 @@ namespace RockGame
             st.NextShot = Time.time + every;
             var dir = c.transform.TransformDirection(Quaternion.Euler(st.Aim.y, st.Aim.x, 0) * Vector3.forward);
             var muzzle = eye + dir * 0.55f;
+            spread += Mathf.Min(st.Speed, 10f) * Cfg.TurretMovingSpread; // (a moving target: it sprays)
+            // a bow, crossbow or spear launches the real thing: it flies, drops and takes time to get there (ServerTickFlying)
+            if (w.Id == Item.Bow || w.Id == Item.Crossbow || w.Id == Item.Spear)
+            {
+                float speed = w.Id == Item.Crossbow ? Cfg.CrossbowSpeed : w.Id == Item.Spear ? Cfg.SpearThrowSpeed : Cfg.ArrowSpeed;
+                float grav = w.Id == Item.Crossbow ? Cfg.CrossbowGravity : w.Id == Item.Spear ? Cfg.SpearGravity : Cfg.ArrowGravity;
+                float dist = Vector3.Distance(st.Track, muzzle), tt = dist / speed;
+                var d = Quaternion.Euler(Random.Range(-spread, spread), Random.Range(-spread, spread), 0) * dir;
+                d = (d * dist + Vector3.up * 0.5f * grav * tt * tt).normalized; // (aimed a little high: it drops)
+                s_Flying.Add(new Flying { Pos = muzzle, Vel = d * speed, Dmg = dmg, Grav = grav, Until = Time.time + 4f, Team = c.Team.Value });
+                c.DeployFxRpc(w.Id == Item.Crossbow ? FxBolt : w.Id == Item.Spear ? FxSpear : FxArrow, d * speed);
+                return;
+            }
             for (int i = 0; i < pellets; i++)
             {
                 var d = Quaternion.Euler(Random.Range(-spread, spread), Random.Range(-spread, spread), 0) * dir;
@@ -370,6 +399,39 @@ namespace RockGame
                     }
                 }
                 if (i == 0) c.DeployFxRpc(FxShot, end);
+            }
+        }
+
+        /// <summary>A turret's arrow, bolt or spear in the air (server): it flies on, drops, and hurts what it hits.</summary>
+        class Flying { public Vector3 Pos, Vel; public float Dmg, Grav, Until; public int Team; }
+        static readonly List<Flying> s_Flying = new List<Flying>();
+        static int s_FlyFrame = -1;
+
+        /// <summary>Server, once a frame: every turret projectile in the air moves on and lands.</summary>
+        static void ServerTickFlying()
+        {
+            if (s_FlyFrame == Time.frameCount || s_Flying.Count == 0) return;
+            s_FlyFrame = Time.frameCount;
+            float dt = Time.deltaTime;
+            for (int i = s_Flying.Count - 1; i >= 0; i--)
+            {
+                var f = s_Flying[i];
+                var step = f.Vel * dt;
+                f.Vel += Vector3.down * f.Grav * dt;
+                if (Physics.Raycast(f.Pos, step, out var hit, step.magnitude, ~0, QueryTriggerInteraction.Ignore))
+                {
+                    var p = hit.collider.GetComponentInParent<PlayerNet>();
+                    if (p != null && p.Team.Value != f.Team && !p.Dead.Value) p.ServerDamage(f.Dmg, null, (byte)Item.AutoTurret);
+                    else
+                    {
+                        var s = hit.collider.GetComponentInParent<Structure>();
+                        if (s != null && s.Team.Value != f.Team) s.ServerDamageAt(f.Dmg * 0.3f, hit.point);
+                    }
+                    s_Flying.RemoveAt(i);
+                    continue;
+                }
+                f.Pos += step;
+                if (Time.time > f.Until) s_Flying.RemoveAt(i);
             }
         }
 
@@ -403,6 +465,17 @@ namespace RockGame
                     Sfx.Play(Sfx.Beep, at, 1f, 0f, 70f);
                     Sfx.Play(Sfx.Beep, at, 1f, 0f, 70f);
                     break;
+                case FxArrow: case FxBolt: case FxSpear:
+                {
+                    // the real projectile on every screen (just the look: the server says what it hits)
+                    var eye = c.transform.position + Vector3.up * 0.95f;
+                    var vel = at;
+                    var muzzle = eye + vel.normalized * 0.55f;
+                    Sfx.Play(Sfx.Twang, eye, 1f, 0.06f, 60f);
+                    if (what == FxSpear) ArrowProjectile.SpawnSpear(muzzle, vel, null, false);
+                    else ArrowProjectile.Spawn(muzzle, vel, null, false, what == FxBolt ? Cfg.CrossbowDamage : -1f);
+                    break;
+                }
                 case FxShot:
                 {
                     var eye = c.transform.position + Vector3.up * 0.95f;

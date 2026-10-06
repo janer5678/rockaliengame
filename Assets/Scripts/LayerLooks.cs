@@ -33,6 +33,60 @@ namespace RockGame
             HandsSaturation.Set(DisplayDefaults.HandsSaturation, save); HandsContrast.Set(DisplayDefaults.HandsContrast, save);
         }
 
+        // ---- the main menu's cutscene (the UFO in space: MenuSpace.cs) ----
+        const string GMenu = "MAIN MENU CUTSCENE";
+        /// <summary>The main menu's cutscene gets the post processing below instead of the world's.</summary>
+        public static readonly DisplayPref.Bool MenuOwn = new("menu.own", GMenu, false);
+        public static readonly DisplayPref.Bool MenuBloom = new("menu.bloom", GMenu, true);
+        public static readonly DisplayPref.Float MenuBloomStrength = new("menu.bloom.strength", GMenu, 0.6f, 0f, 1f);
+        public static readonly DisplayPref.Bool MenuVignette = new("menu.vignette", GMenu, true);
+        public static readonly DisplayPref.Float MenuVignetteStrength = new("menu.vignette.strength", GMenu, 0.4f, 0f, 1f);
+        public static readonly DisplayPref.Bool MenuGrading = new("menu.grading", GMenu, true);
+        public static readonly DisplayPref.Float MenuGradingStrength = new("menu.grading.strength", GMenu, 0.65f, 0f, 1f);
+        public static readonly DisplayPref.Bool MenuOutlines = new("menu.outlines", GMenu, true);
+        public static readonly DisplayPref.Float MenuOutlinesStrength = new("menu.outlines.strength", GMenu, 0.45f, 0f, 1f);
+        public static readonly DisplayPref.Bool MenuCel = new("menu.cel", GMenu, false);
+        public static readonly DisplayPref.Float MenuCelStrength = new("menu.cel.strength", GMenu, 0.5f, 0f, 1f);
+        public static readonly DisplayPref.Bool MenuGrain = new("menu.grain", GMenu, false);
+        public static readonly DisplayPref.Float MenuGrainStrength = new("menu.grain.strength", GMenu, 0.3f, 0f, 1f);
+        public static readonly DisplayPref.Bool MenuChromatic = new("menu.chromatic", GMenu, false);
+        public static readonly DisplayPref.Float MenuChromaticStrength = new("menu.chromatic.strength", GMenu, 0.5f, 0f, 1f);
+
+        /// <summary>The menu cutscene's own post processing is in use right now (switched on, and it's showing).</summary>
+        public static bool MenuPostNow => MenuOwn.Value && MenuSpace.Showing;
+
+        static float Amt(DisplayPref.Bool on, DisplayPref.Float s) => on.Value ? s.Value : 0f;
+        /// <summary>Bloom / vignette / grading strength in use now (0 = off): the menu cutscene's own while it's on, else the world's.</summary>
+        public static float BloomNow => MenuPostNow ? Amt(MenuBloom, MenuBloomStrength) : PostBloom ? PostBloomStrength : 0f;
+        public static float VignetteNow => MenuPostNow ? Amt(MenuVignette, MenuVignetteStrength) : PostVignette ? PostVignetteStrength : 0f;
+        public static float GradingNow => MenuPostNow ? Amt(MenuGrading, MenuGradingStrength) : PostGrading ? PostGradingStrength : 0f;
+        /// <summary>An extra look's strength in use now (0 = off): the menu cutscene has outlines, cel banding, film grain and
+        /// chromatic aberration of its own (and none of the others).</summary>
+        public static float ExtraNow(PostExtra e)
+        {
+            if (!MenuPostNow) return PostExtraAmount(e);
+            switch (e)
+            {
+                case PostExtra.Outlines: return Amt(MenuOutlines, MenuOutlinesStrength);
+                case PostExtra.CelBanding: return Amt(MenuCel, MenuCelStrength);
+                case PostExtra.FilmGrain: return Amt(MenuGrain, MenuGrainStrength);
+                case PostExtra.Chromatic: return Amt(MenuChromatic, MenuChromaticStrength);
+            }
+            return 0f;
+        }
+
+        public static void ResetMenuPost(bool save = true)
+        {
+            MenuOwn.Set(false, save);
+            MenuBloom.Set(true, save); MenuBloomStrength.Set(0.6f, save);
+            MenuVignette.Set(true, save); MenuVignetteStrength.Set(0.4f, save);
+            MenuGrading.Set(true, save); MenuGradingStrength.Set(0.65f, save);
+            MenuOutlines.Set(true, save); MenuOutlinesStrength.Set(0.45f, save);
+            MenuCel.Set(false, save); MenuCelStrength.Set(0.5f, save);
+            MenuGrain.Set(false, save); MenuGrainStrength.Set(0.3f, save);
+            MenuChromatic.Set(false, save); MenuChromaticStrength.Set(0.5f, save);
+        }
+
         // ---- notifications ----
         const string GNotif = "NOTIFICATIONS";
         /// <summary>The big notifications get the looks below (and skip the world's post processing).</summary>
