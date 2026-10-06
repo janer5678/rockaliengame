@@ -1576,11 +1576,11 @@ namespace RockGame
             var rot = Quaternion.Euler(0, yaw, 0);
             if (kind == Item.Barrier || kind == Item.LargeGate)
             {
-                // the whole 4 m wall stays out of the enemy base (not just its middle)...
+                // the whole 5.5 m wall stays out of the enemy base (not just its middle)...
                 if (!Cfg.Builder)
                     for (int e = -1; e <= 1; e += 2)
                     {
-                        int bt = Cfg.BaseTeamAt(pos + rot * new Vector3(e * 2.1f, 0, 0));
+                        int bt = Cfg.BaseTeamAt(pos + rot * new Vector3(e * 2.8f, 0, 0));
                         if (bt >= 0 && bt != team) return "Not in the enemy base";
                     }
                 // ...and away from the enemy's buildings, in every mode (no walling them in on their own foundations)
@@ -1599,7 +1599,7 @@ namespace RockGame
             else if (kind == Item.BearTrap) { c = new Vector3(0, 0.1f, 0); half = new Vector3(0.3f, 0.06f, 0.3f); }
             else if (kind == Item.Ladder) { c = new Vector3(0, 0.6f, 0); half = new Vector3(0.35f, 0.45f, 0.12f); } // (just its foot: it leans on the wall)
             else if (kind == Item.AutoTurret) { c = new Vector3(0, 0.65f, 0); half = new Vector3(0.4f, 0.55f, 0.4f); }
-            else { c = new Vector3(0, 2.7f, 0); half = new Vector3(1.95f, 2.45f, 0.2f); } // the high external wall
+            else { c = new Vector3(0, 2.1f, 0); half = new Vector3(2.7f, 1.85f, 0.2f); } // the large wall and gate (5.5 m wide, 4 m tall)
             foreach (var h in Physics.OverlapBox(pos + rot * c, half, rot, ~0, QueryTriggerInteraction.Ignore))
             {
                 if (h.GetComponentInParent<GroundMarker>() != null || h.GetComponentInParent<PlayerNet>() != null) continue;
@@ -1618,7 +1618,7 @@ namespace RockGame
         {
             problem = DeployProblem(kind, team, pos, yaw);
             if (problem == null) return true;
-            if (problem != "Not enough room here" || kind == Item.Boat) return false;
+            if (problem != "Not enough room here" || kind == Item.Boat || kind == Item.Ladder) return false; // (a ladder stays where it was aimed, up the wall)
             for (float r = 0.15f; r <= 0.71f; r += 0.14f)
                 for (int d = 0; d < 8; d++)
                 {
@@ -1697,7 +1697,19 @@ namespace RockGame
                     if (c.Team.Value != Team.Value) return;
                     var moving = srcKind == 1 ? (srcIdx < c.Slots.Count ? c.Slots[srcIdx] : default) : (srcIdx < Inv.Count ? Inv[srcIdx] : default);
                     if (dstKind == 1 && dstIdx == 0 && !Deployables.TurretWeapon(moving.Id)) { Notify("The turret's first slot takes a ranged weapon or a spear"); return; }
-                    if (dstKind == 1 && dstIdx == 255) return; // (no shift-click: put each in its own slot)
+                    if (srcKind == 0 && dstIdx == 255)
+                    {
+                        // shift-click from the bag: a weapon into the weapon slot (if it's free), anything else into the ammo slot
+                        if (srcIdx >= Inv.Count || c.Slots.Count < 2 || moving.Empty) return;
+                        int to = Deployables.TurretWeapon(moving.Id) && c.Slots[0].Empty ? 0 : (c.Slots[1].Empty || c.Slots[1].Id == moving.Id) ? 1 : -1;
+                        if (to < 0) { Notify("The turret's slots are full"); return; }
+                        var there = c.Slots[to];
+                        int fit = there.Empty ? moving.Count : Mathf.Min(moving.Count, Cfg.MaxStack(moving.Id) - there.Count);
+                        if (fit <= 0) return;
+                        c.Slots[to] = there.Empty ? moving.WithCount(fit) : there.WithCount(there.Count + fit);
+                        Inv[srcIdx] = moving.WithCount(moving.Count - fit);
+                        return;
+                    }
                 }
             }
             var src = srcKind == 1 ? c.Slots : Inv;

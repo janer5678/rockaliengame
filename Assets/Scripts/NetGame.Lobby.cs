@@ -33,14 +33,14 @@ namespace RockGame
 
         /// <summary>The ship lobby (ShipLobby.cs): the match starts once at least two players are in and every one of them
         /// has pressed READY (it needn't be full). The tests (Bootstrap.Testing) keep the old rule: a full lobby starts.</summary>
-        public static bool ReadyLobby => (!Bootstrap.Testing || TestLobby) && !Bootstrap.Solo && !Cfg.Tutorial;
+        public static bool ReadyLobby => (!Bootstrap.Testing || TestLobby) && !Bootstrap.Solo; // (the tutorial with a friend too)
         /// <summary>(tests: -autotest lobby) the ship lobby and READY, as in a real game.</summary>
         public static bool TestLobby;
 
         /// <summary>Server, every frame in the waiting stadium: true when the match should start now.</summary>
         bool ServerReadyToStart(int players, double now)
         {
-            if ((Bootstrap.Solo || Cfg.Tutorial) && players >= 1) return true;
+            if ((Bootstrap.Solo || (Cfg.Tutorial && !ReadyLobby)) && players >= 1) return true;
             bool ready = ReadyLobby;
             bool everyone = (ready ? players >= 2 : players >= Cfg.PlayersNeeded) && players >= Spectator.ServerPlayerClients(NetworkManager); // (spectators aren't waited for)
             if (everyone)

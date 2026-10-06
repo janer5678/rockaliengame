@@ -56,7 +56,7 @@ namespace RockGame
                 GUIUtility.systemCopyBuffer = string.IsNullOrEmpty(ip) ? "127.0.0.1" : ip;
                 m_CopiedAt = Time.time;
             }
-            if (boot.IsHostSession && FramedBtn(ref bx, by, bh, "GAME OPTIONS")) m_LobbyOptions = !m_LobbyOptions;
+            if (boot.IsHostSession && !Cfg.Tutorial && FramedBtn(ref bx, by, bh, "GAME OPTIONS")) m_LobbyOptions = !m_LobbyOptions;
 
             // team games: a JOIN button for each team, with how many are on it
             if (Cfg.TeamCount >= 2 && !Cfg.FreeForAll)

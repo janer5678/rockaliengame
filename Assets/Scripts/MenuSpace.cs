@@ -24,8 +24,8 @@ namespace RockGame
         static float s_OldFar, s_Start, s_Fade = 1f;
         const float StarBox = 700f, Cruise = 260f, LinesBox = 240f;
         static Transform s_Lines, s_Lines2;
-        static GameObject s_Tip;
         static float s_Travel;
+        static Vector3 s_Rattle;
         static readonly List<Transform> s_Exhaust = new List<Transform>();
         static readonly List<Vector3> s_ExhaustBase = new List<Vector3>();
 
@@ -95,7 +95,22 @@ namespace RockGame
                 float f = 1f + boost * 1.6f + Mathf.PerlinNoise(t * 9f, i * 3.7f) * 0.35f;
                 e.localScale = new Vector3(s_ExhaustBase[i].x * (0.9f + boost * 0.3f), s_ExhaustBase[i].y * f, s_ExhaustBase[i].z * (0.9f + boost * 0.3f));
             }
-            if (s_Tip) s_Tip.SetActive(Mathf.Repeat(t, 1f) < 0.5f);
+            // the meteor fire builds up over the first few seconds, then roars and flickers (hotter on a boost)
+            float heat = Mathf.Clamp01((t - 0.5f) / 4f) * (0.85f + 0.15f * Mathf.Sin(t * 1.7f)) * (1f + boost * 0.35f);
+            for (int i = 0; i < s_Fire.Count; i++)
+            {
+                var (ft, fb) = s_Fire[i];
+                if (ft == null) continue;
+                float n = Mathf.PerlinNoise(t * 14f, i * 2.3f);
+                float f = Mathf.Max(0.001f, heat * (0.85f + 0.3f * n));
+                ft.localScale = new Vector3(fb.x * f, fb.y * f * (0.8f + 0.5f * n), fb.z * f);
+            }
+            // it's going so fast it shakes: a hard rattle and the odd jolt
+            float jolt = Mathf.Pow(Mathf.Max(0f, Mathf.Sin(t * 2.3f)), 30f);
+            var rattle = new Vector3(Mathf.PerlinNoise(t * 23f, 1.3f) - 0.5f, Mathf.PerlinNoise(t * 27f, 7.1f) - 0.5f, Mathf.PerlinNoise(t * 19f, 3.7f) - 0.5f) * (0.7f + jolt * 2f);
+            ship.localPosition += rattle;
+            ship.localRotation *= Quaternion.Euler(rattle.y * 2.5f, rattle.x * 1.5f, rattle.z * 3f);
+            s_Rattle = rattle;
             // the star fields stream past fast (faster on a boost): two tiles, so there's never an edge
             s_Travel += Time.unscaledDeltaTime * Cruise * (1f + boost * 1.2f);
             float z = -(s_Travel % StarBox);
@@ -148,7 +163,9 @@ namespace RockGame
                     fov = 40f;
                     break;
             }
-            cam.transform.SetPositionAndRotation(pos, Quaternion.LookRotation(look - pos, Vector3.up));
+            // the camera shakes with it (a little less than the ship: it's riding alongside)
+            pos += s_Rattle * 0.35f;
+            cam.transform.SetPositionAndRotation(pos, Quaternion.LookRotation(look - pos, Vector3.up) * Quaternion.Euler(s_Rattle.y * 0.8f, s_Rattle.x * 0.8f, s_Rattle.z * 1.2f));
             cam.fieldOfView = fov;
         }
 
@@ -160,18 +177,12 @@ namespace RockGame
             s_Ship.Root.transform.SetParent(s_Root.transform, false);
             SmoothShadeHook.Add(s_Ship.Root, true);
             if (s_Ship.Spot) s_Ship.Spot.enabled = false;
-            // the paint job: a glowing pink band of segments round the rim and a ring of acid-green running lights on top
+            // the paint job: a glowing pink band of segments round the rim (the top stays plain metal and glass)
             for (int i = 0; i < 56; i++)
             {
                 float a = i * Mathf.PI * 2f / 56f;
                 var seg = Art.Box(s_Ship.Root.transform, Color.white, Vector3.Scale(new Vector3(Mathf.Sin(a) * 13.05f, 0.62f, Mathf.Cos(a) * 13.05f), 2f * Art.Sphere.bounds.extents), new Vector3(1.1f, 0.16f, 0.12f), new Vector3(0, a * Mathf.Rad2Deg + 90f, 0), false, Unlit(new Color(1f, 0.3f, 0.7f), 1.4f));
                 seg.GetComponent<Renderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            }
-            for (int i = 0; i < 16; i++)
-            {
-                float a = i * Mathf.PI * 2f / 16f;
-                var dot = Art.Part(s_Ship.Root.transform, Art.Sphere, Color.white, Vector3.Scale(new Vector3(Mathf.Sin(a) * 8.5f, 1.75f, Mathf.Cos(a) * 8.5f), 2f * Art.Sphere.bounds.extents), Vector3.one * 0.7f, default, false, Unlit(new Color(0.65f, 1f, 0.25f), 1.8f));
-                dot.GetComponent<Renderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             }
             // the stars: two tiles of a box of little glowing points, streaming past
             s_Stars = StarTile("stars");
@@ -179,6 +190,7 @@ namespace RockGame
             s_Lines = LinesTile("speed lines");
             s_Lines2 = LinesTile("speed lines 2");
             BuildDetail(s_Ship.Root.transform);
+            BuildDomeAndFire(s_Ship.Root.transform);
             // a ringed planet off to the side, and a nebula glow far behind it
             var planet = Art.Part(s_Root.transform, Art.Sphere, new Color(0.55f, 0.35f, 0.75f), new Vector3(-420f, -60f, 900f), Vector3.one * 360f);
             planet.GetComponent<Renderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
@@ -202,8 +214,8 @@ namespace RockGame
 
 
 
-        /// <summary>The ship's extra detail for the menu: panel seams round the hull, a ring of glowing portholes, an alien
-        /// at the controls under the dome, an antenna with a blinking tip, three engine pods out the back with long
+        /// <summary>The ship's extra detail for the menu: panel lines and hatches round the hull, glowing portholes, an
+        /// opaque paneled glass dome with ribs, three engine pods out the back with long
         /// flickering exhaust flames, and two swept fins.</summary>
         static void BuildDetail(Transform shipRoot)
         {
@@ -233,7 +245,6 @@ namespace RockGame
                 {
                     float r = 8.6f, y = HullY(r), slope = Mathf.Atan2(HullY(r + 0.3f) - HullY(r - 0.3f), 0.6f) * Mathf.Rad2Deg;
                     Art.Box(ship, hull * 1.25f, Quaternion.Euler(0, a + 7.5f, 0) * new Vector3(0, y + 0.1f, r), new Vector3(1.7f, 0.2f, 1.5f), new Vector3(-slope, a + 7.5f, 0));
-                    Art.Box(ship, Color.white, Quaternion.Euler(0, a + 7.5f, 0) * new Vector3(0, y + 0.2f, r + 0.62f), new Vector3(1.4f, 0.06f, 0.1f), new Vector3(-slope, a + 7.5f, 0), false, Unlit(new Color(0.45f, 0.95f, 1f), 1.8f));
                 }
             }
             for (int i = 0; i < 40; i++)
@@ -241,25 +252,12 @@ namespace RockGame
                 float a = i * 360f / 40f;
                 Art.Box(ship, dark * 1.4f, Quaternion.Euler(0, a, 0) * new Vector3(0, -0.45f, 12.2f), new Vector3(1.95f, 0.5f, 0.3f), new Vector3(20f, a, 0));
             }
-            // a glowing cyan ring of segments round the top, seen from anywhere above
-            for (int i = 0; i < 48; i++)
-            {
-                float a = i * 360f / 48f, r = 10.8f, y = HullY(r), slope = Mathf.Atan2(HullY(r + 0.3f) - HullY(r - 0.3f), 0.6f) * Mathf.Rad2Deg;
-                Art.Box(ship, Color.white, Quaternion.Euler(0, a, 0) * new Vector3(0, y + 0.08f, r), new Vector3(1.15f, 0.08f, 0.3f), new Vector3(-slope, a, 0), false, Unlit(new Color(0.4f, 0.95f, 1f), 1.6f));
-            }
             // portholes round the rim
             for (int i = 0; i < 28; i++)
             {
                 float a = i * Mathf.PI * 2f / 28f;
                 Art.Part(ship, Art.Sphere, Color.white, new Vector3(Mathf.Sin(a) * 12.5f, 0.6f, Mathf.Cos(a) * 12.5f), new Vector3(0.42f, 0.26f, 0.42f), default, false, Unlit(new Color(1f, 0.9f, 0.55f), 1.8f));
             }
-            // the pilot: an alien head and shoulders under the dome, lit green
-            Art.Part(ship, Art.Sphere, new Color(0.45f, 0.85f, 0.5f), new Vector3(0, 3.2f, 1.2f), new Vector3(1.4f, 1.7f, 1.4f));
-            Art.Part(ship, Art.Capsule, new Color(0.3f, 0.6f, 0.35f), new Vector3(0, 2.2f, 1.2f), new Vector3(1.8f, 0.8f, 1.2f));
-            for (int s = -1; s <= 1; s += 2) Art.Part(ship, Art.Sphere, Color.black, new Vector3(s * 0.35f, 3.3f, 1.8f), new Vector3(0.45f, 0.6f, 0.2f), new Vector3(0, 0, s * -25f));
-            // antenna with a blinking tip
-            Art.Part(ship, Art.Cylinder, dark, new Vector3(0, 5.6f, 0), new Vector3(0.12f / cr * 2f, 1.4f / ch * 2f, 0.12f / cr * 2f));
-            s_Tip = Art.Part(ship, Art.Sphere, Color.white, new Vector3(0, 7f, 0), Vector3.one * 0.45f, default, false, Unlit(new Color(1f, 0.25f, 0.3f), 2.5f));
             // swept fins at the back
             for (int s = -1; s <= 1; s += 2)
                 Art.Box(ship, hull * 0.9f, new Vector3(s * 7f, 1.6f, -11f), new Vector3(0.3f, 2.6f, 4.5f), new Vector3(-25f, s * 12f, s * 30f));
@@ -286,6 +284,61 @@ namespace RockGame
             l.type = LightType.Point; l.range = 30f; l.intensity = 3f; l.color = new Color(0.45f, 0.8f, 1f);
         }
 
+
+        static readonly List<(Transform t, Vector3 baseScale)> s_Fire = new List<(Transform, Vector3)>();
+
+        /// <summary>The dome as opaque, glossy paneled glass (not see-through): ribs up it, rings round it, a metal collar
+        /// at its foot. And the meteor fire at the front: glowing shells of heat piling up on the leading edge and flame
+        /// tongues streaming back round the rim (they build up and flicker: Animate).</summary>
+        static void BuildDomeAndFire(Transform ship)
+        {
+            var metal = new Color(0.22f, 0.24f, 0.28f);
+            // the ship's own dome (BuildShip: a sphere scaled 9 x 5 x 9 at y 2), now opaque, dark and shiny
+            var glass = new Material(Art.Mat(new Color(0.1f, 0.28f, 0.38f))) { name = "menu dome glass" };
+            if (glass.HasProperty("_Smoothness")) glass.SetFloat("_Smoothness", 0.93f);
+            if (glass.HasProperty("_Metallic")) glass.SetFloat("_Metallic", 0.3f);
+            foreach (Transform c in ship)
+                if ((c.localScale - new Vector3(9f, 5f, 9f)).sqrMagnitude < 0.01f && c.TryGetComponent(out Renderer dr)) dr.sharedMaterial = glass;
+            for (int i = 0; i < 10; i++)
+                Art.Part(ship, Art.Sphere, metal, new Vector3(0, 2f, 0), new Vector3(0.16f, 5.05f, 9.04f), new Vector3(0, i * 18f, 0));
+            foreach (float h in new[] { 2.25f, 3.3f, 4.2f })
+            {
+                float r = 9f * Mathf.Sqrt(Mathf.Max(0f, 1f - (h / 5f) * (h / 5f)));
+                Art.Part(ship, Art.Sphere, metal, new Vector3(0, 2f + h, 0), new Vector3(r + 0.05f, 0.1f, r + 0.05f));
+            }
+            Art.Part(ship, Art.Cylinder, metal * 1.2f, new Vector3(0, 4.25f, 0), new Vector3(9.4f, 0.22f, 9.4f));
+            Art.Part(ship, Art.Sphere, metal, new Vector3(0, 7.02f, 0), new Vector3(1.2f, 0.35f, 1.2f));
+
+            // the meteor fire on the front (+z) edge (the rim reaches 30 m out)
+            s_Fire.Clear();
+            void Shell(Vector3 at, Vector3 s, Color c)
+            {
+                var p = Art.Part(ship, Art.Sphere, Color.white, at, s, default, false, Art.Ghost(c));
+                p.GetComponent<Renderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                s_Fire.Add((p.transform, s));
+            }
+            Shell(new Vector3(0, 0, 29f), new Vector3(13.5f, 3f, 4.5f), new Color(1f, 0.35f, 0.08f, 0.3f)); // (radius-1 sphere: these are half-sizes)
+            Shell(new Vector3(0, 0, 30f), new Vector3(11.5f, 2.3f, 3.3f), new Color(1f, 0.55f, 0.12f, 0.45f));
+            Shell(new Vector3(0, 0, 31f), new Vector3(8.5f, 1.6f, 2.1f), new Color(1f, 0.85f, 0.45f, 0.65f));
+            for (int i = 0; i < 14; i++)
+            {
+                // flame tongues licking back round the leading edge
+                float a = Mathf.Lerp(-75f, 75f, i / 13f);
+                var at = Quaternion.Euler(0, a, 0) * new Vector3(0, Random.Range(-0.6f, 0.6f), 29.5f);
+                var tongue = new GameObject("flame tongue").transform;
+                tongue.SetParent(ship, false);
+                tongue.localPosition = at;
+                tongue.localRotation = Quaternion.LookRotation(-at.normalized + Vector3.back * 1.4f) * Quaternion.Euler(90f, 0, 0);
+                var cone = Art.Part(tongue, Art.Cone, Color.white, new Vector3(0, 5f, 0), new Vector3(2.2f, 10f + Random.Range(0f, 8f), 2.2f), default, false,
+                    Art.Ghost(Color.Lerp(new Color(1f, 0.45f, 0.1f, 0.45f), new Color(1f, 0.8f, 0.3f, 0.5f), Random.value)));
+                cone.GetComponent<Renderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                s_Fire.Add((tongue, Vector3.one));
+            }
+            var fl = new GameObject("meteor light").AddComponent<Light>();
+            fl.transform.SetParent(ship, false);
+            fl.transform.localPosition = new Vector3(0, 2f, 34f);
+            fl.type = LightType.Point; fl.range = 70f; fl.intensity = 5f; fl.color = new Color(1f, 0.55f, 0.2f);
+        }
         /// <summary>Speed lines: long thin streaks close round the ship's path, whipping past (two tiles).</summary>
         static Transform LinesTile(string name)
         {

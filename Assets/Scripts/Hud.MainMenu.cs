@@ -26,6 +26,9 @@ namespace RockGame
         public static bool DevMenuShown => s_I != null && (s_I.m_DevMenu || (Bootstrap.Testing && !TestNewMenu));
         /// <summary>(tests) show the new main menu / the name screen / one of its screens (1.. NewPage) though it's a test.</summary>
         public static bool TestNewMenu, TestNameScreen;
+        /// <summary>The new menu's map page is up: the background is the map itself (MenuScene's flight round it), not the UFO.</summary>
+        public static bool MapPreview => s_I != null && !DevMenuShown && s_I.m_New == NewPage.Map;
+        int m_PreviewKey = -1;
         public static void TestNewPage(int p) { if (s_I != null) { s_I.m_New = (NewPage)p; s_I.m_Battle = p == (int)NewPage.Players ? 1 : s_I.m_Battle; } }
 
         static readonly Color k_Pink = new Color(1f, 0.25f, 0.65f), k_Acid = new Color(0.65f, 1f, 0.2f), k_Cyan = new Color(0.3f, 0.95f, 1f);
@@ -42,9 +45,10 @@ namespace RockGame
             m_ModesOpen = false;
             switch (m_New)
             {
-                case NewPage.Join: case NewPage.Battle: m_New = NewPage.Multiplayer; break;
+                case NewPage.Join: m_New = NewPage.Multiplayer; break;
+                case NewPage.Battle: m_New = m_SoloFlow ? NewPage.Root : NewPage.Multiplayer; break;
                 case NewPage.Players: m_New = NewPage.Battle; break;
-                case NewPage.Mode: m_New = m_SoloFlow ? NewPage.Root : m_Battle == 0 ? NewPage.Battle : NewPage.Players; break;
+                case NewPage.Mode: m_New = m_SoloFlow || m_Battle == 0 ? NewPage.Battle : NewPage.Players; break;
                 case NewPage.Map: m_New = NewPage.Mode; break;
                 default: m_New = NewPage.Root; break;
             }
@@ -56,6 +60,7 @@ namespace RockGame
             if (MenuSpace.Fade > 0.001f) Fill(new Rect(0, 0, sw, sh), new Color(0, 0, 0, MenuSpace.Fade));
             // a dark wash down the left so the buttons read over the stars
             GUI.DrawTexture(new Rect(0, 0, 760 * k, sh), LeftFade());
+            if (m_New == NewPage.Map && MenuScene.Fade > 0.001f) Fill(new Rect(0, 0, Screen.width, Screen.height), new Color(0, 0, 0, MenuScene.Fade)); // (the map fading in behind the map page)
             DrawPunkTitle(m_New == NewPage.Root ? MainTitle : PageTitle(), new Vector2(60 * k, 50 * k), m_New == NewPage.Root ? 86 : 64);
             float x = 70 * k, y = (m_New == NewPage.Root ? 230 : 190) * k, w = 470 * k;
             switch (m_New)
@@ -63,7 +68,7 @@ namespace RockGame
                 case NewPage.Root:
                     if (BigBtn(ref y, x, w, "TUTORIAL", k_Acid)) m_New = NewPage.Tutorial;
                     if (BigBtn(ref y, x, w, "MULTIPLAYER", k_Pink)) m_New = NewPage.Multiplayer;
-                    if (BigBtn(ref y, x, w, "SOLO", k_Cyan)) { m_SoloFlow = true; m_Battle = 0; m_New = NewPage.Mode; }
+                    if (BigBtn(ref y, x, w, "SOLO", k_Cyan)) { m_SoloFlow = true; m_Battle = 0; m_New = NewPage.Battle; }
                     if (BigBtn(ref y, x, w, "OPTIONS", new Color(1f, 0.8f, 0.2f))) { m_Page = MenuPage.Settings; m_Tab = SettingsTab.Sound; OnTabOpened(); }
                     if (BigBtn(ref y, x, w, "QUIT", new Color(0.7f, 0.7f, 0.75f))) Application.Quit();
                     break;
@@ -79,8 +84,8 @@ namespace RockGame
                 case NewPage.Join: DrawJoinPage(boot, x, ref y, w); break;
                 case NewPage.Battle:
                     if (BigBtn(ref y, x, w, "1V1", k_Acid)) { m_Battle = 0; m_New = NewPage.Mode; }
-                    if (BigBtn(ref y, x, w, "TEAMS", k_Pink)) { m_Battle = 1; m_New = NewPage.Players; }
-                    if (BigBtn(ref y, x, w, "FFA", k_Cyan)) { m_Battle = 2; m_New = NewPage.Players; }
+                    if (BigBtn(ref y, x, w, "TEAMS", k_Pink)) { m_Battle = 1; if (m_SoloFlow) { m_CapA = m_CapB = 2; m_New = NewPage.Mode; } else m_New = NewPage.Players; }
+                    if (BigBtn(ref y, x, w, "FFA", k_Cyan)) { m_Battle = 2; if (m_SoloFlow) { m_FfaN = 4; m_New = NewPage.Mode; } else m_New = NewPage.Players; }
                     Note(ref y, x, w, "FFA: everyone for themselves, a base each (up to 4).");
                     break;
                 case NewPage.Players: DrawPlayersPage(x, ref y, w); break;
@@ -119,9 +124,9 @@ namespace RockGame
                 case NewPage.Tutorial: return "TUTORIAL";
                 case NewPage.Multiplayer: return "MULTIPLAYER";
                 case NewPage.Join: return "JOIN GAME";
-                case NewPage.Battle: return "BATTLE TYPE";
+                case NewPage.Battle: return m_SoloFlow ? "SOLO BATTLE TYPE" : "MULTIPLAYER BATTLE TYPE";
                 case NewPage.Players: return "PLAYERS";
-                case NewPage.Mode: return "CHOOSE GAME MODE";
+                case NewPage.Mode: return m_SoloFlow ? "SOLO GAME MODE" : m_Battle == 0 ? "1V1 GAME MODE" : m_Battle == 1 ? "TEAMS GAME MODE" : "FFA GAME MODE";
                 case NewPage.Map: return "CHOOSE MAP";
                 default: return MainTitle;
             }
@@ -339,31 +344,25 @@ namespace RockGame
         {
             float k = m_Scale, sw = Screen.width, sh = Screen.height;
             var kind = k_Maps[Mathf.Clamp(m_MapPick, 0, k_Maps.Length - 1)];
-            // the picture: as big as fits, with arrows either side to cycle through the maps
-            float pw = Mathf.Min(sw - 360 * k, 1000 * k), ph = pw * 9f / 16f;
-            if (ph > sh - 430 * k) { ph = sh - 430 * k; pw = ph * 16f / 9f; }
-            var pr = new Rect((sw - pw) / 2f, 150 * k, pw, ph);
-            var tex = Resources.Load<Texture2D>("MapShots/" + kind);
-            Fill(new Rect(pr.x - 6 * k, pr.y - 6 * k, pr.width + 12 * k, pr.height + 12 * k), Color.white);
-            if (tex != null) GUI.DrawTexture(pr, tex, ScaleMode.ScaleAndCrop);
-            else
-            {
-                Fill(pr, new Color(0.08f, 0.1f, 0.16f, 1f));
-                GUI.Label(pr, $"<b><size={Mathf.RoundToInt(48 * k)}>{ThemeMaps.Label(kind).ToUpper()}</size></b>", m_Center);
-            }
-            if (SmallBtn(new Rect(pr.x - 90 * k, pr.center.y - 45 * k, 70 * k, 90 * k), "◀")) m_MapPick = (m_MapPick + k_Maps.Length - 1) % k_Maps.Length;
-            if (SmallBtn(new Rect(pr.xMax + 20 * k, pr.center.y - 45 * k, 70 * k, 90 * k), "▶")) m_MapPick = (m_MapPick + 1) % k_Maps.Length;
-            float y = pr.yMax + 16 * k;
-            var nm = new GUIStyle(m_Big) { alignment = TextAnchor.UpperLeft, fontSize = Mathf.RoundToInt(38 * k) };
-            Shadowed(new Rect(pr.x, y, pr.width, 46 * k), $"<b>{ThemeMaps.Label(kind).ToUpper()}</b>  <size={Mathf.RoundToInt(20 * k)}>{m_MapPick + 1}/{k_Maps.Length}</size>", nm);
-            y += 46 * k;
-            string blurb = kind == MapKind.Plains ? "Rolling grass, wheat and forests: the classic map." : kind == MapKind.Highlands ? "Wild hills and rocky ridges between the bases." : ThemeMaps.Blurb(kind);
-            Shadowed(new Rect(pr.x, y, pr.width, 44 * k), blurb, m_SmallWrap);
-            y += 46 * k;
-            // the size
+            // the background is the map itself: MenuScene's slow flight round it (under its dome), rebuilt whenever the map or its size changes
             int key = Bootstrap.MapChoice;
+            int want = (key & ~15) | (int)kind;
+            if (want != m_PreviewKey && Event.current.type == EventType.Layout) { m_PreviewKey = want; boot.SetMapChoice(want); key = want; }
+            // along the bottom: a dark band with the map's name between the arrows, its blurb, the sizes, back and go
+            float bandH = 250 * k, by = sh - bandH;
+            Fill(new Rect(0, by, sw, bandH), new Color(0f, 0f, 0f, 0.55f));
+            float cw = Mathf.Min(sw - 40 * k, 900 * k), cx = (sw - cw) / 2f, y = by + 14 * k;
+            var nm = new GUIStyle(m_Big) { alignment = TextAnchor.MiddleCenter, fontSize = Mathf.RoundToInt(40 * k) };
+            if (SmallBtn(new Rect(cx, y, 80 * k, 56 * k), "◀")) m_MapPick = (m_MapPick + k_Maps.Length - 1) % k_Maps.Length;
+            if (SmallBtn(new Rect(cx + cw - 80 * k, y, 80 * k, 56 * k), "▶")) m_MapPick = (m_MapPick + 1) % k_Maps.Length;
+            Shadowed(new Rect(cx + 90 * k, y, cw - 180 * k, 56 * k), $"<b>{ThemeMaps.Label(kind).ToUpper()}</b>  <size={Mathf.RoundToInt(20 * k)}>{m_MapPick + 1}/{k_Maps.Length}</size>", nm);
+            y += 60 * k;
+            string blurb = kind == MapKind.Plains ? "Rolling grass, wheat and forests: the classic map." : kind == MapKind.Highlands ? "Wild hills and rocky ridges between the bases." : ThemeMaps.Blurb(kind);
+            Shadowed(new Rect(cx, y, cw, 30 * k), blurb, new GUIStyle(m_SmallWrap) { alignment = TextAnchor.MiddleCenter });
+            y += 40 * k;
+            // the size
             var size = (key & Cfg.SmallBit) != 0 ? MapSize.Small : (MapSize)((key >> Cfg.SizeShift) & 3);
-            float bx = pr.x;
+            float bx = (sw - (80 * k + 4 * 128 * k - 8 * k)) / 2f;
             GUI.Label(new Rect(bx, y, 80 * k, 40 * k), "<b>SIZE</b>", m_Label);
             bx += 80 * k;
             foreach (var sz in new[] { MapSize.Small, MapSize.Big, MapSize.Large, MapSize.Huge })
@@ -375,8 +374,8 @@ namespace RockGame
             }
             Bootstrap.MapChoice = key;
             // back, and go
-            if (SmallBtn(new Rect(pr.x, sh - 80 * k, 160 * k, 52 * k), "◀ BACK")) NewBack();
-            var go = new Rect(pr.xMax - 300 * k, sh - 88 * k, 300 * k, 64 * k);
+            if (SmallBtn(new Rect(cx, sh - 74 * k, 160 * k, 52 * k), "◀ BACK")) NewBack();
+            var go = new Rect(cx + cw - 300 * k, sh - 82 * k, 300 * k, 64 * k);
             float gy = go.y;
             if (BigBtn(ref gy, go.x, go.width, m_SoloFlow ? "PLAY" : "HOST", k_Acid)) LaunchFromMenu(boot, kind);
         }
@@ -388,11 +387,13 @@ namespace RockGame
             key = (key & ~15) | (int)kind;
             var rules = (GameRules)((key >> Cfg.RulesShift) & Cfg.RulesMask);
             if (System.Array.IndexOf(MenuModes, rules) < 0) key = (key & ~(Cfg.RulesMask << Cfg.RulesShift)) | ((int)MenuModes[0] << Cfg.RulesShift);
-            if (m_SoloFlow || m_Battle == 0) key = WithTeams(key, 1, 1);
+            if (m_Battle == 0) key = WithTeams(key, 1, 1);
             else if (m_Battle == 1) key = WithTeams(key, m_CapA, m_CapB);
             else key = Cfg.WithCaps((key & ~(Cfg.ModeMask << Cfg.ModeShift)) | ((int)(m_FfaN >= 4 ? GameMode.Ffa4 : GameMode.Ffa3) << Cfg.ModeShift), null);
             Bootstrap.MapChoice = key;
             PlayerPrefs.SetInt("RockGame.Map", key);
+            m_New = NewPage.Root;
+            m_PreviewKey = -1;
             boot.Host(m_SoloFlow);
         }
 

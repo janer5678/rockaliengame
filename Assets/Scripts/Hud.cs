@@ -42,6 +42,9 @@ namespace RockGame
         // what the mouse is over in the bag (item or crafting row): its name (white, top line) and description (grey)
         string m_HoverTitle = "", m_HoverText = "";
 
+        /// <summary>The old top-right white messages: off (the user asked for them gone).</summary>
+        public static bool ShowMessages = false;
+
         public static void Push(string text)
         {
             Debug.Log("[HUD] " + text);
@@ -136,6 +139,7 @@ namespace RockGame
         void Update()
         {
             if (Time.frameCount > 3) ItemIcons.EnsureRendered();
+            WarmWheel();
             MenuUpdate();
             CountFps();
             var me = PlayerNet.Local;
@@ -296,9 +300,13 @@ namespace RockGame
                 phase += $"   <size={Mathf.RoundToInt(15 * k)}><color=#ffd24a>{Cfg.RulesName(Cfg.Rules).ToUpper()}</color></size>";
             if (phase != "")
             {
-                Fill(new Rect(sw / 2 - 260 * k, 8, 520 * k, 62 * k), new Color(0, 0, 0, 0.45f));
+                // (two lines under the timer - a mode's goal and the ball - make the panel taller so they stay in it)
+                int lines = string.IsNullOrEmpty(sub) ? 0 : sub.Split('\n').Length;
+                float ph = 38 * k + Mathf.Max(1, lines) * 24 * k;
+                Fill(new Rect(sw / 2 - 280 * k, 8, 560 * k, ph), new Color(0, 0, 0, 0.45f));
                 Shadowed(new Rect(0, 10, sw, 30 * k), $"<b><size={Mathf.RoundToInt(24 * k)}>{phase}</size></b>", m_Center);
-                Shadowed(new Rect(0, 40 * k, sw, 26 * k), sub, m_Center);
+                Shadowed(new Rect(0, 40 * k, sw, lines * 24 * k), sub, m_Center);
+                DrawModePanel(game, team, k, 8 + ph + 6 * k); // (the modes' score chips: Hud.ModePanel.cs)
             }
 
             // ---- top left: identity + compass ----
@@ -324,7 +332,9 @@ namespace RockGame
             float my = 10 + DrawCraftStack(me, k, 10);
             float kf = DrawKillFeed(k, my); // the kill feed (Hud.KillFeed.cs), then the messages under it
             if (kf > 0) my += kf + 4 * k;
-            for (int i = s_Msgs.Count - 1; i >= 0; i--)
+            // (no white messages up here any more - the kill feed, banners and the line under the crosshair say it; Push
+            // still logs them)
+            for (int i = s_Msgs.Count - 1; i >= 0 && ShowMessages; i--)
             {
                 float age = Time.time - s_Msgs[i].Time;
                 if (age > 6f) continue;
@@ -393,7 +403,7 @@ namespace RockGame
                     // second health bar, used up first
                     var ab = new Rect(hr.x, statY, hw, 22 * k);
                     Fill(ab, new Color(0, 0, 0, 0.55f));
-                    Fill(new Rect(ab.x + 2, ab.y + 2, (ab.width - 4) * Mathf.Clamp01(me.ArmorHp.Value / (float)Mathf.Max(1, me.ArmorHp.Value > Cfg.ArmorHp ? Cfg.HeavyArmorHp : Cfg.ArmorHp)), ab.height - 4), new Color(0.75f, 0.55f, 0.3f));
+                    Fill(new Rect(ab.x + 2, ab.y + 2, (ab.width - 4) * Mathf.Clamp01(me.ArmorHp.Value / (float)Mathf.Max(1, Mathf.Max(Cfg.HeavyArmorHp, Cfg.ArmorHp))), ab.height - 4), new Color(0.75f, 0.55f, 0.3f));
                     Shadowed(new Rect(ab.x + 6, ab.y, ab.width, ab.height), $"<b>ARMOUR {me.ArmorHp.Value}</b>", m_Small);
                     statY -= 26 * k;
                 }
@@ -483,7 +493,7 @@ namespace RockGame
                     {
                         var bag = s_Bags[i];
                         float wait = Mathf.Max(0f, (float)(bag.ReadyAt.Value - now));
-                        var rb = new Rect(cx - bw * 0.5f, by2 + bh + 40 * k + i * (bh * 0.8f + 6 * k), bw, bh * 0.8f);
+                        var rb = new Rect(cx - bw - 10 * k, by2 + bh + 40 * k + i * (bh * 0.8f + 6 * k), bw * 2f + 20 * k, bh * 0.8f); // (as wide as both buttons above: the words fit)
                         if (rb.Contains(Event.current.mousePosition)) MouseOverUI = true;
                         float dist = Vector3.Distance(bag.transform.position, Cfg.BaseCenter[Mathf.Clamp(me.Team.Value, 0, 3)]);
                         string label = wait > 0f ? $"[{i + 3}]  SLEEPING BAG  ({Mathf.CeilToInt(wait)} s)" : $"[{i + 3}]  SLEEPING BAG  · {dist:0} m from base";
@@ -1025,6 +1035,18 @@ namespace RockGame
         static Texture2D s_Disc, s_Scope;
 
         /// <summary>Donut slices for the wheel (one texture per slice), a filled circle, and the sniper scope mask.</summary>
+
+        int m_WarmWheel;
+        /// <summary>The building wheel's slices and icons are made a few frames apart once you're in a match - not all at
+        /// once the first time you hold RMB with the building plan (that was a hitch).</summary>
+        void WarmWheel()
+        {
+            var opts = PlayerController.WheelOptions;
+            if (m_WarmWheel > opts.Length || PlayerNet.Local == null || (Time.frameCount & 3) != 0) return;
+            if (m_WarmWheel < opts.Length) ItemIcons.Wheel(m_WarmWheel);
+            else EnsureWheelTextures(opts.Length);
+            m_WarmWheel++;
+        }
         static void EnsureWheelTextures(int n)
         {
             if (s_Wedges != null && s_Wedges.Length == n) return;
@@ -1302,48 +1324,10 @@ namespace RockGame
         string BallStatus(int myTeam)
         {
             // the game modes (NetGame.GameModes.cs): what you're after, and the score
-            string mode = ModeStatus(myTeam);
+            string mode = ModeGoal(myTeam); // (the score is in its own panel under the timer: Hud.ModePanel.cs)
             if (mode != null && (Cfg.NoBall || Ball.Instance == null)) return mode;
             string ball = BallOnly(myTeam);
             return mode == null ? ball : ball.Length == 0 ? mode : mode + "\n" + ball;
-        }
-
-        /// <summary>The game modes' line: the goal in a few words and where everyone stands (null: Classic / Primitive).</summary>
-        static string ModeStatus(int myTeam)
-        {
-            var g = NetGame.Instance;
-            if (g == null || !Cfg.ClassicMode) return null;
-            var sb = new System.Text.StringBuilder();
-            string Team(int t) => $"<color=#{ColorUtility.ToHtmlStringRGB(Color.Lerp(Cfg.TeamColor[t], Color.white, 0.3f))}>{Cfg.TeamName[t]}</color>";
-            if (Cfg.Bedwars)
-            {
-                sb.Append(g.MachineDown(myTeam) ? "<color=#ff7777>Your machine is gone - no more respawns!</color>  " : "Smash the enemy machines - and guard yours  ");
-                for (int t = 0; t < Cfg.TeamCount; t++) sb.Append($"  {Team(t)} {(g.MachineDown(t) ? "<color=#ff6666>DOWN</color>" : $"{Cfg.MachineHitsToBreak - g.HitsOn(t)}/{Cfg.MachineHitsToBreak}")}");
-            }
-            else if (Cfg.ThreeGoal)
-            {
-                sb.Append($"First to {Cfg.GoalsToWin} goals:  ");
-                for (int t = 0; t < Cfg.TeamCount; t++) sb.Append($"  {Team(t)} <b>{g.GoalsOf(t)}</b>");
-            }
-            else if (Cfg.ProgressMode)
-            {
-                sb.Append("Keep the ball in your machine to fill your bar:  ");
-                for (int t = 0; t < Cfg.TeamCount; t++) sb.Append($"  {Team(t)} <b>{Mathf.FloorToInt(g.ProgressOf(t) * 100f)}%</b>");
-            }
-            else if (Cfg.Assassin)
-            {
-                int enemies = 0;
-                foreach (var p in PlayerNet.All) if (p != null && p.Team.Value != myTeam) enemies++;
-                sb.Append($"Kill the enemies, hand their skulls in at your machine:  ");
-                for (int t = 0; t < Cfg.TeamCount; t++) sb.Append($"  {Team(t)} <b>{g.SkullsOf(t)}</b>");
-                sb.Append($"   <color=#bbbbbb>(one of each of your {enemies} enemies wins)</color>");
-            }
-            else if (Cfg.Domination)
-            {
-                int bt = g.BallTeam.Value;
-                sb.Append(bt < 0 ? "Whoever has the ball gets the Advanced Trade Station's items" : bt == myTeam ? "<color=#77ff77>Your team has the ball: advanced trades unlocked!</color>" : $"{Team(bt)} has the ball and the advanced trades - take it!");
-            }
-            return sb.ToString();
         }
 
         string BallOnly(int myTeam)

@@ -135,10 +135,10 @@ namespace RockGame
             if (!HasDoor) return false;
             if (PType == PieceType.Gate)
             {
-                // a gate's leaf hangs from x = -1.7, 3.4 m wide and 4.7 m tall
-                var gl = transform.InverseTransformPoint(point) - new Vector3(-1.7f, 0f, 0f);
+                // a gate's leaf hangs from x = -2.6, 5.2 m wide and 3.8 m tall
+                var gl = transform.InverseTransformPoint(point) - new Vector3(-2.6f, 0f, 0f);
                 gl = Quaternion.Inverse(Quaternion.Euler(0f, DoorOpen.Value ? 100f : 0f, 0f)) * gl;
-                return gl.x > -0.1f && gl.x < 3.5f && gl.y > -0.1f && gl.y < 5.2f && Mathf.Abs(gl.z) < 0.4f;
+                return gl.x > -0.1f && gl.x < 5.3f && gl.y > -0.1f && gl.y < 4.1f && Mathf.Abs(gl.z) < 0.55f;
             }
             // into the leaf's own space: it hangs from x = -0.6 and swings 100 degrees open
             var l = transform.InverseTransformPoint(point) - new Vector3(-0.6f, 0f, 0f);
@@ -413,51 +413,62 @@ namespace RockGame
                 }
                 case PieceType.Gate:
                 {
-                    // a large gate (like Rust's external gate): two big log posts and a beam over the top, and a wide leaf
-                    // of sharpened logs on a hinge at the left post - it swings open like a door (E, your team only),
-                    // with its own health; broken off, the gap's open
+                    // a large gate (like Rust's external gate), as wide and low as the large wall: two big log posts and a
+                    // beam over the top, and a wide leaf of sharpened logs on a hinge at the left post - it swings open like
+                    // a door (E, your team only), with its own health; broken off, the gap's open. A big padlock in the
+                    // team's colour hangs on each side of it, clear of the logs
                     for (int k = -1; k <= 1; k += 2)
                     {
-                        Art.Box(tr, Art.DarkWood, new Vector3(k * 1.95f, 2.85f, 0), new Vector3(0.5f, 5.7f, 0.5f), default, col);
-                        Art.Part(tr, Art.Cone, Art.Wood * 1.05f, new Vector3(k * 1.95f, 5.7f, 0), new Vector3(0.5f, 0.6f, 0.5f));
+                        Art.Box(tr, Art.DarkWood, new Vector3(k * 2.85f, 2.25f, 0), new Vector3(0.5f, 4.5f, 0.5f), default, col);
+                        Art.Part(tr, Art.Cone, Art.Wood * 1.05f, new Vector3(k * 2.85f, 4.5f, 0), new Vector3(0.5f, 0.6f, 0.5f));
                     }
-                    Art.Box(tr, Art.DarkWood, new Vector3(0, 5.15f, 0), new Vector3(4.2f, 0.35f, 0.4f), default, col);
+                    Art.Box(tr, Art.DarkWood, new Vector3(0, 4.05f, 0), new Vector3(6.2f, 0.35f, 0.42f), default, col);
                     var gh = new GameObject("hinge").transform;
                     gh.SetParent(tr, false);
-                    gh.localPosition = new Vector3(-1.7f, 0, 0);
-                    for (int k = 0; k < 8; k++)
+                    gh.localPosition = new Vector3(-2.6f, 0, 0);
+                    for (int k = 0; k < 12; k++)
                     {
-                        float x = 0.21f + k * 0.42f, h = 4.6f + ((k * 29) % 4) * 0.07f;
-                        Art.Box(gh, k % 2 == 0 ? Art.Wood : Art.Wood * 0.9f, new Vector3(x, h * 0.5f + 0.05f, 0), new Vector3(0.42f, h, 0.36f), new Vector3(0, k * 11f, 0), col);
-                        Art.Part(gh, Art.Cone, Art.Wood * 1.05f, new Vector3(x, h + 0.05f, 0), new Vector3(0.42f, 0.45f, 0.36f));
+                        float x = 0.215f + k * 0.43f, h = 3.45f + ((k * 29) % 4) * 0.06f;
+                        Art.Box(gh, k % 2 == 0 ? Art.Wood : Art.Wood * 0.9f, new Vector3(x, h * 0.5f + 0.05f, 0), new Vector3(0.43f, h, 0.34f), new Vector3(0, k * 11f, 0), col);
+                        Art.Part(gh, Art.Cone, Art.Wood * 1.05f, new Vector3(x, h + 0.05f, 0), new Vector3(0.43f, 0.4f, 0.34f));
                     }
-                    for (int k = 0; k < 2; k++) Art.Box(gh, Art.DarkWood, new Vector3(1.7f, 1.0f + k * 2.6f, 0.22f), new Vector3(3.4f, 0.2f, 0.1f));
-                    Art.Box(gh, Art.DarkWood, new Vector3(1.7f, 2.3f, 0.24f), new Vector3(0.18f, 3.6f, 0.08f), new Vector3(0, 0, 38f));
-                    Art.Box(gh, Art.Metal, new Vector3(3.2f, 2.3f, 0.26f), new Vector3(0.12f, 0.4f, 0.1f)); // (the handle)
+                    for (int k = 0; k < 2; k++) Art.Box(gh, Art.DarkWood, new Vector3(2.58f, 0.8f + k * 1.9f, 0.24f), new Vector3(5.16f, 0.2f, 0.1f));
+                    Art.Box(gh, Art.DarkWood, new Vector3(2.58f, 1.75f, 0.26f), new Vector3(0.18f, 2.6f, 0.08f), new Vector3(0, 0, 50f));
+                    foreach (float side in new[] { -1f, 1f })
+                    {
+                        // the hasp plate, the lock's body and its shackle, standing proud of the logs
+                        float z = side * 0.42f;
+                        Art.Box(gh, Art.Metal, new Vector3(4.55f, 1.75f, side * 0.31f), new Vector3(0.5f, 0.16f, 0.06f));
+                        Art.Box(gh, Color.white, new Vector3(4.55f, 1.45f, z), new Vector3(0.42f, 0.46f, 0.14f)).name = "lock body";
+                        Art.Box(gh, Color.white, new Vector3(4.55f, 1.45f, z + side * 0.075f), new Vector3(0.3f, 0.08f, 0.02f)).name = "lock band";
+                        Art.Box(gh, Art.Metal, new Vector3(4.42f, 1.8f, z), new Vector3(0.06f, 0.26f, 0.06f));
+                        Art.Box(gh, Art.Metal, new Vector3(4.68f, 1.8f, z), new Vector3(0.06f, 0.26f, 0.06f));
+                        Art.Box(gh, Art.Metal, new Vector3(4.55f, 1.92f, z), new Vector3(0.32f, 0.06f, 0.06f));
+                    }
                     hinge = gh;
                     break;
                 }
                 case PieceType.Barrier:
                 {
-                    // a high external wall like Rust's: a row of big sharpened logs, 4 m wide and about 5.5 m tall,
-                    // tied together with two cross beams and propped up by braces on the back
-                    const int logs = 10;
+                    // a large wall like Rust's high external wall, but lower and wider: a row of big sharpened logs about
+                    // 5.5 m wide and 4 m tall, tied together with two cross beams and propped up by braces on the back
+                    const int logs = 13;
                     for (int k = 0; k < logs; k++)
                     {
-                        float x = -1.8f + k * 0.4f;
-                        float h = 5f + ((k * 37) % 5) * 0.08f;
-                        Art.Box(tr, k % 2 == 0 ? Art.Wood : Art.Wood * 0.9f, new Vector3(x, h * 0.5f, 0), new Vector3(0.42f, h, 0.42f), new Vector3(0, k * 13f, 0));
-                        Art.Part(tr, Art.Cone, Art.Wood * 1.05f, new Vector3(x, h, 0), new Vector3(0.42f, 0.55f, 0.42f));
+                        float x = -2.52f + k * 0.42f;
+                        float h = 3.8f + ((k * 37) % 5) * 0.07f;
+                        Art.Box(tr, k % 2 == 0 ? Art.Wood : Art.Wood * 0.9f, new Vector3(x, h * 0.5f, 0), new Vector3(0.44f, h, 0.44f), new Vector3(0, k * 13f, 0));
+                        Art.Part(tr, Art.Cone, Art.Wood * 1.05f, new Vector3(x, h, 0), new Vector3(0.44f, 0.5f, 0.44f));
                     }
                     for (int k = 0; k < 2; k++)
-                        Art.Box(tr, Art.DarkWood, new Vector3(0, 1.2f + k * 2.6f, 0.26f), new Vector3(4.1f, 0.22f, 0.12f));
+                        Art.Box(tr, Art.DarkWood, new Vector3(0, 1.0f + k * 1.9f, 0.26f), new Vector3(5.5f, 0.22f, 0.12f));
                     for (int k = -1; k <= 1; k += 2)
-                        Art.Box(tr, Art.DarkWood, new Vector3(k * 1.3f, 1.6f, 0.95f), new Vector3(0.18f, 3.6f, 0.18f), new Vector3(-28f, 0, 0));
+                        Art.Box(tr, Art.DarkWood, new Vector3(k * 1.8f, 1.25f, 0.8f), new Vector3(0.18f, 2.8f, 0.18f), new Vector3(-28f, 0, 0));
                     if (col)
                     {
                         var bc = root.AddComponent<BoxCollider>();
-                        bc.center = new Vector3(0, 2.6f, 0);
-                        bc.size = new Vector3(4f, 5.2f, 0.45f);
+                        bc.center = new Vector3(0, 2.0f, 0);
+                        bc.size = new Vector3(5.5f, 4.0f, 0.46f);
                     }
                     break;
                 }
@@ -472,7 +483,7 @@ namespace RockGame
             if (ghost == null) ApplyPsxLook(root, t, tier, c, trim, hinge);
             // every door wears a padlock (both faces): only the team that built it can open it. (Put on after the PSX
             // look, so it shows on the PSX door model as well.)
-            if (hinge != null) DoorLock(hinge);
+            if (hinge != null && t != PieceType.Gate) DoorLock(hinge); // (the gate has its own big padlocks)
 
             if (ghost != null)
             {

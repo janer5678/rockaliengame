@@ -21,6 +21,8 @@ namespace RockGame
             public Item Item;
             public bool Ball, Visible, SpearAim, Crouch, HasArrow, Sprint, Grounded, Firing, Loaded, Aim, Visible2;
             public float Draw, RamCharge, Bob, Speed, VelY, Reload;
+            /// <summary>The revolver: how many rounds this reload puts in (just the fired ones).</summary>
+            public int Rounds;
             public Vector2 Look;
         }
 
@@ -553,7 +555,7 @@ namespace RockGame
                 rot *= Quaternion.Euler(35f * r, 10f * r, -15f * r);
             }
             AttachItemToRoot(pos, rot, s.Item == Item.Sniper ? 0.75f : 1f);
-            if (m_Item && s.Item == Item.Revolver) PoseDrum(rp, revReload);
+            if (m_Item && s.Item == Item.Revolver) PoseDrum(rp, revReload, Mathf.Clamp(s.Rounds, 1, 6));
             if (m_Item && s.Item == Item.Crossbow)
             {
                 var bolt = m_Item.transform.Find("bolt");
@@ -578,7 +580,7 @@ namespace RockGame
                 {
                     // reloading: the left hand comes over to the open drum and thumbs a round in for each sixth of the load
                     float inK = Smooth(Mathf.InverseLerp(0.15f, 0.3f, rp)) * (1f - Smooth(Mathf.InverseLerp(0.8f, 0.9f, rp)));
-                    float load = Mathf.InverseLerp(0.32f, 0.8f, rp) * 6f;
+                    float load = Mathf.InverseLerp(0.32f, 0.8f, rp) * Mathf.Clamp(s.Rounds, 1, 6); // (a thumb-in per round going in)
                     float thumb = rp > 0.32f && rp < 0.8f ? Mathf.Sin((load - Mathf.Floor(load)) * Mathf.PI) : 0f;
                     var at = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(-0.09f, 0.05f + 0.025f * thumb, -0.02f - 0.02f * thumb)));
                     Set(m_L, Vector3.Lerp(m_L.localPosition, at, inK), Quaternion.Slerp(m_L.localRotation, rot * Quaternion.Euler(-40f, 40f, 80f), inK));
@@ -591,14 +593,15 @@ namespace RockGame
         /// <summary>The revolver's drum through a reload (p 0..1): it swings out to the left, the six rounds go as the empties
         /// are flicked out, come back one by one as they're thumbed in (a click each, the drum turning a sixth), then it
         /// snaps shut with a spin and a clack.</summary>
-        void PoseDrum(float p, bool reloading)
+        void PoseDrum(float p, bool reloading, int n)
         {
             var d = m_Item.transform.Find("drum");
             if (d == null) return;
             float open = reloading ? Smooth(Mathf.InverseLerp(0f, 0.18f, p)) * (1f - Smooth(Mathf.InverseLerp(0.82f, 0.95f, p))) : 0f;
             float load = Mathf.InverseLerp(0.32f, 0.8f, p);
-            int rounds = !reloading || p < 0.24f ? 6 : p < 0.32f ? 0 : Mathf.Clamp(Mathf.FloorToInt(load * 6f) + 1, 0, 6);
-            float spin = reloading ? Mathf.Min(5, Mathf.FloorToInt(load * 6f)) * 60f + Smooth(Mathf.InverseLerp(0.82f, 1f, p)) * 720f : 0f;
+            // (only the n fired ones are flicked out and thumbed back in)
+            int rounds = !reloading || p < 0.24f ? 6 : p < 0.32f ? 6 - n : 6 - n + Mathf.Clamp(Mathf.FloorToInt(load * n) + 1, 0, n);
+            float spin = reloading ? Mathf.Min(n - 1, Mathf.FloorToInt(load * n)) * 60f + Smooth(Mathf.InverseLerp(0.82f, 1f, p)) * 720f : 0f;
             d.localPosition = new Vector3(-0.05f * open, 0.03f - 0.012f * open, 0.01f);
             d.localRotation = Quaternion.Euler(90f, 0f, 0f) * Quaternion.Euler(0f, spin, 0f);
             int i = 0;

@@ -471,7 +471,9 @@ namespace RockGame
         /// <summary>Fortify All Walls goes up a step every time your team buys it: stone, then sheet metal, then armoured
         /// (the old "refined" tier, back as the top step - only a little better than sheet metal).</summary>
         [Tune("Arsenal and Builder")] public static int FortifyStoneWood = 1000, FortifyMetalWood = 2000, FortifyArmouredWood = 3000;
-        [Tune("Arsenal and Builder")] public static int SwordWood = 500, C4Wood = 2500, HelmetWood = 800, ShotgunWood = 2000, ShellWood = 250, RevolverWood = 2500, RevolverAmmoWood = 200;
+        [Tune("Arsenal and Builder")] public static int SwordWood = 500, C4Wood = 2500, HelmetWood = 800, ShotgunWood = 2000, ShellWood = 250, RevolverWood = 2500, RevolverAmmoWood = 1000;
+        /// <summary>Revolver bullets come six at a time (a full cylinder) for RevolverAmmoWood.</summary>
+        [Tune("Arsenal and Builder")] public static int RevolverAmmoPerCraft = 6;
         /// <summary>Sword: a slow, heavy swing (the swing time is adjustable) - its own head / body damage instead of the usual x2.</summary>
         [Tune("Arsenal and Builder")] public static float SwordSwingTime = 1.5f, SwordHeadDamage = 150f, SwordBodyDamage = 95f, SwordRange = 2.9f;
         /// <summary>Waterpipe shotgun: one shell at a time. Each pellet does full damage within PointBlank metres, falling off to FarMul at Range.</summary>
@@ -482,7 +484,7 @@ namespace RockGame
         /// <summary>Shotgun pellet damage share at this distance: full up close, down to FarMul at the range.</summary>
         public static float ShotgunFalloff(float dist) => dist <= ShotgunPointBlank ? 1f : dist >= ShotgunRange ? 0f : Mathf.Lerp(1f, ShotgunFarMul, (dist - ShotgunPointBlank) / Mathf.Max(0.1f, ShotgunRange - ShotgunPointBlank));
         /// <summary>Revolver: 5 rounds, its own head / body damage.</summary>
-        [Tune("Arsenal and Builder")] public static int RevolverMag = 5;
+        [Tune("Arsenal and Builder")] public static int RevolverMag = 6;
         [Tune("Arsenal and Builder")] public static float RevolverBodyDamage = 30f, RevolverHeadDamage = 50f, RevolverFireRate = 0.3f, RevolverReload = 2f;
         /// <summary>Revolver: RMB aims down the sights (like the crossbow) - the field of view while aiming.</summary>
         [Tune("Arsenal and Builder")] public static float RevolverZoomFov = 52f;
@@ -506,7 +508,7 @@ namespace RockGame
         /// <summary>The share of melee damage a piece of this tier takes.</summary>
         public static float TierMeleeMul(int tier) => tier >= 3 ? RefinedMeleeMul : tier == 2 ? MetalMeleeMul : tier == 1 ? StoneStructureMeleeMul : 1f;
         [Tune("Arsenal and Builder")] public static float PistolFireRate = 0.22f, PistolReload = 1.3f;
-        [Tune("Arsenal and Builder")] public static int PistolMag = 5, HeavyArmorHp = 100, TreeCrackerUses = 40;
+        [Tune("Arsenal and Builder")] public static int PistolMag = 5, HeavyArmorHp = 50, TreeCrackerUses = 40;
         /// <summary>Heavy armour (100) at the Advanced Trade Station: its price.</summary>
         [Tune("Crafting")] public static int HeavyArmorWood = 1500;
         /// <summary>Builder: every craft takes a while (seconds per 100 wood of its price, between the min and max).</summary>
@@ -933,7 +935,7 @@ namespace RockGame
                 case Item.Shotgun: return new Recipe { Output = id, Count = 1, Wood = ShotgunWood };
                 case Item.ShotgunShell: return new Recipe { Output = id, Count = 1, Wood = ShellWood };
                 case Item.Revolver: return new Recipe { Output = id, Count = 1, Wood = RevolverWood };
-                case Item.RevolverAmmo: return new Recipe { Output = id, Count = 1, Wood = RevolverAmmoWood };
+                case Item.RevolverAmmo: return new Recipe { Output = id, Count = Mathf.Max(1, RevolverAmmoPerCraft), Wood = RevolverAmmoWood };
                 case Item.C4: return new Recipe { Output = id, Count = 1, Wood = C4Wood };
                 case Item.Helmet: return new Recipe { Output = id, Count = 1, Wood = HelmetWood };
                 case Item.HeavyArmor: return new Recipe { Output = id, Count = 1, Wood = HeavyArmorWood };
@@ -950,7 +952,7 @@ namespace RockGame
                 case Item.Shotgun: return $"one shell at a time, {ShotgunPellets * ShotgunPelletDamage:0} up close";
                 case Item.ShotgunShell: return "one shell for the shotgun";
                 case Item.Revolver: return $"{RevolverMag} rounds, {RevolverBodyDamage:0} body / {RevolverHeadDamage:0} head";
-                case Item.RevolverAmmo: return "one bullet for the revolver";
+                case Item.RevolverAmmo: return $"{RevolverAmmoPerCraft} bullets for the revolver (a full cylinder)";
                 case Item.C4: return "thrown: wrecks every building piece nearby";
                 case Item.Helmet: return "goes straight on: stops one headshot completely";
                 case Item.HeavyArmor: return $"{HeavyArmorHp} armour, goes straight on (wooden armour is {ArmorHp})";

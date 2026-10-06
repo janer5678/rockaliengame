@@ -18,7 +18,7 @@ namespace RockGame
             var g = NetGame.Instance;
             int team = me.Team.Value, enemy = 1 - team;
             g.TimerPaused.Value = true;
-            Check(Cfg.ArmorHp == 25 && Cfg.HeavyArmorHp == 100, $"wooden armour {Cfg.ArmorHp}, heavy armour {Cfg.HeavyArmorHp}");
+            Check(Cfg.ArmorHp == 25 && Cfg.HeavyArmorHp == 50, $"wooden armour {Cfg.ArmorHp}, heavy armour {Cfg.HeavyArmorHp}");
             Check(Cfg.ItemName(Item.Workbench2) == "Advanced Trade Station" && Cfg.ItemName(Item.Barrier) == "Large Wall", "renamed: Advanced Trade Station, Large Wall");
             Check(Cfg.CraftTier(Item.SleepingBag) == 1 && Cfg.CraftTier(Item.BearTrap) == 1 && Cfg.CraftTier(Item.Ladder) == 1 && Cfg.CraftTier(Item.LargeGate) == 1 && Cfg.CraftTier(Item.AutoTurret) == 2,
                 "the bag, trap, ladder and gate are Trade Station items, the turret an Advanced one");
@@ -56,6 +56,25 @@ namespace RockGame
                 me.PlaceDeployableRpc((byte)kind, at, faceYaw);
                 yield return new WaitForSeconds(0.6f);
                 Check(me.Count(kind) == 0, $"put the {Cfg.ItemName(kind)} down");
+                // the ladder: walk into it and hold W - up you go (before the wide gate goes up anywhere near it)
+                if (kind == Item.Ladder)
+                {
+                    Container placedLadder = null;
+                    foreach (var c in Container.All) if (c != null && c.Team.Value == team && c.Kind.Value == Container.Ladder) placedLadder = c;
+                    if (placedLadder != null)
+                    {
+                        var l = placedLadder.transform;
+                        pc.LocalTeleport(l.position - l.forward * 0.35f + Vector3.up * 0.1f, l.eulerAngles.y);
+                        yield return new WaitForSeconds(0.3f);
+                        float y0 = me.transform.position.y;
+                        Binds.TestHold(Bind.Forward, true);
+                        float peak = y0;
+                        for (float until = Time.time + 1.6f; Time.time < until; ) { peak = Mathf.Max(peak, me.transform.position.y); yield return null; }
+                        Binds.TestReleaseAll();
+                        Check(peak - y0 > Deployables.LadderHeight - 0.6f, $"climbing the ladder: up {peak - y0:0.0} m at the top");
+                        yield return new WaitForSeconds(1f);
+                    }
+                }
             }
             Container bag = null, ladder = null;
             Structure gate = null;
@@ -64,19 +83,6 @@ namespace RockGame
             Check(bag != null && ladder != null && gate != null, $"the bag, the ladder and the gate are there ({bag != null}/{ladder != null}/{gate != null})");
             yield return Shot("deploy_placed");
 
-            // the ladder: walk into it and hold W - up you go
-            if (ladder != null)
-            {
-                var l = ladder.transform;
-                pc.LocalTeleport(l.position - l.forward * 0.35f + Vector3.up * 0.1f, l.eulerAngles.y);
-                yield return new WaitForSeconds(0.3f);
-                float y0 = me.transform.position.y;
-                Binds.TestHold(Bind.Forward, true);
-                yield return new WaitForSeconds(1.6f);
-                Binds.TestReleaseAll();
-                Check(me.transform.position.y - y0 > 2f, $"climbing the ladder: up {me.transform.position.y - y0:0.0} m");
-                yield return new WaitForSeconds(1f);
-            }
             // the gate opens (E, our team)
             if (gate != null)
             {

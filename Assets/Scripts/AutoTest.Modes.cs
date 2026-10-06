@@ -125,11 +125,11 @@ namespace RockGame
         {
             var hat = Cfg.GetRecipe(Cfg.RecipeIndex(Item.Hatchet));
             var xbow = Cfg.GetRecipe(Cfg.RecipeIndex(Item.Crossbow));
-            Check(Cfg.PowerMenu && Cfg.PowerCount == 7 && Cfg.PowerIndex(Item.Pistol) < 0 && Cfg.PowerIndex(Item.FortifyBuff) < 0 && hat.Wood == Cfg.HatchetWood && xbow.Wood == 350, $"{Cfg.RulesName(Cfg.Rules)}: power menu ({Cfg.PowerCount} items, no pistol, no fortify - it's in UPGRADES), normal prices (hatchet {hat.Wood} wood), crossbow {xbow.Wood} wood");
+            Check(Cfg.PowerMenu && Cfg.PowerCount == 8 && Cfg.PowerIndex(Item.Pistol) < 0 && Cfg.PowerIndex(Item.FortifyBuff) < 0 && hat.Wood == Cfg.HatchetWood && xbow.Wood == 350, $"{Cfg.RulesName(Cfg.Rules)}: power menu ({Cfg.PowerCount} items, no pistol, no fortify - it's in UPGRADES), normal prices (hatchet {hat.Wood} wood), crossbow {xbow.Wood} wood");
             Check(Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.Sword)).Wood == 500 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.C4)).Wood == 2500 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.Helmet)).Wood == 800
                 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.Shotgun)).Wood == 2000 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.ShotgunShell)).Wood == 250
-                && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.Revolver)).Wood == 2500 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.RevolverAmmo)).Wood == 200,
-                "power prices: sword 500, C4 2500, helmet 800, shotgun 2000 + 250 a shell, revolver 2500 + 200 a bullet");
+                && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.Revolver)).Wood == 2500 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.RevolverAmmo)).Wood == 1000,
+                "power prices: sword 500, C4 2500, helmet 800, shotgun 2000 + 250 a shell, revolver 2500 + 1000 for 6 bullets");
             Check(Cfg.MeleePlayerDamage(Item.Sword, true) == 150f && Cfg.MeleePlayerDamage(Item.Sword, false) == 95f && Cfg.Melee(Item.Sword).Cooldown > Cfg.Melee(Item.Hatchet).Cooldown,
                 "sword: 150 head, 95 body, a slower swing");
             Check(Mathf.Abs(Cfg.ShotgunPellets * Cfg.ShotgunPelletDamage * Cfg.ShotgunFalloff(0.9f) - 200f) < 0.5f && Cfg.ShotgunFalloff(10f) < 0.7f, "shotgun: 200 within a metre, less further out");
@@ -139,12 +139,13 @@ namespace RockGame
             yield return new WaitForSeconds(0.4f);
             int w0 = me.Count(Item.Wood);
 
-            // the revolver (5 rounds, comes empty, bullets bought one at a time)
+            // the revolver (6 rounds, comes empty, bullets bought 6 at a time)
             yield return BenchBuy(me, pc, Item.Revolver);
             Check(me.Count(Item.Revolver) == 1 && w0 - me.Count(Item.Wood) == Cfg.RevolverWood, $"bought a revolver ({w0 - me.Count(Item.Wood)} wood)");
             yield return Hold(me, Item.Revolver);
-            Check(me.HeldStack.Data == 0 && Cfg.RevolverMag == 5, $"the revolver comes empty and holds 5 ({me.HeldStack.Data})");
-            for (int i = 0; i < Cfg.RevolverMag; i++) yield return BenchBuy(me, pc, Item.RevolverAmmo);
+            Check(me.HeldStack.Data == 0 && Cfg.RevolverMag == 6, $"the revolver comes empty and holds 6 ({me.HeldStack.Data})");
+            yield return BenchBuy(me, pc, Item.RevolverAmmo);
+            Check(me.Count(Item.RevolverAmmo) == Cfg.RevolverAmmoPerCraft, $"one buy is {Cfg.RevolverAmmoPerCraft} bullets ({me.Count(Item.RevolverAmmo)})");
             me.ReloadPistolRpc();
             yield return new WaitForSeconds(0.4f);
             Check(me.HeldStack.Data == Cfg.RevolverMag && me.Count(Item.RevolverAmmo) == 0, $"bought {Cfg.RevolverMag} bullets and loaded them ({me.HeldStack.Data})");
@@ -159,7 +160,7 @@ namespace RockGame
             yield return BenchBuy(me, pc, Item.RevolverAmmo);
             me.ReloadPistolRpc();
             yield return new WaitForSeconds(0.4f);
-            Check(me.HeldStack.Data == Cfg.RevolverMag && me.Count(Item.RevolverAmmo) == 0, "bought a bullet and reloaded");
+            Check(me.HeldStack.Data == Cfg.RevolverMag && me.Count(Item.RevolverAmmo) == Cfg.RevolverAmmoPerCraft - 1, $"bought bullets and reloaded just the one missing ({me.Count(Item.RevolverAmmo)} spare)");
 
             // the waterpipe shotgun: one shell at a time
             yield return BenchBuy(me, pc, Item.Shotgun);
@@ -363,7 +364,7 @@ namespace RockGame
         {
             var arrows = Cfg.GetRecipe(Cfg.RecipeIndex(Item.Arrow));
             Check(arrows.Wood == 50 && arrows.Count == 5, $"arrows: {arrows.Count} for {arrows.Wood} wood");
-            Check(Cfg.RevolverHeadDamage == 50f && Cfg.RevolverBodyDamage == 30f && Cfg.RevolverMag == 5, "revolver: 5 rounds, 50 head, 30 body");
+            Check(Cfg.RevolverHeadDamage == 50f && Cfg.RevolverBodyDamage == 30f && Cfg.RevolverMag == 6, "revolver: 6 rounds, 50 head, 30 body");
             // the bow: an instant shot is weak and short, a full draw hits hard
             Check(Mathf.Approximately(Cfg.BowDamage(Cfg.BowMinSpeed), Cfg.BowMinDamage) && Mathf.Approximately(Cfg.BowDamage(1f), Cfg.ArrowPlayerDamage)
                 && Cfg.BowDamage(Mathf.Lerp(Cfg.BowMinSpeed, 1f, 0.5f)) < Cfg.ArrowPlayerDamage * 0.4f && Cfg.BowMinSpeed < 0.5f,

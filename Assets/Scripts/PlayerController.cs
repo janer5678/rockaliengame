@@ -668,6 +668,7 @@ namespace RockGame
                 Aim = SightsUp || Scoped,
                 Visible2 = !Scoped,
                 Reload = hs.Id == Item.Crossbow && Time.time < m_XbowBusyUntil ? 1f - (m_XbowBusyUntil - Time.time) / Mathf.Max(0.1f, Cfg.CrossbowReload) : hs.Id == Item.Shotgun ? ShotgunReloadProgress : hs.Id == Item.Revolver ? PistolReloadProgress : -1f,
+                Rounds = PistolReloadRounds,
                 Bob = m_Bob,
                 Speed = m_Speed,
                 Look = m_LookDelta,
@@ -1774,9 +1775,11 @@ namespace RockGame
                 {
                     var flatN = new Vector3(hit.normal.x, 0f, hit.normal.z).normalized;
                     var foot = hit.point + flatN * 0.2f;
+                    // as high up the wall as you aim (its middle on the crosshair), but never below whatever's under it
                     if (Physics.Raycast(foot + Vector3.up * 0.3f, Vector3.down, out var under, 9f, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore))
                     {
                         m_GhostPos = under.point;
+                        m_GhostPos.y = Mathf.Max(under.point.y, hit.point.y - Deployables.LadderHeight * 0.5f);
                         m_GhostYaw = Quaternion.LookRotation(-flatN).eulerAngles.y;
                         PlayerNet.FindDeploySpot(kind, team, ref m_GhostPos, m_GhostYaw, out reason);
                         m_Ghost.transform.SetPositionAndRotation(m_GhostPos, Quaternion.Euler(0, m_GhostYaw, 0));
@@ -2035,6 +2038,10 @@ namespace RockGame
                     else if (c.IsGamble) detail = "E: bet DNA - double it or lose it";
                     else if (c.IsWorkbench) detail = c.Team.Value == m_Net.Team.Value ? $"its items are in your crafting list ({Binds.Name(Bind.Inventory)}) in your base" : "";
                     else if (c.IsBag) detail = "E: open";
+                    // the placeables that don't open: just their health (the turret: its weapon and ammo)
+                    else if (c.IsDeployable)
+                        detail = $"{c.Health.Value:0}/{Deployables.MaxHp(c.Kind.Value):0}" + (c.Kind.Value == Container.Turret && c.Team.Value == m_Net.Team.Value ? $"   {Binds.Name(Bind.Interact)}: weapon and ammo" : "")
+                            + (c.Kind.Value == Container.Trap && c.Flag.Value == 1 ? "   <color=#ff8a7a>sprung</color>" : "") + (DemolishAiming && c.Team.Value == m_Net.Team.Value ? "   <color=#ff8a7a>LMB: demolish</color>" : "");
                     else detail = $"{c.Health.Value:0}/{Cfg.ChestHp:0}   E: open" + (DemolishAiming && c.Team.Value == m_Net.Team.Value ? "   <color=#ff8a7a>LMB: demolish</color>" : "");
                     if (PackingUp) detail = "picking it up...";
                     else if (CanPackUp(t, m_Net.CarryingBall)) detail += $"   hold {Binds.Name(Bind.Interact)}: pick up";

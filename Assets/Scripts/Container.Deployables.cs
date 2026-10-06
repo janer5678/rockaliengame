@@ -41,9 +41,9 @@ namespace RockGame
         /// <summary>A sleeping bag: how long before anyone can respawn at it again.</summary>
         [Tune("Crafting")] public static float SleepingBagCooldown = 60f;
         /// <summary>A bear trap: the damage when it snaps, how long it holds you, and how long until it's set again.</summary>
-        [Tune("Crafting")] public static float BearTrapDamage = 30f, BearTrapHold = 3.5f, BearTrapRearm = 20f;
+        [Tune("Crafting")] public static float BearTrapDamage = 30f, BearTrapHold = 3.5f, BearTrapRearm = 3f; // (rearm: seconds after it lets you go)
         /// <summary>The auto turret: how far it sees, and its cone either side of where it faces (degrees).</summary>
-        [Tune("Crafting")] public static float TurretRange = 32f, TurretCone = 65f;
+        [Tune("Crafting")] public static float TurretRange = 32f, TurretCone = 32f; // (half as wide as it was)
     }
 
     /// <summary>
@@ -53,7 +53,7 @@ namespace RockGame
     ///   (each can be used once a minute: ReadyAt).
     /// - BEAR TRAP: in the team colour, anywhere - your base, the wild or theirs - on the ground or a floor (not on a
     ///   foundation). Anyone stepping on it - its own team too - is snapped (BearTrapDamage) and held (BearTrapHold);
-    ///   it sets itself again after BearTrapRearm (PlayerNet.Trapped).
+    ///   it sets itself again BearTrapRearm seconds after it lets go (PlayerNet.Trapped).
     /// - LADDER: anywhere (to scale someone's walls, or your own); a climbable volume like the fort tower's (Ladder).
     /// - AUTO TURRET: in your own base. E on it opens its two slots - a ranged weapon (or a spear) and its ammo. It
     ///   watches a cone in front of it (shown on the placing ghost), hums as it pans, and with an enemy in view gives a
@@ -62,7 +62,7 @@ namespace RockGame
     public static class Deployables
     {
         public const byte FxSnap = 1, FxWarn = 2, FxShot = 3, FxHum = 4;
-        public const float LadderHeight = 4.65f; // (25% shorter than it was)
+        public const float LadderHeight = 2.4f; // (half what it was: you put it as high up the wall as you aim)
 
         public static float CenterUp(byte kind) => kind == Container.SleepBag ? 0.2f : kind == Container.Trap ? 0.15f : kind == Container.Ladder ? 1.4f : 0.9f;
         public static float MaxHp(byte kind) => kind == Container.SleepBag ? 100f : kind == Container.Trap ? 150f : kind == Container.Ladder ? 250f : 500f;
@@ -149,29 +149,26 @@ namespace RockGame
             foreach (var r in t.GetComponentsInChildren<MeshRenderer>(true)) if (kind != Container.Turret) r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         }
 
-        /// <summary>The turret's ghost shows what it'll watch: a see-through fan out to its range across its cone.</summary>
+        /// <summary>The turret's ghost shows what it'll watch: a red outline of its cone out to its range.</summary>
         static void BuildCone(Transform t, Material ghost)
         {
-            const int seg = 24;
-            var v = new List<Vector3> { new Vector3(0, 0.86f, 0) };
-            var tris = new List<int>();
-            for (int i = 0; i <= seg; i++)
+            // just its outline, in red, on the ground: the two edges of what it watches and the arc at its reach
+            var red = Art.Ghost(new Color(1f, 0.15f, 0.12f, 0.75f));
+            var root = new GameObject("cone").transform;
+            root.SetParent(t, false);
+            void Line(Vector3 a, Vector3 b)
             {
-                float a = Mathf.Lerp(-Cfg.TurretCone, Cfg.TurretCone, i / (float)seg) * Mathf.Deg2Rad;
-                v.Add(new Vector3(Mathf.Sin(a) * Cfg.TurretRange, 0.15f, Mathf.Cos(a) * Cfg.TurretRange));
-                if (i > 0) { tris.Add(0); tris.Add(i); tris.Add(i + 1); tris.Add(0); tris.Add(i + 1); tris.Add(i); }
+                var mid = (a + b) * 0.5f;
+                var d = b - a;
+                var seg = Art.Box(root, Color.white, mid, new Vector3(0.12f, 0.04f, d.magnitude), new Vector3(0, Mathf.Atan2(d.x, d.z) * Mathf.Rad2Deg, 0), false, red);
+                seg.GetComponent<Renderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             }
-            var mesh = new Mesh { name = "turret cone" };
-            mesh.SetVertices(v);
-            mesh.SetTriangles(tris, 0);
-            mesh.RecalculateNormals();
-            var go = new GameObject("cone");
-            go.transform.SetParent(t, false);
-            go.AddComponent<MeshFilter>().sharedMesh = mesh;
-            var mr = go.AddComponent<MeshRenderer>();
-            var c = ghost.color;
-            mr.sharedMaterial = Art.Ghost(new Color(1f, 0.25f, 0.2f, 0.12f));
-            mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            Vector3 At(float deg, float r) => new Vector3(Mathf.Sin(deg * Mathf.Deg2Rad) * r, 0.08f, Mathf.Cos(deg * Mathf.Deg2Rad) * r);
+            Line(At(-Cfg.TurretCone, 0.6f), At(-Cfg.TurretCone, Cfg.TurretRange));
+            Line(At(Cfg.TurretCone, 0.6f), At(Cfg.TurretCone, Cfg.TurretRange));
+            const int seg2 = 12;
+            for (int i = 0; i < seg2; i++)
+                Line(At(Mathf.Lerp(-Cfg.TurretCone, Cfg.TurretCone, i / (float)seg2), Cfg.TurretRange), At(Mathf.Lerp(-Cfg.TurretCone, Cfg.TurretCone, (i + 1) / (float)seg2), Cfg.TurretRange));
         }
 
         /// <summary>A placed one's collider (and the ladder's climbable volume).</summary>
@@ -266,7 +263,7 @@ namespace RockGame
             var now = NetworkManager.Singleton.ServerTime.Time;
             if (c.Flag.Value == 1)
             {
-                if (s_TrapSprung.TryGetValue(c, out var at) && Time.time - at > Cfg.BearTrapRearm) { c.Flag.Value = 0; s_TrapSprung.Remove(c); }
+                if (s_TrapSprung.TryGetValue(c, out var at) && Time.time - at > Cfg.BearTrapHold + Cfg.BearTrapRearm) { c.Flag.Value = 0; s_TrapSprung.Remove(c); }
                 return;
             }
             var p0 = c.transform.position;

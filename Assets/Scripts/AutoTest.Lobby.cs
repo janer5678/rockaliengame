@@ -89,8 +89,26 @@ namespace RockGame
             int onScreen = 0;
             foreach (var p in ShipLobby.Seated) if (ShipLobby.HeadOnScreen(p, out var at) && at.x > 0 && at.x < Screen.width && at.y > 0 && at.y < Screen.height) onScreen++;
             Check(onScreen == ShipLobby.Seated.Count, $"everyone's name tag is on screen ({onScreen})");
+            float sink = ShipLobby.WorstFootSink;
+            Check(sink < 0.04f, $"no seated alien's feet go through the floor ({sink:0.000} m under at worst)");
             ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), $"lobby_{(nm.IsHost ? "host" : "client" + nm.LocalClientId)}.png"));
             yield return new WaitForSeconds(0.5f);
+            if (nm.IsHost)
+            {
+                // close on each of them, twice (their props and what they're doing with them)
+                for (int i = 0; i < ShipLobby.Seated.Count; i++)
+                    for (int s = 0; s < 3; s++)
+                    {
+                        ShipLobby.TestFocus = i;
+                        ShipLobby.TestPhase = s == 0 ? 0.1f : s == 1 ? 1.2f : 2.9f; // (at rest, the drag / swig, breathing the smoke out)
+                        yield return new WaitForSeconds(0.6f);
+                        ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), $"lobby_close_{i}_{s}.png"));
+                        yield return null;
+                    }
+                ShipLobby.TestFocus = -1;
+                ShipLobby.TestPhase = -1f;
+                yield return new WaitForSeconds(0.3f);
+            }
             if (nm.IsHost)
             {
                 // a team swap (2v2: the host moves to the other team if there's room)

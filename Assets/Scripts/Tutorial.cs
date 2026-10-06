@@ -116,6 +116,8 @@ namespace RockGame
         static readonly int[] s_FeatureAt = new int[Enum.GetValues(typeof(TutFeature)).Length];
         static readonly Dictionary<Item, int> s_ItemAt = new Dictionary<Item, int>();
         static bool s_Started;
+        /// <summary>This machine was in the ship lobby before the tutorial started (with a friend, together from step one).</summary>
+        static bool s_SawLobby;
         static int s_Index;
         static float s_DoneAt = -1f, s_StepStart, s_LockedAt = -10f, s_NextHungry, s_NextAsk;
         static bool s_Finished, s_OverScreen;
@@ -171,6 +173,7 @@ namespace RockGame
         {
             s_Steps = null; // (rebuilt with the current key names)
             s_Started = false;
+            s_SawLobby = false;
             s_Index = 0;
             s_DoneAt = -1f;
             s_Finished = false;
@@ -998,7 +1001,7 @@ namespace RockGame
                     Progress = () => { var o = Other; return o == null ? "nobody has joined yet" : $"{o.DisplayName} is here"; },
                     Hint = "Nobody coming? Leave the game (Esc) and play the tutorial Solo to see how it ends.",
                     Skip = () => !Friend,
-                    Enter = () => { if (G != null && !G.IsServer) Ask(AskKit); },
+                    Enter = () => { if (G != null && !G.IsServer && !s_SawLobby) Ask(AskKit); },
                     Done = () => OthersAt(StepAt("friend")),
                     Target = () => { var o = Other; return o != null ? o.transform.position + Vector3.up * 2.4f : (Vector3?)null; }, TargetLabel = "FRIEND",
                 },
@@ -1283,6 +1286,7 @@ namespace RockGame
         {
             if (!On || me == null || pc == null) return;
             if (me.TutStep.Value != MyStep) me.TutStep.Value = MyStep; // so the server knows what's unlocked for us
+            if (G != null && G.S == GameState.Waiting) s_SawLobby = true; // (started together from the ship lobby)
             if (G == null || G.S == GameState.Waiting) return;
             if (!s_Started)
             {
@@ -1290,7 +1294,7 @@ namespace RockGame
                 s_Started = true;
                 // the host starts at the top. Whoever joins somebody's tutorial isn't taken through the early steps: they
                 // start at the "with a friend" step (everything before it unlocked, a starter kit) and wait there for the host
-                s_Index = G.IsServer ? 0 : Mathf.Max(0, StepAt("friend"));
+                s_Index = G.IsServer || s_SawLobby ? 0 : Mathf.Max(0, StepAt("friend"));
                 SkipAhead();
                 EnterStep();
             }

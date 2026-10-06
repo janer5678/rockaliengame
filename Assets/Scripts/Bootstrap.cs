@@ -249,8 +249,8 @@ namespace RockGame
                 cam.position = p;
                 cam.LookAt(new Vector3(0, 0, 0));
             }
-            MenuSpace.Tick(!InSession && !Hud.DevMenuShown); // (the new main menu: the UFO in space)
-            MenuScene.Tick(InSession || !Hud.DevMenuShown);  // (the dev main menu: the flight over the map)
+            MenuSpace.Tick(!InSession && !Hud.DevMenuShown && !Hud.MapPreview); // (the new main menu: the UFO in space)
+            MenuScene.Tick(InSession || (!Hud.DevMenuShown && !Hud.MapPreview)); // (the dev main menu: the flight over the map)
         }
     }
 }

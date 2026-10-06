@@ -6,11 +6,13 @@ namespace RockGame
     /// <summary>Client side of the game-mode guns: the pistol and revolver (fire, reload) and the waterpipe shotgun.</summary>
     public partial class PlayerController
     {
-        float m_NextPistolShot, m_PistolReloadStart = -1f;
+        float m_NextPistolShot, m_PistolReloadStart = -1f, m_PistolReloadTime = 1f;
+        /// <summary>How many rounds the reload under way puts in (the revolver: just the ones that were fired).</summary>
+        public int PistolReloadRounds { get; private set; }
         Item m_PistolReloadItem;
 
         /// <summary>How far the pistol / revolver reload is (0..1), -1 when not reloading (for the HUD).</summary>
-        public float PistolReloadProgress => m_PistolReloadStart < 0 ? -1f : Mathf.Clamp01((Time.time - m_PistolReloadStart) / Mathf.Max(0.05f, Cfg.GunReload(m_PistolReloadItem)));
+        public float PistolReloadProgress => m_PistolReloadStart < 0 ? -1f : Mathf.Clamp01((Time.time - m_PistolReloadStart) / Mathf.Max(0.05f, m_PistolReloadTime));
 
         /// <summary>Pistol / revolver: LMB fires (as fast as you click, up to its fire rate), R reloads; it reloads by itself when empty.</summary>
         void HandlePistol(Item gun)
@@ -49,6 +51,11 @@ namespace RockGame
             if (m_Net.Count(Cfg.GunAmmo(gun)) <= 0) { Hud.Push($"The {Cfg.ItemName(gun).ToLower()} is out of ammo"); return; }
             m_PistolReloadStart = Time.time;
             m_PistolReloadItem = gun;
+            // as long as the rounds going in take: the revolver one by one (5 of 6 left: a one-round reload), plus a moment
+            // to open and close it; the pistol's magazine all at once
+            int mag = Cfg.GunMag(gun);
+            PistolReloadRounds = Mathf.Clamp(Mathf.Min(mag - m_Net.HeldStack.Data, m_Net.Count(Cfg.GunAmmo(gun))), 1, mag);
+            m_PistolReloadTime = gun == Item.Revolver ? Cfg.GunReload(gun) * (0.25f + 0.75f * PistolReloadRounds / (float)mag) : Cfg.GunReload(gun);
             Sfx.Play2D(Sfx.Clink, 0.4f);
         }
 
@@ -61,7 +68,7 @@ namespace RockGame
                 if (m_Net.HeldStack.Data == 0 && m_Net.Count(Cfg.GunAmmo(held)) > 0 && !MenuOpen && Time.time > m_PistolReloadSent + 1f) StartPistolReload(held);
                 return;
             }
-            if (Time.time - m_PistolReloadStart >= Cfg.GunReload(held))
+            if (Time.time - m_PistolReloadStart >= m_PistolReloadTime)
             {
                 m_PistolReloadStart = -1f;
                 m_PistolReloadSent = Time.time; // don't start another while the server's answer is on its way

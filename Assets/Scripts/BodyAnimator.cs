@@ -31,7 +31,7 @@ namespace RockGame
         readonly Transform m_Root;   // character space (unscaled visual root)
         readonly Transform m_Model;  // scaled alien
         readonly Dictionary<Transform, (Quaternion local, Quaternion rel)> m_Rest = new Dictionary<Transform, (Quaternion, Quaternion)>();
-        readonly Transform m_Hips, m_Spine, m_Chest, m_Neck, m_Head, m_LUp, m_LLo, m_RUp, m_RLo, m_LArm, m_LFore, m_RArm, m_RFore, m_LHand, m_RHand;
+        readonly Transform m_Hips, m_Spine, m_Chest, m_Neck, m_Head, m_LUp, m_LLo, m_RUp, m_RLo, m_LArm, m_LFore, m_RArm, m_RFore, m_LHand, m_RHand, m_LFoot, m_RFoot;
         readonly Vector3 m_ModelBase;
         Vector3 m_LastPos;
         float m_Phase, m_Speed, m_Crouch, m_Air, m_VelY, m_Hold, m_Carry, m_Fwd = 1f, m_Side, m_Land, m_AirVel;
@@ -45,6 +45,10 @@ namespace RockGame
 
         public Transform RightHand => m_RHand;
         public Transform LeftHand => m_LHand;
+        public Transform RightFore => m_RFore;
+        public Transform LeftFore => m_LFore;
+        /// <summary>The hips' height over the root (the lobby puts each seat under them).</summary>
+        public float HipsHeight => m_Hips != null ? m_Root.InverseTransformPoint(m_Hips.position).y : 0.45f;
         public Transform HeadBone => m_Head;
         public Transform ChestBone => m_Chest != null ? m_Chest : m_Spine;
 
@@ -74,6 +78,7 @@ namespace RockGame
             m_LUp = B("LeftUpperLeg"); m_LLo = B("LeftLowerLeg"); m_RUp = B("RightUpperLeg"); m_RLo = B("RightLowerLeg");
             m_LArm = B("LeftUpperArm"); m_LFore = B("LeftLowerArm"); m_LHand = B("LeftHand");
             m_RArm = B("RightUpperArm"); m_RFore = B("RightLowerArm"); m_RHand = B("RightHand");
+            m_LFoot = B("LeftFoot"); m_RFoot = B("RightFoot");
             foreach (var b in new[] { m_Hips, m_Spine, m_Chest, m_Neck, m_Head, m_LUp, m_LLo, m_RUp, m_RLo, m_LArm, m_LFore, m_RArm, m_RFore, m_LHand, m_RHand })
                 if (b != null) m_Rest[b] = (b.localRotation, Quaternion.Inverse(root.rotation) * b.rotation);
             // The model is modelled in an A-pose (arms out at an angle). Treat "arms hanging at the sides, legs straight
@@ -114,9 +119,11 @@ namespace RockGame
         static float Smooth(float t) { t = Mathf.Clamp01(t); return t * t * (3 - 2 * t); }
 
         /// <summary>
-        /// The ship lobby (ShipLobby.cs): sitting about, chilling, in one of four poses (variant) - leaning back with the
-        /// arms crossed, elbows on the knees, one leg crossed over with an arm along the seat back, or chatting with a hand
-        /// going - breathing and looking round on its own (t: seconds; each alien has its own offset).
+        /// The ship lobby (ShipLobby.cs): sitting about, chilling, in one of seven poses (variant) - leaning back with the
+        /// arms crossed, elbows on the knees, one leg crossed over with an arm along the seat back, chatting with a hand
+        /// going, smoking (a drag every few seconds), drinking a beer (a swig now and then, head back) or on their phone
+        /// (head down, thumbs going, a laugh now and then) - breathing and looking round on their own (t: seconds; each
+        /// alien has its own offset). The feet are put on the floor whatever the pose (the hips go where the legs say).
         /// </summary>
         public void Lounge(int variant, float t)
         {
@@ -128,8 +135,7 @@ namespace RockGame
             Rot(m_RUp, new Vector3(-84f, 0, 9f));
             Rot(m_LLo, new Vector3(86f, 0, 0));
             Rot(m_RLo, new Vector3(86f, 0, 0));
-            m_Model.localPosition = m_ModelBase + new Vector3(0, -0.36f, 0); // (feet on the floor, not through it)
-            switch (((variant % 4) + 4) % 4)
+            switch (((variant % LoungeVariants) + LoungeVariants) % LoungeVariants)
             {
                 case 0: // leaning back, arms crossed
                     Rot(m_Spine, new Vector3(10f + br, 0, 0));
@@ -160,7 +166,7 @@ namespace RockGame
                     Rot(m_RArm, new Vector3(-28f, 0, 10f));
                     Rot(m_RFore, new Vector3(-62f, 0, 0));
                     break;
-                default: // chatting: a hand going, nodding, turning to the others
+                case 3: // chatting: a hand going, nodding, turning to the others
                     Rot(m_Spine, new Vector3(br, Mathf.Sin(t * 0.5f) * 12f, 0));
                     Rot(m_Chest, new Vector3(-4f, 0, 0));
                     Rot(m_Head, new Vector3(Mathf.Sin(t * 2.6f) * 7f, look, 0));
@@ -169,7 +175,68 @@ namespace RockGame
                     Rot(m_LArm, new Vector3(-30f, 0, -10f));
                     Rot(m_LFore, new Vector3(-72f, 0, 0));
                     break;
+                case 4: // smoking: leaning back, legs crossed, a drag every few seconds (the left arm across the belly)
+                {
+                    float d = Drag(t);
+                    Rot(m_RUp, new Vector3(-92f, 0, -22f));
+                    Rot(m_RLo, new Vector3(58f, 0, 0));
+                    Rot(m_Spine, new Vector3(12f + br, 0, 0));
+                    Rot(m_Chest, new Vector3(4f - d * 4f, 0, 0));
+                    Rot(m_Head, new Vector3(-4f + d * 8f, look * (1f - d), 0));
+                    Rot(m_LArm, new Vector3(-30f, 0, -6f));
+                    Rot(m_LFore, new Vector3(-95f, 50f, 0));
+                    Rot(m_RArm, new Vector3(Mathf.Lerp(-30f, -80f, d), 0, Mathf.Lerp(-2f, 14f, d)));
+                    Rot(m_RFore, new Vector3(Mathf.Lerp(-80f, -142f, d), Mathf.Lerp(-30f, -36f, d), 0));
+                    break;
+                }
+                case 5: // a beer: slouched, the can on the knee, a swig now and then with the head back
+                {
+                    float d = Swig(t);
+                    Rot(m_Spine, new Vector3(16f + br - d * 6f, 0, 0));
+                    Rot(m_Chest, new Vector3(2f, 0, 0));
+                    Rot(m_Head, new Vector3(-4f + d * 26f, look * (1f - d), 0));
+                    Rot(m_LArm, new Vector3(-30f, 0, 2f));
+                    Rot(m_LFore, new Vector3(-72f, 28f, 0));
+                    Rot(m_RArm, new Vector3(Mathf.Lerp(-30f, -78f, d), 0, Mathf.Lerp(-2f, 16f, d)));
+                    Rot(m_RFore, new Vector3(Mathf.Lerp(-70f, -136f, d), Mathf.Lerp(-20f, -36f, d), 0));
+                    break;
+                }
+                default: // on the phone: head down, both hands up in front, thumbs going, a laugh now and then
+                {
+                    float laugh = Mathf.Max(0f, Mathf.Sin(t * 0.45f + 1.3f) - 0.8f) * 5f;
+                    float shake = Mathf.Sin(t * 22f) * 3f * laugh;
+                    Rot(m_Spine, new Vector3(-10f + br + shake, 0, 0));
+                    Rot(m_Chest, new Vector3(-6f + shake, 0, 0));
+                    Rot(m_Head, new Vector3(-26f + laugh * 18f, look * 0.12f, 0));
+                    Rot(m_LArm, new Vector3(-26f, 0, -4f));
+                    Rot(m_LFore, new Vector3(-88f + Mathf.Sin(t * 9f) * 3f, 38f, 0));
+                    Rot(m_RArm, new Vector3(-26f, 0, 4f));
+                    Rot(m_RFore, new Vector3(-88f + Mathf.Sin(t * 11f + 1f) * 3f, -38f, 0));
+                    break;
+                }
             }
+            // the feet on the floor: the lower ankle just over the root (the seat goes under the hips: ShipLobby)
+            m_Model.localPosition = m_ModelBase;
+            float low = Mathf.Min(LocalY(m_LFoot ?? m_LLo), LocalY(m_RFoot ?? m_RLo));
+            if (low < 50f) m_Model.localPosition = m_ModelBase + new Vector3(0f, k_Ankle - low, 0f);
+        }
+
+        /// <summary>How many lounge poses there are (Lounge's variant).</summary>
+        public const int LoungeVariants = 7;
+        /// <summary>An ankle bone's height over the sole.</summary>
+        const float k_Ankle = 0.07f;
+        float LocalY(Transform b) => b != null ? m_Root.InverseTransformPoint(b.position).y : 99f;
+
+        /// <summary>The smoker's hand at the mouth (0..1): a drag every 6 s, held there a moment.</summary>
+        public static float Drag(float t) => Raise(t, 6f, 2.2f);
+        /// <summary>The beer at the mouth (0..1): a swig every 8 s.</summary>
+        public static float Swig(float t) => Raise(t, 8f, 2.4f);
+        static float Raise(float t, float period, float len)
+        {
+            float u = Mathf.Repeat(t, period);
+            if (u > len) return 0f;
+            const float up = 0.55f;
+            return u < up ? Smooth(u / up) : u > len - up ? Smooth((len - u) / up) : 1f;
         }
 
         public void Tick(Pose p, float dt)
