@@ -32,6 +32,19 @@ namespace RockGame
             {
                 Hud.TestNewPage(p);
                 yield return Shot("page" + p);
+                if (p == 7)
+                {
+                    // the map page: the quick, low flight round the map behind it (it moves on fast)
+                    Check(MenuScene.Preview && !MenuSpace.Showing, "the map page shows the map itself (the quick preview flight), not the UFO");
+                    var at0 = Camera.main != null ? Camera.main.transform.position : Vector3.zero;
+                    yield return new WaitForSeconds(2f);
+                    yield return Shot("page7_map_2s");
+                    var at1 = Camera.main != null ? Camera.main.transform.position : Vector3.zero;
+                    float h = at1.y - MapBuilder.GroundHeight(at1.x, at1.z);
+                    Check(Vector3.Distance(at0, at1) > 20f, $"the map preview flies on quickly ({Vector3.Distance(at0, at1):0} m in about 3 s), {h:0.0} m over the ground");
+                    yield return new WaitForSeconds(3f);
+                    yield return Shot("page7_map_5s");
+                }
             }
             Hud.TestNameScreen = true;
             yield return Shot("name_screen");

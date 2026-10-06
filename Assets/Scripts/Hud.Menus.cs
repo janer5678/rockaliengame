@@ -780,9 +780,10 @@ namespace RockGame
                 {
                     bool capturing = m_Rebinding && m_RebindWhat == info.Bind && m_RebindAlt == (alt == 1);
                     var cur = Binds.Get(info.Bind, alt == 1);
-                    string text = capturing ? $"<color=#ffd27a>{(Mathf.Repeat(Time.unscaledTime, 0.8f) < 0.5f ? "press a key" : "")}</color>" : cur == KeyCode.None ? "<color=#777777>-</color>" : Binds.KeyName(cur);
+                    string text = capturing ? $"<color=#ffd27a>{(Mathf.Repeat(Time.unscaledTime, 0.8f) < 0.5f ? "press a key" : "")}</color>" : cur == KeyCode.None ? "<color=#777777>-</color>" : cur == KeyCode.Mouse0 ? "" : Binds.KeyName(cur);
                     bool on = GUILayout.Toggle(capturing, text, m_KeyCell, GUILayout.Width(cellW), GUILayout.Height(30 * k));
                     TrackHover(GUILayoutUtility.GetLastRect());
+                    if (!capturing && cur == KeyCode.Mouse0) { var ir = GUILayoutUtility.GetLastRect(); Tutorial.DrawLmb(new Rect(ir.center.x - 11 * k, ir.y + 3 * k, 22 * k, ir.height - 6 * k)); } // (the left mouse button as its icon)
                     // (the click that just set a key mustn't start capturing again)
                     if (on != capturing && m_RebindFrame != Time.frameCount)
                     {

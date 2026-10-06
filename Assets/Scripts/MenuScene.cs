@@ -21,6 +21,11 @@ namespace RockGame
         public const float FadeSeconds = 1.2f;
         /// <summary>How fast the camera glides along (m/s): slowly past the crash site and the bases, faster through the wild.</summary>
         public const float SlowSpeed = 3.2f, BaseSpeed = 3.8f, WildSpeed = 6f;
+        /// <summary>The menu's map page (Hud.MapPreview): a quick look round the map - no crash site, low (about a
+        /// player's height) through the wild and past every base, PreviewSpeed times as fast, from the wild at once.</summary>
+        public static bool Preview;
+        public const float PreviewSpeed = 4f;
+        static bool s_BakedPreview;
         /// <summary>How black the screen is right now (0..1; 0 while in a match): only the fade in as the menu comes up.</summary>
         public static float Fade { get; private set; }
         /// <summary>Test hook: how many trees stand on the menu's map right now.</summary>
@@ -128,11 +133,12 @@ namespace RockGame
             float dt = Mathf.Min(Time.unscaledDeltaTime, 0.1f);
             if (MapBuilder.Root == null) return;
             int root = MapBuilder.Root.GetInstanceID();
-            if (s_Pos == null || root != s_BakedRoot || TreeCount != s_BakedTrees)
+            if (s_Pos == null || root != s_BakedRoot || TreeCount != s_BakedTrees || Preview != s_BakedPreview)
             {
                 // a new map (or its trees came or went): plan the loop again (the same map: carry on from as far round it)
                 float was = s_Len > 0f ? s_Along / s_Len : 0f;
-                bool same = root == s_BakedRoot && s_Started;
+                bool same = root == s_BakedRoot && s_Started && Preview == s_BakedPreview;
+                s_BakedPreview = Preview;
                 Bake();
                 s_BakedRoot = root;
                 s_BakedTrees = TreeCount;
@@ -151,13 +157,13 @@ namespace RockGame
                 if (d0.sqrMagnitude > 0.01f) s_RotNow = Quaternion.LookRotation(d0.normalized, Vector3.up);
             }
             s_FadeT += dt;
-            Fade = 1f - Mathf.SmoothStep(0f, 1f, s_FadeT / FadeSeconds);
+            Fade = 1f - Mathf.SmoothStep(0f, 1f, s_FadeT / (Preview ? FadeSeconds * 0.4f : FadeSeconds));
             // on round the loop at its (already eased) speed; the look follows its target softly, the head turns softly
-            s_Along = Wrap(s_Along + Read(s_Speed, s_Along) * dt);
+            s_Along = Wrap(s_Along + Read(s_Speed, s_Along) * (Preview ? PreviewSpeed : 1f) * dt);
             var pos = Read(s_Pos, s_Along);
-            s_LookNow = Vector3.Lerp(s_LookNow, Read(s_Look, s_Along), 1f - Mathf.Exp(-1.6f * dt));
+            s_LookNow = Vector3.Lerp(s_LookNow, Read(s_Look, s_Along), 1f - Mathf.Exp((Preview ? -4f : -1.6f) * dt));
             var dir = s_LookNow - pos;
-            if (dir.sqrMagnitude > 0.01f) s_RotNow = Quaternion.Slerp(s_RotNow, Quaternion.LookRotation(dir.normalized, Vector3.up), 1f - Mathf.Exp(-4f * dt));
+            if (dir.sqrMagnitude > 0.01f) s_RotNow = Quaternion.Slerp(s_RotNow, Quaternion.LookRotation(dir.normalized, Vector3.up), 1f - Mathf.Exp((Preview ? -7f : -4f) * dt));
             cam.SetPositionAndRotation(pos, s_RotNow);
         }
 
@@ -213,15 +219,18 @@ namespace RockGame
                 // further out and higher, looking down into the crater)
                 bool close = k % 2 == 0;
                 float r = close ? 15f : 20f, up = close ? 3.4f : 7f;
-                Add(c + (CrashSite.Dir - u * 0.9f).normalized * r, up, crashLook, SlowSpeed, isCrash: true);
-                Add(c + (CrashSite.Dir + u * 0.7f).normalized * r, up + 0.6f, crashLook, SlowSpeed);
+                if (!Preview)
+                {
+                    Add(c + (CrashSite.Dir - u * 0.9f).normalized * r, up, crashLook, SlowSpeed, isCrash: true);
+                    Add(c + (CrashSite.Dir + u * 0.7f).normalized * r, up + 0.6f, crashLook, SlowSpeed);
+                }
                 // out through the wild, low
-                Add(u * (far * 0.42f) + side * (far * 0.18f), 4.4f, default, WildSpeed, true);
+                Add(u * (far * 0.42f) + side * (far * 0.18f), Preview ? 2.4f : 4.4f, default, WildSpeed, true);
                 // across the front of the base, past its machine
-                Add(b - u * (bh + 6f) + side * (bh * 0.45f), 4.2f, machine, BaseSpeed);
-                Add(b - u * (bh + 4f) - side * (bh * 0.55f), 4.8f, machine, BaseSpeed);
+                Add(b - u * (bh + 6f) + side * (bh * 0.45f), Preview ? 2.6f : 4.2f, machine, BaseSpeed);
+                Add(b - u * (bh + 4f) - side * (bh * 0.55f), Preview ? 2.8f : 4.8f, machine, BaseSpeed);
                 // back through the wild on the other side, a little higher
-                Add(u * (far * 0.5f) - side * (far * 0.3f), 8f, default, WildSpeed, true);
+                Add(u * (far * 0.5f) - side * (far * 0.3f), Preview ? 3.2f : 8f, default, WildSpeed, true);
             }
             // the "ahead" stops look down the way the loop goes there, at the ground a way in front
             for (int i = 0; i < stops.Count; i++)

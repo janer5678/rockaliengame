@@ -8,6 +8,8 @@
 //   Sharpen: a small unsharp mask (4 taps).
 //   Cel banding: the brightness snapped to a few steps, the hue and saturation kept.
 // Each one is skipped (a uniform branch) when it's off.
+// Settings > Display > HANDS AND TOOLS: inside the hand mask (_RgHandMask: the first-person hands and what they hold,
+// drawn white - HandMask.shader) the outlines, cel banding, saturation and contrast are the hands' own (_RgHand*).
 Shader "Hidden/RockGame/Stylize"
 {
     SubShader
@@ -31,6 +33,11 @@ Shader "Hidden/RockGame/Stylize"
             float4 _RgLook;      // x sharpen (0 = off), y cel banding steps (0 = off)
             float4 _RgFarLine;   // x the far things' line thickness (x the usual; 1 = as near), y how much silhouettes against the sky keep their line at any distance (0..1)
 
+            float4 _RgHand;        // HANDS AND TOOLS (their own looks, inside the hand mask): x on, y cel banding steps (0 = off), z saturation, w contrast
+            float4 _RgHandOutline; // the hands' outlines, as _RgOutline
+            TEXTURE2D(_RgHandMask);
+            float Hand(float2 uv) { return SAMPLE_TEXTURE2D_LOD(_RgHandMask, sampler_PointClamp, uv, 0).r; }
+
             half3 Col(float2 uv) { return SAMPLE_TEXTURE2D_X_LOD(_BlitTexture, sampler_PointClamp, uv, 0).rgb; }
             float Eye(float2 uv) { return LinearEyeDepth(SampleSceneDepth(uv), _ZBufferParams); }
             // the near grass round the camera says "no ink here" in the normals' alpha (everything else writes 0)
@@ -45,17 +52,17 @@ Shader "Hidden/RockGame/Stylize"
             }
 
             // how much of an ink line this pixel is, with the Roberts cross's samples o (uv) away along the diagonals
-            float Edge(float2 uv, float2 o, float d, float raw)
+            float Edge(float2 uv, float2 o, float d, float raw, float2 ol)
             {
                 float2 a = uv + float2(-o.x, -o.y), b = uv + float2(o.x, o.y), e = uv + float2(o.x, -o.y), f = uv + float2(-o.x, o.y);
                 float ra = SampleSceneDepth(a), rb = SampleSceneDepth(b), re = SampleSceneDepth(e), rf = SampleSceneDepth(f);
                 float da = LinearEyeDepth(ra, _ZBufferParams), db = LinearEyeDepth(rb, _ZBufferParams), de = LinearEyeDepth(re, _ZBufferParams), df = LinearEyeDepth(rf, _ZBufferParams);
                 float near = min(min(da, db), min(min(de, df), d));
                 float jump = max(abs(da - db), abs(de - df)) / max(near, 0.01);
-                float edge = smoothstep(_RgOutline.z, _RgOutline.z * 2.2, jump);
+                float edge = smoothstep(ol.x, ol.x * 2.2, jump);
                 float3 na = SampleSceneNormals(a), nb = SampleSceneNormals(b), ne = SampleSceneNormals(e), nf = SampleSceneNormals(f);
                 float fold = max(1 - dot(na, nb), 1 - dot(ne, nf));
-                edge = max(edge, smoothstep(_RgOutline.w, _RgOutline.w + 0.35, fold) * (Sky(raw) ? 0 : 1));
+                edge = max(edge, smoothstep(ol.y, ol.y + 0.35, fold) * (Sky(raw) ? 0 : 1));
                 // none on (or against) the faded grass right round the camera
                 edge *= 1 - max(max(max(NoInk(a), NoInk(b)), max(NoInk(e), NoInk(f))), NoInk(uv));
                 // fade out with distance (the nearest of the samples) - except, with the far lines turned up past 100%
@@ -93,20 +100,30 @@ Shader "Hidden/RockGame/Stylize"
                 // are read pixel by pixel, so the line is worked out at the whole pixel offsets either side of it and
                 // blended between them - a line 1.5 px thick is the 1 px line with the 2 px one's extra ring half dark.
                 // That keeps lines the same share of the screen at any resolution instead of snapping to whole pixels.
-                if (_RgOutline.x > 0)
+                // (the hands and tools - and the ring of pixels round them, where their silhouette line goes - use their own)
+                float hand = 0;
+                float4 ol = _RgOutline;
+                if (_RgHand.x > 0)
                 {
-                    float t = _RgOutline.y;
+                    hand = Hand(uv);
+                    float2 ho = texel * max(1.0, ceil(max(_RgOutline.y, _RgHandOutline.y)));
+                    float ring = max(max(Hand(uv + ho), Hand(uv - ho)), max(Hand(uv + float2(ho.x, -ho.y)), Hand(uv + float2(-ho.x, ho.y))));
+                    if (max(hand, ring) > 0.5) ol = _RgHandOutline;
+                }
+                if (ol.x > 0)
+                {
+                    float t = ol.y;
                     // the far things - clouds, planets, far mountains, and the sky round them - get their own
                     // thickness (Settings > Display > Far line thickness: x 1 = the same as near)
                     t *= lerp(1.0, _RgFarLine.x, smoothstep(40.0, 110.0, d));
                     float k0 = floor(t), w = t - k0;
-                    float edge = k0 >= 1 ? Edge(uv, texel * k0, d, raw) : 0;
-                    if (w > 0.01) edge = lerp(edge, Edge(uv, texel * (k0 + 1), d, raw), w);
-                    c *= 1 - edge * _RgOutline.x * 0.78;
+                    float edge = k0 >= 1 ? Edge(uv, texel * k0, d, raw, ol.zw) : 0;
+                    if (w > 0.01) edge = lerp(edge, Edge(uv, texel * (k0 + 1), d, raw, ol.zw), w);
+                    c *= 1 - edge * ol.x * 0.78;
                 }
 
                 // distance haze (not on the sky)
-                if (_RgHaze.x > 0 && !Sky(raw))
+                if (_RgHaze.x > 0 && !Sky(raw) && hand < 0.5)
                 {
                     float h = saturate((d - _RgHaze.y) / _RgHaze.z);
                     h = h * (2 - h) * _RgHaze.x;
@@ -114,15 +131,27 @@ Shader "Hidden/RockGame/Stylize"
                 }
 
                 // cel banding: brightness in a few steps (in gamma, so the steps look even), same hue
-                if (_RgLook.y > 0)
+                // (the hands and tools: their own number of steps)
+                float steps = hand > 0.5 ? _RgHand.y : _RgLook.y;
+                if (steps > 0)
                 {
                     float l = max(0.0001, dot(c, float3(0.2126, 0.7152, 0.0722)));
                     float g = LinearToSRGB(saturate(l));
-                    float q = (floor(g * _RgLook.y) + 0.5) / _RgLook.y;
+                    float q = (floor(g * steps) + 0.5) / steps;
                     // soft edges between the steps (no crawling single-pixel stairs)
-                    float t = frac(g * _RgLook.y);
-                    q += (smoothstep(0.88, 1.0, t)) / _RgLook.y * 0.5 - (1 - smoothstep(0.0, 0.12, t)) / _RgLook.y * 0.5;
+                    float t = frac(g * steps);
+                    q += (smoothstep(0.88, 1.0, t)) / steps * 0.5 - (1 - smoothstep(0.0, 0.12, t)) / steps * 0.5;
                     c *= l < 1 ? SRGBToLinear(saturate(q)) / l : 1; // (the brightest bits - the sun, sparks - keep their glow)
+                }
+
+                // the hands' own saturation and contrast (in gamma, as drawn)
+                if (hand > 0.5 && (abs(_RgHand.z - 1) > 0.001 || abs(_RgHand.w - 1) > 0.001))
+                {
+                    float3 g3 = LinearToSRGB(saturate(c));
+                    float l3 = dot(g3, float3(0.2126, 0.7152, 0.0722));
+                    g3 = lerp(l3.xxx, g3, _RgHand.z);
+                    g3 = saturate((g3 - 0.5) * _RgHand.w + 0.5);
+                    c = SRGBToLinear(g3);
                 }
                 return half4(c, 1);
             }

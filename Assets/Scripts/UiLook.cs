@@ -221,6 +221,12 @@ namespace RockGame
         RenderTexture m_UiRt;
         Material m_Mat;
         UiPass m_Pass;
+        // NOTIFICATIONS (LayerLooks.cs): the big messages drawn into a texture of their own, laid on with their own looks
+        RenderTexture m_NotifRt;
+        Material m_NotifMat;
+        UiPass m_NotifPass;
+        bool m_HaveNotif;
+        int m_NotifFrame = -10, m_NotifCleared = -10;
         bool m_HaveUi;
         int m_UiFrame = -10;
         static Font[] s_Fonts;
@@ -250,6 +256,8 @@ namespace RockGame
             {
                 m_Mat = new Material(sh) { name = "RockGame UI composite", hideFlags = HideFlags.DontSave };
                 m_Pass = new UiPass(m_Mat);
+                m_NotifMat = new Material(sh) { name = "RockGame notification composite", hideFlags = HideFlags.DontSave };
+                m_NotifPass = new UiPass(m_NotifMat);
             }
             else Debug.LogWarning("[RockGame] PostFx/UiComposite shader missing: post processing can't go over the UI");
             RenderPipelineManager.beginCameraRendering += OnBeginCamera;
@@ -264,6 +272,8 @@ namespace RockGame
             if (m_Urp != null && m_BaseShadowDistance > 0f) m_Urp.shadowDistance = m_BaseShadowDistance; // (the asset as it was - matters in the editor)
             if (m_UiRt != null) { m_UiRt.Release(); Destroy(m_UiRt); }
             if (m_Mat != null) Destroy(m_Mat);
+            if (m_NotifRt != null) { m_NotifRt.Release(); Destroy(m_NotifRt); }
+            if (m_NotifMat != null) Destroy(m_NotifMat);
         }
 
         void LateUpdate()
@@ -345,14 +355,63 @@ namespace RockGame
             s_I.m_UiFrame = Time.frameCount;
         }
 
+        /// <summary>The big notifications have looks of their own (NOTIFICATIONS > Own look, while post processing is on).</summary>
+        static bool NotifWanted => s_I != null && s_I.m_NotifPass != null && GameSettings.NotifOwn.Value && PostFx.Active && Camera.main != null;
+
+        /// <summary>(tests) the notifications went through their own layer this frame.</summary>
+        public static bool NotifOwnLayer => s_I != null && s_I.m_HaveNotif && Time.frameCount - s_I.m_NotifFrame <= 2;
+
+        /// <summary>Around the big notifications in OnGUI: on the repaint, while they have looks of their own, they're
+        /// drawn into their own texture (cleared once a frame). Returns the target to put back (EndNotif).</summary>
+        public static bool BeginNotif(out RenderTexture prev)
+        {
+            prev = null;
+            if (Event.current.type != EventType.Repaint || !NotifWanted) return false;
+            var me = s_I;
+            int w = Mathf.Max(1, Screen.width), h = Mathf.Max(1, Screen.height);
+            if (me.m_NotifRt == null || me.m_NotifRt.width != w || me.m_NotifRt.height != h)
+            {
+                if (me.m_NotifRt != null) { me.m_NotifRt.Release(); Destroy(me.m_NotifRt); }
+                me.m_NotifRt = new RenderTexture(w, h, 24, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB) { name = "RockGame notifications", hideFlags = HideFlags.DontSave };
+                me.m_NotifRt.Create();
+            }
+            prev = RenderTexture.active;
+            RenderTexture.active = me.m_NotifRt;
+            if (me.m_NotifCleared != Time.frameCount) { me.m_NotifCleared = Time.frameCount; GL.Clear(true, true, new Color(0, 0, 0, 0)); }
+            return true;
+        }
+
+        public static void EndNotif(RenderTexture prev)
+        {
+            RenderTexture.active = prev;
+            if (s_I == null) return;
+            s_I.m_HaveNotif = true;
+            s_I.m_NotifFrame = Time.frameCount;
+        }
+
         /// <summary>Our pass goes in for the main camera only, while the UI goes under the post processing.</summary>
         void OnBeginCamera(ScriptableRenderContext ctx, Camera cam)
         {
             if (m_Pass == null || cam == null || cam != Camera.main || cam.cameraType != CameraType.Game) return;
-            // (stops as soon as the option goes off: the GUI is drawn straight to the screen again that frame)
-            if (!Wanted || m_UiRt == null || !m_HaveUi || Time.frameCount - m_UiFrame > 2) { m_HaveUi = false; return; }
             var data = cam.GetUniversalAdditionalCameraData();
             if (data == null || data.scriptableRenderer == null) return;
+            // (stops as soon as the option goes off: the GUI is drawn straight to the screen again that frame)
+            if (!Wanted || m_UiRt == null || !m_HaveUi || Time.frameCount - m_UiFrame > 2) m_HaveUi = false;
+            else EnqueueUi(data);
+            // the notifications with their own looks, on top (after the world's post processing)
+            if (!NotifWanted || m_NotifRt == null || !m_HaveNotif || Time.frameCount - m_NotifFrame > 2) m_HaveNotif = false;
+            else
+            {
+                m_NotifMat.SetTexture(k_UiTex, m_NotifRt);
+                m_NotifMat.SetFloat(k_UiFlip, FlipUi ? 1f : 0f);
+                SetNotifLooks(m_NotifMat, m_NotifRt.width, m_NotifRt.height);
+                m_NotifPass.renderPassEvent = RenderPassEvent.AfterRenderingPostProcessing;
+                data.scriptableRenderer.EnqueuePass(m_NotifPass);
+            }
+        }
+
+        void EnqueueUi(UniversalAdditionalCameraData data)
+        {
             m_Mat.SetTexture(k_UiTex, m_UiRt);
             m_Mat.SetFloat(k_UiFlip, FlipUi ? 1f : 0f);
             SetUiLooks(m_Mat, m_UiRt.width, m_UiRt.height);
@@ -370,22 +429,33 @@ namespace RockGame
         public static bool UiAfterPost => s_I != null && s_I.m_Pass != null && s_I.m_Pass.renderPassEvent == RenderPassEvent.AfterRenderingPostProcessing && UiUnderPost;
 
         /// <summary>The UI's own looks (Settings > Display > POST PROCESSING ON THE UI) for the composite shader.</summary>
-        static void SetUiLooks(Material m, int w, int h)
+        static void SetUiLooks(Material m, int w, int h) => SetLooks(m, w, h,
+            GameSettings.UiCel.Value ? GameSettings.UiCelStrength.Value : -1f,
+            GameSettings.UiOutline.Value ? GameSettings.UiOutlinePxAt1440 : 0f, GameSettings.UiOutlineColour.Value, GameSettings.UiOutlineOpacity.Value,
+            GameSettings.UiBloom.Value ? GameSettings.UiBloomStrength.Value : 0f, GameSettings.UiSaturation.Value, GameSettings.UiContrast.Value);
+
+        /// <summary>The notifications' own looks (Settings > Display > NOTIFICATIONS).</summary>
+        static void SetNotifLooks(Material m, int w, int h) => SetLooks(m, w, h,
+            GameSettings.NotifCel.Value ? GameSettings.NotifCelStrength.Value : -1f,
+            GameSettings.NotifOutline.Value ? GameSettings.NotifOutlineWidth.Value * (4f / 3f) : 0f, GameSettings.NotifOutlineColour.Value, GameSettings.NotifOutlineOpacity.Value,
+            GameSettings.NotifBloom.Value ? GameSettings.NotifBloomStrength.Value : 0f, GameSettings.NotifSaturation.Value, GameSettings.NotifContrast.Value);
+
+        /// <summary>The composite shader's numbers: cel strength (below 0 = off), outline thickness (px at 1440p, 0 = off),
+        /// its colour and opacity, glow (0 = off), saturation and contrast.</summary>
+        static void SetLooks(Material m, int w, int h, float celStrength, float inkAt1440, Color inkColour, float inkOpacity, float glow, float saturation, float contrast)
         {
             // (outline and glow sizes are set at 1440p and scaled with the screen's height: the same share of the screen
             // at any resolution)
             float px = GameSettings.ScreenPx(1f, h);
-            float cel = GameSettings.UiCel.Value ? Mathf.Round(Mathf.Lerp(12f, 3f, GameSettings.UiCelStrength.Value)) : 0f;
-            float ink = GameSettings.UiOutline.Value ? GameSettings.UiOutlinePxAt1440 * px : 0f;
-            float glow = GameSettings.UiBloom.Value ? GameSettings.UiBloomStrength.Value : 0f;
+            float cel = celStrength >= 0f ? Mathf.Round(Mathf.Lerp(12f, 3f, celStrength)) : 0f;
+            float ink = inkAt1440 * px;
             m.SetVector(k_UiTexel, new Vector4(1f / w, 1f / h, w, h));
             // x: colour steps (0 = off), y: saturation, z: contrast, w: outline radius (px, 0 = off)
-            m.SetVector(k_UiLook, new Vector4(cel, GameSettings.UiSaturation.Value, GameSettings.UiContrast.Value, ink));
+            m.SetVector(k_UiLook, new Vector4(cel, saturation, contrast, ink));
             // x: glow amount (0 = off), y: glow radius (px)
             m.SetVector(k_UiGlow, new Vector4(glow * 1.6f, (6f + 10f * glow) * (4f / 3f) * px, 0f, 0f)); // (8 - 21 px at 1440p)
-            var c = GameSettings.UiOutlineColour.Value;
-            c.a = GameSettings.UiOutlineOpacity.Value;
-            m.SetColor(k_UiInk, c);
+            inkColour.a = inkOpacity;
+            m.SetColor(k_UiInk, inkColour);
         }
         /// <summary>Turn the UI texture upside down as it goes on (how the GUI lands in a texture depends on the graphics API).</summary>
         public static bool FlipUi;

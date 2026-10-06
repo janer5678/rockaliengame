@@ -48,6 +48,28 @@ namespace RockGame
         public const float UiSaturation = 0.9f;             // ui.saturation            (0..2, 1 = as drawn; was 1)
         public const float UiContrast = 1f;                 // ui.contrast              (0.5..1.6, 1 = as drawn)
 
+        // ---- hands and tools (LayerLooks.cs: their own looks instead of the world's) ----
+        public const bool HandsOwn = false;                 // hands.own
+        public const bool HandsOutline = true;              // hands.outline
+        public const float HandsOutlineStrength = 0.45f;    // hands.outline.strength   (0..1)
+        public const bool HandsCel = true;                  // hands.cel
+        public const float HandsCelStrength = 0.5f;         // hands.cel.strength       (0..1: fewer steps)
+        public const float HandsSaturation = 1f;            // hands.saturation         (0..2, 1 = as drawn)
+        public const float HandsContrast = 1f;              // hands.contrast           (0.5..1.6, 1 = as drawn)
+
+        // ---- notifications (LayerLooks.cs: the big messages' own looks) ----
+        public const bool NotifOwn = false;                 // notif.own
+        public const bool NotifCel = false;                 // notif.cel
+        public const float NotifCelStrength = 0.3f;         // notif.cel.strength       (0..1)
+        public const bool NotifOutline = true;              // notif.outline
+        public const float NotifOutlineWidth = 3.5f;        // notif.outline.width      (0.5..8; x 1.333 = px at 1440p)
+        public const string NotifOutlineColour = "#000000"; // notif.outline.colour
+        public const float NotifOutlineOpacity = 0.9f;      // notif.outline.opacity    (0..1)
+        public const bool NotifBloom = true;                // notif.bloom
+        public const float NotifBloomStrength = 0.5f;       // notif.bloom.strength     (0..1)
+        public const float NotifSaturation = 1f;            // notif.saturation         (0..2)
+        public const float NotifContrast = 1f;              // notif.contrast           (0.5..1.6)
+
         // ---- shadows ----
         public const float ShadowStrength = 0.75f;          // shadows.darkness         (0..1; was 1)
         public const float ShadowDistance = 80f;            // shadows.distance         (20..300 m; was 50)
@@ -236,6 +258,12 @@ namespace RockGame
             Pref(GameSettings.UiWorldPost, GameSettings.UiCel, GameSettings.UiCelStrength, GameSettings.UiOutline, GameSettings.UiOutlineWidth,
                 GameSettings.UiOutlineColour, GameSettings.UiOutlineOpacity, GameSettings.UiBloom, GameSettings.UiBloomStrength,
                 GameSettings.UiSaturation, GameSettings.UiContrast);
+            // ---- hands and tools, notifications: their own looks (LayerLooks.cs) ----
+            Pref(GameSettings.HandsOwn, GameSettings.HandsOutline, GameSettings.HandsOutlineStrength, GameSettings.HandsCel, GameSettings.HandsCelStrength,
+                GameSettings.HandsSaturation, GameSettings.HandsContrast);
+            Pref(GameSettings.NotifOwn, GameSettings.NotifCel, GameSettings.NotifCelStrength, GameSettings.NotifOutline, GameSettings.NotifOutlineWidth,
+                GameSettings.NotifOutlineColour, GameSettings.NotifOutlineOpacity, GameSettings.NotifBloom, GameSettings.NotifBloomStrength,
+                GameSettings.NotifSaturation, GameSettings.NotifContrast);
             // ---- shadows ----
             Float("shadows.darkness", GShadows, DisplayDefaults.ShadowStrength, () => GameSettings.ShadowStrength, (v, s) => GameSettings.SetShadows(v, GameSettings.ShadowDistance, s));
             Float("shadows.distance", GShadows, DisplayDefaults.ShadowDistance, () => GameSettings.ShadowDistance, (v, s) => GameSettings.SetShadows(GameSettings.ShadowStrength, v, s));

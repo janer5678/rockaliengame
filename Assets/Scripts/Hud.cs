@@ -183,6 +183,21 @@ namespace RockGame
 
         void Shadowed(Rect r, string text, GUIStyle style)
         {
+            // "LMB" is drawn as the left mouse button icon (Tutorial.Icons.cs lays the line out round it)
+            if (text != null && text.IndexOf("LMB", System.StringComparison.Ordinal) >= 0)
+            {
+                string t = Tutorial.WithMouseIcons(text);
+                var a = style.alignment;
+                bool leftWrap = style.wordWrap && (a == TextAnchor.UpperLeft || a == TextAnchor.MiddleLeft || a == TextAnchor.LowerLeft);
+                if (leftWrap) Tutorial.IconText(r, t, style, ShadowedPlain); // (a wrapped description)
+                else Tutorial.IconLine(r, t, style, ShadowedPlain);
+                return;
+            }
+            ShadowedPlain(r, text, style);
+        }
+
+        void ShadowedPlain(Rect r, string text, GUIStyle style)
+        {
             var old = style.normal.textColor;
             style.normal.textColor = new Color(0, 0, 0, 0.8f);
             string plain = s_ColorTag.Replace(text, "");
@@ -440,6 +455,9 @@ namespace RockGame
 
             if (Tutorial.Allows(TutFeature.HotbarHud)) DrawGains(k);
 
+            // the big notifications (the countdowns, the banner): their own layer when they have looks of their own
+            // (Settings > Display > NOTIFICATIONS: UiLook.BeginNotif)
+            bool notifLayer = UiLook.BeginNotif(out var notifPrev);
             DrawCountdowns(game, team);
 
             // ---- banner ----
@@ -454,6 +472,7 @@ namespace RockGame
                 st2.normal.textColor = new Color(1, 1, 1, a);
                 GUI.Label(new Rect(0, sh * 0.22f + 55 * k, sw, 30 * k), s_BannerSub, st2);
             }
+            if (notifLayer) UiLook.EndNotif(notifPrev);
 
             // ---- dead ----
             var killer = pc.KillCamTarget;

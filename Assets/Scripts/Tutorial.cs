@@ -1780,7 +1780,7 @@ namespace RockGame
                 var gr = new Rect(sw / 2 - 330 * k, sh - 40 * k, 660 * k, 32 * k);
                 fill(gr, new Color(0, 0, 0, 0.75f));
                 var c = new GUIStyle(small) { alignment = TextAnchor.MiddleCenter, wordWrap = false, richText = true };
-                shadowed(gr, $"<b>TUTORIAL</b>  {PlainKeys(goal)}", c);
+                IconLine(gr, $"<b>TUTORIAL</b>  {goal}", c, shadowed); // (its keys and mouse buttons as icons, as in the panel)
                 return;
             }
 

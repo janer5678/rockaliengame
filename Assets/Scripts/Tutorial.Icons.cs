@@ -40,6 +40,41 @@ namespace RockGame
         static string MouseWheel => Icon(MouseWheelId);
         static string MouseIcon => Icon(MouseId);
 
+        /// <summary>The left mouse button icon, as a token in a text (drawn by IconText / IconLine).</summary>
+        public static string LmbIcon => Icon(MouseLeftId);
+
+        /// <summary>Every "LMB" in a hint turned into the left mouse button icon.</summary>
+        public static string WithMouseIcons(string s) =>
+            string.IsNullOrEmpty(s) || s.IndexOf("LMB", StringComparison.Ordinal) < 0 ? s : s.Replace("[LMB]", Icon(MouseLeftId)).Replace("LMB", Icon(MouseLeftId));
+
+        /// <summary>A wrapped text with its icons (left aligned, from the top of `r`).</summary>
+        public static void IconText(Rect r, string text, GUIStyle st, Action<Rect, string, GUIStyle> shadowed = null) => RichDraw(r, text, st, shadowed);
+
+        /// <summary>One line of text with its icons, placed in `r` by the style's alignment (centred, left or right).</summary>
+        public static void IconLine(Rect r, string text, GUIStyle st, Action<Rect, string, GUIStyle> shadowed = null)
+        {
+            if (string.IsNullOrEmpty(text)) return;
+            EnsureIcons();
+            var laid = Lay(text, st, 100000f);
+            float w = 0f;
+            foreach (var it in laid.Items) w = Mathf.Max(w, it.R.xMax);
+            var a = st.alignment;
+            bool centre = a == TextAnchor.UpperCenter || a == TextAnchor.MiddleCenter || a == TextAnchor.LowerCenter;
+            bool right = a == TextAnchor.UpperRight || a == TextAnchor.MiddleRight || a == TextAnchor.LowerRight;
+            bool middle = a == TextAnchor.MiddleLeft || a == TextAnchor.MiddleCenter || a == TextAnchor.MiddleRight;
+            bool lower = a == TextAnchor.LowerLeft || a == TextAnchor.LowerCenter || a == TextAnchor.LowerRight;
+            float x = centre ? r.x + (r.width - w) * 0.5f : right ? r.xMax - w : r.x;
+            float y = middle ? r.y + (r.height - laid.Height) * 0.5f : lower ? r.yMax - laid.Height : r.y;
+            DrawLaid(new Vector2(Mathf.Round(x), Mathf.Round(y)), laid, st, shadowed);
+        }
+
+        /// <summary>Just the left mouse button icon, fitted into `r`.</summary>
+        public static void DrawLmb(Rect r)
+        {
+            EnsureIcons();
+            if (Event.current.type == EventType.Repaint) GUI.DrawTexture(r, s_MouseLTex, ScaleMode.ScaleToFit, true);
+        }
+
         /// <summary>The text with its icons written out ([E], LMB, mouse wheel), for where it's drawn as plain text.</summary>
         public static string PlainKeys(string s)
         {
@@ -303,7 +338,7 @@ namespace RockGame
             foreach (var p in Cut(text))
             {
                 if (p.Kind == 3) { x = 0f; y += row; pend = 0f; lastIcon = false; continue; }
-                if (p.Kind == 2) { if (x > 0f) pend = space; lastIcon = false; continue; }
+                if (p.Kind == 2) { if (x > 0f) pend = pend >= space ? pend + space : space; lastIcon = false; continue; } // (a run of spaces keeps its width)
                 float w, h;
                 if (p.Kind == 1)
                 {
@@ -339,13 +374,18 @@ namespace RockGame
             if (string.IsNullOrEmpty(text)) return;
             EnsureIcons();
             var laid = Lay(text, st, r.width);
+            DrawLaid(r.position, laid, st, shadowed);
+        }
+
+        static void DrawLaid(Vector2 at, Laid laid, GUIStyle st, Action<Rect, string, GUIStyle> shadowed)
+        {
             var ws = WordStyle(st);
             var capSt = new GUIStyle(ws) { fontSize = CapFont(ws), fontStyle = FontStyle.Bold, richText = false, alignment = TextAnchor.MiddleCenter };
             capSt.normal.textColor = new Color(0.1f, 0.11f, 0.14f);
             bool repaint = Event.current.type == EventType.Repaint;
             foreach (var it in laid.Items)
             {
-                var rr = new Rect(r.x + it.R.x, r.y + it.R.y, it.R.width, it.R.height);
+                var rr = new Rect(at.x + it.R.x, at.y + it.R.y, it.R.width, it.R.height);
                 if (it.P.Kind == 0)
                 {
                     if (shadowed != null) shadowed(rr, it.P.Text, ws);

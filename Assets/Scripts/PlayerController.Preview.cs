@@ -194,8 +194,6 @@ namespace RockGame
         Material m_PortalGhostMat, m_PortalGhostInner;
         Vector3 m_PortalFirstShot;
         bool m_PortalFirstShotKnown;
-        GrassClear m_PortalGhostGrass;
-        Vector3 m_PortalGrassAt = Vector3.positiveInfinity;
 
         /// <summary>For the tests: the portal ghost is showing, where, and in which colour.</summary>
         public bool PortalPreviewShown => m_PortalGhost != null && m_PortalGhost.activeSelf;
@@ -274,19 +272,12 @@ namespace RockGame
             }
             if (!show)
             {
-                if (m_PortalGhost != null && m_PortalGhost.activeSelf) m_PortalGhost.SetActive(false); // (its GrassClear lets the grass back)
-                m_PortalGrassAt = Vector3.positiveInfinity;
+                if (m_PortalGhost != null && m_PortalGhost.activeSelf) m_PortalGhost.SetActive(false);
                 return;
             }
             if (m_PortalGhost == null) BuildPortalGhost();
             if (!m_PortalGhost.activeSelf) m_PortalGhost.SetActive(true);
             m_PortalGhost.transform.SetPositionAndRotation(point, Quaternion.LookRotation(normal));
-            // the spot it'd open on shows no grass, just as the portal won't (on this screen only; moved on every 15 cm)
-            if (!((point - m_PortalGrassAt).sqrMagnitude < 0.15f * 0.15f))
-            {
-                m_PortalGrassAt = point;
-                m_PortalGhostGrass.Clear();
-            }
             PortalPreviewColor = colour;
             float pulse = 0.5f + 0.5f * Mathf.Sin(Time.time * 5f);
             var ring = new Color(colour.r, colour.g, colour.b, 0.45f + 0.2f * pulse);
@@ -309,7 +300,6 @@ namespace RockGame
                 NoShadow(Art.Box(m_PortalGhost.transform, Color.white, new Vector3(Mathf.Cos(a) * 0.65f, Mathf.Sin(a) * 1.0f, 0), new Vector3(0.28f, 0.1f, 0.04f), new Vector3(0, 0, a * Mathf.Rad2Deg + 90f), false, m_PortalGhostMat));
             }
             NoShadow(Art.Part(m_PortalGhost.transform, Art.Cylinder, Color.white, Vector3.zero, new Vector3(1.3f, 0.01f, 2f), new Vector3(90, 0, 0), false, m_PortalGhostInner, "inner"));
-            m_PortalGhostGrass = m_PortalGhost.AddComponent<GrassClear>();
         }
 
         // ------------------------------------------------------------------ demolish highlight

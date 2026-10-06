@@ -276,6 +276,112 @@ namespace RockGame
                 GUILayout.Label("<color=#bbbbbb>Outlines: dark ink lines round things and along sharp folds, fading with distance. Ambient occlusion: deeper soft shadows in corners, creases and under things. Distance haze: far things fade into a pale sky colour. Depth of field: far away goes softly out of focus. Film grain: fine animated noise. Chromatic aberration: a hint of colour fringing towards the edges. Sharpen: crisper edges. Cel banding: the light falls in a few flat steps, like a cartoon.</color>", m_SmallWrap);
             }
             else if (defaults) for (int i = 0; i < GameSettings.PostExtraCount; i++) GameSettings.SetPostExtra((GameSettings.PostExtra)i, DisplayDefaults.PostExtraOn(i), DisplayDefaults.PostExtraStrength(i));
+            if (defaults) { GameSettings.ResetHandsLook(); GameSettings.ResetNotifLook(); }
+            if (on) DrawLayerLooks();
+        }
+
+        bool m_HandsLooksOpen, m_NotifLooksOpen;
+        /// <summary>(tests) fold the hands' and the notifications' own looks open in Settings > Display.</summary>
+        public static void OpenLayerLooks(bool open) { if (s_I != null) { s_I.m_HandsLooksOpen = open; s_I.m_NotifLooksOpen = open; } }
+
+        /// <summary>HANDS AND TOOLS and NOTIFICATIONS: looks of their own, apart from the world's and the rest of the UI's
+        /// (LayerLooks.cs). Each folded away, and off (= the same as everything else) to start with.</summary>
+        void DrawLayerLooks()
+        {
+            float k = m_Scale, lw = 210 * k;
+            GUILayout.Space(6 * k);
+            // ---- hands and tools ----
+            if (FoldRow("HANDS AND TOOLS", ref m_HandsLooksOpen, GameSettings.HandsOwn))
+            {
+                float os = GameSettings.HandsOutlineStrength.Value;
+                bool ol = EffectRow("Outlines", GameSettings.HandsOutline.Value, ref os);
+                GameSettings.HandsOutline.Set(ol); GameSettings.HandsOutlineStrength.Set(Mathf.Round(os * 20f) / 20f);
+                float cs = GameSettings.HandsCelStrength.Value;
+                bool cel = EffectRow("Cel shading", GameSettings.HandsCel.Value, ref cs);
+                GameSettings.HandsCel.Set(cel); GameSettings.HandsCelStrength.Set(Mathf.Round(cs * 20f) / 20f);
+                ColourRows(GameSettings.HandsSaturation, GameSettings.HandsContrast, lw);
+                GUILayout.BeginHorizontal();
+                GUILayout.Label("<color=#bbbbbb>Your first-person hands and whatever they hold, with their own ink outlines, cel shading and colour instead of the world's.</color>", m_SmallWrap);
+                if (Btn("Defaults", GUILayout.Width(100 * k), GUILayout.Height(28 * k))) GameSettings.ResetHandsLook();
+                GUILayout.EndHorizontal();
+            }
+            // ---- notifications ----
+            if (FoldRow("NOTIFICATIONS", ref m_NotifLooksOpen, GameSettings.NotifOwn))
+            {
+                float cs = GameSettings.NotifCelStrength.Value;
+                bool cel = EffectRow("Cel shading", GameSettings.NotifCel.Value, ref cs);
+                GameSettings.NotifCel.Set(cel); GameSettings.NotifCelStrength.Set(Mathf.Round(cs * 20f) / 20f);
+                float bs = GameSettings.NotifBloomStrength.Value;
+                bool glow = EffectRow("Glow", GameSettings.NotifBloom.Value, ref bs);
+                GameSettings.NotifBloom.Set(glow); GameSettings.NotifBloomStrength.Set(Mathf.Round(bs * 20f) / 20f);
+                float wd01 = Mathf.InverseLerp(GameSettings.UiOutlineWidthMin, GameSettings.UiOutlineWidthMax, GameSettings.NotifOutlineWidth.Value);
+                bool ink = EffectRow("Outlines", GameSettings.NotifOutline.Value, ref wd01);
+                float wd = Mathf.Round(Mathf.Lerp(GameSettings.UiOutlineWidthMin, GameSettings.UiOutlineWidthMax, wd01) * 2f) / 2f;
+                GameSettings.NotifOutline.Set(ink); GameSettings.NotifOutlineWidth.Set(wd);
+                if (ink)
+                {
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Space(32 * k);
+                    GUILayout.Label($"<color=#bbbbbb>{wd * 4f / 3f:0.#} px · colour</color>", m_Small, GUILayout.Width(110 * k), GUILayout.Height(26 * k));
+                    var cur = GameSettings.NotifOutlineColour.Value;
+                    float sw = 22 * k;
+                    foreach (var pc in s_InkPresets)
+                    {
+                        var pr = GUILayoutUtility.GetRect(sw, sw, GUILayout.Width(sw), GUILayout.Height(26 * k));
+                        pr.y += (26 * k - sw) * 0.5f; pr.height = sw;
+                        Fill(pr, ColorSlots.Same(pc, cur) ? new Color(1f, 0.82f, 0.3f) : new Color(0.5f, 0.5f, 0.5f, 0.8f));
+                        Fill(new Rect(pr.x + 2, pr.y + 2, pr.width - 4, pr.height - 4), pc);
+                        TrackHover(pr);
+                        if (GUI.Button(pr, GUIContent.none, GUIStyle.none)) { ClickSound(); GameSettings.NotifOutlineColour.Set(pc); }
+                        GUILayout.Space(3 * k);
+                    }
+                    GUILayout.FlexibleSpace();
+                    GUILayout.EndHorizontal();
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Space(16 * k);
+                    float op = SliderRow("Outline opacity", GameSettings.NotifOutlineOpacity.Value, 0f, 1f, $"{GameSettings.NotifOutlineOpacity.Value * 100f:0}%", lw - 16 * k);
+                    GameSettings.NotifOutlineOpacity.Set(Mathf.Round(op * 20f) / 20f);
+                    GUILayout.EndHorizontal();
+                }
+                ColourRows(GameSettings.NotifSaturation, GameSettings.NotifContrast, lw);
+                GUILayout.BeginHorizontal();
+                GUILayout.Label("<color=#bbbbbb>The big messages in the middle of the screen - TRADE STATION UNLOCKED, AIRDROP INCOMING, the countdowns - with their own look, laid on after the world's post processing.</color>", m_SmallWrap);
+                if (Btn("Defaults", GUILayout.Width(100 * k), GUILayout.Height(28 * k))) GameSettings.ResetNotifLook();
+                GUILayout.EndHorizontal();
+            }
+        }
+
+        /// <summary>A section's fold button and its "Own look" switch on one row; true while it's open and switched on.</summary>
+        bool FoldRow(string title, ref bool open, DisplayPref.Bool own)
+        {
+            float k = m_Scale;
+            GUILayout.BeginHorizontal();
+            GUILayout.Space(16 * k);
+            if (Btn($"{title}  {(open ? "▲" : "▼")}", GUILayout.Width(260 * k), GUILayout.Height(28 * k))) open = !open;
+            GUILayout.Space(10 * k);
+            bool on = ToggleBtn(own.Value, own.Value ? "Own look: on" : "Own look: off", GUILayout.Width(150 * k), GUILayout.Height(28 * k));
+            own.Set(on);
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
+            if (!open) return false;
+            if (!on) { Hint("Off: they look like everything else. Switch Own look on to set them apart."); return false; }
+            return true;
+        }
+
+        /// <summary>A saturation and a contrast slider (100% = as drawn).</summary>
+        void ColourRows(DisplayPref.Float saturation, DisplayPref.Float contrast, float lw)
+        {
+            float k = m_Scale;
+            GUILayout.BeginHorizontal();
+            GUILayout.Space(16 * k);
+            float sat = SliderRow("Saturation", saturation.Value, 0f, 2f, $"{saturation.Value * 100f:0}%", lw - 16 * k);
+            saturation.Set(Mathf.Round(sat * 20f) / 20f);
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            GUILayout.Space(16 * k);
+            float con = SliderRow("Contrast", contrast.Value, 0.5f, 1.6f, $"{contrast.Value * 100f:0}%", lw - 16 * k);
+            contrast.Set(Mathf.Round(con * 20f) / 20f);
+            GUILayout.EndHorizontal();
         }
 
         static readonly Color[] s_InkPresets =

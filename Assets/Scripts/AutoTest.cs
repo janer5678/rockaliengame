@@ -149,6 +149,7 @@ namespace RockGame
             if (m_Mode == "buildbias") { yield return BuildBiasRoutine(me, pc); yield break; }
             if (m_Mode == "maps") { yield return MapsRoutine(me, pc); yield break; }
             if (m_Mode == "victory") { yield return VictoryRoutine(me, pc); yield break; }
+            if (m_Mode == "looks") { yield return LooksRoutine(me, pc); yield break; } // (AutoTest.Looks.cs)
             Check(Cfg.BaseTeamAt(me.transform.position) == me.Team.Value, $"spawned inside own base ({me.transform.position})");
             Check(me.Count(Item.Rock) == 0 && me.HeldItem == Item.Rock, "empty hand = holding the rock (no rock item)");
             Check(Vector3.Distance(me.transform.position, Cfg.SpawnPos(me.Team.Value, me.Slot.Value)) < 1.5f, $"sent home to the bedrock when the match started on {Cfg.MapLabel} (seed {Cfg.MapSeed})");

@@ -344,40 +344,44 @@ namespace RockGame
         {
             float k = m_Scale, sw = Screen.width, sh = Screen.height;
             var kind = k_Maps[Mathf.Clamp(m_MapPick, 0, k_Maps.Length - 1)];
-            // the background is the map itself: MenuScene's slow flight round it (under its dome), rebuilt whenever the map or its size changes
+            // the background is the map itself: MenuScene's quick, low flight round it (under its dome), rebuilt whenever
+            // the map or its size changes
             int key = Bootstrap.MapChoice;
             int want = (key & ~15) | (int)kind;
             if (want != m_PreviewKey && Event.current.type == EventType.Layout) { m_PreviewKey = want; boot.SetMapChoice(want); key = want; }
-            // along the bottom: a dark band with the map's name between the arrows, its blurb, the sizes, back and go
-            float bandH = 250 * k, by = sh - bandH;
-            Fill(new Rect(0, by, sw, bandH), new Color(0f, 0f, 0f, 0.55f));
-            float cw = Mathf.Min(sw - 40 * k, 900 * k), cx = (sw - cw) / 2f, y = by + 14 * k;
-            var nm = new GUIStyle(m_Big) { alignment = TextAnchor.MiddleCenter, fontSize = Mathf.RoundToInt(40 * k) };
-            if (SmallBtn(new Rect(cx, y, 80 * k, 56 * k), "◀")) m_MapPick = (m_MapPick + k_Maps.Length - 1) % k_Maps.Length;
-            if (SmallBtn(new Rect(cx + cw - 80 * k, y, 80 * k, 56 * k), "▶")) m_MapPick = (m_MapPick + 1) % k_Maps.Length;
-            Shadowed(new Rect(cx + 90 * k, y, cw - 180 * k, 56 * k), $"<b>{ThemeMaps.Label(kind).ToUpper()}</b>  <size={Mathf.RoundToInt(20 * k)}>{m_MapPick + 1}/{k_Maps.Length}</size>", nm);
-            y += 60 * k;
+            // along the bottom, all centred: the name between its arrows, a dot per map, the blurb, the sizes; BACK and
+            // the go button out in the corners
+            float bandH = 200 * k, by = sh - bandH;
+            Fill(new Rect(0, by, sw, bandH), new Color(0f, 0f, 0f, 0.5f));
+            float mid = sw / 2f, y = by + 12 * k;
+            float nameW = 440 * k, arrow = 56 * k;
+            var nm = new GUIStyle(m_Big) { alignment = TextAnchor.MiddleCenter, fontSize = Mathf.RoundToInt(38 * k) };
+            if (SmallBtn(new Rect(mid - nameW / 2f - arrow, y, arrow, arrow), "◀")) m_MapPick = (m_MapPick + k_Maps.Length - 1) % k_Maps.Length;
+            if (SmallBtn(new Rect(mid + nameW / 2f, y, arrow, arrow), "▶")) m_MapPick = (m_MapPick + 1) % k_Maps.Length;
+            Shadowed(new Rect(mid - nameW / 2f, y, nameW, arrow), $"<b>{ThemeMaps.Label(kind).ToUpper()}</b>", nm);
+            y += arrow + 8 * k;
+            // which of the maps this is
+            float dot = 8 * k, dgap = 8 * k, dx = mid - (k_Maps.Length * dot + (k_Maps.Length - 1) * dgap) / 2f;
+            for (int i = 0; i < k_Maps.Length; i++) Fill(new Rect(dx + i * (dot + dgap), y, dot, dot), i == m_MapPick ? k_Acid : new Color(1f, 1f, 1f, 0.3f));
+            y += dot + 8 * k;
             string blurb = kind == MapKind.Plains ? "Rolling grass, wheat and forests: the classic map." : kind == MapKind.Highlands ? "Wild hills and rocky ridges between the bases." : ThemeMaps.Blurb(kind);
-            Shadowed(new Rect(cx, y, cw, 30 * k), blurb, new GUIStyle(m_SmallWrap) { alignment = TextAnchor.MiddleCenter });
-            y += 40 * k;
-            // the size
+            Shadowed(new Rect(mid - 450 * k, y, 900 * k, 24 * k), blurb, new GUIStyle(m_SmallWrap) { alignment = TextAnchor.MiddleCenter, wordWrap = false });
+            y += 34 * k;
+            // the size: one row of four, centred
             var size = (key & Cfg.SmallBit) != 0 ? MapSize.Small : (MapSize)((key >> Cfg.SizeShift) & 3);
-            float bx = (sw - (80 * k + 4 * 128 * k - 8 * k)) / 2f;
-            GUI.Label(new Rect(bx, y, 80 * k, 40 * k), "<b>SIZE</b>", m_Label);
-            bx += 80 * k;
+            float bw = 112 * k, bgap = 6 * k, bx = mid - (4 * bw + 3 * bgap) / 2f;
             foreach (var sz in new[] { MapSize.Small, MapSize.Big, MapSize.Large, MapSize.Huge })
             {
-                var r = new Rect(bx, y, 120 * k, 40 * k);
+                var r = new Rect(bx, y, bw, 40 * k);
                 if (sz == size) { Fill(r, new Color(k_Acid.r, k_Acid.g, k_Acid.b, 0.35f)); Frame(r, k_Acid, 2f); }
                 if (SmallBtn(r, Cfg.SizeLabel(sz))) key = (key & ~Cfg.SmallBit & ~(3 << Cfg.SizeShift)) | ((int)sz << Cfg.SizeShift);
-                bx += 128 * k;
+                bx += bw + bgap;
             }
             Bootstrap.MapChoice = key;
-            // back, and go
-            if (SmallBtn(new Rect(cx, sh - 74 * k, 160 * k, 52 * k), "◀ BACK")) NewBack();
-            var go = new Rect(cx + cw - 300 * k, sh - 82 * k, 300 * k, 64 * k);
-            float gy = go.y;
-            if (BigBtn(ref gy, go.x, go.width, m_SoloFlow ? "PLAY" : "HOST", k_Acid)) LaunchFromMenu(boot, kind);
+            // back, and go: in the corners
+            if (SmallBtn(new Rect(40 * k, sh - 72 * k, 150 * k, 48 * k), "◀ BACK")) NewBack();
+            float gy = sh - 84 * k;
+            if (BigBtn(ref gy, sw - 300 * k, 260 * k, m_SoloFlow ? "PLAY" : "HOST", k_Acid)) LaunchFromMenu(boot, kind);
         }
 
         /// <summary>The menu's choices into the map key, then host (to the ship lobby) or play solo.</summary>

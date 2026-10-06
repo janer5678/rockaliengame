@@ -51,6 +51,8 @@ namespace RockGame
 
         /// <summary>The newest view model (for the hands autotest).</summary>
         public static ViewModel Last;
+        /// <summary>The hands' root (under the camera): everything first-person is under it.</summary>
+        public Transform Root => m_Root;
 
         public Transform DebugHand(bool right) => right ? m_R : m_L;
         public Transform DebugRoot => m_Root;

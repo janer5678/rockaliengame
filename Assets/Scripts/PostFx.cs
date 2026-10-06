@@ -1,5 +1,7 @@
+using System.Collections.Generic;
 using System.Reflection;
 using UnityEngine;
+using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.RenderGraphModule;
 using UnityEngine.Rendering.Universal;
@@ -162,6 +164,11 @@ namespace RockGame
         ChromaticAberration m_Chroma;
         Camera m_Cam;
         Material m_StylizeMat;
+        Material m_MaskMat;
+        static readonly List<Renderer> s_VmRends = new List<Renderer>();
+        /// <summary>The layer the first-person hands and what they hold are put on while they have looks of their own
+        /// (HANDS AND TOOLS): the mask pass draws just that layer. (Nothing else uses it; the camera and lights see every layer.)</summary>
+        public const int HandLayer = 29;
         StylizePass m_Pass;
         bool m_StylizeOn;
         // the renderer's SSAO settings (internal to URP: reached by reflection) and what the asset had
@@ -237,11 +244,15 @@ namespace RockGame
             if (sh != null && sh.isSupported)
             {
                 m_StylizeMat = new Material(sh) { name = "RockGame Stylize", hideFlags = HideFlags.DontSave };
-                m_Pass = new StylizePass(m_StylizeMat);
+                var ms = Resources.Load<Shader>("PostFx/HandMask");
+                if (ms != null && ms.isSupported) m_MaskMat = new Material(ms) { name = "RockGame hand mask", hideFlags = HideFlags.DontSave };
+                m_StylizeMat.SetTexture(k_HandMask, Texture2D.blackTexture);
+                m_Pass = new StylizePass(m_StylizeMat, m_MaskMat);
             }
             else Debug.LogWarning("[RockGame] PostFx/Stylize shader missing: no outlines, haze, sharpen or cel banding");
             FindAo();
             GameSettings.PostFxChanged += Apply;
+            DisplayPref.Changed += Apply; // (HANDS AND TOOLS)
             GameSettings.GraphicsChanged += Apply;
             RenderPipelineManager.beginCameraRendering += OnBeginCamera;
             Apply();
@@ -250,11 +261,13 @@ namespace RockGame
         void OnDestroy()
         {
             GameSettings.PostFxChanged -= Apply;
+            DisplayPref.Changed -= Apply;
             GameSettings.GraphicsChanged -= Apply;
             RenderPipelineManager.beginCameraRendering -= OnBeginCamera;
             SetAo(0f); // (the renderer asset's own SSAO back as it was)
             if (m_Profile != null) Destroy(m_Profile);
             if (m_StylizeMat != null) Destroy(m_StylizeMat);
+            if (m_MaskMat != null) Destroy(m_MaskMat);
         }
 
         /// <summary>The renderer's own SSAO feature (PC_Renderer has one, running gently all the time).</summary>
@@ -299,7 +312,17 @@ namespace RockGame
             var cam = Camera.main;
             if (cam != m_Cam) { m_Cam = cam; ApplyCamera(); }
             if (m_StylizeOn) UpdateStylize();
+            // the hands and what they hold on their own layer while they have looks of their own (what's held changes: every frame)
+            var vm = ViewModel.Last;
+            if (HandsOwnLook && vm != null && vm.Root != null)
+            {
+                vm.Root.GetComponentsInChildren(true, s_VmRends);
+                foreach (var r in s_VmRends) if (r.gameObject.layer != HandLayer) r.gameObject.layer = HandLayer;
+            }
         }
+
+        /// <summary>The hands and tools have looks of their own right now (HANDS AND TOOLS, while post processing is on).</summary>
+        public static bool HandsOwnLook => s_I != null && s_I.m_MaskMat != null && Active && GameSettings.HandsOwn.Value;
 
         void ApplyCamera()
         {
@@ -320,7 +343,8 @@ namespace RockGame
 
         static readonly int k_Outline = Shader.PropertyToID("_RgOutline"), k_Haze = Shader.PropertyToID("_RgHaze"),
                             k_HazeColor = Shader.PropertyToID("_RgHazeColor"), k_Look = Shader.PropertyToID("_RgLook"),
-                            k_FarLine = Shader.PropertyToID("_RgFarLine");
+                            k_FarLine = Shader.PropertyToID("_RgFarLine"), k_Hand = Shader.PropertyToID("_RgHand"),
+                            k_HandOutline = Shader.PropertyToID("_RgHandOutline"), k_HandMask = Shader.PropertyToID("_RgHandMask");
 
         /// <summary>
         /// How thick the world outlines are at 1440p (pixels) for an Outlines strength. Exactly what 1440p showed before
@@ -353,6 +377,15 @@ namespace RockGame
             m_StylizeMat.SetColor(k_HazeColor, Color.Lerp(sky, Color.white, 0.4f).linear);
             // sharpen amount; cel banding: how many brightness steps (fewer = stronger)
             m_StylizeMat.SetVector(k_Look, new Vector4(sh > 0f ? 0.15f + sh * 0.6f : 0f, cel > 0f ? Mathf.Round(Mathf.Lerp(14f, 4f, cel)) : 0f, 0f, 0f));
+            // the hands and tools: their own outlines (the same make-up as the world's), cel steps, saturation and contrast
+            if (HandsOwnLook)
+            {
+                float ho = GameSettings.HandsOutline.Value ? GameSettings.HandsOutlineStrength.Value : 0f;
+                float hc = GameSettings.HandsCel.Value ? Mathf.Round(Mathf.Lerp(14f, 4f, GameSettings.HandsCelStrength.Value)) : 0f;
+                m_StylizeMat.SetVector(k_HandOutline, ho > 0f ? new Vector4(0.5f + ho * 0.5f, GameSettings.ScreenPx(OutlinePxAt1440(ho)), 0.11f - ho * 0.04f, 0.55f) : Vector4.zero);
+                m_StylizeMat.SetVector(k_Hand, new Vector4(1f, hc, GameSettings.HandsSaturation.Value, GameSettings.HandsContrast.Value));
+            }
+            else m_StylizeMat.SetVector(k_Hand, Vector4.zero);
         }
 
         void Apply()
@@ -384,7 +417,7 @@ namespace RockGame
             m_Chroma.intensity.Override(GameSettings.PostExtraAmount(GameSettings.PostExtra.Chromatic) * 0.3f);
             SetAo(on ? GameSettings.PostExtraAmount(GameSettings.PostExtra.AmbientOcclusion) : 0f);
             m_StylizeOn = on && m_Pass != null && (GameSettings.PostExtraOn(GameSettings.PostExtra.Outlines) || GameSettings.PostExtraOn(GameSettings.PostExtra.Haze)
-                || GameSettings.PostExtraOn(GameSettings.PostExtra.Sharpen) || GameSettings.PostExtraOn(GameSettings.PostExtra.CelBanding));
+                || GameSettings.PostExtraOn(GameSettings.PostExtra.Sharpen) || GameSettings.PostExtraOn(GameSettings.PostExtra.CelBanding) || (m_MaskMat != null && GameSettings.HandsOwn.Value));
             m_Volume.enabled = on;
             m_Cam = Camera.main;
             ApplyCamera();
@@ -398,15 +431,19 @@ namespace RockGame
         /// </summary>
         class StylizePass : ScriptableRenderPass
         {
-            readonly Material m_Mat;
+            readonly Material m_Mat, m_MaskMat;
             static readonly MaterialPropertyBlock s_Props = new MaterialPropertyBlock();
-            static readonly int k_BlitTex = Shader.PropertyToID("_BlitTexture"), k_BlitScale = Shader.PropertyToID("_BlitScaleBias");
+            static readonly int k_BlitTex = Shader.PropertyToID("_BlitTexture"), k_BlitScale = Shader.PropertyToID("_BlitScaleBias"),
+                                k_Mask = Shader.PropertyToID("_RgHandMask");
+            static readonly List<ShaderTagId> s_Tags = new List<ShaderTagId> { new ShaderTagId("UniversalForward"), new ShaderTagId("UniversalForwardOnly"), new ShaderTagId("SRPDefaultUnlit") };
 
-            class PassData { public Material Mat; public TextureHandle Src; }
+            class PassData { public Material Mat; public TextureHandle Src, Mask; public bool HasMask; }
+            class MaskData { public RendererListHandle List; }
 
-            public StylizePass(Material mat)
+            public StylizePass(Material mat, Material maskMat)
             {
                 m_Mat = mat;
+                m_MaskMat = maskMat;
                 renderPassEvent = RenderPassEvent.BeforeRenderingPostProcessing;
                 profilingSampler = new ProfilingSampler("RockGame Stylize");
                 ConfigureInput(ScriptableRenderPassInput.Depth | ScriptableRenderPassInput.Normal);
@@ -417,6 +454,31 @@ namespace RockGame
                 var res = frameData.Get<UniversalResourceData>();
                 if (res.isActiveTargetBackBuffer || !res.cameraColor.IsValid()) return;
                 var desc = renderGraph.GetTextureDesc(res.activeColorTexture);
+                // HANDS AND TOOLS: the first-person hands and what they hold (their own layer) drawn white into a mask
+                var mask = TextureHandle.nullHandle;
+                if (HandsOwnLook && m_MaskMat != null)
+                {
+                    var rd = frameData.Get<UniversalRenderingData>();
+                    var cd = frameData.Get<UniversalCameraData>();
+                    var ld = frameData.Get<UniversalLightData>();
+                    var md = new TextureDesc(desc.width, desc.height)
+                    {
+                        name = "_RockGameHandMask", colorFormat = GraphicsFormat.R8_UNorm, clearBuffer = true, clearColor = Color.clear, msaaSamples = MSAASamples.None,
+                    };
+                    mask = renderGraph.CreateTexture(md);
+                    var ds = RenderingUtils.CreateDrawingSettings(s_Tags, rd, cd, ld, SortingCriteria.CommonOpaque);
+                    ds.overrideMaterial = m_MaskMat;
+                    ds.overrideMaterialPassIndex = 0;
+                    var fs = new FilteringSettings(RenderQueueRange.all, 1 << HandLayer);
+                    var list = renderGraph.CreateRendererList(new RendererListParams(rd.cullResults, ds, fs));
+                    using (var mb = renderGraph.AddRasterRenderPass<MaskData>("RockGame Hand Mask", out var mdata, profilingSampler))
+                    {
+                        mdata.List = list;
+                        mb.UseRendererList(list);
+                        mb.SetRenderAttachment(mask, 0, AccessFlags.Write);
+                        mb.SetRenderFunc((MaskData d, RasterGraphContext ctx) => ctx.cmd.DrawRendererList(d.List));
+                    }
+                }
                 desc.name = "_RockGameStylize";
                 desc.clearBuffer = false;
                 desc.msaaSamples = MSAASamples.None;
@@ -425,7 +487,10 @@ namespace RockGame
                 {
                     data.Mat = m_Mat;
                     data.Src = res.activeColorTexture;
+                    data.HasMask = mask.IsValid();
+                    data.Mask = mask;
                     builder.UseTexture(data.Src, AccessFlags.Read);
+                    if (data.HasMask) builder.UseTexture(mask, AccessFlags.Read);
                     if (res.cameraDepthTexture.IsValid()) builder.UseTexture(res.cameraDepthTexture, AccessFlags.Read);
                     if (res.cameraNormalsTexture.IsValid()) builder.UseTexture(res.cameraNormalsTexture, AccessFlags.Read);
                     builder.SetRenderAttachment(dst, 0, AccessFlags.Write);
@@ -434,6 +499,7 @@ namespace RockGame
                         s_Props.Clear();
                         s_Props.SetTexture(k_BlitTex, d.Src);
                         s_Props.SetVector(k_BlitScale, new Vector4(1, 1, 0, 0));
+                        if (d.HasMask) s_Props.SetTexture(k_Mask, d.Mask);
                         ctx.cmd.DrawProcedural(Matrix4x4.identity, d.Mat, 0, MeshTopology.Triangles, 3, 1, s_Props);
                     });
                 }
