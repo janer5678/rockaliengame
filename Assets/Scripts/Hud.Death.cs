@@ -14,42 +14,97 @@ namespace RockGame
     /// </summary>
     public partial class Hud
     {
-        static readonly Color k_DeathRed = new Color(1f, 0.22f, 0.2f);
-        float m_DeadSince = -1f;
+        /// <summary>The death screen's red accent (Settings > Display > HUD & TIMER > DEATH SCREEN: DeathLooks.cs).</summary>
+        static Color k_DeathRed => GameSettings.DeathAccent.Value;
+        float m_DeadSince = -1f, m_TestDeadSince = -1f;
+
+        /// <summary>The death screen's backdrop and YOU DIED `since` seconds in (its own look: DeathLooks.cs). Returns the
+        /// y under it, where the respawn bar / choices go.</summary>
+        float DrawYouDied(float since, float k)
+        {
+            EnsureNotifyTextures();
+            float sw = Screen.width, sh = Screen.height, cx = sw / 2f;
+            float vig = GameSettings.DeathVignette.Value, zs = GameSettings.DeathSize.Value, ink = GameSettings.DeathInk.Value;
+            var font = GameSettings.DeathFontNow;
+            // the screen: darker and redder towards the edges
+            if (vig > 0.001f)
+            {
+                Fill(new Rect(0, 0, sw, sh), new Color(0.06f, 0f, 0f, Mathf.Clamp01(0.35f * vig)));
+                float edge = sh * 0.22f * Mathf.Max(1f, vig);
+                for (int i = 0; i < 12; i++)
+                {
+                    float a = 0.07f * (1f - i / 12f) * vig;
+                    Fill(new Rect(0, i * edge / 12f, sw, edge / 12f), new Color(0.2f, 0f, 0f, a * 3f));
+                    Fill(new Rect(0, sh - (i + 1) * edge / 12f, sw, edge / 12f), new Color(0.2f, 0f, 0f, a * 3f));
+                    Fill(new Rect(i * edge / 12f, 0, edge / 12f, sh), new Color(0.2f, 0f, 0f, a * 2f));
+                    Fill(new Rect(sw - (i + 1) * edge / 12f, 0, edge / 12f, sh), new Color(0.2f, 0f, 0f, a * 2f));
+                }
+            }
+            // YOU DIED: slams in from big, then a line drawn out under it
+            float slam = Mathf.Clamp01(since / 0.35f);
+            float size = 92f * k * zs * (1f + 0.6f * (1f - slam) * (1f - slam));
+            float ty = sh * 0.3f + GameSettings.DeathY.Value * k;
+            var st = new GUIStyle(m_Big) { fontSize = Mathf.Max(8, Mathf.RoundToInt(size)), alignment = TextAnchor.MiddleCenter, clipping = TextClipping.Overflow };
+            if (font != null) st.font = font;
+            if (GameSettings.DeathGlow.Value) Tinted(new Rect(cx - 420 * k * zs, ty - 160 * k * zs, 840 * k * zs, 320 * k * zs), s_GlowTex, new Color(0.8f, 0.05f, 0.05f, 0.35f * slam));
+            var fill = GameSettings.DeathTextColour.Value; fill.a = slam;
+            var edgeC = GameSettings.DeathInkColour.Value; edgeC.a = 0.9f * slam;
+            DeathInkPx = 4f * k * ink; DeathFontPx = st.fontSize; DeathShownFrame = Time.frameCount; // (tests)
+            InkText(new Rect(0, ty - 60 * k * zs, sw, 120 * k * zs), "YOU DIED", st, fill, edgeC, 4f * k * ink);
+            float half = 60 * k * zs; // (the line and what's under it follow YOU DIED's size)
+            if (GameSettings.DeathLine.Value)
+            {
+                float lw = 560 * k * zs * Smooth(Mathf.Clamp01((since - 0.2f) / 0.5f));
+                Tinted(new Rect(cx - lw / 2f, ty + half - 2 * k, lw, 3 * k), s_BandTex, k_DeathRed);
+            }
+            return ty + half + 20 * k;
+        }
+
+        /// <summary>(Settings > Display > DEATH SCREEN: Show a test death screen) YOU DIED with a respawn bar going round
+        /// every 5 s, over everything (DrawTestNotification).</summary>
+        void DrawTestDeath(float k)
+        {
+            if (!TestDeathScreen) return;
+            if (m_TestDeadSince < 0f) m_TestDeadSince = Time.unscaledTime;
+            float since = Time.unscaledTime - m_TestDeadSince;
+            float y = DrawYouDied(since, k) + 14 * k;
+            DrawRespawnBar(y, 1f - Mathf.Repeat(since, 5f) / 5f * 1f, 5f - Mathf.Repeat(since, 5f), true, k);
+        }
+
+        /// <summary>The respawn bar (`fill` 0..1) and RESPAWNING ... IN n over it.</summary>
+        void DrawRespawnBar(float y, float fill, float t, bool home, float k)
+        {
+            float sw = Screen.width, cx = sw / 2f;
+            float ink = GameSettings.DeathInk.Value;
+            var font = GameSettings.DeathFontNow;
+            if (GameSettings.DeathBar.Value)
+            {
+                float w = 360 * k, h = 6 * k;
+                var bar = new Rect(cx - w / 2f, y + 34 * k, w, h);
+                Fill(new Rect(bar.x - 2, bar.y - 2, bar.width + 4, bar.height + 4), new Color(0f, 0f, 0f, 0.6f));
+                Fill(new Rect(bar.x, bar.y, bar.width * Mathf.Clamp01(fill), bar.height), Color.Lerp(k_DeathRed, Color.white, fill * fill));
+            }
+            var lab = new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt(22 * k), alignment = TextAnchor.MiddleCenter };
+            if (font != null) lab.font = font;
+            string num = ColorUtility.ToHtmlStringRGB(Color.Lerp(k_DeathRed, Color.white, 0.35f));
+            InkText(new Rect(0, y, sw, 30 * k), (home ? "RESPAWNING ON YOUR BEDROCK IN " : "RESPAWNING IN ") + $"<color=#{num}>{Mathf.CeilToInt(t)}</color>", lab, Color.white, new Color(0f, 0f, 0f, 0.85f), 2f * k * ink);
+        }
 
         void DrawDeath(NetGame game, PlayerNet me, PlayerController pc, float k)
         {
             EnsureNotifyTextures();
-            float sw = Screen.width, sh = Screen.height, cx = sw / 2f;
+            float sw = Screen.width, cx = sw / 2f;
             if (m_DeadSince < 0f || Time.time - m_DeadSince > 60f) m_DeadSince = Time.time;
             var killer = pc.KillCamTarget;
             if (killer != null) { DrawKillCam(killer, pc, k); return; }
             float since = Time.time - m_DeadSince;
-            // the screen: darker and redder towards the edges
-            Fill(new Rect(0, 0, sw, sh), new Color(0.06f, 0f, 0f, 0.35f));
-            float edge = sh * 0.22f;
-            for (int i = 0; i < 12; i++)
-            {
-                float a = 0.07f * (1f - i / 12f);
-                Fill(new Rect(0, i * edge / 12f, sw, edge / 12f), new Color(0.2f, 0f, 0f, a * 3f));
-                Fill(new Rect(0, sh - (i + 1) * edge / 12f, sw, edge / 12f), new Color(0.2f, 0f, 0f, a * 3f));
-                Fill(new Rect(i * edge / 12f, 0, edge / 12f, sh), new Color(0.2f, 0f, 0f, a * 2f));
-                Fill(new Rect(sw - (i + 1) * edge / 12f, 0, edge / 12f, sh), new Color(0.2f, 0f, 0f, a * 2f));
-            }
-            // YOU DIED: slams in from big, then a line drawn out under it
-            float slam = Mathf.Clamp01(since / 0.35f);
-            float size = 92f * k * (1f + 0.6f * (1f - slam) * (1f - slam));
-            float ty = sh * 0.3f;
-            var st = new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt(size), alignment = TextAnchor.MiddleCenter, clipping = TextClipping.Overflow };
-            Tinted(new Rect(cx - 420 * k, ty - 160 * k, 840 * k, 320 * k), s_GlowTex, new Color(0.8f, 0.05f, 0.05f, 0.35f * slam));
-            InkText(new Rect(0, ty - 60 * k, sw, 120 * k), "YOU DIED", st, new Color(1f, 0.93f, 0.9f, slam), new Color(0.25f, 0f, 0f, 0.9f * slam), 4f * k);
-            float lw = 560 * k * Smooth(Mathf.Clamp01((since - 0.2f) / 0.5f));
-            Tinted(new Rect(cx - lw / 2f, ty + 58 * k, lw, 3 * k), s_BandTex, k_DeathRed);
-            float y = ty + 80 * k;
+            float y = DrawYouDied(since, k); // (the backdrop and YOU DIED: their own look, DeathLooks.cs)
             var small = new GUIStyle(m_Center) { fontSize = Mathf.RoundToInt(17 * k) };
             if (game != null && !game.CanRespawn(me.Team.Value))
             {
-                InkText(new Rect(0, y, sw, 30 * k), "<color=#ff6a60>ELIMINATED</color>", new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt(28 * k) }, Color.white, new Color(0f, 0f, 0f, 0.8f), 2f * k);
+                var est = new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt(28 * k) };
+                if (GameSettings.DeathFontNow != null) est.font = GameSettings.DeathFontNow;
+                InkText(new Rect(0, y, sw, 30 * k), $"<color=#{ColorUtility.ToHtmlStringRGB(Color.Lerp(k_DeathRed, Color.white, 0.3f))}>ELIMINATED</color>", est, Color.white, new Color(0f, 0f, 0f, 0.8f), 2f * k * GameSettings.DeathInk.Value);
                 Shadowed(new Rect(0, y + 34 * k, sw, 26 * k), "Your machine is destroyed - there's no coming back. Cheer your team on!", small);
                 return;
             }
@@ -77,13 +132,7 @@ namespace RockGame
             // the bar filling up to the respawn
             float t = Mathf.Max(0, (float)(me.RespawnAt.Value - me.NetworkManager.ServerTime.Time));
             float fill = 1f - Mathf.Clamp01(t / Mathf.Max(0.1f, Cfg.RespawnTime));
-            float w = 360 * k, h = 6 * k;
-            var bar = new Rect(cx - w / 2f, y + 34 * k, w, h);
-            Fill(new Rect(bar.x - 2, bar.y - 2, bar.width + 4, bar.height + 4), new Color(0f, 0f, 0f, 0.6f));
-            Fill(new Rect(bar.x, bar.y, bar.width * fill, bar.height), Color.Lerp(k_DeathRed, Color.white, fill * fill));
-            bool home = game == null || game.WallUp;
-            var lab = new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt(22 * k), alignment = TextAnchor.MiddleCenter };
-            InkText(new Rect(0, y, sw, 30 * k), (home ? "RESPAWNING ON YOUR BEDROCK IN " : "RESPAWNING IN ") + $"<color=#ff7a6e>{Mathf.CeilToInt(t)}</color>", lab, Color.white, new Color(0f, 0f, 0f, 0.85f), 2f * k);
+            DrawRespawnBar(y, fill, t, game == null || game.WallUp, k);
         }
 
         static float Smooth(float x) => x * x * (3f - 2f * x);
@@ -215,7 +264,8 @@ namespace RockGame
                 var st = new GUIStyle(m_Center) { fontSize = Mathf.Max(8, Mathf.RoundToInt(size * k)), fontStyle = FontStyle.Bold, clipping = TextClipping.Overflow };
                 var c = nk ? new Color(1f, 0.28f, 0.2f, a) : new Color(1f, 1f, 1f, a);
                 var fillC = Color.Lerp(c, new Color(1f, 1f, 1f, a), Mathf.Clamp01(1f - nage / 0.1f) * 0.7f);
-                InkText(new Rect(x - 80, y - 25, 160, 50), Mathf.RoundToInt(amount).ToString(), st, fillC, new Color(0f, 0f, 0f, a * 0.9f), 2.5f * k);
+                // (its edge: Settings > Display > DAMAGE NUMBERS, as the live ones - HudTextLooks.cs)
+                EdgeText(new Rect(x - 80, y - 25, 160, 50), Mathf.RoundToInt(amount).ToString(), st, fillC, GameSettings.DamageEdge.Value, GameSettings.DamageInk.Value * 1.25f * k, new Color(0f, 0f, 0f, a * 0.9f));
                 ReplayNumberShownAt = Time.time;
             }
         }

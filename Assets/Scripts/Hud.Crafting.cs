@@ -99,9 +99,9 @@ namespace RockGame
             {
                 case Item.Hatchet: return "Hatchet: chops trees much faster than your rock. Can be crafted anywhere.";
                 case Item.Pickaxe: return "Stone Pickaxe: mines rocks for stone much faster than your rock.";
-                case Item.Spear: return "Spear: LMB stabs; hold RMB and press LMB to throw it (E picks it back up). Can be crafted anywhere.";
+                case Item.Spear: return $"Spear: LMB stabs; hold RMB and press LMB to throw it ({KT(Bind.Interact)} picks it back up). Can be crafted anywhere.";
                 case Item.BuildingPlan: return "Building Plan: hold it to build. Hold RMB for the building wheel.";
-                case Item.Chest: return $"Storage Chest: place it in your base, E opens it ({Cfg.ChestSlots} slots).";
+                case Item.Chest: return $"Storage Chest: place it in your base, {KT(Bind.Interact)} opens it ({Cfg.ChestSlots} slots).";
                 case Item.Bow: return "Bow: hold LMB to draw, let go to fire. Uses arrows.";
                 case Item.Arrow: return $"Arrows: {Mathf.Max(1, Cfg.ArrowsPerCraft)} a craft, for the bow and the crossbow.";
                 case Item.Ram: return $"Battering Ram ({Cfg.RamUses} hit{(Cfg.RamUses == 1 ? "" : "s")}): hold LMB at an enemy piece - wood breaks, stone and up drop a step.";
@@ -120,13 +120,13 @@ namespace RockGame
                 case Item.Crossbow: return $"Crossbow: {Cfg.CrossbowDamage:0} damage, faster and flatter than the bow. Reloads itself from your arrows.";
                 case Item.Armor: return $"Armour: {Cfg.ArmorHp} extra health used up before your own.";
                 case Item.Chainsaw: return $"Chainsaw: rips through wood and stone. {Cfg.ChainsawUses} uses.";
-                case Item.Saddle: return "Saddle: E on a wild horse to ride it.";
-                case Item.Boat: return "Boat: put it on open water and E to drive it.";
+                case Item.Saddle: return $"Saddle: {KT(Bind.Interact)} on a wild horse to ride it.";
+                case Item.Boat: return $"Boat: put it on open water and {KT(Bind.Interact)} to drive it.";
                 case Item.Sword: return $"Sword: a slow heavy swing, {Cfg.SwordBodyDamage:0} body / {Cfg.SwordHeadDamage:0} head.";
                 case Item.Shotgun: return "Waterpipe Shotgun: one shell at a time, huge up close.";
                 case Item.ShotgunShell: return $"{Cfg.ItemName(id)}: ammo for the waterpipe shotgun, loaded one shell at a time.";
                 case Item.Revolver: return $"Revolver: {Cfg.RevolverMag} rounds, hitscan.";
-                case Item.RevolverAmmo: return $"{Cfg.ItemName(id)}: ammo for the revolver ({Cfg.RevolverMag} fill the cylinder; R reloads).";
+                case Item.RevolverAmmo: return $"{Cfg.ItemName(id)}: ammo for the revolver ({Cfg.RevolverMag} fill the cylinder; {KT(Bind.Rotate)} reloads).";
                 case Item.C4: return "C4: throw it at enemy buildings.";
                 case Item.Helmet: return "Alien Helmet: goes straight on - stops one headshot completely.";
                 default: return Cfg.ItemName(id) + (Cfg.PowerIndex(id) >= 0 ? ": " + Cfg.PowerBlurb(id, team) : "");

@@ -10,6 +10,11 @@ namespace RockGame
     /// WORDING - every notification's title can be reworded (NotifText below: Hud.Banner maps each title through it; an
     ///   empty override = the game's own words). Titles with a part that changes (a team, a number of seconds) keep
     ///   it as {0}.
+    /// ANIMATION - how a banner comes in (snap open, slide down, fade, pop, none) and goes (lift & fade, fade, slide up,
+    ///   shrink), how long it stays and how far up it flies on the way out.
+    /// COLOURS - each kind of news' accent colour (unlocks, airdrops, the wall, destroyed / down, goals...: NotifAccentFor).
+    /// The timer's header words (WALL DROPS IN, TIME LEFT...) are reworded here too (NotifText.Timer: apart from the
+    /// banners'). The countdowns have a look of their own (CountdownLooks.cs).
     /// Also the interface switch for the "YOU ARE BLUE" box in the top left.
     /// </summary>
     public static partial class GameSettings
@@ -18,7 +23,7 @@ namespace RockGame
         /// <summary>TEXT OUTLINE: the words' own ink stroke (Hud.InkText round the banner's title and the countdown's
         /// label and number) - its thickness (1 = as designed, 0 = none), on / off, colour and opacity. Not the OWN LOOK
         /// post outline, which is an extra line laid on round everything after.</summary>
-        public static readonly DisplayPref.Float NotifInk = new("notif.ink", GNotifStyle, 1f, 0f, 3f);
+        public static readonly DisplayPref.Float NotifInk = new("notif.ink", GNotifStyle, 0.45f, 0f, 3f);
         public static readonly DisplayPref.Bool NotifInkOn = new("notif.ink.on", GNotifStyle, true);
         public static readonly DisplayPref.Colour NotifInkColour = new("notif.ink.colour", GNotifStyle, Color.black);
         public static readonly DisplayPref.Float NotifInkOpacity = new("notif.ink.opacity", GNotifStyle, 1f, 0f, 1f);
@@ -32,32 +37,97 @@ namespace RockGame
             return c;
         }
         /// <summary>How wide the dark band behind a banner / the countdown's label is (1 = as designed).</summary>
-        public static readonly DisplayPref.Float NotifWidth = new("notif.width", GNotifStyle, 1f, 0.4f, 1.8f);
+        public static readonly DisplayPref.Float NotifWidth = new("notif.width", GNotifStyle, 0.85f, 0.4f, 1.8f);
         /// <summary>How dark that band is (1 = as designed).</summary>
-        public static readonly DisplayPref.Float NotifPlate = new("notif.plate", GNotifStyle, 1f, 0f, 1.5f);
-        public static readonly DisplayPref.Choice NotifFont = new("notif.font", GNotifStyle, FontPrefNames, 0);
+        public static readonly DisplayPref.Float NotifPlate = new("notif.plate", GNotifStyle, 0.2f, 0f, 1.5f);
+        public static readonly DisplayPref.Choice NotifFont = new("notif.font", GNotifStyle, FontPrefNames, 4); // (4 = Consolas)
         /// <summary>How big the words (and the countdown's number) are (1 = as designed).</summary>
-        public static readonly DisplayPref.Float NotifSize = new("notif.size", GNotifStyle, 1f, 0.5f, 1.8f);
+        public static readonly DisplayPref.Float NotifSize = new("notif.size", GNotifStyle, 1.25f, 0.5f, 1.8f);
         /// <summary>How far up (-) or down (+) the screen they sit, in pixels at the UI scale.</summary>
-        public static readonly DisplayPref.Float NotifY = new("notif.y", GNotifStyle, 0f, -200f, 400f);
+        public static readonly DisplayPref.Float NotifY = new("notif.y", GNotifStyle, -25f, -200f, 400f);
 
         public static Font NotifFontNow => FontForPref(NotifFont.Value);
 
         public static void ResetNotifStyle(bool save = true)
         {
-            NotifInk.Set(1f, save); NotifInkOn.Set(true, save); NotifInkColour.Set(Color.black, save); NotifInkOpacity.Set(1f, save);
-            NotifWidth.Set(1f, save); NotifPlate.Set(1f, save); NotifFont.Set(0, save); NotifSize.Set(1f, save); NotifY.Set(0f, save);
+            DisplayPref.ResetAll(save, NotifInk, NotifInkOn, NotifInkColour, NotifInkOpacity, NotifWidth, NotifPlate, NotifFont, NotifSize, NotifY);
         }
+
+        // ---- how a banner comes and goes ----
+        const string GNotifMove = "NOTIFICATION ANIMATION";
+        /// <summary>How a banner comes in: the band snapping open from the middle (as designed), sliding down from above,
+        /// fading in, popping in from small, or just there.</summary>
+        public static readonly DisplayPref.Choice NotifEnter = new("notif.enter", GNotifMove, new[] { "Snap open", "Slide down", "Fade in", "Pop", "None" }, 0);
+        /// <summary>How it goes: lifting up as it fades (as designed), just fading, sliding up off the screen, or shrinking away.</summary>
+        public static readonly DisplayPref.Choice NotifExit = new("notif.exit", GNotifMove, new[] { "Lift & fade", "Fade", "Slide up", "Shrink" }, 0);
+        /// <summary>How long a banner stays (seconds, the way in and out included).</summary>
+        public static readonly DisplayPref.Float NotifTime = new("notif.time", GNotifMove, 4f, 1.5f, 12f);
+        /// <summary>How far up the screen it flies as it leaves (pixels at the UI scale; Lift & fade and Slide up).</summary>
+        public static readonly DisplayPref.Float NotifFly = new("notif.fly", GNotifMove, 40f, 0f, 600f);
+
+        public static float NotifTimeNow => NotifTime.Value;
+
+        public static void ResetNotifMove(bool save = true)
+        {
+            NotifEnter.Set(0, save); NotifExit.Set(0, save); NotifTime.Set(4f, save); NotifFly.Set(40f, save);
+        }
+
+        // ---- each kind of news' accent colour (the band's lines and the title settle into it: Hud.BannerAccent) ----
+        const string GNotifColours = "NOTIFICATION COLOURS";
+        public static readonly DisplayPref.Colour NotifColUnlock = new("notif.colour.unlock", GNotifColours, new Color(1f, 0.88f, 0.2f));
+        public static readonly DisplayPref.Colour NotifColAirdrop = new("notif.colour.airdrop", GNotifColours, new Color(1f, 0.38f, 0.78f));
+        public static readonly DisplayPref.Colour NotifColWall = new("notif.colour.wall", GNotifColours, new Color(0.4f, 0.85f, 1f));
+        public static readonly DisplayPref.Colour NotifColDown = new("notif.colour.down", GNotifColours, new Color(1f, 0.3f, 0.25f));
+        public static readonly DisplayPref.Colour NotifColGoal = new("notif.colour.goal", GNotifColours, new Color(1f, 0.85f, 0.3f));
+        public static readonly DisplayPref.Colour NotifColAirstrike = new("notif.colour.airstrike", GNotifColours, new Color(1f, 0.85f, 0.3f));
+        public static readonly DisplayPref.Colour NotifColBall = new("notif.colour.ball", GNotifColours, new Color(1f, 0.85f, 0.3f));
+        public static readonly DisplayPref.Colour NotifColClock = new("notif.colour.clock", GNotifColours, new Color(1f, 0.85f, 0.3f));
+        public static readonly DisplayPref.Colour NotifColLobby = new("notif.colour.lobby", GNotifColours, new Color(1f, 0.85f, 0.3f));
+        public static readonly DisplayPref.Colour NotifColDefault = new("notif.colour.default", GNotifColours, new Color(1f, 0.85f, 0.3f));
+
+        /// <summary>The kinds of news with their colours, in the settings' order: (name, what it covers, colour).</summary>
+        public static readonly (string name, string covers, DisplayPref.Colour pref)[] NotifColours =
+        {
+            ("Unlocks", "TRADE STATION UNLOCKED", NotifColUnlock),
+            ("Airdrops", "AIRDROP INCOMING, AIRDROP IN 30 SECONDS", NotifColAirdrop),
+            ("The wall", "THE WALL IS DROPPING, THE WALL IS DOWN", NotifColWall),
+            ("Destroyed / down", "A TEAM'S MACHINE IS DOWN", NotifColDown),
+            ("Goals", "GOAL! BLUE", NotifColGoal),
+            ("Airstrikes", "AIRSTRIKE INBOUND", NotifColAirstrike),
+            ("The ball", "BALL INCOMING", NotifColBall),
+            ("The clock", "1 MINUTE LEFT, OVERTIME, SUDDEN DEATH, GATHER & BUILD", NotifColClock),
+            ("The lobby", "EVERYONE'S READY / HERE, LOBBY / TEAM FULL", NotifColLobby),
+            ("Anything else", "the tutorial and the rest", NotifColDefault),
+        };
+
+        /// <summary>A banner's accent colour, by the game's own words for it.</summary>
+        public static Color NotifAccentFor(string title)
+        {
+            string s = title ?? "";
+            if (s.Contains("UNLOCK")) return NotifColUnlock.Value;
+            if (s.Contains("AIRDROP")) return NotifColAirdrop.Value;
+            if (s.Contains("AIRSTRIKE")) return NotifColAirstrike.Value;
+            if (s.Contains("WALL")) return NotifColWall.Value;
+            if (s.StartsWith("GOAL")) return NotifColGoal.Value;
+            if (s.Contains("BALL")) return NotifColBall.Value;
+            if (s.Contains("DROP")) return NotifColWall.Value;
+            if (s.Contains("DESTROY") || s.Contains("DOWN") || s.Contains("OUT")) return NotifColDown.Value;
+            if (s.Contains("MINUTE") || s.Contains("OVERTIME") || s.Contains("SUDDEN") || s.Contains("GATHER")) return NotifColClock.Value;
+            if (s.Contains("READY") || s.Contains("HERE") || s.Contains("FULL")) return NotifColLobby.Value;
+            return NotifColDefault.Value;
+        }
+
+        public static void ResetNotifColours(bool save = true) { foreach (var c in NotifColours) c.pref.Set(c.pref.Default, save); }
 
         // ---- the HUD ----
         const string GHud = "HUD";
         /// <summary>The "YOU ARE BLUE" box in the top left of the HUD.</summary>
-        public static readonly DisplayPref.Bool HudTeamBox = new("hud.teambox", GHud, true);
+        public static readonly DisplayPref.Bool HudTeamBox = new("hud.teambox", GHud, false);
         /// <summary>The "Your Base" radar under it (it moves up into the corner while the team box is off).</summary>
-        public static readonly DisplayPref.Bool HudBaseRadar = new("hud.baseradar", GHud, true);
+        public static readonly DisplayPref.Bool HudBaseRadar = new("hud.baseradar", GHud, false);
 
         /// <summary>(makes the wording lines exist with GameSettings, so they're in the display settings code)</summary>
-        static readonly int s_NotifLines = NotifText.All.Length;
+        static readonly int s_NotifLines = NotifText.All.Length + NotifText.Timer.Length;
     }
 
     /// <summary>
@@ -128,18 +198,47 @@ namespace RockGame
             return title;
         }
 
+        /// <summary>The timer's header words (Hud.Notify.cs: DrawTopPanel passes its label through MapTimer) - apart from
+        /// the banners', so rewording the OVERTIME banner doesn't reword the timer's OVERTIME and the other way round.</summary>
+        public static readonly Line[] Timer =
+        {
+            new("timer_waiting", "WAITING FOR PLAYERS", "timer: the lobby is filling up"),
+            new("timer_starts", "MATCH STARTS IN", "timer: everyone's in"),
+            new("timer_wall", "WALL DROPS IN", "timer: gathering and building"),
+            new("timer_timeleft", "TIME LEFT", "timer: the ball is out"),
+            new("timer_overtime", "OVERTIME", "timer: overtime"),
+            new("timer_sudden", "SUDDEN DEATH", "timer: the space arena"),
+            new("timer_tutorial", "TUTORIAL", "timer: in the tutorial"),
+        };
+
+        /// <summary>The timer's header in the player's words (their own for it, or the game's).</summary>
+        public static string MapTimer(string label)
+        {
+            if (string.IsNullOrEmpty(label)) return label;
+            foreach (var l in Timer)
+                if (label == l.Default) return string.IsNullOrWhiteSpace(l.Own.Value) ? label : l.Own.Value;
+            return label;
+        }
+
         public static Line Find(string key)
         {
             foreach (var l in All) if (l.Key == key) return l;
+            foreach (var l in Timer) if (l.Key == key) return l;
             return null;
         }
 
-        /// <summary>How many have the player's own words.</summary>
+        /// <summary>How many have the player's own words (the banners' and the timer's).</summary>
         public static int Changed
         {
-            get { int n = 0; foreach (var l in All) if (!string.IsNullOrWhiteSpace(l.Own.Value)) n++; return n; }
+            get
+            {
+                int n = 0;
+                foreach (var l in All) if (!string.IsNullOrWhiteSpace(l.Own.Value)) n++;
+                foreach (var l in Timer) if (!string.IsNullOrWhiteSpace(l.Own.Value)) n++;
+                return n;
+            }
         }
 
-        public static void ResetAll(bool save = true) { foreach (var l in All) l.Own.Set("", save); }
+        public static void ResetAll(bool save = true) { foreach (var l in All) l.Own.Set("", save); foreach (var l in Timer) l.Own.Set("", save); }
     }
 }

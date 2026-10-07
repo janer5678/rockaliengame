@@ -73,12 +73,16 @@ namespace RockGame
             m_Page = MenuPage.Main;
             m_New = NewPage.Root;
             m_PreviewKey = -1;
+            DropPreview(); // (leaving rebuilds this PC's own map anyway: Bootstrap.CleanupLocal)
             if (boot != null && boot.InSession) boot.Leave();
         }
 
         /// <summary>CONFIRM on the lobby menu's map page: back to the lobby with the picks.</summary>
         void LobbyMenuApply(Bootstrap boot, MapKind kind)
         {
+            // (another map's live preview is built: the hosted map back first - its settings are what's compared below,
+            // and a CONFIRM that only changes the options keeps the session on it)
+            if (s_PrevOrigKey >= 0) RestoreHostedMap();
             int key = MenuKey(kind);
             m_LobbyMenu = false;
             m_Page = MenuPage.Main;
@@ -143,28 +147,153 @@ namespace RockGame
         }
 
         /// <summary>
-        /// The host's lobby map page is up with the map being hosted picked (same map, same size): its background is the
-        /// map itself - the main menu's slow cinematic shots (MenuScene.Shots.cs), filmed over the session's own map while
-        /// the page is up. (Another map can't be shown live: the session's map is the one built, and building another
-        /// would pull the world out from under everyone in it - that one's picture drifts behind instead, until CONFIRM.)
+        /// The host's lobby map page is up: its background is the map picked itself - the main menu's slow cinematic shots
+        /// (MenuScene.Shots.cs), filmed over the world while the page is up. The hosted map is the world already. Another
+        /// map is built in its place on the host's PC for the preview (BuildPreview): in the ship lobby nobody's on the
+        /// map - everyone's in the lobby room, their bodies on the waiting stadium's platform (rebuilt in the same place
+        /// with the world) - and MapBuilder.Build only makes this PC's own scenery (no networked objects), so nobody
+        /// else sees a thing. The session's own networked things on the map (its trees and so on, placed for the hosted
+        /// map) are hidden on this PC meanwhile, the main menu's picture-only trees stand in for them, and the hosted map
+        /// comes back (rebuilt, its things shown again) the moment the page shows it again, is left, or CONFIRM is
+        /// pressed (a new map then restarts the session as before). While another map's being built (a moment after the
+        /// arrows stop on it) its picture drifts behind instead.
         /// </summary>
         public static bool LobbyMapLive => s_I != null && s_I.LobbyMapLiveNow();
 
         bool LobbyMapLiveNow()
         {
+            if (!LobbyMapPageUp()) return false;
+            if (MapBuilder.Root == null) return false;
+            return LobbyPickIsHosted() || (s_PrevOrigKey >= 0 && s_PrevKey == PickPreviewKey());
+        }
+
+        bool LobbyMapPageUp()
+        {
             if (!m_LobbyMenu || m_New != NewPage.Map || m_Page != MenuPage.Main || TestHideAll) return false;
             var boot = Bootstrap.I;
-            if (boot == null || !boot.InSession || !ShipLobby.Active || MapBuilder.Root == null) return false;
-            return LobbyPickIsHosted();
+            return boot != null && boot.InSession && ShipLobby.Active;
         }
+
+        /// <summary>The map being hosted (its map key: the preview's built over it for now when s_PrevOrigKey is set).</summary>
+        static int HostedKey => s_PrevOrigKey >= 0 ? s_PrevOrigKey : Cfg.MapKey;
+
+        static MapSize SizeOf(int key) => (key & Cfg.SmallBit) != 0 ? MapSize.Small : (MapSize)((key >> Cfg.SizeShift) & 3);
 
         /// <summary>The map page's pick (map and size) is what's being hosted.</summary>
         bool LobbyPickIsHosted()
         {
             var kind = k_Maps[Mathf.Clamp(m_MapPick, 0, k_Maps.Length - 1)];
-            int key = Bootstrap.MapChoice;
-            var size = (key & Cfg.SmallBit) != 0 ? MapSize.Small : (MapSize)((key >> Cfg.SizeShift) & 3);
-            return kind == Cfg.Map && size == Cfg.Size;
+            int hosted = HostedKey;
+            return kind == (MapKind)(hosted & 15) && SizeOf(Bootstrap.MapChoice) == SizeOf(hosted);
+        }
+
+        /// <summary>The hosted map's key with the page's map and size in it (everything else - the mode, the teams - as
+        /// hosted): what a preview of the pick is built from.</summary>
+        int PickPreviewKey()
+        {
+            var kind = k_Maps[Mathf.Clamp(m_MapPick, 0, k_Maps.Length - 1)];
+            int k = HostedKey & ~15 & ~Cfg.SmallBit & ~(3 << Cfg.SizeShift);
+            return k | (int)kind | ((int)SizeOf(Bootstrap.MapChoice) << Cfg.SizeShift);
+        }
+
+        // ------------------------------------------------------------------ another map's live preview
+
+        /// <summary>The hosted map's key and seed while another map's preview is built in its place (-1: none is), and the
+        /// preview's own key.</summary>
+        static int s_PrevOrigKey = -1, s_PrevOrigSeed, s_PrevKey = -1;
+        int m_PrevWant = -1;
+        float m_PrevWantSince;
+        /// <summary>The session's renderers hidden on this PC for the preview (shown again with the hosted map).</summary>
+        static readonly List<Renderer> s_PrevHidden = new List<Renderer>();
+        /// <summary>The wait after the pick changes before it's built (flicking through the maps builds only the last).</summary>
+        const float PreviewSettle = 0.35f;
+
+        /// <summary>Another map's live preview is built in place of the hosted map (the menu's trees stand on it: MenuScene).</summary>
+        public static bool LobbyPreviewBuilt => s_PrevOrigKey >= 0;
+        /// <summary>(tests) how many previews of other maps have been built, and how many times the hosted map's come back.</summary>
+        public static int LobbyPreviewBuilds { get; private set; }
+        public static int LobbyPreviewRestores { get; private set; }
+        /// <summary>(tests) how many of the session's renderers are hidden for the preview right now.</summary>
+        public static int LobbyPreviewHidden => s_PrevHidden.Count;
+
+        /// <summary>Every frame (MenuSceneLate.LateUpdate, before the shots): build the page's pick when it's another map,
+        /// put the hosted map back when it isn't (or the page is gone).</summary>
+        public static void TickLobbyMapPreview()
+        {
+            if (s_I != null) s_I.LobbyPreviewTick();
+            else if (s_PrevOrigKey >= 0) RestoreHostedMap();
+        }
+
+        void LobbyPreviewTick()
+        {
+            var boot = Bootstrap.I;
+            var g = NetGame.Instance;
+            if (boot == null || !boot.InSession || !boot.IsHostSession || g == null || !g.IsSpawned) { DropPreview(); return; } // (no session: this PC's map is rebuilt by whatever ended it)
+            int want = -1;
+            if (LobbyMapPageUp() && g.IsServer && g.S == GameState.Waiting && !LobbyPickIsHosted()) want = PickPreviewKey();
+            if (want != m_PrevWant) { m_PrevWant = want; m_PrevWantSince = Time.unscaledTime; }
+            if (want < 0) { if (s_PrevOrigKey >= 0) RestoreHostedMap(); return; }
+            if (want == s_PrevKey || Time.unscaledTime - m_PrevWantSince < PreviewSettle) return;
+            BuildPreview(want);
+        }
+
+        /// <summary>Build map `key` in place of the hosted one, on this PC only (see LobbyMapLive).</summary>
+        static void BuildPreview(int key)
+        {
+            if (s_PrevOrigKey < 0)
+            {
+                s_PrevOrigKey = Cfg.MapKey;
+                s_PrevOrigSeed = Cfg.MapSeed;
+                HideSessionThings(Cfg.MapHalf + 40f);
+            }
+            s_PrevKey = key;
+            Cfg.SetMap(key, s_PrevOrigSeed);
+            MapBuilder.Build();
+            LobbyPreviewBuilds++;
+            Debug.Log($"[RockGame] lobby map page: previewing {(MapKind)(key & 15)} ({SizeOf(key)}) live over the hosted {(MapKind)(s_PrevOrigKey & 15)}");
+        }
+
+        /// <summary>The hosted map back (rebuilt) and the session's things on it shown again.</summary>
+        static void RestoreHostedMap()
+        {
+            if (s_PrevOrigKey < 0) return;
+            int key = s_PrevOrigKey, seed = s_PrevOrigSeed;
+            s_PrevOrigKey = -1;
+            s_PrevKey = -1;
+            Cfg.SetMap(key, seed);
+            MapBuilder.Build();
+            foreach (var r in s_PrevHidden) if (r != null) r.enabled = true;
+            s_PrevHidden.Clear();
+            LobbyPreviewRestores++;
+            Debug.Log($"[RockGame] lobby map page: the hosted {(MapKind)(key & 15)} is back");
+        }
+
+        /// <summary>The session's gone with a preview up: nothing to put back (whatever ended it rebuilds this PC's map).</summary>
+        static void DropPreview()
+        {
+            if (s_PrevOrigKey < 0) return;
+            foreach (var r in s_PrevHidden) if (r != null) r.enabled = true;
+            s_PrevHidden.Clear();
+            s_PrevOrigKey = -1;
+            s_PrevKey = -1;
+        }
+
+        /// <summary>Hide the session's networked things on the hosted map on this PC (its trees and so on were placed for
+        /// it, not for the map being previewed): every spawned object within `reach` of the middle but the players and the
+        /// game itself.</summary>
+        static void HideSessionThings(float reach)
+        {
+            s_PrevHidden.Clear();
+            var nm = Unity.Netcode.NetworkManager.Singleton;
+            if (nm == null || nm.SpawnManager == null) return;
+            foreach (var no in nm.SpawnManager.SpawnedObjectsList)
+            {
+                if (no == null || no.GetComponent<PlayerNet>() != null || no.GetComponent<NetGame>() != null) continue;
+                var p = no.transform.position;
+                if (Mathf.Abs(p.x) > reach || Mathf.Abs(p.z) > reach) continue;
+                foreach (var r in no.GetComponentsInChildren<Renderer>())
+                    if (r.enabled) { r.enabled = false; s_PrevHidden.Add(r); }
+            }
         }
 
         int m_PicKind = -1;
@@ -215,7 +344,7 @@ namespace RockGame
             float k = m_Scale, sw = Screen.width;
             int n = ShipLobby.Seated.Count;
             string s = $"<b>YOUR LOBBY IS STILL OPEN</b>  ·  {n} in it\n<color=#bbbbbb>CONFIRM takes you back to it with the new picks.  BACK to the main menu closes it.</color>";
-            if (m_New == NewPage.Map && !LobbyPickIsHosted()) s += "\n<color=#bbbbbb>A picture of this map: CONFIRM builds it for everyone.</color>";
+            if (m_New == NewPage.Map && !LobbyPickIsHosted()) s += LobbyMapLive ? "\n<color=#bbbbbb>A preview of this map (only you can see it): CONFIRM builds it for everyone.</color>" : "\n<color=#bbbbbb>Loading a preview of this map...</color>";
             var st = new GUIStyle(m_Small) { alignment = TextAnchor.UpperRight, fontSize = Mathf.RoundToInt(15 * k), wordWrap = false };
             Shadowed(new Rect(0, 18 * k, sw - 22 * k, 80 * k), s, st);
         }

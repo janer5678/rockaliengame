@@ -63,6 +63,17 @@ namespace RockGame
         public Transform DebugHand(bool right) => right ? m_R : m_L;
         public Transform DebugRoot => m_Root;
 
+        /// <summary>The renderer is part of a hand (an arm: fist, knuckles, thumb, wrist band, forearm) rather than what
+        /// the hands hold (the item - even while it's carried in the right hand - the ball, an arrow, the bow's strings).
+        /// Settings > Display > HANDS / TOOLS & WEAPONS: PostFx.cs puts each on its own layer.</summary>
+        public bool IsHand(Renderer r)
+        {
+            if (r == null) return false;
+            var t = r.transform;
+            if (m_ItemHolder != null && t.IsChildOf(m_ItemHolder)) return false;
+            return (m_R != null && t.IsChildOf(m_R)) || (m_L != null && t.IsChildOf(m_L));
+        }
+
         /// <summary>For the hands autotest: what the hands hold this frame (the item's shown renderers, the ball, the bow's arrow and string).</summary>
         public void DebugHeld(System.Collections.Generic.List<Renderer> list)
         {

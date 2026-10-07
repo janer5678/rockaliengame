@@ -188,8 +188,27 @@ namespace RockGame
                 + "post.extra.filmgrain.strength = 0.5\npost.extra.sharpen.strength = 0.5\npost.extra.celbanding = off\nui.cel.strength = 0.5\nui.outline = off\nui.outline.width = 2\n"
                 + "ui.saturation = 1\nshadows.darkness = 1\nshadows.distance = 50\nshade.smooth.aliens = off\nglow.strength = 0.3\nglow.width = 0.03\ngrass.distance = 60\n"
                 + "grass.falloff = 1.35\ngrass.height = 1\nbeams.falloff = 70\ntreex.glow = 1.6\nbasefloor.after = Flat grass\nbasefloor.teammix = 0.35\n"
-                + "colour.Ground = #70A34F\ncolour.Grass = #5C9929\ncolour.Leaves = #4A8C26\ncolour.Sky = #73A6F2\n", false);
+                + "colour.Ground = #70A34F\ncolour.Grass = #5C9929\ncolour.Leaves = #4A8C26\ncolour.Sky = #73A6F2\n"
+                // (and the 2026-10-08 defaults that change the world's picture: the hands' own look would keep our
+                // stylize pass on, the energy wall and the thicker far lines would move the numbers)
+                + "hands.own = off\nworld.energywall = off\npost.outlines.far = 1\n", false);
             yield return new WaitForSeconds(1f);
+            // a second sun up in the open sky for bloom to light up: the real one drifts behind the clouds from run to run
+            // (and with it there's nothing past bloom's threshold in the picture - 0.63 mean difference, no brighter)
+            GameObject testSun = null;
+            if (SkySun.Current != null && SkySun.Current.Shown && Camera.main != null)
+            {
+                var cam = Camera.main;
+                testSun = new GameObject("Test sun (bloom)");
+                testSun.AddComponent<MeshFilter>().sharedMesh = SkySun.Current.GetComponent<MeshFilter>().sharedMesh;
+                var tsr = testSun.AddComponent<MeshRenderer>();
+                tsr.sharedMaterial = SkySun.Current.GetComponent<MeshRenderer>().sharedMaterial;
+                tsr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                var sunDir = cam.ViewportPointToRay(new Vector3(0.78f, 0.8f, 0f)).direction;
+                testSun.transform.SetPositionAndRotation(cam.transform.position + sunDir * 25f, Quaternion.LookRotation(sunDir));
+                testSun.transform.localScale = Vector3.one * 2.5f;
+            }
+            yield return null;
             // time stands still while the pictures are compared (no swaying grass or drifting clouds between them)
             Time.timeScale = 0f;
             ScreenStats off = default, off2 = default, on = default, bloom = default, vig = default, grade = default;
@@ -257,6 +276,7 @@ namespace RockGame
             Check(Mathf.Min(dBack, dBack2) <= Mathf.Max(xNoise, backNoise) * 1.6f + 0.01f && !PostFx.StylizeOn && Mathf.Approximately(PostFx.AoIntensity, PostFx.AoBaseIntensity),
                 $"every extra look off again: the usual look ({dBack:F3} / {dBack2:F3} mean difference from it, {xNoise:F3} / {backNoise:F3} between two plain frames), our pass not drawn, the SSAO back to {PostFx.AoBaseIntensity:F2}");
             yield return Look(null, false, true, true, true, s => off2 = s);
+            if (testSun != null) Destroy(testSun);
             Time.timeScale = 1f;
             float noise = Diff(off, off2), dOn = Diff(off, on);
             Log($"post fx pixels: off lum {off.Lum:F3} sat {off.Sat:F3} corners {off.Corner:F3} middle {off.Center:F3} | on lum {on.Lum:F3} sat {on.Sat:F3} corners {on.Corner:F3} middle {on.Center:F3} | "
@@ -699,6 +719,9 @@ namespace RockGame
             GameSettings.UiSaturation.Set(1f, false);
 
             // world effects off the UI: the strong vignette and grading on the world only
+            // (time stands still between the three pictures: the world moving behind the see-through panel moved it ~1 of 255)
+            float tsWas = Time.timeScale;
+            Time.timeScale = 0f;
             GameSettings.SetPostFx(true, false, true, true, 0.5f, 1f, 1f, false);
             GameSettings.SetPostOnUi(false, false);
             yield return new WaitForSecondsRealtime(0.5f);
@@ -710,6 +733,7 @@ namespace RockGame
             GameSettings.UiWorldPost.Set(false, false);
             yield return new WaitForSecondsRealtime(0.5f);
             yield return Grab(s => pic = s);
+            Time.timeScale = tsWas;
             yield return shot("display_ui_looks_no_world_effects");
             float PanelDiff(ScreenStats x, ScreenStats y) { Color p = Region(x, panel), q = Region(y, panel); return (Mathf.Abs(p.r - q.r) + Mathf.Abs(p.g - q.g) + Mathf.Abs(p.b - q.b)) * 255f / 3f; }
             float panelOff = PanelDiff(direct, pic), panelUnder = PanelDiff(direct, under);

@@ -290,7 +290,7 @@ namespace RockGame
 
         bool m_HandsLooksOpen, m_NotifLooksOpen, m_MenuLooksOpen;
         /// <summary>(tests) fold the hands' and the notifications' own looks open in Settings > Display.</summary>
-        public static void OpenLayerLooks(bool open) { if (s_I != null) { s_I.m_HandsLooksOpen = open; s_I.m_NotifLooksOpen = open; } }
+        public static void OpenLayerLooks(bool open) { if (s_I != null) { s_I.m_HandsLooksOpen = open; s_I.m_ToolsLooksOpen = open; s_I.m_NotifLooksOpen = open; } }
 
         /// <summary>HANDS AND TOOLS and NOTIFICATIONS: looks of their own, apart from the world's and the rest of the UI's
         /// (LayerLooks.cs). Each folded away, and off (= the same as everything else) to start with.</summary>
@@ -302,23 +302,49 @@ namespace RockGame
             DrawNotifOwnLooks();
         }
 
-        /// <summary>HANDS AND TOOLS: their own outlines, cel shading and colour.</summary>
+        bool m_ToolsLooksOpen;
+
+        /// <summary>HANDS, then TOOLS & WEAPONS: each with its own outlines (and how dark they are), cel shading and colour.</summary>
         void DrawHandsLooks()
         {
             float k = m_Scale, lw = 210 * k;
-            // ---- hands and tools ----
-            if (FoldRow("HANDS AND TOOLS", ref m_HandsLooksOpen, GameSettings.HandsOwn))
+            void Look(DisplayPref.Bool olOn, DisplayPref.Float olStrength, DisplayPref.Float olDark, DisplayPref.Bool celOn, DisplayPref.Float celStrength,
+                DisplayPref.Float saturation, DisplayPref.Float contrast)
             {
-                float os = GameSettings.HandsOutlineStrength.Value;
-                bool ol = EffectRow("Outlines", GameSettings.HandsOutline.Value, ref os);
-                GameSettings.HandsOutline.Set(ol); GameSettings.HandsOutlineStrength.Set(Mathf.Round(os * 20f) / 20f);
-                float cs = GameSettings.HandsCelStrength.Value;
-                bool cel = EffectRow("Cel shading", GameSettings.HandsCel.Value, ref cs);
-                GameSettings.HandsCel.Set(cel); GameSettings.HandsCelStrength.Set(Mathf.Round(cs * 20f) / 20f);
-                ColourRows(GameSettings.HandsSaturation, GameSettings.HandsContrast, lw);
+                float os = olStrength.Value;
+                bool ol = EffectRow("Outlines", olOn.Value, ref os);
+                olOn.Set(ol); olStrength.Set(Mathf.Round(os * 20f) / 20f);
+                if (ol)
+                {
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Space(16 * k);
+                    float d = SliderRow("Outline darkness", olDark.Value, olDark.Min, olDark.Max, olDark.Value >= 1.6f ? $"{olDark.Value * 100f:0}% (black)" : $"{olDark.Value * 100f:0}%", lw - 16 * k);
+                    olDark.Set(Mathf.Round(d * 20f) / 20f);
+                    GUILayout.EndHorizontal();
+                }
+                float cs = celStrength.Value;
+                bool cel = EffectRow("Cel shading", celOn.Value, ref cs);
+                celOn.Set(cel); celStrength.Set(Mathf.Round(cs * 20f) / 20f);
+                ColourRows(saturation, contrast, lw);
+            }
+            // ---- the hands ----
+            if (FoldRow("HANDS", ref m_HandsLooksOpen, GameSettings.HandsOwn))
+            {
+                Look(GameSettings.HandsOutline, GameSettings.HandsOutlineStrength, GameSettings.HandsOutlineDark, GameSettings.HandsCel, GameSettings.HandsCelStrength,
+                    GameSettings.HandsSaturation, GameSettings.HandsContrast);
                 GUILayout.BeginHorizontal();
-                GUILayout.Label("<color=#bbbbbb>Your first-person hands and whatever they hold, with their own ink outlines, cel shading and colour instead of the world's.</color>", m_SmallWrap);
-                if (Btn("Defaults", GUILayout.Width(100 * k), GUILayout.Height(28 * k))) GameSettings.ResetHandsLook();
+                GUILayout.Label("<color=#bbbbbb>Your first-person hands and arms, with their own ink outlines, cel shading and colour instead of the world's. Outline darkness past 160% draws them black.</color>", m_SmallWrap);
+                if (Btn("Defaults", GUILayout.Width(100 * k), GUILayout.Height(28 * k))) GameSettings.ResetHandsOnly();
+                GUILayout.EndHorizontal();
+            }
+            // ---- what they hold ----
+            if (FoldRow("TOOLS & WEAPONS", ref m_ToolsLooksOpen, GameSettings.ToolsOwn))
+            {
+                Look(GameSettings.ToolsOutline, GameSettings.ToolsOutlineStrength, GameSettings.ToolsOutlineDark, GameSettings.ToolsCel, GameSettings.ToolsCelStrength,
+                    GameSettings.ToolsSaturation, GameSettings.ToolsContrast);
+                GUILayout.BeginHorizontal();
+                GUILayout.Label("<color=#bbbbbb>Whatever your hands hold - tools, weapons, the ball - with looks of their own, apart from the hands'.</color>", m_SmallWrap);
+                if (Btn("Defaults", GUILayout.Width(100 * k), GUILayout.Height(28 * k))) GameSettings.ResetToolsLook();
                 GUILayout.EndHorizontal();
             }
         }

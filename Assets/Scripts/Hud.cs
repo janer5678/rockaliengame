@@ -221,6 +221,10 @@ namespace RockGame
         public static bool TestHideAll;
         /// <summary>(tests) show the end countdown on this second (-1: as the game says).</summary>
         public static int TestCountdown = -1;
+        /// <summary>(tests) the timer's game mode tag shows this (null: the mode's own, none in Classic).</summary>
+        public static string TestTimerTag;
+        /// <summary>(tests) the UI scale the HUD draws at (pixels per design pixel).</summary>
+        public static float UiK => s_I != null ? s_I.m_Scale : 1f;
 
         void OnGUI()
         {
@@ -340,7 +344,7 @@ namespace RockGame
             }
             if (topLabel != "")
             {
-                string tag = Cfg.Rules != GameRules.Classic ? Cfg.RulesName(Cfg.Rules).ToUpper() : "";
+                string tag = TestTimerTag ?? (Cfg.Rules != GameRules.Classic ? Cfg.RulesName(Cfg.Rules).ToUpper() : "");
                 float ph = DrawTopPanel(game, topLabel, topClock, tag, sub, topAccent, topLeft, k);
                 DrawModePanel(game, team, k, 8 + ph + 6 * k); // (the modes' score chips: Hud.ModePanel.cs)
             }
@@ -489,10 +493,11 @@ namespace RockGame
             bool dead = me.Dead.Value;
             bool notifLayer = UiLook.BeginNotif(out var notifPrev);
             DrawCountdowns(game, team, dead);
+            DrawReadySetRock(game, dead); // READY / SET / ROCK! before the match (Hud.ReadySetRock.cs)
 
             // ---- banner ----
             float bage = Time.time - s_BannerTime;
-            if (bage < 4f && !dead && !s_BannerTest && game != null && game.S != GameState.GameOver && !game.FightFrozen && !(game.S == GameState.BallLive && !game.Overtime.Value && game.TimeLeft <= 10f)) // (not over the final countdown)
+            if (bage < GameSettings.NotifTimeNow && !dead && !s_BannerTest && game != null && game.S != GameState.GameOver && !game.FightFrozen && !(game.S == GameState.BallLive && !game.Overtime.Value && game.TimeLeft <= 10f)) // (not over the final countdown)
             {
                 DrawBannerFx(s_BannerTitle, s_BannerSub, bage, k); // (animated: Hud.Notify.cs)
                 BannerShownFrame = Time.frameCount;
@@ -648,11 +653,12 @@ namespace RockGame
                     y = Mathf.Min(y, ccy - 25 * k - rise * 0.5f);
                 }
                 var r = new Rect(x - 80, y - 25, 160, 50);
-                st.normal.textColor = new Color(0, 0, 0, a * 0.85f);
-                GUI.Label(new Rect(r.x + 2, r.y + 2, r.width, r.height), txt, st);
-                // a white flash over it as it lands
-                st.normal.textColor = Color.Lerp(c, new Color(1f, 1f, 1f, a), Mathf.Clamp01(1f - age / 0.1f) * 0.7f);
-                GUI.Label(r, txt, st);
+                // its edge: a drop shadow, an outline or none, as thin as Settings > Display > HUD & TIMER > DAMAGE NUMBERS
+                // says (HudTextLooks.cs; it was a 2 px shadow), with a white flash over it as it lands
+                int edge = GameSettings.DamageEdge.Value;
+                float epx = GameSettings.DamageInk.Value * k;
+                DamageEdgeShown = edge; DamageInkShown = epx; // (tests)
+                EdgeText(r, txt, st, Color.Lerp(c, new Color(1f, 1f, 1f, a), Mathf.Clamp01(1f - age / 0.1f) * 0.7f), edge, epx, new Color(0, 0, 0, a * 0.85f));
             }
         }
 
@@ -873,6 +879,9 @@ namespace RockGame
 
         /// <summary>The three lines under the bag that say how to move things.</summary>
         public const string InvHelp = "Drag to move\nRight+Drag to Split\nShift+Click/Drag to quick-move";
+        /// <summary>The same three lines as they're shown: each led by its mouse button / key icons (Shadowed draws "LMB",
+        /// "RMB" and "Shift" as the mouse and the keycap).</summary>
+        public const string InvHelpShown = "LMB  Drag to move\nRMB  Drag to split\nShift + LMB  Click / drag to quick-move";
 
         void DrawInventory(PlayerNet me, PlayerController pc)
         {
@@ -943,7 +952,7 @@ namespace RockGame
             }
             int rows = (Cfg.MainSize + cols - 1) / cols;
             float hotY = top + rows * (slot + gap) + 26 * k;
-            Shadowed(new Rect(invX, hotY - 26 * k, gridW, 24 * k), $"<b>HOTBAR</b>  <color=#bbbbbb>(keys 1-{Cfg.HotbarSize})</color>", m_Small);
+            Shadowed(new Rect(invX, hotY - 26 * k, gridW, 24 * k), $"<b>HOTBAR</b>  <color=#bbbbbb>keys [{Binds.Short(Bind.Hotbar1)}] - [{Binds.Short(Bind.Hotbar1 + Cfg.HotbarSize - 1)}]</color>", m_Small);
             for (int i = 0; i < Cfg.HotbarSize; i++)
             {
                 var r = new Rect(invX + i * (slot + gap), hotY, slot, slot);
@@ -959,12 +968,12 @@ namespace RockGame
             if (craft) { DrawCraftList(me, pc, cxp, top, craftW, colGap, sh - 8 * k, k); hoverShown = true; }
             if (upgrades) { DrawUpgradeList(me, pc, cxp, top, craftW, sh - 8 * k, k); hoverShown = true; }
             // how to move things: always these three lines under the bag
-            Shadowed(new Rect(invX, infoY, gridW, 60 * k), $"<color=#ffffff>{InvHelp}</color>", m_SmallWrap);
+            Shadowed(new Rect(invX, infoY, gridW, 66 * k), $"<color=#ffffff>{InvHelpShown}</color>", m_SmallWrap); // (with the mouse / key icons)
             // no crafting list beside the bag (a chest is open, or the tutorial hasn't got there): the description goes
             // under the chest, or under the help lines
             if (!hoverShown)
             {
-                var hr = loot ? new Rect(lootX, lootBottom + 8 * k, Mathf.Max(lootW, 300 * k), 120 * k) : new Rect(invX, infoY + 62 * k, gridW, 120 * k);
+                var hr = loot ? new Rect(lootX, lootBottom + 8 * k, Mathf.Max(lootW, 300 * k), 120 * k) : new Rect(invX, infoY + 70 * k, gridW, 120 * k);
                 DrawHoverInfo(hr, k);
             }
 
@@ -1257,15 +1266,9 @@ namespace RockGame
                     else { Sfx.Play2D(Sfx.Boom, 0.7f, 0f); Fx.Shake(0.5f); }
                 }
                 if (dead) return; // (not over the death screen)
-                // each word pops in big and settles; ROCK! fades away as the duel starts
-                float pop = 1f + 0.35f * Mathf.Clamp01(1f - t * 4f);
-                if (n > 0) Fill(new Rect(0, 0, sw, sh), new Color(0, 0, 0, 0.25f));
-                var st = new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt(34 * k) };
-                st.normal.textColor = new Color(1f, 0.9f, 0.4f, n > 0 ? 1f : 1f - t);
-                GUI.Label(new Rect(0, sh * 0.2f, sw, 44 * k), "SUDDEN DEATH", st);
-                var big = new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt((n > 0 ? 170f : 200f) * pop * k) };
-                big.normal.textColor = n == 2 ? new Color(1f, 1f, 1f, 0.95f) : n == 1 ? new Color(1f, 0.85f, 0.3f, 0.95f) : new Color(1f, 0.3f, 0.15f, 1f - t);
-                GUI.Label(new Rect(0, sh * 0.24f, sw, 300 * k), word, big);
+                // each word pops in big and settles; ROCK! fades away as the duel starts (Hud.Notify.cs: DrawFightWord -
+                // its own look, Settings > Display > NOTIFICATIONS > COUNTDOWN)
+                DrawFightWord(word, t, k);
                 return;
             }
             m_LastCount = -1;
@@ -1446,9 +1449,16 @@ namespace RockGame
             m_RadarBottom = rr.yMax;
             RadarRect = rr; RadarShownFrame = Time.frameCount; // (tests)
             Fill(rr, new Color(0f, 0f, 0f, 0.4f));
-            string label = $"<color=#{ColorUtility.ToHtmlStringRGB(Color.Lerp(tc, Color.white, 0.45f))}>Your Base</color>";
-            Shadowed(new Rect(rr.x + 8, rr.y + 1, rr.width, rr.height), label, m_Small);
-            float lw = m_Small.CalcSize(new GUIContent("Your Base")).x;
+            // its words' font and edge: Settings > Display > HUD & TIMER > BASE RADAR (HudTextLooks.cs)
+            var rst = new GUIStyle(m_Small);
+            var rfont = GameSettings.FontForPref(GameSettings.RadarFont.Value);
+            if (rfont != null) rst.font = rfont;
+            int redge = GameSettings.RadarEdge.Value;
+            float rpx = GameSettings.RadarInk.Value * k;
+            var rink = GameSettings.RadarInkColour.Value; rink.a = 0.8f;
+            RadarEdgeShown = redge; RadarInkShown = rpx; // (tests)
+            EdgeText(new Rect(rr.x + 8, rr.y + 1, rr.width, rr.height), "Your Base", rst, Color.Lerp(tc, Color.white, 0.45f), redge, rpx, rink);
+            float lw = rst.CalcSize(new GUIContent("Your Base")).x;
             float ax = rr.x + 8 + lw + 6 * k, asz = 15 * k;
             var ar = new Rect(ax, rr.y + (rr.height - asz) / 2f, asz, asz);
             if (dist >= 3f)
@@ -1462,7 +1472,7 @@ namespace RockGame
                 GUI.matrix = oldM;
                 GUI.color = oldC;
             }
-            Shadowed(new Rect(ar.xMax + 6 * k, rr.y + 1, rr.xMax - ar.xMax, rr.height), dist < 3f ? "here" : $"{dist:0}m", m_Small);
+            EdgeText(new Rect(ar.xMax + 6 * k, rr.y + 1, rr.xMax - ar.xMax, rr.height), dist < 3f ? "here" : $"{dist:0}m", rst, rst.normal.textColor, redge, rpx, rink);
         }
 
         /// <summary>Test hooks: when the victory / game over screen was last drawn (Time.time; -1 never), and when the cutscene's bars were.</summary>
@@ -1504,6 +1514,7 @@ namespace RockGame
         void DrawGameOver(Bootstrap boot, NetGame game, int myTeam)
         {
             GameOverShownAt = Time.time;
+            if (game.StraightToLobby) { DrawStraightToLobby(); return; } // (after the victory cutscene: straight back to the lobby)
             float sw = Screen.width, sh = Screen.height, k = m_Scale;
             int w = game.Winner.Value;
             // the winners have escaped (the UFO took them): all black for them; everyone else still sees the world behind it

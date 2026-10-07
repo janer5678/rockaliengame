@@ -1346,7 +1346,9 @@ namespace RockGame
             // stadium crowd: layered swelling noise (loops)
             Crowd = Make("crowd", 4f, (t, d) => N() * (0.35f + 0.15f * Mathf.Sin(t * 1.3f) + 0.1f * Mathf.Sin(t * 3.7f + 1f)) * Mathf.Min(1f, Mathf.Min(t, d - t) * 4f + 0.6f), lowpass: 0.08f);
             Click = Make("click", 0.03f, (t, d) => N() * Env(t, 0.01f));
-            Step = Make("step", 0.08f, (t, d) => N() * Env(t, 0.03f) * 0.25f, lowpass: 0.15f);
+            // your own footstep: a soft, dull scuff of a foot on dirt and grass - heel then toe, all noise and no ring (so it
+            // never sounds like a hoof's hollow knock: Hoof)
+            Step = Make("step", 0.12f, (t, d) => N() * (Env(t, 0.025f) * 0.3f + (t > 0.045f ? Env(t - 0.045f, 0.03f) * 0.17f : 0f)), lowpass: 0.11f);
             // another player's footstep: a heavy heel thump with a gritty scuff on top, loud enough to give them away
             // (PlayerNet.RemoteSounds plays it in 3D where their foot lands)
             EnemyStep = Make("enemystep", 0.14f, (t, d) => Mathf.Sin(t * 2 * Mathf.PI * Mathf.Lerp(95, 55, t / d)) * Env(t, 0.06f) * 0.9f
@@ -1359,7 +1361,6 @@ namespace RockGame
             UiHover = Make("uihover", 0.05f, (t, d) => Mathf.Sin(t * 2 * Mathf.PI * 1320) * Env(t, 0.03f) * 0.18f);
             UiClick = Make("uiclick", 0.09f, (t, d) => (t < 0.03f ? Mathf.Sin(t * 2 * Mathf.PI * 880) : Mathf.Sin(t * 2 * Mathf.PI * 1760)) * Env(t < 0.03f ? t : t - 0.03f, 0.04f) * 0.35f + N() * Env(t, 0.004f) * 0.2f);
             UiSlide = Make("uislide", 0.025f, (t, d) => Mathf.Sin(t * 2 * Mathf.PI * 2600) * Env(t, 0.012f) * 0.15f);
-            // a hoof on the ground
             // the workbench making something (2.2 s): a hand saw going back and forth, then three hammer knocks and a tap
             Workshop = Make("workshop", 2.2f, (t, d) =>
             {
@@ -1391,7 +1392,15 @@ namespace RockGame
                 float saw = Mathf.Sin(t * 2 * Mathf.PI * Mathf.Lerp(300f, 900f, rev)) * 0.18f * rev;
                 return (motor + saw + N() * 0.15f) * Mathf.Min(1f, (d - t) * 4f);
             }, lowpass: 0.35f);
-            Hoof = Make("hoof", 0.09f, (t, d) => Mathf.Sin(t * 2 * Mathf.PI * Mathf.Lerp(520, 260, t / d)) * Env(t, 0.04f) * 0.8f + N() * Env(t, 0.01f) * 0.4f, lowpass: 0.5f);
+            // a hoof on the ground: a hollow, woody CLIP-clop - two short, ringing knocks (high, then a little lower), like
+            // coconut shells - nothing like a footstep's dull scuff or thump (Step, EnemyStep)
+            Hoof = Make("hoof", 0.17f, (t, d) =>
+            {
+                float Knock(float k, float f, float dec) => (Mathf.Sin(k * 2 * Mathf.PI * f) * 0.7f + Mathf.Sin(k * 2 * Mathf.PI * f * 1.53f) * 0.3f) * Env(k, dec) + N() * Env(k, 0.004f) * 0.35f;
+                float clip = Knock(t, 1150f, 0.02f) * 0.6f;
+                float clop = t > 0.07f ? Knock(t - 0.07f, 820f, 0.025f) * 0.5f : 0f;
+                return clip + clop;
+            }, lowpass: 0.6f);
             // the tree disguise: a leafy rustle with a soft thump as it lands each hop; rustling up out of nowhere as you
             // become a tree (a rising swish and a woody pop), and shaking back off again (a falling swish)
             TreeRustle = Make("treerustle", 0.22f, (t, d) => N() * (0.55f + 0.45f * Mathf.Sin(t * 2 * Mathf.PI * 34f)) * Env(t, 0.1f) * 0.55f

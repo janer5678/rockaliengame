@@ -47,7 +47,7 @@ namespace RockGame
         public static void Tick(bool inSession)
         {
             bool menu = !inSession && PlayerController.Local == null;
-            TickTrees(menu);
+            TickTrees(menu || Hud.LobbyPreviewBuilt); // (and on another map previewed live over a running lobby: Hud.LobbyBack.cs)
             if (!menu) { Fade = 0f; s_Started = false; return; }
             var cam = Camera.main;
             if (cam != null) TickCamera(cam.transform);

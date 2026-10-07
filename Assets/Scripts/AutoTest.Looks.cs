@@ -13,6 +13,7 @@ namespace RockGame
         /// </summary>
         IEnumerator LooksRoutine(PlayerNet me, PlayerController pc)
         {
+            DefaultsMatchExport(); // (AutoTest.Defaults.cs)
             yield return Hold(me, Item.Rock);
             GameSettings.SetPostFx(true, false);
             yield return Snap("looks_00_default");
@@ -26,8 +27,8 @@ namespace RockGame
             int onLayer = 0, all = 0;
             var vm = ViewModel.Last;
             if (vm != null && vm.Root != null)
-                foreach (var r in vm.Root.GetComponentsInChildren<Renderer>()) { all++; if (r.gameObject.layer == PostFx.HandLayer) onLayer++; }
-            Check(all > 0 && onLayer == all && PostFx.HandsOwnLook && PostFx.StylizeOn, $"HANDS AND TOOLS own look: the hands on their layer ({onLayer}/{all}) and the stylize pass on");
+                foreach (var r in vm.Root.GetComponentsInChildren<Renderer>()) { all++; if (r.gameObject.layer == (vm.IsHand(r) ? PostFx.HandLayer : PostFx.ToolLayer)) onLayer++; }
+            Check(all > 0 && onLayer == all && PostFx.HandsOwnLook && PostFx.StylizeOn, $"HANDS own look: the hands and what they hold on their layers ({onLayer}/{all}) and the stylize pass on");
             yield return Snap("looks_01_hands_own_grey_cel");
             GameSettings.ResetHandsLook(false);
 
@@ -76,6 +77,7 @@ namespace RockGame
 
             yield return TimerAndNotifLooks(pc);
             yield return Prompt12Looks(me, pc);
+            yield return Prompt13Looks(me, pc);
             Log("looks test done");
             yield return new WaitForSeconds(0.5f);
             Application.Quit(0);
@@ -105,7 +107,8 @@ namespace RockGame
             yield return Snap("looks_12_timer_trimmed");
             GameSettings.ResetTimer(false);
             yield return new WaitForSeconds(0.2f);
-            Check(!Hud.TopPanelLabelAbove && !ColorSlots.Same(Hud.TopPanelAccent, magenta), "TIMER: Defaults put the label left of the clock and the phase colours back");
+            Check(GameSettings.TimerLabelPos.Value == GameSettings.TimerLabelPos.Default && Hud.TopPanelLabelAbove == GameSettings.TimerLabelAboveNow
+                && !ColorSlots.Same(Hud.TopPanelAccent, magenta), $"TIMER: Defaults put the label back ({GameSettings.TimerLabelPos.Name}) and the phase colours back");
 
             // ---- a reworded notification ----
             var airdrop = NotifText.Find("airdrop");
@@ -136,6 +139,7 @@ namespace RockGame
             GameSettings.HudTeamBox.Set(true, false);
             yield return new WaitForSeconds(0.3f);
             Check(Time.frameCount - Hud.TeamBoxShownFrame <= 3, "HUD: ...and back on");
+            GameSettings.HudTeamBox.Reset(false);
 
             // ---- the damage numbers: the old plain look (a drop shadow, no thick outline), far and up close ----
             var cam = Camera.main;
@@ -227,6 +231,7 @@ namespace RockGame
             var spot = Vector3.Lerp(Cfg.BaseCenter[team], Vector3.zero, 0.55f);
             spot.y = MapBuilder.Height(spot.x, spot.z) + 0.1f;
             pc.LocalTeleport(spot, Cfg.SpawnYaw(team));
+            GameSettings.HudTeamBox.Set(true, false); GameSettings.HudBaseRadar.Set(true, false); // (both off by default now)
             yield return new WaitForSeconds(0.5f);
             Check(Time.frameCount - Hud.RadarShownFrame <= 3 && Hud.RadarRect.y > 30f, $"RADAR: under the team box out of our base (y {Hud.RadarRect.y:0})");
             GameSettings.HudTeamBox.Set(false, false);
@@ -237,7 +242,7 @@ namespace RockGame
             yield return new WaitForSeconds(0.3f);
             Check(Time.frameCount - Hud.RadarShownFrame > 5, "RADAR: can be switched off");
             yield return Snap("looks_44_no_team_box_no_radar");
-            GameSettings.HudTeamBox.Set(true, false); GameSettings.HudBaseRadar.Set(true, false);
+            GameSettings.HudTeamBox.Reset(false); GameSettings.HudBaseRadar.Reset(false);
 
             // ---- the kill feed's looks ----
             Hud.ClearKills();

@@ -17,7 +17,7 @@ namespace RockGame
     {
         struct Shot { public Vector3 From, To, LookFrom, LookTo; }
         static readonly List<Shot> s_Shots = new List<Shot>();
-        static int s_ShotsRoot, s_Shot;
+        static int s_ShotsRoot, s_Shot, s_RootSeen, s_RootSeenFrame;
         static float s_ShotT;
         /// <summary>How long each shot lasts, and its fade in and out (s).</summary>
         public const float ShotSeconds = 8f, ShotFade = 0.6f;
@@ -41,8 +41,12 @@ namespace RockGame
         {
             var cam = camera.transform;
             int root = MapBuilder.Root.GetInstanceID() ^ (TreeCount * 7919);
-            if (root != s_ShotsRoot || s_Shots.Count == 0)
+            // (a world just built - another map previewed over the lobby - is planned a couple of frames later, once the old
+            // one's colliders are gone and the new one's are in: the shots keep out of anything solid)
+            if (root != s_RootSeen) { s_RootSeen = root; s_RootSeenFrame = Time.frameCount; }
+            if ((root != s_ShotsRoot || s_Shots.Count == 0) && (s_ShotsRoot == 0 || Time.frameCount - s_RootSeenFrame >= 2))
             {
+                if (s_ShotsRoot != 0 && root != s_ShotsRoot) Physics.SyncTransforms();
                 s_ShotsRoot = root;
                 PlanShots();
                 s_Shot = 0;
@@ -67,6 +71,7 @@ namespace RockGame
         /// shows the hosted map. Each time it opens it starts again from the first shot.</summary>
         public static void TickLobbyPreview()
         {
+            Hud.TickLobbyMapPreview(); // (another map picked: built live in place of the hosted one first - Hud.LobbyBack.cs)
             bool on = LobbyPreview && MapBuilder.Root != null;
             if (on && !s_LobbyWas) s_ShotsRoot = 0; // (planned afresh for this map, from the first shot)
             s_LobbyWas = on;

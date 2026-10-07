@@ -6,7 +6,7 @@ using UnityEngine;
 namespace RockGame
 {
     /// <summary>A building piece (foundation, wall, doorway, window, floor, stairs), a free-standing barrier or a thrown fort tower.</summary>
-    public class Structure : NetworkBehaviour
+    public partial class Structure : NetworkBehaviour
     {
         public static readonly List<Structure> All = new List<Structure>();
 

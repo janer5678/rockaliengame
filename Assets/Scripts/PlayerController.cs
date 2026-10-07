@@ -337,7 +337,7 @@ namespace RockGame
             }
 
             // (the chat line frees the mouse too: a whisper in the log can be clicked to answer it)
-            bool cursorFree = (MenuOpen || Paused || gameOver || choosing || WheelOpen || AirstrikeMapOpen || ScoreboardOpen || Chat.Open) && !cutscene;
+            bool cursorFree = (MenuOpen || Paused || gameOver || choosing || WheelOpen || AirstrikeMapOpen || (ScoreboardOpen && Hud.ScoreboardMouse) || Chat.Open) && !cutscene;
             var lockNow = cursorFree ? CursorLockMode.None : CursorLockMode.Locked;
             if (lockNow == CursorLockMode.Locked && Cursor.lockState != CursorLockMode.Locked) m_LookSkipUntil = Time.frameCount + 3; // (re-locking the cursor jumps the mouse: not a look)
             Cursor.lockState = lockNow;

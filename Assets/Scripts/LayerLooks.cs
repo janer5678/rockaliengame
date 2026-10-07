@@ -3,11 +3,11 @@ using UnityEngine;
 namespace RockGame
 {
     /// <summary>
-    /// Settings > Display > POST PROCESSING, two more layers with looks of their own (both off to start with: they then
-    /// look like everything else):
-    /// HANDS AND TOOLS - your first-person hands and what they hold: their own outlines, cel banding, saturation and
-    ///   contrast instead of the world's (PostFx.cs: the hands are drawn into a mask, and the Stylize pass uses these
-    ///   numbers inside it).
+    /// Settings > Display > POST PROCESSING, more layers with looks of their own (when one is off it
+    /// looks like everything else; the hands' and the notifications' are on to start with, the tools' off):
+    /// HANDS and TOOLS & WEAPONS - your first-person hands, and what they hold, each with their own outlines (and how
+    ///   dark they are), cel banding, saturation and contrast instead of the world's (PostFx.cs: the hands and the held
+    ///   item are drawn into a mask - 1 and 0.5 - and the Stylize pass uses these numbers inside it).
     /// NOTIFICATIONS - the big messages in the middle of the screen (TRADE STATION UNLOCKED, AIRDROP INCOMING, the
     ///   countdowns): their own cel shading, outlines, glow, saturation and contrast, laid on after the world's post
     ///   processing (UiLook.cs: they're drawn into a texture of their own and composited with these).
@@ -24,33 +24,59 @@ namespace RockGame
         public static readonly DisplayPref.Float HandsCelStrength = new("hands.cel.strength", GHands, DisplayDefaults.HandsCelStrength, 0f, 1f);
         public static readonly DisplayPref.Float HandsSaturation = new("hands.saturation", GHands, DisplayDefaults.HandsSaturation, 0f, 2f);
         public static readonly DisplayPref.Float HandsContrast = new("hands.contrast", GHands, DisplayDefaults.HandsContrast, 0.5f, 1.6f);
+        /// <summary>How dark the hands' outlines are (1 = as designed; up past 1.6 the darkest reach black).</summary>
+        public static readonly DisplayPref.Float HandsOutlineDark = new("hands.outline.dark", GHands, DisplayDefaults.HandsOutlineDark, 0.5f, 2.5f);
 
-        public static void ResetHandsLook(bool save = true)
+        // ---- tools & weapons: what the hands hold, with looks apart from the hands' (PostFx.cs: a second value in the mask) ----
+        const string GTools = "TOOLS AND WEAPONS";
+        public static readonly DisplayPref.Bool ToolsOwn = new("tools.own", GTools, DisplayDefaults.ToolsOwn);
+        public static readonly DisplayPref.Bool ToolsOutline = new("tools.outline", GTools, DisplayDefaults.ToolsOutline);
+        public static readonly DisplayPref.Float ToolsOutlineStrength = new("tools.outline.strength", GTools, DisplayDefaults.ToolsOutlineStrength, 0f, 1f);
+        public static readonly DisplayPref.Float ToolsOutlineDark = new("tools.outline.dark", GTools, DisplayDefaults.ToolsOutlineDark, 0.5f, 2.5f);
+        public static readonly DisplayPref.Bool ToolsCel = new("tools.cel", GTools, DisplayDefaults.ToolsCel);
+        public static readonly DisplayPref.Float ToolsCelStrength = new("tools.cel.strength", GTools, DisplayDefaults.ToolsCelStrength, 0f, 1f);
+        public static readonly DisplayPref.Float ToolsSaturation = new("tools.saturation", GTools, DisplayDefaults.ToolsSaturation, 0f, 2f);
+        public static readonly DisplayPref.Float ToolsContrast = new("tools.contrast", GTools, DisplayDefaults.ToolsContrast, 0.5f, 1.6f);
+
+        /// <summary>Both the hands' and the tools' own looks back to the defaults.</summary>
+        public static void ResetHandsLook(bool save = true) { ResetHandsOnly(save); ResetToolsLook(save); }
+
+        public static void ResetHandsOnly(bool save = true)
         {
             HandsOwn.Set(DisplayDefaults.HandsOwn, save);
             HandsOutline.Set(DisplayDefaults.HandsOutline, save); HandsOutlineStrength.Set(DisplayDefaults.HandsOutlineStrength, save);
             HandsCel.Set(DisplayDefaults.HandsCel, save); HandsCelStrength.Set(DisplayDefaults.HandsCelStrength, save);
             HandsSaturation.Set(DisplayDefaults.HandsSaturation, save); HandsContrast.Set(DisplayDefaults.HandsContrast, save);
+            HandsOutlineDark.Set(DisplayDefaults.HandsOutlineDark, save);
+        }
+
+        public static void ResetToolsLook(bool save = true)
+        {
+            ToolsOwn.Set(DisplayDefaults.ToolsOwn, save);
+            ToolsOutline.Set(DisplayDefaults.ToolsOutline, save); ToolsOutlineStrength.Set(DisplayDefaults.ToolsOutlineStrength, save);
+            ToolsOutlineDark.Set(DisplayDefaults.ToolsOutlineDark, save);
+            ToolsCel.Set(DisplayDefaults.ToolsCel, save); ToolsCelStrength.Set(DisplayDefaults.ToolsCelStrength, save);
+            ToolsSaturation.Set(DisplayDefaults.ToolsSaturation, save); ToolsContrast.Set(DisplayDefaults.ToolsContrast, save);
         }
 
         // ---- the main menu's cutscene (the UFO in space: MenuSpace.cs) ----
         const string GMenu = "MAIN MENU CUTSCENE";
         /// <summary>The main menu's cutscene gets the post processing below instead of the world's.</summary>
-        public static readonly DisplayPref.Bool MenuOwn = new("menu.own", GMenu, false);
+        public static readonly DisplayPref.Bool MenuOwn = new("menu.own", GMenu, true);
         public static readonly DisplayPref.Bool MenuBloom = new("menu.bloom", GMenu, true);
-        public static readonly DisplayPref.Float MenuBloomStrength = new("menu.bloom.strength", GMenu, 0.6f, 0f, 1f);
+        public static readonly DisplayPref.Float MenuBloomStrength = new("menu.bloom.strength", GMenu, 1f, 0f, 1f);
         public static readonly DisplayPref.Bool MenuVignette = new("menu.vignette", GMenu, true);
-        public static readonly DisplayPref.Float MenuVignetteStrength = new("menu.vignette.strength", GMenu, 0.4f, 0f, 1f);
+        public static readonly DisplayPref.Float MenuVignetteStrength = new("menu.vignette.strength", GMenu, 1f, 0f, 1f);
         public static readonly DisplayPref.Bool MenuGrading = new("menu.grading", GMenu, true);
-        public static readonly DisplayPref.Float MenuGradingStrength = new("menu.grading.strength", GMenu, 0.65f, 0f, 1f);
+        public static readonly DisplayPref.Float MenuGradingStrength = new("menu.grading.strength", GMenu, 1f, 0f, 1f);
         public static readonly DisplayPref.Bool MenuOutlines = new("menu.outlines", GMenu, true);
-        public static readonly DisplayPref.Float MenuOutlinesStrength = new("menu.outlines.strength", GMenu, 0.45f, 0f, 1f);
-        public static readonly DisplayPref.Bool MenuCel = new("menu.cel", GMenu, false);
-        public static readonly DisplayPref.Float MenuCelStrength = new("menu.cel.strength", GMenu, 0.5f, 0f, 1f);
+        public static readonly DisplayPref.Float MenuOutlinesStrength = new("menu.outlines.strength", GMenu, 0.8f, 0f, 1f);
+        public static readonly DisplayPref.Bool MenuCel = new("menu.cel", GMenu, true);
+        public static readonly DisplayPref.Float MenuCelStrength = new("menu.cel.strength", GMenu, 0.75f, 0f, 1f);
         public static readonly DisplayPref.Bool MenuGrain = new("menu.grain", GMenu, false);
-        public static readonly DisplayPref.Float MenuGrainStrength = new("menu.grain.strength", GMenu, 0.3f, 0f, 1f);
-        public static readonly DisplayPref.Bool MenuChromatic = new("menu.chromatic", GMenu, false);
-        public static readonly DisplayPref.Float MenuChromaticStrength = new("menu.chromatic.strength", GMenu, 0.5f, 0f, 1f);
+        public static readonly DisplayPref.Float MenuGrainStrength = new("menu.grain.strength", GMenu, 1f, 0f, 1f);
+        public static readonly DisplayPref.Bool MenuChromatic = new("menu.chromatic", GMenu, true);
+        public static readonly DisplayPref.Float MenuChromaticStrength = new("menu.chromatic.strength", GMenu, 1f, 0f, 1f);
 
         /// <summary>The menu cutscene's own post processing is in use right now (switched on, and it's showing).</summary>
         public static bool MenuPostNow => MenuOwn.Value && (MenuSpace.Showing || MatchIntro.MenuLook); // (the match intro uses it too)
@@ -78,14 +104,8 @@ namespace RockGame
 
         public static void ResetMenuPost(bool save = true)
         {
-            MenuOwn.Set(false, save);
-            MenuBloom.Set(true, save); MenuBloomStrength.Set(0.6f, save);
-            MenuVignette.Set(true, save); MenuVignetteStrength.Set(0.4f, save);
-            MenuGrading.Set(true, save); MenuGradingStrength.Set(0.65f, save);
-            MenuOutlines.Set(true, save); MenuOutlinesStrength.Set(0.45f, save);
-            MenuCel.Set(false, save); MenuCelStrength.Set(0.5f, save);
-            MenuGrain.Set(false, save); MenuGrainStrength.Set(0.3f, save);
-            MenuChromatic.Set(false, save); MenuChromaticStrength.Set(0.5f, save);
+            DisplayPref.ResetAll(save, MenuOwn, MenuBloom, MenuBloomStrength, MenuVignette, MenuVignetteStrength, MenuGrading, MenuGradingStrength,
+                MenuOutlines, MenuOutlinesStrength, MenuCel, MenuCelStrength, MenuGrain, MenuGrainStrength, MenuChromatic, MenuChromaticStrength);
         }
 
         // ---- notifications ----

@@ -8,8 +8,10 @@
 //   Sharpen: a small unsharp mask (4 taps).
 //   Cel banding: the brightness snapped to a few steps, the hue and saturation kept.
 // Each one is skipped (a uniform branch) when it's off.
-// Settings > Display > HANDS AND TOOLS: inside the hand mask (_RgHandMask: the first-person hands and what they hold,
-// drawn white - HandMask.shader) the outlines, cel banding, saturation and contrast are the hands' own (_RgHand*).
+// Settings > Display > HANDS and TOOLS & WEAPONS: inside the hand mask (_RgHandMask: the first-person hands drawn 1,
+// what they hold 0.5 - HandMask.shader) the outlines, cel banding, saturation and contrast are the hands' own (_RgHand*)
+// or the tools' own (_RgTool*) - each only while that one's own look is on (x > 0), else the world's.
+// An outline's darkness (x) can go past 1: saturate() then lets the darkest outlines reach black.
 Shader "Hidden/RockGame/Stylize"
 {
     SubShader
@@ -35,8 +37,12 @@ Shader "Hidden/RockGame/Stylize"
 
             float4 _RgHand;        // HANDS AND TOOLS (their own looks, inside the hand mask): x on, y cel banding steps (0 = off), z saturation, w contrast
             float4 _RgHandOutline; // the hands' outlines, as _RgOutline
+            float4 _RgTool;        // TOOLS & WEAPONS (what the hands hold), as _RgHand
+            float4 _RgToolOutline; // their outlines, as _RgOutline
             TEXTURE2D(_RgHandMask);
             float Hand(float2 uv) { return SAMPLE_TEXTURE2D_LOD(_RgHandMask, sampler_PointClamp, uv, 0).r; }
+            // which part of the mask a value is: 2 the hands, 1 a tool / weapon, 0 neither
+            int Part(float m) { return m > 0.75 ? 2 : (m > 0.25 ? 1 : 0); }
 
             half3 Col(float2 uv) { return SAMPLE_TEXTURE2D_X_LOD(_BlitTexture, sampler_PointClamp, uv, 0).rgb; }
             float Eye(float2 uv) { return LinearEyeDepth(SampleSceneDepth(uv), _ZBufferParams); }
@@ -101,14 +107,20 @@ Shader "Hidden/RockGame/Stylize"
                 // blended between them - a line 1.5 px thick is the 1 px line with the 2 px one's extra ring half dark.
                 // That keeps lines the same share of the screen at any resolution instead of snapping to whole pixels.
                 // (the hands and tools - and the ring of pixels round them, where their silhouette line goes - use their own)
-                float hand = 0;
+                int part = 0;
                 float4 ol = _RgOutline;
-                if (_RgHand.x > 0)
+                if (_RgHand.x > 0 || _RgTool.x > 0)
                 {
-                    hand = Hand(uv);
-                    float2 ho = texel * max(1.0, ceil(max(_RgOutline.y, _RgHandOutline.y)));
-                    float ring = max(max(Hand(uv + ho), Hand(uv - ho)), max(Hand(uv + float2(ho.x, -ho.y)), Hand(uv + float2(-ho.x, ho.y))));
-                    if (max(hand, ring) > 0.5) ol = _RgHandOutline;
+                    part = Part(Hand(uv));
+                    int linePart = part;
+                    if (linePart == 0)
+                    {
+                        float2 ho = texel * max(1.0, ceil(max(_RgOutline.y, max(_RgHandOutline.y, _RgToolOutline.y))));
+                        float ring = max(max(Hand(uv + ho), Hand(uv - ho)), max(Hand(uv + float2(ho.x, -ho.y)), Hand(uv + float2(-ho.x, ho.y))));
+                        linePart = Part(ring);
+                    }
+                    if (linePart == 2 && _RgHand.x > 0) ol = _RgHandOutline;
+                    else if (linePart == 1 && _RgTool.x > 0) ol = _RgToolOutline;
                 }
                 if (ol.x > 0)
                 {
@@ -119,11 +131,11 @@ Shader "Hidden/RockGame/Stylize"
                     float k0 = floor(t), w = t - k0;
                     float edge = k0 >= 1 ? Edge(uv, texel * k0, d, raw, ol.zw) : 0;
                     if (w > 0.01) edge = lerp(edge, Edge(uv, texel * (k0 + 1), d, raw, ol.zw), w);
-                    c *= 1 - edge * ol.x * 0.78;
+                    c *= 1 - saturate(edge * ol.x * 0.78);
                 }
 
                 // distance haze (not on the sky)
-                if (_RgHaze.x > 0 && !Sky(raw) && hand < 0.5)
+                if (_RgHaze.x > 0 && !Sky(raw) && part == 0)
                 {
                     float h = saturate((d - _RgHaze.y) / _RgHaze.z);
                     h = h * (2 - h) * _RgHaze.x;
@@ -132,7 +144,8 @@ Shader "Hidden/RockGame/Stylize"
 
                 // cel banding: brightness in a few steps (in gamma, so the steps look even), same hue
                 // (the hands and tools: their own number of steps)
-                float steps = hand > 0.5 ? _RgHand.y : _RgLook.y;
+                float4 own = part == 2 ? _RgHand : (part == 1 ? _RgTool : float4(0, 0, 1, 1));
+                float steps = own.x > 0 ? own.y : _RgLook.y;
                 if (steps > 0)
                 {
                     float l = max(0.0001, dot(c, float3(0.2126, 0.7152, 0.0722)));
@@ -144,13 +157,13 @@ Shader "Hidden/RockGame/Stylize"
                     c *= l < 1 ? SRGBToLinear(saturate(q)) / l : 1; // (the brightest bits - the sun, sparks - keep their glow)
                 }
 
-                // the hands' own saturation and contrast (in gamma, as drawn)
-                if (hand > 0.5 && (abs(_RgHand.z - 1) > 0.001 || abs(_RgHand.w - 1) > 0.001))
+                // the hands' / tools' own saturation and contrast (in gamma, as drawn)
+                if (own.x > 0 && (abs(own.z - 1) > 0.001 || abs(own.w - 1) > 0.001))
                 {
                     float3 g3 = LinearToSRGB(saturate(c));
                     float l3 = dot(g3, float3(0.2126, 0.7152, 0.0722));
-                    g3 = lerp(l3.xxx, g3, _RgHand.z);
-                    g3 = saturate((g3 - 0.5) * _RgHand.w + 0.5);
+                    g3 = lerp(l3.xxx, g3, own.z);
+                    g3 = saturate((g3 - 0.5) * own.w + 0.5);
                     c = SRGBToLinear(g3);
                 }
                 return half4(c, 1);

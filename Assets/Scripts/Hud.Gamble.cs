@@ -14,7 +14,7 @@ namespace RockGame
 
             Shadowed(new Rect(x, y + 4 * k, w, 44 * k), bet > 0
                 ? $"<b>BET: <color=#7dffb0>{bet} DNA</color></b>   win: <color=#ffd24a><b>{bet * 2} DNA</b></color>"
-                : "<color=#bbbbbb>Put DNA in the slots - that's your bet.</color>", m_Label);
+                : "<color=#bbbbbb>Drag DNA in with LMB (or Shift + LMB) - that's your bet.</color>", m_Label);
             Shadowed(new Rect(x, y + 28 * k, w, 40 * k), "<color=#bbbbbb>50/50: three DNA pays out DOUBLE, anything else and it's gone.</color>", m_Small);
 
             // the GAMBLE button: big, gold, and bouncing while there's a bet in

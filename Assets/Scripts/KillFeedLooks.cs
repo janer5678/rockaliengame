@@ -11,9 +11,9 @@ namespace RockGame
         const string GKillFeed = "KILL FEED";
         public static readonly DisplayPref.Bool KillFeedOn = new("killfeed.on", GKillFeed, true);
         /// <summary>How big its strips, names and icons are (1 = as designed).</summary>
-        public static readonly DisplayPref.Float KillFeedSize = new("killfeed.size", GKillFeed, 1f, 0.6f, 1.6f);
+        public static readonly DisplayPref.Float KillFeedSize = new("killfeed.size", GKillFeed, 0.95f, 0.6f, 1.6f);
         /// <summary>How dark the strips behind the lines are (1 = as designed, 0 = none).</summary>
-        public static readonly DisplayPref.Float KillFeedBack = new("killfeed.back", GKillFeed, 1f, 0f, 1.3f);
+        public static readonly DisplayPref.Float KillFeedBack = new("killfeed.back", GKillFeed, 0f, 0f, 1.3f);
         /// <summary>The weapon (what did it) icon between the names.</summary>
         public static readonly DisplayPref.Bool KillFeedIcons = new("killfeed.icons", GKillFeed, true);
         /// <summary>The names in their team's colours (off: white).</summary>
@@ -21,22 +21,27 @@ namespace RockGame
         /// <summary>Your own kills edged in gold, your deaths in red.</summary>
         public static readonly DisplayPref.Bool KillFeedHighlight = new("killfeed.highlight", GKillFeed, true);
         /// <summary>How many seconds a line stays.</summary>
-        public static readonly DisplayPref.Float KillFeedTime = new("killfeed.time", GKillFeed, 6.5f, 2f, 20f);
+        public static readonly DisplayPref.Float KillFeedTime = new("killfeed.time", GKillFeed, 10f, 2f, 20f);
         /// <summary>How many lines show at once (the newest).</summary>
-        public static readonly DisplayPref.Float KillFeedLines = new("killfeed.lines", GKillFeed, 6f, 1f, 10f);
+        public static readonly DisplayPref.Float KillFeedLines = new("killfeed.lines", GKillFeed, 5f, 1f, 10f);
         /// <summary>How far in from the right edge and down from the top it sits (pixels at the UI scale, past where it was).</summary>
         public static readonly DisplayPref.Float KillFeedX = new("killfeed.x", GKillFeed, 0f, 0f, 600f);
         public static readonly DisplayPref.Float KillFeedY = new("killfeed.y", GKillFeed, 0f, 0f, 500f);
         /// <summary>The names' colour while team colours are off.</summary>
         public static readonly DisplayPref.Colour KillFeedNameColour = new("killfeed.namecolour", GKillFeed, Color.white);
+        /// <summary>The names' font, and their edge: a drop shadow (as designed), an outline all round, or none (HudTextLooks.cs:
+        /// EdgeText) - how thick (pixels at the UI scale) and its colour.</summary>
+        public static readonly DisplayPref.Choice KillFeedFont = new("killfeed.font", GKillFeed, FontPrefNames, 0);
+        public static readonly DisplayPref.Choice KillFeedEdge = new("killfeed.edge", GKillFeed, EdgeNames, 0);
+        public static readonly DisplayPref.Float KillFeedInk = new("killfeed.ink", GKillFeed, 1.5f, 0.25f, 4f);
+        public static readonly DisplayPref.Colour KillFeedInkColour = new("killfeed.ink.colour", GKillFeed, Color.black);
 
         public static int KillFeedLinesNow => Mathf.Clamp(Mathf.RoundToInt(KillFeedLines.Value), 1, 10);
 
         public static void ResetKillFeed(bool save = true)
         {
-            KillFeedOn.Set(true, save); KillFeedSize.Set(1f, save); KillFeedBack.Set(1f, save); KillFeedIcons.Set(true, save);
-            KillFeedTeamColours.Set(true, save); KillFeedHighlight.Set(true, save); KillFeedTime.Set(6.5f, save); KillFeedLines.Set(6f, save);
-            KillFeedX.Set(0f, save); KillFeedY.Set(0f, save); KillFeedNameColour.Set(Color.white, save);
+            DisplayPref.ResetAll(save, KillFeedOn, KillFeedSize, KillFeedBack, KillFeedIcons, KillFeedTeamColours, KillFeedHighlight, KillFeedTime,
+                KillFeedLines, KillFeedX, KillFeedY, KillFeedNameColour, KillFeedFont, KillFeedEdge, KillFeedInk, KillFeedInkColour);
         }
     }
 
@@ -86,6 +91,13 @@ namespace RockGame
                 Toggle("Weapon icons", GameSettings.KillFeedIcons);
                 Toggle("Team colour names", GameSettings.KillFeedTeamColours, GameSettings.KillFeedTeamColours.Value ? "" : "off: every name in the colour below");
                 if (!GameSettings.KillFeedTeamColours.Value) ColourPrefRow("Name colour", GameSettings.KillFeedNameColour, s_NamePresets);
+                ChoiceRow("Font", GameSettings.KillFeedFont, true);
+                ChoiceRow("Text edge", GameSettings.KillFeedEdge, false, "Drop shadow", "Outline", "None");
+                if (GameSettings.KillFeedEdge.Value != 2)
+                {
+                    Slider(GameSettings.KillFeedEdge.Value == 0 ? "Shadow distance" : "Outline thickness", GameSettings.KillFeedInk, $"{GameSettings.KillFeedInk.Value:0.##} px", 0.25f);
+                    ColourPrefRow("Edge colour", GameSettings.KillFeedInkColour, s_InkPresets);
+                }
                 Toggle("Your kills / deaths edged", GameSettings.KillFeedHighlight, "gold / red");
                 Slider("Lines stay for", GameSettings.KillFeedTime, $"{GameSettings.KillFeedTime.Value:0.#} s", 0.5f);
                 Slider("Most lines at once", GameSettings.KillFeedLines, $"{GameSettings.KillFeedLinesNow}", 1f);

@@ -30,7 +30,7 @@ namespace RockGame
         public static readonly DisplayPref.Colour MenuPlanetColour = new("menu.colour.planet", MenuLooks.Group, new Color(0.55f, 0.35f, 0.75f));
         public static readonly DisplayPref.Colour MenuRingColour = new("menu.colour.ring", MenuLooks.Group, new Color(1f, 0.8f, 0.55f));
         public static readonly DisplayPref.Colour MenuHullColour = new("menu.colour.hull", MenuLooks.Group, MenuLooks.HullRef);
-        public static readonly DisplayPref.Colour MenuDomeColour = new("menu.colour.dome", MenuLooks.Group, new Color(0.1f, 0.28f, 0.38f));
+        public static readonly DisplayPref.Colour MenuDomeColour = new("menu.colour.dome", MenuLooks.Group, DisplayDefaults.Hex("#3892B0"));
         public static readonly DisplayPref.Colour MenuThrusterColour = new("menu.colour.thruster", MenuLooks.Group, MenuLooks.ThrusterRef);
         public static readonly DisplayPref.Colour MenuFireColour = new("menu.colour.fire", MenuLooks.Group, MenuLooks.FireRef);
         public static readonly DisplayPref.Colour MenuKeyLightColour = new("menu.colour.keylight", MenuLooks.Group, new Color(1f, 0.88f, 0.75f));

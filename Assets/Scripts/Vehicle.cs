@@ -238,8 +238,8 @@ namespace RockGame
             m_HoofDist = 0f;
             m_HoofBeat++;
             bool gallop = speed > 7f;
-            Sfx.Play(Sfx.Hoof, p, gallop ? 0.9f : 0.55f, 0.12f, gallop ? 80f : 50f);
-            if (gallop && m_HoofBeat % 2 == 0) Sfx.Play(Sfx.Thud, p, 0.35f, 0.1f, 60f);
+            Sfx.Play(Sfx.Hoof, p, gallop ? 0.6f : 0.36f, 0.12f, gallop ? 70f : 45f); // (a little quieter than they were)
+            // (no low thud on the gallop any more: that sounded like a footstep - the hooves are all hollow knocks)
         }
 
         void Update()

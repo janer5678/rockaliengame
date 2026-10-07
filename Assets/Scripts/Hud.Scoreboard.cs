@@ -38,12 +38,25 @@ namespace RockGame
             return sb.ToString();
         }
 
+        static bool s_ScoreMouse;
+        /// <summary>
+        /// The scoreboard wants the mouse free: only after a right-click while it's up (for its MESSAGE buttons) - until then
+        /// you keep looking round, moving and fighting with it held. Goes back to false when it closes.
+        /// PlayerController frees the cursor for the scoreboard only while this is true.
+        /// </summary>
+        public static bool ScoreboardMouse => s_ScoreMouse;
+        /// <summary>(tests) as if the right mouse button had been clicked with the scoreboard up.</summary>
+        public static void TestScoreboardMouse(bool on) => s_ScoreMouse = on;
+
         void DrawScoreboard(PlayerNet me, PlayerController pc)
         {
             bool open = pc.ScoreboardOpen || TestScoreboard;
-            if (open && !m_ScoreWasOpen) m_ScoreOpened = Time.unscaledTime;
+            if (open && !m_ScoreWasOpen) { m_ScoreOpened = Time.unscaledTime; s_ScoreMouse = false; }
             m_ScoreWasOpen = open;
-            if (!open) return;
+            if (!open) { s_ScoreMouse = false; return; }
+            // a right-click while it's up frees the mouse for the MESSAGE buttons (until it's put away)
+            if (!s_ScoreMouse && Input.GetMouseButtonDown(1)) s_ScoreMouse = true;
+            bool mouseFree = Cursor.lockState != CursorLockMode.Locked; // (locked: the buttons can't be clicked by the crosshair)
             ScoreboardShownAt = Time.time;
             float sw = Screen.width, sh = Screen.height, k = m_Scale;
             var e = Event.current;
@@ -67,7 +80,7 @@ namespace RockGame
             if (watchers != "") h += 26 * k; // (a line of its own for anyone spectating)
             float x = (sw - w) / 2, y = Mathf.Max(70 * k, (sh - h) * 0.4f) - (1f - ease) * 16 * k;
             var panel = new Rect(x, y, w, h);
-            if (panel.Contains(e.mousePosition)) MouseOverUI = true;
+            if (mouseFree && panel.Contains(e.mousePosition)) MouseOverUI = true;
             var oldCol = GUI.color;
             GUI.color = new Color(1, 1, 1, ease);
             Fill(panel, new Color(0.03f, 0.035f, 0.05f, 0.88f * ease));
@@ -151,7 +164,9 @@ namespace RockGame
                     {
                         // a private message to just this player: the chat line opens, addressed to them
                         buttons++;
-                        if (BtnAt(new Rect(btnX, cy + 2 * k, btnW, rr.height - 4 * k), "MESSAGE", btnSt))
+                        var mr = new Rect(btnX, cy + 2 * k, btnW, rr.height - 4 * k);
+                        if (!mouseFree) { var oc = GUI.color; GUI.color = new Color(oc.r, oc.g, oc.b, oc.a * 0.45f); GUI.Label(mr, "MESSAGE", btnSt); GUI.color = oc; }
+                        else if (BtnAt(mr, "MESSAGE", btnSt))
                         {
                             Chat.BeginWhisper(p.OwnerClientId, p.DisplayName, p.Team.Value);
                             TestScoreboard = false;
@@ -170,7 +185,7 @@ namespace RockGame
             }
             var foot = new GUIStyle(m_Small) { alignment = TextAnchor.MiddleCenter };
             foot.normal.textColor = new Color(0.65f, 0.65f, 0.7f, ease);
-            GUI.Label(new Rect(x, y + h - 30 * k, w, 24 * k), $"Hold {Binds.Name(Bind.Scoreboard)}  ·  MESSAGE: a private message only that player sees  ·  click a whisper in the chat to answer it", foot);
+            Shadowed(new Rect(x, y + h - 30 * k, w, 24 * k), (mouseFree ? $"Hold [{Binds.Name(Bind.Scoreboard)}]  ·  MESSAGE: a private message only that player sees  ·  click a whisper in the chat to answer it" : $"Hold [{Binds.Name(Bind.Scoreboard)}]  ·  look and move as usual  ·  RMB: free the mouse to MESSAGE a player"), foot);
             GUI.color = oldCol;
             ScoreboardRows = rows;
             ScoreboardButtons = buttons;

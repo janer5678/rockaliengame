@@ -33,6 +33,7 @@ namespace RockGame
             s_BannerTest = true;
             s_TestBannerAt = Time.unscaledTime;
             s_TestCountAt = -10f;
+            s_TestFightAt = -10f;
             return title;
         }
 
@@ -42,17 +43,25 @@ namespace RockGame
             s_TestCountAt = Time.unscaledTime;
             s_TestCountLast = -1;
             s_BannerTest = false;
+            s_TestFightAt = -10f;
         }
 
         /// <summary>A test notification, if one's going (end of OnGUI: over the HUD, the menus and the settings).</summary>
         void DrawTestNotification()
         {
-            float bage = Time.unscaledTime - s_TestBannerAt, cage = Time.unscaledTime - s_TestCountAt;
-            bool banner = s_BannerTest && bage >= 0f && bage < 4f, count = cage >= 0f && cage < 5f;
-            if (!banner && !count) return;
+            // the test death screen (DeathLooks.cs): only while Settings > Display is up - it goes when they're closed
+            if (TestDeathScreen)
+            {
+                if (DisplayCategoryShown < 0) TestDeathScreen = false;
+                else if (Event.current.type == EventType.Repaint) DrawTestDeath(m_Scale);
+            }
+            float bage = Time.unscaledTime - s_TestBannerAt, cage = Time.unscaledTime - s_TestCountAt, fage = Time.unscaledTime - s_TestFightAt;
+            bool banner = s_BannerTest && bage >= 0f && bage < GameSettings.NotifTimeNow, count = cage >= 0f && cage < 5f, fight = fage >= 0f && fage < 4.2f;
+            if (!banner && !count && !fight) return;
             float k = m_Scale;
             bool layer = UiLook.BeginNotif(out var prev);
-            if (count)
+            if (fight) DrawTestFightWords(k); // (CountdownLooks.cs)
+            else if (count)
             {
                 int n = 5 - Mathf.FloorToInt(cage);
                 if (n != s_TestCountLast) { s_TestCountLast = n; Sfx.PlayUi(n <= 3 ? Sfx.Ding : Sfx.Beep, n <= 3 ? 0.7f : 0.5f); }
@@ -89,7 +98,7 @@ namespace RockGame
             Hint("Shows over everything - the game, the menus and these settings - so you can see each change.");
 
             // ---- style ----
-            Caption("STYLE  ·  the banners and the end countdown");
+            Caption("STYLE  ·  the banners (the countdowns have their own: COUNTDOWN below)");
             Slider("Size", GameSettings.NotifSize, $"{GameSettings.NotifSize.Value * 100f:0}%", 0.05f);
             Slider("Band width", GameSettings.NotifWidth, $"{GameSettings.NotifWidth.Value * 100f:0}%", 0.05f);
             Slider("Band darkness", GameSettings.NotifPlate, GameSettings.NotifPlate.Value < 0.01f ? "none" : $"{GameSettings.NotifPlate.Value * 100f:0}%", 0.05f);
@@ -115,6 +124,35 @@ namespace RockGame
             if (Btn("Defaults", GUILayout.Width(100 * k), GUILayout.Height(28 * k))) GameSettings.ResetNotifStyle();
             GUILayout.EndHorizontal();
 
+            // ---- how they come and go ----
+            Caption("ANIMATION  ·  how a banner comes in and goes");
+            ChoiceRow("Comes in", GameSettings.NotifEnter, false, "Snap open", "Slide down", "Fade in", "Pop", "Just appears");
+            ChoiceRow("Goes", GameSettings.NotifExit, false, "Lift & fade", "Fade", "Slide up", "Shrink");
+            Slider("Stays for", GameSettings.NotifTime, $"{GameSettings.NotifTime.Value:0.#} s", 0.25f);
+            Slider("Flies up as it goes", GameSettings.NotifFly, GameSettings.NotifFly.Value < 0.5f ? "not at all" : $"{GameSettings.NotifFly.Value:0} px", 5f);
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("<color=#bbbbbb>Flies up: how far it moves up the screen on its way out (Lift & fade and Slide up).</color>", m_SmallWrap);
+            if (Btn("Defaults", GUILayout.Width(100 * k), GUILayout.Height(28 * k))) GameSettings.ResetNotifMove();
+            GUILayout.EndHorizontal();
+
+            // ---- each kind's colour ----
+            Caption("COLOURS  ·  each kind of news");
+            foreach (var (name, covers, pref) in GameSettings.NotifColours)
+            {
+                ColourPrefRow(name, pref);
+                GUILayout.BeginHorizontal();
+                GUILayout.Space(32 * k);
+                GUILayout.Label($"<color=#999999>{covers}</color>", m_Small);
+                GUILayout.EndHorizontal();
+            }
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("<color=#bbbbbb>The lines along the band and the colour the title settles into. Double-click a colour square for the colour wheel.</color>", m_SmallWrap);
+            if (Btn("Defaults", GUILayout.Width(100 * k), GUILayout.Height(28 * k))) GameSettings.ResetNotifColours();
+            GUILayout.EndHorizontal();
+
+            // ---- the countdowns: a look of their own ----
+            DrawCountdownLooks(); // (CountdownLooks.cs)
+
             // ---- their own post processing ----
             Caption("OWN LOOK  ·  post processing just for them");
             if (!GameSettings.PostFx) Hint("Only while post processing is on (Post FX).");
@@ -128,8 +166,10 @@ namespace RockGame
                 m_NotifFieldK = k;
                 m_NotifField = new GUIStyle(GUI.skin.textField) { fontSize = Mathf.RoundToInt(14 * k), alignment = TextAnchor.MiddleLeft, padding = new RectOffset(Mathf.RoundToInt(6 * k), 4, 2, 2) };
             }
-            foreach (var line in NotifText.All)
+            int li = 0;
+            foreach (var line in System.Linq.Enumerable.Concat(NotifText.All, NotifText.Timer))
             {
+                if (li++ == NotifText.All.Length) SubHead("THE TIMER'S HEADERS  ·  top of the screen");
                 GUILayout.BeginHorizontal();
                 GUILayout.Space(16 * k);
                 GUILayout.Label($"<b>{line.Default}</b>\n<color=#999999>{line.Where}</color>", m_SmallWrap, GUILayout.Width(lw), GUILayout.MinHeight(34 * k));

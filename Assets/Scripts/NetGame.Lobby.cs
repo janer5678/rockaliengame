@@ -118,8 +118,10 @@ namespace RockGame
     }
     public partial class NetGame
     {
-        /// <summary>How long the result stays up after the match (and its cutscene) before everyone's back in the lobby (s).</summary>
-        public const float BackToLobbyAfter = 7f;
+        /// <summary>How long the result stays up after a match won without the victory cutscene (Bedwars, Assassin...)
+        /// before everyone's back in the lobby (s). After the cutscene it's straight back (StraightToLobbyAfter): the
+        /// cutscene's already said who won.</summary>
+        public const float BackToLobbyAfter = 7f, StraightToLobbyAfter = 0.2f;
         /// <summary>How long a client keeps trying to get back in after the host restarts for the lobby (s): long enough
         /// for a slow host to build the new map.</summary>
         public const float RejoinWindow = 40f;
@@ -131,12 +133,16 @@ namespace RockGame
         /// was thrown out to the main menu instead of going back to the lobby with everyone else.</summary>
         public bool GoingBackToLobby => IsSpawned && S == GameState.GameOver && ReadyLobby && !Cfg.Tutorial;
 
-        /// <summary>Seconds until everyone's sent back to the lobby (-1: not counting: the cutscene's still on, or no lobby).</summary>
-        public float BackToLobbyIn => m_OverSince < 0f ? -1f : Mathf.Max(0f, BackToLobbyAfter - (Time.time - m_OverSince));
+        /// <summary>Going back to the lobby straight after the victory cutscene: no "you win / you lose" screen and no
+        /// countdown - the HUD shows a plain black "BACK TO THE LOBBY..." instead (Hud.DrawStraightToLobby).</summary>
+        public bool StraightToLobby => GoingBackToLobby && CutsceneAt.Value >= 0;
 
-        /// <summary>Server: the match is over and its cutscene has played - a few seconds on the result, then the whole
-        /// session goes back to the ship lobby for the next one (Bootstrap.ServerBackToLobby). Lobby games only (not solo,
-        /// not the tests).</summary>
+        /// <summary>How long after the end (and its cutscene) everyone's sent back to the lobby (s).</summary>
+        float LobbyWait => CutsceneAt.Value >= 0 ? StraightToLobbyAfter : BackToLobbyAfter;
+
+        /// <summary>Seconds until everyone's sent back to the lobby (-1: not counting: the cutscene's still on, or no lobby).</summary>
+        public float BackToLobbyIn => m_OverSince < 0f ? -1f : Mathf.Max(0f, LobbyWait - (Time.time - m_OverSince));
+
         /// <summary>Every client: the host is about to restart the session for the lobby - come straight back in when it drops.</summary>
         [Rpc(SendTo.NotServer)]
         public void BackToLobbyRpc()
@@ -145,12 +151,15 @@ namespace RockGame
             Debug.Log("[RockGame] the host is going back to the lobby: rejoining when it drops");
         }
 
+        /// <summary>Server: the match is over and its cutscene has played - then the whole session goes straight back to the
+        /// ship lobby for the next one (Bootstrap.ServerBackToLobby; a match won without the cutscene shows its result for a
+        /// few seconds first). Lobby games only (not solo, not the tests).</summary>
         void ServerTickBackToLobby()
         {
             bool waiting = S == GameState.GameOver && ReadyLobby && !Cfg.Tutorial && !VictoryCutscene.Active;
             if (!waiting) { m_OverSince = -1f; return; }
             if (m_OverSince < 0f) m_OverSince = Time.time;
-            if (IsServer && Time.time - m_OverSince >= BackToLobbyAfter && Bootstrap.I != null) Bootstrap.I.ServerBackToLobby();
+            if (IsServer && Time.time - m_OverSince >= LobbyWait && Bootstrap.I != null) Bootstrap.I.ServerBackToLobby();
         }
     }
 }

@@ -1,0 +1,266 @@
+ALIEN ROCK GAME display settings v1
+# Settings > Display (everything except the screen settings), 2026-10-08 00:03
+# One "key = value" per line. Paste it back with PASTE SETTINGS; unknown keys are ignored, missing ones are left as they are.
+# ---- POST PROCESSING ----
+post = on
+post.bloom = off
+post.bloom.strength = 0.55
+post.vignette = on
+post.vignette.strength = 0
+post.grading = on
+post.grading.strength = 0.65
+post.extra.outlines = on
+post.extra.outlines.strength = 0.45
+post.extra.ambientocclusion = off
+post.extra.ambientocclusion.strength = 1
+post.extra.haze = on
+post.extra.haze.strength = 0.8
+post.extra.depthoffield = off
+post.extra.depthoffield.strength = 0.5
+post.extra.filmgrain = off
+post.extra.filmgrain.strength = 0
+post.extra.chromatic = off
+post.extra.chromatic.strength = 0.5
+post.extra.sharpen = off
+post.extra.sharpen.strength = 0
+post.extra.celbanding = on
+post.extra.celbanding.strength = 0.5
+# ---- POST PROCESSING ON THE UI ----
+ui.post = off
+ui.post.world = on
+ui.cel = off
+ui.cel.strength = 0.1
+ui.outline = on
+ui.outline.width = 3.5
+ui.outline.colour = #000000
+ui.outline.opacity = 0.9
+ui.bloom = off
+ui.bloom.strength = 0.5
+ui.saturation = 0.9
+ui.contrast = 1
+# ---- HANDS AND TOOLS ----
+hands.own = on    # changed (default off)
+hands.outline = on
+hands.outline.strength = 0.35    # changed (default 0.45)
+hands.cel = off    # changed (default on)
+hands.cel.strength = 0.8    # changed (default 0.5)
+hands.saturation = 1
+hands.contrast = 1.05    # changed (default 1)
+# ---- MAIN MENU CUTSCENE ----
+menu.own = on    # changed (default off)
+menu.bloom = on
+menu.bloom.strength = 1    # changed (default 0.6)
+menu.vignette = on
+menu.vignette.strength = 1    # changed (default 0.4)
+menu.grading = on
+menu.grading.strength = 1    # changed (default 0.65)
+menu.outlines = on
+menu.outlines.strength = 0.8    # changed (default 0.45)
+menu.cel = on    # changed (default off)
+menu.cel.strength = 0.75    # changed (default 0.5)
+menu.grain = off
+menu.grain.strength = 1    # changed (default 0.3)
+menu.chromatic = on    # changed (default off)
+menu.chromatic.strength = 1    # changed (default 0.5)
+# ---- TIMER ----
+timer.own = on    # changed (default off)
+timer.size = 1.15    # changed (default 1)
+timer.plate = 0    # changed (default 0.6)
+timer.bar = on
+timer.sub = off    # changed (default on)
+timer.tag = off    # changed (default on)
+timer.flash = on
+timer.accent = on
+timer.ink = 0.7    # changed (default 1)
+timer.width = 0.5    # changed (default 1)
+timer.font = Segoe UI    # changed (default Same as the UI)
+timer.y = 0
+timer.topline = off    # changed (default on)
+timer.bar.back = off    # changed (default on)
+timer.label = Above    # changed (default Left)
+timer.colour.waiting = #D9E0F2
+timer.colour.start = #73FF73
+timer.colour.preball = #FFFFFF    # changed (default #59D9FF)
+timer.colour.timeleft = #FFD94C
+timer.colour.overtime = #FF3826
+timer.colour.suddendeath = #FF4C40
+# ---- SHIP LOBBY ----
+lobby.own = on    # changed (default off)
+lobby.bloom = on
+lobby.bloom.strength = 1    # changed (default 0.6)
+lobby.vignette = on
+lobby.vignette.strength = 0.5
+lobby.grading = on
+lobby.grading.strength = 1    # changed (default 0.6)
+lobby.outlines = on
+lobby.outlines.strength = 0.5    # changed (default 0.4)
+lobby.cel = on    # changed (default off)
+lobby.cel.strength = 0.5
+lobby.grain = off    # changed (default on)
+lobby.grain.strength = 0    # changed (default 0.35)
+lobby.chromatic = on    # changed (default off)
+lobby.chromatic.strength = 0.45    # changed (default 0.4)
+lobby.dark = 0.3    # changed (default 1)
+lobby.lamp = 0.4    # changed (default 1)
+lobby.tv = 2    # changed (default 1)
+lobby.window = 1
+lobby.sway = on
+lobby.smoke = on
+lobby.fov = 61    # changed (default 60)
+# ---- NOTIFICATIONS ----
+notif.own = on    # changed (default off)
+notif.cel = off
+notif.cel.strength = 0.1    # changed (default 0.3)
+notif.outline = off    # changed (default on)
+notif.outline.width = 0.5    # changed (default 3.5)
+notif.outline.colour = #000000
+notif.outline.opacity = 0.9
+notif.bloom = off    # changed (default on)
+notif.bloom.strength = 0.55    # changed (default 0.5)
+notif.saturation = 1
+notif.contrast = 1
+# ---- SHADOWS ----
+shadows.darkness = 0.75
+shadows.distance = 80
+# ---- SHADING ----
+shade.smooth.hands = off
+shade.smooth.aliens = on
+# ---- INTERFACE ----
+ui.font = Bahnschrift
+ui.scale = 1
+ui.hud.opacity = 1
+ui.accent = Gold
+fps.counter = off    # changed (default on)
+fps.uncapped = off
+# ---- ALIEN GLOW ----
+glow.strength = 1    # changed (default 0.02)
+glow.width = 0.0105    # changed (default 0.005)
+# ---- GRASS ----
+grass.distance = 260
+grass.density = 1
+grass.falloff = 0.65
+grass.height = 1.55
+# ---- BEAMS ----
+beams.strength = 1
+beams.falloff = 125
+# ---- TREE X ----
+treex.glow = 2.85
+treex.halo = 1
+treex.size = 1
+treex.colour = #FF6B14
+# ---- BASE FLOOR ----
+basefloor.after = Colour grid
+basefloor.teammix = 0.5
+# ---- WORLD COLOURS ----
+colour.hands.team = on
+colour.Ground = #72A326
+colour.Rock = #948F85
+colour.Grass = #6CB430
+colour.Leaves = #86BD15
+colour.Clouds = #F7F7FF
+colour.Sky = #004EFF
+colour.Sun = #FFDB6B
+colour.Mountains = #7A8082
+colour.MapWalls = #BFF2FF
+colour.BallZone = #73573B
+colour.Wheat = #BD9947
+colour.Daisies = #F7F7F0
+colour.Lupins = #996BDB
+colour.TreeTrunks = #5C3B1F
+colour.Bushes = #408033
+colour.Berries = #BF1433
+colour.StoneNodes = #8F8F99
+colour.Boulders = #8A8780
+colour.BasePads = #807359
+colour.BaseGrid = #9F9683
+colour.Bedrock = #B8BDC7
+colour.AlienMachine = #4C545C
+colour.WoodMachine = #4C3361
+colour.Workbench = #8C5E33
+colour.BuildWood = #8C5E33
+colour.BuildStone = #8F8F99
+colour.BuildSheetMetal = #80756B
+colour.BuildRefined = #454A57
+colour.Horses = #734C2E
+colour.Chests = #8C5E33
+colour.CrashSite = #9EA3AD
+colour.Hands = #CED1CA
+colour.BuildPlan = #4CFF73
+colour.BuildWheel = #006BFF    # changed (default #619EF2)
+# ---- NOTIFICATION WORDING ----
+notif.text.gather = 
+notif.text.wall_dropping = 
+notif.text.wall_down = 
+notif.text.one_minute = 
+notif.text.overtime = 
+notif.text.sudden_death = 
+notif.text.trade_station = 
+notif.text.airdrop_soon = 
+notif.text.airdrop = 
+notif.text.airstrike = 
+notif.text.ball_incoming = 
+notif.text.goal = 
+notif.text.machine_down = 
+notif.text.everyone_ready = 
+notif.text.everyone_here = 
+notif.text.lobby_full = 
+notif.text.team_full = 
+notif.text.full = 
+notif.text.tutorial = 
+notif.text.cd_you_win = 
+notif.text.cd_team_wins = 
+notif.text.cd_overtime = 
+notif.text.cd_sudden = 
+# ---- POST PROCESSING ----
+post.outlines.far = 1.55    # changed (default 1)
+# ---- WORLD ----
+world.energywall = on    # changed (default off)
+world.energywall.strength = 0.4    # changed (default 0.3)
+# ---- MAIN MENU CUTSCENE ----
+menu.colour.space = #030108
+menu.colour.stars = #FFFFFF
+menu.colour.speedlines = #BFE6FF
+menu.colour.nebula = #E633CC
+menu.colour.planet = #8C59BF
+menu.colour.ring = #FFCC8C
+menu.colour.hull = #8C94A3
+menu.colour.dome = #3892B0    # changed (default #1A4761)
+menu.colour.thruster = #59BFFF
+menu.colour.fire = #FF8C1F
+menu.colour.keylight = #FFE0BF
+menu.colour.rimlight = #73B2FF
+# ---- KILL FEED ----
+killfeed.on = on
+killfeed.size = 0.95    # changed (default 1)
+killfeed.back = 0    # changed (default 1)
+killfeed.icons = on
+killfeed.teamcolours = on
+killfeed.highlight = on
+killfeed.time = 10    # changed (default 6.5)
+killfeed.lines = 5    # changed (default 6)
+killfeed.x = 0
+killfeed.y = 0
+killfeed.namecolour = #FFFFFF
+# ---- SHIP LOBBY ----
+lobby.floor = #4C5226    # changed (default #383326)
+lobby.wall = #4C473D
+lobby.couch = #99521F    # changed (default #856633)
+lobby.stain = #332A1B
+# ---- NOTIFICATION STYLE ----
+notif.ink = 0.45    # changed (default 1)
+notif.ink.on = on
+notif.ink.colour = #000000
+notif.ink.opacity = 1
+notif.width = 0.85    # changed (default 1)
+notif.plate = 0.2    # changed (default 1)
+notif.font = Consolas    # changed (default Same as the UI)
+notif.size = 1.25    # changed (default 1)
+notif.y = -25    # changed (default 0)
+# ---- HUD ----
+hud.teambox = off    # changed (default on)
+hud.baseradar = off    # changed (default on)
+# ---- AIMING ----
+aim.trajectory = off
+# ---- TIMER ----
+timer.bar.pos = Bottom
+# 68 values changed from the defaults.

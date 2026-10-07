@@ -205,6 +205,10 @@ namespace RockGame
             bool repaint = Event.current.type == EventType.Repaint;
             float rowH = 36 * k, gap = 4 * k, pad = 10 * k, iconW = icons ? 58 * k : 0f, headW = 30 * k;
             var nameSt = new GUIStyle(m_Label) { fontSize = Mathf.RoundToInt(17 * k), fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft, wordWrap = false, clipping = TextClipping.Overflow, richText = false };
+            // the names' font and edge (a drop shadow as designed, an outline, or none: KillFeedLooks.cs)
+            var kfont = GameSettings.FontForPref(GameSettings.KillFeedFont.Value);
+            if (kfont != null) nameSt.font = kfont;
+            m_KfEdge = GameSettings.KillFeedEdge.Value; m_KfInk = GameSettings.KillFeedInk.Value * k0; m_KfInkColour = GameSettings.KillFeedInkColour.Value;
             for (int i = s_Kills.Count - 1; i >= 0; i--)
             {
                 var kl = s_Kills[i];
@@ -277,14 +281,19 @@ namespace RockGame
             return shown > 0 ? y - top : 0f;
         }
 
+        // the names' edge this frame (Settings > Display > KILL FEED: KillFeedLooks.cs)
+        int m_KfEdge;
+        float m_KfInk = 1.5f;
+        Color m_KfInkColour = Color.black;
+        /// <summary>(tests) the kill feed names' edge as last drawn (0 shadow, 1 outline, 2 none) and how thick (px).</summary>
+        public static int KillFeedEdgeShown = -1;
+        public static float KillFeedInkShown;
+
         void DrawName(Rect r, string text, Color c, GUIStyle st, float a)
         {
-            var old = st.normal.textColor;
-            st.normal.textColor = new Color(0, 0, 0, 0.85f * a);
-            GUI.Label(new Rect(r.x + 1.5f, r.y + 1.5f, r.width, r.height), text, st);
-            st.normal.textColor = new Color(c.r, c.g, c.b, a);
-            GUI.Label(r, text, st);
-            st.normal.textColor = old;
+            var ec = m_KfInkColour; ec.a = 0.85f * a;
+            KillFeedEdgeShown = m_KfEdge; KillFeedInkShown = m_KfInk;
+            EdgeText(r, text, st, new Color(c.r, c.g, c.b, a), m_KfEdge, m_KfInk, ec);
         }
     }
 }

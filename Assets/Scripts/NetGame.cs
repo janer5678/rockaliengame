@@ -211,6 +211,7 @@ namespace RockGame
             TickStartCountdown(); // the waiting stadium's 10 s countdown once everyone's in (NetGame.Lobby.cs)
             TickBenchUnlockNotice(); // "WORK BENCHES UNLOCKED" when our team captures the ball (NetGame.Bench.cs)
             TickMinuteNotice();
+            TickReadySetRock(); // READY / SET / ROCK!'s beeps and boom (NetGame.ReadySetRock.cs)
             if (!IsServer) return;
             ResourceNode.ServerFlocksTick(); // (flocks of birds sitting in a few trees, there before anyone hits them)
             if (Time.time >= m_NextItemCheck) { m_NextItemCheck = Time.time + 0.5f; ServerSettleItems(); }
@@ -222,6 +223,7 @@ namespace RockGame
                 if (S == GameState.PreBall || S == GameState.BallLive || S == GameState.SuddenDeath) PhaseEnd.Value += dt;
                 if (m_BallStart >= 0) m_BallStart += dt;
             }
+            ServerTickReadySetRock(now); // (held still before ROCK!: the clock waits too)
             ServerTickC4(now);
             ServerTickAirstrikes(now);
             ServerTickBushes(now);
@@ -242,6 +244,7 @@ namespace RockGame
                     {
                         float delay = Cfg.FunRules ? 0f : fast ? Cfg.FastBallDropDelay : Cfg.BallDropDelay; // fun modes: wall down and ball in from the start
                         SetPhase(GameState.PreBall, delay);
+                        ServerBeginReadySetRock(now); // everyone held still through the intro, then READY / SET / ROCK! (NetGame.ReadySetRock.cs)
                         if (Cfg.Tutorial) TimerPaused.Value = true; // the tutorial goes at your pace
                         // the ball is there from the start: in the middle of the map, under the glass dome
                         SpawnBall();
@@ -328,7 +331,8 @@ namespace RockGame
         /// <summary>The end-of-match countdown stays on 0 this long before everyone is sent to the sudden death arena.</summary>
         public const float ZeroHold = 1.2f;
         double m_SuddenDeathAt = -1;
-        public bool FightFrozen => S == GameState.SuddenDeath && IsSpawned && NetworkManager.ServerTime.Time < FightAt.Value;
+        /// <summary>Nobody can move or fight: sudden death's countdown, or before ROCK! at the start (NetGame.ReadySetRock.cs).</summary>
+        public bool FightFrozen => (S == GameState.SuddenDeath && IsSpawned && NetworkManager.ServerTime.Time < FightAt.Value) || RockHeld;
 
         void StartSuddenDeath()
         {

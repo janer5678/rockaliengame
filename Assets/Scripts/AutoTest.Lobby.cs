@@ -28,6 +28,16 @@ namespace RockGame
             yield return Shot("root");
             yield return new WaitForSeconds(4f);
             yield return Shot("root_later");
+            // the tutorial's PLAY WITH A FRIEND: HOST (the friend tutorial) or JOIN (the join page, back to this page)
+            Hud.TestNewPage(8);
+            yield return Shot("page8_tutorial_friend");
+            Check(Hud.TestMenuPage == 8, "TUTORIAL > PLAY WITH A FRIEND: its own page, HOST or JOIN");
+            Hud.TestTutorialJoin();
+            yield return Shot("page8_tutorial_join");
+            Check(Hud.TestMenuPage == 3, "...JOIN opens the join page (to join the host's tutorial)");
+            Hud.TestMenuBack();
+            yield return null;
+            Check(Hud.TestMenuPage == 8, "...and its BACK goes back to the tutorial's HOST / JOIN page");
             foreach (var p in new[] { 1, 2, 3, 4, 5, 6, 7 })
             {
                 Hud.TestNewPage(p);
@@ -120,24 +130,51 @@ namespace RockGame
                 ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "lobbymap_host_modepage.png"));
                 yield return new WaitForSeconds(0.5f);
                 Hud.TestNewPage(7);
+                int builds = Hud.LobbyPreviewBuilds, restores = Hud.LobbyPreviewRestores;
                 Hud.TestLobbyPickMap(to);
-                yield return new WaitForSeconds(0.8f);
-                Check(!MenuScene.LobbyPreview, "host: another map picked - its picture (it isn't built), not the live map");
+                yield return null;
+                Check(!MenuScene.LobbyPreview, "host: another map picked - for a moment its picture, while its preview's built");
+                // a moment later it's built (on the host's PC only) and the page shows it live, in the cinematic shots
+                until = Time.time + 6f;
+                while (!(MenuScene.LobbyPreview && Hud.LobbyPreviewBuilt) && Time.time < until) yield return null;
+                yield return new WaitForSeconds(1.5f);
+                mc = Camera.main != null ? Camera.main.transform.position : ShipLobby.Center;
+                eye = mc.y - MapBuilder.GroundHeight(mc.x, mc.z);
+                Check(MenuScene.LobbyPreview && Hud.LobbyPreviewBuilt && Hud.LobbyPreviewBuilds == builds + 1 && Cfg.Map == to,
+                    $"host: another map picked - {to} is built on the host's PC and shown live, not a picture ({Hud.LobbyPreviewBuilds - builds} built, Cfg.Map {Cfg.Map})");
+                Check(Vector3.Distance(mc, ShipLobby.Center) > 200f && Mathf.Abs(mc.x) < Cfg.MapHalf + 5f && Mathf.Abs(mc.z) < Cfg.MapHalf + 5f && eye < 2.5f,
+                    $"host: ...the camera's in the slow shots over it ({mc.x:0}, {mc.z:0}, {eye:0.0} m up, shot {MenuScene.ShotIndex})");
+                Check(Hud.LobbyPreviewHidden > 0, $"host: ...the session's own things on the hosted map hidden meanwhile ({Hud.LobbyPreviewHidden} renderers)");
+                Check(nm.IsListening && PlayerNet.All.Count == 2 && NetGame.Instance != null && NetGame.Instance.MapKey.Value != Cfg.MapKey,
+                    "host: ...the session carries on, still on the hosted map for everyone else (its map key untouched)");
                 ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "lobbymap_host_newmap.png"));
+                // back to the hosted map: it comes back (rebuilt, its things shown again)
+                Hud.TestLobbyPickMap(from);
+                yield return new WaitForSeconds(0.6f);
+                Check(!Hud.LobbyPreviewBuilt && Hud.LobbyPreviewRestores == restores + 1 && Cfg.Map == from && Hud.LobbyPreviewHidden == 0 && MenuScene.LobbyPreview,
+                    $"host: the hosted map picked again - it's back, live (Cfg.Map {Cfg.Map}, {Hud.LobbyPreviewRestores - restores} restored)");
+                // and the other map once more, to CONFIRM it
+                Hud.TestLobbyPickMap(to);
+                until = Time.time + 6f;
+                while (!Hud.LobbyPreviewBuilt && Time.time < until) yield return null;
                 yield return new WaitForSeconds(0.5f);
+                Check(Hud.LobbyPreviewBuilt && Cfg.Map == to, "host: the other map's preview again");
                 Check(NetGame.Instance != null && NetGame.Instance.S == GameState.Waiting, "host: the match never started while the host was in the menu");
                 Hud.TestLobbyConfirm();
+                Check(!Hud.LobbyPreviewBuilt, "host: CONFIRM puts the hosted map back before restarting on the new one");
             }
             // both: the session restarts on the new map, and everyone's back in the ship lobby
             until = Time.time + 60f;
-            bool left = false;
+            bool left = false, clientMapMoved = false;
             while (Time.time < until)
             {
                 if (NetGame.Instance == null || !NetGame.Instance.IsSpawned) left = true;
+                if (!host && !left && (Cfg.Map != from || MapBuilder.BuiltKey != NetGame.Instance.MapKey.Value)) clientMapMoved = true; // (the host's preview is its own)
                 if (left && ShipLobby.Active && NetGame.Instance != null && NetGame.Instance.S == GameState.Waiting && Cfg.Map == to) break;
                 yield return null;
             }
             Check(left && ShipLobby.Active && Cfg.Map == to, $"{who}: back in the ship lobby on the new map ({from} -> {Cfg.Map})");
+            if (!host) Check(!clientMapMoved, "client: the host's live previews never touched this PC's map (it stayed on the hosted one until the restart)");
             yield return new WaitForSeconds(3f);
             ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), $"lobbymap_{who}_after.png"));
             if (!host)
@@ -217,8 +254,53 @@ namespace RockGame
             Check(sink < 0.04f, $"no seated alien's feet go through the floor ({sink:0.000} m under at worst)");
             ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), $"lobby_{(nm.IsHost ? "host" : "client" + nm.LocalClientId)}.png"));
             yield return new WaitForSeconds(0.5f);
+            int sky = ShipLobby.SkyRays();
+            Check(sky == 0, $"the room is closed all round: no sky in the couch shot ({sky} of 336 rays leave the room)");
+            Check(!Hud.LobbyButtonShown("LOBBY LOOK") && Hud.LobbyButtonShown("COPY ROOM ID"), "there's no LOBBY LOOK button along the bottom any more");
             if (nm.IsHost)
             {
+                // Tab opens LOBBY LOOK (and closes it again); the scoreboard stays away in the lobby
+                Hud.TestLobbyTab = true;
+                yield return new WaitForSeconds(0.4f);
+                Check(Hud.LobbyLookOpen && Time.time - Hud.ScoreboardShownAt > 1f, "Tab in the lobby opens LOBBY LOOK (not the scoreboard)");
+                // the glowing ball's brightness setting (in the panel): turned down, its light goes down with it
+                bool ownWas = GameSettings.LobbyOwn.Value;
+                float ballWas = GameSettings.LobbyBall.Value;
+                float ball0 = ShipLobby.BallLightNow;
+                GameSettings.LobbyOwn.Set(true); GameSettings.LobbyBall.Set(0.3f);
+                yield return new WaitForSeconds(0.3f);
+                float ball1 = ShipLobby.BallLightNow;
+                ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "lobby_tab_look.png"));
+                yield return null;
+                GameSettings.LobbyBall.Set(ballWas); GameSettings.LobbyOwn.Set(ownWas);
+                Check(ball0 > 0.5f && ball0 < 2f && ball1 < ball0 * 0.5f, $"the glowing ball is calmer ({ball0:0.0}) and its brightness setting turns it down live ({ball1:0.00} at 30%)");
+                Check(ShipLobby.TellyLightNow > 8f, $"the telly throws plenty of light on the room ({ShipLobby.TellyLightNow:0.0})");
+                Hud.TestLobbyTab = true;
+                yield return new WaitForSeconds(0.4f);
+                Check(!Hud.LobbyLookOpen, "Tab again closes LOBBY LOOK");
+                // the mouse over the telly: PLAY GAME? beside it (and not with the mouse elsewhere). The telly's off to the
+                // left of the couch shot (out of view): the mouse at the left edge turns the camera round to it first
+                ShipLobby.TestMouse = new Vector2(0.01f, 0.5f);
+                yield return new WaitForSeconds(1.6f);
+                ShipLobby.TestMouse = new Vector2(0.5f, 0.5f);
+                yield return new WaitForSeconds(0.6f);
+                if (ShipLobby.TellyMiddleOnScreen(out var tvMid) && tvMid.x > 0f && tvMid.x < Screen.width && tvMid.y > 0f && tvMid.y < Screen.height)
+                {
+                    Hud.TestLobbyMouse = tvMid;
+                    yield return new WaitForSeconds(0.4f);
+                    Check(Time.time - Hud.TellyTipShownAt < 0.2f, $"the mouse over the telly shows PLAY GAME? next to it (at {tvMid.x:0}, {tvMid.y:0})");
+                    ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "lobby_tv_hover.png"));
+                    yield return null;
+                    Hud.TestLobbyMouse = new Vector2(Screen.width * 0.5f, Screen.height * 0.3f);
+                    yield return new WaitForSeconds(0.4f);
+                    Check(Time.time - Hud.TellyTipShownAt > 0.3f, "...and not with the mouse off it");
+                    Hud.TestLobbyMouse = new Vector2(-1f, -1f);
+                }
+                else Check(false, $"the telly comes into view looking left (for PLAY GAME?; its middle at {tvMid.x:0}, {tvMid.y:0})");
+                // (and back round to the couch: the close-ups below keep the turn)
+                ShipLobby.TestMouse = new Vector2(0.99f, 0.5f);
+                for (float until2 = Time.time + 3f; ShipLobby.LookYaw < 0f && Time.time < until2;) yield return null;
+                ShipLobby.TestMouse = new Vector2(-1f, -1f);
                 // close on each of them, twice (their props and what they're doing with them)
                 for (int i = 0; i < ShipLobby.Seated.Count; i++)
                     for (int s = 0; s < 3; s++)
@@ -236,11 +318,13 @@ namespace RockGame
                 ShipLobby.TestMouse = new Vector2(0.01f, 0.5f);
                 yield return new WaitForSeconds(1.2f);
                 Check(ShipLobby.LookYaw < -20f, $"the mouse at the screen's edge looks round the room ({ShipLobby.LookYaw:0} degrees)");
+                Check(ShipLobby.SkyRays() == 0, $"looking left: no sky ({ShipLobby.SkyRays()} rays out of the room)");
                 ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "lobby_look_left.png"));
                 yield return null;
                 ShipLobby.TestMouse = new Vector2(0.99f, 0.99f);
                 yield return new WaitForSeconds(2.4f);
                 Check(ShipLobby.LookPitch == 0f, $"the mouse at the top edge doesn't tilt the view up or down ({ShipLobby.LookPitch:0.0} degrees)");
+                Check(ShipLobby.SkyRays() == 0, $"looking right: no sky ({ShipLobby.SkyRays()} rays out of the room)");
                 ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "lobby_look_right.png"));
                 yield return null;
                 ShipLobby.TestMouse = new Vector2(0.5f, 0.5f);
@@ -275,6 +359,10 @@ namespace RockGame
                 var tv = ShipLobby.TellyOnScreen;
                 Check(tv.height > Screen.height * 0.4f && tv.yMin > Screen.height * 0.13f && tv.yMax < Screen.height * 0.87f,
                     $"the telly's picture sits clear of the lobby's HUD (from {tv.yMin / Screen.height:0.00} to {tv.yMax / Screen.height:0.00} of the screen's height)");
+                // (the close-up looks back past the telly towards the camera's side of the room: the wall's there now)
+                int skyTv = ShipLobby.SkyRays();
+                Check(skyTv == 0, $"on the telly: no sky round it - the room's back wall is there ({skyTv} rays out of the room)");
+                Check(Time.time - Hud.TellyTipShownAt > 0.5f, "on the telly: no PLAY GAME? any more");
                 LobbyArcade.MyDot(out var dot0);
                 int hash0 = LobbyArcade.PictureHash, draws0 = LobbyArcade.Redraws;
                 LobbyArcade.TestStick = new Vector2(1f, 0f); // (D held)
@@ -299,6 +387,37 @@ namespace RockGame
                 ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "lobby_arcade_goal.png"));
                 yield return null;
                 LobbyArcade.TestAuto = 0;
+                // ARROWS: a clear shot at an enemy (a still dummy) kills them - +2 to you - and a tree in the way stops one
+                LobbyArcade.TestStick = Vector2.zero;
+                int enemy = team == 0 ? 1 : 0;
+                LobbyArcade.TestDummy(true, enemy, new Vector2(44f, 68f));
+                LobbyArcade.TestPlace(nm.LocalClientId, new Vector2(14f, 68f), Vector2.right);
+                yield return new WaitForSeconds(0.4f);
+                int kills0 = LobbyArcade.Kills, mineK = LobbyArcade.PlayerScore(nm.LocalClientId);
+                LobbyArcade.TestShoot = true;
+                until = Time.time + 2f;
+                while (!LobbyArcade.DummyDown && Time.time < until) yield return null;
+                yield return new WaitForSeconds(0.15f);
+                Check(LobbyArcade.DummyDown && LobbyArcade.Kills > kills0 && LobbyArcade.PlayerScore(nm.LocalClientId) >= mineK + 2,
+                    $"Space shoots an arrow: a clear shot kills the enemy, +2 to you (kills {kills0} -> {LobbyArcade.Kills}, yours {mineK} -> {LobbyArcade.PlayerScore(nm.LocalClientId)})");
+                ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "lobby_arcade_shot.png"));
+                yield return null;
+                var treeAt = new Vector2(42f, 30f);
+                until = Time.time + 9f;
+                while (!LobbyArcade.TreeStanding(treeAt) && Time.time < until) yield return null; // (grown back, if it was collected)
+                LobbyArcade.TestDummy(true, enemy, new Vector2(54f, 28.5f));
+                LobbyArcade.TestPlace(nm.LocalClientId, new Vector2(30f, 28.5f), Vector2.right);
+                yield return new WaitForSeconds(0.4f);
+                int blocked0 = LobbyArcade.ServerBlocked, kills1 = LobbyArcade.Kills;
+                LobbyArcade.TestShoot = true;
+                until = Time.time + 1.5f;
+                while (LobbyArcade.ServerBlocked == blocked0 && Time.time < until) yield return null;
+                yield return new WaitForSeconds(0.25f);
+                Check(LobbyArcade.ServerBlocked > blocked0 && !LobbyArcade.DummyDown && LobbyArcade.Kills == kills1 && LobbyArcade.ArrowsShown >= 1,
+                    $"a tree in the way stops the arrow - it sticks in it - and the enemy behind it is fine (blocked {blocked0} -> {LobbyArcade.ServerBlocked}, {LobbyArcade.ArrowsShown} arrow showing)");
+                ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "lobby_arcade_blocked.png"));
+                yield return null;
+                LobbyArcade.TestDummy(false, 0, default);
                 LobbyArcade.TestStick = new Vector2(9f, 9f);
                 // the clients see it too (they wait for a few seconds of it), then STOP PLAYING
                 yield return new WaitForSeconds(3f);

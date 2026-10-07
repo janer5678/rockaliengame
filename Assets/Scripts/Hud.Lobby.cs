@@ -6,8 +6,9 @@ namespace RockGame
     /// The ship lobby's screen (ShipLobby.cs is the room): everyone's name over their alien (in their team's colour, with a
     /// tick once they're READY - AI bots always are), the buttons along the bottom left like the reference - LEAVE (closes the lobby), COPY ROOM
     /// ID (the host's IPv4 address, for a friend to type into JOIN) and GAME OPTIONS (the host: change the game mode,
-    /// length and team sizes; everyone READYs again after), LOBBY LOOK (everyone: the room's colours, lights and post
-    /// processing, for you) and, on the telly's game (LobbyArcade.cs), STOP PLAYING - a JOIN option for each team with a
+    /// length and team sizes; everyone READYs again after) and, on the telly's game (LobbyArcade.cs), STOP PLAYING (its
+    /// keys, small, over it) - Tab opens LOBBY LOOK (everyone: the room's colours, lights and post processing, for you), the
+    /// mouse over the telly says PLAY GAME? beside it - a JOIN option for each team with a
     /// grey SPECTATE twice as long under them (spectating, your alien stays on the couch, grey; a team takes a seat on it
     /// again), and the big green READY bottom right. The chat works as usual.
     /// </summary>
@@ -18,6 +19,15 @@ namespace RockGame
 
         /// <summary>(tests) the lobby's screen was drawn this frame.</summary>
         public static float LobbyShownAt = -10f;
+        /// <summary>(tests) press Tab in the lobby once; LOBBY LOOK is open; the buttons along the bottom (this frame).</summary>
+        public static bool TestLobbyTab;
+        public static bool LobbyLookOpen { get; private set; }
+        static readonly System.Collections.Generic.List<string> s_LobbyBtns = new System.Collections.Generic.List<string>();
+        public static bool LobbyButtonShown(string label) => s_LobbyBtns.Contains(label);
+        /// <summary>(tests) the mouse is here (GUI space; x &lt; 0: the real mouse) - for the telly's PLAY GAME? - and when
+        /// that was last shown.</summary>
+        public static Vector2 TestLobbyMouse = new Vector2(-1f, -1f);
+        public static float TellyTipShownAt { get; private set; } = -10f;
         static readonly System.Collections.Generic.List<Container> s_Bags = new System.Collections.Generic.List<Container>();
 
         void DrawLobby(Bootstrap boot, PlayerNet me)
@@ -26,6 +36,21 @@ namespace RockGame
             LobbyShownAt = Time.time;
             var g = NetGame.Instance;
             ShipLobby.Customising = false; // (alien customisation is off for now)
+            // Tab opens and closes LOBBY LOOK (it has no button). (The scoreboard isn't in the lobby: PlayerController keeps
+            // it shut while the lobby's up, and it's only drawn in the game.)
+            var ev = Event.current;
+            bool tab = ev.type == EventType.KeyDown && ev.keyCode == KeyCode.Tab && !Chat.Open;
+            if (TestLobbyTab && ev.type == EventType.Layout) { TestLobbyTab = false; tab = true; }
+            if (tab)
+            {
+                m_LobbyLook = !m_LobbyLook;
+                m_LobbyOptions = false;
+                GUIUtility.keyboardControl = 0; // (out of any box being typed in)
+                if (ev.type == EventType.KeyDown) ev.Use();
+                ClickSound();
+            }
+            LobbyLookOpen = m_LobbyLook;
+            if (ev.type == EventType.Layout) s_LobbyBtns.Clear();
             // the title, top left: what's being played and how full it is
             var title = new GUIStyle(m_Big) { alignment = TextAnchor.UpperLeft, fontSize = Mathf.RoundToInt(40 * k) };
             Shadowed(new Rect(28 * k, 44 * k, sw, 60 * k), "<b>LOBBY</b>", title); // (under the FPS counter)
@@ -78,8 +103,15 @@ namespace RockGame
                 m_CopiedAt = Time.time;
             }
             if (boot.IsHostSession && !Cfg.Tutorial && FramedBtn(ref bx, by, bh, "GAME OPTIONS")) { m_LobbyOptions = !m_LobbyOptions; m_LobbyLook = false; } // (the AI bots are in there now)
-            if (FramedBtn(ref bx, by, bh, "LOBBY LOOK")) { m_LobbyLook = !m_LobbyLook; m_LobbyOptions = false; } // (everyone: the room's look, for you)
+            // (LOBBY LOOK - the room's look, for you - has no button: Tab opens and closes it, above)
+            float stopX = bx;
             if (LobbyArcade.Focused && FramedBtn(ref bx, by, bh, "STOP PLAYING")) LobbyArcade.Focus(false); // (back to the couch)
+            if (LobbyArcade.Focused && me != null)
+            {
+                // the telly game's keys, small, over STOP PLAYING (the picture itself stays clean)
+                var hint = new GUIStyle(m_Small) { fontSize = Mathf.RoundToInt(14 * k), alignment = TextAnchor.LowerLeft, wordWrap = false };
+                Shadowed(new Rect(stopX + 2 * k, by - 30 * k, 420 * k, 26 * k), "<color=#dddddd>WASD move    Space / LMB shoot</color>", hint);
+            }
             float leftEnd = bx;
 
             // the teams: a JOIN button for each (how many are on it), and under them, twice as long and grey, SPECTATE
@@ -94,6 +126,7 @@ namespace RockGame
                 Shadowed(nr, "<b>SPECTATING</b>\n<size=" + Mathf.RoundToInt(14 * k) + "><color=#bbbbbb>You'll watch the match - pick a team to play</color></size>", new GUIStyle(m_Center) { fontSize = Mathf.RoundToInt(22 * k) });
                 if (m_LobbyOptions && boot.IsHostSession) DrawLobbyOptions(boot);
                 if (m_LobbyLook) DrawLobbyLook();
+                DrawTellyTip(false);
                 Chat.Draw(k, m_Small, Fill, Shadowed);
                 return;
             }
@@ -113,6 +146,7 @@ namespace RockGame
 
             if (m_LobbyOptions && boot.IsHostSession) DrawLobbyOptions(boot);
             if (m_LobbyLook) DrawLobbyLook();
+            DrawTellyTip(true);
             Chat.Draw(k, m_Small, Fill, Shadowed);
         }
 
@@ -161,6 +195,25 @@ namespace RockGame
                 string label = $"<b>SPECTATE</b>  {watching}/{Spectator.MaxSpectators}" + (mine ? "  (you)" : "");
                 if (GUI.Button(r, label, st) && !mine) { ClickSound(); LobbyArcade.Focus(false); g.SpectateRpc(true); }
             }
+        }
+
+        /// <summary>The mouse over the telly (and a click would take you to it): PLAY GAME? next to the mouse (WATCH? for
+        /// a spectator). Not while you're on it already, or the mouse is over the lobby's buttons and panels.</summary>
+        void DrawTellyTip(bool player)
+        {
+            if (LobbyArcade.Focused || ShipLobby.Customising || MouseOverUI || Chat.Open) return;
+            var m = TestLobbyMouse.x >= 0f ? TestLobbyMouse : Event.current.mousePosition;
+            if (!ShipLobby.TellyUnder(m)) return;
+            float k = m_Scale;
+            var st = new GUIStyle(m_Label) { fontSize = Mathf.RoundToInt(20 * k), alignment = TextAnchor.MiddleLeft, wordWrap = false };
+            string text = player ? "<b>PLAY GAME?</b>" : "<b>WATCH?</b>";
+            var size = st.CalcSize(new GUIContent(text));
+            var r = new Rect(m.x + 20 * k, m.y - 4 * k, size.x + 20 * k, 32 * k);
+            if (r.xMax > Screen.width - 4) r.x = m.x - r.width - 12 * k; // (the other side of the mouse at the screen's edge)
+            Fill(r, new Color(0f, 0f, 0f, 0.7f));
+            Frame(r, new Color(1f, 0.85f, 0.3f, 0.9f), 2f);
+            Shadowed(new Rect(r.x + 10 * k, r.y, r.width - 10 * k, r.height), $"<color=#ffd84a>{text}</color>", st);
+            TellyTipShownAt = Time.time;
         }
 
         bool m_LobbyLook;
@@ -258,6 +311,7 @@ namespace RockGame
             var st = new GUIStyle(m_Center) { fontSize = Mathf.RoundToInt(18 * k), font = m_Center.font };
             float w = st.CalcSize(new GUIContent(text)).x + 30 * k;
             var r = new Rect(x, y, w, h);
+            if (Event.current.type == EventType.Layout && !s_LobbyBtns.Contains(text)) s_LobbyBtns.Add(text);
             x += w + 8 * k;
             bool hover = r.Contains(Event.current.mousePosition);
             if (hover) MouseOverUI = true;

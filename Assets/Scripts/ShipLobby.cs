@@ -19,7 +19,8 @@ namespace RockGame
     /// Spectators (Spectator.Lobby.cs) sit on the end of the couch too, grey. The telly shows a tiny pixel version of
     /// the game (LobbyArcade.cs): click it and the camera moves in on it to play; whoever's playing holds a controller and
     /// watches the screen. Now and then the aliens look round at each other. The room's colours and lights are in
-    /// Settings > Display > SHIP LOBBY and LOBBY LOOK (LobbyLooks.cs). More of the room: ShipLobby.Dressing.cs.
+    /// Settings > Display > SHIP LOBBY and LOBBY LOOK (LobbyLooks.cs). More of the room: ShipLobby.Dressing.cs, and
+    /// ShipLobby.Room.cs (the front wall behind the camera, the telly's light and glow, the glowing ball's brightness).
     /// </summary>
     [DefaultExecutionOrder(1000)] // (after PlayerController: the lobby has the camera)
     public partial class ShipLobby : MonoBehaviour
@@ -366,6 +367,7 @@ namespace RockGame
             m_Tones.Clear();
             m_TonesSet = false;
             m_Tv = null;
+            ClearRoomExtras(); // (ShipLobby.Room.cs)
             if (m_Room) Destroy(m_Room);
             m_Room = null;
             m_Blinkers.Clear();
@@ -846,9 +848,12 @@ namespace RockGame
                 float fl = 0.8f + 0.2f * Mathf.PerlinNoise(t * 24f, 2f);
                 var glow = LobbyArcade.Glow;
                 float lum = Mathf.Max(0.05f, glow.maxColorComponent);
-                if (m_TvLight) { m_TvLight.color = Color.Lerp(glow / lum, new Color(0.7f, 0.8f, 1f), 0.35f); m_TvLight.intensity = 6.5f * fl * GameSettings.LobbyTvNow; }
+                var tint = Color.Lerp(glow / lum, new Color(0.7f, 0.8f, 1f), 0.35f);
+                if (m_TvLight) { m_TvLight.color = tint; m_TvLight.intensity = 10f * fl * GameSettings.LobbyTvNow; }
                 if (m_TvMat != null) m_TvMat.SetColor("_Color", Color.Lerp(glow / lum, Color.white, 0.3f) * fl); // (only if the picture's material is missing)
+                TickTellyGlow(tint, fl); // (the light round it, the glow round the screen: ShipLobby.Room.cs)
             }
+            TickBall(); // (the glowing ball: Settings > Display > SHIP LOBBY > Glowing ball)
             // the dying strip light in the corner: it stutters on and off
             if (m_Strip)
             {
@@ -942,6 +947,9 @@ namespace RockGame
                 }
             }
 
+            // ---- the front wall, behind the camera: the room's closed all round (no sky in any shot) - ShipLobby.Room.cs ----
+            BuildFrontWall(t, trim, metal, pipe, wallDark);
+
             // ---- the telly: a chunky old CRT on a crate in front of them, off to one side, facing the couch ----
             {
                 var tv = new GameObject("telly").transform;
@@ -975,10 +983,12 @@ namespace RockGame
                 lg.transform.localRotation = Quaternion.LookRotation(Vector3.forward + Vector3.up * 0.1f);
                 m_TvLight = lg.AddComponent<Light>();
                 m_TvLight.type = LightType.Spot;
-                m_TvLight.spotAngle = 95f;
-                m_TvLight.range = 9f;
+                m_TvLight.spotAngle = 110f;
+                m_TvLight.innerSpotAngle = 50f;
+                m_TvLight.range = 11f;
                 m_TvLight.intensity = 3f;
                 m_TvLight.shadows = LightShadows.None;
+                BuildTellyGlow(tv); // (more light round it, a glow round the screen: ShipLobby.Room.cs)
             }
 
             // ---- the mess: pizza boxes, cans, a laundry pile, a lava lamp, a mini fridge, a dartboard ----
@@ -1224,16 +1234,20 @@ namespace RockGame
             BuildBike(t);
             // the ball, and gear from the game lying about
             {
-                // (glowing like mad: lit by itself, and lighting the floor round it)
+                // (glowing: lit by itself, and lighting the floor round it - how much is Settings > Display > SHIP LOBBY >
+                // Glowing ball: TickBall, ShipLobby.Room.cs)
                 var ball = ItemModels.CreateBall(t, 0.5f);
                 ball.transform.localPosition = new Vector3(3.3f, 0.25f, -1.1f);
-                Material core = Unlit(new Color(1f, 0.85f, 0.2f), 3.2f), band = Unlit(new Color(1f, 0.55f, 0.12f), 2.6f);
+                Material core = Unlit(new Color(1f, 0.85f, 0.2f), BallCore), band = Unlit(new Color(1f, 0.55f, 0.12f), BallBand);
+                m_BallCore = core; m_BallBand = band;
+                m_BallSet = -1f;
                 foreach (var r in ball.GetComponentsInChildren<MeshRenderer>())
                 {
                     r.sharedMaterial = r.transform.localScale.x > r.transform.localScale.y * 3f || r.transform.localScale.z > r.transform.localScale.y * 3f ? band : core;
                     r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
                 }
-                Light(t, new Vector3(3.3f, 0.45f, -1.1f), new Color(1f, 0.8f, 0.3f), 3.2f, 3.6f).name = "ball light";
+                m_BallLight = Light(t, new Vector3(3.3f, 0.45f, -1.1f), new Color(1f, 0.8f, 0.3f), BallLight, 3f);
+                m_BallLight.name = "ball light";
             }
             void Lay(Item it, Vector3 at, float yaw, float roll)
             {

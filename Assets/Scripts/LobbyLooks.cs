@@ -8,41 +8,43 @@ namespace RockGame
     ///   shows the drain bar, the line about what to do, the mode's tag and the final-minute flashing.
     /// SHIP LOBBY - the living room you wait in (ShipLobby.cs): post processing of its own (like the main menu
     ///   cutscene's) and the room itself - the floor, wall, couch and stain colours, how dark it is, how bright the lamp, the
-    ///   telly and the lights passing the window are, the lamp swinging, the cigarette smoke and the camera's field of
-    ///   view. The same rows are in the lobby itself: LOBBY LOOK (Hud.Lobby.cs).
+    ///   telly, the lights passing the window and the glowing ball are, the lamp swinging, the cigarette smoke and the camera's field of
+    ///   view. The same rows are in the lobby itself: Tab opens LOBBY LOOK (Hud.Lobby.cs).
     /// </summary>
     public static partial class GameSettings
     {
         // ---- the ship lobby ----
         const string GLobby = "SHIP LOBBY";
         /// <summary>The ship lobby uses the post processing and room settings below (off: the world's post processing and the room as built).</summary>
-        public static readonly DisplayPref.Bool LobbyOwn = new("lobby.own", GLobby, false);
+        public static readonly DisplayPref.Bool LobbyOwn = new("lobby.own", GLobby, true);
         public static readonly DisplayPref.Bool LobbyBloom = new("lobby.bloom", GLobby, true);
-        public static readonly DisplayPref.Float LobbyBloomStrength = new("lobby.bloom.strength", GLobby, 0.6f, 0f, 1f);
+        public static readonly DisplayPref.Float LobbyBloomStrength = new("lobby.bloom.strength", GLobby, 1f, 0f, 1f);
         public static readonly DisplayPref.Bool LobbyVignette = new("lobby.vignette", GLobby, true);
         public static readonly DisplayPref.Float LobbyVignetteStrength = new("lobby.vignette.strength", GLobby, 0.5f, 0f, 1f);
         public static readonly DisplayPref.Bool LobbyGrading = new("lobby.grading", GLobby, true);
-        public static readonly DisplayPref.Float LobbyGradingStrength = new("lobby.grading.strength", GLobby, 0.6f, 0f, 1f);
+        public static readonly DisplayPref.Float LobbyGradingStrength = new("lobby.grading.strength", GLobby, 1f, 0f, 1f);
         public static readonly DisplayPref.Bool LobbyOutlines = new("lobby.outlines", GLobby, true);
-        public static readonly DisplayPref.Float LobbyOutlinesStrength = new("lobby.outlines.strength", GLobby, 0.4f, 0f, 1f);
-        public static readonly DisplayPref.Bool LobbyCel = new("lobby.cel", GLobby, false);
+        public static readonly DisplayPref.Float LobbyOutlinesStrength = new("lobby.outlines.strength", GLobby, 0.5f, 0f, 1f);
+        public static readonly DisplayPref.Bool LobbyCel = new("lobby.cel", GLobby, true);
         public static readonly DisplayPref.Float LobbyCelStrength = new("lobby.cel.strength", GLobby, 0.5f, 0f, 1f);
-        public static readonly DisplayPref.Bool LobbyGrain = new("lobby.grain", GLobby, true);
-        public static readonly DisplayPref.Float LobbyGrainStrength = new("lobby.grain.strength", GLobby, 0.35f, 0f, 1f);
-        public static readonly DisplayPref.Bool LobbyChromatic = new("lobby.chromatic", GLobby, false);
-        public static readonly DisplayPref.Float LobbyChromaticStrength = new("lobby.chromatic.strength", GLobby, 0.4f, 0f, 1f);
+        public static readonly DisplayPref.Bool LobbyGrain = new("lobby.grain", GLobby, false);
+        public static readonly DisplayPref.Float LobbyGrainStrength = new("lobby.grain.strength", GLobby, 0f, 0f, 1f);
+        public static readonly DisplayPref.Bool LobbyChromatic = new("lobby.chromatic", GLobby, true);
+        public static readonly DisplayPref.Float LobbyChromaticStrength = new("lobby.chromatic.strength", GLobby, 0.45f, 0f, 1f);
         // the room
-        public static readonly DisplayPref.Float LobbyDark = new("lobby.dark", GLobby, 1f, 0.3f, 1.6f);
-        public static readonly DisplayPref.Float LobbyLamp = new("lobby.lamp", GLobby, 1f, 0f, 2f);
-        public static readonly DisplayPref.Float LobbyTv = new("lobby.tv", GLobby, 1f, 0f, 2f);
+        public static readonly DisplayPref.Float LobbyDark = new("lobby.dark", GLobby, 0.3f, 0.3f, 1.6f);
+        public static readonly DisplayPref.Float LobbyLamp = new("lobby.lamp", GLobby, 0.4f, 0f, 2f);
+        public static readonly DisplayPref.Float LobbyTv = new("lobby.tv", GLobby, 2f, 0f, 2f);
         public static readonly DisplayPref.Float LobbyWindow = new("lobby.window", GLobby, 1f, 0f, 2f);
+        /// <summary>The glowing ball lying on the floor: its glow and the light it throws (1 = as built, already toned down).</summary>
+        public static readonly DisplayPref.Float LobbyBall = new("lobby.ball", GLobby, 1f, 0f, 2f);
         public static readonly DisplayPref.Bool LobbySway = new("lobby.sway", GLobby, true);
         public static readonly DisplayPref.Bool LobbySmoke = new("lobby.smoke", GLobby, true);
-        public static readonly DisplayPref.Float LobbyFov = new("lobby.fov", GLobby, 60f, 45f, 85f);
+        public static readonly DisplayPref.Float LobbyFov = new("lobby.fov", GLobby, 61f, 45f, 85f);
         // the room's colours (the carpet, the wall panels, the couch, the stains)
-        public static readonly DisplayPref.Colour LobbyFloor = new("lobby.floor", GLobby, new Color(0.22f, 0.2f, 0.15f));
+        public static readonly DisplayPref.Colour LobbyFloor = new("lobby.floor", GLobby, DisplayDefaults.Hex("#4C5226"));
         public static readonly DisplayPref.Colour LobbyWall = new("lobby.wall", GLobby, new Color(0.3f, 0.28f, 0.24f));
-        public static readonly DisplayPref.Colour LobbyCouch = new("lobby.couch", GLobby, new Color(0.52f, 0.4f, 0.2f));
+        public static readonly DisplayPref.Colour LobbyCouch = new("lobby.couch", GLobby, DisplayDefaults.Hex("#99521F"));
         /// <summary>The stains all over the room (the carpet, the walls, the couch, the ceiling, the coffee table).</summary>
         public static readonly DisplayPref.Colour LobbyStain = new("lobby.stain", GLobby, new Color(0.2f, 0.165f, 0.105f));
 
@@ -53,13 +55,16 @@ namespace RockGame
         public static float LobbyLampNow => LobbyOwn.Value ? LobbyLamp.Value : 1f;
         public static float LobbyTvNow => LobbyOwn.Value ? LobbyTv.Value : 1f;
         public static float LobbyWindowNow => LobbyOwn.Value ? LobbyWindow.Value : 1f;
+        public static float LobbyBallNow => LobbyOwn.Value ? LobbyBall.Value : 1f;
         public static bool LobbySwayNow => !LobbyOwn.Value || LobbySway.Value;
         public static bool LobbySmokeNow => !LobbyOwn.Value || LobbySmoke.Value;
         public static float LobbyFovNow => LobbyOwn.Value ? LobbyFov.Value : 60f;
-        public static Color LobbyFloorNow => LobbyOwn.Value ? LobbyFloor.Value : LobbyFloor.Default;
+        public static Color LobbyFloorNow => LobbyOwn.Value ? LobbyFloor.Value : FloorAsBuilt;
         public static Color LobbyWallNow => LobbyOwn.Value ? LobbyWall.Value : LobbyWall.Default;
-        public static Color LobbyCouchNow => LobbyOwn.Value ? LobbyCouch.Value : LobbyCouch.Default;
+        public static Color LobbyCouchNow => LobbyOwn.Value ? LobbyCouch.Value : CouchAsBuilt;
         public static Color LobbyStainNow => LobbyOwn.Value ? LobbyStain.Value : LobbyStain.Default;
+        /// <summary>The floor and couch as built (their settings start at the 2026-10-08 defaults instead).</summary>
+        static readonly Color FloorAsBuilt = new Color(0.22f, 0.2f, 0.15f), CouchAsBuilt = new Color(0.52f, 0.4f, 0.2f);
 
         static float LobbyExtra(PostExtra e)
         {
@@ -75,17 +80,10 @@ namespace RockGame
 
         public static void ResetLobby(bool save = true)
         {
-            LobbyOwn.Set(false, save);
-            LobbyBloom.Set(true, save); LobbyBloomStrength.Set(0.6f, save);
-            LobbyVignette.Set(true, save); LobbyVignetteStrength.Set(0.5f, save);
-            LobbyGrading.Set(true, save); LobbyGradingStrength.Set(0.6f, save);
-            LobbyOutlines.Set(true, save); LobbyOutlinesStrength.Set(0.4f, save);
-            LobbyCel.Set(false, save); LobbyCelStrength.Set(0.5f, save);
-            LobbyGrain.Set(true, save); LobbyGrainStrength.Set(0.35f, save);
-            LobbyChromatic.Set(false, save); LobbyChromaticStrength.Set(0.4f, save);
-            LobbyDark.Set(1f, save); LobbyLamp.Set(1f, save); LobbyTv.Set(1f, save); LobbyWindow.Set(1f, save);
-            LobbySway.Set(true, save); LobbySmoke.Set(true, save); LobbyFov.Set(60f, save);
-            LobbyFloor.Set(LobbyFloor.Default, save); LobbyWall.Set(LobbyWall.Default, save); LobbyCouch.Set(LobbyCouch.Default, save); LobbyStain.Set(LobbyStain.Default, save);
+            DisplayPref.ResetAll(save, LobbyOwn, LobbyBloom, LobbyBloomStrength, LobbyVignette, LobbyVignetteStrength, LobbyGrading, LobbyGradingStrength,
+                LobbyOutlines, LobbyOutlinesStrength, LobbyCel, LobbyCelStrength, LobbyGrain, LobbyGrainStrength, LobbyChromatic, LobbyChromaticStrength,
+                LobbyDark, LobbyLamp, LobbyTv, LobbyWindow, LobbyBall, LobbySway, LobbySmoke, LobbyFov,
+                LobbyFloor, LobbyWall, LobbyCouch, LobbyStain);
         }
     }
 
@@ -103,7 +101,7 @@ namespace RockGame
             {
                 DrawLobbyLookRows();
                 GUILayout.BeginHorizontal();
-                GUILayout.Label("<color=#bbbbbb>The living room you wait in before a match: its own post processing (the game keeps the settings above), the room's lights and colours. Also in the lobby: LOBBY LOOK.</color>", m_SmallWrap);
+                GUILayout.Label("<color=#bbbbbb>The living room you wait in before a match: its own post processing (the game keeps the settings above), the room's lights and colours. Also in the lobby: press Tab.</color>", m_SmallWrap);
                 if (Btn("Defaults", GUILayout.Width(100 * k), GUILayout.Height(28 * k))) GameSettings.ResetLobby();
                 GUILayout.EndHorizontal();
             }
@@ -187,6 +185,7 @@ namespace RockGame
             Slider("Lamp", GameSettings.LobbyLamp, $"{GameSettings.LobbyLamp.Value * 100f:0}%", 0.05f);
             Slider("Telly", GameSettings.LobbyTv, $"{GameSettings.LobbyTv.Value * 100f:0}%", 0.05f);
             Slider("Window lights", GameSettings.LobbyWindow, $"{GameSettings.LobbyWindow.Value * 100f:0}%", 0.05f);
+            Slider("Glowing ball", GameSettings.LobbyBall, $"{GameSettings.LobbyBall.Value * 100f:0}%", 0.05f);
             Slider("Field of view", GameSettings.LobbyFov, $"{GameSettings.LobbyFov.Value:0}°", 1f);
             Toggle("Lamp swinging", GameSettings.LobbySway);
             Toggle("Cigarette smoke", GameSettings.LobbySmoke);

@@ -938,8 +938,10 @@ namespace RockGame
             StuckSpears.Value = 0;
             if (items.Count > 0 && NetGame.Instance != null) NetGame.Instance.ServerScatter(items, transform.position + Vector3.up * 1.1f);
 
-            // (killed by someone: long enough for the whole kill cam and its replay to play before the automatic respawn)
-            float respawnIn = KilledBy.Value != 0 ? Mathf.Max(Cfg.RespawnTime, Cfg.KillCamTime + DeathReplay.Duration + 0.5f) : Cfg.RespawnTime;
+            // (killed by someone: exactly as long as the kill cam and its replay - the respawn choice, or the automatic
+            // respawn behind the wall, comes the moment it ends, no wait after it; KillCamRespawnSlack only keeps the
+            // server's respawn from cutting off the replay's last frame)
+            float respawnIn = KilledBy.Value != 0 ? Cfg.KillCamTime + DeathReplay.Duration + KillCamRespawnSlack : Cfg.RespawnTime;
             RespawnAt.Value = NetworkManager.ServerTime.Time + respawnIn;
             var victimName = Cfg.TeamName[Team.Value];
             if (NetGame.Instance != null)
@@ -1502,6 +1504,7 @@ namespace RockGame
         {
             if (!BuildGrid.CanBuildAt(Team.Value, key)) return Cfg.Builder ? "You can't build in the enemy base" : "You can only build inside your own base area";
             if (BuildGrid.OnBedrock(key)) return "The bedrock is already a foundation";
+            if (t == PieceType.Doorway && Structure.DoorsOf(Team.Value) >= Cfg.MaxDoors) { DoorLimitRefusals++; return $"Your base already has {Cfg.MaxDoors} doors - that's the most it can have"; }
             BuildGrid.Pose(t, key, out var pos, out var rot);
             if (Vector3.Distance(pos, transform.position) > Cfg.BuildRange + 4f) return "Too far away";
             if (BuildGrid.IsOccupied(key, BuildGrid.Registry.ContainsKey)) return "Something is already built there";

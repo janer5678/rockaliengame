@@ -9,7 +9,9 @@ namespace RockGame
     /// playing - a tiny pixelated top-down version of the real game on the old CRT (128 x 96, point filtered). Everyone
     /// playing is a little alien in their team's colour, moved with WASD (the lobby has no other use for them). Walk into
     /// a tree and you've got it (+1, it grows back), grab the ball in the middle and run it to your team's machine on your
-    /// side (+5) - run into whoever's carrying it to knock it off them. The bar along the top lists everyone playing:
+    /// side (+5) - run into whoever's carrying it to knock it off them. Space (or a click) shoots an arrow the way you're
+    /// facing (the little bow pixel shows it): trees stop arrows (they stick in them), an enemy it reaches is shot - down
+    /// for a moment where they fell, dropping the ball, then back on their side - and the shooter gets +2. The bar along the top lists everyone playing:
     /// their colour and their own score (a newcomer shows up on it straight away). STOP PLAYING (Hud.Lobby.cs) goes back
     /// to the couch.
     /// Networked: whoever plays sends their stick to the server (PlayerNet.Arcade.cs), the server runs the game and sends
@@ -24,7 +26,9 @@ namespace RockGame
         /// <summary>The playing field (pixels, y down from under the score bar).</summary>
         const float FW = W, FH = H - Bar;
         const float Speed = 40f, CarrySlow = 0.82f, Reach = 5f, ChopFlash = 0.35f, TreeBack = 7f, Stun = 0.8f;
-        const int TreeScore = 1, BallScore = 5;
+        const int TreeScore = 1, BallScore = 5, KillScore = 2;
+        /// <summary>The arrows: how fast they fly (pixels a second), how often you can shoot, how long a shot player's down.</summary>
+        const float ArrowSpeed = 110f, ShootEvery = 0.45f, Respawn = 2.5f;
         const float SendEvery = 1f / 15f;
 
         static readonly Vector2[] k_Trees =
@@ -47,7 +51,8 @@ namespace RockGame
 
         // ================================================================== the snapshot everyone draws
 
-        struct Dot { public byte Id, Team, Flags, Score; public Vector2 Pos; }
+        struct Dot { public byte Id, Team, Flags, Score, Face; public Vector2 Pos; }
+        struct Shot { public Vector2 Pos; public byte Ang, Flags; }
         class Snap
         {
             public Vector2 Ball;
@@ -56,17 +61,20 @@ namespace RockGame
             public readonly int[] Score = new int[4];
             public byte Goals, GoalTeam;
             public readonly List<Dot> Dots = new List<Dot>();
+            public readonly List<Shot> Arrows = new List<Shot>();
+            public byte Kills;
             public float At;
             public void CopyFrom(Snap o)
             {
-                Ball = o.Ball; Held = o.Held; Trees = o.Trees; Goals = o.Goals; GoalTeam = o.GoalTeam; At = o.At;
+                Ball = o.Ball; Held = o.Held; Trees = o.Trees; Goals = o.Goals; GoalTeam = o.GoalTeam; At = o.At; Kills = o.Kills;
                 for (int i = 0; i < 4; i++) Score[i] = o.Score[i];
                 Dots.Clear(); Dots.AddRange(o.Dots);
+                Arrows.Clear(); Arrows.AddRange(o.Arrows);
             }
         }
         static readonly Snap s_Prev = new Snap(), s_Cur = new Snap();
         static bool s_Have;
-        const byte FCarry = 1, FChop = 2, FStun = 4;
+        const byte FCarry = 1, FChop = 2, FStun = 4, FDead = 8;
 
         /// <summary>Every client (and the host, from its own game): a new snapshot.</summary>
         public static void ClientReceive(byte[] b)
@@ -83,23 +91,44 @@ namespace RockGame
             s.GoalTeam = b[i++];
             int n = b[i++];
             s.Dots.Clear();
-            for (int k = 0; k < n && i + 6 <= b.Length; k++)
-                s.Dots.Add(new Dot { Id = b[i++], Team = b[i++], Flags = b[i++], Score = b[i++], Pos = new Vector2(b[i++] * 0.5f, b[i++] * 0.5f) });
+            for (int k = 0; k < n && i + 7 <= b.Length; k++)
+                s.Dots.Add(new Dot { Id = b[i++], Team = b[i++], Flags = b[i++], Score = b[i++], Pos = new Vector2(b[i++] * 0.5f, b[i++] * 0.5f), Face = b[i++] });
+            // the shots: how many have been hit so far, the arrows flying (or stuck in a tree)
+            s.Arrows.Clear();
+            if (i + 2 <= b.Length)
+            {
+                s.Kills = b[i++];
+                int na = b[i++];
+                for (int k = 0; k < na && i + 4 <= b.Length; k++)
+                    s.Arrows.Add(new Shot { Pos = new Vector2(b[i++] * 0.5f, b[i++] * 0.5f), Ang = b[i++], Flags = b[i++] });
+            }
             s.At = Time.time;
             if (!s_Have) { s_Prev.CopyFrom(s_Cur); s_Have = true; }
         }
 
         // ================================================================== the server's game
 
-        class Runner { public PlayerNet P; public Vector2 Pos; public float ChopUntil, StunUntil; public int Score; }
+        class Runner
+        {
+            public PlayerNet P;                 // (null: a test dummy)
+            public byte Id;
+            public int Team;
+            public Vector2 Pos, Home, Facing = Vector2.right;
+            public float ChopUntil, StunUntil, DeadUntil, ShootCool;
+            public int Score;
+            public bool Dead;
+        }
+        class Arrow { public Vector2 Pos, Dir; public Runner From; public int Team; public float Born, StuckUntil; public bool Stuck; }
         static readonly List<Runner> s_Run = new List<Runner>();
+        static readonly List<Arrow> s_Arrows = new List<Arrow>();
         static Runner s_Holder;
         static Vector2 s_Ball = BallHome;
         static readonly float[] s_TreeBackAt = new float[k_Trees.Length];
         static readonly int[] s_Score = new int[4];
-        static byte s_Goals, s_GoalTeam;
+        static byte s_Goals, s_GoalTeam, s_Kills;
         static float s_StealCool, s_NextSend;
-        static readonly byte[] s_Buf = new byte[13 + 6 * 32];
+        const int MaxArrows = 24;
+        static readonly byte[] s_Buf = new byte[13 + 7 * 32 + 2 + 4 * MaxArrows];
 
         /// <summary>Server: a player starts / stops playing (PlayerNet.ArcadeJoinRpc).</summary>
         public static void ServerJoin(PlayerNet p, bool on)
@@ -111,13 +140,21 @@ namespace RockGame
                 return;
             }
             if (at >= 0 || s_Run.Count >= 32) return;
-            int team = p.Team.Value & 3, same = 0;
-            foreach (var r in s_Run) if ((r.P.Team.Value & 3) == team) same++;
+            AddRunner(p, (byte)(p.OwnerClientId & 255), p.Team.Value & 3);
+        }
+
+        static Runner AddRunner(PlayerNet p, byte id, int team)
+        {
+            int same = 0;
+            foreach (var r in s_Run) if (r.Team == team) same++;
             var m = k_Machines[team];
             var toward = (BallHome - m).normalized;
             var side = new Vector2(-toward.y, toward.x);
-            s_Run.Add(new Runner { P = p, Pos = m + toward * 12f + side * ((same % 2 == 0 ? 1 : -1) * (6f + 6f * (same / 2))) });
+            var home = m + toward * 12f + side * ((same % 2 == 0 ? 1 : -1) * (6f + 6f * (same / 2)));
+            var run = new Runner { P = p, Id = id, Team = team, Pos = home, Home = home, Facing = toward };
+            s_Run.Add(run);
             s_NextSend = 0f; // (everyone's telly shows the newcomer - on the field and on the scores - straight away)
+            return run;
         }
 
         static int IndexOf(PlayerNet p)
@@ -130,6 +167,7 @@ namespace RockGame
         {
             if (s_Holder == r) { s_Holder = null; s_Ball = r.Pos; }
             s_Run.Remove(r);
+            foreach (var a in s_Arrows) if (a.From == r) a.From = null;
             s_NextSend = 0f; // (off everyone's scores straight away)
             if (s_Run.Count == 0) ResetGame();
         }
@@ -138,6 +176,7 @@ namespace RockGame
         {
             s_Holder = null;
             s_Ball = BallHome;
+            s_Arrows.Clear();
             for (int i = 0; i < s_TreeBackAt.Length; i++) s_TreeBackAt[i] = 0f;
             for (int t = 0; t < 4; t++) s_Score[t] = 0;
         }
@@ -149,6 +188,77 @@ namespace RockGame
                 var g = NetGame.Instance;
                 return g != null && g.IsSpawned && g.S == GameState.Waiting && NetGame.ReadyLobby;
             }
+        }
+
+        /// <summary>Server: a player fires an arrow the way they're facing (PlayerNet.ArcadeShootRpc).</summary>
+        public static void ServerShoot(PlayerNet p)
+        {
+            int at = IndexOf(p);
+            if (at >= 0) Shoot(s_Run[at], Time.time);
+        }
+
+        static void Shoot(Runner r, float now)
+        {
+            if (r.Dead || now < r.ShootCool || now < r.StunUntil || s_Arrows.Count >= MaxArrows) return;
+            r.ShootCool = now + ShootEvery;
+            s_Arrows.Add(new Arrow { Pos = r.Pos + r.Facing * 3f, Dir = r.Facing, From = r, Team = r.Team, Born = now });
+            s_NextSend = 0f; // (everyone sees it go straight away)
+        }
+
+        /// <summary>The arrows fly; a standing tree stops one (it sticks in it a moment), an enemy it reaches is shot -
+        /// down for a moment (dropping the ball), and the shooter gets the points.</summary>
+        static void MoveArrows(float now, float dt)
+        {
+            for (int i = s_Arrows.Count - 1; i >= 0; i--)
+            {
+                var a = s_Arrows[i];
+                if (a.Stuck)
+                {
+                    if (now >= a.StuckUntil) s_Arrows.RemoveAt(i);
+                    continue;
+                }
+                float left = ArrowSpeed * dt;
+                bool gone = false;
+                while (left > 0f && !gone)
+                {
+                    float step = Mathf.Min(1.5f, left);
+                    left -= step;
+                    a.Pos += a.Dir * step;
+                    if (a.Pos.x < 0f || a.Pos.x > FW || a.Pos.y < 0f || a.Pos.y > FH || now - a.Born > 2f) { s_Arrows.RemoveAt(i); gone = true; break; }
+                    for (int t = 0; t < k_Trees.Length; t++)
+                        if (s_TreeBackAt[t] <= now && (a.Pos - TreeMiddle(t)).sqrMagnitude < 3.2f * 3.2f)
+                        {
+                            // blocked: it sticks in the tree for a moment
+                            a.Stuck = true;
+                            a.StuckUntil = now + 0.9f;
+                            ServerBlocked++;
+                            gone = true;
+                            break;
+                        }
+                    if (gone) break;
+                    foreach (var r in s_Run)
+                    {
+                        if (r == a.From || r.Dead || r.Team == a.Team || (r.Pos - a.Pos).sqrMagnitude > 3.2f * 3.2f) continue;
+                        Kill(r, a.From, now);
+                        s_Arrows.RemoveAt(i);
+                        gone = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        /// <summary>The middle of a tree's leaves (what an arrow hits), from its trunk point.</summary>
+        static Vector2 TreeMiddle(int t) => k_Trees[t] + new Vector2(0f, -1.5f);
+
+        static void Kill(Runner victim, Runner shooter, float now)
+        {
+            victim.Dead = true;
+            victim.DeadUntil = now + Respawn;
+            if (s_Holder == victim) { s_Holder = null; s_Ball = victim.Pos; } // (the ball drops where they fell)
+            if (shooter != null && s_Run.Contains(shooter)) Add(shooter, KillScore);
+            s_Kills++;
+            s_NextSend = 0f;
         }
 
         void ServerTick(float now, float dt)
@@ -166,15 +276,28 @@ namespace RockGame
             for (int i = s_Run.Count - 1; i >= 0; i--)
             {
                 var r = s_Run[i];
-                if (r.P == null || !r.P.IsSpawned || !r.P.ArcadePlaying.Value) Drop(r);
+                if (r.P == null) continue; // (a test dummy)
+                if (!r.P.IsSpawned || !r.P.ArcadePlaying.Value) { Drop(r); continue; }
+                r.Team = r.P.Team.Value & 3;
             }
             foreach (var p in PlayerNet.All) if (p != null && p.IsSpawned && p.ArcadePlaying.Value && IndexOf(p) < 0) ServerJoin(p, true);
 
             // move, collect trees, grab, tackle, score
             foreach (var r in s_Run)
             {
+                if (r.Dead)
+                {
+                    // shot: back on their side of the field after a moment
+                    if (now < r.DeadUntil) continue;
+                    r.Dead = false;
+                    r.Pos = r.Home;
+                    r.Facing = (BallHome - r.Home).normalized;
+                    r.StunUntil = 0f;
+                    s_NextSend = 0f;
+                }
                 bool stunned = now < r.StunUntil;
-                var stick = stunned ? Vector2.zero : r.P.ServerArcadeStick;
+                var stick = stunned || r.P == null ? Vector2.zero : r.P.ServerArcadeStick;
+                if (stick.sqrMagnitude > 0.04f) r.Facing = new Vector2(stick.x, -stick.y).normalized; // (where the next arrow goes)
                 float sp = Speed * (s_Holder == r ? CarrySlow : 1f);
                 var move = new Vector2(stick.x, -stick.y) * sp * dt;
                 r.Pos += move;
@@ -203,17 +326,18 @@ namespace RockGame
                     }
                 }
             }
+            MoveArrows(now, dt);
             if (s_Holder == null)
             {
                 foreach (var r in s_Run)
-                    if (now >= r.StunUntil && (r.Pos - s_Ball).magnitude < Reach) { s_Holder = r; break; }
+                    if (!r.Dead && now >= r.StunUntil && (r.Pos - s_Ball).magnitude < Reach) { s_Holder = r; break; }
             }
             else
             {
                 // knocked off them: an enemy running into the carrier takes it (and they're dazed a moment)
                 if (now >= s_StealCool)
                     foreach (var r in s_Run)
-                        if (r != s_Holder && (r.P.Team.Value & 3) != (s_Holder.P.Team.Value & 3) && now >= r.StunUntil && (r.Pos - s_Holder.Pos).magnitude < Reach)
+                        if (r != s_Holder && !r.Dead && r.Team != s_Holder.Team && now >= r.StunUntil && (r.Pos - s_Holder.Pos).magnitude < Reach)
                         {
                             s_Holder.StunUntil = now + Stun;
                             s_Holder = r;
@@ -221,7 +345,7 @@ namespace RockGame
                             break;
                         }
                 s_Ball = s_Holder.Pos + new Vector2(0f, -4f);
-                int team = s_Holder.P.Team.Value & 3;
+                int team = s_Holder.Team;
                 if ((s_Holder.Pos - k_Machines[team]).magnitude < 9f)
                 {
                     Add(s_Holder, BallScore);
@@ -246,8 +370,7 @@ namespace RockGame
         static void Add(Runner r, int pts)
         {
             r.Score = Mathf.Min(255, r.Score + pts);
-            int team = r.P.Team.Value & 3;
-            s_Score[team] = Mathf.Min(255, s_Score[team] + pts);
+            s_Score[r.Team] = Mathf.Min(255, s_Score[r.Team] + pts);
         }
 
         static int Write()
@@ -265,16 +388,67 @@ namespace RockGame
             b[i++] = (byte)s_Run.Count;
             foreach (var r in s_Run)
             {
-                b[i++] = (byte)(r.P.OwnerClientId & 255);
-                b[i++] = (byte)(r.P.Team.Value & 3);
-                b[i++] = (byte)((s_Holder == r ? FCarry : 0) | (now < r.ChopUntil ? FChop : 0) | (now < r.StunUntil ? FStun : 0));
+                b[i++] = r.Id;
+                b[i++] = (byte)(r.Team & 3);
+                b[i++] = (byte)((s_Holder == r ? FCarry : 0) | (now < r.ChopUntil ? FChop : 0) | (now < r.StunUntil ? FStun : 0) | (r.Dead ? FDead : 0));
                 b[i++] = (byte)Mathf.Clamp(r.Score, 0, 255);
                 b[i++] = Q(r.Pos.x); b[i++] = Q(r.Pos.y);
+                b[i++] = Ang(r.Facing);
+            }
+            // the shots: how many have been hit, and every arrow in the air (or stuck in a tree)
+            b[i++] = s_Kills;
+            int na = Mathf.Min(s_Arrows.Count, MaxArrows);
+            b[i++] = (byte)na;
+            for (int k = 0; k < na; k++)
+            {
+                var a = s_Arrows[k];
+                b[i++] = Q(a.Pos.x); b[i++] = Q(a.Pos.y);
+                b[i++] = Ang(a.Dir);
+                b[i++] = (byte)((a.Stuck ? 1 : 0) | ((a.Team & 3) << 1));
             }
             return i;
         }
 
         static byte Q(float v) => (byte)Mathf.Clamp(Mathf.RoundToInt(v * 2f), 0, 255);
+        /// <summary>A direction as a byte (0..255 round the circle), and back.</summary>
+        static byte Ang(Vector2 d) => (byte)(Mathf.RoundToInt(Mathf.Repeat(Mathf.Atan2(d.y, d.x) / (Mathf.PI * 2f), 1f) * 256f) & 255);
+        static Vector2 Dir(byte a) { float r = a / 256f * Mathf.PI * 2f; return new Vector2(Mathf.Cos(r), Mathf.Sin(r)); }
+
+        // ------------------------------------------------------------------ (tests) the arrows
+
+        /// <summary>(tests, server) how many arrows trees have stopped.</summary>
+        public static int ServerBlocked { get; private set; }
+        static Runner s_Dummy;
+        /// <summary>(tests, server) a still target on the field (a player of `team` who isn't anyone) - or take it off.</summary>
+        public static void TestDummy(bool on, int team, Vector2 pos)
+        {
+            if (s_Dummy != null) { Drop(s_Dummy); s_Dummy = null; }
+            if (!on) return;
+            s_Dummy = AddRunner(null, 250, team & 3);
+            s_Dummy.Pos = pos;
+        }
+        /// <summary>(tests, server) the test dummy has been shot (and isn't back yet).</summary>
+        public static bool DummyDown => s_Dummy != null && s_Dummy.Dead;
+        /// <summary>(tests, server) put a player's little alien here, facing this way.</summary>
+        public static bool TestPlace(ulong clientId, Vector2 pos, Vector2 facing)
+        {
+            foreach (var r in s_Run)
+                if (r.P != null && r.P.OwnerClientId == clientId) { r.Pos = pos; r.Facing = facing.normalized; r.ShootCool = 0f; return true; }
+            return false;
+        }
+        /// <summary>(tests, server) the tree nearest this point is standing (not a stump growing back).</summary>
+        public static bool TreeStanding(Vector2 near)
+        {
+            int best = 0;
+            for (int t = 1; t < k_Trees.Length; t++) if ((k_Trees[t] - near).sqrMagnitude < (k_Trees[best] - near).sqrMagnitude) best = t;
+            return s_TreeBackAt[best] <= Time.time;
+        }
+        /// <summary>(tests) how many players have been shot so far (the latest snapshot), and arrows in it.</summary>
+        public static int Kills => s_Have ? s_Cur.Kills : 0;
+        public static int ArrowsShown => s_Have ? s_Cur.Arrows.Count : 0;
+        /// <summary>(tests) shoot once (as if Space were pressed).</summary>
+        public static bool TestShoot;
+
 
         // ================================================================== this PC: looking at it, playing it
 
@@ -347,6 +521,12 @@ namespace RockGame
                 s_NextStick = now + 0.5f;
                 if (me.ArcadePlaying.Value) me.ArcadeStickRpc((sbyte)q.x, (sbyte)q.y);
             }
+            // shoot: Space or a click on the picture (not on the lobby's buttons) - an arrow the way you're facing
+            bool shoot = TestShoot;
+            TestShoot = false;
+            if (!shoot && !Chat.Open && GUIUtility.keyboardControl == 0 && Application.isFocused)
+                shoot = Input.GetKeyDown(KeyCode.Space) || (Input.GetMouseButtonDown(0) && !Hud.MouseOverUI);
+            if (shoot && me.ArcadePlaying.Value) me.ArcadeShootRpc();
         }
 
         static Vector2 ReadStick()
@@ -417,6 +597,19 @@ namespace RockGame
             }
         }
 
+        /// <summary>How bright the picture is (brighter than before: the screen reads as lit in the dark room).</summary>
+        const float ScreenBright = 1.5f;
+        float m_BrightSet = -1f;
+
+        /// <summary>The picture's brightness x k (ShipLobby: Settings > Display > SHIP LOBBY > Telly, gently).</summary>
+        public static void SetScreenBrightness(float k)
+        {
+            if (s_I == null || s_I.m_Mat == null || Mathf.Approximately(s_I.m_BrightSet, k)) return;
+            s_I.m_BrightSet = k;
+            if (s_I.m_Mat.HasProperty("_Intensity")) s_I.m_Mat.SetFloat("_Intensity", ScreenBright * k);
+            else if (s_I.m_Mat.HasProperty("_EmissionColor")) s_I.m_Mat.SetColor("_EmissionColor", Color.white * ScreenBright * k);
+        }
+
         /// <summary>The picture's average colour (the telly's light in the room follows it).</summary>
         public static Color Glow { get; private set; } = new Color(0.3f, 0.6f, 0.35f);
 
@@ -430,7 +623,7 @@ namespace RockGame
             {
                 var sm = new Material(screen) { name = "lobby arcade" };
                 sm.SetTexture("_MainTex", m_Tex);
-                sm.SetFloat("_Intensity", 1.1f);
+                sm.SetFloat("_Intensity", ScreenBright);
                 m_Mat = sm;
                 Draw(Time.time);
                 return;
@@ -463,7 +656,7 @@ namespace RockGame
         static readonly Color32 k_Bar = new Color32(10, 10, 18, 255), k_GrassA = new Color32(38, 96, 44, 255), k_GrassB = new Color32(44, 108, 50, 255),
             k_Edge = new Color32(24, 64, 30, 255), k_Trunk = new Color32(110, 70, 36, 255), k_Leaf = new Color32(26, 74, 28, 255),
             k_LeafHi = new Color32(60, 130, 52, 255), k_Ball = new Color32(255, 222, 50, 255), k_Black = new Color32(8, 8, 10, 255),
-            k_White = new Color32(240, 240, 240, 255), k_Stump = new Color32(140, 98, 56, 255);
+            k_White = new Color32(240, 240, 240, 255), k_Stump = new Color32(140, 98, 56, 255), k_ArrowWood = new Color32(200, 160, 100, 255);
 
         static Color32 TeamC(int t, float k = 1f)
         {
@@ -520,14 +713,29 @@ namespace RockGame
             }
             // the players: little aliens in their team's colours (you: blinking white outline and a marker over you)
             byte myId = (byte)((NetworkManager.Singleton != null ? NetworkManager.Singleton.LocalClientId : 0) & 255);
+            bool meDown = false;
             if (s_Have)
                 foreach (var d in cur.Dots)
                 {
                     var pos = d.Pos;
-                    foreach (var o in s_Prev.Dots) if (o.Id == d.Id) { pos = Vector2.Lerp(o.Pos, d.Pos, a); break; }
+                    foreach (var o in s_Prev.Dots) if (o.Id == d.Id) { if ((o.Pos - d.Pos).sqrMagnitude < 400f) pos = Vector2.Lerp(o.Pos, d.Pos, a); break; } // (back on their side after being shot: no sliding across)
                     var p = F(pos);
                     bool me = d.Id == myId && PlayerNet.Local != null;
+                    if ((d.Flags & FDead) != 0)
+                    {
+                        // shot: a cross where they fell (blinking), until they're back on their side
+                        var xc = Mathf.Repeat(now * 4f, 1f) < 0.6f ? TeamC(d.Team, 0.7f) : k_Black;
+                        for (int k = -2; k <= 2; k++) { Px(p.x + k, p.y + k, xc); Px(p.x + k, p.y - k, xc); }
+                        if (me) { meDown = true; Px(p.x, p.y - 6, k_White); Rect(p.x - 1, p.y - 7, 3, 1, k_White); }
+                        continue;
+                    }
                     if (me && Mathf.Repeat(now * 3f, 1f) < 0.6f) Rect(p.x - 3, p.y - 3, 6, 6, k_White);
+                    // the bow: a pixel or two the way they're facing (where the next arrow goes)
+                    {
+                        var fd = Dir(d.Face);
+                        Px(Mathf.RoundToInt(p.x - 0.5f + fd.x * 3.4f), Mathf.RoundToInt(p.y - 0.5f + fd.y * 3.4f), k_Trunk);
+                        Px(Mathf.RoundToInt(p.x - 0.5f + fd.x * 4.4f), Mathf.RoundToInt(p.y - 0.5f + fd.y * 4.4f), k_Stump);
+                    }
                     bool stun = (d.Flags & FStun) != 0;
                     Rect(p.x - 2, p.y - 2, 4, 4, stun && Mathf.Repeat(now * 8f, 1f) < 0.5f ? TeamC(d.Team, 0.4f) : TeamC(d.Team));
                     Px(p.x - 1, p.y - 1, k_Black); Px(p.x + 1, p.y - 1, k_Black); // (the eyes)
@@ -542,6 +750,27 @@ namespace RockGame
                 if (Mathf.Repeat(now * 4f, 1f) < 0.5f) Rect(p.x - 2, p.y - 2, 5, 5, new Color32(150, 120, 20, 255));
                 Rect(p.x - 1, p.y - 1, 3, 3, k_Ball);
                 Px(p.x - 1, p.y - 1, k_White);
+            }
+            // the arrows: a white tip, a wooden shaft, the shooter's colour on the flights (stuck ones quiver in the tree)
+            if (s_Have)
+                foreach (var ar in cur.Arrows)
+                {
+                    var dir = Dir(ar.Ang);
+                    bool stuck = (ar.Flags & 1) != 0;
+                    var at = ar.Pos;
+                    if (!stuck) at += dir * ArrowSpeed * Mathf.Min(now - cur.At, SendEvery); // (on between snapshots)
+                    else if (Mathf.Repeat(now * 12f, 1f) < 0.5f) at -= dir * 0.6f;
+                    var fl = TeamC((ar.Flags >> 1) & 3);
+                    for (int k = 0; k < 6; k++)
+                    {
+                        var q = at - dir * k;
+                        Px(Mathf.RoundToInt(q.x), Mathf.RoundToInt(q.y) + Bar, k == 0 ? k_White : k >= 4 ? fl : k_ArrowWood);
+                    }
+                }
+            if (meDown)
+            {
+                Rect(W / 2 - 22, Bar + 3, 44, 9, k_Black);
+                Text("SHOT!", W / 2 - 9, Bar + 5, new Color32(255, 90, 80, 255));
             }
             // the scores along the top: everyone playing (by team), their colour and their own points - you underlined
             {
@@ -593,7 +822,8 @@ namespace RockGame
                     int i = (H - 1 - y) * W + x;
                     var c = m_Px[i];
                     if (dark) { c.r = (byte)(c.r * 0.8f); c.g = (byte)(c.g * 0.8f); c.b = (byte)(c.b * 0.8f); m_Px[i] = c; }
-                    if ((x & 7) == 0 && (y & 7) == 0) { sr += c.r; sg += c.g; sb += c.b; hash = hash * 31 + c.r + c.g * 7 + c.b * 13; }
+                    if ((x & 7) == 0 && (y & 7) == 0) { sr += c.r; sg += c.g; sb += c.b; }
+                    hash = hash * 31 + c.r + c.g * 7 + c.b * 13; // (tests: every pixel - a small dot moving between the glow's samples still changes it)
                 }
             }
             int samples = (W / 8) * (H / 8);

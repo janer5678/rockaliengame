@@ -22,6 +22,7 @@ namespace RockGame
             if (game != null && VictoryCutscene.Active) { DrawVictoryCutscene(game, -1); return; }
             if (MatchIntro.DrawHud(k, m_Big, m_Label, m_Small, Fill, Shadowed)) return; // (the match intro: MatchIntro.cs)
             if (game != null && game.S == GameState.GameOver) { DrawSpectatorGameOver(boot, game); return; }
+            DrawReadySetRock(game, false); // (READY / SET / ROCK!: Hud.ReadySetRock.cs)
 
             Chat.Draw(k, m_Small, Fill, Shadowed);
             var t = Spectator.Target;
@@ -133,6 +134,7 @@ namespace RockGame
         void DrawSpectatorGameOver(Bootstrap boot, NetGame game)
         {
             GameOverShownAt = Time.time;
+            if (game.StraightToLobby) { DrawStraightToLobby(); return; } // (after the victory cutscene: straight back to the lobby)
             float sw = Screen.width, sh = Screen.height, k = m_Scale;
             int w = game.Winner.Value;
             Fill(new Rect(0, 0, sw, sh), new Color(0, 0, 0, 0.6f));

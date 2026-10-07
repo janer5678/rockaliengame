@@ -49,24 +49,37 @@ namespace RockGame
         public const float UiContrast = 1f;                 // ui.contrast              (0.5..1.6, 1 = as drawn)
 
         // ---- hands and tools (LayerLooks.cs: their own looks instead of the world's) ----
-        public const bool HandsOwn = false;                 // hands.own
+        // (from here on, "was ..." also marks the values a second COPY SETTINGS export, 2026-10-08 - the file
+        // Resources/Settings/DefaultDisplay.txt - made the defaults; AutoTest.Defaults.cs checks every default against it)
+        public const bool HandsOwn = true;                  // hands.own                (was off)
         public const bool HandsOutline = true;              // hands.outline
-        public const float HandsOutlineStrength = 0.45f;    // hands.outline.strength   (0..1)
-        public const bool HandsCel = true;                  // hands.cel
-        public const float HandsCelStrength = 0.5f;         // hands.cel.strength       (0..1: fewer steps)
+        public const float HandsOutlineStrength = 0.35f;    // hands.outline.strength   (0..1; was 0.45)
+        public const bool HandsCel = false;                 // hands.cel                (was on)
+        public const float HandsCelStrength = 0.8f;         // hands.cel.strength       (0..1: fewer steps; was 0.5)
         public const float HandsSaturation = 1f;            // hands.saturation         (0..2, 1 = as drawn)
-        public const float HandsContrast = 1f;              // hands.contrast           (0.5..1.6, 1 = as drawn)
+        public const float HandsContrast = 1.05f;           // hands.contrast           (0.5..1.6, 1 = as drawn; was 1)
+        public const float HandsOutlineDark = 1f;           // hands.outline.dark       (0.5..2.5 x how dark the outlines are; past ~1.6 they reach black)
+        // ---- tools & weapons (what the hands hold: the same make-up as the hands', set apart from them) ----
+        // (newer than the 2026-10-08 export: they keep the defaults they were added with)
+        public const bool ToolsOwn = false;                 // tools.own
+        public const bool ToolsOutline = true;              // tools.outline
+        public const float ToolsOutlineStrength = 0.45f;    // tools.outline.strength   (0..1)
+        public const float ToolsOutlineDark = 1f;           // tools.outline.dark       (0.5..2.5)
+        public const bool ToolsCel = true;                  // tools.cel
+        public const float ToolsCelStrength = 0.5f;         // tools.cel.strength       (0..1)
+        public const float ToolsSaturation = 1f;            // tools.saturation         (0..2)
+        public const float ToolsContrast = 1f;              // tools.contrast           (0.5..1.6)
 
         // ---- notifications (LayerLooks.cs: the big messages' own looks) ----
-        public const bool NotifOwn = false;                 // notif.own
+        public const bool NotifOwn = true;                  // notif.own                (was off)
         public const bool NotifCel = false;                 // notif.cel
-        public const float NotifCelStrength = 0.3f;         // notif.cel.strength       (0..1)
-        public const bool NotifOutline = true;              // notif.outline
-        public const float NotifOutlineWidth = 3.5f;        // notif.outline.width      (0.5..8; x 1.333 = px at 1440p)
+        public const float NotifCelStrength = 0.1f;         // notif.cel.strength       (0..1; was 0.3)
+        public const bool NotifOutline = false;             // notif.outline            (was on)
+        public const float NotifOutlineWidth = 0.5f;        // notif.outline.width      (0.5..8; x 1.333 = px at 1440p; was 3.5)
         public const string NotifOutlineColour = "#000000"; // notif.outline.colour
         public const float NotifOutlineOpacity = 0.9f;      // notif.outline.opacity    (0..1)
-        public const bool NotifBloom = true;                // notif.bloom
-        public const float NotifBloomStrength = 0.5f;       // notif.bloom.strength     (0..1)
+        public const bool NotifBloom = false;               // notif.bloom              (was on)
+        public const float NotifBloomStrength = 0.55f;      // notif.bloom.strength     (0..1; was 0.5)
         public const float NotifSaturation = 1f;            // notif.saturation         (0..2)
         public const float NotifContrast = 1f;              // notif.contrast           (0.5..1.6)
 
@@ -79,15 +92,15 @@ namespace RockGame
         public const float UiScale = 1f;                    // ui.scale                 (0.75..1.4)
         public const float HudOpacity = 1f;                 // ui.hud.opacity           (0.25..1)
         public const int UiAccent = 0;                      // ui.accent                (0 = Gold; by name in the code)
-        public const bool ShowFps = true;                   // fps.counter              (was off)
+        public const bool ShowFps = false;                  // fps.counter              (was on)
         public const bool UncappedFps = false;              // fps.uncapped             (vsync off, no frame rate cap)
 
         // ---- main menu ----
         public const bool MenuTrees = true;                 // menu.trees               (trees in the play space behind the main menu - always now; not a setting any more)
 
         // ---- alien glow ----
-        public const float GlowStrength = 0.02f;            // glow.strength            (0.02..1; was 0.3)
-        public const float GlowWidth = 0.005f;              // glow.width               (0.005..0.12 m; was 0.03)
+        public const float GlowStrength = 1f;               // glow.strength            (0.02..1; was 0.02)
+        public const float GlowWidth = 0.0105f;             // glow.width               (0.005..0.12 m; was 0.005)
 
         // ---- shading ----
         public const bool SmoothHands = false;              // shade.smooth.hands       (first-person hands + held items)
@@ -100,13 +113,16 @@ namespace RockGame
         public const float GrassHeight = 1.55f;             // grass.height             (0.6..2.5; was 1)
 
         // ---- sky lines and the wall (EnergyWall.cs) ----
-        public const float FarLineThickness = 1f;           // post.outlines.far        (0..3 x the outline thickness on clouds, planets, far mountains; 1 = the usual look)
-        public const bool EnergyWall = false;               // world.energywall         (all the glass - wall, ball dome, map dome - as an energy field)
-        public const float EnergyWallStrength = 0.3f;       // world.energywall.strength (0..1: how bright, opaque and busy the energy wall is)
+        public const float FarLineThickness = 1.55f;        // post.outlines.far        (0..3 x the outline thickness on clouds, planets, far mountains; 1 = the usual look; was 1)
+        public const bool EnergyWall = true;                // world.energywall         (all the glass - wall, ball dome, map dome - as an energy field; was off)
+        public const float EnergyWallStrength = 0.4f;       // world.energywall.strength (0..1: how bright, opaque and busy the energy wall is; was 0.3)
 
         // (elsewhere: beams.falloff 125 (was 70) - BeamFx.cs; treex.glow 2.85 (was 1.6) - TreeX.cs; basefloor.after
         //  Colour grid (was Flat grass) and basefloor.teammix 0.5 (was 0.35) - BaseFloor.cs; the world colours, and the
-        //  building plan preview's colour (colour.BuildPlan) - WorldColors.cs: the .StartAt(...) ones were changed)
+        //  building plan preview's colour (colour.BuildPlan) - WorldColors.cs: the .StartAt(...) ones were changed.
+        //  The 2026-10-08 export's defaults that live in their own files: menu.* - LayerLooks.cs; timer.* - TimerLooks.cs;
+        //  lobby.* - LobbyLooks.cs; notif.ink / width / plate / font / size / y and hud.* - NotifLooks.cs; killfeed.* -
+        //  KillFeedLooks.cs; menu.colour.dome - Hud.MenuColours.cs; colour.BuildWheel - WorldColors.cs)
 
         public static Color Hex(string hex) => ColorUtility.TryParseHtmlString(hex, out var c) ? c : Color.black;
     }
@@ -135,6 +151,10 @@ namespace RockGame
         protected string PrefKey => "RockGame.Disp." + Key;
         protected static void Fire() => Changed?.Invoke();
         internal abstract DisplayCode.Entry Entry();
+        /// <summary>Back to its default (what the section's Defaults / Reset buttons do).</summary>
+        public abstract void Reset(bool save = true);
+        /// <summary>Each of these back to its default.</summary>
+        public static void ResetAll(bool save, params DisplayPref[] prefs) { foreach (var p in prefs) p.Reset(save); }
 
         public sealed class Bool : DisplayPref
         {
@@ -150,6 +170,7 @@ namespace RockGame
                 Fire();
             }
             internal override DisplayCode.Entry Entry() => DisplayCode.MakeBool(Key, Group, Default, () => Value, Set);
+            public override void Reset(bool save = true) => Set(Default, save);
         }
 
         public sealed class Float : DisplayPref
@@ -167,6 +188,7 @@ namespace RockGame
                 Fire();
             }
             internal override DisplayCode.Entry Entry() => DisplayCode.MakeFloat(Key, Group, Default, () => Value, Set);
+            public override void Reset(bool save = true) => Set(Default, save);
         }
 
         public sealed class Colour : DisplayPref
@@ -198,6 +220,7 @@ namespace RockGame
             /// <summary>Saves the colour it has now (after Set(v, false) while dragging the colour wheel).</summary>
             public void Save() { PlayerPrefs.SetString(PrefKey, ColorUtility.ToHtmlStringRGB(Value)); PlayerPrefs.Save(); }
             internal override DisplayCode.Entry Entry() => DisplayCode.MakeColour(Key, Group, Default, () => Value, Set);
+            public override void Reset(bool save = true) => Set(Default, save);
         }
 
         /// <summary>One of a list of named options (by name in the display settings code).</summary>
@@ -218,6 +241,7 @@ namespace RockGame
                 Fire();
             }
             internal override DisplayCode.Entry Entry() => DisplayCode.MakeChoice(Key, Group, Names, Default, () => Value, Set);
+            public override void Reset(bool save = true) => Set(Default, save);
         }
 
         /// <summary>A line of text (empty = the default; the notifications' own wording: NotifLooks.cs). In the display
@@ -237,6 +261,7 @@ namespace RockGame
                 Fire();
             }
             internal override DisplayCode.Entry Entry() => DisplayCode.MakeText(Key, Group, Default, () => Value, Set);
+            public override void Reset(bool save = true) => Set(Default, save);
         }
     }
 
@@ -301,7 +326,9 @@ namespace RockGame
                 GameSettings.UiSaturation, GameSettings.UiContrast);
             // ---- hands and tools, notifications: their own looks (LayerLooks.cs) ----
             Pref(GameSettings.HandsOwn, GameSettings.HandsOutline, GameSettings.HandsOutlineStrength, GameSettings.HandsCel, GameSettings.HandsCelStrength,
-                GameSettings.HandsSaturation, GameSettings.HandsContrast);
+                GameSettings.HandsSaturation, GameSettings.HandsContrast, GameSettings.HandsOutlineDark);
+            Pref(GameSettings.ToolsOwn, GameSettings.ToolsOutline, GameSettings.ToolsOutlineStrength, GameSettings.ToolsOutlineDark, GameSettings.ToolsCel,
+                GameSettings.ToolsCelStrength, GameSettings.ToolsSaturation, GameSettings.ToolsContrast);
             Pref(GameSettings.MenuOwn, GameSettings.MenuBloom, GameSettings.MenuBloomStrength, GameSettings.MenuVignette, GameSettings.MenuVignetteStrength,
                 GameSettings.MenuGrading, GameSettings.MenuGradingStrength, GameSettings.MenuOutlines, GameSettings.MenuOutlinesStrength, GameSettings.MenuCel,
                 GameSettings.MenuCelStrength, GameSettings.MenuGrain, GameSettings.MenuGrainStrength, GameSettings.MenuChromatic, GameSettings.MenuChromaticStrength);

@@ -33,16 +33,31 @@ namespace RockGame
             Check(NetGame.Instance != null && NetGame.Instance.S != GameState.Waiting, "everyone READY (the bot too): the match starts");
             yield return new WaitForSeconds(2f);
             if (host) NetGame.Instance.ServerVictoryCutscene((PlayerNet.Local.Team.Value + 1) % Mathf.Max(2, Cfg.TeamCount), "test over"); // (the host loses, through the end cutscene: the losers go back too)
-            // the result, then back to the lobby: a new session, the same people
+            // the cutscene, then straight back to the lobby (no result screen, no countdown): a new session, the same people
             until = Time.time + 80f;
-            bool left = false;
+            bool left = false, sawCutscene = false, straight = false;
+            float cutsceneEnd = -1f, leftAt = -1f, longestWait = -1f;
             while (Time.time < until)
             {
-                if (NetGame.Instance == null || !NetGame.Instance.IsSpawned) left = true;
+                var ng = NetGame.Instance;
+                if (ng == null || !ng.IsSpawned) { if (!left) leftAt = Time.time; left = true; }
+                else if (!left && ng.S == GameState.GameOver)
+                {
+                    if (VictoryCutscene.Active) sawCutscene = true;
+                    else
+                    {
+                        if (cutsceneEnd < 0f) cutsceneEnd = Time.time;
+                        straight |= ng.StraightToLobby;
+                        longestWait = Mathf.Max(longestWait, ng.BackToLobbyIn);
+                    }
+                }
                 if (left && ShipLobby.Active && NetGame.Instance != null && NetGame.Instance.S == GameState.Waiting) break;
                 yield return null;
             }
             Check(left && ShipLobby.Active, $"back in the ship lobby after the match ({(host ? "the host restarted" : "the client rejoined by itself")})");
+            Check(sawCutscene && straight && longestWait <= NetGame.StraightToLobbyAfter + 0.05f, $"after the end cutscene it goes straight back - no result screen countdown (waited at most {longestWait:0.00} s)");
+            Check(cutsceneEnd > 0f && leftAt > 0f && leftAt - cutsceneEnd < 3f, $"...the session left {(leftAt - cutsceneEnd):0.0} s after the cutscene ended");
+            Check(Hud.StraightToLobbyShownAt > 0f, "...the HUD showed the plain BACK TO THE LOBBY screen, not the result (needs the Hud.DrawGameOver hook)");
             yield return new WaitForSeconds(4f);
             if (host)
             {

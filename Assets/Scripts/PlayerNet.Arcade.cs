@@ -26,6 +26,13 @@ namespace RockGame
             LobbyArcade.ServerJoin(this, on);
         }
 
+        /// <summary>Owner: shoot an arrow the way your little alien is facing (Space or a click while playing).</summary>
+        [Rpc(SendTo.Server)]
+        public void ArcadeShootRpc()
+        {
+            if (ArcadePlaying.Value) LobbyArcade.ServerShoot(this);
+        }
+
         /// <summary>Owner: the stick (x, y each -100..100).</summary>
         [Rpc(SendTo.Server)]
         public void ArcadeStickRpc(sbyte x, sbyte y)

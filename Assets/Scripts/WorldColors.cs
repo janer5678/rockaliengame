@@ -123,7 +123,7 @@ namespace RockGame
             // can't-go-there red stays red). Not a model colour: read straight from the slot
             BuildPlan = Add("BuildPlan", "Building plan preview", GBuild, new Color(0.3f, 1f, 0.45f)),
             // the building wheel's blue slices (Hud.DrawWheel; its centre disc is a darker shade of it). Read straight from the slot
-            BuildWheel = Add("BuildWheel", "Building wheel", GBuild, new Color(0.38f, 0.62f, 0.95f));
+            BuildWheel = Add("BuildWheel", "Building wheel", GBuild, new Color(0.38f, 0.62f, 0.95f)).StartAt("#006BFF");
 
         public static Slot Find(string id) { foreach (var s in All) if (s.Id == id) return s; return null; }
 

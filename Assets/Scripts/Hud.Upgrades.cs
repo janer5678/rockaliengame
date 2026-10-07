@@ -59,7 +59,7 @@ namespace RockGame
                 y += row + gap;
             }
             string hint = "Upgrades are here from the start - no trade station needed. Press "
-                + $"{Binds.Name(Bind.Interact)} on your upgrade station (the up arrow in your team's colour, left of your alien machine) to open this; {Binds.Name(Bind.Inventory)} or Esc closes it.";
+                + $"{KT(Bind.Interact)} on your upgrade station (the up arrow in your team's colour, left of your alien machine) to open this; {KT(Bind.Inventory)} or [Esc] closes it. LMB on UPGRADE buys the next level.";
             var hintStyle = CraftStyle(13 * k, FontStyle.Normal, TextAnchor.UpperLeft, Color.white, true);
             // what the mouse is over (an upgrade or an item in the bag), otherwise how this screen works
             if (!DrawHoverInfo(new Rect(x, y + 4 * k, colW, Mathf.Max(40 * k, bottom - y)), k))

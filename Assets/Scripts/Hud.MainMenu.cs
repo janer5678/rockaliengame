@@ -12,9 +12,12 @@ namespace RockGame
     /// </summary>
     public partial class Hud
     {
-        enum NewPage { Root, Tutorial, Multiplayer, Join, Battle, Players, Mode, Map }
+        // (TutorialFriend is last: the tests go to the pages by number - 6 the mode page, 7 the map page)
+        enum NewPage { Root, Tutorial, Multiplayer, Join, Battle, Players, Mode, Map, TutorialFriend }
         NewPage m_New;
         bool m_DevMenu, m_SoloFlow, m_ModesOpen;
+        /// <summary>The JOIN page was opened from the tutorial's PLAY WITH A FRIEND (BACK goes back there).</summary>
+        bool m_JoinFromTutorial;
         int m_Battle;              // 0: 1v1, 1: teams, 2: free for all
         int m_CapA = 2, m_CapB = 2, m_FfaN = 4, m_MapPick;
         static readonly MapKind[] k_Maps = { MapKind.Plains, MapKind.Highlands, MapKind.Beach, MapKind.Canyon, MapKind.Frostlake, MapKind.Volcano, MapKind.Ruins };
@@ -29,7 +32,11 @@ namespace RockGame
         /// <summary>The new menu's map page is up: the background is the map itself (MenuScene's flight round it), not the UFO.</summary>
         public static bool MapPreview => s_I != null && !DevMenuShown && s_I.m_New == NewPage.Map;
         int m_PreviewKey = -1;
-        public static void TestNewPage(int p) { if (s_I != null) { s_I.m_New = (NewPage)p; s_I.m_Battle = p == (int)NewPage.Players ? 1 : s_I.m_Battle; } }
+        public static void TestNewPage(int p) { if (s_I != null) { s_I.m_New = (NewPage)p; s_I.m_Battle = p == (int)NewPage.Players ? 1 : s_I.m_Battle; if (p == (int)NewPage.Join) s_I.m_JoinFromTutorial = false; } }
+        /// <summary>(tests) which of the new menu's pages is up (NewPage: 3 join, 7 map, 8 the tutorial's HOST / JOIN).</summary>
+        public static int TestMenuPage => s_I != null ? (int)s_I.m_New : -1;
+        /// <summary>(tests) JOIN on the tutorial's PLAY WITH A FRIEND page.</summary>
+        public static void TestTutorialJoin() { if (s_I != null && s_I.m_New == NewPage.TutorialFriend) { s_I.m_JoinFromTutorial = true; s_I.m_New = NewPage.Join; } }
 
         // (the menu's accents: the teams' red and blue, the tutorial green; QUIT stays grey)
         static readonly Color k_Red = new Color(1f, 0.3f, 0.25f), k_Acid = new Color(0.65f, 1f, 0.2f), k_Blue = new Color(0.25f, 0.5f, 1f);
@@ -46,7 +53,8 @@ namespace RockGame
             m_ModesOpen = false;
             switch (m_New)
             {
-                case NewPage.Join: m_New = NewPage.Multiplayer; break;
+                case NewPage.Join: m_New = m_JoinFromTutorial ? NewPage.TutorialFriend : NewPage.Multiplayer; break;
+                case NewPage.TutorialFriend: m_New = NewPage.Tutorial; break;
                 case NewPage.Battle: m_New = m_SoloFlow ? NewPage.Root : NewPage.Multiplayer; break;
                 case NewPage.Players: m_New = NewPage.Battle; break;
                 case NewPage.Mode: m_New = m_SoloFlow || m_Battle == 0 ? NewPage.Battle : NewPage.Players; break;
@@ -79,12 +87,18 @@ namespace RockGame
                     break;
                 case NewPage.Tutorial:
                     if (BigBtn(ref y, x, w, "SOLO", k_Blue)) StartTutorial(boot, true);
-                    if (BigBtn(ref y, x, w, "PLAY WITH A FRIEND", k_Red)) StartTutorial(boot, false);
-                    Note(ref y, x, w, "Learn the whole game a step at a time. With a friend, they join your IP when the tutorial asks.");
+                    if (BigBtn(ref y, x, w, "PLAY WITH A FRIEND", k_Red)) m_New = NewPage.TutorialFriend;
+                    Note(ref y, x, w, "Learn the whole game a step at a time - on your own, or with a friend.");
+                    break;
+                case NewPage.TutorialFriend:
+                    // one of you hosts the tutorial, the other joins it
+                    if (BigBtn(ref y, x, w, "HOST", k_Red)) StartTutorial(boot, false);
+                    if (BigBtn(ref y, x, w, "JOIN", k_Blue)) { if (lobby) LobbyMenuLeave(boot); m_JoinFromTutorial = true; m_New = NewPage.Join; }
+                    Note(ref y, x, w, "HOST starts the tutorial and your friend joins you. JOIN: put in your friend's room ID once they've hosted it.");
                     break;
                 case NewPage.Multiplayer:
                     if (BigBtn(ref y, x, w, "HOST", k_Red)) { m_SoloFlow = false; m_New = NewPage.Battle; }
-                    if (BigBtn(ref y, x, w, "JOIN", k_Blue)) { if (lobby) LobbyMenuLeave(boot); m_New = NewPage.Join; }
+                    if (BigBtn(ref y, x, w, "JOIN", k_Blue)) { if (lobby) LobbyMenuLeave(boot); m_JoinFromTutorial = false; m_New = NewPage.Join; }
                     break;
                 case NewPage.Join: DrawJoinPage(boot, x, ref y, w); break;
                 case NewPage.Battle:
@@ -127,8 +141,9 @@ namespace RockGame
             switch (m_New)
             {
                 case NewPage.Tutorial: return "TUTORIAL";
+                case NewPage.TutorialFriend: return "TUTORIAL WITH A FRIEND";
                 case NewPage.Multiplayer: return "MULTIPLAYER";
-                case NewPage.Join: return "JOIN GAME";
+                case NewPage.Join: return m_JoinFromTutorial ? "JOIN TUTORIAL" : "JOIN GAME";
                 case NewPage.Battle: return m_SoloFlow ? "SOLO TYPE" : "MULTIPLAYER TYPE";
                 case NewPage.Players: return "PLAYERS";
                 case NewPage.Mode: return m_SoloFlow ? "SOLO GAME MODE" : m_Battle == 0 ? "1V1 GAME MODE" : m_Battle == 1 ? "TEAM BATTLE GAME MODE" : "FREE FOR ALL GAME MODE";
