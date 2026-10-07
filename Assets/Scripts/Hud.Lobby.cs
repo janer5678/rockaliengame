@@ -57,7 +57,7 @@ namespace RockGame
 
             // the buttons along the bottom left, white-framed like the reference (CUSTOMISE ALIEN is off for now)
             float bh = 40 * k, by = sh - bh - 22 * k, bx = 24 * k;
-            if (FramedBtn(ref bx, by, bh, "BACK")) { boot.Leave(); return; }
+            if (FramedBtn(ref bx, by, bh, "BACK")) { LobbyBackPressed(boot); return; } // (Hud.LobbyBack.cs)
             if (FramedBtn(ref bx, by, bh, Time.time - m_CopiedAt < 2f ? "COPIED!" : "COPY ROOM ID"))
             {
                 string ip = boot.IsHostSession ? Tutorial.LocalIp() : boot.Ip.Trim();
