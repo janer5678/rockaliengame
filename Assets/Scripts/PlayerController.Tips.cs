@@ -25,6 +25,9 @@ namespace RockGame
         /// <summary>A tip for something a team owns: the header is in that team's colour (which says whose it is).</summary>
         public static string TeamTip(string header, int team, string detail = "") => Tip(header, PlayerNet.NameColor(team), detail);
 
+        /// <summary>An action's key in a tip, as "[E]" (the HUD draws it as the keycap icon: Tutorial.WithKeyIcons).</summary>
+        public static string KT(Bind b) => Tutorial.KeyTag(b);
+
         /// <summary>The colour for a horse, unicorn, car, boat or Slenderman's header.</summary>
         static Color VehicleTipColor(Vehicle v) => v.IsSlender ? TipDanger : v.IsUnicorn ? TipUnicorn : v.IsHorse ? TipAnimal : TipWood;
     }

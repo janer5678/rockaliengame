@@ -187,10 +187,11 @@ namespace RockGame
 
         void Shadowed(Rect r, string text, GUIStyle style)
         {
-            // "LMB" is drawn as the left mouse button icon (Tutorial.Icons.cs lays the line out round it)
-            if (text != null && text.IndexOf("LMB", System.StringComparison.Ordinal) >= 0)
+            // the keys a line mentions ("[E]", "E: open", "hold Space", LMB...) are drawn as their keycap / mouse icons
+            // (Tutorial.Icons.cs: WithKeyIcons finds them, IconLine / IconText lay the line out round them)
+            string t = Tutorial.WithKeyIcons(text);
+            if (Tutorial.HasIcons(t))
             {
-                string t = Tutorial.WithMouseIcons(text);
                 var a = style.alignment;
                 bool leftWrap = style.wordWrap && (a == TextAnchor.UpperLeft || a == TextAnchor.MiddleLeft || a == TextAnchor.LowerLeft);
                 if (leftWrap) Tutorial.IconText(r, t, style, ShadowedPlain); // (a wrapped description)
@@ -228,6 +229,7 @@ namespace RockGame
             bool toTexture = UiLook.BeginUi(out var prevTarget);
             Styles();
             SearchFrame();
+            ColourWheelGate(); // (the colour wheel is open: clicks and keys only go to it - Hud.ColourWheel.cs)
             BeginHoverFrame();
             MouseOverUI = false;
             s_HudAlpha = 1f;
@@ -237,8 +239,9 @@ namespace RockGame
             GUI.color = Color.white;
             DrawTestNotification(); // (Settings > Display > NOTIFICATIONS > Test: on top of everything, menus too - Hud.Settings.Notif.cs)
             DrawFps(Bootstrap.I != null && Bootstrap.I.InSession && PlayerNet.Local != null);
-            EndHoverFrame();
             if (toTexture) UiLook.EndUi(prevTarget);
+            DrawColourWheel(); // (double-click a colour square in the settings: over everything, and after the UI's own post processing so its colours are true - Hud.ColourWheel.cs)
+            EndHoverFrame();
         }
 
         void DrawAll()
@@ -258,7 +261,7 @@ namespace RockGame
                 DrawLeaveButton(boot, new Rect(Screen.width / 2 - 100 * m_Scale, Screen.height / 2 + 60, 200 * m_Scale, 40 * m_Scale));
                 return;
             }
-            if (ShipLobby.Active) { DrawLobby(boot, me); return; } // (before the match: the ship lobby - Hud.Lobby.cs)
+            if (ShipLobby.Active) { if (!MenuScene.LobbyPreview) DrawLobby(boot, me); return; } // (before the match: the ship lobby - Hud.Lobby.cs)
             DrawGame(boot, me, pc);
         }
 
@@ -277,6 +280,7 @@ namespace RockGame
             int team = me.Team.Value;
             // the victory cutscene: just letterbox bars and a caption over it; the victory screen waits until it's over
             if (game != null && VictoryCutscene.Active) { DrawVictoryCutscene(game, team); return; }
+            if (MatchIntro.DrawHud(k, m_Big, m_Label, m_Small, Fill, Shadowed)) return; // (the match intro: MatchIntro.cs)
             // Settings > Display > INTERFACE > HUD opacity (only while nothing is open over the game)
             s_HudAlpha = pc.MenuOpen || pc.Paused ? 1f : GameSettings.HudOpacity;
             GUI.color = new Color(1f, 1f, 1f, s_HudAlpha);
@@ -352,8 +356,11 @@ namespace RockGame
             // the radar for your own base, right under YOU ARE ... (the FPS counter goes under it): a short panel with a little
             // arrow that points at your base from where the camera faces (it turns as you look round), and how far it is.
             // Not in Builder (no bases), up in the sudden death arena, or while you're inside your own base (you're home).
-            if (!Cfg.Builder && !me.Dead.Value && (game == null || game.S != GameState.SuddenDeath) && Cfg.BaseTeamAt(me.transform.position) != team)
+            // With the team box off it moves up into the corner (no gap); it can be switched off too (HUD > Base radar).
+            if (GameSettings.HudBaseRadar.Value && !Cfg.Builder && !me.Dead.Value && (game == null || game.S != GameState.SuddenDeath) && Cfg.BaseTeamAt(me.transform.position) != team)
                 DrawBaseRadar(me, team, tc, k);
+            // (no radar: the FPS counter goes under the team box - or into the corner with neither)
+            if (m_RadarBottom < 0f) m_RadarBottom = GameSettings.HudTeamBox.Value ? 10 + 30 * k : 10 - 4 * k;
             // ---- the gun's rounds, big, top left (pistol, revolver, shotgun) ----
             if ((Cfg.IsGun(me.HeldItem) || me.HeldItem == Item.Shotgun) && !me.Dead.Value)
             {
@@ -513,6 +520,9 @@ namespace RockGame
             if (game != null && game.S == GameState.GameOver) DrawGameOver(boot, game, team);
         }
 
+        /// <summary>An action's key in a hint, as "[E]" (Shadowed draws it as the keycap icon: Tutorial.WithKeyIcons).</summary>
+        static string KT(Bind b) => Tutorial.KeyTag(b);
+
         string HeldHint(PlayerNet me, PlayerController pc)
         {
             var s = me.HeldStack;
@@ -520,20 +530,20 @@ namespace RockGame
             {
                 case Item.BuildingPlan:
                     if (pc.DemolishMode) return "<b>Demolish</b>    LMB: take down your own piece (lit up red; half the wood back)    hold RMB: building wheel";
-                    return $"<b>{Cfg.PieceName(pc.BuildPiece)}</b>  ({Cfg.PieceWood(pc.BuildPiece)} {Cfg.CurrencyName})    hold RMB: building wheel (demolish at the bottom)   R: rotate stairs" + (Cfg.WoodMode || Tutorial.HideStone ? "" : "   F: upgrade to stone");
+                    return $"<b>{Cfg.PieceName(pc.BuildPiece)}</b>  ({Cfg.PieceWood(pc.BuildPiece)} {Cfg.CurrencyName})    hold RMB: building wheel (demolish at the bottom)   {KT(Bind.Rotate)}: rotate stairs" + (Cfg.WoodMode || Tutorial.HideStone ? "" : $"   {KT(Bind.Upgrade)}: upgrade to stone");
                 case Item.Ram: return $"<b>Battering Ram</b> ({s.Data} hit{(s.Data == 1 ? "" : "s")} left)    hold LMB at an enemy piece: wood breaks instantly, stone / metal drop one step";
-                case Item.Spear: return "<b>Spear</b>    LMB: stab    hold RMB + LMB: throw    E: pick thrown spears back up";
+                case Item.Spear: return $"<b>Spear</b>    LMB: stab    hold RMB + LMB: throw    {KT(Bind.Interact)}: pick thrown spears back up";
                 case Item.Bow: return $"<b>Bow</b>  ({me.Count(Item.Arrow)} arrows)    hold LMB to draw, release to fire";
                 case Item.Chest: return "<b>Storage Chest</b>    LMB: place it inside your base";
                 case Item.Workbench:
-                case Item.Workbench2: return $"<b>{Cfg.ItemName(s.Id)}</b>    LMB: put it down anywhere in your base - its items then show in your crafting list ({Binds.Name(Bind.Inventory)})";
+                case Item.Workbench2: return $"<b>{Cfg.ItemName(s.Id)}</b>    LMB: put it down anywhere in your base - its items then show in your crafting list ({KT(Bind.Inventory)})";
                 case Item.Barrier: return $"<b>Large Wall</b> x{s.Count}    LMB: place it - in your base or out in the open (not in the enemy base)";
-                case Item.LargeGate: return $"<b>Large Gate</b> x{s.Count}    LMB: place it - a tall log gate your team opens with {Binds.Name(Bind.Interact)}";
+                case Item.LargeGate: return $"<b>Large Gate</b> x{s.Count}    LMB: place it - a tall log gate your team opens with {KT(Bind.Interact)}";
                 case Item.SleepingBag: return $"<b>Sleeping Bag</b> x{s.Count}    LMB: put it down (not in an enemy base) - respawn at it when you die";
                 case Item.BearTrap: return $"<b>Bear Trap</b> x{s.Count}    LMB: set it on the ground or a floor - it snaps and holds ANYONE who steps on it (you too)";
-                case Item.Ladder: return $"<b>Ladder</b> x{s.Count}    LMB: aim at a wall (yours or theirs, or a large wall) - it stands against it; walk into it and hold W to climb";
-                case Item.AutoTurret: return $"<b>Auto Turret</b>    LMB: place it in your base - {Binds.Name(Bind.Interact)} on it to give it a ranged weapon and ammo";
-                case Item.Skull: return $"<b>Skull</b> x{s.Count}    Assassin: take it to your machine and {Binds.Name(Bind.Interact)}";
+                case Item.Ladder: return $"<b>Ladder</b> x{s.Count}    LMB: aim at a wall (yours or theirs, or a large wall) - it stands against it; walk into it and hold {KT(Bind.Forward)} to climb";
+                case Item.AutoTurret: return $"<b>Auto Turret</b>    LMB: place it in your base - {KT(Bind.Interact)} on it to give it a ranged weapon and ammo";
+                case Item.Skull: return $"<b>Skull</b> x{s.Count}    Assassin: take it to your machine and {KT(Bind.Interact)}";
                 case Item.Berry: return $"<b>Berries</b> x{s.Count}    RMB: eat ({Cfg.BerryEatTime:0.#}s, +{Cfg.BerryHeal:0} HP)   LMB on a horse: feed it (+{Cfg.HorseBerryHeal:0} HP)";
                 case Item.C4: return "<b>C4</b>    LMB: throw it at enemy buildings - it blows up everything nearby";
                 case Item.DeathWand: return "<b>Death Wand</b> (1 shot)    LMB: fire - kills anyone it passes close to, or fells a tree (all its wood to you), or destroys one building piece";
@@ -541,8 +551,8 @@ namespace RockGame
                 case Item.Armor: return $"<b>Wooden Armour</b> ({(s.Data > 0 ? s.Data : Cfg.ArmorHp)} HP)    LMB: put it on - a second health bar that goes first";
                 case Item.Crossbow: return $"<b>Crossbow</b>  ({(s.Data > 0 ? "loaded" : "empty")}, {me.Count(Item.Arrow)} arrows)    LMB: fire   hold RMB: aim   reloads by itself (one reload for all your crossbows)";
                 case Item.FortTower: return "<b>Fort Tower</b>    LMB: throw it - a lookout tower with a ladder pops up where it lands";
-                case Item.Car: return "<b>Wooden Car</b>    LMB: put it down, then E to drive";
-                case Item.Saddle: return $"<b>Saddle</b> ({Cfg.TeamLabel(s.Data > 0 ? s.Data - 1 : me.Team.Value)})    walk up to a wild horse and press E to saddle and ride it";
+                case Item.Car: return $"<b>Wooden Car</b>    LMB: put it down, then {KT(Bind.Interact)} to drive";
+                case Item.Saddle: return $"<b>Saddle</b> ({Cfg.TeamLabel(s.Data > 0 ? s.Data - 1 : me.Team.Value)})    walk up to a wild horse and press {KT(Bind.Interact)} to saddle and ride it";
                 case Item.Meat: return $"<b>Horse Meat</b>    RMB: eat ({Cfg.MeatEatTime:0.#}s, heals you fully)";
                 case Item.Sniper: return $"<b>Sniper Rifle</b> ({s.Data} shots)    hold RMB: scope   LMB: fire - one hit kills (a helmet stops a headshot)";
                 case Item.PortalGun:
@@ -550,7 +560,7 @@ namespace RockGame
                     int left = s.Data <= 0 || s.Data > Cfg.PortalShots ? Cfg.PortalShots : s.Data;
                     return $"<b>Portal Gun</b> ({left} portal{(left == 1 ? "" : "s")} left)    LMB: shoot a portal onto any surface - " + (left >= Cfg.PortalShots ? "two shots make a linked pair" : "this shot links it to your first one");
                 }
-                case Item.Jetpack: return $"<b>Jetpack</b> (fuel {s.Data}%)    hold Space to fly";
+                case Item.Jetpack: return $"<b>Jetpack</b> (fuel {s.Data}%)    hold {KT(Bind.Jump)} to fly";
                 case Item.SlenderEgg: return "<b>Slenderman Egg</b>    LMB: throw it - Slenderman hatches and hunts your enemy";
                 case Item.BuildEgg: return "<b>Build Egg</b>    LMB: throw it - blocks appear along its path to walk on";
                 case Item.GiantStaff: return "<b>Staff of the Giant</b>    LMB: turn your nearest enemy into a giant";
@@ -563,16 +573,16 @@ namespace RockGame
                 case Item.SpeedJuice: return $"<b>Extreme Speed Juice</b>    LMB: drink ({Cfg.SpeedJuiceTime:0}s of extreme speed)";
                 case Item.Chainsaw: return $"<b>Chainsaw</b> ({s.Data} uses left)    hold LMB: cuts wood and stone fast";
                 case Item.EnderPearl: return "<b>Ender Pearl</b>    LMB: throw it - you teleport to wherever it lands";
-                case Item.Pistol: return $"<b>Pistol</b>  ({s.Data} shot{(s.Data == 1 ? "" : "s")} left)    LMB: shoot" + (me.Count(Item.PistolAmmo) > 0 ? $"   R: reload ({me.Count(Item.PistolAmmo)} spare ammo)" : "");
+                case Item.Pistol: return $"<b>Pistol</b>  ({s.Data} shot{(s.Data == 1 ? "" : "s")} left)    LMB: shoot" + (me.Count(Item.PistolAmmo) > 0 ? $"   {KT(Bind.Rotate)}: reload ({me.Count(Item.PistolAmmo)} spare ammo)" : "");
                 case Item.PistolAmmo: return "<b>Pistol Ammo</b>    the pistol reloads from this";
-                case Item.Revolver: return $"<b>Revolver</b>  ({s.Data}/{Cfg.RevolverMag})    LMB: shoot   R: reload ({me.Count(Item.RevolverAmmo)} bullets)";
+                case Item.Revolver: return $"<b>Revolver</b>  ({s.Data}/{Cfg.RevolverMag})    LMB: shoot   {KT(Bind.Rotate)}: reload ({me.Count(Item.RevolverAmmo)} bullets)";
                 case Item.RevolverAmmo: return $"<b>Revolver Bullets</b> x{s.Count}    the revolver reloads from these";
-                case Item.Shotgun: return $"<b>Waterpipe Shotgun</b>  ({(s.Data > 0 ? "loaded" : "empty")}, {me.Count(Item.ShotgunShell)} shells)    LMB: fire   loads the next shell by itself (or R)";
+                case Item.Shotgun: return $"<b>Waterpipe Shotgun</b>  ({(s.Data > 0 ? "loaded" : "empty")}, {me.Count(Item.ShotgunShell)} shells)    LMB: fire   loads the next shell by itself (or {KT(Bind.Rotate)})";
                 case Item.ShotgunShell: return $"<b>Shotgun Shells</b> x{s.Count}    one at a time into the waterpipe shotgun";
                 case Item.Sword: return $"<b>Sword</b>    LMB: a slow, heavy swing - {Cfg.SwordBodyDamage:0} to the body, {Cfg.SwordHeadDamage:0} to the head";
                 case Item.HeavyArmor: return $"<b>Heavy Armour</b> ({Cfg.HeavyArmorHp} HP)    LMB: put it on (replaces wooden armour)";
                 case Item.TreeCracker: return $"<b>Tree Cracker</b> ({s.Data} uses left)    LMB: fells a whole tree in one hit";
-                case Item.Boat: return $"<b>Boat</b>    LMB on the water: put it in, then E to get in (only on maps with water)";
+                case Item.Boat: return $"<b>Boat</b>    LMB on the water: put it in, then {KT(Bind.Interact)} to get in (only on maps with water)";
                 case Item.FortifyBuff: return $"<b>{Cfg.ItemName(s.Id)}</b>";
                 default: return "";
             }
@@ -1393,6 +1403,9 @@ namespace RockGame
         static Texture2D s_RadarArrow;
         /// <summary>Where the base radar panel ends (its bottom edge) this GUI pass; -1 when it isn't up. The FPS counter goes under it.</summary>
         float m_RadarBottom = -1f;
+        /// <summary>(tests) where the base radar was last drawn, and the frame.</summary>
+        public static Rect RadarRect;
+        public static int RadarShownFrame = -10;
         /// <summary>(tests) the base radar arrow's turn last drawn, degrees clockwise from straight up (0 = the base is ahead).</summary>
         public static float RadarArrowAngle { get; private set; }
 
@@ -1429,8 +1442,9 @@ namespace RockGame
             fwd.y = 0;
             if (fwd.sqrMagnitude < 1e-4f) fwd = me.transform.forward;
             float ang = Vector3.SignedAngle(fwd, d, Vector3.up); // + = to the right
-            var rr = new Rect(10, 10 + 34 * k, 150 * k, 24 * k);
+            var rr = new Rect(10, GameSettings.HudTeamBox.Value ? 10 + 34 * k : 10, 150 * k, 24 * k); // (no team box: up in the corner)
             m_RadarBottom = rr.yMax;
+            RadarRect = rr; RadarShownFrame = Time.frameCount; // (tests)
             Fill(rr, new Color(0f, 0f, 0f, 0.4f));
             string label = $"<color=#{ColorUtility.ToHtmlStringRGB(Color.Lerp(tc, Color.white, 0.45f))}>Your Base</color>";
             Shadowed(new Rect(rr.x + 8, rr.y + 1, rr.width, rr.height), label, m_Small);

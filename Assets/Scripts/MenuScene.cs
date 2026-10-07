@@ -136,7 +136,7 @@ namespace RockGame
             float dt = Mathf.Min(Time.unscaledDeltaTime, 0.1f);
             if (MapBuilder.Root == null) return;
             // the map page: slow shots of the map itself instead of the loop (MenuScene.Shots.cs)
-            if (Preview) { TickShots(cam, dt); return; }
+            if (Preview) { TickShots(cam.GetComponent<Camera>(), dt); return; }
             s_ShotsRoot = 0;
             int root = MapBuilder.Root.GetInstanceID();
             if (s_Pos == null || root != s_BakedRoot || TreeCount != s_BakedTrees || Preview != s_BakedPreview)

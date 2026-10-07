@@ -52,6 +52,78 @@ namespace RockGame
             return s;
         }
 
+        // ------------------------------------------------------------------ keys in any HUD text
+
+        /// <summary>The names keys go by in hints (Binds.KeyName's, and the usual short ones) - drawn as keycaps.</summary>
+        static readonly HashSet<string> s_KeyWords = new HashSet<string>
+        {
+            "Esc", "Escape", "Tab", "Shift", "Space", "Ctrl", "Alt", "Enter", "Backspace", "Caps Lock", "Delete", "Insert", "Home", "End",
+            "Page Up", "Page Down", "Up", "Down", "Left", "Right", "Right Shift", "Right Ctrl", "Right Alt", "Mouse 4", "Mouse 5", "Mouse 6", "Mouse 7",
+        };
+        /// <summary>The ones that are drawn as keys wherever they stand as a word (capitalised: "Esc to cancel", "hold Space").</summary>
+        const string KeyWordAlternation = "Esc|Tab|Shift|Space|Ctrl|Alt";
+        static readonly System.Text.RegularExpressions.Regex s_KeyRx = new System.Text.RegularExpressions.Regex(
+            // [E] [Tab] [Mouse 4]...  |  WASD  |  W/S  |  Esc, Shift... as a word  |  a single capital before a colon (E: open)
+            //  |  a single capital after hold / press / then (hold E, then E to drive)
+            @"(?<![\w\u0001#])(?:\[(?<b>[^\[\]<>\u0001\u0002]{1,14})\]|(?<w>WASD)(?!\w)|(?<p>[A-Z])/(?<q>[A-Z])(?![\w\u0002])|(?<n>" + KeyWordAlternation + @")(?![\w\u0002])|(?<n>Enter)(?=:| to )|(?<l>[A-Z])(?=:(?:\s|$|<))|(?<=(?:[Hh]old|[Pp]ress|then) )(?<h>[A-Z])(?=[\s,.;:)!]|$))",
+            System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+        static readonly Dictionary<string, string> s_KeyIconMemo = new Dictionary<string, string>();
+
+        /// <summary>A name in [brackets] that is a key (not [LMB] / [RMB]: WithMouseIcons does those).</summary>
+        static bool IsKeyName(string n)
+        {
+            if (string.IsNullOrEmpty(n)) return false;
+            if (n.Length == 1) return char.IsLetterOrDigit(n[0]) || (n != "-" && "`=[];',./\\".IndexOf(n[0]) >= 0);
+            if (s_KeyWords.Contains(n)) return true;
+            if (n.Length <= 3 && n[0] == 'F' && int.TryParse(n.Substring(1), out int f) && f >= 1 && f <= 15) return true; // (F1..F15)
+            if (n.StartsWith("Num ", StringComparison.Ordinal) || n.StartsWith("Keypad", StringComparison.Ordinal)) return true;
+            return false;
+        }
+
+        /// <summary>
+        /// Every key a HUD hint mentions turned into its keycap icon (and LMB / RMB into the mouse icons - WithMouseIcons):
+        /// "[E]", "[Tab]", "[Mouse 4]" (the hint builders write keys like that: KeyTag), "E: open" (a single capital
+        /// before a colon), "hold E" / "press E" / "then E", "WASD", "W/S", and Esc / Tab / Shift / Space / Ctrl / Alt /
+        /// Enter as words. Ordinary words are left alone. Drawn by IconLine / IconText (Hud.Shadowed does it for every HUD
+        /// line). Remembered, so it's cheap every frame.
+        /// </summary>
+        public static string WithKeyIcons(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return s;
+            if (s_KeyIconMemo.TryGetValue(s, out var done)) return done;
+            string r = s_KeyRx.Replace(s, m =>
+            {
+                if (m.Groups["b"].Success)
+                {
+                    string n = m.Groups["b"].Value;
+                    if (n == "LMB" || n == "RMB") return m.Value; // (the mouse: below)
+                    if (n == "Middle mouse") return Icon(MouseMiddleId);
+                    if (n == "mouse wheel") return Icon(MouseWheelId);
+                    return IsKeyName(n) ? Cap(n) : m.Value;
+                }
+                if (m.Groups["w"].Success) return Cap("W") + Cap("A") + Cap("S") + Cap("D");
+                if (m.Groups["p"].Success) return Cap(m.Groups["p"].Value) + "/" + Cap(m.Groups["q"].Value);
+                if (m.Groups["n"].Success) return Cap(m.Groups["n"].Value);
+                if (m.Groups["l"].Success) return Cap(m.Groups["l"].Value);
+                if (m.Groups["h"].Success) return Cap(m.Groups["h"].Value);
+                return m.Value;
+            });
+            r = WithMouseIcons(r);
+            if (s_KeyIconMemo.Count > 600) s_KeyIconMemo.Clear();
+            s_KeyIconMemo[s] = r;
+            return r;
+        }
+
+        /// <summary>The text has an icon in it (a key or a mouse button) - draw it with IconLine / IconText.</summary>
+        public static bool HasIcons(string s) => !string.IsNullOrEmpty(s) && s.IndexOf(IconOpen) >= 0;
+
+        /// <summary>An action's key for a hint: "[E]" (WithKeyIcons draws it as the keycap; LMB / RMB as the mouse).</summary>
+        public static string KeyTag(Bind b)
+        {
+            string n = Binds.Name(b);
+            return n == "-" ? "(unbound)" : "[" + n + "]";
+        }
+
         /// <summary>A wrapped text with its icons (left aligned, from the top of `r`).</summary>
         public static void IconText(Rect r, string text, GUIStyle st, Action<Rect, string, GUIStyle> shadowed = null) => RichDraw(r, text, st, shadowed);
 

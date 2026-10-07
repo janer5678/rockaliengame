@@ -39,7 +39,8 @@ namespace RockGame
             Fill(r, picking ? new Color(1f, 0.82f, 0.3f) : new Color(0.8f, 0.8f, 0.8f));
             Fill(new Rect(r.x + 2, r.y + 2, r.width - 4, r.height - 4), s.Value);
             TrackHover(r);
-            if (GUI.Button(r, GUIContent.none, GUIStyle.none)) { ClickSound(); TogglePicker(s, s.Value, false); }
+            bool wheel = ColourWheelOnDoubleClick(r, "colour." + s.Id, s.Label, () => s.Value, (c, save) => ColorSlots.Set(s, c, save)); // (double-click: the colour wheel)
+            if (GUI.Button(r, GUIContent.none, GUIStyle.none) && !wheel) { ClickSound(); TogglePicker(s, s.Value, false); }
             GUILayout.Label($"<color=#bbbbbb>  #{ColorUtility.ToHtmlStringRGB(s.Value)}</color>", m_Small, GUILayout.Width(90 * k), GUILayout.Height(rowH));
             if (Btn(picking ? "Pick ▲" : "Pick ▼", GUILayout.Width(80 * k), GUILayout.Height(rowH))) TogglePicker(s, s.Value, false);
             if (s.Changed && Btn("Default", GUILayout.Width(84 * k), GUILayout.Height(rowH))) ColorSlots.Set(s, s.Default);

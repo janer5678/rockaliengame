@@ -241,6 +241,7 @@ namespace RockGame
                 return;
             }
             if (m_Room == null) BuildRoom();
+            if (MenuScene.LobbyPreview) { Dim(false); m_CamSet = false; return; } // (the host is on the map page: MenuScene.Shots.cs has the camera)
             Dim(true);
             ApplyTones();
             SyncAvatars();
@@ -365,7 +366,6 @@ namespace RockGame
             m_Tones.Clear();
             m_TonesSet = false;
             m_Tv = null;
-            if (m_Graffiti) Destroy(m_Graffiti);
             if (m_Room) Destroy(m_Room);
             m_Room = null;
             m_Blinkers.Clear();
@@ -403,9 +403,10 @@ namespace RockGame
             }
             else if (LobbyArcade.Focused && m_Tv != null)
             {
-                // the telly's game: the screen fills the middle of the view, a bit of the set and the speakers round it
+                // the telly's game: the screen in the middle of the view, the set and the speakers round it - back far
+                // enough that the lobby's HUD (the title top left, the buttons along the bottom, READY) stays off the picture
                 var scr = m_Tv.TransformPoint(k_Screen);
-                pos = scr + m_Tv.forward * 0.6f + Vector3.up * 0.03f; // (close: the picture fills most of the view)
+                pos = scr + m_Tv.forward * 0.92f + Vector3.up * 0.03f; // (the picture about 60% of the view's height)
                 look = scr - Vector3.up * 0.01f;
                 fov = 42f;
                 m_Yaw = Mathf.Lerp(m_Yaw, 0f, 1f - Mathf.Exp(-6f * dt));
@@ -558,14 +559,14 @@ namespace RockGame
             Art.Box(couch, fabric, new Vector3(0f, 0.27f, -0.12f), new Vector3(1.28f, 0.14f, 0.9f), default, false, Tone(Tones.Couch, 0.8f)); // the frame under the cushion
             Art.Box(couch, fabric, new Vector3(0f, 0.72f, -0.53f), new Vector3(1.3f, 0.86f, 0.2f), new Vector3(-10f, 0f, 0f), false, Tone(Tones.Couch, 0.8f)); // the back
             Art.Box(couch, fabric, new Vector3(0f, 0.74f, -0.42f), new Vector3(1.16f, 0.62f, 0.14f), new Vector3(-10f, 0f, 0f), false, Tone(Tones.Couch, 0.92f)); // the back cushion
-            Art.Box(couch, fabric, new Vector3(0.2f, 0.6f, -0.34f), new Vector3(0.3f, 0.2f, 0.02f), new Vector3(-10f, 0f, 14f), false, Tone(Tones.Couch, 0.6f));   // (a stain)
+            Art.Box(couch, fabric, new Vector3(0.2f, 0.6f, -0.34f), new Vector3(0.3f, 0.2f, 0.02f), new Vector3(-10f, 0f, 14f), false, Tone(Tones.Stain, 0.8f));   // (a stain)
             for (int s = -1; s <= 1; s += 2)
                 Art.Box(couch, wood * 0.7f, new Vector3(s * 0.55f, 0.02f, 0.25f), new Vector3(0.08f, 0.04f, 0.08f));       // (stubby feet)
             a.Seat = new GameObject("cushion").transform;
             a.Seat.SetParent(couch, false);
             Art.Box(a.Seat, fabric, new Vector3(0f, 0f, -0.08f), new Vector3(1.22f, 0.16f, 0.78f), default, false, Tone(Tones.Couch, 1f));
             Art.Box(a.Seat, fabric, new Vector3(0f, -0.005f, 0.31f), new Vector3(1.22f, 0.15f, 0.04f), default, false, Tone(Tones.Couch, 0.85f)); // (the cushion's front seam)
-            if (id % 3 == 1) Art.Box(a.Seat, new Color(0.3f, 0.22f, 0.1f), new Vector3(-0.25f, 0.082f, 0f), new Vector3(0.3f, 0.005f, 0.22f), new Vector3(0, 25f, 0)); // (a mystery stain)
+            if (id % 3 == 1) Art.Box(a.Seat, Color.white, new Vector3(-0.25f, 0.082f, 0f), new Vector3(0.3f, 0.005f, 0.22f), new Vector3(0, 25f, 0), false, Tone(Tones.Stain, 1.3f)); // (a mystery stain)
             a.ArmL = Art.Box(couch, fabric, new Vector3(-0.7f, 0.45f, -0.12f), new Vector3(0.22f, 0.5f, 0.92f), default, false, Tone(Tones.Couch, 0.8f)).transform;
             a.ArmR = Art.Box(couch, fabric, new Vector3(0.7f, 0.45f, -0.12f), new Vector3(0.22f, 0.5f, 0.92f), default, false, Tone(Tones.Couch, 0.8f)).transform;
             // what they've got in their hands
@@ -655,12 +656,14 @@ namespace RockGame
             else a.Anim.ReachRight(SwigCan(mouth, hf, a.Root.up), BodyAnimator.Swig(t), Grip);
         }
 
-        /// <summary>Playing the telly's game: the controller in both hands, tipped up towards the face.</summary>
+        /// <summary>Playing the telly's game: a big controller in both hands, held low (down by the lap), tipped up a
+        /// little towards the face (the arms' pose: BodyAnimator.LoungeGaming).</summary>
         void PlacePad(Avatar a)
         {
             if (a.Pad == null)
             {
                 a.Pad = Controller(a.Root, new Color(0.12f, 0.12f, 0.14f), true).transform;
+                a.Pad.localScale = Vector3.one * PadSize;
                 foreach (var r in a.Pad.GetComponentsInChildren<MeshRenderer>()) r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             }
             a.Pad.gameObject.SetActive(true);
@@ -668,12 +671,15 @@ namespace RockGame
             if (rh == null || rf == null || lh == null || lf == null) return;
             var rp = rh.position + (rh.position - rf.position).normalized * (Grip * 0.7f);
             var lp = lh.position + (lh.position - lf.position).normalized * (Grip * 0.7f);
-            var at = (rp + lp) * 0.5f + a.Root.up * 0.015f;
+            var at = (rp + lp) * 0.5f + a.Root.up * 0.01f; // (sat down in the hands, a bit under them)
             var across = lp - rp;
             var fwd = Vector3.ProjectOnPlane(a.Root.forward, across.sqrMagnitude > 1e-4f ? across.normalized : a.Root.right);
             if (fwd.sqrMagnitude < 1e-4f) fwd = a.Root.forward;
-            a.Pad.SetPositionAndRotation(at, Quaternion.LookRotation(fwd.normalized, a.Root.up) * Quaternion.Euler(-30f, 0f, 0f));
+            a.Pad.SetPositionAndRotation(at, Quaternion.LookRotation(fwd.normalized, a.Root.up) * Quaternion.Euler(-20f, 0f, 0f));
         }
+
+        /// <summary>How much bigger than the ones on the floor the controller in a player's hands is.</summary>
+        const float PadSize = 1.7f;
 
         /// <summary>The prop in the hand(s) this frame (and the cigarette's smoke coming off it).</summary>
         void PlaceProp(Avatar a, float t, float now)
@@ -900,8 +906,8 @@ namespace RockGame
             Art.Box(t, metal * 0.6f, new Vector3(0, -0.1f, 0), new Vector3(15f, 0.2f, 13f));
             // (the carpet's colour: Settings > Display > SHIP LOBBY > Floor)
             Art.Box(t, carpet, new Vector3(0, 0.004f, 0.3f), new Vector3(12.5f, 0.008f, 8.2f), default, false, Tone(Tones.Floor, 1f));
-            for (int i = 0; i < 16; i++) // (stains)
-                Art.Part(t, Art.Cylinder, carpet, new Vector3(R() * 10f - 5f, 0.01f + i * 0.0003f, R() * 6.5f - 2.8f), new Vector3((0.3f + R() * 0.9f) / CR, 0.002f, (0.25f + R() * 0.7f) / CR), new Vector3(0, R() * 180f, 0), false, Tone(Tones.Floor, 0.5f + R() * 0.3f));
+            for (int i = 0; i < 16; i++) // (stains: Settings > Display > SHIP LOBBY > Stains, like all the room's stains)
+                Art.Part(t, Art.Cylinder, carpet, new Vector3(R() * 10f - 5f, 0.01f + i * 0.0003f, R() * 6.5f - 2.8f), new Vector3((0.3f + R() * 0.9f) / CR, 0.002f, (0.25f + R() * 0.7f) / CR), new Vector3(0, R() * 180f, 0), false, Tone(Tones.Stain, 0.6f + R() * 0.35f));
             Art.Part(t, Art.Cylinder, new Color(0.35f, 0.15f, 0.12f), new Vector3(0, 0.012f, 0.4f), new Vector3(2.6f / CR, 0.004f, 1.7f / CR)); // (a small old round rug in front of the couch)
 
             // ---- the back wall, round a long rounded window: the stars streak past it ----
@@ -921,7 +927,7 @@ namespace RockGame
                     Art.Box(wall, wallDark, new Vector3(-side * 0.16f, 0.45f, i * 2.4f + 1.2f), new Vector3(0.04f, 0.6f, 2f), default, false, Tone(Tones.Wall, 0.9f)); // (scuffed kick panels)
                     Art.Box(wall, wallC, new Vector3(-side * 0.16f, 1.2f + R() * 1.4f, i * 2.4f + 0.6f + R()), new Vector3(0.03f, 0.3f + R() * 0.5f, 0.4f + R() * 0.6f), default, false, Tone(Tones.Wall, 0.75f + R() * 0.15f)); // (grime)
                     // (stains running down the panels)
-                    Art.Box(wall, wallC, new Vector3(-side * 0.158f, 0.9f + R() * 1.2f, i * 2.4f + R() * 2f - 1f), new Vector3(0.02f, 0.5f + R() * 0.8f, 0.08f + R() * 0.2f), default, false, Tone(Tones.Wall, 0.55f + R() * 0.15f));
+                    Art.Box(wall, wallC, new Vector3(-side * 0.158f, 0.9f + R() * 1.2f, i * 2.4f + R() * 2f - 1f), new Vector3(0.02f, 0.5f + R() * 0.8f, 0.08f + R() * 0.2f), default, false, Tone(Tones.Stain, 0.9f + R() * 0.2f));
                 }
                 foreach (float py in new[] { 2.75f, 2.95f })
                     Art.Part(wall, Art.Cylinder, pipe, new Vector3(-side * 0.3f, py, 0), new Vector3(0.1f / CR, 13f / CH, 0.1f / CR), new Vector3(90f, 0, 0));
@@ -1196,7 +1202,11 @@ namespace RockGame
                 Art.Part(t, Art.Cone, new Color(0.06f, 0.08f, 0.06f), at + Vector3.up * 0.58f, new Vector3(0.14f, 0.16f, 0.14f));
             }
             for (int i = 0; i < 14; i++)
-                Art.Part(t, Art.Ico, new Color(0.88f, 0.86f, 0.8f), new Vector3(R() * 10f - 5f, 0.05f, R() * 5f - 2.5f), Vector3.one * (0.07f + R() * 0.05f), new Vector3(R() * 360f, R() * 360f, 0));
+            {
+                float px = R() * 10f - 5f, pz = R() * 5f - 2.5f, ps = 0.07f + R() * 0.05f, rx = R() * 360f, ry = R() * 360f; // (drawn the same either way: the rest of the room stays put)
+                if (px > 1f && i % 3 != 0) continue; // (fewer on the right of the room)
+                Art.Part(t, Art.Ico, new Color(0.88f, 0.86f, 0.8f), new Vector3(px, 0.05f, pz), Vector3.one * ps, new Vector3(rx, ry, 0));
+            }
             // newspapers: a few pages spread out, columns of print on them
             for (int i = 0; i < 4; i++)
             {
@@ -1213,7 +1223,18 @@ namespace RockGame
             // a bike on its stand, back towards the window at the end of the couch (ShipLobby.Dressing.cs)
             BuildBike(t);
             // the ball, and gear from the game lying about
-            ItemModels.CreateBall(t, 0.5f).transform.localPosition = new Vector3(3.3f, 0.25f, -1.1f);
+            {
+                // (glowing like mad: lit by itself, and lighting the floor round it)
+                var ball = ItemModels.CreateBall(t, 0.5f);
+                ball.transform.localPosition = new Vector3(3.3f, 0.25f, -1.1f);
+                Material core = Unlit(new Color(1f, 0.85f, 0.2f), 3.2f), band = Unlit(new Color(1f, 0.55f, 0.12f), 2.6f);
+                foreach (var r in ball.GetComponentsInChildren<MeshRenderer>())
+                {
+                    r.sharedMaterial = r.transform.localScale.x > r.transform.localScale.y * 3f || r.transform.localScale.z > r.transform.localScale.y * 3f ? band : core;
+                    r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                }
+                Light(t, new Vector3(3.3f, 0.45f, -1.1f), new Color(1f, 0.8f, 0.3f), 3.2f, 3.6f).name = "ball light";
+            }
             void Lay(Item it, Vector3 at, float yaw, float roll)
             {
                 var go = ItemModels.Create(it, t);
@@ -1277,7 +1298,7 @@ namespace RockGame
             Poster(new Vector3(6.25f, 2.55f, 0.4f), -90f, new Vector2(0.7f, 0.5f), 3);
             Poster(new Vector3(6.25f, 1.45f, 1.2f), -90f, new Vector2(0.5f, 0.65f), 1);
             BuildMiddle(t, rng);
-            BuildDressing(t, rng); // (the trade stations, the gear all round, the guitar, graffiti...: ShipLobby.Dressing.cs)
+            BuildDressing(t, rng); // (the trade stations, the gear all round, the stains...: ShipLobby.Dressing.cs)
         }
 
         /// <summary>The middle of the room: a coffee table in front of the couch, covered in beer cans, a bottle, an
@@ -1295,7 +1316,7 @@ namespace RockGame
             foreach (float x in new[] { -0.68f, 0.68f })
                 foreach (float z in new[] { -0.28f, 0.28f })
                     Art.Box(table, wood * 0.8f, new Vector3(x, 0.19f, z), new Vector3(0.06f, 0.38f, 0.06f));
-            Art.Part(table, Art.Cylinder, wood * 0.55f, new Vector3(0.3f, 0.432f, 0.1f), new Vector3(0.16f / CR, 0.002f, 0.16f / CR)); // (a ring stain)
+            Art.Part(table, Art.Cylinder, Color.white, new Vector3(0.3f, 0.432f, 0.1f), new Vector3(0.16f / CR, 0.002f, 0.16f / CR), default, false, Tone(Tones.Stain, 0.85f)); // (a ring stain)
             // beer cans standing and knocked over, a bottle
             void Can(Vector3 at, bool down, float yaw)
             {
@@ -1312,10 +1333,9 @@ namespace RockGame
             var bottle = new Color(0.15f, 0.35f, 0.12f);
             Art.Part(table, Art.Cylinder, bottle, new Vector3(-0.15f, 0.54f, 0.12f), new Vector3(0.08f / CR, 0.22f / CH, 0.08f / CR));
             Art.Part(table, Art.Cylinder, bottle, new Vector3(-0.15f, 0.69f, 0.12f), new Vector3(0.03f / CR, 0.09f / CH, 0.03f / CR));
-            // a pizza box, open, a slice left in it
+            // a pizza box (its lid long gone), a slice left in it
             var box = new Color(0.72f, 0.58f, 0.38f);
             Art.Box(table, box, new Vector3(0.25f, 0.445f, 0.02f), new Vector3(0.42f, 0.03f, 0.42f), new Vector3(0, -12f, 0));
-            Art.Box(table, box * 0.9f, new Vector3(0.27f, 0.63f, 0.25f), new Vector3(0.42f, 0.42f, 0.02f), new Vector3(-20f, -12f, 0));
             Art.Box(table, new Color(0.9f, 0.6f, 0.2f), new Vector3(0.22f, 0.465f, -0.02f), new Vector3(0.16f, 0.012f, 0.12f), new Vector3(0, 30f, 0));
             // an ashtray full of butts, crisp packets, screwed-up paper
             Art.Part(table, Art.Cylinder, new Color(0.25f, 0.25f, 0.28f), new Vector3(-0.3f, 0.445f, -0.18f), new Vector3(0.14f / CR, 0.03f / CH, 0.14f / CR));
@@ -1348,7 +1368,11 @@ namespace RockGame
             Art.Box(pad, new Color(0.12f, 0.12f, 0.14f), Vector3.zero, new Vector3(0.18f, 0.04f, 0.1f));
             foreach (float s in new[] { -1f, 1f }) Art.Box(pad, new Color(0.12f, 0.12f, 0.14f), new Vector3(s * 0.08f, 0, -0.04f), new Vector3(0.06f, 0.04f, 0.08f), new Vector3(0, s * 20f, 0));
             for (int i = 0; i < 6; i++)
-                Art.Part(t, Art.Ico, new Color(0.88f, 0.86f, 0.8f), new Vector3((R() - 0.5f) * 4f, 0.04f, (R() - 0.5f) * 2f - 0.2f), Vector3.one * (0.06f + R() * 0.04f), new Vector3(R() * 360f, R() * 360f, 0));
+            {
+                float px = (R() - 0.5f) * 4f, pz = (R() - 0.5f) * 2f - 0.2f, ps = 0.06f + R() * 0.04f, rx = R() * 360f, ry = R() * 360f;
+                if (px > 0.8f) continue; // (none on the right)
+                Art.Part(t, Art.Ico, new Color(0.88f, 0.86f, 0.8f), new Vector3(px, 0.04f, pz), Vector3.one * ps, new Vector3(rx, ry, 0));
+            }
         }
 
         /// <summary>An unlit glowing material (the same bright colour whatever the light).</summary>

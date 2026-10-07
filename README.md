@@ -11,13 +11,23 @@ Both players start with a rock, gather wood and stone, build a Rust-style base, 
 3. Press Play. In the main editor window click **HOST GAME**. In the Player 2 window click **JOIN GAME** (IP `127.0.0.1`).
 
 ### Option B: standalone builds (best for LAN play with a friend)
-1. **Rock Game > Build Windows Player**. The build goes to `Builds/Windows/RockBaseBrawl.exe`.
+1. **Rock Game > Build Windows Player**. The build goes to `Builds/Windows/Alien Rock Game.exe` (its saves still live under the old product name, Rock Base Brawl, so nobody's settings reset).
 2. Run it twice (or on two PCs). One clicks **HOST GAME**, the other types the host's IP and clicks **JOIN GAME**.
    Port 7777/UDP must be reachable; allow the Windows firewall prompt.
    You can also press Play in the editor and host or join from there against a build.
 
 ### Spectating
 JOIN GAME on a match that has already started (or is full) no longer turns you away: you come in as a **spectator** (up to 8 per match). You get no body and no team and can't do anything in the world; the camera is a player's own first-person view (their eyes, where they're looking, what's in their hands). **Left click** watches the next player, **right click** the previous one. If the one you're watching dies you move on to someone alive after a moment; if they leave you move on at once. The HUD is just a bar along the bottom (who you're watching, the clock, LEAVE) and the chat. You see the victory cutscene and then the end screen ("BLUE WINS") with Leave game, like everyone else. Spectators never count as players (teams, the lobby countdown, who wins, someone leaving) and they're listed on their own SPECTATORS line under the scoreboard. A spectator stays a spectator for that match even if a place frees up. Code: `Spectator.cs`, `Hud.Spectator.cs`, `Bootstrap.Approve`. Test: `Tools\run_autotests.ps1 "spectate+client2:-fast"` (a 1v1 host, a client that plays, and a second client that joins the running match).
+
+### Patch 2026-10-08: match intro, colour wheel, key icons everywhere, kill feed settings, "Alien Rock Game.exe"
+- **Match intro** (`MatchIntro.cs`, `MenuSpace.Crash.cs`): when a lobby match starts, ~9 s on every screen - the menu's UFO in space, then it burns down through the atmosphere, punches through the clouds and slams into the planet (flash, fireball, dust ring, bending trees), then a swoop over the real crash site with the ball's EMERGENCY FLARE marker and "GET THE BALL INTO YOUR MACHINE!". Input is locked; Space skips. Uses the main menu cutscene's post processing when that's on. Test: `-autotest intro -host -solo`.
+- **Colour wheel** (`Hud.ColourWheel.cs`): double-click any colour square in the settings (display, lobby, world colours, base floors) for a hue/strength disc, brightness strip, hex box, Undo / OK.
+- **Key icons** (`Tutorial.WithKeyIcons`): every HUD hint shows keys as keycaps ([E], E:, hold E, WASD, Esc, Shift...), built from your actual bindings. The ball carrying hint under the crosshair is back.
+- **HUD**: with the team box off the base radar moves up into the corner, and it can be switched off; the timer's drain bar can go on top; NOTIFICATIONS > TEXT OUTLINE controls the words' own stroke (on/off, thickness, colour, opacity); **KILL FEED** settings (size, background, icons, name colours, how long, how many, position, test button).
+- **Lobby**: no graffiti, guitar or pizza lid; fewer paper balls on the right; the crossbow lies flat; the hatchet right of the C4; trade station screens light the wall; the ball glows; a Stains colour. Telly game: no instructions on screen, camera further back, players' scores listed (newcomers at once), walking into a tree collects it, a bigger controller held lower. Bots are always READY.
+- **Lobby BACK** shows the live cinematic shots of the hosted map (another map: its picture, until CONFIRM builds it). The map previews show tall grass.
+- **Kill cam** quicker (~5.3 s): a 1.6 s glide, then the replay with slow motion from just before the killing hit through the fall.
+- **The exe is `Alien Rock Game.exe`** (`Alien Rock Game_Data`); the product name, and so everyone's saved settings, stay as they were. The old `RockBaseBrawl.exe` in Builds/Windows is a stale build.
 
 ### Patch 2026-10-07 (4): the telly game, CoD kill cam, bots with goals, display settings in tabs, lobby BACK to the map
 - **Telly game** (`LobbyArcade.cs`, `NetGame.Arcade.cs`, `PlayerNet.Arcade.cs`): click the TV in the lobby - the camera moves onto it and you play a pixel top-down mini version of the game (WASD: bump trees +1, carry the ball to your machine +5, run into the carrier to steal it). Server-run, everyone sees the same picture; players' aliens hold a controller and watch the TV. STOP PLAYING (or Esc) goes back. Drawn with an unlit screen shader (`Resources/World/Screen.shader`).

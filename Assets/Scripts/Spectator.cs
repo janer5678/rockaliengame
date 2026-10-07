@@ -229,6 +229,8 @@ namespace RockGame
                 m_Snap = true;
                 return;
             }
+            // the match intro (MatchIntro.cs): for the watchers too
+            if (MatchIntro.CameraPose(out var inPos, out var inRot, out var inFov)) { ShowBody(true); cam.transform.SetPositionAndRotation(inPos, inRot); cam.fieldOfView = inFov; CamPos = inPos; m_VM?.Update(new ViewModel.State { Item = Item.Rock, Visible = false, Visible2 = false }); m_Snap = true; return; }
             var t = m_Target;
             if (t == null || !t.IsSpawned)
             {

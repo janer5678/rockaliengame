@@ -72,6 +72,9 @@ namespace RockGame
         public static string LastKillLine { get; private set; } = "";
         public static int KillLines { get; private set; }
         public static bool LastKillHead { get; private set; }
+        /// <summary>(tests) how many kill feed lines were last drawn, the frame, and how tall each was.</summary>
+        public static int KillFeedShownLines, KillFeedShownFrame = -10;
+        public static float KillFeedRowH;
 
         public static void AddKill(byte killerTeam, byte killerSlot, byte victimTeam, byte victimSlot, byte cause, bool head = false, string killerName = "", string victimName = "")
         {
@@ -85,7 +88,7 @@ namespace RockGame
                 victim = cause == KillCause.BallPickup ? "picked up the ball" : killer == "" ? $"{team} captured the ball" : $"captured the ball for {team}";
             }
             s_Kills.Add(new Kill { KillerTeam = killerTeam, KillerSlot = killerSlot, VictimTeam = victimTeam, VictimSlot = victimSlot, Cause = cause, Head = head, Killer = killer, Victim = victim, Time = Time.time, Y = -1f });
-            while (s_Kills.Count > 6) s_Kills.RemoveAt(0);
+            while (s_Kills.Count > 10) s_Kills.RemoveAt(0); // (Settings > Display > KILL FEED: up to 10 at once)
             LastKillLine = (killer + " [" + CauseName(cause) + (head ? ", headshot" : "") + "] " + victim).Trim();
             LastKillHead = head;
             KillLines++;
@@ -189,23 +192,31 @@ namespace RockGame
         }
 
         /// <summary>Top right. Returns how tall it is (the messages go under it).</summary>
-        float DrawKillFeed(float k, float top)
+        float DrawKillFeed(float k0, float top)
         {
-            float now = Time.time, y = top, sw = Screen.width;
+            if (!GameSettings.KillFeedOn.Value) return 0f;
+            // (Settings > Display > HUD AND TIMER > KILL FEED: KillFeedLooks.cs)
+            float k = k0 * GameSettings.KillFeedSize.Value, bgA = GameSettings.KillFeedBack.Value, show = GameSettings.KillFeedTime.Value;
+            bool icons = GameSettings.KillFeedIcons.Value, teamCols = GameSettings.KillFeedTeamColours.Value, edged = GameSettings.KillFeedHighlight.Value;
+            int maxLines = GameSettings.KillFeedLinesNow, shown = 0;
+            float offY = GameSettings.KillFeedY.Value * k0, offX = GameSettings.KillFeedX.Value * k0;
+            float now = Time.time, y = top + offY, sw = Screen.width - offX;
             var me = PlayerNet.Local;
             bool repaint = Event.current.type == EventType.Repaint;
-            float rowH = 36 * k, gap = 4 * k, pad = 10 * k, iconW = 58 * k, headW = 30 * k;
+            float rowH = 36 * k, gap = 4 * k, pad = 10 * k, iconW = icons ? 58 * k : 0f, headW = 30 * k;
             var nameSt = new GUIStyle(m_Label) { fontSize = Mathf.RoundToInt(17 * k), fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft, wordWrap = false, clipping = TextClipping.Overflow, richText = false };
             for (int i = s_Kills.Count - 1; i >= 0; i--)
             {
                 var kl = s_Kills[i];
                 float age = now - kl.Time;
-                if (age > KillShow || age < 0f) continue;
+                if (age > show || age < 0f) continue;
+                if (shown >= maxLines) break; // (the newest few)
+                shown++;
                 // the newest is on top: the older ones ease down to make room for it (and back up as strips go)
                 if (kl.Y < 0f) kl.Y = y;
                 else if (repaint) kl.Y = Mathf.Abs(kl.Y - y) < 0.5f ? y : Mathf.Lerp(kl.Y, y, 1f - Mathf.Exp(-16f * Time.unscaledDeltaTime));
                 s_Kills[i] = kl;
-                float a = Mathf.Clamp01((KillShow - age) / KillFade);
+                float a = Mathf.Clamp01((show - age) / KillFade);
                 // it pops in from the right and overshoots a touch before settling; a white flash dies away over it
                 float p = Mathf.Clamp01(age / KillPop), q = p - 1f;
                 float back = 1f + 2.6f * q * q * q + 1.6f * q * q;
@@ -213,15 +224,15 @@ namespace RockGame
                 float bump = 1f + 0.3f * Mathf.Sin(Mathf.Clamp01(age / 0.3f) * Mathf.PI);
                 string killer = kl.Killer ?? "", victim = kl.Victim ?? "";
                 float kw = killer != "" ? nameSt.CalcSize(new GUIContent(killer)).x : 0f, vw = nameSt.CalcSize(new GUIContent(victim)).x;
-                float w = pad + (kw > 0 ? kw + 8 * k : 0) + iconW + 8 * k + (kl.Head ? headW + 6 * k : 0) + vw + pad;
+                float w = pad + (kw > 0 ? kw + 8 * k : 0) + (icons ? iconW + 8 * k : 0) + (kl.Head ? headW + 6 * k : 0) + vw + pad;
                 float x = sw - 10 - w + (1f - back) * (w + 20f);
                 var r = new Rect(x, kl.Y, w, rowH);
-                bool mine = me != null && kl.KillerTeam == me.Team.Value && kl.KillerSlot == me.Slot.Value && kl.KillerTeam != 255;
-                bool myDeath = me != null && kl.VictimTeam == me.Team.Value && kl.VictimSlot == me.Slot.Value && !KillCause.IsBall(kl.Cause) && !KillCause.IsEvent(kl.Cause); // (a ball or mode line's "victim" is words)
+                bool mine = edged && me != null && kl.KillerTeam == me.Team.Value && kl.KillerSlot == me.Slot.Value && kl.KillerTeam != 255;
+                bool myDeath = edged && me != null && kl.VictimTeam == me.Team.Value && kl.VictimSlot == me.Slot.Value && !KillCause.IsBall(kl.Cause) && !KillCause.IsEvent(kl.Cause); // (a ball or mode line's "victim" is words)
                 var old = GUI.color;
-                Fill(r, mine ? new Color(0.2f, 0.14f, 0.02f, 0.86f * a) : myDeath ? new Color(0.24f, 0.04f, 0.04f, 0.84f * a) : new Color(0.04f, 0.04f, 0.06f, 0.72f * a));
-                Fill(new Rect(r.x, r.y, r.width, 2 * k), new Color(1, 1, 1, 0.08f * a));
-                var edge = mine ? new Color(1f, 0.82f, 0.25f, a) : myDeath ? new Color(1f, 0.25f, 0.2f, a) : new Color(1, 1, 1, 0.12f * a);
+                Fill(r, mine ? new Color(0.2f, 0.14f, 0.02f, Mathf.Clamp01(0.86f * bgA) * a) : myDeath ? new Color(0.24f, 0.04f, 0.04f, Mathf.Clamp01(0.84f * bgA) * a) : new Color(0.04f, 0.04f, 0.06f, Mathf.Clamp01(0.72f * bgA) * a));
+                if (bgA > 0.01f) Fill(new Rect(r.x, r.y, r.width, 2 * k), new Color(1, 1, 1, 0.08f * a * Mathf.Min(1f, bgA)));
+                var edge = mine ? new Color(1f, 0.82f, 0.25f, a) : myDeath ? new Color(1f, 0.25f, 0.2f, a) : new Color(1, 1, 1, 0.12f * a * Mathf.Min(1f, bgA));
                 Fill(new Rect(r.x, r.y, 3 * k, r.height), edge);
                 if (mine || myDeath)
                 {
@@ -234,10 +245,10 @@ namespace RockGame
                 float cx = r.x + pad;
                 if (kw > 0)
                 {
-                    DrawName(new Rect(cx, r.y, kw + 4, rowH), killer, kl.KillerTeam != 255 ? NameColor(kl.KillerTeam) : new Color(0.8f, 0.6f, 1f), nameSt, a);
+                    DrawName(new Rect(cx, r.y, kw + 4, rowH), killer, !teamCols ? GameSettings.KillFeedNameColour.Value : kl.KillerTeam != 255 ? NameColor(kl.KillerTeam) : new Color(0.8f, 0.6f, 1f), nameSt, a);
                     cx += kw + 8 * k;
                 }
-                var icon = CauseIcon(kl.Cause);
+                var icon = icons ? CauseIcon(kl.Cause) : null;
                 if (icon != null)
                 {
                     // (on a faint light tile so dark weapons show; the icon swells as the strip lands)
@@ -246,7 +257,7 @@ namespace RockGame
                     float iw = iconW * bump, ih = (rowH - 2 * k) * bump;
                     GUI.DrawTexture(new Rect(cx + iconW / 2 - iw / 2, r.center.y - ih / 2, iw, ih), icon, ScaleMode.ScaleToFit, true);
                 }
-                cx += iconW + 8 * k;
+                if (icons) cx += iconW + 8 * k;
                 if (kl.Head)
                 {
                     // the headshot mark: it lands a beat after the weapon, bigger
@@ -258,10 +269,12 @@ namespace RockGame
                     cx += headW + 6 * k;
                 }
                 GUI.color = old;
-                DrawName(new Rect(cx, r.y, vw + 4, rowH), victim, NameColor(kl.VictimTeam), nameSt, a);
+                DrawName(new Rect(cx, r.y, vw + 4, rowH), victim, teamCols ? NameColor(kl.VictimTeam) : GameSettings.KillFeedNameColour.Value, nameSt, a);
                 y += rowH + gap;
             }
-            return y - top;
+            KillFeedShownLines = shown; // (tests)
+            if (shown > 0) { KillFeedShownFrame = Time.frameCount; KillFeedRowH = rowH; }
+            return shown > 0 ? y - top : 0f;
         }
 
         void DrawName(Rect r, string text, Color c, GUIStyle st, float a)

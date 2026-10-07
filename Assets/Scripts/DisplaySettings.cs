@@ -195,6 +195,8 @@ namespace RockGame
                 if (save) { PlayerPrefs.SetString(PrefKey, ColorUtility.ToHtmlStringRGB(v)); PlayerPrefs.Save(); }
                 Fire();
             }
+            /// <summary>Saves the colour it has now (after Set(v, false) while dragging the colour wheel).</summary>
+            public void Save() { PlayerPrefs.SetString(PrefKey, ColorUtility.ToHtmlStringRGB(Value)); PlayerPrefs.Save(); }
             internal override DisplayCode.Entry Entry() => DisplayCode.MakeColour(Key, Group, Default, () => Value, Set);
         }
 

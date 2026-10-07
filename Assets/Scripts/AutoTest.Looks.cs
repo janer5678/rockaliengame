@@ -75,6 +75,7 @@ namespace RockGame
             yield return Snap("looks_04_lmb_icon_hint");
 
             yield return TimerAndNotifLooks(pc);
+            yield return Prompt12Looks(me, pc);
             Log("looks test done");
             yield return new WaitForSeconds(0.5f);
             Application.Quit(0);
@@ -173,6 +174,141 @@ namespace RockGame
             Hud.OpenDisplayCategory(0);
             pc.Paused = false;
             yield return new WaitForSeconds(0.3f);
+        }
+
+        /// <summary>
+        /// Prompt 12: keys as keycap icons in the hints, the notifications' own text outline (colour, on / off), the timer's
+        /// drain bar on top, the base radar moving into the corner without the team box (and switched off), the kill feed's
+        /// looks, the colour wheel (opened on a timer colour, dragged, undone; it closes with the settings), and the ball's
+        /// tip under the crosshair while carrying it. Nothing is saved.
+        /// </summary>
+        IEnumerator Prompt12Looks(PlayerNet me, PlayerController pc)
+        {
+            var g = NetGame.Instance;
+            int team = me.Team.Value;
+
+            // ---- keys as icons ----
+            string a = Tutorial.WithKeyIcons("[E]: open"), b = Tutorial.WithKeyIcons("hold E to pick up"), c = Tutorial.WithKeyIcons("RMB / Esc to cancel");
+            string plain = "Every Enemy: TIME 1:30 - Assassin: hand in";
+            Check(Tutorial.HasIcons(a) && a.IndexOf("[E]", System.StringComparison.Ordinal) < 0, "KEY ICONS: [E] turns into its keycap");
+            Check(Tutorial.HasIcons(b) && Tutorial.HasIcons(c) && c.IndexOf("\u0001Esc\u0002", System.StringComparison.Ordinal) >= 0 /* (Esc as its keycap token) */ && c.IndexOf("RMB", System.StringComparison.Ordinal) < 0,
+                "KEY ICONS: hold E, Esc and RMB turn into icons");
+            Check(Tutorial.WithKeyIcons(plain) == plain, $"KEY ICONS: ordinary words and a clock are left alone ({Tutorial.PlainKeys(Tutorial.WithKeyIcons(plain))})");
+            Check(Tutorial.KeyTag(Bind.Interact) == "[" + Binds.Name(Bind.Interact) + "]", $"KEY ICONS: hints write the interact key as {Tutorial.KeyTag(Bind.Interact)}");
+            me.ServerGive(Item.Spear, 1);
+            yield return Hold(me, Item.Spear);
+            yield return new WaitForSeconds(0.3f);
+            yield return Snap("looks_40_key_icons_spear_hint");
+
+            // ---- the notifications' own text outline: red and thick, then off ----
+            var red = new Color(1f, 0f, 0f);
+            GameSettings.NotifInkColour.Set(red, false); GameSettings.NotifInk.Set(2.5f, false);
+            Hud.Banner("AIRDROP INCOMING", "a red text outline");
+            yield return new WaitForSeconds(0.7f);
+            var edge = Hud.BannerInkEdge; edge.a = 1f;
+            Check(ColorSlots.Same(edge, red) && Hud.BannerInkPx > 1f, $"TEXT OUTLINE: the banner's own stroke takes the colour and thickness (#{ColorUtility.ToHtmlStringRGB(edge)}, {Hud.BannerInkPx:0.0} px)");
+            yield return Snap("looks_41_notification_red_text_outline");
+            GameSettings.NotifInkOn.Set(false, false);
+            yield return new WaitForSeconds(0.2f);
+            Check(Hud.BannerInkPx < 0.01f, $"TEXT OUTLINE: switched off, the banner has no stroke ({Hud.BannerInkPx:0.0} px)");
+            GameSettings.ResetNotifStyle(false);
+            yield return new WaitForSeconds(3.5f);
+
+            // ---- the timer's drain bar on top ----
+            GameSettings.TimerOwn.Set(true, false);
+            GameSettings.TimerBarPos.Set(1, false);
+            yield return new WaitForSeconds(0.3f);
+            if (g != null && g.S != GameState.Waiting) Check(Hud.TopPanelBarOnTop, "TIMER: the drain bar can go on top of the timer");
+            else Log("TIMER bar on top: skipped (no drain bar while waiting for players)");
+            yield return Snap("looks_42_timer_bar_on_top");
+            GameSettings.ResetTimer(false);
+
+            // ---- the base radar: out of our base it shows; with no team box it's up in the corner; it can be hidden ----
+            var spot = Vector3.Lerp(Cfg.BaseCenter[team], Vector3.zero, 0.55f);
+            spot.y = MapBuilder.Height(spot.x, spot.z) + 0.1f;
+            pc.LocalTeleport(spot, Cfg.SpawnYaw(team));
+            yield return new WaitForSeconds(0.5f);
+            Check(Time.frameCount - Hud.RadarShownFrame <= 3 && Hud.RadarRect.y > 30f, $"RADAR: under the team box out of our base (y {Hud.RadarRect.y:0})");
+            GameSettings.HudTeamBox.Set(false, false);
+            yield return new WaitForSeconds(0.3f);
+            Check(Time.frameCount - Hud.RadarShownFrame <= 3 && Hud.RadarRect.y < 12f, $"RADAR: no team box - up in the corner (y {Hud.RadarRect.y:0})");
+            yield return Snap("looks_43_radar_in_the_corner");
+            GameSettings.HudBaseRadar.Set(false, false);
+            yield return new WaitForSeconds(0.3f);
+            Check(Time.frameCount - Hud.RadarShownFrame > 5, "RADAR: can be switched off");
+            yield return Snap("looks_44_no_team_box_no_radar");
+            GameSettings.HudTeamBox.Set(true, false); GameSettings.HudBaseRadar.Set(true, false);
+
+            // ---- the kill feed's looks ----
+            Hud.ClearKills();
+            Hud.TestKillFeed();
+            yield return new WaitForSeconds(0.6f);
+            Check(Time.frameCount - Hud.KillFeedShownFrame <= 3 && Hud.KillFeedShownLines == 4, $"KILL FEED: the test lines show ({Hud.KillFeedShownLines})");
+            float row = Hud.KillFeedRowH;
+            yield return Snap("looks_45_kill_feed_default");
+            GameSettings.KillFeedLines.Set(2f, false); GameSettings.KillFeedSize.Set(1.5f, false); GameSettings.KillFeedIcons.Set(false, false);
+            GameSettings.KillFeedTeamColours.Set(false, false); GameSettings.KillFeedBack.Set(0.2f, false); GameSettings.KillFeedX.Set(80f, false); GameSettings.KillFeedY.Set(60f, false);
+            yield return new WaitForSeconds(0.3f);
+            Check(Hud.KillFeedShownLines == 2 && Hud.KillFeedRowH > row * 1.4f, $"KILL FEED: at most 2 lines, bigger ({Hud.KillFeedShownLines} lines, {Hud.KillFeedRowH:0} px rows, was {row:0})");
+            yield return Snap("looks_46_kill_feed_styled");
+            GameSettings.KillFeedOn.Set(false, false);
+            yield return new WaitForSeconds(0.3f);
+            Check(Time.frameCount - Hud.KillFeedShownFrame > 5, "KILL FEED: can be switched off");
+            GameSettings.ResetKillFeed(false);
+            Hud.ClearKills();
+
+            // ---- the colour wheel, on a timer phase colour in Settings > Display > HUD & TIMER ----
+            GameSettings.TimerOwn.Set(true, false);
+            pc.Paused = true;
+            Hud.OpenPause = 2;
+            yield return new WaitForSeconds(0.4f);
+            Hud.OpenDisplayCategory((int)Hud.DisplayCat.HudTimer);
+            Hud.SetSettingsScroll(100000f); // (down to the TIMER section)
+            yield return new WaitForSeconds(0.3f);
+            var pref = GameSettings.TimerColBallLive;
+            var before = pref.Value;
+            Hud.OpenColourWheel(pref, "Time left");
+            yield return new WaitForSeconds(0.4f);
+            Check(Hud.ColourWheelOpen && Time.frameCount - Hud.ColourWheelShownFrame <= 3, "COLOUR WHEEL: opens over the settings and stays open while its colour square is drawn");
+            Hud.TestColourWheelPick(0.75f, 0.9f, 1f, false);
+            yield return new WaitForSeconds(0.2f);
+            Check(ColorSlots.Same(pref.Value, Color.HSVToRGB(0.75f, 0.9f, 1f)), $"COLOUR WHEEL: dragging puts the colour in live (#{ColorUtility.ToHtmlStringRGB(pref.Value)})");
+            yield return Snap("looks_47_colour_wheel");
+            Hud.CloseColourWheel(false);
+            yield return new WaitForSeconds(0.2f);
+            Check(!Hud.ColourWheelOpen && ColorSlots.Same(pref.Value, before), "COLOUR WHEEL: Undo puts the colour from before back");
+            Hud.OpenColourWheel(pref, "Time left");
+            yield return new WaitForSeconds(0.2f);
+            pc.Paused = false;
+            yield return new WaitForSeconds(0.5f);
+            Check(!Hud.ColourWheelOpen, "COLOUR WHEEL: closes by itself when the settings close");
+            pref.Set(before, false);
+            GameSettings.ResetTimer(false);
+            Hud.OpenDisplayCategory(0);
+
+            // ---- the ball's tip under the crosshair while carrying it ----
+            Check(PlayerController.BallCarryTip(false).Contains("Carrying the ball") && Tutorial.HasIcons(Tutorial.WithKeyIcons(PlayerController.BallCarryTip(false))),
+                $"BALL TIP: says what the mouse does with it ({PlayerController.BallCarryTip(false)})");
+            if (g != null && !Cfg.Builder)
+            {
+                g.TimerPaused.Value = true;
+                g.DevSkipPhase(GameState.PreBall);
+                float until = Time.time + 12f;
+                while ((g.S != GameState.BallLive || Ball.Instance == null || g.WallUp) && Time.time < until) yield return null;
+                yield return new WaitForSeconds(3f);
+                var ball = Ball.Instance;
+                if (ball != null && g.S == GameState.BallLive && !g.WallUp)
+                {
+                    var bp = ball.transform.position;
+                    pc.LocalTeleport(new Vector3(bp.x + 1.5f, MapBuilder.Height(bp.x + 1.5f, bp.z) + 0.1f, bp.z), 270f);
+                    yield return new WaitForSeconds(0.5f);
+                    me.PickupBallRpc();
+                    yield return new WaitForSeconds(0.8f);
+                    Check(me.CarryingBall && pc.AimText.Contains("Carrying the ball"), $"BALL TIP: carrying the ball, the tip is under the crosshair (\"{pc.AimText}\")");
+                    yield return Snap("looks_48_ball_carry_tip");
+                }
+                else Log("BALL TIP in play: skipped (the ball didn't come out in time)");
+            }
         }
     }
 }

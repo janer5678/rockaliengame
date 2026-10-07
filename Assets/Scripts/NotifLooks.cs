@@ -15,8 +15,22 @@ namespace RockGame
     public static partial class GameSettings
     {
         const string GNotifStyle = "NOTIFICATION STYLE";
-        /// <summary>The ink outline round the notifications' words (1 = as designed, 0 = none).</summary>
+        /// <summary>TEXT OUTLINE: the words' own ink stroke (Hud.InkText round the banner's title and the countdown's
+        /// label and number) - its thickness (1 = as designed, 0 = none), on / off, colour and opacity. Not the OWN LOOK
+        /// post outline, which is an extra line laid on round everything after.</summary>
         public static readonly DisplayPref.Float NotifInk = new("notif.ink", GNotifStyle, 1f, 0f, 3f);
+        public static readonly DisplayPref.Bool NotifInkOn = new("notif.ink.on", GNotifStyle, true);
+        public static readonly DisplayPref.Colour NotifInkColour = new("notif.ink.colour", GNotifStyle, Color.black);
+        public static readonly DisplayPref.Float NotifInkOpacity = new("notif.ink.opacity", GNotifStyle, 1f, 0f, 1f);
+        /// <summary>The text outline's thickness in use (0 while it's switched off).</summary>
+        public static float NotifInkNow => NotifInkOn.Value ? NotifInk.Value : 0f;
+        /// <summary>The text outline's colour, at `alpha` (what the design had there) times its opacity.</summary>
+        public static Color NotifInkEdge(float alpha)
+        {
+            var c = NotifInkColour.Value;
+            c.a = Mathf.Clamp01(alpha * NotifInkOpacity.Value);
+            return c;
+        }
         /// <summary>How wide the dark band behind a banner / the countdown's label is (1 = as designed).</summary>
         public static readonly DisplayPref.Float NotifWidth = new("notif.width", GNotifStyle, 1f, 0.4f, 1.8f);
         /// <summary>How dark that band is (1 = as designed).</summary>
@@ -31,13 +45,16 @@ namespace RockGame
 
         public static void ResetNotifStyle(bool save = true)
         {
-            NotifInk.Set(1f, save); NotifWidth.Set(1f, save); NotifPlate.Set(1f, save); NotifFont.Set(0, save); NotifSize.Set(1f, save); NotifY.Set(0f, save);
+            NotifInk.Set(1f, save); NotifInkOn.Set(true, save); NotifInkColour.Set(Color.black, save); NotifInkOpacity.Set(1f, save);
+            NotifWidth.Set(1f, save); NotifPlate.Set(1f, save); NotifFont.Set(0, save); NotifSize.Set(1f, save); NotifY.Set(0f, save);
         }
 
         // ---- the HUD ----
         const string GHud = "HUD";
         /// <summary>The "YOU ARE BLUE" box in the top left of the HUD.</summary>
         public static readonly DisplayPref.Bool HudTeamBox = new("hud.teambox", GHud, true);
+        /// <summary>The "Your Base" radar under it (it moves up into the corner while the team box is off).</summary>
+        public static readonly DisplayPref.Bool HudBaseRadar = new("hud.baseradar", GHud, true);
 
         /// <summary>(makes the wording lines exist with GameSettings, so they're in the display settings code)</summary>
         static readonly int s_NotifLines = NotifText.All.Length;

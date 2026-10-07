@@ -36,6 +36,8 @@ namespace RockGame
         public static readonly DisplayPref.Bool TimerBarBack = new("timer.bar.back", GTimer, true);
         /// <summary>Where the label (TIME LEFT...) goes: left of the clock, or above it.</summary>
         public static readonly DisplayPref.Choice TimerLabelPos = new("timer.label", GTimer, new[] { "Left", "Above" }, 0);
+        /// <summary>Where the drain bar goes: under the plate (as designed) or over it.</summary>
+        public static readonly DisplayPref.Choice TimerBarPos = new("timer.bar.pos", GTimer, new[] { "Bottom", "Top" }, 0);
         // each phase's colour (the label, the line, the bar, the tag)
         public static readonly DisplayPref.Colour TimerColWaiting = new("timer.colour.waiting", GTimer, new Color(0.85f, 0.88f, 0.95f));
         public static readonly DisplayPref.Colour TimerColStart = new("timer.colour.start", GTimer, new Color(0.45f, 1f, 0.45f));
@@ -73,6 +75,7 @@ namespace RockGame
         public static bool TimerTopLineNow => !TimerOwn.Value || TimerTopLine.Value;
         public static bool TimerBarBackNow => !TimerOwn.Value || TimerBarBack.Value;
         public static bool TimerLabelAboveNow => TimerOwn.Value && TimerLabelPos.Value == 1;
+        public static bool TimerBarTopNow => TimerOwn.Value && TimerBarPos.Value == 1;
         /// <summary>A phase's colour in use: its own while the timer's own look is on, else as designed.</summary>
         public static Color TimerColourNow(DisplayPref.Colour c) => TimerOwn.Value ? c.Value : c.Default;
 
@@ -81,7 +84,7 @@ namespace RockGame
             TimerOwn.Set(false, save); TimerSize.Set(1f, save); TimerPlate.Set(0.6f, save);
             TimerBar.Set(true, save); TimerSub.Set(true, save); TimerTag.Set(true, save); TimerFlash.Set(true, save); TimerAccent.Set(true, save);
             TimerInk.Set(1f, save); TimerWidth.Set(1f, save); TimerFont.Set(0, save); TimerY.Set(0f, save);
-            TimerTopLine.Set(true, save); TimerBarBack.Set(true, save); TimerLabelPos.Set(0, save);
+            TimerTopLine.Set(true, save); TimerBarBack.Set(true, save); TimerLabelPos.Set(0, save); TimerBarPos.Set(0, save);
             foreach (var c in TimerColours) c.pref.Set(c.pref.Default, save);
         }
 
@@ -141,6 +144,7 @@ namespace RockGame
                 SubHead("PARTS");
                 Toggle("Top line", GameSettings.TimerTopLine);
                 Toggle("Drain bar", GameSettings.TimerBar);
+                if (GameSettings.TimerBar.Value) ChoiceRow("Drain bar goes", GameSettings.TimerBarPos, false, "Under the timer", "On top of it");
                 Toggle("Bar's grey ends", GameSettings.TimerBarBack);
                 Toggle("What to do line", GameSettings.TimerSub);
                 Toggle("Game mode tag", GameSettings.TimerTag);
@@ -198,7 +202,7 @@ namespace RockGame
 
         string m_ColourHexKey, m_ColourHexText;
         /// <summary>"Name  [swatch] [#RRGGBB] ↺" - a DisplayPref.Colour picked from a few presets or typed as hex.</summary>
-        void ColourPrefRow(string name, DisplayPref.Colour p)
+        void ColourPrefRow(string name, DisplayPref.Colour p, Color[] presets = null)
         {
             float k = m_Scale, lw = 210 * k;
             GUILayout.BeginHorizontal();
@@ -208,17 +212,13 @@ namespace RockGame
             float sw = 22 * k;
             var big = GUILayoutUtility.GetRect(40 * k, sw, GUILayout.Width(40 * k), GUILayout.Height(26 * k));
             big.y += (26 * k - sw) * 0.5f; big.height = sw;
-            Fill(big, new Color(0.75f, 0.75f, 0.75f));
-            Fill(new Rect(big.x + 2, big.y + 2, big.width - 4, big.height - 4), cur);
+            ColourSwatch(big, p, name); // (double-click: the colour wheel - Hud.ColourWheel.cs)
             GUILayout.Space(6 * k);
-            foreach (var pc in s_PhasePresets)
+            foreach (var pc in presets ?? s_PhasePresets)
             {
                 var pr = GUILayoutUtility.GetRect(sw, sw, GUILayout.Width(sw), GUILayout.Height(26 * k));
                 pr.y += (26 * k - sw) * 0.5f; pr.height = sw;
-                Fill(pr, ColorSlots.Same(pc, cur) ? new Color(1f, 0.82f, 0.3f) : new Color(0.4f, 0.4f, 0.4f, 0.8f));
-                Fill(new Rect(pr.x + 2, pr.y + 2, pr.width - 4, pr.height - 4), pc);
-                TrackHover(pr);
-                if (GUI.Button(pr, GUIContent.none, GUIStyle.none)) { ClickSound(); p.Set(pc); m_ColourHexKey = null; }
+                if (PresetSwatch(pr, pc, p, name)) m_ColourHexKey = null;
                 GUILayout.Space(2 * k);
             }
             GUILayout.Space(6 * k);

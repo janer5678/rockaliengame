@@ -366,7 +366,7 @@ namespace RockGame
                 bool glow = EffectRow("Glow", GameSettings.NotifBloom.Value, ref bs);
                 GameSettings.NotifBloom.Set(glow); GameSettings.NotifBloomStrength.Set(Mathf.Round(bs * 20f) / 20f);
                 float wd01 = Mathf.InverseLerp(GameSettings.UiOutlineWidthMin, GameSettings.UiOutlineWidthMax, GameSettings.NotifOutlineWidth.Value);
-                bool ink = EffectRow("Outlines", GameSettings.NotifOutline.Value, ref wd01);
+                bool ink = EffectRow("Extra outline (post)", GameSettings.NotifOutline.Value, ref wd01); // (not the TEXT OUTLINE: that is the words' own stroke)
                 float wd = Mathf.Round(Mathf.Lerp(GameSettings.UiOutlineWidthMin, GameSettings.UiOutlineWidthMax, wd01) * 2f) / 2f;
                 GameSettings.NotifOutline.Set(ink); GameSettings.NotifOutlineWidth.Set(wd);
                 if (ink)
@@ -374,16 +374,17 @@ namespace RockGame
                     GUILayout.BeginHorizontal();
                     GUILayout.Space(32 * k);
                     GUILayout.Label($"<color=#bbbbbb>{wd * 4f / 3f:0.#} px · colour</color>", m_Small, GUILayout.Width(110 * k), GUILayout.Height(26 * k));
-                    var cur = GameSettings.NotifOutlineColour.Value;
                     float sw = 22 * k;
+                    // the colour now (double-click: the colour wheel), then the presets
+                    var nowR = GUILayoutUtility.GetRect(40 * k, sw, GUILayout.Width(40 * k), GUILayout.Height(26 * k));
+                    nowR.y += (26 * k - sw) * 0.5f; nowR.height = sw;
+                    ColourSwatch(nowR, GameSettings.NotifOutlineColour, "Notifications' post outline");
+                    GUILayout.Space(6 * k);
                     foreach (var pc in s_InkPresets)
                     {
                         var pr = GUILayoutUtility.GetRect(sw, sw, GUILayout.Width(sw), GUILayout.Height(26 * k));
                         pr.y += (26 * k - sw) * 0.5f; pr.height = sw;
-                        Fill(pr, ColorSlots.Same(pc, cur) ? new Color(1f, 0.82f, 0.3f) : new Color(0.5f, 0.5f, 0.5f, 0.8f));
-                        Fill(new Rect(pr.x + 2, pr.y + 2, pr.width - 4, pr.height - 4), pc);
-                        TrackHover(pr);
-                        if (GUI.Button(pr, GUIContent.none, GUIStyle.none)) { ClickSound(); GameSettings.NotifOutlineColour.Set(pc); }
+                        PresetSwatch(pr, pc, GameSettings.NotifOutlineColour, "Notifications' post outline");
                         GUILayout.Space(3 * k);
                     }
                     GUILayout.FlexibleSpace();
@@ -499,10 +500,7 @@ namespace RockGame
                 {
                     var pr = GUILayoutUtility.GetRect(sw, sw, GUILayout.Width(sw), GUILayout.Height(26 * k));
                     pr.y += (26 * k - sw) * 0.5f; pr.height = sw;
-                    Fill(pr, ColorSlots.Same(pc, cur) ? new Color(1f, 0.82f, 0.3f) : new Color(0.5f, 0.5f, 0.5f, 0.8f));
-                    Fill(new Rect(pr.x + 2, pr.y + 2, pr.width - 4, pr.height - 4), pc);
-                    TrackHover(pr);
-                    if (GUI.Button(pr, GUIContent.none, GUIStyle.none)) { ClickSound(); GameSettings.UiOutlineColour.Set(pc); m_InkHex = null; }
+                    if (PresetSwatch(pr, pc, GameSettings.UiOutlineColour, "The UI's outline")) m_InkHex = null; // (double-click: the colour wheel)
                     GUILayout.Space(3 * k);
                 }
                 GUILayout.Space(6 * k);

@@ -49,6 +49,20 @@ namespace RockGame
                         $"the first shot is from a corner ({at0.x:0}, {at0.z:0}) at eye level ({h:0.0} m), drifting slowly ({Vector3.Distance(at0, at1):0.0} m, {Quaternion.Angle(rot0, rot1):0} deg in 2 s)");
                     yield return new WaitForSeconds(3f);
                     yield return Shot("page7_map_5s");
+                    // a map with tall grass (Highlands): one of the shots is of a patch of it, as in a match
+                    int hk = (Bootstrap.MapChoice & ~15) | (int)MapKind.Highlands;
+                    Bootstrap.I.SetMapChoice(hk);
+                    yield return new WaitForSeconds(1.5f);
+                    Check(MenuScene.TallGrassShots > 0 && MenuScene.FirstTallGrassShot > 0, $"Highlands: the map page's shots show its tall grass ({MenuScene.TallGrassShots} shots of it)");
+                    MenuScene.TestJumpShot(MenuScene.FirstTallGrassShot);
+                    yield return new WaitForSeconds(1.5f);
+                    var g = GrassField.Current;
+                    var cp = Camera.main != null ? Camera.main.transform.position : Vector3.zero;
+                    var fw = Camera.main != null ? Camera.main.transform.forward : Vector3.forward;
+                    float tallAhead = 0f;
+                    if (g != null) for (float d = 2f; d < 20f; d += 1f) tallAhead = Mathf.Max(tallAhead, g.WheatAt(cp.x + fw.x * d, cp.z + fw.z * d));
+                    Check(tallAhead > 0.5f && g != null && g.DrawnPatches > 0, $"...the camera looks into a tall grass patch ({tallAhead:0.00} deep, {(g != null ? g.DrawnPatches : 0)} patches drawn)");
+                    yield return Shot("page7_tallgrass");
                 }
             }
             Hud.TestNameScreen = true;
@@ -91,16 +105,24 @@ namespace RockGame
                 Check(Hud.LobbyMenuOpen && Hud.LobbyMenuPage == 7 && ShipLobby.Active && nm.IsListening && PlayerNet.All.Count == 2,
                     $"host: BACK in the lobby opens the map page over it, the lobby still open with both in it (page {Hud.LobbyMenuPage}, {PlayerNet.All.Count} players)");
                 Check(!PlayerNet.Local.LobbyReady.Value, "host: in the menu the host isn't READY (the match can't start without them)");
+                // the hosted map's page: the map itself, in the menu's slow shots over the session's own map (not a picture)
+                yield return new WaitForSeconds(1f);
+                var mc = Camera.main != null ? Camera.main.transform.position : ShipLobby.Center;
+                float eye = mc.y - MapBuilder.GroundHeight(mc.x, mc.z);
+                Check(MenuScene.LobbyPreview && Vector3.Distance(mc, ShipLobby.Center) > 200f && Mathf.Abs(mc.x) < Cfg.MapHalf + 5f && Mathf.Abs(mc.z) < Cfg.MapHalf + 5f && eye < 2.5f,
+                    $"host: the map page shows the hosted map live - the cinematic shots over it ({mc.x:0}, {mc.z:0}, {eye:0.0} m up)");
                 ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "lobbymap_host_mappage.png"));
                 yield return new WaitForSeconds(0.5f);
                 Hud.TestMenuBack();
                 yield return new WaitForSeconds(0.8f);
+                Check(!MenuScene.LobbyPreview, "host: off the map page the live map preview stops");
                 Check(Hud.LobbyMenuOpen && Hud.LobbyMenuPage == 6 && nm.IsListening && ShipLobby.Active, $"host: BACK again - the game mode page, still in the lobby (page {Hud.LobbyMenuPage})");
                 ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "lobbymap_host_modepage.png"));
                 yield return new WaitForSeconds(0.5f);
                 Hud.TestNewPage(7);
                 Hud.TestLobbyPickMap(to);
                 yield return new WaitForSeconds(0.8f);
+                Check(!MenuScene.LobbyPreview, "host: another map picked - its picture (it isn't built), not the live map");
                 ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "lobbymap_host_newmap.png"));
                 yield return new WaitForSeconds(0.5f);
                 Check(NetGame.Instance != null && NetGame.Instance.S == GameState.Waiting, "host: the match never started while the host was in the menu");
@@ -246,6 +268,13 @@ namespace RockGame
                 yield return new WaitForSeconds(0.4f);
                 Check(me.ArcadePlaying.Value && LobbyArcade.Playing >= 1, $"you're playing the telly's game ({LobbyArcade.Playing} playing)");
                 Check(ShipLobby.IsGaming(me), "your alien on the couch holds a controller and watches the telly");
+                // the score bar along the top lists everyone playing (you too, the moment you join)
+                Check(LobbyArcade.BoardShown == LobbyArcade.Playing && LobbyArcade.PlayerScore(nm.LocalClientId) >= 0,
+                    $"the telly's score bar shows everyone playing ({LobbyArcade.BoardShown} on it, {LobbyArcade.Playing} playing)");
+                // the camera sits back from the telly: the HUD (the title top left, the buttons along the bottom) stays off the picture
+                var tv = ShipLobby.TellyOnScreen;
+                Check(tv.height > Screen.height * 0.4f && tv.yMin > Screen.height * 0.13f && tv.yMax < Screen.height * 0.87f,
+                    $"the telly's picture sits clear of the lobby's HUD (from {tv.yMin / Screen.height:0.00} to {tv.yMax / Screen.height:0.00} of the screen's height)");
                 LobbyArcade.MyDot(out var dot0);
                 int hash0 = LobbyArcade.PictureHash, draws0 = LobbyArcade.Redraws;
                 LobbyArcade.TestStick = new Vector2(1f, 0f); // (D held)
@@ -255,11 +284,12 @@ namespace RockGame
                 Check(LobbyArcade.Redraws > draws0 + 10 && LobbyArcade.PictureHash != hash0, $"the telly's picture keeps redrawing ({LobbyArcade.Redraws - draws0} frames) and changes");
                 ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "lobby_arcade_host.png"));
                 yield return null;
-                int team = me.Team.Value & 3, score0 = LobbyArcade.Score(team);
+                int team = me.Team.Value & 3, score0 = LobbyArcade.Score(team), mine0 = LobbyArcade.PlayerScore(nm.LocalClientId);
                 LobbyArcade.TestAuto = 1; // (steering itself into the nearest tree)
                 until = Time.time + 10f;
                 while (LobbyArcade.Score(team) < score0 + 1 && Time.time < until) yield return null;
-                Check(LobbyArcade.Score(team) >= score0 + 1, $"bumping into a tree chops it down: +1 ({score0} -> {LobbyArcade.Score(team)})");
+                Check(LobbyArcade.Score(team) >= score0 + 1 && LobbyArcade.PlayerScore(nm.LocalClientId) >= mine0 + 1,
+                    $"walking into a tree collects it: +1 for you and your team ({score0} -> {LobbyArcade.Score(team)}, yours {mine0} -> {LobbyArcade.PlayerScore(nm.LocalClientId)})");
                 int score1 = LobbyArcade.Score(team);
                 LobbyArcade.TestAuto = 2; // (to the ball, then home with it)
                 until = Time.time + 20f;

@@ -11,8 +11,11 @@ namespace RockGame
     /// a chase from behind and above, a fast fly-by whip and a slow push in on its dome, each with its own little move.
     /// The ship banks and bobs as it goes and its rim of lights turns. Far out past everything (Origin), with the camera
     /// cleared to black space while it's showing.
+    /// It also plays the first two scenes of the match intro (MatchIntro.cs) while a session's up: this UFO in space,
+    /// then its crash onto the planet (MenuSpace.Crash.cs). The intro's camera pose is worked out here (IntroPos/Rot/Fov)
+    /// and handed to the player's camera by MatchIntro.CameraPose.
     /// </summary>
-    public static class MenuSpace
+    public static partial class MenuSpace
     {
         static readonly Vector3 Origin = new Vector3(-6000f, 1500f, 0f);
         static GameObject s_Root;
@@ -24,6 +27,7 @@ namespace RockGame
         static float s_OldFar, s_Start, s_Fade = 1f;
         const float StarBox = 700f, Cruise = 260f, LinesBox = 240f;
         static Transform s_Lines, s_Lines2;
+        static bool s_Intro, s_OldFog;
         static float s_Travel;
         static Vector3 s_Rattle;
         static readonly List<Transform> s_Exhaust = new List<Transform>();
@@ -34,10 +38,15 @@ namespace RockGame
         /// <summary>The space shot is up (no distance haze: PostFx).</summary>
         public static bool Showing => s_Showing;
 
-        /// <summary>Every frame (Bootstrap): show the space shot (on: the main menu's up) or put it away.</summary>
+        /// <summary>Every frame (Bootstrap): show the space shot (on: the main menu's up) or put it away. It runs the
+        /// match intro too (MatchIntro.Tick), and shows its space and crash scenes while it wants them.</summary>
         public static void Tick(bool on)
         {
+            MatchIntro.Tick();
+            bool intro = !on && MatchIntro.SpaceUp;
+            on |= intro;
             var cam = Camera.main;
+            if (s_Showing && s_Intro != intro) Hide(cam); // (between the menu and the intro: start over)
             if (!on || cam == null)
             {
                 if (s_Showing) Hide(cam);
@@ -47,13 +56,21 @@ namespace RockGame
             if (!s_Showing)
             {
                 s_Showing = true;
+                s_Intro = intro;
                 s_Root.SetActive(true);
                 s_OldClear = cam.clearFlags;
                 s_OldBg = cam.backgroundColor;
                 s_OldFar = cam.farClipPlane;
                 s_Start = Time.unscaledTime;
-                s_Fade = 1f;
+                s_Fade = intro ? 0f : 1f;
+                if (intro)
+                {
+                    // (the map's fog would wash the far-off scenes out: none while they're up)
+                    s_OldFog = RenderSettings.fog;
+                    RenderSettings.fog = false;
+                }
             }
+            if (s_Intro) { TickIntro(cam); return; }
             cam.clearFlags = CameraClearFlags.SolidColor;
             cam.backgroundColor = GameSettings.MenuSpaceColour.Value; // (Settings > Display > MAIN MENU CUTSCENE: MenuLooks.cs)
             if (s_ColoursDirty) ApplyColours();
@@ -67,6 +84,13 @@ namespace RockGame
         static void Hide(Camera cam)
         {
             s_Showing = false;
+            if (s_Intro)
+            {
+                s_Intro = false;
+                IntroPoseOk = false;
+                SetCrashScene(false);
+                RenderSettings.fog = s_OldFog;
+            }
             if (s_Root) s_Root.SetActive(false);
             if (cam == null) return;
             cam.clearFlags = s_OldClear;
@@ -490,7 +514,7 @@ namespace RockGame
             PaintLight(fl, GameSettings.MenuFireColour, MenuLooks.FireRef);
         }
         /// <summary>Speed lines: long thin streaks close round the ship's path, whipping past (two tiles).</summary>
-        static Transform LinesTile(string name)
+        static Transform LinesTile(string name, Transform parent = null)
         {
             var rng = new System.Random(name.Length * 131 + 9);
             var v = new List<Vector3>();
@@ -512,7 +536,7 @@ namespace RockGame
             mesh.RecalculateNormals();
             mesh.RecalculateBounds();
             var go = new GameObject(name);
-            go.transform.SetParent(s_Root.transform, false);
+            go.transform.SetParent(parent != null ? parent : s_Root.transform, false);
             go.AddComponent<MeshFilter>().sharedMesh = mesh;
             var mr = go.AddComponent<MeshRenderer>();
             mr.sharedMaterial = Unlit(new Color(0.75f, 0.9f, 1f), 1.2f);

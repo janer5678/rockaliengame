@@ -125,7 +125,7 @@ namespace RockGame
                 if (g.S == GameState.BallLive && NetworkManager.Singleton.ServerTime.Time >= m_P.RespawnAt.Value && g.CanRespawn(m_P.Team.Value)) m_P.ServerRespawn(false);
                 return;
             }
-            if (m_CC == null || !m_CC.enabled || g.S == GameState.GameOver || g.FightFrozen || VictoryCutscene.Active) { SetAction(BodyAnimator.Act.None); return; }
+            if (m_CC == null || !m_CC.enabled || g.S == GameState.GameOver || g.FightFrozen || VictoryCutscene.Active || MatchIntro.Active) { SetAction(BodyAnimator.Act.None); return; }
             // added once the match had begun (it came in at the waiting stadium): off home to its base
             if ((g.S == GameState.PreBall || g.S == GameState.BallLive) && SpaceArena.NearArena(transform.position)) { m_P.ServerSendHome(); return; }
             bool lobby = g.S == GameState.Waiting;

@@ -496,6 +496,43 @@ namespace RockGame
             Shader.SetGlobalVector(k_GroundRect, m_GroundRect);
         }
 
+        /// <summary>
+        /// The middles of the biggest tall grass patches (ground height in y), biggest first, at least `apart` metres from
+        /// each other - for the menu's map preview (MenuScene.Shots.cs), so its slow shots show the tall grass as in a match.
+        /// </summary>
+        public List<Vector3> TallGrassSpots(int max, float apart = 30f)
+        {
+            var spots = new List<Vector3>();
+            if (m_Px == null || max <= 0) return spots;
+            // the tall middles (B over 0.8) counted in 12 m cells, with their centroid
+            const float Cell = 12f;
+            int cn = Mathf.CeilToInt(m_N / Cell) + 1;
+            var count = new int[cn * cn];
+            var sum = new Vector2[cn * cn];
+            for (int j = 0; j < m_N; j++)
+            for (int i = 0; i < m_N; i++)
+            {
+                var px = m_Px[j * m_N + i];
+                if (px.b < 0.8f || px.g < 0.5f) continue; // (grass growing there at all: not on the rock)
+                int c = (int)(j / Cell) * cn + (int)(i / Cell);
+                count[c]++;
+                sum[c] += new Vector2(m_Min + i, m_Min + j);
+            }
+            var order = new List<int>();
+            for (int c = 0; c < count.Length; c++) if (count[c] >= 6) order.Add(c);
+            order.Sort((a, b) => count[b].CompareTo(count[a]));
+            foreach (int c in order)
+            {
+                var p = sum[c] / count[c];
+                bool close = false;
+                foreach (var s in spots) if (new Vector2(s.x - p.x, s.z - p.y).sqrMagnitude < apart * apart) { close = true; break; }
+                if (close) continue;
+                spots.Add(new Vector3(p.x, MapBuilder.GroundHeight(p.x, p.y), p.y));
+                if (spots.Count >= max) break;
+            }
+            return spots;
+        }
+
         int Idx(float w) => Mathf.Clamp(Mathf.RoundToInt(w - m_Min), 0, m_N - 1);
         Color Field(float x, float z) => m_Px[Idx(z) * m_N + Idx(x)];
 

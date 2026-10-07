@@ -94,7 +94,11 @@ namespace RockGame
                     Fill(pr, ColorSlots.Same(c, cur) ? new Color(1f, 0.82f, 0.3f) : new Color(0.5f, 0.5f, 0.5f, 0.8f));
                     Fill(new Rect(pr.x + 2, pr.y + 2, pr.width - 4, pr.height - 4), c);
                     TrackHover(pr);
-                    if (GUI.Button(pr, GUIContent.none, GUIStyle.none)) { ClickSound(); pref.Set(c); m_MenuHex.Remove(pref.Key); }
+                    // (double-click: the colour wheel - Hud.ColourWheel.cs)
+                    bool wheel = ColourWheelOnDoubleClick(pr, pref, name);
+                    bool click = GUI.Button(pr, GUIContent.none, GUIStyle.none); // (always made, so the control ids stay the same)
+                    if (wheel) m_MenuHex.Remove(pref.Key);
+                    else if (click) { ClickSound(); pref.Set(c); m_MenuHex.Remove(pref.Key); }
                     GUILayout.Space(2 * k);
                 }
                 Swatch(pref.Default);
@@ -117,7 +121,7 @@ namespace RockGame
             }
             GUILayout.BeginHorizontal();
             GUILayout.Space(16 * k);
-            GUILayout.Label("<color=#bbbbbb>The main menu's UFO cutscene only. The first swatch is each one as it was made; type a hex code (like FF8800) for any other colour. The nebula, hull, thrusters and fire keep their layers in the new colour.</color>", m_SmallWrap);
+            GUILayout.Label("<color=#bbbbbb>The main menu's UFO cutscene only. The first swatch is each one as it was made; type a hex code (like FF8800) for any other colour, or double-click a square for the colour wheel. The nebula, hull, thrusters and fire keep their layers in the new colour.</color>", m_SmallWrap);
             GUILayout.EndHorizontal();
         }
     }

@@ -142,15 +142,71 @@ namespace RockGame
             return true;
         }
 
-        /// <summary>Behind the lobby menu's pages: the lobby, dimmed nearly away - and on the map page, the map's picture.</summary>
+        /// <summary>
+        /// The host's lobby map page is up with the map being hosted picked (same map, same size): its background is the
+        /// map itself - the main menu's slow cinematic shots (MenuScene.Shots.cs), filmed over the session's own map while
+        /// the page is up. (Another map can't be shown live: the session's map is the one built, and building another
+        /// would pull the world out from under everyone in it - that one's picture drifts behind instead, until CONFIRM.)
+        /// </summary>
+        public static bool LobbyMapLive => s_I != null && s_I.LobbyMapLiveNow();
+
+        bool LobbyMapLiveNow()
+        {
+            if (!m_LobbyMenu || m_New != NewPage.Map || m_Page != MenuPage.Main || TestHideAll) return false;
+            var boot = Bootstrap.I;
+            if (boot == null || !boot.InSession || !ShipLobby.Active || MapBuilder.Root == null) return false;
+            return LobbyPickIsHosted();
+        }
+
+        /// <summary>The map page's pick (map and size) is what's being hosted.</summary>
+        bool LobbyPickIsHosted()
+        {
+            var kind = k_Maps[Mathf.Clamp(m_MapPick, 0, k_Maps.Length - 1)];
+            int key = Bootstrap.MapChoice;
+            var size = (key & Cfg.SmallBit) != 0 ? MapSize.Small : (MapSize)((key >> Cfg.SizeShift) & 3);
+            return kind == Cfg.Map && size == Cfg.Size;
+        }
+
+        int m_PicKind = -1;
+        float m_PicFrom;
+
+        /// <summary>Behind the lobby menu's pages: the lobby, dimmed nearly away - and on the map page, the map itself
+        /// (the hosted one: LobbyMapLive) or another map's picture, slowly drifting and zooming in shots like the live ones.</summary>
         void DrawLobbyMenuBackdrop()
         {
             var full = new Rect(0, 0, Screen.width, Screen.height);
-            Fill(full, new Color(0.02f, 0.01f, 0.05f, 0.94f));
-            if (m_New != NewPage.Map) return;
+            if (m_New == NewPage.Map && LobbyMapLive)
+            {
+                // the live map: only the shots' fade through black between them
+                if (MenuScene.Fade > 0.001f) Fill(full, new Color(0, 0, 0, MenuScene.Fade));
+                m_PicKind = -1;
+                return;
+            }
+            Fill(full, new Color(0.02f, 0.01f, 0.05f, m_New == NewPage.Map ? 1f : 0.94f));
+            if (m_New != NewPage.Map) { m_PicKind = -1; return; }
             var kind = k_Maps[Mathf.Clamp(m_MapPick, 0, k_Maps.Length - 1)];
             if (!s_MapShots.TryGetValue(kind, out var tex)) { tex = Resources.Load<Texture2D>("MapShots/" + kind); s_MapShots[kind] = tex; }
-            if (tex != null) GUI.DrawTexture(full, tex, ScaleMode.ScaleAndCrop);
+            if (tex == null) return;
+            if ((int)kind != m_PicKind) { m_PicKind = (int)kind; m_PicFrom = Time.unscaledTime; }
+            // the picture as slow shots: each a gentle zoom and drift across part of it, cut through a short fade
+            float t = Time.unscaledTime - m_PicFrom, len = MenuScene.ShotSeconds;
+            int shot = Mathf.FloorToInt(t / len);
+            float st = t - shot * len, u = st / len, e = u * u * (3f - 2f * u) * 0.5f + u * 0.5f;
+            var rng = new System.Random(shot * 7919 + (int)kind * 31);
+            float R() => (float)rng.NextDouble();
+            float z0 = 1.05f + R() * 0.1f, z1 = z0 + 0.12f + R() * 0.08f;
+            if (shot % 2 == 1) (z0, z1) = (z1, z0);
+            float zoom = Mathf.Lerp(z0, z1, e);
+            float sa = Screen.width / (float)Mathf.Max(1, Screen.height), ta = tex.width / (float)Mathf.Max(1, tex.height);
+            float uw = sa > ta ? 1f : sa / ta, uh = sa > ta ? ta / sa : 1f;
+            uw /= zoom; uh /= zoom;
+            var c0 = new Vector2(R(), R()); var c1 = new Vector2(R(), R());
+            var c = Vector2.Lerp(c0, c1, e * 0.6f + 0.2f);
+            float cx = Mathf.Lerp(uw / 2f, 1f - uw / 2f, c.x), cy = Mathf.Lerp(uh / 2f, 1f - uh / 2f, c.y);
+            GUI.DrawTextureWithTexCoords(full, tex, new Rect(cx - uw / 2f, cy - uh / 2f, uw, uh));
+            float fin = Mathf.Clamp01(st / MenuScene.ShotFade), fout = Mathf.Clamp01((len - st) / MenuScene.ShotFade);
+            float fade = 1f - Mathf.SmoothStep(0f, 1f, Mathf.Min(fin, fout));
+            if (fade > 0.001f) Fill(full, new Color(0, 0, 0, fade));
         }
 
         /// <summary>Top right on the lobby menu: the lobby's still open, and how to close it.</summary>
@@ -159,8 +215,9 @@ namespace RockGame
             float k = m_Scale, sw = Screen.width;
             int n = ShipLobby.Seated.Count;
             string s = $"<b>YOUR LOBBY IS STILL OPEN</b>  ·  {n} in it\n<color=#bbbbbb>CONFIRM takes you back to it with the new picks.  BACK to the main menu closes it.</color>";
+            if (m_New == NewPage.Map && !LobbyPickIsHosted()) s += "\n<color=#bbbbbb>A picture of this map: CONFIRM builds it for everyone.</color>";
             var st = new GUIStyle(m_Small) { alignment = TextAnchor.UpperRight, fontSize = Mathf.RoundToInt(15 * k), wordWrap = false };
-            Shadowed(new Rect(0, 18 * k, sw - 22 * k, 50 * k), s, st);
+            Shadowed(new Rect(0, 18 * k, sw - 22 * k, 80 * k), s, st);
         }
     }
 

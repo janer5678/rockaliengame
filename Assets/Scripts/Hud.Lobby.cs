@@ -4,7 +4,7 @@ namespace RockGame
 {
     /// <summary>
     /// The ship lobby's screen (ShipLobby.cs is the room): everyone's name over their alien (in their team's colour, with a
-    /// tick once they're READY), the buttons along the bottom left like the reference - LEAVE (closes the lobby), COPY ROOM
+    /// tick once they're READY - AI bots always are), the buttons along the bottom left like the reference - LEAVE (closes the lobby), COPY ROOM
     /// ID (the host's IPv4 address, for a friend to type into JOIN) and GAME OPTIONS (the host: change the game mode,
     /// length and team sizes; everyone READYs again after), LOBBY LOOK (everyone: the room's colours, lights and post
     /// processing, for you) and, on the telly's game (LobbyArcade.cs), STOP PLAYING - a JOIN option for each team with a
@@ -33,7 +33,7 @@ namespace RockGame
             string sub = $"{Cfg.RulesName(Cfg.Rules).ToUpper()}  ·  {Cfg.ModeLabel}  ·  {players}/{Cfg.PlayersNeeded} players";
             Shadowed(new Rect(30 * k, 90 * k, sw, 30 * k), sub, new GUIStyle(m_Label) { fontSize = Mathf.RoundToInt(18 * k) });
             int readyN = 0;
-            foreach (var p in ShipLobby.Seated) if (p.LobbyReady.Value) readyN++;
+            foreach (var p in ShipLobby.Seated) if (ShipLobby.IsReady(p)) readyN++; // (bots always count as READY)
             string wait = g != null && g.StartCounting ? $"<color=#7dff7a>Starting in {Mathf.CeilToInt(g.StartsIn)}...</color>"
                 : players < 2 ? "Waiting for someone to join - COPY ROOM ID and send it to a friend"
                 : $"{readyN}/{players} ready - the match starts when everyone is";
@@ -55,7 +55,7 @@ namespace RockGame
                     if (!ShipLobby.HeadOnScreen(p, out var at)) continue;
                     var c = Cfg.TeamColor[Mathf.Clamp(p.Team.Value, 0, 3)];
                     string hex = ColorUtility.ToHtmlStringRGB(Color.Lerp(c, Color.white, 0.35f));
-                    string tick = p.LobbyReady.Value ? $"  <size={Mathf.RoundToInt(38 * k)}><color=#7dff7a>✔</color></size>" : ""; // (big: ready at a glance)
+                    string tick = ShipLobby.IsReady(p) ? $"  <size={Mathf.RoundToInt(38 * k)}><color=#7dff7a>✔</color></size>" : ""; // (big: ready at a glance)
                     string pad = LobbyArcade.InGame(p) ? $"  <size={Mathf.RoundToInt(14 * k)}><color=#ffd84a>ON THE TELLY</color></size>" : "";
                     Shadowed(new Rect(at.x - 150 * k, at.y - 26 * k, 300 * k, 30 * k), $"<color=#{hex}>{p.DisplayName}</color>{tick}{pad}", tag);
                 }
@@ -66,13 +66,7 @@ namespace RockGame
                     Shadowed(new Rect(at.x - 150 * k, at.y - 26 * k, 300 * k, 30 * k), $"<color=#b4b4b4>{s.Name}</color>  <size={Mathf.RoundToInt(14 * k)}><color=#8c8c8c>SPECTATING</color></size>", tag);
                 }
             }
-            else
-            {
-                // playing the telly's game: how to play, under the title
-                Shadowed(new Rect(30 * k, 168 * k, sw, 26 * k), me != null
-                    ? "<color=#ffd84a><b>TELLY GAME</b></color>  WASD to move · bump trees to chop them (+1) · run the ball to your machine (+5) · run into the carrier to steal it"
-                    : "<color=#ffd84a><b>TELLY GAME</b></color>  watching - pick a team to play too", new GUIStyle(m_Small) { fontSize = Mathf.RoundToInt(15 * k) });
-            }
+            // (playing the telly's game: no how-to-play line - the camera sits back so the HUD stays off the picture)
 
             // the buttons along the bottom left, white-framed like the reference (CUSTOMISE ALIEN is off for now)
             float bh = 40 * k, by = sh - bh - 22 * k, bx = 24 * k;

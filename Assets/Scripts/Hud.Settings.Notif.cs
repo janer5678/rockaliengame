@@ -91,11 +91,25 @@ namespace RockGame
             // ---- style ----
             Caption("STYLE  ·  the banners and the end countdown");
             Slider("Size", GameSettings.NotifSize, $"{GameSettings.NotifSize.Value * 100f:0}%", 0.05f);
-            Slider("Outline thickness", GameSettings.NotifInk, GameSettings.NotifInk.Value < 0.01f ? "none" : $"{GameSettings.NotifInk.Value * 100f:0}%", 0.05f);
             Slider("Band width", GameSettings.NotifWidth, $"{GameSettings.NotifWidth.Value * 100f:0}%", 0.05f);
             Slider("Band darkness", GameSettings.NotifPlate, GameSettings.NotifPlate.Value < 0.01f ? "none" : $"{GameSettings.NotifPlate.Value * 100f:0}%", 0.05f);
             Slider("Height on screen", GameSettings.NotifY, Mathf.Abs(GameSettings.NotifY.Value) < 0.5f ? "as usual" : $"{(GameSettings.NotifY.Value > 0 ? "+" : "")}{GameSettings.NotifY.Value:0} px", 5f);
             ChoiceRow("Font", GameSettings.NotifFont, true);
+            // the words' own ink stroke (InkText) - not OWN LOOK's outline, which is an extra line laid round everything after
+            SubHead("TEXT OUTLINE  ·  the words' own stroke");
+            GUILayout.BeginHorizontal();
+            GUILayout.Space(16 * k);
+            GUILayout.Label("Text outline", m_Small, GUILayout.Width(lw - 16 * k), GUILayout.Height(26 * k));
+            GameSettings.NotifInkOn.Set(ToggleBtn(GameSettings.NotifInkOn.Value, GameSettings.NotifInkOn.Value ? "On" : "Off", GUILayout.Width(80 * k), GUILayout.Height(26 * k)));
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
+            if (GameSettings.NotifInkOn.Value)
+            {
+                Slider("Text outline thickness", GameSettings.NotifInk, GameSettings.NotifInk.Value < 0.01f ? "none" : $"{GameSettings.NotifInk.Value * 100f:0}%", 0.05f);
+                ColourPrefRow("Text outline colour", GameSettings.NotifInkColour, s_InkPresets);
+                Slider("Text outline opacity", GameSettings.NotifInkOpacity, $"{GameSettings.NotifInkOpacity.Value * 100f:0}%", 0.05f);
+            }
+            Hint("The ink stroke drawn round the banner's and the countdown's own letters. (OWN LOOK's Outlines below is a separate, extra line laid round everything afterwards.) Double-click a colour square for the colour wheel.");
             GUILayout.BeginHorizontal();
             GUILayout.Label("<color=#bbbbbb>The big messages in the middle of the screen. Height: up (left) or down (right) from where they usually sit.</color>", m_SmallWrap);
             if (Btn("Defaults", GUILayout.Width(100 * k), GUILayout.Height(28 * k))) GameSettings.ResetNotifStyle();
@@ -151,6 +165,13 @@ namespace RockGame
             bool box = ToggleBtn(GameSettings.HudTeamBox.Value, GameSettings.HudTeamBox.Value ? "On" : "Off", GUILayout.Width(90 * k), GUILayout.Height(30 * k));
             GameSettings.HudTeamBox.Set(box);
             GUILayout.Label("<color=#bbbbbb>  \"YOU ARE BLUE\" in the top left</color>", m_Small, GUILayout.Height(30 * k));
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            RowLabel("Base radar", lw);
+            bool radar = ToggleBtn(GameSettings.HudBaseRadar.Value, GameSettings.HudBaseRadar.Value ? "On" : "Off", GUILayout.Width(90 * k), GUILayout.Height(30 * k));
+            GameSettings.HudBaseRadar.Set(radar);
+            GUILayout.Label(GameSettings.HudTeamBox.Value ? "<color=#bbbbbb>  \"Your Base\" arrow, under the team box</color>" : "<color=#bbbbbb>  \"Your Base\" arrow, up in the corner (no team box)</color>", m_Small, GUILayout.Height(30 * k));
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
             GUILayout.BeginHorizontal();

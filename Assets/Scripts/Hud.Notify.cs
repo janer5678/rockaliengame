@@ -84,7 +84,7 @@ namespace RockGame
             bool hard = n <= 3;
             var accent = overtime ? new Color(1f, 0.25f, 0.18f) : hard ? new Color(1f, 0.55f, 0.15f) : new Color(1f, 0.85f, 0.25f);
             // (Settings > Display > NOTIFICATIONS: size, height, band width / darkness, font, outline; NotifLooks.cs)
-            float zs = GameSettings.NotifSize.Value, ink = GameSettings.NotifInk.Value, dy = GameSettings.NotifY.Value * k;
+            float zs = GameSettings.NotifSize.Value, ink = GameSettings.NotifInkNow, dy = GameSettings.NotifY.Value * k; // (TEXT OUTLINE: thickness, colour, opacity)
             var font = GameSettings.NotifFontNow;
             label = NotifText.Map(label);
             float cx = sw / 2f, cy = sh * 0.24f + 110 * k * zs + dy;
@@ -98,7 +98,7 @@ namespace RockGame
             Fill(new Rect(cx - bw * 0.35f, by + bh - 4 * k, bw * 0.7f * t, 3 * k), accent);
             var lst = new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt(30 * k * zs), alignment = TextAnchor.MiddleCenter, clipping = TextClipping.Overflow };
             if (font != null) lst.font = font;
-            InkText(new Rect(0, by, sw, bh), label, lst, new Color(1f, 0.95f, 0.9f), new Color(0f, 0f, 0f, 0.9f), 2.5f * k * ink);
+            InkText(new Rect(0, by, sw, bh), label, lst, new Color(1f, 0.95f, 0.9f), GameSettings.NotifInkEdge(0.9f), 2.5f * k * ink);
             // the number: slammed in white-hot, springing and wobbling as it settles into the colour
             float spring = 1f + (hard ? 0.6f : 0.42f) * Mathf.Exp(-7f * t) * Mathf.Cos(t * 22f);
             float size = (hard ? 200f : 165f) * k * zs * spring;
@@ -109,7 +109,7 @@ namespace RockGame
             float wob = (hard ? 9f : 6f) * Mathf.Exp(-6f * t) * Mathf.Sin(t * 26f);
             var mat = GUI.matrix;
             GUIUtility.RotateAroundPivot(wob, new Vector2(cx, cy));
-            InkText(new Rect(cx - 300 * k * zs, cy - size * 0.6f, 600 * k * zs, size * 1.2f), n.ToString(), nst, fill, new Color(0f, 0f, 0f, 0.85f), (hard ? 6f : 5f) * k * ink);
+            InkText(new Rect(cx - 300 * k * zs, cy - size * 0.6f, 600 * k * zs, size * 1.2f), n.ToString(), nst, fill, GameSettings.NotifInkEdge(0.85f), (hard ? 6f : 5f) * k * ink);
             GUI.matrix = mat;
             // the pips: one per second left
             float pip = 12 * k, gap = 7 * k, px0 = cx - (10 * pip + 9 * gap) / 2f, py = cy + 120 * k * zs;
@@ -127,6 +127,8 @@ namespace RockGame
         public static int TopPanelFrame = -10;
         public static Color TopPanelAccent;
         public static bool TopPanelLabelAbove;
+        /// <summary>(tests) the top panel's drain bar was last drawn over the plate (TIMER > Drain bar: On top).</summary>
+        public static bool TopPanelBarOnTop;
 
         GameState m_TopState = (GameState)255;
         float m_TopTotal = 1f, m_TopSecondAt = -10f;
@@ -167,6 +169,12 @@ namespace RockGame
             TopPanelFrame = Time.frameCount; TopPanelAccent = accent; TopPanelLabelAbove = above; // (tests)
             float labelFont = 17 * k;
             float aboveH = above ? 22 * k : 0f;
+            // the drain bar goes under the plate, or over it (TIMER > Drain bar: on top) - then the plate starts under it
+            bool showBar = GameSettings.TimerBarNow && game != null && game.S != GameState.Waiting && (left >= 0f || overtime);
+            bool barTop = GameSettings.TimerBarTopNow;
+            float barTopY = y;
+            if (showBar && barTop) y += 6 * k;
+            TopPanelBarOnTop = showBar && barTop;
             // the plate (its width: TIMER > Plate width)
             float pw = 600 * k * GameSettings.TimerWidthNow, plateH = 56 * k + aboveH;
             float plate = GameSettings.TimerPlateNow;
@@ -224,10 +232,10 @@ namespace RockGame
             y += plateH;
             // the bar: draining in from both ends, meeting in the middle at the end of the phase (its dark track - the grey
             // ends - can be switched off: TIMER > Bar's grey ends)
-            if (GameSettings.TimerBarNow && game != null && game.S != GameState.Waiting && (left >= 0f || overtime))
+            if (showBar)
             {
                 float bw = pw * 0.84f, frac = overtime ? 1f : Mathf.Clamp01(left / m_TopTotal);
-                var br = new Rect(cx - bw / 2f, y, bw, 4 * k);
+                var br = new Rect(cx - bw / 2f, barTop ? barTopY : y, bw, 4 * k);
                 if (GameSettings.TimerBarBackNow) Fill(br, new Color(0f, 0f, 0f, 0.55f));
                 var bc = overtime ? Color.Lerp(accent * 0.8f, new Color(1f, 0.6f, 0.5f), beat) : final ? Color.Lerp(accent, new Color(1f, 0.3f, 0.2f), pulse) : accent;
                 bc.a = 1f;
@@ -238,7 +246,7 @@ namespace RockGame
                     Tinted(new Rect(cx - half - 12 * k, br.y - 5 * k, 24 * k, br.height + 10 * k), s_GlowTex, new Color(1f, 1f, 1f, 0.6f));
                     Tinted(new Rect(cx + half - 12 * k, br.y - 5 * k, 24 * k, br.height + 10 * k), s_GlowTex, new Color(1f, 1f, 1f, 0.6f));
                 }
-                y += 6 * k;
+                if (!barTop) y += 6 * k; // (on top: its room was made over the plate)
             }
             // the line about what to do
             int lines = string.IsNullOrEmpty(sub) || !GameSettings.TimerSubNow ? 0 : sub.Split('\n').Length;
@@ -266,6 +274,10 @@ namespace RockGame
             return new Color(1f, 0.85f, 0.3f);
         }
 
+        /// <summary>(tests) the last banner's text outline: its thickness in pixels and its colour (at full opacity).</summary>
+        public static float BannerInkPx;
+        public static Color BannerInkEdge;
+
         /// <summary>A banner `age` seconds old (it lasts 4 s).</summary>
         void DrawBannerFx(string title, string sub, float age, float k)
         {
@@ -278,7 +290,7 @@ namespace RockGame
             float lift = outT * outT * 40f * k;                        // ...and lifting away at the end
             float alpha = 1f - outT;
             // (Settings > Display > NOTIFICATIONS: size, height, band width / darkness, font, outline; NotifLooks.cs)
-            float zs = GameSettings.NotifSize.Value, ink = GameSettings.NotifInk.Value;
+            float zs = GameSettings.NotifSize.Value, ink = GameSettings.NotifInkNow; // (TEXT OUTLINE)
             var font = GameSettings.NotifFontNow;
             float cx = sw / 2f, by = sh * 0.27f + GameSettings.NotifY.Value * k - lift, bh = 66 * k * zs, bw = Mathf.Min(sw, 820 * k * GameSettings.NotifWidth.Value) * open; // (smaller and lower than it was; just the title)
             Tinted(new Rect(cx - bw / 2f, by, bw, bh), s_BandTex, new Color(0f, 0f, 0f, Mathf.Clamp01(0.62f * GameSettings.NotifPlate.Value) * alpha));
@@ -296,7 +308,8 @@ namespace RockGame
             if (font != null) tst.font = font;
             var fill = Color.Lerp(Color.white, accent, Mathf.Clamp01((age - 0.1f) * 3f));
             fill.a = ta;
-            InkText(new Rect(0, by + 4 * k, sw, bh - 8 * k), title, tst, fill, new Color(0f, 0f, 0f, 0.9f * ta), 3f * k * ink);
+            BannerInkPx = 3f * k * ink; BannerInkEdge = GameSettings.NotifInkEdge(0.9f); // (tests)
+            InkText(new Rect(0, by + 4 * k, sw, bh - 8 * k), title, tst, fill, GameSettings.NotifInkEdge(0.9f * ta), 3f * k * ink);
             // a glint sweeping across the title
             float g = Mathf.Clamp01((age - 0.35f) / 0.55f);
             if (g > 0f && g < 1f)

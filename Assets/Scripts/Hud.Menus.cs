@@ -1051,7 +1051,8 @@ namespace RockGame
                     Fill(r, picking ? new Color(1f, 0.82f, 0.3f) : new Color(0.8f, 0.8f, 0.8f));
                     Fill(new Rect(r.x + 2, r.y + 2, r.width - 4, r.height - 4), shown);
                     TrackHover(r);
-                    if (GUI.Button(r, GUIContent.none, GUIStyle.none)) { ClickSound(); TogglePicker(s, shown, teamHands); }
+                    bool wheelNow = ColourWheelOnDoubleClick(r, "colour." + s.Id, s.Label, () => s.Value, (c, save) => ColorSlots.Set(s, c, save)); // (double-click: the colour wheel)
+                    if (GUI.Button(r, GUIContent.none, GUIStyle.none) && !wheelNow) { ClickSound(); TogglePicker(s, shown, teamHands); }
                     GUILayout.Space(8 * k);
                     foreach (var pc in s.Presets)
                     {
@@ -1061,7 +1062,8 @@ namespace RockGame
                         Fill(pr, on ? new Color(1f, 0.82f, 0.3f) : new Color(0, 0, 0, 0.6f));
                         Fill(new Rect(pr.x + 2, pr.y + 2, pr.width - 4, pr.height - 4), pc);
                         TrackHover(pr);
-                        if (GUI.Button(pr, GUIContent.none, GUIStyle.none)) { ClickSound(); ColorSlots.Set(s, pc); }
+                        bool wheel = ColourWheelOnDoubleClick(pr, "colour." + s.Id, s.Label, () => s.Value, (c, save) => ColorSlots.Set(s, c, save)); // (double-click: the colour wheel)
+                        if (GUI.Button(pr, GUIContent.none, GUIStyle.none) && !wheel) { ClickSound(); ColorSlots.Set(s, pc); }
                         GUILayout.Space(3 * k);
                     }
                     GUILayout.FlexibleSpace();

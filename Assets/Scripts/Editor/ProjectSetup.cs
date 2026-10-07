@@ -114,6 +114,9 @@ namespace RockGame.EditorTools
             Debug.Log("[RockGame] Setup complete.");
         }
 
+        /// <summary>Where the Windows build goes (its data folder is "Alien Rock Game_Data" next to it).</summary>
+        public const string ExePath = "Builds/Windows/Alien Rock Game.exe";
+
         [MenuItem("Rock Game/Build Windows Player")]
         public static void BuildWindows()
         {
@@ -121,10 +124,14 @@ namespace RockGame.EditorTools
             // no Unity splash on launch (Unity 6 allows this on every licence)
             PlayerSettings.SplashScreen.show = false;
             PlayerSettings.SplashScreen.showUnityLogo = false;
+            // The exe is "Alien Rock Game.exe" but productName stays "Rock Base Brawl": on Windows PlayerPrefs live under
+            // HKCU\Software\<company>\<product> (persistentDataPath uses it too), so renaming the product would reset
+            // everyone's saved settings, binds and looks. (An old RockBaseBrawl.exe + RockBaseBrawl_Data next to it is
+            // just a stale build: safe to delete by hand.)
             var opts = new BuildPlayerOptions
             {
                 scenes = new[] { ScenePath },
-                locationPathName = "Builds/Windows/RockBaseBrawl.exe",
+                locationPathName = ExePath,
                 target = BuildTarget.StandaloneWindows64,
                 options = BuildOptions.None,
             };

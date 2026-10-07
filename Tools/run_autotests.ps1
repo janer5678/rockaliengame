@@ -5,7 +5,7 @@
 #   "name+client2" ...and a third copy, another client, 14 s after that (the spectate test: it joins the running match)
 param([string[]]$Modes = @('inv:-solo','upgrades:-solo -rules autowood','feel:-solo','ui:-solo','craftui:-solo','scenery:-solo','world:-solo','dome:-solo','nodes:-solo','victory:-solo','buildbias:-solo'), [int]$TimeoutSec = 480)
 $root = Split-Path $PSScriptRoot -Parent
-$exe = Join-Path $root 'Builds/Windows/RockBaseBrawl.exe'
+$exe = Join-Path $root 'Builds/Windows/Alien Rock Game.exe'
 New-Item -ItemType Directory -Force (Join-Path $root 'Logs/autotest') | Out-Null
 $win = '-screen-fullscreen 0 -screen-width 1280 -screen-height 720'
 function Report($tag, $log, $exit) {

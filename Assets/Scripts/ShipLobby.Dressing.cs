@@ -5,26 +5,27 @@ namespace RockGame
 {
     /// <summary>
     /// More of the ship lobby's room (ShipLobby.cs builds the walls, the couch and the lights):
-    /// - the room's own colours: the carpet, the wall panels and the couch take Settings > Display > SHIP LOBBY's colours
-    ///   (LobbyLooks.cs; also LOBBY LOOK in the lobby), changed live;
+    /// - the room's own colours: the carpet, the wall panels, the couch and the stains take Settings > Display > SHIP
+    ///   LOBBY's colours (LobbyLooks.cs; also LOBBY LOOK in the lobby), changed live;
     /// - the telly's kit: two big speakers either side of it, a games console on the floor in front of it with its
     ///   controllers (the telly itself plays the warm-up game: LobbyArcade.cs);
     /// - a bike on its stand (proper wheels: rings and spokes, the frame clear of them);
-    /// - two trade stations against the back wall (their screens going), gear from the game all round (a rocket
-    ///   launcher, the death wand, a revolver, a spear, a pile of wood, a sword, a shotgun...), dumbbells, a guitar on its
-    ///   stand, "RED WAZ HERE" sprayed up on the back wall, more stains, a shelf of bottles, a clock, a ceiling vent.
+    /// - two trade stations against the back wall (their screens going, lighting the wall round them), gear from the
+    ///   game all round (a rocket launcher, the death wand, a revolver, a spear, a pile of wood, a sword, a shotgun...),
+    ///   dumbbells, more stains, a shelf of bottles, a clock, a ceiling vent.
     /// </summary>
     public partial class ShipLobby
     {
         // ------------------------------------------------------------------ the room's colours
 
-        enum Tones { Floor, Wall, Couch }
+        enum Tones { Floor, Wall, Couch, Stain }
         class ToneMat { public Tones T; public float Mul; public Material M; }
         readonly List<ToneMat> m_Tones = new List<ToneMat>();
         bool m_TonesSet;
-        Color m_FloorWas, m_WallWas, m_CouchWas;
+        Color m_FloorWas, m_WallWas, m_CouchWas, m_StainWas;
 
-        static Color ToneColour(Tones t) => t == Tones.Floor ? GameSettings.LobbyFloorNow : t == Tones.Wall ? GameSettings.LobbyWallNow : GameSettings.LobbyCouchNow;
+        static Color ToneColour(Tones t) => t == Tones.Floor ? GameSettings.LobbyFloorNow : t == Tones.Wall ? GameSettings.LobbyWallNow
+            : t == Tones.Stain ? GameSettings.LobbyStainNow : GameSettings.LobbyCouchNow;
 
         /// <summary>A material in one of the room's colours (shaded by mul), re-tinted when the colour changes.</summary>
         Material Tone(Tones t, float mul)
@@ -42,10 +43,10 @@ namespace RockGame
         /// <summary>Every frame: the room's colours follow the settings.</summary>
         void ApplyTones()
         {
-            Color f = GameSettings.LobbyFloorNow, w = GameSettings.LobbyWallNow, c = GameSettings.LobbyCouchNow;
-            if (m_TonesSet && f == m_FloorWas && w == m_WallWas && c == m_CouchWas) return;
+            Color f = GameSettings.LobbyFloorNow, w = GameSettings.LobbyWallNow, c = GameSettings.LobbyCouchNow, st = GameSettings.LobbyStainNow;
+            if (m_TonesSet && f == m_FloorWas && w == m_WallWas && c == m_CouchWas && st == m_StainWas) return;
             m_TonesSet = true;
-            m_FloorWas = f; m_WallWas = w; m_CouchWas = c;
+            m_FloorWas = f; m_WallWas = w; m_CouchWas = c; m_StainWas = st;
             foreach (var x in m_Tones)
             {
                 if (x.M == null) continue;
@@ -248,8 +249,15 @@ namespace RockGame
                 Workbench.BuildModel(root, team, false, tier);
                 foreach (var tr in root.GetComponentsInChildren<Transform>(true))
                 {
-                    if (tr.name == Workbench.FaceScreen) BenchScreen.Attach(tr.gameObject, BenchScreen.Kind.Face);
-                    else if (tr.name == Workbench.StockScreen) BenchScreen.Attach(tr.gameObject, BenchScreen.Kind.Stocks);
+                    bool face = tr.name == Workbench.FaceScreen;
+                    if (!face && tr.name != Workbench.StockScreen) continue;
+                    BenchScreen.Attach(tr.gameObject, face ? BenchScreen.Kind.Face : BenchScreen.Kind.Stocks);
+                    // the screens light the room: brighter than in the game, and a small light in front of each in its
+                    // picture's tint (the alien's green, the stock chart's cyan)
+                    var tint = face ? new Color(0.45f, 1f, 0.6f) : new Color(0.35f, 0.9f, 1f);
+                    var mr = tr.GetComponent<MeshRenderer>();
+                    if (mr != null && mr.sharedMaterial != null && mr.sharedMaterial.HasProperty("_EmissionColor")) mr.sharedMaterial.SetColor("_EmissionColor", Color.white * 2.4f);
+                    Light(root, root.InverseTransformPoint(tr.position + tr.forward * 0.3f), tint, 1.6f, 2.6f).name = "screen light";
                 }
             }
             Station(new Vector3(-4.8f, 0f, 3.62f), 0, 2);
@@ -263,12 +271,12 @@ namespace RockGame
             Lay(t, Item.Spear, new Vector3(-0.3f, 0.04f, -2.25f), 80f, 90f);
             Lay(t, Item.Sword, new Vector3(-2.85f, 0.03f, -1.65f), 20f, 90f);
             Lay(t, Item.Shotgun, new Vector3(5.6f, 1.03f, -0.6f), 10f, 90f);   // (on top of the fridge)
-            Lay(t, Item.Crossbow, new Vector3(3.05f, 0.05f, 0.55f), -20f, 90f);
+            Lay(t, Item.Crossbow, new Vector3(3.05f, 0.135f, 0.55f), -20f, 0f); // (flat on the floor, the prod across it)
             Lay(t, Item.Chainsaw, new Vector3(-3.95f, 0.02f, -0.45f), 40f, 90f);
             Lay(t, Item.Sniper, new Vector3(4.5f, 0.04f, -0.95f), 10f, 90f);
             Lay(t, Item.Meat, new Vector3(4.42f, 0.36f, 2.6f), 30f, 0f);       // (on the pizza boxes)
             Lay(t, Item.Berry, new Vector3(0.95f, 0.03f, -0.15f), 0f, 0f);
-            Lay(t, Item.Hatchet, new Vector3(-4.3f, 0.05f, 3.0f), 120f, 90f);
+            Lay(t, Item.Hatchet, new Vector3(-3.25f, 0.05f, 3.3f), 160f, 90f); // (just right of the C4)
             // a pile of wood
             for (int i = 0; i < 7; i++)
             {
@@ -290,14 +298,13 @@ namespace RockGame
             }
             Dumbbell(new Vector3(2.05f, 0f, -0.6f), 30f);
             Dumbbell(new Vector3(2.35f, 0f, -0.3f), 75f);
-            BuildGuitar(t, new Vector3(3.95f, 0f, 2.95f));
-            Graffiti(t, "RED WAZ HERE", new Vector3(0.3f, 3.38f, WinZ - 0.156f), 0.07f);
 
-            // ---- more stains: on the back wall under the window, a damp patch on the ceiling, a puddle by the fridge ----
+            // ---- more stains (Settings > Display > SHIP LOBBY > Stains): on the back wall under the window, a damp patch
+            // on the ceiling, a puddle by the fridge ----
             for (int i = 0; i < 6; i++)
-                Art.Box(t, Color.white, new Vector3(R() * 7f - 3.5f, 0.25f + R() * 0.7f, WinZ - 0.153f), new Vector3(0.2f + R() * 0.5f, 0.15f + R() * 0.4f, 0.004f), new Vector3(0, 0, R() * 40f - 20f), false, Tone(Tones.Wall, 0.6f + R() * 0.15f));
-            Art.Part(t, Art.Cylinder, new Color(0.24f, 0.2f, 0.13f), new Vector3(2.2f, RoomH - 0.003f, 0.6f), new Vector3(1.3f / CR, 0.003f / CH, 0.9f / CR));
-            Art.Part(t, Art.Cylinder, new Color(0.17f, 0.14f, 0.09f), new Vector3(2.3f, RoomH - 0.006f, 0.65f), new Vector3(0.7f / CR, 0.003f / CH, 0.5f / CR));
+                Art.Box(t, Color.white, new Vector3(R() * 7f - 3.5f, 0.25f + R() * 0.7f, WinZ - 0.153f), new Vector3(0.2f + R() * 0.5f, 0.15f + R() * 0.4f, 0.004f), new Vector3(0, 0, R() * 40f - 20f), false, Tone(Tones.Stain, 0.9f + R() * 0.2f));
+            Art.Part(t, Art.Cylinder, Color.white, new Vector3(2.2f, RoomH - 0.003f, 0.6f), new Vector3(1.3f / CR, 0.003f / CH, 0.9f / CR), default, false, Tone(Tones.Stain, 1.2f));
+            Art.Part(t, Art.Cylinder, Color.white, new Vector3(2.3f, RoomH - 0.006f, 0.65f), new Vector3(0.7f / CR, 0.003f / CH, 0.5f / CR), default, false, Tone(Tones.Stain, 0.85f));
             var puddle = Art.NewMat(new Color(0.06f, 0.07f, 0.06f));
             if (puddle.HasProperty("_Smoothness")) puddle.SetFloat("_Smoothness", 0.85f);
             Art.Part(t, Art.Cylinder, Color.white, new Vector3(4.95f, 0.011f, -0.55f), new Vector3(0.7f / CR, 0.002f, 0.45f / CR), new Vector3(0, 20f, 0), false, puddle);
@@ -333,94 +340,5 @@ namespace RockGame
             Art.Box(t, new Color(0.05f, 0.05f, 0.05f), new Vector3(-4.6f, 0.006f, -1.05f), new Vector3(3.6f, 0.008f, 0.014f), new Vector3(0, 4f, 0));
             for (int i = 0; i < 4; i++) Art.Box(t, new Color(0.55f, 0.5f, 0.35f), new Vector3(-5.9f + i * 0.9f, 0.008f, -1.08f + i * 0.06f), new Vector3(0.06f, 0.004f, 0.1f)); // (tape)
         }
-
-        /// <summary>An acoustic guitar standing on its little A-frame stand, facing the room.</summary>
-        static void BuildGuitar(Transform t, Vector3 at)
-        {
-            var g = new GameObject("guitar").transform;
-            g.SetParent(t, false);
-            g.localPosition = at;
-            g.localRotation = Quaternion.Euler(-8f, 165f, 0f); // (leaning back on the stand, turned a bit towards the couch)
-            var body = new Color(0.75f, 0.38f, 0.12f);
-            var edge = new Color(0.25f, 0.12f, 0.05f);
-            var neck = new Color(0.32f, 0.2f, 0.1f);
-            // (the guitar's front faces its +z)
-            Art.Part(g, Art.Sphere, edge, new Vector3(0, 0.3f, 0), new Vector3(0.42f, 0.38f, 0.1f) / SR);
-            Art.Part(g, Art.Sphere, edge, new Vector3(0, 0.58f, 0), new Vector3(0.32f, 0.3f, 0.1f) / SR);
-            Art.Part(g, Art.Sphere, body, new Vector3(0, 0.3f, 0.006f), new Vector3(0.39f, 0.35f, 0.1f) / SR);
-            Art.Part(g, Art.Sphere, body, new Vector3(0, 0.58f, 0.006f), new Vector3(0.29f, 0.27f, 0.1f) / SR);
-            Art.Part(g, Art.Cylinder, new Color(0.05f, 0.04f, 0.03f), new Vector3(0, 0.5f, 0.056f), new Vector3(0.1f / CR, 0.004f / CH, 0.1f / CR), new Vector3(90, 0, 0)); // (the sound hole)
-            Art.Box(g, edge, new Vector3(0, 0.26f, 0.055f), new Vector3(0.12f, 0.02f, 0.012f)); // (the bridge)
-            Art.Box(g, neck, new Vector3(0, 0.98f, 0.02f), new Vector3(0.055f, 0.56f, 0.03f));
-            Art.Box(g, edge, new Vector3(0, 1.31f, 0.015f), new Vector3(0.075f, 0.13f, 0.025f), new Vector3(-6f, 0, 0)); // (the headstock)
-            for (int i = 0; i < 6; i++)
-            {
-                float x = -0.02f + i * 0.008f;
-                Art.Box(g, new Color(0.85f, 0.85f, 0.8f), new Vector3(x, 0.78f, 0.04f), new Vector3(0.0015f, 1.05f, 0.0015f));
-                Art.Part(g, Art.Cylinder, new Color(0.8f, 0.8f, 0.8f), new Vector3(i < 3 ? -0.045f : 0.045f, 1.27f + (i % 3) * 0.035f, 0.015f), new Vector3(0.012f / CR, 0.02f / CH, 0.012f / CR), new Vector3(0, 0, 90f)); // (tuning pegs)
-            }
-            // the stand: two legs behind, a cradle under the body, a fork for the neck
-            var stand = new Color(0.08f, 0.08f, 0.08f);
-            foreach (float s in new[] { -1f, 1f })
-            {
-                Tube(g, stand, new Vector3(s * 0.12f, 0.02f, 0.08f), new Vector3(s * 0.12f, 0.12f, 0.02f), 0.02f);
-                Tube(g, stand, new Vector3(s * 0.12f, 0.02f, -0.25f), new Vector3(0, 0.9f, -0.06f), 0.02f);
-            }
-            Art.Box(g, stand, new Vector3(0, 0.12f, 0.03f), new Vector3(0.3f, 0.02f, 0.05f));
-        }
-
-        /// <summary>Words sprayed on a wall in red (the 3x5 pixel font, LobbyArcade.Glyph): each "pixel" a slightly
-        /// wonky square of paint, with runs dripping off the bottoms of the letters. `top` is the middle of the top edge
-        /// (room space), on the back wall's face.</summary>
-        void Graffiti(Transform t, string text, Vector3 top, float cell)
-        {
-            var rng = new System.Random(5);
-            float R() => (float)rng.NextDouble();
-            var verts = new List<Vector3>();
-            var tris = new List<int>();
-            void Quad(float x0, float y0, float x1, float y1)
-            {
-                // facing -z (the room): bottom left, top left, top right, bottom right
-                int b = verts.Count;
-                verts.Add(new Vector3(x0, y0, 0)); verts.Add(new Vector3(x0, y1, 0)); verts.Add(new Vector3(x1, y1, 0)); verts.Add(new Vector3(x1, y0, 0));
-                tris.Add(b); tris.Add(b + 1); tris.Add(b + 2); tris.Add(b); tris.Add(b + 2); tris.Add(b + 3);
-            }
-            float width = (text.Length * 4 - 1) * cell;
-            float x = -width * 0.5f;
-            foreach (char ch in text)
-            {
-                var gl = LobbyArcade.Glyph(ch);
-                float lift = (R() - 0.5f) * cell * 0.4f; // (each letter a bit up or down: done by hand)
-                for (int r = 0; r < 5; r++)
-                    for (int c = 0; c < 3; c++)
-                    {
-                        if ((gl[r] & (4 >> c)) == 0) continue;
-                        float cx = x + c * cell, cy = -r * cell + lift;
-                        float j = cell * 0.08f;
-                        Quad(cx - j * R(), cy - cell - j * R(), cx + cell + j * R(), cy + j * R());
-                        // runs dripping off the bottom of the strokes
-                        bool bottom = r == 4 || (gl[r + 1] & (4 >> c)) == 0;
-                        if (bottom && R() < 0.4f)
-                        {
-                            float dx = cx + cell * (0.25f + R() * 0.5f), len = cell * (0.6f + R() * 2.2f);
-                            Quad(dx - cell * 0.12f, cy - cell - len, dx + cell * 0.12f, cy - cell + 0.001f);
-                        }
-                    }
-                x += 4f * cell;
-            }
-            var mesh = new Mesh { name = "graffiti" };
-            mesh.SetVertices(verts);
-            mesh.SetTriangles(tris, 0);
-            mesh.RecalculateNormals();
-            mesh.RecalculateBounds();
-            var go = new GameObject("graffiti");
-            go.transform.SetParent(t, false);
-            go.transform.localPosition = top;
-            go.AddComponent<MeshFilter>().sharedMesh = mesh;
-            go.AddComponent<MeshRenderer>().sharedMaterial = Unlit(new Color(0.85f, 0.07f, 0.05f), 0.75f); // (spray paint, just catching what light there is)
-            m_Graffiti = mesh;
-        }
-
-        Mesh m_Graffiti;
     }
 }

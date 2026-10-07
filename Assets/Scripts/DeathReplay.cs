@@ -17,8 +17,9 @@ namespace RockGame
     public class DeathReplay : MonoBehaviour
     {
         /// <summary>How many seconds before the kill get played back, how much of that (and of the fall after it) is slowed
-        /// down, and how slow.</summary>
-        public const float Length = 4f, SlowBefore = 0.6f, After = 0.8f, SlowRate = 0.4f;
+        /// down, and how slow. (Kept short and snappy: real time up to a moment before the killing blow lands - about the
+        /// swing's wind-up - then slow motion for that blow and the fall; about 3.7 s in all.)</summary>
+        public const float Length = 2.2f, SlowBefore = 0.3f, After = 0.5f, SlowRate = 0.45f;
         /// <summary>The replay's real running time.</summary>
         public static float Duration => Length - SlowBefore + (SlowBefore + After) / SlowRate;
 
@@ -70,6 +71,9 @@ namespace RockGame
         public static bool KillerHandsShown => s_Me != null && s_Me.m_VM != null && s_Me.m_VM.Root != null && s_Me.m_VM.Root.gameObject.activeInHierarchy;
         /// <summary>Your copy has gone down as a ragdoll (the replay's reached your death).</summary>
         public static bool GhostFell { get; private set; }
+        /// <summary>(tests) when, in real time, the slow motion began (before the death) and the copy fell (-1: not yet).</summary>
+        public static float SlowFromReal { get; private set; } = -1f;
+        public static float FellAtReal { get; private set; } = -1f;
         /// <summary>How fast the replay runs right now (1 real time, SlowRate in slow motion).</summary>
         public static float Rate { get; private set; } = 1f;
         /// <summary>How many hits were played back (damage numbers) this replay.</summary>
@@ -202,7 +206,7 @@ namespace RockGame
             if (s_Me == null || me == null || killer == null) return false;
             End();
             var r = s_Me;
-            GhostFell = false; Rate = 1f; HitsPlayed = 0;
+            GhostFell = false; Rate = 1f; HitsPlayed = 0; SlowFromReal = FellAtReal = -1f;
             r.m_SpareDone = false;
             if (!r.m_Looks.TryGetValue(killer.NetworkObjectId, out var looks) || looks.Count < 4 || r.m_Poses.Count < 4) return false;
             r.m_KLooks = new List<Look>(looks);
@@ -257,6 +261,7 @@ namespace RockGame
             float fast = Length - SlowBefore;
             float rt = t < fast ? t : Mathf.Min(Length + After, fast + (t - fast) * SlowRate);
             Rate = t < fast ? 1f : SlowRate;
+            if (Rate < 1f && SlowFromReal < 0f && rt < Length) SlowFromReal = Time.time; // (tests: when the slow motion began, real time)
             float at = r.m_Died - Length + rt;
             r.m_At = at;
             if (!r.m_Ghost.activeSelf && !r.m_SpareDone)
@@ -292,6 +297,7 @@ namespace RockGame
             if (at >= r.m_Died)
             {
                 GhostFell = true;
+                if (FellAtReal < 0f) FellAtReal = Time.time;
                 if (r.m_GhostFall != null)
                 {
                     int fi = FindFall(r.m_RFalls, at, out float ff);

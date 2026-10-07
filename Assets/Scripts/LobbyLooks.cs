@@ -7,7 +7,7 @@ namespace RockGame
     /// TIMER - the top-centre timer panel (Hud.Notify.cs: DrawTopPanel): its size, how dark its plate is, and whether it
     ///   shows the drain bar, the line about what to do, the mode's tag and the final-minute flashing.
     /// SHIP LOBBY - the living room you wait in (ShipLobby.cs): post processing of its own (like the main menu
-    ///   cutscene's) and the room itself - the floor, wall and couch colours, how dark it is, how bright the lamp, the
+    ///   cutscene's) and the room itself - the floor, wall, couch and stain colours, how dark it is, how bright the lamp, the
     ///   telly and the lights passing the window are, the lamp swinging, the cigarette smoke and the camera's field of
     ///   view. The same rows are in the lobby itself: LOBBY LOOK (Hud.Lobby.cs).
     /// </summary>
@@ -39,13 +39,15 @@ namespace RockGame
         public static readonly DisplayPref.Bool LobbySway = new("lobby.sway", GLobby, true);
         public static readonly DisplayPref.Bool LobbySmoke = new("lobby.smoke", GLobby, true);
         public static readonly DisplayPref.Float LobbyFov = new("lobby.fov", GLobby, 60f, 45f, 85f);
-        // the room's colours (the carpet, the wall panels, the couch)
+        // the room's colours (the carpet, the wall panels, the couch, the stains)
         public static readonly DisplayPref.Colour LobbyFloor = new("lobby.floor", GLobby, new Color(0.22f, 0.2f, 0.15f));
         public static readonly DisplayPref.Colour LobbyWall = new("lobby.wall", GLobby, new Color(0.3f, 0.28f, 0.24f));
         public static readonly DisplayPref.Colour LobbyCouch = new("lobby.couch", GLobby, new Color(0.52f, 0.4f, 0.2f));
+        /// <summary>The stains all over the room (the carpet, the walls, the couch, the ceiling, the coffee table).</summary>
+        public static readonly DisplayPref.Colour LobbyStain = new("lobby.stain", GLobby, new Color(0.2f, 0.165f, 0.105f));
 
         /// <summary>The ship lobby's own post processing is in use right now (switched on, and it's showing).</summary>
-        public static bool LobbyPostNow => LobbyOwn.Value && ShipLobby.Active;
+        public static bool LobbyPostNow => LobbyOwn.Value && ShipLobby.Active && !MenuScene.LobbyPreview;
         /// <summary>The lobby's room settings in use (1 = as built).</summary>
         public static float LobbyDarkNow => LobbyOwn.Value ? LobbyDark.Value : 1f;
         public static float LobbyLampNow => LobbyOwn.Value ? LobbyLamp.Value : 1f;
@@ -57,6 +59,7 @@ namespace RockGame
         public static Color LobbyFloorNow => LobbyOwn.Value ? LobbyFloor.Value : LobbyFloor.Default;
         public static Color LobbyWallNow => LobbyOwn.Value ? LobbyWall.Value : LobbyWall.Default;
         public static Color LobbyCouchNow => LobbyOwn.Value ? LobbyCouch.Value : LobbyCouch.Default;
+        public static Color LobbyStainNow => LobbyOwn.Value ? LobbyStain.Value : LobbyStain.Default;
 
         static float LobbyExtra(PostExtra e)
         {
@@ -82,7 +85,7 @@ namespace RockGame
             LobbyChromatic.Set(false, save); LobbyChromaticStrength.Set(0.4f, save);
             LobbyDark.Set(1f, save); LobbyLamp.Set(1f, save); LobbyTv.Set(1f, save); LobbyWindow.Set(1f, save);
             LobbySway.Set(true, save); LobbySmoke.Set(true, save); LobbyFov.Set(60f, save);
-            LobbyFloor.Set(LobbyFloor.Default, save); LobbyWall.Set(LobbyWall.Default, save); LobbyCouch.Set(LobbyCouch.Default, save);
+            LobbyFloor.Set(LobbyFloor.Default, save); LobbyWall.Set(LobbyWall.Default, save); LobbyCouch.Set(LobbyCouch.Default, save); LobbyStain.Set(LobbyStain.Default, save);
         }
     }
 
@@ -156,7 +159,8 @@ namespace RockGame
                     Fill(pr, ColorSlots.Same(pc, cur) ? new Color(1f, 0.82f, 0.3f) : new Color(0.5f, 0.5f, 0.5f, 0.8f));
                     Fill(new Rect(pr.x + 2, pr.y + 2, pr.width - 4, pr.height - 4), pc);
                     TrackHover(pr);
-                    if (GUI.Button(pr, GUIContent.none, GUIStyle.none)) { ClickSound(); p.Set(pc); m_LobbyHex.Remove(p.Key); }
+                    bool wheel = ColourWheelOnDoubleClick(pr, p, name); // (double-click: the colour wheel - Hud.ColourWheel.cs)
+                    if (GUI.Button(pr, GUIContent.none, GUIStyle.none) && !wheel) { ClickSound(); p.Set(pc); m_LobbyHex.Remove(p.Key); }
                     GUILayout.Space(3 * k);
                 }
                 GUILayout.Space(6 * k);
@@ -178,6 +182,7 @@ namespace RockGame
             Colour("Floor", GameSettings.LobbyFloor);
             Colour("Walls", GameSettings.LobbyWall);
             Colour("Couch", GameSettings.LobbyCouch);
+            Colour("Stains", GameSettings.LobbyStain);
             Slider("Room darkness", GameSettings.LobbyDark, $"{GameSettings.LobbyDark.Value * 100f:0}%", 0.05f);
             Slider("Lamp", GameSettings.LobbyLamp, $"{GameSettings.LobbyLamp.Value * 100f:0}%", 0.05f);
             Slider("Telly", GameSettings.LobbyTv, $"{GameSettings.LobbyTv.Value * 100f:0}%", 0.05f);

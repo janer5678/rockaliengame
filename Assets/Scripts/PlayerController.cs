@@ -276,7 +276,7 @@ namespace RockGame
             var game = NetGame.Instance;
             bool dead = m_Net.Dead.Value;
             bool gameOver = game != null && game.S == GameState.GameOver;
-            bool cutscene = VictoryCutscene.Active; // the victory cutscene: everything locked until the victory screen
+            bool cutscene = VictoryCutscene.Active || MatchIntro.Active; // the victory cutscene: everything locked until the victory screen
             bool sd = game != null && game.S == GameState.SuddenDeath;
             bool carrying = m_Net.CarryingBall;
             bool riding = m_Net.Riding;
@@ -631,6 +631,8 @@ namespace RockGame
                 m_VM.Update(new ViewModel.State { Item = m_Net.HeldItem, Visible = false, Visible2 = false });
                 return;
             }
+            // the match intro (MatchIntro.cs) has the camera too, and your hands are put away
+            if (MatchIntro.CameraPose(out var inPos, out var inRot, out var inFov)) { m_Cam.transform.SetPositionAndRotation(inPos, inRot); m_Cam.fieldOfView = inFov; m_VM.Update(new ViewModel.State { Item = m_Net.HeldItem, Visible = false, Visible2 = false }); return; }
             if (m_Net.Riding) FollowSeat();
             Fx.TickCamera(Time.deltaTime);
             var rv = m_Net.Riding ? RidingVehicle : null;
@@ -1714,7 +1716,7 @@ namespace RockGame
             get
             {
                 string a = Binds.Name(Bind.Crouch), b = Binds.Name(Bind.Slide);
-                return a == "-" ? b : b == "-" || a == b ? a : a + " / " + b;
+                return a == "-" ? "[" + b + "]" : b == "-" || a == b ? "[" + a + "]" : "[" + a + "] / [" + b + "]"; // (as keycaps: Tutorial.WithKeyIcons)
             }
         }
 
@@ -2085,39 +2087,52 @@ namespace RockGame
 
         // ------------------------------------------------------------------ HUD info
 
+        /// <summary>The line under the crosshair while you carry the ball (Builder: put it down; else throw it - at your own
+        /// machine: into the socket).</summary>
+        public static string BallCarryTip(bool atOwnMachine)
+        {
+            if (Cfg.Builder) return $"Carrying the ball!  {KT(Bind.Attack)} or {KT(Bind.Interact)}: put it down (it becomes your team's)";
+            return atOwnMachine ? $"<color=#77ff77>{KT(Bind.Attack)}: throw it into the socket!</color>"
+                : $"Carrying the ball!  {KT(Bind.Attack)}: throw it - it snaps into your machine's socket when it gets close";
+        }
+
         void UpdateAimText(Interactable t)
         {
             AimText = "";
             if (m_Net.Dead.Value) return;
-            // (carrying the ball: nothing here - the top of the screen already says what to do with it)
-            if (m_Net.CarryingBall) return;
+            // carrying the ball: what the mouse does with it, under the crosshair
+            if (m_Net.CarryingBall)
+            {
+                AimText = BallCarryTip(t.Kind == TargetKind.Machine && t.MachineTeam == m_Net.Team.Value);
+                return;
+            }
             switch (t.Kind)
             {
                 // (every look-at line is Tip / TeamTip - PlayerController.Tips.cs: the name in capitals and a colour that
                 // says what or whose it is, a dash, the details)
-                case TargetKind.Ball: AimText = Tip("The ball", TipGold, $"{Binds.Name(Bind.Interact)}: pick it up"); return;
+                case TargetKind.Ball: AimText = Tip("The ball", TipGold, $"{KT(Bind.Interact)}: pick it up"); return;
                 case TargetKind.Door:
                 {
                     var s = t.Obj.GetComponent<Structure>();
                     AimText = TeamTip(s.DisplayName, s.Team.Value, $"{s.Health.Value:0}/{s.MaxHp:0}  ·  door {s.DoorHealth.Value:0}/{s.DoorMaxHp:0}   "
-                        + (s.Team.Value == m_Net.Team.Value ? "E: open/close" : "locked - only its team can open it (the door itself breaks easier than the frame)"));
+                        + (s.Team.Value == m_Net.Team.Value ? $"{KT(Bind.Interact)}: open/close" : "locked - only its team can open it (the door itself breaks easier than the frame)"));
                     return;
                 }
                 case TargetKind.Container:
                 {
                     var c = t.Obj.GetComponent<Container>();
                     string detail;
-                    if (c.IsAirdrop) detail = "E: open";
-                    else if (c.IsGamble) detail = "E: bet DNA - double it or lose it";
-                    else if (c.IsWorkbench) detail = c.Team.Value == m_Net.Team.Value ? $"its items are in your crafting list ({Binds.Name(Bind.Inventory)}) in your base" : "";
-                    else if (c.IsBag) detail = "E: open";
+                    if (c.IsAirdrop) detail = $"{KT(Bind.Interact)}: open";
+                    else if (c.IsGamble) detail = $"{KT(Bind.Interact)}: bet DNA - double it or lose it";
+                    else if (c.IsWorkbench) detail = c.Team.Value == m_Net.Team.Value ? $"its items are in your crafting list ({KT(Bind.Inventory)}) in your base" : "";
+                    else if (c.IsBag) detail = $"{KT(Bind.Interact)}: open";
                     // the placeables that don't open: just their health (the turret: its weapon and ammo)
                     else if (c.IsDeployable)
-                        detail = $"{c.Health.Value:0}/{Deployables.MaxHp(c.Kind.Value):0}" + (c.Kind.Value == Container.Turret && c.Team.Value == m_Net.Team.Value ? $"   {Binds.Name(Bind.Interact)}: weapon and ammo" : "")
+                        detail = $"{c.Health.Value:0}/{Deployables.MaxHp(c.Kind.Value):0}" + (c.Kind.Value == Container.Turret && c.Team.Value == m_Net.Team.Value ? $"   {KT(Bind.Interact)}: weapon and ammo" : "")
                             + (c.Kind.Value == Container.Trap && c.Flag.Value == 1 ? "   <color=#ff8a7a>sprung</color>" : "") + (DemolishAiming && c.Team.Value == m_Net.Team.Value ? "   <color=#ff8a7a>LMB: demolish</color>" : "");
-                    else detail = $"{c.Health.Value:0}/{Cfg.ChestHp:0}   E: open" + (DemolishAiming && c.Team.Value == m_Net.Team.Value ? "   <color=#ff8a7a>LMB: demolish</color>" : "");
+                    else detail = $"{c.Health.Value:0}/{Cfg.ChestHp:0}   {KT(Bind.Interact)}: open" + (DemolishAiming && c.Team.Value == m_Net.Team.Value ? "   <color=#ff8a7a>LMB: demolish</color>" : "");
                     if (PackingUp) detail = "picking it up...";
-                    else if (CanPackUp(t, m_Net.CarryingBall)) detail += $"   hold {Binds.Name(Bind.Interact)}: pick up";
+                    else if (CanPackUp(t, m_Net.CarryingBall)) detail += $"   hold {KT(Bind.Interact)}: pick up";
                     // an airdrop is purple, the gambling machine its green; a chest, bench or loot bag is its team's colour
                     AimText = c.IsAirdrop ? Tip(c.DisplayName, TipAirdrop, detail) : c.IsGamble ? Tip(c.DisplayName, TipGamble, detail)
                         : TeamTip(c.IsBag ? "Loot bag" : c.DisplayName, c.Team.Value, detail);
@@ -2130,7 +2145,7 @@ namespace RockGame
                     bool mine = t.MachineTeam == m_Net.Team.Value;
                     string d = Cfg.Bedwars
                         ? (g != null && g.MachineDown(t.MachineTeam) ? "<color=#ff6666>destroyed</color>" : mine ? $"your cryochamber - {Cfg.MachineHitsToBreak - (g != null ? g.HitsOn(t.MachineTeam) : 0)} hits left" : $"smash it! {Cfg.MachineHitsToBreak - (g != null ? g.HitsOn(t.MachineTeam) : 0)} hits left")
-                        : mine ? $"{Binds.Name(Bind.Interact)}: hand in your skulls ({m_Net.Count(Item.Skull)})   {(g != null ? g.SkullsOf(m_Net.Team.Value) : 0)} in" : "";
+                        : mine ? $"{KT(Bind.Interact)}: hand in your skulls ({m_Net.Count(Item.Skull)})   {(g != null ? g.SkullsOf(m_Net.Team.Value) : 0)} in" : "";
                     AimText = TeamTip("Alien machine", t.MachineTeam, d);
                     return;
                 }
@@ -2139,7 +2154,7 @@ namespace RockGame
                         : "the ball goes in the socket" + (Ball.Instance != null && Ball.Instance.SocketTeam.Value == m_Net.Team.Value ? "   <color=#77ff77>(the ball is in!)</color>" : ""));
                     return;
                 case TargetKind.UpgradeStation:
-                    AimText = TeamTip("Upgrade station", t.MachineTeam, t.MachineTeam != m_Net.Team.Value ? "" : $"{Binds.Name(Bind.Interact)} to open");
+                    AimText = TeamTip("Upgrade station", t.MachineTeam, t.MachineTeam != m_Net.Team.Value ? "" : $"{KT(Bind.Interact)} to open");
                     return;
                 case TargetKind.Vehicle:
                 {
@@ -2147,25 +2162,25 @@ namespace RockGame
                     // a horse's HP only shows once it has been hurt (or while you're holding berries to feed it)
                     bool feeding = v.IsHorse && m_Net.HeldItem == Item.Berry;
                     string hp = v.Hp.Value < v.MaxHp - 0.5f || feeding ? $"{v.Hp.Value:0}/{v.MaxHp:0} HP   " : "";
-                    string e = Binds.Name(Bind.Interact);
+                    string e = KT(Bind.Interact);
                     AimText = v.IsHorse ? (v.Saddled.Value ? Tip(v.IsUnicorn ? "Unicorn" : "Horse", VehicleTipColor(v), $"{hp}{e}: ride")
                             : Tip(v.IsUnicorn ? "Wild Unicorn" : "Wild horse", VehicleTipColor(v), $"{hp}{e}: saddle and ride ({(m_Net.Count(Item.Saddle) > 0 ? "uses your saddle" : "<color=#ff8888>needs a saddle</color>")})"))
                         : Tip("Wooden car", VehicleTipColor(v), $"{e}: drive");
                     if (feeding) AimText += FeedHint(v);
                     return;
                 }
-                case TargetKind.Bush: AimText = Tip("Berry Bush", TipPlant, $"{Binds.Name(Bind.Interact)}: pick it"); return;
-                case TargetKind.PlayerSpear: AimText = Tip("Stuck spear", TipPlain, $"{Binds.Name(Bind.Interact)}: pull it out"); return;
-                case TargetKind.WorldItem: AimText = Tip(Cfg.ItemName(t.Stack.Id) + (t.Stack.Count > 1 ? $" x{t.Stack.Count}" : ""), TipPlain, $"{Binds.Name(Bind.Interact)}: pick up"); return;
+                case TargetKind.Bush: AimText = Tip("Berry Bush", TipPlant, $"{KT(Bind.Interact)}: pick it"); return;
+                case TargetKind.PlayerSpear: AimText = Tip("Stuck spear", TipPlain, $"{KT(Bind.Interact)}: pull it out"); return;
+                case TargetKind.WorldItem: AimText = Tip(Cfg.ItemName(t.Stack.Id) + (t.Stack.Count > 1 ? $" x{t.Stack.Count}" : ""), TipPlain, $"{KT(Bind.Interact)}: pick up"); return;
             }
             if (m_Net.Riding)
             {
                 var rv = RidingVehicle;
-                AimText = rv != null && rv.IsHorse ? $"Riding  ·  WASD + look to steer, Shift gallop, Space jump, {DismountKeys} get off" : $"Driving  ·  W/S gas & brake, A/D steer, {DismountKeys} get out";
+                AimText = rv != null && rv.IsHorse ? $"Riding  ·  WASD + look to steer, {KT(Bind.Sprint)} gallop, {KT(Bind.Jump)} jump, {DismountKeys} get off" : $"Driving  ·  W/S gas & brake, A/D steer, {DismountKeys} get out";
                 return;
             }
             if (m_Net.HeldItem == Item.BuildingPlan && DemolishMode) AimText = "<color=#ff9f5a>DEMOLISH</color>  LMB on your own piece  ·  hold RMB to change";
-            string self = m_Net.StuckSpears.Value > 0 ? $"<color=#ff8888>{m_Net.StuckSpears.Value} spear(s) stuck in you - E: pull out</color>" : "";
+            string self = m_Net.StuckSpears.Value > 0 ? $"<color=#ff8888>{m_Net.StuckSpears.Value} spear(s) stuck in you - {KT(Bind.Interact)}: pull out</color>" : "";
             if (!(m_Net.HeldItem == Item.BuildingPlan && DemolishMode)) AimText = self;
             if (!Aim(CenterRay(), 6f, out var hit)) return;
             // the wood machine (Auto Wood, once it's been bought): the rate it's making wood at, in the upgrade station's style
@@ -2183,7 +2198,7 @@ namespace RockGame
                 string detail = $"{st.Health.Value:0}/{st.MaxHp:0}" + (st.HasBars ? $"  ·  bars {st.DoorHealth.Value:0}/{st.DoorMaxHp:0}" : ""); // (a window: its bars have their own, like a door)
                 if (m_Net.HeldItem == Item.BuildingPlan && st.Team.Value == m_Net.Team.Value)
                 {
-                    if (st.Tier.Value == 0 && st.Upgradable && !Cfg.WoodMode) detail += $"   F: upgrade to stone ({Cfg.UpgradeCost(st.PType)} {Cfg.UpgradeName})";
+                    if (st.Tier.Value == 0 && st.Upgradable && !Cfg.WoodMode) detail += $"   {KT(Bind.Upgrade)}: upgrade to stone ({Cfg.UpgradeCost(st.PType)} {Cfg.UpgradeName})";
                     if (DemolishMode) detail += "   <color=#ff8a7a>LMB: demolish</color>";
                 }
                 if (m_Net.HeldItem == Item.Ram && hit.distance <= Cfg.RamRange)

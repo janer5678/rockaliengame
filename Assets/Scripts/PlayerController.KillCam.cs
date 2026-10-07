@@ -5,7 +5,7 @@ namespace RockGame
     public static partial class Cfg
     {
         /// <summary>The kill cam: how long, after you're killed, the camera looks at who did it (then the replay).</summary>
-        [Tune("Player")] public static float KillCamTime = 2.4f;
+        [Tune("Player")] public static float KillCamTime = 1.6f;
     }
 
     /// <summary>
@@ -71,13 +71,13 @@ namespace RockGame
             away.Normalize();
             var side = Vector3.Cross(Vector3.up, away);
             // (after the glide over, it keeps easing in closer and round a little, so the shot never sits still)
-            float drift = Smooth01(Mathf.Clamp01((t - 1.2f) / Mathf.Max(0.1f, Cfg.KillCamTime - 1.2f)));
+            float drift = Smooth01(Mathf.Clamp01((t - 0.85f) / Mathf.Max(0.1f, Cfg.KillCamTime - 0.85f)));
             var to = head + away * Mathf.Lerp(3.4f, 2.5f, drift) + side * Mathf.Lerp(1.1f, 0.6f, drift) + Vector3.up * Mathf.Lerp(0.55f, 0.35f, drift);
             // (not through a wall: stop short of whatever's between them and the spot)
             if (Physics.Linecast(head, to, out var hit, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore)) to = hit.point + (head - to).normalized * 0.3f;
-            float e = Smooth01(Mathf.Clamp01(t / 1.2f));
+            float e = Smooth01(Mathf.Clamp01(t / 0.85f)); // (a quick glide over)
             var pos = Vector3.Lerp(m_KillCamFrom, to, e);
-            var rot = Quaternion.Slerp(m_KillCamFromRot, Quaternion.LookRotation(head - pos), Smooth01(Mathf.Clamp01(t / 0.8f)));
+            var rot = Quaternion.Slerp(m_KillCamFromRot, Quaternion.LookRotation(head - pos), Smooth01(Mathf.Clamp01(t / 0.55f)));
             m_Cam.transform.SetPositionAndRotation(pos, rot);
             m_Cam.fieldOfView = Mathf.Lerp(m_Cam.fieldOfView, 52f, Time.deltaTime * 6f);
             return true;

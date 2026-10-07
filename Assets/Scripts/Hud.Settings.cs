@@ -7,7 +7,7 @@ namespace RockGame
     ///   GRAPHICS       - the screen (window, resolution, refresh rate), frame rate, shadows, shading
     ///   POST FX        - post processing, on the UI too (and the UI's own looks), the extra looks, hands and tools
     ///   WORLD          - grass, world colours, alien glow, tree X, base floor, beams, sky lines and the wall
-    ///   HUD & TIMER    - the interface (font, scale, opacity, accent), the HUD's parts, the trajectory line, the TIMER
+    ///   HUD & TIMER    - the interface (font, scale, opacity, accent), the HUD's parts, the KILL FEED, the trajectory line, the TIMER
     ///   NOTIFICATIONS  - test button, style (outline, band, font, size, height), own look, wording (Hud.Settings.Notif.cs)
     ///   LOBBY          - the ship lobby's own post processing and room
     ///   MAIN MENU      - the main menu cutscene's own post processing and colours
@@ -87,6 +87,7 @@ namespace RockGame
                     case DisplayCat.HudTimer:
                         DrawInterfaceSection();
                         DrawHudPartsSection();     // (Hud.Settings.Notif.cs)
+                        DrawKillFeedLooks();       // (KillFeedLooks.cs)
                         DrawAimPreviewSettings();  // (PlayerController.Preview.cs: the trajectory line)
                         Caption("TIMER  ·  the top of the screen in a match");
                         DrawTimerLooks();          // (TimerLooks.cs)

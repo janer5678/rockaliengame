@@ -20,6 +20,7 @@ namespace RockGame
             var game = NetGame.Instance;
             float sw = Screen.width, sh = Screen.height, k = m_Scale;
             if (game != null && VictoryCutscene.Active) { DrawVictoryCutscene(game, -1); return; }
+            if (MatchIntro.DrawHud(k, m_Big, m_Label, m_Small, Fill, Shadowed)) return; // (the match intro: MatchIntro.cs)
             if (game != null && game.S == GameState.GameOver) { DrawSpectatorGameOver(boot, game); return; }
 
             Chat.Draw(k, m_Small, Fill, Shadowed);

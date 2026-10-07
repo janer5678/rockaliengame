@@ -53,7 +53,7 @@ namespace RockGame
         public static readonly DisplayPref.Float MenuChromaticStrength = new("menu.chromatic.strength", GMenu, 0.5f, 0f, 1f);
 
         /// <summary>The menu cutscene's own post processing is in use right now (switched on, and it's showing).</summary>
-        public static bool MenuPostNow => MenuOwn.Value && MenuSpace.Showing;
+        public static bool MenuPostNow => MenuOwn.Value && (MenuSpace.Showing || MatchIntro.MenuLook); // (the match intro uses it too)
 
         static float Amt(DisplayPref.Bool on, DisplayPref.Float s) => on.Value ? s.Value : 0f;
         /// <summary>Bloom / vignette / grading strength in use now (0 = off): the menu cutscene's own while it's on, else the world's.</summary>
