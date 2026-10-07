@@ -6,7 +6,7 @@ namespace RockGame
     /// The main menu players see (the old one, with every mode and setting on one page, is the DEV MAIN MENU now: Tab
     /// swaps to it and back). Over the UFO cruising through the stars (MenuSpace.cs), a punky title and a column of big
     /// buttons: TUTORIAL (with a friend / solo, straight in), MULTIPLAYER (JOIN: the host's IP and port; HOST: battle type
-    /// 1V1 / TEAMS / FREE FOR ALL, then for teams how many v how many - uneven is fine - or for FFA how many players, then the game
+    /// 1V1 / TEAM BATTLE / FREE FOR ALL, then for teams how many v how many - uneven is fine - or for FFA how many players, then the game
     /// mode with its length and options, then the map with pictures of each and its size, then the ship lobby), SOLO (a
     /// match on your own: mode, then map), OPTIONS (the settings) and QUIT. Esc or BACK goes back a screen.
     /// </summary>
@@ -53,15 +53,19 @@ namespace RockGame
                 case NewPage.Map: m_New = NewPage.Mode; break;
                 default: m_New = NewPage.Root; break;
             }
+            // the host's lobby menu: back past the first page closes the lobby (Hud.LobbyBack.cs)
+            if (m_LobbyMenu && m_New == NewPage.Root) LobbyMenuLeave(Bootstrap.I);
         }
 
         void DrawNewMenu(Bootstrap boot)
         {
             float k = m_Scale, sw = Screen.width, sh = Screen.height;
+            bool lobby = boot.InSession; // (the host's lobby menu: Hud.LobbyBack.cs - the lobby stays open behind it)
+            if (lobby) DrawLobbyMenuBackdrop();
             if (MenuSpace.Fade > 0.001f) Fill(new Rect(0, 0, sw, sh), new Color(0, 0, 0, MenuSpace.Fade));
             // a dark wash down the left so the buttons read over the stars
             GUI.DrawTexture(new Rect(0, 0, 760 * k, sh), LeftFade());
-            if (m_New == NewPage.Map && MenuScene.Fade > 0.001f) Fill(new Rect(0, 0, Screen.width, Screen.height), new Color(0, 0, 0, MenuScene.Fade)); // (the map fading in behind the map page)
+            if (!lobby && m_New == NewPage.Map && MenuScene.Fade > 0.001f) Fill(new Rect(0, 0, Screen.width, Screen.height), new Color(0, 0, 0, MenuScene.Fade)); // (the map fading in behind the map page)
             DrawPunkTitle(m_New == NewPage.Root ? MainTitle : PageTitle(), new Vector2(60 * k, 50 * k), m_New == NewPage.Root ? 86 : 64);
             float x = 70 * k, y = (m_New == NewPage.Root ? 230 : 190) * k, w = 470 * k;
             switch (m_New)
@@ -74,18 +78,18 @@ namespace RockGame
                     if (BigBtn(ref y, x, w, "QUIT", new Color(0.7f, 0.7f, 0.75f))) Application.Quit();
                     break;
                 case NewPage.Tutorial:
+                    if (BigBtn(ref y, x, w, "SOLO", k_Blue)) StartTutorial(boot, true);
                     if (BigBtn(ref y, x, w, "PLAY WITH A FRIEND", k_Red)) StartTutorial(boot, false);
-                    if (BigBtn(ref y, x, w, "SOLO", k_Acid)) StartTutorial(boot, true);
                     Note(ref y, x, w, "Learn the whole game a step at a time. With a friend, they join your IP when the tutorial asks.");
                     break;
                 case NewPage.Multiplayer:
                     if (BigBtn(ref y, x, w, "HOST", k_Red)) { m_SoloFlow = false; m_New = NewPage.Battle; }
-                    if (BigBtn(ref y, x, w, "JOIN", k_Blue)) m_New = NewPage.Join;
+                    if (BigBtn(ref y, x, w, "JOIN", k_Blue)) { if (lobby) LobbyMenuLeave(boot); m_New = NewPage.Join; }
                     break;
                 case NewPage.Join: DrawJoinPage(boot, x, ref y, w); break;
                 case NewPage.Battle:
                     if (BigBtn(ref y, x, w, "1V1", k_Blue)) { m_Battle = 0; m_New = NewPage.Mode; }
-                    if (BigBtn(ref y, x, w, "TEAMS", k_Red)) { m_Battle = 1; if (m_SoloFlow) { m_CapA = m_CapB = 2; m_New = NewPage.Mode; } else m_New = NewPage.Players; }
+                    if (BigBtn(ref y, x, w, "TEAM BATTLE", k_Red)) { m_Battle = 1; if (m_SoloFlow) { m_CapA = m_CapB = 2; m_New = NewPage.Mode; } else m_New = NewPage.Players; }
                     if (BigBtn(ref y, x, w, "FREE FOR ALL", k_Acid)) { m_Battle = 2; if (m_SoloFlow) { m_FfaN = 4; m_New = NewPage.Mode; } else m_New = NewPage.Players; }
                     break;
                 case NewPage.Players: DrawPlayersPage(x, ref y, w); break;
@@ -99,7 +103,8 @@ namespace RockGame
             }
             if (!string.IsNullOrEmpty(boot.Status) && (m_New == NewPage.Join || m_New == NewPage.Root))
                 Shadowed(new Rect(x, sh - 70 * k, sw - x, 30 * k), "<color=#ffcc66>" + boot.Status + "</color>", m_Label);
-            Shadowed(new Rect(0, sh - 30 * k, sw - 16 * k, 24 * k), "<color=#ffffff55>TAB: dev main menu</color>", new GUIStyle(m_Small) { alignment = TextAnchor.MiddleRight });
+            if (lobby) DrawLobbyMenuNote();
+            else Shadowed(new Rect(0, sh - 30 * k, sw - 16 * k, 24 * k), "<color=#ffffff55>TAB: dev main menu</color>", new GUIStyle(m_Small) { alignment = TextAnchor.MiddleRight });
         }
 
 
@@ -124,9 +129,9 @@ namespace RockGame
                 case NewPage.Tutorial: return "TUTORIAL";
                 case NewPage.Multiplayer: return "MULTIPLAYER";
                 case NewPage.Join: return "JOIN GAME";
-                case NewPage.Battle: return m_SoloFlow ? "SOLO BATTLE TYPE" : "MULTIPLAYER BATTLE TYPE";
+                case NewPage.Battle: return m_SoloFlow ? "SOLO TYPE" : "MULTIPLAYER TYPE";
                 case NewPage.Players: return "PLAYERS";
-                case NewPage.Mode: return m_SoloFlow ? "SOLO GAME MODE" : m_Battle == 0 ? "1V1 GAME MODE" : m_Battle == 1 ? "TEAMS GAME MODE" : "FREE FOR ALL GAME MODE";
+                case NewPage.Mode: return m_SoloFlow ? "SOLO GAME MODE" : m_Battle == 0 ? "1V1 GAME MODE" : m_Battle == 1 ? "TEAM BATTLE GAME MODE" : "FREE FOR ALL GAME MODE";
                 case NewPage.Map: return "CHOOSE MAP";
                 default: return MainTitle;
             }
@@ -348,7 +353,9 @@ namespace RockGame
             // the map or its size changes
             int key = Bootstrap.MapChoice;
             int want = (key & ~15) | (int)kind;
-            if (want != m_PreviewKey && Event.current.type == EventType.Layout) { m_PreviewKey = want; boot.SetMapChoice(want); key = want; }
+            // (the host's lobby menu: no rebuilding the map under the running session - its picture is behind instead)
+            if (boot.InSession) key = want;
+            else if (want != m_PreviewKey && Event.current.type == EventType.Layout) { m_PreviewKey = want; boot.SetMapChoice(want); key = want; }
             // along the bottom, all centred: the name between its arrows, a dot per map, the blurb, the sizes; BACK and
             // the go button out in the corners
             float bandH = 200 * k, by = sh - bandH;
@@ -391,11 +398,27 @@ namespace RockGame
             // back, and go: in the corners
             if (SmallBtn(new Rect(40 * k, sh - 72 * k, 150 * k, 48 * k), "◀ BACK")) NewBack();
             float gy = sh - 84 * k;
-            if (BigBtn(ref gy, sw - 300 * k, 260 * k, m_SoloFlow ? "PLAY" : "HOST", k_Acid)) LaunchFromMenu(boot, kind);
+            if (boot.InSession)
+            {
+                // the host's lobby menu: back to the lobby with this map (everyone rebuilds it - Hud.LobbyBack.cs)
+                if (BigBtn(ref gy, sw - 300 * k, 260 * k, "CONFIRM", k_Acid)) LobbyMenuApply(boot, kind);
+            }
+            else if (BigBtn(ref gy, sw - 300 * k, 260 * k, m_SoloFlow ? "PLAY" : "HOST", k_Acid)) LaunchFromMenu(boot, kind);
         }
 
         /// <summary>The menu's choices into the map key, then host (to the ship lobby) or play solo.</summary>
         void LaunchFromMenu(Bootstrap boot, MapKind kind)
+        {
+            int key = MenuKey(kind);
+            Bootstrap.MapChoice = key;
+            PlayerPrefs.SetInt("RockGame.Map", key);
+            m_New = NewPage.Root;
+            m_PreviewKey = -1;
+            boot.Host(m_SoloFlow);
+        }
+
+        /// <summary>The map key the menu's picks make: this map, the mode page's rules, the battle type and its sizes.</summary>
+        int MenuKey(MapKind kind)
         {
             int key = Bootstrap.MapChoice;
             key = (key & ~15) | (int)kind;
@@ -404,11 +427,7 @@ namespace RockGame
             if (m_Battle == 0) key = WithTeams(key, 1, 1);
             else if (m_Battle == 1) key = WithTeams(key, m_CapA, m_CapB);
             else key = Cfg.WithCaps((key & ~(Cfg.ModeMask << Cfg.ModeShift)) | ((int)(m_FfaN >= 4 ? GameMode.Ffa4 : GameMode.Ffa3) << Cfg.ModeShift), null);
-            Bootstrap.MapChoice = key;
-            PlayerPrefs.SetInt("RockGame.Map", key);
-            m_New = NewPage.Root;
-            m_PreviewKey = -1;
-            boot.Host(m_SoloFlow);
+            return key;
         }
 
         // ------------------------------------------------------------------ the look

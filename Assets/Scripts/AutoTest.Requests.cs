@@ -81,6 +81,38 @@ namespace RockGame
                 Check(!lying && socketed, $"ball buff only with the ball in your socket (lying in base: {lying}, socketed: {socketed})");
                 pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
                 yield return Snap("ball_buff_" + rn);
+
+                // the ball in the ENEMY's socket can be taken out: caught off-centre it still sits right in the socket
+                // (its body too, not just its picture), and E aimed at it - or at the cradle's lip just by it - targets the ball
+                {
+                    int enemy = (team + 1) % Mathf.Max(2, Cfg.TeamCount);
+                    var esp = Cfg.SocketPos(enemy);
+                    var eback = Cfg.BackDir(enemy);
+                    ball.ServerDrop(esp - eback * 0.9f + Vector3.up * 1.2f, Vector3.zero); // (dropped in off-centre: the socket catches it)
+                    float until = Time.time + 3f;
+                    while (Time.time < until && ball.SocketTeam.Value != enemy) yield return null;
+                    yield return new WaitForSeconds(0.6f);
+                    float off = Vector3.Distance(ball.transform.position, esp);
+                    Check(ball.SocketTeam.Value == enemy && off < 0.05f && ball.GrabZoneOn, $"caught off-centre, the ball's body sits right in the enemy socket ({off:0.00} m off, grab zone {ball.GrabZoneOn})");
+                    var stand = esp - eback * 2.3f;
+                    stand.y = Cfg.SpawnPos(enemy).y;
+                    float yawE = Quaternion.LookRotation(eback).eulerAngles.y;
+                    pc.LocalTeleport(stand, yawE);
+                    int onBall = 0;
+                    var aims = new[] { esp, esp - eback * 0.85f - Vector3.up * 0.4f, esp + Vector3.Cross(Vector3.up, eback) * 0.8f - Vector3.up * 0.3f };
+                    foreach (var aim in aims)
+                    {
+                        var eye = pc.CenterRay().origin;
+                        var d = aim - eye;
+                        float pitch = -Mathf.Atan2(d.y, new Vector2(d.x, d.z).magnitude) * Mathf.Rad2Deg;
+                        pc.SetLook(Quaternion.LookRotation(new Vector3(d.x, 0, d.z)).eulerAngles.y, pitch);
+                        yield return null;
+                        yield return null;
+                        if (pc.Target.Kind == PlayerController.TargetKind.Ball) onBall++;
+                    }
+                    Check(onBall == aims.Length, $"looking at the ball in the enemy socket (or its cradle's lip) targets the ball, not the machine ({onBall}/{aims.Length})");
+                    yield return Snap("ball_enemy_socket_" + rn);
+                }
                 ball.ServerPlaceInDome();
                 yield return new WaitForSeconds(0.3f);
                 Check(new Vector2(ball.transform.position.x, ball.transform.position.z).magnitude < 0.5f && ball.SocketTeam.Value < 0, "ball back under the dome");

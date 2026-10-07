@@ -182,6 +182,7 @@ namespace RockGame
 
         public void Leave()
         {
+            m_Rejoining = false; s_RejoinExpectedUntil = -1f; // (leaving on purpose: no rejoining the lobby after)
             m_Nm.Shutdown();
             Status = "";
             CleanupLocal();

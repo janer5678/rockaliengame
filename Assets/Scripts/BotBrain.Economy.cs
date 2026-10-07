@@ -5,11 +5,12 @@ using UnityEngine;
 namespace RockGame
 {
     /// <summary>
-    /// A bot's economy (BotBrain.cs): farming trees (with the X weak spot when it's good at it), picking and eating
-    /// berries, crafting its gear in order (hatchet, spear, trade station, armour, sword - fetching wood from its chest
-    /// when it's short), putting down its chest and trade station, building walls round its machine during the build
-    /// phase, and taking its spare wood to the chest. All through the players' own server calls (MeleeRpc, PickBerriesRpc,
-    /// EatRpc, CraftRpc, PlaceDeployableRpc, PlaceRpc, MoveItemRpc), so it pays the same and follows the same rules.
+    /// A bot's economy (BotBrain.cs): farming trees (with the X weak spot when it's good at it - with a chainsaw once it
+    /// has one), picking and eating berries, its starter tools (a hatchet, a spear), the team chest (another when the
+    /// first is full), putting down what it crafted (chests, Trade Stations, a sleeping bag, an auto turret), and stashing
+    /// its spare wood and anything it can't use in the chest. What it spends on is the goals' business (BotBrain.Goals.cs);
+    /// it never stops farming while there's nothing better to do. All through the players' own server calls (MeleeRpc,
+    /// PickBerriesRpc, EatRpc, CraftRpc, PlaceDeployableRpc, MoveItemRpc), so it pays the same and follows the same rules.
     /// </summary>
     public partial class BotBrain
     {
@@ -27,7 +28,6 @@ namespace RockGame
         readonly Dictionary<Object, float> m_Avoid = new Dictionary<Object, float>();
         readonly Dictionary<Item, float> m_CraftFail = new Dictionary<Item, float>();
         readonly Dictionary<Item, float> m_PutFail = new Dictionary<Item, float>(); // (things it couldn't find a spot for)
-        readonly Dictionary<PieceKey, float> m_WallFail = new Dictionary<PieceKey, float>();
 
         /// <summary>(tests) trees hit, pieces built, things crafted.</summary>
         public int FarmHits { get; private set; }
@@ -52,6 +52,9 @@ namespace RockGame
                 case Task.Craft: TickCraft(); break;
                 case Task.Deploy: TickDeploy(); break;
                 case Task.Build: TickBuild(); break;
+                case Task.Loot: TickLoot(); break;
+                case Task.Upgrade: TickUpgrade(); break;
+                case Task.Arm: TickArm(); break;
                 case Task.Fetch: TickBall(false); break;
                 case Task.Raid: if (m_RaidMachine) TickMachineRaid(g); else TickBall(true); break;
                 case Task.Carry: TickCarry(); break;
@@ -155,7 +158,7 @@ namespace RockGame
             var item = m_P.HeldItem;
             if (!Cfg.IsMelee(item)) return;
             var st = Cfg.Melee(item);
-            m_NextSwing = Time.time + st.Cooldown + Random.Range(0.05f, 0.35f);
+            m_NextSwing = Time.time + st.Cooldown + Random.Range(0.05f, 0.35f) * (st.Cooldown < 0.3f ? 0.3f : 1f);
             // the X: a good bot goes for it most of the time (twice the wood), a poor one now and then
             var point = near;
             bool weak = false;
@@ -224,10 +227,10 @@ namespace RockGame
             m_NextThink = Time.time + 0.2f;
         }
 
-        // ---------------------------------------------------------------- gear
+        // ---------------------------------------------------------------- starter tools
 
-        static readonly Item[] k_RaiderGear = { Item.Spear, Item.Hatchet, Item.Workbench, Item.Armor, Item.Sword };
-        static readonly Item[] k_Gear = { Item.Hatchet, Item.Spear, Item.Workbench, Item.Armor, Item.Sword };
+        static readonly Item[] k_RaiderBasics = { Item.Spear, Item.Hatchet };
+        static readonly Item[] k_Basics = { Item.Hatchet, Item.Spear };
 
         /// <summary>A gathering tool that beats the rock for wood.</summary>
         bool HasAxe => Has(Item.Hatchet) || Has(Item.Chainsaw) || Has(Item.TreeCracker);
@@ -248,46 +251,31 @@ namespace RockGame
             {
                 case Item.Hatchet: return HasAxe;
                 case Item.Spear: return HasWeapon;
-                case Item.Armor: return m_P.ArmorHp.Value > 0;
+                case Item.Armor: return m_P.ArmorHp.Value > 0 || Has(Item.Armor) || Has(Item.HeavyArmor);
+                case Item.HeavyArmor: return m_P.ArmorHp.Value >= Cfg.HeavyArmorHp || Has(Item.HeavyArmor);
                 case Item.Workbench: return Has(Item.Workbench) || Workbench.ForTeam(MyTeam, 1) != null;
                 default: return Has(id);
             }
         }
 
-        /// <summary>The next thing on its gear list it could make in this mode (whether or not it can afford it yet).
-        /// basic: just the starter tools.</summary>
-        bool NextWant(bool basic, out Item item, out int idx, out Recipe r)
+        /// <summary>The starter tool it still needs (a hatchet, a spear - a raider the spear first).</summary>
+        bool NextBasic(out Item item, out int idx, out Recipe r)
         {
             item = Item.None; idx = -1; r = default;
-            var list = m_Bent == Bent.Raider ? k_RaiderGear : k_Gear;
-            int team = MyTeam;
-            foreach (var id in list)
+            foreach (var id in m_Bent == Bent.Raider ? k_RaiderBasics : k_Basics)
             {
-                if (basic && id != Item.Hatchet && id != Item.Spear) continue;
-                if (Got(id)) continue;
-                if (m_CraftFail.TryGetValue(id, out var until) && Time.time < until) continue;
-                int i = Cfg.CraftIndexOf(id);
-                if (!Cfg.ValidCraftIndex(i)) continue;
-                var rec = Cfg.CraftRecipe(i, team);
-                if (rec.Output != id) continue;
-                if (Cfg.CraftTier(id) > Cfg.BenchTier(team)) continue;
-                if (id == Item.Workbench && !Cfg.BenchUnlocked(team)) continue;
-                if (!Tutorial.AllowsItemFor(m_P, id)) continue;
-                item = id; idx = i; r = rec;
+                if (Got(id) || !Craftable(id, out int i, out _)) continue;
+                item = id; idx = i; r = Cfg.CraftRecipe(i, MyTeam);
                 return true;
             }
             return false;
         }
 
-        bool CraftJob(bool basic, bool homeSide)
+        bool CraftJob(bool homeSide)
         {
-            if (!NextWant(basic, out var item, out int idx, out var r)) return false;
-            bool anywhere = Cfg.CanCraftAt(MyTeam, transform.position, item);
-            if (!anywhere && !homeSide) return false;
-            var cur = Cfg.CurrencyItem;
-            // keep enough for the walls if it's the builder and they're not up yet
-            int reserve = !basic && IsBuilder() && NextWall(out _) ? Cfg.PieceWood(PieceType.Wall) * 3 : 0;
-            if (m_P.CanAfford(r) && m_P.Count(cur) - r.Wood >= reserve)
+            if (!NextBasic(out var item, out int idx, out var r)) return false;
+            if (!Cfg.CanCraftAt(MyTeam, transform.position, item) && !homeSide) return false;
+            if (m_P.CanAfford(r))
             {
                 m_Want = item;
                 m_WantIdx = idx;
@@ -295,13 +283,15 @@ namespace RockGame
                 return true;
             }
             // short: is the rest in the chest at home?
-            if (!homeSide || r.Stone > 0) return false;
-            var c = TeamChest();
-            if (c == null) return false;
-            int need = r.Wood + reserve - m_P.Count(cur);
-            if (need <= 0 || InvOps.Count(c.Slots, cur) < need) return false;
+            if (!homeSide) return false;
+            var c = RichestChest();
+            var cur = Cfg.CurrencyItem;
+            int need = r.Wood - m_P.Count(cur);
+            if (c == null || need <= 0 || InvOps.Count(c.Slots, cur) < need) return false;
             m_Chest = c;
             m_Withdraw = need + 5;
+            m_HoldFor = r.Wood;
+            m_HoldUntil = Time.time + 45f;
             Set(Task.Store);
             return true;
         }
@@ -311,8 +301,8 @@ namespace RockGame
             if (!Cfg.ValidCraftIndex(m_WantIdx)) { Done(); return; }
             if (!Cfg.CanCraftAt(MyTeam, transform.position, m_Want))
             {
-                var home = Cfg.BaseCenter[MyTeam] - Cfg.BackDir(MyTeam) * 4f;
-                GoTo(home, 2f, Flat(home, transform.position) > 10f);
+                var home = Cfg.BaseCenter[MyTeam] - Cfg.BackDir(MyTeam) * 8f;
+                GoTo(home, 3f, Flat(home, transform.position) > 10f);
                 return;
             }
             if (Time.time < m_NextUse) return;
@@ -321,6 +311,7 @@ namespace RockGame
             int before = CountItem(item);
             int armour = m_P.ArmorHp.Value;
             m_P.CraftRpc(m_WantIdx);
+            m_HoldFor = 0;
             if (CountItem(item) > before || m_P.ArmorHp.Value != armour) Crafted++;
             else m_CraftFail[item] = Time.time + 30f; // (didn't go through - not again for a while; Builder: it's queued)
             Done();
@@ -334,12 +325,18 @@ namespace RockGame
             return n;
         }
 
-        // ---------------------------------------------------------------- chests and trade stations
+        // ---------------------------------------------------------------- chests, trade stations and the rest
 
+        /// <summary>Something it made that goes down in its base: the Trade Stations, a chest when it needs one, a sleeping
+        /// bag, an auto turret.</summary>
         bool DeployJob()
         {
-            if (Has(Item.Workbench) && Workbench.ForTeam(MyTeam, 1) == null && !Avoided(Item.Workbench)) { StartDeploy(Item.Workbench); return true; }
-            if (Has(Item.Chest) && TeamChest() == null && !Avoided(Item.Chest)) { StartDeploy(Item.Chest); return true; }
+            int team = MyTeam;
+            if (Has(Item.Workbench) && Workbench.ForTeam(team, 1) == null && !Avoided(Item.Workbench)) { StartDeploy(Item.Workbench); return true; }
+            if (Has(Item.Workbench2) && Workbench.ForTeam(team, 1) != null && Workbench.ForTeam(team, 2) == null && !Avoided(Item.Workbench2)) { StartDeploy(Item.Workbench2); return true; }
+            if (Has(Item.Chest) && NeedChest() && !Avoided(Item.Chest)) { StartDeploy(Item.Chest); return true; }
+            if (Has(Item.SleepingBag) && !TeamHasBox(Container.SleepBag) && !Avoided(Item.SleepingBag)) { StartDeploy(Item.SleepingBag); return true; }
+            if (Has(Item.AutoTurret) && !Avoided(Item.AutoTurret)) { StartDeploy(Item.AutoTurret); return true; }
             return false;
         }
 
@@ -378,7 +375,8 @@ namespace RockGame
             if (Random.value < 0.35f) { Avoid(kind, 45f); Done(); }
         }
 
-        /// <summary>Where to put a chest (by the machine, on the bedrock or just off it) or the trade station (its usual corner).</summary>
+        /// <summary>Where to put a chest (by the machine, on the bedrock or just off it), a Trade Station (its usual
+        /// corner), a sleeping bag (somewhere in the base) or a turret (out front, covering the door).</summary>
         bool PickDeploySpot(Item kind, int team, out Vector3 at, out float yaw)
         {
             var back = Cfg.BackDir(team);
@@ -386,17 +384,19 @@ namespace RockGame
             var c = Cfg.BaseCenter[team];
             yaw = Workbench.DefaultYaw(team);
             at = default;
-            for (int k = 0; k < 6; k++)
+            for (int k = 0; k < 8; k++)
             {
                 Vector3 p;
-                if (kind == Item.Workbench) p = k == 0 ? Workbench.DefaultPos(team, 1) : c - back * Random.Range(3.5f, 8f) + left * Random.Range(-7f, 7f);
-                else
+                if (Workbench.IsBench(kind)) p = k == 0 ? Workbench.DefaultPos(team, Workbench.TierOfItem(kind)) : c - back * Random.Range(3.5f, 8f) + left * Random.Range(-7f, 7f);
+                else if (kind == Item.Chest)
                 {
                     float side = (k % 2 == 0 ? m_SideSign : -m_SideSign);
                     p = k < 2 ? c - back * 0.4f + left * 2.2f * side
                       : k < 4 ? c + left * 4.6f * side
                       : c - back * Random.Range(4.5f, 9f) + left * Random.Range(-6f, 6f);
                 }
+                else if (kind == Item.AutoTurret) p = c - back * Random.Range(7.5f, 10f) + left * Random.Range(2.5f, 4.5f) * (k % 2 == 0 ? 1f : -1f);
+                else p = c + back * Random.Range(-1f, 4f) + left * Random.Range(7.5f, 11f) * (k % 2 == 0 ? m_SideSign : -m_SideSign); // (a sleeping bag: off to the side)
                 p.y = Cfg.BaseY + 3f;
                 if (Physics.Raycast(p, Vector3.down, out var hit, 8f, Mask, QueryTriggerInteraction.Ignore)) p.y = hit.point.y;
                 else p.y = MapBuilder.Height(p.x, p.z);
@@ -407,7 +407,7 @@ namespace RockGame
             return false;
         }
 
-        /// <summary>Its team's chest in its base (the nearest with room).</summary>
+        /// <summary>Its team's chest in its base with the most room.</summary>
         Container TeamChest()
         {
             Container best = null;
@@ -415,36 +415,54 @@ namespace RockGame
             var cur = Cfg.CurrencyItem;
             foreach (var c in Container.All)
             {
-                if (c == null || !c.IsSpawned || c.Kind.Value != Container.Chest || c.Team.Value != MyTeam) continue;
-                if (Cfg.BaseTeamAt(c.transform.position) != MyTeam && !Cfg.Builder) continue;
+                if (!IsHomeChest(c)) continue;
                 float d = Flat(c.transform.position, transform.position) + (InvOps.Space(c.Slots, cur) < 50 ? 100f : 0f);
                 if (d < bd) { bd = d; best = c; }
             }
             return best;
         }
 
+        /// <summary>No chest at home with room in it.</summary>
+        bool NeedChest()
+        {
+            var cur = Cfg.CurrencyItem;
+            foreach (var c in Container.All)
+                if (IsHomeChest(c) && InvOps.Space(c.Slots, cur) >= 300 && InvOps.HasEmpty(c.Slots)) return false;
+            return true;
+        }
+
+        /// <summary>No chest with room at home: make one (DeployJob puts it down).</summary>
+        bool ChestJob()
+        {
+            if (Has(Item.Chest) || Avoided(Item.Chest) || !NeedChest()) return false;
+            if (!Craftable(Item.Chest, out int idx, out int cost)) return false;
+            if (m_P.Count(Cfg.CurrencyItem) < cost) return false;
+            m_Want = Item.Chest;
+            m_WantIdx = idx;
+            Set(Task.Craft);
+            return true;
+        }
+
         // ---------------------------------------------------------------- storing
 
+        /// <summary>Carrying a good load, or full, or with things it can't use: off to the chest with it.</summary>
         bool StoreJob()
         {
             var cur = Cfg.CurrencyItem;
-            bool full = InvOps.Space(m_P.Inv, Cfg.GatherItem(Item.Wood)) < 30;
             int keep = KeepOnHand();
-            if (m_P.Count(cur) < Mathf.Max(m_StoreAt, keep + 150) && !full) return false;
+            bool full = InvOps.Space(m_P.Inv, Cfg.GatherItem(Item.Wood)) < 30 && m_P.Count(cur) > keep;
+            bool load = m_P.Count(cur) >= Mathf.Max(m_StoreAt, keep + 120);
             var c = TeamChest();
-            if (c == null)
+            if (c == null) return false;
+            if (load || full)
             {
-                // no chest yet: make one (DeployJob puts it down)
-                if (Has(Item.Chest) || Avoided(Item.Chest)) return false;
-                int idx = Cfg.CraftIndexOf(Item.Chest);
-                if (!Cfg.ValidCraftIndex(idx) || !m_P.CanAfford(Cfg.CraftRecipe(idx, MyTeam)) || !Tutorial.AllowsItemFor(m_P, Item.Chest)) return false;
-                if (m_CraftFail.TryGetValue(Item.Chest, out var until) && Time.time < until) return false;
-                m_Want = Item.Chest;
-                m_WantIdx = idx;
-                Set(Task.Craft);
-                return true;
+                if (InvOps.Space(c.Slots, cur) < 50) return false;
             }
-            if (InvOps.Space(c.Slots, cur) < 50) return false;
+            else
+            {
+                // just things it can't use: when there's room for them and it's not a trip of its own from far off
+                if (JunkSlot() < 0 || !InvOps.HasEmpty(c.Slots) || Flat(c.transform.position, transform.position) > 25f) return false;
+            }
             m_Chest = c;
             m_Withdraw = 0;
             Set(Task.Store);
@@ -467,7 +485,7 @@ namespace RockGame
             var inv = m_P.Inv;
             if (m_Withdraw > 0)
             {
-                // take what it's short of for its next bit of gear
+                // take what it's short of for what it's about to make or buy
                 int si = -1;
                 for (int i = 0; i < c.Slots.Count; i++) if (c.Slots[i].Id == cur && c.Slots[i].Count > 0) { si = i; break; }
                 int di = SlotFor(inv, cur, Cfg.HotbarSize);
@@ -485,21 +503,31 @@ namespace RockGame
             int from = -1;
             for (int i = inv.Count - 1; i >= 0; i--) if (inv[i].Id == cur && inv[i].Count > 0) { from = i; break; }
             int to = SlotFor(c.Slots, cur, 0);
-            if (extra <= 0 || from < 0 || to < 0) { Done(); return; }
-            int space = c.Slots[to].Empty ? Cfg.MaxStack(cur) : Cfg.MaxStack(cur) - c.Slots[to].Count;
-            int n = Mathf.Min(extra, inv[from].Count, space);
-            int before = m_P.Count(cur);
-            m_P.MoveItemRpc(0, (byte)from, 1, (byte)to, (ushort)Mathf.Max(1, n), c.NetworkObject);
-            if (m_P.Count(cur) == before) Done(); // (nothing moved: leave it)
-            else Stored += before - m_P.Count(cur);
+            if (extra > 0 && from >= 0 && to >= 0)
+            {
+                int space = c.Slots[to].Empty ? Cfg.MaxStack(cur) : Cfg.MaxStack(cur) - c.Slots[to].Count;
+                int n = Mathf.Min(extra, inv[from].Count, space);
+                int before = m_P.Count(cur);
+                m_P.MoveItemRpc(0, (byte)from, 1, (byte)to, (ushort)Mathf.Max(1, n), c.NetworkObject);
+                if (m_P.Count(cur) < before) { Stored += before - m_P.Count(cur); return; }
+            }
+            // and anything it has no use for (shift-click into the chest)
+            int junk = JunkSlot();
+            if (junk >= 0 && InvOps.HasEmpty(c.Slots))
+            {
+                int had = TotalItems();
+                m_P.MoveItemRpc(0, (byte)junk, 1, 255, (ushort)inv[junk].Count, c.NetworkObject);
+                if (TotalItems() < had) return;
+            }
+            Done();
         }
 
-        /// <summary>How much wood it keeps on it: its usual float, or enough for the next bit of gear it's after (so it
+        /// <summary>How much wood it keeps on it: its usual float for the odd wall, or what it's about to spend (so it
         /// doesn't put wood away only to fetch it straight back out).</summary>
         int KeepOnHand()
         {
             int keep = Mathf.RoundToInt(m_Keep);
-            if (NextWant(false, out _, out _, out var r) && r.Stone == 0) keep = Mathf.Max(keep, r.Wood);
+            if (Time.time < m_HoldUntil) keep = Mathf.Max(keep, m_HoldFor);
             return keep;
         }
 
@@ -514,118 +542,6 @@ namespace RockGame
             for (int i = start; i < list.Count; i++) if (list[i].Empty) return i;
             for (int i = 0; i < Mathf.Min(start, list.Count); i++) if (list[i].Empty) return i;
             return -1;
-        }
-
-        // ---------------------------------------------------------------- building
-
-        /// <summary>Its team's builder: the first bot on the team.</summary>
-        bool IsBuilder()
-        {
-            foreach (var p in PlayerNet.All)
-                if (p != null && p.IsSpawned && p.Bot.Value && p.Team.Value == MyTeam && p.NetworkObjectId < m_P.NetworkObjectId) return false;
-            return true;
-        }
-
-        static readonly List<PieceKey> s_Walls = new List<PieceKey>(8);
-        static int s_WallsTeam = -1;
-        static Vector3 s_WallsAt;
-
-        /// <summary>
-        /// The walls it puts up: round the back and sides of its bedrock (the machine's 6 x 6 m pad), standing on the
-        /// bedrock's edges - the front stays open, so nobody's shut in. Back ones first.
-        /// </summary>
-        static List<PieceKey> WallPlan(int team)
-        {
-            if (s_WallsTeam == team && s_WallsAt == Cfg.BaseCenter[team] && s_Walls.Count > 0) return s_Walls; // (bases move with the map size)
-            s_Walls.Clear();
-            s_WallsTeam = team;
-            s_WallsAt = Cfg.BaseCenter[team];
-            int ci = Mathf.RoundToInt(Cfg.BaseCenter[team].x / Cfg.Cell), cj = Mathf.RoundToInt(Cfg.BaseCenter[team].z / Cfg.Cell);
-            var back = Cfg.BackDir(team);
-            for (int k = 0; k < 2; k++)
-            {
-                AddWall(team, back, new PieceKey(PieceKey.KEdge, ci - 2, cj - 1 + k, 0, 0)); // the bedrock's -x edge
-                AddWall(team, back, new PieceKey(PieceKey.KEdge, ci, cj - 1 + k, 0, 0));     // +x
-                AddWall(team, back, new PieceKey(PieceKey.KEdge, ci - 1 + k, cj - 2, 0, 1)); // -z
-                AddWall(team, back, new PieceKey(PieceKey.KEdge, ci - 1 + k, cj, 0, 1));     // +z
-            }
-            s_Walls.Sort((a, b) => Facing(team, b).CompareTo(Facing(team, a)));
-            return s_Walls;
-        }
-
-        /// <summary>How much a wall faces out the back of the base (1: right at the back, -1: the front).</summary>
-        static float Facing(int team, PieceKey k)
-        {
-            BuildGrid.Pose(PieceType.Wall, k, out var p, out _);
-            var d = p - Cfg.BaseCenter[team];
-            d.y = 0f;
-            return Vector3.Dot(d.normalized, Cfg.BackDir(team));
-        }
-
-        static void AddWall(int team, Vector3 back, PieceKey k)
-        {
-            if (Facing(team, k) < -0.7f) return; // (the front: left open)
-            s_Walls.Add(k);
-        }
-
-        /// <summary>The next wall of the plan still to build (not there, not refused lately, not waiting after being broken).</summary>
-        bool NextWall(out PieceKey key)
-        {
-            key = default;
-            if (Cfg.Builder) return false;
-            var plan = WallPlan(MyTeam);
-            for (int i = 0; i < plan.Count; i++)
-            {
-                var k = plan[i];
-                if (BuildGrid.Registry.ContainsKey(k)) continue;
-                if (m_WallFail.TryGetValue(k, out var until) && Time.time < until) continue;
-                if (Structure.RebuildWait(k) > 0f || !BuildGrid.CanBuildAt(MyTeam, k)) continue;
-                key = k;
-                return true;
-            }
-            return false;
-        }
-
-        bool BuildJob(NetGame g)
-        {
-            if (g.S == GameState.SuddenDeath || Cfg.Builder || !IsBuilder() || !Tutorial.AllowsFor(m_P, TutFeature.Build)) return false;
-            if (!NextWall(out _)) return false;
-            if (!HasAxe && g.S == GameState.PreBall && TimeLeft(g) > 120f) return false; // (a hatchet first: the wood comes three times as fast)
-            bool plan = Has(Item.BuildingPlan);
-            int need = Cfg.PieceWood(PieceType.Wall) + (plan ? 0 : Cfg.PlanWood);
-            if (m_P.Count(Cfg.CurrencyItem) < need + 5) return false;
-            if (!plan)
-            {
-                int idx = Cfg.CraftIndexOf(Item.BuildingPlan);
-                if (!Cfg.ValidCraftIndex(idx) || (m_CraftFail.TryGetValue(Item.BuildingPlan, out var until) && Time.time < until)) return false;
-                m_Want = Item.BuildingPlan;
-                m_WantIdx = idx;
-                Set(Task.Craft);
-                return true;
-            }
-            Set(Task.Build);
-            return true;
-        }
-
-        void TickBuild()
-        {
-            int team = MyTeam;
-            var stand = Cfg.BaseCenter[team] - Cfg.BackDir(team) * 4.5f + Vector3.Cross(Vector3.up, Cfg.BackDir(team)) * m_SideSign;
-            GoTo(stand, 1.2f, Flat(stand, transform.position) > 10f);
-            if (Flat(stand, transform.position) > 3f) return;
-            m_Arrived = true;
-            if (Time.time < m_NextUse) return;
-            m_NextUse = Time.time + Random.Range(0.45f, 0.9f);
-            if (!NextWall(out var key) || m_P.Count(Cfg.CurrencyItem) < Cfg.PieceWood(PieceType.Wall)) { Done(); return; }
-            int slot = HotbarFor(Item.BuildingPlan);
-            if (slot < 0) { Done(); return; }
-            Hold(slot);
-            BuildGrid.Pose(PieceType.Wall, key, out var wp, out _);
-            m_HasLook = true;
-            m_LookAt = wp + Vector3.up * 1.4f;
-            m_P.PlaceRpc((byte)PieceType.Wall, key.I, key.J, key.L, key.D);
-            if (BuildGrid.Registry.ContainsKey(key)) Built++;
-            else m_WallFail[key] = Time.time + 45f; // (blocked - the machine, a chest, a player's piece: skip it a while)
         }
 
         // ---------------------------------------------------------------- the hand
@@ -669,31 +585,39 @@ namespace RockGame
             return -1;
         }
 
-        /// <summary>How good a melee item is for this (damage / wood / damage to walls, per second).</summary>
-        static float Rate(Item it, Use u)
+        /// <summary>How good a melee item is for this (damage / wood / damage to walls, per second). For a fight `dist` is
+        /// how far off the target is: a weapon that doesn't reach that far counts for less.</summary>
+        static float Rate(Item it, Use u, float dist = 0f)
         {
             var st = Cfg.Melee(it);
             if (st.Cooldown <= 0f) return -1f;
             float v = u == Use.Fight ? Cfg.MeleePlayerDamage(it, false) : u == Use.Wood ? st.WoodGather : st.StructureDamage;
-            return v / st.Cooldown;
+            v /= st.Cooldown;
+            if (u == Use.Fight && dist > st.Range + 0.2f) v *= 0.45f;
+            return v;
         }
 
-        /// <summary>Hold the best thing it has on its hotbar for this (the rock if nothing beats it).</summary>
-        void HoldBest(Use u)
+        /// <summary>Hold the best thing it has for this - from anywhere in its inventory (the rock if nothing beats it).
+        /// In a fight, `dist` picks between a long spear and a heavy close-up sword.</summary>
+        void HoldBest(Use u, float dist = 0f)
         {
             if (Eating) return;
-            int best = -1;
-            int rock = RockSlot(false);
-            float bv = rock >= 0 ? Rate(Item.Rock, u) : -1f;
-            for (int i = 0; i < Cfg.HotbarSize; i++)
+            var best = Item.None;
+            float bv = Rate(Item.Rock, u, dist);
+            var inv = m_P.Inv;
+            for (int i = 0; i < inv.Count; i++)
             {
-                var it = m_P.SlotAt(i).Id;
+                var it = inv[i].Id;
                 if (!Cfg.IsMelee(it)) continue;
-                float v = Rate(it, u);
-                if (v > bv) { bv = v; best = i; }
+                float v = Rate(it, u, dist);
+                if (v > bv) { bv = v; best = it; }
             }
-            if (best >= 0) { Hold(best); return; }
-            if (rock < 0) rock = RockSlot(true);
+            if (best != Item.None)
+            {
+                int s = HotbarFor(best);
+                if (s >= 0) { Hold(s); return; }
+            }
+            int rock = RockSlot(true);
             if (rock >= 0) Hold(rock);
         }
 
@@ -710,14 +634,16 @@ namespace RockGame
         void Avoid(Object o, float seconds) { if (o != null) m_Avoid[o] = Time.time + seconds; }
         void Avoid(Item id, float seconds) => m_PutFail[id] = Time.time + seconds;
 
-        /// <summary>Stuck on the way for a good few seconds: give up on that (a tree, a bush, a spot) for a while.</summary>
+        /// <summary>Stuck on the way for a good few seconds: give up on that (a tree, a bush, a spot, some loot) for a while.</summary>
         void GaveUp()
         {
             switch (m_Task)
             {
                 case Task.Farm: Avoid(m_Node, 40f); m_Node = null; break;
                 case Task.Berries: Avoid(m_Bush, 40f); m_Bush = null; break;
+                case Task.Loot: LootGaveUp(); break;
                 case Task.Deploy: m_DeployPickedAt = -100f; return;
+                case Task.Arm: Avoid(m_Turret, 40f); break;
                 case Task.Fight: case Task.Raid: case Task.Fetch: case Task.Carry: case Task.Retreat: return; // (it keeps at those - breaking through, sidestepping)
             }
             StartWander(3f);

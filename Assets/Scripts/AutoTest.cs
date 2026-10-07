@@ -29,6 +29,7 @@ namespace RockGame
             if (m_Mode == "voice") { StartCoroutine(VoiceRoutine()); return; }
             if (m_Mode == "spectate") { StartCoroutine(SpectateRoutine()); return; } // (AutoTest.Spectate.cs)
             if (m_Mode == "backtolobby") { NetGame.TestLobby = true; StartCoroutine(BackToLobbyRoutine()); return; } // (AutoTest.Bots.cs)
+            if (m_Mode == "lobbymap") { NetGame.TestLobby = true; StartCoroutine(LobbyMapRoutine()); return; } // (AutoTest.Lobby.cs)
             StartCoroutine(Run());
         }
 

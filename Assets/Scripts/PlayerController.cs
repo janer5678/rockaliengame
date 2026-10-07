@@ -326,6 +326,7 @@ namespace RockGame
             // the UPGRADES screen goes with the menu, and closes if you walk away from your upgrade station
             if (UpgradesOpen && (!MenuOpen || !Cfg.AtOwnStation(m_Net.Team.Value, transform.position))) { if (MenuOpen) MenuOpen = false; UpgradesOpen = false; }
             if (Paused || MenuOpen || dead) WheelOpen = false;
+            TickWatchSync(); // (PlayerController.Watch.cs: tells spectators which screen is open)
             if (dead || m_Net.HeldItem != Item.Airstrike) AirstrikeMapOpen = false;
 
             bool choosing = m_Net.ChoosingRespawn;
@@ -1514,6 +1515,21 @@ namespace RockGame
                 var machine = h.collider.GetComponentInParent<Machine>();
                 if (machine != null && h.distance <= Cfg.InteractRange + 1.5f)
                 {
+                    // the ball sitting in this machine's socket: aiming at it or just beside it on the cradle takes the
+                    // ball (the machine's parts round the socket used to win, and you couldn't get it out)
+                    var sb = Ball.Instance;
+                    if (sb != null && !sb.IsCarried && sb.SocketTeam.Value == machine.Team)
+                    {
+                        var bp = sb.transform.position;
+                        var sray = new Ray(m_Cam.transform.position, m_Cam.transform.forward);
+                        float along = Vector3.Dot(bp - sray.origin, sray.direction);
+                        if (along > 0f && along <= Cfg.InteractRange + 2f && Vector3.Cross(sray.direction, bp - sray.origin).magnitude < 1.1f)
+                        {
+                            result = new Interactable { Kind = TargetKind.Ball, Obj = sb.NetworkObject };
+                            found = along;
+                            break;
+                        }
+                    }
                     result.Kind = TargetKind.Machine;
                     result.MachineTeam = machine.Team;
                     found = h.distance;

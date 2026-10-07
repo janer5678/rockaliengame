@@ -938,7 +938,9 @@ namespace RockGame
             StuckSpears.Value = 0;
             if (items.Count > 0 && NetGame.Instance != null) NetGame.Instance.ServerScatter(items, transform.position + Vector3.up * 1.1f);
 
-            RespawnAt.Value = NetworkManager.ServerTime.Time + Cfg.RespawnTime;
+            // (killed by someone: long enough for the whole kill cam and its replay to play before the automatic respawn)
+            float respawnIn = KilledBy.Value != 0 ? Mathf.Max(Cfg.RespawnTime, Cfg.KillCamTime + DeathReplay.Duration + 0.5f) : Cfg.RespawnTime;
+            RespawnAt.Value = NetworkManager.ServerTime.Time + respawnIn;
             var victimName = Cfg.TeamName[Team.Value];
             if (NetGame.Instance != null)
             {

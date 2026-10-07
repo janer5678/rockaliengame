@@ -6,9 +6,11 @@ namespace RockGame
     /// Dead:
     /// - THE KILL CAM (PlayerController.KillCam.cs) and its REPLAY (DeathReplay.cs): cinematic black bars slide in;
     ///   the bottom one says who it was in their team colour, with what and how much health they've left; during the
-    ///   replay a blinking REPLAY tag (SLOW MOTION for the last moment) and how to skip it.
+    ///   replay what the killer saw - their crosshair, hit markers and damage numbers (DrawReplayHits) - a blinking REPLAY
+    ///   tag (SLOW MOTION around the death) and how to skip it.
     /// - THE DEATH SCREEN: the edges darken to blood red, YOU DIED slams in big with a thin line drawn out under it, and
-    ///   below that a bar fills up to the respawn - or the respawn choices as dark cards with their key on the left.
+    ///   below that a bar fills up to the respawn - or the respawn choices as dark cards with their key on the left
+    ///   (green while the mouse is on one).
     /// </summary>
     public partial class Hud
     {
@@ -40,7 +42,7 @@ namespace RockGame
             float ty = sh * 0.3f;
             var st = new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt(size), alignment = TextAnchor.MiddleCenter, clipping = TextClipping.Overflow };
             Tinted(new Rect(cx - 420 * k, ty - 160 * k, 840 * k, 320 * k), s_GlowTex, new Color(0.8f, 0.05f, 0.05f, 0.35f * slam));
-            InkText(new Rect(0, ty - 60 * k, sw, 120 * k), "Y O U   D I E D", st, new Color(1f, 0.93f, 0.9f, slam), new Color(0.25f, 0f, 0f, 0.9f * slam), 4f * k);
+            InkText(new Rect(0, ty - 60 * k, sw, 120 * k), "YOU DIED", st, new Color(1f, 0.93f, 0.9f, slam), new Color(0.25f, 0f, 0f, 0.9f * slam), 4f * k);
             float lw = 560 * k * Smooth(Mathf.Clamp01((since - 0.2f) / 0.5f));
             Tinted(new Rect(cx - lw / 2f, ty + 58 * k, lw, 3 * k), s_BandTex, k_DeathRed);
             float y = ty + 80 * k;
@@ -51,18 +53,16 @@ namespace RockGame
                 Shadowed(new Rect(0, y + 34 * k, sw, 26 * k), "Your machine is destroyed - there's no coming back. Cheer your team on!", small);
                 return;
             }
-            Shadowed(new Rect(0, y, sw, 26 * k), "<color=#d8c0bc>Your stuff spilled out where you died</color>", small);
-            y += 40 * k;
+            y += 14 * k;
             if (me.ChoosingRespawn)
             {
                 float bw = 300 * k, bh = 54 * k;
                 if (DeathCard(new Rect(cx - bw - 8 * k, y, bw, bh), "1", "RESPAWN IN BASE", "", true, KeyCode.Alpha1)) pc.ChooseRespawn(false);
                 if (DeathCard(new Rect(cx + 8 * k, y, bw, bh), "2", "RESPAWN IN THE WILD", "", true, KeyCode.Alpha2)) pc.ChooseRespawn(true);
-                Shadowed(new Rect(0, y + bh + 4 * k, sw, 24 * k), "<color=#a89a98>The wild drops you somewhere random in the enemy's half of the map</color>", new GUIStyle(small) { fontSize = Mathf.RoundToInt(14 * k) });
                 // your team's sleeping bags (Container.Deployables.cs): one more card each, once a minute each
                 Deployables.BagsOf(me.Team.Value, s_Bags);
                 double now = me.NetworkManager.ServerTime.Time;
-                float by = y + bh + 34 * k;
+                float by = y + bh + 12 * k;
                 for (int i = 0; i < s_Bags.Count && i < 4; i++)
                 {
                     var bag = s_Bags[i];
@@ -94,8 +94,8 @@ namespace RockGame
             float k = m_Scale;
             bool hover = on && r.Contains(Event.current.mousePosition);
             if (r.Contains(Event.current.mousePosition)) MouseOverUI = true;
-            Fill(r, hover ? new Color(0.35f, 0.04f, 0.04f, 0.92f) : new Color(0.04f, 0.02f, 0.02f, on ? 0.82f : 0.55f));
-            Fill(new Rect(r.x, r.y, 4 * k, r.height), on ? k_DeathRed : new Color(0.4f, 0.4f, 0.4f));
+            Fill(r, hover ? new Color(0.06f, 0.34f, 0.12f, 0.92f) : new Color(0.04f, 0.02f, 0.02f, on ? 0.82f : 0.55f));
+            Fill(new Rect(r.x, r.y, 4 * k, r.height), hover ? new Color(0.35f, 1f, 0.45f) : on ? k_DeathRed : new Color(0.4f, 0.4f, 0.4f));
             Frame(r, new Color(1f, 1f, 1f, hover ? 0.7f : 0.18f), 1f);
             var kr = new Rect(r.x + 14 * k, r.y + (r.height - 28 * k) / 2f, 28 * k, 28 * k);
             Frame(kr, new Color(1f, 1f, 1f, on ? 0.85f : 0.3f), 1.5f);
@@ -134,7 +134,9 @@ namespace RockGame
             ShadowedPlain(new Rect(0, by + bar * 0.12f + 60 * k, sw, 22 * k), $"<color=#c8c8c8>with {with}  ·  </color><color=#ff8080>{Mathf.CeilToInt(killer.Health.Value)} HP</color><color=#c8c8c8> left</color>"
                 + (killer.ArmorHp.Value > 0 ? $"<color=#c8c8c8> (+{killer.ArmorHp.Value} armour)</color>" : ""), new GUIStyle(m_Center) { fontSize = Mathf.RoundToInt(15 * k) });
             if (!pc.KillCamReplay) return;
-            // the replay: a blinking REPLAY tag, slow motion at the end, and how to skip it
+            // the replay: what the killer saw on their screen - their crosshair, the hit markers and damage numbers
+            DrawReplayHits(k);
+            // a blinking REPLAY tag, slow motion at the end, and how to skip it
             float rt = pc.KillCamReplayT;
             bool blink = Mathf.Repeat(Time.time, 1f) < 0.6f;
             var tag = new GUIStyle(m_Label) { fontSize = Mathf.RoundToInt(20 * k), fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
@@ -146,6 +148,76 @@ namespace RockGame
             ShadowedPlain(new Rect(sw - 440 * k, tyy, 400 * k, 24 * k), $"<color=#bbbbbb>{Binds.Name(Bind.Jump)}  skip</color>", skip);
             // its progress along the top bar's edge
             Fill(new Rect(0, bar - 2 * k, sw * Mathf.Clamp01(rt / DeathReplay.Duration), 2 * k), new Color(1f, 1f, 1f, 0.6f));
+        }
+
+        /// <summary>Test hook: when the replay last drew a damage number (Time.time; -1 never).</summary>
+        public static float ReplayNumberShownAt { get; private set; } = -1f;
+
+        /// <summary>
+        /// The kill cam's replay, as the killer saw it: their crosshair in the middle, the ticks of a hit marker round it as
+        /// each hit on you lands (red for the kill), and the damage numbers popping up off you - all on the replay's own
+        /// clock, so they slow down with it.
+        /// </summary>
+        void DrawReplayHits(float k)
+        {
+            float sw = Screen.width, sh = Screen.height, cx = sw / 2f, cy = sh / 2f;
+            Fill(new Rect(cx - 1, cy - 8, 2, 16), new Color(1, 1, 1, 0.8f));
+            Fill(new Rect(cx - 8, cy - 1, 16, 2), new Color(1, 1, 1, 0.8f));
+            // the hit marker
+            float age = DeathReplay.HitMarkerAge(out bool kill);
+            float dur = kill ? 0.55f : 0.32f;
+            if (age >= 0f && age < dur)
+            {
+                var hc = kill ? new Color(1f, 0.2f, 0.15f) : Color.white;
+                float a = Mathf.Clamp01((dur - age) / 0.16f);
+                float pop = 1f - Mathf.Clamp01(age / 0.09f);
+                float gap = (kill ? 8f : 6f) * k + pop * 6f * k + (kill ? age * 18f * k : 0f);
+                float len = (kill ? 11f : 7f) * k * (1f + pop * 0.35f);
+                float thick = Mathf.Max(2f, (kill ? 3f : 2f) * k);
+                var oldM = GUI.matrix;
+                for (int pass = 0; pass < 2; pass++)
+                    for (int i = 0; i < 4; i++)
+                    {
+                        float ang = 45f + i * 90f, rad = ang * Mathf.Deg2Rad;
+                        var c = new Vector2(cx, cy) + new Vector2(Mathf.Cos(rad), Mathf.Sin(rad)) * (gap + len * 0.5f);
+                        GUI.matrix = oldM;
+                        GUIUtility.RotateAroundPivot(ang, c);
+                        if (pass == 0) Fill(new Rect(c.x - len / 2 - 1, c.y - thick / 2 - 1, len + 2, thick + 2), new Color(0, 0, 0, 0.55f * a));
+                        else Fill(new Rect(c.x - len / 2, c.y - thick / 2, len, thick), new Color(hc.r, hc.g, hc.b, a));
+                    }
+                GUI.matrix = oldM;
+            }
+            // the damage numbers: pop in, drift up, fade (white, red for the kill)
+            var cam = Camera.main;
+            if (cam == null) return;
+            const float Life = 1.2f;
+            float bar = sh * 0.11f;
+            for (int i = 0; i < DeathReplay.HitCount; i++)
+            {
+                if (!DeathReplay.GetHit(i, out var pos, out float amount, out float nage, out bool nk) || nage > Life) continue;
+                var sp = cam.WorldToScreenPoint(pos + Vector3.up * 0.35f);
+                if (sp.z < 0) continue;
+                float a = Mathf.Clamp01((Life - nage) / 0.3f);
+                float pop = nage < 0.06f ? Mathf.Lerp(0.55f, 1.5f, nage / 0.06f) : Mathf.Lerp(1.5f, 1f, Mathf.SmoothStep(0f, 1f, (nage - 0.06f) / 0.16f));
+                float rise = (1f - Mathf.Exp(-nage * 2.2f)) * 55f * k;
+                float size = (nk ? 30f : 20f) * pop;
+                float dist = Vector3.Distance(cam.transform.position, pos);
+                float x = sp.x + (i % 2 == 0 ? 10f : -10f) * k, y = sh - sp.y - rise;
+                if (dist < 4.5f)
+                {
+                    // (up close it'd sit right on the crosshair: out to the side and above it, bigger)
+                    size *= 1.4f;
+                    x = Mathf.Max(x, cx + 70 * k);
+                    y = Mathf.Min(y, cy - 50 * k - rise * 0.6f);
+                }
+                x = Mathf.Clamp(x, 60 * k, sw - 60 * k);
+                y = Mathf.Clamp(y, bar + 30 * k, sh - bar - 30 * k);
+                var st = new GUIStyle(m_Center) { fontSize = Mathf.Max(8, Mathf.RoundToInt(size * k)), fontStyle = FontStyle.Bold, clipping = TextClipping.Overflow };
+                var c = nk ? new Color(1f, 0.28f, 0.2f, a) : new Color(1f, 1f, 1f, a);
+                var fillC = Color.Lerp(c, new Color(1f, 1f, 1f, a), Mathf.Clamp01(1f - nage / 0.1f) * 0.7f);
+                InkText(new Rect(x - 80, y - 25, 160, 50), Mathf.RoundToInt(amount).ToString(), st, fillC, new Color(0f, 0f, 0f, a * 0.9f), 2.5f * k);
+                ReplayNumberShownAt = Time.time;
+            }
         }
     }
 }

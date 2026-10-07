@@ -526,7 +526,7 @@ namespace RockGame
             }
 
             if (sheet) RustSheets(tr, t, c, trim);
-            if (ghost == null && !sheet) AddDetail(tr, t, tier, c, trim); // (plank seams, mortar lines, rivets)
+            // (no extra plank seams / mortar lines / rivets merged on any more: the pieces are back to their original detail)
 
             // Builder: walls built straight on the ground (no foundation) reach down into it, so nothing rolls out underneath
             if (Cfg.Builder && (t == PieceType.Wall || t == PieceType.Doorway || t == PieceType.Window) && parent.position.y < Cfg.BaseY + 0.5f)
@@ -595,102 +595,6 @@ namespace RockGame
         }
 
         static bool Near(Color a, Color b) => Mathf.Abs(a.r - b.r) + Mathf.Abs(a.g - b.g) + Mathf.Abs(a.b - b.b) < 0.06f;
-
-
-        /// <summary>
-        /// The finer detail on the walls, foundations and floors (not on the placement ghost): plank seams and nail heads
-        /// on wood, a staggered block pattern of mortar lines on stone, and rivets along the trims of refined metal. All of
-        /// a piece's detail is merged into a mesh or two (one draw each), so a big base stays cheap.
-        /// </summary>
-        static void AddDetail(Transform tr, PieceType t, int tier, Color c, Color trim)
-        {
-            bool wallLike = t == PieceType.Wall || t == PieceType.Doorway || t == PieceType.Window;
-            if (!wallLike && t != PieceType.Foundation && t != PieceType.Floor) return;
-            var seams = new List<Matrix4x4>();
-            var dots = new List<Matrix4x4>();
-            void Box(List<Matrix4x4> l, Vector3 at, Vector3 size) => l.Add(Matrix4x4.TRS(at, Quaternion.identity, size));
-            // is this spot on the wall's solid part (not in the doorway's or the window's opening)?
-            bool Solid(float x, float y) =>
-                t == PieceType.Doorway ? !(Mathf.Abs(x) < 0.62f && y < 2.42f)
-                : t == PieceType.Window ? !(Mathf.Abs(x) < 0.97f && y > 0.88f && y < 2.42f)
-                : true;
-            if (tier == 0)
-            {
-                // wood: planks standing side by side (a dark seam between each), a nail head where each crosses a trim
-                if (wallLike)
-                    for (int i = -3; i <= 3; i++)
-                    {
-                        float x = i * 0.375f;
-                        for (float y = 0.05f; y < 2.95f; y += 0.25f)
-                            if (Solid(x, y + 0.125f))
-                                foreach (float z in new[] { -0.152f, 0.152f }) Box(seams, new Vector3(x, y + 0.125f, z), new Vector3(0.025f, 0.26f, 0.01f));
-                        for (int k = 1; k < 4; k++)
-                            if (Solid(x + 0.19f, k * 0.75f))
-                                foreach (float z in new[] { -0.175f, 0.175f }) Box(dots, new Vector3(x + 0.19f, k * 0.75f, z), new Vector3(0.035f, 0.035f, 0.012f));
-                    }
-                else if (t == PieceType.Floor)
-                    for (int i = -3; i <= 3; i++) Box(seams, new Vector3(i * 0.375f, 0.002f, 0), new Vector3(0.025f, 0.01f, 2.98f));
-                else
-                    for (int i = -3; i <= 3; i++)
-                        foreach (var side in new[] { Vector3.forward, Vector3.back, Vector3.right, Vector3.left })
-                        {
-                            var along = new Vector3(side.z, 0, -side.x);
-                            Box(seams, side * 1.505f + along * (i * 0.375f) + Vector3.up * 0.55f, new Vector3(Mathf.Abs(along.x) * 0.025f + Mathf.Abs(side.x) * 0.01f, 0.5f, Mathf.Abs(along.z) * 0.025f + Mathf.Abs(side.z) * 0.01f));
-                        }
-            }
-            else if (tier == 1)
-            {
-                // stone: courses of blocks (a mortar line along each course, the joints staggered course to course)
-                if (wallLike || t == PieceType.Foundation)
-                {
-                    float top = wallLike ? 3f : 1f;
-                    for (int row = 0; row * 0.5f < top; row++)
-                    {
-                        float y = row * 0.5f;
-                        if (wallLike)
-                        {
-                            for (float x = -1.45f; x < 1.45f; x += 0.1f)
-                                if (y > 0.01f && Solid(x + 0.05f, y)) foreach (float z in new[] { -0.152f, 0.152f }) Box(seams, new Vector3(x + 0.05f, y, z), new Vector3(0.11f, 0.03f, 0.01f));
-                            for (float x = (row % 2 == 0 ? -1.125f : -0.75f); x < 1.4f; x += 0.75f)
-                                if (Solid(x, y + 0.25f)) foreach (float z in new[] { -0.152f, 0.152f }) Box(seams, new Vector3(x, y + 0.25f, z), new Vector3(0.03f, 0.5f, 0.01f));
-                        }
-                        else
-                            foreach (var side in new[] { Vector3.forward, Vector3.back, Vector3.right, Vector3.left })
-                            {
-                                var along = new Vector3(side.z, 0, -side.x);
-                                if (row > 0) Box(seams, side * 1.505f + Vector3.up * y, new Vector3(Mathf.Abs(along.x) * 3f + Mathf.Abs(side.x) * 0.01f, 0.03f, Mathf.Abs(along.z) * 3f + Mathf.Abs(side.z) * 0.01f));
-                                for (float a = (row % 2 == 0 ? -1.125f : -0.75f); a < 1.4f; a += 0.75f)
-                                    Box(seams, side * 1.505f + along * a + Vector3.up * (y + 0.25f), new Vector3(Mathf.Abs(along.x) * 0.03f + Mathf.Abs(side.x) * 0.01f, 0.5f, Mathf.Abs(along.z) * 0.03f + Mathf.Abs(side.z) * 0.01f));
-                            }
-                    }
-                }
-            }
-            else if (tier >= 3 && wallLike)
-            {
-                // refined: rivets all along the trims (both faces)
-                for (int k = 1; k < 4; k++)
-                    for (float x = -1.35f; x <= 1.36f; x += 0.3f)
-                        if (Solid(x, k * 0.75f)) foreach (float z in new[] { -0.175f, 0.175f }) Box(dots, new Vector3(x, k * 0.75f, z), new Vector3(0.045f, 0.045f, 0.015f));
-            }
-            Merge(tr, seams, c * 0.62f, "detail seams");
-            Merge(tr, dots, tier == 0 ? new Color(0.35f, 0.35f, 0.38f) : trim * 1.1f, "detail dots");
-        }
-
-        /// <summary>Boxes (unit cubes placed by these matrices, in `tr`'s space) as one mesh in one colour.</summary>
-        static void Merge(Transform tr, List<Matrix4x4> boxes, Color color, string name)
-        {
-            if (boxes.Count == 0) return;
-            var ci = new CombineInstance[boxes.Count];
-            for (int i = 0; i < ci.Length; i++) ci[i] = new CombineInstance { mesh = Art.Cube, transform = boxes[i] };
-            var mesh = new Mesh { name = name, indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
-            mesh.CombineMeshes(ci, true, true);
-            var go = new GameObject(name);
-            go.transform.SetParent(tr, false);
-            go.AddComponent<MeshFilter>().sharedMesh = mesh;
-            var mr = go.AddComponent<MeshRenderer>();
-            mr.sharedMaterial = Art.Mat(color);
-            mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-        }
 
         /// <summary>Sheet metal: corrugated ridges on the walls and foundations, and rust patches and bolts on every piece.</summary>
         static void RustSheets(Transform tr, PieceType t, Color c, Color trim)

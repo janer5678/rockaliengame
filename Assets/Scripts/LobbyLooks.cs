@@ -7,8 +7,9 @@ namespace RockGame
     /// TIMER - the top-centre timer panel (Hud.Notify.cs: DrawTopPanel): its size, how dark its plate is, and whether it
     ///   shows the drain bar, the line about what to do, the mode's tag and the final-minute flashing.
     /// SHIP LOBBY - the living room you wait in (ShipLobby.cs): post processing of its own (like the main menu
-    ///   cutscene's) and the room itself - how dark it is, how bright the lamp, the telly and the lights passing the
-    ///   window are, the lamp swinging, the cigarette smoke and the camera's field of view.
+    ///   cutscene's) and the room itself - the floor, wall and couch colours, how dark it is, how bright the lamp, the
+    ///   telly and the lights passing the window are, the lamp swinging, the cigarette smoke and the camera's field of
+    ///   view. The same rows are in the lobby itself: LOBBY LOOK (Hud.Lobby.cs).
     /// </summary>
     public static partial class GameSettings
     {
@@ -38,6 +39,10 @@ namespace RockGame
         public static readonly DisplayPref.Bool LobbySway = new("lobby.sway", GLobby, true);
         public static readonly DisplayPref.Bool LobbySmoke = new("lobby.smoke", GLobby, true);
         public static readonly DisplayPref.Float LobbyFov = new("lobby.fov", GLobby, 60f, 45f, 85f);
+        // the room's colours (the carpet, the wall panels, the couch)
+        public static readonly DisplayPref.Colour LobbyFloor = new("lobby.floor", GLobby, new Color(0.22f, 0.2f, 0.15f));
+        public static readonly DisplayPref.Colour LobbyWall = new("lobby.wall", GLobby, new Color(0.3f, 0.28f, 0.24f));
+        public static readonly DisplayPref.Colour LobbyCouch = new("lobby.couch", GLobby, new Color(0.52f, 0.4f, 0.2f));
 
         /// <summary>The ship lobby's own post processing is in use right now (switched on, and it's showing).</summary>
         public static bool LobbyPostNow => LobbyOwn.Value && ShipLobby.Active;
@@ -49,6 +54,9 @@ namespace RockGame
         public static bool LobbySwayNow => !LobbyOwn.Value || LobbySway.Value;
         public static bool LobbySmokeNow => !LobbyOwn.Value || LobbySmoke.Value;
         public static float LobbyFovNow => LobbyOwn.Value ? LobbyFov.Value : 60f;
+        public static Color LobbyFloorNow => LobbyOwn.Value ? LobbyFloor.Value : LobbyFloor.Default;
+        public static Color LobbyWallNow => LobbyOwn.Value ? LobbyWall.Value : LobbyWall.Default;
+        public static Color LobbyCouchNow => LobbyOwn.Value ? LobbyCouch.Value : LobbyCouch.Default;
 
         static float LobbyExtra(PostExtra e)
         {
@@ -74,6 +82,7 @@ namespace RockGame
             LobbyChromatic.Set(false, save); LobbyChromaticStrength.Set(0.4f, save);
             LobbyDark.Set(1f, save); LobbyLamp.Set(1f, save); LobbyTv.Set(1f, save); LobbyWindow.Set(1f, save);
             LobbySway.Set(true, save); LobbySmoke.Set(true, save); LobbyFov.Set(60f, save);
+            LobbyFloor.Set(LobbyFloor.Default, save); LobbyWall.Set(LobbyWall.Default, save); LobbyCouch.Set(LobbyCouch.Default, save);
         }
     }
 
@@ -83,6 +92,29 @@ namespace RockGame
 
         /// <summary>Settings > Display: the TIMER and SHIP LOBBY sections (after the other own-look sections).</summary>
         void DrawTimerAndLobbyLooks()
+        {
+            float k = m_Scale;
+            DrawTimerLooks(); // (TimerLooks.cs)
+            // ---- the ship lobby ----
+            if (FoldRow("SHIP LOBBY", ref m_LobbyLooksOpen, GameSettings.LobbyOwn))
+            {
+                DrawLobbyLookRows();
+                GUILayout.BeginHorizontal();
+                GUILayout.Label("<color=#bbbbbb>The living room you wait in before a match: its own post processing (the game keeps the settings above), the room's lights and colours. Also in the lobby: LOBBY LOOK.</color>", m_SmallWrap);
+                if (Btn("Defaults", GUILayout.Width(100 * k), GUILayout.Height(28 * k))) GameSettings.ResetLobby();
+                GUILayout.EndHorizontal();
+            }
+        }
+
+        static readonly Color[] s_LobbySwatches =
+        {
+            new Color(0.15f, 0.15f, 0.17f), new Color(0.12f, 0.16f, 0.3f), new Color(0.35f, 0.1f, 0.12f), new Color(0.3f, 0.32f, 0.15f),
+            new Color(0.1f, 0.3f, 0.3f), new Color(0.28f, 0.15f, 0.35f), new Color(0.6f, 0.55f, 0.45f), new Color(0.6f, 0.32f, 0.12f),
+        };
+        readonly System.Collections.Generic.Dictionary<string, string> m_LobbyHex = new System.Collections.Generic.Dictionary<string, string>();
+
+        /// <summary>The SHIP LOBBY settings, one row each (Settings > Display, and LOBBY LOOK in the lobby: Hud.Lobby.cs).</summary>
+        void DrawLobbyLookRows()
         {
             float k = m_Scale, lw = 210 * k;
             void Slider(string name, DisplayPref.Float p, string shown, float step)
@@ -108,29 +140,58 @@ namespace RockGame
                 bool o = EffectRow(name, on.Value, ref v);
                 on.Set(o); s.Set(Mathf.Round(v * 20f) / 20f);
             }
-            DrawTimerLooks(); // (TimerLooks.cs)
-            // ---- the ship lobby ----
-            if (FoldRow("SHIP LOBBY", ref m_LobbyLooksOpen, GameSettings.LobbyOwn))
+            void Colour(string name, DisplayPref.Colour p)
             {
-                Row("Bloom", GameSettings.LobbyBloom, GameSettings.LobbyBloomStrength);
-                Row("Vignette", GameSettings.LobbyVignette, GameSettings.LobbyVignetteStrength);
-                Row("Colour grading", GameSettings.LobbyGrading, GameSettings.LobbyGradingStrength);
-                Row("Outlines", GameSettings.LobbyOutlines, GameSettings.LobbyOutlinesStrength);
-                Row("Cel banding", GameSettings.LobbyCel, GameSettings.LobbyCelStrength);
-                Row("Film grain", GameSettings.LobbyGrain, GameSettings.LobbyGrainStrength);
-                Row("Chromatic aberration", GameSettings.LobbyChromatic, GameSettings.LobbyChromaticStrength);
-                Slider("Room darkness", GameSettings.LobbyDark, $"{GameSettings.LobbyDark.Value * 100f:0}%", 0.05f);
-                Slider("Lamp", GameSettings.LobbyLamp, $"{GameSettings.LobbyLamp.Value * 100f:0}%", 0.05f);
-                Slider("Telly", GameSettings.LobbyTv, $"{GameSettings.LobbyTv.Value * 100f:0}%", 0.05f);
-                Slider("Window lights", GameSettings.LobbyWindow, $"{GameSettings.LobbyWindow.Value * 100f:0}%", 0.05f);
-                Slider("Field of view", GameSettings.LobbyFov, $"{GameSettings.LobbyFov.Value:0}°", 1f);
-                Toggle("Lamp swinging", GameSettings.LobbySway);
-                Toggle("Cigarette smoke", GameSettings.LobbySmoke);
+                // the swatches (the room as built first) and a hex box
                 GUILayout.BeginHorizontal();
-                GUILayout.Label("<color=#bbbbbb>The living room you wait in before a match: its own post processing (the game keeps the settings above) and the room's lights.</color>", m_SmallWrap);
-                if (Btn("Defaults", GUILayout.Width(100 * k), GUILayout.Height(28 * k))) GameSettings.ResetLobby();
+                GUILayout.Space(16 * k);
+                GUILayout.Label(name, m_Small, GUILayout.Width(lw - 16 * k), GUILayout.Height(26 * k));
+                var cur = p.Value;
+                float sw = 22 * k;
+                for (int i = -1; i < s_LobbySwatches.Length; i++)
+                {
+                    var pc = i < 0 ? p.Default : s_LobbySwatches[i];
+                    var pr = GUILayoutUtility.GetRect(sw, sw, GUILayout.Width(sw), GUILayout.Height(26 * k));
+                    pr.y += (26 * k - sw) * 0.5f; pr.height = sw;
+                    Fill(pr, ColorSlots.Same(pc, cur) ? new Color(1f, 0.82f, 0.3f) : new Color(0.5f, 0.5f, 0.5f, 0.8f));
+                    Fill(new Rect(pr.x + 2, pr.y + 2, pr.width - 4, pr.height - 4), pc);
+                    TrackHover(pr);
+                    if (GUI.Button(pr, GUIContent.none, GUIStyle.none)) { ClickSound(); p.Set(pc); m_LobbyHex.Remove(p.Key); }
+                    GUILayout.Space(3 * k);
+                }
+                GUILayout.Space(6 * k);
+                string ctl = "lobbyhex." + p.Key;
+                if (GUI.GetNameOfFocusedControl() != ctl) m_LobbyHex.Remove(p.Key);
+                string hex = m_LobbyHex.TryGetValue(p.Key, out var typed) ? typed : ColorUtility.ToHtmlStringRGB(cur);
+                GUI.SetNextControlName(ctl);
+                string nh = GUILayout.TextField(hex, 7, new GUIStyle(GUI.skin.textField) { fontSize = Mathf.RoundToInt(15 * k), alignment = TextAnchor.MiddleCenter }, GUILayout.Width(86 * k), GUILayout.Height(24 * k));
+                NoteTyping(ctl);
+                if (nh != hex)
+                {
+                    m_LobbyHex[p.Key] = nh;
+                    var t = nh.Trim().TrimStart('#');
+                    if (t.Length == 6 && ColorUtility.TryParseHtmlString("#" + t, out var hc)) p.Set(hc);
+                }
+                GUILayout.FlexibleSpace();
                 GUILayout.EndHorizontal();
             }
+            Colour("Floor", GameSettings.LobbyFloor);
+            Colour("Walls", GameSettings.LobbyWall);
+            Colour("Couch", GameSettings.LobbyCouch);
+            Slider("Room darkness", GameSettings.LobbyDark, $"{GameSettings.LobbyDark.Value * 100f:0}%", 0.05f);
+            Slider("Lamp", GameSettings.LobbyLamp, $"{GameSettings.LobbyLamp.Value * 100f:0}%", 0.05f);
+            Slider("Telly", GameSettings.LobbyTv, $"{GameSettings.LobbyTv.Value * 100f:0}%", 0.05f);
+            Slider("Window lights", GameSettings.LobbyWindow, $"{GameSettings.LobbyWindow.Value * 100f:0}%", 0.05f);
+            Slider("Field of view", GameSettings.LobbyFov, $"{GameSettings.LobbyFov.Value:0}°", 1f);
+            Toggle("Lamp swinging", GameSettings.LobbySway);
+            Toggle("Cigarette smoke", GameSettings.LobbySmoke);
+            Row("Bloom", GameSettings.LobbyBloom, GameSettings.LobbyBloomStrength);
+            Row("Vignette", GameSettings.LobbyVignette, GameSettings.LobbyVignetteStrength);
+            Row("Colour grading", GameSettings.LobbyGrading, GameSettings.LobbyGradingStrength);
+            Row("Outlines", GameSettings.LobbyOutlines, GameSettings.LobbyOutlinesStrength);
+            Row("Cel banding", GameSettings.LobbyCel, GameSettings.LobbyCelStrength);
+            Row("Film grain", GameSettings.LobbyGrain, GameSettings.LobbyGrainStrength);
+            Row("Chromatic aberration", GameSettings.LobbyChromatic, GameSettings.LobbyChromaticStrength);
         }
     }
 }

@@ -120,7 +120,16 @@ namespace RockGame
     {
         /// <summary>How long the result stays up after the match (and its cutscene) before everyone's back in the lobby (s).</summary>
         public const float BackToLobbyAfter = 7f;
+        /// <summary>How long a client keeps trying to get back in after the host restarts for the lobby (s): long enough
+        /// for a slow host to build the new map.</summary>
+        public const float RejoinWindow = 40f;
         float m_OverSince = -1f;
+
+        /// <summary>The match is over and everyone - winners, losers and spectators alike - is going back to the ship
+        /// lobby by themselves (a lobby game, not the tutorial). The end screen shouldn't offer "Leave game" in the middle
+        /// of the screen then: the mouse is let go right on top of it, and a loser still clicking away as the match ended
+        /// was thrown out to the main menu instead of going back to the lobby with everyone else.</summary>
+        public bool GoingBackToLobby => IsSpawned && S == GameState.GameOver && ReadyLobby && !Cfg.Tutorial;
 
         /// <summary>Seconds until everyone's sent back to the lobby (-1: not counting: the cutscene's still on, or no lobby).</summary>
         public float BackToLobbyIn => m_OverSince < 0f ? -1f : Mathf.Max(0f, BackToLobbyAfter - (Time.time - m_OverSince));
@@ -132,7 +141,7 @@ namespace RockGame
         [Rpc(SendTo.NotServer)]
         public void BackToLobbyRpc()
         {
-            Bootstrap.s_RejoinExpectedUntil = Time.unscaledTime + 10f;
+            Bootstrap.s_RejoinExpectedUntil = Time.unscaledTime + RejoinWindow;
             Debug.Log("[RockGame] the host is going back to the lobby: rejoining when it drops");
         }
 

@@ -35,6 +35,11 @@ namespace RockGame
         /// <summary>The beacon's bright core and its soft halo (radius, metres).</summary>
         public const float BeaconCore = 0.55f, BeaconHalo = 1.9f;
         Light m_Light;
+        SphereCollider m_Grab;
+        /// <summary>How far round a socketed ball's centre E still grabs it (the ball itself is Radius).</summary>
+        public const float GrabRadius = 1.05f;
+        /// <summary>Test hook: the grab zone's on (the ball sits in a machine's socket).</summary>
+        public bool GrabZoneOn => m_Grab != null && m_Grab.enabled;
         Collider m_IgnoredCol, m_IgnoredMount;
         float m_IgnoreUntil;
 
@@ -91,6 +96,17 @@ namespace RockGame
             foot.transform.localPosition = new Vector3(0, -Radius + 0.06f, 0);
             foot.transform.localScale = Vector3.one * BeaconHalo * 3f;
             m_Foot = foot;
+            // the grab zone round a ball in a machine's socket: a trigger a bit bigger than the ball, so E on it (or on the
+            // cradle's lip right by it) takes it out - before, the interact ray caught the cradle and the arch first and
+            // took them for "the alien machine", so you had to hit the ball dead on. Only the interact ray sees triggers
+            // (every other query ignores them) and it's on Ignore Raycast, so nothing else notices it.
+            var grab = new GameObject("socket grab");
+            grab.layer = 2; // (Ignore Raycast)
+            grab.transform.SetParent(transform, false);
+            m_Grab = grab.AddComponent<SphereCollider>();
+            m_Grab.isTrigger = true;
+            m_Grab.radius = GrabRadius;
+            m_Grab.enabled = false;
             SocketTeam.OnValueChanged += OnSocketChanged;
             OnSocketChanged(-1, SocketTeam.Value);
             m_Ready = true;
@@ -142,6 +158,8 @@ namespace RockGame
             // keep the beacon pointing straight up even while the ball rolls
             if (m_Beacon) m_Beacon.transform.rotation = Quaternion.identity;
             m_Col.enabled = !IsCarried;
+            bool grab = !IsCarried && SocketTeam.Value >= 0 && !Cfg.Builder;
+            if (m_Grab != null && m_Grab.enabled != grab) m_Grab.enabled = grab;
             // (on every peer: the server for the thrower, the thrower's own screen for itself)
             if ((m_IgnoredCol != null || m_IgnoredMount != null) && Time.time > m_IgnoreUntil)
             {
@@ -403,6 +421,13 @@ namespace RockGame
                 }
             }
 
+            // in a socket it stays put right in it (where everyone sees it and can take it out)
+            if (!IsCarried && SocketTeam.Value >= 0 && !Cfg.Builder)
+            {
+                var sp = Cfg.SocketPos(Mathf.Clamp(SocketTeam.Value, 0, 3));
+                if ((transform.position - sp).sqrMagnitude > 0.05f * 0.05f) { m_Rb.isKinematic = true; MoveTo(sp); }
+            }
+
             var p = transform.position;
             if (!IsCarried && SocketTeam.Value < 0 && !Cfg.Builder) // Builder has no machine goal
             {
@@ -437,8 +462,14 @@ namespace RockGame
         public void ServerSocket(int team)
         {
             CarrierId.Value = NoCarrier;
+            if (!m_Rb.isKinematic) { m_Rb.linearVelocity = Vector3.zero; m_Rb.angularVelocity = Vector3.zero; }
             m_Rb.isKinematic = true;
-            transform.SetPositionAndRotation(Cfg.SocketPos(team), Quaternion.identity);
+            m_SlowFall = false;
+            // (MoveTo, not just the transform: the body is interpolated, so a bare transform move could be undone by the
+            // next physics step - the ball stayed where the socket caught it (up to 1.4 m off and 1.6 m up: in the arch or
+            // the machine) while its picture sat in the socket, so the ball you saw couldn't be taken out)
+            MoveTo(Cfg.SocketPos(team));
+            transform.rotation = Quaternion.identity;
             SocketTeam.Value = (sbyte)team;
             // the kill feed (and only it - no top-right message saying the same): who captured it (whoever last picked it up, if they're on that team), or just the team
             if (NetGame.Instance != null) NetGame.Instance.ServerBallFeed(m_LastHolder != null && m_LastHolder.IsSpawned && m_LastHolder.Team.Value == team ? m_LastHolder : null, team, true);

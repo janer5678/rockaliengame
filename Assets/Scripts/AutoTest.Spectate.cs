@@ -44,7 +44,27 @@ namespace RockGame
                     float yawOff = Mathf.Abs(Mathf.DeltaAngle(Camera.main.transform.eulerAngles.y, first.transform.eulerAngles.y));
                     Check(pitchOff < 3f && yawOff < 3f, $"looking where they look (pitch {pitchOff:0.0}, yaw {yawOff:0.0} degrees off)");
                     Check(Time.time - Hud.SpectatorBarShownAt < 0.5f && Hud.SpectatorBarText.Contains(first.DisplayName), $"the spectator bar: \"{Hud.SpectatorBarText}\"");
+                    Check(first.Dead.Value || Time.time - Hud.WatchedHotbarShownAt < 0.5f, "their hotbar is shown along the bottom (what's in their hand picked out)");
                 }
+                // the playing client has its bag open (below): watching it, we see it too
+                float bagUntil = Time.time + 8f;
+                bool sawBag = false;
+                while (!sawBag && Time.time < bagUntil)
+                {
+                    var tg = Spectator.Target;
+                    if (tg != null && tg.WatchOpen.Value == (byte)WatchUi.Bag)
+                    {
+                        yield return new WaitForSeconds(0.3f);
+                        sawBag = Hud.WatchedPanel == "Bag";
+                        if (sawBag) yield return Snap("spectate_bag");
+                        break;
+                    }
+                    if (tg == null || tg.WatchOpen.Value == 0) { Spectator.Step(1); yield return new WaitForSeconds(0.4f); }
+                    else yield return null;
+                }
+                Check(sawBag, $"watching the player with their bag open: it's shown to us too (\"{Hud.WatchedPanel}\")");
+                if (Spectator.Target != first) { Spectator.Step(1); yield return new WaitForSeconds(0.3f); }
+                if (Spectator.Target != first) { Spectator.Step(1); yield return new WaitForSeconds(0.3f); }
                 int sw = Spectator.Switches;
                 Spectator.Step(1); // (left click)
                 yield return new WaitForSeconds(0.5f);
@@ -88,9 +108,17 @@ namespace RockGame
                 yield break;
             }
 
-            // the client that plays: just stays in until the host has finished
+            // the client that plays: opens its bag once the match is going (the spectator sees it), then stays in until the
+            // host has finished
             float end = Time.time + 150f;
-            while (nm.IsConnectedClient && Time.time < end) yield return null;
+            bool opened = false;
+            while (nm.IsConnectedClient && Time.time < end)
+            {
+                var pc = PlayerController.Local;
+                if (pc != null && g.S != GameState.Waiting && !opened && g.Spectators.Count > 0) { opened = true; Log("opening the bag for the spectator"); }
+                if (opened && pc != null && !pc.MenuOpen && PlayerNet.Local != null && !PlayerNet.Local.Dead.Value) pc.MenuOpen = true;
+                yield return null;
+            }
             Log("player client done");
             Application.Quit(0);
         }

@@ -197,6 +197,45 @@ namespace RockGame
             }
             internal override DisplayCode.Entry Entry() => DisplayCode.MakeColour(Key, Group, Default, () => Value, Set);
         }
+
+        /// <summary>One of a list of named options (by name in the display settings code).</summary>
+        public sealed class Choice : DisplayPref
+        {
+            public readonly int Default;
+            public readonly string[] Names;
+            int m_V; bool m_Loaded;
+            public Choice(string key, string group, string[] names, int def) : base(key, group) { Names = names; Default = Mathf.Clamp(def, 0, names.Length - 1); m_V = Default; }
+            public int Value { get { if (!m_Loaded) { m_Loaded = true; m_V = Mathf.Clamp(PlayerPrefs.GetInt(PrefKey, Default), 0, Names.Length - 1); } return m_V; } }
+            public string Name => Names[Value];
+            public void Set(int v, bool save = true)
+            {
+                v = Mathf.Clamp(v, 0, Names.Length - 1);
+                if (v == Value) return;
+                m_V = v;
+                if (save) { PlayerPrefs.SetInt(PrefKey, v); PlayerPrefs.Save(); }
+                Fire();
+            }
+            internal override DisplayCode.Entry Entry() => DisplayCode.MakeChoice(Key, Group, Names, Default, () => Value, Set);
+        }
+
+        /// <summary>A line of text (empty = the default; the notifications' own wording: NotifLooks.cs). In the display
+        /// settings code as it is typed ("#" can't be used: it starts a comment there).</summary>
+        public sealed class Text : DisplayPref
+        {
+            public readonly string Default;
+            string m_V; bool m_Loaded;
+            public Text(string key, string group, string def = "") : base(key, group) { Default = def ?? ""; m_V = Default; }
+            public string Value { get { if (!m_Loaded) { m_Loaded = true; m_V = PlayerPrefs.GetString(PrefKey, Default); } return m_V; } }
+            public void Set(string v, bool save = true)
+            {
+                v ??= "";
+                if (v == Value) return;
+                m_V = v;
+                if (save) { PlayerPrefs.SetString(PrefKey, v); PlayerPrefs.Save(); }
+                Fire();
+            }
+            internal override DisplayCode.Entry Entry() => DisplayCode.MakeText(Key, Group, Default, () => Value, Set);
+        }
     }
 
     /// <summary>
@@ -265,7 +304,10 @@ namespace RockGame
                 GameSettings.MenuGrading, GameSettings.MenuGradingStrength, GameSettings.MenuOutlines, GameSettings.MenuOutlinesStrength, GameSettings.MenuCel,
                 GameSettings.MenuCelStrength, GameSettings.MenuGrain, GameSettings.MenuGrainStrength, GameSettings.MenuChromatic, GameSettings.MenuChromaticStrength);
             Pref(GameSettings.TimerOwn, GameSettings.TimerSize, GameSettings.TimerPlate, GameSettings.TimerBar, GameSettings.TimerSub, GameSettings.TimerTag,
-                GameSettings.TimerFlash, GameSettings.TimerAccent);
+                GameSettings.TimerFlash, GameSettings.TimerAccent, GameSettings.TimerInk, GameSettings.TimerWidth, GameSettings.TimerFont, GameSettings.TimerY,
+                GameSettings.TimerTopLine, GameSettings.TimerBarBack, GameSettings.TimerLabelPos);
+            foreach (var (_, pref) in GameSettings.TimerColours) Pref(pref);
+            // (the notifications' style and wording, and the HUD's team box: NotifLooks.cs - registered by themselves)
             Pref(GameSettings.LobbyOwn, GameSettings.LobbyBloom, GameSettings.LobbyBloomStrength, GameSettings.LobbyVignette, GameSettings.LobbyVignetteStrength,
                 GameSettings.LobbyGrading, GameSettings.LobbyGradingStrength, GameSettings.LobbyOutlines, GameSettings.LobbyOutlinesStrength, GameSettings.LobbyCel,
                 GameSettings.LobbyCelStrength, GameSettings.LobbyGrain, GameSettings.LobbyGrainStrength, GameSettings.LobbyChromatic, GameSettings.LobbyChromaticStrength,
@@ -408,6 +450,12 @@ namespace RockGame
                 set(v, s);
                 return true;
             },
+        };
+
+        internal static Entry MakeText(string key, string group, string def, Func<string> get, Action<string, bool> set) => new Entry
+        {
+            Key = key, Group = group, Default = def ?? "", Get = () => get() ?? "",
+            Set = (t, s) => { set((t ?? "").Trim(), s); return true; },
         };
 
         // ================================================================== values

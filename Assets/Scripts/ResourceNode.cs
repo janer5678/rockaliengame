@@ -355,58 +355,6 @@ namespace RockGame
                 }
                 return false;
             }
-            // leaves sticking out of the blobs all over (so it reads as a leafy bush, not a pile of green balls): each a
-            // rounded two-sided oval leaf, gently domed, leaning out and up from the blob's surface, its own shade of
-            // the bush's green and fluttering in the wind more than the blobs
-            {
-                Color.RGBToHSV(leaf, out float lh, out float ls, out float lv);
-                for (int bi = 0; bi < blobs.Count; bi++)
-                {
-                    var (c, r, squash) = blobs[bi];
-                    int n = Mathf.RoundToInt(r * 44f) + rng.Next(3); // (more of them now they're smaller)
-                    for (int k = 0, tries = 0; k < n && tries < n * 4; tries++)
-                    {
-                        var dir = new Vector3(R(-1f, 1f), R(-0.25f, 1f), R(-1f, 1f));
-                        if (dir.sqrMagnitude < 0.05f) continue;
-                        dir.Normalize();
-                        var at = c + new Vector3(dir.x * r, dir.y * r * squash, dir.z * r) * 0.9f;
-                        if (at.y < 0.12f || Buried(at, bi)) continue;
-                        k++;
-                        float len = R(0.09f, 0.13f), wid = len * R(0.9f, 1f); // (small and round: as wide as long)
-                        var fwd = (dir + Vector3.up * 0.35f + new Vector3(R(-0.3f, 0.3f), R(-0.1f, 0.2f), R(-0.3f, 0.3f))).normalized;
-                        var side = Vector3.Cross(fwd, Vector3.up);
-                        if (side.sqrMagnitude < 0.01f) side = Vector3.Cross(fwd, Vector3.right);
-                        side = Quaternion.AngleAxis(R(-35f, 35f), fwd) * side.normalized;
-                        var nrm = Vector3.Cross(side, fwd).normalized;
-                        if (Vector3.Dot(nrm, Vector3.up) < 0f) nrm = -nrm; // (the face looks up / out)
-                        var col = Color.HSVToRGB(Mathf.Repeat(lh + R(-0.03f, 0.03f), 1f), ls * R(0.85f, 1.05f), lv * R(0.95f, 1.25f))
-                                  * Mathf.Lerp(0.82f, 1.08f, Mathf.Clamp01(at.y / 0.9f));
-                        col.a = 1f;
-                        var dark = col * 0.8f;
-                        dark.a = 1f;
-                        // a rounded, gently domed oval leaf: a fan round its middle, the far end curling down a little
-                        var centre = at + fwd * len * 0.5f + nrm * wid * 0.12f;
-                        var sc = Sway(centre, 0.8f);
-                        const int Seg = 12; // (a smooth round outline)
-                        Vector3 prev = default; Vector2 prevS = default;
-                        for (int s = 0; s <= Seg; s++)
-                        {
-                            float a = s * Mathf.PI * 2f / Seg;
-                            float ca = Mathf.Cos(a), sn = Mathf.Sin(a);
-                            var p = at + fwd * (len * 0.5f * (1f + ca)) + side * (sn * wid * 0.5f) - nrm * (len * 0.08f * Mathf.Max(0f, ca));
-                            var sp = Sway(p, 0.75f + 0.25f * ca);
-                            if (s > 0)
-                            {
-                                // the upper face in the leaf's colour, the underside darker (both sides drawn)
-                                bool up = Vector3.Dot(Vector3.Cross(prev - centre, p - centre), nrm) > 0f;
-                                if (up) { leaves.Tri(centre, prev, p, col, col, col, sc, prevS, sp); leaves.Tri(centre, p, prev, dark, dark, dark, sc, sp, prevS); }
-                                else { leaves.Tri(centre, p, prev, col, col, col, sc, sp, prevS); leaves.Tri(centre, prev, p, dark, dark, dark, sc, prevS, sp); }
-                            }
-                            prev = p; prevS = sp;
-                        }
-                    }
-                }
-            }
             // (bigger berries than they were - BerrySize - and plenty of them: about twice as many as before)
             int want = 32 + rng.Next(8), made = 0;
             for (int tries = 0; tries < 800 && made < want; tries++)
@@ -440,7 +388,7 @@ namespace RockGame
             MeshKit.Spawn(tr, "bush", new[] { WorldLook.BushLeaves, WorldLook.Berries }, true, leaves, berries);
         }
 
-        /// <summary>The Normal berry bush is this much bigger than the old one (about 3.3 m across, 2 m high with its leaves
+        /// <summary>The Normal berry bush is this much bigger than the old one (about 3.3 m across, 2 m high; no leaves sticking out of it any more
         /// - it was 1.25: 2.2 m across, then 1.7). The trigger you pick it by grows with it.</summary>
         public const float BushSize = 1.85f;
         /// <summary>The PSX / AI PSX bush (the old one) is this much bigger than it first was, its trigger too.</summary>

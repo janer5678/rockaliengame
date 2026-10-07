@@ -62,6 +62,90 @@ namespace RockGame
             Application.Quit(0);
         }
 
+        /// <summary>
+        /// -autotest lobbymap (a host -host and a client -client 127.0.0.1): the lobby's BACK doesn't close the lobby for
+        /// the host - it opens the menu's map page over it (the lobby still running, the host not READY); BACK again goes
+        /// back a page (still in the lobby); another map and CONFIRM restart the lobby on it - the client comes back in by
+        /// itself and both are in the ship lobby on the new map. Then BACK all the way past the first page closes the lobby.
+        /// </summary>
+        IEnumerator LobbyMapRoutine()
+        {
+            var nm = NetworkManager.Singleton;
+            float until = Time.time + 60f;
+            while ((PlayerNet.Local == null || NetGame.Instance == null || !NetGame.Instance.IsSpawned) && Time.time < until) yield return null;
+            if (PlayerNet.Local == null) { Log("FAIL: never got into the lobby"); Application.Quit(2); yield break; }
+            bool host = nm.IsHost;
+            string who = host ? "host" : "client";
+            Check(ShipLobby.Active, $"{who}: in the ship lobby to start with");
+            var from = Cfg.Map;
+            var to = from == MapKind.Beach ? MapKind.Canyon : MapKind.Beach;
+            if (host)
+            {
+                until = Time.time + 40f;
+                while (PlayerNet.All.Count < 2 && Time.time < until) yield return null;
+                yield return new WaitForSeconds(2f);
+                PlayerNet.Local.LobbyReadyRpc(true);
+                yield return new WaitForSeconds(0.5f);
+                Hud.TestLobbyBack();
+                yield return new WaitForSeconds(1f);
+                Check(Hud.LobbyMenuOpen && Hud.LobbyMenuPage == 7 && ShipLobby.Active && nm.IsListening && PlayerNet.All.Count == 2,
+                    $"host: BACK in the lobby opens the map page over it, the lobby still open with both in it (page {Hud.LobbyMenuPage}, {PlayerNet.All.Count} players)");
+                Check(!PlayerNet.Local.LobbyReady.Value, "host: in the menu the host isn't READY (the match can't start without them)");
+                ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "lobbymap_host_mappage.png"));
+                yield return new WaitForSeconds(0.5f);
+                Hud.TestMenuBack();
+                yield return new WaitForSeconds(0.8f);
+                Check(Hud.LobbyMenuOpen && Hud.LobbyMenuPage == 6 && nm.IsListening && ShipLobby.Active, $"host: BACK again - the game mode page, still in the lobby (page {Hud.LobbyMenuPage})");
+                ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "lobbymap_host_modepage.png"));
+                yield return new WaitForSeconds(0.5f);
+                Hud.TestNewPage(7);
+                Hud.TestLobbyPickMap(to);
+                yield return new WaitForSeconds(0.8f);
+                ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "lobbymap_host_newmap.png"));
+                yield return new WaitForSeconds(0.5f);
+                Check(NetGame.Instance != null && NetGame.Instance.S == GameState.Waiting, "host: the match never started while the host was in the menu");
+                Hud.TestLobbyConfirm();
+            }
+            // both: the session restarts on the new map, and everyone's back in the ship lobby
+            until = Time.time + 60f;
+            bool left = false;
+            while (Time.time < until)
+            {
+                if (NetGame.Instance == null || !NetGame.Instance.IsSpawned) left = true;
+                if (left && ShipLobby.Active && NetGame.Instance != null && NetGame.Instance.S == GameState.Waiting && Cfg.Map == to) break;
+                yield return null;
+            }
+            Check(left && ShipLobby.Active && Cfg.Map == to, $"{who}: back in the ship lobby on the new map ({from} -> {Cfg.Map})");
+            yield return new WaitForSeconds(3f);
+            ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), $"lobbymap_{who}_after.png"));
+            if (!host)
+            {
+                yield return new WaitForSeconds(1f);
+                Log("lobby map test done");
+                Application.Quit(0);
+                yield break;
+            }
+            until = Time.time + 20f;
+            while (PlayerNet.All.Count < 2 && Time.time < until) yield return null;
+            Check(PlayerNet.All.Count == 2 && !Hud.LobbyMenuOpen, $"host: the client's back in too ({PlayerNet.All.Count} players), the menu's gone");
+            yield return new WaitForSeconds(3f); // (the client takes its picture and goes)
+            // BACK all the way: the lobby only closes past the first page
+            Hud.TestLobbyBack();
+            yield return new WaitForSeconds(0.3f);
+            int expect = Cfg.FreeForAll || Cfg.TeamCap(0) > 1 || Cfg.TeamCap(1) > 1 ? 5 : 4; // (map, mode, [players,] battle type, multiplayer)
+            int presses = 0;
+            for (; presses < 8 && nm.IsListening; presses++)
+            {
+                Hud.TestMenuBack();
+                yield return new WaitForSeconds(0.4f);
+            }
+            Check(!nm.IsListening && presses == expect && !Hud.LobbyMenuOpen && Hud.LobbyMenuPage == 0,
+                $"host: BACK through every page ({presses} presses) - the lobby closes only past the first one, back to the main menu");
+            yield return new WaitForSeconds(1f);
+            Log("lobby map test done");
+            Application.Quit(0);
+        }
+
 
         /// <summary>-autotest mapshots -shotdir Assets/Game/Resources/MapShots (absolute): a picture of each map from the air
         /// for the main menu's CHOOSE MAP (MapShots/&lt;kind&gt;.png), with the menu's trees on it and no HUD.</summary>
@@ -146,36 +230,123 @@ namespace RockGame
                 yield return new WaitForSeconds(0.5f);
                 Check(!ShipLobby.AnyHat, "hats are off: none shows even when one is picked");
                 me.SetHatRpc(0);
-                // SPECTATE: a client gets up off the couch to watch, then PLAY puts them back
+
+                // now and then they look round at each other
+                until = Time.time + 16f;
+                while (!ShipLobby.AnyLooking && Time.time < until) yield return null;
+                Check(ShipLobby.AnyLooking, "now and then the aliens on the couch turn and look at each other");
+                if (ShipLobby.AnyLooking) { yield return new WaitForSeconds(0.5f); ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "lobby_looking.png")); yield return null; }
+
+                // THE TELLY: clicking it moves the camera onto its game and starts you playing
+                ShipLobby.TestClickTv = true;
+                yield return new WaitForSeconds(1.8f);
+                Check(LobbyArcade.Focused && ShipLobby.CamToTelly < 1.4f, $"clicking the telly moves the camera onto its screen ({ShipLobby.CamToTelly:0.00} m away)");
+                until = Time.time + 4f;
+                while ((!me.ArcadePlaying.Value || LobbyArcade.Playing < 1 || !LobbyArcade.MyDot(out _)) && Time.time < until) yield return null;
+                yield return new WaitForSeconds(0.4f);
+                Check(me.ArcadePlaying.Value && LobbyArcade.Playing >= 1, $"you're playing the telly's game ({LobbyArcade.Playing} playing)");
+                Check(ShipLobby.IsGaming(me), "your alien on the couch holds a controller and watches the telly");
+                LobbyArcade.MyDot(out var dot0);
+                int hash0 = LobbyArcade.PictureHash, draws0 = LobbyArcade.Redraws;
+                LobbyArcade.TestStick = new Vector2(1f, 0f); // (D held)
+                yield return new WaitForSeconds(1.2f);
+                LobbyArcade.MyDot(out var dot1);
+                Check(dot1.x > dot0.x + 10f, $"WASD moves your little alien across the telly ({dot0.x:0} -> {dot1.x:0})");
+                Check(LobbyArcade.Redraws > draws0 + 10 && LobbyArcade.PictureHash != hash0, $"the telly's picture keeps redrawing ({LobbyArcade.Redraws - draws0} frames) and changes");
+                ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "lobby_arcade_host.png"));
+                yield return null;
+                int team = me.Team.Value & 3, score0 = LobbyArcade.Score(team);
+                LobbyArcade.TestAuto = 1; // (steering itself into the nearest tree)
+                until = Time.time + 10f;
+                while (LobbyArcade.Score(team) < score0 + 1 && Time.time < until) yield return null;
+                Check(LobbyArcade.Score(team) >= score0 + 1, $"bumping into a tree chops it down: +1 ({score0} -> {LobbyArcade.Score(team)})");
+                int score1 = LobbyArcade.Score(team);
+                LobbyArcade.TestAuto = 2; // (to the ball, then home with it)
+                until = Time.time + 20f;
+                while (LobbyArcade.Score(team) < score1 + 5 && Time.time < until) yield return null;
+                Check(LobbyArcade.Score(team) >= score1 + 5, $"running the ball to your machine scores +5 ({score1} -> {LobbyArcade.Score(team)})");
+                yield return new WaitForSeconds(0.3f);
+                ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "lobby_arcade_goal.png"));
+                yield return null;
+                LobbyArcade.TestAuto = 0;
+                LobbyArcade.TestStick = new Vector2(9f, 9f);
+                // the clients see it too (they wait for a few seconds of it), then STOP PLAYING
+                yield return new WaitForSeconds(3f);
+                LobbyArcade.Focus(false); // (what STOP PLAYING does)
+                yield return new WaitForSeconds(2.5f);
+                Check(!LobbyArcade.Focused && !me.ArcadePlaying.Value && !ShipLobby.IsGaming(me) && ShipLobby.CamToTelly > 2f,
+                    $"STOP PLAYING: back to the couch view ({ShipLobby.CamToTelly:0.0} m from the telly) and the usual idle");
+                ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "lobby_arcade_stopped.png"));
+                yield return null;
+
+                // SPECTATE (the grey team option): a client gets up to watch - their alien stays on the end of the couch,
+                // grey - then picking a team takes a seat on it again
                 ulong other = 0;
                 foreach (var p in PlayerNet.All) if (p != null && !p.Bot.Value && p.OwnerClientId != nm.LocalClientId) other = p.OwnerClientId;
                 int before = PlayerNet.All.Count;
-                bool off = g.ServerSetSpectating(other, true);
+                bool off = g.ServerSetSpectating(other, true); // (what their SPECTATE option sends: NetGame.SpectateRpc)
                 yield return new WaitForSeconds(1.5f);
-                Check(off && PlayerNet.All.Count == before - 1 && g.IsSpectator(other), $"SPECTATE: client {other} leaves the couch to watch ({PlayerNet.All.Count} players, {g.Spectators.Count} watching)");
+                Check(off && PlayerNet.All.Count == before - 1 && g.IsSpectator(other), $"SPECTATE: client {other} gets up to watch ({PlayerNet.All.Count} players, {g.Spectators.Count} watching)");
+                Check(ShipLobby.GreyAliens == 1 && ShipLobby.GhostsGrey && ShipLobby.Seated.Count + ShipLobby.GreyAliens == before,
+                    $"the spectator's alien stays on the couch, grey ({ShipLobby.GreyAliens} grey, {ShipLobby.Seated.Count} playing)");
+                Check(ShipLobby.SpectatorHeadOnScreen(other, out _), "the spectator has a name tag over their grey alien");
                 ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "lobby_one_spectating.png"));
                 yield return null;
-                bool on = g.ServerSetSpectating(other, false);
+                int pick = 0, least = 99;
+                for (int t = 0; t < Cfg.TeamCount; t++)
+                {
+                    int n = 0;
+                    foreach (var p in PlayerNet.All) if (p.Team.Value == t) n++;
+                    if (n < least && n < Cfg.TeamCap(t)) { least = n; pick = t; }
+                }
+                bool on = g.ServerPlayOnTeam(other, pick); // (what clicking a team while spectating sends: NetGame.PlayOnTeamRpc)
                 until = Time.time + 6f;
                 while (PlayerNet.All.Count < before && Time.time < until) yield return null;
                 yield return new WaitForSeconds(1.5f);
-                Check(on && PlayerNet.All.Count == before && !g.IsSpectator(other), $"PLAY: they take a seat again ({PlayerNet.All.Count} players)");
+                PlayerNet back = null;
+                foreach (var p in PlayerNet.All) if (p != null && p.OwnerClientId == other && !p.Bot.Value) back = p;
+                Check(on && PlayerNet.All.Count == before && !g.IsSpectator(other) && back != null && back.Team.Value == pick && ShipLobby.GreyAliens == 0,
+                    $"picking {Cfg.TeamName[pick]} while spectating: they take a seat on it again ({PlayerNet.All.Count} players, team {(back != null ? back.Team.Value : -1)}, {ShipLobby.GreyAliens} grey)");
             }
             else
             {
-                // (a client: watched for a moment by the host's SPECTATE check - the lobby with no seat of our own)
-                float watchUntil = Time.time + 20f;
-                bool sawWatch = false;
-                while (Time.time < watchUntil && !sawWatch) { if (Spectator.Active && ShipLobby.Active) sawWatch = true; yield return null; }
+                // (a client: the host plays the telly's game for a bit - we see it too)
+                float arcadeUntil = Time.time + 60f;
+                while (LobbyArcade.Playing < 1 && Time.time < arcadeUntil) yield return null;
+                if (LobbyArcade.Playing >= 1)
+                {
+                    yield return new WaitForSeconds(1.5f);
+                    int draws = LobbyArcade.Redraws;
+                    PlayerNet player = null;
+                    foreach (var p in PlayerNet.All) if (p != null && p.ArcadePlaying.Value) player = p;
+                    yield return new WaitForSeconds(1f);
+                    Check(LobbyArcade.Playing >= 1 && LobbyArcade.Redraws > draws, $"our telly shows the game the host is playing ({LobbyArcade.Playing} playing)");
+                    Check(player != null && ShipLobby.IsGaming(player), "the player on the telly holds a controller on our screen too");
+                    ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), $"lobby_arcade_client{nm.LocalClientId}.png"));
+                    yield return null;
+                }
+                else Check(false, "our telly shows the game the host is playing (nobody seen playing)");
+                // (watched for a moment by the host's SPECTATE check - the lobby with our alien grey on the couch; or
+                // another client was picked: wait until they're back)
+                float watchUntil = Time.time + 90f;
+                bool sawWatch = false, sawOther = false;
+                while (Time.time < watchUntil && !sawWatch)
+                {
+                    if (Spectator.Active && ShipLobby.Active) sawWatch = true;
+                    else if (g.Spectators.Count > 0) sawOther = true;
+                    else if (sawOther) break;
+                    yield return null;
+                }
                 if (sawWatch)
                 {
-                    yield return new WaitForSeconds(0.4f);
+                    yield return new WaitForSeconds(0.6f);
                     ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), $"lobby_spectating_client{nm.LocalClientId}.png"));
                     yield return null;
                     Check(ShipLobby.Active, "spectating, you still see the ship lobby");
+                    Check(ShipLobby.GreyAliens >= 1 && ShipLobby.SpectatorHeadOnScreen(nm.LocalClientId, out _), "spectating, our own alien sits on the couch, grey");
                     until = Time.time + 15f;
                     while (PlayerNet.Local == null && Time.time < until) yield return null;
-                    Check(PlayerNet.Local != null, "PLAY again: our alien's back on the couch");
+                    Check(PlayerNet.Local != null, "picking a team again: our alien's back on the couch");
                     me = PlayerNet.Local;
                 }
             }
@@ -196,7 +367,7 @@ namespace RockGame
             yield return new WaitForSeconds(nm.IsHost ? 4f : 1f);
             Check(g.S == GameState.Waiting && !g.StartCounting, "the match waits until everyone is READY");
             me.LobbyReadyRpc(true);
-            until = Time.time + 25f;
+            until = Time.time + 60f; // (the clients READY once the host's done with them)
             while (g.S == GameState.Waiting && Time.time < until) yield return null;
             Check(g.S != GameState.Waiting, "everyone READY: the match starts");
             yield return new WaitForSeconds(1f);

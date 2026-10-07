@@ -133,7 +133,11 @@ namespace RockGame
         {
             float br = Mathf.Sin(t * 1.6f) * 2.5f;                                   // breathing
             float look = Mathf.Sin(t * 0.37f + variant * 1.7f) * 28f + Mathf.Sin(t * 0.13f) * 12f; // looking round
-            foreach (var b in new[] { m_Hips, m_Neck, m_LHand, m_RHand }) Rot(b, Vector3.zero);
+            // turning to look at something (a neighbour, the telly): the neck takes some of it, the head the rest
+            float tw = Mathf.Clamp01(TurnW);
+            look = Mathf.Lerp(look, TurnYaw * 0.65f, tw);
+            Rot(m_Hips, Vector3.zero); Rot(m_LHand, Vector3.zero); Rot(m_RHand, Vector3.zero);
+            Rot(m_Neck, new Vector3(0f, TurnYaw * 0.35f * tw, 0f));
             // sitting: thighs forward, knees bent, the body down on the seat
             Rot(m_LUp, new Vector3(-84f, 0, -9f));
             Rot(m_RUp, new Vector3(-84f, 0, 9f));
@@ -205,6 +209,20 @@ namespace RockGame
                     Rot(m_RFore, new Vector3(Mathf.Lerp(-70f, -136f, d), Mathf.Lerp(-20f, -36f, d), 0));
                     break;
                 }
+                case 7: // playing the telly's game (ShipLobby / LobbyArcade): leaning in, a controller in both hands, thumbs
+                        // mashing, body english on the big moments, eyes on the screen (TurnYaw points the head at it)
+                {
+                    float mash = Mathf.Sin(t * 17f) * 3f, mash2 = Mathf.Sin(t * 13f + 1f) * 3f;
+                    float sway = Mathf.Sin(t * 0.9f) * 5f * Mathf.Max(0f, Mathf.Sin(t * 0.31f));
+                    Rot(m_Spine, new Vector3(-16f + br * 0.5f, 0, sway));
+                    Rot(m_Chest, new Vector3(-6f, 0, sway * 0.5f));
+                    Rot(m_Head, new Vector3(8f + Mathf.Sin(t * 2.1f) * 2f, look, 0));
+                    Rot(m_LArm, new Vector3(-36f, 0, -6f));
+                    Rot(m_LFore, new Vector3(-80f + mash, 42f, 0));
+                    Rot(m_RArm, new Vector3(-36f, 0, 6f));
+                    Rot(m_RFore, new Vector3(-80f + mash2, -42f, 0));
+                    break;
+                }
                 default: // on the phone: head down, both hands up in front, thumbs going, a laugh now and then
                 {
                     float laugh = Mathf.Max(0f, Mathf.Sin(t * 0.45f + 1.3f) - 0.8f) * 5f;
@@ -225,8 +243,56 @@ namespace RockGame
             if (low < 50f) m_Model.localPosition = m_ModelBase + new Vector3(0f, k_Ankle - low, 0f);
         }
 
-        /// <summary>How many lounge poses there are (Lounge's variant).</summary>
-        public const int LoungeVariants = 7;
+        /// <summary>How many lounge poses there are (Lounge's variant; 7 is playing the telly's game).</summary>
+        public const int LoungeVariants = 8;
+        /// <summary>Lounge: the variant that's playing the telly's game with a controller.</summary>
+        public const int LoungeGaming = 7;
+
+        /// <summary>Lounge: turn the head this way (degrees, character space: + to the right) with this weight (0..1) -
+        /// looking at a neighbour or the telly (ShipLobby sets them each frame before Lounge).</summary>
+        public float TurnYaw, TurnW;
+
+        /// <summary>
+        /// After Lounge: bends the right arm (shoulder and elbow, two-bone IK keeping the elbow on the side it's on) so the
+        /// hand's grip point - `grip` past the wrist along the forearm - goes to `palm`, `w` of the way there from where the
+        /// pose put it. The lobby's smoker brings the cigarette to their lips this way, and the drinker the can.
+        /// </summary>
+        public void ReachRight(Vector3 palm, float w, float grip)
+        {
+            if (w <= 0.001f || m_RArm == null || m_RFore == null || m_RHand == null) return;
+            w = Mathf.Clamp01(w);
+            var start = m_RHand.position + (m_RHand.position - m_RFore.position).normalized * grip;
+            var goal = Vector3.Lerp(start, palm, w);
+            for (int pass = 0; pass < 2; pass++) // (the second pass mops up what the first one's guess of the forearm missed)
+            {
+                var e = m_RFore.position;
+                var reach = goal - e;
+                if (reach.sqrMagnitude < 1e-6f) return;
+                TwoBone(m_RArm, m_RFore, m_RHand, goal - reach.normalized * grip);
+            }
+        }
+
+        void TwoBone(Transform upper, Transform lower, Transform end, Vector3 target)
+        {
+            Vector3 s = upper.position, e = lower.position, h = end.position;
+            float a = (e - s).magnitude, b = (h - e).magnitude;
+            var toT = target - s;
+            float d = toT.magnitude;
+            if (a < 1e-4f || b < 1e-4f || d < 1e-4f) return;
+            var dir = toT / d;
+            d = Mathf.Clamp(d, Mathf.Abs(a - b) + 0.002f, a + b - 0.002f);
+            // the elbow stays bent the way it is (out and down), just as much as the reach needs
+            var pole = Vector3.ProjectOnPlane(e - s, dir);
+            if (pole.sqrMagnitude < 1e-6f) pole = Vector3.ProjectOnPlane(-m_Root.up, dir);
+            pole.Normalize();
+            float cosA = Mathf.Clamp((a * a + d * d - b * b) / (2f * a * d), -1f, 1f);
+            float sinA = Mathf.Sqrt(Mathf.Max(0f, 1f - cosA * cosA));
+            var elbow = s + (dir * cosA + pole * sinA) * a;
+            upper.rotation = Quaternion.FromToRotation(e - s, elbow - s) * upper.rotation;
+            e = lower.position; h = end.position;
+            var wrist = s + dir * d;
+            lower.rotation = Quaternion.FromToRotation(h - e, wrist - e) * lower.rotation;
+        }
         /// <summary>An ankle bone's height over the sole.</summary>
         const float k_Ankle = 0.07f;
         float LocalY(Transform b) => b != null ? m_Root.InverseTransformPoint(b.position).y : 99f;

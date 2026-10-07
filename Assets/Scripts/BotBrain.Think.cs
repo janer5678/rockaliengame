@@ -9,8 +9,9 @@ namespace RockGame
     /// with someone after it: back home to heal and eat); then a fight with an enemy it can see near enough (how near
     /// depends on how aggressive it is - and a player in tree camo is just a tree to it); then the ball (fetch it when
     /// it's loose, escort a teammate carrying it, raid the base it's in, defend it at home - by its leaning and how much
-    /// time is left); and then the economy - berries when hurt, putting down a chest or trade station it made, crafting
-    /// better gear, walls round its machine, taking spare wood to the chest, farming trees - with a wander now and then.
+    /// time is left); and then the economy - berries when hurt, floor loot and airdrops, putting down what it made, its
+    /// starter tools, the team chest, stashing its load, the team's goals (a bigger house, better weapons, more crafting
+    /// unlocked, more upgrades: BotBrain.Goals.cs), and otherwise farming trees - with a wander now and then.
     /// </summary>
     public partial class BotBrain
     {
@@ -175,14 +176,17 @@ namespace RockGame
             bool homeSide = !MapBuilder.GlassUp || Cfg.RegionOf(transform.position) == Cfg.RegionOf(Cfg.BaseCenter[MyTeam]);
             // hurt and out of berries: a bush (the eating itself happens on the way: TickEat)
             if (Hp01 < 0.75f && m_P.Count(Item.Berry) == 0 && FindBush()) { Set(Task.Berries); return true; }
-            if (homeSide && DeployJob()) return true;
-            if (CraftJob(true, homeSide)) return true;      // the basics first: a hatchet, a spear
-            if (homeSide && BuildJob(g)) return true;       // walls round the machine
-            if (homeSide && StoreJob()) return true;        // too much to lose: into the chest
-            if (CraftJob(false, homeSide)) return true;     // then a trade station, armour, a sword
+            if (LootJob()) return true;                     // floor loot, death bags, airdrops (BotBrain.Loot.cs)
+            if (homeSide && DeployJob()) return true;       // what it made: a Trade Station, a chest, a bag, a turret
+            if (CraftJob(homeSide)) return true;            // the basics first: a hatchet, a spear
+            if (homeSide && ChestJob()) return true;        // somewhere to keep it all
+            if (homeSide && StoreJob()) return true;        // a good load on it (or junk): into the chest
+            if (homeSide && GoalJob(g)) return true;        // whatever the team's most behind on (BotBrain.Goals.cs)
             // now and then just a look round, like a person
-            if (Random.value < 0.03f * m_Playful) { StartWander(6f); return true; }
-            return FarmJob();
+            if (Random.value < 0.02f * m_Playful) { StartWander(6f); return true; }
+            // and otherwise it farms - always, well past what it needs (the spare goes in the chest)
+            if (FarmJob()) return true;
+            return homeSide && StoreJob(); // (full up)
         }
 
         // ---------------------------------------------------------------- who to fight

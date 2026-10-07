@@ -102,7 +102,11 @@ namespace RockGame
             GUI.matrix = oldM;
         }
         public static void Wake() => s_WakeTime = Time.time;
-        public static void Banner(string title, string sub) { s_BannerTitle = title; s_BannerSub = sub; s_BannerTime = Time.time; }
+        /// <summary>A banner across the middle. The title is the game's own words: it's shown in the player's own words when
+        /// they've reworded it (Settings > Display > NOTIFICATIONS > WORDING: NotifText.Map, when it's drawn).</summary>
+        public static void Banner(string title, string sub) { s_BannerTitle = title; s_BannerSub = sub; s_BannerTime = Time.time; s_BannerTest = false; }
+        /// <summary>Test hook: the last banner's title as it's shown (in the player's own words, if they've reworded it).</summary>
+        public static string LastBannerShown => NotifText.Map(s_BannerTitle);
         public static void Clear() { s_Msgs.Clear(); s_Gains.Clear(); s_Kills.Clear(); s_BannerTime = -10f; Fx.Numbers.Clear(); }
 
         /// <summary>Materials spent (building, crafting): a red "-15 Wood" line in the same feed.</summary>
@@ -231,6 +235,7 @@ namespace RockGame
             DrawAll();
             s_HudAlpha = 1f;
             GUI.color = Color.white;
+            DrawTestNotification(); // (Settings > Display > NOTIFICATIONS > Test: on top of everything, menus too - Hud.Settings.Notif.cs)
             DrawFps(Bootstrap.I != null && Bootstrap.I.InSession && PlayerNet.Local != null);
             EndHoverFrame();
             if (toTexture) UiLook.EndUi(prevTarget);
@@ -296,9 +301,9 @@ namespace RockGame
                         topLabel = "WAITING FOR PLAYERS";
                         topClock = $"{PlayerNet.All.Count}/{Cfg.PlayersNeeded}";
                         sub = "Rock brawl in the stadium while you wait!" + (boot.IsHost && PlayerNet.All.Count < 2 ? "  Friends join your IP." : "");
-                        topAccent = new Color(0.85f, 0.88f, 0.95f);
+                        topAccent = GameSettings.TimerColourNow(GameSettings.TimerColWaiting);
                         // everyone's in: the countdown to the start (NetGame.Lobby.cs)
-                        if (game.StartCounting) { topLabel = "MATCH STARTS IN"; topClock = Mathf.CeilToInt(game.StartsIn).ToString(); sub = "Everyone's here - get ready!"; topAccent = new Color(0.45f, 1f, 0.45f); }
+                        if (game.StartCounting) { topLabel = "MATCH STARTS IN"; topClock = Mathf.CeilToInt(game.StartsIn).ToString(); sub = "Everyone's here - get ready!"; topAccent = GameSettings.TimerColourNow(GameSettings.TimerColStart); }
                         break;
                     case GameState.PreBall when Cfg.Tutorial:
                         topLabel = "TUTORIAL";
@@ -311,21 +316,21 @@ namespace RockGame
                         topLeft = game.TimeLeft;
                         sub = Cfg.Builder ? "Gather, craft and build anywhere - then plant the ball for your team"
                             : Cfg.DnaRules ? "Mine trees and rocks for DNA, build your base" : Cfg.WoodMode ? "Gather wood and build your base" : "Gather wood & stone, build your base";
-                        topAccent = new Color(0.35f, 0.85f, 1f);
+                        topAccent = GameSettings.TimerColourNow(GameSettings.TimerColPreBall);
                         break;
                     case GameState.BallLive:
                         topLabel = game.Overtime.Value ? "OVERTIME" : "TIME LEFT";
                         topClock = game.Overtime.Value ? "" : Clock(game.TimeLeft);
                         topLeft = game.Overtime.Value ? -1f : game.TimeLeft;
                         sub = game.Overtime.Value ? "First team to get the ball into its machine wins" : BallStatus(team);
-                        topAccent = game.Overtime.Value ? new Color(1f, 0.6f, 0.15f) : new Color(1f, 0.85f, 0.3f);
+                        topAccent = game.Overtime.Value ? GameSettings.TimerColourNow(GameSettings.TimerColOvertime) : GameSettings.TimerColourNow(GameSettings.TimerColBallLive);
                         break;
                     case GameState.SuddenDeath:
                         topLabel = "SUDDEN DEATH";
                         topClock = Clock(game.TimeLeft);
                         topLeft = game.TimeLeft;
                         sub = "Rocks only - first kill wins - don't fall into space";
-                        topAccent = new Color(1f, 0.3f, 0.25f);
+                        topAccent = GameSettings.TimerColourNow(GameSettings.TimerColSudden);
                         break;
                 }
             }
@@ -338,8 +343,12 @@ namespace RockGame
 
             // ---- top left: identity + compass ----
             var tc = Cfg.TeamColor[team];
-            Fill(new Rect(10, 10, 230 * k, 30 * k), new Color(tc.r, tc.g, tc.b, 0.6f));
-            Shadowed(new Rect(18, 12, 230 * k, 28 * k), $"<b>YOU ARE {Cfg.TeamName[team]}</b>", m_Label);
+            if (GameSettings.HudTeamBox.Value) // (Settings > Display > HUD AND TIMER can hide it)
+            {
+                Fill(new Rect(10, 10, 230 * k, 30 * k), new Color(tc.r, tc.g, tc.b, 0.6f));
+                Shadowed(new Rect(18, 12, 230 * k, 28 * k), $"<b>YOU ARE {Cfg.TeamName[team]}</b>", m_Label);
+                TeamBoxShownFrame = Time.frameCount;
+            }
             // the radar for your own base, right under YOU ARE ... (the FPS counter goes under it): a short panel with a little
             // arrow that points at your base from where the camera faces (it turns as you look round), and how far it is.
             // Not in Builder (no bases), up in the sudden death arena, or while you're inside your own base (you're home).
@@ -469,14 +478,17 @@ namespace RockGame
 
             // the big notifications (the countdowns, the banner): their own layer when they have looks of their own
             // (Settings > Display > NOTIFICATIONS: UiLook.BeginNotif)
+            // (none of them while you're dead: the death screen and kill cam have the middle of the screen - Hud.Death.cs)
+            bool dead = me.Dead.Value;
             bool notifLayer = UiLook.BeginNotif(out var notifPrev);
-            DrawCountdowns(game, team);
+            DrawCountdowns(game, team, dead);
 
             // ---- banner ----
             float bage = Time.time - s_BannerTime;
-            if (bage < 4f && game != null && game.S != GameState.GameOver && !game.FightFrozen && !(game.S == GameState.BallLive && !game.Overtime.Value && game.TimeLeft <= 10f)) // (not over the final countdown)
+            if (bage < 4f && !dead && !s_BannerTest && game != null && game.S != GameState.GameOver && !game.FightFrozen && !(game.S == GameState.BallLive && !game.Overtime.Value && game.TimeLeft <= 10f)) // (not over the final countdown)
             {
                 DrawBannerFx(s_BannerTitle, s_BannerSub, bage, k); // (animated: Hud.Notify.cs)
+                BannerShownFrame = Time.frameCount;
             }
             if (notifLayer) UiLook.EndNotif(notifPrev);
 
@@ -615,23 +627,22 @@ namespace RockGame
                 var st = new GUIStyle(m_Center) { fontSize = Mathf.Max(8, Mathf.RoundToInt(baseSize * k * pop)), fontStyle = FontStyle.Bold, clipping = TextClipping.Overflow };
                 var c = n.Kill ? new Color(1f, 0.28f, 0.2f, a) : n.Head ? new Color(1f, 0.82f, 0.16f, a) : new Color(1f, 1f, 1f, a);
                 string txt = Mathf.RoundToInt(n.Value) + (n.Head ? "!" : "");
-                // up close (a melee hit) it'd sit right under the crosshair, behind the swing and the blood: bigger, and
-                // kept out to the side and above the crosshair, on screen
+                // (the old plain look: a 2px drop shadow, no outline.) The one gentle tweak: up close (a melee hit) it'd
+                // sit right on the crosshair, under the swing - so it's nudged a little to the side and up, same size
                 float dist = Vector3.Distance(cam.transform.position, n.Pos);
                 float x = sp.x + side, y = Screen.height - sp.y - rise;
                 if (dist < 4.5f)
                 {
-                    st.fontSize = Mathf.RoundToInt(st.fontSize * 1.4f);
                     float ccx = Screen.width / 2f, ccy = Screen.height / 2f;
-                    x = Mathf.Max(x, ccx + 70 * k + side * 0.5f);
-                    y = Mathf.Min(y, ccy - 50 * k - rise * 0.6f);
+                    x = Mathf.Max(x, ccx + 45 * k + side * 0.5f);
+                    y = Mathf.Min(y, ccy - 25 * k - rise * 0.5f);
                 }
-                x = Mathf.Clamp(x, 60 * k, Screen.width - 60 * k);
-                y = Mathf.Clamp(y, 40 * k, Screen.height - 40 * k);
                 var r = new Rect(x - 80, y - 25, 160, 50);
-                // a thick dark edge round it so it reads on anything, a white flash over it as it lands
-                var fillC = Color.Lerp(c, new Color(1f, 1f, 1f, a), Mathf.Clamp01(1f - age / 0.1f) * 0.7f);
-                InkText(r, txt, st, fillC, new Color(0f, 0f, 0f, a * 0.9f), (dist < 4.5f ? 2.5f : 2f) * k);
+                st.normal.textColor = new Color(0, 0, 0, a * 0.85f);
+                GUI.Label(new Rect(r.x + 2, r.y + 2, r.width, r.height), txt, st);
+                // a white flash over it as it lands
+                st.normal.textColor = Color.Lerp(c, new Color(1f, 1f, 1f, a), Mathf.Clamp01(1f - age / 0.1f) * 0.7f);
+                GUI.Label(r, txt, st);
             }
         }
 
@@ -1209,10 +1220,10 @@ namespace RockGame
         }
 
         /// <summary>The last 10 seconds before sudden death (it sits on 0 for a moment before the arena) or the win, and the arena's Ready? / Set / ROCK!.</summary>
-        void DrawCountdowns(NetGame game, int myTeam)
+        void DrawCountdowns(NetGame game, int myTeam, bool dead = false)
         {
             float sw = Screen.width, sh = Screen.height, k = m_Scale;
-            if (TestCountdown >= 0) { DrawEndCountdown(TestCountdown, 1f - Mathf.Repeat(Time.time, 1f), "YOU WIN IN", false, k); return; } // (tests)
+            if (TestCountdown >= 0 && !dead) { DrawEndCountdown(TestCountdown, 1f - Mathf.Repeat(Time.time, 1f), "YOU WIN IN", false, k); CountdownShownFrame = Time.frameCount; return; } // (tests)
             if (game == null) return;
             int sock = Ball.Instance != null ? Ball.Instance.SocketTeam.Value : -1;
             if (game.S == GameState.BallLive && !game.Overtime.Value && game.TimeLeft <= 10f && (game.TimeLeft > 0f || sock < 0))
@@ -1222,7 +1233,7 @@ namespace RockGame
                 if (n != m_LastCount) { m_LastCount = n; Sfx.Play2D(n <= 3 ? Sfx.Ding : Sfx.Beep, n <= 3 ? 0.9f : 0.6f, 0f); Fx.Shake(0.08f + (10 - n) * 0.02f); }
                 // (no coloured border round the screen - the number, its glow and shockwave, the label, the pips: Hud.Notify.cs)
                 string label = sock < 0 ? (Cfg.UseOvertime && !Cfg.Builder ? "OVERTIME IN" : "SUDDEN DEATH IN") : sock == myTeam ? "YOU WIN IN" : $"{Cfg.TeamName[sock]} WINS IN";
-                DrawEndCountdown(n, frac, label, sock < 0, k);
+                if (!dead) { DrawEndCountdown(n, frac, label, sock < 0, k); CountdownShownFrame = Time.frameCount; } // (the beeps go on while you're dead; the number doesn't show)
                 return;
             }
             string word = FightWord(game, out float t);
@@ -1235,6 +1246,7 @@ namespace RockGame
                     if (n > 0) { Sfx.Play2D(Sfx.Ding, 1f, 0f); Fx.Shake(0.2f); }
                     else { Sfx.Play2D(Sfx.Boom, 0.7f, 0f); Fx.Shake(0.5f); }
                 }
+                if (dead) return; // (not over the death screen)
                 // each word pops in big and settles; ROCK! fades away as the duel starts
                 float pop = 1f + 0.35f * Mathf.Clamp01(1f - t * 4f);
                 if (n > 0) Fill(new Rect(0, 0, sw, sh), new Color(0, 0, 0, 0.25f));
@@ -1488,7 +1500,7 @@ namespace RockGame
             Shadowed(new Rect(0, sh * 0.3f, sw, 70 * k), $"<size={Mathf.RoundToInt(64 * k)}>{title}</size>", m_Big);
             // (kept short: the title, one line of why - the end reasons are a few words each, NetGame - and the button)
             Shadowed(new Rect(0, sh * 0.3f + 80 * k, sw, 30 * k), game.EndReason.Value.ToString(), m_Center);
-            DrawLeaveButton(boot, new Rect(sw / 2 - 110 * k, sh * 0.3f + 140 * k, 220 * k, 46 * k));
+            if (!game.GoingBackToLobby) DrawLeaveButton(boot, new Rect(sw / 2 - 110 * k, sh * 0.3f + 140 * k, 220 * k, 46 * k)); // (everyone goes back to the lobby: no button to click away by accident)
             if (game.BackToLobbyIn >= 0f) Shadowed(new Rect(0, sh * 0.3f + 196 * k, sw, 30 * k), $"Back to the lobby in {Mathf.CeilToInt(game.BackToLobbyIn)}...", new GUIStyle(m_Center) { fontSize = Mathf.RoundToInt(20 * k) });
             // the tutorial ends with this screen: its "tutorial complete" card goes on top of it
             if (Cfg.Tutorial) Tutorial.DrawOverGameOver(k, m_Label, m_Small, Fill, Shadowed);

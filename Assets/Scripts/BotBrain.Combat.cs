@@ -4,8 +4,9 @@ using UnityEngine;
 namespace RockGame
 {
     /// <summary>
-    /// A bot fighting and playing for the ball (BotBrain.cs): it closes in with its best weapon out, circles a target up
-    /// close, swings on the weapon's own cooldown (a good bot hits more and aims for the head more), backs off home to
+    /// A bot fighting and playing for the ball (BotBrain.cs): it closes in with the best weapon for the distance out (a
+    /// sword up close, a spear's reach when they keep off), circles a target up close, swings on the weapon's own
+    /// cooldown (a good bot hits more and aims for the head more), brings a ram to enemy walls if it has one, backs off home to
     /// heal when it's losing; fetches a loose ball and carries it home to its machine, escorts a teammate carrying it,
     /// raids the base the ball's in - breaking through enemy walls in the way - defends its own machine, and goes
     /// hunting on the enemy side. Swings go through MeleeRpc (PlayerNet.BotMelee), the ball through PickupBallRpc and
@@ -13,7 +14,7 @@ namespace RockGame
     /// </summary>
     public partial class BotBrain
     {
-        float m_NextPatrol;
+        float m_NextPatrol, m_RamFrom;
 
         void TickFight()
         {
@@ -21,7 +22,8 @@ namespace RockGame
             if (t == null || !Hostile(t)) { m_Target = null; Done(); return; }
             var tp = t.transform.position;
             float d = Flat(tp, transform.position);
-            HoldBest(Use.Fight);
+            // the right weapon for the distance: a sword up close, a spear's reach when they keep off - never just the spear
+            if (Time.time >= m_NextSwing - 0.15f) HoldBest(Use.Fight, d);
             var item = m_P.HeldItem;
             var st = Cfg.Melee(item);
             float reach = st.Range > 0f ? st.Range : Cfg.RockRange;
@@ -208,6 +210,21 @@ namespace RockGame
             m_HasLook = true;
             m_LookAt = m_BlockPoint;
             m_BlockedAt = Time.time; // (still in the way while it's at it)
+            // a ram (a raider brings one for walls): hold it up for the wind-up, then the strike (RamStrikeRpc)
+            if (s != null && s.Team.Value != MyTeam && Has(Item.Ram))
+            {
+                int rs = HotbarFor(Item.Ram);
+                if (rs >= 0)
+                {
+                    if (m_P.HeldItem != Item.Ram) { Hold(rs); m_RamFrom = Time.time; }
+                    if (Time.time - m_RamFrom < Cfg.RamWindup + 0.1f || Time.time < m_NextSwing) return true;
+                    m_NextSwing = Time.time + Cfg.RamWindup * 0.9f;
+                    m_RamFrom = Time.time;
+                    m_P.RamStrikeRpc(no, m_BlockPoint);
+                    if (!no.IsSpawned) m_Blocker = null;
+                    return true;
+                }
+            }
             if (Time.time < m_NextSwing) return true;
             HoldBest(Use.Smash);
             var st = Cfg.Melee(m_P.HeldItem);

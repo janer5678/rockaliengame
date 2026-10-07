@@ -32,9 +32,9 @@ namespace RockGame
             while (NetGame.Instance != null && NetGame.Instance.S == GameState.Waiting && Time.time < until) yield return null;
             Check(NetGame.Instance != null && NetGame.Instance.S != GameState.Waiting, "everyone READY (the bot too): the match starts");
             yield return new WaitForSeconds(2f);
-            if (host) NetGame.Instance.EndGame(PlayerNet.Local.Team.Value, "test over");
+            if (host) NetGame.Instance.ServerVictoryCutscene((PlayerNet.Local.Team.Value + 1) % Mathf.Max(2, Cfg.TeamCount), "test over"); // (the host loses, through the end cutscene: the losers go back too)
             // the result, then back to the lobby: a new session, the same people
-            until = Time.time + 45f;
+            until = Time.time + 80f;
             bool left = false;
             while (Time.time < until)
             {
@@ -60,7 +60,8 @@ namespace RockGame
         /// <summary>
         /// -autotest bots -host -solo: the AI bots (PlayerNet.Bot.cs, BotBrain*.cs). One is added on the enemy team: it's a
         /// player like any other (named, on its team, always ready, a BotBrain on the server). While the wall's up it gets
-        /// on with things on its own side - it moves about and farms trees (its wood goes up). Put right next to us while
+        /// on with things on its own side - it moves about and farms trees (its wood goes up); given wood, it builds up its
+        /// house and stockpiles the rest in a chest; an item dropped by it, it picks up. Put right next to us while
         /// we're in tree camo it leaves us alone (to a bot that's a tree); out of the camo it comes for us and hits us.
         /// Removing it takes it out.
         /// </summary>
@@ -94,6 +95,24 @@ namespace RockGame
             Check(bot.Count(wood) > w0, $"while the wall's up it farms trees: +{bot.Count(wood) - w0} {wood} ({brain.FarmHits} hits, {brain.Job}, a {brain.Leaning})");
             Check(Cfg.RegionOf(bot.transform.position) == Cfg.RegionOf(Cfg.BaseCenter[enemy]), "...on its own side of the glass");
             yield return Snap("bots_farming");
+            // goals: with wood to spend it builds up its house and stockpiles the spare in a team chest (BotBrain.Goals.cs)
+            var cur = Cfg.CurrencyItem;
+            int built0 = BotBrain.HouseBuilt(enemy, out int planSize), stock0 = TeamChestStock(enemy);
+            bot.ServerGive(cur, 800);
+            until = Time.time + 50f;
+            while (Time.time < until && !(BotBrain.HouseBuilt(enemy, out _) >= built0 + 4 && TeamChestStock(enemy) > stock0)) yield return null;
+            int built1 = BotBrain.HouseBuilt(enemy, out _);
+            Check(built1 >= built0 + 4 && TeamChestStock(enemy) > stock0,
+                $"given 800 {cur} it builds its house (+{built1 - built0}, {built1} of {planSize} pieces) and stockpiles the rest ({TeamChestStock(enemy)} {cur} in its chest; going for {brain.Focus}, {brain.Job})");
+            yield return Snap("bots_house");
+            // floor loot: something dropped right by it gets picked up (PickupItemRpc)
+            var ng = NetGame.Instance;
+            var at = bot.transform.position + bot.transform.forward * 1.5f;
+            int looted0 = brain.Looted;
+            int dropId = ng.ServerDropItem(ItemStack.Of(Item.Arrow, 10), at + Vector3.up * 0.5f, bot.transform.forward, at + Vector3.up);
+            until = Time.time + 15f;
+            while (Time.time < until && ItemLying(ng, dropId)) yield return null;
+            Check(!ItemLying(ng, dropId) && brain.Looted > looted0, $"it picks up floor loot dropped next to it ({brain.Looted - looted0} picked up, {brain.Job})");
             // in tree camo right next to it: it doesn't see us
             me.Health.Value = Cfg.MaxHealth;
             me.ServerGive(Item.TreeCamo, 1);
@@ -122,6 +141,22 @@ namespace RockGame
             Log("bots test done");
             yield return new WaitForSeconds(0.5f);
             Application.Quit(0);
+        }
+
+        /// <summary>Wood (DNA) in a team's chests.</summary>
+        static int TeamChestStock(int team)
+        {
+            int n = 0;
+            foreach (var c in Container.All)
+                if (c != null && c.IsSpawned && c.Kind.Value == Container.Chest && c.Team.Value == team) n += InvOps.Count(c.Slots, Cfg.CurrencyItem);
+            return n;
+        }
+
+        /// <summary>Is this world item still lying there?</summary>
+        static bool ItemLying(NetGame g, int id)
+        {
+            for (int i = 0; i < g.Items.Count; i++) if (g.Items[i].Id == id) return true;
+            return false;
         }
     }
 }

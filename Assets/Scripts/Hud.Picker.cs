@@ -277,6 +277,13 @@ namespace RockGame
             }
             else if (defaults) for (int i = 0; i < GameSettings.PostExtraCount; i++) GameSettings.SetPostExtra((GameSettings.PostExtra)i, DisplayDefaults.PostExtraOn(i), DisplayDefaults.PostExtraStrength(i));
             if (defaults) { GameSettings.ResetHandsLook(); GameSettings.ResetNotifLook(); GameSettings.ResetMenuPost(); GameSettings.ResetTimer(); GameSettings.ResetLobby(); }
+            if (m_DisplayTabbed)
+            {
+                // (in categories: just the hands here - the notifications, the menu cutscene, the timer and the lobby
+                // each have a category of their own: Hud.Settings.cs)
+                if (on) { GUILayout.Space(6 * k); DrawHandsLooks(); }
+                return;
+            }
             if (on) DrawLayerLooks();
             DrawTimerAndLobbyLooks(); // (LobbyLooks.cs: the lobby's post processing only shows while post processing is on)
         }
@@ -289,8 +296,16 @@ namespace RockGame
         /// (LayerLooks.cs). Each folded away, and off (= the same as everything else) to start with.</summary>
         void DrawLayerLooks()
         {
+            GUILayout.Space(6 * m_Scale);
+            DrawHandsLooks();
+            DrawMenuCutsceneLooks();
+            DrawNotifOwnLooks();
+        }
+
+        /// <summary>HANDS AND TOOLS: their own outlines, cel shading and colour.</summary>
+        void DrawHandsLooks()
+        {
             float k = m_Scale, lw = 210 * k;
-            GUILayout.Space(6 * k);
             // ---- hands and tools ----
             if (FoldRow("HANDS AND TOOLS", ref m_HandsLooksOpen, GameSettings.HandsOwn))
             {
@@ -306,6 +321,12 @@ namespace RockGame
                 if (Btn("Defaults", GUILayout.Width(100 * k), GUILayout.Height(28 * k))) GameSettings.ResetHandsLook();
                 GUILayout.EndHorizontal();
             }
+        }
+
+        /// <summary>MAIN MENU CUTSCENE: its own post processing.</summary>
+        void DrawMenuCutsceneLooks()
+        {
+            float k = m_Scale;
             // ---- the main menu's cutscene ----
             if (FoldRow("MAIN MENU CUTSCENE", ref m_MenuLooksOpen, GameSettings.MenuOwn))
             {
@@ -327,6 +348,14 @@ namespace RockGame
                 if (Btn("Defaults", GUILayout.Width(100 * k), GUILayout.Height(28 * k))) GameSettings.ResetMenuPost();
                 GUILayout.EndHorizontal();
             }
+            // its colours (Hud.MenuColours.cs): whenever the section is open - they don't need the own look switched on
+            if (m_MenuLooksOpen) DrawMenuCutsceneColours();
+        }
+
+        /// <summary>NOTIFICATIONS: their own post processing layer (cel shading, glow, outlines, colour).</summary>
+        void DrawNotifOwnLooks()
+        {
+            float k = m_Scale, lw = 210 * k;
             // ---- notifications ----
             if (FoldRow("NOTIFICATIONS", ref m_NotifLooksOpen, GameSettings.NotifOwn))
             {
@@ -414,7 +443,12 @@ namespace RockGame
         GUIStyle m_InkField;
         bool m_UiLooksOpen;
         /// <summary>(tests) fold the UI's own looks open in Settings > Display.</summary>
-        public static void OpenUiLooks(bool open) { if (s_I != null) s_I.m_UiLooksOpen = open; }
+        public static void OpenUiLooks(bool open)
+        {
+            if (s_I == null) return;
+            s_I.m_UiLooksOpen = open;
+            if (open) s_I.m_DisplayCat = DisplayCat.PostFx; // (they're in the Post FX category)
+        }
         /// <summary>(tests) scroll the settings window to this height.</summary>
         public static void SetSettingsScroll(float y) { if (s_I != null) s_I.m_SettingsScroll.y = y; }
 

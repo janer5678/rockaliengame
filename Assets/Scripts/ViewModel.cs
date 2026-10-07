@@ -10,7 +10,7 @@ namespace RockGame
     /// Locomotion is animated like a Mixamo-style FPS rig: figure-8 walk bob, a lowered and tilted sprint pose with the
     /// free hand pumping, idle breathing, jump lag and a landing dip.
     /// </summary>
-    public class ViewModel
+    public partial class ViewModel
     {
         /// <summary>Seconds from click to the moment the swing connects (the hit is applied then).</summary>
         public const float ImpactTime = 0.13f;
@@ -51,6 +51,12 @@ namespace RockGame
 
         /// <summary>The newest view model (for the hands autotest).</summary>
         public static ViewModel Last;
+
+        /// <summary>The time the animations run on: Time.time (-1, the default), or a clock of its own - the kill cam's
+        /// replay (DeathReplay.cs) drives the killer's hands with the recording's time, so they slow down with it.</summary>
+        public float Clock = -1f;
+        float m_PrevClock = -1f, m_Dt;
+        float Now => Clock >= 0f ? Clock : Time.time;
         /// <summary>The hands' root (under the camera): everything first-person is under it.</summary>
         public Transform Root => m_Root;
 
@@ -93,7 +99,7 @@ namespace RockGame
 
         public void Swing(float cooldown, float impact = ImpactTime)
         {
-            m_SwingStart = Time.time; m_SwingDur = Mathf.Max(0.35f, cooldown); m_ImpactKnown = false; m_Hit = false;
+            m_SwingStart = Now; m_SwingDur = Mathf.Max(0.35f, cooldown); m_ImpactKnown = false; m_Hit = false;
             // a slower weapon (the sword) winds up for longer before it comes down
             m_Down = Mathf.Max(0.14f, impact + 0.01f);
             m_Up = m_Down * 0.57f;
@@ -105,8 +111,8 @@ namespace RockGame
             m_ImpactKnown = true;
             m_Hit = hit;
             if (!hit) return;
-            m_FreezeE = Time.time - m_SwingStart;
-            m_FreezeUntil = Time.time + HitStop;
+            m_FreezeE = Now - m_SwingStart;
+            m_FreezeUntil = Now + HitStop;
             m_SwingStart += HitStop; // the rest of the swing continues after the freeze
         }
         /// <summary>Where the held gun's muzzle is in the world (the wand's tip, the launcher's mouth): its flash goes here.</summary>
@@ -131,7 +137,7 @@ namespace RockGame
         /// </summary>
         float Recoil(float dur)
         {
-            float t = Time.time - m_UseStart;
+            float t = Now - m_UseStart;
             if (t < 0f || t >= dur) return 0f;
             float k = t / dur;
             if (k < 0.1f) return Smooth(k / 0.1f);
@@ -139,9 +145,9 @@ namespace RockGame
             return Mathf.Exp(-u * 4.5f) * Mathf.Cos(u * 5.2f) * (1f - u);
         }
 
-        public void Throw() => m_ThrowStart = Time.time;
-        public void Eat() => m_EatStart = Time.time;
-        public void Use() => m_UseStart = Time.time;
+        public void Throw() => m_ThrowStart = Now;
+        public void Eat() => m_EatStart = Now;
+        public void Use() => m_UseStart = Now;
 
         static Transform MakeArm(Transform parent, Color team, bool right)
         {
@@ -166,16 +172,18 @@ namespace RockGame
 
         public void Update(State s)
         {
-            float dt = Time.deltaTime;
+            m_Dt = Clock >= 0f ? (m_PrevClock >= 0f ? Mathf.Clamp(Clock - m_PrevClock, 0f, 0.1f) : 0f) : Time.deltaTime;
+            m_PrevClock = Clock;
+            float dt = m_Dt;
             bool vis = s.Visible && s.Visible2; // hidden while looking through the sniper scope
             if (m_Root.gameObject.activeSelf != vis) m_Root.gameObject.SetActive(vis);
             if (!vis) return;
             if (DebugAim) s.Aim = true;
             if (DebugBall) s.Ball = true;
-            if (DebugSwingE >= 0f) { m_SwingStart = Time.time - DebugSwingE; m_FreezeUntil = -10f; m_ImpactKnown = false; }
-            if (DebugThrowE >= 0f) m_ThrowStart = Time.time - DebugThrowE;
-            if (DebugEatE >= 0f) m_EatStart = Time.time - DebugEatE;
-            if (DebugUseE >= 0f) m_UseStart = Time.time - DebugUseE;
+            if (DebugSwingE >= 0f) { m_SwingStart = Now - DebugSwingE; m_FreezeUntil = -10f; m_ImpactKnown = false; }
+            if (DebugThrowE >= 0f) m_ThrowStart = Now - DebugThrowE;
+            if (DebugEatE >= 0f) m_EatStart = Now - DebugEatE;
+            if (DebugUseE >= 0f) m_UseStart = Now - DebugUseE;
 
             // ---- models ----
             var want = s.Ball ? (Item)254 : s.Item;
@@ -188,7 +196,7 @@ namespace RockGame
                 else if (s.Item != Item.None) m_Item = ItemModels.Create(s.Item, m_ItemHolder);
                 foreach (var r in m_Root.GetComponentsInChildren<Renderer>()) r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
                 // after throwing the ball the hands come back up a moment later instead of instantly
-                m_EquipStart = Time.time + (m_WasBall && !s.Ball ? 0.3f : 0f);
+                m_EquipStart = Now + (m_WasBall && !s.Ball ? 0.3f : 0f);
                 m_ItemId = want;
                 m_WasBall = s.Ball;
                 m_Smooth?.Refresh(true);
@@ -226,7 +234,7 @@ namespace RockGame
             m_Sway = Vector2.ClampMagnitude(m_Sway, 0.05f);
             m_CrouchK = Mathf.MoveTowards(m_CrouchK, s.Crouch ? 1f : 0f, dt * 5f);
 
-            float swingE = Time.time < m_FreezeUntil ? m_FreezeE : Time.time - m_SwingStart;
+            float swingE = Now < m_FreezeUntil ? m_FreezeE : Now - m_SwingStart;
             bool swinging = swingE >= 0 && swingE < Mathf.Max(0.45f, m_SwingDur * 0.9f);
             bool busy = swinging || s.Draw > 0f || s.RamCharge > 0f || s.Firing || s.SpearAim || s.Aim || s.Reload >= 0f;
 
@@ -248,8 +256,8 @@ namespace RockGame
             m_BobPhase = s.Bob * 1.6f;
             float bx = Mathf.Sin(m_BobPhase), by = Mathf.Abs(Mathf.Cos(m_BobPhase));
             Vector3 bob = new Vector3(bx * 0.014f * (1f + m_SprintK), by * 0.018f * (1f + m_SprintK * 1.3f), 0) * bobAmt;
-            float breathe = Mathf.Sin(Time.time * 1.7f) * 0.004f * (1f - bobAmt);
-            float equip = Smooth((Time.time - m_EquipStart) / 0.25f);
+            float breathe = Mathf.Sin(Now * 1.7f) * 0.004f * (1f - bobAmt);
+            float equip = Smooth((Now - m_EquipStart) / 0.25f);
             float landDip = Mathf.Sin(m_Land * Mathf.PI) * 0.06f;
             Vector3 shared = bob + new Vector3(m_Sway.x + pose * 0.03f, m_Sway.y - m_CrouchK * 0.02f + breathe + m_Jump - landDip - pose * 0.07f, -pose * 0.04f)
                 + Vector3.down * (1f - equip) * 0.45f;
@@ -386,16 +394,16 @@ namespace RockGame
         /// </summary>
         void PoseSpear(State s, Vector3 shared, Quaternion sharedRot, bool swinging, float e)
         {
-            float throwK = Mathf.Clamp01((Time.time - m_ThrowStart) / 0.25f);
+            float throwK = Mathf.Clamp01((Now - m_ThrowStart) / 0.25f);
             bool throwing = throwK < 1f;
-            float dt = Time.deltaTime;
+            float dt = m_Dt;
             if (throwing) m_SpearAimK = 1f;
-            else if (Time.time - m_ThrowStart < 0.3f) m_SpearAimK = 0f; // (just thrown: the next one comes up from below)
+            else if (Now - m_ThrowStart < 0.3f) m_SpearAimK = 0f; // (just thrown: the next one comes up from below)
             else m_SpearAimK = Mathf.MoveTowards(m_SpearAimK, s.SpearAim ? 1f : 0f, dt / (s.SpearAim ? 0.2f : 0.16f));
             float k = Smooth(m_SpearAimK);
             if (k >= 0.999f || throwing) { PoseSpearAim(s, shared, sharedRot, throwK, throwing); return; }
             // after a throw the next spear rises back into the hands
-            float back = Smooth((Time.time - m_ThrowStart - 0.25f) / 0.3f);
+            float back = Smooth((Now - m_ThrowStart - 0.25f) / 0.3f);
             var low = shared + Vector3.down * (1f - back) * 0.4f;
             PoseSpearIdle(low, sharedRot, swinging, e);
             if (k <= 0.001f) return;
@@ -514,7 +522,7 @@ namespace RockGame
         /// <summary>Rust crossbow: held like a rifle at the hip, RMB brings it up to the eye, and after a shot it's cranked back for the next bolt.</summary>
         void PoseCrossbow(State s, Vector3 shared, Quaternion sharedRot)
         {
-            float aim = m_AimK = Mathf.MoveTowards(m_AimK, s.Aim ? 1f : 0f, Time.deltaTime * 7f);
+            float aim = m_AimK = Mathf.MoveTowards(m_AimK, s.Aim ? 1f : 0f, m_Dt * 7f);
             // the shot's kick, each gun its own: the revolver snaps up at the wrist, the shotgun shoves back hard into the
             // shoulder and bucks, the rocket launcher lurches back and takes a while to settle, the portal gun gives a
             // soft pulse (the rest: the short knock back they always had)
@@ -527,7 +535,7 @@ namespace RockGame
                 case Item.Shotgun: kick = Recoil(0.55f); kickPos = new Vector3(0.01f, 0.035f, -0.17f); kickRot = new Vector3(-15f, -2f, 4f); break;
                 case Item.RocketLauncher: kick = Recoil(0.8f); kickPos = new Vector3(0, -0.02f, -0.2f); kickRot = new Vector3(-7f, 3f, -7f); break;
                 case Item.PortalGun: kick = Recoil(0.4f); kickPos = new Vector3(0, 0.01f, -0.08f); kickRot = new Vector3(-5f, 0, 0); break;
-                default: kick = Mathf.Clamp01(1f - (Time.time - m_UseStart) / 0.25f); break;
+                default: kick = Mathf.Clamp01(1f - (Now - m_UseStart) / 0.25f); break;
             }
             kick *= 1f - 0.35f * aim; // (steadier down the sights)
             // the sights at the eye: the revolver's sit higher above its grip than the crossbow's
@@ -617,7 +625,7 @@ namespace RockGame
 
         void PoseRam(State s, Vector3 shared, Quaternion sharedRot)
         {
-            float strikeK = Mathf.Clamp01((Time.time - m_UseStart) / 0.45f);
+            float strikeK = Mathf.Clamp01((Now - m_UseStart) / 0.45f);
             float thrust = strikeK < 1f ? (strikeK < 0.3f ? Smooth(strikeK / 0.3f) : 1f - Smooth((strikeK - 0.3f) / 0.7f)) : 0f;
             var pos = shared + new Vector3(0.18f, -0.4f, 0.55f - s.RamCharge * 0.3f + thrust * 0.7f);
             var rot = sharedRot * Quaternion.Euler(-4f + s.RamCharge * 6f, -8f, 0);
@@ -644,7 +652,7 @@ namespace RockGame
         /// <summary>The ball, huge, in both hands: fills the bottom half of the screen, its top reaching the middle.</summary>
         void PoseBall(Vector3 shared, Quaternion sharedRot)
         {
-            float throwK = Mathf.Clamp01((Time.time - m_ThrowStart) / 0.3f);
+            float throwK = Mathf.Clamp01((Now - m_ThrowStart) / 0.3f);
             bool throwing = throwK < 1f;
             var ballPos = shared + new Vector3(0, -0.62f, 0.75f);
             if (throwing) ballPos += new Vector3(0, 0.25f, 0.9f) * Smooth(throwK);
@@ -661,16 +669,16 @@ namespace RockGame
 
         void PoseHeld(Item item, Vector3 shared, Quaternion sharedRot)
         {
-            float eatK = Mathf.Clamp01((Time.time - m_EatStart) / 0.6f);
+            float eatK = Mathf.Clamp01((Now - m_EatStart) / 0.6f);
             float toMouth = eatK < 1f ? Mathf.Sin(eatK * Mathf.PI) : 0f;
-            float useK = Mathf.Clamp01((Time.time - m_UseStart) / 0.3f);
+            float useK = Mathf.Clamp01((Now - m_UseStart) / 0.3f);
             float use = useK < 1f ? Mathf.Sin(useK * Mathf.PI) : 0f;
             if (item == Item.DeathWand) use = Recoil(0.5f) * 1.5f; // the cast: flicked out hard, springing back
             Vector3 idle = new Vector3(0.26f, -0.27f, 0.45f);
             // a box (the chest, and the workbenches held like it): the hand under it further forward and a touch lower
             if (item == Item.Chest || item == Item.Workbench || item == Item.Workbench2) idle += new Vector3(0f, -0.03f, 0.09f);
             Vector3 pos = Vector3.Lerp(idle, new Vector3(0.04f, -0.13f, 0.22f), toMouth) + new Vector3(0, -0.05f, 0.12f) * use;
-            float throwK = Mathf.Clamp01((Time.time - m_ThrowStart) / 0.35f);
+            float throwK = Mathf.Clamp01((Now - m_ThrowStart) / 0.35f);
             if (throwK < 1f) pos += new Vector3(-0.05f, 0.12f, 0.3f) * Mathf.Sin(throwK * Mathf.PI); // lob (C4)
             Set(m_R, shared + pos, sharedRot * Quaternion.Euler(-12f - toMouth * 20f - use * 25f, -14f, -4f));
             if (m_Item) m_Item.SetActive(throwK >= 1f || throwK < 0.45f);

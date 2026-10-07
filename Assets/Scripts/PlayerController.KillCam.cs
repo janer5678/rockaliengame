@@ -5,15 +5,16 @@ namespace RockGame
     public static partial class Cfg
     {
         /// <summary>The kill cam: how long, after you're killed, the camera looks at who did it (then the replay).</summary>
-        [Tune("Player")] public static float KillCamTime = 1.2f;
+        [Tune("Player")] public static float KillCamTime = 2.4f;
     }
 
     /// <summary>
     /// The kill cam: killed by someone, the camera leaves your eyes and glides over to them - stopping a few metres off,
-    /// a little above and to one side, looking them in the face - for Cfg.KillCamTime, while the HUD says who it was,
-    /// what they had and how much health they've left (Hud.Death.cs). Then the replay (DeathReplay.cs): the last seconds
-    /// again, out of the killer's eyes, so you see how you died (jump skips it). Then the usual death screen. Not after
-    /// a fall, the void or your own C4 (nobody to look at).
+    /// a little above and to one side, looking them in the face, then slowly closing in - for Cfg.KillCamTime, while the
+    /// HUD says who it was, what they had and how much health they've left (Hud.Death.cs). Then the replay
+    /// (DeathReplay.cs): the last seconds again, out of the killer's eyes with their weapon in hand, their crosshair and
+    /// the damage they did, until you see yourself die and fall in slow motion (jump skips it). Then the usual death
+    /// screen. Not after a fall, the void or your own C4 (nobody to look at). Respawning ends it whenever that comes.
     /// </summary>
     public partial class PlayerController
     {
@@ -69,12 +70,14 @@ namespace RockGame
             if (away.sqrMagnitude < 0.01f) away = -k.transform.forward;
             away.Normalize();
             var side = Vector3.Cross(Vector3.up, away);
-            var to = head + away * 3.4f + side * 1.1f + Vector3.up * 0.55f;
+            // (after the glide over, it keeps easing in closer and round a little, so the shot never sits still)
+            float drift = Smooth01(Mathf.Clamp01((t - 1.2f) / Mathf.Max(0.1f, Cfg.KillCamTime - 1.2f)));
+            var to = head + away * Mathf.Lerp(3.4f, 2.5f, drift) + side * Mathf.Lerp(1.1f, 0.6f, drift) + Vector3.up * Mathf.Lerp(0.55f, 0.35f, drift);
             // (not through a wall: stop short of whatever's between them and the spot)
             if (Physics.Linecast(head, to, out var hit, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore)) to = hit.point + (head - to).normalized * 0.3f;
-            float e = Smooth01(Mathf.Clamp01(t / 0.9f));
+            float e = Smooth01(Mathf.Clamp01(t / 1.2f));
             var pos = Vector3.Lerp(m_KillCamFrom, to, e);
-            var rot = Quaternion.Slerp(m_KillCamFromRot, Quaternion.LookRotation(head - pos), Smooth01(Mathf.Clamp01(t / 0.6f)));
+            var rot = Quaternion.Slerp(m_KillCamFromRot, Quaternion.LookRotation(head - pos), Smooth01(Mathf.Clamp01(t / 0.8f)));
             m_Cam.transform.SetPositionAndRotation(pos, rot);
             m_Cam.fieldOfView = Mathf.Lerp(m_Cam.fieldOfView, 52f, Time.deltaTime * 6f);
             return true;

@@ -6,8 +6,10 @@ namespace RockGame
     /// The ship lobby's screen (ShipLobby.cs is the room): everyone's name over their alien (in their team's colour, with a
     /// tick once they're READY), the buttons along the bottom left like the reference - LEAVE (closes the lobby), COPY ROOM
     /// ID (the host's IPv4 address, for a friend to type into JOIN) and GAME OPTIONS (the host: change the game mode,
-    /// length and team sizes; everyone READYs again after) - in team games a JOIN row for each team, and the big green
-    /// READY bottom right. The chat works as usual.
+    /// length and team sizes; everyone READYs again after), LOBBY LOOK (everyone: the room's colours, lights and post
+    /// processing, for you) and, on the telly's game (LobbyArcade.cs), STOP PLAYING - a JOIN option for each team with a
+    /// grey SPECTATE twice as long under them (spectating, your alien stays on the couch, grey; a team takes a seat on it
+    /// again), and the big green READY bottom right. The chat works as usual.
     /// </summary>
     public partial class Hud
     {
@@ -44,15 +46,32 @@ namespace RockGame
                 Shadowed(new Rect(30 * k, 142 * k, sw, 26 * k), $"<color=#bbbbbb>Spectating: {names}</color>", new GUIStyle(m_Small) { fontSize = Mathf.RoundToInt(15 * k) });
             }
 
-            // name tags over the aliens
+            // name tags over the aliens (a little over their heads; not while the camera's on the telly)
             var tag = new GUIStyle(m_Center) { fontSize = Mathf.RoundToInt(19 * k), fontStyle = FontStyle.Bold };
-            foreach (var p in ShipLobby.Seated)
+            if (!LobbyArcade.Focused)
             {
-                if (!ShipLobby.HeadOnScreen(p, out var at)) continue;
-                var c = Cfg.TeamColor[Mathf.Clamp(p.Team.Value, 0, 3)];
-                string hex = ColorUtility.ToHtmlStringRGB(Color.Lerp(c, Color.white, 0.35f));
-                string tick = p.LobbyReady.Value ? $"  <size={Mathf.RoundToInt(38 * k)}><color=#7dff7a>✔</color></size>" : ""; // (big: ready at a glance)
-                Shadowed(new Rect(at.x - 150 * k, at.y - 34 * k, 300 * k, 30 * k), $"<color=#{hex}>{p.DisplayName}</color>{tick}", tag);
+                foreach (var p in ShipLobby.Seated)
+                {
+                    if (!ShipLobby.HeadOnScreen(p, out var at)) continue;
+                    var c = Cfg.TeamColor[Mathf.Clamp(p.Team.Value, 0, 3)];
+                    string hex = ColorUtility.ToHtmlStringRGB(Color.Lerp(c, Color.white, 0.35f));
+                    string tick = p.LobbyReady.Value ? $"  <size={Mathf.RoundToInt(38 * k)}><color=#7dff7a>✔</color></size>" : ""; // (big: ready at a glance)
+                    string pad = LobbyArcade.InGame(p) ? $"  <size={Mathf.RoundToInt(14 * k)}><color=#ffd84a>ON THE TELLY</color></size>" : "";
+                    Shadowed(new Rect(at.x - 150 * k, at.y - 26 * k, 300 * k, 30 * k), $"<color=#{hex}>{p.DisplayName}</color>{tick}{pad}", tag);
+                }
+                // the spectators, grey on the end of the couch
+                foreach (var s in ShipLobby.SeatedSpectators)
+                {
+                    if (!ShipLobby.SpectatorHeadOnScreen(s.Id, out var at)) continue;
+                    Shadowed(new Rect(at.x - 150 * k, at.y - 26 * k, 300 * k, 30 * k), $"<color=#b4b4b4>{s.Name}</color>  <size={Mathf.RoundToInt(14 * k)}><color=#8c8c8c>SPECTATING</color></size>", tag);
+                }
+            }
+            else
+            {
+                // playing the telly's game: how to play, under the title
+                Shadowed(new Rect(30 * k, 168 * k, sw, 26 * k), me != null
+                    ? "<color=#ffd84a><b>TELLY GAME</b></color>  WASD to move · bump trees to chop them (+1) · run the ball to your machine (+5) · run into the carrier to steal it"
+                    : "<color=#ffd84a><b>TELLY GAME</b></color>  watching - pick a team to play too", new GUIStyle(m_Small) { fontSize = Mathf.RoundToInt(15 * k) });
             }
 
             // the buttons along the bottom left, white-framed like the reference (CUSTOMISE ALIEN is off for now)
@@ -64,40 +83,25 @@ namespace RockGame
                 GUIUtility.systemCopyBuffer = string.IsNullOrEmpty(ip) ? "127.0.0.1" : ip;
                 m_CopiedAt = Time.time;
             }
-            if (boot.IsHostSession && !Cfg.Tutorial && FramedBtn(ref bx, by, bh, "GAME OPTIONS")) m_LobbyOptions = !m_LobbyOptions; // (the AI bots are in there now)
-            // watch instead of playing (or, watching, take a seat again)
-            if (g != null && !Cfg.Tutorial && FramedBtn(ref bx, by, bh, me == null ? "PLAY" : "SPECTATE")) g.SpectateRpc(me != null);
+            if (boot.IsHostSession && !Cfg.Tutorial && FramedBtn(ref bx, by, bh, "GAME OPTIONS")) { m_LobbyOptions = !m_LobbyOptions; m_LobbyLook = false; } // (the AI bots are in there now)
+            if (FramedBtn(ref bx, by, bh, "LOBBY LOOK")) { m_LobbyLook = !m_LobbyLook; m_LobbyOptions = false; } // (everyone: the room's look, for you)
+            if (LobbyArcade.Focused && FramedBtn(ref bx, by, bh, "STOP PLAYING")) LobbyArcade.Focus(false); // (back to the couch)
             float leftEnd = bx;
+
+            // the teams: a JOIN button for each (how many are on it), and under them, twice as long and grey, SPECTATE
+            if (!Cfg.Tutorial || me != null) DrawLobbyTeams(g, me, leftEnd, by);
+
             if (me == null)
             {
-                // spectating: no team or READY - just a note where READY goes
+                // spectating: no READY - just a note where it goes
                 var nr = new Rect(sw - 420 * k, sh - 86 * k, 394 * k, 64 * k);
                 Fill(nr, new Color(0f, 0f, 0f, 0.6f));
                 Frame(nr, new Color(1f, 1f, 1f, 0.6f), 2f);
-                Shadowed(nr, "<b>SPECTATING</b>\n<size=" + Mathf.RoundToInt(14 * k) + "><color=#bbbbbb>You'll watch the match - PLAY to take a seat</color></size>", new GUIStyle(m_Center) { fontSize = Mathf.RoundToInt(22 * k) });
+                Shadowed(nr, "<b>SPECTATING</b>\n<size=" + Mathf.RoundToInt(14 * k) + "><color=#bbbbbb>You'll watch the match - pick a team to play</color></size>", new GUIStyle(m_Center) { fontSize = Mathf.RoundToInt(22 * k) });
                 if (m_LobbyOptions && boot.IsHostSession) DrawLobbyOptions(boot);
+                if (m_LobbyLook) DrawLobbyLook();
                 Chat.Draw(k, m_Small, Fill, Shadowed);
                 return;
-            }
-
-            // team games: a JOIN button for each team, with how many are on it
-            if (Cfg.TeamCount >= 2 && !Cfg.FreeForAll)
-            {
-                float tw = 190 * k, th = 40 * k, gap = 12 * k;
-                float tx = Mathf.Max(leftEnd + 12 * k, (sw - (tw * Cfg.TeamCount + gap * (Cfg.TeamCount - 1))) / 2f), ty = by; // (along the bottom, with the other buttons)
-                for (int t = 0; t < Cfg.TeamCount; t++)
-                {
-                    int n = 0;
-                    foreach (var p in ShipLobby.Seated) if (p.Team.Value == t) n++;
-                    var r = new Rect(tx + t * (tw + gap), ty, tw, th);
-                    bool mine = me.Team.Value == t, full = n >= Cfg.TeamCap(t);
-                    var c = Cfg.TeamColor[t];
-                    Fill(r, new Color(c.r * 0.5f, c.g * 0.5f, c.b * 0.5f, mine ? 0.95f : 0.7f));
-                    if (mine) Frame(r, Color.white, 2f);
-                    if (r.Contains(Event.current.mousePosition)) MouseOverUI = true;
-                    string label = $"<b>{Cfg.TeamName[t]}</b>  {n}/{Cfg.TeamCap(t)}" + (mine ? "  (you)" : full ? "  FULL" : "");
-                    if (GUI.Button(r, label, new GUIStyle(m_Center) { fontSize = Mathf.RoundToInt(17 * k) }) && !mine && !full) { me.LobbyTeamRpc((byte)t); ClickSound(); }
-                }
             }
 
             // READY, bottom right: big and green
@@ -114,7 +118,91 @@ namespace RockGame
             }
 
             if (m_LobbyOptions && boot.IsHostSession) DrawLobbyOptions(boot);
+            if (m_LobbyLook) DrawLobbyLook();
             Chat.Draw(k, m_Small, Fill, Shadowed);
+        }
+
+        /// <summary>The team options along the bottom middle: a JOIN button for each team in its colour (in free for all, one
+        /// PLAY button), and under them a grey SPECTATE twice as long. Picking SPECTATE gets you up to watch (your alien
+        /// stays on the end of the couch, grey); picking a team while you're watching takes a seat on it.</summary>
+        void DrawLobbyTeams(NetGame g, PlayerNet me, float leftEnd, float by)
+        {
+            float k = m_Scale, sw = Screen.width;
+            float tw = 190 * k, th = 40 * k, gap = 10 * k;
+            bool teams = Cfg.TeamCount >= 2 && !Cfg.FreeForAll;
+            int cols = teams ? Cfg.TeamCount : 1;
+            float rowW = tw * cols + gap * (cols - 1), specW = teams ? tw * 2f + gap : tw * 2f;
+            float tx = Mathf.Max(leftEnd + 12 * k, (sw - Mathf.Max(rowW, specW)) / 2f);
+            float ty = by - th - gap; // (the teams over SPECTATE, which is along the bottom with the other buttons)
+            var st = new GUIStyle(m_Center) { fontSize = Mathf.RoundToInt(17 * k) };
+            for (int t = 0; t < cols; t++)
+            {
+                int n = 0;
+                foreach (var p in ShipLobby.Seated) if (!teams || p.Team.Value == t) n++;
+                int cap = teams ? Cfg.TeamCap(t) : Cfg.PlayersNeeded;
+                var r = new Rect(tx + (Mathf.Max(rowW, specW) - rowW) / 2f + t * (tw + gap), ty, tw, th);
+                bool mine = me != null && (!teams || me.Team.Value == t), full = n >= cap;
+                var c = teams ? Cfg.TeamColor[t] : new Color(0.3f, 0.75f, 0.4f);
+                Fill(r, new Color(c.r * 0.5f, c.g * 0.5f, c.b * 0.5f, mine ? 0.95f : 0.7f));
+                if (mine) Frame(r, Color.white, 2f);
+                if (r.Contains(Event.current.mousePosition)) MouseOverUI = true;
+                string label = $"<b>{(teams ? Cfg.TeamName[t] : "PLAY")}</b>  {n}/{cap}" + (mine ? "  (you)" : full ? "  FULL" : "");
+                if (GUI.Button(r, label, st) && !mine && !full)
+                {
+                    ClickSound();
+                    if (me != null) me.LobbyTeamRpc((byte)t);
+                    else if (g != null) g.PlayOnTeamRpc((byte)(teams ? t : 255)); // (watching: take a seat on it)
+                }
+            }
+            if (g == null || Cfg.Tutorial) return;
+            {
+                // SPECTATE: grey, twice as long, under the teams
+                int watching = g.IsSpawned ? g.Spectators.Count : 0;
+                var r = new Rect(tx + (Mathf.Max(rowW, specW) - specW) / 2f, by, specW, th);
+                bool mine = me == null;
+                var c = new Color(0.55f, 0.55f, 0.58f);
+                Fill(r, new Color(c.r * 0.5f, c.g * 0.5f, c.b * 0.5f, mine ? 0.95f : 0.7f));
+                if (mine) Frame(r, Color.white, 2f);
+                if (r.Contains(Event.current.mousePosition)) MouseOverUI = true;
+                string label = $"<b>SPECTATE</b>  {watching}/{Spectator.MaxSpectators}" + (mine ? "  (you)" : "");
+                if (GUI.Button(r, label, st) && !mine) { ClickSound(); LobbyArcade.Focus(false); g.SpectateRpc(true); }
+            }
+        }
+
+        bool m_LobbyLook;
+        Vector2 m_LobbyLookScroll;
+        static int s_LobbyPrefEdits;
+        static bool s_LobbyPrefHooked;
+
+        /// <summary>LOBBY LOOK (everyone): the SHIP LOBBY display settings (LobbyLooks.cs) right there in the lobby, so you
+        /// see the room change as you go - its colours, lights and post processing. Changing anything switches the room's
+        /// own look on. Only on this PC.</summary>
+        void DrawLobbyLook()
+        {
+            float k = m_Scale, sw = Screen.width, sh = Screen.height;
+            if (!s_LobbyPrefHooked) { s_LobbyPrefHooked = true; DisplayPref.Changed += () => s_LobbyPrefEdits++; }
+            // (on the right, so the room shows beside it)
+            float w = Mathf.Min(sw - 40, 640 * k), h = Mathf.Min(sh - 200 * k, 620 * k);
+            var r = new Rect(sw - w - 24 * k, 60 * k, w, h);
+            MouseOverUI = true;
+            Fill(r, new Color(0.05f, 0.04f, 0.09f, 0.94f));
+            Frame(r, new Color(1f, 1f, 1f, 0.8f), 2f);
+            GUILayout.BeginArea(new Rect(r.x + 18 * k, r.y + 14 * k, r.width - 36 * k, r.height - 28 * k));
+            GUILayout.BeginHorizontal();
+            GUILayout.Label($"<b><size={Mathf.RoundToInt(26 * k)}>LOBBY LOOK</size></b>", m_Label);
+            GUILayout.FlexibleSpace();
+            bool own = ToggleBtn(GameSettings.LobbyOwn.Value, GameSettings.LobbyOwn.Value ? "Own look: on" : "Own look: off", GUILayout.Width(150 * k), GUILayout.Height(32 * k));
+            GameSettings.LobbyOwn.Set(own);
+            if (Btn("Defaults", GUILayout.Width(100 * k), GUILayout.Height(32 * k))) GameSettings.ResetLobby();
+            if (Btn("Close", GUILayout.Width(90 * k), GUILayout.Height(32 * k))) m_LobbyLook = false;
+            GUILayout.EndHorizontal();
+            GUILayout.Label("<color=#bbbbbb>How this room looks on your screen (also in Settings > Display > SHIP LOBBY). Changing anything switches its own look on.</color>", m_SmallWrap);
+            m_LobbyLookScroll = GUILayout.BeginScrollView(m_LobbyLookScroll);
+            int before = s_LobbyPrefEdits;
+            DrawLobbyLookRows();
+            if (s_LobbyPrefEdits != before && !GameSettings.LobbyOwn.Value) GameSettings.LobbyOwn.Set(true);
+            GUILayout.EndScrollView();
+            GUILayout.EndArea();
         }
 
         string m_NameEditLobby;

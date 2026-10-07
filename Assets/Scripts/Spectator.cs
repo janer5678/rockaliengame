@@ -261,17 +261,24 @@ namespace RockGame
                 m_VM = new ViewModel(cam.transform, Cfg.TeamColor[Mathf.Clamp(team, 0, 3)]);
                 m_VMTeam = team;
             }
-            m_VM.Update(new ViewModel.State
+            // what they're doing (drawing, aiming, eating, sawing) and their swings and throws, as everyone sees them
+            byte act = t.Action.Value;
+            if (act != m_Act || t != m_ActOf) { m_Act = act; m_ActSince = Time.time; }
+            float sw = t.SwingAnim, th = t.ThrowAnim;
+            if (t == m_ActOf)
             {
-                Item = t.HeldItem,
-                Ball = t.CarryingBall,
-                Visible = !t.Dead.Value && !t.TreeCamo,
-                Visible2 = true,
-                Grounded = true,
-                Crouch = t.Crouch.Value,
-                HasArrow = t.Count(Item.Arrow) > 0,
-            });
+                if (sw > m_PrevSwing + 0.05f) m_VM.WatchedSwing(t.HeldItem, ViewModel.ImpactTime);
+                if (th > m_PrevThrow + 0.05f) m_VM.Throw();
+            }
+            m_ActOf = t;
+            m_PrevSwing = sw; m_PrevThrow = th;
+            m_VM.Update(ViewModel.Watched(t.HeldItem, (BodyAnimator.Act)act, Time.time - m_ActSince, t.Crouch.Value, t.CarryingBall,
+                t.Count(Item.Arrow) > 0, !t.Dead.Value && !t.TreeCamo));
         }
+
+        byte m_Act;
+        float m_ActSince, m_PrevSwing, m_PrevThrow;
+        PlayerNet m_ActOf;
 
         // ------------------------------------------------------------------ server
 

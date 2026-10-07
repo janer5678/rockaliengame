@@ -7,9 +7,10 @@ namespace RockGame
     /// <summary>
     /// The server's driver for a bot (PlayerNet.Bot.cs): it plays the match like a person would. A few times a second it
     /// thinks (BotBrain.Think.cs) - what's going on, what it needs, what its personality likes - and picks a job: farm
-    /// trees, eat berries when hurt, take its wood home to a chest, craft better gear, build walls round its machine, go
-    /// for the ball, carry it home, raid an enemy base for it, defend, hunt, or fight whoever it can see (never anyone
-    /// hiding in tree camo). Every frame it then walks there like a player (the same character controller, speeds,
+    /// trees, eat berries when hurt, pick up floor loot and empty airdrops, stash its wood in the team chest, and work on
+    /// whatever its team is furthest behind the others on (BotBrain.Goals.cs): a bigger house (BotBrain.House.cs), better
+    /// weapons and armour, more of the crafting list unlocked, or more base upgrades; go for the ball, carry it home, raid
+    /// an enemy base for it, defend, hunt, or fight whoever it can see (never anyone hiding in tree camo). Every frame it then walks there like a player (the same character controller, speeds,
     /// jump and slide), steering round things, and does the job's actions through the same server calls a player's
     /// input ends up in (MeleeRpc, CraftRpc, PlaceRpc, MoveItemRpc, PickupBallRpc...), so every rule and price applies.
     /// In the waiting stadium / ship lobby it just ambles about.
@@ -17,7 +18,7 @@ namespace RockGame
     public partial class BotBrain : MonoBehaviour
     {
         /// <summary>What a bot is doing (tests and debugging can read it: Job).</summary>
-        public enum Task : byte { Idle, Lounge, Wander, Farm, Berries, Store, Craft, Deploy, Build, Fetch, Carry, Escort, Raid, Defend, Hunt, Fight, Retreat }
+        public enum Task : byte { Idle, Lounge, Wander, Farm, Berries, Store, Craft, Deploy, Build, Fetch, Carry, Escort, Raid, Defend, Hunt, Fight, Retreat, Loot, Upgrade, Arm }
         /// <summary>A bot's leaning in a team: raiders go for the enemy, gatherers build up the economy, defenders hold the base.</summary>
         public enum Bent : byte { Raider, Gatherer, Defender }
 
@@ -86,6 +87,9 @@ namespace RockGame
             m_Node = null;
             m_Target = null;
             m_Blocker = null;
+            m_LootBox = null;
+            m_LootId = -1;
+            m_OpenedDoor = null;
         }
 
         void InitPersonality()
@@ -98,7 +102,7 @@ namespace RockGame
             m_Aggro = Mathf.Lerp(0.25f, 1f, F());
             m_Skill = Mathf.Lerp(0.35f, 0.95f, F());
             m_RetreatAt = Mathf.Lerp(0.22f, 0.45f, 1f - m_Aggro * 0.6f);
-            m_StoreAt = Mathf.Lerp(350f, 750f, F());
+            m_StoreAt = Mathf.Lerp(260f, 520f, F());
             m_Keep = Mathf.Lerp(120f, 260f, F());
             m_Playful = Mathf.Lerp(0.4f, 1.6f, F());
             m_ThinkEvery = Mathf.Lerp(0.5f, 0.85f, F());
@@ -133,7 +137,12 @@ namespace RockGame
             m_Arrived = false;
             m_HasLook = false;
             m_Strafe = false;
-            if (!lobby) Tick(g, dt); // the job's actions (swings, pick-ups, crafting...) - it may say it has arrived
+            if (!lobby)
+            {
+                Tick(g, dt); // the job's actions (swings, pick-ups, crafting...) - it may say it has arrived
+                TickGear();  // armour / a helmet it picked up goes on (BotBrain.Loot.cs)
+                TickDoors(); // its own doors: open in the way, shut behind it (BotBrain.House.cs)
+            }
             Move(g, lobby, dt);
         }
 
@@ -175,10 +184,13 @@ namespace RockGame
         void Move(NetGame g, bool lobby, float dt)
         {
             var pos = transform.position;
-            var to = m_Goal - pos;
+            // in or out of its own house: by way of the front doors (BotBrain.House.cs)
+            bool routed = false;
+            var goal = lobby ? m_Goal : Route(pos, out routed);
+            var to = goal - pos;
             to.y = 0f;
             float dist = to.magnitude;
-            var wish = !m_Arrived && dist > m_Stop ? to / Mathf.Max(dist, 0.001f) : Vector3.zero;
+            var wish = !m_Arrived && dist > (routed ? 0.25f : m_Stop) ? to / Mathf.Max(dist, 0.001f) : Vector3.zero;
             // fighting up close: circle the target, now one way, now the other
             if (m_Strafe && !lobby)
             {
@@ -312,6 +324,8 @@ namespace RockGame
                 case Task.Berries: return m_Bush != null && t.IsChildOf(m_Bush.transform);
                 case Task.Store: return m_Chest != null && t.IsChildOf(m_Chest.transform);
                 case Task.Fetch: case Task.Raid: return Ball.Instance != null && t.IsChildOf(Ball.Instance.transform);
+                case Task.Loot: return m_LootBox != null && t.IsChildOf(m_LootBox.transform);
+                case Task.Arm: return m_Turret != null && t.IsChildOf(m_Turret.transform);
             }
             return false;
         }

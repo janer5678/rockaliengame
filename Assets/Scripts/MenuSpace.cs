@@ -55,7 +55,8 @@ namespace RockGame
                 s_Fade = 1f;
             }
             cam.clearFlags = CameraClearFlags.SolidColor;
-            cam.backgroundColor = new Color(0.01f, 0.005f, 0.03f);
+            cam.backgroundColor = GameSettings.MenuSpaceColour.Value; // (Settings > Display > MAIN MENU CUTSCENE: MenuLooks.cs)
+            if (s_ColoursDirty) ApplyColours();
             cam.farClipPlane = Mathf.Max(s_OldFar, 3000f);
             s_Fade = Mathf.MoveTowards(s_Fade, 0f, Time.unscaledDeltaTime);
             float t = Time.unscaledTime - s_Start;
@@ -107,15 +108,40 @@ namespace RockGame
                 ft.localScale = new Vector3(fs.x * w, fs.y * len, fs.z * w);
                 ft.localRotation = Quaternion.Euler(Mathf.Sin(t * 13f + i) * layer * 2.5f, 0f, Mathf.Cos(t * 11f + i * 2f) * layer * 2.5f);
             }
-            // the meteor fire builds up over the first few seconds, then roars and flickers (hotter on a boost)
+            // the meteor fire builds up over the first few seconds, then roars and flickers (hotter on a boost). It never
+            // sits still: the shells of heat on the front boil - swelling, squashing and jostling about - and the flame
+            // sheets down the sides lash and flap like a torn flag, stretching and snapping back, all of it shaking hard
             float heat = Mathf.Clamp01((t - 0.5f) / 4f) * (0.85f + 0.15f * Mathf.Sin(t * 1.7f)) * (1f + boost * 0.35f);
             for (int i = 0; i < s_Fire.Count; i++)
             {
                 var (ft, fb) = s_Fire[i];
-                if (ft == null) continue;
+                if (ft == null || i >= s_FireRest.Count) continue;
+                var (rp, rr, trail) = s_FireRest[i];
                 float n = Mathf.PerlinNoise(t * 14f, i * 2.3f);
-                float f = Mathf.Max(0.001f, heat * (0.85f + 0.3f * n));
-                ft.localScale = new Vector3(fb.x * f, fb.y * f * (0.8f + 0.5f * n), fb.z * f);
+                float shake = 0.6f + 0.4f * Mathf.PerlinNoise(t * 3f, i * 0.37f + 11f) + boost * 0.6f; // (gusts of it)
+                var jit = new Vector3(Mathf.PerlinNoise(t * 19f, i * 1.9f) - 0.5f, Mathf.PerlinNoise(t * 23f, i * 3.3f + 4f) - 0.5f, Mathf.PerlinNoise(t * 17f, i * 4.4f + 8f) - 0.5f);
+                var buzz = new Vector3(Mathf.Sin(t * 47f + i * 1.3f), Mathf.Sin(t * 53f + i * 2.1f), Mathf.Sin(t * 41f + i * 0.7f)) * 0.12f; // (a fast tremble on top)
+                if (!trail)
+                {
+                    // a shell of heat: swells and squashes on its own axes, and jostles about the leading edge
+                    float f = Mathf.Max(0.001f, heat * (0.8f + 0.4f * n));
+                    float sx = 0.85f + 0.3f * Mathf.PerlinNoise(t * 26f, i * 1.1f + 3f), sz = 0.8f + 0.4f * Mathf.PerlinNoise(t * 29f, i * 2.7f + 6f);
+                    ft.localScale = new Vector3(fb.x * f * sx, fb.y * f * (0.75f + 0.6f * n), fb.z * f * sz);
+                    ft.localPosition = rp + Vector3.Scale(jit, new Vector3(1.8f, 1f, 1.6f)) * heat * shake + buzz * heat;
+                }
+                else
+                {
+                    // a flame sheet down the side: lashing about its root, stretching and snapping back, shaking
+                    float len = 0.6f + 0.8f * Mathf.PerlinNoise(t * 18f, i * 2.3f) + 0.15f * Mathf.Sin(t * 33f + i * 2.9f);
+                    float wid = 0.8f + 0.45f * Mathf.PerlinNoise(t * 24f, i * 1.7f + 5f);
+                    float f = Mathf.Max(0.001f, heat * (0.85f + 0.3f * n));
+                    ft.localScale = new Vector3(f * wid, f * len, f * wid);
+                    float flapX = (Mathf.PerlinNoise(t * 9f, i * 0.7f) - 0.5f) * 34f + Mathf.Sin(t * 21f + i * 1.3f) * 6f;
+                    float flapY = (Mathf.PerlinNoise(t * 7f, i * 1.1f + 3f) - 0.5f) * 18f;
+                    float flapZ = (Mathf.PerlinNoise(t * 11f, i * 0.9f + 8f) - 0.5f) * 30f + Mathf.Sin(t * 17f + i) * 5f;
+                    ft.localRotation = rr * Quaternion.Euler(flapX * shake, flapY * shake, flapZ * shake);
+                    ft.localPosition = rp + (jit * 1.1f + buzz) * heat * shake;
+                }
             }
             // it's going so fast it shakes: a hard rattle and the odd jolt
             float jolt = Mathf.Pow(Mathf.Max(0f, Mathf.Sin(t * 2.3f)), 30f);
@@ -200,15 +226,21 @@ namespace RockGame
             s_Lines2 = LinesTile("speed lines 2");
             BuildDetail(s_Ship.Root.transform);
             BuildDomeAndFire(s_Ship.Root.transform);
+            // everything else on the ship is its hull (the UFO hull colour)
+            foreach (var r in s_Ship.Root.GetComponentsInChildren<Renderer>(true))
+                if (r.sharedMaterial != null && !s_Owned.Contains(r.sharedMaterial) && !s_NoTint.Contains(r.sharedMaterial)) Paint(r, GameSettings.MenuHullColour, MenuLooks.HullRef);
             // a ringed planet off to the side, and a nebula glow far behind it
             var planet = Art.Part(s_Root.transform, Art.Sphere, new Color(0.55f, 0.35f, 0.75f), new Vector3(-420f, -60f, 900f), Vector3.one * 360f);
             planet.GetComponent<Renderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            Paint(planet.GetComponent<Renderer>(), GameSettings.MenuPlanetColour, null);
             var ring = Art.Part(s_Root.transform, Art.Cylinder, Color.white, new Vector3(-420f, -60f, 900f), new Vector3(620f, 0.5f, 620f) / (2f * Art.Cylinder.bounds.extents.x), new Vector3(18f, 0f, -12f), false, Art.Ghost(new Color(1f, 0.8f, 0.55f, 0.35f)));
             ring.GetComponent<Renderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            Paint(ring.GetComponent<Renderer>(), GameSettings.MenuRingColour, null);
             foreach (var (p, s, c) in new[] { (new Vector3(500f, 200f, 1400f), 700f, new Color(0.9f, 0.2f, 0.8f, 0.07f)), (new Vector3(700f, 50f, 1300f), 500f, new Color(0.2f, 0.8f, 1f, 0.06f)), (new Vector3(300f, -150f, 1500f), 600f, new Color(0.5f, 0.3f, 1f, 0.06f)) })
             {
                 var neb = Art.Part(s_Root.transform, Art.Sphere, Color.white, p, Vector3.one * s, default, false, Art.Ghost(c));
                 neb.GetComponent<Renderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                Paint(neb.GetComponent<Renderer>(), GameSettings.MenuNebulaColour, MenuLooks.NebulaRef);
             }
             // light: a warm key from the front-left (the sun's still on too) and a cool rim from behind
             var key = new GameObject("key light").AddComponent<Light>();
@@ -219,6 +251,76 @@ namespace RockGame
             rim.transform.SetParent(s_Root.transform, false);
             rim.transform.localPosition = new Vector3(50f, -10f, -70f);
             rim.type = LightType.Point; rim.range = 260f; rim.intensity = 6f; rim.color = new Color(0.45f, 0.7f, 1f);
+            PaintLight(key, GameSettings.MenuKeyLightColour, null);
+            PaintLight(rim, GameSettings.MenuRimLightColour, null);
+            DisplayPref.Changed += () => s_ColoursDirty = true;
+            ApplyColours();
+        }
+
+        // ------------------------------------------------------------------ the colours (Settings > Display > MAIN MENU CUTSCENE)
+
+        /// <summary>A material of the cutscene's own (never one shared with the game), its colour as built, and the
+        /// setting that colours it: straight (the setting's colour, keeping the built alpha) or, with a reference
+        /// colour, shifted (the built colour's hue turned, and its saturation and brightness scaled, by how far the
+        /// setting is from the reference - so a layered flame keeps its white-hot core and its fading outer layers).</summary>
+        class PaintJob { public Material M; public Color Orig; public DisplayPref.Colour Pref; public Color? Ref; }
+        class LightJob { public Light L; public Color Orig; public DisplayPref.Colour Pref; public Color? Ref; }
+        static readonly List<PaintJob> s_Paints = new List<PaintJob>();
+        static readonly List<LightJob> s_LightJobs = new List<LightJob>();
+        static readonly Dictionary<(Material, DisplayPref.Colour), Material> s_PaintCache = new Dictionary<(Material, DisplayPref.Colour), Material>();
+        static readonly HashSet<Material> s_Owned = new HashSet<Material>(), s_NoTint = new HashSet<Material>();
+        static bool s_ColoursDirty = true;
+
+        /// <summary>This renderer gets its own copy of its material, coloured by the setting (copies shared per material).</summary>
+        static void Paint(Renderer r, DisplayPref.Colour pref, Color? shiftRef)
+        {
+            if (r == null || r.sharedMaterial == null) return;
+            var src = r.sharedMaterial;
+            if (s_Owned.Contains(src)) return;
+            if (!s_PaintCache.TryGetValue((src, pref), out var m) || m == null)
+            {
+                m = new Material(src) { name = src.name + " (menu " + pref.Key + ")" };
+                s_PaintCache[(src, pref)] = m;
+                s_Owned.Add(m);
+                s_Paints.Add(new PaintJob { M = m, Orig = ColourOf(src), Pref = pref, Ref = shiftRef });
+            }
+            r.sharedMaterial = m;
+        }
+
+        static void PaintLight(Light l, DisplayPref.Colour pref, Color? shiftRef)
+        {
+            if (l != null) s_LightJobs.Add(new LightJob { L = l, Orig = l.color, Pref = pref, Ref = shiftRef });
+        }
+
+        static Color ColourOf(Material m) => m.HasProperty("_BaseColor") ? m.GetColor("_BaseColor") : m.HasProperty("_Color") ? m.GetColor("_Color") : Color.white;
+
+        static Color Tinted(Color orig, DisplayPref.Colour pref, Color? shiftRef)
+        {
+            var pick = pref.Value;
+            if (shiftRef == null) return new Color(pick.r, pick.g, pick.b, orig.a);
+            Color.RGBToHSV(orig, out float h, out float s, out float v);
+            Color.RGBToHSV(pick, out float ph, out float ps, out float pv);
+            Color.RGBToHSV(shiftRef.Value, out float rh, out float rs, out float rv);
+            h = Mathf.Repeat(h + ph - rh, 1f);
+            s = Mathf.Clamp01(rs > 0.02f ? s * ps / rs : Mathf.Max(s, ps));
+            v = Mathf.Clamp01(rv > 0.02f ? v * pv / rv : pv);
+            var c = Color.HSVToRGB(h, s, v);
+            c.a = orig.a;
+            return c;
+        }
+
+        /// <summary>Every coloured part of the cutscene to its setting's colour (when one changes).</summary>
+        static void ApplyColours()
+        {
+            s_ColoursDirty = false;
+            foreach (var p in s_Paints)
+            {
+                if (p.M == null) continue;
+                var c = Tinted(p.Orig, p.Pref, p.Ref);
+                if (p.M.HasProperty("_BaseColor")) p.M.SetColor("_BaseColor", c);
+                if (p.M.HasProperty("_Color")) p.M.SetColor("_Color", c);
+            }
+            foreach (var l in s_LightJobs) if (l.L != null) l.L.color = Tinted(l.Orig, l.Pref, l.Ref);
         }
 
 
@@ -266,7 +368,7 @@ namespace RockGame
             for (int i = 0; i < 28; i++)
             {
                 float a = i * Mathf.PI * 2f / 28f;
-                Art.Part(ship, Art.Sphere, Color.white, new Vector3(Mathf.Sin(a) * 12.5f, 0.6f, Mathf.Cos(a) * 12.5f), new Vector3(0.42f, 0.26f, 0.42f), default, false, PortholeGlass());
+                { var pg = PortholeGlass(); s_NoTint.Add(pg); Art.Part(ship, Art.Sphere, Color.white, new Vector3(Mathf.Sin(a) * 12.5f, 0.6f, Mathf.Cos(a) * 12.5f), new Vector3(0.42f, 0.26f, 0.42f), default, false, pg); } // (the portholes keep their dark glass)
             }
             // swept fins at the back
             for (int s = -1; s <= 1; s += 2)
@@ -280,7 +382,7 @@ namespace RockGame
                 Art.Part(ship, Art.Cylinder, dark, p, new Vector3(2.6f / cr, 3.4f / ch, 2.6f / cr), new Vector3(90f, 0, 0));
                 Art.Part(ship, Art.Cylinder, hull, p + new Vector3(0, 0, 1.6f), new Vector3(2.9f / cr, 0.4f / ch, 2.9f / cr), new Vector3(90f, 0, 0));
                 Art.Part(ship, Art.Cylinder, hull * 0.7f, p - new Vector3(0, 0, 1.55f), new Vector3(2.4f / cr, 0.35f / ch, 2.4f / cr), new Vector3(90f, 0, 0)); // (the nozzle lip)
-                Art.Part(ship, Art.Cylinder, Color.white, p - new Vector3(0, 0, 1.75f), new Vector3(1.9f / cr, 0.04f / ch, 1.9f / cr), new Vector3(90f, 0, 0), false, Unlit(new Color(0.7f, 0.9f, 1f), 3f));
+                Paint(Art.Part(ship, Art.Cylinder, Color.white, p - new Vector3(0, 0, 1.75f), new Vector3(1.9f / cr, 0.04f / ch, 1.9f / cr), new Vector3(90f, 0, 0), false, Unlit(new Color(0.7f, 0.9f, 1f), 3f)).GetComponent<Renderer>(), GameSettings.MenuThrusterColour, MenuLooks.ThrusterRef);
                 var flame = new GameObject("flame").transform;
                 flame.SetParent(ship, false);
                 flame.localPosition = p - new Vector3(0, 0, 1.75f);
@@ -290,6 +392,7 @@ namespace RockGame
                     var c = Art.Part(flame, Art.Cone, Color.white, Vector3.zero, new Vector3(w, len, w), default, false, m);
                     c.GetComponent<Renderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
                     s_Flames.Add((c.transform, new Vector3(w, len, w)));
+                    Paint(c.GetComponent<Renderer>(), GameSettings.MenuThrusterColour, MenuLooks.ThrusterRef);
                 }
                 Layer(1.1f, 3.2f, Unlit(new Color(0.88f, 0.96f, 1f), 3.2f));
                 Layer(1.8f, 6.5f, Art.Ghost(new Color(0.35f, 0.75f, 1f, 0.75f)));
@@ -302,6 +405,7 @@ namespace RockGame
             l.transform.SetParent(ship, false);
             l.transform.localPosition = new Vector3(0, 0, -21f);
             l.type = LightType.Point; l.range = 40f; l.intensity = 5f; l.color = new Color(0.4f, 0.7f, 1f);
+            PaintLight(l, GameSettings.MenuThrusterColour, MenuLooks.ThrusterRef);
         }
 
         /// <summary>Each engine flame layer and its size (they flicker on their own: Animate).</summary>
@@ -309,6 +413,8 @@ namespace RockGame
 
 
         static readonly List<(Transform t, Vector3 baseScale)> s_Fire = new List<(Transform, Vector3)>();
+        /// <summary>Each fire piece's resting place and turn, and whether it's a flame sheet down the side (else a shell of heat).</summary>
+        static readonly List<(Vector3 pos, Quaternion rot, bool trail)> s_FireRest = new List<(Vector3, Quaternion, bool)>();
 
         /// <summary>The dome as opaque, glossy paneled glass (not see-through): ribs up it, rings round it, a metal collar
         /// at its foot. And the meteor fire at the front: glowing shells of heat piling up on the leading edge and flame
@@ -321,7 +427,7 @@ namespace RockGame
             if (glass.HasProperty("_Smoothness")) glass.SetFloat("_Smoothness", 0.93f);
             if (glass.HasProperty("_Metallic")) glass.SetFloat("_Metallic", 0.3f);
             foreach (Transform c in ship)
-                if ((c.localScale - new Vector3(9f, 5f, 9f)).sqrMagnitude < 0.01f && c.TryGetComponent(out Renderer dr)) dr.sharedMaterial = glass;
+                if ((c.localScale - new Vector3(9f, 5f, 9f)).sqrMagnitude < 0.01f && c.TryGetComponent(out Renderer dr)) { dr.sharedMaterial = glass; Paint(dr, GameSettings.MenuDomeColour, null); }
             for (int i = 0; i < 10; i++)
                 Art.Part(ship, Art.Sphere, metal, new Vector3(0, 2f, 0), new Vector3(0.16f, 5.05f, 9.04f), new Vector3(0, i * 18f, 0));
             foreach (float h in new[] { 2.25f, 3.3f, 4.2f })
@@ -334,11 +440,14 @@ namespace RockGame
 
             // the meteor fire on the front (+z) edge (the rim reaches 30 m out)
             s_Fire.Clear();
+            s_FireRest.Clear();
             void Shell(Vector3 at, Vector3 s, Color c)
             {
                 var p = Art.Part(ship, Art.Sphere, Color.white, at, s, default, false, Art.Ghost(c));
                 p.GetComponent<Renderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                Paint(p.GetComponent<Renderer>(), GameSettings.MenuFireColour, MenuLooks.FireRef);
                 s_Fire.Add((p.transform, s));
+                s_FireRest.Add((p.transform.localPosition, p.transform.localRotation, false));
             }
             // (radius-1 spheres: these are half-sizes) layers of heat piled up on the leading edge, white-hot at the front,
             // a wide haze of heat round it, and a bow of fire pushed out ahead of it
@@ -370,12 +479,15 @@ namespace RockGame
                     var cone = Art.Part(lick, Art.Cone, Color.white, Vector3.zero, new Vector3(w, len, w * 0.6f), default, false,
                         Art.Ghost(Color.Lerp(new Color(1f, 0.75f, 0.3f, 0.5f), new Color(1f, 0.35f, 0.08f, 0.35f), f)));
                     cone.GetComponent<Renderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                    Paint(cone.GetComponent<Renderer>(), GameSettings.MenuFireColour, MenuLooks.FireRef);
                     s_Fire.Add((lick, Vector3.one));
+                    s_FireRest.Add((lick.localPosition, lick.localRotation, true));
                 }
             var fl = new GameObject("meteor light").AddComponent<Light>();
             fl.transform.SetParent(ship, false);
             fl.transform.localPosition = new Vector3(0, 2f, 34f);
             fl.type = LightType.Point; fl.range = 95f; fl.intensity = 9f; fl.color = new Color(1f, 0.55f, 0.2f);
+            PaintLight(fl, GameSettings.MenuFireColour, MenuLooks.FireRef);
         }
         /// <summary>Speed lines: long thin streaks close round the ship's path, whipping past (two tiles).</summary>
         static Transform LinesTile(string name)
@@ -404,6 +516,7 @@ namespace RockGame
             go.AddComponent<MeshFilter>().sharedMesh = mesh;
             var mr = go.AddComponent<MeshRenderer>();
             mr.sharedMaterial = Unlit(new Color(0.75f, 0.9f, 1f), 1.2f);
+            Paint(mr, GameSettings.MenuLinesColour, null);
             mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             return go.transform;
         }
@@ -457,6 +570,7 @@ namespace RockGame
             go.AddComponent<MeshFilter>().sharedMesh = mesh;
             var mr = go.AddComponent<MeshRenderer>();
             mr.sharedMaterial = Unlit(Color.white, 1.6f);
+            Paint(mr, GameSettings.MenuStarsColour, null);
             mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             go.transform.localPosition = new Vector3(0, 0, 0);
             return go.transform;

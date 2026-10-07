@@ -59,6 +59,8 @@ namespace RockGame
             // Esc on the main menu goes back a page
             var boot = Bootstrap.I;
             NewMenuKeys(boot); // (Tab: the dev main menu; Esc: back a screen on the new one - Hud.MainMenu.cs)
+            // the host's menu over the lobby (Hud.LobbyBack.cs): Esc goes back a page there too
+            if (m_LobbyMenu && Input.GetKeyDown(KeyCode.Escape) && !m_Rebinding && !Chat.Open && !DropTyping()) { LobbyMenuEsc(); return; }
             if (boot != null && !boot.InSession && Input.GetKeyDown(KeyCode.Escape) && !m_Rebinding && m_RebindFrame != Time.frameCount && m_Page != MenuPage.Main)
             {
                 if (DropTyping()) return; // (Esc in a search box lets go of it first)
@@ -712,9 +714,11 @@ namespace RockGame
             if (Btn("Back", GUILayout.Width((side ? 96 : 120) * k), GUILayout.Height(34 * k))) back = true;
             GUILayout.EndHorizontal();
             GUILayout.BeginHorizontal();
-            string[] tabs = { "Sound", "Controls", "Display", "Voice chat", "Name" };
+            if (m_Tab == SettingsTab.Voice) m_Tab = SettingsTab.Sound; // (voice chat is in the Sound tab now)
+            string[] tabs = { "Sound", "Controls", "Display", "Name" };
+            SettingsTab[] tabIs = { SettingsTab.Sound, SettingsTab.Controls, SettingsTab.Display, SettingsTab.Name };
             for (int i = 0; i < tabs.Length; i++)
-                if (Choice((int)m_Tab == i, tabs[i], GUILayout.Height(34 * k))) { m_Tab = (SettingsTab)i; m_Rebinding = false; OnTabOpened(); }
+                if (Choice(m_Tab == tabIs[i], tabs[i], GUILayout.Height(34 * k))) { m_Tab = tabIs[i]; m_Rebinding = false; OnTabOpened(); }
             GUILayout.EndHorizontal();
             GUILayout.Space(10 * k);
             m_SettingsScroll = GUILayout.BeginScrollView(m_SettingsScroll);
@@ -723,7 +727,6 @@ namespace RockGame
                 case SettingsTab.Sound: DrawSoundTab(); break;
                 case SettingsTab.Controls: DrawControlsTab(); break;
                 case SettingsTab.Display: DrawDisplayTab(); break;
-                case SettingsTab.Voice: DrawVoiceTab(); break;
                 case SettingsTab.Name: DrawNameTab(); break;
             }
             GUILayout.EndScrollView();
@@ -741,13 +744,13 @@ namespace RockGame
             if (!Mathf.Approximately(v, GameSettings.MasterVolume)) { GameSettings.MasterVolume = v; changed = true; }
             v = SliderRow("Sound effects", GameSettings.SfxVolume, 0f, 1.5f, $"{GameSettings.SfxVolume * 100:0}%");
             if (!Mathf.Approximately(v, GameSettings.SfxVolume)) { GameSettings.SfxVolume = v; changed = true; }
-            v = SliderRow("Voice chat", GameSettings.VoiceVolume, 0f, 2f, $"{GameSettings.VoiceVolume * 100:0}%");
-            if (!Mathf.Approximately(v, GameSettings.VoiceVolume)) { GameSettings.VoiceVolume = v; changed = true; }
             GUILayout.Space(6 * k);
-            GUILayout.Label("<color=#bbbbbb>Master turns everything up or down. Sound effects is every game and menu sound (hits, gathering, building, arrows, footsteps). Voice chat is how loud other players are.</color>", m_SmallWrap);
+            GUILayout.Label("<color=#bbbbbb>Master turns everything up or down. Sound effects is every game and menu sound (hits, gathering, building, arrows, footsteps).</color>", m_SmallWrap);
             GUILayout.Space(8 * k);
             if (Btn("Test sound", GUILayout.Width(160 * k), GUILayout.Height(30 * k))) Sfx.Play2D(Sfx.Ding, 0.7f, 0f);
             if (changed) GameSettings.Save();
+            GUILayout.Space(18 * k);
+            DrawVoiceSettings(); // (the voice chat settings live here now: there's no Voice chat tab)
         }
 
         void DrawControlsTab()
@@ -801,111 +804,7 @@ namespace RockGame
             GUILayout.Label("<color=#bbbbbb>Esc: pause (or close a menu) · mouse wheel: hotbar · 1 / 2 on the death screen: respawn in base / in the wild · building plan: hold Aim for the building wheel</color>", m_SmallWrap);
         }
 
-        void DrawDisplayTab()
-        {
-            float k = m_Scale;
-            if (m_ResList == null) OnTabOpened();
-            float lw = 150 * k;
-            // ---- the screen first (window mode, resolution, refresh rate) ----
-            Caption("SCREEN");
-            GUILayout.BeginHorizontal();
-            RowLabel("Window", lw);
-            foreach (var mode in new[] { GameSettings.WindowMode.Fullscreen, GameSettings.WindowMode.Borderless, GameSettings.WindowMode.Windowed })
-                if (Choice(m_ModeSel == mode, mode == GameSettings.WindowMode.Borderless ? "Borderless" : mode.ToString(), GUILayout.Height(30 * k))) m_ModeSel = mode;
-            GUILayout.EndHorizontal();
-
-            GUILayout.BeginHorizontal();
-            RowLabel("Resolution", lw);
-            if (Btn("<", GUILayout.Width(40 * k), GUILayout.Height(30 * k))) { m_ResSel = Mathf.Min(m_ResList.Count - 1, m_ResSel + 1); m_RateSel = 0; }
-            var res = m_ResList[Mathf.Clamp(m_ResSel, 0, m_ResList.Count - 1)];
-            bool native = res.x == Screen.currentResolution.width && res.y == Screen.currentResolution.height;
-            GUILayout.Label($"<b>{res.x} x {res.y}</b>{(native ? "  <color=#aaaaaa>(your screen)</color>" : "")}", m_Center, GUILayout.ExpandWidth(true), GUILayout.Height(30 * k));
-            if (Btn(">", GUILayout.Width(40 * k), GUILayout.Height(30 * k))) { m_ResSel = Mathf.Max(0, m_ResSel - 1); m_RateSel = 0; }
-            GUILayout.EndHorizontal();
-
-            var rates = GameSettings.RefreshRates(res);
-            m_RateSel = Mathf.Clamp(m_RateSel, 0, rates.Count - 1);
-            GUILayout.BeginHorizontal();
-            RowLabel("Refresh rate", lw);
-            if (Btn("<", GUILayout.Width(40 * k), GUILayout.Height(30 * k))) m_RateSel = Mathf.Min(rates.Count - 1, m_RateSel + 1);
-            GUILayout.Label($"<b>{rates[m_RateSel].value:0.##} Hz</b>{(m_RateSel == 0 ? "  <color=#aaaaaa>(highest)</color>" : "")}", m_Center, GUILayout.ExpandWidth(true), GUILayout.Height(30 * k));
-            if (Btn(">", GUILayout.Width(40 * k), GUILayout.Height(30 * k))) m_RateSel = Mathf.Max(0, m_RateSel - 1);
-            GUILayout.EndHorizontal();
-
-            GUILayout.Space(8 * k);
-            GUILayout.BeginHorizontal();
-            if (Btn("Apply", m_Primary, GUILayout.Height(38 * k))) GameSettings.SetDisplay(res, m_ModeSel, rates[m_RateSel]);
-            if (Btn("Use my screen's best", GUILayout.Height(38 * k)))
-            {
-                m_ResSel = Mathf.Max(0, m_ResList.IndexOf(new Vector2Int(Screen.currentResolution.width, Screen.currentResolution.height)));
-                m_RateSel = 0;
-            }
-            GUILayout.EndHorizontal();
-            GUILayout.Label($"<color=#bbbbbb>Now: {Screen.width} x {Screen.height}, {GameSettings.CurrentMode}, {GameSettings.ChosenRate.value:0.##} Hz. The refresh rate starts at the highest your screen can do; in a window it follows your desktop.</color>", m_SmallWrap);
-
-            // ---- every other display setting as a code: copy it, paste one back ----
-            DrawDisplayCode();
-
-            Caption("GRAPHICS");
-            // (the PSX test looks are hidden for now - GameSettings.ShowGraphicsPicker)
-            if (GameSettings.ShowGraphicsPicker)
-            {
-                GUILayout.BeginHorizontal();
-                RowLabel("Style", lw);
-                // in a match the host's graphics are used by everyone
-                bool inMatch = NetGame.Instance != null && NetGame.Instance.IsSpawned;
-                GUI.enabled = !inMatch;
-                if (Choice(GameSettings.GraphicsMode == 0, "Normal", GUILayout.Height(30 * k))) GameSettings.SetGraphics(0);
-                if (Choice(GameSettings.GraphicsMode == 1, "PSX", GUILayout.Height(30 * k))) GameSettings.SetGraphics(1);
-                if (Choice(GameSettings.GraphicsMode == 2, "AI PSX TEST", GUILayout.Height(30 * k))) GameSettings.SetGraphics(2);
-                GUI.enabled = true;
-                GUILayout.EndHorizontal();
-                if (inMatch) GUILayout.Label("<color=#bbbbbb>Picked by the host for everyone in this match.</color>", m_SmallWrap);
-            }
-            GUILayout.BeginHorizontal();
-            RowLabel("FPS counter", lw);
-            bool fps = ToggleBtn(GameSettings.ShowFps, GameSettings.ShowFps ? "On" : "Off", GUILayout.Width(90 * k), GUILayout.Height(30 * k));
-            if (fps != GameSettings.ShowFps) GameSettings.SetShowFps(fps);
-            GUILayout.Label("<color=#bbbbbb>  frames per second, top left</color>", m_Small, GUILayout.Height(30 * k));
-            GUILayout.FlexibleSpace();
-            GUILayout.EndHorizontal();
-            GUILayout.BeginHorizontal();
-            RowLabel("Uncapped framerate", lw);
-            bool unc = ToggleBtn(GameSettings.UncappedFps, GameSettings.UncappedFps ? "On" : "Off", GUILayout.Width(90 * k), GUILayout.Height(30 * k));
-            if (unc != GameSettings.UncappedFps) GameSettings.SetUncappedFps(unc);
-            GUILayout.Label("<color=#bbbbbb>  vsync off, no frame cap - as fast as your PC can go</color>", m_Small, GUILayout.Height(30 * k));
-            GUILayout.FlexibleSpace();
-            GUILayout.EndHorizontal();
-
-            // ---- shadows ----
-            Caption("SHADOWS  ·  just on this PC");
-            float ss = SliderRow("Shadow darkness", GameSettings.ShadowStrength, 0f, 1f, $"{GameSettings.ShadowStrength * 100f:0}%", lw);
-            float sd = SliderRow("Shadow distance", GameSettings.ShadowDistance, GameSettings.ShadowDistanceMin, GameSettings.ShadowDistanceMax, $"{GameSettings.ShadowDistance:0} m", lw);
-            GameSettings.SetShadows(Mathf.Round(ss * 20f) / 20f, Mathf.Round(sd / 5f) * 5f);
-            GUILayout.Label("<color=#bbbbbb>Darkness: how dark the sun's shadows are (0% = none). Distance: how far from you shadows are drawn - further looks better, nearer is faster and the near shadows are sharper.</color>", m_SmallWrap);
-
-            // ---- shading (SmoothShade.cs): smooth instead of flat facets, one row ----
-            Caption("SHADING  ·  just on this PC");
-            GUILayout.BeginHorizontal();
-            RowLabel("Shade smooth", lw);
-            bool sh = ToggleBtn(GameSettings.SmoothHands.Value, "Hands & items", GUILayout.Width(150 * k), GUILayout.Height(30 * k));
-            GUILayout.Space(6 * k);
-            bool sa = ToggleBtn(GameSettings.SmoothAliens.Value, "Aliens & crowd", GUILayout.Width(150 * k), GUILayout.Height(30 * k));
-            GUILayout.FlexibleSpace();
-            GUILayout.EndHorizontal();
-            GameSettings.SmoothHands.Set(sh);
-            GameSettings.SmoothAliens.Set(sa);
-            GUILayout.Label("<color=#bbbbbb>Lit smoothly instead of in flat facets: your first-person hands and what they hold, and the alien players and the stadium crowd (off = the normal look).</color>", m_SmallWrap);
-
-            DrawPostFxSettings();
-            DrawInterfaceSettings();
-            DrawWorldLook();
-            DrawTreeXSettings(); // (TreeX.cs)
-            DrawBaseFloorSettings(); // (Hud.BaseFloor.cs)
-            DrawAimPreviewSettings(); // (PlayerController.Preview.cs: the trajectory line)
-            DrawBeamSettings(); // (Hud.Beams.cs)
-            DrawSkyLinesAndWall(); // (Hud.SkyLines.cs: far line thickness, energy wall)
-        }
+        void DrawDisplayTab() => DrawDisplayTabbed(); // (Settings > Display in categories: Hud.Settings.cs)
 
         bool m_CopyNoteBad;
 
@@ -1187,11 +1086,13 @@ namespace RockGame
             GUILayout.EndArea();
         }
 
-        void DrawVoiceTab()
+        /// <summary>Settings > Sound's VOICE CHAT section: off / open mic / push to talk, the mic, how loud the others are,
+        /// the mic's volume and level, alien voice and hearing yourself.</summary>
+        void DrawVoiceSettings()
         {
             float k = m_Scale;
             bool changed = false;
-            Caption("PROXIMITY VOICE CHAT  ·  people hear you when they're near you");
+            Caption("VOICE CHAT  ·  people hear you when they're near you");
             GUILayout.BeginHorizontal();
             string[] modes = { "Off", "Open mic", $"Push to talk ({Binds.Name(Bind.PushToTalk)})" };
             for (int i = 0; i < 3; i++)
@@ -1211,7 +1112,9 @@ namespace RockGame
                 if (Btn(">", GUILayout.Width(40 * k), GUILayout.Height(30 * k))) { GameSettings.MicDevice = devs[(cur + 1) % devs.Length]; changed = true; }
             }
             GUILayout.EndHorizontal();
-            float v = SliderRow("Mic volume", GameSettings.MicGain, 0.2f, 4f, $"{GameSettings.MicGain * 100:0}%");
+            float v = SliderRow("Voice chat volume", GameSettings.VoiceVolume, 0f, 2f, $"{GameSettings.VoiceVolume * 100:0}%");
+            if (!Mathf.Approximately(v, GameSettings.VoiceVolume)) { GameSettings.VoiceVolume = v; changed = true; }
+            v = SliderRow("Mic volume", GameSettings.MicGain, 0.2f, 4f, $"{GameSettings.MicGain * 100:0}%");
             if (!Mathf.Approximately(v, GameSettings.MicGain)) { GameSettings.MicGain = v; changed = true; }
             if (GameSettings.VoiceMode == GameSettings.VoiceOpen)
             {
