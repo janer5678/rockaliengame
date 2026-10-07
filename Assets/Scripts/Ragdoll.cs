@@ -18,7 +18,7 @@ namespace RockGame
         const int Max = 12;
         const int Layer = 2; // (Ignore Raycast)
 
-        class Body { public GameObject Go; public Transform Hips; public Transform Pool; public float Born; public Vector3 PoolAt; bool m_Pooled; public bool Pooled { get => m_Pooled; set => m_Pooled = value; } }
+        class Body { public ulong Owner; public GameObject Go; public Transform Hips; public Transform Pool; public float Born; public Vector3 PoolAt; bool m_Pooled; public bool Pooled { get => m_Pooled; set => m_Pooled = value; } }
         static readonly List<Body> s_Bodies = new List<Body>();
         static Material s_Blood;
 
@@ -40,7 +40,7 @@ namespace RockGame
         };
 
         /// <summary>Copies `model` (the dead alien, posed) into a ragdoll and knocks it along `push` (m/s).</summary>
-        public static void Spawn(GameObject model, GameObject hat, Vector3 push)
+        public static void Spawn(GameObject model, GameObject hat, Vector3 push, ulong owner = 0)
         {
             if (model == null) return;
             while (s_Bodies.Count >= Max) { var old = s_Bodies[0]; s_Bodies.RemoveAt(0); if (old.Go) Object.Destroy(old.Go); if (old.Pool) Object.Destroy(old.Pool.gameObject); }
@@ -120,7 +120,7 @@ namespace RockGame
                 rb.angularVelocity = Random.insideUnitSphere * 2f;
             }
             if (bodies.TryGetValue("Chest", out var chest)) chest.AddForce(push * 4f, ForceMode.VelocityChange);
-            s_Bodies.Add(new Body { Go = go, Hips = map.TryGetValue("Hips", out var hips) ? hips : go.transform, Born = Time.time });
+            s_Bodies.Add(new Body { Owner = owner, Go = go, Hips = map.TryGetValue("Hips", out var hips) ? hips : go.transform, Born = Time.time });
         }
 
         /// <summary>Every frame (Bootstrap): the blood spreading under each body, and the old ones sinking away.</summary>
@@ -167,6 +167,18 @@ namespace RockGame
                     s_Bodies.RemoveAt(i);
                 }
             }
+        }
+
+        /// <summary>Hides (or shows again) the newest body of player `owner` - the kill cam's replay acts their death out instead.</summary>
+        public static void SetHidden(ulong owner, bool hidden)
+        {
+            for (int i = s_Bodies.Count - 1; i >= 0; i--)
+                if (s_Bodies[i].Owner == owner && s_Bodies[i].Go != null)
+                {
+                    foreach (var r in s_Bodies[i].Go.GetComponentsInChildren<Renderer>(true)) if (r.name != "outline copy") r.enabled = !hidden;
+                    if (s_Bodies[i].Pool != null) s_Bodies[i].Pool.gameObject.SetActive(!hidden);
+                    return;
+                }
         }
 
         /// <summary>Every body gone at once (a new match).</summary>

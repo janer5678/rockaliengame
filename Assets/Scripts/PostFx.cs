@@ -165,7 +165,7 @@ namespace RockGame
         Camera m_Cam;
         Material m_StylizeMat;
         Material m_MaskMat;
-        bool m_MenuPost;
+        int m_MenuPost;
         static readonly List<Renderer> s_VmRends = new List<Renderer>();
         /// <summary>The layer the first-person hands and what they hold are put on while they have looks of their own
         /// (HANDS AND TOOLS): the mask pass draws just that layer. (Nothing else uses it; the camera and lights see every layer.)</summary>
@@ -313,7 +313,7 @@ namespace RockGame
             var cam = Camera.main;
             if (cam != m_Cam) { m_Cam = cam; ApplyCamera(); }
             // the main menu cutscene has its own post processing (LayerLooks.cs): switch over as it comes and goes
-            bool menu = GameSettings.MenuPostNow;
+            int menu = GameSettings.MenuPostNow ? 1 : GameSettings.LobbyPostNow ? 2 : 0; // (and the ship lobby too)
             if (menu != m_MenuPost) { m_MenuPost = menu; Apply(); }
             if (m_StylizeOn) UpdateStylize();
             // the hands and what they hold on their own layer while they have looks of their own (what's held changes: every frame)

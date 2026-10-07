@@ -14,6 +14,9 @@ namespace RockGame
     /// </summary>
     public static class Cosmetics
     {
+        /// <summary>Hats (and CUSTOMISE ALIEN) are switched off for now: nobody wears one, in the lobby or a match.</summary>
+        public const bool HatsOn = false;
+
         public static readonly string[] HatNames =
         {
             "No hat", "Anime hair", "Paper bag", "Cowboy hat", "Top hat", "Bieber hair", "Punk mohawk", "Long wig", "Beanie", "Party hat",
@@ -381,7 +384,7 @@ namespace RockGame
                 d.y = 0f;
                 if (d.sqrMagnitude > 0.01f) push = d.normalized * 4.5f + Vector3.up * 2f;
             }
-            Ragdoll.Spawn(model.gameObject, m_HatGo, push);
+            Ragdoll.Spawn(model.gameObject, m_HatGo, push, NetworkObjectId);
         }
 
         [Rpc(SendTo.Server)]
@@ -390,10 +393,11 @@ namespace RockGame
         /// <summary>Every frame: the hat on this player's alien is the one they picked (yours only shows in your shadow).</summary>
         void TickHat()
         {
-            if (m_HatShown == Hat.Value || m_Anim == null || m_Anim.HeadBone == null) return;
-            m_HatShown = Hat.Value;
+            int hat = Cosmetics.HatsOn ? Hat.Value : 0; // (hats are off for now)
+            if (m_HatShown == hat || m_Anim == null || m_Anim.HeadBone == null) return;
+            m_HatShown = hat;
             if (m_HatGo) Destroy(m_HatGo);
-            m_HatGo = Cosmetics.Wear(Hat.Value, m_VisualRoot, m_Anim, IsOwner);
+            m_HatGo = Cosmetics.Wear(hat, m_VisualRoot, m_Anim, IsOwner);
         }
     }
 }

@@ -57,13 +57,14 @@ namespace RockGame
 
         static float Amt(DisplayPref.Bool on, DisplayPref.Float s) => on.Value ? s.Value : 0f;
         /// <summary>Bloom / vignette / grading strength in use now (0 = off): the menu cutscene's own while it's on, else the world's.</summary>
-        public static float BloomNow => MenuPostNow ? Amt(MenuBloom, MenuBloomStrength) : PostBloom ? PostBloomStrength : 0f;
-        public static float VignetteNow => MenuPostNow ? Amt(MenuVignette, MenuVignetteStrength) : PostVignette ? PostVignetteStrength : 0f;
-        public static float GradingNow => MenuPostNow ? Amt(MenuGrading, MenuGradingStrength) : PostGrading ? PostGradingStrength : 0f;
+        public static float BloomNow => MenuPostNow ? Amt(MenuBloom, MenuBloomStrength) : LobbyPostNow ? Amt(LobbyBloom, LobbyBloomStrength) : PostBloom ? PostBloomStrength : 0f;
+        public static float VignetteNow => MenuPostNow ? Amt(MenuVignette, MenuVignetteStrength) : LobbyPostNow ? Amt(LobbyVignette, LobbyVignetteStrength) : PostVignette ? PostVignetteStrength : 0f;
+        public static float GradingNow => MenuPostNow ? Amt(MenuGrading, MenuGradingStrength) : LobbyPostNow ? Amt(LobbyGrading, LobbyGradingStrength) : PostGrading ? PostGradingStrength : 0f;
         /// <summary>An extra look's strength in use now (0 = off): the menu cutscene has outlines, cel banding, film grain and
         /// chromatic aberration of its own (and none of the others).</summary>
         public static float ExtraNow(PostExtra e)
         {
+            if (!MenuPostNow && LobbyPostNow) return LobbyExtra(e);
             if (!MenuPostNow) return PostExtraAmount(e);
             switch (e)
             {

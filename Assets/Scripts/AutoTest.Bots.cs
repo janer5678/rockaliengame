@@ -7,11 +7,6 @@ namespace RockGame
     public partial class AutoTest
     {
         /// <summary>
-        /// -autotest bots -host -solo: the AI bots (PlayerNet.Bot.cs). One is added on the enemy team: it's a player like
-        /// any other (named, on its team, always ready, a BotBrain on the server), it roams its base while the wall's up,
-        /// and put next to us it chases and hits us. Removing it takes it out.
-        /// </summary>
-        /// <summary>
         /// -autotest backtolobby (a host and a client): the ship lobby, both READY (and a bot the host adds), the match
         /// starts, the host ends it - and a few seconds after the result everyone is back in the ship lobby: the host's
         /// session restarted, the client back in by itself, the bot back on its team.
@@ -62,9 +57,17 @@ namespace RockGame
             Application.Quit(0);
         }
 
+        /// <summary>
+        /// -autotest bots -host -solo: the AI bots (PlayerNet.Bot.cs, BotBrain*.cs). One is added on the enemy team: it's a
+        /// player like any other (named, on its team, always ready, a BotBrain on the server). While the wall's up it gets
+        /// on with things on its own side - it moves about and farms trees (its wood goes up). Put right next to us while
+        /// we're in tree camo it leaves us alone (to a bot that's a tree); out of the camo it comes for us and hits us.
+        /// Removing it takes it out.
+        /// </summary>
         IEnumerator BotsRoutine(PlayerNet me, PlayerController pc)
         {
             var g = NetGame.Instance;
+            g.TimerPaused.Value = true; // (the wall stays up the whole test)
             int team = me.Team.Value, enemy = (team + 1) % Mathf.Max(2, Cfg.TeamCount);
             int before = PlayerNet.All.Count;
             bool added = PlayerNet.ServerAddBot(enemy);
@@ -73,23 +76,43 @@ namespace RockGame
             foreach (var p in PlayerNet.All) if (p != null && p.Bot.Value) bot = p;
             Check(added && bot != null && PlayerNet.All.Count == before + 1, $"a bot joined ({PlayerNet.All.Count - before} new player)");
             if (bot == null) { Application.Quit(1); yield break; }
-            Check(bot.Team.Value == enemy && bot.LobbyReady.Value && bot.DisplayName.StartsWith("Bot") && bot.GetComponent<BotBrain>() != null && !bot.Mine && PlayerNet.Local == me,
+            var brain = bot.GetComponent<BotBrain>();
+            Check(bot.Team.Value == enemy && bot.LobbyReady.Value && bot.DisplayName.StartsWith("Bot") && brain != null && !bot.Mine && PlayerNet.Local == me,
                 $"it's on the enemy team ({bot.Team.Value}), ready, named {bot.DisplayName}, run by a BotBrain - and not this PC's player");
-            // it roams (the wall's up: round its own base)
+            if (brain == null) { Application.Quit(1); yield break; }
+            // it moves about on its own (the wall's up: on its own side)
             if (bot.Dead.Value) bot.ServerRespawn(false);
             yield return new WaitForSeconds(0.5f);
             var p0 = bot.transform.position;
             yield return new WaitForSeconds(3f);
-            Check(Vector3.Distance(bot.transform.position, p0) > 1.5f, $"it moves about on its own ({Vector3.Distance(bot.transform.position, p0):0.0} m in 3 s)");
-            // put it right by us: it comes for us and hits
-            g.TimerPaused.Value = true;
+            Check(Vector3.Distance(bot.transform.position, p0) > 1.5f, $"it moves about on its own ({Vector3.Distance(bot.transform.position, p0):0.0} m in 3 s, {brain.Job})");
+            // it farms: its wood goes up
+            var wood = Cfg.GatherItem(Item.Wood);
+            int w0 = bot.Count(wood);
+            float until = Time.time + 45f;
+            while (Time.time < until && bot.Count(wood) <= w0) yield return null;
+            Check(bot.Count(wood) > w0, $"while the wall's up it farms trees: +{bot.Count(wood) - w0} {wood} ({brain.FarmHits} hits, {brain.Job}, a {brain.Leaning})");
+            Check(Cfg.RegionOf(bot.transform.position) == Cfg.RegionOf(Cfg.BaseCenter[enemy]), "...on its own side of the glass");
+            yield return Snap("bots_farming");
+            // in tree camo right next to it: it doesn't see us
             me.Health.Value = Cfg.MaxHealth;
+            me.ServerGive(Item.TreeCamo, 1);
+            yield return new WaitForSeconds(0.3f);
+            yield return Hold(me, Item.TreeCamo);
             var near = me.transform.position + me.transform.forward * 4f;
             near.y = MapBuilder.Height(near.x, near.z) + 0.1f;
             bot.TeleportRpc(near, 0f);
-            float until = Time.time + 8f;
+            yield return new WaitForSeconds(5f);
+            Check(me.TreeCamo && me.Health.Value >= Cfg.MaxHealth && brain.Job != BotBrain.Task.Fight,
+                $"we're in tree camo right by it: it leaves us alone ({me.Health.Value:0} HP, it's on {brain.Job})");
+            // out of the camo: it comes for us and hits
+            for (int i = 0; i < Cfg.PlayerSlots; i++) if (me.SlotAt(i).Id == Item.TreeCamo) me.Inv[i] = default;
+            yield return Hold(me, Item.Rock);
+            me.Health.Value = Cfg.MaxHealth;
+            bot.TeleportRpc(near, 0f);
+            until = Time.time + 8f;
             while (Time.time < until && me.Health.Value >= Cfg.MaxHealth) yield return null;
-            Check(me.Health.Value < Cfg.MaxHealth, $"put next to us, it attacks ({me.Health.Value:0} HP)");
+            Check(me.Health.Value < Cfg.MaxHealth, $"out of the camo, put next to us, it attacks ({me.Health.Value:0} HP, {brain.Job})");
             pc.SetLook(Quaternion.LookRotation(bot.transform.position - me.transform.position).eulerAngles.y, 5f);
             yield return Snap("bots_attacking");
             me.Health.Value = Cfg.MaxHealth;

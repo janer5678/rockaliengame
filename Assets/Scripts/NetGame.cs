@@ -73,6 +73,7 @@ namespace RockGame
         public override void OnNetworkSpawn()
         {
             Instance = this;
+            if (IsServer) LobbyOn.Value = HostReadyLobby; // (the host decides lobby or not, for everyone: NetGame.Lobby.cs)
             Tutorial.Reset();
             State.OnValueChanged += OnStateChanged;
             Tunables.OnValueChanged += OnTunablesChanged;

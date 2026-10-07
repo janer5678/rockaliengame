@@ -2073,18 +2073,8 @@ namespace RockGame
         {
             AimText = "";
             if (m_Net.Dead.Value) return;
-            if (m_Net.CarryingBall && Cfg.Builder)
-            {
-                AimText = $"Carrying the ball!  LMB or {Binds.Name(Bind.Interact)}: put it down (it becomes your team's)";
-                return;
-            }
-            if (m_Net.CarryingBall)
-            {
-                AimText = t.Kind == TargetKind.Machine && t.MachineTeam == m_Net.Team.Value
-                    ? "<color=#77ff77>LMB: throw it into the socket!</color>"
-                    : "Carrying the ball!  LMB: throw it - it snaps into your machine's socket when it gets close";
-                return;
-            }
+            // (carrying the ball: nothing here - the top of the screen already says what to do with it)
+            if (m_Net.CarryingBall) return;
             switch (t.Kind)
             {
                 // (every look-at line is Tip / TeamTip - PlayerController.Tips.cs: the name in capitals and a colour that

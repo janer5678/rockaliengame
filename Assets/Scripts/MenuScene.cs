@@ -15,7 +15,7 @@ namespace RockGame
     /// way). It only fades in from black when the menu comes up (Hud.Menus draws MenuScene.Fade under the menu). And trees (always) stand
     /// in the play space where a match would grow them: only pictures, gone the moment a match starts.
     /// </summary>
-    public static class MenuScene
+    public static partial class MenuScene
     {
         /// <summary>Seconds of the fade in from black as the menu comes up.</summary>
         public const float FadeSeconds = 1.2f;
@@ -135,6 +135,9 @@ namespace RockGame
             if (TestHold) return; // (tests: the camera is theirs - the map pictures)
             float dt = Mathf.Min(Time.unscaledDeltaTime, 0.1f);
             if (MapBuilder.Root == null) return;
+            // the map page: slow shots of the map itself instead of the loop (MenuScene.Shots.cs)
+            if (Preview) { TickShots(cam, dt); return; }
+            s_ShotsRoot = 0;
             int root = MapBuilder.Root.GetInstanceID();
             if (s_Pos == null || root != s_BakedRoot || TreeCount != s_BakedTrees || Preview != s_BakedPreview)
             {

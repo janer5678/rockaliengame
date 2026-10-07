@@ -262,7 +262,7 @@ namespace RockGame
                 Art.Part(tr, Art.MakeRock(Seed.Value + 2, 0.2f), leaf * 1.1f, new Vector3(-0.35f, 0.3f, -0.2f) * OldBushSize, new Vector3(0.45f, 0.35f, 0.4f) * OldBushSize);
                 bushTint.Dispose();
                 // loaded with berries
-                m_Berries = new GameObject[14];
+                m_Berries = new GameObject[24];
                 for (int i = 0; i < m_Berries.Length; i++)
                 {
                     float a = i * 0.9f + r();
@@ -407,9 +407,9 @@ namespace RockGame
                     }
                 }
             }
-            // (bigger berries than they were - BerrySize - and a few fewer of them)
-            int want = 15 + rng.Next(5), made = 0;
-            for (int tries = 0; tries < 300 && made < want; tries++)
+            // (bigger berries than they were - BerrySize - and plenty of them: about twice as many as before)
+            int want = 32 + rng.Next(8), made = 0;
+            for (int tries = 0; tries < 800 && made < want; tries++)
             {
                 int bi = 1 + rng.Next(blobs.Count - 1);
                 var (c, r, squash) = blobs[bi];
@@ -419,7 +419,7 @@ namespace RockGame
                 dir.Normalize();
                 var at = c + new Vector3(dir.x * r, dir.y * r * squash, dir.z * r);
                 if (at.y < 0.2f || Buried(at, bi)) continue;
-                int cluster = 1 + rng.Next(3);
+                int cluster = 2 + rng.Next(3);
                 var side = Vector3.Cross(dir, Vector3.up).normalized;
                 var up = Vector3.Cross(side, dir);
                 for (int k = 0; k < cluster && made < want; k++)

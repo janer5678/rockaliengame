@@ -276,8 +276,9 @@ namespace RockGame
                 GUILayout.Label("<color=#bbbbbb>Outlines: dark ink lines round things and along sharp folds, fading with distance. Ambient occlusion: deeper soft shadows in corners, creases and under things. Distance haze: far things fade into a pale sky colour. Depth of field: far away goes softly out of focus. Film grain: fine animated noise. Chromatic aberration: a hint of colour fringing towards the edges. Sharpen: crisper edges. Cel banding: the light falls in a few flat steps, like a cartoon.</color>", m_SmallWrap);
             }
             else if (defaults) for (int i = 0; i < GameSettings.PostExtraCount; i++) GameSettings.SetPostExtra((GameSettings.PostExtra)i, DisplayDefaults.PostExtraOn(i), DisplayDefaults.PostExtraStrength(i));
-            if (defaults) { GameSettings.ResetHandsLook(); GameSettings.ResetNotifLook(); GameSettings.ResetMenuPost(); }
+            if (defaults) { GameSettings.ResetHandsLook(); GameSettings.ResetNotifLook(); GameSettings.ResetMenuPost(); GameSettings.ResetTimer(); GameSettings.ResetLobby(); }
             if (on) DrawLayerLooks();
+            DrawTimerAndLobbyLooks(); // (LobbyLooks.cs: the lobby's post processing only shows while post processing is on)
         }
 
         bool m_HandsLooksOpen, m_NotifLooksOpen, m_MenuLooksOpen;

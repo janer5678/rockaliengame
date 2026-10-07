@@ -4,7 +4,7 @@ using UnityEngine;
 namespace RockGame
 {
     // new kinds go at the end (they're sent over the network as bytes)
-    public enum FxKind : byte { Blood, BloodHead, WoodChips, StoneChips, WeakSpot, Break, Smash, StructureHit, Spawn, C4Placed, Explosion, WandBeam, HelmetBreak, Craft, Drink, AirstrikeWarn, SniperTracer, PortalOpen, Timber, WeakSpotTree, Heal, BloodKill, LogBreak, PistolTracer, RevolverTracer, ShotgunTracer }
+    public enum FxKind : byte { Blood, BloodHead, WoodChips, StoneChips, WeakSpot, Break, Smash, StructureHit, Spawn, C4Placed, Explosion, WandBeam, HelmetBreak, Craft, Drink, AirstrikeWarn, SniperTracer, PortalOpen, Timber, WeakSpotTree, Heal, BloodKill, LogBreak, PistolTracer, RevolverTracer, ShotgunTracer, Poof }
 
     /// <summary>
     /// Game feel: particles (blood, chips, sparks), camera shake/kick, floating damage numbers and sounds.
@@ -131,6 +131,16 @@ namespace RockGame
                 case FxKind.Drink:
                     for (int i = 0; i < 8; i++) FxParticle.Puff(pos + Random.insideUnitSphere * 0.6f + Vector3.up, new Color(0.7f, 0.4f, 1f, 0.5f), Random.Range(0.4f, 0.8f));
                     Sfx.Play(Sfx.Zap, pos, 0.5f);
+                    break;
+                case FxKind.Poof:
+                    // something vanishing (a horse killed): a big soft cloud bursting out and drifting up as it fades
+                    for (int i = 0; i < 22; i++)
+                    {
+                        var off = Vector3.Scale(Random.insideUnitSphere, new Vector3(1.1f, 0.7f, 1.1f));
+                        var vel = new Vector3(off.x, 0f, off.z).normalized * Random.Range(1.2f, 2.6f) + Vector3.up * Random.Range(0.3f, 1.1f);
+                        FxParticle.Puff(pos + off, new Color(0.93f, 0.92f, 0.9f, 0.75f), Random.Range(0.9f, 1.7f), Random.Range(0.8f, 1.4f), vel);
+                    }
+                    Sfx.Play(Sfx.Pop, pos, 1f, 0.15f);
                     break;
                 case FxKind.Heal:
                     // a horse fed a berry: green puffs rising off it and a munch
@@ -1010,6 +1020,17 @@ namespace RockGame
             s_Alive++;
         }
 
+        /// <summary>A soft puff that lives `life` seconds, drifting off along `vel` (slowing down) as it swells and fades.</summary>
+        public static void Puff(Vector3 pos, Color c, float size, float life, Vector3 vel)
+        {
+            var mat = new Material(Art.Ghost(c));
+            var go = Art.Part(null, Art.Ico, c, pos, Vector3.one * size * 0.4f, Random.rotation.eulerAngles, false, mat);
+            go.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            var p = go.AddComponent<FxParticle>();
+            p.m_Life = p.m_Max = life; p.m_Size = size; p.m_Puff = true; p.m_PuffMat = mat; p.m_PuffColor = c; p.m_Vel = vel;
+            s_Alive++;
+        }
+
         public static void Puff(Vector3 pos, Color c, float size)
         {
             var mat = new Material(Art.Ghost(c));
@@ -1050,6 +1071,7 @@ namespace RockGame
             float k = m_Life / m_Max;
             if (m_Puff)
             {
+                if (m_Vel.sqrMagnitude > 0.0001f) { transform.position += m_Vel * dt; m_Vel *= Mathf.Exp(-2.2f * dt); }
                 transform.localScale = Vector3.one * m_Size * Mathf.Lerp(1.3f, 0.4f, k);
                 var c = m_PuffColor; c.a *= k;
                 m_PuffMat.SetColor("_BaseColor", c);

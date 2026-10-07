@@ -33,7 +33,20 @@ namespace RockGame
 
         /// <summary>The ship lobby (ShipLobby.cs): the match starts once at least two players are in and every one of them
         /// has pressed READY (it needn't be full). The tests (Bootstrap.Testing) keep the old rule: a full lobby starts.</summary>
-        public static bool ReadyLobby => (!Bootstrap.Testing || TestLobby) && !Bootstrap.Solo; // (the tutorial with a friend too)
+        /// The host decides it and everyone else follows the host (LobbyOn): a client's own leftover settings (it played
+        /// solo before joining, say) can never put it in the old waiting stadium while the others are in the lobby.
+        public static bool ReadyLobby
+        {
+            get
+            {
+                var g = Instance;
+                if (g != null && g.IsSpawned && !g.IsServer) return g.LobbyOn.Value;
+                return HostReadyLobby;
+            }
+        }
+        static bool HostReadyLobby => (!Bootstrap.Testing || TestLobby) && !Bootstrap.Solo; // (the tutorial with a friend too)
+        /// <summary>The host's ReadyLobby, synced to everyone (set as the match spawns: NetGame.OnNetworkSpawn).</summary>
+        public readonly NetworkVariable<bool> LobbyOn = new NetworkVariable<bool>(true);
         /// <summary>(tests: -autotest lobby) the ship lobby and READY, as in a real game.</summary>
         public static bool TestLobby;
 

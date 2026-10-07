@@ -172,6 +172,7 @@ namespace RockGame
 
         public void Join()
         {
+            Solo = false; // (joining is never solo - a solo game played before mustn't stick: the host decides the lobby)
             Status = "Connecting to " + Ip + ":" + ParsedPort + " ...";
             m_Ut.SetConnectionData(Ip.Trim(), ParsedPort);
             // our name goes with the request: if we end up spectating it's what the others see (Spectator.cs)

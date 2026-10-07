@@ -122,74 +122,102 @@ namespace RockGame
         int m_TopSecond = -1;
 
         /// <summary>
-        /// The top-centre header in a match: a dark plate with the phase's accent along it - its label on a chip ("WALL
-        /// DROPS IN", "TIME LEFT", "OVERTIME", "SUDDEN DEATH"...), the clock big in inked digits that tick in with a little
-        /// pop every second, the mode on a tag at the end - a bar under it draining through the phase with a bright head,
-        /// and the line about what to do under that. In the phase's last 30 seconds the clock and its bar pulse. Returns
-        /// how tall it is (the mode chips go under it).
+        /// The top-centre header in a match: a dark plate with the phase's accent along it - its label ("WALL DROPS IN",
+        /// "TIME LEFT", "SUDDEN DEATH"...), the clock in inked digits, the mode on a tag the same size as the label - a bar
+        /// under it draining in from both ends to the middle through the phase, and the line about what to do under that.
+        /// Calm until the phase's final minute: only then does the clock pop each second and the clock and bar pulse red.
+        /// OVERTIME is loud: the plate throbs red, the word shakes and glows, the edges flash. Settings > Display > TIMER
+        /// sizes and trims it (LobbyLooks.cs). Returns how tall it is (the mode chips go under it).
         /// </summary>
         float DrawTopPanel(NetGame game, string label, string clock, string tag, string sub, Color accent, float left, float k)
         {
             EnsureNotifyTextures();
+            k *= 0.82f * GameSettings.TimerSizeNow; // (smaller than it was)
             float sw = Screen.width, cx = sw / 2f, y = 8f;
+            if (!GameSettings.TimerAccentNow) accent = new Color(0.92f, 0.92f, 0.92f);
+            bool overtime = game != null && game.S == GameState.BallLive && game.Overtime.Value;
+            if (overtime) accent = new Color(1f, 0.22f, 0.15f);
             // the phase's length (for the bar): what the clock read when the phase began
             var st = game != null ? game.S : GameState.Waiting;
             if (st != m_TopState) { m_TopState = st; m_TopTotal = Mathf.Max(1f, left); }
             if (left > m_TopTotal) m_TopTotal = left;
             int sec = left >= 0f ? Mathf.CeilToInt(left) : -1;
             if (sec != m_TopSecond) { m_TopSecond = sec; m_TopSecondAt = Time.time; }
-            bool urgent = left >= 0f && left <= 30f;
-            float pulse = urgent ? 0.5f + 0.5f * Mathf.Sin(Time.time * 7f) : 0f;
+            bool timed = game != null && (game.S == GameState.PreBall || game.S == GameState.BallLive || game.S == GameState.SuddenDeath);
+            bool final = timed && left >= 0f && left <= 60f && GameSettings.TimerFlashNow; // (only the final minute flashes)
+            float pulse = final ? 0.5f + 0.5f * Mathf.Sin(Time.time * 7f) : 0f;
+            float beat = overtime ? Mathf.Pow(Mathf.Abs(Mathf.Sin(Time.time * 3.4f)), 6f) : 0f; // (a heartbeat)
             // the plate
-            float pw = 640 * k, plateH = 64 * k;
-            Tinted(new Rect(cx - pw * 0.62f, y, pw * 1.24f, plateH), s_BandTex, new Color(0f, 0f, 0f, 0.6f));
-            Fill(new Rect(cx - pw * 0.42f, y, pw * 0.84f, 2 * k), new Color(accent.r, accent.g, accent.b, 0.85f));
-            // the label chip, left of the clock
-            var lst = new GUIStyle(m_Label) { fontSize = Mathf.RoundToInt(19 * k), fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
+            float pw = 600 * k, plateH = 56 * k;
+            float plate = GameSettings.TimerPlateNow;
+            Tinted(new Rect(cx - pw * 0.62f, y, pw * 1.24f, plateH), s_BandTex, new Color(0f, 0f, 0f, plate));
+            if (overtime)
+            {
+                Tinted(new Rect(cx - pw * 0.7f, y - 10 * k, pw * 1.4f, plateH + 20 * k), s_BandTex, new Color(0.7f, 0.02f, 0.02f, 0.35f + 0.4f * beat));
+                Tinted(new Rect(cx - 260 * k, y - 60 * k, 520 * k, plateH + 120 * k), s_GlowTex, new Color(1f, 0.15f, 0.1f, 0.25f + 0.35f * beat));
+                Fill(new Rect(cx - pw * 0.5f, y + plateH - 2 * k, pw, 2 * k), new Color(1f, 0.3f, 0.2f, 0.5f + 0.5f * beat));
+            }
+            Fill(new Rect(cx - pw * 0.42f, y, pw * 0.84f, 2 * k), new Color(accent.r, accent.g, accent.b, overtime ? 0.6f + 0.4f * beat : 0.85f));
             bool hasClock = !string.IsNullOrEmpty(clock);
-            float clockW = hasClock ? 150 * k : 0f;
-            var labelR = hasClock ? new Rect(cx - clockW / 2f - 260 * k, y + 6 * k, 250 * k, plateH - 12 * k) : new Rect(0, y + 6 * k, sw, plateH - 12 * k);
-            if (!hasClock) lst.alignment = TextAnchor.MiddleCenter;
-            if (!hasClock) lst.fontSize = Mathf.RoundToInt(26 * k);
-            InkText(labelR, $"<color=#{ColorUtility.ToHtmlStringRGB(accent)}>{label}</color>", lst, Color.white, new Color(0f, 0f, 0f, 0.8f), 1.5f * k);
-            // the clock: big inked digits, popping in each second (redder in the last 30)
+            float clockW = hasClock ? 130 * k : 0f;
+            float labelFont = 17 * k;
+            // the label, left of the clock (alone and bigger without one; OVERTIME shakes)
+            var lst = new GUIStyle(m_Label) { fontSize = Mathf.RoundToInt(labelFont), fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
+            var labelR = hasClock ? new Rect(cx - clockW / 2f - 250 * k, y + 4 * k, 240 * k, plateH - 8 * k) : new Rect(0, y + 4 * k, sw, plateH - 8 * k);
+            if (!hasClock) { lst.alignment = TextAnchor.MiddleCenter; lst.fontSize = Mathf.RoundToInt((overtime ? 34f * (1f + 0.08f * beat) : 24f) * k); lst.clipping = TextClipping.Overflow; }
+            if (overtime)
+            {
+                labelR.x += (Mathf.PerlinNoise(Time.time * 30f, 1f) - 0.5f) * 5f * k * (0.4f + beat);
+                labelR.y += (Mathf.PerlinNoise(2f, Time.time * 30f) - 0.5f) * 4f * k * (0.4f + beat);
+                InkText(labelR, label, lst, Color.Lerp(new Color(1f, 0.3f, 0.2f), Color.white, beat * 0.7f), new Color(0.15f, 0f, 0f, 0.95f), 2.5f * k);
+            }
+            else InkText(labelR, $"<color=#{ColorUtility.ToHtmlStringRGB(accent)}>{label}</color>", lst, Color.white, new Color(0f, 0f, 0f, 0.8f), 1.5f * k);
+            // the clock: inked digits - steady, except in the final minute (a pop each second, pulsing red)
             if (hasClock)
             {
                 float since = Time.time - m_TopSecondAt;
-                float pop = 1f + (urgent ? 0.18f : 0.08f) * Mathf.Exp(-9f * since);
-                var cst = new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt(46 * k * pop), alignment = TextAnchor.MiddleCenter, clipping = TextClipping.Overflow };
-                var fill = urgent ? Color.Lerp(Color.white, new Color(1f, 0.35f, 0.25f), 0.4f + 0.6f * pulse) : Color.Lerp(accent, Color.white, Mathf.Exp(-6f * since) * 0.8f + 0.35f);
-                InkText(new Rect(cx - clockW / 2f, y, clockW, plateH), clock, cst, fill, new Color(0f, 0f, 0f, 0.9f), 3f * k);
+                float pop = final ? 1f + 0.16f * Mathf.Exp(-9f * since) : 1f;
+                var cst = new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt(40 * k * pop), alignment = TextAnchor.MiddleCenter, clipping = TextClipping.Overflow };
+                var fill = final ? Color.Lerp(Color.white, new Color(1f, 0.35f, 0.25f), 0.4f + 0.6f * pulse) : Color.Lerp(accent, Color.white, 0.55f);
+                InkText(new Rect(cx - clockW / 2f, y, clockW, plateH), clock, cst, fill, new Color(0f, 0f, 0f, 0.9f), 2.5f * k);
             }
-            // the mode's tag, right of the clock
-            if (!string.IsNullOrEmpty(tag) && hasClock)
+            // the mode's tag, right of the clock: the same size as the label
+            if (!string.IsNullOrEmpty(tag) && GameSettings.TimerTagNow)
             {
-                var tst = new GUIStyle(m_Label) { fontSize = Mathf.RoundToInt(14 * k), fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+                var tst = new GUIStyle(m_Label) { fontSize = Mathf.RoundToInt(labelFont), fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
                 float tw = tst.CalcSize(new GUIContent(tag)).x + 18 * k;
-                var tr = new Rect(cx + clockW / 2f + 14 * k, y + plateH / 2f - 12 * k, tw, 24 * k);
-                Fill(tr, new Color(accent.r * 0.35f, accent.g * 0.35f, accent.b * 0.35f, 0.85f));
+                float tx = hasClock ? cx + clockW / 2f + 12 * k : cx + lst.CalcSize(new GUIContent(label)).x / 2f + 20 * k;
+                var tr = new Rect(tx, y + plateH / 2f - 13 * k, tw, 26 * k);
+                Fill(tr, new Color(accent.r * 0.3f, accent.g * 0.3f, accent.b * 0.3f, 0.85f));
                 Frame(tr, new Color(accent.r, accent.g, accent.b, 0.9f), 1.5f);
                 GUI.Label(tr, $"<color=#{ColorUtility.ToHtmlStringRGB(Color.Lerp(accent, Color.white, 0.4f))}>{tag}</color>", tst);
             }
             y += plateH;
-            // the bar: draining through the phase, a bright head at its end
-            if (left >= 0f && game != null && game.S != GameState.Waiting)
+            // the bar: draining in from both ends, meeting in the middle at the end of the phase
+            if (GameSettings.TimerBarNow && game != null && game.S != GameState.Waiting && (left >= 0f || overtime))
             {
-                float bw = pw * 0.84f, frac = Mathf.Clamp01(left / m_TopTotal);
-                var br = new Rect(cx - bw / 2f, y, bw, 5 * k);
+                float bw = pw * 0.84f, frac = overtime ? 1f : Mathf.Clamp01(left / m_TopTotal);
+                var br = new Rect(cx - bw / 2f, y, bw, 4 * k);
                 Fill(br, new Color(0f, 0f, 0f, 0.55f));
-                var bc = urgent ? Color.Lerp(accent, new Color(1f, 0.3f, 0.2f), pulse) : accent;
-                Fill(new Rect(br.x, br.y, br.width * frac, br.height), bc);
-                Tinted(new Rect(br.x + br.width * frac - 14 * k, br.y - 6 * k, 28 * k, br.height + 12 * k), s_GlowTex, new Color(1f, 1f, 1f, 0.7f));
-                y += 7 * k;
+                var bc = overtime ? Color.Lerp(new Color(0.8f, 0.1f, 0.08f), new Color(1f, 0.6f, 0.5f), beat) : final ? Color.Lerp(accent, new Color(1f, 0.3f, 0.2f), pulse) : accent;
+                float half = bw * frac / 2f;
+                Fill(new Rect(cx - half, br.y, half * 2f, br.height), bc);
+                if (!overtime && frac > 0.002f)
+                {
+                    Tinted(new Rect(cx - half - 12 * k, br.y - 5 * k, 24 * k, br.height + 10 * k), s_GlowTex, new Color(1f, 1f, 1f, 0.6f));
+                    Tinted(new Rect(cx + half - 12 * k, br.y - 5 * k, 24 * k, br.height + 10 * k), s_GlowTex, new Color(1f, 1f, 1f, 0.6f));
+                }
+                y += 6 * k;
             }
             // the line about what to do
-            int lines = string.IsNullOrEmpty(sub) ? 0 : sub.Split('\n').Length;
+            int lines = string.IsNullOrEmpty(sub) || !GameSettings.TimerSubNow ? 0 : sub.Split('\n').Length;
             if (lines > 0)
             {
-                float sh2 = lines * 22 * k + 6 * k;
-                Tinted(new Rect(cx - pw * 0.55f, y, pw * 1.1f, sh2), s_BandTex, new Color(0f, 0f, 0f, 0.45f));
-                Shadowed(new Rect(0, y + 3 * k, sw, lines * 22 * k), sub, new GUIStyle(m_Center) { fontSize = Mathf.RoundToInt(16 * k) });
+                float sh2 = lines * 20 * k + 6 * k;
+                Tinted(new Rect(cx - pw * 0.55f, y, pw * 1.1f, sh2), s_BandTex, new Color(0f, 0f, 0f, plate * 0.75f));
+                var sst = new GUIStyle(m_Center) { fontSize = Mathf.RoundToInt(15 * k) };
+                if (overtime) sub = $"<color=#ffb0a0>{sub}</color>";
+                Shadowed(new Rect(0, y + 3 * k, sw, lines * 20 * k), sub, sst);
                 y += sh2;
             }
             return y - 8f;
@@ -200,7 +228,7 @@ namespace RockGame
         {
             string s = title ?? "";
             if (s.Contains("UNLOCK")) return new Color(1f, 0.88f, 0.2f);   // (yellow)
-            if (s.Contains("AIRDROP")) return new Color(0.75f, 0.4f, 1f);  // (purple)
+            if (s.Contains("AIRDROP")) return new Color(1f, 0.38f, 0.78f);  // (pink)
             if (s.Contains("WALL") || s.Contains("DROP")) return new Color(0.4f, 0.85f, 1f);
             if (s.Contains("DESTROY") || s.Contains("DOWN") || s.Contains("OUT")) return new Color(1f, 0.3f, 0.25f);
             return new Color(1f, 0.85f, 0.3f);
@@ -216,7 +244,7 @@ namespace RockGame
             float open = 1f - Mathf.Pow(1f - inT, 3f);                 // the band snapping open
             float lift = outT * outT * 40f * k;                        // ...and lifting away at the end
             float alpha = 1f - outT;
-            float cx = sw / 2f, by = sh * 0.2f - 10 * k - lift, bh = 112 * k, bw = Mathf.Min(sw, 1100 * k) * open;
+            float cx = sw / 2f, by = sh * 0.27f - lift, bh = 66 * k, bw = Mathf.Min(sw, 820 * k) * open; // (smaller and lower than it was; just the title)
             Tinted(new Rect(cx - bw / 2f, by, bw, bh), s_BandTex, new Color(0f, 0f, 0f, 0.62f * alpha));
             // accent lines racing out along the band's edges
             float lines = 1f - Mathf.Pow(1f - Mathf.Clamp01((age - 0.08f) / 0.45f), 3f);
@@ -228,21 +256,18 @@ namespace RockGame
             float tt = Mathf.Clamp01((age - 0.05f) / 0.5f);
             float bounce = 1f + 0.45f * Mathf.Exp(-6f * tt) * Mathf.Cos(tt * 16f) * (tt > 0f ? 1f : 0f);
             float ta = Mathf.Clamp01((age - 0.05f) / 0.12f) * alpha;
-            var tst = new GUIStyle(m_Big) { fontSize = Mathf.Max(8, Mathf.RoundToInt(52 * k * bounce)), alignment = TextAnchor.MiddleCenter, clipping = TextClipping.Overflow };
+            var tst = new GUIStyle(m_Big) { fontSize = Mathf.Max(8, Mathf.RoundToInt(38 * k * bounce)), alignment = TextAnchor.MiddleCenter, clipping = TextClipping.Overflow };
             var fill = Color.Lerp(Color.white, accent, Mathf.Clamp01((age - 0.1f) * 3f));
             fill.a = ta;
-            InkText(new Rect(0, by + 4 * k, sw, 66 * k), title, tst, fill, new Color(0f, 0f, 0f, 0.9f * ta), 3.5f * k);
+            InkText(new Rect(0, by + 4 * k, sw, bh - 8 * k), title, tst, fill, new Color(0f, 0f, 0f, 0.9f * ta), 3f * k);
             // a glint sweeping across the title
             float g = Mathf.Clamp01((age - 0.35f) / 0.55f);
             if (g > 0f && g < 1f)
             {
                 float gx = cx - bw * 0.4f + bw * 0.8f * g;
-                Tinted(new Rect(gx - 30 * k, by + 8 * k, 60 * k, 58 * k), s_GlintTex, new Color(1f, 1f, 1f, 0.35f * Mathf.Sin(g * Mathf.PI) * alpha));
+                Tinted(new Rect(gx - 24 * k, by + 6 * k, 48 * k, bh - 12 * k), s_GlintTex, new Color(1f, 1f, 1f, 0.35f * Mathf.Sin(g * Mathf.PI) * alpha));
             }
-            // the line under it
-            float sa = Mathf.Clamp01((age - 0.25f) / 0.3f) * alpha;
-            var sst = new GUIStyle(m_Center) { fontSize = Mathf.RoundToInt(19 * k), alignment = TextAnchor.MiddleCenter };
-            InkText(new Rect(0, by + 68 * k, sw, 34 * k), sub, sst, new Color(1f, 1f, 1f, sa), new Color(0f, 0f, 0f, 0.8f * sa), 1.5f * k);
+            // (no line under it any more: just the title)
         }
     }
 }

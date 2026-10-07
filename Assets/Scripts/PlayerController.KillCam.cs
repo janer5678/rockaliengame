@@ -4,30 +4,42 @@ namespace RockGame
 {
     public static partial class Cfg
     {
-        /// <summary>The kill cam: how long, after you're killed, the camera shows who did it.</summary>
-        [Tune("Player")] public static float KillCamTime = 3.5f;
+        /// <summary>The kill cam: how long, after you're killed, the camera looks at who did it (then the replay).</summary>
+        [Tune("Player")] public static float KillCamTime = 1.2f;
     }
 
     /// <summary>
     /// The kill cam: killed by someone, the camera leaves your eyes and glides over to them - stopping a few metres off,
-    /// a little above and to one side, looking them in the face - and holds there for Cfg.KillCamTime, while the HUD says
-    /// who it was, what they had and how much health they've left (Hud.cs, under YOU DIED). Then it's back to the usual
-    /// death screen. Not after a fall, the void or your own C4 (nobody to look at).
+    /// a little above and to one side, looking them in the face - for Cfg.KillCamTime, while the HUD says who it was,
+    /// what they had and how much health they've left (Hud.Death.cs). Then the replay (DeathReplay.cs): the last seconds
+    /// again, out of the killer's eyes, so you see how you died (jump skips it). Then the usual death screen. Not after
+    /// a fall, the void or your own C4 (nobody to look at).
     /// </summary>
     public partial class PlayerController
     {
         float m_DiedAt = -1f;
         Vector3 m_KillCamFrom;
         Quaternion m_KillCamFromRot;
+        bool m_Replay, m_KcDone;
+        float m_ReplayT = -1f;
 
         /// <summary>Who the kill cam is looking at right now (null: it isn't on).</summary>
         public PlayerNet KillCamTarget { get; private set; }
+        /// <summary>The kill cam's replay is playing (out of the killer's eyes), and how far into it it is (s).</summary>
+        public bool KillCamReplay => m_ReplayT >= 0f;
+        public float KillCamReplayT => m_ReplayT;
 
         /// <summary>LateUpdate: runs the kill cam while it's on (true: it has the camera).</summary>
         bool TickKillCam()
         {
             KillCamTarget = null;
-            if (!m_Net.Dead.Value) { m_DiedAt = -1f; return false; }
+            m_ReplayT = -1f;
+            if (!m_Net.Dead.Value)
+            {
+                if (m_DiedAt >= 0f) DeathReplay.End();
+                m_DiedAt = -1f; m_Replay = false; m_KcDone = false;
+                return false;
+            }
             if (m_DiedAt < 0f)
             {
                 m_DiedAt = Time.time;
@@ -35,10 +47,21 @@ namespace RockGame
                 m_KillCamFromRot = m_Cam.transform.rotation;
             }
             float t = Time.time - m_DiedAt;
-            if (t > Cfg.KillCamTime || m_Net.KilledBy.Value == 0) return false;
+            if (m_KcDone || m_Net.KilledBy.Value == 0) return false;
             PlayerNet k = null;
             foreach (var p in PlayerNet.All) if (p != null && p.IsSpawned && p.NetworkObjectId == m_Net.KilledBy.Value) { k = p; break; }
-            if (k == null) return false;
+            if (k == null || k == m_Net) { DeathReplay.End(); return false; }
+            if (t > Cfg.KillCamTime)
+            {
+                // the replay: the last seconds again, out of the killer's eyes
+                if (!m_Replay) { m_Replay = true; if (!DeathReplay.Begin(m_Net, k)) m_KcDone = true; }
+                if (Binds.Down(Bind.Jump)) m_KcDone = true;
+                float rt = t - Cfg.KillCamTime;
+                if (m_KcDone || !DeathReplay.Play(rt, m_Cam)) { DeathReplay.End(); m_KcDone = true; return false; }
+                KillCamTarget = k;
+                m_ReplayT = rt;
+                return true;
+            }
             KillCamTarget = k;
             var head = k.transform.position + Vector3.up * 1.55f;
             var away = m_KillCamFrom - head;

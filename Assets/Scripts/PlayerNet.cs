@@ -756,6 +756,26 @@ namespace RockGame
             m_Anim.GripPose(out var gp, out var gr);
             m_Hand.SetPositionAndRotation(gp, gr);
             if (m_HandItem) m_HandItem.transform.localRotation = Quaternion.identity;
+            SlideDust();
+        }
+
+        float m_NextDust;
+        Vector3 m_DustLast;
+
+        /// <summary>Every screen: a player sliding along the ground kicks up dust behind their feet.</summary>
+        void SlideDust()
+        {
+            var pos = transform.position;
+            var moved = pos - m_DustLast;
+            m_DustLast = pos;
+            if ((BodyAnimator.Act)Action.Value != BodyAnimator.Act.Slide || Dead.Value || Riding || Time.time < m_NextDust) return;
+            m_NextDust = Time.time + 0.045f;
+            if (!Physics.Raycast(pos + Vector3.up * 0.3f, Vector3.down, out var hit, 0.7f, ~(1 << HitboxLayer), QueryTriggerInteraction.Ignore)) return; // (only on the ground)
+            moved.y = 0f;
+            var back = moved.sqrMagnitude > 0.00001f ? -moved.normalized : -transform.forward;
+            var at = hit.point + back * 0.25f + Random.insideUnitSphere * 0.15f + Vector3.up * 0.08f;
+            var vel = back * Random.Range(0.6f, 1.4f) + Vector3.up * Random.Range(0.4f, 0.9f) + Vector3.Cross(Vector3.up, back) * Random.Range(-0.6f, 0.6f);
+            FxParticle.Puff(at, new Color(0.78f, 0.72f, 0.6f, 0.55f), Random.Range(0.35f, 0.6f), Random.Range(0.5f, 0.8f), vel);
         }
 
         // =====================================================================
@@ -1760,7 +1780,28 @@ namespace RockGame
             }
             var dst = dstKind == 1 ? c.Slots : Inv;
             if (dstIdx >= dst.Count) return;
-            InvOps.Move(src, srcIdx, dst, dstIdx, amount, srcKind == 1 && c.TakeOnly);
+            bool takeOnly = srcKind == 1 && c.TakeOnly;
+            if (InvOps.Move(src, srcIdx, dst, dstIdx, amount, takeOnly) || !takeOnly || dstKind != 0) return;
+            // dragged out of an airdrop (or a loot bag) onto a slot that's taken: nothing can be swapped back into it, so it
+            // goes in that slot and what was there moves elsewhere in your bag - or, with no room for that, it goes wherever
+            // it fits (it used to just snap back into the crate)
+            var a = src[srcIdx];
+            var b = Inv[dstIdx];
+            if (a.Empty) return;
+            if (!b.Empty)
+            {
+                Inv[dstIdx] = default;
+                int room = InvOps.Space(Inv, b.Id, b.Data) - Cfg.MaxStack(b.Id); // (not counting the slot the airdrop's item is going in)
+                if (room >= b.Count)
+                {
+                    InvOps.Add(Inv, b.Id, b.Count, b.Data, true, dstIdx);
+                    Inv[dstIdx] = a;
+                    src[srcIdx] = default;
+                    return;
+                }
+                Inv[dstIdx] = b;
+            }
+            if (!InvOps.QuickMove(src, srcIdx, Inv, true)) Notify("Inventory full!");
         }
 
         [Rpc(SendTo.Server)]

@@ -264,6 +264,12 @@ namespace RockGame
             Pref(GameSettings.MenuOwn, GameSettings.MenuBloom, GameSettings.MenuBloomStrength, GameSettings.MenuVignette, GameSettings.MenuVignetteStrength,
                 GameSettings.MenuGrading, GameSettings.MenuGradingStrength, GameSettings.MenuOutlines, GameSettings.MenuOutlinesStrength, GameSettings.MenuCel,
                 GameSettings.MenuCelStrength, GameSettings.MenuGrain, GameSettings.MenuGrainStrength, GameSettings.MenuChromatic, GameSettings.MenuChromaticStrength);
+            Pref(GameSettings.TimerOwn, GameSettings.TimerSize, GameSettings.TimerPlate, GameSettings.TimerBar, GameSettings.TimerSub, GameSettings.TimerTag,
+                GameSettings.TimerFlash, GameSettings.TimerAccent);
+            Pref(GameSettings.LobbyOwn, GameSettings.LobbyBloom, GameSettings.LobbyBloomStrength, GameSettings.LobbyVignette, GameSettings.LobbyVignetteStrength,
+                GameSettings.LobbyGrading, GameSettings.LobbyGradingStrength, GameSettings.LobbyOutlines, GameSettings.LobbyOutlinesStrength, GameSettings.LobbyCel,
+                GameSettings.LobbyCelStrength, GameSettings.LobbyGrain, GameSettings.LobbyGrainStrength, GameSettings.LobbyChromatic, GameSettings.LobbyChromaticStrength,
+                GameSettings.LobbyDark, GameSettings.LobbyLamp, GameSettings.LobbyTv, GameSettings.LobbyWindow, GameSettings.LobbySway, GameSettings.LobbySmoke, GameSettings.LobbyFov);
             Pref(GameSettings.NotifOwn, GameSettings.NotifCel, GameSettings.NotifCelStrength, GameSettings.NotifOutline, GameSettings.NotifOutlineWidth,
                 GameSettings.NotifOutlineColour, GameSettings.NotifOutlineOpacity, GameSettings.NotifBloom, GameSettings.NotifBloomStrength,
                 GameSettings.NotifSaturation, GameSettings.NotifContrast);

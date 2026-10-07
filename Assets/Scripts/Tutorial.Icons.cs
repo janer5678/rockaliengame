@@ -43,9 +43,14 @@ namespace RockGame
         /// <summary>The left mouse button icon, as a token in a text (drawn by IconText / IconLine).</summary>
         public static string LmbIcon => Icon(MouseLeftId);
 
-        /// <summary>Every "LMB" in a hint turned into the left mouse button icon.</summary>
-        public static string WithMouseIcons(string s) =>
-            string.IsNullOrEmpty(s) || s.IndexOf("LMB", StringComparison.Ordinal) < 0 ? s : s.Replace("[LMB]", Icon(MouseLeftId)).Replace("LMB", Icon(MouseLeftId));
+        /// <summary>Every "LMB" / "RMB" in a hint turned into the left / right mouse button icon.</summary>
+        public static string WithMouseIcons(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return s;
+            if (s.IndexOf("LMB", StringComparison.Ordinal) >= 0) s = s.Replace("[LMB]", Icon(MouseLeftId)).Replace("LMB", Icon(MouseLeftId));
+            if (s.IndexOf("RMB", StringComparison.Ordinal) >= 0) s = s.Replace("[RMB]", Icon(MouseRightId)).Replace("RMB", Icon(MouseRightId));
+            return s;
+        }
 
         /// <summary>A wrapped text with its icons (left aligned, from the top of `r`).</summary>
         public static void IconText(Rect r, string text, GUIStyle st, Action<Rect, string, GUIStyle> shadowed = null) => RichDraw(r, text, st, shadowed);

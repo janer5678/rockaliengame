@@ -243,10 +243,13 @@ namespace RockGame
             if (!boot.InSession) { DrawMainMenu(boot); return; }
             var me = PlayerNet.Local;
             var pc = PlayerController.Local;
+            if (me == null && Spectator.Active && ShipLobby.Active) { DrawLobby(boot, null); return; } // (spectating from the ship lobby: Spectator.Lobby.cs)
             if (me == null && Spectator.Active) { DrawSpectator(boot); return; } // (watching, not playing: Hud.Spectator.cs)
             if (me == null || pc == null)
             {
-                Shadowed(new Rect(0, Screen.height / 2 - 40, Screen.width, 80), boot.Status != "" ? boot.Status : "Connecting...", m_Big);
+                // joining (a game or the lobby): a plain black screen, the words in the middle (no drone shot of the map)
+                Fill(new Rect(0, 0, Screen.width, Screen.height), Color.black);
+                Shadowed(new Rect(0, Screen.height / 2 - 40, Screen.width, 80), boot.Status != "" ? boot.Status : "Connecting...", new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt(30 * m_Scale) });
                 DrawLeaveButton(boot, new Rect(Screen.width / 2 - 100 * m_Scale, Screen.height / 2 + 60, 200 * m_Scale, 40 * m_Scale));
                 return;
             }
@@ -279,7 +282,6 @@ namespace RockGame
             {
                 float a = Mathf.Clamp01(1f - wake / 1.6f);
                 Fill(new Rect(0, 0, sw, sh), new Color(0.75f, 0.95f, 1f, a * a * 0.95f));
-                if (wake < 1.1f) Shadowed(new Rect(0, sh * 0.42f, sw, 40 * k), "<color=#12506a>RESPAWNED</color>", m_Center);
             }
 
             // ---- top centre: phase & timer (Hud.Notify.cs: DrawTopPanel) ----
@@ -308,7 +310,7 @@ namespace RockGame
                         topClock = Clock(game.TimeLeft);
                         topLeft = game.TimeLeft;
                         sub = Cfg.Builder ? "Gather, craft and build anywhere - then plant the ball for your team"
-                            : Cfg.DnaRules ? "Mine trees and rocks for DNA, build your base (craft in your base)" : Cfg.WoodMode ? "Gather wood and build your base (craft in your base)" : "Gather wood & stone, build your base (craft in your base)";
+                            : Cfg.DnaRules ? "Mine trees and rocks for DNA, build your base" : Cfg.WoodMode ? "Gather wood and build your base" : "Gather wood & stone, build your base";
                         topAccent = new Color(0.35f, 0.85f, 1f);
                         break;
                     case GameState.BallLive:
@@ -472,64 +474,14 @@ namespace RockGame
 
             // ---- banner ----
             float bage = Time.time - s_BannerTime;
-            if (bage < 4f && game != null && game.S != GameState.GameOver && !game.FightFrozen && !(game.S == GameState.BallLive && game.TimeLeft <= 10f)) // (not over the final countdown)
+            if (bage < 4f && game != null && game.S != GameState.GameOver && !game.FightFrozen && !(game.S == GameState.BallLive && !game.Overtime.Value && game.TimeLeft <= 10f)) // (not over the final countdown)
             {
                 DrawBannerFx(s_BannerTitle, s_BannerSub, bage, k); // (animated: Hud.Notify.cs)
             }
             if (notifLayer) UiLook.EndNotif(notifPrev);
 
-            // ---- dead ----
-            var killer = pc.KillCamTarget;
-            if (me.Dead.Value && killer != null && (game == null || game.S != GameState.GameOver))
-            {
-                // the kill cam (PlayerController.KillCam.cs): who it was, low on the screen so their face shows
-                Fill(new Rect(0, 0, sw, sh), new Color(0.3f, 0, 0, 0.12f));
-                var kc = Cfg.TeamColor[Mathf.Clamp(killer.Team.Value, 0, 3)];
-                string hex = ColorUtility.ToHtmlStringRGB(Color.Lerp(kc, Color.white, 0.3f));
-                var big = new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt(42 * k) };
-                Shadowed(new Rect(0, sh * 0.7f, sw, 54 * k), $"KILLED BY <color=#{hex}>{killer.DisplayName}</color>", big);
-                string with = killer.HeldItem == Item.None || killer.HeldItem == Item.Rock ? "a rock" : Cfg.ItemName(killer.HeldItem);
-                Shadowed(new Rect(0, sh * 0.7f + 52 * k, sw, 30 * k), $"with {with}  ·  <color=#ff8080>{Mathf.CeilToInt(killer.Health.Value)} HP</color> left" + (killer.ArmorHp.Value > 0 ? $" (+{killer.ArmorHp.Value} armour)" : ""), m_Center);
-            }
-            else if (me.Dead.Value && (game == null || game.S != GameState.GameOver))
-            {
-                Fill(new Rect(0, 0, sw, sh), new Color(0.3f, 0, 0, 0.35f));
-                float t = Mathf.Max(0, (float)(me.RespawnAt.Value - me.NetworkManager.ServerTime.Time));
-                Shadowed(new Rect(0, sh * 0.4f, sw, 60 * k), "YOU DIED", m_Big);
-                bool home = game == null || game.WallUp;
-                if (game != null && !game.CanRespawn(me.Team.Value))
-                    Shadowed(new Rect(0, sh * 0.4f + 60 * k, sw, 30 * k), "<color=#ff8080>ELIMINATED</color> - your machine is destroyed, so there's no coming back. Cheer your team on!", m_Center);
-                else if (me.ChoosingRespawn)
-                {
-                    Shadowed(new Rect(0, sh * 0.4f + 60 * k, sw, 30 * k), "Your stuff spilled out where you died. Where do you want to respawn?", m_Center);
-                    float bw = 260 * k, bh = 50 * k, by2 = sh * 0.4f + 100 * k;
-                    var r1 = new Rect(cx - bw - 10 * k, by2, bw, bh);
-                    var r2 = new Rect(cx + 10 * k, by2, bw, bh);
-                    if (r1.Contains(Event.current.mousePosition) || r2.Contains(Event.current.mousePosition)) MouseOverUI = true;
-                    if (BtnAt(r1, "[1]  RESPAWN IN BASE", m_Button)) pc.ChooseRespawn(false);
-                    if (BtnAt(r2, "[2]  RESPAWN IN THE WILD", m_Button)) pc.ChooseRespawn(true);
-                    Shadowed(new Rect(0, by2 + bh + 6 * k, sw, 26 * k), "<color=#bbbbbb>The wild drops you somewhere random in the enemy's half of the map</color>", m_Center);
-                    // your team's sleeping bags (Container.Deployables.cs): one more button each, once a minute each
-                    Deployables.BagsOf(me.Team.Value, s_Bags);
-                    double now = me.NetworkManager.ServerTime.Time;
-                    for (int i = 0; i < s_Bags.Count && i < 4; i++)
-                    {
-                        var bag = s_Bags[i];
-                        float wait = Mathf.Max(0f, (float)(bag.ReadyAt.Value - now));
-                        var rb = new Rect(cx - bw - 10 * k, by2 + bh + 40 * k + i * (bh * 0.8f + 6 * k), bw * 2f + 20 * k, bh * 0.8f); // (as wide as both buttons above: the words fit)
-                        if (rb.Contains(Event.current.mousePosition)) MouseOverUI = true;
-                        float dist = Vector3.Distance(bag.transform.position, Cfg.BaseCenter[Mathf.Clamp(me.Team.Value, 0, 3)]);
-                        string label = wait > 0f ? $"[{i + 3}]  SLEEPING BAG  ({Mathf.CeilToInt(wait)} s)" : $"[{i + 3}]  SLEEPING BAG  · {dist:0} m from base";
-                        bool key = Event.current.type == EventType.KeyDown && Event.current.keyCode == KeyCode.Alpha3 + i;
-                        GUI.enabled = wait <= 0f;
-                        if (BtnAt(rb, label, m_Button) || (key && wait <= 0f)) me.RespawnAtBagRpc(bag.NetworkObject);
-                        GUI.enabled = true;
-                    }
-                }
-                else Shadowed(new Rect(0, sh * 0.4f + 60 * k, sw, 30 * k), home
-                    ? $"Your stuff spilled out where you died. Respawning on your bedrock in {Mathf.CeilToInt(t)}"
-                    : $"Your stuff spilled out where you died. Respawn in {Mathf.CeilToInt(t)}", m_Center);
-            }
+            // ---- dead: the kill cam, its replay and the death screen (Hud.Death.cs) ----
+            if (me.Dead.Value && (game == null || game.S != GameState.GameOver)) DrawDeath(game, me, pc, k);
 
             // (the HUD's opacity stops here: the inventory, wheel, tutorial panel and menus are drawn solid)
             s_HudAlpha = 1f;
@@ -663,12 +615,23 @@ namespace RockGame
                 var st = new GUIStyle(m_Center) { fontSize = Mathf.Max(8, Mathf.RoundToInt(baseSize * k * pop)), fontStyle = FontStyle.Bold, clipping = TextClipping.Overflow };
                 var c = n.Kill ? new Color(1f, 0.28f, 0.2f, a) : n.Head ? new Color(1f, 0.82f, 0.16f, a) : new Color(1f, 1f, 1f, a);
                 string txt = Mathf.RoundToInt(n.Value) + (n.Head ? "!" : "");
-                var r = new Rect(sp.x - 80 + side, Screen.height - sp.y - 25 - rise, 160, 50);
-                st.normal.textColor = new Color(0, 0, 0, a * 0.85f);
-                GUI.Label(new Rect(r.x + 2, r.y + 2, r.width, r.height), txt, st);
-                // a white flash over it as it lands
-                st.normal.textColor = Color.Lerp(c, new Color(1f, 1f, 1f, a), Mathf.Clamp01(1f - age / 0.1f) * 0.7f);
-                GUI.Label(r, txt, st);
+                // up close (a melee hit) it'd sit right under the crosshair, behind the swing and the blood: bigger, and
+                // kept out to the side and above the crosshair, on screen
+                float dist = Vector3.Distance(cam.transform.position, n.Pos);
+                float x = sp.x + side, y = Screen.height - sp.y - rise;
+                if (dist < 4.5f)
+                {
+                    st.fontSize = Mathf.RoundToInt(st.fontSize * 1.4f);
+                    float ccx = Screen.width / 2f, ccy = Screen.height / 2f;
+                    x = Mathf.Max(x, ccx + 70 * k + side * 0.5f);
+                    y = Mathf.Min(y, ccy - 50 * k - rise * 0.6f);
+                }
+                x = Mathf.Clamp(x, 60 * k, Screen.width - 60 * k);
+                y = Mathf.Clamp(y, 40 * k, Screen.height - 40 * k);
+                var r = new Rect(x - 80, y - 25, 160, 50);
+                // a thick dark edge round it so it reads on anything, a white flash over it as it lands
+                var fillC = Color.Lerp(c, new Color(1f, 1f, 1f, a), Mathf.Clamp01(1f - age / 0.1f) * 0.7f);
+                InkText(r, txt, st, fillC, new Color(0f, 0f, 0f, a * 0.9f), (dist < 4.5f ? 2.5f : 2f) * k);
             }
         }
 
@@ -1199,7 +1162,7 @@ namespace RockGame
                 Fill(new Rect(a.x, a.y, bs, bs), new Color(col.r, col.g, col.b, 0.55f));
                 GUI.Label(new Rect(a.x, a.y + bs / 2 - 12, bs, 24), $"<b>{Cfg.TeamName[t]}</b>", m_Center);
             }
-            foreach (var c in Container.All) if (c.IsAirdrop) { var q = ToMap(c.transform.position); Fill(new Rect(q.x - 5, q.y - 5, 10, 10), new Color(0.75f, 0.35f, 1f)); }
+            foreach (var c in Container.All) if (c.IsAirdrop) { var q = ToMap(c.transform.position); Fill(new Rect(q.x - 5, q.y - 5, 10, 10), new Color(1f, 0.38f, 0.78f)); }
             if (Ball.Instance != null) { var q = ToMap(Ball.Instance.transform.position); Fill(new Rect(q.x - 5, q.y - 5, 10, 10), new Color(1f, 0.85f, 0.15f)); }
             foreach (var p in PlayerNet.All)
             {
@@ -1252,7 +1215,7 @@ namespace RockGame
             if (TestCountdown >= 0) { DrawEndCountdown(TestCountdown, 1f - Mathf.Repeat(Time.time, 1f), "YOU WIN IN", false, k); return; } // (tests)
             if (game == null) return;
             int sock = Ball.Instance != null ? Ball.Instance.SocketTeam.Value : -1;
-            if (game.S == GameState.BallLive && game.TimeLeft <= 10f && (game.TimeLeft > 0f || sock < 0))
+            if (game.S == GameState.BallLive && !game.Overtime.Value && game.TimeLeft <= 10f && (game.TimeLeft > 0f || sock < 0))
             {
                 int n = Mathf.CeilToInt(game.TimeLeft);
                 float frac = n == 0 ? 1f : game.TimeLeft - Mathf.Floor(game.TimeLeft);

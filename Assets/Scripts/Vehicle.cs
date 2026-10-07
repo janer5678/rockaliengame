@@ -133,7 +133,7 @@ namespace RockGame
                 if (Saddled.Value) drops.Add(ItemStack.Of(Item.Saddle, 1, SaddleTeam.Value + 1));
                 g.ServerScatter(drops, at);
             }
-            Fx.Server(IsDummy ? FxKind.Break : IsSlender ? FxKind.Drink : FxKind.Blood, at, Vector3.up);
+            Fx.Server(IsDummy ? FxKind.Break : IsSlender ? FxKind.Drink : FxKind.Poof, at, Vector3.up); // (a horse goes in a cloud of smoke, not just gone)
             if (IsSlender && g != null) g.Broadcast("Slenderman was destroyed!");
             NetworkObject.Despawn(true);
         }

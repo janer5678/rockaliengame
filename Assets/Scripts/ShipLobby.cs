@@ -44,7 +44,7 @@ namespace RockGame
 
         // the telly (its screen and the light it throws flicker), the dying strip light, the light flashing past outside
         Material m_TvMat;
-        Light m_TvLight, m_Strip, m_PassLight;
+        Light m_TvLight, m_Strip, m_PassLight, m_LampLight, m_WinLight, m_FillLight;
         Renderer m_StripTube;
         Transform m_Lamp;
         float m_LampKick;
@@ -88,7 +88,7 @@ namespace RockGame
             get
             {
                 var g = NetGame.Instance;
-                return g != null && g.IsSpawned && g.S == GameState.Waiting && NetGame.ReadyLobby && PlayerNet.Local != null && !Spectator.Active;
+                return g != null && g.IsSpawned && g.S == GameState.Waiting && NetGame.ReadyLobby && (PlayerNet.Local != null || Spectator.Active); // (spectators wait in it too)
             }
         }
 
@@ -117,6 +117,29 @@ namespace RockGame
         public static float TestPhase = -1f;
         /// <summary>(tests) how far the camera has turned to look round the room (degrees).</summary>
         public static float LookYaw => s_I != null ? s_I.m_Yaw : 0f;
+        /// <summary>(tests) how far the camera has tilted up or down (always 0: the lobby only looks left and right).</summary>
+        public static float LookPitch => s_I != null ? s_I.m_Pitch : 0f;
+        /// <summary>(tests) every seated alien has an idle of its own (none the same, up to seven).</summary>
+        public static bool IdlesAllDifferent
+        {
+            get
+            {
+                if (s_I == null) return false;
+                var seen = new HashSet<int>();
+                foreach (var a in s_I.m_Avatars.Values) if (!seen.Add(a.Variant) && s_I.m_Avatars.Count <= k_Variants.Length) return false;
+                return true;
+            }
+        }
+        /// <summary>(tests) any seated alien is wearing a hat.</summary>
+        public static bool AnyHat
+        {
+            get
+            {
+                if (s_I == null) return false;
+                foreach (var a in s_I.m_Avatars.Values) if (a.Hat != null) return true;
+                return false;
+            }
+        }
         /// <summary>(tests) hold the mouse at this point of the screen (0..1; x &lt; 0: the real mouse).</summary>
         public static Vector2 TestMouse = new Vector2(-1f, -1f);
 
@@ -174,9 +197,11 @@ namespace RockGame
                 FitSeat(a);
                 if (a.Prop) a.Prop.gameObject.SetActive(!still);
                 if (!still) PlaceProp(a, lt, t);
-                if (a.HatShown != a.P.Hat.Value)
+                // (hats are off for now: Cosmetics.HatsOn)
+                int hat = Cosmetics.HatsOn ? a.P.Hat.Value : 0;
+                if (a.HatShown != hat)
                 {
-                    a.HatShown = a.P.Hat.Value;
+                    a.HatShown = hat;
                     if (a.Hat) Destroy(a.Hat);
                     a.Hat = Cosmetics.Wear(a.HatShown, a.Root, a.Anim);
                 }
@@ -212,7 +237,7 @@ namespace RockGame
             var cam = Camera.main;
             if (cam == null) return;
             Vector3 pos, look;
-            float fov = 56f;
+            float fov = GameSettings.LobbyFovNow; // (Settings > Display > SHIP LOBBY)
             Avatar mine = null;
             if (me != null) m_Avatars.TryGetValue(me, out mine);
             if (Customising && mine != null && mine.Anim != null && mine.Anim.HeadBone != null)
@@ -247,9 +272,8 @@ namespace RockGame
                 bool free = (Application.isFocused || TestMouse.x >= 0f) && !Hud.MouseOverUI && !Chat.Open && m.x >= 0f && m.x <= 1f && m.y >= 0f && m.y <= 1f;
                 const float Edge = 0.12f;
                 float ex = !free ? 0f : m.x < Edge ? -(1f - m.x / Edge) : m.x > 1f - Edge ? (m.x - (1f - Edge)) / Edge : 0f;
-                float ey = !free ? 0f : m.y < Edge ? -(1f - m.y / Edge) : m.y > 1f - Edge ? (m.y - (1f - Edge)) / Edge : 0f;
                 m_Yaw = Mathf.Clamp(m_Yaw + ex * Mathf.Abs(ex) * 40f * dt, -32f, 32f);
-                m_Pitch = Mathf.Clamp(m_Pitch - ey * Mathf.Abs(ey) * 25f * dt, -10f, 12f);
+                m_Pitch = 0f; // (only left and right: no looking up and down in the lobby)
             }
             var rot = Quaternion.LookRotation(look - pos);
             rot = Quaternion.Euler(0f, m_Yaw, 0f) * rot * Quaternion.Euler(m_Pitch, 0f, 0f);
@@ -282,7 +306,15 @@ namespace RockGame
             for (int i = 0; i < n; i++)
             {
                 var p = s_Order[i];
-                if (!m_Avatars.TryGetValue(p, out var a)) m_Avatars[p] = a = MakeAvatar(p);
+                // each seat its own idle (no two the same, up to seven of them): someone moving seat gets the new one's
+                int variant = k_Variants[i % k_Variants.Length];
+                if (m_Avatars.TryGetValue(p, out var old) && old.Variant != variant)
+                {
+                    if (old.Root) Destroy(old.Root.gameObject);
+                    foreach (var pf in old.Puffs) if (pf.T) Destroy(pf.T.gameObject);
+                    m_Avatars.Remove(p);
+                }
+                if (!m_Avatars.TryGetValue(p, out var a)) m_Avatars[p] = a = MakeAvatar(p, variant);
                 var seat = SeatPos(i, n);
                 if ((seat - a.SeatAt).sqrMagnitude > 0.0001f || a.Root.position == Vector3.zero)
                 {
@@ -313,9 +345,9 @@ namespace RockGame
             return new Vector3(x, 0f, z);
         }
 
-        Avatar MakeAvatar(PlayerNet p)
+        Avatar MakeAvatar(PlayerNet p, int variant)
         {
-            var a = new Avatar { P = p, Seed = (p.OwnerClientId * 7.31f) % 50f, Variant = k_Variants[(int)(p.OwnerClientId % (ulong)k_Variants.Length)] };
+            var a = new Avatar { P = p, Seed = (p.OwnerClientId * 7.31f) % 50f, Variant = variant };
             var go = new GameObject("lobby alien " + p.DisplayName);
             go.transform.SetParent(m_Room.transform, true);
             a.Root = go.transform;
@@ -402,6 +434,8 @@ namespace RockGame
 
         /// <summary>How far past the wrist the fingers close round something (the alien's long hand).</summary>
         const float Grip = 0.2f;
+        /// <summary>Where the alien's mouth is from its head bone: up and forward (m).</summary>
+        public static float MouthUp = 0.015f, MouthFwd = 0.15f;
 
         /// <summary>The prop in the hand(s) this frame, and the smoke.</summary>
         void PlaceProp(Avatar a, float t, float now)
@@ -419,16 +453,21 @@ namespace RockGame
                     float d = BodyAnimator.Drag(t);
                     var side = Vector3.Cross(dir, up);
                     if (side.sqrMagnitude < 0.01f) side = a.Root.right;
-                    // held between two fingers, sticking out sideways
-                    a.Prop.SetPositionAndRotation(palm + dir * 0.02f, Quaternion.LookRotation(-side.normalized, up));
+                    var head = a.Anim.HeadBone != null ? a.Anim.HeadBone.position : a.Root.position + up * 1.2f;
+                    // held between two fingers, sticking out sideways, a little low in the hand - and on a drag it goes to
+                    // the mouth: the filter between the lips, the lit end pointing out
+                    var held = palm + dir * 0.02f - up * 0.035f;
+                    var heldRot = Quaternion.LookRotation(-side.normalized, up);
+                    var mouth = head + up * MouthUp + fwd * MouthFwd;
+                    float m = Mathf.SmoothStep(0f, 1f, (d - 0.2f) / 0.45f);
+                    a.Prop.SetPositionAndRotation(Vector3.Lerp(held, mouth + fwd * 0.04f, m), Quaternion.Slerp(heldRot, Quaternion.LookRotation(fwd, up), m));
                     if (a.Tip) a.Tip.sharedMaterial = d > 0.6f ? m_TipOn : m_TipOff;
                     // breathing the smoke out after the drag, and a thin wisp off the tip the rest of the time
                     float u = Mathf.Repeat(t, 6f);
-                    var head = a.Anim.HeadBone != null ? a.Anim.HeadBone.position : a.Root.position + up * 1.2f;
-                    if (now >= a.NextPuff)
+                    if (now >= a.NextPuff && GameSettings.LobbySmokeNow)
                     {
                         bool exhale = u > 2.1f && u < 3.5f;
-                        var from = exhale ? head + fwd * 0.17f + up * 0.08f : a.Tip != null ? a.Tip.transform.position : palm;
+                        var from = exhale ? mouth + fwd * 0.03f : a.Tip != null ? a.Tip.transform.position : palm;
                         Emit(a, from, exhale ? fwd * 0.35f + up * 0.2f : up * 0.18f + fwd * 0.03f, exhale ? 0.035f : 0.012f, now);
                         a.NextPuff = now + (exhale ? 0.12f : 0.55f);
                     }
@@ -500,8 +539,14 @@ namespace RockGame
                 m_LampKick = Mathf.Max(m_LampKick * Mathf.Exp(-0.6f * dt), jolt * 9f);
                 float sx = Mathf.Sin(t * 2.1f) * (1.5f + m_LampKick) + (Mathf.PerlinNoise(t * 3f, 2f) - 0.5f) * 2f;
                 float sz = Mathf.Sin(t * 1.7f + 1f) * (1.2f + m_LampKick * 0.7f);
-                m_Lamp.localRotation = Quaternion.Euler(sx, 0f, sz);
+                m_Lamp.localRotation = GameSettings.LobbySwayNow ? Quaternion.Euler(sx, 0f, sz) : Quaternion.identity;
             }
+            // the room's lights (Settings > Display > SHIP LOBBY can turn each up or down, and the room darker)
+            float dark = GameSettings.LobbyDarkNow;
+            if (m_LampLight) m_LampLight.intensity = 5.5f * GameSettings.LobbyLampNow;
+            if (m_WinLight) m_WinLight.intensity = 0.9f * GameSettings.LobbyWindowNow;
+            if (m_FillLight) m_FillLight.intensity = 0.12f / dark;
+            Dim(true);
             // the stars streaking past the window (the near ones faster), the planet drifting by far off
             for (int i = 0; i < m_Stars.Count; i++)
             {
@@ -525,7 +570,7 @@ namespace RockGame
                 var scene = Color.HSVToRGB(Mathf.Repeat(cut * 0.37f, 1f), 0.55f, 1f);
                 float fl = 0.75f + 0.25f * Mathf.PerlinNoise(t * 24f, 2f) + (Mathf.Repeat(t * 1.3f, 1f) < 0.05f ? 0.6f : 0f);
                 m_TvMat.SetColor("_Color", Color.Lerp(scene, Color.white, 0.35f) * fl);
-                if (m_TvLight) { m_TvLight.color = Color.Lerp(scene, new Color(0.7f, 0.8f, 1f), 0.4f); m_TvLight.intensity = 3.2f * fl; }
+                if (m_TvLight) { m_TvLight.color = Color.Lerp(scene, new Color(0.7f, 0.8f, 1f), 0.4f); m_TvLight.intensity = 4.5f * fl * GameSettings.LobbyTvNow; }
             }
             // the dying strip light in the corner: it stutters on and off
             if (m_Strip)
@@ -544,7 +589,7 @@ namespace RockGame
                 if (pass)
                 {
                     m_PassLight.transform.localPosition = new Vector3(Mathf.Lerp(9f, -9f, u / 0.9f), WinY + 0.4f, WinZ + 1.5f);
-                    m_PassLight.intensity = Mathf.Sin(u / 0.9f * Mathf.PI) * 9f;
+                    m_PassLight.intensity = Mathf.Sin(u / 0.9f * Mathf.PI) * 18f * GameSettings.LobbyWindowNow; // (bright: it lights the whole room up as it goes by)
                 }
             }
         }
@@ -572,7 +617,7 @@ namespace RockGame
             Art.Box(t, carpet, new Vector3(0, 0.004f, 0.3f), new Vector3(12.5f, 0.008f, 8.2f));
             for (int i = 0; i < 9; i++) // (stains)
                 Art.Part(t, Art.Cylinder, carpet * (0.6f + R() * 0.2f), new Vector3(R() * 10f - 5f, 0.01f, R() * 6f - 2.5f), new Vector3((0.4f + R() * 0.8f) / CR, 0.002f, (0.3f + R() * 0.6f) / CR));
-            Art.Part(t, Art.Cylinder, new Color(0.35f, 0.15f, 0.12f), new Vector3(0, 0.012f, 0.4f), new Vector3(6.5f / CR, 0.004f, 3f / CR)); // (an old round rug in front of the couch)
+            Art.Part(t, Art.Cylinder, new Color(0.35f, 0.15f, 0.12f), new Vector3(0, 0.012f, 0.4f), new Vector3(2.6f / CR, 0.004f, 1.7f / CR)); // (a small old round rug in front of the couch)
 
             // ---- the back wall, round a long rounded window: the stars streak past it ----
             BuildWindowWall(t, wallC, trim, metal, cyan);
@@ -712,10 +757,11 @@ namespace RockGame
             }
 
             // ---- lights: the warm lamp over them, the telly (above), cool light in through the window, a dim fill ----
-            Light(m_Lamp, new Vector3(0, -1.05f, -0.1f), warm, 3.4f, 6f);
-            Light(t, new Vector3(0, WinY + 0.6f, WinZ - 1.4f), new Color(0.55f, 0.7f, 1f), 0.45f, 4f);
-            Light(t, new Vector3(0, 2.2f, -4.5f), new Color(0.6f, 0.62f, 0.75f), 0.25f, 8f); // (the room's dark: the telly and the lamp light it)
-            m_PassLight = Light(t, new Vector3(9f, WinY, WinZ + 1.5f), new Color(0.7f, 0.85f, 1f), 0f, 12f);
+            // (very dark otherwise: the lights are bright pools in it - AnimateRoom sets their strength)
+            m_LampLight = Light(m_Lamp, new Vector3(0, -1.05f, -0.1f), warm, 5.5f, 6.5f);
+            m_WinLight = Light(t, new Vector3(0, WinY + 0.6f, WinZ - 1.4f), new Color(0.55f, 0.7f, 1f), 0.9f, 4.5f);
+            m_FillLight = Light(t, new Vector3(0, 2.2f, -4.5f), new Color(0.6f, 0.62f, 0.75f), 0.12f, 8f);
+            m_PassLight = Light(t, new Vector3(9f, WinY, WinZ + 1.5f), new Color(0.7f, 0.85f, 1f), 0f, 16f);
             m_PassLight.enabled = false;
             foreach (var r in m_Room.GetComponentsInChildren<MeshRenderer>()) r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         }
@@ -813,17 +859,21 @@ namespace RockGame
         {
             if (on)
             {
-                if (m_SunWas >= 0f) return;
-                m_Sun = RenderSettings.sun;
-                if (m_Sun == null)
-                    foreach (var l in FindObjectsByType<Light>(FindObjectsSortMode.None))
-                        if (l.type == LightType.Directional && l.enabled) { m_Sun = l; break; }
-                if (m_Sun != null) { m_SunWas = m_Sun.intensity; m_Sun.intensity = m_SunWas * 0.06f; }
-                else m_SunWas = 0f;
-                m_AmbientWas = RenderSettings.ambientIntensity;
-                RenderSettings.ambientIntensity = m_AmbientWas * 0.3f;
-                m_AmbientColWas = RenderSettings.ambientLight;
-                RenderSettings.ambientLight = m_AmbientColWas * 0.3f;
+                if (m_SunWas < 0f)
+                {
+                    m_Sun = RenderSettings.sun;
+                    if (m_Sun == null)
+                        foreach (var l in FindObjectsByType<Light>(FindObjectsSortMode.None))
+                            if (l.type == LightType.Directional && l.enabled) { m_Sun = l; break; }
+                    m_SunWas = m_Sun != null ? m_Sun.intensity : 0f;
+                    m_AmbientWas = RenderSettings.ambientIntensity;
+                    m_AmbientColWas = RenderSettings.ambientLight;
+                }
+                // even darker than it was (and Room darkness in the settings on top)
+                float dark = GameSettings.LobbyDarkNow;
+                if (m_Sun != null) m_Sun.intensity = m_SunWas * 0.025f / dark;
+                RenderSettings.ambientIntensity = m_AmbientWas * 0.14f / dark;
+                RenderSettings.ambientLight = m_AmbientColWas * (0.14f / dark);
             }
             else
             {
@@ -862,12 +912,13 @@ namespace RockGame
                     for (int l = 0; l < 6; l++)
                         Art.Box(np, new Color(0.45f, 0.45f, 0.45f), new Vector3(-0.17f + c * 0.17f, 0.003f, -0.08f + l * 0.04f), new Vector3(0.14f, 0.002f, 0.012f));
             }
-            // a bike leaning on the left wall
+            // a bike on its stand, out towards the middle of the room
             {
                 var bike = new GameObject("bike").transform;
                 bike.SetParent(t, false);
-                bike.localPosition = new Vector3(-5.9f, 0f, 0.6f);
-                bike.localRotation = Quaternion.Euler(0, 90f, -12f);
+                bike.localPosition = new Vector3(-3.4f, 0f, 0.2f);
+                bike.localRotation = Quaternion.Euler(0, 64f, -7f);
+                Art.Box(bike, new Color(0.5f, 0.5f, 0.52f), new Vector3(0.08f, 0.14f, -0.05f), new Vector3(0.02f, 0.3f, 0.02f), new Vector3(0, 0, -28f)); // (the stand)
                 var fr = new Color(0.75f, 0.15f, 0.15f);
                 foreach (float z in new[] { -0.5f, 0.5f })
                 {
@@ -937,6 +988,86 @@ namespace RockGame
             Poster(new Vector3(-6.25f, 2.5f, -2.6f), 90f, new Vector2(0.75f, 1f), 3);
             Poster(new Vector3(6.25f, 2.3f, 2.9f), -90f, new Vector2(0.6f, 0.9f), 0);
             Poster(new Vector3(6.25f, 1.6f, -2.2f), -90f, new Vector2(0.8f, 0.6f), 2);
+            // ...and more of them
+            Poster(new Vector3(5.3f, 1.7f, WinZ - 0.17f), 0f, new Vector2(0.55f, 0.75f), 3);
+            Poster(new Vector3(-6.25f, 1.6f, -0.9f), 90f, new Vector2(0.6f, 0.8f), 1);
+            Poster(new Vector3(-6.25f, 1.9f, 1.4f), 90f, new Vector2(0.9f, 0.65f), 0);
+            Poster(new Vector3(-6.25f, 2.55f, 3.2f), 90f, new Vector2(0.5f, 0.7f), 2);
+            Poster(new Vector3(6.25f, 2.55f, 0.4f), -90f, new Vector2(0.7f, 0.5f), 3);
+            Poster(new Vector3(6.25f, 1.45f, 1.2f), -90f, new Vector2(0.5f, 0.65f), 1);
+            Poster(new Vector3(-3.5f, 1.5f, WinZ - 0.17f), 0f, new Vector2(0.45f, 0.6f), 2);
+            BuildMiddle(t, rng);
+        }
+
+        /// <summary>The middle of the room: a coffee table in front of the couch, covered in beer cans, a bottle, an
+        /// ashtray, a pizza box and rubbish - and more mess on the floor round it.</summary>
+        void BuildMiddle(Transform t, System.Random rng)
+        {
+            float R() => (float)rng.NextDouble();
+            var wood = new Color(0.32f, 0.22f, 0.14f);
+            var table = new GameObject("coffee table").transform;
+            table.SetParent(t, false);
+            table.localPosition = new Vector3(0.1f, 0f, 0.25f);
+            table.localRotation = Quaternion.Euler(0, 4f, 0);
+            Art.Box(table, wood, new Vector3(0, 0.4f, 0), new Vector3(1.5f, 0.06f, 0.68f));                 // the top
+            Art.Box(table, wood * 0.7f, new Vector3(0, 0.12f, 0), new Vector3(1.36f, 0.03f, 0.56f));         // the shelf under it
+            foreach (float x in new[] { -0.68f, 0.68f })
+                foreach (float z in new[] { -0.28f, 0.28f })
+                    Art.Box(table, wood * 0.8f, new Vector3(x, 0.19f, z), new Vector3(0.06f, 0.38f, 0.06f));
+            Art.Part(table, Art.Cylinder, wood * 0.55f, new Vector3(0.3f, 0.432f, 0.1f), new Vector3(0.16f / CR, 0.002f, 0.16f / CR)); // (a ring stain)
+            // beer cans standing and knocked over, a bottle
+            void Can(Vector3 at, bool down, float yaw)
+            {
+                var c = BeerCan(table).transform;
+                c.localPosition = at + (down ? new Vector3(0, 0.05f, 0) : new Vector3(0, 0.085f, 0));
+                c.localRotation = Quaternion.Euler(0, yaw, down ? 90f : 0f);
+            }
+            Can(new Vector3(-0.55f, 0.43f, -0.12f), false, 0f);
+            Can(new Vector3(-0.42f, 0.43f, 0.15f), false, 40f);
+            Can(new Vector3(0.05f, 0.43f, -0.2f), true, 70f);
+            Can(new Vector3(0.55f, 0.43f, 0.18f), false, 10f);
+            Can(new Vector3(0.62f, 0.43f, -0.15f), true, -30f);
+            Can(new Vector3(-0.2f, 0.135f, 0.05f), true, 20f); // (one on the shelf)
+            var bottle = new Color(0.15f, 0.35f, 0.12f);
+            Art.Part(table, Art.Cylinder, bottle, new Vector3(-0.15f, 0.54f, 0.12f), new Vector3(0.08f / CR, 0.22f / CH, 0.08f / CR));
+            Art.Part(table, Art.Cylinder, bottle, new Vector3(-0.15f, 0.69f, 0.12f), new Vector3(0.03f / CR, 0.09f / CH, 0.03f / CR));
+            // a pizza box, open, a slice left in it
+            var box = new Color(0.72f, 0.58f, 0.38f);
+            Art.Box(table, box, new Vector3(0.25f, 0.445f, 0.02f), new Vector3(0.42f, 0.03f, 0.42f), new Vector3(0, -12f, 0));
+            Art.Box(table, box * 0.9f, new Vector3(0.27f, 0.63f, 0.25f), new Vector3(0.42f, 0.42f, 0.02f), new Vector3(-20f, -12f, 0));
+            Art.Box(table, new Color(0.9f, 0.6f, 0.2f), new Vector3(0.22f, 0.465f, -0.02f), new Vector3(0.16f, 0.012f, 0.12f), new Vector3(0, 30f, 0));
+            // an ashtray full of butts, crisp packets, screwed-up paper
+            Art.Part(table, Art.Cylinder, new Color(0.25f, 0.25f, 0.28f), new Vector3(-0.3f, 0.445f, -0.18f), new Vector3(0.14f / CR, 0.03f / CH, 0.14f / CR));
+            for (int i = 0; i < 4; i++)
+                Art.Box(table, new Color(0.85f, 0.55f, 0.25f), new Vector3(-0.3f + (R() - 0.5f) * 0.08f, 0.465f, -0.18f + (R() - 0.5f) * 0.08f), new Vector3(0.012f, 0.012f, 0.04f), new Vector3(0, R() * 180f, 0));
+            Art.Box(table, new Color(0.85f, 0.15f, 0.2f), new Vector3(0.6f, 0.44f, 0.0f), new Vector3(0.16f, 0.015f, 0.22f), new Vector3(0, 35f, 4f));
+            Art.Box(table, new Color(0.2f, 0.45f, 0.9f), new Vector3(-0.62f, 0.145f, -0.1f), new Vector3(0.16f, 0.015f, 0.2f), new Vector3(0, -20f, 0));
+            for (int i = 0; i < 4; i++)
+                Art.Part(table, Art.Ico, new Color(0.88f, 0.86f, 0.8f), new Vector3((R() - 0.5f) * 1.3f, 0.47f, (R() - 0.5f) * 0.5f), Vector3.one * 0.06f, new Vector3(R() * 360f, R() * 360f, 0));
+            // the floor round it: more cans, pizza boxes, a sock, a game controller
+            for (int i = 0; i < 6; i++)
+            {
+                float ang = R() * Mathf.PI * 2f, r = 1.1f + R() * 1.4f;
+                var at = new Vector3(Mathf.Cos(ang) * r * 1.4f, 0f, 0.2f + Mathf.Sin(ang) * r * 0.7f);
+                if (at.z > 0.9f) at.z = 0.9f - R() * 0.3f; // (not under the couch)
+                var c = BeerCan(t).transform;
+                c.localPosition = at + new Vector3(0, 0.05f, 0);
+                c.localRotation = Quaternion.Euler(0, R() * 360f, 90f);
+            }
+            foreach (var at in new[] { new Vector3(-1.6f, 0f, -0.6f), new Vector3(1.8f, 0f, 0.5f) })
+            {
+                Art.Box(t, box, at + new Vector3(0, 0.025f, 0), new Vector3(0.42f, 0.05f, 0.42f), new Vector3(0, R() * 90f, 0));
+                Art.Box(t, box * 0.85f, at + new Vector3(0.02f, 0.075f, 0.01f), new Vector3(0.42f, 0.05f, 0.42f), new Vector3(0, R() * 90f, 0));
+            }
+            Art.Box(t, new Color(0.9f, 0.9f, 0.85f), new Vector3(1.3f, 0.015f, -0.4f), new Vector3(0.1f, 0.03f, 0.3f), new Vector3(0, 50f, 0)); // (a sock)
+            var pad = new GameObject("controller").transform;
+            pad.SetParent(t, false);
+            pad.localPosition = new Vector3(-0.9f, 0.03f, 0.75f);
+            pad.localRotation = Quaternion.Euler(0, 20f, 0);
+            Art.Box(pad, new Color(0.12f, 0.12f, 0.14f), Vector3.zero, new Vector3(0.18f, 0.04f, 0.1f));
+            foreach (float s in new[] { -1f, 1f }) Art.Box(pad, new Color(0.12f, 0.12f, 0.14f), new Vector3(s * 0.08f, 0, -0.04f), new Vector3(0.06f, 0.04f, 0.08f), new Vector3(0, s * 20f, 0));
+            for (int i = 0; i < 6; i++)
+                Art.Part(t, Art.Ico, new Color(0.88f, 0.86f, 0.8f), new Vector3((R() - 0.5f) * 4f, 0.04f, (R() - 0.5f) * 2f - 0.2f), Vector3.one * (0.06f + R() * 0.04f), new Vector3(R() * 360f, R() * 360f, 0));
         }
 
         /// <summary>An unlit glowing material (the same bright colour whatever the light).</summary>

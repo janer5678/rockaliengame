@@ -6,7 +6,7 @@ namespace RockGame
     /// The main menu players see (the old one, with every mode and setting on one page, is the DEV MAIN MENU now: Tab
     /// swaps to it and back). Over the UFO cruising through the stars (MenuSpace.cs), a punky title and a column of big
     /// buttons: TUTORIAL (with a friend / solo, straight in), MULTIPLAYER (JOIN: the host's IP and port; HOST: battle type
-    /// 1V1 / TEAMS / FFA, then for teams how many v how many - uneven is fine - or for FFA how many players, then the game
+    /// 1V1 / TEAMS / FREE FOR ALL, then for teams how many v how many - uneven is fine - or for FFA how many players, then the game
     /// mode with its length and options, then the map with pictures of each and its size, then the ship lobby), SOLO (a
     /// match on your own: mode, then map), OPTIONS (the settings) and QUIT. Esc or BACK goes back a screen.
     /// </summary>
@@ -79,15 +79,14 @@ namespace RockGame
                     Note(ref y, x, w, "Learn the whole game a step at a time. With a friend, they join your IP when the tutorial asks.");
                     break;
                 case NewPage.Multiplayer:
-                    if (BigBtn(ref y, x, w, "JOIN", k_Blue)) m_New = NewPage.Join;
                     if (BigBtn(ref y, x, w, "HOST", k_Red)) { m_SoloFlow = false; m_New = NewPage.Battle; }
+                    if (BigBtn(ref y, x, w, "JOIN", k_Blue)) m_New = NewPage.Join;
                     break;
                 case NewPage.Join: DrawJoinPage(boot, x, ref y, w); break;
                 case NewPage.Battle:
-                    if (BigBtn(ref y, x, w, "1V1", k_Acid)) { m_Battle = 0; m_New = NewPage.Mode; }
+                    if (BigBtn(ref y, x, w, "1V1", k_Blue)) { m_Battle = 0; m_New = NewPage.Mode; }
                     if (BigBtn(ref y, x, w, "TEAMS", k_Red)) { m_Battle = 1; if (m_SoloFlow) { m_CapA = m_CapB = 2; m_New = NewPage.Mode; } else m_New = NewPage.Players; }
-                    if (BigBtn(ref y, x, w, "FFA", k_Blue)) { m_Battle = 2; if (m_SoloFlow) { m_FfaN = 4; m_New = NewPage.Mode; } else m_New = NewPage.Players; }
-                    Note(ref y, x, w, "FFA: everyone for themselves, a base each (up to 4).");
+                    if (BigBtn(ref y, x, w, "FREE FOR ALL", k_Acid)) { m_Battle = 2; if (m_SoloFlow) { m_FfaN = 4; m_New = NewPage.Mode; } else m_New = NewPage.Players; }
                     break;
                 case NewPage.Players: DrawPlayersPage(x, ref y, w); break;
                 case NewPage.Mode: DrawModePage(x, ref y, w); break;
@@ -127,7 +126,7 @@ namespace RockGame
                 case NewPage.Join: return "JOIN GAME";
                 case NewPage.Battle: return m_SoloFlow ? "SOLO BATTLE TYPE" : "MULTIPLAYER BATTLE TYPE";
                 case NewPage.Players: return "PLAYERS";
-                case NewPage.Mode: return m_SoloFlow ? "SOLO GAME MODE" : m_Battle == 0 ? "1V1 GAME MODE" : m_Battle == 1 ? "TEAMS GAME MODE" : "FFA GAME MODE";
+                case NewPage.Mode: return m_SoloFlow ? "SOLO GAME MODE" : m_Battle == 0 ? "1V1 GAME MODE" : m_Battle == 1 ? "TEAMS GAME MODE" : "FREE FOR ALL GAME MODE";
                 case NewPage.Map: return "CHOOSE MAP";
                 default: return MainTitle;
             }
@@ -374,8 +373,18 @@ namespace RockGame
             foreach (var sz in new[] { MapSize.Small, MapSize.Big, MapSize.Large, MapSize.Huge })
             {
                 var r = new Rect(bx, y, bw, 40 * k);
-                if (sz == size) { Fill(r, new Color(k_Acid.r, k_Acid.g, k_Acid.b, 0.35f)); Frame(r, k_Acid, 2f); }
+                bool sel = sz == size;
+                if (sel) r = new Rect(r.x - 4 * k, r.y - 5 * k, r.width + 8 * k, r.height + 10 * k); // (the picked one stands out: bigger, solid green, dark text)
                 if (SmallBtn(r, Cfg.SizeLabel(sz))) key = (key & ~Cfg.SmallBit & ~(3 << Cfg.SizeShift)) | ((int)sz << Cfg.SizeShift);
+                if (sel)
+                {
+                    Fill(new Rect(r.x - 3 * k, r.y - 3 * k, r.width + 6 * k, r.height + 6 * k), new Color(k_Acid.r, k_Acid.g, k_Acid.b, 0.25f));
+                    Fill(r, k_Acid);
+                    Frame(r, Color.white, 2f);
+                    var ss = new GUIStyle(m_Center) { fontSize = Mathf.RoundToInt(19 * k), fontStyle = FontStyle.Bold };
+                    ss.normal.textColor = new Color(0.05f, 0.08f, 0.02f);
+                    GUI.Label(r, Cfg.SizeLabel(sz), ss);
+                }
                 bx += bw + bgap;
             }
             Bootstrap.MapChoice = key;

@@ -34,14 +34,19 @@ namespace RockGame
                 yield return Shot("page" + p);
                 if (p == 7)
                 {
-                    // the map page: the quick, low flight round the map behind it (it moves on fast)
-                    Check(MenuScene.Preview && !MenuSpace.Showing, "the map page shows the map itself (the quick preview flight), not the UFO");
+                    // the map page: slow shots of the map at eye level, the first from a corner across the whole map
+                    Check(MenuScene.Preview && !MenuSpace.Showing, "the map page shows the map itself (slow shots), not the UFO");
+                    yield return new WaitForSeconds(0.2f);
                     var at0 = Camera.main != null ? Camera.main.transform.position : Vector3.zero;
+                    var rot0 = Camera.main != null ? Camera.main.transform.rotation : Quaternion.identity;
                     yield return new WaitForSeconds(2f);
                     yield return Shot("page7_map_2s");
                     var at1 = Camera.main != null ? Camera.main.transform.position : Vector3.zero;
+                    var rot1 = Camera.main != null ? Camera.main.transform.rotation : Quaternion.identity;
                     float h = at1.y - MapBuilder.GroundHeight(at1.x, at1.z);
-                    Check(Vector3.Distance(at0, at1) > 20f, $"the map preview flies on quickly ({Vector3.Distance(at0, at1):0} m in about 3 s), {h:0.0} m over the ground");
+                    bool corner = Mathf.Abs(at0.x) > Cfg.MapHalf * 0.6f && Mathf.Abs(at0.z) > Cfg.MapHalf * 0.6f;
+                    Check(MenuScene.ShotIndex == 0 && corner && h < 2.5f && Vector3.Distance(at0, at1) < 8f && Quaternion.Angle(rot0, rot1) < 25f,
+                        $"the first shot is from a corner ({at0.x:0}, {at0.z:0}) at eye level ({h:0.0} m), drifting slowly ({Vector3.Distance(at0, at1):0.0} m, {Quaternion.Angle(rot0, rot1):0} deg in 2 s)");
                     yield return new WaitForSeconds(3f);
                     yield return Shot("page7_map_5s");
                 }
@@ -127,29 +132,52 @@ namespace RockGame
                 Check(ShipLobby.LookYaw < -20f, $"the mouse at the screen's edge looks round the room ({ShipLobby.LookYaw:0} degrees)");
                 ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "lobby_look_left.png"));
                 yield return null;
-                ShipLobby.TestMouse = new Vector2(0.99f, 0.6f);
+                ShipLobby.TestMouse = new Vector2(0.99f, 0.99f);
                 yield return new WaitForSeconds(2.4f);
+                Check(ShipLobby.LookPitch == 0f, $"the mouse at the top edge doesn't tilt the view up or down ({ShipLobby.LookPitch:0.0} degrees)");
                 ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "lobby_look_right.png"));
                 yield return null;
                 ShipLobby.TestMouse = new Vector2(0.5f, 0.5f);
                 yield return new WaitForSeconds(0.3f);
                 ShipLobby.TestMouse = new Vector2(-1f, -1f);
-                // CUSTOMISE ALIEN: close on our head, every hat tried on
-                ShipLobby.Customising = true;
-                yield return new WaitForSeconds(1.2f);
-                for (int h = 0; h < Cosmetics.HatCount; h++)
-                {
-                    me.SetHatRpc((byte)h);
-                    yield return new WaitForSeconds(0.5f);
-                    ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), $"lobby_hat_{h}.png"));
-                    yield return null;
-                }
-                Check(me.Hat.Value == Cosmetics.HatCount - 1, $"the hat is synced ({me.Hat.Value})");
+                Check(ShipLobby.IdlesAllDifferent, "no two seated aliens have the same idle");
+                // (hats and CUSTOMISE ALIEN are off for now: nobody wears one)
                 me.SetHatRpc(3);
-                ShipLobby.Customising = false;
-                yield return new WaitForSeconds(1f);
-                ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "lobby_with_hat.png"));
+                yield return new WaitForSeconds(0.5f);
+                Check(!ShipLobby.AnyHat, "hats are off: none shows even when one is picked");
+                me.SetHatRpc(0);
+                // SPECTATE: a client gets up off the couch to watch, then PLAY puts them back
+                ulong other = 0;
+                foreach (var p in PlayerNet.All) if (p != null && !p.Bot.Value && p.OwnerClientId != nm.LocalClientId) other = p.OwnerClientId;
+                int before = PlayerNet.All.Count;
+                bool off = g.ServerSetSpectating(other, true);
+                yield return new WaitForSeconds(1.5f);
+                Check(off && PlayerNet.All.Count == before - 1 && g.IsSpectator(other), $"SPECTATE: client {other} leaves the couch to watch ({PlayerNet.All.Count} players, {g.Spectators.Count} watching)");
+                ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "lobby_one_spectating.png"));
                 yield return null;
+                bool on = g.ServerSetSpectating(other, false);
+                until = Time.time + 6f;
+                while (PlayerNet.All.Count < before && Time.time < until) yield return null;
+                yield return new WaitForSeconds(1.5f);
+                Check(on && PlayerNet.All.Count == before && !g.IsSpectator(other), $"PLAY: they take a seat again ({PlayerNet.All.Count} players)");
+            }
+            else
+            {
+                // (a client: watched for a moment by the host's SPECTATE check - the lobby with no seat of our own)
+                float watchUntil = Time.time + 20f;
+                bool sawWatch = false;
+                while (Time.time < watchUntil && !sawWatch) { if (Spectator.Active && ShipLobby.Active) sawWatch = true; yield return null; }
+                if (sawWatch)
+                {
+                    yield return new WaitForSeconds(0.4f);
+                    ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), $"lobby_spectating_client{nm.LocalClientId}.png"));
+                    yield return null;
+                    Check(ShipLobby.Active, "spectating, you still see the ship lobby");
+                    until = Time.time + 15f;
+                    while (PlayerNet.Local == null && Time.time < until) yield return null;
+                    Check(PlayerNet.Local != null, "PLAY again: our alien's back on the couch");
+                    me = PlayerNet.Local;
+                }
             }
             if (nm.IsHost)
             {

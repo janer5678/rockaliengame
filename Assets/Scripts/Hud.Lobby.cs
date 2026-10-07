@@ -23,7 +23,7 @@ namespace RockGame
             float k = m_Scale, sw = Screen.width, sh = Screen.height;
             LobbyShownAt = Time.time;
             var g = NetGame.Instance;
-            if (ShipLobby.Customising) { DrawCustomise(me); Chat.Draw(k, m_Small, Fill, Shadowed); return; }
+            ShipLobby.Customising = false; // (alien customisation is off for now)
             // the title, top left: what's being played and how full it is
             var title = new GUIStyle(m_Big) { alignment = TextAnchor.UpperLeft, fontSize = Mathf.RoundToInt(40 * k) };
             Shadowed(new Rect(28 * k, 44 * k, sw, 60 * k), "<b>LOBBY</b>", title); // (under the FPS counter)
@@ -36,6 +36,13 @@ namespace RockGame
                 : players < 2 ? "Waiting for someone to join - COPY ROOM ID and send it to a friend"
                 : $"{readyN}/{players} ready - the match starts when everyone is";
             Shadowed(new Rect(30 * k, 118 * k, sw, 26 * k), wait, new GUIStyle(m_Small) { fontSize = Mathf.RoundToInt(15 * k) });
+            // who's watching
+            if (g != null && g.Spectators.Count > 0)
+            {
+                var names = new System.Text.StringBuilder();
+                foreach (var s in g.Spectators) { if (names.Length > 0) names.Append(", "); names.Append(s.Name.ToString()); }
+                Shadowed(new Rect(30 * k, 142 * k, sw, 26 * k), $"<color=#bbbbbb>Spectating: {names}</color>", new GUIStyle(m_Small) { fontSize = Mathf.RoundToInt(15 * k) });
+            }
 
             // name tags over the aliens
             var tag = new GUIStyle(m_Center) { fontSize = Mathf.RoundToInt(19 * k), fontStyle = FontStyle.Bold };
@@ -48,19 +55,8 @@ namespace RockGame
                 Shadowed(new Rect(at.x - 150 * k, at.y - 34 * k, 300 * k, 30 * k), $"<color=#{hex}>{p.DisplayName}</color>{tick}", tag);
             }
 
-            // the buttons along the bottom left, white-framed like the reference
+            // the buttons along the bottom left, white-framed like the reference (CUSTOMISE ALIEN is off for now)
             float bh = 40 * k, by = sh - bh - 22 * k, bx = 24 * k;
-            // CUSTOMISE ALIEN: big, over LEAVE and COPY ROOM ID
-            {
-                var fst = new GUIStyle(m_Center) { fontSize = Mathf.RoundToInt(18 * k) };
-                float cw = fst.CalcSize(new GUIContent("BACK")).x + 30 * k + 8 * k + fst.CalcSize(new GUIContent(Time.time - m_CopiedAt < 2f ? "COPIED!" : "COPY ROOM ID")).x + 30 * k;
-                var cr = new Rect(24 * k, by - 58 * k, cw, 50 * k); // (lined up over BACK and COPY ROOM ID)
-                bool hov = cr.Contains(Event.current.mousePosition);
-                if (hov) MouseOverUI = true;
-                Fill(cr, hov ? new Color(0.35f, 0.2f, 0.55f, 0.95f) : new Color(0.22f, 0.12f, 0.36f, 0.9f));
-                Frame(cr, Color.white, 2f);
-                if (GUI.Button(cr, "<b>CUSTOMISE ALIEN</b>", new GUIStyle(m_Center) { fontSize = Mathf.RoundToInt(20 * k) })) { ClickSound(); ShipLobby.Customising = true; m_NameEditLobby = null; }
-            }
             if (FramedBtn(ref bx, by, bh, "BACK")) { boot.Leave(); return; }
             if (FramedBtn(ref bx, by, bh, Time.time - m_CopiedAt < 2f ? "COPIED!" : "COPY ROOM ID"))
             {
@@ -68,11 +64,21 @@ namespace RockGame
                 GUIUtility.systemCopyBuffer = string.IsNullOrEmpty(ip) ? "127.0.0.1" : ip;
                 m_CopiedAt = Time.time;
             }
-            if (boot.IsHostSession && !Cfg.Tutorial && FramedBtn(ref bx, by, bh, "GAME OPTIONS")) m_LobbyOptions = !m_LobbyOptions;
-            // the host's AI bots: one more on the team with the most room, or the newest one out (PlayerNet.Bot.cs)
-            if (boot.IsHostSession && !Cfg.Tutorial && FramedBtn(ref bx, by, bh, "+ BOT") && !PlayerNet.ServerAddBot()) Hud.Banner("TEAMS FULL", "There's no room for another bot");
-            if (boot.IsHostSession && PlayerNet.BotCount > 0 && FramedBtn(ref bx, by, bh, "- BOT")) PlayerNet.ServerRemoveBot();
+            if (boot.IsHostSession && !Cfg.Tutorial && FramedBtn(ref bx, by, bh, "GAME OPTIONS")) m_LobbyOptions = !m_LobbyOptions; // (the AI bots are in there now)
+            // watch instead of playing (or, watching, take a seat again)
+            if (g != null && !Cfg.Tutorial && FramedBtn(ref bx, by, bh, me == null ? "PLAY" : "SPECTATE")) g.SpectateRpc(me != null);
             float leftEnd = bx;
+            if (me == null)
+            {
+                // spectating: no team or READY - just a note where READY goes
+                var nr = new Rect(sw - 420 * k, sh - 86 * k, 394 * k, 64 * k);
+                Fill(nr, new Color(0f, 0f, 0f, 0.6f));
+                Frame(nr, new Color(1f, 1f, 1f, 0.6f), 2f);
+                Shadowed(nr, "<b>SPECTATING</b>\n<size=" + Mathf.RoundToInt(14 * k) + "><color=#bbbbbb>You'll watch the match - PLAY to take a seat</color></size>", new GUIStyle(m_Center) { fontSize = Mathf.RoundToInt(22 * k) });
+                if (m_LobbyOptions && boot.IsHostSession) DrawLobbyOptions(boot);
+                Chat.Draw(k, m_Small, Fill, Shadowed);
+                return;
+            }
 
             // team games: a JOIN button for each team, with how many are on it
             if (Cfg.TeamCount >= 2 && !Cfg.FreeForAll)
@@ -180,6 +186,40 @@ namespace RockGame
             return hit;
         }
 
+        /// <summary>GAME OPTIONS: the AI bots (PlayerNet.Bot.cs) - add one to the team you pick, or take one off it; free for
+        /// all just has the one + and -. Happens at once (no APPLY needed).</summary>
+        void DrawBotsRow()
+        {
+            float k = m_Scale;
+            GUILayout.Space(6 * k);
+            GUILayout.BeginHorizontal();
+            RowLabel("AI bots");
+            if (Cfg.FreeForAll || Cfg.TeamCount < 2)
+            {
+                if (Btn("+ BOT", GUILayout.Width(110 * k), GUILayout.Height(30 * k)) && !PlayerNet.ServerAddBot()) Banner("FULL", "There's no room for another bot");
+                if (PlayerNet.BotCount > 0 && Btn("- BOT", GUILayout.Width(110 * k), GUILayout.Height(30 * k))) PlayerNet.ServerRemoveBot();
+                GUILayout.Label($"<color=#bbbbbb>{PlayerNet.BotCount} in</color>", m_Small, GUILayout.Height(30 * k));
+            }
+            else
+            {
+                for (int t = 0; t < Cfg.TeamCount; t++)
+                {
+                    int bots = 0;
+                    foreach (var p in PlayerNet.All) if (p != null && p.IsSpawned && p.Bot.Value && p.Team.Value == t) bots++;
+                    var c = Cfg.TeamColor[t];
+                    var old = GUI.backgroundColor;
+                    GUI.backgroundColor = Color.Lerp(c, Color.white, 0.2f);
+                    if (Btn($"+ {Cfg.TeamName[t]}", GUILayout.Width(120 * k), GUILayout.Height(30 * k)) && !PlayerNet.ServerAddBot(t)) Banner("TEAM FULL", $"There's no room on {Cfg.TeamName[t]}");
+                    GUI.backgroundColor = old;
+                    if (bots > 0 && Btn("-", GUILayout.Width(34 * k), GUILayout.Height(30 * k))) PlayerNet.ServerRemoveBot(t);
+                    GUILayout.Label($"<color=#bbbbbb>{bots}</color>", m_Small, GUILayout.Width(22 * k), GUILayout.Height(30 * k));
+                    GUILayout.Space(6 * k);
+                }
+            }
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
+        }
+
         void Frame(Rect r, Color c, float w)
         {
             Fill(new Rect(r.x, r.y, r.width, w), c);
@@ -208,6 +248,7 @@ namespace RockGame
             key = DrawRulesPicker(key);
             DrawLengthRow(key);
             if (!Cfg.FreeForAll && Cfg.PlayersNeeded > 2) key = DrawCapsRow(key); // (team games: the team sizes)
+            DrawBotsRow();
             GUILayout.Label($"<color=#bbbbbb>The map ({ThemeMaps.Label(Cfg.Map)}, {Cfg.SizeLabel(Cfg.Size)}) stays as hosted. Changing anything here un-readies everyone.</color>", m_SmallWrap);
             GUILayout.FlexibleSpace();
             if (Btn("APPLY", m_Primary, GUILayout.Height(44 * k)))

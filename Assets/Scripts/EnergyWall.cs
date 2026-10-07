@@ -126,7 +126,7 @@ namespace RockGame
         {
             if (c == null || !GameSettings.EnergyWall.Value) return false;
             var e = c.GetComponentInParent<EnergyWall>();
-            if (e == null && MapDome.Collider == c) e = Dome;
+            if (e == null && (MapDome.Collider == c || c.name == "map wall")) e = Dome; // (the invisible boundary walls just inside the dome: the dome's border flares the same)
             if (e == null || !e.Energy) return false;
             Sfx.Play(Sfx.Zap, point, 0.75f, 0.15f, 45f);
             Sfx.PlayPitched(Sfx.Hum, point, 0.6f, 0.55f, 40f);

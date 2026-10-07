@@ -36,7 +36,7 @@ namespace RockGame
     /// checks, the scoreboard - which lists them on a line of their own).
     /// Lives on the NetworkManager object (added by Bootstrap).
     /// </summary>
-    public class Spectator : MonoBehaviour
+    public partial class Spectator : MonoBehaviour
     {
         /// <summary>The most spectators a match lets in (after that a late joiner is turned away as before).</summary>
         public const int MaxSpectators = 8;
@@ -80,7 +80,8 @@ namespace RockGame
             {
                 var nm = NetworkManager.Singleton;
                 var g = NetGame.Instance;
-                return nm != null && nm.IsConnectedClient && !nm.IsServer && PlayerNet.Local == null && g != null && g.IsSpectator(nm.LocalClientId);
+                // (the host too, once it's chosen to spectate from the lobby: Spectator.Lobby.cs)
+                return nm != null && nm.IsConnectedClient && PlayerNet.Local == null && g != null && g.IsSpectator(nm.LocalClientId);
             }
         }
 
@@ -123,8 +124,10 @@ namespace RockGame
                 m_Was = true;
                 Cursor.lockState = CursorLockMode.None;
                 Cursor.visible = true;
-                Chat.Add("<color=#bbbbbb>The match has already started (or is full): you're spectating. Left click: next player, right click: previous.</color>");
+                Chat.Add(ShipLobby.Active ? "<color=#bbbbbb>You're spectating: you'll watch the match from the players' eyes. PLAY takes a seat again while there's room.</color>"
+                    : "<color=#bbbbbb>The match has already started (or is full): you're spectating. Left click: next player, right click: previous.</color>");
             }
+            if (ShipLobby.Active) return; // (in the ship lobby: the room's camera, nobody to follow yet)
             // the watched one went (left the game) or there was nobody yet: the next one there is
             if (m_Target == null || !m_Target.IsSpawned) Cycle(1, true);
             else if (m_Target.Dead.Value && !VictoryCutscene.Active)
@@ -212,7 +215,7 @@ namespace RockGame
 
         void LateUpdate()
         {
-            if (!m_Was) return;
+            if (!m_Was || ShipLobby.Active) return; // (in the ship lobby the room has the camera)
             var cam = Camera.main;
             if (cam == null) return;
             // the victory cutscene has the camera, for the watchers too
