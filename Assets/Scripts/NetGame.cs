@@ -97,6 +97,7 @@ namespace RockGame
                 for (int i = 0; i < LaneTotal; i++) { Lanes.Add(new DropLaneState { Start = -1 }); m_Lanes[i] = new DropLane(); }
                 SpawnNodes();
                 GambleMachine.ServerSpawnAll(); // DNA mode: a gambling machine in every base
+                JonahMode.ServerSpawnConverters(); // Jonah mode: a wood -> alien dust converter at every upgrade station
                 NetworkManager.OnClientDisconnectCallback += OnClientDisconnect;
             }
         }
@@ -536,7 +537,7 @@ namespace RockGame
                         // tools lie flat; small stuff is scaled up a little so it reads on the ground
                         bool longItem = it.Stack.Id == Item.Hatchet || it.Stack.Id == Item.Pickaxe || it.Stack.Id == Item.Bow || it.Stack.Id == Item.BuildingPlan || it.Stack.Id == Item.DeathWand;
                         m.transform.localRotation = longItem ? Quaternion.Euler(90, 0, 0) : Quaternion.identity;
-                        m.transform.localScale = Vector3.one * (it.Stack.Id == Item.Skull ? 4.5f : it.Stack.Id == Item.Ram || it.Stack.Id == Item.Chainsaw ? 1f : 1.6f); // (Assassin's skulls: big, so they're seen)
+                        m.transform.localScale = Vector3.one * (it.Stack.Id == Item.Skull ? 4.5f : Cfg.IsRam(it.Stack.Id) || it.Stack.Id == Item.Chainsaw ? 1f : 1.6f); // (Assassin's skulls: big, so they're seen)
                         if (it.Stack.Id == Item.Helmet) m.transform.localPosition = new Vector3(0, 0.25f, 0);
                         if (longItem) m.transform.localPosition = new Vector3(0, 0.05f, -0.2f);
                     }
@@ -689,6 +690,7 @@ namespace RockGame
 
         void SpawnNode(byte kind, Vector3 pos, int seed)
         {
+            if (ThemeMaps.Custom != null && !ThemeMaps.SpotOk(pos)) return; // THEME MAPS (a copy that lands in the sea - Islands with three teams)
             pos.y = MapBuilder.Height(pos.x, pos.z) - 0.1f;
             var go = Instantiate(Bootstrap.I.nodePrefab, pos, Quaternion.Euler(0, seed % 360, 0));
             go.GetComponent<ResourceNode>().ServerInit(kind, seed);
@@ -745,6 +747,8 @@ namespace RockGame
         public const float DropArrive = AirdropShip.Arrive + 1f, DropBeam = 8f;
         /// <summary>Seconds after a lane's start when the crate touches down (the ship arrives, then beams it down).</summary>
         public const float DropLand = DropArrive + DropBeam;
+        /// <summary>The tutorial's airdrop comes down this many times as fast (its ship, beam and crate all run on the sped-up clock).</summary>
+        public static float DropSpeed => Cfg.Tutorial ? 3f : 1f;
         /// <summary>Lanes 0-3: the world airdrops (one for the whole map, or one per team's side).</summary>
         public const int LaneTotal = 4;
 
@@ -857,7 +861,7 @@ namespace RockGame
             var lane = m_Lanes[i];
             if (lane.Incoming)
             {
-                if (now < LaneStartAt(i) + DropLand) return;
+                if (now < LaneStartAt(i) + DropLand / DropSpeed) return;
                 lane.Incoming = false;
                 var pos = LanePosAt(i);
                 var go = Instantiate(Bootstrap.I.containerPrefab, pos, Quaternion.Euler(0, Random.Range(0f, 360f), 0));
@@ -1046,6 +1050,9 @@ namespace RockGame
         /// <summary>A bush was picked: a new one grows back later somewhere else on the same side.</summary>
         public void ServerScheduleBush(Vector3 where) => m_BushQueue.Add((NetworkManager.ServerTime.Time + Cfg.BushRespawnTime, Cfg.RegionOf(where)));
 
+        /// <summary>The tutorial: a berry bush right here (its berry steps, when every bush on your side has been picked).</summary>
+        public void ServerSpawnBushAt(Vector3 p) => SpawnNode(ResourceNode.Bush, p, Random.Range(0, 1 << 30));
+
         void ServerTickBushes(double now)
         {
             for (int i = m_BushQueue.Count - 1; i >= 0; i--)
@@ -1171,6 +1178,7 @@ namespace RockGame
                 return true;
             }
             if (kind == BlastKind.Airstrike && tier >= 2) { s.ServerDowngrade(); return false; }
+            if (kind == BlastKind.Rocket && s == on) { s.ServerDamage(s.Health.Value + 1f, false); return true; } // (a rocket breaks the piece it hits, any tier)
             float d = structureDamage < 0 ? s.Health.Value + 1f : structureDamage * Mathf.Lerp(1f, 0.5f, Vector3.Distance(s.transform.position, pos) / radius);
             if (kind == BlastKind.Rocket) d *= Cfg.TierBlastMul(tier);
             bool gone = d >= s.Health.Value;
@@ -1204,7 +1212,17 @@ namespace RockGame
         public void ServerRocket(Vector3 pos, PlayerNet shooter)
         {
             // rockets also blow up any trees in the blast (they fall and regrow like felled ones)
-            int n = ServerBlast(pos, Cfg.RocketRadius + 1f, -1, Cfg.RocketPlayerDamage, Cfg.RocketStructureDamage, 0.8f, shooter, false, true, BlastKind.Rocket); // your own base too
+            // the piece it hit goes in one rocket whatever it's fortified to (the rest of the blast as usual)
+            Structure hit = null;
+            float best = 1.6f;
+            foreach (var h in Physics.OverlapSphere(pos, 1.6f, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore))
+            {
+                var s = h.GetComponentInParent<Structure>();
+                if (s == null || !s.IsSpawned) continue;
+                float d = Vector3.Distance(h.ClosestPoint(pos), pos);
+                if (d < best) { best = d; hit = s; }
+            }
+            int n = ServerBlast(pos, Cfg.RocketRadius + 1f, -1, Cfg.RocketPlayerDamage, Cfg.RocketStructureDamage, 0.8f, shooter, false, true, BlastKind.Rocket, hit); // your own base too
             if (shooter != null && n > 0) shooter.NotifyPublic($"Your rocket destroyed {n} piece{(n == 1 ? "" : "s")}!");
         }
 

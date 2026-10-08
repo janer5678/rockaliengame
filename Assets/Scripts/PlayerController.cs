@@ -199,7 +199,7 @@ namespace RockGame
         /// <summary>E on your own upgrade station (UpgradeStation.cs): the UPGRADES screen (in the modes that have base upgrades - Upgrades.cs).</summary>
         public void OpenUpgrades()
         {
-            LootTarget = null;
+            LootTarget = JonahMode.ConverterOf(m_Net.Team.Value); // (Jonah mode: the converter's slot sits on top of the list)
             UpgradesOpen = true;
             MenuOpen = true;
             WheelOpen = false;
@@ -276,7 +276,7 @@ namespace RockGame
             var game = NetGame.Instance;
             bool dead = m_Net.Dead.Value;
             bool gameOver = game != null && game.S == GameState.GameOver;
-            bool cutscene = VictoryCutscene.Active || MatchIntro.Active; // the victory cutscene: everything locked until the victory screen
+            bool cutscene = VictoryCutscene.Active || MatchIntro.Active || WallPicker.Active; // the victory cutscene: everything locked until the victory screen (and Jonah's wall picker)
             bool sd = game != null && game.S == GameState.SuddenDeath;
             bool carrying = m_Net.CarryingBall;
             bool riding = m_Net.Riding;
@@ -325,6 +325,7 @@ namespace RockGame
             if (LootTarget != null && (!LootTarget.IsSpawned || !LootTarget.InReach(m_Net.EyePos))) LootTarget = null;
             // the UPGRADES screen goes with the menu, and closes if you walk away from your upgrade station
             if (UpgradesOpen && (!MenuOpen || !Cfg.AtOwnStation(m_Net.Team.Value, transform.position))) { if (MenuOpen) MenuOpen = false; UpgradesOpen = false; }
+            if (LootTarget != null && LootTarget.IsConverter && !UpgradesOpen) LootTarget = null; // (the converter only shows with UPGRADES)
             if (Paused || MenuOpen || dead) WheelOpen = false;
             TickWatchSync(); // (PlayerController.Watch.cs: tells spectators which screen is open)
             if (dead || m_Net.HeldItem != Item.Airstrike) AirstrikeMapOpen = false;
@@ -457,7 +458,7 @@ namespace RockGame
                 float speed = Crouching ? Cfg.CrouchSpeed : sprint ? Cfg.SprintSpeed : Cfg.WalkSpeed;
                 if (carrying) speed *= Cfg.BallCarrySpeedMul;
                 if (m_DrawStart >= 0 || SightsUp) speed *= 0.6f;
-                if (held == Item.Ram && !carrying) speed *= Cfg.RamMoveMul;
+                if (Cfg.IsRam(held) && !carrying) speed *= Cfg.RamMoveMul;
                 speed *= ThemeMaps.SpeedMul(transform.position); // THEME MAPS
                 if (m_Net.Juiced) speed *= Cfg.SpeedJuiceMul; // (Extreme Speed Juice)
                 if (m_Net.Trapped) speed = 0f; // (caught in a bear trap: held where you stand)
@@ -492,12 +493,17 @@ namespace RockGame
                     // climb: W up, S down, nothing = hang on
                     bool up = move && (fwdInput > 0 || Binds.Held(Bind.Jump));
                     m_VelY = up ? 3.6f : move && fwdInput < 0 ? -3.6f : 0f;
-                    // at the top: step off forwards onto the floor
+                    // at the top: step off forwards onto the floor - over a large wall or gate it takes a while, and hurts
                     var ld = CurrentLadder;
-                    if (ld != null && transform.position.y > ld.TopWorldY - 0.15f && up) { m_Push = ld.ExitDir * 3f; m_VelY = Mathf.Max(m_VelY, ld.ExitHop); }
+                    if (ld != null && transform.position.y > ld.TopWorldY - 0.15f && up)
+                    {
+                        if (ld.CanGoOver) { m_VelY = 0f; TickWallClimb(ld); }
+                        else { m_Push = ld.ExitDir * 3f; m_VelY = Mathf.Max(m_VelY, ld.ExitHop); }
+                    }
+                    else m_WallClimbStart = -1f;
                     if (move && Binds.Down(Bind.Jump)) { m_VelY = 4f; m_Push = -transform.forward * 3f; m_JumpPressedAt = -10f; m_JumpedSinceGround = true; }
                 }
-                else m_VelY -= Cfg.Gravity * Time.deltaTime;
+                else { m_VelY -= Cfg.Gravity * Time.deltaTime; m_WallClimbStart = -1f; }
                 m_Grounded = grounded || ladder;
                 m_Sprinting = sprint && wish.sqrMagnitude > 0.1f;
                 // knockback (hit by a car) fades out, faster on the ground
@@ -555,7 +561,7 @@ namespace RockGame
                         case Item.Revolver: HandlePistol(held); break;
                         case Item.Shotgun: HandleShotgun(); break;
                         case Item.BuildingPlan: HandleBuildInput(); break;
-                        case Item.Ram: HandleRam(); break;
+                        case Item.Ram: case Item.HeavyRam: HandleRam(); break;
                         case Item.Chest:
                         case Item.Barrier:
                         case Item.Car:
@@ -596,7 +602,7 @@ namespace RockGame
             if ((held != Item.Berry && held != Item.Meat) || m_Net.Dead.Value || !input) m_EatStart = -1f;
             float drawTime = held == Item.Spear ? Cfg.SpearDrawTime : Cfg.BowDrawTime;
             DrawAmount = m_DrawStart >= 0 ? Mathf.Clamp01((Time.time - m_DrawStart) / Mathf.Max(0.05f, drawTime)) : 0f;
-            if (!input || carrying || gameOver || held != Item.Ram || !Binds.Held(Bind.Attack)) RamCharge = 0f;
+            if (!input || carrying || gameOver || !Cfg.IsRam(held) || !Binds.Held(Bind.Attack)) RamCharge = 0f;
             CrossbowAiming = input && !carrying && held == Item.Crossbow && Binds.Held(Bind.Aim) && Time.time >= m_XbowBusyUntil;
             // the revolver comes up to the eye the same way (not while it's being reloaded)
             RevolverAiming = input && !carrying && held == Item.Revolver && Binds.Held(Bind.Aim) && m_PistolReloadStart < 0f;
@@ -918,11 +924,13 @@ namespace RockGame
                 float scroll = Tutorial.Allows(TutFeature.Hotbar) ? Input.mouseScrollDelta.y : 0f; // (the tutorial unlocks the hotbar later)
                 if (scroll != 0) want = ((want + (scroll < 0 ? 1 : -1)) % Cfg.HotbarSize + Cfg.HotbarSize) % Cfg.HotbarSize;
             }
-            // the drop key (Q): one of what you're holding goes on the ground in front of you (not the rock: that's your hand)
+            // the drop key (Q): one of what you're holding goes on the ground in front of you (not the rock: that's your hand);
+            // Ctrl+Q drops the whole stack
             if (input && !WheelOpen && Binds.Down(Bind.Drop) && !m_Net.HeldStack.Empty && Time.time >= m_NextDrop)
             {
                 m_NextDrop = Time.time + 0.12f;
-                m_Net.DropItemRpc(0, (byte)cur, 1, default);
+                bool all = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
+                m_Net.DropItemRpc(0, (byte)cur, (ushort)(all ? m_Net.HeldStack.Count : 1), default);
                 Sfx.Play2D(Sfx.Throw, 0.35f);
             }
             if (want != cur)
@@ -1645,6 +1653,33 @@ namespace RockGame
         float m_PackStart = -1f;
         /// <summary>How far through holding E to pick up a chest / workbench (0..1; 0 when not holding). Drawn round the crosshair.
         /// It stays at 0 for the first Cfg.PackUpDelay seconds, so a normal tap of E never flashes the bar.</summary>
+        float m_WallClimbStart = -1f;
+        /// <summary>Going over a large wall / gate from a ladder (0..1, 0 when not).</summary>
+        public float WallClimbProgress => m_WallClimbStart < 0f ? 0f : Mathf.Clamp01((Time.time - m_WallClimbStart) / Mathf.Max(0.1f, Cfg.WallClimbTime));
+
+        /// <summary>Holding W at the top of a ladder on a large wall / gate: after WallClimbTime you're hauled over the
+        /// spiked top (the server takes WallClimbDamage) and drop down the far side.</summary>
+        void TickWallClimb(Ladder ld)
+        {
+            if (m_WallClimbStart < 0f) { m_WallClimbStart = Time.time; Sfx.Play2D(Sfx.Thud, 0.25f, 0.1f); }
+            if (Time.time - m_WallClimbStart < Cfg.WallClimbTime) return;
+            m_WallClimbStart = -1f;
+            var wall = ld.Support;
+            if (wall == null) return;
+            var dir = ld.ExitDir; dir.y = 0f; dir.Normalize();
+            // onto the top of the wall, past its middle, then a shove over the far side
+            float top = ld.SupportTop;
+            var mid = wall.transform.position;
+            float along = Vector3.Dot(mid - transform.position, dir);
+            var to = transform.position + dir * (along + 0.45f);
+            to.y = top + 0.15f;
+            LocalTeleport(to, m_Yaw);
+            m_Push = dir * 4.5f;
+            m_VelY = 1.5f;
+            m_Net.ClimbOverWallRpc();
+            Fx.Shake(0.4f);
+        }
+
         public float PackUpProgress => m_PackStart < 0f ? 0f : Mathf.Clamp01((Time.time - m_PackStart - Cfg.PackUpDelay) / Mathf.Max(0.05f, Cfg.PackUpHoldTime));
         /// <summary>E has been held past the delay: the bar is up (and the aim text says "picking it up...").</summary>
         public bool PackingUp => m_PackStart >= 0f && Time.time - m_PackStart >= Cfg.PackUpDelay;
@@ -1871,7 +1906,8 @@ namespace RockGame
                         goto ladderPlaced;
                     }
                 }
-                if (!visible) reason = kind == Item.Ladder ? "Aim at a wall (or flat ground) nearby" : "Aim at flat ground nearby";
+                if (kind == Item.Ladder) { visible = false; reason = "Aim at a wall nearby"; } // (a ladder only goes against a wall)
+                else if (!visible) reason = "Aim at flat ground nearby";
                 else
                 {
                     m_GhostPos = hit.point;
@@ -2128,7 +2164,7 @@ namespace RockGame
                     else if (c.IsBag) detail = $"{KT(Bind.Interact)}: open";
                     // the placeables that don't open: just their health (the turret: its weapon and ammo)
                     else if (c.IsDeployable)
-                        detail = $"{c.Health.Value:0}/{Deployables.MaxHp(c.Kind.Value):0}" + (c.Kind.Value == Container.Turret && c.Team.Value == m_Net.Team.Value ? $"   {KT(Bind.Interact)}: weapon and ammo" : "")
+                        detail = $"{c.Health.Value:0}/{Deployables.MaxHp(c.Kind.Value):0}" + (c.Kind.Value == Container.Turret && c.Team.Value == m_Net.Team.Value ? (c.Slots.Count > 0 && c.Slots[0].Empty ? $"   <color=#ff8a7a>NO WEAPON</color> - {KT(Bind.Interact)}: put any weapon + arrows in" : $"   {KT(Bind.Interact)}: weapon and arrows") : "")
                             + (c.Kind.Value == Container.Trap && c.Flag.Value == 1 ? "   <color=#ff8a7a>sprung</color>" : "") + (DemolishAiming && c.Team.Value == m_Net.Team.Value ? "   <color=#ff8a7a>LMB: demolish</color>" : "");
                     else detail = $"{c.Health.Value:0}/{Cfg.ChestHp:0}   {KT(Bind.Interact)}: open" + (DemolishAiming && c.Team.Value == m_Net.Team.Value ? "   <color=#ff8a7a>LMB: demolish</color>" : "");
                     if (PackingUp) detail = "picking it up...";
@@ -2154,7 +2190,7 @@ namespace RockGame
                         : "the ball goes in the socket" + (Ball.Instance != null && Ball.Instance.SocketTeam.Value == m_Net.Team.Value ? "   <color=#77ff77>(the ball is in!)</color>" : ""));
                     return;
                 case TargetKind.UpgradeStation:
-                    AimText = TeamTip("Upgrade station", t.MachineTeam, t.MachineTeam != m_Net.Team.Value ? "" : $"{KT(Bind.Interact)} to open");
+                    AimText = TeamTip("Upgrade station", t.MachineTeam, t.MachineTeam != m_Net.Team.Value ? "" : Cfg.Jonah ? $"{KT(Bind.Interact)}: upgrades + wood to alien dust" : $"{KT(Bind.Interact)} to open");
                     return;
                 case TargetKind.Vehicle:
                 {
@@ -2201,8 +2237,11 @@ namespace RockGame
                     if (st.Tier.Value == 0 && st.Upgradable && !Cfg.WoodMode) detail += $"   {KT(Bind.Upgrade)}: upgrade to stone ({Cfg.UpgradeCost(st.PType)} {Cfg.UpgradeName})";
                     if (DemolishMode) detail += "   <color=#ff8a7a>LMB: demolish</color>";
                 }
-                if (m_Net.HeldItem == Item.Ram && hit.distance <= Cfg.RamRange)
-                    detail += st.Tier.Value >= 1 && st.PType != PieceType.Barrier ? $"   hold LMB: ram down to {Cfg.TierName(st.Tier.Value - 1).ToLower()}" : "   hold LMB: ram to smash";
+                if (Cfg.IsRam(m_Net.HeldItem) && hit.distance <= Cfg.RamRange)
+                {
+                    int down = st.Tier.Value - (m_Net.HeldItem == Item.HeavyRam ? Cfg.HeavyRamSteps : 1); // (the heavy ram: three steps in one slam)
+                    detail += down >= 0 && st.PType != PieceType.Barrier ? $"   hold LMB: ram down to {Cfg.TierName(down).ToLower()}" : "   hold LMB: ram to smash";
+                }
                 AimText = TeamTip(st.DisplayName, st.Team.Value, detail);
             }
             // trees and fallen logs show nothing when you point at them (and neither does a player dressed up as one)

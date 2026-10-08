@@ -284,6 +284,7 @@ namespace RockGame
             int team = me.Team.Value;
             // the victory cutscene: just letterbox bars and a caption over it; the victory screen waits until it's over
             if (game != null && VictoryCutscene.Active) { DrawVictoryCutscene(game, team); return; }
+            if (WallPicker.Active) return; // (Jonah's wall picker draws its own)
             if (MatchIntro.DrawHud(k, m_Big, m_Label, m_Small, Fill, Shadowed)) return; // (the match intro: MatchIntro.cs)
             // Settings > Display > INTERFACE > HUD opacity (only while nothing is open over the game)
             s_HudAlpha = pc.MenuOpen || pc.Paused ? 1f : GameSettings.HudOpacity;
@@ -400,7 +401,8 @@ namespace RockGame
             }
             DrawHitMarker(cx, cy, k); // (ticks round the crosshair - it isn't replaced)
             if (pc.Scoped) DrawScope();
-            float charge = Mathf.Max(pc.DrawAmount, pc.RamCharge, pc.EatProgress, pc.PackUpProgress); // (the last: holding E to pick up a chest / workbench)
+            float charge = Mathf.Max(pc.DrawAmount, pc.RamCharge, pc.EatProgress, pc.PackUpProgress, pc.WallClimbProgress);
+            if (pc.WallClimbProgress > 0f) Shadowed(new Rect(0, cy + 42 * k, sw, 26 * k), "<color=#ff8a7a>Climbing over the spikes...</color>", m_Center); // (the last: holding E to pick up a chest / workbench)
             if (charge > 0)
             {
                 Fill(new Rect(cx - 50 * k, cy + 30 * k, 100 * k, 8 * k), new Color(0, 0, 0, 0.5f));
@@ -547,7 +549,7 @@ namespace RockGame
                 case Item.SleepingBag: return $"<b>Sleeping Bag</b> x{s.Count}    LMB: put it down (not in an enemy base) - respawn at it when you die";
                 case Item.BearTrap: return $"<b>Bear Trap</b> x{s.Count}    LMB: set it on the ground or a floor - it snaps and holds ANYONE who steps on it (you too)";
                 case Item.Ladder: return $"<b>Ladder</b> x{s.Count}    LMB: aim at a wall (yours or theirs, or a large wall) - it stands against it; walk into it and hold {KT(Bind.Forward)} to climb";
-                case Item.AutoTurret: return $"<b>Auto Turret</b>    LMB: place it in your base - {KT(Bind.Interact)} on it to give it a ranged weapon and ammo";
+                case Item.AutoTurret: return $"<b>Auto Turret</b>    LMB: place it in your base - then {KT(Bind.Interact)} on it and PUT A WEAPON (any) AND ARROWS IN IT";
                 case Item.Skull: return $"<b>Skull</b> x{s.Count}    Assassin: take it to your machine and {KT(Bind.Interact)}";
                 case Item.Berry: return $"<b>Berries</b> x{s.Count}    RMB: eat ({Cfg.BerryEatTime:0.#}s, +{Cfg.BerryHeal:0} HP)   LMB on a horse: feed it (+{Cfg.HorseBerryHeal:0} HP)";
                 case Item.C4: return "<b>C4</b>    LMB: throw it at enemy buildings - it blows up everything nearby";
@@ -576,7 +578,8 @@ namespace RockGame
                 case Item.Wallhack: return "<b>Wallhack Glasses</b>    hold them to see your enemies through walls";
                 case Item.InvisPotion: return $"<b>Invisibility Potion</b>    LMB: drink ({Cfg.InvisTime:0}s, attacking shows you)";
                 case Item.SpeedJuice: return $"<b>Extreme Speed Juice</b>    LMB: drink ({Cfg.SpeedJuiceTime:0}s of extreme speed)";
-                case Item.Chainsaw: return $"<b>Chainsaw</b> ({s.Data} uses left)    hold LMB: cuts wood and stone fast";
+                case Item.Chainsaw: return "<b>Chainsaw</b>    hold LMB: cuts wood and stone fast (never wears out)";
+                case Item.HeavyRam: return $"<b>High Strength Battering Ram</b> ({s.Data} hit{(s.Data == 1 ? "" : "s")} left)    hold LMB at an enemy piece: 3x a normal ram";
                 case Item.EnderPearl: return "<b>Ender Pearl</b>    LMB: throw it - you teleport to wherever it lands";
                 case Item.Pistol: return $"<b>Pistol</b>  ({s.Data} shot{(s.Data == 1 ? "" : "s")} left)    LMB: shoot" + (me.Count(Item.PistolAmmo) > 0 ? $"   {KT(Bind.Rotate)}: reload ({me.Count(Item.PistolAmmo)} spare ammo)" : "");
                 case Item.PistolAmmo: return "<b>Pistol Ammo</b>    the pistol reloads from this";
@@ -714,7 +717,7 @@ namespace RockGame
             // the drop key over an item in the bag (or an open chest): one of it goes on the ground
             if (hover && !s.Empty && !m_Dragging && e.type == EventType.KeyDown && e.keyCode != KeyCode.None && (e.keyCode == Binds.Get(Bind.Drop) || e.keyCode == Binds.Get(Bind.Drop, true)))
             {
-                me.DropItemRpc(kind, (byte)index, 1, LootRef(pc));
+                me.DropItemRpc(kind, (byte)index, (ushort)(e.control ? s.Count : 1), LootRef(pc)); // (Ctrl+Q: the whole stack)
                 Sfx.Play2D(Sfx.Throw, 0.35f);
                 e.Use();
             }
@@ -766,8 +769,7 @@ namespace RockGame
         {
             switch (s.Id)
             {
-                case Item.Ram: return $"  ({s.Data} hits left)";
-                case Item.Chainsaw:
+                case Item.Ram: case Item.HeavyRam: return $"  ({s.Data} hits left)";
                 case Item.TreeCracker: return $"  ({s.Data} uses left)";
                 case Item.Pistol: return $"  ({s.Data}/{Cfg.PistolMag})";
                 case Item.Revolver: return $"  ({s.Data}/{Cfg.RevolverMag})";
@@ -899,7 +901,8 @@ namespace RockGame
             // (a crate that went the moment it was emptied - an airdrop - keeps its panel, empty, until the bag is closed:
             // the bag used to jump over to the crafting layout in the middle of the move. Hud.Flights.cs)
             bool ghost = pc.LootTarget == null && m_GhostLoot;
-            bool loot = pc.LootTarget != null || ghost;
+            bool converter = pc.LootTarget != null && pc.LootTarget.IsConverter; // (Jonah mode: drawn at the top of UPGRADES, not as a chest)
+            bool loot = (pc.LootTarget != null && !converter) || ghost;
             float top = sh * 0.14f;
             // the crafting list: one column (Hud.Crafting.cs)
             bool upgrades = !loot && pc.UpgradesOpen; // E on your alien machine: UPGRADES instead of crafting (Hud.Upgrades.cs)
@@ -933,12 +936,26 @@ namespace RockGame
                 var c = pc.LootTarget;
                 Shadowed(new Rect(lootX, top - 34 * k, lootW, 30 * k), $"<b>{c.DisplayName.ToUpper()}</b>" + (c.TakeOnly ? "  <color=#bbbbbb>(take only)</color>" : ""), m_Label);
                 int n = c.Slots.Count;
+                bool turret = c.Kind.Value == Container.Turret;
                 for (int i = 0; i < n; i++)
                 {
                     var r = new Rect(lootX + (i % cols) * (slot + gap), top + (i / cols) * (slot + gap), slot, slot);
+                    if (turret) r.x = lootX + i * (slot * 1.6f + gap); // (the turret: its two slots spaced out, each labelled)
+                    // an empty weapon slot in a turret flashes red: it does nothing without one
+                    if (turret && i == 0 && c.Slots[i].Empty) Fill(new Rect(r.x - 4 * k, r.y - 4 * k, r.width + 8 * k, r.height + 8 * k), new Color(1f, 0.15f, 0.1f, 0.35f + 0.35f * Mathf.Sin(Time.unscaledTime * 6f)));
                     DrawSlot(r, c.Slots[i], 1, i, false, me, pc);
+                    if (turret) Shadowed(new Rect(r.x - 20 * k, r.yMax + 2 * k, r.width + 40 * k, 22 * k), i == 0 ? "<b>WEAPON</b> <color=#bbbbbb>(any)</color>" : "<b>ARROWS</b>", m_Center);
                 }
                 lootBottom = top + Mathf.Max(1, (n + cols - 1) / cols) * (slot + gap);
+                if (turret)
+                {
+                    lootBottom += 26 * k;
+                    string help = c.Slots.Count > 0 && c.Slots[0].Empty ? "<color=#ff8a7a><b>NO WEAPON - IT WON'T SHOOT.</b></color> Drag any weapon into the first slot."
+                        : c.Slots.Count > 1 && c.Slots[1].Empty ? "<color=#ffd27a><b>NO ARROWS - IT WON'T SHOOT.</b></color> Drag arrows into the second slot."
+                        : "<color=#9dff9d>Armed.</color> It fires arrows from its weapon at enemies in front of it.";
+                    Shadowed(new Rect(lootX, lootBottom, lootW, 44 * k), help, m_SmallWrap);
+                    lootBottom += 46 * k;
+                }
                 if (c.IsGamble) { DrawGamblePanel(c, me, pc, lootX, top + slot + gap, lootW, slot, k); lootBottom = top + slot + gap + 140 * k; } // DNA mode: the GAMBLE button
             }
 

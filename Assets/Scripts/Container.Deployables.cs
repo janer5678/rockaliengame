@@ -69,6 +69,36 @@ namespace RockGame
         /// <summary>Put against a wall while not square on to it, a ladder turns this far your way at most (degrees).</summary>
         public const float LadderMaxTurn = 30f;
 
+        /// <summary>The building piece a ladder standing here leans on (it faces into it), or null: a ladder needs a wall
+        /// to go against, and breaks (nothing dropped) once that wall is gone.</summary>
+        public static Structure LadderSupport(Vector3 pos, Quaternion rot)
+        {
+            var fwd = rot * Vector3.forward;
+            for (float y = 0.35f; y <= LadderHeight - 0.1f; y += 0.45f)
+            {
+                var o = pos + Vector3.up * y - fwd * 0.2f;
+                foreach (var h in Physics.RaycastAll(o, fwd, 1f, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore))
+                {
+                    var s = h.collider.GetComponentInParent<Structure>();
+                    if (s != null && s.IsSpawned && s.Health.Value > 0f) return s;
+                }
+            }
+            return null;
+        }
+
+        static readonly Dictionary<Container, float> s_LadderCheck = new Dictionary<Container, float>();
+
+        /// <summary>Server: a ladder whose wall has gone breaks with it.</summary>
+        static void ServerLadder(Container c)
+        {
+            s_LadderCheck.TryGetValue(c, out var at);
+            if (Time.time < at) return;
+            s_LadderCheck[c] = Time.time + 0.4f;
+            if (LadderSupport(c.transform.position, c.transform.rotation) != null) return;
+            s_LadderCheck.Remove(c);
+            c.ServerBreakWithSupport();
+        }
+
         public static float CenterUp(byte kind) => kind == Container.SleepBag ? 0.2f : kind == Container.Trap ? 0.15f : kind == Container.Ladder ? 1.4f : 0.9f;
         public static float MaxHp(byte kind) => kind == Container.SleepBag ? 100f : kind == Container.Trap ? 150f : kind == Container.Ladder ? 250f : 500f;
 
@@ -196,6 +226,7 @@ namespace RockGame
                     vol.isTrigger = true;
                     vol.size = new Vector3(1f, LadderHeight + 1f, 1f);
                     var lad = lg.AddComponent<Ladder>();
+                    lad.Deployed = true;
                     lad.TopLocalY = LadderHeight - 0.3f;
                     lad.ExitHop = 4.6f; // (a big hop off the top: over a large wall it doesn't quite reach)
                     break;
@@ -216,6 +247,9 @@ namespace RockGame
         {
             switch (c.Kind.Value)
             {
+                case Container.Ladder:
+                    if (c.IsServer) ServerLadder(c);
+                    break;
                 case Container.Trap:
                 {
                     float shut = c.Flag.Value == 1 ? 1f : 0f;
@@ -244,6 +278,7 @@ namespace RockGame
                         pitch.localRotation = Quaternion.Euler(np, 0, 0);
                         // the weapon it's been given, mounted in its head
                         var w = c.Slots.Count > 0 ? c.Slots[0].Id : Item.None;
+                        TickNeedsWeapon(c, visual, w == Item.None);
                         if (w != st.Shown)
                         {
                             st.Shown = w;
@@ -261,6 +296,47 @@ namespace RockGame
                     break;
                 }
             }
+        }
+
+        /// <summary>An empty turret (no weapon) has a big red sign bobbing over it - "NEEDS A WEAPON" - for its own team,
+        /// so it's obvious it does nothing until you give it one.</summary>
+        static void TickNeedsWeapon(Container c, Transform visual, bool empty)
+        {
+            var sign = visual.Find("needsWeapon");
+            bool show = empty && PlayerNet.Local != null && PlayerNet.Local.Team.Value == c.Team.Value;
+            if (sign == null)
+            {
+                if (!show) return;
+                sign = new GameObject("needsWeapon").transform;
+                sign.SetParent(visual, false);
+                var red = new Color(1f, 0.2f, 0.15f);
+                var glow = new Material(Art.Mat(red));
+                if (glow.HasProperty("_EmissionColor")) { glow.EnableKeyword("_EMISSION"); glow.SetColor("_EmissionColor", red * 2f); }
+                // a "!" in a red ring: the bar and the dot, then the ring of short bars round it
+                Art.Box(sign, red, new Vector3(0, 0.12f, 0), new Vector3(0.12f, 0.36f, 0.05f), default, false, glow);
+                Art.Box(sign, red, new Vector3(0, -0.15f, 0), new Vector3(0.12f, 0.1f, 0.05f), default, false, glow);
+                for (int k = 0; k < 12; k++)
+                {
+                    var r = Quaternion.Euler(0, 0, k * 30f);
+                    Art.Box(sign, red, r * new Vector3(0, 0.36f, 0), new Vector3(0.16f, 0.05f, 0.05f), new Vector3(0, 0, k * 30f), false, glow);
+                }
+                var label = new GameObject("label").AddComponent<TextMesh>();
+                label.transform.SetParent(sign, false);
+                label.transform.localPosition = new Vector3(0, -0.55f, 0);
+                label.text = "NEEDS A WEAPON\n(E: any weapon + arrows)";
+                label.anchor = TextAnchor.MiddleCenter;
+                label.alignment = TextAlignment.Center;
+                label.characterSize = 0.045f;
+                label.fontSize = 64;
+                label.color = new Color(1f, 0.85f, 0.8f);
+                foreach (var col in sign.GetComponentsInChildren<Collider>()) Object.Destroy(col);
+            }
+            sign.gameObject.SetActive(show);
+            if (!show) return;
+            // bob over the turret, always facing the camera
+            sign.position = c.transform.position + Vector3.up * (2.1f + Mathf.Sin(Time.time * 3f) * 0.12f);
+            var cam = Camera.main;
+            if (cam != null) sign.rotation = Quaternion.LookRotation(sign.position - cam.transform.position);
         }
 
         static void ServerTrap(Container c)
@@ -286,25 +362,42 @@ namespace RockGame
             }
         }
 
-        /// <summary>What a turret weapon fires and how: its ammo (None: the weapon's own count), seconds between shots,
-        /// damage, spread (degrees) and pellets.</summary>
-        static bool Gun(Item w, out Item ammo, out float every, out float dmg, out float spread, out int pellets)
+        /// <summary>
+        /// What a turret does with the weapon it's given: seconds between shots, damage, spread (degrees) and pellets.
+        /// It takes ANY weapon (melee ones too) and every one of them fires ARROWS from its second slot - the guns as
+        /// hitscan at their own pace, everything else launching real arrows (ServerTickFlying) that hit as hard as the weapon.
+        /// </summary>
+        static bool Gun(Item w, out float every, out float dmg, out float spread, out int pellets)
         {
             pellets = 1;
             switch (w)
             {
-                case Item.Bow: ammo = Item.Arrow; every = 1.4f; dmg = 30f; spread = 2.5f; return true;
-                case Item.Crossbow: ammo = Item.Arrow; every = 1.7f; dmg = Cfg.CrossbowDamage; spread = 1.5f; return true;
-                case Item.Pistol: ammo = Item.PistolAmmo; every = 0.6f; dmg = Cfg.PistolBodyDamage; spread = 3f; return true;
-                case Item.Revolver: ammo = Item.RevolverAmmo; every = 0.9f; dmg = Cfg.RevolverBodyDamage; spread = 2f; return true;
-                case Item.Shotgun: ammo = Item.ShotgunShell; every = 1.3f; dmg = Cfg.ShotgunPelletDamage; spread = 7f; pellets = Mathf.Max(1, Cfg.ShotgunPellets); return true;
-                case Item.Spear: ammo = Item.Spear; every = 2.2f; dmg = 45f; spread = 2f; return true;
-                case Item.Sniper: ammo = Item.None; every = 2.6f; dmg = 70f; spread = 0.5f; return true;
-                default: ammo = Item.None; every = 1f; dmg = 0f; spread = 0f; return false;
+                case Item.Bow: every = 1.4f; dmg = 30f; spread = 2.5f; return true;
+                case Item.Crossbow: every = 1.7f; dmg = Cfg.CrossbowDamage; spread = 1.5f; return true;
+                case Item.Pistol: every = 0.6f; dmg = Cfg.PistolBodyDamage * 0.45f; spread = 3f; return true;
+                case Item.Revolver: every = 0.9f; dmg = Cfg.RevolverBodyDamage; spread = 2f; return true;
+                case Item.Shotgun: every = 1.3f; dmg = Cfg.ShotgunPelletDamage; spread = 7f; pellets = Mathf.Max(1, Cfg.ShotgunPellets); return true;
+                case Item.Spear: every = 2.2f; dmg = 45f; spread = 2f; return true;
+                case Item.Sniper: every = 2.6f; dmg = 70f; spread = 0.5f; return true;
+                case Item.RocketLauncher: every = 2.4f; dmg = 60f; spread = 1.5f; return true;
+                case Item.DeathWand: every = 2.4f; dmg = 55f; spread = 1f; return true;
             }
+            if (!TurretWeapon(w)) { every = 1f; dmg = 0f; spread = 0f; return false; }
+            // a melee weapon (or a ram, a rock...): arrows at a bow's pace, as hard as the weapon hits (within reason)
+            float hit = Cfg.IsMelee(w) ? Cfg.Melee(w).PlayerDamage : 30f;
+            every = w == Item.Chainsaw ? 0.8f : 1.5f;
+            dmg = Mathf.Clamp(hit * 1.3f, 20f, 40f);
+            spread = 3f;
+            return true;
         }
 
-        public static bool TurretWeapon(Item w) => Gun(w, out _, out _, out _, out _, out _);
+        /// <summary>Anything that's a weapon (melee or ranged): it can go in a turret's weapon slot.</summary>
+        public static bool TurretWeapon(Item w) => Cfg.IsMelee(w) || Cfg.IsRam(w) || w == Item.Bow || w == Item.Crossbow || w == Item.Pistol || w == Item.Revolver
+            || w == Item.Shotgun || w == Item.Sniper || w == Item.RocketLauncher || w == Item.DeathWand;
+        /// <summary>The only thing a turret fires: arrows, from its second slot.</summary>
+        public const Item TurretAmmo = Item.Arrow;
+        /// <summary>The guns: a turret fires them hitscan (everything else launches a real arrow).</summary>
+        static bool Hitscan(Item w) => w == Item.Pistol || w == Item.Revolver || w == Item.Shotgun || w == Item.Sniper || w == Item.RocketLauncher || w == Item.DeathWand;
 
         static void ServerTurret(Container c, TurretState st)
         {
@@ -355,24 +448,16 @@ namespace RockGame
             // fire, if it has a weapon and ammo for it
             if (c.Slots.Count < 2) return;
             var w = c.Slots[0];
-            if (!Gun(w.Id, out var ammo, out var every, out var dmg, out var spread, out var pellets)) return;
-            if (ammo == Item.None)
-            {
-                if (w.Data == 0) return;
-                c.Slots[0] = ItemStack.Of(w.Id, w.Count, w.Data - 1);
-            }
-            else
-            {
-                var a = c.Slots[1];
-                if (a.Id != ammo || a.Count <= 0) return;
-                c.Slots[1] = a.WithCount(a.Count - 1);
-            }
+            if (!Gun(w.Id, out var every, out var dmg, out var spread, out var pellets)) return;
+            var a = c.Slots[1];
+            if (a.Id != TurretAmmo || a.Count <= 0) return;
+            c.Slots[1] = a.WithCount(a.Count - 1);
             st.NextShot = Time.time + every;
             var dir = c.transform.TransformDirection(Quaternion.Euler(st.Aim.y, st.Aim.x, 0) * Vector3.forward);
             var muzzle = eye + dir * 0.55f;
             spread += Mathf.Min(st.Speed, 10f) * Cfg.TurretMovingSpread; // (a moving target: it sprays)
             // a bow, crossbow or spear launches the real thing: it flies, drops and takes time to get there (ServerTickFlying)
-            if (w.Id == Item.Bow || w.Id == Item.Crossbow || w.Id == Item.Spear)
+            if (!Hitscan(w.Id))
             {
                 float speed = w.Id == Item.Crossbow ? Cfg.CrossbowSpeed : w.Id == Item.Spear ? Cfg.SpearThrowSpeed : Cfg.ArrowSpeed;
                 float grav = w.Id == Item.Crossbow ? Cfg.CrossbowGravity : w.Id == Item.Spear ? Cfg.SpearGravity : Cfg.ArrowGravity;

@@ -15,7 +15,8 @@ namespace RockGame
         Dna,
         Workbench,
         Workbench2,
-        Ladder, BearTrap, SleepingBag, LargeGate, SpeedJuice, Skull, AutoTurret }
+        Ladder, BearTrap, SleepingBag, LargeGate, SpeedJuice, Skull, AutoTurret,
+        HeavyRam, AlienDust }
 
     /// <summary>
     /// The game mode (picked in the main menu, next to the players). They don't mix:
@@ -27,14 +28,16 @@ namespace RockGame
     /// (Synced in 4 bits of the map key: never reorder.)
     /// </summary>
     public enum GameRules : byte { Classic, Arsenal, Builder, Fun, FunRandom, FunRandomLimited, Primitive, BuildingPrimitive, AutoWood, Tutorial, Dna,
-        Bedwars, ThreeGoal, Progress, Assassin, Domination } // (the last five: Classic with their own way to win - NetGame.GameModes.cs)
+        Bedwars, ThreeGoal, Progress, Assassin, Domination, // (these five: Classic with their own way to win - NetGame.GameModes.cs)
+        JonahTest } // Jonah Ideas Test: Classic plus alien dust and Upgrade 10 Walls (JonahMode.cs). 16+ needs RulesHighBit in the map key
 
     public enum PieceType : byte { Foundation, Wall, Doorway, Floor, Stairs, Barrier, Window, Tower, EggBlock, Gate }
 
     public enum GameState : byte { Waiting, PreBall, BallLive, SuddenDeath, GameOver }
 
     public enum MapKind : byte { Plains, Highlands,
-        Beach, Canyon, Frostlake, Volcano, Ruins } // THEME MAPS (the second line)
+        Beach, Canyon, Frostlake, Volcano, Ruins, // THEME MAPS (the second line)
+        Islands, Jungle, Ice, CherryBlossom, Wonderland, Swamp, Cube, Mars } // THEME MAPS (the second batch: ThemeMaps/Map.*.cs) - 4 bits in the map key, so 15 is the last
 
     /// <summary>Map size: Big (the original), Small, and 1.5x / 2x versions of Big.</summary>
     public enum MapSize : byte { Big, Small, Large, Huge }
@@ -54,6 +57,8 @@ namespace RockGame
     {
         public Item Output;
         public int Count, Wood, Stone;
+        /// <summary>Jonah mode: the price in alien dust (Cfg.JonahPriced).</summary>
+        public int Dust;
         public string Name => Count > 1 ? $"{Cfg.ItemName(Output)} x{Count}" : Cfg.ItemName(Output);
     }
 
@@ -99,14 +104,20 @@ namespace RockGame
         public static GameMode Mode = GameMode.Duel;
         public static GameRules Rules = GameRules.Classic;
         /// <summary>Arsenal and Builder: cheap items and the powerful items menu.</summary>
-        public static bool PowerMenu => Rules == GameRules.Arsenal || Rules == GameRules.Builder || Rules == GameRules.AutoWood || ClassicMode;
+        public static bool PowerMenu => Rules == GameRules.Arsenal || Rules == GameRules.Builder || Rules == GameRules.AutoWood || ClassicMode || Jonah;
         /// <summary>The five modes that are Classic with another way to win (Bedwars, 3 Goal, Progress, Assassin, Domination).</summary>
-        public static bool ClassicMode => Rules >= GameRules.Bedwars;
+        public static bool ClassicMode => Rules >= GameRules.Bedwars && Rules <= GameRules.Domination;
         /// <summary>The last game mode there is (the menus and the map key clamp to it).</summary>
-        public const GameRules LastRules = GameRules.Domination;
+        public const GameRules LastRules = GameRules.JonahTest;
+        /// <summary>The rules are 4 bits of the map key at RulesShift, and a fifth up here (modes 16 and on: Jonah Ideas Test).</summary>
+        public const int RulesHighBit = 1 << 30;
+        /// <summary>The game mode in a map key.</summary>
+        public static GameRules RulesOf(int key) => (GameRules)Mathf.Clamp(((key >> RulesShift) & RulesMask) | ((key & RulesHighBit) != 0 ? 16 : 0), 0, (int)LastRules);
+        /// <summary>A map key with another game mode in it.</summary>
+        public static int WithRules(int key, GameRules r) => (key & ~(RulesMask << RulesShift) & ~RulesHighBit) | (((int)r & RulesMask) << RulesShift) | ((int)r >= 16 ? RulesHighBit : 0);
         /// <summary>Auto Wood: Arsenal, plus wood piles up at every base by itself.</summary>
         /// <summary>(The tutorial has the wood machine too, bought at its upgrade station like in Classic - but none of the POWER ITEMS.)</summary>
-        public static bool AutoWood => Rules == GameRules.AutoWood || Rules == GameRules.Tutorial || ClassicMode;
+        public static bool AutoWood => Rules == GameRules.AutoWood || Rules == GameRules.Tutorial || ClassicMode || Jonah;
         /// <summary>The graphics everyone plays with, picked by the host (0 Normal, 1 PSX, 2 AI PSX TEST). Synced in the map key.</summary>
         public static int HostGraphics;
         /// <summary>Builder: craft anywhere (with a wait), build anywhere, win with the ball in your own fort.</summary>
@@ -123,14 +134,14 @@ namespace RockGame
         /// the old names.
         /// </summary>
         public static string RulesName(GameRules r) => r == GameRules.Arsenal ? "Arsenal" : r == GameRules.Builder ? "Builder" : r == GameRules.Fun ? "Fun"
-            : r == GameRules.FunRandom ? "Fun Random" : r == GameRules.FunRandomLimited ? "Fun Random Limited" : r == GameRules.Primitive ? "Primitive Limited" : r == GameRules.BuildingPrimitive ? "Building Primitive" : r == GameRules.AutoWood ? "Classic" : r == GameRules.Tutorial ? "Tutorial" : r == GameRules.Dna ? "DNA" : r == GameRules.Bedwars ? "Bedwars" : r == GameRules.ThreeGoal ? "3 Goal" : r == GameRules.Progress ? "Progress" : r == GameRules.Assassin ? "Assassin" : r == GameRules.Domination ? "Domination" : "Primitive";
+            : r == GameRules.FunRandom ? "Fun Random" : r == GameRules.FunRandomLimited ? "Fun Random Limited" : r == GameRules.Primitive ? "Primitive Limited" : r == GameRules.BuildingPrimitive ? "Building Primitive" : r == GameRules.AutoWood ? "Classic" : r == GameRules.Tutorial ? "Tutorial" : r == GameRules.Dna ? "DNA" : r == GameRules.Bedwars ? "Bedwars" : r == GameRules.ThreeGoal ? "3 Goal" : r == GameRules.Progress ? "Progress" : r == GameRules.Assassin ? "Assassin" : r == GameRules.Domination ? "Domination" : r == GameRules.JonahTest ? "Jonah Ideas Test" : "Primitive";
         /// <summary>The mode's -rules name (the enum's, never renamed: classic, autowood, primitive...) - the tests' file names.</summary>
         public static string RulesId(GameRules r) => r.ToString().ToLowerInvariant();
         /// <summary>The game modes on the main menu's first row (the rest are under "More modes").</summary>
         public static readonly GameRules[] MainRules = { GameRules.Tutorial, GameRules.AutoWood, GameRules.Classic };
         /// <summary>The rest of the game modes, under "More modes".</summary>
         public static readonly GameRules[] MoreRules = { GameRules.Arsenal, GameRules.Builder, GameRules.Primitive, GameRules.BuildingPrimitive, GameRules.Dna, GameRules.Fun, GameRules.FunRandom, GameRules.FunRandomLimited,
-            GameRules.Bedwars, GameRules.ThreeGoal, GameRules.Progress, GameRules.Assassin, GameRules.Domination };
+            GameRules.Bedwars, GameRules.ThreeGoal, GameRules.Progress, GameRules.Assassin, GameRules.Domination, GameRules.JonahTest };
         public static string RulesDesc(GameRules r)
         {
             switch (r)
@@ -141,6 +152,7 @@ namespace RockGame
                 case GameRules.ThreeGoal: return "Classic, but score 3 times: get the ball into your machine and a UFO drops it back in the middle. First to 3 wins (most goals when the clock runs out).";
                 case GameRules.Progress: return "Classic, but while the ball sits in your machine your progress bar fills - fill it and you win.";
                 case GameRules.Assassin: return "No ball: kill the enemies - each drops their skull - and hand a skull of every one of them into your machine (E). Skulls only drop in this mode.";
+                case GameRules.JonahTest: return "Classic, plus Jonah's ideas: the upgrade station turns wood into ALIEN DUST (drag wood in, CONVERT), metal and tech things cost alien dust, and UPGRADE 10 WALLS (1000 dust) lets you fly round your base in a black void and pick 10 pieces to go up a tier.";
                 case GameRules.Domination: return "Classic, but whoever has the ball (carried or in their machine) gets the Advanced Trade Station's items without building one. Lose the ball, lose them.";
                 case GameRules.Tutorial: return "New here? Start with this. Short, simple steps teach you the whole game - you do each one to go on, and each control unlocks as it's taught. The clock is stopped and it's always the small Plains map. Press PLAY TUTORIAL and pick Solo or With a friend.";
                 case GameRules.AutoWood: return "Buy a wood machine in UPGRADES (E on the upgrade station beside your alien machine) and wood piles up at your base by itself - go and pick it up; more upgrades speed it up. Arsenal's prices and POWER ITEMS.";
@@ -203,7 +215,7 @@ namespace RockGame
         public static bool FourWay => TeamCount > 2;
         public static string ModeLabel => ModeName(Mode);
         /// <summary>Packs the map/mode choice for syncing; the seed is sent separately.</summary>
-        public static int MapKey => (int)Map | ((int)Size << SizeShift) | (WoodMode ? WoodBit : 0) | (AirdropSides ? SidesBit : 0) | (AirdropCenter ? CenterBit : 0) | (RespawnLoot ? RespawnLootBit : 0) | ((int)Mode << ModeShift) | ((int)Rules << RulesShift) | ((HostGraphics & GraphicsMask) << GraphicsShift) | (CustomCaps ? CapsBit | CapsBits() : 0);
+        public static int MapKey => (int)Map | ((int)Size << SizeShift) | (WoodMode ? WoodBit : 0) | (AirdropSides ? SidesBit : 0) | (AirdropCenter ? CenterBit : 0) | (RespawnLoot ? RespawnLootBit : 0) | ((int)Mode << ModeShift) | WithRules(0, Rules) | ((HostGraphics & GraphicsMask) << GraphicsShift) | (CustomCaps ? CapsBit | CapsBits() : 0);
         static int CapsBits() { int b = 0; for (int t = 0; t < 4; t++) b |= (s_Caps[t] - 1) << (CapsShift + 2 * t); return b; }
 
         public static void SetMap(int key, int seed)
@@ -216,7 +228,7 @@ namespace RockGame
             AirdropCenter = (key & CenterBit) != 0;
             RespawnLoot = (key & RespawnLootBit) != 0;
             Mode = (GameMode)((key >> ModeShift) & ModeMask);
-            Rules = (GameRules)Mathf.Clamp((key >> RulesShift) & RulesMask, 0, (int)Cfg.LastRules);
+            Rules = RulesOf(key);
             if (Rules == GameRules.Tutorial)
             {
                 // the tutorial is always the small, flat Plains map with the normal (wood) materials, whatever the menu says
@@ -454,7 +466,12 @@ namespace RockGame
         [Tune("Crafting")] public static int ChestWood = 50, BarrierWood = 40;
         /// <summary>The Trade Station's ladder, bear trap, sleeping bag and large gate, and the Advanced one's auto turret.</summary>
         [Tune("Crafting")] public static int LadderWood = 250, BearTrapWood = 200, SleepingBagWood = 175, LargeGateWood = 120, AutoTurretWood = 3000;
-        [Tune("Crafting")] public static int CrossbowWood = 500, SaddleWood = 750, ArmorWood = 250, ChainsawWood = 500;
+        [Tune("Crafting")] public static int CrossbowWood = 500, SaddleWood = 750, ArmorWood = 250, ChainsawWood = 2000;
+        /// <summary>The High Strength Battering Ram (Trade Station): one slam does three normal rams' worth.</summary>
+        [Tune("Crafting")] public static int HeavyRamWood = 600;
+        [Tune("Ram")] public static int HeavyRamSteps = 3;
+        /// <summary>Going over a large wall or gate from a ladder: how long it takes (s) and what the spikes on top do (HP).</summary>
+        [Tune("Building")] public static float WallClimbTime = 1.6f, WallClimbDamage = 20f;
         public static int FortTowerWood = 1000; // only used for the demolish refund (the fort is an airdrop item now)
 
         // ---------- Vehicles ----------
@@ -537,6 +554,7 @@ namespace RockGame
                 case Item.Hatchet: return "Hatchet";
                 case Item.Pickaxe: return "Stone Pickaxe";
                 case Item.Ram: return "Battering Ram";
+                case Item.HeavyRam: return "High Strength Battering Ram";
                 case Item.Chest: return "Storage Chest";
                 case Item.Barrier: return "Large Wall";
                 case Item.Stone: return "Stone";
@@ -577,7 +595,7 @@ namespace RockGame
                 case Item.PistolAmmo: return "Pistol Ammo";
                 case Item.HeavyArmor: return "Heavy Armour";
                 case Item.TreeCracker: return "Tree Cracker";
-                case Item.FortifyBuff: return "Fortify All Walls";
+                case Item.FortifyBuff: return Jonah ? "Upgrade 10 Walls" : "Fortify All Walls";
                 case Item.WoodGenBuff: return "Auto Wood Gen";
                 case Item.Boat: return "Wooden Boat";
                 case Item.Sword: return "Sword";
@@ -586,6 +604,7 @@ namespace RockGame
                 case Item.Revolver: return "Revolver";
                 case Item.RevolverAmmo: return "Revolver Bullet";
                 case Item.Dna: return "DNA";
+                case Item.AlienDust: return "Alien Dust";
                 case Item.Workbench: return "Trade Station";    // (the code still calls them workbenches, T1 and T2)
                 case Item.Workbench2: return "Advanced Trade Station";
                 case Item.None: return "";
@@ -597,7 +616,7 @@ namespace RockGame
         {
             switch (i)
             {
-                case Item.Wood: case Item.Stone: case Item.Dna: return 1000;
+                case Item.Wood: case Item.Stone: case Item.Dna: case Item.AlienDust: return 1000;
                 case Item.Arrow: return 64;
                 case Item.PistolAmmo: return 120;
                 case Item.ShotgunShell: return 64;
@@ -616,7 +635,7 @@ namespace RockGame
         }
 
         /// <summary>Materials: they stack onto what you already have, otherwise fill the hotbar from its last slot (6) backwards.</summary>
-        public static bool IsMat(Item i) => i == Item.Wood || i == Item.Stone || i == Item.Dna || i == Item.Arrow || i == Item.ShotgunShell || i == Item.RevolverAmmo;
+        public static bool IsMat(Item i) => i == Item.Wood || i == Item.Stone || i == Item.Dna || i == Item.AlienDust || i == Item.Arrow || i == Item.ShotgunShell || i == Item.RevolverAmmo;
 
         /// <summary>Items whose Data byte is a durability / health counter (shown as a bar).</summary>
         public static int MaxData(Item i)
@@ -624,7 +643,8 @@ namespace RockGame
             switch (i)
             {
                 case Item.Ram: return RamUses;
-                case Item.Chainsaw: return ChainsawUses;
+                case Item.Chainsaw: return 0; // (never wears out)
+                case Item.HeavyRam: return RamUses;
                 case Item.Armor: return ArmorHp;
                 case Item.Sniper: return SniperAmmo;
                 case Item.Jetpack: return JetpackFuel;
@@ -783,6 +803,8 @@ namespace RockGame
                 default: return default;
             }
         }
+        /// <summary>The battering rams: the normal one and the High Strength one (three steps a slam).</summary>
+        public static bool IsRam(Item i) => i == Item.Ram || i == Item.HeavyRam;
         public static bool IsMelee(Item i) => i == Item.Rock || i == Item.Hatchet || i == Item.Pickaxe || i == Item.Spear || i == Item.Chainsaw || i == Item.TreeCracker || i == Item.Sword;
         /// <summary>Melee damage to a player: the sword has its own headshot number, everything else does x2 to the head.</summary>
         public static float MeleePlayerDamage(Item i, bool head) => i == Item.Sword ? (head ? SwordHeadDamage : SwordBodyDamage) : Melee(i).PlayerDamage * (head ? HeadshotMul : 1f);
@@ -848,7 +870,7 @@ namespace RockGame
         }
 
         // ---------- Crafting ----------
-        static readonly Item[] k_Recipes = { Item.Hatchet, Item.Pickaxe, Item.Spear, Item.BuildingPlan, Item.Chest, Item.Bow, Item.Arrow, Item.Crossbow, Item.Armor, Item.Chainsaw, Item.Ram, Item.Barrier, Item.LargeGate, Item.Ladder, Item.Saddle, Item.Workbench, Item.Workbench2, Item.AutoTurret };
+        static readonly Item[] k_Recipes = { Item.Hatchet, Item.Pickaxe, Item.Spear, Item.BuildingPlan, Item.Chest, Item.Bow, Item.Arrow, Item.Crossbow, Item.Armor, Item.Chainsaw, Item.Ram, Item.HeavyRam, Item.Barrier, Item.LargeGate, Item.Ladder, Item.Saddle, Item.Workbench, Item.Workbench2, Item.AutoTurret };
 
         static readonly Item[] k_Limited = { Item.Hatchet, Item.Spear, Item.BuildingPlan, Item.Ram };
         static readonly List<Item> s_Active = new List<Item>();
@@ -880,6 +902,7 @@ namespace RockGame
                 case Item.Bow: r = new Recipe { Output = Item.Bow, Count = 1, Wood = BowWood, Stone = BowStone }; break;
                 case Item.Arrow: r = new Recipe { Output = Item.Arrow, Count = Mathf.Max(1, ArrowsPerCraft), Wood = ArrowWood, Stone = ArrowStone }; break;
                 case Item.Ram: r = new Recipe { Output = Item.Ram, Count = 1, Wood = RamWood, Stone = RamStone }; break;
+                case Item.HeavyRam: r = new Recipe { Output = Item.HeavyRam, Count = 1, Wood = HeavyRamWood }; break;
                 case Item.Chest: r = new Recipe { Output = Item.Chest, Count = 1, Wood = ChestWood }; break;
                 case Item.Crossbow: r = new Recipe { Output = Item.Crossbow, Count = 1, Wood = CrossbowWood }; break;
                 case Item.Saddle: r = new Recipe { Output = Item.Saddle, Count = 1, Wood = SaddleWood }; break;
@@ -895,7 +918,7 @@ namespace RockGame
                 default: r = new Recipe { Output = Item.Barrier, Count = 1, Wood = BarrierWood }; break;
             }
             if (WoodMode) { r.Wood += r.Stone; r.Stone = 0; } // everything costs wood only
-            return DnaPriced(Priced(r)); // DNA mode: the price in DNA
+            return JonahPriced(DnaPriced(Priced(r))); // DNA mode: the price in DNA; Jonah mode: metal things in alien dust
         }
         /// <summary>A recipe's price in this game mode (Arsenal / Builder: the crossbow is cheaper).</summary>
         public static Recipe Priced(Recipe r)
@@ -942,14 +965,14 @@ namespace RockGame
             var id = k_Power[Mathf.Clamp(i, 0, k_Power.Length - 1)];
             switch (id)
             {
-                case Item.Sword: return new Recipe { Output = id, Count = 1, Wood = SwordWood };
-                case Item.Shotgun: return new Recipe { Output = id, Count = 1, Wood = ShotgunWood };
-                case Item.ShotgunShell: return new Recipe { Output = id, Count = 1, Wood = ShellWood };
-                case Item.Revolver: return new Recipe { Output = id, Count = 1, Wood = RevolverWood };
-                case Item.RevolverAmmo: return new Recipe { Output = id, Count = Mathf.Max(1, RevolverAmmoPerCraft), Wood = RevolverAmmoWood };
-                case Item.C4: return new Recipe { Output = id, Count = 1, Wood = C4Wood };
-                case Item.Helmet: return new Recipe { Output = id, Count = 1, Wood = HelmetWood };
-                case Item.HeavyArmor: return new Recipe { Output = id, Count = 1, Wood = HeavyArmorWood };
+                case Item.Sword: return JonahPriced(new Recipe { Output = id, Count = 1, Wood = SwordWood });
+                case Item.Shotgun: return JonahPriced(new Recipe { Output = id, Count = 1, Wood = ShotgunWood });
+                case Item.ShotgunShell: return JonahPriced(new Recipe { Output = id, Count = 1, Wood = ShellWood });
+                case Item.Revolver: return JonahPriced(new Recipe { Output = id, Count = 1, Wood = RevolverWood });
+                case Item.RevolverAmmo: return JonahPriced(new Recipe { Output = id, Count = Mathf.Max(1, RevolverAmmoPerCraft), Wood = RevolverAmmoWood });
+                case Item.C4: return JonahPriced(new Recipe { Output = id, Count = 1, Wood = C4Wood });
+                case Item.Helmet: return JonahPriced(new Recipe { Output = id, Count = 1, Wood = HelmetWood });
+                case Item.HeavyArmor: return JonahPriced(new Recipe { Output = id, Count = 1, Wood = HeavyArmorWood });
                 default: return BaseUpgradeRecipe(id, team); // (Builder's Fortify All Walls)
             }
         }

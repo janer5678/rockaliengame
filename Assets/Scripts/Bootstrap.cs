@@ -150,7 +150,8 @@ namespace RockGame
                                 : rs == "primitive" || rs == "primitivelimited" || rs == "limited" ? 6 : rs == "buildingprimitive" ? 7 : rs == "autowood" ? 8
                                 : rs == "tutorial" ? 9 : rs == "dna" ? (int)GameRules.Dna : rs == "bedwars" ? (int)GameRules.Bedwars : rs == "threegoal" || rs == "3goal" ? (int)GameRules.ThreeGoal
                                 : rs == "progress" ? (int)GameRules.Progress : rs == "assassin" ? (int)GameRules.Assassin : rs == "domination" ? (int)GameRules.Domination : 0; // (classic, original: 0)
-                            MapChoice = (MapChoice & ~(Cfg.RulesMask << Cfg.RulesShift)) | (rv << Cfg.RulesShift);
+                            if (rs == "jonah" || rs == "jonahtest") rv = (int)GameRules.JonahTest;
+                            MapChoice = Cfg.WithRules(MapChoice, (GameRules)rv);
                         }
                         break;
                     case "-sides": MapChoice |= Cfg.SidesBit; break;

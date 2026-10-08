@@ -45,15 +45,17 @@ namespace RockGame
         }
 
         /// <summary>How many times a team has bought it (0 = not yet).</summary>
-        public static int BaseUpgradeLevel(Item id, int team) => id == Item.WoodGenBuff ? WoodGenLevel(team) : FortifyLevel(team);
-        public static int BaseUpgradeMax(Item id) => id == Item.WoodGenBuff ? MaxWoodGen : MaxFortify;
-        public static bool BaseUpgradeMaxed(Item id, int team) => BaseUpgradeLevel(id, team) >= BaseUpgradeMax(id);
+        public static int BaseUpgradeLevel(Item id, int team) => id == Item.WoodGenBuff ? WoodGenLevel(team) : Jonah ? 0 : FortifyLevel(team);
+        public static int BaseUpgradeMax(Item id) => id == Item.WoodGenBuff ? MaxWoodGen : Jonah ? 0 : MaxFortify;
+        /// <summary>(Jonah's Upgrade 10 Walls is never maxed: it can be bought as long as there's a piece left to upgrade.)</summary>
+        public static bool BaseUpgradeMaxed(Item id, int team) => Jonah && id == Item.FortifyBuff ? UpgradablePieces(team) == 0 : BaseUpgradeLevel(id, team) >= BaseUpgradeMax(id);
 
         /// <summary>What the next level costs (it goes up each time; team -1: the first level). In DNA mode the price is DNA.</summary>
         public static Recipe BaseUpgradeRecipe(Item id, int team)
         {
             int lvl = BaseUpgradeLevel(id, team);
-            if (id == Item.WoodGenBuff) return DnaPriced(new Recipe { Output = id, Count = 1, Wood = WoodGenWood(lvl + 1) });
+            if (id == Item.WoodGenBuff) return JonahPriced(DnaPriced(new Recipe { Output = id, Count = 1, Wood = WoodGenWood(lvl + 1) }));
+            if (Jonah) return Upgrade10WallsRecipe;
             return DnaPriced(new Recipe { Output = Item.FortifyBuff, Count = 1, Wood = FortifyWoodFor(lvl + 1) });
         }
 
@@ -67,6 +69,7 @@ namespace RockGame
                 if (lvl == 0) return $"builds a wood machine in your base: {WoodGenRate(1)} wood a second";
                 return $"level {lvl + 1}: your base makes {WoodGenRate(lvl + 1)} wood a second (now {WoodGenRate(lvl)})";
             }
+            if (Jonah) return UpgradablePieces(team) == 0 ? "build some walls first (or they're all armoured)" : $"fly round your base and pick {WallsPerUpgrade} pieces: each goes up a tier";
             if (lvl >= MaxFortify) return "your pieces are all armoured - fully fortified";
             return $"all your team's pieces from {TierName(lvl).ToLower()} to {TierName(lvl + 1).ToLower()} ({lvl + 2} ram hits each)";
         }
@@ -75,7 +78,7 @@ namespace RockGame
         public static string BaseUpgradeNow(Item id, int team)
         {
             int lvl = BaseUpgradeLevel(id, team);
-            return id == Item.WoodGenBuff ? (lvl == 0 ? "no wood machine yet" : $"{WoodGenRate(lvl)} wood a second") : $"{TierName(lvl)} walls";
+            return id == Item.WoodGenBuff ? (lvl == 0 ? "no wood machine yet" : $"{WoodGenRate(lvl)} wood a second") : Jonah ? "no walls to upgrade" : $"{TierName(lvl)} walls";
         }
 
         /// <summary>Is a player of this team standing at p close enough to its upgrade station to buy upgrades?</summary>
@@ -99,6 +102,7 @@ namespace RockGame
             if (Dead.Value || g == null || InSuddenDeath || g.S == GameState.GameOver || !Cfg.BaseUpgradeOn(id)) return;
             int team = Team.Value;
             if (!Tutorial.AllowsFor(this, TutFeature.Station)) { Notify("Not yet - the tutorial gets to the upgrade station soon"); return; }
+            if (Cfg.Jonah && id == Item.FortifyBuff) { Notify("Upgrade 10 Walls: press UPGRADE and pick the pieces"); return; } // (JonahMode.cs: WallPicker -> UpgradeWallsRpc)
             if (id == Item.FortifyBuff && !Tutorial.AllowsFor(this, TutFeature.Fortify)) { Notify("Not yet - the wood gen first, then the tutorial gets to your walls"); return; }
             if (!Cfg.AtOwnStation(team, transform.position)) { Notify("Upgrades are bought at your upgrade station (E on it - the orange arrow, left of your alien machine)"); return; }
             if (Cfg.BaseUpgradeMaxed(id, team)) { Notify(id == Item.WoodGenBuff ? "Your wood gen is already maxed out" : "Your walls are already armoured - fully fortified"); return; }

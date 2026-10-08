@@ -48,6 +48,14 @@ namespace RockGame
             {
                 me.ServerGive(kind, 1);
                 yield return Hold(me, kind);
+                if (kind == Item.Ladder)
+                {
+                    // a ladder only goes against a wall now: put one up where it'll stand
+                    var lp = SpotFor(Item.Chest, faceYaw);
+                    var lfwd = Quaternion.Euler(0, faceYaw, 0) * Vector3.forward;
+                    if (lp != Vector3.zero) SpawnKeylessPiece(PieceType.Wall, team, lp + lfwd * 0.45f, Quaternion.Euler(0, faceYaw, 0));
+                    yield return new WaitForSeconds(0.3f);
+                }
                 var at = SpotFor(kind, faceYaw);
                 Check(at != Vector3.zero, $"a spot in our base for the {Cfg.ItemName(kind)}");
                 if (at == Vector3.zero) continue;
@@ -117,7 +125,7 @@ namespace RockGame
             {
                 var at = OnGround(spawn - back * 6f - side * 5f, 0f);
                 var tgo = Instantiate(Bootstrap.I.containerPrefab, at, Quaternion.LookRotation(back));
-                tgo.GetComponent<Container>().ServerInit(Container.Turret, enemy, 2, new System.Collections.Generic.List<ItemStack> { ItemStack.Of(Item.Pistol, 1, Cfg.PistolMag), ItemStack.Of(Item.PistolAmmo, 30) });
+                tgo.GetComponent<Container>().ServerInit(Container.Turret, enemy, 2, new System.Collections.Generic.List<ItemStack> { ItemStack.Of(Item.Pistol, 1, Cfg.PistolMag), ItemStack.Of(Item.Arrow, 30) });
                 tgo.GetComponent<NetworkObject>().Spawn(true);
                 var turret = tgo.GetComponent<Container>();
                 pc.LocalTeleport(OnGround(at + back * 9f), Quaternion.LookRotation(-back).eulerAngles.y);

@@ -20,10 +20,11 @@ namespace RockGame
         bool m_JoinFromTutorial;
         int m_Battle;              // 0: 1v1, 1: teams, 2: free for all
         int m_CapA = 2, m_CapB = 2, m_FfaN = 4, m_MapPick;
-        static readonly MapKind[] k_Maps = { MapKind.Plains, MapKind.Highlands, MapKind.Beach, MapKind.Canyon, MapKind.Frostlake, MapKind.Volcano, MapKind.Ruins };
+        static readonly MapKind[] k_Maps = { MapKind.Plains, MapKind.Highlands, MapKind.Beach, MapKind.Canyon, MapKind.Frostlake, MapKind.Volcano, MapKind.Ruins,
+            MapKind.Islands, MapKind.Jungle, MapKind.Ice, MapKind.CherryBlossom, MapKind.Wonderland, MapKind.Swamp, MapKind.Cube, MapKind.Mars };
 
         /// <summary>The modes the main menu offers (the others are hidden for now; the dev main menu still has them all).</summary>
-        public static readonly GameRules[] MenuModes = { GameRules.AutoWood, GameRules.Classic, GameRules.Bedwars, GameRules.ThreeGoal, GameRules.Progress, GameRules.Assassin, GameRules.Domination };
+        public static readonly GameRules[] MenuModes = { GameRules.AutoWood, GameRules.Classic, GameRules.Bedwars, GameRules.ThreeGoal, GameRules.Progress, GameRules.Assassin, GameRules.Domination, GameRules.JonahTest };
 
         /// <summary>The dev main menu (the old all-in-one page) is up instead of the new one: Tab swaps them.</summary>
         public static bool DevMenuShown => s_I != null && (s_I.m_DevMenu || (Bootstrap.Testing && !TestNewMenu));
@@ -156,9 +157,8 @@ namespace RockGame
 
         void StartTutorial(Bootstrap boot, bool solo)
         {
-            int key = Bootstrap.MapChoice & ~(Cfg.RulesMask << Cfg.RulesShift);
-            key = Cfg.WithCaps(key, null);
-            Bootstrap.MapChoice = key | ((int)GameRules.Tutorial << Cfg.RulesShift);
+            int key = Cfg.WithCaps(Bootstrap.MapChoice, null);
+            Bootstrap.MapChoice = Cfg.WithRules(key, GameRules.Tutorial);
             PlayerPrefs.SetInt("RockGame.Map", Bootstrap.MapChoice);
             boot.Host(solo);
         }
@@ -230,8 +230,8 @@ namespace RockGame
             // + / - buttons, the options under it, and the big CONTINUE
             float k = m_Scale;
             int key = Bootstrap.MapChoice;
-            var rules = (GameRules)Mathf.Clamp((key >> Cfg.RulesShift) & Cfg.RulesMask, 0, (int)Cfg.LastRules);
-            if (System.Array.IndexOf(MenuModes, rules) < 0) { rules = MenuModes[0]; key = (key & ~(Cfg.RulesMask << Cfg.RulesShift)) | ((int)rules << Cfg.RulesShift); }
+            var rules = Cfg.RulesOf(key);
+            if (System.Array.IndexOf(MenuModes, rules) < 0) { rules = MenuModes[0]; key = Cfg.WithRules(key, rules); }
             // the drop-down
             var dr = new Rect(x, y, w, 58 * k);
             bool hover = dr.Contains(Event.current.mousePosition);
@@ -250,7 +250,7 @@ namespace RockGame
                     var rr = new Rect(x + 18 * k, y, w - 18 * k, 40 * k);
                     bool on = gr == rules;
                     if (on) { Fill(rr, new Color(k_Acid.r, k_Acid.g, k_Acid.b, 0.3f)); Frame(rr, k_Acid, 2f); }
-                    if (SmallBtn(rr, Cfg.RulesName(gr).ToUpper())) { key = (key & ~(Cfg.RulesMask << Cfg.RulesShift)) | ((int)gr << Cfg.RulesShift); m_ModesOpen = false; rules = gr; }
+                    if (SmallBtn(rr, Cfg.RulesName(gr).ToUpper())) { key = Cfg.WithRules(key, gr); m_ModesOpen = false; rules = gr; }
                     y += 44 * k;
                 }
                 y += 4 * k;
@@ -289,8 +289,8 @@ namespace RockGame
         int DrawRulesPicker(int key)
         {
             float k = m_Scale;
-            var rules = (GameRules)Mathf.Clamp((key >> Cfg.RulesShift) & Cfg.RulesMask, 0, (int)Cfg.LastRules);
-            if (System.Array.IndexOf(MenuModes, rules) < 0) { rules = MenuModes[0]; key = (key & ~(Cfg.RulesMask << Cfg.RulesShift)) | ((int)rules << Cfg.RulesShift); }
+            var rules = Cfg.RulesOf(key);
+            if (System.Array.IndexOf(MenuModes, rules) < 0) { rules = MenuModes[0]; key = Cfg.WithRules(key, rules); }
             GUILayout.BeginHorizontal();
             RowLabel("Game mode");
             if (Btn($"<b>{Cfg.RulesName(rules).ToUpper()}</b>      {(m_ModesOpen ? "▲" : "▼")}", GUILayout.Height(36 * k))) m_ModesOpen = !m_ModesOpen;
@@ -300,10 +300,10 @@ namespace RockGame
                 {
                     GUILayout.BeginHorizontal();
                     GUILayout.Space(103 * k);
-                    if (Choice(rules == gr, Cfg.RulesName(gr), GUILayout.Height(32 * k))) { key = (key & ~(Cfg.RulesMask << Cfg.RulesShift)) | ((int)gr << Cfg.RulesShift); m_ModesOpen = false; }
+                    if (Choice(rules == gr, Cfg.RulesName(gr), GUILayout.Height(32 * k))) { key = Cfg.WithRules(key, gr); m_ModesOpen = false; }
                     GUILayout.EndHorizontal();
                 }
-            rules = (GameRules)((key >> Cfg.RulesShift) & Cfg.RulesMask);
+            rules = Cfg.RulesOf(key);
             GUILayout.BeginHorizontal();
             GUILayout.Space(103 * k);
             GUILayout.Label($"<color=#ffd24a>{Cfg.RulesDesc(rules)}</color>", m_SmallWrap);
@@ -439,8 +439,8 @@ namespace RockGame
         {
             int key = Bootstrap.MapChoice;
             key = (key & ~15) | (int)kind;
-            var rules = (GameRules)((key >> Cfg.RulesShift) & Cfg.RulesMask);
-            if (System.Array.IndexOf(MenuModes, rules) < 0) key = (key & ~(Cfg.RulesMask << Cfg.RulesShift)) | ((int)MenuModes[0] << Cfg.RulesShift);
+            var rules = Cfg.RulesOf(key);
+            if (System.Array.IndexOf(MenuModes, rules) < 0) key = Cfg.WithRules(key, MenuModes[0]);
             if (m_Battle == 0) key = WithTeams(key, 1, 1);
             else if (m_Battle == 1) key = WithTeams(key, m_CapA, m_CapB);
             else key = Cfg.WithCaps((key & ~(Cfg.ModeMask << Cfg.ModeShift)) | ((int)(m_FfaN >= 4 ? GameMode.Ffa4 : GameMode.Ffa3) << Cfg.ModeShift), null);

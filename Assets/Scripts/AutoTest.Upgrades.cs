@@ -318,12 +318,12 @@ namespace RockGame
             {
                 me.CraftRpc(idx);
                 yield return new WaitForSeconds(0.5f);
-                Check(me.Count(Item.Saddle) == s0 && me.Count(cur) == w0, $"no saddle without a Workbench T1 (benches: T{Cfg.BenchTier(team)})");
+                Check(me.Count(Item.Saddle) == s0 && me.Count(cur) == w0, $"no saddle without the trade stations (benches: T{Cfg.BenchTier(team)})");
             }
             int benchBefore = Cfg.BenchTier(team);
             yield return BenchBuy(me, pc, Item.Saddle);
-            Check(Cfg.CraftTier(Item.Saddle) == 1 && Cfg.BenchTier(team) == Mathf.Max(1, benchBefore) && me.Count(Item.Saddle) == s0 + 1,
-                $"the saddle is crafted with the Workbench T1 (no T2 needed; benches: T{Cfg.BenchTier(team)})");
+            Check(Cfg.CraftTier(Item.Saddle) == 2 && Cfg.BenchTier(team) == 2 && me.Count(Item.Saddle) == s0 + 1,
+                $"the saddle is crafted at the Advanced Trade Station (benches: T{Cfg.BenchTier(team)})");
             Drop(me, Item.Saddle);
         }
 

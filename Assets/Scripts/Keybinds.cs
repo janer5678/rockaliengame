@@ -40,7 +40,7 @@ namespace RockGame
             new Info { Bind = Bind.Aim, Group = "ACTIONS", Label = "Aim / eat", Hint = "eat, aim the crossbow / sniper; hold + Attack throws a spear", Main = KeyCode.Mouse1 },
             new Info { Bind = Bind.Interact, Group = "ACTIONS", Label = "Interact", Hint = "ball, doors, chests, bushes, items, horses, cars", Main = KeyCode.E },
             new Info { Bind = Bind.Inventory, Group = "ACTIONS", Label = "Inventory & crafting", Hint = "crafting works in your base (spears & hatchets anywhere); a tap of the scoreboard key opens it too", Main = KeyCode.I },
-            new Info { Bind = Bind.Drop, Group = "ACTIONS", Label = "Drop item", Hint = "drops one of what you're holding - or, in the bag, of the item under the mouse", Main = KeyCode.Q },
+            new Info { Bind = Bind.Drop, Group = "ACTIONS", Label = "Drop item", Hint = "drops one of what you're holding - or, in the bag, of the item under the mouse. Ctrl + this drops the whole stack", Main = KeyCode.Q },
             new Info { Bind = Bind.Scoreboard, Group = "ACTIONS", Label = "Bag (tap) / scoreboard (hold)", Hint = "tap: the bag, like the inventory key · hold: every player, kills, deaths, ping - and a MESSAGE button to whisper to one", Main = KeyCode.Tab },
 
             new Info { Bind = Bind.Rotate, Group = "BUILDING  (holding the building plan)", Label = "Rotate", Hint = "turns stairs · hold Aim for the building wheel", Main = KeyCode.R },

@@ -108,7 +108,7 @@ Shader "RockGame/Painted"
                 half3 n = normalize(i.n) * (front ? 1 : -1);
                 half3 c = GrassShade(i.color, i.ws, n, i.positionCS, 0);
                 c += i.color * _Glow * (1 - saturate(dot(n, _MainLightPosition.xyz)) );
-                return half4(MixFog(c, ComputeFogFactor(i.positionCS.z)), 1);
+                return half4(MixFog(c, ComputeFogFactorZ0ToFar(distance(i.ws, _WorldSpaceCameraPos))), 1); // (fog by the real distance: SV_Position's z here is screen depth, which fogged everything solid)
             }
             ENDHLSL
         }

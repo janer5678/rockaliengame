@@ -82,6 +82,17 @@ namespace RockGame
             else { Inv[HeldSlot.Value] = ItemStack.Of(Item.PortalGun, 1, left); Notify("Portal placed - shoot again for the other end"); }
         }
 
+        float m_NextWallClimb;
+        /// <summary>Hauled yourself over a large wall / gate from a ladder: the spikes on top hurt.</summary>
+        [Rpc(SendTo.Server)]
+        public void ClimbOverWallRpc()
+        {
+            if (Dead.Value || Time.time < m_NextWallClimb) return;
+            m_NextWallClimb = Time.time + Cfg.WallClimbTime * 0.8f;
+            ServerDamage(Cfg.WallClimbDamage, null, KillCause.Died);
+            Notify($"The spikes on top of the wall cut you (-{Cfg.WallClimbDamage:0} HP)");
+        }
+
         /// <summary>How close to a portal a ram has to hit to smash it.</summary>
         public const float RamPortalReach = 1.5f;
 
@@ -90,7 +101,7 @@ namespace RockGame
         public void RamPortalRpc(Vector3 point)
         {
             var g = NetGame.Instance;
-            if (g == null || Dead.Value || CarryingBall || InSuddenDeath || HeldItem != Item.Ram || !GameAllowsCombat || Time.time < m_NextRam) return;
+            if (g == null || Dead.Value || CarryingBall || InSuddenDeath || !Cfg.IsRam(HeldItem) || !GameAllowsCombat || Time.time < m_NextRam) return;
             if (Vector3.Distance(EyePos, point) > Cfg.RamRange + 2f) return;
             m_NextRam = Time.time + Cfg.RamWindup * 0.85f;
             SwingRpc();
@@ -99,7 +110,7 @@ namespace RockGame
             var ram = HeldStack;
             int left = ram.Data - 1;
             if (left <= 0) ServerClearSlot(HeldSlot.Value);
-            else Inv[HeldSlot.Value] = ItemStack.Of(Item.Ram, 1, left);
+            else Inv[HeldSlot.Value] = ItemStack.Of(ram.Id, 1, left);
             Fx.Server(FxKind.Smash, point, (EyePos - point).normalized);
             Notify("Smashed the portal!" + (left > 0 ? $"  ({left} ram hits left)" : "  - your ram broke"));
         }

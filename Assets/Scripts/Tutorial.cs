@@ -85,7 +85,9 @@ namespace RockGame
         /// <summary>PlayerNet.TutStep when the tutorial is finished (everything unlocked).</summary>
         public const byte FinishedStep = 255;
         /// <summary>What a guide asks the server for (PlayerNet.TutorialRpc -> ServerAction).</summary>
-        public const byte AskWall = 1, AskHungry = 2, AskDummies = 3, AskAirdrop = 4, AskHut = 5, AskUpgradeWood = 6, AskFinale = 7, AskKit = 8, AskFortifyWood = 9, AskC4 = 10;
+        public const byte AskWall = 1, AskHungry = 2, AskDummies = 3, AskAirdrop = 4, AskHut = 5, AskUpgradeWood = 6, AskFinale = 7, AskKit = 8, AskFortifyWood = 9, AskC4 = 10, AskWood = 11, AskBush = 12;
+        /// <summary>After the wall-breaking step nothing needs chopping any more: whenever you have less than WoodFloor wood you're topped up to WoodGift.</summary>
+        public const int WoodFloor = 300, WoodGift = 800;
         /// <summary>The raid step: this long after your C4 is gone (thrown, dropped) with the door still on, you're handed
         /// another one (its fuse, plus a moment for the blast to count).</summary>
         public static float C4RefillAfter => Cfg.C4Fuse + 2.5f;
@@ -190,6 +192,8 @@ namespace RockGame
             s_Finale = 0;
             s_FinaleTeam = 0;
             s_SoloBallTaken = false;
+            s_NextWood.Clear();
+            HideBeacon();
         }
 
         // ------------------------------------------------------------------ the gates
@@ -371,13 +375,13 @@ namespace RockGame
         }
 
         /// <summary>Within a few metres of the glass wall: some spot close by is on another side of it.</summary>
-        public static bool NearWall(Vector3 p)
+        public static bool NearWall(Vector3 p, float reach = 6f)
         {
             int r = Cfg.RegionOf(p);
             for (int i = 0; i < 16; i++)
             {
                 float a = i * Mathf.PI / 8f;
-                if (Cfg.RegionOf(p + new Vector3(Mathf.Cos(a), 0, Mathf.Sin(a)) * 6f) != r) return true;
+                if (Cfg.RegionOf(p + new Vector3(Mathf.Cos(a), 0, Mathf.Sin(a)) * reach) != r) return true;
             }
             return false;
         }
@@ -504,7 +508,7 @@ namespace RockGame
                 var g = G;
                 if (g == null || !g.IsSpawned) return false;
                 double s = g.LaneStartAt(Team);
-                return s >= 0 && g.NetworkManager.ServerTime.Time < s + NetGame.DropLand + 1.5;
+                return s >= 0 && g.NetworkManager.ServerTime.Time < s + NetGame.DropLand / NetGame.DropSpeed + 1.5;
             }
         }
 
@@ -514,7 +518,7 @@ namespace RockGame
             {
                 var g = G;
                 if (g == null || !g.IsSpawned || g.LaneStartAt(Team) < 0) return 0f;
-                return Mathf.Max(0f, (float)(g.LaneStartAt(Team) + NetGame.DropLand - g.NetworkManager.ServerTime.Time));
+                return Mathf.Max(0f, (float)(g.LaneStartAt(Team) + NetGame.DropLand / NetGame.DropSpeed - g.NetworkManager.ServerTime.Time));
             }
         }
 
@@ -702,7 +706,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "machine", Title = "Hi, little alien!",
-                    Body = $"Move the {MouseIcon} " + Hi("mouse") + " to look around. Behind you is " + Hi("your machine") + ". Put the ball in it to win!",
+                    Body = "Look behind you: " + Hi("your machine") + ". Get the ball in it to win!",
                     Goal = "Turn around and look at your machine",
                     Hint = $"Move the {MouseIcon} mouse left or right to turn around.",
                     Done = () => LookingAt(MachineSpot.Value, 25f),
@@ -712,7 +716,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "walk", Title = "Walk",
-                    Body = $"Now you can walk! Use {K(Bind.Forward)} {K(Bind.Left)} {K(Bind.Back)} {K(Bind.Right)}.",
+                    Body = $"Walk: {K(Bind.Forward)} {K(Bind.Left)} {K(Bind.Back)} {K(Bind.Right)}",
                     Goal = "Walk 8 metres", Progress = () => $"{Mathf.Min(8, s_Moved):0} / 8 m",
                     Done = () => s_Moved >= 8f,
                     Unlocks = new[] { TutFeature.Move },
@@ -720,7 +724,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "sprint", Title = "Run and jump",
-                    Body = $"Hold {K(Bind.Sprint)} to run. Tap {K(Bind.Jump)} to jump. (Press it just before you land and you jump again the moment you touch down.)",
+                    Body = $"Hold {K(Bind.Sprint)} to run. {K(Bind.Jump)} jumps.",
                     Goal = "Run 2 seconds and jump",
                     Progress = () => $"run {Mathf.Min(2f, s_SprintTime):0.0}/2 s   jump {(s_Jumped ? "✔" : "-")}",
                     Hint = $"Hold {K(Bind.Sprint)} while you walk forward.",
@@ -730,7 +734,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "crouch", Title = "Crouch",
-                    Body = $"Hold {K(Bind.Crouch)} to crouch. Enemies hear your footsteps from far off - but crouch-walking is silent. Sneaky!",
+                    Body = $"Hold {K(Bind.Crouch)} to crouch (silent walking).",
                     Goal = "Crouch for 1 second", Progress = () => $"{Mathf.Min(1f, s_CrouchTime):0.0} / 1 s",
                     Hint = $"Keep {K(Bind.Crouch)} held down.",
                     Done = () => s_CrouchTime >= 1f,
@@ -739,7 +743,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "slide", Title = "Slide",
-                    Body = $"While running, press {K(Bind.Slide)} to slide. Wheee! Press it mid-jump and you land in a slide; push the other way or press {K(Bind.Crouch)} to drop straight into a crouch. ({K(Bind.Crouch)} only crouches.)",
+                    Body = $"While running, tap {K(Bind.Slide)} to slide.",
                     Goal = "Run, then slide",
                     Hint = $"Run first ({K(Bind.Sprint)} + {K(Bind.Forward)}), then tap {K(Bind.Slide)}.",
                     Done = () => s_Slid,
@@ -749,7 +753,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "chop", Title = "Chop a tree",
-                    Body = "Your rock can chop! Walk to a " + Hi("tree") + $" and hit it with {K(Bind.Attack)}. The wood goes on your " + Hi("hotbar") + " (bottom).",
+                    Body = "Hit a " + Hi("tree") + $" with {K(Bind.Attack)}.",
                     Goal = "Get 20 wood", Progress = () => $"{Mathf.Max(0, Count(Item.Wood) - s_Wood0)} / 20",
                     Hint = $"Follow the yellow marker to a tree. Get close and click {K(Bind.Attack)}.",
                     Done = () => Count(Item.Wood) - s_Wood0 >= 20,
@@ -759,16 +763,16 @@ namespace RockGame
                 new Step
                 {
                     Id = "weak", Title = "Hit the X",
-                    Body = "See the glowing orange " + Hi("X") + " on the tree? Hit it for double wood!",
+                    Body = "Hit the glowing " + Hi("red X") + " for double wood.",
                     Goal = "Hit the X 2 times", Progress = () => $"{Mathf.Min(2, WeakHits - s_Weak0)} / 2",
-                    Hint = "Aim right at the orange X when you swing. It moves after each hit.",
+                    Hint = "Aim right at the red X. It moves after each hit.",
                     Done = () => WeakHits - s_Weak0 >= 2,
                     Target = () => Nearest(ResourceNode.Tree), TargetLabel = "TREE",
                 },
                 new Step
                 {
                     Id = "wood", Title = "More wood",
-                    Body = "Wood makes everything. Keep chopping! " + Hi("Fallen logs") + " give wood too (and have an X), and a felled tree grows back.",
+                    Body = "Keep chopping. " + Hi("Fallen logs") + " give wood too.",
                     Goal = "Have 100 wood", Progress = () => $"{Mathf.Min(100, Count(Item.Wood))} / 100",
                     Done = () => Count(Item.Wood) >= 100,
                     Target = () => Nearest(ResourceNode.Tree), TargetLabel = "TREE",
@@ -777,7 +781,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "bag", Title = "Your bag",
-                    Body = $"Tap {BagKey} to open your bag (or press {K(Bind.Inventory)}). The bottom row is your hotbar. (Holding {BagKey} shows the scoreboard instead.)",
+                    Body = $"Tap {BagKey} to open your bag.",
                     Goal = "Open your bag",
                     Done = () => PC != null && PC.MenuOpen,
                     Unlocks = new[] { TutFeature.Inventory },
@@ -785,7 +789,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "hatchet", Title = "Make an axe",
-                    Body = "On the right is " + Hi("crafting") + $". Click {MouseL} " + Hi("CRAFT") + " next to " + Hi(Cfg.ItemName(Item.Hatchet)) + ". It chops 3x faster!",
+                    Body = $"Click {MouseL} " + Hi("CRAFT") + " next to " + Hi(Cfg.ItemName(Item.Hatchet)) + ".",
                     Goal = "Craft a " + Cfg.ItemName(Item.Hatchet),
                     Hint = $"Open your bag with {BagKey}. Crafting is on the right. It costs {Price(Item.Hatchet)}.",
                     Done = () => Count(Item.Hatchet) >= 1,
@@ -794,7 +798,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "axechop", Title = "Use the axe",
-                    Body = $"Close the bag ({BagKey}). Press the axe's number ({K(Bind.Hotbar1)}-{K(Bind.Hotbar6)}) or roll the mouse wheel {MouseWheel}, then chop!",
+                    Body = $"Close the bag, pick the axe ({K(Bind.Hotbar1)}-{K(Bind.Hotbar6)} or {MouseWheel}) and chop.",
                     Goal = "Get 100 wood with the axe", Progress = () => $"{Mathf.Max(0, Count(Item.Wood) - s_Wood0)} / 100",
                     Hint = $"Keys {K(Bind.Hotbar1)}-{K(Bind.Hotbar6)} or the mouse wheel {MouseWheel} pick what you hold. An empty slot is your rock.",
                     Done = () => Count(Item.Wood) - s_Wood0 >= 100 && Me.HeldItem == Item.Hatchet,
@@ -805,7 +809,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "home", Title = "Go home",
-                    Body = "You can only build and craft big things in " + Hi("your base") + ". Go back!",
+                    Body = "Go back to " + Hi("your base") + ".",
                     Goal = "Walk into your base",
                     Done = () => Cfg.BaseTeamAt(Me.transform.position) == Team,
                     Target = () => BaseSpot, TargetLabel = "YOUR BASE",
@@ -813,7 +817,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "plan", Title = "Building plan",
-                    Body = $"Open your bag ({BagKey}) and craft a " + Hi("Building Plan") + ".",
+                    Body = "Craft a " + Hi("Building Plan") + $" ({BagKey}).",
                     Goal = "Craft a Building Plan",
                     Hint = $"It costs {Price(Item.BuildingPlan)}. Craft it inside your base.",
                     Done = () => Count(Item.BuildingPlan) >= 1,
@@ -823,7 +827,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "floor", Title = "Build a floor",
-                    Body = $"Hold the plan, look at the ground and click {K(Bind.Attack)}. Green means it fits!",
+                    Body = $"Hold the plan, aim at the ground, click {K(Bind.Attack)}.",
                     Goal = "Place a foundation",
                     Hint = "Pick the plan on your hotbar. Look at the grid in your base.",
                     Done = () => Pieces(PieceType.Foundation) >= 1,
@@ -833,7 +837,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "wall", Title = "Build a wall",
-                    Body = $"Hold {K(Bind.Aim)} for the wheel. Pick " + Hi("Wall") + ", then click the floor's edge. (Aim a wall at bare ground in your base and a floor goes down under it first - you pay for both.)",
+                    Body = $"Hold {K(Bind.Aim)}, pick " + Hi("Wall") + ", place it on the floor's edge.",
                     Goal = "Place a wall",
                     Hint = $"Keep holding {K(Bind.Aim)}, move the mouse onto Wall, let go.",
                     Done = () => Pieces(PieceType.Wall) >= 1,
@@ -842,7 +846,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "door", Title = "Build a door",
-                    Body = "Pick " + Hi("Doorway") + $" on the wheel and place it. {K(Bind.Interact)} opens your door.",
+                    Body = "Pick " + Hi("Doorway") + $" on the wheel and place it. {K(Bind.Interact)} opens it.",
                     Goal = "Place a doorway",
                     Hint = "Doorways go on a floor's edge, just like walls - aim near your last pieces and it carries them on.",
                     Done = () => Pieces(PieceType.Doorway) >= 1,
@@ -851,9 +855,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "breakwall", Title = "Oops? Break it!",
-                    BodyF = () => (s_WallMax == 0 ? "Build a wall first. " : "")
-                        + "You can take down " + Hi("your own") + $" walls. Hold the plan, hold {K(Bind.Aim)} and pick " + Hi("Demolish") + $" at the bottom of the wheel - the piece you aim at turns red - then click {K(Bind.Attack)} on one (half the wood back). You can build there again straight away. "
-                        + $"Wood is weak: hitting breaks it too, but where a piece is " + Hi("broken") + $" nothing can be built again for {Cfg.WallRebuildCooldown:0} seconds.",
+                    BodyF = () => (s_WallMax == 0 ? "Build a wall first. " : "") + $"Hold {K(Bind.Aim)}, pick " + Hi("Demolish") + $", then click {K(Bind.Attack)} on your wall.",
                     Goal = "Take down one of your walls",
                     Hint = $"Hold the building plan, hold {K(Bind.Aim)}, move the mouse down onto Demolish and let go, then look at your wall and click {K(Bind.Attack)}.",
                     Done = () => WallPieces < s_WallMax,
@@ -863,7 +865,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "spear", Title = "Make a spear",
-                    Body = "Craft a " + Hi("Spear") + $" in your bag. Click {K(Bind.Attack)} to poke!",
+                    Body = "Craft a " + Hi("Spear") + ". Here's some wood!",
                     Goal = "Craft a spear", Progress = () => WoodNeed(WoodOf(Item.Spear)),
                     Hint = $"It costs {Price(Item.Spear)}. Chop more if you need it.",
                     Done = () => Count(Item.Spear) >= 1,
@@ -873,7 +875,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "throw", Title = "Throw it",
-                    Body = $"Hold the spear. Hold {K(Bind.Aim)} to wind it up, click {K(Bind.Attack)} to throw - it hits hard! (Click early and it throws once it's wound up.) {K(Bind.Interact)} picks it up.",
+                    Body = $"Hold {K(Bind.Aim)}, click {K(Bind.Attack)} to throw. {K(Bind.Interact)} picks it up.",
                     Goal = "Throw the spear and pick it up",
                     Progress = () => SpearThrows - s_Spear0 > 0 ? (Count(Item.Spear) > 0 ? "got it ✔" : "thrown ✔ - pick it up") : "",
                     Hint = $"Walk to the spear, look at it and press {K(Bind.Interact)}.",
@@ -884,7 +886,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "bow", Title = "Make a bow",
-                    Body = "Now something that reaches further. Craft a " + Hi("Bow") + " and some " + Hi("Arrows") + " in your bag, in your base.",
+                    Body = "Craft a " + Hi("Bow") + " and " + Hi("Arrows") + ".",
                     Goal = "Craft a bow and arrows",
                     Progress = () => $"bow {(Count(Item.Bow) > 0 ? "✔" : "-")}   arrows {Count(Item.Arrow)}" + (Count(Item.Wood) < BowNeed ? $"   wood {Count(Item.Wood)} / {BowNeed} - chop more!" : ""),
                     Hint = $"The bow costs {Price(Item.Bow)}; {Cfg.ArrowsPerCraft} arrows cost {Price(Item.Arrow)}. Craft them inside your base.",
@@ -895,8 +897,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "bowkill", Title = "Take one down",
-                    BodyF = () => Hi("Training dummies") + " stand in front of your base, wearing the " + Hi("enemy's alien heads") + $". They're hit just like a player ({Vehicle.DummyHp:0} HP): the straw " + Hi("body") + " is the body hitbox - normal damage - and the " + Hi("head") + " is the head hitbox. "
-                        + $"Hold the bow, hold {K(Bind.Attack)} to draw it back - the longer, the faster and harder it flies - and let go. Arrows drop on the way: aim a little high. {K(Bind.Interact)} picks up the ones that miss.",
+                    BodyF = () => $"Hold {K(Bind.Attack)} to draw, let go to shoot. Destroy a " + Hi("dummy") + ".",
                     Goal = "Destroy a dummy with the bow",
                     Progress = () => { string hp = DummyHp(); return Arrows() + (hp.Length > 0 ? "   " + hp : ""); },
                     Hint = $"Pick the bow on your hotbar, stand a few steps back and aim at the target on its chest. Two full draws finish it. Out of arrows? {Cfg.ArrowsPerCraft} more cost {Price(Item.Arrow)}.",
@@ -907,8 +908,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "headshot", Title = "Headshot!",
-                    Body = "Now aim for the " + Hi("head") + ". A hit on the head does " + Hi("double damage") + " - one full draw to the head takes a player down from full health. "
-                        + "The body is big and easy to hit; the head is small, but deadly.",
+                    Body = "Now hit a dummy's " + Hi("head") + ": double damage!",
                     Goal = "Hit a dummy's head with an arrow",
                     Progress = Arrows,
                     Hint = "Aim at the middle of the alien head - from further back, aim a little above it (arrows drop).",
@@ -920,7 +920,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "berry", Title = "Food",
-                    Body = "Bottom left is your " + Hi("health") + ". Berry bushes heal you. Press " + K(Bind.Interact) + " on a bush.",
+                    Body = $"Press {K(Bind.Interact)} on a " + Hi("berry bush") + ".",
                     Goal = "Pick a berry",
                     Done = () => Count(Item.Berry) > s_Berry0,
                     Target = () => Nearest(ResourceNode.Bush), TargetLabel = "BERRIES",
@@ -929,7 +929,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "eat", Title = "Eat",
-                    Body = $"Ouch, you're hungry! Hold the berry and press {K(Bind.Aim)}. Yum!",
+                    Body = $"Hold the berry, press {K(Bind.Aim)} to eat.",
                     Goal = "Eat a berry",
                     Hint = "Pick the berry on your hotbar first. No berry? Get one from a bush.",
                     Enter = () => { Ask(AskHungry); s_NextHungry = Time.time + 3f; },
@@ -941,7 +941,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "chest", Title = "A storage chest",
-                    Body = "When you die, " + Hi("everything you carry drops") + " where you fell. A " + Hi(Cfg.ItemName(Item.Chest)) + " in your base keeps things safe - until somebody breaks in. Craft one!",
+                    Body = "Craft a " + Hi(Cfg.ItemName(Item.Chest)) + ": it keeps your things safe.",
                     Goal = "Craft a " + Cfg.ItemName(Item.Chest),
                     Progress = () => WoodNeed(WoodOf(Item.Chest)),
                     Hint = $"Open your bag ({BagKey}) in your base. It costs {Price(Item.Chest)}.",
@@ -952,7 +952,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "placechest", Title = "Put the chest down",
-                    Body = $"Hold the chest and click {K(Bind.Attack)} to put it down in your base. Behind your own walls is safest.",
+                    Body = $"Hold the chest, click {K(Bind.Attack)} in your base.",
                     Goal = "Place your chest",
                     Hint = "Pick the chest on your hotbar and aim at the ground (or a floor) inside your base.",
                     Done = () => MyChest != null,
@@ -962,8 +962,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "usechest", Title = "Fill it",
-                    Body = $"Tap {K(Bind.Interact)} on the chest to open it. Your bag is beside it: {ShiftClick} something (or drag it across) to put it in the chest. "
-                        + $"(Hold {K(Bind.Interact)} on an empty chest of yours to pick it back up.)",
+                    Body = $"Open it ({K(Bind.Interact)}) and {ShiftClick} something in.",
                     Goal = "Put something in your chest",
                     Hint = $"Look at the chest from close by and tap {K(Bind.Interact)}. Then {ShiftClick} some wood.",
                     Done = () => ChestHasStuff,
@@ -973,8 +972,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "airdrop", Title = "Airdrop!",
-                    Body = "Look up - a UFO is bringing an " + Hi("airdrop") + " right into " + Hi("your base") + ". It flies in, then beams a crate down slowly: the " + Hi("purple beam") + " shows where. "
-                        + $"In a match they come down anywhere, a warning counts down {NetGame.DropWarning:0} seconds before each one, and everyone races for it. Go and meet it!",
+                    Body = "An " + Hi("airdrop") + " is coming! Go to the " + Hi("purple beam") + ".",
                     Goal = "Get to the airdrop crate",
                     Progress = () => MyDrop != null ? "it's down!" : DropComing ? $"lands in {Mathf.CeilToInt(DropLandsIn)} s" : "",
                     Hint = "Follow the yellow marker to the purple beam and wait for the crate to touch down.",
@@ -985,8 +983,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "loot", Title = "Take the loot",
-                    Body = $"Press {K(Bind.Interact)} on the crate and take what's inside (click {MouseL} it, or {ShiftClick}). An airdrop holds " + Hi("one powerful item") + " - rockets, C4, a jetpack... "
-                        + "This one has " + Hi("C4") + ": an explosive that blows enemy buildings apart. Keep it for the raid!",
+                    Body = $"Open the crate ({K(Bind.Interact)}) and take the " + Hi("C4") + ".",
                     Goal = "Empty the airdrop crate",
                     Hint = $"Look at the crate from close by and press {K(Bind.Interact)}. Make room in your bag if it's full.",
                     Done = () => s_DropSeen && MyDrop == null && !DropComing,
@@ -1009,10 +1006,9 @@ namespace RockGame
                 new Step
                 {
                     Id = "glass", Title = "The glass wall",
-                    BodyF = () => "A big " + Hi("glass wall") + " splits the map. The " + Hi("ball") + " waits under the glass dome in the middle - it's your " + Hi("emergency flare") + ". Walk up to the wall!"
-                        + (Friend ? " It drops when you're " + Hi("both") + " there." : ""),
+                    BodyF = () => "Walk to the " + Hi("glass wall") + "." + (Friend ? " It drops when you're both there." : ""),
                     Goal = "Walk up to the glass wall",
-                    Done = () => NearWall(Me.transform.position) || WallDown,
+                    Done = () => NearWall(Me.transform.position, 16f) || WallDown, // (a good way off it counts: no walking right up to the glass)
                     Target = () => WallSpot(Team), TargetLabel = "GLASS WALL",
                 },
                 new Step
@@ -1021,9 +1017,9 @@ namespace RockGame
                     BodyF = () =>
                     {
                         int left = PlayersNotAtWall();
-                        if (!WallDown && left > 0) return $"It drops when everyone is here. Waiting for {left} more player{(left == 1 ? "" : "s")}...";
-                        if (Friend) return "Down it slides into the ground - and the dome too! The whole map is open, and your friend is on the " + Hi("other team") + ".";
-                        return "Down it slides into the ground - and the dome too! But watch the ball's beam: the " + Hi("enemy") + " got to it first. It's in " + Hi("their machine") + ", in their base.";
+                        if (!WallDown && left > 0) return $"Waiting for {left} more player{(left == 1 ? "" : "s")}...";
+                        if (Friend) return "The wall is down! Your friend is the " + Hi("other team") + ".";
+                        return "The wall is down! The " + Hi("enemy") + " has the ball in " + Hi("their machine") + ".";
                     },
                     Goal = "Wait for the wall to drop",
                     Hint = "Slow friends? The wall drops by itself soon.",
@@ -1035,10 +1031,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "raid", Title = "Raid!",
-                    BodyF = () => (Friend ? "Raid your friend's base! A " + Hi("hut") + " has gone up in it, and its door is padlocked. "
-                            : "Raid the enemy's base! They've " + Hi("walled their machine in") + " - the ball is in there - and their door is padlocked. ")
-                        + $"Hold your " + Hi("C4") + $", look at the door and click {K(Bind.Attack)} to throw it: it sticks, beeps for {Cfg.C4Fuse:0} seconds and " + Hi("blows the wall open") + " - stand back! "
-                        + "Out of C4 and still locked out? You get another. (Your axe or a " + Hi("battering ram") + " on the door works too - slowly.)",
+                    BodyF = () => (Friend ? "Raid your friend's " + Hi("hut") + "! " : "Raid the enemy base! ") + "Throw your " + Hi("C4") + $" ({K(Bind.Attack)}) at the door, then stand back.",
                     Goal = "Blow their door open",
                     Progress = () => Count(Item.C4) > 0 ? $"C4 {Count(Item.C4)}"
                         : s_NoC4Since >= 0f && Time.time - s_NoC4Since < Cfg.C4Fuse + 0.5f ? "C4 ticking - stand back!"
@@ -1052,7 +1045,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "raidloot", Title = "Take their stuff",
-                    Body = $"You're in! Open their chest ({K(Bind.Interact)}) and take everything - or smash the chest and pick it all up off the floor. That's what raiding is for.",
+                    Body = $"Open their chest ({K(Bind.Interact)}) and take everything.",
                     Goal = "Empty the enemy's chest",
                     Hint = $"{ShiftClick} each thing in the chest to move it to your bag.",
                     Done = () => s_HutChestSeen && (HutChest == null || HutChest.Empty),
@@ -1062,8 +1055,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "toball", Title = "Get the ball",
-                    BodyF = () => Friend ? "The " + Hi("ball") + " is loose in the middle - its beam of light shows where from anywhere. Race your friend to it!"
-                        : "Now the " + Hi("ball") + ": it's in the enemy's " + Hi("machine") + ", right inside the walls you just broke into - its beam of light shows where. Go to it!",
+                    BodyF = () => Friend ? "Race your friend to the " + Hi("ball") + "!" : "Go to the " + Hi("ball") + " in their machine.",
                     Goal = "Run to the ball",
                     Done = () => Me.CarryingBall || (Ball.Instance != null && Vector3.Distance(Ball.Instance.transform.position, Me.transform.position) < 6f) || (Friend && Captured),
                     Target = () => BallSpot, TargetLabel = "BALL",
@@ -1074,9 +1066,8 @@ namespace RockGame
                     BodyF = () =>
                     {
                         var c = Ball.Instance != null ? Ball.Instance.Carrier : null;
-                        if (c != null && c != Me) return "Someone else has it! Hit them - they drop it.";
-                        if (BallInEnemyMachine) return $"{K(Bind.Interact)} takes the ball out of " + Hi("any") + " machine - theirs too. Look at it and press it.";
-                        return $"Look at the ball and press {K(Bind.Interact)}.";
+                        if (c != null && c != Me) return "Someone has it! Hit them.";
+                        return $"Look at the ball, press {K(Bind.Interact)}.";
                     },
                     Goal = "Pick up the ball",
                     Hint = $"Get close, look right at the ball and press {K(Bind.Interact)}.",
@@ -1086,9 +1077,9 @@ namespace RockGame
                 new Step
                 {
                     Id = "score", Title = "Take it home",
-                    BodyF = () => Me.CarryingBall ? $"Now take it all the way back to " + Hi("your base") + $" and throw it ({K(Bind.Attack)}) into " + Hi("your machine") + "'s socket. A match is only won with the ball in YOUR machine."
-                        : Friend && Captured ? "Your friend got it into their machine first! A capture still unlocks the " + Hi("Trade Station") + " - for everyone."
-                        : "You lost it! Get it back - " + K(Bind.Interact) + " takes it out of any machine.",
+                    BodyF = () => Me.CarryingBall ? "Take it home and throw it (" + K(Bind.Attack) + ") into " + Hi("your machine") + "."
+                        : Friend && Captured ? "Your friend scored first - the " + Hi("Trade Station") + " is unlocked anyway."
+                        : "You lost it! Get it back.",
                     Goal = "Put the ball in your machine",
                     Hint = $"Stand at your machine, look at the glowing socket and click {K(Bind.Attack)}.",
                     Done = () => (Ball.Instance != null && Ball.Instance.SocketTeam.Value == Team) || (Friend && Captured),
@@ -1097,9 +1088,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "guard", Title = "Guard it!",
-                    BodyF = () => Ball.Instance != null && Ball.Instance.SocketTeam.Value == Team
-                        ? $"You captured the ball - that unlocks the " + Hi("Trade Station") + $" (for everyone)! Enemies can steal it with {K(Bind.Interact)}, just like you did, so stay by your machine."
-                        : "It got stolen! Get it back into your machine.",
+                    BodyF = () => Ball.Instance != null && Ball.Instance.SocketTeam.Value == Team ? "Captured! Guard " + Hi("your machine") + "." : "It got stolen! Get it back.",
                     Goal = "Guard your machine for 5 seconds",
                     Progress = () => $"{Mathf.Min(5f, s_GuardTime):0} / 5 s",
                     Skip = () => Friend, // (with a friend, the race for the ball and the last match teach it)
@@ -1110,10 +1099,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "bench", Title = "The Trade Station",
-                    BodyF = () => (Cfg.BenchUnlocked(Team) ? "The ball has been captured, so the " + Hi("Trade Station") + " is unlocked! "
-                            : "The " + Hi("Trade Station") + " unlocks once the ball is captured. ")
-                        + $"(In a match: any team puts the ball in its machine once, or keeps it in its base for {Cfg.BenchUnlockSeconds:0} seconds - and that unlocks it for " + Hi("everyone") + ".) "
-                        + "A Trade Station in your base adds more things to your bag. Craft a " + Hi(Cfg.ItemName(Item.Workbench)) + "!",
+                    BodyF = () => (Cfg.BenchUnlocked(Team) ? "" : "Capture the ball to unlock it. ") + "Craft a " + Hi(Cfg.ItemName(Item.Workbench)) + ".",
                     Goal = "Craft a " + Cfg.ItemName(Item.Workbench),
                     Progress = () => !Cfg.BenchUnlocked(Team) ? "locked - get the ball into your machine" : WoodNeed(WoodOf(Item.Workbench)),
                     Hint = $"Open your bag ({BagKey}) in your base. It costs {Price(Item.Workbench)}.",
@@ -1124,7 +1110,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "placebench", Title = "Put it down",
-                    Body = $"Hold the trade station and click {K(Bind.Attack)} to put it down " + Hi("anywhere in your base") + ". Only C4 stuck right on it can break it (and then it just drops).",
+                    Body = "Put it down in " + Hi("your base") + ".",
                     Goal = "Place your trade station",
                     Hint = "Pick it on your hotbar and aim at flat ground inside your base (not the spawn spot or the ball socket).",
                     Done = () => MyBench != null,
@@ -1133,8 +1119,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "newcrafts", Title = "New things!",
-                    Body = $"Open your bag ({BagKey}). Your trade station adds a " + Hi("TRADE STATION") + " list: crossbow, armour, chainsaw, high walls, a saddle... "
-                        + "and the " + Hi(Cfg.ItemName(Item.Workbench2)) + $" ({Price(Item.Workbench2)}) for guns, ammo, C4 and more. You can see them anywhere, but only craft them in your base. Scroll the list with the mouse wheel {MouseWheel}.",
+                    Body = $"Open your bag ({BagKey}) in your base: new things to craft!",
                     Goal = "Open your bag in your base",
                     Hint = $"Stand inside your base and press {BagKey}. The new list is under the basics.",
                     Done = () => PC != null && PC.MenuOpen && PC.LootTarget == null && !PC.UpgradesOpen && Cfg.CraftTierAt(Team, Me.transform.position) >= 1,
@@ -1145,8 +1130,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "armour", Title = "Armour up",
-                    Body = "The trade station's list has " + Hi(Cfg.ItemName(Item.Armor)) + $": {Cfg.ArmorHp} extra health that goes " + Hi("before your own") + " - it goes straight on when you craft it. "
-                        + "Raids get you shot at, so never go out without it!",
+                    Body = "Craft " + Hi(Cfg.ItemName(Item.Armor)) + ": extra health.",
                     Goal = "Craft " + Cfg.ItemName(Item.Armor),
                     Progress = () => WoodNeed(WoodOf(Item.Armor)),
                     Hint = $"Open your bag ({BagKey}) inside your base - armour is in the TRADE STATION list. It costs {Price(Item.Armor)}.",
@@ -1157,8 +1141,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "upgrade", Title = "The upgrade station",
-                    Body = "Left of your machine stands the " + Hi("upgrade station") + $" (the big arrow in your colour). Press {K(Bind.Interact)} on it: " + Hi("UPGRADES") + ", for your whole team. "
-                        + "Buy the " + Hi(Cfg.ItemName(Item.WoodGenBuff)) + ": it builds a " + Hi("wood machine") + " that makes wood by itself (two more upgrades speed it up). You've been given the wood for it.",
+                    Body = $"Press {K(Bind.Interact)} on the " + Hi("upgrade station") + " and buy the " + Hi(Cfg.ItemName(Item.WoodGenBuff)) + ".",
                     Goal = "Buy the wood gen upgrade",
                     Progress = () => WoodNeed(Cfg.BaseUpgradeRecipe(Item.WoodGenBuff, Team).Wood),
                     Hint = $"Stand at the terminal with the big arrow in your colour, press {K(Bind.Interact)} and click UPGRADE next to " + Cfg.ItemName(Item.WoodGenBuff) + ".",
@@ -1170,8 +1153,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "fortify", Title = "Stronger walls",
-                    Body = "You just blew a wooden base open - yours is wooden too. Back at the " + Hi("upgrade station") + ", buy " + Hi(Cfg.ItemName(Item.FortifyBuff)) + ": "
-                        + "every piece your team has built turns to " + Hi("stone") + " (more hits to break). Buy it again for metal, then armoured - those even shrug off most of a C4 blast. You've been given the wood.",
+                    Body = "Now buy " + Hi(Cfg.ItemName(Item.FortifyBuff)) + " there: stronger walls.",
                     Goal = "Upgrade your base's walls",
                     Progress = () => WoodNeed(Cfg.BaseUpgradeRecipe(Item.FortifyBuff, Team).Wood),
                     Hint = $"Press {K(Bind.Interact)} on the upgrade station and click UPGRADE next to " + Cfg.ItemName(Item.FortifyBuff) + ".",
@@ -1187,10 +1169,9 @@ namespace RockGame
                     BodyF = () =>
                     {
                         var o = Other;
-                        if (o == null) return "Your friend has left. They can join again - or the tutorial carries on without them in a moment.";
-                        if (!s_DuelBoth) return $"The last part is a " + Hi("tiny real game") + $" against your friend. Waiting for them to catch up (they're on step {Shown(o.TutStep.Value) + 1} of {Shown(Steps.Count)})...";
-                        return "A " + Hi("tiny real game") + ": your friend is on the " + Hi("other team") + " - find them (the yellow marker) and fight! Spear, bow, axe - whatever you have. "
-                            + "Whoever is knocked out " + Hi("drops everything") + " they carry and comes back a few seconds later.";
+                        if (o == null) return "Your friend left. Carrying on in a moment.";
+                        if (!s_DuelBoth) return "Waiting for your friend...";
+                        return "Find your friend and " + Hi("fight") + "!";
                     },
                     Goal = "Fight your friend: first knock-out",
                     Hint = "Poke with the spear up close, or draw the bow from further off - aim for the head. Berries heal.",
@@ -1202,11 +1183,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "win", Title = "Win the match",
-                    BodyF = () => Other != null
-                        ? "The last round - for real. The " + Hi("clock") + " at the top is running, and the ball is dropping into the middle. Whoever has it " + Hi("in their machine") + " when the clock hits zero wins. "
-                            + $"Take it out of your friend's machine with {K(Bind.Interact)}, and hit whoever carries it - they drop it."
-                        : "This is how a match is won: the ball is " + Hi("in your machine") + " when the " + Hi("clock") + " at the top runs out. It's running now - watch! "
-                            + "(If nobody has it in a machine at zero, it's sudden death up in space: rocks only, first kill wins.)",
+                    BodyF = () => Other != null ? "Last round! Have the " + Hi("ball") + " in " + Hi("your machine") + " when the clock hits 0." : "Keep the " + Hi("ball") + " in " + Hi("your machine") + " until the clock hits 0.",
                     Goal = "Have the ball in your machine when the clock hits 0",
                     Progress = () => G != null && !GameOver ? $"{Mathf.CeilToInt(G.TimeLeft)} s" : "",
                     Enter = () => Ask(AskFinale),
@@ -1305,7 +1282,7 @@ namespace RockGame
                     if (b != Bind.PushToTalk && !BindAllowed(b) && Binds.RawDown(b)) s_LockedAt = Time.time;
                 if (!Allows(TutFeature.Hotbar) && Input.mouseScrollDelta.y != 0) s_LockedAt = Time.time;
             }
-            if (s_Finished) return;
+            if (s_Finished) { HideBeacon(); return; }
             var st = s_Steps[s_Index];
             var p = me.transform.position;
             var d = p - s_LastPos;
@@ -1328,8 +1305,14 @@ namespace RockGame
             // that's still missing (a dummy to replace the one just destroyed, an airdrop or a hut that never came)
             bool ask = Time.time >= s_NextAsk;
             if (ask) s_NextAsk = Time.time + 3f;
+            // past the wall-breaking step: no more chopping - short of wood, the server tops you up
+            if (ask && s_Index > StepAt("breakwall") && me.Count(Cfg.GatherItem(Item.Wood)) < WoodFloor && !me.Dead.Value) me.TutorialRpc(AskWood);
             switch (st.Id)
             {
+                case "berry": case "eat":
+                    // every bush on your side picked already: one grows by your base
+                    if (ask && Nearest(ResourceNode.Bush) == null && (st.Id == "berry" || Count(Item.Berry) == 0)) me.TutorialRpc(AskBush);
+                    break;
                 case "bowkill": case "headshot":
                     if (ask && DummyCount() < 2) me.TutorialRpc(AskDummies);
                     break;
@@ -1360,6 +1343,11 @@ namespace RockGame
                     break;
                 }
             }
+
+            // a big beam of light and a bouncing arrow on whatever the step is about (Tutorial.Beacon.cs)
+            Vector3? beacon = null;
+            try { beacon = st.Target?.Invoke(); } catch (Exception) { }
+            UpdateBeacon(s_DoneAt < 0 ? beacon : null);
 
             // you have to actually do it: a finished goal ticks, then moves on by itself (there's no skipping)
             if (s_DoneAt < 0 && Time.time - s_StepStart > 0.3f && SafeDone(st))
@@ -1527,6 +1515,8 @@ namespace RockGame
                 case AskFinale: if (s_Finale == 0) { s_Finale = 1; s_FinaleTeam = p.Team.Value; } break;
                 case AskKit: ServerKit(p); break;
                 case AskC4: ServerC4(p); break;
+                case AskWood: ServerWood(p); break;
+                case AskBush: ServerBush(p); break;
             }
         }
 
@@ -1694,6 +1684,42 @@ namespace RockGame
             p.NotifyPublic($"You've been given {need} wood for {Cfg.ItemName(upgrade)}");
         }
 
+        static readonly Dictionary<ulong, float> s_NextWood = new Dictionary<ulong, float>();
+
+        /// <summary>Server: past the wall-breaking step the tutorial doesn't make you chop - short of wood, you're topped up.</summary>
+        static void ServerWood(PlayerNet p)
+        {
+            if (p.Dead.Value || p.TutStep.Value <= StepAt("breakwall")) return;
+            if (s_NextWood.TryGetValue(p.OwnerClientId, out var at) && Time.time < at) return;
+            var wood = Cfg.GatherItem(Item.Wood);
+            int need = WoodGift - p.Count(wood);
+            if (p.Count(wood) >= WoodFloor || need <= 0) return;
+            s_NextWood[p.OwnerClientId] = Time.time + 5f;
+            if (p.ServerGive(wood, need) < need) p.NotifyPublic($"Here's {need} wood - no more chopping!");
+        }
+
+        /// <summary>Server: the berry steps with every bush on this player's side already picked - one grows just outside
+        /// their base, beside the training yard.</summary>
+        static void ServerBush(PlayerNet p)
+        {
+            var g = G;
+            if (g == null) return;
+            int team = p.Team.Value;
+            foreach (var n in ResourceNode.All)
+                if (n != null && n.IsSpawned && n.IsBush && n.Amount.Value > 0 && Cfg.RegionOf(n.transform.position) == team) return;
+            var back = Cfg.BackDir(team);
+            var along = Vector3.Cross(Vector3.up, back);
+            foreach (float s in new[] { 13f, -13f, 17f, -17f, 9f, -9f })
+            {
+                var at = TrainSpot(team) + along * s - back * 2f;
+                at.y = MapBuilder.Height(at.x, at.z);
+                if (!ServerClear(at + Vector3.up * 1.2f, new Vector3(0.9f, 0.8f, 0.9f))) continue;
+                g.ServerSpawnBushAt(at);
+                Fx.Server(FxKind.Spawn, at, Vector3.up);
+                return;
+            }
+        }
+
         /// <summary>The tutorial's airdrop always holds C4, for the raid (NetGame.ServerTickLane).</summary>
         public static ItemStack DropLoot => ItemStack.Of(Item.C4, 1, Mathf.Clamp(Cfg.MaxData(Item.C4), 0, 255));
 
@@ -1841,7 +1867,7 @@ namespace RockGame
                     pos.y = Mathf.Min(pos.y, sh - 110 * k); // clear of the health bar and hotbar
                 }
                 float pulse = 1f + Mathf.Sin(Time.time * 6f) * 0.15f;
-                float sz = 16 * k * pulse;
+                float sz = 26 * k * pulse; // (bigger: it should be obvious where to go)
                 var old = GUI.matrix;
                 GUIUtility.RotateAroundPivot(45f, pos);
                 fill(new Rect(pos.x - sz / 2, pos.y - sz / 2, sz, sz), new Color(1f, 0.82f, 0.29f, 0.95f));

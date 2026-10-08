@@ -45,7 +45,7 @@ namespace RockGame
         }
 
         /// <summary>"120 DNA" or "50 wood, 10 stone": what a recipe costs, for menus.</summary>
-        public static string CostText(Recipe r) => DnaRules ? $"{r.Wood} DNA" : r.Wood + " wood" + (r.Stone > 0 ? ", " + r.Stone + " stone" : "");
+        public static string CostText(Recipe r) => r.Dust > 0 && r.Wood == 0 && r.Stone == 0 ? $"{r.Dust} alien dust" : (DnaRules ? $"{r.Wood} DNA" : r.Wood + " wood" + (r.Stone > 0 ? ", " + r.Stone + " stone" : "")) + (r.Dust > 0 ? $", {r.Dust} alien dust" : "");
 
         /// <summary>What a tree / rock hit gives: wood and stone, or DNA in DNA mode.</summary>
         public static Item GatherItem(Item yield) => DnaRules && (yield == Item.Wood || yield == Item.Stone) ? Item.Dna : yield;

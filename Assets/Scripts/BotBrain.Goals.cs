@@ -136,7 +136,7 @@ namespace RockGame
             if (!Cfg.ValidCraftIndex(idx)) return false;
             if (m_CraftFail.TryGetValue(id, out var until) && Time.time < until) return false;
             var r = Cfg.CraftRecipe(idx, MyTeam);
-            if (r.Output != id || r.Stone > 0) return false;
+            if (r.Output != id || r.Stone > 0 || r.Dust > 0) return false; // (Jonah mode's alien dust: bots don't convert)
             if (Cfg.CraftTier(id) > Cfg.BenchTier(MyTeam)) return false;
             if (id == Item.Workbench && !Cfg.BenchUnlocked(MyTeam)) return false;
             if (!Tutorial.AllowsItemFor(m_P, id)) return false;
@@ -377,7 +377,7 @@ namespace RockGame
                 craft = Item.Bow;
                 return Craftable(Item.Bow, out idx, out cost);
             }
-            if ((w.Id == Item.Bow || w.Id == Item.Crossbow) && (ammo.Empty || (ammo.Id == Item.Arrow && ammo.Count < 15)))
+            if (ammo.Empty || (ammo.Id == Item.Arrow && ammo.Count < 15)) // (a turret fires arrows from whatever weapon it has)
             {
                 if (CountItem(Item.Arrow) >= 10) return true;
                 craft = Item.Arrow;

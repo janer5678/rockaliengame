@@ -83,13 +83,14 @@ namespace RockGame
         {
             bool woodOk = me.Count(Cfg.CurrencyItem) >= r.Wood, stoneOk = me.Count(Item.Stone) >= r.Stone;
             string cur = Cfg.DnaRules ? "#7dffb0" : "#f0b878";
-            string s = r.Wood > 0 || r.Stone == 0 ? $"<color={(woodOk ? cur : "#ff6a5a")}>{Thousands(r.Wood)} {Cfg.CurrencyName}</color>" : "";
+            string s = r.Wood > 0 || (r.Stone == 0 && r.Dust == 0) ? $"<color={(woodOk ? cur : "#ff6a5a")}>{Thousands(r.Wood)} {Cfg.CurrencyName}</color>" : "";
             if (r.Stone > 0) s += (s != "" ? "  +  " : "") + $"<color={(stoneOk ? "#d4d4dc" : "#ff6a5a")}>{Thousands(r.Stone)} stone</color>";
+            if (r.Dust > 0) s += (s != "" ? "  +  " : "") + $"<color={(me.Count(Item.AlienDust) >= r.Dust ? "#c79bff" : "#ff6a5a")}>{Thousands(r.Dust)} alien dust</color>"; // (Jonah mode)
             return s;
         }
 
         /// <summary>What you have to spend (the TAB header).</summary>
-        static string CurrencyText(PlayerNet me) => Cfg.DnaRules ? $"<color=#7dffb0>{Thousands(me.Count(Item.Dna))} DNA</color>" :
+        static string CurrencyText(PlayerNet me) => Cfg.Jonah ? $"<color=#f0b878>{Thousands(me.Count(Item.Wood))} wood</color>   <color=#c79bff>{Thousands(me.Count(Item.AlienDust))} alien dust</color>" : Cfg.DnaRules ? $"<color=#7dffb0>{Thousands(me.Count(Item.Dna))} DNA</color>" :
             $"<color=#f0b878>{Thousands(me.Count(Item.Wood))} wood</color>" + (Cfg.WoodMode || Tutorial.HideStone ? "" : $"   <color=#d4d4dc>{Thousands(me.Count(Item.Stone))} stone</color>");
 
         /// <summary>A short description of everything you can make (shown when you point at it).</summary>
@@ -110,7 +111,7 @@ namespace RockGame
                 case Item.SleepingBag: return $"Sleeping Bag: put it down anywhere but an enemy base and respawn at it (once every {Cfg.SleepingBagCooldown:0} s).";
                 case Item.BearTrap: return $"Bear Trap: in your colour; snaps anyone who steps on it - you too ({Cfg.BearTrapDamage:0} damage, held {Cfg.BearTrapHold:0.#} s). Ground or floors.";
                 case Item.Ladder: return "Ladder: aim it at any wall - yours, theirs or a large wall - and climb over.";
-                case Item.AutoTurret: return $"Auto Turret: give it a ranged weapon (or a spear) and ammo; it fires at enemies in its {Cfg.TurretCone * 2f:0} degree view out to {Cfg.TurretRange:0} m.";
+                case Item.AutoTurret: return $"Auto Turret: does NOTHING until you put a weapon in it (any weapon) and arrows. Then it shoots enemies in its {Cfg.TurretCone * 2f:0} degree view out to {Cfg.TurretRange:0} m.";
                 // (every description is "Name: what it does" - the name goes on top, the rest wraps under it; without the
                 // name the whole lot would be the one-line title and run off the edge)
                 case Item.Workbench:
@@ -119,7 +120,8 @@ namespace RockGame
                 case Item.Workbench2: return $"{Cfg.ItemName(id)}: lets you obtain EVEN MORE STUFF by trading resources intergalactically.";
                 case Item.Crossbow: return $"Crossbow: {Cfg.CrossbowDamage:0} damage, faster and flatter than the bow. Reloads itself from your arrows.";
                 case Item.Armor: return $"Armour: {Cfg.ArmorHp} extra health used up before your own.";
-                case Item.Chainsaw: return $"Chainsaw: rips through wood and stone. {Cfg.ChainsawUses} uses.";
+                case Item.Chainsaw: return "Chainsaw: rips through wood and stone. Never wears out.";
+                case Item.HeavyRam: return "High Strength Battering Ram: 3x a normal ram. Wood, stone and metal break in one slam; armoured drops to wood.";
                 case Item.Saddle: return $"Saddle: {KT(Bind.Interact)} on a wild horse to ride it.";
                 case Item.Boat: return $"Boat: put it on open water and {KT(Bind.Interact)} to drive it.";
                 case Item.Sword: return $"Sword: a slow heavy swing, {Cfg.SwordBodyDamage:0} body / {Cfg.SwordHeadDamage:0} head.";
@@ -174,6 +176,7 @@ namespace RockGame
                 case Item.Berry: return $"RMB to eat ({Cfg.BerryEatTime:0.#}s, +{Cfg.BerryHeal:0} HP). LMB on a horse feeds it (+{Cfg.HorseBerryHeal:0} HP).";
                 case Item.Meat: return $"RMB to eat ({Cfg.MeatEatTime:0.#}s): heals you fully.";
                 case Item.Dna: return "What everything costs in DNA mode. Mine trees and rocks for more.";
+                case Item.AlienDust: return "Jonah mode: what metal and tech things cost. Turn wood into it at your upgrade station (drag wood in, CONVERT).";
                 case Item.PistolAmmo: return "The pistol reloads from this.";
                 default: return "";
             }

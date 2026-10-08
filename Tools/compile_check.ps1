@@ -12,4 +12,7 @@ $new = Join-Path $out "check.rsp"
 ($keep + $src + ('-out:"' + (Join-Path $out 'check.dll') + '"')) | Set-Content -Encoding utf8 $new
 $res = & "$ed/NetCoreRuntime/dotnet.exe" "$ed/DotNetSdkRoslyn/csc.dll" "@$new" 2>&1 | Out-String
 $errs = $res -split "`n" | Where-Object { $_ -match 'error ' }
+# Steamworks.NET is a git package Unity downloads on its first open: until then this check can't see it, so the Steam
+# files' own errors are left out (anything else is still reported)
+if (-not (Get-ChildItem "Library/PackageCache" -Filter "com.rlabrecque.steamworks.net*" -ErrorAction SilentlyContinue)) { $errs = $errs | Where-Object { $_ -notmatch 'Scripts.Steam[A-Za-z]*[.]cs' } }
 if ($errs) { $errs | Select-Object -First 60 } else { "COMPILE OK" }

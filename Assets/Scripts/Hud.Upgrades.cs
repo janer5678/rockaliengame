@@ -32,6 +32,8 @@ namespace RockGame
         static string UpgradeDescription(Item id, int team)
         {
             int lvl = Cfg.BaseUpgradeLevel(id, team), max = Cfg.BaseUpgradeMax(id);
+            if (Cfg.Jonah && id == Item.FortifyBuff)
+                return $"Upgrade 10 Walls ({Cfg.Upgrade10WallsDust} alien dust): you fly round a black copy of your base and click {Cfg.WallsPerUpgrade} of your pieces (click again to un-pick). The moment you pick the last one you're back and they've gone up a tier. Buy it as often as you like.";
             if (id == Item.WoodGenBuff)
                 return $"Wood Gen: the first level builds a wood machine in your base ({Cfg.WoodGenRate(1)} wood a second), the next two make it faster - {Cfg.WoodGenRate(2)}, then {Cfg.WoodGenRate(3)} a second. Level {lvl} of {max}.";
             return $"Fortify All Walls: every piece your team has built goes up a step at full health - stone, then metal, then armoured - and pieces you build after come out that strong too. Level {lvl} of {max}.";
@@ -46,6 +48,9 @@ namespace RockGame
             Shadowed(new Rect(x, top - 36 * k, colW, 32 * k), CurrencyText(me), CraftStyle(17 * k, FontStyle.Bold, TextAnchor.MiddleRight, Color.white));
             Cfg.BaseUpgrades(m_UpgradeTmp);
             if (ev.type == EventType.Repaint) UpgradeRowsShown.Clear();
+            // Jonah mode: the wood -> alien dust converter on top
+            var conv = pc.LootTarget;
+            if (conv != null && conv.IsConverter) top = DrawConverter(me, pc, conv, x, top, colW, k);
 
             // a heading in the crafting list's style, then the rows
             float headH = 24 * k, row = 92 * k, gap = 6 * k;
@@ -64,6 +69,29 @@ namespace RockGame
             // what the mouse is over (an upgrade or an item in the bag), otherwise how this screen works
             if (!DrawHoverInfo(new Rect(x, y + 4 * k, colW, Mathf.Max(40 * k, bottom - y)), k))
                 Shadowed(new Rect(x, y + 4 * k, colW, Mathf.Max(40 * k, bottom - y)), hint, hintStyle);
+        }
+
+        /// <summary>Jonah mode: the converter - its slot (drag wood in), how much dust that makes and CONVERT. Returns where the rows start.</summary>
+        float DrawConverter(PlayerNet me, PlayerController pc, Container c, float x, float top, float colW, float k)
+        {
+            var dust = new Color(0.78f, 0.6f, 1f);
+            float headH = 24 * k;
+            Shadowed(new Rect(x + 2 * k, top, colW, headH - 3 * k), "<b>WOOD → ALIEN DUST</b>  <color=#bbbbbb>1 wood = 1 alien dust</color>",
+                CraftStyle(Mathf.Min(15 * k, headH * 0.7f), FontStyle.Bold, TextAnchor.MiddleLeft, dust));
+            Fill(new Rect(x, top + headH - 4 * k, colW, 2 * k), new Color(dust.r, dust.g, dust.b, 0.6f));
+            float y = top + headH + 4 * k, slot = 72 * k;
+            Fill(new Rect(x, y, colW, slot + 12 * k), new Color(0.12f, 0.08f, 0.18f, 0.75f));
+            var sr = new Rect(x + 8 * k, y + 6 * k, slot, slot);
+            DrawSlot(sr, c.Slots.Count > 0 ? c.Slots[0] : default, 1, 0, false, me, pc);
+            int wood = c.Slots.Count > 0 && c.Slots[0].Id == Item.Wood ? c.Slots[0].Count : 0;
+            float tx = sr.xMax + 10 * k, bw = Mathf.Min(140 * k, colW * 0.3f);
+            var br = new Rect(x + colW - bw - 8 * k, y + 6 * k + slot * 0.18f, bw, slot * 0.64f);
+            string info = wood > 0 ? $"<b>{wood} wood</b> → <color=#c79bff><b>{wood} alien dust</b></color>" : "<color=#bbbbbb>Drag wood into the slot (or Shift + click it in your bag).</color>";
+            GUI.Label(new Rect(tx, y + 6 * k, br.x - tx - 6 * k, slot), info, CraftStyle(15 * k, FontStyle.Normal, TextAnchor.MiddleLeft, Color.white, true));
+            bool ok = wood > 0;
+            if (FlatBtn(br, ok ? new Color(0.45f, 0.25f, 0.75f) : k_BtnNo, new Color(0.6f, 0.35f, 0.95f), ok)) { me.ConvertDustRpc(c.NetworkObject); Sfx.PlayUi(Sfx.UiClick, 0.8f, 0.7f); }
+            GUI.Label(br, "CONVERT", CraftStyle(Mathf.Min(17 * k, slot * 0.24f), FontStyle.Bold, TextAnchor.MiddleCenter, ok ? Color.white : new Color(1, 1, 1, 0.35f)));
+            return y + slot + 12 * k + 14 * k;
         }
 
         /// <summary>One row: icon, name + level pips, what the next level does, its price, and UPGRADE.</summary>
@@ -96,7 +124,7 @@ namespace RockGame
             GUI.Label(new Rect(tx, rr.y + row * 0.05f, tw, row * 0.3f), nm, nameStyle);
             float pip = 13 * k, pipGap = 4 * k;
             float px = tx + Mathf.Min(nameStyle.CalcSize(new GUIContent(nm)).x, tw * 0.62f) + 10 * k;
-            GUI.Label(new Rect(px, rr.y + row * 0.05f, 60 * k, row * 0.3f), $"LV {lvl}/{max}", CraftStyle(12 * k, FontStyle.Bold, TextAnchor.MiddleLeft, new Color(0.85f, 0.85f, 0.8f)));
+            if (max > 0) GUI.Label(new Rect(px, rr.y + row * 0.05f, 60 * k, row * 0.3f), $"LV {lvl}/{max}", CraftStyle(12 * k, FontStyle.Bold, TextAnchor.MiddleLeft, new Color(0.85f, 0.85f, 0.8f))); // (Jonah's Upgrade 10 Walls has no levels)
             px += 52 * k;
             for (int i = 0; i < max; i++)
             {
@@ -106,12 +134,16 @@ namespace RockGame
             }
             GUI.Label(new Rect(tx, rr.y + row * 0.36f, tw, row * 0.3f), Cfg.BaseUpgradeBlurb(id, team),
                 CraftStyle(Mathf.Min(14 * k, row * 0.17f), FontStyle.Normal, TextAnchor.MiddleLeft, new Color(0.88f, 0.88f, 0.84f), true));
-            string sub = maxed ? $"<color=#ffd24a>MAXED OUT</color>  <color=#a8a8a0>{Cfg.BaseUpgradeNow(id, team)}</color>"
+            string sub = maxed && Cfg.Jonah && id == Item.FortifyBuff ? "<color=#a8a8a0>no walls to upgrade yet</color>" : maxed ? $"<color=#ffd24a>MAXED OUT</color>  <color=#a8a8a0>{Cfg.BaseUpgradeNow(id, team)}</color>"
                 : CostColored(me, rec);
             if (problem == "at your station") sub += "  <color=#8fb8ff>at your upgrade station</color>";
             GUI.Label(new Rect(tx, rr.y + row * 0.66f, tw, row * 0.28f), sub, FitStyle(sub, tw, Mathf.Min(16 * k, row * 0.19f), FontStyle.Bold, TextAnchor.MiddleLeft, Color.white));
-            if (FlatBtn(br, ok ? k_BtnOk : k_BtnNo, k_BtnOkHi, ok)) me.BaseUpgradeRpc(id);
-            GUI.Label(br, maxed ? "MAXED" : "UPGRADE", CraftStyle(Mathf.Min(17 * k, row * 0.22f), FontStyle.Bold, TextAnchor.MiddleCenter, ok ? Color.white : new Color(1, 1, 1, 0.35f)));
+            if (FlatBtn(br, ok ? k_BtnOk : k_BtnNo, k_BtnOkHi, ok))
+            {
+                if (Cfg.Jonah && id == Item.FortifyBuff) WallPicker.Begin(); // (Jonah mode: pick the 10 pieces first - JonahMode.cs)
+                else me.BaseUpgradeRpc(id);
+            }
+            GUI.Label(br, maxed ? (Cfg.Jonah && id == Item.FortifyBuff ? "NO WALLS" : "MAXED") : Cfg.Jonah && id == Item.FortifyBuff ? "PICK 10" : "UPGRADE", CraftStyle(Mathf.Min(17 * k, row * 0.22f), FontStyle.Bold, TextAnchor.MiddleCenter, ok ? Color.white : new Color(1, 1, 1, 0.35f)));
         }
     }
 }

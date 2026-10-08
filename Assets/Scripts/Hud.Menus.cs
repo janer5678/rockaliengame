@@ -185,14 +185,14 @@ namespace RockGame
 
             // game mode: separate ways to play (they don't mix)
             key = Bootstrap.MapChoice;
-            var rules = (GameRules)Mathf.Clamp((key >> Cfg.RulesShift) & Cfg.RulesMask, 0, (int)Cfg.LastRules);
-            int noRules = key & ~(Cfg.RulesMask << Cfg.RulesShift);
+            var rules = Cfg.RulesOf(key);
+            int noRules = Cfg.WithRules(key, GameRules.Classic);
             // Tutorial, Classic (the Auto Wood rules) and Primitive (the original game); the rest fold out under "More modes"
             bool moreRule = System.Array.IndexOf(Cfg.MoreRules, rules) >= 0;
             GUILayout.BeginHorizontal();
             RowLabel("Game mode");
             foreach (var gr in Cfg.MainRules)
-                if (Choice(rules == gr, Cfg.RulesName(gr), GUILayout.Height(30 * k))) { boot.SetMapChoice(noRules | ((int)gr << Cfg.RulesShift)); m_ShowMoreRules = false; }
+                if (Choice(rules == gr, Cfg.RulesName(gr), GUILayout.Height(30 * k))) { boot.SetMapChoice(Cfg.WithRules(noRules, gr)); m_ShowMoreRules = false; }
             string moreLabel = (moreRule ? $"<color=#{ColorUtility.ToHtmlStringRGB(GameSettings.AccentColor)}>{MoreRuleLabel(rules)}</color>" : "More modes") + (m_ShowMoreRules ? "  ▲" : "  ▼");
             if (Btn(moreLabel, GUILayout.Height(30 * k))) m_ShowMoreRules = !m_ShowMoreRules;
             GUILayout.EndHorizontal();
@@ -204,7 +204,7 @@ namespace RockGame
                     for (int i = row; i < row + 3 && i < Cfg.MoreRules.Length; i++)
                     {
                         var gr = Cfg.MoreRules[i];
-                        if (Choice(rules == gr, MoreRuleLabel(gr), GUILayout.Height(30 * k))) { boot.SetMapChoice(noRules | ((int)gr << Cfg.RulesShift)); m_ShowMoreRules = false; }
+                        if (Choice(rules == gr, MoreRuleLabel(gr), GUILayout.Height(30 * k))) { boot.SetMapChoice(Cfg.WithRules(noRules, gr)); m_ShowMoreRules = false; }
                     }
                     GUILayout.EndHorizontal();
                 }

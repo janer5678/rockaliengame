@@ -130,6 +130,19 @@ namespace RockGame
                     Art.Part(t, Art.Cylinder, Art.Metal, new Vector3(0, 0, 0.3f), new Vector3(0.26f, 0.03f, 0.26f), new Vector3(90, 0, 0));
                     Art.Part(t, Art.Cylinder, Art.Metal, new Vector3(0, 0, -0.2f), new Vector3(0.26f, 0.03f, 0.26f), new Vector3(90, 0, 0));
                     break;
+                case Item.HeavyRam:
+                {
+                    // the High Strength ram: a thicker log, banded in dark iron with a red strap and a spiked iron head
+                    var iron = new Color(0.22f, 0.22f, 0.25f);
+                    var strap = new Color(0.7f, 0.15f, 0.12f);
+                    Art.Part(t, Art.Cylinder, Art.DarkWood, new Vector3(0, 0, 0.1f), new Vector3(0.3f, 0.62f, 0.3f), new Vector3(90, 0, 0));
+                    Art.Part(t, Art.Cylinder, iron, new Vector3(0, 0, 0.7f), new Vector3(0.36f, 0.08f, 0.36f), new Vector3(90, 0, 0));
+                    Art.Box(t, iron, new Vector3(0, 0, 0.8f), new Vector3(0.28f, 0.28f, 0.12f));
+                    Art.Part(t, Art.Cone, iron, new Vector3(0, 0, 0.92f), new Vector3(0.14f, 0.1f, 0.14f), new Vector3(90, 0, 0));
+                    for (int k = 0; k < 3; k++)
+                        Art.Part(t, Art.Cylinder, k == 1 ? strap : iron, new Vector3(0, 0, 0.42f - k * 0.3f), new Vector3(0.33f, 0.035f, 0.33f), new Vector3(90, 0, 0));
+                    break;
+                }
                 case Item.Chest:
                     Art.Box(t, Art.Wood, new Vector3(0, 0.08f, 0), new Vector3(0.36f, 0.17f, 0.2f));
                     Art.Box(t, Art.DarkWood, new Vector3(0, 0.19f, 0), new Vector3(0.38f, 0.05f, 0.22f));
@@ -232,6 +245,19 @@ namespace RockGame
                     Art.Part(t, Art.MakeRock(13, 0.3f), new Color(0.5f, 0.5f, 0.52f), new Vector3(-0.07f, 0.03f, 0.06f), new Vector3(0.06f, 0.05f, 0.06f));
                     break;
                 case Item.Dna: DnaArt.Helix(t, 0.34f); break;
+                case Item.AlienDust:
+                {
+                    // a little glass vial of glowing purple dust, with a heap of it spilt beside it
+                    var dust = new Color(0.72f, 0.45f, 1f);
+                    var glow = new Material(Art.Mat(dust));
+                    if (glow.HasProperty("_EmissionColor")) { glow.EnableKeyword("_EMISSION"); glow.SetColor("_EmissionColor", dust * 1.8f); }
+                    Art.Part(t, Art.Cylinder, new Color(0.85f, 0.9f, 1f), new Vector3(0, 0.14f, 0), new Vector3(0.13f, 0.14f, 0.13f));
+                    Art.Part(t, Art.Cylinder, dust, new Vector3(0, 0.11f, 0), new Vector3(0.11f, 0.1f, 0.11f), default, false, glow);
+                    Art.Part(t, Art.Cylinder, Art.DarkWood, new Vector3(0, 0.29f, 0), new Vector3(0.08f, 0.02f, 0.08f));
+                    Art.Part(t, Art.Sphere, dust, new Vector3(0.12f, 0.025f, 0.04f), new Vector3(0.12f, 0.05f, 0.1f), default, false, glow);
+                    Art.Part(t, Art.Sphere, dust, new Vector3(-0.1f, 0.02f, -0.05f), new Vector3(0.07f, 0.035f, 0.07f), default, false, glow);
+                    break;
+                }
                 case Item.Arrow:
                     // all wood: a thin pale shaft, a small point of darker, harder wood, thin wooden vanes for fletching
                     Art.Box(t, new Color(0.85f, 0.75f, 0.55f), new Vector3(0, 0.2f, 0), new Vector3(0.018f, 0.7f, 0.018f));

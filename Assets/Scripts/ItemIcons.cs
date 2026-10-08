@@ -280,6 +280,7 @@ namespace RockGame
                 case Item.Jetpack:
                     t.localRotation = Quaternion.Euler(0, 140, 0); break;
                 case Item.Ram:
+                case Item.HeavyRam:
                 case Item.Chainsaw:
                 case Item.Crossbow:
                 case Item.Sniper:

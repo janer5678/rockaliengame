@@ -746,7 +746,7 @@ namespace RockGame
                 Carrying = CarryingBall,
                 Riding = Riding,
                 Holding = item != Item.None,
-                TwoHanded = item == Item.Rock || item == Item.Spear || item == Item.Ram || item == Item.Chainsaw || item == Item.Crossbow || item == Item.Shotgun || item == Item.TreeCracker,
+                TwoHanded = item == Item.Rock || item == Item.Spear || Cfg.IsRam(item) || item == Item.Chainsaw || item == Item.Crossbow || item == Item.Shotgun || item == Item.TreeCracker,
                 Pitch = Pitch.Value,
                 Swing = m_Swing,
                 Action = (BodyAnimator.Act)Action.Value,
@@ -1159,7 +1159,7 @@ namespace RockGame
         void WearChainsaw()
         {
             var st = HeldStack;
-            if (st.Id != Item.Chainsaw && st.Id != Item.TreeCracker) return;
+            if (st.Id != Item.TreeCracker) return; // (the chainsaw never wears out)
             int left = st.Data - 1;
             if (left <= 0)
             {
@@ -1287,7 +1287,7 @@ namespace RockGame
             NetworkList<ItemStack> list = Inv;
             if (kind == 1)
             {
-                if (!containerRef.TryGet(out var no) || !no.TryGetComponent(out Container c) || !c.InReach(EyePos)) return;
+                if (!containerRef.TryGet(out var no) || !no.TryGetComponent(out Container c) || !c.InReachServer(EyePos)) return;
                 list = c.Slots;
             }
             if (idx >= list.Count) return;
@@ -1352,7 +1352,7 @@ namespace RockGame
         [Rpc(SendTo.Server)]
         public void RamStrikeRpc(NetworkObjectReference target, Vector3 point)
         {
-            if (Dead.Value || CarryingBall || InSuddenDeath || HeldItem != Item.Ram || !GameAllowsCombat) return;
+            if (Dead.Value || CarryingBall || InSuddenDeath || !Cfg.IsRam(HeldItem) || !GameAllowsCombat) return;
             if (Time.time < m_NextRam) return;
             m_NextRam = Time.time + Cfg.RamWindup * 0.85f;
             SwingRpc();
@@ -1363,15 +1363,17 @@ namespace RockGame
             string msg;
             if (no.TryGetComponent(out Structure s))
             {
-                // (your own pieces too)
-                bool hard = s.Tier.Value >= 1 && s.PType != PieceType.Barrier; // the high external wall always goes in one hit
-                msg = hard ? $"Smashed the {s.DisplayName} down to {Cfg.TierName(s.Tier.Value - 1).ToLower()}" : $"Smashed the {s.DisplayName}!";
+                // (your own pieces too) - the High Strength ram does three normal slams' worth: a step down each, or broken
+                int steps = HeldItem == Item.HeavyRam ? Mathf.Max(1, Cfg.HeavyRamSteps) : 1;
+                int after = s.Tier.Value - steps;
+                bool hard = after >= 0 && s.PType != PieceType.Barrier; // the high external wall always goes in one hit
+                msg = hard ? $"Smashed the {s.DisplayName} down to {Cfg.TierName(after).ToLower()}" : $"Smashed the {s.DisplayName}!";
                 if (s.PType == PieceType.Barrier)
                 {
                     int chain = ServerRamBarrierChain(s, point);
                     if (chain > 1) msg = $"Smashed {chain} high external walls in a row!";
                 }
-                else if (hard) s.ServerDowngrade();
+                else if (hard) for (int k = 0; k < steps; k++) s.ServerDowngrade();
                 else s.ServerDamage(s.Health.Value + 1f);
             }
             else if (no.TryGetComponent(out Container c) && c.Breakable)
@@ -1384,7 +1386,7 @@ namespace RockGame
             var ram = HeldStack;
             int left = ram.Data - 1;
             if (left <= 0) ServerClearSlot(HeldSlot.Value);
-            else Inv[HeldSlot.Value] = ItemStack.Of(Item.Ram, 1, left);
+            else Inv[HeldSlot.Value] = ItemStack.Of(ram.Id, 1, left);
             Fx.Server(FxKind.Smash, point, (EyePos - point).normalized, OwnerClientId);
             Notify(msg + (left > 0 ? $"  ({left} ram hits left)" : "  - your ram broke"));
         }
@@ -1632,6 +1634,7 @@ namespace RockGame
             if (!smallThing && !Workbench.IsBench(kind) && Cfg.PointBlocked(pos)) return "Not on the bedrock";
             if (kind != Item.Chest && !anywhere && baseTeam >= 0 && baseTeam != team) return "Not in the enemy base";
             var rot = Quaternion.Euler(0, yaw, 0);
+            if (kind == Item.Ladder && Deployables.LadderSupport(pos, rot) == null) return "Ladders go against a wall";
             if (kind == Item.Barrier || kind == Item.LargeGate)
             {
                 // the whole 5.5 m wall stays out of the enemy base (not just its middle)...
@@ -1748,20 +1751,24 @@ namespace RockGame
             Container c = null;
             if (srcKind == 1 || dstKind == 1)
             {
-                if (!containerRef.TryGet(out var no) || !no.TryGetComponent(out c) || !c.InReach(EyePos)) return;
+                if (!containerRef.TryGet(out var no) || !no.TryGetComponent(out c) || !c.InReachServer(EyePos)) return;
                 if (dstKind == 1 && c.TakeOnly) return;
-                // an auto turret: its own team only; its first slot takes a ranged weapon (or a spear), its second the ammo
+                // an auto turret: its own team only; its first slot takes any weapon, its second arrows (all it fires)
                 if (c.Kind.Value == Container.Turret)
                 {
                     if (c.Team.Value != Team.Value) return;
                     var moving = srcKind == 1 ? (srcIdx < c.Slots.Count ? c.Slots[srcIdx] : default) : (srcIdx < Inv.Count ? Inv[srcIdx] : default);
-                    if (dstKind == 1 && dstIdx == 0 && !Deployables.TurretWeapon(moving.Id)) { Notify("The turret's first slot takes a ranged weapon or a spear"); return; }
+                    if (dstKind == 1 && dstIdx == 0 && !Deployables.TurretWeapon(moving.Id)) { Notify("The turret's first slot takes a weapon (any weapon)"); return; }
+                    if (dstKind == 1 && dstIdx == 1 && moving.Id != Deployables.TurretAmmo) { Notify("The turret's second slot takes arrows - it fires arrows from any weapon"); return; }
+                    // (swapping a turret slot's contents out into the bag can't put a wrong thing in either)
+                    if (srcKind == 0 && dstKind == 1 && dstIdx < c.Slots.Count && !c.Slots[dstIdx].Empty && c.Slots[dstIdx].Id != moving.Id && (dstIdx == 0 ? !Deployables.TurretWeapon(moving.Id) : moving.Id != Deployables.TurretAmmo)) return;
                     if (srcKind == 0 && dstIdx == 255)
                     {
                         // shift-click from the bag: a weapon into the weapon slot (if it's free), anything else into the ammo slot
                         if (srcIdx >= Inv.Count || c.Slots.Count < 2 || moving.Empty) return;
-                        int to = Deployables.TurretWeapon(moving.Id) && c.Slots[0].Empty ? 0 : (c.Slots[1].Empty || c.Slots[1].Id == moving.Id) ? 1 : -1;
-                        if (to < 0) { Notify("The turret's slots are full"); return; }
+                        int to = Deployables.TurretWeapon(moving.Id) ? (c.Slots[0].Empty ? 0 : -1) : moving.Id == Deployables.TurretAmmo ? 1 : -2;
+                        if (to == -2) { Notify("A turret only takes a weapon (any) and arrows"); return; }
+                        if (to < 0) { Notify("The turret already has a weapon"); return; }
                         var there = c.Slots[to];
                         int fit = there.Empty ? moving.Count : Mathf.Min(moving.Count, Cfg.MaxStack(moving.Id) - there.Count);
                         if (fit <= 0) return;
@@ -1774,6 +1781,7 @@ namespace RockGame
             var src = srcKind == 1 ? c.Slots : Inv;
             if (srcIdx >= src.Count) return;
             if (c != null && c.IsGamble && !GambleMachine.ServerMoveOk(c, src, srcIdx, srcKind == 1 ? Inv : c.Slots, dstIdx)) { Notify("The gambling machine only takes DNA"); return; }
+            if (c != null && c.IsConverter && (c.Team.Value != Team.Value || !JonahMode.ServerMoveOk(c, src, srcIdx, srcKind == 1 ? Inv : c.Slots, dstIdx))) { Notify("The converter only takes wood"); return; }
             if (dstIdx == 255)
             {
                 if (c == null) return;

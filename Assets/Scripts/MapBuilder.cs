@@ -173,8 +173,9 @@ namespace RockGame
 
             // distant low-poly mountains for a horizon (PSX graphics: the big PSX terrain rocks). Solid (a convex hull of the rock):
             // the nearest ones poke in past the boundary wall, and you used to walk straight through them
+            bool mountains = ThemeMaps.Custom == null || ThemeMaps.Custom.Mountains; // THEME MAPS (space, the cube: none)
             using (ColorSlots.Use(ColorSlots.Mountains))
-            for (int i = 0; i < 40; i++)
+            for (int i = 0; i < (mountains ? 40 : 0); i++)
             {
                 float a = i / 40f * Mathf.PI * 2f + R(-0.05f, 0.05f);
                 float d = R(half * 1.5f, half * 1.9f);
@@ -187,7 +188,7 @@ namespace RockGame
                 PsxModels.Replace(m.transform, "bigrock" + (i % 6), PsxModels.Fit.Uniform);
             }
             // further out, layers of mountain ranges, each taller and paler; and big boulders about the map (MapScenery)
-            MapScenery.Build(root);
+            if (mountains) MapScenery.Build(root);
 
             BuildArena(root);
             if (Cfg.Map == MapKind.Plains || Cfg.Map == MapKind.Highlands)
@@ -200,6 +201,7 @@ namespace RockGame
             }
             look.Done();
             if (AiPsxArt.On) AiPsxArt.ApplyWorld(root);
+            ThemeMaps.AfterBuild(root); // THEME MAPS (the second batch's sky and moving parts)
         }
 
         // =====================================================================

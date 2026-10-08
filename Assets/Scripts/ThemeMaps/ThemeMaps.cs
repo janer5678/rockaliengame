@@ -15,16 +15,17 @@ namespace RockGame
     /// Volcano:   black ash, a ring of lava round the middle (it burns) with land bridges; a volcano smokes on the horizon.
     /// Ruins:     overgrown ancient ruins - broken walls and pillars for cover, extra stone.
     /// </summary>
-    public static class ThemeMaps
+    public static partial class ThemeMaps
     {
         public const float WaterY = -0.45f, LavaY = -0.35f;
         public const int BoatWood = 1500;
         public const float BoatSpeed = 15f, LavaDps = 22f;
 
-        public static readonly MapKind[] Kinds = { MapKind.Beach, MapKind.Canyon, MapKind.Frostlake, MapKind.Volcano, MapKind.Ruins };
+        public static readonly MapKind[] Kinds = { MapKind.Beach, MapKind.Canyon, MapKind.Frostlake, MapKind.Volcano, MapKind.Ruins,
+            MapKind.Islands, MapKind.Jungle, MapKind.Ice, MapKind.CherryBlossom, MapKind.Wonderland, MapKind.Swamp, MapKind.Cube, MapKind.Mars };
 
         public static bool IsTheme => Cfg.Map >= MapKind.Beach;
-        public static bool HasWater => Cfg.Map == MapKind.Beach;
+        public static bool HasWater => Cfg.Map == MapKind.Beach || (Custom != null && Custom.HasWater);
 
         public static string Label(MapKind k)
         {
@@ -35,7 +36,7 @@ namespace RockGame
                 case MapKind.Frostlake: return "Frostlake";
                 case MapKind.Volcano: return "Volcano";
                 case MapKind.Ruins: return "Ruins";
-                default: return k.ToString();
+                default: return CustomFor(k)?.Label ?? k.ToString();
             }
         }
 
@@ -48,7 +49,7 @@ namespace RockGame
                 case MapKind.Frostlake: return "Snowy hills round a frozen lake in the middle. The ice is slippery!";
                 case MapKind.Volcano: return "Black ash and a ring of LAVA round the middle - it burns. Cross on the land bridges.";
                 case MapKind.Ruins: return "Overgrown ancient ruins: broken walls and pillars for cover, extra stone.";
-                default: return "";
+                default: return CustomFor(k)?.Blurb ?? "";
             }
         }
 
@@ -136,7 +137,7 @@ namespace RockGame
                     h = Mathf.Max(h, 0f);
                     break;
                 default:
-                    return 0f;
+                    return Custom != null ? Custom.Height(x, z) : 0f;
             }
             if (edge > 0) h += edge * 0.9f;
             return h * Mask(x, z);
@@ -153,25 +154,28 @@ namespace RockGame
 
         static bool IceAt(float x, float z)
         {
+            if (Custom != null) return Custom.Slippery(new Vector3(x, Height(x, z), z));
             if (Cfg.Map != MapKind.Frostlake) return false;
             float r = new Vector2(x, z).magnitude;
             return r > 13f && r < Half * 0.38f && Mask(x, z) > 0.5f;
         }
 
-        public static bool OnIce(Vector3 p) => IceAt(p.x, p.z) && p.y < 0.6f;
+        public static bool OnIce(Vector3 p) => Custom != null ? Custom.Slippery(p) : IceAt(p.x, p.z) && p.y < 0.6f;
 
         public static bool LavaAt(float x, float z) => Cfg.Map == MapKind.Volcano && Height(x, z) < LavaY - 0.1f;
 
         public static bool InLava(Vector3 p) => LavaAt(p.x, p.z) && p.y < LavaY + 0.4f;
 
         /// <summary>How fast you can walk here (wading, lava).</summary>
-        public static float SpeedMul(Vector3 p) => !IsTheme ? 1f : InWater(p) ? 0.6f : InLava(p) ? 0.7f : 1f;
+        public static float SpeedMul(Vector3 p) => !IsTheme ? 1f : InWater(p) ? 0.6f : InLava(p) ? 0.7f : Custom != null ? Custom.SpeedMul(p) : 1f;
 
         /// <summary>Somewhere a tree / rock / airdrop can go (not in water or lava, not up on a mesa).</summary>
         public static bool SpotOk(Vector3 p)
         {
             if (!IsTheme) return true;
             float h = Height(p.x, p.z);
+            var cm = Custom;
+            if (cm != null) return h >= -0.15f && h <= cm.MaxSpotHeight && cm.SpotOk(new Vector3(p.x, h, p.z));
             if (h < -0.15f || h > 3f) return false;
             if (IceAt(p.x, p.z)) return false;
             return true;
@@ -188,7 +192,7 @@ namespace RockGame
                 case MapKind.Frostlake: return tree ? 1.2f : bush ? 0.5f : 0.9f;
                 case MapKind.Volcano: return tree ? 0.6f : bush ? 0.4f : 1.5f;
                 case MapKind.Ruins: return tree ? 0.8f : bush ? 0.8f : 1.4f;
-                default: return 1f;
+                default: return Custom != null ? Custom.NodeMul(kind) : 1f;
             }
         }
 
@@ -196,6 +200,7 @@ namespace RockGame
         static float s_NextBurn;
         public static void ServerTick()
         {
+            ServerTickCustom();
             if (Cfg.Map != MapKind.Volcano || Time.time < s_NextBurn) return;
             s_NextBurn = Time.time + 0.5f;
             foreach (var p in PlayerNet.All)
@@ -218,13 +223,14 @@ namespace RockGame
                 case MapKind.Frostlake: return Color.Lerp(leaf, new Color(0.85f, 0.92f, 0.95f), 0.45f);
                 case MapKind.Volcano: return Color.Lerp(leaf, new Color(0.28f, 0.24f, 0.18f), 0.65f);
                 case MapKind.Ruins: return Color.Lerp(leaf, new Color(0.3f, 0.45f, 0.18f), 0.3f);
-                default: return leaf;
+                default: return Custom != null ? Custom.LeafTint(leaf) : leaf;
             }
         }
 
         /// <summary>Beach: palm trees instead of the cone trees (the trunk collider and weak spots stay the same).</summary>
         public static bool BuildPalm(Transform tr, int seed, float h, GameObject trunk)
         {
+            if (Custom != null) return Custom.BuildTree(tr, seed, h, trunk);
             if (Cfg.Map != MapKind.Beach) return false;
             var rng = new System.Random(seed + 5);
             float r() => (float)rng.NextDouble();
@@ -270,6 +276,7 @@ namespace RockGame
 
         static Color[] Palette()
         {
+            if (Custom != null) return Custom.Palette;
             switch (Cfg.Map)
             {
                 case MapKind.Beach: return new[] { new Color(0.88f, 0.8f, 0.56f), new Color(0.72f, 0.64f, 0.44f), new Color(0.55f, 0.52f, 0.47f) };
@@ -283,6 +290,7 @@ namespace RockGame
         /// <summary>Which palette colour a ground triangle gets.</summary>
         static int ColourAt(Vector3 c, float slopeY)
         {
+            if (Custom != null) return Custom.ColourAt(c, slopeY);
             switch (Cfg.Map)
             {
                 case MapKind.Beach: return slopeY < 0.75f ? 2 : c.y < -0.25f ? 1 : 0;
@@ -296,6 +304,7 @@ namespace RockGame
         /// <summary>The ground (a smooth-shaded mesh like the Highlands), coloured for the map.</summary>
         public static void BuildGround(Transform root)
         {
+            if (Custom != null) { Custom.BuildGround(root); if (Custom.HasWater) Surface(root, "Water", new Color(0.2f, 0.52f, 0.78f), WaterY, Cfg.MapHalf * 2f + 60f, false); return; }
             float half = Cfg.MapHalf + 30f;
             const float step = 2f;
             int n = Mathf.CeilToInt(half * 2f / step);
@@ -321,7 +330,7 @@ namespace RockGame
             if (Cfg.Map == MapKind.Volcano) Surface(root, "Lava", new Color(1f, 0.42f, 0.08f), LavaY, size, true);
         }
 
-        static void Surface(Transform root, string name, Color c, float y, float size, bool glow)
+        public static void Surface(Transform root, string name, Color c, float y, float size, bool glow)
         {
             var mat = new Material(Art.Mat(c)) { name = name };
             if (mat.HasProperty("_Smoothness")) mat.SetFloat("_Smoothness", glow ? 0.2f : 0.85f);
@@ -342,6 +351,7 @@ namespace RockGame
             float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
             float half = Cfg.MapHalf;
             int want = Mathf.RoundToInt(14 * half / 100f);
+            if (Custom != null) { Custom.BuildProps(root); return; }
 
             // spots in the first team's part of the map, away from the bases and the middle, copied round for every team
             IEnumerable<(Vector3 p, float yaw)> Spots(int count, float clearance)

@@ -159,7 +159,7 @@ namespace RockGame
             for (int i = 0; i < NetGame.LaneTotal; i++)
             {
                 double start = g.LaneStartAt(i);
-                if (start < 0 || now - start < 0 || now - start > Gone) continue;
+                if (start < 0 || now - start < 0 || (now - start) * NetGame.DropSpeed > Gone) continue;
                 bool have = false;
                 foreach (var f in s_Flights) if (f.m_Lane == i && f.m_Start == start) { have = true; break; }
                 if (!have) s_Flights.Add(Begin(i, start, g.LanePosAt(i)));
@@ -168,7 +168,7 @@ namespace RockGame
             for (int k = s_Flights.Count - 1; k >= 0; k--)
             {
                 var f = s_Flights[k];
-                float e = (float)(now - f.m_Start);
+                float e = (float)(now - f.m_Start) * NetGame.DropSpeed; // (the tutorial's comes down faster)
                 if (e < 0f || e > Gone)
                 {
                     f.Destroy(true);

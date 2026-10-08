@@ -15,6 +15,9 @@ namespace RockGame
         /// <summary>The Trade Station's placeables and the Advanced one's auto turret (Deployables.cs): a sleeping bag (respawn
         /// at it), a bear trap, a ladder and the turret (two slots: a weapon, its ammo).</summary>
         public const byte SleepBag = 6, Trap = 7, Ladder = 8, Turret = 9;
+        /// <summary>Jonah mode: the wood -> alien dust converter at a team's upgrade station (JonahMode.cs) - one slot, no model, nothing to hit.</summary>
+        public const byte Converter = 10;
+        public bool IsConverter => Kind.Value == Converter;
         /// <summary>A bear trap: 0 armed, 1 sprung. (Deployables.cs)</summary>
         public readonly NetworkVariable<byte> Flag = new NetworkVariable<byte>();
         /// <summary>An auto turret's aim (yaw, pitch in degrees, its own space), for every screen to pan it.</summary>
@@ -42,7 +45,7 @@ namespace RockGame
         /// <summary>Chests can be damaged and rammed; bags and airdrops can't.</summary>
         public bool Breakable => Kind.Value == Chest || IsDeployable;
         public bool TakeOnly => IsBag || IsAirdrop;
-        public string DisplayName => IsDeployable ? Cfg.ItemName(ItemOf(Kind.Value)) : IsWorkbench ? (BenchTier == 2 ? "Advanced Trade Station" : "Trade Station") : IsGamble ? "Gambling Machine" : IsBag ? $"{Cfg.TeamName[Mathf.Clamp(Team.Value, 0, 3)]}'s loot bag" : IsAirdrop ? "Alien Airdrop" : "Storage Chest";
+        public string DisplayName => IsConverter ? "Wood to Alien Dust Converter" : IsDeployable ? Cfg.ItemName(ItemOf(Kind.Value)) : IsWorkbench ? (BenchTier == 2 ? "Advanced Trade Station" : "Trade Station") : IsGamble ? "Gambling Machine" : IsBag ? $"{Cfg.TeamName[Mathf.Clamp(Team.Value, 0, 3)]}'s loot bag" : IsAirdrop ? "Alien Airdrop" : "Storage Chest";
         public Vector3 Center => transform.position + Vector3.up * (IsDeployable ? Deployables.CenterUp(Kind.Value) : IsBag ? 0.3f : IsAirdrop ? 0.6f : IsGamble ? 1f : IsWorkbench ? 0.9f : 0.4f);
         public bool Empty
         {
@@ -90,6 +93,7 @@ namespace RockGame
             else if (IsGamble) GambleMachine.Setup(this, m_Visual, bc);
             else if (IsWorkbench) RockGame.Workbench.Setup(this, m_Visual, bc);
             else if (IsDeployable) Deployables.Setup(this, m_Visual, bc); // (the bag, trap, ladder and turret: Deployables.cs)
+            else if (IsConverter) bc.enabled = false; // (Jonah's converter: you get at it through the upgrade station)
             else { bc.center = new Vector3(0, 0.33f, 0); bc.size = new Vector3(1.1f, 0.66f, 0.62f); }
             m_Pop = 0f;
             // no grass through a chest, a workbench or a gamble machine (it grows back when it's gone; bags and airdrops lie in it)
@@ -210,7 +214,10 @@ namespace RockGame
             }
         }
 
-        public bool InReach(Vector3 eye) => Vector3.Distance(eye, Center) <= Cfg.LootRange + 1.5f;
+        public bool InReach(Vector3 eye) => IsConverter ? Cfg.AtOwnStation(Team.Value, eye) : Vector3.Distance(eye, Center) <= Cfg.LootRange + 1.5f;
+        /// <summary>The server's check for moves in an open container: a bit more lenient than the client's (where you
+        /// were when you let go reaches the server a moment later - a move right at the edge used to be refused and snap back).</summary>
+        public bool InReachServer(Vector3 eye) => IsConverter ? Cfg.AtOwnStation(Team.Value, eye) : Vector3.Distance(eye, Center) <= Cfg.LootRange + 3.5f;
 
         // ---------------- Server ----------------
 

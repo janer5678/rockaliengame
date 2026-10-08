@@ -7,7 +7,7 @@ namespace RockGame
     public partial class PlayerNet
     {
         /// <summary>Enough of this mode's currency (and stone, outside DNA mode) for a recipe.</summary>
-        public bool CanAfford(Recipe r) => Count(Cfg.CurrencyItem) >= r.Wood && Count(Item.Stone) >= r.Stone;
+        public bool CanAfford(Recipe r) => Count(Cfg.CurrencyItem) >= r.Wood && Count(Item.Stone) >= r.Stone && Count(Item.AlienDust) >= r.Dust;
 
         /// <summary>Server: take a recipe's price (shown in red in the bottom right).</summary>
         void ServerPay(Recipe r)
@@ -15,7 +15,9 @@ namespace RockGame
             var cur = Cfg.CurrencyItem;
             InvOps.Remove(Inv, cur, r.Wood);
             InvOps.Remove(Inv, Item.Stone, r.Stone);
+            InvOps.Remove(Inv, Item.AlienDust, r.Dust);
             if (r.Wood > 0) SpentRpc((byte)cur, r.Wood);
+            if (r.Dust > 0) SpentRpc((byte)Item.AlienDust, r.Dust);
             if (r.Stone > 0) SpentRpc((byte)Item.Stone, r.Stone);
         }
 

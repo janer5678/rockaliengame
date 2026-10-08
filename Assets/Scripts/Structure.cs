@@ -715,5 +715,41 @@ namespace RockGame
         public Vector3 ExitDir => transform.forward;
         /// <summary>How hard you hop off the top (up, m/s).</summary>
         public float ExitHop = 1.5f;
+        /// <summary>A placed ladder (Container.Deployables.cs), not the fort tower's own.</summary>
+        public bool Deployed;
+
+        Structure m_Support;
+        float m_SupportAt = -10f;
+        /// <summary>A placed ladder: the building piece it leans on (looked up twice a second).</summary>
+        public Structure Support
+        {
+            get
+            {
+                if (!Deployed) return null;
+                if (Time.time - m_SupportAt > 0.5f || (m_Support != null && !m_Support.IsSpawned))
+                {
+                    m_SupportAt = Time.time;
+                    var root = transform.parent != null && transform.parent.parent != null ? transform.parent.parent : transform;
+                    m_Support = Deployables.LadderSupport(root.position, root.rotation);
+                }
+                return m_Support;
+            }
+        }
+        /// <summary>Leaning on a large wall or gate: going over the top is slow and the spikes hurt (like Rust's).</summary>
+        public bool HighWall { get { var s = Support; return s != null && (s.PType == PieceType.Barrier || s.PType == PieceType.Gate); } }
+        /// <summary>The top of the piece it leans on (world y).</summary>
+        public float SupportTop
+        {
+            get
+            {
+                var s = Support;
+                if (s == null) return float.MinValue;
+                float top = float.MinValue;
+                foreach (var col in s.GetComponentsInChildren<Collider>()) if (!col.isTrigger) top = Mathf.Max(top, col.bounds.max.y);
+                return top;
+            }
+        }
+        /// <summary>High enough up a large wall / gate that you can reach over its top from the ladder.</summary>
+        public bool CanGoOver => HighWall && SupportTop - TopWorldY < 2.3f;
     }
 }

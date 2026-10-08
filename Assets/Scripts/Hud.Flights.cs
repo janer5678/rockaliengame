@@ -20,7 +20,7 @@ namespace RockGame
         struct Expect { public Item Id; public float Time; }
 
         const float FlightTime = 0.3f, LandTime = 0.08f, MatchWindow = 0.4f; // (the flight is a touch slower than it was; the landing pop is quick)
-        const float ManualWindow = 0.8f;
+        const float ManualWindow = 2f; // (long enough for a slow connection's answer: it used to run out first and the item jumped back)
         readonly List<Flight> m_Flights = new List<Flight>();
         readonly List<Change> m_Losses = new List<Change>(), m_Gains = new List<Change>();
         readonly List<Manual> m_Manual = new List<Manual>();
@@ -69,7 +69,11 @@ namespace RockGame
                 dst = b.WithCount(b.Count + put);
                 src = a.WithCount(a.Count - put);
             }
-            else if (amount != a.Count || (srcKind == 1 && c != null && c.TakeOnly)) return false;
+            // out of an airdrop / loot bag onto a taken slot: nothing can go back into the crate, so the server puts the
+            // crate's item in that slot and moves what was there elsewhere in the bag (PlayerNet.MoveItemRpc) - shown
+            // straight away (it used to sit in the crate until the server answered, looking like it snapped back)
+            else if (srcKind == 1 && dstKind == 0 && c != null && c.TakeOnly) { dst = a; src = default; }
+            else if (amount != a.Count) return false;
             else { dst = a; src = b; }
             m_Manual.Add(new Manual { SrcKind = srcKind, SrcIndex = srcIndex, DstKind = dstKind, DstIndex = dstIndex, SrcWas = a, DstWas = b, SrcShow = src, DstShow = dst, Time = Time.unscaledTime });
             ManualMoves++;
