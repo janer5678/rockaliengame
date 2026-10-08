@@ -57,7 +57,7 @@ namespace RockGame
             float half = Cfg.MapHalf;
 
             // ---------- ground ----------
-            if (Cfg.Map == MapKind.Highlands) BuildTerrain(root);
+            if (Cfg.IsHighlands) BuildTerrain(root);
             else if (ThemeMaps.IsTheme) ThemeMaps.BuildGround(root); // THEME MAPS
             else
             {
@@ -154,7 +154,7 @@ namespace RockGame
             // the walls are still what stops you at the edge, but in Normal graphics they're invisible: the glass dome over
             // the map (MapDome, built above) is what you see. PSX / AI PSX keep them, in concrete.
             var wallC = new Color(0.45f, 0.43f, 0.4f);
-            float wh = Cfg.Map == MapKind.Highlands || ThemeMaps.IsTheme /* THEME MAPS */ ? 40f : 5f;
+            float wh = Cfg.IsHighlands || ThemeMaps.IsTheme /* THEME MAPS */ ? 40f : 5f;
             {
                 var walls = new List<Renderer>();
                 for (int k = 0; k < 4; k++)
@@ -192,13 +192,13 @@ namespace RockGame
             if (mountains) MapScenery.Build(root);
 
             BuildArena(root);
-            if (Cfg.Map == MapKind.Plains || Cfg.Map == MapKind.Highlands)
+            if (Cfg.Map == MapKind.Plains || Cfg.IsHighlands)
             {
                 GrassField.Build(root); // tufts of grass (Normal graphics)
                 CloudLayer.Build(root);  // clouds drifting over (Normal graphics)
                 SkySun.Build(root);      // the low-poly sun (Normal graphics)
                 Butterflies.Build(root); // little butterflies fluttering about out in the wild
-                if (Cfg.Map == MapKind.Highlands) SkyPlanets.Build(root); // big planets in the sky (Normal graphics)
+                if (Cfg.IsHighlands) SkyPlanets.Build(root); // big planets in the sky (Normal graphics)
             }
             look.Done();
             if (AiPsxArt.On) AiPsxArt.ApplyWorld(root);
@@ -238,7 +238,7 @@ namespace RockGame
 
         /// <summary>Highlands: is this part of the ground the rocky rise at the edge of the map? (Drawn smooth-shaded like the
         /// hills: it was faceted for a while, which looked wrong where the glass wall ends.)</summary>
-        public static bool EdgeRise(float x, float z) => Cfg.Map == MapKind.Highlands && Mathf.Max(Mathf.Abs(x), Mathf.Abs(z)) > Cfg.MapHalf - 12f;
+        public static bool EdgeRise(float x, float z) => Cfg.IsHighlands && Mathf.Max(Mathf.Abs(x), Mathf.Abs(z)) > Cfg.MapHalf - 12f;
 
         /// <summary>Ground height at (x, z). Bases and the ball zone are flat (y = 0) so building and the drop work the same.</summary>
         public static float Height(float x, float z) => Height(x, z, out _, out _);
@@ -250,7 +250,7 @@ namespace RockGame
             hills = 0f;
             mask = 1f;
             if (ThemeMaps.IsTheme) return ThemeMaps.Height(x, z); // THEME MAPS
-            if (Cfg.Map != MapKind.Highlands) return 0f;
+            if (!Cfg.IsHighlands) return 0f;
             // symmetric: every team gets the same terrain (point mirror, or four ways round)
             float h = Cfg.FourWay ? 0.25f * (Raw(x, z) + Raw(-z, x) + Raw(-x, -z) + Raw(z, -x)) : 0.5f * (Raw(x, z) + Raw(-x, -z));
             float dBase = float.MaxValue;
@@ -437,7 +437,7 @@ namespace RockGame
         public static float RockField(float x, float z)
         {
             var g = s_RockField;
-            if (g == null || Cfg.Map != MapKind.Highlands) return -1f;
+            if (g == null || !Cfg.IsHighlands) return -1f;
             return OnGrid(g, x, z);
         }
 
@@ -448,7 +448,7 @@ namespace RockGame
         public static bool GroundGrid(out float[,] hs, out float[,] rock, out float half, out float step)
         {
             hs = s_GroundHs; rock = s_RockField; half = s_FieldHalf; step = s_FieldStep;
-            return hs != null && rock != null && Cfg.Map == MapKind.Highlands && !ThemeMaps.IsTheme;
+            return hs != null && rock != null && Cfg.IsHighlands && !ThemeMaps.IsTheme;
         }
 
         /// <summary>
@@ -460,7 +460,7 @@ namespace RockGame
         public static float GroundHeight(float x, float z)
         {
             var g = s_GroundHs;
-            if (g == null || Cfg.Map != MapKind.Highlands || ThemeMaps.IsTheme) return Height(x, z);
+            if (g == null || !Cfg.IsHighlands || ThemeMaps.IsTheme) return Height(x, z);
             int n = g.GetLength(0) - 1;
             float fx = (x + s_FieldHalf) / s_FieldStep, fz = (z + s_FieldHalf) / s_FieldStep;
             if (fx < 0f || fz < 0f || fx > n || fz > n) return Height(x, z);
@@ -744,6 +744,14 @@ namespace RockGame
                     arm.localRotation = Quaternion.Euler(0, 45f + 90f * k, 0);
                     BuildGlassPanel(arm, arm.localRotation * Vector3.right);
                 }
+            }
+            else if (Cfg.DiagonalBases)
+            {
+                // two teams corner to corner (THEME MAPS: Islands): the wall runs across the other diagonal
+                var arm = new GameObject("glass").transform;
+                arm.SetParent(s_Glass.transform, false);
+                arm.localRotation = Quaternion.Euler(0, 45f, 0);
+                BuildGlassPanel(arm, arm.localRotation * Vector3.right);
             }
             else BuildGlassPanel(s_Glass.transform, Vector3.right);
             EnergyWall.Attach(s_Glass); // (Settings > Display > Energy wall: drawn as an energy field instead of glass)

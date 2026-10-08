@@ -98,7 +98,7 @@ namespace RockGame
         }
 
         /// <summary>How far in from the edge of the map their loops stay (m).</summary>
-        public static float EdgeMargin => Cfg.Map == MapKind.Highlands ? 17f : 7f;
+        public static float EdgeMargin => Cfg.IsHighlands ? 17f : 7f;
         /// <summary>They keep this far from the mountain rocks round the map (m).</summary>
         public const float MountainClear = 4f;
         static float s_Edge = 1e6f;

@@ -269,6 +269,7 @@ namespace RockGame
             RowLabel("Map");
             if (Choice(kind == MapKind.Plains, "Plains", GUILayout.Height(30 * k))) { boot.SetMapChoice((int)MapKind.Plains | flags); m_ShowMoreMaps = false; }
             if (Choice(kind == MapKind.Highlands, "Highlands (wild)", GUILayout.Height(30 * k))) { boot.SetMapChoice((int)MapKind.Highlands | flags); m_ShowMoreMaps = false; }
+            if (Choice(kind == MapKind.HighlandsJonah, "Highlands Jonah", GUILayout.Height(30 * k))) { boot.SetMapChoice((int)MapKind.HighlandsJonah | flags); m_ShowMoreMaps = false; }
             string mapsLabel = (themePicked ? $"<color=#{ColorUtility.ToHtmlStringRGB(GameSettings.AccentColor)}>{ThemeMaps.Label(kind)}</color>" : "More maps") + (m_ShowMoreMaps ? "  ▲" : "  ▼");
             if (Btn(mapsLabel, GUILayout.Height(30 * k))) m_ShowMoreMaps = !m_ShowMoreMaps;
             GUILayout.EndHorizontal();

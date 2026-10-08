@@ -244,7 +244,7 @@ namespace RockGame
         }
 
         /// <summary>The map's name, as the intro's top bar shows it.</summary>
-        public static string MapName => (ThemeMaps.IsTheme ? ThemeMaps.Label(Cfg.Map) : Cfg.Map.ToString()).ToUpperInvariant(); // THEME MAPS
+        public static string MapName => ThemeMaps.Label(Cfg.Map).ToUpperInvariant(); // THEME MAPS
 
         /// <summary>The intro's HUD (Hud.DrawGame / DrawSpectator call it first): letterbox bars, the flashes and cuts and
         /// the captions. True while it's playing (draw nothing else); in the moment after (Outro) it draws the fade back in

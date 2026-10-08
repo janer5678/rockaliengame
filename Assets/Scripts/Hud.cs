@@ -537,7 +537,7 @@ namespace RockGame
             {
                 case Item.BuildingPlan:
                     if (pc.DemolishMode) return "<b>Demolish</b>    LMB: take down your own piece (lit up red; half the wood back)    hold RMB: building wheel";
-                    return $"<b>{Cfg.PieceName(pc.BuildPiece)}</b>  ({Cfg.PieceWood(pc.BuildPiece)} {Cfg.CurrencyName})    hold RMB: building wheel (demolish at the bottom)   {KT(Bind.Rotate)}: rotate stairs" + (Cfg.WoodMode || Tutorial.HideStone ? "" : $"   {KT(Bind.Upgrade)}: upgrade to stone");
+                    return $"<b>{Cfg.PieceName(pc.BuildPiece)}</b>  ({Cfg.PieceWood(pc.BuildPiece)} {Cfg.BuildName})    hold RMB: building wheel (demolish at the bottom)   {KT(Bind.Rotate)}: rotate stairs" + (Cfg.WoodMode || Tutorial.HideStone ? "" : $"   {KT(Bind.Upgrade)}: upgrade to stone");
                 case Item.Ram: return $"<b>Battering Ram</b> ({s.Data} hit{(s.Data == 1 ? "" : "s")} left)    hold LMB at an enemy piece: wood breaks instantly, stone / metal drop one step";
                 case Item.Spear: return $"<b>Spear</b>    LMB: stab    hold RMB + LMB: throw    {KT(Bind.Interact)}: pick thrown spears back up";
                 case Item.Bow: return $"<b>Bow</b>  ({me.Count(Item.Arrow)} arrows)    hold LMB to draw, release to fire";
@@ -984,6 +984,7 @@ namespace RockGame
             bool hoverShown = false;
             if (craft) { DrawCraftList(me, pc, cxp, top, craftW, colGap, sh - 8 * k, k); hoverShown = true; }
             if (upgrades) { DrawUpgradeList(me, pc, cxp, top, craftW, sh - 8 * k, k); hoverShown = true; }
+            if (Cfg.Jonah && (craft || upgrades)) DrawDustPanel(me, pc, cxp + (craft ? craftTotal : craftW) + 14 * k, top, k); // (Jonah mode: buy alien dust - to the right)
             // how to move things: always these three lines under the bag
             Shadowed(new Rect(invX, infoY, gridW, 66 * k), $"<color=#ffffff>{InvHelpShown}</color>", m_SmallWrap); // (with the mouse / key icons)
             // no crafting list beside the bag (a chest is open, or the tutorial hasn't got there): the description goes
@@ -1146,7 +1147,7 @@ namespace RockGame
             if (Event.current.type == EventType.Repaint)
             {
                 Vector2 raw = Input.mousePosition;
-                moved = (raw - s_WheelLastMouse).sqrMagnitude > 4f;
+                moved = (raw - s_WheelLastMouse).sqrMagnitude > 4f && Application.isFocused; // (not while the game isn't the focused window: the mouse is somewhere else then)
                 s_WheelLastMouse = raw;
             }
             if (moved && d.magnitude > 18f * k)
@@ -1179,7 +1180,7 @@ namespace RockGame
             GUI.DrawTexture(new Rect(c.x - R * 0.32f, c.y - R * 0.32f, R * 0.64f, R * 0.64f), s_Disc);
             GUI.color = old;
             var o = opts[Mathf.Clamp(WheelHover, 0, opts.Length - 1)];
-            string cost = o.Demolish ? "your own pieces\nhalf the wood back" : o.Upgrade ? (Cfg.WoodMode ? "not in wood mode" : Tutorial.HideStone ? "after the tutorial" : "to stone\nLMB on your piece") : $"{Cfg.PieceWood(o.Piece)} {Cfg.CurrencyName}";
+            string cost = o.Demolish ? "your own pieces\nhalf the wood back" : o.Upgrade ? (Cfg.WoodMode ? "not in wood mode" : Tutorial.HideStone ? "after the tutorial" : "to stone\nLMB on your piece") : $"{Cfg.PieceWood(o.Piece)} {Cfg.BuildName}";
             var title = new GUIStyle(m_Center) { fontStyle = FontStyle.Bold, fontSize = Mathf.RoundToInt(20 * k) };
             title.normal.textColor = o.Demolish ? new Color(1f, 0.5f, 0.4f) : Color.white;
             GUI.Label(new Rect(c.x - 100 * k, c.y - 28 * k, 200 * k, 26 * k), o.Label.ToUpper(), title);

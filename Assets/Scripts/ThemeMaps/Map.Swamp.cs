@@ -6,7 +6,8 @@ namespace RockGame
 {
     /// <summary>
     /// SWAMP: everything outside the bases is murky shallow water (slow to wade), lost in golden fog. Small lily pads are
-    /// dotted all over it, a short jump apart, so you can parkour almost anywhere. A small mud island in the middle with
+    /// scattered at random over it - sparse, some close, some a long jump apart and some too far - so crossing on them takes
+    /// careful jumping and often runs out (then you wade). A small mud island in the middle with
     /// the ball (stumps, roots, a fallen log, an upturned boat, glowing lanterns), and little root mounds out in the water
     /// where the twisted black trees and the glowing mushrooms grow. Giant toads to ride.
     /// </summary>
@@ -14,13 +15,14 @@ namespace RockGame
     {
         public override MapKind Kind => MapKind.Swamp;
         public override string Label => "Swamp";
-        public override string Blurb => "Murky water everywhere but your base, lost in golden fog. Parkour across the lily pads to get anywhere fast, wade (slow) - or craft a BOAT (1500 wood).";
+        public override string Blurb => "Murky water everywhere but your base, lost in golden fog. Scattered lily pads - jump carefully from one to the next (they don't always reach), wade (slow) - or craft a BOAT (1500 wood).";
         public override bool HasWater => true;
         public override bool Mountains => false;
         public override string MountName => "Giant Toad";
 
         const float PadTop = ThemeMaps.WaterY + 0.12f, PadBottom = ThemeMaps.WaterY - 0.12f;
-        /// <summary>Lily pads sit on a 3 m grid (jittered): 1.2 - 1.8 m across, never more than ~2.5 m edge to edge.</summary>
+        /// <summary>Lily pads: at most one in each 3 m cell, anywhere in it, in only about three cells in ten (patchy: a few
+        /// clusters, wide empty stretches) - 1 - 2 m across. Gaps run from an easy hop to too far to jump.</summary>
         const float PadStep = 3f;
         /// <summary>The middle mud island's radius (flat round the ball).</summary>
         const float MidR = 12.5f;
@@ -308,8 +310,9 @@ namespace RockGame
             float half = Cfg.MapHalf;
             bool Deep(float x, float z) => ThemeMaps.Height(x, z) < ThemeMaps.WaterY - 0.3f;
 
-            // ---- lily pads everywhere on the water: a jittered 3 m grid laid out in blue's sector (the grid is the same
-            //      turned round, so the copies line up with each other at the sector edges) ----
+            // ---- lily pads scattered over the water: at most one per 3 m cell (anywhere in it), only in about 30% of the
+            //      cells and patchy (a slow noise makes clusters and bare stretches) - laid out in blue's sector, the grid the
+            //      same turned round so the copies line up at the sector edges ----
             var pads = new PadBatch(sec);
             var padAt = new Dictionary<long, Vector3>(); // grid cell -> (x, radius, z)
             long Key(int i, int j) => ((long)i << 32) ^ (uint)j;
@@ -319,14 +322,18 @@ namespace RockGame
             for (int i = -n; i < n; i++)
             {
                 if (Cfg.FourWay && !(i >= 0 ? j >= i : j >= -i)) continue; // (just blue's quarter, one diagonal edge)
-                var p = new Vector3((i + 0.5f) * PadStep + (TmKit.Hash(i, j, 81) - 0.5f) * 0.7f, 0, -(j + 0.5f) * PadStep + (TmKit.Hash(i, j, 82) - 0.5f) * 0.7f);
+                float r = 0.5f + TmKit.Hash(i, j, 83) * 0.5f;
+                // anywhere in its cell (well off the grid), not just near the middle
+                float room = PadStep * 0.5f - r - 0.05f;
+                var p = new Vector3((i + 0.5f) * PadStep + (TmKit.Hash(i, j, 81) - 0.5f) * 2f * room, 0, -(j + 0.5f) * PadStep + (TmKit.Hash(i, j, 82) - 0.5f) * 2f * room);
+                float keep = 0.12f + 0.38f * TmKit.SymN(p.x, p.z, 0.07f, ThemeMaps.SeedP + 55f); // (clusters and bare stretches)
+                if (TmKit.Hash(i, j, 80) > keep) continue;
                 if (Mathf.Abs(p.x) > half - 1.2f || Mathf.Abs(p.z) > half - 1.2f || !Deep(p.x, p.z)) continue;
-                float r = 0.6f + TmKit.Hash(i, j, 83) * 0.3f;
                 if (!Deep(p.x + r, p.z) || !Deep(p.x - r, p.z) || !Deep(p.x, p.z + r) || !Deep(p.x, p.z - r)) continue;
                 float notch = TmKit.Hash(i, j, 84) * 360f;
                 pads.Add(p, r, notch, TmKit.Hash(i, j, 85) < 0.5f ? 0 : 1);
                 padAt[Key(i, j)] = new Vector3(p.x, r, p.z);
-                if (TmKit.Hash(i, j, 86) < 0.04f && flowers < 60)
+                if (TmKit.Hash(i, j, 86) < 0.1f && flowers < 60)
                 {
                     flowers++;
                     var fc = TmKit.Hash(i, j, 87) < 0.5f ? new Color(0.95f, 0.7f, 0.8f) : new Color(0.95f, 0.93f, 0.85f);

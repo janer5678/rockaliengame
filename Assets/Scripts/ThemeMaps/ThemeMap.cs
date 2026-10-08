@@ -67,6 +67,14 @@ namespace RockGame
         public virtual float BaseDistance => 0f;
         /// <summary>Boats can be crafted from the start (no trade station).</summary>
         public virtual bool BoatsAnytime => false;
+        /// <summary>Two teams: the bases sit on the diagonal ((-d,-d) and (d,d), d = BaseDistance along each axis) and the
+        /// glass wall between them is turned to match. Three or four teams stay where they always are.</summary>
+        public virtual bool DiagonalBases => false;
+        /// <summary>Its water is too deep to wade: off a boat you can't swim - you sink (slowly, no jumping) and drown at KillY.</summary>
+        public virtual bool DeepWater => false;
+        /// <summary>This version of the map is the one played (a map can keep an older version as a backup class with
+        /// the same Kind: exactly one of them must be enabled).</summary>
+        public virtual bool Enabled => true;
         /// <summary>A player who falls to their death respawns this many times as fast.</summary>
         public virtual float FallRespawnMul => 1f;
 
@@ -108,7 +116,7 @@ namespace RockGame
         static void RegisterAll()
         {
             if (s_Custom.Count > 0) return;
-            foreach (var m in AllCustom()) s_Custom[m.Kind] = m;
+            foreach (var m in AllCustom()) if (m.Enabled) s_Custom[m.Kind] = m;
         }
 
         /// <summary>The second batch of theme maps (each in ThemeMaps/Map.*.cs).</summary>

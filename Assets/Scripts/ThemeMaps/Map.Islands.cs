@@ -5,9 +5,10 @@ using UnityEngine.Rendering;
 namespace RockGame
 {
     /// <summary>
-    /// ISLANDS: every team's base sits on its own small round sand island far out at sea, and the ball drops on a small
-    /// round island in the middle (the same size). Nothing joins them - wade the shallow sea (slow) or take a boat, which
-    /// you can craft from the start. The middle island has sandstone blocks with ladders, a wooden deck, crates, sea-glass
+    /// ISLANDS: every team's base sits on its own small round sand island far out at sea (two teams: in opposite corners
+    /// of the map, on the diagonal), and the ball drops on a small round island in the middle (the same size). Nothing
+    /// joins them and the sea is deep: off a boat you can't swim - you sink and drown (DeepWater). Boats can be crafted
+    /// from the start. The middle island has sandstone blocks with ladders, a wooden deck, crates, sea-glass
     /// and a driftwood barricade to fight round. Palm trees, pineapple bushes, giant crabs to ride.
     /// (Three teams: only three base islands - the empty fourth spot is open sea, with nothing on it.)
     /// </summary>
@@ -15,25 +16,33 @@ namespace RockGame
     {
         public override MapKind Kind => MapKind.Islands;
         public override string Label => "Islands";
-        public override string Blurb => "A small round island for every team, far out at sea, and one in the middle with the ball. Nothing joins them: wade the shallow sea (slow) or craft a BOAT - you can make one from the start.";
+        public override string Blurb => "A small round island for every team, far out at sea, and one in the middle with the ball. The sea is DEEP: fall in without a boat and you sink and drown. Craft a BOAT - you can make one from the start.";
         public override bool HasWater => true;
+        /// <summary>No wading, no swimming: off a boat you sink (slowly, no jumping) and drown at KillY.</summary>
+        public override bool DeepWater => true;
+        public override float KillY => -9f;
+        /// <summary>Two teams: corner to corner, as far apart as the map allows.</summary>
+        public override bool DiagonalBases => true;
         public override bool Mountains => false;
 
         /// <summary>Half the usual build space (24 x 24).</summary>
         public override float BaseHalfSize => 12f;
         /// <summary>Each round island's radius: just big enough round the base (its corners are 17 m out) for a beach.</summary>
         static float IslandR => Cfg.SmallMap ? 20f : 23f;
-        /// <summary>The base islands right out near the edge of the map (a few metres of sea behind them).</summary>
+        /// <summary>The base islands right out near the edge of the map (a few metres of sea behind them). Two teams: this
+        /// far along both axes (the corners); three or four: along their axis.</summary>
         public override float BaseDistance => Mathf.Floor((Cfg.MapHalf - IslandR - 4f) / 3f) * 3f;
         public override bool BoatsAnytime => true;
         public override string MountName => "Giant Crab";
 
-        static float D => Mathf.Abs(Cfg.BaseCenter[0].z);
+        /// <summary>How far the base islands are from the middle (on the diagonal for two teams).</summary>
+        static float D => new Vector2(Cfg.BaseCenter[0].x, Cfg.BaseCenter[0].z).magnitude;
         /// <summary>The middle island: the same size as the base islands (smaller on the small map, so there's still sea between).</summary>
         static float CenterR => Mathf.Clamp(D - IslandR - 12f, 12f, IslandR);
-        const float SeaFloor = -1.6f;
+        /// <summary>The deep sea floor, and the bottom of the narrow sloped shore round each island before it drops away.</summary>
+        const float SeaFloor = -14f, ShoreFloor = -1.3f;
 
-        static readonly Color Sand = new Color(0.93f, 0.85f, 0.62f), WetSand = new Color(0.8f, 0.7f, 0.5f), SeaBed = new Color(0.62f, 0.66f, 0.55f);
+        static readonly Color Sand = new Color(0.93f, 0.85f, 0.62f), WetSand = new Color(0.8f, 0.7f, 0.5f), SeaBed = new Color(0.62f, 0.66f, 0.55f), Deep = new Color(0.16f, 0.32f, 0.36f);
         static readonly Color Sandstone = new Color(0.86f, 0.74f, 0.52f), Sandstone2 = new Color(0.78f, 0.66f, 0.45f);
         static readonly Color Plank = new Color(0.66f, 0.5f, 0.32f), PlankDark = new Color(0.5f, 0.37f, 0.22f);
         static readonly Color LadderOrange = new Color(0.95f, 0.45f, 0.12f), SeaGlass = new Color(0.55f, 0.85f, 0.9f);
@@ -50,28 +59,32 @@ namespace RockGame
         {
             float s = ThemeMaps.SeedP;
             float wob = (ThemeMaps.SymNoiseP(x, z, 0.09f, s + 11f) - 0.5f) * 2f; // (a slightly wobbly shore)
-            // the middle island, flat round the ball
+            // how far out past the nearest island's shore (negative: on it) - the middle island, flat round the ball...
             float r = Mathf.Sqrt(x * x + z * z);
-            float land = 1f - ThemeMaps.SmoothStepP(CenterR - 2f, CenterR + 2f, r + wob);
+            float out_ = r + wob - CenterR;
             float flat = ThemeMaps.SmoothStepP(8f, 13f, r);
-            // one round island round every base - only as many as there are teams (three teams: the fourth spot is sea)
+            // ...and one round island round every base - only as many as there are teams (three teams: the fourth spot is sea)
             for (int k = 0; k < Cfg.Copies; k++)
             {
                 if (!IslandUsed(k)) continue;
                 var c = Cfg.Copy(Cfg.BaseCenter[0], k);
                 float dx = x - c.x, dz = z - c.z;
-                land = Mathf.Max(land, 1f - ThemeMaps.SmoothStepP(IslandR - 2f, IslandR + 2f, Mathf.Sqrt(dx * dx + dz * dz) + wob));
+                out_ = Mathf.Min(out_, Mathf.Sqrt(dx * dx + dz * dz) + wob - IslandR);
                 float bx = Mathf.Max(0f, Mathf.Abs(dx) - Cfg.BaseHalf), bz = Mathf.Max(0f, Mathf.Abs(dz) - Cfg.BaseHalf);
                 flat = Mathf.Min(flat, ThemeMaps.SmoothStepP(0.5f, 5f, Mathf.Sqrt(bx * bx + bz * bz)));
             }
             float dune = 0.24f + (ThemeMaps.SymNoiseP(x, z, 0.08f, s + 3f) - 0.5f) * 0.5f;
-            return Mathf.Lerp(SeaFloor, dune * flat, land); // (the bases and the middle stay flat at 0)
+            // the beach slopes down into the water over a few metres, then the sea floor drops away deep (no wading)
+            float h = Mathf.Lerp(dune * flat, ShoreFloor, ThemeMaps.SmoothStepP(-2f, 2f, out_)); // (the bases and the middle stay flat at 0)
+            return Mathf.Lerp(h, SeaFloor, ThemeMaps.SmoothStepP(2f, 7f, out_));
         }
 
-        public override Color[] Palette => new[] { Sand, WetSand, SeaBed };
-        public override int ColourAt(Vector3 c, float slopeY) => c.y > -0.2f ? 0 : c.y > -0.9f ? 1 : 2;
+        public override Color[] Palette => new[] { Sand, WetSand, SeaBed, Deep };
+        public override int ColourAt(Vector3 c, float slopeY) => c.y > -0.2f ? 0 : c.y > -0.9f ? 1 : c.y > -4f ? 2 : 3;
 
-        public override bool SpotOk(Vector3 p) => p.y > 0.02f;
+        /// <summary>Only up on the sand (never in the sea, never on the wet shore).</summary>
+        public override bool SpotOk(Vector3 p) => p.y > 0.02f && ThemeMaps.Height(p.x + 1.5f, p.z) > -0.3f && ThemeMaps.Height(p.x - 1.5f, p.z) > -0.3f
+            && ThemeMaps.Height(p.x, p.z + 1.5f) > -0.3f && ThemeMaps.Height(p.x, p.z - 1.5f) > -0.3f;
         public override float NodeMul(byte kind) => kind == ResourceNode.Tree ? 1f : kind == ResourceNode.Bush ? 0.8f : 0.6f;
         public override Color LeafTint(Color leaf) => Color.Lerp(leaf, new Color(0.35f, 0.75f, 0.3f), 0.5f);
 
@@ -88,16 +101,22 @@ namespace RockGame
             root.SetParent(tr, false);
             root.localRotation = Quaternion.Euler(0, R() * 360f, 0);
             float lean = 8f + R() * 10f;
-            int segs = 7;
-            float segH = (h + 2.2f) / segs;
-            var pos = Vector3.zero;
+            // the bottom 2.4 m: straight up the middle, exactly as thick as the trunk collider (0.6 across) - the weak spot X
+            // goes on the collider's surface 0.8 - 1.5 m up, so it sits right on the bark you see, never inside it
+            const float StraightH = 2.4f, TrunkW = 0.6f;
+            for (int i = 0; i < 2; i++)
+                Art.Part(root, Art.Cylinder, i == 0 ? bark : ring, new Vector3(0, StraightH * (0.25f + i * 0.5f), 0), new Vector3(TrunkW, StraightH * 0.25f + 0.01f, TrunkW));
+            // above that it thins and leans
+            int segs = 5;
+            float segH = Mathf.Max(0.6f, (h + 2.2f - StraightH) / segs);
+            var pos = new Vector3(0, StraightH, 0);
             var rot = Quaternion.identity;
             for (int i = 0; i < segs; i++)
             {
-                if (i >= 2) rot = Quaternion.Euler(lean * (i - 1) / segs * 2f, 0, 0);
+                rot = Quaternion.Euler(lean * (i + 1) / segs * 1.6f, 0, 0);
                 var up = rot * Vector3.up;
-                float w = Mathf.Lerp(0.66f, 0.42f, i / (float)segs);
-                Art.Part(root, Art.Cylinder, i % 2 == 0 ? bark : ring, pos + up * segH * 0.5f, new Vector3(w, segH * 0.5f + 0.02f, w), rot.eulerAngles);
+                float w = Mathf.Lerp(0.56f, 0.42f, i / (float)(segs - 1));
+                Art.Part(root, Art.Cylinder, i % 2 == 0 ? ring : bark, pos + up * segH * 0.5f, new Vector3(w, segH * 0.5f + 0.02f, w), rot.eulerAngles);
                 pos += up * segH;
             }
             Art.Part(root, Art.Cylinder, ring, new Vector3(0, 0.15f, 0), new Vector3(1f, 0.15f, 1f)); // root flare
@@ -243,9 +262,9 @@ namespace RockGame
                             Art.Box(sec, new Color(0.95f, 0.5f, 0.3f), p + Vector3.up * 0.03f + Quaternion.Euler(0, y0 + k * 72f, 0) * new Vector3(0, 0, 0.16f), new Vector3(0.12f, 0.05f, 0.32f), new Vector3(0, y0 + k * 72f, 0));
                         break;
                     }
-                    default: // a rock in the shallows
+                    default: // a rock in the shallows (on the sloped shore, not out over the deep water)
                     {
-                        if (hh > -0.5f) continue;
+                        if (hh > -0.5f || hh < -1.2f) continue;
                         float sc = Rn(0.7f, 1.2f);
                         Art.Part(sec, TmKit.Rock(made), TmKit.Shade(Sandstone2, Rn(0.85f, 1f)), p + Vector3.up * sc * 0.35f, new Vector3(sc * 1.3f, sc, sc * 1.1f), new Vector3(0, Rn(0, 360), 0), true);
                         break;
@@ -263,7 +282,8 @@ namespace RockGame
                 for (int i = 0; i < 3; i++)
                 {
                     var p = TmKit.CentreSpot(-0.3f + i * 0.3f + Rn(-0.05f, 0.05f), Rn(gap0, gap1));
-                    if (!Cfg.InFirstSector(p, 2f)) continue;
+                    if (!Cfg.InFirstSector(p, 2f) || Mathf.Abs(p.x) > Cfg.MapHalf - 6f || Mathf.Abs(p.z) > Cfg.MapHalf - 6f) continue;
+                    if (ThemeMaps.Height(p.x, p.z) > -3f) continue; // (out in the open sea, not by an island)
                     p.y = ThemeMaps.WaterY;
                     Art.Part(sea, Art.Cylinder, Color.white, p + Vector3.up * 0.2f, new Vector3(0.6f, 0.25f, 0.6f));
                     Art.Part(sea, Art.Cylinder, new Color(0.9f, 0.2f, 0.15f), p + Vector3.up * 0.65f, new Vector3(0.45f, 0.2f, 0.45f));
@@ -507,9 +527,12 @@ namespace RockGame
         }
 
         /// <summary>A climbable ladder up a wall. foot: on the ground at the wall's face; faceOut: away from the wall.
-        /// topY: the floor you step off onto at the top. Parent must be at the world origin, only turned about y (a Sector).
-        /// The ladder itself is solid (you can't walk through it - under a deck it would be the only thing there); the
-        /// climbing volume is in front of it.</summary>
+        /// topY: the floor you step off onto at the top (its edge must be right at the wall's face, open - no railing).
+        /// Parent must be at the world origin, only turned about y (a Sector).
+        /// Climbable from the front only: the ladder itself is a solid board (you can't walk through it or climb it from
+        /// behind) and the climbing volume is only in front of it, narrower than the rails, and it stops just under the
+        /// floor at the top - so standing on the floor by the top never grabs you; you step off the edge (backwards, S) to
+        /// climb down. Going up, near the top you're pushed forwards (Ladder.ExitDir = into the wall) straight onto the floor.</summary>
         public static void Ladder(Transform parent, Vector3 foot, float topY, Vector3 faceOut, Color c, bool solid = true)
         {
             faceOut.y = 0;
@@ -521,26 +544,29 @@ namespace RockGame
             var b = foot + faceOut * 0.12f;
             Art.Box(parent, c, b + right * 0.36f + Vector3.up * (len * 0.5f), new Vector3(0.09f, len, 0.09f), e);
             Art.Box(parent, c, b - right * 0.36f + Vector3.up * (len * 0.5f), new Vector3(0.09f, len, 0.09f), e);
-            for (float y = 0.35f; y < len - 0.1f; y += 0.45f)
+            for (float y = 0.35f; y < topY - foot.y - 0.1f; y += 0.45f)
                 Art.Box(parent, c, b + Vector3.up * y, new Vector3(0.72f, 0.07f, 0.07f), e);
             if (solid)
             {
-                // one solid slab round the rails and rungs, up to just under the floor at the top (so you step off over it)
+                // one solid board round the rails and rungs, up to just under the floor at the top (so you step off over it)
                 float sh = Mathf.Max(0.2f, topY - foot.y - 0.05f);
                 var body = new GameObject("ladder body");
                 body.transform.SetParent(parent, false);
                 body.transform.localPosition = b + Vector3.up * (sh * 0.5f);
                 body.transform.localRotation = rot;
-                body.AddComponent<BoxCollider>().size = new Vector3(0.84f, sh, 0.18f);
+                body.AddComponent<BoxCollider>().size = new Vector3(0.84f, sh, 0.2f);
             }
+            // the climbing volume: in front of the board only (0.25 - 1.0 m out), up to 0.2 m under the floor at the top
+            float vh = Mathf.Max(0.6f, topY - foot.y - 0.2f);
             var go = new GameObject("ladder");
             go.transform.SetParent(parent, false);
-            go.transform.localPosition = foot + faceOut * 0.5f + Vector3.up * (len * 0.5f);
+            go.transform.localPosition = foot + faceOut * 0.62f + Vector3.up * (vh * 0.5f);
             go.transform.localRotation = rot;
             var bc = go.AddComponent<BoxCollider>();
             bc.isTrigger = true;
-            bc.size = new Vector3(1.1f, len, 0.9f);
-            go.AddComponent<Ladder>().TopLocalY = topY;
+            bc.size = new Vector3(0.9f, vh, 0.76f);
+            // (step-off starts with your feet 0.45 m under the floor - the step height - so you always make it onto it)
+            go.AddComponent<Ladder>().TopLocalY = topY - 0.3f;
         }
 
         /// <summary>Recolours the wadeable water surface ThemeMaps added (it is built before the props).</summary>
@@ -584,10 +610,11 @@ namespace RockGame
         /// <summary>
         /// Lays out the middle round the ball: each spot (f, r: see CentreSpot; r capped at maxR, never under 6.5 so the
         /// ball's own few metres stay clear) gets build(sector, ground point, yaw facing the middle, index, rng) - skipped if
-        /// it would be within `gap` of another (counting every team's copy) or of the signpost - then copied round.
+        /// it would be within `gap` of another (counting every team's copy) or of the signpost, or `avoid` says no (given
+        /// each team's copy of the spot) - then copied round.
         /// </summary>
         public static void CentreLayout(Transform root, string name, int salt, (float f, float r)[] spots, float maxR, float gap,
-            System.Action<Transform, Vector3, float, int, System.Random> build)
+            System.Action<Transform, Vector3, float, int, System.Random> build, System.Func<Vector3, bool> avoid = null)
         {
             var sec = Sector(root, name);
             var rng = Rng(salt);
@@ -603,6 +630,7 @@ namespace RockGame
                 {
                     var q = Cfg.Copy(p, k);
                     if (new Vector2(q.x - sign.x, q.z - sign.z).magnitude < 3.2f) ok = false;
+                    if (avoid != null && avoid(q)) ok = false;
                     foreach (var o in placed) if (new Vector2(q.x - o.x, q.z - o.z).magnitude < gap) { ok = false; break; }
                 }
                 if (!ok) continue;

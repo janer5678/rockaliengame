@@ -55,7 +55,7 @@ namespace RockGame
         public readonly List<Vector2> ClearingSpots = new List<Vector2>();
         public bool ForceOff;
         /// <summary>How much grass grows at (x, z), as drawn: the field, and on Highlands no blade on the rock (RockKeep).</summary>
-        public float CoverAt(float x, float z) => Field(x, z).g * (Cfg.Map == MapKind.Highlands ? RockKeep(MapBuilder.RockField(x, z)) : 1f);
+        public float CoverAt(float x, float z) => Field(x, z).g * (Cfg.IsHighlands ? RockKeep(MapBuilder.RockField(x, z)) : 1f);
         /// <summary>Each blade's own check against the rock line where it stands (Grass.shader does the same with the
         /// terrain's rock field grid): none from just short of the line.</summary>
         public static float RockKeep(float rockField) => Mathf.Clamp01((-0.004f - rockField) * 60f);
@@ -170,7 +170,7 @@ namespace RockGame
                     // hillsides left wide bands of green ground with no grass on them.
                     // (and each blade checks the rock line itself, exactly where it stands: RockKeep, in the shader too -
                     // the shader blends the 1 m texels round a blade, which would put a few blades on the rock's edge)
-                    if (Cfg.Map == MapKind.Highlands)
+                    if (Cfg.IsHighlands)
                         cover *= Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(RockEdge, RockFull, MapBuilder.RockField(x, z)));
                 }
                 // tall grass patches: the tops of a slow noise (fewer, further apart than they were). None on Plains: it's

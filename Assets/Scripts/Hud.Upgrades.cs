@@ -48,8 +48,6 @@ namespace RockGame
             Shadowed(new Rect(x, top - 36 * k, colW, 32 * k), CurrencyText(me), CraftStyle(17 * k, FontStyle.Bold, TextAnchor.MiddleRight, Color.white));
             Cfg.BaseUpgrades(m_UpgradeTmp);
             if (ev.type == EventType.Repaint) UpgradeRowsShown.Clear();
-            // Jonah mode: buying alien dust with wood, on top (it's in the crafting list too)
-            if (Cfg.Jonah) top = DrawDustBuy(me, pc, x, top, colW, k);
 
             // a heading in the crafting list's style, then the rows
             float headH = 24 * k, row = 92 * k, gap = 6 * k;
@@ -70,28 +68,29 @@ namespace RockGame
                 Shadowed(new Rect(x, y + 4 * k, colW, Mathf.Max(40 * k, bottom - y)), hint, hintStyle);
         }
 
-        /// <summary>Jonah mode: "1000 Alien Dust for 1000 wood" and a BUY button (the same craft as in the TAB list). Returns where the rows start.</summary>
-        float DrawDustBuy(PlayerNet me, PlayerController pc, float x, float top, float colW, float k)
+        /// <summary>Jonah mode: a panel to the right of the crafting list (and of UPGRADES at the upgrade station) - the alien
+        /// dust, "1000 Alien Dust", its price in wood and a BUY button (the same craft as CraftRpc's AlienDust recipe).</summary>
+        void DrawDustPanel(PlayerNet me, PlayerController pc, float x, float top, float k)
         {
-            var dust = new Color(0.62f, 0.82f, 0.42f);
             int idx = Cfg.CraftIndexOf(Item.AlienDust);
-            if (idx < 0) return top;
+            if (idx < 0) return;
             var r = Cfg.CraftRecipe(idx, me.Team.Value);
-            float row = 64 * k;
-            var rr = new Rect(x, top, colW, row);
-            bool ok = me.CanAfford(r);
-            Fill(rr, new Color(0.1f, 0.16f, 0.08f, 0.8f));
-            Fill(new Rect(rr.x, rr.y, 4 * k, rr.height), dust);
+            float w = 170 * k, h = 230 * k;
+            x = Mathf.Min(x, Screen.width - w - 10);
+            var red = new Color(0.85f, 0.12f, 0.08f);
+            var rr = new Rect(x, top, w, h);
+            Fill(rr, new Color(0.14f, 0.04f, 0.04f, 0.85f));
+            Fill(new Rect(rr.x, rr.y, rr.width, 4 * k), red);
+            Shadowed(new Rect(x, top + 8 * k, w, 26 * k), "<b>ALIEN DUST</b>", CraftStyle(17 * k, FontStyle.Bold, TextAnchor.MiddleCenter, Color.white));
             var icon = ItemIcons.Get(Item.AlienDust);
-            if (icon != null) GUI.DrawTexture(new Rect(rr.x + 10 * k, rr.y + 6 * k, row - 12 * k, row - 12 * k), icon, ScaleMode.ScaleToFit, true);
-            float bw = Mathf.Min(120 * k, colW * 0.26f);
-            var br = new Rect(rr.xMax - bw - 8 * k, rr.y + row * 0.18f, bw, row * 0.64f);
-            float tx = rr.x + row + 6 * k;
-            GUI.Label(new Rect(tx, rr.y + 4 * k, br.x - tx, row * 0.5f), $"<b>{r.Count} Alien Dust</b>", CraftStyle(17 * k, FontStyle.Bold, TextAnchor.MiddleLeft, Color.white, true));
-            GUI.Label(new Rect(tx, rr.y + row * 0.5f, br.x - tx, row * 0.45f), CostColored(me, r), CraftStyle(15 * k, FontStyle.Bold, TextAnchor.MiddleLeft, Color.white, true));
+            float isz = 90 * k;
+            if (icon != null) GUI.DrawTexture(new Rect(x + (w - isz) / 2f, top + 36 * k, isz, isz), icon, ScaleMode.ScaleToFit, true);
+            GUI.Label(new Rect(x, top + 130 * k, w, 24 * k), $"<b>{r.Count} dust</b>", CraftStyle(16 * k, FontStyle.Bold, TextAnchor.MiddleCenter, Color.white, true));
+            GUI.Label(new Rect(x, top + 152 * k, w, 22 * k), CostColored(me, r), CraftStyle(14 * k, FontStyle.Bold, TextAnchor.MiddleCenter, Color.white, true));
+            bool ok = me.CanAfford(r);
+            var br = new Rect(x + 14 * k, top + h - 50 * k, w - 28 * k, 38 * k);
             if (FlatBtn(br, ok ? k_BtnOk : k_BtnNo, k_BtnOkHi, ok)) { me.CraftRpc(idx); Sfx.PlayUi(Sfx.UiClick, 0.8f, 0.7f); }
-            GUI.Label(br, "BUY", CraftStyle(Mathf.Min(17 * k, row * 0.3f), FontStyle.Bold, TextAnchor.MiddleCenter, ok ? Color.white : new Color(1, 1, 1, 0.35f)));
-            return top + row + 10 * k;
+            GUI.Label(br, "BUY", CraftStyle(18 * k, FontStyle.Bold, TextAnchor.MiddleCenter, ok ? Color.white : new Color(1, 1, 1, 0.35f)));
         }
 
         /// <summary>One row: icon, name + level pips, what the next level does, its price, and UPGRADE.</summary>

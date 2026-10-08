@@ -64,7 +64,6 @@ namespace RockGame
         public static void AddTier(List<int> into, int tier)
         {
             var order = tier == 0 ? k_Starter : tier == 1 ? k_Tier1 : k_Tier2;
-            if (tier == 0 && Jonah) { int d = CraftIndexOf(Item.AlienDust); if (d >= 0 && !into.Contains(d)) into.Add(d); } // (Jonah mode: wood -> alien dust at the top)
             foreach (var id in order)
             {
                 int i = CraftIndexOf(id);
@@ -74,7 +73,7 @@ namespace RockGame
             if (tier != 2) return;
             // anything else craftable in this mode that isn't listed anywhere goes on the end of tier 2
             for (int i = 0; i < RecipeCount; i++)
-                if (CraftTier(GetRecipe(i).Output) == 2 && !into.Contains(i)) into.Add(i);
+                if (CraftTier(GetRecipe(i).Output) == 2 && GetRecipe(i).Output != Item.AlienDust && !into.Contains(i)) into.Add(i);
             for (int i = 0; i < PowerCount; i++)
                 if (CraftTier(GetPowerRecipe(i).Output) == 2 && !into.Contains(PowerBase + i)) into.Add(PowerBase + i);
         }

@@ -19,8 +19,9 @@ namespace RockGame
         public override bool Mountains => true;
         public override float MaxSpotHeight => 3.8f;
 
-        /// <summary>Much slidier than Frostlake (3.5): your speed changes slowly on the ice - you keep gliding.</summary>
-        public override float IceGrip => 1.15f;
+        /// <summary>Far slidier than Frostlake (3.5): your speed changes very slowly on the ice - you glide on and on, and
+        /// turning or stopping takes a long run-out (about 15 s to stop from a sprint).</summary>
+        public override float IceGrip => 0.5f;
         public override string MountName => "Woolly Mammoth";
 
         /// <summary>A frost-berry bush: pale blue-green frosted clumps under caps of snow, loaded with bright red berries,

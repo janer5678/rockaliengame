@@ -213,7 +213,9 @@ namespace RockGame
             Check(v != null && Mathf.Approximately(v.Hp.Value, 25f + Cfg.HorseBerryHeal) && me.Count(Item.Berry) == 4 && Mathf.Approximately(me.Health.Value, 50f) && pc.EatProgress == 0f,
                 $"LMB with berries on the horse feeds it a berry: {HpText(v)} (+{Cfg.HorseBerryHeal:0}), {me.Count(Item.Berry)} berries left, our health still {me.Health.Value:0} (not eaten)");
             yield return Snap($"horse_fed_{rn}");
-            // again: up to full, not past it
+            // again: up to full, not past it (a few HP short of full first: horses have HorseHp, more than one berry's worth)
+            v.Hp.Value = v.MaxHp - Cfg.HorseBerryHeal * 0.5f;
+            yield return new WaitForSeconds(0.2f);
             Binds.TestPress(Bind.Attack);
             yield return AimAt(pc, me, v, 0.8f);
             Check(v != null && Mathf.Approximately(v.Hp.Value, v.MaxHp) && me.Count(Item.Berry) == 3, $"a second berry heals it to full and no further ({HpText(v)}, {me.Count(Item.Berry)} berries)");

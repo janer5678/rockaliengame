@@ -96,7 +96,7 @@ namespace RockGame
         public void MountRpc(NetworkObjectReference target)
         {
             if (Dead.Value || Riding || InSuddenDeath || !target.TryGet(out var no) || !no.TryGetComponent(out Vehicle v) || !v.Rideable) return;
-            if (CarryingBall && !v.IsHorse) { Notify("You can't drive with the ball - ride a horse instead"); return; }
+            if (CarryingBall && !v.IsHorse && !v.IsBoat) { Notify("You can't drive with the ball - ride a horse or a boat instead"); return; } // (a boat takes the ball along too)
             if (Vector3.Distance(v.transform.position, transform.position) > Cfg.InteractRange + 3f) return;
             if (v.HasDriver) { Notify("Someone is already riding that"); return; }
             if (v.IsHorse && !v.Saddled.Value)

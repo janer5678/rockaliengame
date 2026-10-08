@@ -1460,7 +1460,7 @@ namespace RockGame
             string problem = ServerPlaceProblem(t, key, false);
             if (problem != null) { Notify(problem); return; }
             int cost = Cfg.PieceWood(t);
-            if (Count(Cfg.CurrencyItem) < cost) { Notify($"Need {cost} {Cfg.CurrencyName}"); return; }
+            if (Count(Cfg.BuildItem) < cost) { Notify($"Need {cost} {Cfg.BuildName}"); return; }
             ServerBuildPiece(t, key);
         }
 
@@ -1489,7 +1489,7 @@ namespace RockGame
             problem = problem ?? ServerPlaceProblem(t, key, needFoundation);
             if (problem != null) { Notify(problem); return; }
             if (needFoundation) cost += Cfg.PieceWood(PieceType.Foundation);
-            if (Count(Cfg.CurrencyItem) < cost)
+            if (Count(Cfg.BuildItem) < cost)
             {
                 Notify(needFoundation ? $"Need {cost} {Cfg.CurrencyName} for the foundation and the {Cfg.PieceName(t).ToLower()}" : $"Need {cost} {Cfg.CurrencyName}");
                 return;
@@ -1525,8 +1525,8 @@ namespace RockGame
         void ServerBuildPiece(PieceType t, PieceKey key)
         {
             int cost = Cfg.PieceWood(t);
-            if (!InvOps.Remove(Inv, Cfg.CurrencyItem, cost)) return;
-            SpentRpc((byte)Cfg.CurrencyItem, cost);
+            if (!InvOps.Remove(Inv, Cfg.BuildItem, cost)) return;
+            SpentRpc((byte)Cfg.BuildItem, cost);
             BuildGrid.Pose(t, key, out var pos, out var rot);
 
             m_NextBuild = Time.time + Cfg.BuildCooldown * 0.85f;
@@ -1591,7 +1591,7 @@ namespace RockGame
                 Fx.Server(FxKind.Break, s.transform.position + Vector3.up * 1.2f, Vector3.up);
                 s.NetworkObject.Despawn(true);
                 if (NetGame.Instance != null) NetGame.Instance.ServerCollapseCheck(false); // (your own choice: no rebuild wait)
-                if (wood > 0) ServerGive(Cfg.CurrencyItem, wood);
+                if (wood > 0) ServerGive(Cfg.BuildItem, wood);
                 if (stone > 0) ServerGive(Cfg.WoodMode ? Item.Wood : Cfg.UpgradeItem, stone);
             }
             else if (no.TryGetComponent(out Container c) && c.Breakable)
@@ -1599,7 +1599,7 @@ namespace RockGame
                 if (c.Team.Value != Team.Value) { Notify("You can only demolish your own chests"); return; }
                 c.ServerBreak();
                 int wood = Mathf.FloorToInt(Cfg.ChestWood * Cfg.DemolishRefund);
-                if (wood > 0) ServerGive(Cfg.CurrencyItem, wood);
+                if (wood > 0) ServerGive(Cfg.BuildItem, wood);
             }
         }
 

@@ -12,6 +12,9 @@ namespace RockGame
     /// game's own; the horses are Cube Walkers (blocky robots).
     /// The ceiling is lower than where the airdrop ships hover, so they stay out of sight above it (their beam comes
     /// down through it). Walls and ceiling cast no shadows, so the sun still lights the room.
+    /// The trees are synthetic and it shows: now and then one flickers into a see-through cyan hologram and glitches
+    /// about (jumping, stretching, twitching round) for a moment, and when you turn your camera fast the trees near you
+    /// in view glitch and smear behind the turn. Only how they look - their colliders never move.
     /// </summary>
     public class CubeMap : ThemeMap
     {
@@ -100,6 +103,7 @@ namespace RockGame
 
         public override void BuildGround(Transform root)
         {
+            m_Holo.Clear();
             float half = Half;
             // the floor: tiles lined up with the building grid (and a solid slab under it)
             float s = Mathf.Ceil((half + 2f) / Tile) * Tile;
@@ -201,8 +205,17 @@ namespace RockGame
             // two little glowing cubes in the leaves (it's synthetic)
             for (int i = 0; i < 2; i++)
                 g.Box(top + yaw * new Vector3((i == 0 ? 1f : -1f) * cs * 1.42f, R(-0.3f, 0.4f) * cs, R(-0.5f, 0.5f) * cs), Vector3.one * 0.22f, yaw * Quaternion.Euler(30f, 45f, 0), Color.white, MeshKit.All);
-            ThemeKitB.Spawn(tr, "synthetic tree", k, null, true);
-            ThemeKitB.Spawn(tr, "synthetic glow", g, ThemeKitB.Glow(k_Neon, 1.8f), false);
+            // (the look on its own transform, so the hologram glitches can move it about while the collider stays put)
+            var look = new GameObject("synthetic look").transform;
+            look.SetParent(tr, false);
+            var ra = ThemeKitB.Spawn(look, "synthetic tree", k, null, true).GetComponent<Renderer>();
+            var rb = ThemeKitB.Spawn(look, "synthetic glow", g, ThemeKitB.Glow(k_Neon, 1.8f), false).GetComponent<Renderer>();
+            var rs = new List<Renderer>();
+            if (ra != null) rs.Add(ra);
+            if (rb != null) rs.Add(rb);
+            var mats = new Material[rs.Count];
+            for (int i = 0; i < rs.Count; i++) mats[i] = rs[i].sharedMaterial;
+            m_Holo.Add(new Holo { Look = look, Rs = rs.ToArray(), Mats = mats, Next = Time.time + Random.Range(2f, 25f) });
             return true;
         }
 
@@ -284,7 +297,111 @@ namespace RockGame
             ThemeKitB.Lighting(Color.white, new Color(0.86f, 0.86f, 0.87f), new Color(0.77f, 0.77f, 0.78f), new Color(0.62f, 0.62f, 0.63f));
         }
 
-        public override void ClientTick() => ThemeKitB.Keep(Camera.main);
+        // ---------------------------------------------------------------- the hologram glitches (how the trees look only)
+        class Holo
+        {
+            public Transform Look;
+            public Renderer[] Rs;
+            public Material[] Mats;
+            public bool On;
+            public float Until, Next, NextJump, Start;
+            public Vector3 Lag; // (world space: how far it smears behind a fast camera turn)
+        }
+        readonly List<Holo> m_Holo = new List<Holo>();
+        static Material s_HoloSee, s_HoloBright;
+        int m_Scan;
+        bool m_HaveCam;
+        Quaternion m_CamRot;
+        Vector3 m_CamPos;
+        float m_NextTurnGlitch;
+
+        static Material HoloSee => s_HoloSee != null ? s_HoloSee : (s_HoloSee = new Material(Art.Ghost(new Color(0.3f, 1f, 0.95f, 0.38f))) { name = "cube hologram" });
+        static Material HoloBright => s_HoloBright != null ? s_HoloBright : (s_HoloBright = ThemeKitB.Glow(new Color(0.35f, 1f, 0.92f), 1.7f));
+
+        static void StartGlitch(Holo h, float seconds, Vector3 lag)
+        {
+            float t = Time.time;
+            if (h.On) { h.Until = Mathf.Max(h.Until, t + seconds); if (lag.sqrMagnitude > h.Lag.sqrMagnitude) h.Lag = lag; return; }
+            h.On = true; h.Start = t; h.Until = t + seconds; h.NextJump = 0f; h.Lag = lag;
+            foreach (var r in h.Rs) if (r != null) r.sharedMaterial = HoloSee;
+        }
+
+        static void EndGlitch(Holo h)
+        {
+            h.On = false;
+            h.Next = Time.time + Random.Range(4f, 16f);
+            if (h.Look == null) return;
+            h.Look.localPosition = Vector3.zero; h.Look.localRotation = Quaternion.identity; h.Look.localScale = Vector3.one;
+            for (int i = 0; i < h.Rs.Length; i++) if (h.Rs[i] != null) { h.Rs[i].sharedMaterial = h.Mats[i]; h.Rs[i].enabled = true; }
+        }
+
+        public override void ClientTick()
+        {
+            var cam = Camera.main;
+            ThemeKitB.Keep(cam);
+            if (cam == null || m_Holo.Count == 0) return;
+            float t = Time.time, dt = Mathf.Max(Time.deltaTime, 1e-4f);
+            for (int i = m_Holo.Count - 1; i >= 0; i--) if (m_Holo[i].Look == null) m_Holo.RemoveAt(i); // (chopped down)
+            if (m_Holo.Count == 0) return;
+
+            // the camera turning fast: the trees near you, in view, glitch and smear the other way
+            var ct = cam.transform;
+            var cr = ct.rotation; var cp = ct.position;
+            if (m_HaveCam && (cp - m_CamPos).magnitude < 8f) // (not on a respawn / teleport)
+            {
+                float turn = Quaternion.Angle(m_CamRot, cr) / dt;
+                float yaw = Mathf.DeltaAngle(m_CamRot.eulerAngles.y, cr.eulerAngles.y);
+                if (turn > 150f && turn < 4000f && t >= m_NextTurnGlitch)
+                {
+                    m_NextTurnGlitch = t + 0.12f;
+                    float strength = Mathf.InverseLerp(150f, 700f, turn);
+                    var smear = ct.right * -Mathf.Sign(yaw);
+                    var fwd = ct.forward;
+                    foreach (var h in m_Holo)
+                    {
+                        var d = h.Look.position - cp;
+                        float dist = d.magnitude;
+                        if (dist > 55f || Vector3.Dot(fwd, d / Mathf.Max(dist, 0.01f)) < 0.35f) continue;
+                        if (Random.value > 0.3f + 0.6f * strength) continue;
+                        StartGlitch(h, Random.Range(0.12f, 0.4f), smear * Random.Range(0.4f, 1.6f) * (0.4f + strength));
+                    }
+                }
+            }
+            m_HaveCam = true; m_CamRot = cr; m_CamPos = cp;
+
+            // now and then, one by itself (a few looked at each frame)
+            int scan = Mathf.Min(6, m_Holo.Count);
+            for (int n = 0; n < scan; n++)
+            {
+                m_Scan = (m_Scan + 1) % m_Holo.Count;
+                var h = m_Holo[m_Scan];
+                if (h.On || t < h.Next) continue;
+                if (Random.value < 0.4f) StartGlitch(h, Random.Range(0.35f, 1.6f), Vector3.zero);
+                else h.Next = t + Random.Range(3f, 12f);
+            }
+
+            // the glitching ones: jump about every few hundredths of a second, stretch, twitch, flicker
+            foreach (var h in m_Holo)
+            {
+                if (!h.On) continue;
+                if (t >= h.Until) { EndGlitch(h); continue; }
+                if (t < h.NextJump) continue;
+                h.NextJump = t + Random.Range(0.035f, 0.09f);
+                float fade = 1f - Mathf.Clamp01((t - h.Start) / Mathf.Max(0.05f, h.Until - h.Start));
+                var lag = h.Look.parent != null ? h.Look.parent.InverseTransformVector(h.Lag * fade) : h.Lag * fade;
+                bool big = Random.value < 0.25f;
+                h.Look.localPosition = lag + new Vector3(Random.Range(-0.35f, 0.35f), Random.Range(-0.12f, 0.2f), Random.Range(-0.35f, 0.35f)) * (big ? 2.2f : 1f);
+                h.Look.localScale = Random.value < 0.4f ? new Vector3(1f + Random.Range(-0.3f, 0.35f), 1f + Random.Range(-0.18f, 0.22f), 1f + Random.Range(-0.3f, 0.35f)) : Vector3.one;
+                h.Look.localRotation = Random.value < 0.35f ? Quaternion.Euler(0f, Random.Range(-14f, 14f), Random.Range(-3f, 3f)) : Quaternion.identity;
+                bool bright = Random.value < 0.22f, gone = Random.value < 0.12f;
+                foreach (var r in h.Rs)
+                {
+                    if (r == null) continue;
+                    r.enabled = !gone;
+                    r.sharedMaterial = bright ? HoloBright : HoloSee;
+                }
+            }
+        }
 
         public override void Cleanup() => ThemeKitB.End();
     }

@@ -18,13 +18,13 @@ namespace RockGame
     public static partial class ThemeMaps
     {
         public const float WaterY = -0.45f, LavaY = -0.35f;
-        public const int BoatWood = 1500;
-        public const float BoatSpeed = 15f, LavaDps = 22f;
+        public const int BoatWood = 250;
+        public const float BoatSpeed = 9f, LavaDps = 22f; // (the boat: 250 wood, and slower than it was - 15)
 
         public static readonly MapKind[] Kinds = { MapKind.Beach, MapKind.Canyon, MapKind.Frostlake, MapKind.Volcano, MapKind.Ruins,
             MapKind.Islands, MapKind.Jungle, MapKind.Ice, MapKind.CherryBlossom, MapKind.Wonderland, MapKind.Swamp, MapKind.Cube, MapKind.Mars };
 
-        public static bool IsTheme => Cfg.Map >= MapKind.Beach;
+        public static bool IsTheme => Cfg.Map >= MapKind.Beach && Cfg.Map != MapKind.HighlandsJonah; // (the Jonah Highlands is the Highlands, not a theme map)
         public static bool HasWater => Cfg.Map == MapKind.Beach || (Custom != null && Custom.HasWater);
 
         public static string Label(MapKind k)
@@ -36,6 +36,7 @@ namespace RockGame
                 case MapKind.Frostlake: return "Frostlake";
                 case MapKind.Volcano: return "Volcano";
                 case MapKind.Ruins: return "Ruins";
+                case MapKind.HighlandsJonah: return "Highlands Jonah";
                 default: return CustomFor(k)?.Label ?? k.ToString();
             }
         }

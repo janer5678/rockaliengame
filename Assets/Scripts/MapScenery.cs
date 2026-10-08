@@ -103,7 +103,7 @@ namespace RockGame
 
         public static void Build(Transform root)
         {
-            if (Cfg.Map != MapKind.Plains && Cfg.Map != MapKind.Highlands) return;
+            if (Cfg.Map != MapKind.Plains && !Cfg.IsHighlands) return;
             BuildRanges(root);
             // (Plains is the open map: no big boulders standing about on it - the stone nodes are NetGame's, and stay)
             Boulders.Clear();

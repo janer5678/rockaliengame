@@ -12,6 +12,13 @@ namespace RockGame
     /// topiary, painted roses, chess pieces, a sign pointing every way - and cards, cups and clocks tumbling past in space.
     /// The band in from the slab's edges gets its own extra helping of all that (it was bare next to round the bases).
     /// The horses are Cheshire Cats; the berry bushes are clipped rose bushes full of strawberries, a jam tart on top.
+    /// LAUNCH PADS (bouncy mushroom caps on springs, arrows on them) throw you across the map: from by your base to the
+    /// edge of the middle, round from one flank into the next team's, and from the middle back out to your flank - a
+    /// red and white target marks where each lands you. A lot of it moves: the teacups spin, the pocket watches and
+    /// teapots rock, the big mushrooms squash and stretch, the card soldiers march on the spot, the topiary and signposts
+    /// turn. And the ways from each base to the middle have plenty of cover along them (hedges, cards, rose bushes,
+    /// toadstools) for sneaking past, and the open ground out by the slab's edges and corners has loose clusters of cover
+    /// (hedges, cards, mushrooms, teapots, stacks of giant books, chess pieces).
     /// </summary>
     public class WonderlandMap : ThemeMap
     {
@@ -228,6 +235,10 @@ namespace RockGame
         public override void BuildProps(Transform root)
         {
             m_Float.Clear();
+            m_Movers.Clear();
+            m_Pads.Clear();
+            m_MoverRoot = new GameObject("moving props").transform;
+            m_MoverRoot.SetParent(root, false);
             var rng = new System.Random(Cfg.MapSeed + 9090);
             float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
             var k = new MeshKit();
@@ -268,20 +279,34 @@ namespace RockGame
             }
             int N(float n) => Mathf.Max(1, Mathf.RoundToInt(n * sc));
             float far = 9999f, wild = PlazaR + 4f;
+            // the same, moving (see Mover): its look turns / rocks / squashes / marches, its colliders stay put
+            void EachMove(Vector3 p, float yaw, byte mode, float spd, float amp, System.Action<MeshKit, Transform, Vector3, float> make)
+            {
+                for (int m = 0; m < Cfg.Copies; m++)
+                {
+                    var q = Cfg.Copy(p, m);
+                    q.y = Height(q.x, q.z);
+                    float y = yaw + m * 360f / Cfg.Copies;
+                    // (spinning ones go either way; rocking ones rock in the plane they face)
+                    float dir = ((Mathf.RoundToInt(Mathf.Abs(p.x * 7f + p.z * 13f)) & 1) == 0) ? 1f : -1f;
+                    Moving(cols, q, y, mode, mode == 0 ? spd * dir : spd, amp, Yaw(y) * Vector3.forward, make);
+                }
+            }
+            BuildPads(root, placed);
 
             // the mad tea party (one each)
             if (Spot(7f, wild, far, out var tp)) { int sd = rng.Next(); Each(tp, R(0, 360), (q, y) => TeaParty(k, cols, q, y, sd)); }
-            for (int i = 0; i < N(5); i++) if (Spot(4.5f, wild, far, out var p)) { int sd = rng.Next(); float s = R(0.8f, 1.35f); Each(p, R(0, 360), (q, y) => Mushroom(k, cols, q, y, s, sd, true)); }
+            for (int i = 0; i < N(5); i++) if (Spot(4.5f, wild, far, out var p)) { int sd = rng.Next(); float s = R(0.8f, 1.35f); EachMove(p, R(0, 360), 2, 1.3f, 0.045f, (kk, cc, q, y) => Mushroom(kk, cc, q, y, s, sd, true)); }
             for (int i = 0; i < N(6); i++) if (Spot(2f, wild, far, out var p)) { int sd = rng.Next(); Each(p, R(0, 360), (q, y) => MushroomPatch(k, q, sd)); }
-            for (int i = 0; i < N(2); i++) if (Spot(6f, wild, far, out var p)) { int sd = rng.Next(); Each(p, R(0, 360), (q, y) => CardSoldiers(k, cols, q, y, sd)); }
+            for (int i = 0; i < N(2); i++) if (Spot(6f, wild, far, out var p)) { int sd = rng.Next(); EachMove(p, R(0, 360), 3, 4.2f, 0.16f, (kk, cc, q, y) => CardSoldiers(kk, cc, q, y, sd)); }
             for (int i = 0; i < N(1.5f); i++) if (Spot(3f, wild, far, out var p)) { int sd = rng.Next(); Each(p, R(0, 360), (q, y) => CardHouse(k, cols, q, y, sd)); }
-            for (int i = 0; i < N(2); i++) if (Spot(3.5f, wild, far, out var p)) { int sd = rng.Next(); float s = R(0.8f, 1.2f); Each(p, R(0, 360), (q, y) => Teacup(k, cols, q, y, s, sd)); }
-            for (int i = 0; i < N(1); i++) if (Spot(3f, wild, far, out var p)) { int sd = rng.Next(); Each(p, R(0, 360), (q, y) => Teapot(k, cols, q, y, 1.2f, sd)); }
-            for (int i = 0; i < N(2); i++) if (Spot(3f, wild, far, out var p)) { float tilt = R(-18f, 8f); Each(p, R(0, 360), (q, y) => Watch(k, cols, q, y, 1f, tilt)); }
-            for (int i = 0; i < N(5); i++) if (Spot(2.5f, wild, far, out var p)) { int sd = rng.Next(); Each(p, R(0, 360), (q, y) => Topiary(k, cols, q, y, sd)); }
+            for (int i = 0; i < N(2); i++) if (Spot(3.5f, wild, far, out var p)) { int sd = rng.Next(); float s = R(0.8f, 1.2f); EachMove(p, R(0, 360), 0, 0.45f, 0f, (kk, cc, q, y) => Teacup(kk, cc, q, y, s, sd)); }
+            for (int i = 0; i < N(1); i++) if (Spot(3f, wild, far, out var p)) { int sd = rng.Next(); EachMove(p, R(0, 360), 1, 0.9f, 7f, (kk, cc, q, y) => Teapot(kk, cc, q, y, 1.2f, sd)); }
+            for (int i = 0; i < N(2); i++) if (Spot(3f, wild, far, out var p)) { float tilt = R(-18f, 8f); EachMove(p, R(0, 360), 1, 1.5f, 11f, (kk, cc, q, y) => Watch(kk, cc, q, y, 1f, tilt)); }
+            for (int i = 0; i < N(5); i++) if (Spot(2.5f, wild, far, out var p)) { int sd = rng.Next(); EachMove(p, R(0, 360), 0, 0.2f, 0f, (kk, cc, q, y) => Topiary(kk, cc, q, y, sd)); }
             for (int i = 0; i < N(3); i++) if (Spot(4f, wild, far, out var p)) { int sd = rng.Next(); Each(p, R(0, 360), (q, y) => Hedge(k, cols, q, y, sd)); }
             for (int i = 0; i < N(5); i++) if (Spot(2f, wild, far, out var p)) { int sd = rng.Next(); Each(p, R(0, 360), (q, y) => RoseBush(k, cols, q, y, sd)); }
-            if (Spot(2f, wild, far, out var sp)) Each(sp, R(0, 360), (q, y) => Signpost(k, cols, q, y));
+            if (Spot(2f, wild, far, out var sp)) EachMove(sp, R(0, 360), 0, 0.35f, 0f, (kk, cc, q, y) => Signpost(kk, cc, q, y));
             if (Spot(2.5f, wild, far, out var bp)) Each(bp, R(0, 360), (q, y) => Bottle(k, cols, q, y));
             // chess pieces standing on the checkerboard round the middle (off the lines to the bases)
             float th0 = Mathf.Atan2(bc.z, bc.x);
@@ -317,23 +342,260 @@ namespace RockGame
                 p = default;
                 return false;
             }
-            for (int i = 0; i < N(6); i++) if (SideSpot(4f, out var p)) { int sd = rng.Next(); float s = R(0.65f, 1.25f); Each(p, R(0, 360), (q, y) => Mushroom(k, cols, q, y, s, sd, true)); }
+            for (int i = 0; i < N(6); i++) if (SideSpot(4f, out var p)) { int sd = rng.Next(); float s = R(0.65f, 1.25f); EachMove(p, R(0, 360), 2, 1.3f, 0.045f, (kk, cc, q, y) => Mushroom(kk, cc, q, y, s, sd, true)); }
             for (int i = 0; i < N(9); i++) if (SideSpot(2f, out var p)) { int sd = rng.Next(); Each(p, R(0, 360), (q, y) => MushroomPatch(k, q, sd)); }
-            for (int i = 0; i < N(6); i++) if (SideSpot(2.5f, out var p)) { int sd = rng.Next(); Each(p, R(0, 360), (q, y) => Topiary(k, cols, q, y, sd)); }
+            for (int i = 0; i < N(6); i++) if (SideSpot(2.5f, out var p)) { int sd = rng.Next(); EachMove(p, R(0, 360), 0, 0.2f, 0f, (kk, cc, q, y) => Topiary(kk, cc, q, y, sd)); }
             for (int i = 0; i < N(6); i++) if (SideSpot(2f, out var p)) { int sd = rng.Next(); Each(p, R(0, 360), (q, y) => RoseBush(k, cols, q, y, sd)); }
-            for (int i = 0; i < N(8); i++) if (SideSpot(1.8f, out var p)) { int sd = rng.Next(); Each(p, R(0, 360), (q, y) => LoneCard(k, cols, q, y, sd)); }
-            for (int i = 0; i < N(3); i++) if (SideSpot(3.5f, out var p)) { int sd = rng.Next(); float s = R(0.7f, 1.1f); Each(p, R(0, 360), (q, y) => Teacup(k, cols, q, y, s, sd)); }
+            for (int i = 0; i < N(8); i++) if (SideSpot(1.8f, out var p)) { int sd = rng.Next(); EachMove(p, R(0, 360), 1, 1.1f, 4f, (kk, cc, q, y) => LoneCard(kk, cc, q, y, sd)); }
+            for (int i = 0; i < N(3); i++) if (SideSpot(3.5f, out var p)) { int sd = rng.Next(); float s = R(0.7f, 1.1f); EachMove(p, R(0, 360), 0, 0.45f, 0f, (kk, cc, q, y) => Teacup(kk, cc, q, y, s, sd)); }
             for (int i = 0; i < N(3); i++) if (SideSpot(4f, out var p)) { int sd = rng.Next(); Each(p, R(0, 360), (q, y) => Hedge(k, cols, q, y, sd)); }
-            for (int i = 0; i < N(2); i++) if (SideSpot(6f, out var p)) { int sd = rng.Next(); Each(p, R(0, 360), (q, y) => CardSoldiers(k, cols, q, y, sd)); }
-            for (int i = 0; i < N(2); i++) if (SideSpot(3f, out var p)) { float tilt = R(-18f, 8f), ws = R(0.7f, 1f); Each(p, R(0, 360), (q, y) => Watch(k, cols, q, y, ws, tilt)); }
+            for (int i = 0; i < N(2); i++) if (SideSpot(6f, out var p)) { int sd = rng.Next(); EachMove(p, R(0, 360), 3, 4.2f, 0.16f, (kk, cc, q, y) => CardSoldiers(kk, cc, q, y, sd)); }
+            for (int i = 0; i < N(2); i++) if (SideSpot(3f, out var p)) { float tilt = R(-18f, 8f), ws = R(0.7f, 1f); EachMove(p, R(0, 360), 1, 1.5f, 11f, (kk, cc, q, y) => Watch(kk, cc, q, y, ws, tilt)); }
             for (int i = 0; i < N(2); i++) if (SideSpot(2.5f, out var p)) { int kind = rng.Next(2); bool white = rng.NextDouble() < 0.5; Each(p, 0f, (q, y) => Chess(k, cols, q, y, kind, white)); }
-            for (int i = 0; i < N(1); i++) if (SideSpot(3f, out var p)) { int sd = rng.Next(); Each(p, R(0, 360), (q, y) => Teapot(k, cols, q, y, 1f, sd)); }
+            for (int i = 0; i < N(1); i++) if (SideSpot(3f, out var p)) { int sd = rng.Next(); EachMove(p, R(0, 360), 1, 0.9f, 7f, (kk, cc, q, y) => Teapot(kk, cc, q, y, 1f, sd)); }
             for (int i = 0; i < N(1); i++) if (SideSpot(3f, out var p)) { int sd = rng.Next(); Each(p, R(0, 360), (q, y) => CardHouse(k, cols, q, y, sd)); }
             if (SideSpot(2.5f, out var bp2)) Each(bp2, R(0, 360), (q, y) => Bottle(k, cols, q, y));
+
+            // ---- clusters of cover out on the open ground by the slab's edges and corners (hedges, giant cards, mushrooms,
+            // teapots, stacks of books, chess pieces), loose enough to slip between
+            bool EdgeOk(Vector3 p, float clear, float gapMul)
+            {
+                if (!Cfg.InFirstSector(p, 2f + clear) || !InSlab(p.x, p.z)) return false;
+                float ed = EdgeDist(p.x, p.z);
+                if (ed < 7f + clear || ed > 7f + clear + band + 6f) return false;
+                if (new Vector2(p.x, p.z).magnitude < PlazaR + 6f) return false;
+                if (Mathf.Abs(p.x - bc.x) < Cfg.BaseHalf + 4f + clear && Mathf.Abs(p.z - bc.z) < Cfg.BaseHalf + 4f + clear) return false;
+                if (PathLat(p.x, p.z) < 5.5f + clear) return false;
+                foreach (var q in placed) if ((q.p - new Vector2(p.x, p.z)).magnitude < q.r + clear + 1.4f * gapMul) return false;
+                return true;
+            }
+            int clusters = N(9);
+            for (int ci = 0; ci < clusters; ci++)
+            {
+                Vector3 c = default;
+                bool found = false;
+                for (int tries = 0; tries < 120 && !found; tries++)
+                {
+                    c = new Vector3(R(-Side + 7f, Side - 7f), 0, R(-Side + 7f, -3f));
+                    found = EdgeOk(c, 3f, 1.5f);
+                }
+                if (!found) continue;
+                int items = 4 + rng.Next(3);
+                for (int j = 0; j < items; j++)
+                {
+                    int kind = rng.Next(8);
+                    float clear = kind == 0 ? 3.8f : kind == 4 ? 2.2f : kind == 6 ? 3.2f : 2f;
+                    Vector3 p = default;
+                    bool ok = false;
+                    for (int tries = 0; tries < 30 && !ok; tries++)
+                    {
+                        float a = R(0f, 6.283f), d = j == 0 ? 0f : R(2.5f, 7f);
+                        p = c + new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d);
+                        ok = EdgeOk(p, clear, 1f);
+                    }
+                    if (!ok) continue;
+                    placed.Add((new Vector2(p.x, p.z), clear));
+                    int sd = rng.Next();
+                    float yaw = R(0f, 360f), s = R(0.75f, 1.1f);
+                    switch (kind)
+                    {
+                        case 0: Each(p, yaw, (q, y) => Hedge(k, cols, q, y, sd)); break;
+                        case 1: case 2: EachMove(p, yaw, 1, 1.1f, 4f, (kk, cc, q, y) => LoneCard(kk, cc, q, y, sd)); break;
+                        case 3: EachMove(p, yaw, 2, 1.3f, 0.045f, (kk, cc, q, y) => Mushroom(kk, cc, q, y, s, sd, true)); break;
+                        case 4: EachMove(p, yaw, 1, 0.9f, 7f, (kk, cc, q, y) => Teapot(kk, cc, q, y, 0.9f, sd)); break;
+                        case 5: Each(p, yaw, (q, y) => Books(k, cols, q, y, sd)); break;
+                        case 6: { int ck = rng.Next(2); bool white = rng.NextDouble() < 0.5; Each(p, 0f, (q, y) => Chess(k, cols, q, y, ck, white)); break; }
+                        default: Each(p, yaw, (q, y) => RoseBush(k, cols, q, y, sd)); break;
+                    }
+                }
+            }
+
+            // ---- cover along the way from each base to the middle (either side of the path): sneak up behind it
+            var toBase = new Vector3(bc.x, 0f, bc.z).normalized;
+            var across = new Vector3(-toBase.z, 0f, toBase.x);
+            float baseIn = new Vector2(bc.x, bc.z).magnitude - Cfg.BaseHalf;
+            float pathYaw = Mathf.Atan2(-toBase.z, toBase.x) * Mathf.Rad2Deg; // (a hedge's length along the path)
+            bool RouteSpot(float clear, out Vector3 p)
+            {
+                for (int tries = 0; tries < 160; tries++)
+                {
+                    float along = R(PlazaR - 3f, baseIn - 4f), lat = R(5f + clear, 17f) * (rng.NextDouble() < 0.5 ? -1f : 1f);
+                    p = toBase * along + across * lat;
+                    if (!Cfg.InFirstSector(p, 2f + clear) || !InSlab(p.x, p.z) || EdgeDist(p.x, p.z) < 7f + clear) continue;
+                    if (new Vector2(p.x, p.z).magnitude < 13f + clear) continue;
+                    if (Mathf.Abs(p.x - bc.x) < Cfg.BaseHalf + 3f + clear && Mathf.Abs(p.z - bc.z) < Cfg.BaseHalf + 3f + clear) continue;
+                    if (PathLat(p.x, p.z) < 4.8f + clear) continue;
+                    bool hit = false;
+                    foreach (var q in placed) if ((q.p - new Vector2(p.x, p.z)).magnitude < q.r + clear + 1.0f) { hit = true; break; }
+                    if (hit) continue;
+                    placed.Add((new Vector2(p.x, p.z), clear));
+                    return true;
+                }
+                p = default;
+                return false;
+            }
+            for (int i = 0; i < N(7); i++) if (RouteSpot(3.6f, out var p)) { int sd = rng.Next(); Each(p, pathYaw + R(-22f, 22f), (q, y) => Hedge(k, cols, q, y, sd)); }
+            for (int i = 0; i < N(6); i++) if (RouteSpot(1.8f, out var p)) { int sd = rng.Next(); EachMove(p, pathYaw + R(-30f, 30f), 1, 1.1f, 4f, (kk, cc, q, y) => LoneCard(kk, cc, q, y, sd)); }
+            for (int i = 0; i < N(5); i++) if (RouteSpot(2f, out var p)) { int sd = rng.Next(); Each(p, R(0, 360), (q, y) => RoseBush(k, cols, q, y, sd)); }
+            for (int i = 0; i < N(3); i++) if (RouteSpot(3.5f, out var p)) { int sd = rng.Next(); float s = R(0.7f, 1.05f); EachMove(p, R(0, 360), 2, 1.3f, 0.045f, (kk, cc, q, y) => Mushroom(kk, cc, q, y, s, sd, true)); }
+            for (int i = 0; i < N(3); i++) if (RouteSpot(2.5f, out var p)) { int sd = rng.Next(); EachMove(p, R(0, 360), 0, 0.2f, 0f, (kk, cc, q, y) => Topiary(kk, cc, q, y, sd)); }
+            for (int i = 0; i < N(2); i++) if (RouteSpot(3f, out var p)) { int sd = rng.Next(); Each(p, pathYaw + R(-20f, 20f), (q, y) => CardHouse(k, cols, q, y, sd)); }
+            for (int i = 0; i < N(2); i++) if (RouteSpot(2f, out var p)) { int sd = rng.Next(); Each(p, R(0, 360), (q, y) => MushroomPatch(k, q, sd)); }
             ThemeKitB.Spawn(root, "wonderland props", k, null, true);
 
             BuildFloaters(root);
             BuildSky(root);
+        }
+
+        // ---------------------------------------------------------------- launch pads (giant springy mushroom tops)
+        class Pad { public Transform Top; public Vector3 Pos, Target; public float Flight, Squash, Ph; }
+        readonly List<Pad> m_Pads = new List<Pad>();
+
+        /// <summary>Things that move by themselves: 0 spin round (deg/s), 1 rock to and fro about Axis (deg), 2 squash and
+        /// stretch (a fraction), 3 march (bounce up, metres). Only the look moves - the colliders stay where they were built.</summary>
+        class Mover { public Transform T; public Vector3 Pos, Axis; public Quaternion Rot; public byte Mode; public float Spd, Amp, Ph; }
+        readonly List<Mover> m_Movers = new List<Mover>();
+        Transform m_MoverRoot;
+
+        /// <summary>A prop that moves: its look built round its own pivot at `at` (make(kit, null, origin, yaw)), its colliders
+        /// built where it stands (make(throwaway, cols, at, yaw)), animated in ClientTick.</summary>
+        void Moving(Transform cols, Vector3 at, float yaw, byte mode, float spd, float amp, Vector3 axis, System.Action<MeshKit, Transform, Vector3, float> make)
+        {
+            var go = new GameObject("moving prop");
+            go.transform.SetParent(m_MoverRoot, false);
+            go.transform.localPosition = at;
+            var kit = new MeshKit();
+            make(kit, null, Vector3.zero, yaw);
+            ThemeKitB.Spawn(go.transform, "prop", kit, null, true);
+            make(new MeshKit(), cols, at, yaw);
+            float ph = Mathf.Repeat(at.x * 0.37f + at.z * 0.61f, 6.283f); // (from where it is: the same on every peer, no rng used)
+            m_Movers.Add(new Mover { T = go.transform, Pos = at, Rot = Quaternion.identity, Mode = mode, Spd = spd, Amp = amp, Ph = ph, Axis = axis });
+        }
+
+        /// <summary>The launch pads, laid out in the first team's part and copied round: by the base (out to the edge of the
+        /// middle), out on each flank (round into the next team's flank) and at the edge of the middle (back out to your own
+        /// flank). Their pads and landing spots are kept clear of props.</summary>
+        void BuildPads(Transform root, List<(Vector2 p, float r)> placed)
+        {
+            var bc = Cfg.BaseCenter[0];
+            float th0 = Mathf.Atan2(bc.z, bc.x) * Mathf.Rad2Deg, span = 360f / Cfg.Copies;
+            float baseIn = new Vector2(bc.x, bc.z).magnitude - Cfg.BaseHalf;
+            float mid = (PlazaR + baseIn) * 0.5f;
+            Vector3 P(float deg, float r) => new Vector3(Mathf.Cos(deg * Mathf.Deg2Rad) * r, 0f, Mathf.Sin(deg * Mathf.Deg2Rad) * r);
+            bool Ok(Vector3 p, float pad)
+            {
+                if (!InSlab(p.x, p.z) || EdgeDist(p.x, p.z) < 8f + pad) return false;
+                for (int t = 0; t < Cfg.TeamCount; t++)
+                {
+                    var c = Cfg.BaseCenter[t];
+                    if (Mathf.Abs(p.x - c.x) < Cfg.BaseHalf + 3f + pad && Mathf.Abs(p.z - c.z) < Cfg.BaseHalf + 3f + pad) return false;
+                }
+                return new Vector2(p.x, p.z).magnitude > 13f;
+            }
+            // (a spot that isn't fine is pulled in toward the middle until it is)
+            Vector3 Fit(float deg, float r, float pad)
+            {
+                for (int i = 0; i < 10; i++) { var p = P(deg, r - i * 3f); if (Ok(p, pad)) return p; }
+                return Vector3.zero;
+            }
+            var list = new List<(Vector3 from, Vector3 to, float flight)>();
+            for (int sg = -1; sg <= 1; sg += 2)
+            {
+                float rb = Mathf.Max(PlazaR + 6f, baseIn - 6f);
+                float latDeg = Mathf.Asin(Mathf.Clamp01(10f / rb)) * Mathf.Rad2Deg;
+                list.Add((Fit(th0 + sg * latDeg, rb, 0f), Fit(th0 + sg * span * 0.16f, PlazaR + 3f, 1f), 2.2f));
+                list.Add((Fit(th0 + sg * span * 0.3f, mid, 0f), Fit(th0 + sg * span * 0.7f, mid + 4f, 1f), 2.6f));
+                list.Add((Fit(th0 + sg * span * 0.2f, PlazaR + 1.5f, 0f), Fit(th0 + sg * span * 0.42f, mid + 2f, 1f), 2.2f));
+            }
+            var parent = new GameObject("launch pads").transform;
+            parent.SetParent(root, false);
+            foreach (var l in list)
+            {
+                if (l.from == Vector3.zero || l.to == Vector3.zero || (l.to - l.from).magnitude < 12f) continue;
+                for (int m = 0; m < Cfg.Copies; m++)
+                {
+                    var a = Cfg.Copy(l.from, m); var b = Cfg.Copy(l.to, m);
+                    if (Cfg.InFirstSector(a, 0f)) placed.Add((new Vector2(a.x, a.z), 3.2f));
+                    if (Cfg.InFirstSector(b, 0f)) placed.Add((new Vector2(b.x, b.z), 5f));
+                }
+                for (int m = 0; m < Cfg.Copies; m++)
+                {
+                    var a = Cfg.Copy(l.from, m); var b = Cfg.Copy(l.to, m);
+                    a.y = Height(a.x, a.z); b.y = Height(b.x, b.z);
+                    m_Pads.Add(MakePad(parent, a, b, l.flight));
+                    Target(parent, b);
+                }
+            }
+        }
+
+        static readonly Color k_PadCap = new Color(0.95f, 0.35f, 0.62f), k_PadSpot = new Color(1f, 0.97f, 0.9f);
+
+        /// <summary>A launch pad: a gold ring on springs with a big bouncy spotted mushroom cap set in it (it squashes when it
+        /// throws you), glowing arrows on it pointing where it throws you.</summary>
+        Pad MakePad(Transform parent, Vector3 at, Vector3 target, float flight)
+        {
+            var go = new GameObject("launch pad");
+            go.transform.SetParent(parent, false);
+            go.transform.localPosition = at;
+            var flat = target - at; flat.y = 0f;
+            var look = Quaternion.LookRotation(flat.normalized);
+            var k = new MeshKit();
+            ThemeKitB.Cyl(k, Vector3.down * 0.15f, Vector3.up * 0.14f, 2.05f, 1.95f, 22, k_Gold, false, true);
+            for (int i = 0; i < 10; i++)
+            {
+                float a = i * Mathf.PI * 2f / 10f;
+                var b = new Vector3(Mathf.Cos(a), 0, Mathf.Sin(a)) * 1.86f;
+                for (int c = 0; c < 3; c++)
+                    ThemeKitB.Cyl(k, b + Vector3.up * (0.14f + c * 0.07f), b + Vector3.up * (0.18f + c * 0.07f), 0.12f, 0.12f, 6, new Color(0.75f, 0.75f, 0.8f), false, true);
+            }
+            ThemeKitB.Spawn(go.transform, "pad ring", k, null, true);
+            // (low enough to step up onto)
+            ThemeKitB.BoxCol(go.transform, Vector3.up * 0.06f, new Vector3(2.5f, 0.42f, 2.5f), Quaternion.identity);
+            ThemeKitB.BoxCol(go.transform, Vector3.up * 0.06f, new Vector3(2.5f, 0.42f, 2.5f), Quaternion.Euler(0, 45f, 0));
+            var top = new GameObject("pad top").transform;
+            top.SetParent(go.transform, false);
+            top.localPosition = Vector3.up * 0.14f;
+            top.localRotation = look;
+            var tk = new MeshKit(); var gk = new MeshKit();
+            ThemeKitB.Ball(tk, Vector3.zero, new Vector3(1.7f, 0.2f, 1.7f), Quaternion.identity, k_PadCap, 1);
+            for (int i = 0; i < 7; i++)
+            {
+                float a = i * 0.9f + 0.4f, d = i == 0 ? 0f : 1.05f;
+                var c = new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d);
+                float h = 0.2f * Mathf.Sqrt(Mathf.Max(0f, 1f - (d * d) / (1.7f * 1.7f)));
+                if (i == 0) continue;
+                ThemeKitB.Ball(tk, c + Vector3.up * (h - 0.02f), new Vector3(0.28f, 0.05f, 0.28f), Quaternion.identity, k_PadSpot, 0);
+            }
+            // arrows (chevrons) along its top, pointing the way it throws you
+            for (int i = 0; i < 3; i++)
+            {
+                float z = -0.6f + i * 0.55f, y = 0.215f;
+                ThemeKitB.Tri(gk, new Vector3(-0.4f, y, z - 0.25f), new Vector3(0f, y, z + 0.15f), new Vector3(0f, y, z - 0.05f), Color.white, Vector3.up);
+                ThemeKitB.Tri(gk, new Vector3(-0.4f, y, z - 0.25f), new Vector3(0f, y, z - 0.05f), new Vector3(-0.4f, y, z - 0.45f), Color.white, Vector3.up);
+                ThemeKitB.Tri(gk, new Vector3(0.4f, y, z - 0.25f), new Vector3(0f, y, z - 0.05f), new Vector3(0f, y, z + 0.15f), Color.white, Vector3.up);
+                ThemeKitB.Tri(gk, new Vector3(0.4f, y, z - 0.25f), new Vector3(0.4f, y, z - 0.45f), new Vector3(0f, y, z - 0.05f), Color.white, Vector3.up);
+            }
+            ThemeKitB.Spawn(top, "pad cap", tk, null, true);
+            ThemeKitB.Spawn(top, "pad arrows", gk, ThemeKitB.Glow(new Color(1f, 0.85f, 0.35f), 2.2f), false);
+            return new Pad { Top = top, Pos = at, Target = target, Flight = flight, Ph = Mathf.Repeat(at.x * 0.53f + at.z * 0.29f, 6.283f) };
+        }
+
+        /// <summary>Where a pad lands you: a big red and white target painted on the ground.</summary>
+        static void Target(Transform parent, Vector3 at)
+        {
+            var k = new MeshKit();
+            for (int ring = 0; ring < 4; ring++)
+            {
+                float r = 2.6f - ring * 0.62f, y = 0.04f + ring * 0.01f;
+                var col = ring % 2 == 0 ? k_Red : k_White;
+                for (int i = 0; i < 24; i++)
+                {
+                    float a0 = i * Mathf.PI * 2f / 24f, a1 = (i + 1) * Mathf.PI * 2f / 24f;
+                    ThemeKitB.Tri(k, at + Vector3.up * y, at + new Vector3(Mathf.Cos(a0) * r, y, Mathf.Sin(a0) * r), at + new Vector3(Mathf.Cos(a1) * r, y, Mathf.Sin(a1) * r), col, Vector3.up);
+                }
+            }
+            var g = ThemeKitB.Spawn(parent, "pad target", k, null, false);
+            g.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
         }
 
         // ---------------------------------------------------------------- the props themselves
@@ -753,6 +1015,29 @@ namespace RockGame
             }
         }
 
+        /// <summary>A stack of three or four giant books, each turned a little (good cover, about head high).</summary>
+        static void Books(MeshKit k, Transform cols, Vector3 p, float yaw, int seed)
+        {
+            var rng = new System.Random(seed);
+            Color[] covers = { new Color(0.62f, 0.12f, 0.18f), new Color(0.18f, 0.32f, 0.6f), new Color(0.22f, 0.45f, 0.28f), new Color(0.5f, 0.28f, 0.6f), new Color(0.75f, 0.5f, 0.2f) };
+            var pages = new Color(0.96f, 0.93f, 0.84f);
+            int n = 3 + rng.Next(2);
+            float y = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                float w = 3.4f - i * 0.25f + (float)rng.NextDouble() * 0.3f, d = 2.4f - i * 0.15f, h = 0.5f + (float)rng.NextDouble() * 0.25f;
+                var rot = Yaw(yaw + ((float)rng.NextDouble() * 30f - 15f));
+                var c = p + Vector3.up * (y + h * 0.5f);
+                var col = covers[rng.Next(covers.Length)];
+                k.Box(c, new Vector3(w, h, d), rot, col, MeshKit.All);
+                k.Box(c + rot * new Vector3(0.12f, 0f, 0f), new Vector3(w - 0.12f, h - 0.12f, d + 0.02f), rot, pages, MeshKit.All);
+                k.Box(c + rot * new Vector3(-w * 0.5f, 0f, 0f), new Vector3(0.1f, h + 0.02f, d + 0.04f), rot, col * 0.8f, MeshKit.All);
+                k.Box(c + rot * new Vector3(-w * 0.5f - 0.03f, 0f, 0f), new Vector3(0.06f, h * 0.3f, d * 0.6f), rot, k_Gold, MeshKit.All);
+                ThemeKitB.BoxCol(cols, c, new Vector3(w, h, d), rot);
+                y += h;
+            }
+        }
+
         static void Signpost(MeshKit k, Transform cols, Vector3 p, float yaw)
         {
             var wood = new Color(0.45f, 0.3f, 0.2f);
@@ -1114,12 +1399,68 @@ namespace RockGame
         // ---------------------------------------------------------------- every frame
         public override void ClientTick()
         {
-            float t = Time.time;
+            float t = Time.time, dt = Mathf.Min(Time.deltaTime, 0.1f);
             foreach (var f in m_Float)
             {
                 if (f.t == null) continue;
                 f.t.localRotation = Quaternion.AngleAxis(t * f.spin, f.axis) * f.rot;
                 f.t.localPosition = f.pos + Vector3.up * Mathf.Sin(t * 0.4f + f.ph) * f.bob;
+            }
+            // the props that move by themselves
+            foreach (var m in m_Movers)
+            {
+                if (m.T == null) continue;
+                float w = t * m.Spd + m.Ph;
+                switch (m.Mode)
+                {
+                    case 0: m.T.localRotation = Quaternion.Euler(0f, w * Mathf.Rad2Deg, 0f) * Quaternion.AngleAxis(Mathf.Sin(w * 0.37f) * 2.5f, Vector3.right); break;
+                    case 1: m.T.localRotation = Quaternion.AngleAxis(Mathf.Sin(w) * m.Amp, m.Axis); break;
+                    case 2:
+                    {
+                        float s = Mathf.Sin(w) * m.Amp;
+                        m.T.localScale = new Vector3(1f - s * 0.6f, 1f + s, 1f - s * 0.6f);
+                        break;
+                    }
+                    default:
+                        m.T.localPosition = m.Pos + Vector3.up * (Mathf.Abs(Mathf.Sin(w)) * m.Amp);
+                        m.T.localRotation = Quaternion.Euler(0f, 0f, Mathf.Sin(w) * 3f);
+                        break;
+                }
+            }
+            // the launch pads: step on one and it throws you (you only - every peer throws its own player)
+            var me = PlayerController.Local;
+            if (me != null && me.SinceLaunch > 0.8f && me.VelY < 1f)
+            {
+                var p = me.transform.position;
+                foreach (var pad in m_Pads)
+                {
+                    var d = p - pad.Pos;
+                    if (d.y < -0.5f || d.y > 1.0f) continue;
+                    d.y = 0f;
+                    if (d.sqrMagnitude > 1.9f * 1.9f) continue;
+                    me.Launch(ThemeKitB.LaunchVelocity(p, pad.Target, pad.Flight));
+                    pad.Squash = 1f;
+                    Sfx.Play(Sfx.Twang, pad.Pos, 1f, 0.12f, 70f);
+                    Fx.Shake(0.15f);
+                    break;
+                }
+            }
+            foreach (var pad in m_Pads)
+            {
+                if (pad.Top == null) continue;
+                // (someone else bouncing off it: it squashes for them too)
+                if (pad.Squash < 0.2f)
+                    foreach (var pn in PlayerNet.All)
+                    {
+                        if (pn == null || pn.IsOwner) continue;
+                        var d = pn.transform.position - pad.Pos;
+                        if (d.y > 0.6f && d.y < 2.5f && new Vector2(d.x, d.z).sqrMagnitude < 4f) { pad.Squash = 0.8f; break; }
+                    }
+                pad.Squash = Mathf.Max(0f, pad.Squash - dt * 2.2f);
+                float sq = pad.Squash * pad.Squash, idle = Mathf.Sin(t * 2.2f + pad.Ph) * 0.06f;
+                float spring = Mathf.Sin((1f - pad.Squash) * 18f) * pad.Squash;
+                pad.Top.localScale = new Vector3(1f + sq * 0.12f - idle * 0.3f, 1f + idle - spring * 0.8f, 1f + sq * 0.12f - idle * 0.3f);
+                pad.Top.localPosition = Vector3.up * (0.14f + spring * 0.25f);
             }
             var cam = Camera.main;
             if (m_Sky != null)

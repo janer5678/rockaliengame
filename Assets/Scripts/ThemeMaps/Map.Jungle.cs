@@ -5,24 +5,55 @@ using UnityEngine.Rendering;
 namespace RockGame
 {
     /// <summary>
-    /// JUNGLE: mossy forest floor closed in by tall grey rock cliffs. Lots of tall thin leafy trees. Round the middle a
-    /// ring of giant climbing trees, each with plank decks one above another (5.5 m a level, up to 16.5 m), solid ladders
-    /// from deck to deck and plank bridges between the trees - high ones too; a few lower ones out by the bases (with a
-    /// ramp). Mossy jungle rocks all over the floor, a red stilt treehouse and a roofed hut out to the sides, a ruined
+    /// JUNGLE: mossy forest floor closed in by tall grey rock cliffs. Lots of tall thin leafy trees. The middle round the
+    /// ball is open (no big trees): instead a ring of plank walkways 5.5 m up on round post platforms circles it, with
+    /// walkways branching out from it to the giant climbing trees further out - each with plank decks one above another
+    /// (5.5 m a level, up to 16.5 m), ladders from deck to deck (climbable from the front only, each topping out right
+    /// at a deck's open edge) and plank bridges between the trees - high ones too; a few lower ones out by the bases (with
+    /// a ramp). Mossy jungle rocks all over the floor, a red stilt treehouse and a roofed hut out to the sides, a ruined
     /// stone shrine-wall and boulders round the ball. Banana plants for food, jaguars to ride. Light green haze.
     /// </summary>
     public class JungleMap : ThemeMap
     {
         public override MapKind Kind => MapKind.Jungle;
         public override string Label => "Jungle";
-        public override string Blurb => "Thick jungle walled in by rock cliffs. Giant climbing trees round the middle - ladders up to decks three storeys high, bridges between them. Mossy rocks for cover below.";
+        public override string Blurb => "Thick jungle walled in by rock cliffs. Walkways high over the middle branch out to giant climbing trees - ladders up to decks three storeys high, bridges between them. Mossy rocks for cover below.";
         public override bool Mountains => false;
         public override float MaxSpotHeight => 3f;
         public override string MountName => "Jaguar";
 
-        const float DeckY = 5.5f, DeckHalf = 3.4f;
-        /// <summary>Each deck level's half size (the higher, the smaller: the ladder up to the next one stands on the one below).</summary>
-        static readonly float[] Halfs = { 3.4f, 2.8f, 2.2f };
+        const float DeckY = 5.5f;
+        /// <summary>Each deck level's half size (the higher, the smaller: the ladder up to the next one stands on the one
+        /// below, with 1.2 m of floor in front of it to stand on).</summary>
+        static readonly float[] Halfs = { 4.4f, 3.2f, 2.0f };
+        /// <summary>The round walkway platforms (on posts) round the middle: radius, and how far from the ball.</summary>
+        const float HubR = 2.6f, HubDist = 15f;
+        /// <summary>No giant trees nearer the ball than this (the middle is open: walkways only).</summary>
+        const float TreeMinR = 30f;
+        /// <summary>No ordinary trees (or bushes) nearer the ball than this.</summary>
+        const float MidClear = 22f;
+
+        /// <summary>The walkway platforms round the middle, in blue's sector (two teams: two, either side; four: one).</summary>
+        static Vector3[] HubSpots() => Cfg.FourWay
+            ? new[] { TmKit.CentreSpot(0f, HubDist) }
+            : new[] { TmKit.CentreSpot(-0.25f, HubDist), TmKit.CentreSpot(0.25f, HubDist) };
+
+        /// <summary>Everything up in the air (walkways, bridges, decks: every team's copy) as flat segments with a
+        /// half-width - no tree grows up through them (SpotOk). Filled in by BuildProps.</summary>
+        static readonly List<(Vector2 a, Vector2 b, float r)> s_Lanes = new List<(Vector2, Vector2, float)>();
+
+        public override bool SpotOk(Vector3 p)
+        {
+            var q = new Vector2(p.x, p.z);
+            if (q.magnitude < MidClear) return false;
+            foreach (var (a, b, r) in s_Lanes)
+            {
+                var ab = b - a;
+                float t = ab.sqrMagnitude < 1e-4f ? 0f : Mathf.Clamp01(Vector2.Dot(q - a, ab) / ab.sqrMagnitude);
+                if ((a + ab * t - q).magnitude < r) return false;
+            }
+            return true;
+        }
         static float LevelY(int lv) => DeckY * (lv + 1);
 
         static readonly Color Moss = new Color(0.3f, 0.46f, 0.2f), Dirt = new Color(0.43f, 0.35f, 0.23f), Cliff = new Color(0.52f, 0.5f, 0.47f), DarkMoss = new Color(0.24f, 0.38f, 0.16f);
@@ -194,20 +225,23 @@ namespace RockGame
             float d = Mathf.Abs(Cfg.BaseCenter[0].z), bh = Cfg.BaseHalf, half = Cfg.MapHalf;
             bool two = !Cfg.FourWay;
 
-            // ---- the climbing trees: most in a ring round the middle (three decks high), a second ring a bit further
-            //      out (two decks), and one low one by each side of the base ----
-            bool Ok(Vector3 p) => TmKit.FreeSpot(p, Halfs[0] + 1.5f) && ThemeMaps.Height(p.x, p.z) < 3.2f;
+            // ---- the walkways and climbing trees. The middle round the ball is open: a ring of round post platforms
+            //      (HubDist out) joined by walkways circles it, and walkways branch out from it to the giant climbing trees
+            //      (three decks high, TreeMinR+ out), on to a second ring (two decks) and the low ones by the bases ----
+            bool Ok(Vector3 p) => TmKit.FreeSpot(p, Halfs[0] + 1.5f) && ThemeMaps.Height(p.x, p.z) < 3.2f && p.magnitude >= TreeMinR;
             var nodes = new List<Vector3>();
             var lvls = new List<int>();
-            int Add(Vector3 p, int lv)
+            var hub = new List<bool>();
+            int Add(Vector3 p, int lv, bool isHub = false)
             {
                 for (int i = 0; i < nodes.Count; i++) if ((nodes[i] - p).sqrMagnitude < 1f) { lvls[i] = Mathf.Max(lvls[i], lv); return i; }
-                nodes.Add(p); lvls.Add(lv);
+                nodes.Add(p); lvls.Add(lv); hub.Add(isHub);
                 return nodes.Count - 1;
             }
             int Tower(Vector3 p, int lv) => Ok(p) ? Add(p, lv) : -1;
-            // (a = this sector's tree, far = the other end's centre, c = its index here: another team's copy when ext)
-            var links = new List<(int a, int c, int lv, bool ext)>();
+            float Hf(int i, int lv) => hub[i] ? HubR : Halfs[lv];
+            // (a = this sector's node, c = the other end; ext: c's copy in team k's sector)
+            var links = new List<(int a, int c, int lv, int k)>();
             // (no bridge over a base)
             bool OverBase(Vector3 a, Vector3 b)
             {
@@ -218,6 +252,11 @@ namespace RockGame
                     if (Mathf.Abs(q.x - bc.x) < bh + 3f && Mathf.Abs(q.z - bc.z) < bh + 3f) return true;
                 }
                 return false;
+            }
+            bool SpanOk(Vector3 pa, Vector3 pb, int a, int c, int lv)
+            {
+                float len = (pa - pb).magnitude, span = len - Hf(a, lv) - Hf(c, lv);
+                return span > 2.5f && span < 28f;
             }
             void Link(int a, int b, int lv, int depth = 0)
             {
@@ -230,67 +269,96 @@ namespace RockGame
                     var m = (pa + pb) * 0.5f;
                     if (Ok(m)) { int mi = Add(m, 1); Link(a, mi, 0, depth + 1); Link(mi, b, 0, depth + 1); return; }
                 }
-                if ((pa - pb).magnitude < Halfs[lv] * 2f + 3f) return;
-                links.Add((a, b, lv, false));
+                if (!SpanOk(pa, pb, a, b, lv)) return;
+                links.Add((a, b, lv, 0));
             }
-            // the nearest copy (another team's) of tree c to point p
-            Vector3 Near(int c, Vector3 p)
+            // the nearest copy (another team's) of node c to point p
+            int NearK(int c, Vector3 p)
             {
-                Vector3 best = nodes[c];
+                int best = 1;
                 float bd = float.MaxValue;
                 for (int k = 1; k < Cfg.Copies; k++)
                 {
-                    var q = Cfg.Copy(nodes[c], k);
-                    float dd = (q - p).sqrMagnitude;
-                    if (dd < bd) { bd = dd; best = q; }
+                    float dd = (Cfg.Copy(nodes[c], k) - p).sqrMagnitude;
+                    if (dd < bd - 0.01f) { bd = dd; best = k; }
                 }
                 return best;
             }
             void LinkExt(int a, int c, int lv)
             {
                 if (a < 0 || c < 0 || lv >= Mathf.Min(lvls[a], lvls[c])) return;
-                float len = (Near(c, nodes[a]) - nodes[a]).magnitude;
-                if (len > 34f || len < Halfs[lv] * 2f + 3f) return;
-                links.Add((a, c, lv, true));
+                int k = NearK(c, nodes[a]);
+                if (!SpanOk(nodes[a], Cfg.Copy(nodes[c], k), a, c, lv)) return;
+                links.Add((a, c, lv, k));
+            }
+            int Nearest(Vector3 p, params int[] of)
+            {
+                int best = -1;
+                foreach (int i in of) if (i >= 0 && (best < 0 || (nodes[i] - p).sqrMagnitude < (nodes[best] - p).sqrMagnitude)) best = i;
+                return best;
             }
 
-            float rIn = 27f, rMid = Mathf.Max(rIn + 14f, (rIn + d - bh) * 0.55f);
-            int inL = Tower(TmKit.CentreSpot(-0.17f, rIn), 3), inR = Tower(TmKit.CentreSpot(0.17f, rIn), 3);
-            int midC = Tower(TmKit.CentreSpot(0f, rMid), 2);
-            int outL = -1, outR = -1, midL = -1, midR = -1;
-            if (two)
-            {
-                outL = Tower(TmKit.CentreSpot(-0.4f, rIn), 3); outR = Tower(TmKit.CentreSpot(0.4f, rIn), 3);
-                midL = Tower(TmKit.CentreSpot(-0.3f, rMid), 2); midR = Tower(TmKit.CentreSpot(0.3f, rMid), 2);
-            }
+            var hubPos = HubSpots();
+            var hubs = new int[hubPos.Length];
+            for (int i = 0; i < hubPos.Length; i++) hubs[i] = Add(hubPos[i], 1, true);
+            float rT = TreeMinR + 4f, rM = Mathf.Max(rT + 14f, (rT + d - bh) * 0.55f);
             int sideL = Tower(new Vector3(-(bh + 11f), 0, -d + 4f), 1), sideR = Tower(new Vector3(bh + 11f, 0, -d + 4f), 1);
-            Link(inL, inR, 1);                      // the high bridge across in front of the ball
-            Link(inL, midC, 0); Link(inR, midC, 0);
             if (two)
             {
-                Link(inL, outL, 0); Link(inR, outR, 0);
-                LinkExt(outR, outL, 1);             // high across to the other team's side
-                Link(midL, outL, 1); Link(midR, outR, 1);
-                Link(sideL, midL, 0); Link(sideR, midR, 0);
+                int hA = hubs[0], hB = hubs[1];
+                int tA = Tower(TmKit.CentreSpot(-0.25f, rT), 3), tB = Tower(TmKit.CentreSpot(0.25f, rT), 3);
+                int mC = Tower(TmKit.CentreSpot(0f, rM), 2);
+                int cA = Tower(TmKit.CentreSpot(-0.42f, rM), 2), cB = Tower(TmKit.CentreSpot(0.42f, rM), 2);
+                Link(hA, hB, 0);                    // the walkway across in front of the ball...
+                LinkExt(hB, hA, 0);                 // ...and on round it, behind the other team's side: a ring
+                Link(hA, tA, 0); Link(hB, tB, 0);   // branching out to the climbing trees
+                if (tA < 0) Link(hA, Nearest(hubPos[0], cA, mC), 0);
+                if (tB < 0) Link(hB, Nearest(hubPos[1], cB, mC), 0);
+                Link(tA, mC, 0); Link(tB, mC, 0);
+                Link(tA, cA, 1); Link(tB, cB, 1);
+                LinkExt(cB, cA, 1);                 // high across to the other team's side
+                Link(sideL, Nearest(nodes.Count > 0 && sideL >= 0 ? nodes[sideL] : Vector3.zero, cA, cB, mC), 0);
+                Link(sideR, Nearest(nodes.Count > 0 && sideR >= 0 ? nodes[sideR] : Vector3.zero, cA, cB, mC), 0);
             }
             else
             {
-                LinkExt(inR, inL, 0);               // round to the next team's ring
-                Link(sideL, midC, 0); Link(sideR, midC, 0);
+                int h0 = hubs[0];
+                int tA = Tower(TmKit.CentreSpot(0f, rT), 3);
+                int cA = Tower(TmKit.CentreSpot(-0.35f, rM), 2), cB = Tower(TmKit.CentreSpot(0.35f, rM), 2);
+                LinkExt(h0, h0, 0);                 // the ring of walkways round the ball (one platform per team)
+                Link(h0, tA, 0);                    // branching out to the climbing tree...
+                if (tA < 0) { Link(h0, cA, 0); Link(h0, cB, 0); }
+                Link(tA, cA, 0); Link(tA, cB, 0);   // ...and on to the outer ones
+                LinkExt(cB, cA, 1);                 // high round to the next team's side
+                Link(sideL, Nearest(sideL >= 0 ? nodes[sideL] : Vector3.zero, cA, cB), 0);
+                Link(sideR, Nearest(sideR >= 0 ? nodes[sideR] : Vector3.zero, cA, cB), 0);
             }
 
+            // the bridges, and what's up in the air for SpotOk (every team's copy)
+            s_Lanes.Clear();
+            void Lane(Vector3 a, Vector3 b, float r)
+            {
+                for (int m = 0; m < Cfg.Copies; m++)
+                {
+                    var qa = Cfg.Copy(a, m); var qb = Cfg.Copy(b, m);
+                    s_Lanes.Add((new Vector2(qa.x, qa.z), new Vector2(qb.x, qb.z), r));
+                }
+            }
             var used = new List<Vector3>[nodes.Count, 3];
             for (int i = 0; i < nodes.Count; i++) for (int l = 0; l < 3; l++) used[i, l] = new List<Vector3>();
             Vector3 Flat(Vector3 v) { v.y = 0; return v.normalized; }
-            foreach (var (a, c, lv, ext) in links)
+            foreach (var (a, c, lv, k) in links)
             {
                 var pa = nodes[a];
-                var pb = ext ? Near(c, pa) : nodes[c];
+                var pb = k == 0 ? nodes[c] : Cfg.Copy(nodes[c], k);
                 var dir = Flat(pb - pa);
-                Bridge(sec, pa + dir * Halfs[lv], pb - dir * Halfs[lv], LevelY(lv));
+                Bridge(sec, pa + dir * Hf(a, lv), pb - dir * Hf(c, lv), LevelY(lv));
+                Lane(pa, pb, 3.5f);
                 used[a, lv].Add(dir);
-                used[c, lv].Add(ext ? Flat(Near(a, nodes[c]) - nodes[c]) : -dir);
+                // (an ext bridge's copy turned into blue's sector arrives at c from a's copy there)
+                used[c, lv].Add(k == 0 ? -dir : Flat(Cfg.Copy(pa, Cfg.Copies - k) - nodes[c]));
             }
+            for (int i = 0; i < nodes.Count; i++) Lane(nodes[i], nodes[i], (hub[i] ? HubR : Halfs[0]) + 2f);
             var dirs = new Vector3[8];
             for (int i = 0; i < 8; i++) dirs[i] = Quaternion.Euler(0, i * 45f, 0) * Vector3.forward;
             var feet = new List<Vector3>();
@@ -298,16 +366,19 @@ namespace RockGame
             {
                 var p = nodes[i];
                 int L = lvls[i];
-                DeckTree(sec, p, L, rng);
+                if (hub[i]) HubDeck(sec, p);
+                else DeckTree(sec, p, L, rng);
                 bool Free(Vector3 dv, int lv, Vector3 avoid)
                 {
-                    foreach (var u in used[i, lv]) if (Vector3.Dot(u, dv) > 0.6f) return false;
-                    if (lv > 0) foreach (var u in used[i, lv - 1]) if (Vector3.Dot(u, dv) > 0.6f) return false; // (not in the way of a bridge onto the deck it stands on)
+                    foreach (var u in used[i, lv]) if (Vector3.Dot(u, dv) > 0.75f) return false;
+                    if (lv > 0) foreach (var u in used[i, lv - 1]) if (Vector3.Dot(u, dv) > 0.75f) return false; // (not in the way of a bridge onto the deck it stands on)
                     return Vector3.Dot(avoid, dv) < 0.6f;
                 }
-                int start = rng.Next(8);
+                // the square decks' ladders go up the middle of a side (straight onto the deck's edge); round platforms any way
+                int step = hub[i] ? 1 : 2;
+                int start = hub[i] ? rng.Next(8) : rng.Next(4) * 2;
                 // up from the ground: a ramp too on the low trees by the bases
-                if (Mathf.Abs(p.z) > d * 0.8f)
+                if (!hub[i] && Mathf.Abs(p.z) > d * 0.8f)
                     for (int k = 0; k < 8; k += 2)
                     {
                         var dv = dirs[(start + k) % 8];
@@ -317,22 +388,27 @@ namespace RockGame
                         var foot = top + dv * len;
                         if (!TmKit.FreeSpot(foot, 1f) || ThemeMaps.Height(foot.x, foot.z) > 2f) continue;
                         Ramp(sec, top, foot);
+                        Lane(top, foot, 2f);
                         used[i, 0].Add(dv);
                         feet.Add(foot);
                         break;
                     }
+                // a ladder up to every deck (from the ground, then from the deck below), each on its own side
                 Vector3 last = Vector3.zero;
                 for (int lv = 0; lv < L; lv++)
                 {
-                    for (int k = 0; k < 8; k++)
+                    // round platforms: the ladder on the side away from the ball if it's free
+                    if (hub[i]) start = Mathf.RoundToInt(Mathf.Atan2(p.x, p.z) * Mathf.Rad2Deg / 45f + 8f) % 8;
+                    for (int k = 0; k < 8; k += step)
                     {
-                        var dv = dirs[(start + k * 3) % 8];
+                        var dv = dirs[(start + (hub[i] ? (k % 2 == 0 ? k / 2 : 8 - (k + 1) / 2) : k * 3)) % 8];
                         if (!Free(dv, lv, last)) continue;
-                        var foot = p + dv * Halfs[lv];
+                        var foot = p + dv * Hf(i, lv);
                         foot.y = lv == 0 ? ThemeMaps.Height(foot.x, foot.z) : LevelY(lv - 1);
+                        if (lv == 0 && !hub[i] && foot.y > DeckY - 2f) continue;
                         TmKit.Ladder(sec, foot, LevelY(lv), dv, PlankDark);
                         used[i, lv].Add(dv);
-                        if (lv == 0) feet.Add(p + dv * (Halfs[0] + 1.5f));
+                        if (lv == 0) feet.Add(p + dv * (Hf(i, 0) + 1.5f));
                         last = dv;
                         break;
                     }
@@ -346,7 +422,7 @@ namespace RockGame
                 for (int tries = 0; tries < 80; tries++)
                 {
                     var p = new Vector3(Rn(-half + 12f, half - 12f), 0, Rn(-d * 1.1f, -30f));
-                    if (!TmKit.FreeSpot(p, 6f) || ThemeMaps.Height(p.x, p.z) > 2.5f) continue;
+                    if (!TmKit.FreeSpot(p, 6f) || ThemeMaps.Height(p.x, p.z) > 2.5f || !SpotOk(p)) continue; // (not under a walkway)
                     bool near = false;
                     foreach (var n in spots) if ((n - p).magnitude < 14f) near = true;
                     if (near) continue;
@@ -426,10 +502,23 @@ namespace RockGame
         /// <summary>The middle: mossy boulders, a fallen log, a stump with ferns and a crumbling carved stone wall round the ball.</summary>
         public override bool BuildCentre(Transform root)
         {
-            var spots = new (float f, float r)[] { (-0.3f, 7.5f), (0.27f, 8.5f), (0f, 12f), (-0.15f, 15f), (0.38f, 13f), (-0.4f, 11.5f), (0.15f, 16.5f) };
+            // (more spots than get used: the ones by the walkway platforms are left out)
+            var spots = new (float f, float r)[] { (-0.3f, 7.5f), (0.27f, 8.5f), (0f, 12f), (-0.15f, 15f), (0.38f, 13f), (-0.4f, 11.5f), (0.15f, 16.5f),
+                (0.06f, 7f), (-0.47f, 15f), (0.46f, 9f), (-0.06f, 17f), (0.2f, 6.8f) };
+            var hubs = HubSpots();
+            bool ByHub(Vector3 q)
+            {
+                for (int m = 0; m < Cfg.Copies; m++)
+                    foreach (var h in hubs)
+                    {
+                        var c = Cfg.Copy(h, m);
+                        if (new Vector2(c.x - q.x, c.z - q.z).magnitude < HubR + 4.5f) return true; // (clear of the walkway platforms and their ladders)
+                    }
+                return false;
+            }
             TmKit.CentreLayout(root, "Jungle centre", 6250, spots, 17f, 5f, (sec, p, yaw, i, rng) =>
             {
-                switch (i)
+                switch (i % 7)
                 {
                     case 0: case 4:
                         MossRock(sec, p, 1.8f + (float)rng.NextDouble() * 0.5f, rng);
@@ -454,7 +543,7 @@ namespace RockGame
                         }
                         break;
                 }
-            });
+            }, ByHub);
             return true;
         }
 
@@ -502,7 +591,7 @@ namespace RockGame
                 float y = LevelY(lv), hh = Halfs[lv];
                 // the deck, with a darker rim under it
                 Art.Box(sec, lv % 2 == 0 ? PlankC : TmKit.Shade(PlankC, 0.94f), new Vector3(p.x, y - 0.18f, p.z), new Vector3(hh * 2f, 0.36f, hh * 2f), default, true);
-                Art.Box(sec, PlankDark, new Vector3(p.x, y - 0.4f, p.z), new Vector3(hh * 2f + 0.2f, 0.14f, hh * 2f + 0.2f));
+                Art.Box(sec, PlankDark, new Vector3(p.x, y - 0.4f, p.z), new Vector3(hh * 2f - 0.3f, 0.14f, hh * 2f - 0.3f)); // (inside the edge: clear of the ladders)
                 if (lv == 0)
                 {
                     for (int i = 0; i < 4; i++)
@@ -542,6 +631,25 @@ namespace RockGame
                 float len = 1.2f + (float)rng.NextDouble() * 1.6f;
                 Art.Box(sec, DarkMoss, new Vector3(c.x, y0 - 0.3f - len * 0.5f, c.z), new Vector3(0.1f, len, 0.1f));
             }
+        }
+
+        /// <summary>A round plank walkway platform 5.5 m up on four posts (round, so a ladder up any side tops out right at
+        /// its edge), a dark rim under it and a lantern on a post.</summary>
+        static void HubDeck(Transform sec, Vector3 p)
+        {
+            float y = DeckY;
+            var deck = TmKit.Stone(sec, new Vector3(p.x, y, p.z), HubR, PlankC, 0.36f);
+            deck.name = "walkway platform";
+            Art.Part(sec, Art.Cylinder, PlankDark, new Vector3(p.x, y - 0.42f, p.z), new Vector3(HubR * 2f - 0.4f, 0.07f, HubR * 2f - 0.4f));
+            for (int i = 0; i < 4; i++)
+            {
+                var c = p + Quaternion.Euler(0, 45 + i * 90, 0) * new Vector3(0, 0, HubR - 0.6f);
+                float g = ThemeMaps.Height(c.x, c.z);
+                Art.Part(sec, Art.Cylinder, Bark, new Vector3(c.x, (g + y) * 0.5f - 0.2f, c.z), new Vector3(0.36f, (y - g) * 0.5f, 0.36f), default, true);
+            }
+            // cross slats on top for the plank look
+            for (int k = -2; k <= 2; k++)
+                Art.Box(sec, PlankDark, new Vector3(p.x + k * 0.95f, y + 0.005f, p.z), new Vector3(0.1f, 0.02f, 2f * Mathf.Sqrt(Mathf.Max(0.1f, HubR * HubR - k * 0.95f * k * 0.95f)) - 0.2f));
         }
 
         /// <summary>A flat plank bridge between two decks at height y, with rope rails.</summary>

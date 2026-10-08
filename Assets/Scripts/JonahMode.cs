@@ -25,13 +25,12 @@ namespace RockGame
         [Tune("Jonah test mode")] public static int DustPerBuy = 1000, DustBuyWood = 1000;
         public const int WallsPerUpgrade = 10;
 
-        /// <summary>Jonah mode: bought with alien dust - everything from both trade stations, the Trade Station itself and the base upgrades.</summary>
-        public static bool DustItem(Item i)
-        {
-            if (i == Item.AlienDust) return false;
-            if (i == Item.Workbench || i == Item.WoodGenBuff || i == Item.FortifyBuff) return true;
-            return CraftTier(i) >= 1;
-        }
+        /// <summary>Jonah mode: everything is bought with alien dust (only alien dust itself is bought with wood).</summary>
+        public static bool DustItem(Item i) => i != Item.AlienDust;
+
+        /// <summary>What building pieces cost (and give back when demolished): alien dust in Jonah mode, else the usual currency.</summary>
+        public static Item BuildItem => Jonah ? Item.AlienDust : CurrencyItem;
+        public static string BuildName => Jonah ? "alien dust" : CurrencyName;
 
         /// <summary>Jonah mode: a dust item's price moves over to alien dust (the same amount).</summary>
         public static Recipe JonahPriced(Recipe r)

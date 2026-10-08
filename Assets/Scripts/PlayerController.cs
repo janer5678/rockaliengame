@@ -178,6 +178,12 @@ namespace RockGame
         }
 
         /// <summary>Used by AutoTest to aim the camera.</summary>
+        /// <summary>On a boat right now (E gets you off it).</summary>
+        bool RidingBoat => m_Net.Riding && m_Net.NetworkManager != null && m_Net.NetworkManager.SpawnManager != null
+            && m_Net.NetworkManager.SpawnManager.SpawnedObjects.TryGetValue(m_Net.RidingId.Value, out var bno) && bno.TryGetComponent(out Vehicle bv) && bv.IsBoat;
+        /// <summary>The frame E was used to get off a boat (it doesn't also use whatever you're looking at).</summary>
+        int m_SkipInteract = -10;
+
         /// <summary>Where you're looking (degrees).</summary>
         public float LookYaw => m_Yaw;
         public float LookPitch => m_Pitch;
@@ -415,7 +421,7 @@ namespace RockGame
             if (dead || riding) { m_SlideOn = false; m_SlideQueued = -1f; m_SlideVel = Vector3.zero; TickSlideSound(); } // (the slide's hiss stops with it)
             // riding: the crouch keys (Ctrl / C) get you off - E stays free to do everything it does on foot
             // (the tutorial keeps Ctrl / C locked until its crouch and slide steps - but a rider can always get off)
-            if (riding && input && !locked && (Binds.Down(Bind.Crouch) || Binds.Down(Bind.Slide) || (Tutorial.On && (Binds.RawDown(Bind.Crouch) || Binds.RawDown(Bind.Slide))))) { m_Net.DismountRpc(); Sfx.Play2D(Sfx.Pop, 0.4f); Dismounts++; }
+            if (riding && input && !locked && (Binds.Down(Bind.Crouch) || Binds.Down(Bind.Slide) || (Tutorial.On && (Binds.RawDown(Bind.Crouch) || Binds.RawDown(Bind.Slide))) || (Binds.Down(Bind.Interact) && RidingBoat))) { m_Net.DismountRpc(); Sfx.Play2D(Sfx.Pop, 0.4f); Dismounts++; m_SkipInteract = Time.frameCount; } // (E gets you off a boat)
             // the crouch key (Ctrl) pressed mid-slide: drop straight into a crouch - the slide stops dead, no glide-out
             // (and a slide waiting for the landing is called off)
             if (move && !riding && Binds.Down(Bind.Crouch) && (m_SlideOn || m_SlideQueued >= 0f))
@@ -1474,7 +1480,7 @@ namespace RockGame
                     if (GhostAutoFoundation)
                     {
                         m_Net.PlaceOnNewFoundationRpc((byte)BuildPiece, m_GhostKey.I, m_GhostKey.J, m_GhostKey.D, GhostFoundation.I, GhostFoundation.J);
-                        Hud.Push($"Foundation put down under it  (-{Cfg.PieceWood(PieceType.Foundation)} {Cfg.CurrencyName})");
+                        Hud.Push($"Foundation put down under it  (-{Cfg.PieceWood(PieceType.Foundation)} {Cfg.BuildName})");
                     }
                     else m_Net.PlaceRpc((byte)BuildPiece, m_GhostKey.I, m_GhostKey.J, m_GhostKey.L, m_GhostKey.D);
                     NoteBuilt(m_GhostKey);
@@ -1833,6 +1839,7 @@ namespace RockGame
                     if (!carrying) OpenUpgrades();
                     break;
                 case TargetKind.Vehicle:
+                    if (m_SkipInteract == Time.frameCount || m_Net.Riding) break; // (that E got you off the boat)
                     m_Net.MountRpc(t.Obj);
                     Sfx.Play2D(Sfx.Pop, 0.5f);
                     break;
@@ -2098,9 +2105,9 @@ namespace RockGame
             {
                 int team = m_Net.Team.Value;
                 if (!BuildGrid.CanBuildAt(team, f) || BuildGrid.OnBedrock(f) || BuildGrid.IsOccupied(f, m_ClientKeys.Contains) || Structure.RebuildWait(f) > 0f) continue;
-                if (m_Net.Count(Cfg.CurrencyItem) < both)
+                if (m_Net.Count(Cfg.BuildItem) < both)
                 {
-                    reason = $"Needs a foundation underneath - {both} {Cfg.CurrencyName} for the foundation and the {Cfg.PieceName(t).ToLower()}";
+                    reason = $"Needs a foundation underneath - {both} {Cfg.BuildName} for the foundation and the {Cfg.PieceName(t).ToLower()}";
                     return false;
                 }
                 fkey = f;
@@ -2122,7 +2129,7 @@ namespace RockGame
             if (wait > 0f) return Structure.RebuildWaitText(wait);
             if (!BuildGrid.IsSupported(key, m_ClientKeys.Contains))
                 return t == PieceType.Floor ? "Floors need a wall below or a floor next to them" : k_NeedsFoundation;
-            if (m_Net.Count(Cfg.CurrencyItem) < Cfg.PieceWood(t)) return $"Need {Cfg.PieceWood(t)} {Cfg.CurrencyName}";
+            if (m_Net.Count(Cfg.BuildItem) < Cfg.PieceWood(t)) return $"Need {Cfg.PieceWood(t)} {Cfg.BuildName}";
             return null;
         }
 

@@ -180,15 +180,16 @@ namespace RockGame
             hook.Track(Art.Box(square, skin, new Vector3(-0.045f * side, 0.025f, 0.035f), new Vector3(0.03f, 0.03f, 0.065f), new Vector3(0, 20 * side, 0)), HandColorHook.Skin); // thumb
             hook.Track(Art.Box(square, band, new Vector3(0, 0, -0.075f), new Vector3(0.082f, 0.082f, 0.035f)), HandColorHook.Band);                // wrist band
             hook.Track(Art.Box(square, skin, new Vector3(0, 0, -0.32f), new Vector3(0.072f, 0.072f, 0.46f)), HandColorHook.Skin);                  // forearm
-            // the round hands: the same parts, the same sizes and places, but round - a ball of a fist, a rounded knuckle
-            // ridge, a capsule thumb, a ring of a wrist band and a tube of a forearm (Art.Cylinder is 2 tall: its y scale is half the length)
+            // the round hands, slender like the aliens' own: a thin tapering forearm (no wrist band), a slim smooth hand with
+            // a rounded tip - a mitten, not fingers - a soft knuckle ridge and a thin thumb (Art.Cylinder is 2 tall: y scale = half the length)
             var round = new GameObject("round").transform;
             round.SetParent(hand, false);
-            hook.Track(Art.Part(round, Art.Sphere, skin, Vector3.zero, new Vector3(0.095f, 0.098f, 0.11f)), HandColorHook.Skin);                                   // fist
-            hook.Track(Art.Part(round, Art.Capsule, dark, new Vector3(0, 0.005f, 0.055f), new Vector3(0.042f, 0.05f, 0.042f), new Vector3(0, 0, 90)), HandColorHook.Knuckles); // knuckles
-            hook.Track(Art.Part(round, Art.Capsule, skin, new Vector3(-0.045f * side, 0.025f, 0.035f), new Vector3(0.032f, 0.036f, 0.032f), new Vector3(90, 20 * side, 0)), HandColorHook.Skin); // thumb
-            hook.Track(Art.Part(round, Art.Cylinder, band, new Vector3(0, 0, -0.075f), new Vector3(0.088f, 0.018f, 0.088f), new Vector3(90, 0, 0)), HandColorHook.Band);   // wrist band
-            hook.Track(Art.Part(round, Art.Cylinder, skin, new Vector3(0, 0, -0.32f), new Vector3(0.078f, 0.23f, 0.078f), new Vector3(90, 0, 0)), HandColorHook.Skin);     // forearm
+            hook.Track(Art.Part(round, Art.Sphere, skin, new Vector3(0, -0.004f, 0.005f), new Vector3(0.062f, 0.052f, 0.118f)), HandColorHook.Skin);                  // hand
+            hook.Track(Art.Part(round, Art.Sphere, skin, new Vector3(0, -0.008f, 0.06f), new Vector3(0.054f, 0.044f, 0.06f)), HandColorHook.Skin);                    // rounded tip
+            hook.Track(Art.Part(round, Art.Capsule, dark, new Vector3(0, 0.012f, 0.042f), new Vector3(0.026f, 0.03f, 0.026f), new Vector3(0, 0, 90)), HandColorHook.Knuckles); // knuckle ridge
+            hook.Track(Art.Part(round, Art.Capsule, skin, new Vector3(-0.032f * side, 0.008f, 0.03f), new Vector3(0.02f, 0.03f, 0.02f), new Vector3(80, 25 * side, 0)), HandColorHook.Skin); // thumb
+            hook.Track(Art.Part(round, Art.Cylinder, skin, new Vector3(0, 0, -0.1f), new Vector3(0.042f, 0.06f, 0.042f), new Vector3(90, 0, 0)), HandColorHook.Skin);     // wrist
+            hook.Track(Art.Part(round, Art.Cylinder, skin, new Vector3(0, 0, -0.35f), new Vector3(0.05f, 0.21f, 0.05f), new Vector3(90, 0, 0)), HandColorHook.Skin);      // forearm
             ShowHandStyle(hand);
             foreach (var r in hand.GetComponentsInChildren<Renderer>()) r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             return hand;

@@ -20,7 +20,7 @@ namespace RockGame
         bool m_JoinFromTutorial;
         int m_Battle;              // 0: 1v1, 1: teams, 2: free for all
         int m_CapA = 2, m_CapB = 2, m_FfaN = 4, m_MapPick;
-        static readonly MapKind[] k_Maps = { MapKind.Plains, MapKind.Highlands, MapKind.Beach, MapKind.Canyon, MapKind.Frostlake, MapKind.Volcano, MapKind.Ruins,
+        static readonly MapKind[] k_Maps = { MapKind.Plains, MapKind.Highlands, MapKind.HighlandsJonah, MapKind.Beach, MapKind.Canyon, MapKind.Frostlake, MapKind.Volcano, MapKind.Ruins,
             MapKind.Islands, MapKind.Jungle, MapKind.Ice, MapKind.CherryBlossom, MapKind.Wonderland, MapKind.Swamp, MapKind.Cube, MapKind.Mars };
 
         /// <summary>The modes the main menu offers (the others are hidden for now; the dev main menu still has them all).</summary>
@@ -388,7 +388,7 @@ namespace RockGame
             float dot = 8 * k, dgap = 8 * k, dx = mid - (k_Maps.Length * dot + (k_Maps.Length - 1) * dgap) / 2f;
             for (int i = 0; i < k_Maps.Length; i++) Fill(new Rect(dx + i * (dot + dgap), y, dot, dot), i == m_MapPick ? k_Acid : new Color(1f, 1f, 1f, 0.3f));
             y += dot + 8 * k;
-            string blurb = kind == MapKind.Plains ? "Rolling grass, wheat and forests: the classic map." : kind == MapKind.Highlands ? "Wild hills and rocky ridges between the bases." : ThemeMaps.Blurb(kind);
+            string blurb = kind == MapKind.Plains ? "Rolling grass, wheat and forests: the classic map." : kind == MapKind.Highlands ? "Wild hills and rocky ridges between the bases." : kind == MapKind.HighlandsJonah ? "Jonah's version of the Highlands (the same for now)." : ThemeMaps.Blurb(kind);
             Shadowed(new Rect(mid - 450 * k, y, 900 * k, 24 * k), blurb, new GUIStyle(m_SmallWrap) { alignment = TextAnchor.MiddleCenter, wordWrap = false });
             y += 34 * k;
             // the size: one row of four, centred

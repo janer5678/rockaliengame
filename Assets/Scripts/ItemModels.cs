@@ -247,18 +247,18 @@ namespace RockGame
                 case Item.Dna: DnaArt.Helix(t, 0.34f); break;
                 case Item.AlienDust:
                 {
-                    // a bundle of sugar cane (like Minecraft's): three pale green stalks, ringed at the joints, with a few leaves
-                    Color cane = new Color(0.62f, 0.82f, 0.42f), joint = new Color(0.44f, 0.64f, 0.3f), leafC = new Color(0.36f, 0.62f, 0.26f);
-                    var stalks = new[] { new Vector3(-0.045f, 0, 0.02f), new Vector3(0.045f, 0, 0.025f), new Vector3(0f, 0, -0.04f) };
-                    var tall = new[] { 0.42f, 0.36f, 0.4f };
-                    for (int k = 0; k < 3; k++)
+                    // a little heap of redstone-like dust: flat blotches of deep red with brighter, glowing red specks in it
+                    var deep = new Color(0.55f, 0.04f, 0.03f);
+                    var hot = new Color(1f, 0.16f, 0.1f);
+                    var glowRed = new Material(Art.Mat(hot));
+                    if (glowRed.HasProperty("_EmissionColor")) { glowRed.EnableKeyword("_EMISSION"); glowRed.SetColor("_EmissionColor", hot * 1.6f); }
+                    Art.Part(t, Art.Sphere, deep, new Vector3(0, 0.03f, 0), new Vector3(0.3f, 0.07f, 0.26f));
+                    Art.Part(t, Art.Sphere, deep, new Vector3(0.02f, 0.06f, -0.01f), new Vector3(0.17f, 0.07f, 0.15f));
+                    var rs = new System.Random(77);
+                    for (int k = 0; k < 9; k++)
                     {
-                        var b = stalks[k];
-                        float h = tall[k];
-                        Art.Box(t, cane, b + new Vector3(0, h * 0.5f, 0), new Vector3(0.038f, h, 0.038f), new Vector3(0, k * 25f, 0));
-                        for (float y = 0.09f; y < h - 0.02f; y += 0.11f)
-                            Art.Box(t, joint, b + new Vector3(0, y, 0), new Vector3(0.044f, 0.014f, 0.044f), new Vector3(0, k * 25f, 0));
-                        Art.Box(t, leafC, b + new Vector3(0.025f, h * 0.62f, 0), new Vector3(0.05f, 0.012f, 0.02f), new Vector3(0, k * 60f, -30f));
+                        float a = k * 40f * Mathf.Deg2Rad, r = 0.03f + (float)rs.NextDouble() * 0.1f;
+                        Art.Box(t, hot, new Vector3(Mathf.Cos(a) * r, 0.06f + (float)rs.NextDouble() * 0.04f, Mathf.Sin(a) * r * 0.85f), Vector3.one * (0.022f + (float)rs.NextDouble() * 0.014f), new Vector3(0, k * 33f, 0), false, glowRed);
                     }
                     break;
                 }

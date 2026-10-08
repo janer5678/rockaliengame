@@ -501,3 +501,10 @@ Networking: movement is owner-authoritative (NetworkTransform in Owner mode). Re
 - **Round hands** (Settings > Display > Round hands, on by default; off = the old square hands).
 - **Theme map hooks** (`ThemeMap`): BuildBush, BuildMount / MountName (a themed rideable creature), BuildCentre, BaseHalfSize / BaseDistance (`Cfg.BaseHalf` is now per map), BoatsAnytime, IceGrip, FallRespawnMul.
 
+### Third round
+- **Jonah mode**: everything costs alien dust - every craft and building piece (`Cfg.BuildItem`); only alien dust itself is bought with wood, in a panel to the right of the crafting list and of UPGRADES. Alien dust looks like redstone.
+- **Boats**: 250 wood, slower (`ThemeMaps.BoatSpeed`), you can ride one carrying the ball, and E gets you off. Horses (and every map's mount) have twice the HP. The spear throws at once (`Cfg.SpearMinWindup` / `SpearReleaseTime` 0). The round hands are slimmer, alien-style, with no wrist band.
+- **Islands**: two teams sit corner to corner (`ThemeMap.DiagonalBases`; the glass wall turns to match); the sea is deep - off a boat you sink and drown (`ThemeMap.DeepWater`).
+- **Highlands Jonah** (`MapKind.HighlandsJonah`, `-map highlandsjonah`): a clone of the Highlands (`Cfg.IsHighlands`).
+- **Cherry Blossom backup**: `Map.CherryV1.cs` is the previous version; flip `CherryBlossomMap.UseNew` to go back (`ThemeMap.Enabled`).
+

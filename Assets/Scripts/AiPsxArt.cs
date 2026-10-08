@@ -356,7 +356,7 @@ namespace RockGame
             Color tint;
             switch (Cfg.Map)
             {
-                case MapKind.Plains: case MapKind.Highlands: case MapKind.Ruins: tint = new Color(0.42f, 0.62f, 0.3f); break;
+                case MapKind.Plains: case MapKind.Highlands: case MapKind.HighlandsJonah: case MapKind.Ruins: tint = new Color(0.42f, 0.62f, 0.3f); break;
                 case MapKind.Canyon: tint = new Color(0.72f, 0.62f, 0.34f); break;       // THEME MAPS: dry grass
                 default: return;                                                          // snow, sand, ash: no grass
             }

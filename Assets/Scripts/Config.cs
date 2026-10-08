@@ -37,7 +37,8 @@ namespace RockGame
 
     public enum MapKind : byte { Plains, Highlands,
         Beach, Canyon, Frostlake, Volcano, Ruins, // THEME MAPS (the second line)
-        Islands, Jungle, Ice, CherryBlossom, Wonderland, Swamp, Cube, Mars } // THEME MAPS (the second batch: ThemeMaps/Map.*.cs) - 4 bits in the map key, so 15 is the last
+        Islands, Jungle, Ice, CherryBlossom, Wonderland, Swamp, Cube, Mars, // THEME MAPS (the second batch: ThemeMaps/Map.*.cs)
+        HighlandsJonah } // Highlands Jonah version: a clone of the Highlands, to be changed on its own (Cfg.IsHighlands) - 4 bits in the map key: 15 is the last
 
     /// <summary>Map size: Big (the original), Small, and 1.5x / 2x versions of Big.</summary>
     public enum MapSize : byte { Big, Small, Large, Huge }
@@ -75,6 +76,8 @@ namespace RockGame
     {
         // ---------- Map (chosen by the host in the menu) ----------
         public static MapKind Map = MapKind.Plains;
+        /// <summary>The Highlands or its Jonah version clone (everything the Highlands do, the clone does too).</summary>
+        public static bool IsHighlands => Map == MapKind.Highlands || Map == MapKind.HighlandsJonah;
         public static MapSize Size = MapSize.Big;
         public static bool SmallMap => Size == MapSize.Small;
         public static float SizeScale => Size == MapSize.Large ? 1.5f : Size == MapSize.Huge ? 2f : 1f;
@@ -96,7 +99,7 @@ namespace RockGame
         /// (CentreCover.cs, or the theme map's own). Set true to bring the crash site back exactly as it was.</summary>
         public const bool CrashSiteOn = false;
         public static readonly Vector3[] BaseCenter = { new Vector3(0, 0, -75), new Vector3(0, 0, 75), new Vector3(75, 0, 0), new Vector3(-75, 0, 0) };
-        public static string MapLabel => ModeLabel + ", " + SizeLabel(Size).ToLower() + " " + (ThemeMaps.IsTheme ? ThemeMaps.Label(Map) : Map.ToString()) /* THEME MAPS */ + (WoodMode ? " (Wood mode)" : "") + (AirdropCenter ? " (airdrops in the middle)" : AirdropSides ? " (airdrops on both sides)" : "") + (RespawnLoot ? " (respawn loot)" : "");
+        public static string MapLabel => ModeLabel + ", " + SizeLabel(Size).ToLower() + " " + ThemeMaps.Label(Map) /* THEME MAPS */ + (WoodMode ? " (Wood mode)" : "") + (AirdropCenter ? " (airdrops in the middle)" : AirdropSides ? " (airdrops on both sides)" : "") + (RespawnLoot ? " (respawn loot)" : "");
         /// <summary>Airdrops come down on both sides (one in each half, each on its own timer) instead of anywhere.</summary>
         public static bool AirdropSides;
         /// <summary>Airdrops always come down in the middle of the map.</summary>
@@ -252,12 +255,18 @@ namespace RockGame
             var tm = ThemeMaps.CustomFor(Map); // THEME MAPS (smaller bases / further out)
             s_BaseHalf = tm != null ? tm.BaseHalfSize : 18f;
             if (tm != null && tm.BaseDistance > 0f) d = Mathf.Round(tm.BaseDistance / Cell) * Cell;
+            s_Diagonal = tm != null && tm.DiagonalBases && TeamCount == 2;
             // blue south, red north, green east, yellow west
             BaseCenter[0] = new Vector3(0, 0, -d);
             BaseCenter[1] = new Vector3(0, 0, d);
             BaseCenter[2] = new Vector3(d, 0, 0);
             BaseCenter[3] = new Vector3(-d, 0, 0);
+            if (s_Diagonal) { BaseCenter[0] = new Vector3(-d, 0, -d); BaseCenter[1] = new Vector3(d, 0, d); } // THEME MAPS (Islands: corner to corner)
         }
+
+        static bool s_Diagonal;
+        /// <summary>Two teams on the diagonal (a theme map's DiagonalBases): the glass wall between them is turned 45 degrees.</summary>
+        public static bool DiagonalBases => s_Diagonal;
 
         // ---------- Bedrock spawn + alien machine ----------
         // Every base has an unbreakable 2x2-cell silver bedrock in its middle. You spawn on it; the alien machine
@@ -417,7 +426,7 @@ namespace RockGame
         [Tune("Hatchet")] public static float HatchetCooldown = 0.7f, HatchetRange = 2.5f, HatchetPlayerDamage = 14f, HatchetWoodGather = 15f, HatchetStoneGather = 2f, HatchetStructureDamage = 12f;
         [Tune("Pickaxe")] public static float PickaxeCooldown = 0.8f, PickaxeRange = 2.5f, PickaxePlayerDamage = 14f, PickaxeWoodGather = 3f, PickaxeStoneGather = 12f, PickaxeStructureDamage = 12f;
         [Tune("Spear")] public static float SpearCooldown = 0.9f, SpearRange = 3.4f, SpearPlayerDamage = 35f, SpearWoodGather = 2f, SpearStoneGather = 1f, SpearStructureDamage = 10f;
-        [Tune("Spear")] public static float SpearDrawTime = 0.6f, SpearThrowSpeed = 30f, SpearThrowDamage = 90f, SpearThrowStructureDamage = 8f;
+        [Tune("Spear")] public static float SpearDrawTime = 0.05f /* (full power at once: an instant throw) */, SpearThrowSpeed = 30f, SpearThrowDamage = 90f, SpearThrowStructureDamage = 8f;
         [Tune("Chainsaw")] public static float ChainsawCooldown = 0.15f, ChainsawRange = 2.4f, ChainsawPlayerDamage = 8f, ChainsawWoodGather = 12f, ChainsawStoneGather = 10f, ChainsawStructureDamage = 12f;
         [Tune("Melee")] public static float StoneStructureMeleeMul = 0.2f; // stone is very hard to melee - bring a ram
 
@@ -435,7 +444,7 @@ namespace RockGame
         /// <summary>Spear throw timing (s): the shortest wind-up before it can be let go, how long a click is remembered
         /// (pressed during the wind-up or the recovery it throws as soon as it can), the arm coming through before the spear
         /// leaves the hand (it can't be called off once started), the recovery after a throw and lowering it again.</summary>
-        [Tune("Spear")] public static float SpearMinWindup = 0.3f, SpearInputBuffer = 0.4f, SpearReleaseTime = 0.1f, SpearThrowRecovery = 0.55f, SpearLowerTime = 0.2f;
+        [Tune("Spear")] public static float SpearMinWindup = 0f, SpearInputBuffer = 0.4f, SpearReleaseTime = 0f, /* (instant throw) */ SpearThrowRecovery = 0.55f, SpearLowerTime = 0.2f;
 
         // ---------- Battering ram (hand held) ----------
         // Hold LMB to wind up, then it slams whatever enemy piece you look at:
@@ -485,7 +494,7 @@ namespace RockGame
 
         // ---------- Vehicles ----------
         [Tune("Vehicles")] public static float CarSpeed = 17f, CarReverseSpeed = 6f, CarAccel = 9f, CarTurn = 95f, CarHitDamage = 30f, CarKnockback = 11f;
-        [Tune("Vehicles")] public static float HorseWalk = 4.5f, HorseSprint = 11f, HorseJump = 8.5f, HorseHp = 60f;
+        [Tune("Vehicles")] public static float HorseWalk = 4.5f, HorseSprint = 11f, HorseJump = 8.5f, HorseHp = 120f; // (doubled: the horse and every map's own mount)
         [Tune("Vehicles")] public static int HorsesPerSide = 3;
         /// <summary>The chance (0..1) each wild horse is a Wild Unicorn instead: white with a horn, a little faster and tougher,
         /// and it leaves a rainbow behind it at a gallop.</summary>

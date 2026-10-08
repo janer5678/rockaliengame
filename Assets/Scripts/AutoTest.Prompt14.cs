@@ -175,7 +175,7 @@ namespace RockGame
             var wb = Cfg.GetRecipe(Cfg.RecipeIndex(Item.Workbench));
             var hatchet = Cfg.GetRecipe(Cfg.RecipeIndex(Item.Hatchet));
             Check(wb.Dust > 0 && wb.Wood == 0, $"the Trade Station costs alien dust ({wb.Dust})");
-            Check(hatchet.Wood > 0 && hatchet.Dust == 0, "the hatchet still costs wood");
+            Check(hatchet.Wood == 0 && hatchet.Dust > 0 && Cfg.BuildItem == Item.AlienDust, "everything costs alien dust: the hatchet, and building pieces");
             Check(Cfg.GetRecipe(Cfg.RecipeIndex(Item.Crossbow)).Dust > 0 && Cfg.GetRecipe(Cfg.RecipeIndex(Item.Armor)).Dust > 0, "everything from the trade stations costs alien dust (crossbow, armour)");
             var dr = Cfg.GetRecipe(Cfg.RecipeIndex(Item.AlienDust));
             Check(dr.Count == 1000 && dr.Wood == 1000 && Cfg.CraftTier(Item.AlienDust) == 0, "1000 alien dust for 1000 wood, from the start");

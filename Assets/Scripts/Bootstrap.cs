@@ -122,7 +122,7 @@ namespace RockGame
                     case "-map":
                         if (i + 1 < args.Length)
                         {
-                            MapChoice = (MapChoice & ~15) | (args[i + 1].ToLowerInvariant().StartsWith("h") ? (int)MapKind.Highlands : (int)MapKind.Plains);
+                            MapChoice = (MapChoice & ~15) | (args[i + 1].ToLowerInvariant() == "highlandsjonah" ? (int)MapKind.HighlandsJonah : args[i + 1].ToLowerInvariant().StartsWith("h") ? (int)MapKind.Highlands : (int)MapKind.Plains);
                             foreach (var tk in ThemeMaps.Kinds) if (args[i + 1].ToLowerInvariant() == tk.ToString().ToLowerInvariant()) MapChoice = (MapChoice & ~15) | (int)tk; // THEME MAPS
                         }
                         break;
