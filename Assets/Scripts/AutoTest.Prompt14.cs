@@ -22,6 +22,25 @@ namespace RockGame
             g.TimerPaused.Value = true;
             if (Cfg.Jonah) { yield return JonahRoutine(me, pc); Log("prompt14 done"); Application.Quit(0); yield break; }
 
+            // ---- the theme maps' light never sticks: Swamp, then Jungle straight after it, then back to this map - exactly as before
+            {
+                var home = Cfg.Map;
+                pc.SetLook(Quaternion.LookRotation(-Cfg.BackDir(team)).eulerAngles.y, 5f);
+                yield return Snap("p14_light_before");
+                var sun = RenderSettings.sun;
+                var amb0 = RenderSettings.ambientSkyColor;
+                var sun0 = sun != null ? sun.color : Color.white;
+                foreach (var k in new[] { MapKind.Swamp, MapKind.Jungle, MapKind.Mars, home })
+                {
+                    Cfg.Map = k;
+                    MapBuilder.Build();
+                    yield return new WaitForSeconds(0.6f);
+                }
+                Check(ThemeMaps.LightingIsPristine() && RenderSettings.ambientSkyColor == amb0 && (sun == null || sun.color == sun0),
+                    $"after Swamp, Jungle and Mars the light is exactly the game's own again (ambient {RenderSettings.ambientSkyColor} vs {amb0}, sun {(sun != null ? sun.color : Color.white)} vs {sun0})");
+                yield return Snap("p14_light_after");
+            }
+
             // ---- items
             Check(Cfg.CraftTier(Item.Chainsaw) == 2 && Cfg.CraftTier(Item.Saddle) == 2, "the chainsaw and saddle are Advanced Trade Station items");
             int ci = Cfg.RecipeIndex(Item.Chainsaw);

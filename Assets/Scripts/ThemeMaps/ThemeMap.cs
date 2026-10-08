@@ -65,7 +65,7 @@ namespace RockGame
     {
         public ThemeMap Map;
         void Update() { Map?.ClientTick(); }
-        void OnDestroy() { Map?.Cleanup(); }
+        void OnDestroy() { ThemeMaps.RunnerGone(this); }
     }
 
     public static partial class ThemeMaps
@@ -119,14 +119,113 @@ namespace RockGame
             return go;
         }
 
-        /// <summary>After MapBuilder.Build: the custom map's sky and its per-frame runner.</summary>
+        // ---- the game's own lighting, exactly as it was before any of these maps touched it ----
+        static bool s_Pristine;
+        static Material s_PSky;
+        static bool s_PSkyTint, s_PSkyExp, s_PSkyGround, s_PSkyThick;
+        static Color s_PTint, s_PGround;
+        static float s_PExp, s_PThick;
+        static bool s_PFog;
+        static FogMode s_PFogMode;
+        static Color s_PFogCol, s_PAmbSky, s_PAmbEq, s_PAmbGround, s_PAmbLight, s_PSunCol;
+        static float s_PFogDens, s_PFogStart, s_PFogEnd, s_PAmbInt, s_PSunInt;
+        static UnityEngine.Rendering.AmbientMode s_PAmbMode;
+        static Light s_PSun;
+        static ThemeMap s_Live;
+        static ThemeMapRunner s_LiveRunner;
+
+        static Light FindSun()
+        {
+            if (RenderSettings.sun != null) return RenderSettings.sun;
+            foreach (var l in Object.FindObjectsByType<Light>(FindObjectsSortMode.None))
+                if (l.type == LightType.Directional && l.enabled) return l;
+            return null;
+        }
+
+        /// <summary>Once, before any of these maps has changed anything: the sky, fog, ambient light and sun as the game has them.</summary>
+        static void SnapshotPristine()
+        {
+            if (s_Pristine) return;
+            s_Pristine = true;
+            s_PSky = RenderSettings.skybox;
+            if (s_PSky != null)
+            {
+                if (s_PSkyTint = s_PSky.HasProperty("_SkyTint")) s_PTint = s_PSky.GetColor("_SkyTint");
+                if (s_PSkyExp = s_PSky.HasProperty("_Exposure")) s_PExp = s_PSky.GetFloat("_Exposure");
+                if (s_PSkyGround = s_PSky.HasProperty("_GroundColor")) s_PGround = s_PSky.GetColor("_GroundColor");
+                if (s_PSkyThick = s_PSky.HasProperty("_AtmosphereThickness")) s_PThick = s_PSky.GetFloat("_AtmosphereThickness");
+            }
+            s_PFog = RenderSettings.fog; s_PFogMode = RenderSettings.fogMode; s_PFogCol = RenderSettings.fogColor;
+            s_PFogDens = RenderSettings.fogDensity; s_PFogStart = RenderSettings.fogStartDistance; s_PFogEnd = RenderSettings.fogEndDistance;
+            s_PAmbMode = RenderSettings.ambientMode; s_PAmbSky = RenderSettings.ambientSkyColor; s_PAmbEq = RenderSettings.ambientEquatorColor;
+            s_PAmbGround = RenderSettings.ambientGroundColor; s_PAmbLight = RenderSettings.ambientLight; s_PAmbInt = RenderSettings.ambientIntensity;
+            s_PSun = FindSun();
+            if (s_PSun != null) { s_PSunCol = s_PSun.color; s_PSunInt = s_PSun.intensity; }
+        }
+
+        /// <summary>Puts the game's own lighting back exactly (a theme map is going, or being swapped for another). The maps'
+        /// own save-and-restore could save another map's light as "how it was" when one replaced another (the menu's map
+        /// preview, a new match), and the game stayed tinted - golden swamp light everywhere - for the rest of the session.</summary>
+        static void RestorePristine()
+        {
+            if (!s_Pristine) return;
+            RenderSettings.skybox = s_PSky;
+            if (s_PSky != null)
+            {
+                if (s_PSkyTint) s_PSky.SetColor("_SkyTint", s_PTint);
+                if (s_PSkyExp) s_PSky.SetFloat("_Exposure", s_PExp);
+                if (s_PSkyGround) s_PSky.SetColor("_GroundColor", s_PGround);
+                if (s_PSkyThick) s_PSky.SetFloat("_AtmosphereThickness", s_PThick);
+            }
+            RenderSettings.fog = s_PFog; RenderSettings.fogMode = s_PFogMode; RenderSettings.fogColor = s_PFogCol;
+            RenderSettings.fogDensity = s_PFogDens; RenderSettings.fogStartDistance = s_PFogStart; RenderSettings.fogEndDistance = s_PFogEnd;
+            RenderSettings.ambientMode = s_PAmbMode; RenderSettings.ambientSkyColor = s_PAmbSky; RenderSettings.ambientEquatorColor = s_PAmbEq;
+            RenderSettings.ambientGroundColor = s_PAmbGround; RenderSettings.ambientLight = s_PAmbLight; RenderSettings.ambientIntensity = s_PAmbInt;
+            if (s_PSun != null) { s_PSun.color = s_PSunCol; s_PSun.intensity = s_PSunInt; }
+            DynamicGI.UpdateEnvironment();
+            WorldLook.Apply(); // (the sky's tint from Settings > Display, as the player has it)
+        }
+
+        /// <summary>Test hook: is the lighting exactly the game's own right now?</summary>
+        public static bool LightingIsPristine()
+        {
+            if (!s_Pristine) return true;
+            return RenderSettings.skybox == s_PSky && RenderSettings.fog == s_PFog && RenderSettings.ambientMode == s_PAmbMode
+                && RenderSettings.ambientSkyColor == s_PAmbSky && RenderSettings.ambientEquatorColor == s_PAmbEq && RenderSettings.ambientGroundColor == s_PAmbGround
+                && (s_PSun == null || (s_PSun.color == s_PSunCol && Mathf.Approximately(s_PSun.intensity, s_PSunInt)));
+        }
+
+        /// <summary>After MapBuilder.Build (every map): the last theme map's light goes (back to the game's own, exactly),
+        /// then this one's sky and per-frame runner if it's one of these maps.</summary>
         public static void AfterBuild(Transform root)
         {
+            SnapshotPristine();
+            if (s_Live != null)
+            {
+                var old = s_Live;
+                s_Live = null;
+                s_LiveRunner = null;
+                try { old.Cleanup(); } catch (System.Exception e) { Debug.LogException(e); }
+                RestorePristine();
+            }
             var m = Custom;
             if (m == null) return;
             m.ApplySky();
             if (!m.Dome) foreach (var r in MapDome.Renderers) if (r != null) r.enabled = false;
-            root.gameObject.AddComponent<ThemeMapRunner>().Map = m;
+            s_Live = m;
+            s_LiveRunner = root.gameObject.AddComponent<ThemeMapRunner>();
+            s_LiveRunner.Map = m;
+        }
+
+        /// <summary>A map's runner went with its world: if that map is still the live one (nothing replaced it), its light goes.</summary>
+        internal static void RunnerGone(ThemeMapRunner r)
+        {
+            if (r != s_LiveRunner || s_Live == null) return;
+            var old = s_Live;
+            s_Live = null;
+            s_LiveRunner = null;
+            try { old.Cleanup(); } catch (System.Exception e) { Debug.LogException(e); }
+            RestorePristine();
         }
 
         static float s_NextFall;
