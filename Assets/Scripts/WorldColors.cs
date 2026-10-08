@@ -309,12 +309,29 @@ namespace RockGame
     public class HandColorHook : MonoBehaviour
     {
         public const int Skin = 0, Knuckles = 1, Band = 2;
+        /// <summary>The alien hands (ViewModel.Hands.cs): a dark blue skin and the fingertip pads a shade darker, in a
+        /// slightly glossy material (smooth and polished, like the rest of the game's rounded art) - not the team / picked hand colour.</summary>
+        public const int AlienSkin = 3, AlienPad = 4;
+        public static readonly Color AlienBlue = new Color32(26, 43, 117, 255), AlienBluePad = new Color32(20, 34, 91, 255); // (exact bytes: no rounding drift)
+        static readonly Dictionary<Color, Material> s_Polished = new Dictionary<Color, Material>();
+
+        /// <summary>A gently glossy material in this colour (the alien hands').</summary>
+        static Material Polished(Color c)
+        {
+            if (s_Polished.TryGetValue(c, out var m) && m) return m;
+            m = Art.NewMat(c);
+            if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.45f);
+            s_Polished[c] = m;
+            return m;
+        }
         Color m_Team;
         readonly List<(Renderer r, int part)> m_Parts = new List<(Renderer, int)>();
 
         /// <summary>The colour of one part of the hands for this team.</summary>
         public static Color Shade(Color team, int part)
         {
+            if (part == AlienSkin) return AlienBlue;
+            if (part == AlienPad) return AlienBluePad;
             var skin = ColorSlots.HandTint(team);
             if (part == Band) return team;
             if (part == Knuckles) { var dark = skin * 0.85f; dark.a = 1f; return dark; }
@@ -332,15 +349,26 @@ namespace RockGame
         public GameObject Track(GameObject box, int part)
         {
             var r = box != null ? box.GetComponent<Renderer>() : null;
-            if (r != null) m_Parts.Add((r, part));
+            if (r != null)
+            {
+                m_Parts.Add((r, part));
+                if (part >= AlienSkin) r.sharedMaterial = Polished(Shade(m_Team, part)); // (the alien hands: dark blue straight away)
+            }
             return box;
         }
 
         /// <summary>(tests) Every part of this hand in its colour now.</summary>
+        /// <summary>(tests) The last part AllShaded found in the wrong colour.</summary>
+        public static string LastMismatch = "";
         public bool AllShaded(out int parts)
         {
             parts = m_Parts.Count;
-            foreach (var p in m_Parts) if (p.r == null || !ColorSlots.Same(p.r.sharedMaterial.color, Shade(m_Team, p.part))) return false;
+            foreach (var p in m_Parts)
+                if (p.r == null || !ColorSlots.Same(p.r.sharedMaterial.color, Shade(m_Team, p.part)))
+                {
+                    LastMismatch = p.r == null ? "a destroyed part" : $"{p.r.name} (part {p.part}): {ColorUtility.ToHtmlStringRGB(p.r.sharedMaterial.color)} vs {ColorUtility.ToHtmlStringRGB(Shade(m_Team, p.part))}";
+                    return false;
+                }
             return parts > 0;
         }
 
@@ -354,7 +382,7 @@ namespace RockGame
             {
                 if (p.r == null) continue;
                 var c = Shade(m_Team, p.part);
-                if (p.r.sharedMaterial == null || p.r.sharedMaterial.color != c) p.r.sharedMaterial = Art.Mat(c);
+                if (p.r.sharedMaterial == null || p.r.sharedMaterial.color != c) p.r.sharedMaterial = p.part >= AlienSkin ? Polished(c) : Art.Mat(c);
             }
         }
     }

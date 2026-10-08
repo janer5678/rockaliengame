@@ -268,7 +268,7 @@ namespace RockGame
             // ---- the colour setting reaches the boxes ----
             int hooks = 0, shaded = 0;
             foreach (var hook in FindObjectsByType<HandColorHook>(FindObjectsSortMode.None)) { hooks++; if (hook.AllShaded(out int n) && n > 5) shaded++; }
-            Check(hooks == 2 && shaded == 2, $"both hands' parts (square and alien) are in their colours ({shaded} / {hooks})");
+            Check(hooks == 2 && shaded == 2, $"both hands' parts (square and alien) are in their colours ({shaded} / {hooks}{(shaded < hooks ? ": " + HandColorHook.LastMismatch : "")})");
 
             // ---- PSX graphics: the same block hands (with the PSX items) ----
             GameSettings.SetGraphics(1, false);

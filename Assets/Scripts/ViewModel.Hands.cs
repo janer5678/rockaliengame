@@ -83,7 +83,7 @@ namespace RockGame
             Vector3 M(float x, float y, float z) => new Vector3(x * sx, y, z);
             Vector3 ME(float x, float y, float z) => new Vector3(x, y * sx, z * sx);
             void P(Transform t, Mesh mesh, Color c, Vector3 pos, Vector3 scale, Vector3 euler, int part = HandColorHook.Skin)
-                => hook.Track(Art.Part(t, mesh, c, pos, scale, euler, false, null, part == HandColorHook.Skin ? "skin" : "pad"), part);
+                => hook.Track(Art.Part(t, mesh, c, pos, scale, euler, false, null, part == HandColorHook.Skin ? "skin" : "pad"), part == HandColorHook.Skin ? HandColorHook.AlienSkin : HandColorHook.AlienPad); // (the alien hands: their own dark blue, polished)
 
             var a = new AlienArm { Right = right };
             a.Root = Node(arm, "alien", Vector3.zero);
@@ -153,7 +153,7 @@ namespace RockGame
         {
             long key = ((long)Mathf.RoundToInt(r0 * 1e5f) << 42) ^ ((long)Mathf.RoundToInt(r1 * 1e5f) << 21) ^ Mathf.RoundToInt(len * 1e5f);
             if (s_Lathes.TryGetValue(key, out var cached) && cached != null) return cached;
-            const int sides = 14, cap = 5;
+            const int sides = 36, cap = 10; // (fine enough that no facet or corner shows, even right in front of the camera)
             var prof = new List<Vector4>(); // (z, r, normal z, normal r)
             var body = new Vector2(-(r1 - r0) / Mathf.Max(1e-4f, len), 1f).normalized;
             for (int i = 0; i <= cap; i++)
@@ -205,25 +205,25 @@ namespace RockGame
             int idx = right ? 0 : 1;
             if (s_Palms[idx] != null) return s_Palms[idx];
             float sx = right ? 1f : -1f;
-            const int sides = 24;
+            const int sides = 56;
             var ring = new List<Vector4>(); // (z, half width, half thickness, how far along the palm 0..1)
             const float z0 = -0.004f, z1 = 0.08f, cap = 0.009f;
             float W(float t) => Mathf.Lerp(0.0165f, 0.0285f, Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t / 0.7f)));
             float T(float t) => Mathf.Lerp(0.0135f, 0.0098f, Mathf.SmoothStep(0f, 1f, t));
-            for (int k = 4; k >= 1; k--) // (the dome inside the wrist)
+            for (int k = 8; k >= 1; k--) // (the dome inside the wrist)
             {
-                float ph = Mathf.PI * 0.5f * k / 4f;
+                float ph = Mathf.PI * 0.5f * k / 8f;
                 ring.Add(new Vector4(z0 - cap * Mathf.Sin(ph), W(0f) * Mathf.Cos(ph), T(0f) * Mathf.Cos(ph), 0f));
             }
-            const int along = 14;
+            const int along = 32;
             for (int k = 0; k <= along; k++)
             {
                 float t = k / (float)along;
                 ring.Add(new Vector4(Mathf.Lerp(z0, z1, t), W(t), T(t), t));
             }
-            for (int k = 1; k <= 5; k++) // (the dome over the knuckles)
+            for (int k = 1; k <= 10; k++) // (the dome over the knuckles)
             {
-                float ph = Mathf.PI * 0.5f * k / 5f;
+                float ph = Mathf.PI * 0.5f * k / 10f;
                 ring.Add(new Vector4(z1 + cap * Mathf.Sin(ph), W(1f) * Mathf.Cos(ph), T(1f) * Mathf.Cos(ph), 1f));
             }
             var v = new List<Vector3>();
