@@ -40,8 +40,40 @@ namespace RockGame
         /// <summary>Its own trees: build the look under `tr` (the trunk collider + weak spots stay), hide the trunk's renderer, return true.</summary>
         public virtual bool BuildTree(Transform tr, int seed, float h, GameObject trunk) => false;
 
+        /// <summary>Its own berry bush look: build under `tr` (the bush's trigger collider stays), return true.</summary>
+        public virtual bool BuildBush(Transform tr, int seed) => false;
+
+        /// <summary>Its own rideable creature instead of the horse (ridden exactly like one). Build under `t`, like
+        /// Vehicle.CreateVisual's horse: about the same size (rider's seat ~1.5 m up), `legs` = 4 transforms pivoting at the
+        /// hips (they swing as it walks), `head` (it bobs / grazes), `tail`, and `saddle` (shown once saddled) holding a
+        /// child named "blanket" (tinted the saddler's team colour). Give the body parts BoxColliders on
+        /// PlayerNet.HitboxLayer when ghost == null (so shots hit it), and the head its own solid BoxCollider named "horse head".
+        /// Return true.</summary>
+        public virtual bool BuildMount(Transform t, Material ghost, bool unicorn, out Transform saddle, out Transform head, out Transform tail, List<Transform> legs)
+        {
+            saddle = head = tail = null;
+            return false;
+        }
+        /// <summary>What the rideable creature is called ("Wild ..." / "Saddled ..."), null = Horse.</summary>
+        public virtual string MountName => null;
+
+        /// <summary>Its own middle of the map, round the ball (no crashed UFO any more - CentreCover.cs is the default
+        /// cover). Return true if it built one (false = the default cover).</summary>
+        public virtual bool BuildCentre(Transform root) => false;
+
+        /// <summary>The bases' half size (the default 18 m: 36 x 36). A multiple of 3 (the build grid).</summary>
+        public virtual float BaseHalfSize => 18f;
+        /// <summary>How far each base's centre is from the middle (0 = the usual). A multiple of 3.</summary>
+        public virtual float BaseDistance => 0f;
+        /// <summary>Boats can be crafted from the start (no trade station).</summary>
+        public virtual bool BoatsAnytime => false;
+        /// <summary>A player who falls to their death respawns this many times as fast.</summary>
+        public virtual float FallRespawnMul => 1f;
+
         /// <summary>Ice: you keep sliding the way you were going.</summary>
         public virtual bool Slippery(Vector3 p) => false;
+        /// <summary>How fast your speed can change on its ice (m/s²; Frostlake's is 3.5 - lower slides more).</summary>
+        public virtual float IceGrip => 3.5f;
         public virtual float SpeedMul(Vector3 p) => 1f;
 
         /// <summary>Players below this height die (falling off the map / into a hole). Keep it above -30 (the client's safety net).</summary>

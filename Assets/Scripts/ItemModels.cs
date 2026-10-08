@@ -135,7 +135,7 @@ namespace RockGame
                     // the High Strength ram: a thicker log, banded in dark iron with a red strap and a spiked iron head
                     var iron = new Color(0.22f, 0.22f, 0.25f);
                     var strap = new Color(0.7f, 0.15f, 0.12f);
-                    Art.Part(t, Art.Cylinder, Art.DarkWood, new Vector3(0, 0, 0.1f), new Vector3(0.3f, 0.62f, 0.3f), new Vector3(90, 0, 0));
+                    Art.Part(t, Art.Cylinder, new Color(0.47f, 0.47f, 0.5f), new Vector3(0, 0, 0.1f), new Vector3(0.3f, 0.62f, 0.3f), new Vector3(90, 0, 0)); // (grey: the High Strength ram's iron-cored body)
                     Art.Part(t, Art.Cylinder, iron, new Vector3(0, 0, 0.7f), new Vector3(0.36f, 0.08f, 0.36f), new Vector3(90, 0, 0));
                     Art.Box(t, iron, new Vector3(0, 0, 0.8f), new Vector3(0.28f, 0.28f, 0.12f));
                     Art.Part(t, Art.Cone, iron, new Vector3(0, 0, 0.92f), new Vector3(0.14f, 0.1f, 0.14f), new Vector3(90, 0, 0));
@@ -247,15 +247,19 @@ namespace RockGame
                 case Item.Dna: DnaArt.Helix(t, 0.34f); break;
                 case Item.AlienDust:
                 {
-                    // a little glass vial of glowing purple dust, with a heap of it spilt beside it
-                    var dust = new Color(0.72f, 0.45f, 1f);
-                    var glow = new Material(Art.Mat(dust));
-                    if (glow.HasProperty("_EmissionColor")) { glow.EnableKeyword("_EMISSION"); glow.SetColor("_EmissionColor", dust * 1.8f); }
-                    Art.Part(t, Art.Cylinder, new Color(0.85f, 0.9f, 1f), new Vector3(0, 0.14f, 0), new Vector3(0.13f, 0.14f, 0.13f));
-                    Art.Part(t, Art.Cylinder, dust, new Vector3(0, 0.11f, 0), new Vector3(0.11f, 0.1f, 0.11f), default, false, glow);
-                    Art.Part(t, Art.Cylinder, Art.DarkWood, new Vector3(0, 0.29f, 0), new Vector3(0.08f, 0.02f, 0.08f));
-                    Art.Part(t, Art.Sphere, dust, new Vector3(0.12f, 0.025f, 0.04f), new Vector3(0.12f, 0.05f, 0.1f), default, false, glow);
-                    Art.Part(t, Art.Sphere, dust, new Vector3(-0.1f, 0.02f, -0.05f), new Vector3(0.07f, 0.035f, 0.07f), default, false, glow);
+                    // a bundle of sugar cane (like Minecraft's): three pale green stalks, ringed at the joints, with a few leaves
+                    Color cane = new Color(0.62f, 0.82f, 0.42f), joint = new Color(0.44f, 0.64f, 0.3f), leafC = new Color(0.36f, 0.62f, 0.26f);
+                    var stalks = new[] { new Vector3(-0.045f, 0, 0.02f), new Vector3(0.045f, 0, 0.025f), new Vector3(0f, 0, -0.04f) };
+                    var tall = new[] { 0.42f, 0.36f, 0.4f };
+                    for (int k = 0; k < 3; k++)
+                    {
+                        var b = stalks[k];
+                        float h = tall[k];
+                        Art.Box(t, cane, b + new Vector3(0, h * 0.5f, 0), new Vector3(0.038f, h, 0.038f), new Vector3(0, k * 25f, 0));
+                        for (float y = 0.09f; y < h - 0.02f; y += 0.11f)
+                            Art.Box(t, joint, b + new Vector3(0, y, 0), new Vector3(0.044f, 0.014f, 0.044f), new Vector3(0, k * 25f, 0));
+                        Art.Box(t, leafC, b + new Vector3(0.025f, h * 0.62f, 0), new Vector3(0.05f, 0.012f, 0.02f), new Vector3(0, k * 60f, -30f));
+                    }
                     break;
                 }
                 case Item.Arrow:

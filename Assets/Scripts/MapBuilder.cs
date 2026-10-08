@@ -145,7 +145,8 @@ namespace RockGame
             if (ThemeMaps.IsTheme) ThemeMaps.BuildProps(root); // THEME MAPS
 
             // ---------- the crashed UFO round the ball, in the ball zone (no yellow circle any more: the crash's dirt and rubble) ----------
-            CrashSite.Build(root);
+            if (Cfg.CrashSiteOn) CrashSite.Build(root);
+            else if (ThemeMaps.Custom == null || !ThemeMaps.Custom.BuildCentre(root)) CentreCover.Build(root); // (cover round the ball instead)
             // ---------- a signpost on the other side of the ball, an arrow pointing at every team's base ----------
             CentreSign.Build(root);
 

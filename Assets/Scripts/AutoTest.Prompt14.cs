@@ -41,6 +41,11 @@ namespace RockGame
                 yield return Snap("p14_light_after");
             }
 
+            // ---- no crashed UFO: cover round the ball instead; no auto turret to craft
+            Check(CrashSite.Current == null && MapBuilder.Root != null && MapBuilder.Root.Find("CentreCover") != null, "no crashed UFO in the middle, cover round the ball instead");
+            Check(Cfg.CraftIndexOf(Item.AutoTurret) < 0, "the auto turret is out for now");
+            yield return Snap("p14_centre");
+
             // ---- items
             Check(Cfg.CraftTier(Item.Chainsaw) == 2 && Cfg.CraftTier(Item.Saddle) == 2, "the chainsaw and saddle are Advanced Trade Station items");
             int ci = Cfg.RecipeIndex(Item.Chainsaw);
@@ -107,6 +112,22 @@ namespace RockGame
             Check(lad == null || !lad.IsSpawned, "the ladder breaks with its wall");
             Check(g.Items.Count <= items0, "...and drops nothing");
 
+            // ---- a ladder can't go right up at the top of a large wall (the spikes)
+            {
+                var bp = front - side * 10f;
+                bp.y = MapBuilder.Height(bp.x, bp.z);
+                var big = Instantiate(Bootstrap.I.structurePrefab, bp, Quaternion.Euler(0, yaw, 0)).GetComponent<Structure>();
+                big.ServerInit(PieceType.Barrier, team, default, false);
+                big.NetworkObject.Spawn(true);
+                yield return new WaitForSeconds(0.4f);
+                var foot = bp - Quaternion.Euler(0, yaw, 0) * Vector3.forward * 0.45f;
+                float maxFoot = Deployables.LadderMaxFoot(big);
+                var high = foot; high.y = maxFoot + 0.6f;
+                var ok = foot; ok.y = maxFoot - 0.1f;
+                Check(PlayerNet.DeployProblem(Item.Ladder, team, high, yaw) == "Too high - the spikes are in the way" && PlayerNet.DeployProblem(Item.Ladder, team, ok, yaw) == null,
+                    $"a ladder can't be put up at the very top of a large wall (max foot {maxFoot - bp.y:0.0} m up)");
+            }
+
             // ---- the turret: any weapon, arrows only
             me.ServerGive(Item.AutoTurret, 1);
             var tp = Cfg.BaseCenter[team] - Cfg.BackDir(team) * 9f + side * 6f;
@@ -155,28 +176,20 @@ namespace RockGame
             var hatchet = Cfg.GetRecipe(Cfg.RecipeIndex(Item.Hatchet));
             Check(wb.Dust > 0 && wb.Wood == 0, $"the Trade Station costs alien dust ({wb.Dust})");
             Check(hatchet.Wood > 0 && hatchet.Dust == 0, "the hatchet still costs wood");
-            var conv = JonahMode.ConverterOf(team);
-            Check(conv != null && conv.Slots.Count == 1, "a converter at our upgrade station");
-            me.ServerGive(Item.Wood, 600);
+            Check(Cfg.GetRecipe(Cfg.RecipeIndex(Item.Crossbow)).Dust > 0 && Cfg.GetRecipe(Cfg.RecipeIndex(Item.Armor)).Dust > 0, "everything from the trade stations costs alien dust (crossbow, armour)");
+            var dr = Cfg.GetRecipe(Cfg.RecipeIndex(Item.AlienDust));
+            Check(dr.Count == 1000 && dr.Wood == 1000 && Cfg.CraftTier(Item.AlienDust) == 0, "1000 alien dust for 1000 wood, from the start");
+            me.ServerGive(Item.Wood, 1000);
             var st = Cfg.UpgradeStationPos(team);
             pc.LocalTeleport(st - Cfg.BackDir(team) * -2.2f + Vector3.up * 0.1f, Quaternion.LookRotation(-Cfg.BackDir(team)).eulerAngles.y + 180f);
             yield return new WaitForSeconds(0.4f);
             pc.OpenUpgrades();
-            yield return new WaitForSeconds(0.3f);
-            Check(pc.LootTarget == conv, "E on the station opens UPGRADES with the converter");
-            int woodSlot = -1;
-            for (int i = 0; i < me.Inv.Count; i++) if (me.Inv[i].Id == Item.Wood) woodSlot = i;
-            if (conv != null && woodSlot >= 0)
-            {
-                me.MoveItemRpc(0, (byte)woodSlot, 1, 0, 500, conv.NetworkObject);
-                yield return new WaitForSeconds(0.4f);
-                Check(conv.Slots[0].Id == Item.Wood && conv.Slots[0].Count == 500, "500 wood dragged into the converter");
-                yield return Snap("p14_jonah_converter");
-                int dust0 = me.Count(Item.AlienDust);
-                me.ConvertDustRpc(conv.NetworkObject);
-                yield return new WaitForSeconds(0.4f);
-                Check(me.Count(Item.AlienDust) - dust0 == 500 && conv.Slots[0].Empty, $"CONVERT: 500 alien dust ({me.Count(Item.AlienDust) - dust0})");
-            }
+            yield return new WaitForSeconds(0.4f);
+            yield return Snap("p14_jonah_station");
+            int dust0 = me.Count(Item.AlienDust);
+            me.CraftRpc(Cfg.CraftIndexOf(Item.AlienDust));
+            yield return new WaitForSeconds(0.5f);
+            Check(me.Count(Item.AlienDust) - dust0 == 1000, $"BUY: 1000 alien dust ({me.Count(Item.AlienDust) - dust0})");
             pc.CloseMenu();
             // Upgrade 10 Walls: twelve walls, pick ten in the void
             var front = Cfg.BaseCenter[team] - Cfg.BackDir(team) * 6f;
@@ -188,10 +201,11 @@ namespace RockGame
                 at.y = MapBuilder.Height(at.x, at.z);
                 walls.Add(SpawnKeylessPiece(PieceType.Wall, team, at, Quaternion.LookRotation(-Cfg.BackDir(team))));
             }
-            me.ServerGive(Item.AlienDust, 1000);
-            yield return new WaitForSeconds(0.5f);
+                        yield return new WaitForSeconds(0.5f);
             pc.LocalTeleport(st - Cfg.BackDir(team) * -2.2f + Vector3.up * 0.1f, 0f);
             yield return new WaitForSeconds(0.3f);
+            pc.SetLook(37f, 12f);
+            yield return null;
             var at0 = me.transform.position;
             WallPicker.Begin();
             yield return new WaitForSeconds(0.6f);
@@ -203,7 +217,7 @@ namespace RockGame
             WallPicker.TestPick(ids);
             yield return new WaitForSeconds(0.8f);
             Check(!WallPicker.Active, "the 10th pick closes the picker");
-            Check(Vector3.Distance(me.transform.position, at0) < 1f, "...back where we were");
+            Check(Vector3.Distance(me.transform.position, at0) < 0.3f && Mathf.Abs(Mathf.DeltaAngle(pc.LookYaw, 37f)) < 1f && Mathf.Abs(pc.LookPitch - 12f) < 1f, "...back exactly where we were, looking the same way");
             int up = 0;
             for (int i = 0; i < 12; i++) if (walls[i] != null && walls[i].Tier.Value == 1) up++;
             Check(up == 10 && walls[10].Tier.Value == 0, $"ten walls went up a tier ({up}), the others didn't");

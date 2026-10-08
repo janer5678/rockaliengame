@@ -48,9 +48,8 @@ namespace RockGame
             Shadowed(new Rect(x, top - 36 * k, colW, 32 * k), CurrencyText(me), CraftStyle(17 * k, FontStyle.Bold, TextAnchor.MiddleRight, Color.white));
             Cfg.BaseUpgrades(m_UpgradeTmp);
             if (ev.type == EventType.Repaint) UpgradeRowsShown.Clear();
-            // Jonah mode: the wood -> alien dust converter on top
-            var conv = pc.LootTarget;
-            if (conv != null && conv.IsConverter) top = DrawConverter(me, pc, conv, x, top, colW, k);
+            // Jonah mode: buying alien dust with wood, on top (it's in the crafting list too)
+            if (Cfg.Jonah) top = DrawDustBuy(me, pc, x, top, colW, k);
 
             // a heading in the crafting list's style, then the rows
             float headH = 24 * k, row = 92 * k, gap = 6 * k;
@@ -71,27 +70,28 @@ namespace RockGame
                 Shadowed(new Rect(x, y + 4 * k, colW, Mathf.Max(40 * k, bottom - y)), hint, hintStyle);
         }
 
-        /// <summary>Jonah mode: the converter - its slot (drag wood in), how much dust that makes and CONVERT. Returns where the rows start.</summary>
-        float DrawConverter(PlayerNet me, PlayerController pc, Container c, float x, float top, float colW, float k)
+        /// <summary>Jonah mode: "1000 Alien Dust for 1000 wood" and a BUY button (the same craft as in the TAB list). Returns where the rows start.</summary>
+        float DrawDustBuy(PlayerNet me, PlayerController pc, float x, float top, float colW, float k)
         {
-            var dust = new Color(0.78f, 0.6f, 1f);
-            float headH = 24 * k;
-            Shadowed(new Rect(x + 2 * k, top, colW, headH - 3 * k), "<b>WOOD → ALIEN DUST</b>  <color=#bbbbbb>1 wood = 1 alien dust</color>",
-                CraftStyle(Mathf.Min(15 * k, headH * 0.7f), FontStyle.Bold, TextAnchor.MiddleLeft, dust));
-            Fill(new Rect(x, top + headH - 4 * k, colW, 2 * k), new Color(dust.r, dust.g, dust.b, 0.6f));
-            float y = top + headH + 4 * k, slot = 72 * k;
-            Fill(new Rect(x, y, colW, slot + 12 * k), new Color(0.12f, 0.08f, 0.18f, 0.75f));
-            var sr = new Rect(x + 8 * k, y + 6 * k, slot, slot);
-            DrawSlot(sr, c.Slots.Count > 0 ? c.Slots[0] : default, 1, 0, false, me, pc);
-            int wood = c.Slots.Count > 0 && c.Slots[0].Id == Item.Wood ? c.Slots[0].Count : 0;
-            float tx = sr.xMax + 10 * k, bw = Mathf.Min(140 * k, colW * 0.3f);
-            var br = new Rect(x + colW - bw - 8 * k, y + 6 * k + slot * 0.18f, bw, slot * 0.64f);
-            string info = wood > 0 ? $"<b>{wood} wood</b> → <color=#c79bff><b>{wood} alien dust</b></color>" : "<color=#bbbbbb>Drag wood into the slot (or Shift + click it in your bag).</color>";
-            GUI.Label(new Rect(tx, y + 6 * k, br.x - tx - 6 * k, slot), info, CraftStyle(15 * k, FontStyle.Normal, TextAnchor.MiddleLeft, Color.white, true));
-            bool ok = wood > 0;
-            if (FlatBtn(br, ok ? new Color(0.45f, 0.25f, 0.75f) : k_BtnNo, new Color(0.6f, 0.35f, 0.95f), ok)) { me.ConvertDustRpc(c.NetworkObject); Sfx.PlayUi(Sfx.UiClick, 0.8f, 0.7f); }
-            GUI.Label(br, "CONVERT", CraftStyle(Mathf.Min(17 * k, slot * 0.24f), FontStyle.Bold, TextAnchor.MiddleCenter, ok ? Color.white : new Color(1, 1, 1, 0.35f)));
-            return y + slot + 12 * k + 14 * k;
+            var dust = new Color(0.62f, 0.82f, 0.42f);
+            int idx = Cfg.CraftIndexOf(Item.AlienDust);
+            if (idx < 0) return top;
+            var r = Cfg.CraftRecipe(idx, me.Team.Value);
+            float row = 64 * k;
+            var rr = new Rect(x, top, colW, row);
+            bool ok = me.CanAfford(r);
+            Fill(rr, new Color(0.1f, 0.16f, 0.08f, 0.8f));
+            Fill(new Rect(rr.x, rr.y, 4 * k, rr.height), dust);
+            var icon = ItemIcons.Get(Item.AlienDust);
+            if (icon != null) GUI.DrawTexture(new Rect(rr.x + 10 * k, rr.y + 6 * k, row - 12 * k, row - 12 * k), icon, ScaleMode.ScaleToFit, true);
+            float bw = Mathf.Min(120 * k, colW * 0.26f);
+            var br = new Rect(rr.xMax - bw - 8 * k, rr.y + row * 0.18f, bw, row * 0.64f);
+            float tx = rr.x + row + 6 * k;
+            GUI.Label(new Rect(tx, rr.y + 4 * k, br.x - tx, row * 0.5f), $"<b>{r.Count} Alien Dust</b>", CraftStyle(17 * k, FontStyle.Bold, TextAnchor.MiddleLeft, Color.white, true));
+            GUI.Label(new Rect(tx, rr.y + row * 0.5f, br.x - tx, row * 0.45f), CostColored(me, r), CraftStyle(15 * k, FontStyle.Bold, TextAnchor.MiddleLeft, Color.white, true));
+            if (FlatBtn(br, ok ? k_BtnOk : k_BtnNo, k_BtnOkHi, ok)) { me.CraftRpc(idx); Sfx.PlayUi(Sfx.UiClick, 0.8f, 0.7f); }
+            GUI.Label(br, "BUY", CraftStyle(Mathf.Min(17 * k, row * 0.3f), FontStyle.Bold, TextAnchor.MiddleCenter, ok ? Color.white : new Color(1, 1, 1, 0.35f)));
+            return top + row + 10 * k;
         }
 
         /// <summary>One row: icon, name + level pips, what the next level does, its price, and UPGRADE.</summary>

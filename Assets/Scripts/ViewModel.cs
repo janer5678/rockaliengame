@@ -93,6 +93,7 @@ namespace RockGame
             m_ItemHolder = new GameObject("item").transform;
             m_ItemHolder.SetParent(m_Root, false);
             GameSettings.GraphicsChanged += OnGraphicsChanged;
+            GameSettings.HandStyleChanged += OnHandStyle;
             // the hands and what's held are shaded smooth or flat as Settings > Display > SHADING says
             m_Smooth = SmoothShadeHook.Add(m_Root.gameObject, false);
         }
@@ -105,6 +106,7 @@ namespace RockGame
         public void Destroy()
         {
             GameSettings.GraphicsChanged -= OnGraphicsChanged;
+            GameSettings.HandStyleChanged -= OnHandStyle;
             if (m_Root) Object.Destroy(m_Root.gameObject);
         }
 
@@ -170,14 +172,40 @@ namespace RockGame
             var skin = HandColorHook.Shade(team, HandColorHook.Skin);
             var dark = HandColorHook.Shade(team, HandColorHook.Knuckles);
             var band = HandColorHook.Shade(team, HandColorHook.Band);
-            hook.Track(Art.Box(hand, skin, Vector3.zero, new Vector3(0.085f, 0.09f, 0.1f)), HandColorHook.Skin);                                  // fist
-            hook.Track(Art.Box(hand, dark, new Vector3(0, 0.005f, 0.055f), new Vector3(0.09f, 0.075f, 0.035f)), HandColorHook.Knuckles);         // knuckles
-            hook.Track(Art.Box(hand, skin, new Vector3(-0.045f * side, 0.025f, 0.035f), new Vector3(0.03f, 0.03f, 0.065f), new Vector3(0, 20 * side, 0)), HandColorHook.Skin); // thumb
-            hook.Track(Art.Box(hand, band, new Vector3(0, 0, -0.075f), new Vector3(0.082f, 0.082f, 0.035f)), HandColorHook.Band);                // wrist band
-            hook.Track(Art.Box(hand, skin, new Vector3(0, 0, -0.32f), new Vector3(0.072f, 0.072f, 0.46f)), HandColorHook.Skin);                  // forearm
+            // the old square hands (Settings > Display > Round hands off brings them back)
+            var square = new GameObject("square").transform;
+            square.SetParent(hand, false);
+            hook.Track(Art.Box(square, skin, Vector3.zero, new Vector3(0.085f, 0.09f, 0.1f)), HandColorHook.Skin);                                  // fist
+            hook.Track(Art.Box(square, dark, new Vector3(0, 0.005f, 0.055f), new Vector3(0.09f, 0.075f, 0.035f)), HandColorHook.Knuckles);         // knuckles
+            hook.Track(Art.Box(square, skin, new Vector3(-0.045f * side, 0.025f, 0.035f), new Vector3(0.03f, 0.03f, 0.065f), new Vector3(0, 20 * side, 0)), HandColorHook.Skin); // thumb
+            hook.Track(Art.Box(square, band, new Vector3(0, 0, -0.075f), new Vector3(0.082f, 0.082f, 0.035f)), HandColorHook.Band);                // wrist band
+            hook.Track(Art.Box(square, skin, new Vector3(0, 0, -0.32f), new Vector3(0.072f, 0.072f, 0.46f)), HandColorHook.Skin);                  // forearm
+            // the round hands: the same parts, the same sizes and places, but round - a ball of a fist, a rounded knuckle
+            // ridge, a capsule thumb, a ring of a wrist band and a tube of a forearm (Art.Cylinder is 2 tall: its y scale is half the length)
+            var round = new GameObject("round").transform;
+            round.SetParent(hand, false);
+            hook.Track(Art.Part(round, Art.Sphere, skin, Vector3.zero, new Vector3(0.095f, 0.098f, 0.11f)), HandColorHook.Skin);                                   // fist
+            hook.Track(Art.Part(round, Art.Capsule, dark, new Vector3(0, 0.005f, 0.055f), new Vector3(0.042f, 0.05f, 0.042f), new Vector3(0, 0, 90)), HandColorHook.Knuckles); // knuckles
+            hook.Track(Art.Part(round, Art.Capsule, skin, new Vector3(-0.045f * side, 0.025f, 0.035f), new Vector3(0.032f, 0.036f, 0.032f), new Vector3(90, 20 * side, 0)), HandColorHook.Skin); // thumb
+            hook.Track(Art.Part(round, Art.Cylinder, band, new Vector3(0, 0, -0.075f), new Vector3(0.088f, 0.018f, 0.088f), new Vector3(90, 0, 0)), HandColorHook.Band);   // wrist band
+            hook.Track(Art.Part(round, Art.Cylinder, skin, new Vector3(0, 0, -0.32f), new Vector3(0.078f, 0.23f, 0.078f), new Vector3(90, 0, 0)), HandColorHook.Skin);     // forearm
+            ShowHandStyle(hand);
             foreach (var r in hand.GetComponentsInChildren<Renderer>()) r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             return hand;
         }
+
+        /// <summary>Round or square hands, as Settings > Display > Round hands says.</summary>
+        static void ShowHandStyle(Transform hand)
+        {
+            if (hand == null) return;
+            bool round = GameSettings.RoundHands;
+            var sq = hand.Find("square");
+            var rd = hand.Find("round");
+            if (sq) sq.gameObject.SetActive(!round);
+            if (rd) rd.gameObject.SetActive(round);
+        }
+
+        void OnHandStyle() { ShowHandStyle(m_R); ShowHandStyle(m_L); }
 
         static float Smooth(float t) { t = Mathf.Clamp01(t); return t * t * (3f - 2f * t); }
 

@@ -86,6 +86,17 @@ namespace RockGame
             return null;
         }
 
+        /// <summary>The top of a building piece (world y).</summary>
+        public static float PieceTop(Structure s)
+        {
+            float top = float.MinValue;
+            foreach (var col in s.GetComponentsInChildren<Collider>()) if (!col.isTrigger) top = Mathf.Max(top, col.bounds.max.y);
+            return top;
+        }
+
+        /// <summary>A large wall / gate: the highest a ladder's foot may stand against it (its top stays below the spikes).</summary>
+        public static float LadderMaxFoot(Structure s) => PieceTop(s) - Cfg.LadderSpikeGap - LadderHeight;
+
         static readonly Dictionary<Container, float> s_LadderCheck = new Dictionary<Container, float>();
 
         /// <summary>Server: a ladder whose wall has gone breaks with it.</summary>

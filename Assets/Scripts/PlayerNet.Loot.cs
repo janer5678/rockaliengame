@@ -82,15 +82,14 @@ namespace RockGame
             else { Inv[HeldSlot.Value] = ItemStack.Of(Item.PortalGun, 1, left); Notify("Portal placed - shoot again for the other end"); }
         }
 
-        float m_NextWallClimb;
-        /// <summary>Hauled yourself over a large wall / gate from a ladder: the spikes on top hurt.</summary>
+        float m_NextSpike;
+        /// <summary>Going over a large wall / gate from a ladder: every half second on the spikes hurts (rate-limited here).</summary>
         [Rpc(SendTo.Server)]
-        public void ClimbOverWallRpc()
+        public void WallSpikesRpc()
         {
-            if (Dead.Value || Time.time < m_NextWallClimb) return;
-            m_NextWallClimb = Time.time + Cfg.WallClimbTime * 0.8f;
-            ServerDamage(Cfg.WallClimbDamage, null, KillCause.Died);
-            Notify($"The spikes on top of the wall cut you (-{Cfg.WallClimbDamage:0} HP)");
+            if (Dead.Value || Time.time < m_NextSpike) return;
+            m_NextSpike = Time.time + 0.4f;
+            ServerDamage(Cfg.WallClimbDps * 0.5f, null, KillCause.Died);
         }
 
         /// <summary>How close to a portal a ram has to hit to smash it.</summary>

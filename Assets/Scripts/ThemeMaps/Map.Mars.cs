@@ -11,7 +11,9 @@ namespace RockGame
     /// (a walkable path over the rim on each side), and a TUNNEL SYSTEM runs under it: a square ring of tunnels under the
     /// rim (4.4 m below ground, its own floor, walls and roof - real colliders), a tunnel from it straight up into the
     /// crater through a portal in the crater wall for each team, and two long tunnels out from its corners to covered
-    /// ramps up to the surface near each base. Orange lamps, steel ribs and cyan guide strips inside. Glowing lava seams
+    /// ramps up to the surface near each base (roomy: 3.8 m high, 4.8 m wide, nothing hanging low; a climbing tunnel stays
+    /// level until it's out from under the one it leaves). Orange lamps, steel ribs and cyan guide strips inside.
+    /// The crater floor has cover round the ball (BuildCentre); the horses are six-legged Dust Striders. Glowing lava seams
     /// round the crater floor and down the slopes (just to look at), smoke rising from vents on the rim.
     /// </summary>
     public class MarsMap : ThemeMap
@@ -23,13 +25,20 @@ namespace RockGame
         public override float MaxSpotHeight => 3f;
 
         static float Half => Cfg.MapHalf;
-        const float CraterR = 17f, Df = 4.4f, Inner = 3.6f, RoofT = 0.7f, HalfW = 2.2f, OuterW = 4.2f, RampLen = 12f, PassFrac = 0.15f;
+        // (the tunnels are roomy: 3.8 m floor to roof, 4.8 m wall to wall - you used to catch on the roof where a tunnel
+        // climbed out from under another one)
+        const float CraterR = 17f, Df = 4.4f, Inner = 3.8f, RoofT = 0.5f, HalfW = 2.4f, OuterW = 4.4f, RampLen = 12f, PassFrac = 0.15f;
+        /// <summary>A climbing tunnel stays level this far out of the tunnel it leaves (so you're clear of that one's roof),
+        /// and a ramp this far.</summary>
+        const float ClimbFlat = OuterW + 0.4f, RampFlat = 2.8f;
         static float RimPeakR => CraterR + 3.5f;
         static float RimH => Cfg.SmallMap ? 6.5f : Half >= 150f ? 12f : 10f;
         static float BaseIn => Cfg.BaseCenter[0].magnitude - Cfg.BaseHalf;
         static float RimOut => Mathf.Clamp(Mathf.Min(Half * 0.42f, BaseIn - 4f), RimPeakR + 5f, 52f);
         /// <summary>The tunnel ring's half size (even: the tunnels line up with the ground's 2 m grid).</summary>
-        static float Rq => Cfg.SmallMap ? 24f : Half >= 150f ? 28f : 26f;
+        static float Rq => Cfg.SmallMap ? 24f : Half >= 150f ? 32f : 30f;
+        /// <summary>How far from the middle the tunnel up into the crater comes out (in the crater, through its wall).</summary>
+        static float CraterExit => Mathf.Min(CraterR - 1f, Rq - 12f);
 
         static readonly Color k_Rock = new Color(0.52f, 0.27f, 0.18f), k_Rock2 = new Color(0.45f, 0.23f, 0.16f), k_Floor = new Color(0.33f, 0.24f, 0.21f);
         static readonly Color k_Metal = new Color(0.27f, 0.26f, 0.28f), k_Lava = new Color(1f, 0.42f, 0.1f), k_Lamp = new Color(1f, 0.62f, 0.28f), k_Guide = new Color(0.3f, 0.85f, 1f);
@@ -46,8 +55,8 @@ namespace RockGame
             public float Floor(float s)
             {
                 if (Kind == 0) return -Df;
-                if (Kind == 1) return -Df * (1f - Mathf.Clamp01(s / Mathf.Max(0.1f, L - 2f)));
-                return -Df * (1f - Mathf.Clamp01(s / L));
+                if (Kind == 1) return -Df * (1f - Mathf.Clamp01((s - ClimbFlat) / Mathf.Max(0.1f, L - 1.2f - ClimbFlat)));
+                return -Df * (1f - Mathf.Clamp01((s - RampFlat) / Mathf.Max(0.1f, L - RampFlat)));
             }
             public bool Roofed(float s) => Kind != 2 || Floor(s) < -1.8f;
             public void Local(float x, float z, out float s, out float lat)
@@ -81,7 +90,7 @@ namespace RockGame
             var first = new List<(Vector2 a, Vector2 b, int kind)>
             {
                 (new Vector2(-R, -R), new Vector2(R, -R), 0),
-                (new Vector2(0, -R), new Vector2(0, -(CraterR - 1f)), 1),
+                (new Vector2(0, -R), new Vector2(0, -CraterExit), 1),
             };
             if (!Cfg.FourWay) { first.Add((new Vector2(R, -R), new Vector2(R, 0), 0)); first.Add((new Vector2(-R, -R), new Vector2(-R, 0), 0)); }
             for (int sx = -1; sx <= 1; sx += 2)
@@ -225,7 +234,7 @@ namespace RockGame
             foreach (var g in s_Segs)
             {
                 g.Local(cx, cz, out float s, out float lat);
-                if (Mathf.Abs(lat) >= 4f) continue;
+                if (Mathf.Abs(lat) >= OuterW) continue;
                 float sMin = g.OpenA ? 0f : -4f, sMax = g.OpenB ? g.L : g.L + 4f;
                 if (s < sMin || s > sMax) continue;
                 float sc = Mathf.Clamp(s, 0f, g.L);
@@ -393,22 +402,23 @@ namespace RockGame
                 {
                     if (!g.Roofed(s)) continue;
                     float f = g.Floor(s), c = f + Inner;
-                    var pL = g.P(s, -2.02f, 0); var pR = g.P(s, 2.02f, 0);
+                    float rl = HalfW - 0.12f;
+                    var pL = g.P(s, -rl, 0); var pR = g.P(s, rl, 0);
                     if (InsideOther(g, pL) || InsideOther(g, pR)) continue;
-                    Block(k, null, g, s - 0.17f, s + 0.17f, -2.02f, 0.3f, f, c, k_Metal);
-                    Block(k, null, g, s - 0.17f, s + 0.17f, 2.02f, 0.3f, f, c, k_Metal);
-                    Block(k, null, g, s - 0.17f, s + 0.17f, 0f, 4.3f, c - 0.34f, c, k_Metal);
+                    Block(k, null, g, s - 0.17f, s + 0.17f, -rl, 0.24f, f, c, k_Metal);
+                    Block(k, null, g, s - 0.17f, s + 0.17f, rl, 0.24f, f, c, k_Metal);
+                    Block(k, null, g, s - 0.17f, s + 0.17f, 0f, HalfW * 2f - 0.1f, c - 0.16f, c, k_Metal);
                     if (n % 2 == 0)
                     {
-                        float ls = (n / 2) % 2 == 0 ? -2.12f : 2.12f;
-                        Block(lamps, null, g, s + 1.2f, s + 2f, ls, 0.12f, f + 2.45f, f + 2.8f, Color.white);
+                        float ls = (n / 2) % 2 == 0 ? -(HalfW - 0.05f) : HalfW - 0.05f;
+                        Block(lamps, null, g, s + 1.2f, s + 2f, ls, 0.1f, f + 2.6f, f + 2.95f, Color.white);
                     }
                 }
                 for (float s0 = Mathf.Max(0f, fa); s0 < Mathf.Min(L, fb) - 0.01f; s0 += 2f)
                 {
                     float s1 = Mathf.Min(s0 + 2f, L);
                     for (int side = -1; side <= 1; side += 2)
-                        Slab(glow, null, g, s0, s1, g.Floor(s0) + 0.03f, g.Floor(s1) + 0.03f, 0.04f, side * 1.9f, 0.1f, Color.white);
+                        Slab(glow, null, g, s0, s1, g.Floor(s0) + 0.02f, g.Floor(s1) + 0.02f, 0.03f, side * (HalfW - 0.3f), 0.1f, Color.white);
                 }
                 // ---- the portals: a steel frame with hazard stripes where it opens out
                 if (g.Kind == 1) Portal(k, lamps, g, L - 0.15f, true);
@@ -428,19 +438,20 @@ namespace RockGame
         {
             float f = g.Floor(Mathf.Clamp(s, 0f, g.L)), c = f + Inner;
             var hazardY = new Color(0.95f, 0.75f, 0.15f);
+            float px = HalfW + 0.22f; // (the posts stand just outside the tunnel's width: nothing to catch on)
             for (int side = -1; side <= 1; side += 2)
             {
-                Block(k, null, g, s - 0.25f, s + 0.25f, side * 2.4f, 0.5f, f - 0.2f, c + 0.6f, k_Metal);
-                for (int i = 0; i < 4; i++) Block(k, null, g, s + 0.22f, s + 0.27f, side * 2.4f, 0.52f, f + 0.4f + i * 0.8f, f + 0.8f + i * 0.8f, i % 2 == 0 ? hazardY : new Color(0.12f, 0.12f, 0.12f));
+                Block(k, null, g, s - 0.25f, s + 0.25f, side * px, 0.44f, f - 0.2f, c + 0.6f, k_Metal);
+                for (int i = 0; i < 4; i++) Block(k, null, g, s + 0.22f, s + 0.27f, side * px, 0.46f, f + 0.4f + i * 0.85f, f + 0.82f + i * 0.85f, i % 2 == 0 ? hazardY : new Color(0.12f, 0.12f, 0.12f));
             }
-            Block(k, null, g, s - 0.25f, s + 0.25f, 0f, 5.3f, c, c + 0.65f, k_Metal);
-            for (int i = 0; i < 7; i++) Block(k, null, g, s + 0.22f, s + 0.27f, -2.4f + i * 0.8f, 0.8f, c + 0.1f, c + 0.55f, i % 2 == 0 ? hazardY : new Color(0.12f, 0.12f, 0.12f));
-            Block(glow, null, g, s - 0.1f, s + 0.1f, 0f, 4.2f, c - 0.12f, c, Color.white);
+            Block(k, null, g, s - 0.25f, s + 0.25f, 0f, px * 2f + 0.44f, c, c + 0.6f, k_Metal);
+            for (int i = 0; i < 7; i++) Block(k, null, g, s + 0.22f, s + 0.27f, -px + i * px / 3f, px / 3f, c + 0.1f, c + 0.5f, i % 2 == 0 ? hazardY : new Color(0.12f, 0.12f, 0.12f));
+            Block(glow, null, g, s - 0.3f, s - 0.25f, 0f, HalfW * 2f - 0.4f, c + 0.12f, c + 0.42f, Color.white); // (a light strip on the beam's inside face)
             if (!crater)
             {
                 // a beacon on top, so you can spot the way in
-                Block(k, null, g, s - 0.15f, s + 0.15f, 2.4f, 0.2f, c + 0.6f, c + 2.2f, k_Metal);
-                Block(glow, null, g, s - 0.2f, s + 0.2f, 2.4f, 0.4f, c + 2.2f, c + 2.6f, Color.white);
+                Block(k, null, g, s - 0.15f, s + 0.15f, px, 0.2f, c + 0.6f, c + 2.2f, k_Metal);
+                Block(glow, null, g, s - 0.2f, s + 0.2f, px, 0.4f, c + 2.2f, c + 2.6f, Color.white);
             }
         }
 
@@ -736,6 +747,204 @@ namespace RockGame
             ThemeKitB.Ball(k, new Vector3(-0.5f, 0.42f, 0.75f).normalized * 950f, new Vector3(26f, 19f, 22f), Quaternion.Euler(20f, 40f, 0f), new Color(0.62f, 0.55f, 0.52f), 1, 0.25f, 9);
             ThemeKitB.Ball(k, new Vector3(0.7f, 0.55f, -0.45f).normalized * 1000f, new Vector3(10f, 8f, 9f), Quaternion.Euler(0f, 10f, 30f), new Color(0.7f, 0.64f, 0.6f), 0, 0.2f, 4);
             ThemeKitB.Spawn(m_Sky, "moons", k, ThemeKitB.Glow(new Color(0.78f, 0.7f, 0.66f), 0.9f), false);
+        }
+
+        // ================================================================ the crater floor: cover round the ball
+        /// <summary>The crater floor round the ball: clusters of boulders, stubby basalt columns across the way in from each
+        /// team's tunnel, and a smoking lava vent - the same in every team's part, all clear of the ball's few metres, the
+        /// tunnel mouths and the sign.</summary>
+        public override bool BuildCentre(Transform root)
+        {
+            Layout();
+            var t = new GameObject("crater cover").transform;
+            t.SetParent(root, false);
+            var cols = new GameObject("crater cover colliders").transform;
+            cols.SetParent(t, false);
+            var k = new MeshKit(); var lava = new MeshKit();
+            var rng = new System.Random(Cfg.MapSeed + 3131);
+            float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
+            float span = 360f / Cfg.Copies;
+            float th0 = Mathf.Atan2(Cfg.BaseCenter[0].z, Cfg.BaseCenter[0].x) * Mathf.Rad2Deg;
+            Vector3 Dir(float deg) { float a = deg * Mathf.Deg2Rad; return new Vector3(Mathf.Cos(a), 0, Mathf.Sin(a)); }
+            Color[] rock = { new Color(0.42f, 0.2f, 0.15f), new Color(0.5f, 0.25f, 0.17f), new Color(0.34f, 0.17f, 0.14f) };
+            var basalt = new Color(0.22f, 0.16f, 0.16f);
+            float wallR = Mathf.Min(10.5f, CraterExit - 4.5f);
+
+            // the layout of one part (random once, the same for every team)
+            var boulders = new List<(float a, float r, float s, int seed)>();
+            for (int sgn = -1; sgn <= 1; sgn += 2)
+            {
+                float a = sgn * span * R(0.22f, 0.3f), r = R(8.5f, 10.5f);
+                boulders.Add((a, r, R(1.25f, 1.6f), rng.Next()));
+                boulders.Add((a + sgn * R(5f, 9f), r + R(1.2f, 2f), R(0.8f, 1.1f), rng.Next()));
+            }
+            var columns = new List<(float lat, float h, float rad)>();
+            for (int i = 0; i < 5; i++) columns.Add(((i - 2) * 0.78f + R(-0.1f, 0.1f), R(1.3f, 2.3f) * (i == 0 || i == 4 ? 0.75f : 1f), R(0.42f, 0.5f)));
+            float ventA = span * 0.5f, ventR = 9.5f;
+
+            for (int m = 0; m < Cfg.Copies; m++)
+            {
+                float baseA = th0 + m * span;
+                // boulder clusters
+                foreach (var b in boulders)
+                {
+                    var c = Dir(baseA + b.a) * b.r;
+                    var rot = Quaternion.Euler(0, b.seed % 360, 0);
+                    var radii = new Vector3(b.s, b.s * 0.8f, b.s * 0.9f);
+                    ThemeKitB.Ball(k, c + Vector3.up * b.s * 0.55f, radii, rot, rock[b.seed & 1], 1, 0.22f, b.seed & 1023);
+                    ThemeKitB.Ball(k, c + rot * new Vector3(b.s * 0.9f, 0.2f, b.s * 0.4f), radii * 0.45f, rot, rock[2], 0, 0.25f, (b.seed >> 3) & 1023);
+                    ThemeKitB.BoxCol(cols, c + Vector3.up * b.s * 0.55f, radii * 1.5f, rot);
+                }
+                // basalt columns across the way in from this team's tunnel (a gap to go round on each side)
+                {
+                    var o = Dir(baseA); var sd = new Vector3(-o.z, 0, o.x);
+                    var c = o * wallR;
+                    foreach (var col in columns)
+                    {
+                        var p = c + sd * col.lat;
+                        ThemeKitB.Cyl(k, p + Vector3.down * 0.2f, p + Vector3.up * col.h, col.rad, col.rad * 0.92f, 6, basalt, false, true, col.lat);
+                        ThemeKitB.CapCol(cols, p, p + Vector3.up * col.h, col.rad * 0.9f);
+                    }
+                    k.Box(c + sd * 2.2f + Vector3.up * 0.15f, new Vector3(1.1f, 0.3f, 0.7f), Quaternion.LookRotation(o), basalt * 1.2f, MeshKit.All); // (a fallen piece)
+                }
+                // a lava vent: a low ring of rock (you can hop it) round a glowing pool, smoke rising
+                {
+                    var c = Dir(baseA + ventA) * ventR;
+                    ThemeKitB.Cyl(k, c + Vector3.down * 0.1f, c + Vector3.up * 0.75f, 1.6f, 1.15f, 9, rock[2], false, false, m);
+                    ThemeKitB.Cyl(k, c + Vector3.up * 0.75f, c + Vector3.up * 0.55f, 1.15f, 0.85f, 9, rock[0], false, false, m, true);
+                    ThemeKitB.Cyl(lava, c + Vector3.up * 0.5f, c + Vector3.up * 0.56f, 0.9f, 0.9f, 9, Color.white, false, true, m);
+                    ThemeKitB.BoxCol(cols, c + Vector3.up * 0.35f, new Vector3(2.4f, 0.75f, 2.4f), Quaternion.identity);
+                    ThemeKitB.BoxCol(cols, c + Vector3.up * 0.35f, new Vector3(2.4f, 0.75f, 2.4f), Quaternion.Euler(0, 45f, 0));
+                    m_Vents.Add(c + Vector3.up * 0.4f);
+                }
+            }
+            // smoke over the vents (same as the rim's)
+            var puffKit = new MeshKit();
+            ThemeKitB.Ball(puffKit, Vector3.zero, Vector3.one, Quaternion.identity, new Color(0.34f, 0.29f, 0.28f), 1, 0.15f, 3);
+            var puffMesh = puffKit.ToMesh("vent puff");
+            var puffs = new GameObject("vent smoke");
+            puffs.transform.SetParent(t, false);
+            puffs.AddComponent<OwnedMesh>().Mesh = puffMesh;
+            int pi = 0;
+            foreach (var v in m_Vents)
+                for (int j = 0; j < 2; j++)
+                {
+                    var go = new GameObject("puff");
+                    go.transform.SetParent(puffs.transform, false);
+                    go.AddComponent<MeshFilter>().sharedMesh = puffMesh;
+                    var mr = go.AddComponent<MeshRenderer>();
+                    mr.sharedMaterial = ThemeKitB.Painted();
+                    mr.shadowCastingMode = ShadowCastingMode.Off;
+                    m_Puffs.Add((go.transform, v, j / 2f + (pi++ % 5) * 0.13f));
+                }
+            m_Vents.Clear();
+            ThemeKitB.Spawn(t, "crater rocks", k, null, true);
+            ThemeKitB.Spawn(t, "crater lava", lava, ThemeKitB.Glow(k_Lava, 2.2f), false);
+            return true;
+        }
+
+        readonly List<Vector3> m_Vents = new List<Vector3>();
+
+        // ================================================================ the Dust Strider (the horse here) and the glow-pod bush
+        public override string MountName => "Dust Strider";
+
+        /// <summary>A six-legged Martian beast: rust-red hide, armour plates down its back, a wide flat head with four glowing
+        /// eyes and two feelers, a spiked tail (a unicorn: a pale one with a gold horn).</summary>
+        public override bool BuildMount(Transform t, Material ghost, bool unicorn, out Transform saddle, out Transform head, out Transform tail, List<Transform> legs)
+        {
+            var hide = unicorn ? new Color(0.92f, 0.88f, 0.84f) : new Color(0.62f, 0.3f, 0.2f);
+            var plate = unicorn ? new Color(0.8f, 0.74f, 0.7f) : new Color(0.38f, 0.18f, 0.14f);
+            var under = unicorn ? new Color(1f, 0.95f, 0.9f) : new Color(0.78f, 0.52f, 0.36f);
+            var eye = ThemeKitB.Glow(unicorn ? new Color(1f, 0.82f, 0.35f) : new Color(0.35f, 1f, 0.85f), 2.4f);
+            // body: long and low, plates down the back
+            ThemeKitB.MHit(Art.Box(t, hide, new Vector3(0, 1.12f, -0.05f), new Vector3(0.7f, 0.55f, 1.65f)), ghost);
+            Art.Box(t, under, new Vector3(0, 0.82f, -0.05f), new Vector3(0.56f, 0.1f, 1.45f));
+            for (int i = 0; i < 4; i++)
+                Art.Box(t, plate, new Vector3(0, 1.4f, -0.72f + i * 0.4f + (i >= 2 ? 0.25f : 0f)), new Vector3(0.62f, 0.1f, 0.34f), new Vector3(-8f, 0, 0));
+            for (int i = 0; i < 3; i++)
+                Art.Part(t, Art.Cone, plate, new Vector3(0, 1.44f, -0.75f + i * 0.2f), new Vector3(0.1f, 0.16f + i * 0.02f, 0.14f)); // (spines behind the seat)
+            // head: wide, flat, four eyes, feelers, mandibles (pivots to "graze")
+            var neck = ThemeKitB.MPivot(t, "neck", new Vector3(0, 1.22f, 0.8f));
+            ThemeKitB.MHit(Art.Box(neck, hide, new Vector3(0, 0.05f, 0.06f), new Vector3(0.46f, 0.36f, 0.3f), new Vector3(10, 0, 0)), ghost);
+            ThemeKitB.MHead(neck, ghost, hide, new Vector3(0, 0.16f, 0.36f), new Vector3(0.6f, 0.26f, 0.46f));
+            Art.Box(neck, plate, new Vector3(0, 0.31f, 0.33f), new Vector3(0.62f, 0.06f, 0.42f));
+            for (int s = -1; s <= 1; s += 2)
+            {
+                for (int e = 0; e < 2; e++)
+                    Art.Part(neck, Art.Sphere, Color.white, new Vector3(s * (0.12f + e * 0.13f), 0.22f - e * 0.03f, 0.59f - e * 0.04f), Vector3.one * (0.09f - e * 0.02f), default, false, eye);
+                Art.Box(neck, plate, new Vector3(s * 0.12f, 0.02f, 0.62f), new Vector3(0.06f, 0.06f, 0.22f), new Vector3(0, -s * 25f, 0)); // mandibles
+                var feeler = Art.Box(neck, plate, new Vector3(s * 0.16f, 0.5f, 0.42f), new Vector3(0.03f, 0.42f, 0.03f), new Vector3(30f, 0, s * -18f));
+                Art.Part(neck, Art.Sphere, Color.white, new Vector3(s * 0.23f, 0.68f, 0.54f), Vector3.one * 0.07f, default, false, eye);
+                feeler.name = "feeler";
+            }
+            if (unicorn) ThemeKitB.MHorn(neck, new Vector3(0, 0.34f, 0.5f));
+            head = neck;
+            // a segmented tail with a spike
+            var tl = ThemeKitB.MPivot(t, "tail", new Vector3(0, 1.25f, -0.86f));
+            var at = Vector3.zero;
+            for (int i = 0; i < 4; i++)
+            {
+                var next = at + new Vector3(0, 0.02f + i * 0.04f, -0.2f);
+                var seg = Art.Box(tl, i % 2 == 0 ? hide : plate, (at + next) * 0.5f, new Vector3(0.24f - i * 0.04f, 0.2f - i * 0.03f, 0.22f), new Vector3(-i * 10f, 0, 0));
+                if (i < 2) ThemeKitB.MHit(seg, ghost);
+                at = next;
+            }
+            Art.Part(tl, Art.Cone, under, at + new Vector3(0, 0.02f, -0.02f), new Vector3(0.1f, 0.24f, 0.1f), new Vector3(-70f, 0, 0));
+            tail = tl;
+            // six legs: thigh out to the side, shin down to a pointed foot (the middle pair isn't in `legs`' trot pairs, so it
+            // swings with the back right: close enough)
+            float[] zs = { 0.55f, 0.55f, -0.6f, -0.6f, -0.02f, -0.02f };
+            for (int i = 0; i < 6; i++)
+            {
+                float s = i % 2 == 0 ? -1f : 1f;
+                var leg = ThemeKitB.MPivot(t, "leg", new Vector3(s * 0.3f, 0.95f, zs[i]));
+                ThemeKitB.MHit(Art.Box(leg, hide, new Vector3(s * 0.12f, -0.08f, 0), new Vector3(0.3f, 0.16f, 0.16f), new Vector3(0, 0, s * 25f)), ghost);
+                ThemeKitB.MHit(Art.Box(leg, plate, new Vector3(s * 0.22f, -0.5f, 0), new Vector3(0.13f, 0.72f, 0.13f), new Vector3(0, 0, s * -6f)), ghost);
+                Art.Part(leg, Art.Cone, under, new Vector3(s * 0.25f, -0.76f, 0), new Vector3(0.14f, 0.2f, 0.14f), new Vector3(180f, 0, 0));
+                legs?.Add(leg);
+            }
+            saddle = ThemeKitB.MSaddle(t, ghost, new Color(0.3f, 0.3f, 0.32f), 0.7f, 1.45f);
+            return true;
+        }
+
+        /// <summary>A Martian pod bush: fleshy crimson lobes with clusters of glowing berries (the food) on them.</summary>
+        public override bool BuildBush(Transform tr, int seed)
+        {
+            var rng = new System.Random(seed * 31 + 17);
+            float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
+            var k = new MeshKit(); var g = new MeshKit();
+            const float S = ResourceNode.BushSize;
+            Color[] flesh = { new Color(0.55f, 0.13f, 0.2f), new Color(0.45f, 0.1f, 0.22f), new Color(0.62f, 0.2f, 0.18f) };
+            var lobes = new List<(Vector3 c, Vector3 r)>();
+            int n = 5 + rng.Next(3);
+            float spin = R(0f, 6.28f);
+            lobes.Add((new Vector3(0, 0.45f, 0) * S, new Vector3(0.38f, 0.45f, 0.38f) * S));
+            for (int i = 0; i < n; i++)
+            {
+                float a = spin + i * 6.283f / n + R(-0.25f, 0.25f), d = R(0.38f, 0.52f), h = R(0.5f, 0.9f), w = R(0.2f, 0.28f);
+                var dir = new Vector3(Mathf.Cos(a), 0, Mathf.Sin(a));
+                // a stalk leaning out, a bulb on the end
+                var top = (dir * d + Vector3.up * h) * S;
+                ThemeKitB.Cyl(k, dir * 0.1f * S, top, w * 0.55f * S, w * 0.4f * S, 6, flesh[1], false, false);
+                lobes.Add((top, new Vector3(w, w * 1.25f, w) * S));
+            }
+            for (int i = 0; i < lobes.Count; i++)
+                ThemeKitB.Ball(k, lobes[i].c, lobes[i].r, Quaternion.Euler(0, R(0, 360), 0), flesh[i % flesh.Length], 1, 0.12f, seed + i);
+            // glowing berries in clusters on the bulbs
+            var berryCol = Color.white;
+            for (int i = 1; i < lobes.Count; i++)
+            {
+                int b = 3 + rng.Next(3);
+                for (int j = 0; j < b; j++)
+                {
+                    float a = R(0f, 6.28f), el = R(-0.2f, 1.1f);
+                    var d = new Vector3(Mathf.Cos(a) * Mathf.Cos(el), Mathf.Sin(el), Mathf.Sin(a) * Mathf.Cos(el));
+                    ThemeKitB.Ball(g, lobes[i].c + Vector3.Scale(d, lobes[i].r) * 1.05f, Vector3.one * R(0.075f, 0.1f) * S, Quaternion.identity, berryCol, 0);
+                }
+            }
+            ThemeKitB.Spawn(tr, "pod bush", k, null, true);
+            ThemeKitB.Spawn(tr, "pod berries", g, ThemeKitB.Glow(new Color(0.45f, 1f, 0.6f), 2f), false);
+            return true;
         }
 
         // ================================================================ trees: tall alien stalks with puffy red crowns and glowing spores

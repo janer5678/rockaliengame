@@ -89,7 +89,12 @@ namespace RockGame
         public const bool WoodIsNormal = true;
         public static int MapSeed;
         public static float MapHalf => SmallMap ? 62f : 100f * SizeScale;
-        public const float BaseHalf = 18f; // bases are 36x36m, aligned to the 3m build grid
+        /// <summary>Bases are 36x36m (a theme map can make them smaller: ThemeMap.BaseHalfSize), aligned to the 3m build grid.</summary>
+        public static float BaseHalf => s_BaseHalf;
+        static float s_BaseHalf = 18f;
+        /// <summary>The crashed UFO in the middle (CrashSite.cs). Off for now: the middle has cover round the ball instead
+        /// (CentreCover.cs, or the theme map's own). Set true to bring the crash site back exactly as it was.</summary>
+        public const bool CrashSiteOn = false;
         public static readonly Vector3[] BaseCenter = { new Vector3(0, 0, -75), new Vector3(0, 0, 75), new Vector3(75, 0, 0), new Vector3(-75, 0, 0) };
         public static string MapLabel => ModeLabel + ", " + SizeLabel(Size).ToLower() + " " + (ThemeMaps.IsTheme ? ThemeMaps.Label(Map) : Map.ToString()) /* THEME MAPS */ + (WoodMode ? " (Wood mode)" : "") + (AirdropCenter ? " (airdrops in the middle)" : AirdropSides ? " (airdrops on both sides)" : "") + (RespawnLoot ? " (respawn loot)" : "");
         /// <summary>Airdrops come down on both sides (one in each half, each on its own timer) instead of anywhere.</summary>
@@ -244,6 +249,9 @@ namespace RockGame
             MapSeed = seed;
             // on the 3 m building grid, or the grid wouldn't line up with the base area
             float d = SmallMap ? 42f : Mathf.Round(75f * SizeScale / Cell) * Cell;
+            var tm = ThemeMaps.CustomFor(Map); // THEME MAPS (smaller bases / further out)
+            s_BaseHalf = tm != null ? tm.BaseHalfSize : 18f;
+            if (tm != null && tm.BaseDistance > 0f) d = Mathf.Round(tm.BaseDistance / Cell) * Cell;
             // blue south, red north, green east, yellow west
             BaseCenter[0] = new Vector3(0, 0, -d);
             BaseCenter[1] = new Vector3(0, 0, d);
@@ -470,8 +478,9 @@ namespace RockGame
         /// <summary>The High Strength Battering Ram (Trade Station): one slam does three normal rams' worth.</summary>
         [Tune("Crafting")] public static int HeavyRamWood = 600;
         [Tune("Ram")] public static int HeavyRamSteps = 3;
-        /// <summary>Going over a large wall or gate from a ladder: how long it takes (s) and what the spikes on top do (HP).</summary>
-        [Tune("Building")] public static float WallClimbTime = 1.6f, WallClimbDamage = 20f;
+        /// <summary>Going over a large wall or gate from a ladder: how long it takes (s, holding W) and what the spikes on top
+        /// do the whole way over (HP a second). A ladder can't go so high up one that its top is within LadderSpikeGap of the spikes.</summary>
+        [Tune("Building")] public static float WallClimbTime = 3f, WallClimbDps = 9f, LadderSpikeGap = 0.9f;
         public static int FortTowerWood = 1000; // only used for the demolish refund (the fort is an airdrop item now)
 
         // ---------- Vehicles ----------
@@ -660,7 +669,7 @@ namespace RockGame
         /// <summary>The airdrop items the host can pick from in the mode options (the others are unused for now).</summary>
         /// <summary>Taken out of the game for now (not craftable, not in any shop, airdrop or loot pool): the bear trap,
         /// the sleeping bag and the alien helmet. Their code stays, so they can come back by taking them off this list.</summary>
-        public static bool Removed(Item i) => i == Item.BearTrap || i == Item.SleepingBag || i == Item.Helmet;
+        public static bool Removed(Item i) => i == Item.BearTrap || i == Item.SleepingBag || i == Item.Helmet || i == Item.AutoTurret; // (the auto turret: out for now)
 
         public static readonly Item[] AirdropChoices =
         {
@@ -870,7 +879,7 @@ namespace RockGame
         }
 
         // ---------- Crafting ----------
-        static readonly Item[] k_Recipes = { Item.Hatchet, Item.Pickaxe, Item.Spear, Item.BuildingPlan, Item.Chest, Item.Bow, Item.Arrow, Item.Crossbow, Item.Armor, Item.Chainsaw, Item.Ram, Item.HeavyRam, Item.Barrier, Item.LargeGate, Item.Ladder, Item.Saddle, Item.Workbench, Item.Workbench2, Item.AutoTurret };
+        static readonly Item[] k_Recipes = { Item.Hatchet, Item.Pickaxe, Item.Spear, Item.BuildingPlan, Item.Chest, Item.Bow, Item.Arrow, Item.Crossbow, Item.Armor, Item.Chainsaw, Item.Ram, Item.HeavyRam, Item.Barrier, Item.LargeGate, Item.Ladder, Item.Saddle, Item.Workbench, Item.Workbench2 }; // (the auto turret is out for now: Removed)
 
         static readonly Item[] k_Limited = { Item.Hatchet, Item.Spear, Item.BuildingPlan, Item.Ram };
         static readonly List<Item> s_Active = new List<Item>();
@@ -882,6 +891,7 @@ namespace RockGame
             if (LimitedCrafting) { s_Active.AddRange(k_Limited); return s_Active; }
             foreach (var it in k_Recipes) if (!(WoodMode && it == Item.Pickaxe)) s_Active.Add(it);
             if (ThemeMaps.HasWater) s_Active.Add(Item.Boat); // THEME MAPS (the boat)
+            if (Jonah) s_Active.Add(Item.AlienDust); // (Jonah mode: buy alien dust with wood)
             return s_Active;
         }
 
@@ -915,6 +925,7 @@ namespace RockGame
                 case Item.SleepingBag: r = new Recipe { Output = Item.SleepingBag, Count = 1, Wood = SleepingBagWood }; break;
                 case Item.LargeGate: r = new Recipe { Output = Item.LargeGate, Count = 1, Wood = LargeGateWood }; break;
                 case Item.AutoTurret: r = new Recipe { Output = Item.AutoTurret, Count = 1, Wood = AutoTurretWood }; break;
+                case Item.AlienDust: r = new Recipe { Output = Item.AlienDust, Count = Mathf.Max(1, DustPerBuy), Wood = DustBuyWood }; break;
                 default: r = new Recipe { Output = Item.Barrier, Count = 1, Wood = BarrierWood }; break;
             }
             if (WoodMode) { r.Wood += r.Stone; r.Stone = 0; } // everything costs wood only

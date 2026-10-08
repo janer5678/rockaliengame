@@ -8,15 +8,147 @@ namespace RockGame
     /// ICE: snowy cliff plateaus in terraces (3.2 m a step) over a lowland of sheet ice and frozen turquoise lakes.
     /// The ice is slippery (most of the open lowland); snow patches, the plateau tops, the bases and the middle are not.
     /// Wooden ramps up the cliffs, frozen waterfalls down them, snowy pines, carved stone crates and huts, and a
-    /// minecart line across the ice in every team's part.
+    /// minecart line across the ice in every team's part. Frost-berry bushes, woolly mammoths to ride, snow drifts, ice walls
+    /// and a snowman round the ball.
     /// </summary>
     public class IceMap : ThemeMap
     {
         public override MapKind Kind => MapKind.Ice;
         public override string Label => "Ice";
-        public override string Blurb => "Snowy cliff plateaus over sheets of SLIPPERY ice and frozen lakes. Snow gives you grip - on the ice you keep sliding. Wooden ramps lead up the cliffs.";
+        public override string Blurb => "Snowy cliff plateaus over sheets of VERY SLIPPERY ice and frozen lakes. Snow gives you grip - on the ice you glide on and on. Wooden ramps lead up the cliffs. Ride a woolly mammoth.";
         public override bool Mountains => true;
         public override float MaxSpotHeight => 3.8f;
+
+        /// <summary>Much slidier than Frostlake (3.5): your speed changes slowly on the ice - you keep gliding.</summary>
+        public override float IceGrip => 1.15f;
+        public override string MountName => "Woolly Mammoth";
+
+        /// <summary>A frost-berry bush: pale blue-green frosted clumps under caps of snow, loaded with bright red berries,
+        /// a few ice crystals poking out (press E for food).</summary>
+        public override bool BuildBush(Transform tr, int seed)
+        {
+            var rng = new System.Random(seed * 31 + 23);
+            float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
+            var frost = new Color(0.5f, 0.68f, 0.64f);
+            var blobs = new List<(Vector3 c, float r)> { (new Vector3(0, 0.75f, 0), R(0.85f, 0.95f)) };
+            int ring = 5;
+            float spin = R(0, 360);
+            for (int i = 0; i < ring; i++)
+                blobs.Add((Quaternion.Euler(0, spin + i * 72f + R(-15f, 15f), 0) * new Vector3(0, R(0.45f, 0.6f), R(0.75f, 0.9f)), R(0.55f, 0.7f)));
+            int b = 0;
+            foreach (var (c, r) in blobs)
+            {
+                Art.Part(tr, TmKit.Blob(seed + b), TmKit.Shade(frost, R(0.9f, 1.1f)), c, new Vector3(r * 2f, r * 1.6f, r * 2f), new Vector3(0, R(0, 360), 0));
+                Art.Part(tr, TmKit.Blob(seed + b + 3), Snow, c + Vector3.up * r * 0.62f, new Vector3(r * 1.5f, r * 0.55f, r * 1.5f), new Vector3(0, R(0, 360), 0));
+                b++;
+            }
+            var berry = new Color(0.9f, 0.12f, 0.18f);
+            for (int i = 0; i < 18; i++)
+            {
+                var (c, r) = blobs[i % blobs.Count];
+                var dir = Quaternion.Euler(0, R(0, 360), 0) * Quaternion.Euler(R(40f, 95f), 0, 0) * Vector3.up;
+                Art.Part(tr, Art.Sphere, i % 4 == 0 ? TmKit.Shade(berry, 0.8f) : berry, c + dir * r * 0.95f, Vector3.one * R(0.16f, 0.21f));
+            }
+            for (int k = 0; k < 3; k++)
+            {
+                var at = Quaternion.Euler(0, spin + 36f + k * 120f, 0) * new Vector3(0, 0, R(0.9f, 1.2f));
+                Art.Part(tr, Art.Cone, k == 1 ? IceBlue : Color.Lerp(IceBlue, Color.white, 0.35f), at, new Vector3(0.28f, R(0.7f, 1.1f), 0.28f), new Vector3(R(-20f, 20f), 0, R(-20f, 20f)));
+            }
+            return true;
+        }
+
+        /// <summary>The woolly mammoth (pony-sized): a shaggy brown body with a hump, a long trunk, curling tusks, little
+        /// ears, thick legs.</summary>
+        public override bool BuildMount(Transform t, Material ghost, bool unicorn, out Transform saddle, out Transform head, out Transform tail, List<Transform> legs)
+        {
+            var fur = unicorn ? new Color(0.94f, 0.94f, 0.96f) : new Color(0.45f, 0.3f, 0.18f); // (now and then a rare white one)
+            var shag = TmKit.Shade(fur, 0.75f);
+            var tusk = new Color(0.96f, 0.93f, 0.84f);
+            var toe = new Color(0.55f, 0.5f, 0.44f);
+            TmKit.Hit(Art.Part(t, Art.Sphere, fur, new Vector3(0, 1.1f, 0), new Vector3(0.95f, 0.8f, 1.65f)), ghost);
+            Art.Part(t, Art.Sphere, fur, new Vector3(0, 1.32f, 0.45f), new Vector3(0.75f, 0.55f, 0.7f)); // the hump
+            TmKit.Hit(Art.Box(t, shag, new Vector3(0, 0.85f, 0), new Vector3(0.9f, 0.4f, 1.45f)), ghost); // the shaggy skirt
+            for (int i = 0; i < 6; i++)
+                Art.Box(t, shag, new Vector3((i % 2 == 0 ? -1 : 1) * 0.44f, 0.82f, -0.55f + (i / 2) * 0.55f), new Vector3(0.08f, 0.5f, 0.4f), new Vector3(0, 0, (i % 2 == 0 ? -1 : 1) * 6f));
+            // the head: a domed head, the trunk hanging down and curling forward, tusks curving out and up
+            var hp = TmKit.Pivot(t, "head", new Vector3(0, 1.32f, 0.82f));
+            TmKit.HeadBox(hp, fur, new Vector3(0, 0.05f, 0.18f), new Vector3(0.6f, 0.62f, 0.55f), ghost, Art.Sphere);
+            Art.Part(hp, Art.Sphere, fur, new Vector3(0, 0.32f, 0.12f), new Vector3(0.44f, 0.3f, 0.4f));
+            var tr0 = new Vector3(0, -0.08f, 0.44f);
+            var tr1 = new Vector3(0, -0.5f, 0.56f);
+            var tr2 = new Vector3(0, -0.85f, 0.6f);
+            var tr3 = new Vector3(0, -0.95f, 0.75f);
+            TmKit.Hit(TmKit.Rod(hp, fur, tr0, tr1, 0.2f, 0.2f), ghost);
+            TmKit.Rod(hp, fur, tr1, tr2, 0.16f, 0.16f);
+            TmKit.Rod(hp, shag, tr2, tr3, 0.13f, 0.13f);
+            for (int s = -1; s <= 1; s += 2)
+            {
+                var a = new Vector3(s * 0.16f, -0.15f, 0.38f);
+                var m = new Vector3(s * 0.26f, -0.48f, 0.68f);
+                var e = new Vector3(s * 0.2f, -0.35f, 0.98f);
+                TmKit.Rod(hp, tusk, a, m, 0.09f, 0.09f);
+                TmKit.Rod(hp, tusk, m, e, 0.07f, 0.07f);
+                Art.Box(hp, shag, new Vector3(s * 0.3f, 0.1f, 0.08f), new Vector3(0.06f, 0.28f, 0.22f), new Vector3(0, s * 20f, 0)); // a little ear
+                Art.Box(hp, Color.black, new Vector3(s * 0.22f, 0.12f, 0.4f), new Vector3(0.05f, 0.05f, 0.03f));
+            }
+            head = hp;
+            var tl = TmKit.Pivot(t, "tail", new Vector3(0, 1.28f, -0.82f));
+            Art.Box(tl, fur, new Vector3(0, -0.22f, -0.04f), new Vector3(0.08f, 0.45f, 0.08f));
+            Art.Box(tl, shag, new Vector3(0, -0.48f, -0.06f), new Vector3(0.14f, 0.16f, 0.14f));
+            tail = tl;
+            for (int i = 0; i < 4; i++)
+            {
+                float x = i % 2 == 0 ? -0.26f : 0.26f, z = i < 2 ? 0.52f : -0.52f;
+                var leg = TmKit.Leg(t, new Vector3(x, 0.88f, z), 0.86f, 0.26f, shag, toe, ghost, legs);
+                Art.Box(leg, fur, new Vector3(0, -0.2f, 0), new Vector3(0.32f, 0.4f, 0.32f)); // shaggy at the top
+            }
+            saddle = TmKit.Saddle(t, ghost, 1.52f, 0.8f, -0.25f);
+            return true;
+        }
+
+        /// <summary>The middle: snow drifts, carved stone crates, ice-block walls, ice crystals and a snowman round the ball.</summary>
+        public override bool BuildCentre(Transform root)
+        {
+            var spots = new (float f, float r)[] { (-0.3f, 7.5f), (0.28f, 8f), (0f, 12f), (-0.15f, 15f), (0.38f, 13f), (-0.4f, 11.5f), (0.15f, 16.5f) };
+            TmKit.CentreLayout(root, "Ice centre", 8450, spots, 17f, 5f, (sec, p, yaw, i, rng) =>
+            {
+                float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
+                switch (i)
+                {
+                    case 0: case 5: // a snow drift with a block of ice half buried in it
+                    {
+                        float sc = R(1.6f, 2f);
+                        Art.Part(sec, TmKit.Blob(i), Snow, p + Vector3.up * sc * 0.3f, new Vector3(sc * 1.6f, sc * 0.8f, sc * 1.1f), new Vector3(0, yaw + 90f, 0), true);
+                        Art.Box(sec, IceBlue, p + Quaternion.Euler(0, yaw, 0) * new Vector3(0.8f, 0.8f, 0.3f), new Vector3(1.2f, 1.2f, 1.2f), new Vector3(R(-10f, 10f), yaw + 30f, R(-10f, 10f)), true);
+                        break;
+                    }
+                    case 1: case 6: CrateStack(sec, p, yaw, rng); break;
+                    case 2: // a wall of ice blocks across the way in, its top broken
+                    {
+                        var o = Quaternion.Euler(0, yaw + 90f, 0);
+                        float[] hs = { 1.1f, 1.7f, 1.4f, 0.8f };
+                        for (int k = 0; k < 4; k++)
+                            Art.Box(sec, k % 2 == 0 ? IceBlue : Color.Lerp(IceBlue, Color.white, 0.35f), p + o * new Vector3(0, hs[k] * 0.5f, (k - 1.5f) * 1.05f), new Vector3(0.9f, hs[k], 1f), new Vector3(0, yaw + 90f + R(-4f, 4f), 0), true);
+                        Art.Part(sec, TmKit.Blob(3), Snow, p + Vector3.up * 1.75f + o * new Vector3(0, 0, -0.5f), new Vector3(0.9f, 0.25f, 1f), new Vector3(0, yaw, 0));
+                        break;
+                    }
+                    case 3: // a snowman
+                    {
+                        Art.Part(sec, Art.Sphere, Snow, p + Vector3.up * 0.6f, Vector3.one * 1.3f, default, true);
+                        Art.Part(sec, Art.Sphere, Snow, p + Vector3.up * 1.5f, Vector3.one * 0.9f, default, true);
+                        Art.Part(sec, Art.Sphere, Snow, p + Vector3.up * 2.15f, Vector3.one * 0.6f);
+                        var fwd = Quaternion.Euler(0, yaw + 180f, 0) * Vector3.forward;
+                        Art.Part(sec, Art.Cone, new Color(0.95f, 0.5f, 0.1f), p + Vector3.up * 2.15f + fwd * 0.28f, new Vector3(0.1f, 0.3f, 0.1f), Quaternion.FromToRotation(Vector3.up, fwd).eulerAngles);
+                        for (int s = -1; s <= 1; s += 2)
+                            Art.Part(sec, Art.Sphere, Color.black, p + Vector3.up * 2.25f + fwd * 0.26f + Quaternion.Euler(0, yaw, 0) * new Vector3(s * 0.11f, 0, 0), Vector3.one * 0.07f);
+                        Art.Box(sec, new Color(0.7f, 0.15f, 0.15f), p + Vector3.up * 1.9f, new Vector3(0.72f, 0.14f, 0.72f), new Vector3(0, yaw, 0)); // a scarf
+                        break;
+                    }
+                    default: Crystals(sec, p, rng); Crystals(sec, p + Quaternion.Euler(0, yaw, 0) * new Vector3(1.6f, 0, 0.5f), rng); break;
+                }
+            });
+            return true;
+        }
 
         const float Step = 3.2f;
         static readonly Color Snow = new Color(0.93f, 0.95f, 0.98f), Rock = new Color(0.55f, 0.62f, 0.72f), IceSheet = new Color(0.72f, 0.88f, 0.94f), Lake = new Color(0.38f, 0.78f, 0.86f);

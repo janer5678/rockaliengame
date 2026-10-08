@@ -942,6 +942,7 @@ namespace RockGame
             // respawn behind the wall, comes the moment it ends, no wait after it; KillCamRespawnSlack only keeps the
             // server's respawn from cutting off the replay's last frame)
             float respawnIn = KilledBy.Value != 0 ? Cfg.KillCamTime + DeathReplay.Duration + KillCamRespawnSlack : Cfg.RespawnTime;
+            if (cause == KillCause.Fall && ThemeMaps.Custom != null) respawnIn *= ThemeMaps.Custom.FallRespawnMul; // THEME MAPS (falling into the hole: back sooner)
             RespawnAt.Value = NetworkManager.ServerTime.Time + respawnIn;
             var victimName = Cfg.TeamName[Team.Value];
             if (NetGame.Instance != null)
@@ -1634,7 +1635,12 @@ namespace RockGame
             if (!smallThing && !Workbench.IsBench(kind) && Cfg.PointBlocked(pos)) return "Not on the bedrock";
             if (kind != Item.Chest && !anywhere && baseTeam >= 0 && baseTeam != team) return "Not in the enemy base";
             var rot = Quaternion.Euler(0, yaw, 0);
-            if (kind == Item.Ladder && Deployables.LadderSupport(pos, rot) == null) return "Ladders go against a wall";
+            if (kind == Item.Ladder)
+            {
+                var sup = Deployables.LadderSupport(pos, rot);
+                if (sup == null) return "Ladders go against a wall";
+                if ((sup.PType == PieceType.Barrier || sup.PType == PieceType.Gate) && pos.y > Deployables.LadderMaxFoot(sup) + 0.05f) return "Too high - the spikes are in the way";
+            }
             if (kind == Item.Barrier || kind == Item.LargeGate)
             {
                 // the whole 5.5 m wall stays out of the enemy base (not just its middle)...
@@ -1781,7 +1787,6 @@ namespace RockGame
             var src = srcKind == 1 ? c.Slots : Inv;
             if (srcIdx >= src.Count) return;
             if (c != null && c.IsGamble && !GambleMachine.ServerMoveOk(c, src, srcIdx, srcKind == 1 ? Inv : c.Slots, dstIdx)) { Notify("The gambling machine only takes DNA"); return; }
-            if (c != null && c.IsConverter && (c.Team.Value != Team.Value || !JonahMode.ServerMoveOk(c, src, srcIdx, srcKind == 1 ? Inv : c.Slots, dstIdx))) { Notify("The converter only takes wood"); return; }
             if (dstIdx == 255)
             {
                 if (c == null) return;

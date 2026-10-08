@@ -5,10 +5,11 @@ using UnityEngine.Rendering;
 namespace RockGame
 {
     /// <summary>
-    /// THE CUBE: one huge empty room the size of the map - a light blue tiled floor (3 m tiles: the building grid), white
-    /// grid-tiled walls and ceiling, glowing cyan strips along the top edges (and faintly along the floor and up the
-    /// corners) - with synthetic trees in it (white trunks with cyan rings, teal cube crowns) and nothing else: no
-    /// mountains, no boulders, no bushes, no rocks. The bases, the crash site and the sign are the game's own.
+    /// THE CUBE: one huge empty room the size of the map - a grey tiled floor (3 m tiles: the building grid), grey
+    /// grid-tiled walls and ceiling, glowing green strips along the top edges (and faintly along the floor and up the
+    /// corners) - with synthetic trees in it (blocky brown trunks and branches, green cube crowns) and nothing else: no
+    /// mountains, no boulders, no bushes, no rocks. Nothing in the middle but the ball (and the sign). The bases are the
+    /// game's own; the horses are Cube Walkers (blocky robots).
     /// The ceiling is lower than where the airdrop ships hover, so they stay out of sight above it (their beam comes
     /// down through it). Walls and ceiling cast no shadows, so the sun still lights the room.
     /// </summary>
@@ -25,12 +26,15 @@ namespace RockGame
         const float Ceiling = 48f;
         const float Tile = 3f;
 
-        static readonly Color k_Floor = new Color(0.5f, 0.8f, 0.9f), k_Wall = new Color(0.9f, 0.91f, 0.93f), k_Roof = new Color(0.82f, 0.83f, 0.86f);
-        static readonly Color k_Neon = new Color(0.3f, 0.92f, 1f);
+        static readonly Color k_Floor = new Color(0.56f, 0.57f, 0.58f), k_Wall = new Color(0.68f, 0.68f, 0.69f), k_Roof = new Color(0.62f, 0.62f, 0.63f);
+        static readonly Color k_Neon = new Color(0.45f, 1f, 0.5f);
 
         public override float Height(float x, float z) => 0f;
         public override float NodeMul(byte kind) => kind == ResourceNode.Tree ? 1.3f : 0f;
-        public override Color LeafTint(Color leaf) => new Color(0.4f, 0.85f, 0.9f);
+        public override Color LeafTint(Color leaf) => new Color(0.36f, 0.66f, 0.3f);
+        public override string MountName => "Cube Walker";
+        /// <summary>Nothing in the middle: just the ball.</summary>
+        public override bool BuildCentre(Transform root) => true;
 
         static Texture2D s_Grid;
 
@@ -133,69 +137,151 @@ namespace RockGame
                 low.Box(q * new Vector3(0, 0.12f, -half + 0.12f), new Vector3(2 * half, 0.24f, 0.24f), q, Color.white, MeshKit.All);
                 top.Box(q * new Vector3(-half + 0.3f, Ceiling * 0.5f, -half + 0.3f), new Vector3(0.6f, Ceiling, 0.6f), q, Color.white, MeshKit.All);
             }
-            ThemeKitB.Spawn(root, "neon top", top, ThemeKitB.Glow(k_Neon, 3f), false);
-            ThemeKitB.Spawn(root, "neon floor", low, ThemeKitB.Glow(k_Neon, 1.6f), false);
+            ThemeKitB.Spawn(root, "neon top", top, ThemeKitB.Glow(k_Neon, 2.4f), false);
+            ThemeKitB.Spawn(root, "neon floor", low, ThemeKitB.Glow(k_Neon, 1.3f), false);
         }
 
+        static readonly Color[] k_Bark = { new Color(0.42f, 0.27f, 0.16f), new Color(0.35f, 0.22f, 0.13f), new Color(0.49f, 0.32f, 0.19f) };
+        static readonly Color[] k_Green = { new Color(0.3f, 0.58f, 0.24f), new Color(0.38f, 0.68f, 0.28f), new Color(0.24f, 0.48f, 0.2f), new Color(0.46f, 0.74f, 0.32f) };
+
+        /// <summary>A rounded clump of cubes (a voxel ball: the middle, its faces and edges - no corners), each its own green.</summary>
+        static void VoxelClump(MeshKit k, Vector3 c, float cs, Quaternion yaw, System.Random rng, bool flatBottom)
+        {
+            for (int x = -1; x <= 1; x++)
+            for (int y = -1; y <= 1; y++)
+            for (int z = -1; z <= 1; z++)
+            {
+                int far = Mathf.Abs(x) + Mathf.Abs(y) + Mathf.Abs(z);
+                if (far == 3) continue;                      // (no corners: it reads round)
+                if (flatBottom && y < 0 && far > 1) continue; // (a flatter underside)
+                if (far == 2 && rng.NextDouble() < 0.2) continue;
+                float s = cs * (far == 0 ? 1.05f : 0.92f + (float)rng.NextDouble() * 0.12f);
+                k.Box(c + yaw * (new Vector3(x, y * 0.85f, z) * cs), Vector3.one * s, yaw, k_Green[rng.Next(k_Green.Length)], MeshKit.All);
+            }
+        }
+
+        /// <summary>A synthetic tree: a blocky brown trunk on splayed root blocks, square branches, round crowns of green cubes.</summary>
         public override bool BuildTree(Transform tr, int seed, float h, GameObject trunk)
         {
             trunk.GetComponent<MeshRenderer>().enabled = false;
             var rng = new System.Random(seed + 404);
             float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
             var k = new MeshKit(); var g = new MeshKit();
-            var white = new Color(0.93f, 0.95f, 0.97f);
-            Color[] teal = { new Color(0.35f, 0.82f, 0.88f), new Color(0.56f, 0.9f, 0.95f), new Color(0.25f, 0.66f, 0.8f), new Color(0.82f, 0.95f, 0.98f) };
             var yaw = Quaternion.Euler(0, R(0f, 90f), 0);
-            // the base plate and the trunk: a white square column with glowing rings
-            k.Box(new Vector3(0, 0.16f, 0), new Vector3(1.5f, 0.14f, 1.5f), yaw, new Color(0.2f, 0.45f, 0.55f), MeshKit.All);
-            k.Box(new Vector3(0, h * 0.5f, 0), new Vector3(0.56f, h, 0.56f), yaw, white, MeshKit.All);
-            for (float y = 1.2f; y < h - 0.4f; y += 1.4f) g.Box(new Vector3(0, y, 0), new Vector3(0.62f, 0.07f, 0.62f), yaw, Color.white, MeshKit.All);
-            int kind = rng.Next(3);
-            float cs = R(2.4f, 3.1f);
-            var c = new Vector3(0, h + cs * 0.4f, 0);
-            if (kind == 0)
+            // root blocks splayed round the foot
+            for (int i = 0; i < 4; i++)
             {
-                // a big cube with smaller ones round it
-                k.Box(c, Vector3.one * cs, yaw, teal[0], MeshKit.All);
-                for (int i = 0; i < 4; i++)
-                {
-                    var q = yaw * Quaternion.Euler(0, i * 90f + 45f, 0);
-                    float s2 = R(1f, 1.5f);
-                    k.Box(c + q * new Vector3(0, R(-0.9f, 0.4f), cs * 0.62f), Vector3.one * s2, q, teal[1 + rng.Next(3)], MeshKit.All);
-                }
+                var q = yaw * Quaternion.Euler(0, i * 90f + R(-12f, 12f), 0);
+                k.Box(q * new Vector3(0, 0.2f, 0.5f), new Vector3(0.34f, 0.4f, 0.62f), q * Quaternion.Euler(-12f, 0, 0), k_Bark[1], MeshKit.All);
             }
-            else if (kind == 1)
+            // the trunk: stacked square blocks, narrowing, each turned a little
+            const int segs = 4;
+            for (int i = 0; i < segs; i++)
             {
-                // a cube standing on its corner
-                var q = yaw * Quaternion.Euler(45f, 0, 35.26f);
-                k.Box(c + Vector3.up * cs * 0.3f, Vector3.one * cs * 1.05f, q, teal[2], MeshKit.All);
-                k.Box(c + Vector3.up * cs * 0.3f, Vector3.one * cs * 0.6f, q * Quaternion.Euler(0, 45f, 0), teal[3], MeshKit.All);
+                float y0 = h * i / segs, y1 = h * (i + 1) / segs, w = Mathf.Lerp(0.72f, 0.48f, i / (segs - 1f));
+                k.Box(new Vector3(0, (y0 + y1) * 0.5f, 0), new Vector3(w, y1 - y0 + 0.05f, w), yaw * Quaternion.Euler(0, i * 7f, 0), k_Bark[i % k_Bark.Length], MeshKit.All);
             }
-            else
+            // branches: square arms out and up from the upper trunk, a clump of cubes on each
+            int nb = 2 + rng.Next(2);
+            float spin = R(0f, 360f);
+            for (int b = 0; b < nb; b++)
             {
-                // a stack of shrinking cubes, each turned
-                float y = h - 0.1f;
-                for (int i = 0; i < 4; i++)
-                {
-                    float s2 = cs * (1f - i * 0.2f);
-                    k.Box(new Vector3(0, y + s2 * 0.5f, 0), new Vector3(s2, s2 * 0.6f, s2), yaw * Quaternion.Euler(0, i * 22f, 0), teal[i % teal.Length], MeshKit.All);
-                    y += s2 * 0.6f;
-                }
-                c = new Vector3(0, y, 0);
+                var dir = Quaternion.Euler(0, spin + b * 360f / nb + R(-20f, 20f), 0) * Vector3.forward;
+                var from = Vector3.up * (h * R(0.55f, 0.78f));
+                var to = from + dir * R(1.3f, 1.9f) + Vector3.up * R(0.7f, 1.2f);
+                var along = to - from;
+                k.Box((from + to) * 0.5f, new Vector3(0.3f, 0.3f, along.magnitude + 0.2f), Quaternion.LookRotation(along), k_Bark[2], MeshKit.All);
+                VoxelClump(k, to + Vector3.up * 0.45f, R(0.62f, 0.78f), yaw * Quaternion.Euler(0, b * 25f, 0), rng, true);
             }
-            // a little glowing cube floating over the top
-            g.Box(c + Vector3.up * (cs * 0.9f + 0.4f), Vector3.one * 0.45f, yaw * Quaternion.Euler(30f, 45f, 0), Color.white, MeshKit.All);
+            // the crown on top
+            float cs = R(0.95f, 1.15f);
+            var top = Vector3.up * (h + cs * 0.55f);
+            VoxelClump(k, top, cs, yaw, rng, false);
+            k.Box(top + Vector3.up * cs * 1.5f, Vector3.one * cs * 0.85f, yaw * Quaternion.Euler(0, 45f, 0), k_Green[3], MeshKit.All);
+            // two little glowing cubes in the leaves (it's synthetic)
+            for (int i = 0; i < 2; i++)
+                g.Box(top + yaw * new Vector3((i == 0 ? 1f : -1f) * cs * 1.42f, R(-0.3f, 0.4f) * cs, R(-0.5f, 0.5f) * cs), Vector3.one * 0.22f, yaw * Quaternion.Euler(30f, 45f, 0), Color.white, MeshKit.All);
             ThemeKitB.Spawn(tr, "synthetic tree", k, null, true);
-            ThemeKitB.Spawn(tr, "synthetic glow", g, ThemeKitB.Glow(k_Neon, 2.2f), false);
+            ThemeKitB.Spawn(tr, "synthetic glow", g, ThemeKitB.Glow(k_Neon, 1.8f), false);
+            return true;
+        }
+
+        /// <summary>A bush of green cubes with red cube berries on it (there are no bushes here unless that changes).</summary>
+        public override bool BuildBush(Transform tr, int seed)
+        {
+            var rng = new System.Random(seed * 31 + 5);
+            var k = new MeshKit();
+            const float S = ResourceNode.BushSize;
+            var yaw = Quaternion.Euler(0, (float)rng.NextDouble() * 90f, 0);
+            VoxelClump(k, Vector3.up * 0.42f * S, 0.36f * S, yaw, rng, true);
+            var red = new Color(0.85f, 0.1f, 0.16f);
+            for (int i = 0; i < 22; i++)
+            {
+                int face = rng.Next(5);
+                var n = face == 0 ? Vector3.right : face == 1 ? Vector3.left : face == 2 ? Vector3.forward : face == 3 ? Vector3.back : Vector3.up;
+                var t = Vector3.Cross(n, Mathf.Abs(n.y) > 0.5f ? Vector3.right : Vector3.up);
+                var b = Vector3.Cross(n, t);
+                var p = n * 0.58f + t * ((float)rng.NextDouble() - 0.5f) * 0.9f + b * ((float)rng.NextDouble() - 0.5f) * 0.9f;
+                float s = 0.13f + (float)rng.NextDouble() * 0.04f;
+                k.Box(Vector3.up * 0.42f * S + yaw * (p * S), Vector3.one * s * S, yaw * Quaternion.Euler(0, 45f, 0), red, MeshKit.All);
+            }
+            ThemeKitB.Spawn(tr, "cube bush", k, null, true);
+            return true;
+        }
+
+        /// <summary>The Cube Walker (the horse here): a blocky grey robot on four square legs, a cube head with a glowing visor
+        /// (a unicorn: a white one with a gold horn).</summary>
+        public override bool BuildMount(Transform t, Material ghost, bool unicorn, out Transform saddle, out Transform head, out Transform tail, List<Transform> legs)
+        {
+            var hull = unicorn ? new Color(0.93f, 0.93f, 0.95f) : new Color(0.5f, 0.51f, 0.53f);
+            var hull2 = unicorn ? new Color(0.82f, 0.82f, 0.86f) : new Color(0.36f, 0.37f, 0.39f);
+            var joint = new Color(0.2f, 0.2f, 0.22f);
+            var eye = ThemeKitB.Glow(unicorn ? new Color(1f, 0.8f, 0.35f) : k_Neon, 2.2f);
+            ThemeKitB.MHit(Art.Box(t, hull, new Vector3(0, 1.15f, 0), new Vector3(0.62f, 0.56f, 1.45f)), ghost);
+            Art.Box(t, hull2, new Vector3(0, 0.84f, 0), new Vector3(0.5f, 0.1f, 1.3f));
+            for (int s = -1; s <= 1; s += 2)
+            {
+                Art.Box(t, hull2, new Vector3(s * 0.315f, 1.18f, 0.35f), new Vector3(0.02f, 0.3f, 0.5f));
+                Art.Box(t, hull2, new Vector3(s * 0.315f, 1.18f, -0.35f), new Vector3(0.02f, 0.3f, 0.5f));
+                Art.Box(t, Color.white, new Vector3(s * 0.32f, 1.18f, 0f), new Vector3(0.02f, 0.06f, 1.2f), default, false, eye); // (glow strips)
+            }
+            // neck + cube head (pivots to "graze")
+            var neck = ThemeKitB.MPivot(t, "neck", new Vector3(0, 1.36f, 0.66f));
+            ThemeKitB.MHit(Art.Box(neck, joint, new Vector3(0, 0.25f, 0.06f), new Vector3(0.22f, 0.55f, 0.22f), new Vector3(18, 0, 0)), ghost);
+            ThemeKitB.MHead(neck, ghost, hull, new Vector3(0, 0.6f, 0.3f), new Vector3(0.42f, 0.38f, 0.5f));
+            Art.Box(neck, Color.white, new Vector3(0, 0.64f, 0.556f), new Vector3(0.34f, 0.08f, 0.02f), default, false, eye); // the visor
+            Art.Box(neck, hull2, new Vector3(0, 0.46f, 0.5f), new Vector3(0.3f, 0.08f, 0.14f));
+            Art.Box(neck, joint, new Vector3(0.12f, 0.88f, 0.22f), new Vector3(0.03f, 0.22f, 0.03f));
+            Art.Box(neck, Color.white, new Vector3(0.12f, 1.0f, 0.22f), new Vector3(0.07f, 0.07f, 0.07f), default, false, eye);
+            for (int s = -1; s <= 1; s += 2) Art.Box(neck, hull2, new Vector3(s * 0.2f, 0.82f, 0.18f), new Vector3(0.08f, 0.14f, 0.08f));
+            if (unicorn) ThemeKitB.MHorn(neck, new Vector3(0, 0.8f, 0.42f));
+            head = neck;
+            // a cable tail with a cube on the end
+            var tl = ThemeKitB.MPivot(t, "tail", new Vector3(0, 1.3f, -0.74f));
+            ThemeKitB.MHit(Art.Box(tl, joint, new Vector3(0, -0.22f, -0.05f), new Vector3(0.07f, 0.45f, 0.07f)), ghost);
+            Art.Box(tl, Color.white, new Vector3(0, -0.48f, -0.05f), new Vector3(0.14f, 0.14f, 0.14f), new Vector3(0, 45f, 0), false, eye);
+            tail = tl;
+            // square legs with a knee block and a flat foot
+            for (int i = 0; i < 4; i++)
+            {
+                float x = i % 2 == 0 ? -0.22f : 0.22f, z = i < 2 ? 0.55f : -0.55f;
+                var leg = ThemeKitB.MPivot(t, "leg", new Vector3(x, 0.9f, z));
+                ThemeKitB.MHit(Art.Box(leg, hull2, new Vector3(0, -0.2f, 0), new Vector3(0.18f, 0.4f, 0.18f)), ghost);
+                Art.Box(leg, joint, new Vector3(0, -0.43f, 0), new Vector3(0.2f, 0.1f, 0.2f));
+                ThemeKitB.MHit(Art.Box(leg, hull, new Vector3(0, -0.64f, 0), new Vector3(0.14f, 0.36f, 0.14f)), ghost);
+                Art.Box(leg, joint, new Vector3(0, -0.86f, 0.03f), new Vector3(0.22f, 0.08f, 0.26f));
+                legs?.Add(leg);
+            }
+            saddle = ThemeKitB.MSaddle(t, ghost, new Color(0.18f, 0.18f, 0.2f), 0.62f, 1.47f);
             return true;
         }
 
         public override void ApplySky()
         {
             ThemeKitB.Begin();
-            ThemeKitB.Skybox(new Color(0.75f, 0.8f, 0.85f), new Color(0.6f, 0.62f, 0.65f), 1.1f, 0.6f);
-            ThemeKitB.Fog(new Color(0.84f, 0.88f, 0.93f), 70f, Mathf.Max(280f, Half * 3.4f));
-            ThemeKitB.Lighting(Color.white, new Color(0.86f, 0.89f, 0.93f), new Color(0.76f, 0.8f, 0.85f), new Color(0.62f, 0.66f, 0.7f));
+            ThemeKitB.Skybox(new Color(0.78f, 0.78f, 0.8f), new Color(0.6f, 0.6f, 0.61f), 1.1f, 0.6f);
+            ThemeKitB.Fog(new Color(0.8f, 0.8f, 0.81f), 70f, Mathf.Max(280f, Half * 3.4f));
+            ThemeKitB.Lighting(Color.white, new Color(0.86f, 0.86f, 0.87f), new Color(0.77f, 0.77f, 0.78f), new Color(0.62f, 0.62f, 0.63f));
         }
 
         public override void ClientTick() => ThemeKitB.Keep(Camera.main);

@@ -97,7 +97,6 @@ namespace RockGame
                 for (int i = 0; i < LaneTotal; i++) { Lanes.Add(new DropLaneState { Start = -1 }); m_Lanes[i] = new DropLane(); }
                 SpawnNodes();
                 GambleMachine.ServerSpawnAll(); // DNA mode: a gambling machine in every base
-                JonahMode.ServerSpawnConverters(); // Jonah mode: a wood -> alien dust converter at every upgrade station
                 NetworkManager.OnClientDisconnectCallback += OnClientDisconnect;
             }
         }

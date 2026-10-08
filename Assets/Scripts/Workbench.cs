@@ -29,7 +29,7 @@ namespace RockGame
         public static IReadOnlyList<Item> StarterOrder => k_Starter;
 
         /// <summary>Which workbench tier an item needs (0 = none: a starter item).</summary>
-        public static int CraftTier(Item i) => IsStarter(i) ? 0 : System.Array.IndexOf(k_Tier1, i) >= 0 ? 1 : 2;
+        public static int CraftTier(Item i) => IsStarter(i) || (i == Item.Boat && ThemeMaps.Custom != null && ThemeMaps.Custom.BoatsAnytime) || i == Item.AlienDust ? 0 : System.Array.IndexOf(k_Tier1, i) >= 0 ? 1 : 2;
 
         /// <summary>The best workbench a team has placed (0 none, 1, 2).</summary>
         public static int BenchTier(int team) => Domination && NetGame.Instance != null && NetGame.Instance.BallTeam.Value == team ? 2 : Workbench.TierOf(team); // (Domination: the team with the ball gets the advanced trades)
@@ -64,11 +64,13 @@ namespace RockGame
         public static void AddTier(List<int> into, int tier)
         {
             var order = tier == 0 ? k_Starter : tier == 1 ? k_Tier1 : k_Tier2;
+            if (tier == 0 && Jonah) { int d = CraftIndexOf(Item.AlienDust); if (d >= 0 && !into.Contains(d)) into.Add(d); } // (Jonah mode: wood -> alien dust at the top)
             foreach (var id in order)
             {
                 int i = CraftIndexOf(id);
                 if (i >= 0 && !into.Contains(i)) into.Add(i);
             }
+            if (tier == 0) { int b = CraftIndexOf(Item.Boat); if (b >= 0 && CraftTier(Item.Boat) == 0 && !into.Contains(b)) into.Add(b); } // THEME MAPS (boats from the start)
             if (tier != 2) return;
             // anything else craftable in this mode that isn't listed anywhere goes on the end of tier 2
             for (int i = 0; i < RecipeCount; i++)

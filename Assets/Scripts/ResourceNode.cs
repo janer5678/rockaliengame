@@ -240,7 +240,8 @@ namespace RockGame
             {
                 // Normal graphics: a round clump of leafy blobs with berries on it, swaying in the wind like the pines
                 Color leaf = Color.Lerp(ItemModels.Leaf, new Color(0.18f, 0.4f, 0.16f), r());
-                BuildBush(tr, Seed.Value, leaf);
+                if (ThemeMaps.Custom != null && ThemeMaps.Custom.BuildBush(tr, Seed.Value)) { } // THEME MAPS (its own bush)
+                else BuildBush(tr, Seed.Value, leaf);
                 m_PaintedBush = true;
                 if (GetComponent<SphereCollider>() == null)
                 {

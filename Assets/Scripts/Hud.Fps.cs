@@ -5,7 +5,22 @@ namespace RockGame
     /// <summary>Settings > Display > FPS counter (just on this PC, saved), and the uncapped framerate switch.</summary>
     public static partial class GameSettings
     {
-        static int s_ShowFps = -1;
+        static int s_ShowFps = -1, s_RoundHands = -1;
+
+        /// <summary>Settings > Display > Round hands (on to start with): the first-person hands are round instead of the old
+        /// square ones. Off brings the old hands straight back.</summary>
+        public static bool RoundHands
+        {
+            get { if (s_RoundHands < 0) s_RoundHands = PlayerPrefs.GetInt("RockGame.RoundHands", 1); return s_RoundHands == 1; }
+        }
+        public static event System.Action HandStyleChanged;
+
+        public static void SetRoundHands(bool on, bool save = true)
+        {
+            s_RoundHands = on ? 1 : 0;
+            if (save) { PlayerPrefs.SetInt("RockGame.RoundHands", s_RoundHands); PlayerPrefs.Save(); }
+            HandStyleChanged?.Invoke();
+        }
 
         /// <summary>Show the frames-per-second counter in the top left corner.</summary>
         public static bool ShowFps

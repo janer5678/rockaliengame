@@ -39,7 +39,7 @@ namespace RockGame
         public float MaxHp => IsDummy ? DummyHp : IsSlender ? Cfg.SlenderHp : Cfg.HorseHp * (IsUnicorn ? Mathf.Max(0.1f, Cfg.UnicornHpMul) : 1f);
         public bool Rideable => Kind.Value != Slender && Kind.Value != Dummy;
         public bool HasDriver => DriverId.Value != NoDriver;
-        public string DisplayName => IsDummy ? "Training Dummy" : IsBoat ? "Boat" /* THEME MAPS */ : IsSlender ? "Slenderman" : IsHorse ? (Saddled.Value ? (IsUnicorn ? "Saddled Unicorn" : "Saddled Horse") : (IsUnicorn ? "Wild Unicorn" : "Wild Horse")) : "Wooden Car";
+        public string DisplayName => IsDummy ? "Training Dummy" : IsBoat ? "Boat" /* THEME MAPS */ : IsSlender ? "Slenderman" : IsHorse ? (ThemeMaps.Custom?.MountName != null ? (Saddled.Value ? "Saddled " : "Wild ") + ThemeMaps.Custom.MountName : Saddled.Value ? (IsUnicorn ? "Saddled Unicorn" : "Saddled Horse") : (IsUnicorn ? "Wild Unicorn" : "Wild Horse")) : "Wooden Car";
         /// <summary>Where the rider's feet go (local space).</summary>
         public Vector3 SeatLocal => IsHorse ? new Vector3(0, 0.95f, -0.1f) : new Vector3(0, 0.3f, -0.25f);
         public Vector3 SeatWorld => transform.TransformPoint(SeatLocal + (IsHorse && m_Visual ? m_Visual.localPosition * 0.7f : Vector3.zero)); // (bobs a little with the horse's stride)
@@ -584,6 +584,7 @@ namespace RockGame
                     wheels?.Add(w);
                 }
             }
+            else if (kind == Horse && ThemeMaps.Custom != null && ThemeMaps.Custom.BuildMount(t, ghost, unicorn, out saddle, out head, out tail, legs)) { } // THEME MAPS (its own creature)
             else if (kind == Horse)
             {
                 using var tint = ColorSlots.Use(unicorn ? null : ColorSlots.Horses); // (Settings > Display colours; a unicorn is always white)

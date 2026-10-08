@@ -10,6 +10,8 @@ namespace RockGame
     /// and you fall into space (KillY). Checkerboard plaza round the middle and checkerboard paths to the bases, giant
     /// mushrooms (stand on the caps), card soldiers and card houses, teacups and teapots, a mad tea party, pocket watches,
     /// topiary, painted roses, chess pieces, a sign pointing every way - and cards, cups and clocks tumbling past in space.
+    /// The band in from the slab's edges gets its own extra helping of all that (it was bare next to round the bases).
+    /// The horses are Cheshire Cats; the berry bushes are clipped rose bushes full of strawberries, a jam tart on top.
     /// </summary>
     public class WonderlandMap : ThemeMap
     {
@@ -292,6 +294,42 @@ namespace RockGame
                 int kind = i;
                 Each(p, 0f, (q, y) => Chess(k, cols, q, y, kind, (Mathf.RoundToInt(y / (360f / Cfg.Copies)) & 1) == 0));
             }
+
+            // ---- the sides: lots more of it out toward the slab's edges (not the middle) - as busy as round the bases
+            float band = Mathf.Max(14f, Side * 0.26f);
+            bool SideSpot(float clear, out Vector3 p)
+            {
+                for (int tries = 0; tries < 140; tries++)
+                {
+                    p = new Vector3(R(-Side + 7f, Side - 7f), 0, R(-Side + 7f, -4f));
+                    if (!Cfg.InFirstSector(p, 4f + clear) || !InSlab(p.x, p.z)) continue;
+                    float ed = EdgeDist(p.x, p.z);
+                    if (ed < 6.5f + clear || ed > 6.5f + clear + band) continue;
+                    if (new Vector2(p.x, p.z).magnitude < PlazaR + 8f) continue;
+                    if (Mathf.Abs(p.x - bc.x) < Cfg.BaseHalf + 3f + clear && Mathf.Abs(p.z - bc.z) < Cfg.BaseHalf + 3f + clear) continue;
+                    if (PathLat(p.x, p.z) < 6f + clear) continue;
+                    bool hit = false;
+                    foreach (var q in placed) if ((q.p - new Vector2(p.x, p.z)).magnitude < q.r + clear + 1.2f) { hit = true; break; }
+                    if (hit) continue;
+                    placed.Add((new Vector2(p.x, p.z), clear));
+                    return true;
+                }
+                p = default;
+                return false;
+            }
+            for (int i = 0; i < N(6); i++) if (SideSpot(4f, out var p)) { int sd = rng.Next(); float s = R(0.65f, 1.25f); Each(p, R(0, 360), (q, y) => Mushroom(k, cols, q, y, s, sd, true)); }
+            for (int i = 0; i < N(9); i++) if (SideSpot(2f, out var p)) { int sd = rng.Next(); Each(p, R(0, 360), (q, y) => MushroomPatch(k, q, sd)); }
+            for (int i = 0; i < N(6); i++) if (SideSpot(2.5f, out var p)) { int sd = rng.Next(); Each(p, R(0, 360), (q, y) => Topiary(k, cols, q, y, sd)); }
+            for (int i = 0; i < N(6); i++) if (SideSpot(2f, out var p)) { int sd = rng.Next(); Each(p, R(0, 360), (q, y) => RoseBush(k, cols, q, y, sd)); }
+            for (int i = 0; i < N(8); i++) if (SideSpot(1.8f, out var p)) { int sd = rng.Next(); Each(p, R(0, 360), (q, y) => LoneCard(k, cols, q, y, sd)); }
+            for (int i = 0; i < N(3); i++) if (SideSpot(3.5f, out var p)) { int sd = rng.Next(); float s = R(0.7f, 1.1f); Each(p, R(0, 360), (q, y) => Teacup(k, cols, q, y, s, sd)); }
+            for (int i = 0; i < N(3); i++) if (SideSpot(4f, out var p)) { int sd = rng.Next(); Each(p, R(0, 360), (q, y) => Hedge(k, cols, q, y, sd)); }
+            for (int i = 0; i < N(2); i++) if (SideSpot(6f, out var p)) { int sd = rng.Next(); Each(p, R(0, 360), (q, y) => CardSoldiers(k, cols, q, y, sd)); }
+            for (int i = 0; i < N(2); i++) if (SideSpot(3f, out var p)) { float tilt = R(-18f, 8f), ws = R(0.7f, 1f); Each(p, R(0, 360), (q, y) => Watch(k, cols, q, y, ws, tilt)); }
+            for (int i = 0; i < N(2); i++) if (SideSpot(2.5f, out var p)) { int kind = rng.Next(2); bool white = rng.NextDouble() < 0.5; Each(p, 0f, (q, y) => Chess(k, cols, q, y, kind, white)); }
+            for (int i = 0; i < N(1); i++) if (SideSpot(3f, out var p)) { int sd = rng.Next(); Each(p, R(0, 360), (q, y) => Teapot(k, cols, q, y, 1f, sd)); }
+            for (int i = 0; i < N(1); i++) if (SideSpot(3f, out var p)) { int sd = rng.Next(); Each(p, R(0, 360), (q, y) => CardHouse(k, cols, q, y, sd)); }
+            if (SideSpot(2.5f, out var bp2)) Each(bp2, R(0, 360), (q, y) => Bottle(k, cols, q, y));
             ThemeKitB.Spawn(root, "wonderland props", k, null, true);
 
             BuildFloaters(root);
@@ -452,6 +490,16 @@ namespace RockGame
                 Card(k, c, r2, rng.Next(4), 1 + rng.Next(6));
                 ThemeKitB.BoxCol(cols, c, new Vector3(2.4f, 3.4f, 0.2f), r2);
             }
+        }
+
+        /// <summary>A giant playing card stuck in the ground, leaning.</summary>
+        static void LoneCard(MeshKit k, Transform cols, Vector3 p, float yaw, int seed)
+        {
+            var rng = new System.Random(seed);
+            var rot = Yaw(yaw) * Quaternion.Euler((float)rng.NextDouble() * 16f - 8f, 0, (float)rng.NextDouble() * 24f - 12f);
+            var c = p + rot * Vector3.up * 1.45f;
+            Card(k, c, rot, rng.Next(4), 1 + rng.Next(9));
+            ThemeKitB.BoxCol(cols, c, new Vector3(2.4f, 3.4f, 0.2f), rot);
         }
 
         static readonly Color[] k_China = { new Color(0.98f, 0.7f, 0.82f), new Color(0.55f, 0.82f, 0.9f), new Color(0.98f, 0.9f, 0.5f), new Color(0.8f, 0.68f, 0.95f), new Color(0.97f, 0.96f, 0.94f) };
@@ -783,6 +831,109 @@ namespace RockGame
                 ThemeKitB.Ball(k, c + new Vector3(Mathf.Cos(a) * 0.45f, i * 0.32f, Mathf.Sin(a) * 0.45f), Vector3.one * Mathf.Lerp(0.42f, 0.18f, i / 5f), Quaternion.identity, crown[i % 2], 0);
             }
             ThemeKitB.Spawn(tr, "wonder tree", k, null, true);
+            return true;
+        }
+
+        // ---------------------------------------------------------------- the Cheshire Cat (the horse here) and the tart bush
+        public override string MountName => "Cheshire Cat";
+
+        /// <summary>A big pink and purple striped cat with that grin and a long curling striped tail (a unicorn: a blue and
+        /// white striped one with a gold horn).</summary>
+        public override bool BuildMount(Transform t, Material ghost, bool unicorn, out Transform saddle, out Transform head, out Transform tail, List<Transform> legs)
+        {
+            var furA = unicorn ? new Color(0.55f, 0.75f, 0.98f) : new Color(0.92f, 0.45f, 0.72f);
+            var furB = unicorn ? new Color(0.95f, 0.96f, 1f) : new Color(0.46f, 0.22f, 0.62f);
+            var eyeC = new Color(0.85f, 0.95f, 0.25f);
+            // the body, striped across
+            ThemeKitB.MHit(Art.Box(t, furA, new Vector3(0, 1.12f, 0), new Vector3(0.6f, 0.56f, 1.5f)), ghost);
+            for (int i = 0; i < 5; i++)
+                Art.Box(t, furB, new Vector3(0, 1.12f, -0.6f + i * 0.3f), new Vector3(0.62f, 0.58f, 0.12f));
+            // neck + a big round head (pivots to "graze")
+            var neck = ThemeKitB.MPivot(t, "neck", new Vector3(0, 1.3f, 0.7f));
+            ThemeKitB.MHit(Art.Box(neck, furB, new Vector3(0, 0.15f, 0.05f), new Vector3(0.4f, 0.4f, 0.32f), new Vector3(15, 0, 0)), ghost);
+            var hd = ThemeKitB.MHead(neck, ghost, furA, new Vector3(0, 0.45f, 0.3f), new Vector3(0.62f, 0.52f, 0.5f));
+            Art.Box(neck, furB, new Vector3(0, 0.66f, 0.3f), new Vector3(0.64f, 0.1f, 0.52f));
+            Art.Box(neck, furB, new Vector3(0, 0.45f, 0.08f), new Vector3(0.64f, 0.54f, 0.08f));
+            // the grin: a wide white crescent full of teeth, right across the face
+            for (int i = -3; i <= 3; i++)
+            {
+                float x = i * 0.075f, y = 0.33f + i * i * 0.008f;
+                Art.Box(neck, Color.white, new Vector3(x, y, 0.556f), new Vector3(0.08f, 0.09f, 0.02f), new Vector3(0, 0, i * -7f));
+                Art.Box(neck, new Color(0.3f, 0.05f, 0.15f), new Vector3(x, y, 0.565f), new Vector3(0.012f, 0.08f, 0.01f));
+            }
+            // big yellow-green eyes with slit pupils
+            for (int s = -1; s <= 1; s += 2)
+            {
+                Art.Part(neck, Art.Sphere, eyeC, new Vector3(s * 0.15f, 0.54f, 0.54f), new Vector3(0.15f, 0.13f, 0.06f));
+                Art.Box(neck, Color.black, new Vector3(s * 0.15f, 0.54f, 0.572f), new Vector3(0.025f, 0.11f, 0.01f));
+                // pointed ears
+                Art.Part(neck, Art.Cone, furA, new Vector3(s * 0.2f, 0.69f, 0.28f), new Vector3(0.22f, 0.26f, 0.12f), new Vector3(0, 0, s * -12f));
+                Art.Part(neck, Art.Cone, new Color(1f, 0.75f, 0.85f), new Vector3(s * 0.2f, 0.7f, 0.33f), new Vector3(0.13f, 0.18f, 0.05f), new Vector3(0, 0, s * -12f));
+                // whiskers
+                for (int w = 0; w < 2; w++)
+                    Art.Box(neck, Color.white, new Vector3(s * 0.36f, 0.4f + w * 0.05f, 0.5f), new Vector3(0.22f, 0.012f, 0.012f), new Vector3(0, s * 10f, s * (w == 0 ? 8f : -8f)));
+            }
+            Art.Part(neck, Art.Sphere, new Color(1f, 0.55f, 0.7f), new Vector3(0, 0.45f, 0.56f), new Vector3(0.08f, 0.06f, 0.05f));
+            if (unicorn) ThemeKitB.MHorn(neck, new Vector3(0, 0.72f, 0.42f));
+            head = neck;
+            // a long striped tail curling up at the end
+            var tl = ThemeKitB.MPivot(t, "tail", new Vector3(0, 1.3f, -0.76f));
+            var at = Vector3.zero;
+            for (int i = 0; i < 7; i++)
+            {
+                float a = i * 0.32f;
+                var next = at + new Vector3(0, -0.06f + i * 0.04f, -0.16f + i * 0.03f) + new Vector3(0, Mathf.Sin(a) * 0.05f, 0);
+                var seg = Art.Box(tl, i % 2 == 0 ? furA : furB, (at + next) * 0.5f, new Vector3(0.13f, 0.13f, 0.2f), new Vector3(-i * 18f, 0, 0));
+                if (i < 3) ThemeKitB.MHit(seg, ghost);
+                at = next;
+            }
+            tail = tl;
+            // striped legs, soft paws
+            for (int i = 0; i < 4; i++)
+            {
+                float x = i % 2 == 0 ? -0.2f : 0.2f, z = i < 2 ? 0.55f : -0.55f;
+                var leg = ThemeKitB.MPivot(t, "leg", new Vector3(x, 0.88f, z));
+                ThemeKitB.MHit(Art.Box(leg, furA, new Vector3(0, -0.38f, 0), new Vector3(0.18f, 0.76f, 0.18f)), ghost);
+                Art.Box(leg, furB, new Vector3(0, -0.22f, 0), new Vector3(0.19f, 0.1f, 0.19f));
+                Art.Box(leg, furB, new Vector3(0, -0.52f, 0), new Vector3(0.19f, 0.1f, 0.19f));
+                Art.Box(leg, new Color(1f, 0.8f, 0.88f), new Vector3(0, -0.83f, 0.04f), new Vector3(0.22f, 0.1f, 0.26f));
+                legs?.Add(leg);
+            }
+            // a top-hat-red saddle
+            saddle = ThemeKitB.MSaddle(t, ghost, new Color(0.62f, 0.14f, 0.2f), 0.6f, 1.44f);
+            return true;
+        }
+
+        /// <summary>A round clipped rose bush full of strawberries (the red and white roses are painted, the strawberries are
+        /// food) with a jam tart or two sitting on top.</summary>
+        public override bool BuildBush(Transform tr, int seed)
+        {
+            var rng = new System.Random(seed * 31 + 13);
+            float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
+            var k = new MeshKit();
+            const float S = ResourceNode.BushSize;
+            var c = new Vector3(0, 0.52f, 0) * S;
+            var rad = new Vector3(0.62f, 0.5f, 0.6f) * S;
+            ThemeKitB.Ball(k, c, rad, Quaternion.Euler(0, R(0, 360), 0), k_Leaf, 1, 0.06f, seed & 255);
+            ThemeKitB.Ball(k, c + Vector3.up * 0.38f * S, new Vector3(0.4f, 0.3f, 0.4f) * S, Quaternion.identity, k_Leaf2, 1, 0.06f, (seed + 3) & 255);
+            Roses(k, c, rad, Quaternion.identity, 8, rng);
+            // strawberries: red, a little pointed, a green cap, pale seeds
+            int n = 14 + rng.Next(5);
+            for (int i = 0; i < n; i++)
+            {
+                float a = R(0f, 6.28f), el = R(-0.25f, 0.9f);
+                var d = new Vector3(Mathf.Cos(a) * Mathf.Cos(el), Mathf.Sin(el), Mathf.Sin(a) * Mathf.Cos(el));
+                var at = c + Vector3.Scale(d, rad) * 1.04f;
+                float s = R(0.09f, 0.12f) * S;
+                ThemeKitB.Ball(k, at, new Vector3(s, s * 1.25f, s), Quaternion.FromToRotation(Vector3.up, Vector3.Lerp(Vector3.down, d, 0.3f)), new Color(0.9f, 0.12f, 0.18f), 0);
+                ThemeKitB.Ball(k, at + Vector3.up * s * 0.95f, new Vector3(s * 0.8f, s * 0.25f, s * 0.8f), Quaternion.identity, new Color(0.25f, 0.6f, 0.22f), 0);
+                ThemeKitB.Ball(k, at + d * s * 0.85f, Vector3.one * s * 0.18f, Quaternion.identity, new Color(1f, 0.9f, 0.55f), 0);
+            }
+            // a jam tart on top
+            var tc = c + Vector3.up * (rad.y + 0.42f * S * 0.6f);
+            ThemeKitB.Cyl(k, tc, tc + Vector3.up * 0.07f * S, 0.2f * S, 0.22f * S, 10, new Color(0.9f, 0.68f, 0.38f));
+            ThemeKitB.Cyl(k, tc + Vector3.up * 0.07f * S, tc + Vector3.up * 0.085f * S, 0.16f * S, 0.16f * S, 10, new Color(0.8f, 0.08f, 0.2f));
+            ThemeKitB.Spawn(tr, "tart bush", k, null, true);
             return true;
         }
 

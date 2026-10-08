@@ -178,6 +178,10 @@ namespace RockGame
         }
 
         /// <summary>Used by AutoTest to aim the camera.</summary>
+        /// <summary>Where you're looking (degrees).</summary>
+        public float LookYaw => m_Yaw;
+        public float LookPitch => m_Pitch;
+
         public void SetLook(float yaw, float pitch)
         {
             m_Yaw = yaw;
@@ -199,7 +203,7 @@ namespace RockGame
         /// <summary>E on your own upgrade station (UpgradeStation.cs): the UPGRADES screen (in the modes that have base upgrades - Upgrades.cs).</summary>
         public void OpenUpgrades()
         {
-            LootTarget = JonahMode.ConverterOf(m_Net.Team.Value); // (Jonah mode: the converter's slot sits on top of the list)
+            LootTarget = null;
             UpgradesOpen = true;
             MenuOpen = true;
             WheelOpen = false;
@@ -497,18 +501,23 @@ namespace RockGame
                     var ld = CurrentLadder;
                     if (ld != null && transform.position.y > ld.TopWorldY - 0.15f && up)
                     {
-                        if (ld.CanGoOver) { m_VelY = 0f; TickWallClimb(ld); }
+                        if (ld.CanGoOver) { m_VelY = 0f; if (m_ClimbT < 0f) StartWallClimb(ld); }
                         else { m_Push = ld.ExitDir * 3f; m_VelY = Mathf.Max(m_VelY, ld.ExitHop); }
                     }
-                    else m_WallClimbStart = -1f;
                     if (move && Binds.Down(Bind.Jump)) { m_VelY = 4f; m_Push = -transform.forward * 3f; m_JumpPressedAt = -10f; m_JumpedSinceGround = true; }
                 }
-                else { m_VelY -= Cfg.Gravity * Time.deltaTime; m_WallClimbStart = -1f; }
+                else if (m_ClimbT < 0f) m_VelY -= Cfg.Gravity * Time.deltaTime;
                 m_Grounded = grounded || ladder;
                 m_Sprinting = sprint && wish.sqrMagnitude > 0.1f;
                 // knockback (hit by a car) fades out, faster on the ground
                 m_Push = Vector3.MoveTowards(m_Push, Vector3.zero, (grounded ? 14f : 3f) * Time.deltaTime);
                 var planar = wish * speed;
+                if (m_ClimbT >= 0f)
+                {
+                    // going over the spikes: the climb moves you (up and across); W carries on, S lets go
+                    TickWallClimb(move && (fwdInput > 0 || Binds.Held(Bind.Jump)), move && fwdInput < 0);
+                    planar = Vector3.zero;
+                }
                 if (m_SlideOn) planar = TickSlide(wish, grounded, move);
                 else planar = ThemeGround(planar, grounded); // THEME MAPS
                 var before = transform.position;
@@ -1653,31 +1662,60 @@ namespace RockGame
         float m_PackStart = -1f;
         /// <summary>How far through holding E to pick up a chest / workbench (0..1; 0 when not holding). Drawn round the crosshair.
         /// It stays at 0 for the first Cfg.PackUpDelay seconds, so a normal tap of E never flashes the bar.</summary>
-        float m_WallClimbStart = -1f;
-        /// <summary>Going over a large wall / gate from a ladder (0..1, 0 when not).</summary>
-        public float WallClimbProgress => m_WallClimbStart < 0f ? 0f : Mathf.Clamp01((Time.time - m_WallClimbStart) / Mathf.Max(0.1f, Cfg.WallClimbTime));
+        // going over a large wall / gate from a ladder: where it started, the top of the wall, which way is over, how far along
+        Ladder m_ClimbLadder;
+        Vector3 m_ClimbFrom, m_ClimbTop, m_ClimbOver;
+        float m_ClimbT = -1f, m_NextSpike;
+        /// <summary>Going over a large wall / gate from a ladder right now.</summary>
+        public bool ClimbingOverWall => m_ClimbT >= 0f;
 
-        /// <summary>Holding W at the top of a ladder on a large wall / gate: after WallClimbTime you're hauled over the
-        /// spiked top (the server takes WallClimbDamage) and drop down the far side.</summary>
-        void TickWallClimb(Ladder ld)
+        /// <summary>Holding W at the top of a ladder on a large wall / gate: you haul yourself up and over the spiked top,
+        /// slowly (Cfg.WallClimbTime) and hurt the whole time (Cfg.WallClimbDps, while you're on the spikes); let go of W and
+        /// you hang there (still on the spikes), S lets go and you drop back down.</summary>
+        void StartWallClimb(Ladder ld)
         {
-            if (m_WallClimbStart < 0f) { m_WallClimbStart = Time.time; Sfx.Play2D(Sfx.Thud, 0.25f, 0.1f); }
-            if (Time.time - m_WallClimbStart < Cfg.WallClimbTime) return;
-            m_WallClimbStart = -1f;
             var wall = ld.Support;
             if (wall == null) return;
             var dir = ld.ExitDir; dir.y = 0f; dir.Normalize();
-            // onto the top of the wall, past its middle, then a shove over the far side
             float top = ld.SupportTop;
-            var mid = wall.transform.position;
-            float along = Vector3.Dot(mid - transform.position, dir);
-            var to = transform.position + dir * (along + 0.45f);
-            to.y = top + 0.15f;
-            LocalTeleport(to, m_Yaw);
-            m_Push = dir * 4.5f;
-            m_VelY = 1.5f;
-            m_Net.ClimbOverWallRpc();
-            Fx.Shake(0.4f);
+            float along = Vector3.Dot(wall.transform.position - transform.position, dir);
+            m_ClimbLadder = ld;
+            m_ClimbFrom = transform.position;
+            m_ClimbTop = transform.position + dir * along;  // (over the middle of the wall)
+            m_ClimbTop.y = top + 0.2f;
+            m_ClimbOver = m_ClimbTop + dir * 0.75f;
+            m_ClimbT = 0f;
+            m_NextSpike = Time.time + 0.2f;
+            Sfx.Play2D(Sfx.Thud, 0.25f, 0.1f);
+        }
+
+        /// <summary>Every frame while going over: moves you along (up, then across the top), hurts you, and lets go at the far side.</summary>
+        void TickWallClimb(bool up, bool down)
+        {
+            if (m_ClimbT < 0f) return;
+            if (down || m_Net.Dead.Value || m_Net.Trapped) { m_ClimbT = -1f; return; }
+            if (up) m_ClimbT = Mathf.Min(1f, m_ClimbT + Time.deltaTime / Mathf.Max(0.3f, Cfg.WallClimbTime));
+            // up the face for the first 60%, then across the top
+            Vector3 at = m_ClimbT < 0.6f ? Vector3.Lerp(m_ClimbFrom, new Vector3(m_ClimbFrom.x, m_ClimbTop.y, m_ClimbFrom.z), m_ClimbT / 0.6f)
+                : Vector3.Lerp(new Vector3(m_ClimbFrom.x, m_ClimbTop.y, m_ClimbFrom.z), m_ClimbOver, (m_ClimbT - 0.6f) / 0.4f);
+            LocalTeleport(at, m_Yaw);
+            m_VelY = 0f;
+            m_Push = Vector3.zero;
+            // the spikes: a bite every half second, all the way over
+            if (Time.time >= m_NextSpike)
+            {
+                m_NextSpike = Time.time + 0.5f;
+                m_Net.WallSpikesRpc();
+                Fx.Shake(0.12f);
+            }
+            if (m_ClimbT >= 1f)
+            {
+                m_ClimbT = -1f;
+                var dir = m_ClimbOver - new Vector3(m_ClimbFrom.x, m_ClimbTop.y, m_ClimbFrom.z);
+                dir.y = 0f;
+                m_Push = dir.normalized * 4f;
+                m_VelY = 1f;
+            }
         }
 
         public float PackUpProgress => m_PackStart < 0f ? 0f : Mathf.Clamp01((Time.time - m_PackStart - Cfg.PackUpDelay) / Mathf.Max(0.05f, Cfg.PackUpHoldTime));
@@ -1897,6 +1935,9 @@ namespace RockGame
                     {
                         m_GhostPos = under.point;
                         m_GhostPos.y = Mathf.Max(under.point.y, hit.point.y - Deployables.LadderHeight * 0.5f);
+                        // (not up at the very top of a large wall / gate: its top stays below the spikes)
+                        var hs = hit.collider.GetComponentInParent<Structure>();
+                        if (hs != null && (hs.PType == PieceType.Barrier || hs.PType == PieceType.Gate)) m_GhostPos.y = Mathf.Max(under.point.y, Mathf.Min(m_GhostPos.y, Deployables.LadderMaxFoot(hs)));
                         // facing the wall - turned a little your way if you're not square on to it (like Rust's)
                         float wallYaw = Quaternion.LookRotation(-flatN).eulerAngles.y;
                         m_GhostYaw = wallYaw + Mathf.Clamp(Mathf.DeltaAngle(wallYaw, m_Yaw), -Deployables.LadderMaxTurn, Deployables.LadderMaxTurn);

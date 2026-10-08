@@ -5,31 +5,38 @@ using UnityEngine.Rendering;
 namespace RockGame
 {
     /// <summary>
-    /// ISLANDS: every team's base sits on its own sand island, and the ball drops on a sand island in the middle.
-    /// Shallow sea in between (wading is slow; boats can be crafted). A pier and stepping stones lead from each base
-    /// island towards the middle. Mini-Monke style props in sand colours: stacked sandstone blocks with orange ladders
-    /// (real, climbable), wooden platforms on posts, crates, sea-glass blocks, low-poly blob trees.
-    /// (Three teams: only three islands - the empty fourth spot is open sea, with nothing on it.)
+    /// ISLANDS: every team's base sits on its own small round sand island far out at sea, and the ball drops on a small
+    /// round island in the middle (the same size). Nothing joins them - wade the shallow sea (slow) or take a boat, which
+    /// you can craft from the start. The middle island has sandstone blocks with ladders, a wooden deck, crates, sea-glass
+    /// and a driftwood barricade to fight round. Palm trees, pineapple bushes, giant crabs to ride.
+    /// (Three teams: only three base islands - the empty fourth spot is open sea, with nothing on it.)
     /// </summary>
     public class IslandsMap : ThemeMap
     {
         public override MapKind Kind => MapKind.Islands;
         public override string Label => "Islands";
-        public override string Blurb => "A sand island for every team and one in the middle with the ball. Wade the shallow sea (slow), hop the stepping stones, or craft a BOAT (1500 wood).";
+        public override string Blurb => "A small round island for every team, far out at sea, and one in the middle with the ball. Nothing joins them: wade the shallow sea (slow) or craft a BOAT - you can make one from the start.";
         public override bool HasWater => true;
         public override bool Mountains => false;
 
+        /// <summary>Half the usual build space (24 x 24).</summary>
+        public override float BaseHalfSize => 12f;
+        /// <summary>Each round island's radius: just big enough round the base (its corners are 17 m out) for a beach.</summary>
+        static float IslandR => Cfg.SmallMap ? 20f : 23f;
+        /// <summary>The base islands right out near the edge of the map (a few metres of sea behind them).</summary>
+        public override float BaseDistance => Mathf.Floor((Cfg.MapHalf - IslandR - 4f) / 3f) * 3f;
+        public override bool BoatsAnytime => true;
+        public override string MountName => "Giant Crab";
+
         static float D => Mathf.Abs(Cfg.BaseCenter[0].z);
-        static float CenterR => Mathf.Max(24f, D * 0.44f);
+        /// <summary>The middle island: the same size as the base islands (smaller on the small map, so there's still sea between).</summary>
+        static float CenterR => Mathf.Clamp(D - IslandR - 12f, 12f, IslandR);
         const float SeaFloor = -1.6f;
 
         static readonly Color Sand = new Color(0.93f, 0.85f, 0.62f), WetSand = new Color(0.8f, 0.7f, 0.5f), SeaBed = new Color(0.62f, 0.66f, 0.55f);
         static readonly Color Sandstone = new Color(0.86f, 0.74f, 0.52f), Sandstone2 = new Color(0.78f, 0.66f, 0.45f);
         static readonly Color Plank = new Color(0.66f, 0.5f, 0.32f), PlankDark = new Color(0.5f, 0.37f, 0.22f);
         static readonly Color LadderOrange = new Color(0.95f, 0.45f, 0.12f), SeaGlass = new Color(0.55f, 0.85f, 0.9f);
-
-        /// <summary>Which quarter-turn takes blue's island to island k (k = the Cfg.Copy index).</summary>
-        static int Quarter(int k) => k * (4 / Cfg.Copies);
 
         /// <summary>Is there a team in the k-th copy's spot? (Three teams: the fourth spot is open sea - no island, no props, no trees.)</summary>
         public static bool IslandUsed(int k)
@@ -39,66 +46,162 @@ namespace RockGame
             return false;
         }
 
-        /// <summary>The island-local coords (u across, v away from the middle) of a point, for island k.</summary>
-        static Vector2 Local(float x, float z, int k)
-        {
-            var p = Cfg.Rotate(new Vector3(x, 0, z), 4 - Quarter(k) & 3); // back into blue's frame
-            return new Vector2(p.x, -(p.z + D)); // v > 0: out past the base, away from the middle
-        }
-
         public override float Height(float x, float z)
         {
             float s = ThemeMaps.SeedP;
-            // the middle island
+            float wob = (ThemeMaps.SymNoiseP(x, z, 0.09f, s + 11f) - 0.5f) * 2f; // (a slightly wobbly shore)
+            // the middle island, flat round the ball
             float r = Mathf.Sqrt(x * x + z * z);
-            float wob = (ThemeMaps.SymNoiseP(x, z, 0.05f, s + 11f) - 0.5f) * 10f;
-            float land = 1f - ThemeMaps.SmoothStepP(CenterR - 4f, CenterR + 3f, r + wob);
-            // one island round every base - only as many as there are teams (three teams: the fourth spot is sea)
-            for (int k = 0; k < Cfg.Copies && land < 1f; k++)
+            float land = 1f - ThemeMaps.SmoothStepP(CenterR - 2f, CenterR + 2f, r + wob);
+            float flat = ThemeMaps.SmoothStepP(8f, 13f, r);
+            // one round island round every base - only as many as there are teams (three teams: the fourth spot is sea)
+            for (int k = 0; k < Cfg.Copies; k++)
             {
                 if (!IslandUsed(k)) continue;
-                var l = Local(x, z, k);
-                float dx = Mathf.Max(0f, Mathf.Abs(l.x) - Cfg.BaseHalf), dz = Mathf.Max(0f, Mathf.Abs(l.y) - Cfg.BaseHalf);
-                float dB = Mathf.Sqrt(dx * dx + dz * dz);
-                float reach = 14f + (Mathf.PerlinNoise(l.x * 0.05f + s + 40f, l.y * 0.05f + s * 0.5f + 70f) - 0.5f) * 10f;
-                land = Mathf.Max(land, 1f - ThemeMaps.SmoothStepP(reach - 5f, reach + 3f, dB));
+                var c = Cfg.Copy(Cfg.BaseCenter[0], k);
+                float dx = x - c.x, dz = z - c.z;
+                land = Mathf.Max(land, 1f - ThemeMaps.SmoothStepP(IslandR - 2f, IslandR + 2f, Mathf.Sqrt(dx * dx + dz * dz) + wob));
+                float bx = Mathf.Max(0f, Mathf.Abs(dx) - Cfg.BaseHalf), bz = Mathf.Max(0f, Mathf.Abs(dz) - Cfg.BaseHalf);
+                flat = Mathf.Min(flat, ThemeMaps.SmoothStepP(0.5f, 5f, Mathf.Sqrt(bx * bx + bz * bz)));
             }
-            float dune = 0.25f + (ThemeMaps.SymNoiseP(x, z, 0.08f, s + 3f) - 0.5f) * 0.7f;
-            return Mathf.Lerp(SeaFloor, dune, land) * ThemeMaps.MaskP(x, z);
+            float dune = 0.24f + (ThemeMaps.SymNoiseP(x, z, 0.08f, s + 3f) - 0.5f) * 0.5f;
+            return Mathf.Lerp(SeaFloor, dune * flat, land); // (the bases and the middle stay flat at 0)
         }
 
         public override Color[] Palette => new[] { Sand, WetSand, SeaBed };
         public override int ColourAt(Vector3 c, float slopeY) => c.y > -0.2f ? 0 : c.y > -0.9f ? 1 : 2;
 
         public override bool SpotOk(Vector3 p) => p.y > 0.02f;
-        public override float NodeMul(byte kind) => kind == ResourceNode.Tree ? 0.9f : kind == ResourceNode.Bush ? 0.8f : 0.6f;
+        public override float NodeMul(byte kind) => kind == ResourceNode.Tree ? 1f : kind == ResourceNode.Bush ? 0.8f : 0.6f;
         public override Color LeafTint(Color leaf) => Color.Lerp(leaf, new Color(0.35f, 0.75f, 0.3f), 0.5f);
 
-        /// <summary>Mini-Monke trees: a chunky trunk forking into a few branches, each topped with a faceted green blob.</summary>
+        /// <summary>Palm trees: a ringed trunk, straight low down (where the weak spots are) and leaning higher up, drooping
+        /// fronds and coconuts.</summary>
         public override bool BuildTree(Transform tr, int seed, float h, GameObject trunk)
         {
             trunk.GetComponent<MeshRenderer>().enabled = false;
             var rng = new System.Random(seed + 77);
             float R() => (float)rng.NextDouble();
-            var bark = TmKit.Shade(Color.Lerp(new Color(0.5f, 0.36f, 0.24f), new Color(0.6f, 0.45f, 0.3f), R()), 1f);
-            var leaf = TmKit.Shade(Color.Lerp(new Color(0.33f, 0.78f, 0.3f), new Color(0.45f, 0.85f, 0.35f), R()), 1f);
-            float th = h * 0.75f;
-            Art.Part(tr, Art.Cylinder, bark, new Vector3(0, th * 0.5f, 0), new Vector3(0.7f, th * 0.5f, 0.7f));
-            Art.Part(tr, Art.Cylinder, bark, new Vector3(0, 0.25f, 0), new Vector3(1.1f, 0.25f, 1.1f)); // root flare
-            int branches = 2 + rng.Next(2);
-            float yaw0 = R() * 360f;
-            for (int b = 0; b < branches; b++)
+            var bark = TmKit.Shade(Color.Lerp(new Color(0.62f, 0.48f, 0.3f), new Color(0.7f, 0.56f, 0.38f), R()), 1f);
+            var ring = TmKit.Shade(bark, 0.8f);
+            var root = new GameObject("palm").transform;
+            root.SetParent(tr, false);
+            root.localRotation = Quaternion.Euler(0, R() * 360f, 0);
+            float lean = 8f + R() * 10f;
+            int segs = 7;
+            float segH = (h + 2.2f) / segs;
+            var pos = Vector3.zero;
+            var rot = Quaternion.identity;
+            for (int i = 0; i < segs; i++)
             {
-                float yaw = yaw0 + b * 360f / branches + R() * 30f, tilt = 30f + R() * 20f, len = 2.2f + R() * 1.4f;
-                var dir = Quaternion.Euler(0, yaw, 0) * Quaternion.Euler(tilt, 0, 0) * Vector3.up;
-                var a = new Vector3(0, th * (0.75f + R() * 0.2f), 0);
-                var e = a + dir * len;
-                Art.Part(tr, Art.Cylinder, bark, (a + e) * 0.5f, new Vector3(0.32f, len * 0.5f, 0.32f), Quaternion.FromToRotation(Vector3.up, dir).eulerAngles);
-                float bs = 2.2f + R() * 1.2f;
-                Art.Part(tr, TmKit.Blob(seed + b), TmKit.Shade(leaf, (0.9f + R() * 0.15f)), e + Vector3.up * bs * 0.25f, new Vector3(bs, bs * 0.85f, bs), new Vector3(0, R() * 360f, 0));
+                if (i >= 2) rot = Quaternion.Euler(lean * (i - 1) / segs * 2f, 0, 0);
+                var up = rot * Vector3.up;
+                float w = Mathf.Lerp(0.66f, 0.42f, i / (float)segs);
+                Art.Part(root, Art.Cylinder, i % 2 == 0 ? bark : ring, pos + up * segH * 0.5f, new Vector3(w, segH * 0.5f + 0.02f, w), rot.eulerAngles);
+                pos += up * segH;
             }
-            float top = 3f + R();
-            Art.Part(tr, TmKit.Blob(seed + 9), leaf, new Vector3(0, th + top * 0.45f, 0), new Vector3(top, top * 0.9f, top), new Vector3(0, R() * 360f, 0));
+            Art.Part(root, Art.Cylinder, ring, new Vector3(0, 0.15f, 0), new Vector3(1f, 0.15f, 1f)); // root flare
+            var leaf = TmKit.Shade(Color.Lerp(new Color(0.25f, 0.62f, 0.2f), new Color(0.42f, 0.74f, 0.26f), R()), 1f);
+            int fronds = 7 + rng.Next(2);
+            for (int k = 0; k < fronds; k++)
+            {
+                var f = new GameObject("frond").transform;
+                f.SetParent(root, false);
+                f.localPosition = pos;
+                f.localRotation = Quaternion.Euler(0, k * (360f / fronds) + R() * 20f, 0);
+                float up = 14f + R() * 14f;
+                Art.Box(f, leaf, new Vector3(0, 0.05f, 1.3f), new Vector3(1f, 0.06f, 2.8f), new Vector3(up, 0, 0));
+                Art.Box(f, TmKit.Shade(leaf, 0.82f), new Vector3(0, -0.75f, 3.1f), new Vector3(0.8f, 0.05f, 1.7f), new Vector3(up + 30f, 0, 0));
+            }
+            Art.Part(root, Art.Sphere, TmKit.Shade(leaf, 0.9f), pos + Vector3.up * 0.1f, new Vector3(0.9f, 0.5f, 0.9f)); // the crown
+            for (int k = 0; k < 4; k++)
+                Art.Part(root, Art.Sphere, new Color(0.38f, 0.26f, 0.13f), pos + Quaternion.Euler(0, k * 90f + 20f, 0) * new Vector3(0.36f, -0.35f, 0), Vector3.one * 0.36f);
+            return true;
+        }
+
+        /// <summary>A pineapple plant: a fan of spiky leaves round three ripe pineapples (press E for food).</summary>
+        public override bool BuildBush(Transform tr, int seed)
+        {
+            var rng = new System.Random(seed * 31 + 5);
+            float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
+            var leafA = new Color(0.22f, 0.5f, 0.24f);
+            var leafB = new Color(0.36f, 0.62f, 0.3f);
+            int leaves = 16;
+            float spin = R(0, 360);
+            for (int i = 0; i < leaves; i++)
+            {
+                float yaw = spin + i * 360f / leaves + R(-8f, 8f), tilt = i % 2 == 0 ? R(55f, 70f) : R(30f, 45f), len = R(1.1f, 1.6f);
+                var dir = Quaternion.Euler(0, yaw, 0) * Quaternion.Euler(tilt, 0, 0) * Vector3.up;
+                TmKit.Rod(tr, TmKit.Shade(i % 3 == 0 ? leafB : leafA, R(0.9f, 1.1f)), Vector3.up * 0.1f, Vector3.up * 0.1f + dir * len, 0.26f, 0.05f);
+            }
+            var gold = new Color(0.96f, 0.68f, 0.18f);
+            var crown = new Color(0.3f, 0.58f, 0.22f);
+            for (int k = 0; k < 3; k++)
+            {
+                float a = spin + k * 120f + R(-20f, 20f), d = k == 0 ? 0f : R(0.45f, 0.6f), s = k == 0 ? 1.15f : R(0.8f, 0.95f);
+                var c = Quaternion.Euler(0, a, 0) * new Vector3(0, 0, d) + Vector3.up * (0.45f * s + (k == 0 ? 0.25f : 0.05f));
+                Art.Part(tr, Art.Sphere, gold, c, new Vector3(0.48f, 0.72f, 0.48f) * s, new Vector3(0, a, 0));
+                // the criss-cross skin
+                Art.Box(tr, TmKit.Shade(gold, 0.72f), c, new Vector3(0.5f, 0.05f, 0.5f) * s, new Vector3(0, a + 45f, 0));
+                Art.Box(tr, TmKit.Shade(gold, 0.72f), c + Vector3.up * 0.16f * s, new Vector3(0.44f, 0.05f, 0.44f) * s, new Vector3(0, a, 0));
+                Art.Box(tr, TmKit.Shade(gold, 0.72f), c - Vector3.up * 0.16f * s, new Vector3(0.44f, 0.05f, 0.44f) * s, new Vector3(0, a, 0));
+                for (int j = 0; j < 4; j++)
+                {
+                    var dir = Quaternion.Euler(0, a + j * 90f, 0) * Quaternion.Euler(j % 2 == 0 ? 18f : 32f, 0, 0) * Vector3.up;
+                    var top = c + Vector3.up * 0.34f * s;
+                    TmKit.Rod(tr, crown, top, top + dir * 0.45f * s, 0.12f * s, 0.04f);
+                }
+            }
+            return true;
+        }
+
+        /// <summary>The giant crab: a wide red shell to sit on, eyes on stalks, two big claws in front, four pairs of legs.</summary>
+        public override bool BuildMount(Transform t, Material ghost, bool unicorn, out Transform saddle, out Transform head, out Transform tail, List<Transform> legs)
+        {
+            var shell = unicorn ? new Color(0.95f, 0.93f, 0.97f) : new Color(0.88f, 0.3f, 0.16f); // (now and then a rare pearl-white one)
+            var under = new Color(0.98f, 0.78f, 0.55f);
+            var tip = unicorn ? new Color(1f, 0.8f, 0.25f) : new Color(0.25f, 0.12f, 0.08f);
+            TmKit.Hit(Art.Part(t, Art.Sphere, shell, new Vector3(0, 1.12f, 0), new Vector3(1.5f, 0.66f, 1.2f)), ghost);
+            TmKit.Hit(Art.Part(t, Art.Sphere, under, new Vector3(0, 0.95f, 0), new Vector3(1.3f, 0.36f, 1.05f)), ghost);
+            for (int i = 0; i < 4; i++)
+                Art.Part(t, Art.Sphere, TmKit.Shade(shell, 1.12f), new Vector3((i % 2 == 0 ? -1 : 1) * (i < 2 ? 0.42f : 0.2f), 1.36f, i < 2 ? 0.25f : -0.3f), new Vector3(0.22f, 0.1f, 0.2f));
+            // the head: eyes on stalks, mouth, and the two big claws (they bob with it)
+            var hp = TmKit.Pivot(t, "head", new Vector3(0, 1.18f, 0.5f));
+            TmKit.HeadBox(hp, shell, new Vector3(0, -0.02f, 0.08f), new Vector3(0.7f, 0.32f, 0.3f), ghost);
+            Art.Box(hp, new Color(0.35f, 0.08f, 0.06f), new Vector3(0, -0.1f, 0.24f), new Vector3(0.3f, 0.06f, 0.03f));
+            for (int s = -1; s <= 1; s += 2)
+            {
+                TmKit.Rod(hp, shell, new Vector3(s * 0.16f, 0.08f, 0.12f), new Vector3(s * 0.2f, 0.42f, 0.18f), 0.07f, 0.07f);
+                Art.Part(hp, Art.Sphere, Color.white, new Vector3(s * 0.2f, 0.46f, 0.18f), Vector3.one * 0.15f);
+                Art.Part(hp, Art.Sphere, Color.black, new Vector3(s * 0.2f, 0.47f, 0.24f), Vector3.one * 0.08f);
+                // the arm out to the claw, then the claw: a big upper pincer and a little lower one
+                TmKit.Hit(TmKit.Rod(hp, shell, new Vector3(s * 0.38f, -0.08f, 0.1f), new Vector3(s * 0.62f, -0.02f, 0.5f), 0.16f, 0.16f), ghost);
+                TmKit.Hit(Art.Part(hp, Art.Sphere, shell, new Vector3(s * 0.66f, 0.02f, 0.68f), new Vector3(0.34f, 0.3f, 0.42f)), ghost);
+                Art.Box(hp, tip, new Vector3(s * 0.64f, 0.08f, 0.95f), new Vector3(0.16f, 0.1f, 0.3f), new Vector3(-12f, 0, 0));
+                Art.Box(hp, TmKit.Shade(shell, 0.85f), new Vector3(s * 0.7f, -0.08f, 0.9f), new Vector3(0.12f, 0.08f, 0.22f), new Vector3(10f, 0, 0));
+            }
+            head = hp;
+            // no real tail: a little flap at the back
+            var tl = TmKit.Pivot(t, "tail", new Vector3(0, 0.98f, -0.58f));
+            Art.Box(tl, under, new Vector3(0, -0.08f, -0.03f), new Vector3(0.46f, 0.18f, 0.08f));
+            tail = tl;
+            // four leg pivots (they swing as it walks), each carrying two legs: out sideways from the shell, then down
+            for (int i = 0; i < 4; i++)
+            {
+                int s = i % 2 == 0 ? -1 : 1;
+                float z = i < 2 ? 0.25f : -0.3f;
+                var leg = TmKit.Pivot(t, "leg", new Vector3(s * 0.55f, 1.0f, z));
+                for (int k = 0; k < 2; k++)
+                {
+                    float dz = k == 0 ? 0.1f : -0.12f;
+                    var knee = new Vector3(s * 0.62f, 0.25f, dz * 2f);
+                    TmKit.Hit(TmKit.Rod(leg, shell, new Vector3(0, 0, dz), knee, 0.13f, 0.13f), ghost);
+                    TmKit.Rod(leg, TmKit.Shade(shell, 0.9f), knee, new Vector3(s * 0.85f, -0.98f, dz * 3f), 0.11f, 0.11f);
+                    Art.Box(leg, tip, new Vector3(s * 0.85f, -0.96f, dz * 3f), new Vector3(0.1f, 0.08f, 0.1f));
+                }
+                legs?.Add(leg);
+            }
+            saddle = TmKit.Saddle(t, ghost, 1.47f, 0.7f, -0.05f, new Vector3(0.95f, 0.1f, 0.75f), 0.07f); // (the blanket lies over the shell)
             return true;
         }
 
@@ -112,75 +215,62 @@ namespace RockGame
             var sec = TmKit.Sector(root, "Islands props");
             var bc = Cfg.BaseCenter[0];
 
-            // ---- the pier and the stepping stones from blue's island to the middle (off to one side of the base's axis) ----
-            float laneX = Mathf.Min(9f, Cfg.BaseHalf - 4f);
-            float zShore = float.NaN, zFar = float.NaN;
-            for (float z = bc.z + Cfg.BaseHalf; z < -CenterR + 6f; z += 0.5f)
+            // ---- blue's island: only beach bits round the base (the island is all build space): driftwood, shells,
+            //      starfish, and a few rocks out in the shallows ----
+            for (int i = 0, made = 0; i < 400 && made < 12; i++)
             {
-                float hh = ThemeMaps.Height(laneX, z);
-                if (float.IsNaN(zShore) && hh < -0.5f) zShore = z;
-                if (!float.IsNaN(zShore) && hh > -0.4f) { zFar = z; break; }
-            }
-            if (!float.IsNaN(zShore) && !float.IsNaN(zFar) && zFar - zShore > 5f)
-            {
-                float zEnd = zShore + (zFar - zShore) * 0.5f;
-                Pier(sec, new Vector3(laneX, 0, zShore - 3f), new Vector3(laneX, 0, zEnd));
-                for (float z = zEnd + 2.6f; z < zFar - 0.5f; z += 2.7f)
-                    TmKit.Stone(sec, new Vector3(laneX + Rn(-0.8f, 0.8f), 0.12f, z), Rn(0.75f, 0.95f), Sandstone2);
-            }
-            // a second, all-stepping-stone route on the other side (more of a jump)
-            for (float z = (float.IsNaN(zShore) ? 0 : zShore) + 1f; !float.IsNaN(zShore) && !float.IsNaN(zFar) && z < zFar - 0.5f; z += 3.1f)
-            {
-                var q = new Vector3(-laneX - 4f + Rn(-1f, 1f), 0.12f, z);
-                if (ThemeMaps.Height(q.x, q.z) < -0.3f) TmKit.Stone(sec, q, Rn(0.7f, 0.9f), Sandstone2);
-            }
-
-            // ---- the middle island: obstacles round the ball (the middle itself stays clear) ----
-            float ring = Mathf.Max(23f, CenterR - 7f);
-            var spots = new List<(float ang, float r, int kind)>
-            {
-                (-24f, ring, 0), (22f, ring + 1f, 1), (0f, ring + 3f, 2), (-33f, ring - 1f, 3), (33f, ring - 1f, 2), (8f, ring - 1.5f, 3),
-            };
-            if (!Cfg.FourWay) { spots.Add((-70f, ring, 1)); spots.Add((70f, ring, 0)); spots.Add((-80f, ring + 1f, 3)); spots.Add((80f, ring + 1f, 2)); spots.Add((-55f, ring + 2f, 2)); spots.Add((55f, ring + 2f, 3)); }
-            foreach (var (ang, r, kind) in spots)
-            {
-                var p = Quaternion.Euler(0, ang, 0) * new Vector3(0, 0, -r);
-                if (!TmKit.FreeSpot(p, 3f) || ThemeMaps.Height(p.x, p.z) < -0.1f) continue;
-                p.y = ThemeMaps.Height(p.x, p.z);
-                float yaw = ang + Rn(-15f, 15f);
-                switch (kind)
-                {
-                    case 0: BlockStack(sec, p, yaw, rng); break;
-                    case 1: Platform(sec, p, yaw, rng, 2.4f); break;
-                    case 2: Crates(sec, p, yaw, rng); break;
-                    default: GlassBlock(sec, p, yaw, rng); break;
-                }
-            }
-
-            // ---- blue's island: a platform and crates out past the base edges ----
-            var local = new[] { new Vector3(Cfg.BaseHalf + 7f, 0, 0), new Vector3(-Cfg.BaseHalf - 7f, 0, -6f), new Vector3(Cfg.BaseHalf + 6f, 0, -10f), new Vector3(-Cfg.BaseHalf - 6f, 0, 8f) };
-            for (int i = 0; i < local.Length; i++)
-            {
-                var p = bc + local[i];
-                if (!Cfg.InFirstSector(p, 3f) || Mathf.Abs(p.x) > Cfg.MapHalf - 4f || ThemeMaps.Height(p.x, p.z) < 0.02f) continue;
-                p.y = ThemeMaps.Height(p.x, p.z);
-                if (i == 0) Platform(sec, p, Rn(0, 360), rng, 2.2f);
-                else if (i == 1) BlockStack(sec, p, Rn(0, 360), rng, small: true);
-                else Crates(sec, p, Rn(0, 360), rng);
-            }
-            // driftwood and shells along the beaches
-            for (int i = 0, made = 0; i < 400 && made < Mathf.RoundToInt(8 * Cfg.MapHalf / 100f); i++)
-            {
-                var p = new Vector3(Rn(-Cfg.MapHalf + 6f, Cfg.MapHalf - 6f), 0, Rn(-Cfg.MapHalf + 6f, -4f));
-                if (!TmKit.FreeSpot(p, 2f)) continue;
+                float a = Rn(0, Mathf.PI * 2f), dist = Rn(Cfg.BaseHalf + 2f, IslandR + 2.5f);
+                var p = bc + new Vector3(Mathf.Cos(a), 0, Mathf.Sin(a)) * dist;
+                if (Mathf.Abs(p.x - bc.x) < Cfg.BaseHalf + 1.5f && Mathf.Abs(p.z - bc.z) < Cfg.BaseHalf + 1.5f) continue;
+                if (!Cfg.InFirstSector(p, 2f) || Mathf.Abs(p.x) > Cfg.MapHalf - 3f || Mathf.Abs(p.z) > Cfg.MapHalf - 3f) continue;
                 float hh = ThemeMaps.Height(p.x, p.z);
-                if (hh < -0.4f || hh > 0.1f) continue;
                 p.y = hh;
+                switch (made % 4)
+                {
+                    case 0: // driftwood on the sand
+                        if (hh < -0.3f || hh > 0.3f) continue;
+                        Art.Part(sec, Art.Cylinder, new Color(0.7f, 0.6f, 0.45f), p + Vector3.up * 0.15f, new Vector3(0.3f, Rn(0.9f, 1.4f), 0.3f), new Vector3(90, Rn(0, 360), 0));
+                        break;
+                    case 1: // a shell
+                        if (hh < -0.3f) continue;
+                        Art.Part(sec, Art.Sphere, new Color(0.98f, 0.82f, 0.75f), p + Vector3.up * 0.05f, new Vector3(0.35f, 0.15f, 0.3f), new Vector3(0, Rn(0, 360), 0));
+                        break;
+                    case 2: // a starfish
+                    {
+                        if (hh < -0.4f) continue;
+                        float y0 = Rn(0, 72);
+                        for (int k = 0; k < 5; k++)
+                            Art.Box(sec, new Color(0.95f, 0.5f, 0.3f), p + Vector3.up * 0.03f + Quaternion.Euler(0, y0 + k * 72f, 0) * new Vector3(0, 0, 0.16f), new Vector3(0.12f, 0.05f, 0.32f), new Vector3(0, y0 + k * 72f, 0));
+                        break;
+                    }
+                    default: // a rock in the shallows
+                    {
+                        if (hh > -0.5f) continue;
+                        float sc = Rn(0.7f, 1.2f);
+                        Art.Part(sec, TmKit.Rock(made), TmKit.Shade(Sandstone2, Rn(0.85f, 1f)), p + Vector3.up * sc * 0.35f, new Vector3(sc * 1.3f, sc, sc * 1.1f), new Vector3(0, Rn(0, 360), 0), true);
+                        break;
+                    }
+                }
                 made++;
-                if (made % 2 == 0) Art.Part(sec, Art.Cylinder, new Color(0.7f, 0.6f, 0.45f), p + Vector3.up * 0.2f, new Vector3(0.35f, 1.4f, 0.35f), new Vector3(90, Rn(0, 360), 0), true);
-                else Art.Part(sec, Art.Sphere, new Color(0.98f, 0.82f, 0.75f), p + Vector3.up * 0.05f, new Vector3(0.35f, 0.15f, 0.3f), new Vector3(0, Rn(0, 360), 0));
             }
             TmKit.CopyRound(sec, IslandUsed);
+
+            // ---- red and white buoys out in the open sea between the islands (nothing to stand on) ----
+            float gap0 = CenterR + 5f, gap1 = D - IslandR - 5f;
+            if (gap1 - gap0 > 4f)
+            {
+                var sea = TmKit.Sector(root, "Islands buoys");
+                for (int i = 0; i < 3; i++)
+                {
+                    var p = TmKit.CentreSpot(-0.3f + i * 0.3f + Rn(-0.05f, 0.05f), Rn(gap0, gap1));
+                    if (!Cfg.InFirstSector(p, 2f)) continue;
+                    p.y = ThemeMaps.WaterY;
+                    Art.Part(sea, Art.Cylinder, Color.white, p + Vector3.up * 0.2f, new Vector3(0.6f, 0.25f, 0.6f));
+                    Art.Part(sea, Art.Cylinder, new Color(0.9f, 0.2f, 0.15f), p + Vector3.up * 0.65f, new Vector3(0.45f, 0.2f, 0.45f));
+                    Art.Part(sea, Art.Sphere, new Color(0.9f, 0.2f, 0.15f), p + Vector3.up * 0.95f, Vector3.one * 0.3f);
+                }
+                TmKit.CopyRound(sea);
+            }
 
             // far-off little islands on the horizon (scenery only)
             float half = Cfg.MapHalf;
@@ -195,22 +285,23 @@ namespace RockGame
             }
         }
 
-        static void Pier(Transform sec, Vector3 a, Vector3 b)
+        /// <summary>The middle island: sandstone block stacks with ladders, a wooden deck, crates, sea-glass blocks and a
+        /// driftwood barricade round the ball - things to duck behind and climb on.</summary>
+        public override bool BuildCentre(Transform root)
         {
-            const float top = 0.45f;
-            a.y = b.y = top;
-            TmKit.Plank(sec, a, b, 2.4f, 0.25f, Plank, true);
-            var dir = (b - a).normalized;
-            var side = new Vector3(dir.z, 0, -dir.x);
-            float len = (b - a).magnitude;
-            for (float t = 0; t <= len; t += 3f)
-                for (int s = -1; s <= 1; s += 2)
+            var spots = new (float f, float r)[] { (-0.3f, 7.5f), (0.27f, 8f), (0f, 12.5f), (-0.15f, 16f), (0.36f, 13.5f), (-0.38f, 12f), (0.14f, 18f), (-0.05f, 19.5f) };
+            TmKit.CentreLayout(root, "Islands centre", 5150, spots, CenterR - 3.5f, 5.5f, (sec, p, yaw, i, rng) =>
+            {
+                switch (i)
                 {
-                    var p = a + dir * t + side * (s * 1.1f);
-                    float floor = ThemeMaps.Height(p.x, p.z);
-                    float hgt = top - floor + 0.6f;
-                    Art.Part(sec, Art.Cylinder, PlankDark, new Vector3(p.x, floor + hgt * 0.5f - 0.2f, p.z), new Vector3(0.28f, hgt * 0.5f, 0.28f));
+                    case 0: case 6: Crates(sec, p, yaw, rng); break;
+                    case 1: case 7: GlassBlock(sec, p, yaw, rng); break;
+                    case 2: case 5: BlockStack(sec, p, yaw, rng, small: true); break;
+                    case 3: Barricade(sec, p, yaw); break;
+                    default: Platform(sec, p, yaw, rng, 2.4f); break;
                 }
+            });
+            return true;
         }
 
         /// <summary>Stacked sandstone blocks (2-3 tiers), each with an orange ladder up its face; a crate on top.</summary>
@@ -282,6 +373,21 @@ namespace RockGame
             Art.Box(sec, SeaGlass, p + Vector3.up * 0.5f, new Vector3(4.5f, 1.4f, 3.5f), new Vector3(0, yaw, 0), true);
             Art.Box(sec, Color.Lerp(SeaGlass, Color.white, 0.2f), p + rot * new Vector3(1.2f, 1.6f, 0.4f), new Vector3(2.6f, 1.3f, 2.6f), new Vector3(0, yaw + 12f, 0), true);
         }
+
+        /// <summary>A driftwood barricade: three bleached logs stacked between posts, chest high.</summary>
+        static void Barricade(Transform sec, Vector3 p, float yaw)
+        {
+            var rot = Quaternion.Euler(0, yaw, 0);
+            var drift = new Color(0.74f, 0.66f, 0.52f);
+            for (int k = 0; k < 3; k++)
+            {
+                var c = p + Vector3.up * (0.25f + k * 0.42f) + rot * new Vector3(k == 1 ? 0.2f : 0f, 0, 0);
+                float len = 2.1f - k * 0.2f;
+                TmKit.Rod(sec, TmKit.Shade(drift, 1f - k * 0.06f), c - rot * Vector3.right * len, c + rot * Vector3.right * len, 0.45f, 0.45f, true, Art.Cylinder);
+            }
+            for (int s = -1; s <= 1; s += 2)
+                Art.Part(sec, Art.Cylinder, PlankDark, p + rot * new Vector3(s * 1.5f, 0.75f, 0.32f), new Vector3(0.2f, 0.8f, 0.2f), default, true);
+        }
     }
 
     /// <summary>Shared bits for the Islands / Jungle / Swamp / Ice maps.</summary>
@@ -296,6 +402,17 @@ namespace RockGame
         public static float SymN(float x, float z, float f, float o) => 0.5f + (ThemeMaps.SymNoiseP(x, z, f, o) - 0.5f) * (Cfg.FourWay ? 1.55f : 1f);
 
         public static System.Random Rng(int salt) => new System.Random(salt + Cfg.MapSeed * 7919);
+
+        /// <summary>A whole-number hash of (i, j) and the map seed, as 0..1 (the same on every peer).</summary>
+        public static float Hash(int i, int j, int salt)
+        {
+            unchecked
+            {
+                uint h = (uint)(i * 73856093) ^ (uint)(j * 19349663) ^ (uint)((Cfg.MapSeed + salt) * 83492791);
+                h ^= h >> 13; h *= 0x5bd1e995; h ^= h >> 15; h *= 0x27d4eb2d; h ^= h >> 16;
+                return (h & 0xffffff) / (float)0x1000000;
+            }
+        }
 
         /// <summary>A group at the world origin for blue's sector: build into it, then CopyRound copies it to the others.</summary>
         public static Transform Sector(Transform root, string name)
@@ -320,6 +437,17 @@ namespace RockGame
             }
         }
 
+        /// <summary>The point turned round into blue's sector (for things laid out once there and copied round).</summary>
+        public static Vector3 ToFirstSector(Vector3 p)
+        {
+            for (int k = 0; k < Cfg.Copies; k++)
+            {
+                var q = Cfg.Copy(p, k);
+                if (Cfg.InFirstSector(q, 0f)) return q;
+            }
+            return p;
+        }
+
         /// <summary>In blue's sector, away from its base, the middle and the edge.</summary>
         public static bool FreeSpot(Vector3 p, float clear)
         {
@@ -330,13 +458,20 @@ namespace RockGame
             return Mathf.Abs(p.x) < Cfg.MapHalf - clear && Mathf.Abs(p.z) < Cfg.MapHalf - clear;
         }
 
-        static readonly Mesh[] s_Blobs = new Mesh[8];
+        static readonly Mesh[] s_Blobs = new Mesh[8], s_Rocks = new Mesh[8];
         /// <summary>A faceted low-poly blob (shared meshes).</summary>
         public static Mesh Blob(int i)
         {
             i = ((i % 8) + 8) % 8;
             if (s_Blobs[i] == null) s_Blobs[i] = Art.MakeRock(900 + i, 0.22f);
             return s_Blobs[i];
+        }
+        /// <summary>A craggier low-poly rock (shared meshes).</summary>
+        public static Mesh Rock(int i)
+        {
+            i = ((i % 8) + 8) % 8;
+            if (s_Rocks[i] == null) s_Rocks[i] = Art.MakeRock(950 + i, 0.32f);
+            return s_Rocks[i];
         }
 
         /// <summary>A box whose top face runs from a to b (walkways, ramps, bridges).</summary>
@@ -346,6 +481,16 @@ namespace RockGame
             var rot = Quaternion.LookRotation(d.normalized, Vector3.up);
             var mid = (a + b) * 0.5f - rot * Vector3.up * (thick * 0.5f);
             return Art.Box(parent, c, mid, new Vector3(width, thick, d.magnitude), rot.eulerAngles, collider);
+        }
+
+        /// <summary>A bar from a to b (w wide, d deep): a box, or a cylinder when mesh = Art.Cylinder.</summary>
+        public static GameObject Rod(Transform parent, Color c, Vector3 a, Vector3 b, float w, float d, bool collider = false, Mesh mesh = null)
+        {
+            var v = b - a;
+            float len = v.magnitude;
+            var rot = len > 1e-4f ? Quaternion.FromToRotation(Vector3.up, v / len) : Quaternion.identity;
+            bool cyl = mesh == Art.Cylinder;
+            return Art.Part(parent, mesh ?? Art.Cube, c, (a + b) * 0.5f, new Vector3(w, cyl ? len * 0.5f : len, d), rot.eulerAngles, collider);
         }
 
         /// <summary>A flat round stepping stone / pad (top at top.y) with an exact convex collider.</summary>
@@ -362,8 +507,10 @@ namespace RockGame
         }
 
         /// <summary>A climbable ladder up a wall. foot: on the ground at the wall's face; faceOut: away from the wall.
-        /// topY: the floor you step off onto at the top. Parent must be at the world origin, only turned about y (a Sector).</summary>
-        public static void Ladder(Transform parent, Vector3 foot, float topY, Vector3 faceOut, Color c)
+        /// topY: the floor you step off onto at the top. Parent must be at the world origin, only turned about y (a Sector).
+        /// The ladder itself is solid (you can't walk through it - under a deck it would be the only thing there); the
+        /// climbing volume is in front of it.</summary>
+        public static void Ladder(Transform parent, Vector3 foot, float topY, Vector3 faceOut, Color c, bool solid = true)
         {
             faceOut.y = 0;
             faceOut.Normalize();
@@ -376,6 +523,16 @@ namespace RockGame
             Art.Box(parent, c, b - right * 0.36f + Vector3.up * (len * 0.5f), new Vector3(0.09f, len, 0.09f), e);
             for (float y = 0.35f; y < len - 0.1f; y += 0.45f)
                 Art.Box(parent, c, b + Vector3.up * y, new Vector3(0.72f, 0.07f, 0.07f), e);
+            if (solid)
+            {
+                // one solid slab round the rails and rungs, up to just under the floor at the top (so you step off over it)
+                float sh = Mathf.Max(0.2f, topY - foot.y - 0.05f);
+                var body = new GameObject("ladder body");
+                body.transform.SetParent(parent, false);
+                body.transform.localPosition = b + Vector3.up * (sh * 0.5f);
+                body.transform.localRotation = rot;
+                body.AddComponent<BoxCollider>().size = new Vector3(0.84f, sh, 0.18f);
+            }
             var go = new GameObject("ladder");
             go.transform.SetParent(parent, false);
             go.transform.localPosition = foot + faceOut * 0.5f + Vector3.up * (len * 0.5f);
@@ -405,6 +562,106 @@ namespace RockGame
             var mat = new Material(Art.Mat(c));
             if (mat.HasProperty("_EmissionColor")) { mat.EnableKeyword("_EMISSION"); mat.SetColor("_EmissionColor", c * power); }
             return mat;
+        }
+
+        static readonly Dictionary<Color, Material> s_Glows = new Dictionary<Color, Material>();
+        /// <summary>A glowing material, shared (for things built many times over: bushes, mounts).</summary>
+        public static Material GlowShared(Color c, float power)
+        {
+            var key = new Color(c.r, c.g, c.b, power);
+            if (s_Glows.TryGetValue(key, out var m) && m) return m;
+            m = Glow(c, power);
+            s_Glows[key] = m;
+            return m;
+        }
+
+        // ---- the middle of the map (ThemeMap.BuildCentre) ----
+
+        /// <summary>A spot in blue's part of the middle: f across the sector (-0.5 .. 0.5, 0 = straight towards blue's
+        /// base), r metres from the ball.</summary>
+        public static Vector3 CentreSpot(float f, float r) => Quaternion.Euler(0, f * 360f / Cfg.Copies, 0) * new Vector3(0, 0, -r);
+
+        /// <summary>
+        /// Lays out the middle round the ball: each spot (f, r: see CentreSpot; r capped at maxR, never under 6.5 so the
+        /// ball's own few metres stay clear) gets build(sector, ground point, yaw facing the middle, index, rng) - skipped if
+        /// it would be within `gap` of another (counting every team's copy) or of the signpost - then copied round.
+        /// </summary>
+        public static void CentreLayout(Transform root, string name, int salt, (float f, float r)[] spots, float maxR, float gap,
+            System.Action<Transform, Vector3, float, int, System.Random> build)
+        {
+            var sec = Sector(root, name);
+            var rng = Rng(salt);
+            var placed = new List<Vector3>();
+            var sign = CentreSign.Dir * CentreSign.Dist;
+            for (int i = 0; i < spots.Length; i++)
+            {
+                float r = Mathf.Clamp(spots[i].r, 6.5f, Mathf.Max(6.5f, maxR));
+                var p = CentreSpot(spots[i].f, r);
+                if (!Cfg.InFirstSector(p, 1.5f)) continue;
+                bool ok = true;
+                for (int k = 0; k < Cfg.Copies && ok; k++)
+                {
+                    var q = Cfg.Copy(p, k);
+                    if (new Vector2(q.x - sign.x, q.z - sign.z).magnitude < 3.2f) ok = false;
+                    foreach (var o in placed) if (new Vector2(q.x - o.x, q.z - o.z).magnitude < gap) { ok = false; break; }
+                }
+                if (!ok) continue;
+                placed.Add(p);
+                p.y = ThemeMaps.Height(p.x, p.z);
+                float yaw = Mathf.Atan2(p.x, p.z) * Mathf.Rad2Deg + (float)(rng.NextDouble() * 30.0 - 15.0);
+                build(sec, p, yaw, i, rng);
+            }
+            CopyRound(sec);
+        }
+
+        // ---- rideable creatures (ThemeMap.BuildMount) ----
+
+        /// <summary>A hit box on a body part (shots find it; it bumps nothing), as the horse has.</summary>
+        public static GameObject Hit(GameObject g, Material ghost)
+        {
+            if (ghost != null) return g;
+            g.AddComponent<BoxCollider>();
+            g.layer = PlayerNet.HitboxLayer;
+            return g;
+        }
+
+        public static Transform Pivot(Transform parent, string name, Vector3 at)
+        {
+            var p = new GameObject(name).transform;
+            p.SetParent(parent, false);
+            p.localPosition = at;
+            return p;
+        }
+
+        /// <summary>The head's own solid box (a hit there does double damage), named like the horse's.</summary>
+        public static GameObject HeadBox(Transform pivot, Color c, Vector3 pos, Vector3 size, Material ghost, Mesh mesh = null)
+        {
+            var g = Art.Part(pivot, mesh ?? Art.Cube, c, pos, size);
+            if (ghost == null) g.AddComponent<BoxCollider>();
+            g.name = "horse head";
+            return g;
+        }
+
+        /// <summary>A straight leg swinging from the hip (len long, w thick), its foot a different colour.</summary>
+        public static Transform Leg(Transform t, Vector3 hip, float len, float w, Color c, Color foot, Material ghost, List<Transform> legs)
+        {
+            var leg = Pivot(t, "leg", hip);
+            Hit(Art.Box(leg, c, new Vector3(0, -len * 0.5f, 0), new Vector3(w, len, w)), ghost);
+            Art.Box(leg, foot, new Vector3(0, -len + 0.06f, 0.03f), new Vector3(w * 1.15f, 0.12f, w * 1.3f));
+            legs?.Add(leg);
+            return leg;
+        }
+
+        /// <summary>The saddle (shown once it's saddled): seat at seatY, with the team-coloured "blanket" under it.</summary>
+        public static Transform Saddle(Transform t, Material ghost, float seatY, float width, float z = -0.05f, Vector3? blanketSize = null, float blanketDrop = 0.27f)
+        {
+            var sd = Pivot(t, "saddle", Vector3.zero);
+            var leather = new Color(0.35f, 0.18f, 0.08f);
+            Hit(Art.Box(sd, leather, new Vector3(0, seatY, z), new Vector3(width + 0.04f, 0.08f, 0.55f)), ghost);
+            Art.Box(sd, leather, new Vector3(0, seatY + 0.08f, z + 0.25f), new Vector3(0.3f, 0.12f, 0.08f));
+            var blanket = Art.Box(sd, new Color(0.8f, 0.2f, 0.15f), new Vector3(0, seatY - blanketDrop, z), blanketSize ?? new Vector3(width + 0.06f, 0.5f, 0.45f));
+            blanket.name = "blanket";
+            return sd;
         }
     }
 

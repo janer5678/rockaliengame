@@ -401,8 +401,8 @@ namespace RockGame
             }
             DrawHitMarker(cx, cy, k); // (ticks round the crosshair - it isn't replaced)
             if (pc.Scoped) DrawScope();
-            float charge = Mathf.Max(pc.DrawAmount, pc.RamCharge, pc.EatProgress, pc.PackUpProgress, pc.WallClimbProgress);
-            if (pc.WallClimbProgress > 0f) Shadowed(new Rect(0, cy + 42 * k, sw, 26 * k), "<color=#ff8a7a>Climbing over the spikes...</color>", m_Center); // (the last: holding E to pick up a chest / workbench)
+            float charge = Mathf.Max(pc.DrawAmount, pc.RamCharge, pc.EatProgress, pc.PackUpProgress);
+            if (pc.ClimbingOverWall) Shadowed(new Rect(0, cy + 42 * k, sw, 26 * k), "<color=#ff8a7a>Climbing over the spikes - hold W</color>", m_Center); // (no bar: it's slow, and it hurts) // (the last: holding E to pick up a chest / workbench)
             if (charge > 0)
             {
                 Fill(new Rect(cx - 50 * k, cy + 30 * k, 100 * k, 8 * k), new Color(0, 0, 0, 0.5f));
