@@ -717,6 +717,11 @@ namespace RockGame
         public float ExitHop = 1.5f;
         /// <summary>A placed ladder (Container.Deployables.cs), not the fort tower's own.</summary>
         public bool Deployed;
+        /// <summary>Is a player standing at p on the ladder's climbing side (in front of it, not behind the rungs)? Placed
+        /// ladders: the board is FrontDepth in front of... behind this volume's centre, so anything past it is behind.</summary>
+        public bool FromFront(Vector3 p) => !Deployed || transform.InverseTransformPoint(p).z < BoardZ;
+        /// <summary>Where the ladder's board is along the volume's forward (local z): behind it is the back side.</summary>
+        public float BoardZ = 0.3f;
 
         Structure m_Support;
         float m_SupportAt = -10f;

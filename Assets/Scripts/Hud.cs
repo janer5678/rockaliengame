@@ -984,7 +984,6 @@ namespace RockGame
             bool hoverShown = false;
             if (craft) { DrawCraftList(me, pc, cxp, top, craftW, colGap, sh - 8 * k, k); hoverShown = true; }
             if (upgrades) { DrawUpgradeList(me, pc, cxp, top, craftW, sh - 8 * k, k); hoverShown = true; }
-            if (Cfg.Jonah && (craft || upgrades)) DrawDustPanel(me, pc, cxp + (craft ? craftTotal : craftW) + 14 * k, top, k); // (Jonah mode: buy alien dust - to the right)
             // how to move things: always these three lines under the bag
             Shadowed(new Rect(invX, infoY, gridW, 66 * k), $"<color=#ffffff>{InvHelpShown}</color>", m_SmallWrap); // (with the mouse / key icons)
             // no crafting list beside the bag (a chest is open, or the tutorial hasn't got there): the description goes

@@ -160,7 +160,7 @@ namespace RockGame
                 case GameRules.ThreeGoal: return "Classic, but score 3 times: get the ball into your machine and a UFO drops it back in the middle. First to 3 wins (most goals when the clock runs out).";
                 case GameRules.Progress: return "Classic, but while the ball sits in your machine your progress bar fills - fill it and you win.";
                 case GameRules.Assassin: return "No ball: kill the enemies - each drops their skull - and hand a skull of every one of them into your machine (E). Skulls only drop in this mode.";
-                case GameRules.JonahTest: return "Classic, plus Jonah's ideas: the upgrade station turns wood into ALIEN DUST (drag wood in, CONVERT), metal and tech things cost alien dust, and UPGRADE 10 WALLS (1000 dust) lets you fly round your base in a black void and pick 10 pieces to go up a tier.";
+                case GameRules.JonahTest: return "Classic, plus Jonah's ideas: the trade stations TRADE (everything costs wood), and UPGRADE 10 WALLS at the upgrade station (insert 1000 wood) lets you fly round your base in a black void and pick 10 pieces to go up a tier.";
                 case GameRules.Domination: return "Classic, but whoever has the ball (carried or in their machine) gets the Advanced Trade Station's items without building one. Lose the ball, lose them.";
                 case GameRules.Tutorial: return "New here? Start with this. Short, simple steps teach you the whole game - you do each one to go on, and each control unlocks as it's taught. The clock is stopped and it's always the small Plains map. Press PLAY TUTORIAL and pick Solo or With a friend.";
                 case GameRules.AutoWood: return "Buy a wood machine in UPGRADES (E on the upgrade station beside your alien machine) and wood piles up at your base by itself - go and pick it up; more upgrades speed it up. Arsenal's prices and POWER ITEMS.";
@@ -274,7 +274,7 @@ namespace RockGame
         public const float BedrockHalf = 3f;
 
         /// <summary>Direction from a base's centre to the back of its bedrock (away from the middle of the map).</summary>
-        public static Vector3 BackDir(int team) => new Vector3(BaseCenter[team].x, 0, BaseCenter[team].z).normalized;
+        public static Vector3 BackDir(int team) => s_Diagonal ? new Vector3(0, 0, Mathf.Sign(BaseCenter[team].z)) : new Vector3(BaseCenter[team].x, 0, BaseCenter[team].z).normalized; // (bases on the diagonal: the machine still squares up with the grid)
         public static Vector3 BedrockCenter(int team) => BaseCenter[team];
         // the machine stands clear of the bedrock's back edge so walls fit behind it
         public static Vector3 MachinePos(int team) => BaseCenter[team] + BackDir(team) * 2.0f + Vector3.up * BaseY;
@@ -900,7 +900,6 @@ namespace RockGame
             if (LimitedCrafting) { s_Active.AddRange(k_Limited); return s_Active; }
             foreach (var it in k_Recipes) if (!(WoodMode && it == Item.Pickaxe)) s_Active.Add(it);
             if (ThemeMaps.HasWater) s_Active.Add(Item.Boat); // THEME MAPS (the boat)
-            if (Jonah) s_Active.Add(Item.AlienDust); // (Jonah mode: buy alien dust with wood)
             return s_Active;
         }
 

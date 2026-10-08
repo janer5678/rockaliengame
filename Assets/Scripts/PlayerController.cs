@@ -508,9 +508,9 @@ namespace RockGame
                     if (ld != null && transform.position.y > ld.TopWorldY - 0.15f && up)
                     {
                         if (ld.CanGoOver) { m_VelY = 0f; if (m_ClimbT < 0f) StartWallClimb(ld); }
-                        else { m_Push = ld.ExitDir * 3f; m_VelY = Mathf.Max(m_VelY, ld.ExitHop); }
+                        // (otherwise nothing: you just keep climbing until you're high enough to walk forward onto the floor - no push, no hop)
                     }
-                    if (move && Binds.Down(Bind.Jump)) { m_VelY = 4f; m_Push = -transform.forward * 3f; m_JumpPressedAt = -10f; m_JumpedSinceGround = true; }
+                    if (move && Binds.Down(Bind.Jump) && fwdInput <= 0) { m_VelY = 3f; m_JumpPressedAt = -10f; m_JumpedSinceGround = true; } // (let go: a small hop off, nothing throws you back)
                 }
                 else if (m_ClimbT < 0f) m_VelY -= Cfg.Gravity * Time.deltaTime;
                 m_Grounded = grounded || ladder;
@@ -750,7 +750,14 @@ namespace RockGame
             var p = transform.position;
             CurrentLadder = null;
             foreach (var c in Physics.OverlapCapsule(p + Vector3.up * 0.3f, p + Vector3.up * 1.4f, 0.45f, ~0, QueryTriggerInteraction.Collide))
-                if (c.isTrigger && c.TryGetComponent(out Ladder l)) { CurrentLadder = l; return true; }
+            {
+                if (!c.isTrigger || !c.TryGetComponent(out Ladder l)) continue;
+                // ladders work from the front only, and never from the top: standing on the floor it leads up to, you just walk
+                if (m_CC.isGrounded && p.y > l.TopWorldY - 0.25f) continue;
+                if (!l.FromFront(p)) continue;
+                CurrentLadder = l;
+                return true;
+            }
             return false;
         }
 
@@ -2238,7 +2245,7 @@ namespace RockGame
                         : "the ball goes in the socket" + (Ball.Instance != null && Ball.Instance.SocketTeam.Value == m_Net.Team.Value ? "   <color=#77ff77>(the ball is in!)</color>" : ""));
                     return;
                 case TargetKind.UpgradeStation:
-                    AimText = TeamTip("Upgrade station", t.MachineTeam, t.MachineTeam != m_Net.Team.Value ? "" : Cfg.Jonah ? $"{KT(Bind.Interact)}: upgrades + wood to alien dust" : $"{KT(Bind.Interact)} to open");
+                    AimText = TeamTip("Upgrade station", t.MachineTeam, t.MachineTeam != m_Net.Team.Value ? "" : $"{KT(Bind.Interact)} to open");
                     return;
                 case TargetKind.Vehicle:
                 {

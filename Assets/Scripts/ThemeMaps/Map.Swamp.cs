@@ -5,22 +5,27 @@ using UnityEngine.Rendering;
 namespace RockGame
 {
     /// <summary>
-    /// SWAMP: everything outside the bases is murky shallow water (slow to wade), lost in golden fog. Small lily pads are
+    /// SWAMP: everything outside the bases is murky shallow water (very slow to wade), lost in golden fog. Small lily pads
+    /// (standing up out of the water: on them you move at full speed, like on the ground) are
     /// scattered at random over it - sparse, some close, some a long jump apart and some too far - so crossing on them takes
     /// careful jumping and often runs out (then you wade). A small mud island in the middle with
     /// the ball (stumps, roots, a fallen log, an upturned boat, glowing lanterns), and little root mounds out in the water
-    /// where the twisted black trees and the glowing mushrooms grow. Giant toads to ride.
+    /// where the twisted black trees and the berry bushes grow. Kelpies (bog ponies) to ride.
     /// </summary>
     public class SwampMap : ThemeMap
     {
         public override MapKind Kind => MapKind.Swamp;
         public override string Label => "Swamp";
-        public override string Blurb => "Murky water everywhere but your base, lost in golden fog. Scattered lily pads - jump carefully from one to the next (they don't always reach), wade (slow) - or craft a BOAT (1500 wood).";
+        public override string Blurb => "Murky water everywhere but your base, lost in golden fog. Scattered lily pads are solid ground - hop from one to the next (they don't always reach). The water is VERY slow to wade - or craft a BOAT (1500 wood).";
         public override bool HasWater => true;
         public override bool Mountains => false;
-        public override string MountName => "Giant Toad";
+        public override string MountName => "Kelpie";
+        /// <summary>The water is sluggish (the lily pads are normal ground).</summary>
+        public override float WaterSpeed => 0.4f;
 
-        const float PadTop = ThemeMaps.WaterY + 0.12f, PadBottom = ThemeMaps.WaterY - 0.12f;
+        /// <summary>The pads' tops stand well clear of the water (ThemeMaps.InWater: feet under WaterY + 0.2 is wading), so
+        /// on a pad you walk at full speed.</summary>
+        const float PadTop = ThemeMaps.WaterY + 0.32f, PadBottom = ThemeMaps.WaterY - 0.12f;
         /// <summary>Lily pads: at most one in each 3 m cell, anywhere in it, in only about three cells in ten (patchy: a few
         /// clusters, wide empty stretches) - 1 - 2 m across. Gaps run from an easy hop to too far to jump.</summary>
         const float PadStep = 3f;
@@ -88,7 +93,12 @@ namespace RockGame
         public override float NodeMul(byte kind) => kind == ResourceNode.Tree ? 1f : kind == ResourceNode.Bush ? 0.9f : 0.6f;
         public override Color LeafTint(Color leaf) => Color.Lerp(leaf, new Color(0.3f, 0.36f, 0.2f), 0.55f);
 
-        /// <summary>Twisted black trees, no leaves: a crooked trunk on arching roots, gnarled branches, hanging moss.</summary>
+        /// <summary>The trees' trunk radius from the ground to 3 m (straight and round there: the weak spot X sits on it).</summary>
+        const float TrunkR = 0.375f, StraightH = 3f;
+        public override float TreeTrunkRadius(int seed) => TrunkR;
+
+        /// <summary>Twisted black trees, no leaves: a straight round trunk to 3 m (where the X goes), crooked above that,
+        /// low roots arching out of the mud from its foot, gnarled branches, hanging moss.</summary>
         public override bool BuildTree(Transform tr, int seed, float h, GameObject trunk)
         {
             trunk.GetComponent<MeshRenderer>().enabled = false;
@@ -96,37 +106,38 @@ namespace RockGame
             float R() => (float)rng.NextDouble();
             float Rs() => R() * 2f - 1f;
             var bark = TmKit.Shade(BarkC, 0.9f + R() * 0.3f);
-            float H = h * (1.15f + R() * 0.35f);
-            // the trunk: bends more the higher it goes
-            var pos = Vector3.zero;
+            float H = Mathf.Max(h * (1.15f + R() * 0.35f), StraightH + 2.5f);
+            // the trunk: straight and exactly TrunkR round up to 3 m, then bending more the higher it goes
+            Art.Part(tr, Art.Cylinder, bark, new Vector3(0, StraightH * 0.5f, 0), new Vector3(TrunkR * 2f, StraightH * 0.5f, TrunkR * 2f));
+            var pos = new Vector3(0, StraightH, 0);
             var dir = Vector3.up;
-            int segs = 4;
-            float segL = H / segs;
+            int segs = 3;
+            float segL = (H - StraightH) / segs;
             for (int i = 0; i < segs; i++)
             {
-                float bend = i == 0 ? 6f : 18f + i * 8f;
+                float bend = 14f + i * 10f;
                 dir = (Quaternion.Euler(Rs() * bend, 0, Rs() * bend) * dir).normalized;
                 if (dir.y < 0.45f) { dir.y = 0.45f; dir.Normalize(); }
-                float w = Mathf.Lerp(0.75f, 0.32f, i / (float)segs);
+                float w = Mathf.Lerp(TrunkR * 2f, 0.32f, i / (float)segs);
                 Seg(tr, bark, pos, pos + dir * segL, w);
                 pos += dir * segL;
             }
-            // roots arching out of the ground
+            // roots arching out of the mud from the trunk's very foot (under 0.3 m where they meet it, clear of the X)
             int roots = 3 + rng.Next(2);
             for (int k = 0; k < roots; k++)
             {
                 var o = Quaternion.Euler(0, k * 360f / roots + Rs() * 25f, 0) * Vector3.forward;
-                var a = Vector3.up * (0.7f + R() * 0.5f);
-                var m = o * (1.1f + R() * 0.5f) + Vector3.up * (0.55f + R() * 0.3f);
+                var a = o * (TrunkR * 0.7f) + Vector3.up * 0.1f;
+                var m = o * (1.1f + R() * 0.4f) + Vector3.up * (0.4f + R() * 0.2f);
                 var e = o * (2f + R() * 0.8f) + Vector3.down * 0.3f;
-                Seg(tr, bark, a, m, 0.3f);
-                Seg(tr, bark, m, e, 0.22f);
+                Seg(tr, bark, a, m, 0.26f);
+                Seg(tr, bark, m, e, 0.2f);
             }
             // gnarled branches, moss hanging off them
             int branches = 3;
             for (int k = 0; k < branches; k++)
             {
-                var a = Vector3.Lerp(Vector3.zero, pos, 0.55f + k * 0.15f) + Vector3.up * 0.2f;
+                var a = Vector3.Lerp(new Vector3(0, StraightH, 0), pos, 0.3f + k * 0.3f) + Vector3.up * 0.2f;
                 var o = Quaternion.Euler(0, k * 120f + Rs() * 30f, 0) * Vector3.forward;
                 var m = a + (o * 1.6f + Vector3.up * (0.9f + R() * 0.6f));
                 var e = m + (Quaternion.Euler(0, Rs() * 50f, 0) * o) * 1.5f + Vector3.up * (Rs() * 0.6f);
@@ -147,82 +158,41 @@ namespace RockGame
             return Art.Part(tr, Art.Cylinder, c, (a + b) * 0.5f, new Vector3(w, d.magnitude * 0.5f + w * 0.25f, w), Quaternion.FromToRotation(Vector3.up, d).eulerAngles, collider);
         }
 
-        /// <summary>A clump of glowing swamp mushrooms (fat pale stems, round glowing caps with spots) and a couple of
-        /// cattails - press E for food.</summary>
+        /// <summary>The game's berry bush, murky green with glowing orange berries (press E for food).</summary>
         public override bool BuildBush(Transform tr, int seed)
         {
-            var rng = new System.Random(seed * 31 + 17);
-            float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
-            bool violet = rng.NextDouble() < 0.5;
-            var cap = violet ? new Color(0.7f, 0.42f, 0.95f) : new Color(0.35f, 0.92f, 0.78f);
-            var capMat = TmKit.GlowShared(cap, 1.3f);
-            var stem = new Color(0.86f, 0.84f, 0.74f);
-            var dots = new Color(0.98f, 0.97f, 0.9f);
-            int n = 6 + rng.Next(3);
-            float spin = R(0, 360);
-            for (int i = 0; i < n; i++)
-            {
-                float s = i == 0 ? 1.25f : R(0.45f, 0.95f);
-                var at = i == 0 ? Vector3.zero : Quaternion.Euler(0, spin + i * 360f / (n - 1) + R(-20f, 20f), 0) * new Vector3(0, 0, R(0.55f, 1.15f));
-                float sh = 0.9f * s;
-                var top = at + new Vector3(R(-0.1f, 0.1f), sh, R(-0.1f, 0.1f));
-                TmKit.Rod(tr, stem, at, top, 0.2f * s, 0.2f * s, false, Art.Cylinder);
-                Art.Part(tr, Art.Sphere, cap, top + Vector3.up * 0.04f, new Vector3(0.95f, 0.5f, 0.95f) * s, new Vector3(R(-10f, 10f), 0, R(-10f, 10f)), false, capMat);
-                Art.Part(tr, Art.Cylinder, TmKit.Shade(cap, 0.5f), top - Vector3.up * 0.03f, new Vector3(0.82f * s, 0.02f, 0.82f * s)); // the gills under it
-                for (int k = 0; k < 3; k++)
-                    Art.Part(tr, Art.Sphere, dots, top + Quaternion.Euler(0, k * 120f + i * 40f, 0) * new Vector3(0, 0.2f * s, 0.24f * s), Vector3.one * 0.1f * s);
-            }
-            // cattails poking up behind
-            for (int k = 0; k < 3; k++)
-            {
-                var at = Quaternion.Euler(0, spin + 180f + k * 25f, 0) * new Vector3(0, 0, R(0.9f, 1.3f));
-                float th = R(1.5f, 2f);
-                TmKit.Rod(tr, new Color(0.35f, 0.42f, 0.2f), at, at + new Vector3(R(-0.1f, 0.1f), th, R(-0.1f, 0.1f)), 0.05f, 0.05f);
-                Art.Part(tr, Art.Cylinder, new Color(0.4f, 0.25f, 0.13f), at + Vector3.up * (th - 0.3f), new Vector3(0.13f, 0.2f, 0.13f));
-            }
+            ResourceNode.BuildBerryBush(tr, seed, new Color(0.27f, 0.36f, 0.2f), new Color(1f, 0.55f, 0.1f));
             return true;
         }
 
-        /// <summary>The giant toad: a squat warty green body to sit on, a wide head with bulging golden eyes, thin front legs
-        /// and big folded back legs with webbed feet.</summary>
+        /// <summary>The kelpie, a bog pony: the game's horse, dark bog-green, with a long weed-green mane hanging down both
+        /// sides of its neck, strands of pondweed hanging off it and glowing orange eyes (now and then a rare pale one).</summary>
         public override bool BuildMount(Transform t, Material ghost, bool unicorn, out Transform saddle, out Transform head, out Transform tail, List<Transform> legs)
         {
-            var skin = unicorn ? new Color(0.95f, 0.78f, 0.25f) : new Color(0.4f, 0.5f, 0.22f); // (now and then a rare golden one)
-            var belly = new Color(0.86f, 0.82f, 0.6f);
-            var wart = TmKit.Shade(skin, 0.75f);
-            TmKit.Hit(Art.Part(t, Art.Sphere, skin, new Vector3(0, 1.08f, -0.05f), new Vector3(1.15f, 0.85f, 1.5f)), ghost);
-            Art.Part(t, Art.Sphere, belly, new Vector3(0, 0.88f, 0.1f), new Vector3(0.95f, 0.5f, 1.2f));
-            for (int i = 0; i < 10; i++)
-            {
-                float a = i * 1.7f, y = 1.2f + (i % 3) * 0.08f;
-                Art.Part(t, Art.Sphere, wart, new Vector3(Mathf.Sin(a) * 0.42f, y, Mathf.Cos(a) * 0.5f - 0.05f), Vector3.one * 0.12f);
-            }
-            // the head: wide and flat, eyes bulging on top, a long mouth line
-            var hp = TmKit.Pivot(t, "head", new Vector3(0, 1.2f, 0.62f));
-            TmKit.HeadBox(hp, skin, new Vector3(0, 0f, 0.2f), new Vector3(0.95f, 0.45f, 0.6f), ghost, Art.Sphere);
-            Art.Box(hp, new Color(0.18f, 0.2f, 0.1f), new Vector3(0, -0.07f, 0.44f), new Vector3(0.62f, 0.03f, 0.05f));
-            Art.Part(hp, Art.Sphere, belly, new Vector3(0, -0.14f, 0.26f), new Vector3(0.7f, 0.2f, 0.45f));
+            var coat = unicorn ? new Color(0.7f, 0.78f, 0.74f) : new Color(0.2f, 0.26f, 0.22f);
+            var mane = new Color(0.32f, 0.48f, 0.22f);
+            var weed = new Color(0.4f, 0.5f, 0.26f);
+            var neck = TmKit.Horse(t, ghost, coat, mane, new Color(0.12f, 0.12f, 0.1f), out saddle, out head, out tail, legs, out var legT, TmKit.Shade(coat, 0.7f), 0.15f);
+            // glowing eyes (over the horse's black ones)
+            var eye = TmKit.GlowShared(new Color(1f, 0.6f, 0.15f), 2f);
             for (int s = -1; s <= 1; s += 2)
-            {
-                Art.Part(hp, Art.Sphere, skin, new Vector3(s * 0.26f, 0.2f, 0.22f), Vector3.one * 0.26f);
-                Art.Part(hp, Art.Sphere, new Color(0.95f, 0.75f, 0.2f), new Vector3(s * 0.28f, 0.25f, 0.3f), Vector3.one * 0.18f);
-                Art.Box(hp, Color.black, new Vector3(s * 0.29f, 0.25f, 0.385f), new Vector3(0.1f, 0.03f, 0.02f));
-            }
-            head = hp;
-            var tl = TmKit.Pivot(t, "tail", new Vector3(0, 1.0f, -0.78f)); // (a toad has no tail: a little nub)
-            Art.Part(tl, Art.Sphere, skin, new Vector3(0, -0.05f, -0.02f), Vector3.one * 0.18f);
-            tail = tl;
+                Art.Part(neck, Art.Cube, Color.white, new Vector3(s * 0.162f, 0.7f, 0.5f), new Vector3(0.02f, 0.07f, 0.08f), default, false, eye);
+            // the long mane: strands hanging down both sides of the neck
+            var up = Quaternion.Euler(25, 0, 0) * Vector3.up;
             for (int i = 0; i < 4; i++)
+                for (int s = -1; s <= 1; s += 2)
+                    Art.Box(neck, i % 2 == 0 ? mane : weed, new Vector3(s * 0.1f, 0.3f, 0f) + up * (-0.25f + i * 0.16f) + Vector3.down * 0.1f, new Vector3(0.05f, 0.3f, 0.1f), new Vector3(25, 0, s * 8f));
+            // pondweed hanging off its back and sides
+            for (int i = 0; i < 5; i++)
             {
                 int s = i % 2 == 0 ? -1 : 1;
-                bool front = i < 2;
-                var hip = front ? new Vector3(s * 0.36f, 0.95f, 0.45f) : new Vector3(s * 0.42f, 1.0f, -0.42f);
-                var leg = TmKit.Leg(t, hip, front ? 0.88f : 0.95f, front ? 0.15f : 0.2f, skin, TmKit.Shade(skin, 0.85f), ghost, legs);
-                if (!front) TmKit.Hit(Art.Part(leg, Art.Sphere, skin, new Vector3(s * 0.08f, -0.15f, -0.05f), new Vector3(0.42f, 0.55f, 0.7f)), ghost); // the big thigh
-                // the webbed foot
-                Art.Box(leg, TmKit.Shade(skin, 0.85f), new Vector3(0, (front ? -0.88f : -0.95f) + 0.04f, 0.14f), new Vector3(front ? 0.3f : 0.38f, 0.05f, 0.36f));
+                float l = 0.3f + (i % 3) * 0.1f;
+                Art.Box(t, i % 2 == 0 ? weed : mane, new Vector3(s * 0.31f, 1.3f - l * 0.5f, -0.55f + i * 0.27f), new Vector3(0.03f, l, 0.08f));
             }
-            saddle = TmKit.Saddle(t, ghost, 1.52f, 0.7f, -0.1f);
+            // a long weedy tail
+            Art.Box(tail, weed, new Vector3(0, -0.6f, -0.08f), new Vector3(0.1f, 0.4f, 0.1f));
+            foreach (var leg in legT)
+                Art.Box(leg, weed, new Vector3(0, -0.62f, 0), new Vector3(0.17f, 0.05f, 0.17f)); // (a band of weed round each leg)
             return true;
         }
 

@@ -222,7 +222,7 @@ namespace RockGame
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
             GUILayout.BeginHorizontal();
-            RowLabel("Round hands", lw);
+            RowLabel("Alien hands", lw);
             bool roundHands = ToggleBtn(GameSettings.RoundHands, GameSettings.RoundHands ? "On" : "Off", GUILayout.Width(90 * k), GUILayout.Height(30 * k));
             if (roundHands != GameSettings.RoundHands) GameSettings.SetRoundHands(roundHands);
             GUILayout.Label("<color=#bbbbbb>  off: the old square hands</color>", m_Small, GUILayout.Height(30 * k));

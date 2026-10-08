@@ -168,7 +168,7 @@ namespace RockGame
         public static bool InLava(Vector3 p) => LavaAt(p.x, p.z) && p.y < LavaY + 0.4f;
 
         /// <summary>How fast you can walk here (wading, lava).</summary>
-        public static float SpeedMul(Vector3 p) => !IsTheme ? 1f : InWater(p) ? 0.6f : InLava(p) ? 0.7f : Custom != null ? Custom.SpeedMul(p) : 1f;
+        public static float SpeedMul(Vector3 p) => !IsTheme ? 1f : InWater(p) ? (Custom != null ? Custom.WaterSpeed : 0.6f) : InLava(p) ? 0.7f : Custom != null ? Custom.SpeedMul(p) : 1f;
 
         /// <summary>Somewhere a tree / rock / airdrop can go (not in water or lava, not up on a mesa).</summary>
         public static bool SpotOk(Vector3 p)

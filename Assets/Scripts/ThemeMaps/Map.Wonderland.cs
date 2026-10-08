@@ -1082,6 +1082,10 @@ namespace RockGame
             new[] { new Color(0.55f, 0.32f, 0.2f), new Color(0.95f, 0.75f, 0.5f) },
         };
 
+        /// <summary>The trunk's radius where the X goes (0-3 m up: a straight round striped column, every tree the same).</summary>
+        const float TrunkR = 0.32f;
+        public override float TreeTrunkRadius(int seed) => TrunkR;
+
         public override bool BuildTree(Transform tr, int seed, float h, GameObject trunk)
         {
             trunk.GetComponent<MeshRenderer>().enabled = false;
@@ -1090,22 +1094,33 @@ namespace RockGame
             var k = new MeshKit();
             var bark = k_Barks[rng.Next(k_Barks.Length)];
             var crown = k_Crowns[rng.Next(k_Crowns.Length)];
-            // a twisting, striped trunk, leaning a little (topsy-turvy)
+            // a round striped trunk: dead straight and TrunkR thick up to 3 m (where the X goes), then leaning a little
+            // and narrowing (topsy-turvy)
             float lean = R(-9f, 9f);
             var lq = Quaternion.Euler(lean, R(0, 360), 0);
-            int segs = 6;
-            for (int i = 0; i < segs; i++)
+            const float Straight = 3f;
+            float spin = R(0f, 6.28f);
+            const int low = 5;
+            for (int i = 0; i < low; i++)
             {
-                float y = h * (i + 0.5f) / segs;
-                var q = lq * Quaternion.Euler(0, i * 22f, 0);
-                k.Box(lq * Vector3.up * y, new Vector3(0.62f - i * 0.03f, h / segs + 0.04f, 0.62f - i * 0.03f), q, bark[i % 2], MeshKit.All);
+                float y0 = Straight * i / low, y1 = Straight * (i + 1) / low;
+                ThemeKitB.Cyl(k, Vector3.up * y0, Vector3.up * y1, TrunkR, TrunkR, 16, bark[i % 2], i == 0, false, spin);
             }
-            var top = lq * Vector3.up * h;
+            float upper = Mathf.Max(1.8f, h - Straight); // (the crown stays clear over the 3 m of bare trunk)
+            const int high = 3;
+            var foot = Vector3.up * Straight;
+            for (int i = 0; i < high; i++)
+            {
+                float r0 = Mathf.Lerp(TrunkR, TrunkR * 0.7f, i / (float)high), r1 = Mathf.Lerp(TrunkR, TrunkR * 0.7f, (i + 1f) / high);
+                Vector3 a = foot + lq * Vector3.up * (upper * i / high), b = foot + lq * Vector3.up * (upper * (i + 1) / high);
+                ThemeKitB.Cyl(k, a, b + lq * Vector3.up * 0.02f, r0, r1, 16, bark[(low + i) % 2], false, i == high - 1, spin);
+            }
+            var top = foot + lq * Vector3.up * upper;
             float big = R(1.9f, 2.5f);
             ThemeKitB.Ball(k, top + Vector3.up * (big * 0.6f), Vector3.one * big, lq, crown[0], 1);
             for (int i = 0; i < 3; i++)
             {
-                var off = Quaternion.Euler(0, i * 120f + R(-20f, 20f), 0) * new Vector3(big * 0.85f, R(-0.6f, 0.2f), 0);
+                var off = Quaternion.Euler(0, i * 120f + R(-20f, 20f), 0) * new Vector3(big * 0.85f, R(-0.3f, 0.3f), 0);
                 ThemeKitB.Ball(k, top + off, Vector3.one * R(0.9f, 1.3f), lq, crown[1], 1);
             }
             // a curl on top
@@ -1189,36 +1204,10 @@ namespace RockGame
             return true;
         }
 
-        /// <summary>A round clipped rose bush full of strawberries (the red and white roses are painted, the strawberries are
-        /// food) with a jam tart or two sitting on top.</summary>
+        /// <summary>The game's own berry bush in Wonderland's colours: rose-bush green, strawberry-red berries.</summary>
         public override bool BuildBush(Transform tr, int seed)
         {
-            var rng = new System.Random(seed * 31 + 13);
-            float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
-            var k = new MeshKit();
-            const float S = ResourceNode.BushSize;
-            var c = new Vector3(0, 0.52f, 0) * S;
-            var rad = new Vector3(0.62f, 0.5f, 0.6f) * S;
-            ThemeKitB.Ball(k, c, rad, Quaternion.Euler(0, R(0, 360), 0), k_Leaf, 1, 0.06f, seed & 255);
-            ThemeKitB.Ball(k, c + Vector3.up * 0.38f * S, new Vector3(0.4f, 0.3f, 0.4f) * S, Quaternion.identity, k_Leaf2, 1, 0.06f, (seed + 3) & 255);
-            Roses(k, c, rad, Quaternion.identity, 8, rng);
-            // strawberries: red, a little pointed, a green cap, pale seeds
-            int n = 14 + rng.Next(5);
-            for (int i = 0; i < n; i++)
-            {
-                float a = R(0f, 6.28f), el = R(-0.25f, 0.9f);
-                var d = new Vector3(Mathf.Cos(a) * Mathf.Cos(el), Mathf.Sin(el), Mathf.Sin(a) * Mathf.Cos(el));
-                var at = c + Vector3.Scale(d, rad) * 1.04f;
-                float s = R(0.09f, 0.12f) * S;
-                ThemeKitB.Ball(k, at, new Vector3(s, s * 1.25f, s), Quaternion.FromToRotation(Vector3.up, Vector3.Lerp(Vector3.down, d, 0.3f)), new Color(0.9f, 0.12f, 0.18f), 0);
-                ThemeKitB.Ball(k, at + Vector3.up * s * 0.95f, new Vector3(s * 0.8f, s * 0.25f, s * 0.8f), Quaternion.identity, new Color(0.25f, 0.6f, 0.22f), 0);
-                ThemeKitB.Ball(k, at + d * s * 0.85f, Vector3.one * s * 0.18f, Quaternion.identity, new Color(1f, 0.9f, 0.55f), 0);
-            }
-            // a jam tart on top
-            var tc = c + Vector3.up * (rad.y + 0.42f * S * 0.6f);
-            ThemeKitB.Cyl(k, tc, tc + Vector3.up * 0.07f * S, 0.2f * S, 0.22f * S, 10, new Color(0.9f, 0.68f, 0.38f));
-            ThemeKitB.Cyl(k, tc + Vector3.up * 0.07f * S, tc + Vector3.up * 0.085f * S, 0.16f * S, 0.16f * S, 10, new Color(0.8f, 0.08f, 0.2f));
-            ThemeKitB.Spawn(tr, "tart bush", k, null, true);
+            ResourceNode.BuildBerryBush(tr, seed, new Color(0.3f, 0.56f, 0.3f), new Color(0.92f, 0.12f, 0.2f));
             return true;
         }
 
@@ -1429,6 +1418,7 @@ namespace RockGame
             }
             // the launch pads: step on one and it throws you (you only - every peer throws its own player)
             var me = PlayerController.Local;
+            if (me != null) me.LaunchTick(); // (steering in the air after a pad, and stopping dead on landing)
             if (me != null && me.SinceLaunch > 0.8f && me.VelY < 1f)
             {
                 var p = me.transform.position;

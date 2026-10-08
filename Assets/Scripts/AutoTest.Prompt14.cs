@@ -174,11 +174,7 @@ namespace RockGame
             Check(Cfg.RulesOf(Cfg.WithRules(Cfg.MapKey, GameRules.Domination)) == GameRules.Domination, "...and the other modes still read back");
             var wb = Cfg.GetRecipe(Cfg.RecipeIndex(Item.Workbench));
             var hatchet = Cfg.GetRecipe(Cfg.RecipeIndex(Item.Hatchet));
-            Check(wb.Dust > 0 && wb.Wood == 0, $"the Trade Station costs alien dust ({wb.Dust})");
-            Check(hatchet.Wood == 0 && hatchet.Dust > 0 && Cfg.BuildItem == Item.AlienDust, "everything costs alien dust: the hatchet, and building pieces");
-            Check(Cfg.GetRecipe(Cfg.RecipeIndex(Item.Crossbow)).Dust > 0 && Cfg.GetRecipe(Cfg.RecipeIndex(Item.Armor)).Dust > 0, "everything from the trade stations costs alien dust (crossbow, armour)");
-            var dr = Cfg.GetRecipe(Cfg.RecipeIndex(Item.AlienDust));
-            Check(dr.Count == 1000 && dr.Wood == 1000 && Cfg.CraftTier(Item.AlienDust) == 0, "1000 alien dust for 1000 wood, from the start");
+            Check(wb.Wood > 0 && wb.Dust == 0 && hatchet.Wood > 0 && Cfg.RecipeIndex(Item.AlienDust) < 0 && Cfg.BuildItem == Item.Wood, "no alien dust any more: everything costs wood (the Trade Station, the hatchet, building)");
             me.ServerGive(Item.Wood, 1000);
             var st = Cfg.UpgradeStationPos(team);
             pc.LocalTeleport(st - Cfg.BackDir(team) * -2.2f + Vector3.up * 0.1f, Quaternion.LookRotation(-Cfg.BackDir(team)).eulerAngles.y + 180f);
@@ -186,10 +182,6 @@ namespace RockGame
             pc.OpenUpgrades();
             yield return new WaitForSeconds(0.4f);
             yield return Snap("p14_jonah_station");
-            int dust0 = me.Count(Item.AlienDust);
-            me.CraftRpc(Cfg.CraftIndexOf(Item.AlienDust));
-            yield return new WaitForSeconds(0.5f);
-            Check(me.Count(Item.AlienDust) - dust0 == 1000, $"BUY: 1000 alien dust ({me.Count(Item.AlienDust) - dust0})");
             pc.CloseMenu();
             // Upgrade 10 Walls: twelve walls, pick ten in the void
             var front = Cfg.BaseCenter[team] - Cfg.BackDir(team) * 6f;
@@ -211,7 +203,7 @@ namespace RockGame
             yield return new WaitForSeconds(0.6f);
             Check(WallPicker.Active, "Upgrade 10 Walls opens the wall picker");
             yield return Snap("p14_jonah_void");
-            int dustBefore = me.Count(Item.AlienDust);
+            int dustBefore = me.Count(Item.Wood);
             var ids = new List<ulong>();
             for (int i = 0; i < 10; i++) ids.Add(walls[i].NetworkObjectId);
             WallPicker.TestPick(ids);
@@ -221,7 +213,7 @@ namespace RockGame
             int up = 0;
             for (int i = 0; i < 12; i++) if (walls[i] != null && walls[i].Tier.Value == 1) up++;
             Check(up == 10 && walls[10].Tier.Value == 0, $"ten walls went up a tier ({up}), the others didn't");
-            Check(dustBefore - me.Count(Item.AlienDust) == Cfg.Upgrade10WallsDust, $"for {Cfg.Upgrade10WallsDust} alien dust");
+            Check(dustBefore - me.Count(Item.Wood) == Cfg.Upgrade10WallsDust, $"for {Cfg.Upgrade10WallsDust} wood");
             yield return Snap("p14_jonah_after");
         }
     }

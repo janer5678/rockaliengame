@@ -508,3 +508,8 @@ Networking: movement is owner-authoritative (NetworkTransform in Owner mode). Re
 - **Highlands Jonah** (`MapKind.HighlandsJonah`, `-map highlandsjonah`): a clone of the Highlands (`Cfg.IsHighlands`).
 - **Cherry Blossom backup**: `Map.CherryV1.cs` is the previous version; flip `CherryBlossomMap.UseNew` to go back (`ThemeMap.Enabled`).
 
+### Fourth round
+- **Jonah mode**: alien dust is gone - everything costs wood again (the item and `Recipe.Dust` plumbing stay, unused). The crafting list's buttons say TRADE; Upgrade 10 Walls says INSERT 1000 WOOD.
+- **Ladders** (all): no push at the top and none when you jump off - you climb until you can walk forward onto the floor; climbable from the front only (`Ladder.FromFront`), never grabbed from the floor at their top.
+- **Theme map hooks**: `TreeTrunkRadius` (the tree X and trunk collider follow each map's real trunk), `WaterSpeed`, `IceSteer` (Minecraft-like ice), DeepWater now means slow swimming; `ResourceNode.BuildBerryBush` (every map's bush is the real berry bush in its colours). Diagonal bases keep the machines square to the grid (`Cfg.BackDir`).
+

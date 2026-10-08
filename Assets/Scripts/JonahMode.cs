@@ -25,17 +25,18 @@ namespace RockGame
         [Tune("Jonah test mode")] public static int DustPerBuy = 1000, DustBuyWood = 1000;
         public const int WallsPerUpgrade = 10;
 
-        /// <summary>Jonah mode: everything is bought with alien dust (only alien dust itself is bought with wood).</summary>
-        public static bool DustItem(Item i) => i != Item.AlienDust;
+        /// <summary>Alien dust is gone (everything costs wood again, Jonah mode too): nothing is bought with it. (The item and
+        /// the Recipe.Dust plumbing stay, unused, in case it comes back.)</summary>
+        public static bool DustItem(Item i) => false;
 
-        /// <summary>What building pieces cost (and give back when demolished): alien dust in Jonah mode, else the usual currency.</summary>
-        public static Item BuildItem => Jonah ? Item.AlienDust : CurrencyItem;
-        public static string BuildName => Jonah ? "alien dust" : CurrencyName;
+        /// <summary>What building pieces cost (and give back when demolished): the usual currency.</summary>
+        public static Item BuildItem => CurrencyItem;
+        public static string BuildName => CurrencyName;
 
         /// <summary>Jonah mode: a dust item's price moves over to alien dust (the same amount).</summary>
         public static Recipe JonahPriced(Recipe r)
         {
-            if (!Jonah || !DustItem(r.Output)) return r;
+            if (!Jonah || !DustItem(r.Output)) return r; // (never now: everything is wood)
             r.Dust += r.Wood + r.Stone;
             r.Wood = 0;
             r.Stone = 0;
@@ -43,7 +44,7 @@ namespace RockGame
         }
 
         /// <summary>Jonah mode's "Upgrade 10 Walls" (it takes Fortify All Walls' place on the UPGRADES screen).</summary>
-        public static Recipe Upgrade10WallsRecipe => new Recipe { Output = Item.FortifyBuff, Count = 1, Dust = Upgrade10WallsDust };
+        public static Recipe Upgrade10WallsRecipe => new Recipe { Output = Item.FortifyBuff, Count = 1, Wood = Upgrade10WallsDust }; // (wood now: Upgrade10WallsDust is its price in wood)
 
         /// <summary>How many of a team's pieces can still go up a tier.</summary>
         public static int UpgradablePieces(int team)
@@ -75,7 +76,7 @@ namespace RockGame
             int need = Mathf.Min(Cfg.WallsPerUpgrade, Cfg.UpgradablePieces(team));
             if (picked.Count == 0 || picked.Count < need) { Notify("Some of those pieces are gone or already armoured - pick again"); return; }
             var r = Cfg.Upgrade10WallsRecipe;
-            if (!CanAfford(r)) { Notify($"Upgrade 10 Walls costs {r.Dust} alien dust"); return; }
+            if (!CanAfford(r)) { Notify($"Upgrade 10 Walls costs {r.Wood} {Cfg.CurrencyName}"); return; }
             ServerPay(r);
             foreach (var s in picked) s.ServerUpgrade(s.Tier.Value + 1);
             g.Broadcast($"{Cfg.TeamLabel(team)} upgraded {picked.Count} piece{(picked.Count == 1 ? "" : "s")} a tier!");
@@ -123,7 +124,7 @@ namespace RockGame
             int team = me.Team.Value;
             int can = Cfg.UpgradablePieces(team);
             if (can == 0) { Hud.Push("Nothing to upgrade - build some walls first (or they're all armoured)"); return; }
-            if (!me.CanAfford(Cfg.Upgrade10WallsRecipe)) { Hud.Push($"Upgrade 10 Walls costs {Cfg.Upgrade10WallsDust} alien dust - buy some in your crafting list"); return; }
+            if (!me.CanAfford(Cfg.Upgrade10WallsRecipe)) { Hud.Push($"Upgrade 10 Walls costs {Cfg.Upgrade10WallsDust} {Cfg.CurrencyName}"); return; }
             pc.CloseMenu();
             var go = new GameObject("WallPicker");
             s_I = go.AddComponent<WallPicker>();

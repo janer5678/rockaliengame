@@ -7,20 +7,22 @@ namespace RockGame
     /// <summary>
     /// ISLANDS: every team's base sits on its own small round sand island far out at sea (two teams: in opposite corners
     /// of the map, on the diagonal), and the ball drops on a small round island in the middle (the same size). Nothing
-    /// joins them and the sea is deep: off a boat you can't swim - you sink and drown (DeepWater). Boats can be crafted
-    /// from the start. The middle island has sandstone blocks with ladders, a wooden deck, crates, sea-glass
-    /// and a driftwood barricade to fight round. Palm trees, pineapple bushes, giant crabs to ride.
+    /// joins them and the sea is deep: off a boat you swim, very slowly, at the surface (DeepWater), and every island has
+    /// a gentle sandy slope up out of the water to climb out on. Boats can be crafted from the start. The middle island
+    /// has sandstone blocks with ladders, a wooden deck, crates, sea-glass and a driftwood barricade to fight round.
+    /// Palm trees, cactus-fruit bushes, zebras to ride.
     /// (Three teams: only three base islands - the empty fourth spot is open sea, with nothing on it.)
     /// </summary>
     public class IslandsMap : ThemeMap
     {
         public override MapKind Kind => MapKind.Islands;
         public override string Label => "Islands";
-        public override string Blurb => "A small round island for every team, far out at sea, and one in the middle with the ball. The sea is DEEP: fall in without a boat and you sink and drown. Craft a BOAT - you can make one from the start.";
+        public override string Blurb => "A small round island for every team, far out at sea, and one in the middle with the ball. The sea is DEEP: without a boat you can only swim - very, very slowly. Craft a BOAT - you can make one from the start.";
         public override bool HasWater => true;
-        /// <summary>No wading, no swimming: off a boat you sink (slowly, no jumping) and drown at KillY.</summary>
+        /// <summary>Too deep to wade: off a boat you swim (very slowly, at the surface) and climb out up a beach.</summary>
         public override bool DeepWater => true;
-        public override float KillY => -9f;
+        /// <summary>(Only a safety net: swimmers float at the surface, and the sea floor is at -14.)</summary>
+        public override float KillY => -16f;
         /// <summary>Two teams: corner to corner, as far apart as the map allows.</summary>
         public override bool DiagonalBases => true;
         public override bool Mountains => false;
@@ -33,14 +35,15 @@ namespace RockGame
         /// far along both axes (the corners); three or four: along their axis.</summary>
         public override float BaseDistance => Mathf.Floor((Cfg.MapHalf - IslandR - 4f) / 3f) * 3f;
         public override bool BoatsAnytime => true;
-        public override string MountName => "Giant Crab";
+        public override string MountName => "Zebra";
 
         /// <summary>How far the base islands are from the middle (on the diagonal for two teams).</summary>
         static float D => new Vector2(Cfg.BaseCenter[0].x, Cfg.BaseCenter[0].z).magnitude;
         /// <summary>The middle island: the same size as the base islands (smaller on the small map, so there's still sea between).</summary>
         static float CenterR => Mathf.Clamp(D - IslandR - 12f, 12f, IslandR);
-        /// <summary>The deep sea floor, and the bottom of the narrow sloped shore round each island before it drops away.</summary>
-        const float SeaFloor = -14f, ShoreFloor = -1.3f;
+        /// <summary>The deep sea floor, and the bottom of the sloped shore round each island before it drops away: well
+        /// under a swimmer's feet (WaterY - 1.25), so swimming in you meet a gentle sandy slope and walk up out of the sea.</summary>
+        const float SeaFloor = -14f, ShoreFloor = -2.6f;
 
         static readonly Color Sand = new Color(0.93f, 0.85f, 0.62f), WetSand = new Color(0.8f, 0.7f, 0.5f), SeaBed = new Color(0.62f, 0.66f, 0.55f), Deep = new Color(0.16f, 0.32f, 0.36f);
         static readonly Color Sandstone = new Color(0.86f, 0.74f, 0.52f), Sandstone2 = new Color(0.78f, 0.66f, 0.45f);
@@ -74,9 +77,10 @@ namespace RockGame
                 flat = Mathf.Min(flat, ThemeMaps.SmoothStepP(0.5f, 5f, Mathf.Sqrt(bx * bx + bz * bz)));
             }
             float dune = 0.24f + (ThemeMaps.SymNoiseP(x, z, 0.08f, s + 3f) - 0.5f) * 0.5f;
-            // the beach slopes down into the water over a few metres, then the sea floor drops away deep (no wading)
-            float h = Mathf.Lerp(dune * flat, ShoreFloor, ThemeMaps.SmoothStepP(-2f, 2f, out_)); // (the bases and the middle stay flat at 0)
-            return Mathf.Lerp(h, SeaFloor, ThemeMaps.SmoothStepP(2f, 7f, out_));
+            // the beach slopes gently down into the water (about 25 degrees: you can walk up it out of the sea), on down
+            // to well under a swimmer's feet, then the sea floor drops away deep (no wading)
+            float h = Mathf.Lerp(dune * flat, ShoreFloor, ThemeMaps.SmoothStepP(-2f, 5f, out_)); // (the bases and the middle stay flat at 0)
+            return Mathf.Lerp(h, SeaFloor, ThemeMaps.SmoothStepP(5f, 10f, out_));
         }
 
         public override Color[] Palette => new[] { Sand, WetSand, SeaBed, Deep };
@@ -87,6 +91,10 @@ namespace RockGame
             && ThemeMaps.Height(p.x, p.z + 1.5f) > -0.3f && ThemeMaps.Height(p.x, p.z - 1.5f) > -0.3f;
         public override float NodeMul(byte kind) => kind == ResourceNode.Tree ? 1f : kind == ResourceNode.Bush ? 0.8f : 0.6f;
         public override Color LeafTint(Color leaf) => Color.Lerp(leaf, new Color(0.35f, 0.75f, 0.3f), 0.5f);
+
+        /// <summary>The palms' trunk radius from the ground to 3.2 m (where the X goes).</summary>
+        const float TrunkR = 0.3f;
+        public override float TreeTrunkRadius(int seed) => TrunkR;
 
         /// <summary>Palm trees: a ringed trunk, straight low down (where the weak spots are) and leaning higher up, drooping
         /// fronds and coconuts.</summary>
@@ -101,9 +109,9 @@ namespace RockGame
             root.SetParent(tr, false);
             root.localRotation = Quaternion.Euler(0, R() * 360f, 0);
             float lean = 8f + R() * 10f;
-            // the bottom 2.4 m: straight up the middle, exactly as thick as the trunk collider (0.6 across) - the weak spot X
-            // goes on the collider's surface 0.8 - 1.5 m up, so it sits right on the bark you see, never inside it
-            const float StraightH = 2.4f, TrunkW = 0.6f;
+            // the bottom 3.2 m: straight up the middle, exactly TrunkR round (TreeTrunkRadius: the trunk collider and the
+            // weak spot X are on a cylinder that thick, 0.3 - 3 m up) - so the X sits right on the bark you see
+            const float StraightH = 3.2f, TrunkW = TrunkR * 2f;
             for (int i = 0; i < 2; i++)
                 Art.Part(root, Art.Cylinder, i == 0 ? bark : ring, new Vector3(0, StraightH * (0.25f + i * 0.5f), 0), new Vector3(TrunkW, StraightH * 0.25f + 0.01f, TrunkW));
             // above that it thins and leans
@@ -119,7 +127,7 @@ namespace RockGame
                 Art.Part(root, Art.Cylinder, i % 2 == 0 ? ring : bark, pos + up * segH * 0.5f, new Vector3(w, segH * 0.5f + 0.02f, w), rot.eulerAngles);
                 pos += up * segH;
             }
-            Art.Part(root, Art.Cylinder, ring, new Vector3(0, 0.15f, 0), new Vector3(1f, 0.15f, 1f)); // root flare
+            Art.Part(root, Art.Cylinder, ring, new Vector3(0, 0.12f, 0), new Vector3(0.95f, 0.12f, 0.95f)); // root flare (under 0.3 m: clear of the X)
             var leaf = TmKit.Shade(Color.Lerp(new Color(0.25f, 0.62f, 0.2f), new Color(0.42f, 0.74f, 0.26f), R()), 1f);
             int fronds = 7 + rng.Next(2);
             for (int k = 0; k < fronds; k++)
@@ -138,89 +146,33 @@ namespace RockGame
             return true;
         }
 
-        /// <summary>A pineapple plant: a fan of spiky leaves round three ripe pineapples (press E for food).</summary>
+        /// <summary>The game's berry bush, cactus-green with pink-red cactus fruit (press E for food).</summary>
         public override bool BuildBush(Transform tr, int seed)
         {
-            var rng = new System.Random(seed * 31 + 5);
-            float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
-            var leafA = new Color(0.22f, 0.5f, 0.24f);
-            var leafB = new Color(0.36f, 0.62f, 0.3f);
-            int leaves = 16;
-            float spin = R(0, 360);
-            for (int i = 0; i < leaves; i++)
-            {
-                float yaw = spin + i * 360f / leaves + R(-8f, 8f), tilt = i % 2 == 0 ? R(55f, 70f) : R(30f, 45f), len = R(1.1f, 1.6f);
-                var dir = Quaternion.Euler(0, yaw, 0) * Quaternion.Euler(tilt, 0, 0) * Vector3.up;
-                TmKit.Rod(tr, TmKit.Shade(i % 3 == 0 ? leafB : leafA, R(0.9f, 1.1f)), Vector3.up * 0.1f, Vector3.up * 0.1f + dir * len, 0.26f, 0.05f);
-            }
-            var gold = new Color(0.96f, 0.68f, 0.18f);
-            var crown = new Color(0.3f, 0.58f, 0.22f);
-            for (int k = 0; k < 3; k++)
-            {
-                float a = spin + k * 120f + R(-20f, 20f), d = k == 0 ? 0f : R(0.45f, 0.6f), s = k == 0 ? 1.15f : R(0.8f, 0.95f);
-                var c = Quaternion.Euler(0, a, 0) * new Vector3(0, 0, d) + Vector3.up * (0.45f * s + (k == 0 ? 0.25f : 0.05f));
-                Art.Part(tr, Art.Sphere, gold, c, new Vector3(0.48f, 0.72f, 0.48f) * s, new Vector3(0, a, 0));
-                // the criss-cross skin
-                Art.Box(tr, TmKit.Shade(gold, 0.72f), c, new Vector3(0.5f, 0.05f, 0.5f) * s, new Vector3(0, a + 45f, 0));
-                Art.Box(tr, TmKit.Shade(gold, 0.72f), c + Vector3.up * 0.16f * s, new Vector3(0.44f, 0.05f, 0.44f) * s, new Vector3(0, a, 0));
-                Art.Box(tr, TmKit.Shade(gold, 0.72f), c - Vector3.up * 0.16f * s, new Vector3(0.44f, 0.05f, 0.44f) * s, new Vector3(0, a, 0));
-                for (int j = 0; j < 4; j++)
-                {
-                    var dir = Quaternion.Euler(0, a + j * 90f, 0) * Quaternion.Euler(j % 2 == 0 ? 18f : 32f, 0, 0) * Vector3.up;
-                    var top = c + Vector3.up * 0.34f * s;
-                    TmKit.Rod(tr, crown, top, top + dir * 0.45f * s, 0.12f * s, 0.04f);
-                }
-            }
+            ResourceNode.BuildBerryBush(tr, seed, new Color(0.33f, 0.56f, 0.3f), new Color(0.93f, 0.26f, 0.42f));
             return true;
         }
 
-        /// <summary>The giant crab: a wide red shell to sit on, eyes on stalks, two big claws in front, four pairs of legs.</summary>
+        /// <summary>The zebra: the game's horse, white with black stripes, a black-and-white mane and a dark muzzle
+        /// (now and then a rare golden one).</summary>
         public override bool BuildMount(Transform t, Material ghost, bool unicorn, out Transform saddle, out Transform head, out Transform tail, List<Transform> legs)
         {
-            var shell = unicorn ? new Color(0.95f, 0.93f, 0.97f) : new Color(0.88f, 0.3f, 0.16f); // (now and then a rare pearl-white one)
-            var under = new Color(0.98f, 0.78f, 0.55f);
-            var tip = unicorn ? new Color(1f, 0.8f, 0.25f) : new Color(0.25f, 0.12f, 0.08f);
-            TmKit.Hit(Art.Part(t, Art.Sphere, shell, new Vector3(0, 1.12f, 0), new Vector3(1.5f, 0.66f, 1.2f)), ghost);
-            TmKit.Hit(Art.Part(t, Art.Sphere, under, new Vector3(0, 0.95f, 0), new Vector3(1.3f, 0.36f, 1.05f)), ghost);
-            for (int i = 0; i < 4; i++)
-                Art.Part(t, Art.Sphere, TmKit.Shade(shell, 1.12f), new Vector3((i % 2 == 0 ? -1 : 1) * (i < 2 ? 0.42f : 0.2f), 1.36f, i < 2 ? 0.25f : -0.3f), new Vector3(0.22f, 0.1f, 0.2f));
-            // the head: eyes on stalks, mouth, and the two big claws (they bob with it)
-            var hp = TmKit.Pivot(t, "head", new Vector3(0, 1.18f, 0.5f));
-            TmKit.HeadBox(hp, shell, new Vector3(0, -0.02f, 0.08f), new Vector3(0.7f, 0.32f, 0.3f), ghost);
-            Art.Box(hp, new Color(0.35f, 0.08f, 0.06f), new Vector3(0, -0.1f, 0.24f), new Vector3(0.3f, 0.06f, 0.03f));
-            for (int s = -1; s <= 1; s += 2)
+            var coat = unicorn ? new Color(1f, 0.9f, 0.55f) : new Color(0.95f, 0.94f, 0.9f);
+            var stripe = unicorn ? new Color(0.75f, 0.5f, 0.12f) : new Color(0.08f, 0.08f, 0.09f);
+            var neck = TmKit.Horse(t, ghost, coat, stripe, stripe, out saddle, out head, out tail, legs, out var legT, stripe, 0.16f);
+            // stripes round the body (over the top and down the sides), up the neck and round the legs
+            for (int i = 0; i < 7; i++)
             {
-                TmKit.Rod(hp, shell, new Vector3(s * 0.16f, 0.08f, 0.12f), new Vector3(s * 0.2f, 0.42f, 0.18f), 0.07f, 0.07f);
-                Art.Part(hp, Art.Sphere, Color.white, new Vector3(s * 0.2f, 0.46f, 0.18f), Vector3.one * 0.15f);
-                Art.Part(hp, Art.Sphere, Color.black, new Vector3(s * 0.2f, 0.47f, 0.24f), Vector3.one * 0.08f);
-                // the arm out to the claw, then the claw: a big upper pincer and a little lower one
-                TmKit.Hit(TmKit.Rod(hp, shell, new Vector3(s * 0.38f, -0.08f, 0.1f), new Vector3(s * 0.62f, -0.02f, 0.5f), 0.16f, 0.16f), ghost);
-                TmKit.Hit(Art.Part(hp, Art.Sphere, shell, new Vector3(s * 0.66f, 0.02f, 0.68f), new Vector3(0.34f, 0.3f, 0.42f)), ghost);
-                Art.Box(hp, tip, new Vector3(s * 0.64f, 0.08f, 0.95f), new Vector3(0.16f, 0.1f, 0.3f), new Vector3(-12f, 0, 0));
-                Art.Box(hp, TmKit.Shade(shell, 0.85f), new Vector3(s * 0.7f, -0.08f, 0.9f), new Vector3(0.12f, 0.08f, 0.22f), new Vector3(10f, 0, 0));
+                float z = -0.62f + i * 0.2f, w = i % 2 == 0 ? 0.07f : 0.05f;
+                Art.Box(t, stripe, new Vector3(0, 1.15f, z), new Vector3(0.62f, 0.62f, w));
             }
-            head = hp;
-            // no real tail: a little flap at the back
-            var tl = TmKit.Pivot(t, "tail", new Vector3(0, 0.98f, -0.58f));
-            Art.Box(tl, under, new Vector3(0, -0.08f, -0.03f), new Vector3(0.46f, 0.18f, 0.08f));
-            tail = tl;
-            // four leg pivots (they swing as it walks), each carrying two legs: out sideways from the shell, then down
             for (int i = 0; i < 4; i++)
-            {
-                int s = i % 2 == 0 ? -1 : 1;
-                float z = i < 2 ? 0.25f : -0.3f;
-                var leg = TmKit.Pivot(t, "leg", new Vector3(s * 0.55f, 1.0f, z));
-                for (int k = 0; k < 2; k++)
-                {
-                    float dz = k == 0 ? 0.1f : -0.12f;
-                    var knee = new Vector3(s * 0.62f, 0.25f, dz * 2f);
-                    TmKit.Hit(TmKit.Rod(leg, shell, new Vector3(0, 0, dz), knee, 0.13f, 0.13f), ghost);
-                    TmKit.Rod(leg, TmKit.Shade(shell, 0.9f), knee, new Vector3(s * 0.85f, -0.98f, dz * 3f), 0.11f, 0.11f);
-                    Art.Box(leg, tip, new Vector3(s * 0.85f, -0.96f, dz * 3f), new Vector3(0.1f, 0.08f, 0.1f));
-                }
-                legs?.Add(leg);
-            }
-            saddle = TmKit.Saddle(t, ghost, 1.47f, 0.7f, -0.05f, new Vector3(0.95f, 0.1f, 0.75f), 0.07f); // (the blanket lies over the shell)
+                Art.Box(neck, stripe, new Vector3(0, 0.3f, 0.12f) + Quaternion.Euler(25, 0, 0) * Vector3.up * (-0.24f + i * 0.16f), new Vector3(0.34f, 0.045f, 0.37f), new Vector3(25, 0, 0));
+            for (int i = 0; i < 3; i++)
+                Art.Box(neck, stripe, new Vector3(0, 0.62f, 0.25f + i * 0.13f), new Vector3(0.31f, 0.31f, 0.035f));
+            foreach (var leg in legT)
+                for (int k = 0; k < 3; k++)
+                    Art.Box(leg, stripe, new Vector3(0, -0.2f - k * 0.18f, 0), new Vector3(0.17f, 0.045f, 0.17f));
             return true;
         }
 
@@ -530,9 +482,9 @@ namespace RockGame
         /// topY: the floor you step off onto at the top (its edge must be right at the wall's face, open - no railing).
         /// Parent must be at the world origin, only turned about y (a Sector).
         /// Climbable from the front only: the ladder itself is a solid board (you can't walk through it or climb it from
-        /// behind) and the climbing volume is only in front of it, narrower than the rails, and it stops just under the
-        /// floor at the top - so standing on the floor by the top never grabs you; you step off the edge (backwards, S) to
-        /// climb down. Going up, near the top you're pushed forwards (Ladder.ExitDir = into the wall) straight onto the floor.</summary>
+        /// behind or the sides) up to just under the floor at the top, and the climbing volume is only in front of it,
+        /// narrower than the rails. It reaches 0.6 m above the floor at the top, so you climb until your feet clear the
+        /// floor and simply walk forwards onto it.</summary>
         public static void Ladder(Transform parent, Vector3 foot, float topY, Vector3 faceOut, Color c, bool solid = true)
         {
             faceOut.y = 0;
@@ -556,8 +508,8 @@ namespace RockGame
                 body.transform.localRotation = rot;
                 body.AddComponent<BoxCollider>().size = new Vector3(0.84f, sh, 0.2f);
             }
-            // the climbing volume: in front of the board only (0.25 - 1.0 m out), up to 0.2 m under the floor at the top
-            float vh = Mathf.Max(0.6f, topY - foot.y - 0.2f);
+            // the climbing volume: in front of the board only (0.25 - 1.0 m out), up to 0.6 m over the floor at the top
+            float vh = Mathf.Max(0.6f, topY - foot.y + 0.6f);
             var go = new GameObject("ladder");
             go.transform.SetParent(parent, false);
             go.transform.localPosition = foot + faceOut * 0.62f + Vector3.up * (vh * 0.5f);
@@ -565,8 +517,7 @@ namespace RockGame
             var bc = go.AddComponent<BoxCollider>();
             bc.isTrigger = true;
             bc.size = new Vector3(0.9f, vh, 0.76f);
-            // (step-off starts with your feet 0.45 m under the floor - the step height - so you always make it onto it)
-            go.AddComponent<Ladder>().TopLocalY = topY - 0.3f;
+            go.AddComponent<Ladder>().TopLocalY = topY;
         }
 
         /// <summary>Recolours the wadeable water surface ThemeMaps added (it is built before the props).</summary>
@@ -678,6 +629,42 @@ namespace RockGame
             Art.Box(leg, foot, new Vector3(0, -len + 0.06f, 0.03f), new Vector3(w * 1.15f, 0.12f, w * 1.3f));
             legs?.Add(leg);
             return leg;
+        }
+
+        /// <summary>
+        /// The game's horse (Vehicle.CreateVisual), in a map's colours: the same box body, neck, mane, head, tail and four
+        /// legs, the same hit boxes and saddle - so every map's mount is a real horse shape, just a different animal.
+        /// Returns the neck pivot (the head: it bobs and grazes) for the map's own touches; legT: the four leg pivots.
+        /// </summary>
+        public static Transform Horse(Transform t, Material ghost, Color coat, Color mane, Color hoof, out Transform saddle, out Transform head,
+            out Transform tail, List<Transform> legs, out Transform[] legT, Color? muzzle = null, float earLen = 0.14f)
+        {
+            Hit(Art.Box(t, coat, new Vector3(0, 1.15f, 0), new Vector3(0.6f, 0.6f, 1.5f)), ghost);
+            var neck = Pivot(t, "neck", new Vector3(0, 1.35f, 0.65f));
+            Hit(Art.Box(neck, coat, new Vector3(0, 0.3f, 0.12f), new Vector3(0.32f, 0.7f, 0.35f), new Vector3(25, 0, 0)), ghost);
+            Hit(Art.Box(neck, mane, new Vector3(0, 0.35f, -0.02f), new Vector3(0.1f, 0.7f, 0.12f), new Vector3(25, 0, 0)), ghost);
+            HeadBox(neck, coat, new Vector3(0, 0.62f, 0.42f), new Vector3(0.3f, 0.3f, 0.6f), ghost);
+            Hit(Art.Box(neck, muzzle ?? Shade(mane, 1.5f), new Vector3(0, 0.56f, 0.7f), new Vector3(0.26f, 0.2f, 0.12f)), ghost);
+            Art.Box(neck, Color.black, new Vector3(0.16f, 0.7f, 0.5f), new Vector3(0.02f, 0.06f, 0.06f));
+            Art.Box(neck, Color.black, new Vector3(-0.16f, 0.7f, 0.5f), new Vector3(0.02f, 0.06f, 0.06f));
+            Art.Box(neck, coat, new Vector3(0.09f, 0.75f + earLen * 0.5f, 0.25f), new Vector3(0.06f, earLen, 0.06f));
+            Art.Box(neck, coat, new Vector3(-0.09f, 0.75f + earLen * 0.5f, 0.25f), new Vector3(0.06f, earLen, 0.06f));
+            head = neck;
+            var tl = Pivot(t, "tail", new Vector3(0, 1.3f, -0.76f));
+            Hit(Art.Box(tl, mane, new Vector3(0, -0.3f, -0.05f), new Vector3(0.12f, 0.65f, 0.12f)), ghost);
+            tail = tl;
+            legT = new Transform[4];
+            for (int i = 0; i < 4; i++)
+            {
+                float x = i % 2 == 0 ? -0.2f : 0.2f, z = i < 2 ? 0.55f : -0.55f;
+                var leg = Pivot(t, "leg", new Vector3(x, 0.9f, z));
+                Hit(Art.Box(leg, coat, new Vector3(0, -0.4f, 0), new Vector3(0.16f, 0.8f, 0.16f)), ghost);
+                Art.Box(leg, hoof, new Vector3(0, -0.85f, 0), new Vector3(0.18f, 0.12f, 0.18f));
+                legs?.Add(leg);
+                legT[i] = leg;
+            }
+            saddle = Saddle(t, ghost, 1.47f, 0.6f);
+            return neck;
         }
 
         /// <summary>The saddle (shown once it's saddled): seat at seatY, with the team-coloured "blanket" under it.</summary>

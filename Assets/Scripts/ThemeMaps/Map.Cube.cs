@@ -12,9 +12,9 @@ namespace RockGame
     /// game's own; the horses are Cube Walkers (blocky robots).
     /// The ceiling is lower than where the airdrop ships hover, so they stay out of sight above it (their beam comes
     /// down through it). Walls and ceiling cast no shadows, so the sun still lights the room.
-    /// The trees are synthetic and it shows: now and then one flickers into a see-through cyan hologram and glitches
-    /// about (jumping, stretching, twitching round) for a moment, and when you turn your camera fast the trees near you
-    /// in view glitch and smear behind the turn. Only how they look - their colliders never move.
+    /// The trees are synthetic and it shows, just a little: now and then a piece of one (a trunk segment, a branch's
+    /// clump of cubes, the crown) flickers see-through for a moment and twitches a few centimetres, and turning your
+    /// camera fast can set a piece of a near tree flickering too. Only how they look - their colliders never move.
     /// </summary>
     public class CubeMap : ThemeMap
     {
@@ -103,7 +103,7 @@ namespace RockGame
 
         public override void BuildGround(Transform root)
         {
-            m_Holo.Clear();
+            m_Trees.Clear();
             float half = Half;
             // the floor: tiles lined up with the building grid (and a solid slab under it)
             float s = Mathf.Ceil((half + 2f) / Tile) * Tile;
@@ -164,81 +164,83 @@ namespace RockGame
             }
         }
 
-        /// <summary>A synthetic tree: a blocky brown trunk on splayed root blocks, square branches, round crowns of green cubes.</summary>
+        /// <summary>The trunk's radius where the X goes: round, straight and this thick from the ground to 3 m.</summary>
+        const float TrunkR = 0.34f;
+        public override float TreeTrunkRadius(int seed) => TrunkR;
+
+        /// <summary>A synthetic tree: a round segmented brown trunk (straight to 3 m) on flat root blocks, square branches above
+        /// that, crowns of green cubes. Each piece is its own renderer so a piece can glitch on its own.</summary>
         public override bool BuildTree(Transform tr, int seed, float h, GameObject trunk)
         {
             trunk.GetComponent<MeshRenderer>().enabled = false;
             var rng = new System.Random(seed + 404);
             float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
-            var k = new MeshKit(); var g = new MeshKit();
+            var look = new GameObject("synthetic look").transform;
+            look.SetParent(tr, false);
+            var parts = new List<Part>();
+            void Add(MeshKit kit, string name, Color tint, Material mat = null, bool shadows = true)
+            {
+                var r = ThemeKitB.Spawn(look, name, kit, mat, shadows).GetComponent<Renderer>();
+                if (r == null) return;
+                tint.a = 0.32f;
+                parts.Add(new Part { T = r.transform, R = r, Mat = r.sharedMaterial, See = Art.Ghost(tint), Glow = mat != null });
+            }
             var yaw = Quaternion.Euler(0, R(0f, 90f), 0);
-            // root blocks splayed round the foot
+            // flat root blocks splayed round the foot (no higher than 0.25 m: the trunk is bare where the X goes)
+            var roots = new MeshKit();
             for (int i = 0; i < 4; i++)
             {
                 var q = yaw * Quaternion.Euler(0, i * 90f + R(-12f, 12f), 0);
-                k.Box(q * new Vector3(0, 0.2f, 0.5f), new Vector3(0.34f, 0.4f, 0.62f), q * Quaternion.Euler(-12f, 0, 0), k_Bark[1], MeshKit.All);
+                roots.Box(q * new Vector3(0, 0.12f, 0.5f), new Vector3(0.34f, 0.24f, 0.62f), q, k_Bark[1], MeshKit.All);
             }
-            // the trunk: stacked square blocks, narrowing, each turned a little
-            const int segs = 4;
-            for (int i = 0; i < segs; i++)
+            Add(roots, "synthetic roots", k_Bark[1]);
+            // the trunk: round stacked segments - two of them straight and TrunkR thick up to 3 m, then narrowing to the top
+            const float Straight = 3f;
+            float spin = R(0f, 6.28f);
+            float top = Mathf.Max(h, Straight + 1.2f);
+            float[] ys = { 0f, 1.5f, Straight, Straight + (top - Straight) * 0.5f, top };
+            for (int i = 0; i < 4; i++)
             {
-                float y0 = h * i / segs, y1 = h * (i + 1) / segs, w = Mathf.Lerp(0.72f, 0.48f, i / (segs - 1f));
-                k.Box(new Vector3(0, (y0 + y1) * 0.5f, 0), new Vector3(w, y1 - y0 + 0.05f, w), yaw * Quaternion.Euler(0, i * 7f, 0), k_Bark[i % k_Bark.Length], MeshKit.All);
+                var seg = new MeshKit();
+                float r0 = i < 2 ? TrunkR : Mathf.Lerp(TrunkR, 0.22f, (i - 2) / 2f), r1 = i < 2 ? TrunkR : Mathf.Lerp(TrunkR, 0.22f, (i - 1) / 2f);
+                ThemeKitB.Cyl(seg, Vector3.up * ys[i], Vector3.up * ys[i + 1], r0, r1, 12, k_Bark[i % k_Bark.Length], i == 0, true, spin);
+                Add(seg, "synthetic trunk " + i, k_Bark[i % k_Bark.Length]);
             }
-            // branches: square arms out and up from the upper trunk, a clump of cubes on each
+            // branches: square arms out and up from the trunk above 3 m, a clump of cubes on each
             int nb = 2 + rng.Next(2);
-            float spin = R(0f, 360f);
+            float bspin = R(0f, 360f);
             for (int b = 0; b < nb; b++)
             {
-                var dir = Quaternion.Euler(0, spin + b * 360f / nb + R(-20f, 20f), 0) * Vector3.forward;
-                var from = Vector3.up * (h * R(0.55f, 0.78f));
+                var k = new MeshKit();
+                var dir = Quaternion.Euler(0, bspin + b * 360f / nb + R(-20f, 20f), 0) * Vector3.forward;
+                var from = Vector3.up * Mathf.Min(top - 0.3f, Mathf.Max(Straight + 0.25f, top * R(0.6f, 0.85f)));
                 var to = from + dir * R(1.3f, 1.9f) + Vector3.up * R(0.7f, 1.2f);
                 var along = to - from;
                 k.Box((from + to) * 0.5f, new Vector3(0.3f, 0.3f, along.magnitude + 0.2f), Quaternion.LookRotation(along), k_Bark[2], MeshKit.All);
                 VoxelClump(k, to + Vector3.up * 0.45f, R(0.62f, 0.78f), yaw * Quaternion.Euler(0, b * 25f, 0), rng, true);
+                Add(k, "synthetic branch " + b, k_Green[1]);
             }
             // the crown on top
+            var crown = new MeshKit(); var g = new MeshKit();
             float cs = R(0.95f, 1.15f);
-            var top = Vector3.up * (h + cs * 0.55f);
-            VoxelClump(k, top, cs, yaw, rng, false);
-            k.Box(top + Vector3.up * cs * 1.5f, Vector3.one * cs * 0.85f, yaw * Quaternion.Euler(0, 45f, 0), k_Green[3], MeshKit.All);
+            var ct = Vector3.up * (top + cs * 0.55f);
+            VoxelClump(crown, ct, cs, yaw, rng, false);
+            Add(crown, "synthetic crown", k_Green[0]);
+            var cap = new MeshKit();
+            cap.Box(ct + Vector3.up * cs * 1.5f, Vector3.one * cs * 0.85f, yaw * Quaternion.Euler(0, 45f, 0), k_Green[3], MeshKit.All);
+            Add(cap, "synthetic crown top", k_Green[3]);
             // two little glowing cubes in the leaves (it's synthetic)
             for (int i = 0; i < 2; i++)
-                g.Box(top + yaw * new Vector3((i == 0 ? 1f : -1f) * cs * 1.42f, R(-0.3f, 0.4f) * cs, R(-0.5f, 0.5f) * cs), Vector3.one * 0.22f, yaw * Quaternion.Euler(30f, 45f, 0), Color.white, MeshKit.All);
-            // (the look on its own transform, so the hologram glitches can move it about while the collider stays put)
-            var look = new GameObject("synthetic look").transform;
-            look.SetParent(tr, false);
-            var ra = ThemeKitB.Spawn(look, "synthetic tree", k, null, true).GetComponent<Renderer>();
-            var rb = ThemeKitB.Spawn(look, "synthetic glow", g, ThemeKitB.Glow(k_Neon, 1.8f), false).GetComponent<Renderer>();
-            var rs = new List<Renderer>();
-            if (ra != null) rs.Add(ra);
-            if (rb != null) rs.Add(rb);
-            var mats = new Material[rs.Count];
-            for (int i = 0; i < rs.Count; i++) mats[i] = rs[i].sharedMaterial;
-            m_Holo.Add(new Holo { Look = look, Rs = rs.ToArray(), Mats = mats, Next = Time.time + Random.Range(2f, 25f) });
+                g.Box(ct + yaw * new Vector3((i == 0 ? 1f : -1f) * cs * 1.42f, R(-0.3f, 0.4f) * cs, R(-0.5f, 0.5f) * cs), Vector3.one * 0.22f, yaw * Quaternion.Euler(30f, 45f, 0), Color.white, MeshKit.All);
+            Add(g, "synthetic glow", k_Neon, ThemeKitB.Glow(k_Neon, 1.8f), false);
+            m_Trees.Add(new Glitchy { Look = look, Parts = parts.ToArray(), Next = Time.time + Random.Range(6f, 40f) });
             return true;
         }
 
-        /// <summary>A bush of green cubes with red cube berries on it (there are no bushes here unless that changes).</summary>
+        /// <summary>The game's own berry bush in the Cube's colours: grey-green leaves, cyan berries.</summary>
         public override bool BuildBush(Transform tr, int seed)
         {
-            var rng = new System.Random(seed * 31 + 5);
-            var k = new MeshKit();
-            const float S = ResourceNode.BushSize;
-            var yaw = Quaternion.Euler(0, (float)rng.NextDouble() * 90f, 0);
-            VoxelClump(k, Vector3.up * 0.42f * S, 0.36f * S, yaw, rng, true);
-            var red = new Color(0.85f, 0.1f, 0.16f);
-            for (int i = 0; i < 22; i++)
-            {
-                int face = rng.Next(5);
-                var n = face == 0 ? Vector3.right : face == 1 ? Vector3.left : face == 2 ? Vector3.forward : face == 3 ? Vector3.back : Vector3.up;
-                var t = Vector3.Cross(n, Mathf.Abs(n.y) > 0.5f ? Vector3.right : Vector3.up);
-                var b = Vector3.Cross(n, t);
-                var p = n * 0.58f + t * ((float)rng.NextDouble() - 0.5f) * 0.9f + b * ((float)rng.NextDouble() - 0.5f) * 0.9f;
-                float s = 0.13f + (float)rng.NextDouble() * 0.04f;
-                k.Box(Vector3.up * 0.42f * S + yaw * (p * S), Vector3.one * s * S, yaw * Quaternion.Euler(0, 45f, 0), red, MeshKit.All);
-            }
-            ThemeKitB.Spawn(tr, "cube bush", k, null, true);
+            ResourceNode.BuildBerryBush(tr, seed, new Color(0.42f, 0.5f, 0.44f), new Color(0.2f, 0.9f, 0.95f));
             return true;
         }
 
@@ -297,109 +299,120 @@ namespace RockGame
             ThemeKitB.Lighting(Color.white, new Color(0.86f, 0.86f, 0.87f), new Color(0.77f, 0.77f, 0.78f), new Color(0.62f, 0.62f, 0.63f));
         }
 
-        // ---------------------------------------------------------------- the hologram glitches (how the trees look only)
-        class Holo
+        // ---------------------------------------------------------------- the glitches (how the trees look only; subtle)
+        /// <summary>One piece of a tree: its renderer, its own material and its see-through look.</summary>
+        class Part
+        {
+            public Transform T;
+            public Renderer R;
+            public Material Mat, See;
+            public bool Glow;
+            public bool On;
+            public float Until, NextFlick;
+            public Vector3 Lag; // (local: a tiny smear behind a fast camera turn)
+        }
+        class Glitchy
         {
             public Transform Look;
-            public Renderer[] Rs;
-            public Material[] Mats;
-            public bool On;
-            public float Until, Next, NextJump, Start;
-            public Vector3 Lag; // (world space: how far it smears behind a fast camera turn)
+            public Part[] Parts;
+            public float Next;
         }
-        readonly List<Holo> m_Holo = new List<Holo>();
-        static Material s_HoloSee, s_HoloBright;
+        readonly List<Glitchy> m_Trees = new List<Glitchy>();
         int m_Scan;
         bool m_HaveCam;
         Quaternion m_CamRot;
         Vector3 m_CamPos;
         float m_NextTurnGlitch;
 
-        static Material HoloSee => s_HoloSee != null ? s_HoloSee : (s_HoloSee = new Material(Art.Ghost(new Color(0.3f, 1f, 0.95f, 0.38f))) { name = "cube hologram" });
-        static Material HoloBright => s_HoloBright != null ? s_HoloBright : (s_HoloBright = ThemeKitB.Glow(new Color(0.35f, 1f, 0.92f), 1.7f));
-
-        static void StartGlitch(Holo h, float seconds, Vector3 lag)
+        static void StartGlitch(Part p, float seconds, Vector3 lag)
         {
+            if (p == null || p.T == null) return;
             float t = Time.time;
-            if (h.On) { h.Until = Mathf.Max(h.Until, t + seconds); if (lag.sqrMagnitude > h.Lag.sqrMagnitude) h.Lag = lag; return; }
-            h.On = true; h.Start = t; h.Until = t + seconds; h.NextJump = 0f; h.Lag = lag;
-            foreach (var r in h.Rs) if (r != null) r.sharedMaterial = HoloSee;
+            p.Until = Mathf.Max(p.Until, t + seconds);
+            if (lag.sqrMagnitude > p.Lag.sqrMagnitude) p.Lag = lag;
+            if (p.On) return;
+            p.On = true; p.NextFlick = 0f;
         }
 
-        static void EndGlitch(Holo h)
+        static void EndGlitch(Part p)
         {
-            h.On = false;
-            h.Next = Time.time + Random.Range(4f, 16f);
-            if (h.Look == null) return;
-            h.Look.localPosition = Vector3.zero; h.Look.localRotation = Quaternion.identity; h.Look.localScale = Vector3.one;
-            for (int i = 0; i < h.Rs.Length; i++) if (h.Rs[i] != null) { h.Rs[i].sharedMaterial = h.Mats[i]; h.Rs[i].enabled = true; }
+            p.On = false; p.Lag = Vector3.zero;
+            if (p.T == null) return;
+            p.T.localPosition = Vector3.zero;
+            p.R.sharedMaterial = p.Mat;
+            p.R.enabled = true;
+        }
+
+        /// <summary>One or two pieces of the tree (rarely the glow cubes) flicker for a moment.</summary>
+        static void GlitchSome(Glitchy g, float seconds, Vector3 lag, int count)
+        {
+            if (g.Parts.Length == 0) return;
+            for (int n = 0; n < count; n++)
+            {
+                var p = g.Parts[Random.Range(0, g.Parts.Length)];
+                if (p.Glow) p = g.Parts[Random.Range(0, g.Parts.Length)];
+                StartGlitch(p, seconds * Random.Range(0.7f, 1.2f), lag);
+            }
         }
 
         public override void ClientTick()
         {
             var cam = Camera.main;
             ThemeKitB.Keep(cam);
-            if (cam == null || m_Holo.Count == 0) return;
+            if (cam == null || m_Trees.Count == 0) return;
             float t = Time.time, dt = Mathf.Max(Time.deltaTime, 1e-4f);
-            for (int i = m_Holo.Count - 1; i >= 0; i--) if (m_Holo[i].Look == null) m_Holo.RemoveAt(i); // (chopped down)
-            if (m_Holo.Count == 0) return;
+            for (int i = m_Trees.Count - 1; i >= 0; i--) if (m_Trees[i].Look == null) m_Trees.RemoveAt(i); // (chopped down)
+            if (m_Trees.Count == 0) return;
 
-            // the camera turning fast: the trees near you, in view, glitch and smear the other way
+            // the camera turning really fast: now and then a piece of a near tree in view flickers, smeared a touch behind
             var ct = cam.transform;
             var cr = ct.rotation; var cp = ct.position;
             if (m_HaveCam && (cp - m_CamPos).magnitude < 8f) // (not on a respawn / teleport)
             {
                 float turn = Quaternion.Angle(m_CamRot, cr) / dt;
                 float yaw = Mathf.DeltaAngle(m_CamRot.eulerAngles.y, cr.eulerAngles.y);
-                if (turn > 150f && turn < 4000f && t >= m_NextTurnGlitch)
+                if (turn > 320f && turn < 4000f && t >= m_NextTurnGlitch)
                 {
-                    m_NextTurnGlitch = t + 0.12f;
-                    float strength = Mathf.InverseLerp(150f, 700f, turn);
-                    var smear = ct.right * -Mathf.Sign(yaw);
+                    m_NextTurnGlitch = t + 0.35f;
+                    var smear = ct.right * -Mathf.Sign(yaw) * 0.08f;
                     var fwd = ct.forward;
-                    foreach (var h in m_Holo)
+                    foreach (var g in m_Trees)
                     {
-                        var d = h.Look.position - cp;
+                        var d = g.Look.position - cp;
                         float dist = d.magnitude;
-                        if (dist > 55f || Vector3.Dot(fwd, d / Mathf.Max(dist, 0.01f)) < 0.35f) continue;
-                        if (Random.value > 0.3f + 0.6f * strength) continue;
-                        StartGlitch(h, Random.Range(0.12f, 0.4f), smear * Random.Range(0.4f, 1.6f) * (0.4f + strength));
+                        if (dist > 40f || Vector3.Dot(fwd, d / Mathf.Max(dist, 0.01f)) < 0.5f) continue;
+                        if (Random.value > 0.12f) continue;
+                        var lag = g.Look.parent != null ? g.Look.parent.InverseTransformVector(smear) : smear;
+                        GlitchSome(g, Random.Range(0.08f, 0.18f), lag, 1);
                     }
                 }
             }
             m_HaveCam = true; m_CamRot = cr; m_CamPos = cp;
 
-            // now and then, one by itself (a few looked at each frame)
-            int scan = Mathf.Min(6, m_Holo.Count);
+            // now and then, one tree by itself (a few looked at each frame): a piece or two flickers for a moment
+            int scan = Mathf.Min(4, m_Trees.Count);
             for (int n = 0; n < scan; n++)
             {
-                m_Scan = (m_Scan + 1) % m_Holo.Count;
-                var h = m_Holo[m_Scan];
-                if (h.On || t < h.Next) continue;
-                if (Random.value < 0.4f) StartGlitch(h, Random.Range(0.35f, 1.6f), Vector3.zero);
-                else h.Next = t + Random.Range(3f, 12f);
+                m_Scan = (m_Scan + 1) % m_Trees.Count;
+                var g = m_Trees[m_Scan];
+                if (t < g.Next) continue;
+                g.Next = t + Random.Range(12f, 45f);
+                if (Random.value < 0.5f) GlitchSome(g, Random.Range(0.12f, 0.4f), Vector3.zero, Random.value < 0.3f ? 2 : 1);
             }
 
-            // the glitching ones: jump about every few hundredths of a second, stretch, twitch, flicker
-            foreach (var h in m_Holo)
+            // the flickering pieces: every few hundredths of a second see-through or solid (once in a while gone for a
+            // frame), twitching a few centimetres
+            foreach (var g in m_Trees)
+            foreach (var p in g.Parts)
             {
-                if (!h.On) continue;
-                if (t >= h.Until) { EndGlitch(h); continue; }
-                if (t < h.NextJump) continue;
-                h.NextJump = t + Random.Range(0.035f, 0.09f);
-                float fade = 1f - Mathf.Clamp01((t - h.Start) / Mathf.Max(0.05f, h.Until - h.Start));
-                var lag = h.Look.parent != null ? h.Look.parent.InverseTransformVector(h.Lag * fade) : h.Lag * fade;
-                bool big = Random.value < 0.25f;
-                h.Look.localPosition = lag + new Vector3(Random.Range(-0.35f, 0.35f), Random.Range(-0.12f, 0.2f), Random.Range(-0.35f, 0.35f)) * (big ? 2.2f : 1f);
-                h.Look.localScale = Random.value < 0.4f ? new Vector3(1f + Random.Range(-0.3f, 0.35f), 1f + Random.Range(-0.18f, 0.22f), 1f + Random.Range(-0.3f, 0.35f)) : Vector3.one;
-                h.Look.localRotation = Random.value < 0.35f ? Quaternion.Euler(0f, Random.Range(-14f, 14f), Random.Range(-3f, 3f)) : Quaternion.identity;
-                bool bright = Random.value < 0.22f, gone = Random.value < 0.12f;
-                foreach (var r in h.Rs)
-                {
-                    if (r == null) continue;
-                    r.enabled = !gone;
-                    r.sharedMaterial = bright ? HoloBright : HoloSee;
-                }
+                if (!p.On || p.T == null) continue;
+                if (t >= p.Until) { EndGlitch(p); continue; }
+                if (t < p.NextFlick) continue;
+                p.NextFlick = t + Random.Range(0.03f, 0.07f);
+                float k = Random.value;
+                p.R.enabled = k > 0.08f;
+                p.R.sharedMaterial = k < 0.6f && !p.Glow ? p.See : p.Mat;
+                p.T.localPosition = p.Lag + (Random.value < 0.5f ? new Vector3(Random.Range(-0.05f, 0.05f), Random.Range(-0.02f, 0.03f), Random.Range(-0.05f, 0.05f)) : Vector3.zero);
             }
         }
 

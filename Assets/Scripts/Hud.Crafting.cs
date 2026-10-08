@@ -90,7 +90,7 @@ namespace RockGame
         }
 
         /// <summary>What you have to spend (the TAB header).</summary>
-        static string CurrencyText(PlayerNet me) => Cfg.Jonah ? $"<color=#f0b878>{Thousands(me.Count(Item.Wood))} wood</color>   <color=#c79bff>{Thousands(me.Count(Item.AlienDust))} alien dust</color>" : Cfg.DnaRules ? $"<color=#7dffb0>{Thousands(me.Count(Item.Dna))} DNA</color>" :
+        static string CurrencyText(PlayerNet me) => Cfg.DnaRules ? $"<color=#7dffb0>{Thousands(me.Count(Item.Dna))} DNA</color>" :
             $"<color=#f0b878>{Thousands(me.Count(Item.Wood))} wood</color>" + (Cfg.WoodMode || Tutorial.HideStone ? "" : $"   <color=#d4d4dc>{Thousands(me.Count(Item.Stone))} stone</color>");
 
         /// <summary>A short description of everything you can make (shown when you point at it).</summary>
@@ -449,7 +449,7 @@ namespace RockGame
             float bp = Mathf.Max(3 * k, row * 0.14f);
             var br = new Rect(rr.xMax - bw - 6 * k, rr.y + bp, bw, row - 2 * bp);
             if (FlatBtn(br, ok ? k_BtnOk : k_BtnNo, k_BtnOkHi, ok && canClick)) me.CraftRpc(idx);
-            GUI.Label(br, locked ? "LOCKED" : "CRAFT", CraftStyle(Mathf.Min(17 * k, row * 0.36f), FontStyle.Bold, TextAnchor.MiddleCenter, ok ? Color.white : new Color(1, 1, 1, 0.35f)));
+            GUI.Label(br, locked ? "LOCKED" : Cfg.Jonah ? "TRADE" : "CRAFT", /* (Jonah mode: the trade stations trade) */ CraftStyle(Mathf.Min(17 * k, row * 0.36f), FontStyle.Bold, TextAnchor.MiddleCenter, ok ? Color.white : new Color(1, 1, 1, 0.35f)));
         }
     }
 }

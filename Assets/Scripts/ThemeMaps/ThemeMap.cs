@@ -39,6 +39,9 @@ namespace RockGame
         public virtual Color LeafTint(Color leaf) => leaf;
         /// <summary>Its own trees: build the look under `tr` (the trunk collider + weak spots stay), hide the trunk's renderer, return true.</summary>
         public virtual bool BuildTree(Transform tr, int seed, float h, GameObject trunk) => false;
+        /// <summary>Its own tree's trunk radius (m) for this seed between 0.3 and 2.2 m up, where the X goes - keep the trunk
+        /// straight, round and exactly this thick there (the X is drawn on a cylinder of this radius, and so is the collider).</summary>
+        public virtual float TreeTrunkRadius(int seed) => 0.3f;
 
         /// <summary>Its own berry bush look: build under `tr` (the bush's trigger collider stays), return true.</summary>
         public virtual bool BuildBush(Transform tr, int seed) => false;
@@ -70,8 +73,13 @@ namespace RockGame
         /// <summary>Two teams: the bases sit on the diagonal ((-d,-d) and (d,d), d = BaseDistance along each axis) and the
         /// glass wall between them is turned to match. Three or four teams stay where they always are.</summary>
         public virtual bool DiagonalBases => false;
-        /// <summary>Its water is too deep to wade: off a boat you can't swim - you sink (slowly, no jumping) and drown at KillY.</summary>
+        /// <summary>Its water is too deep to wade: off a boat you swim - very slowly, floating at the surface (Space to come up).</summary>
         public virtual bool DeepWater => false;
+        /// <summary>How fast you move wading / swimming in its water (share of walking speed).</summary>
+        public virtual float WaterSpeed => 0.6f;
+        /// <summary>Its ice (Slippery): how quickly you can change speed while pushing a direction (m/s per second; Minecraft-like:
+        /// steering works, it just takes a moment). 0 = the old ice (IceGrip for everything).</summary>
+        public virtual float IceSteer => 0f;
         /// <summary>This version of the map is the one played (a map can keep an older version as a backup class with
         /// the same Kind: exactly one of them must be enabled).</summary>
         public virtual bool Enabled => true;

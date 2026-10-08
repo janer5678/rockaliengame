@@ -3,8 +3,10 @@ using UnityEngine;
 namespace RockGame
 {
     /// <summary>
-    /// First-person hands: the block hands (a box fist, a darker knuckle row, a thumb, a team-coloured wrist band and a
-    /// square forearm). Every item has a hand pose. The rock is held in both hands; melee swings raise,
+    /// First-person hands: the alien arms with four jointed fingers and a thumb (ViewModel.Hands.cs builds them,
+    /// ViewModel.Fingers.cs poses every finger on every item), or - Settings > Display > Alien hands off - the old block
+    /// hands (a box fist, a darker knuckle row, a thumb, a team-coloured wrist band and a square forearm). Every item has a
+    /// hand pose. The rock is held in both hands; melee swings raise,
     /// slam down, then either bounce back up with a short hit-stop when they connect or follow through
     /// further down when they miss (Rust style). Two-handed items put the second hand on the item.
     /// Locomotion is animated like a Mixamo-style FPS rig: figure-8 walk bob, a lowered and tilted sprint pose with the
@@ -88,8 +90,8 @@ namespace RockGame
             Last = this;
             m_Root = new GameObject("ViewModel").transform;
             m_Root.SetParent(cam, false);
-            m_R = MakeArm(m_Root, team, true);
-            m_L = MakeArm(m_Root, team, false);
+            m_R = MakeArm(m_Root, team, true, out m_AR);
+            m_L = MakeArm(m_Root, team, false, out m_AL);
             m_ItemHolder = new GameObject("item").transform;
             m_ItemHolder.SetParent(m_Root, false);
             GameSettings.GraphicsChanged += OnGraphicsChanged;
@@ -162,7 +164,7 @@ namespace RockGame
         public void Eat() => m_EatStart = Now;
         public void Use() => m_UseStart = Now;
 
-        static Transform MakeArm(Transform parent, Color team, bool right)
+        static Transform MakeArm(Transform parent, Color team, bool right, out AlienArm alien)
         {
             var hand = new GameObject(right ? "R" : "L").transform;
             hand.SetParent(parent, false);
@@ -172,7 +174,7 @@ namespace RockGame
             var skin = HandColorHook.Shade(team, HandColorHook.Skin);
             var dark = HandColorHook.Shade(team, HandColorHook.Knuckles);
             var band = HandColorHook.Shade(team, HandColorHook.Band);
-            // the old square hands (Settings > Display > Round hands off brings them back)
+            // the old square hands (Settings > Display > Alien hands off brings them back)
             var square = new GameObject("square").transform;
             square.SetParent(hand, false);
             hook.Track(Art.Box(square, skin, Vector3.zero, new Vector3(0.085f, 0.09f, 0.1f)), HandColorHook.Skin);                                  // fist
@@ -180,28 +182,20 @@ namespace RockGame
             hook.Track(Art.Box(square, skin, new Vector3(-0.045f * side, 0.025f, 0.035f), new Vector3(0.03f, 0.03f, 0.065f), new Vector3(0, 20 * side, 0)), HandColorHook.Skin); // thumb
             hook.Track(Art.Box(square, band, new Vector3(0, 0, -0.075f), new Vector3(0.082f, 0.082f, 0.035f)), HandColorHook.Band);                // wrist band
             hook.Track(Art.Box(square, skin, new Vector3(0, 0, -0.32f), new Vector3(0.072f, 0.072f, 0.46f)), HandColorHook.Skin);                  // forearm
-            // the round hands, slender like the aliens' own: a thin tapering forearm (no wrist band), a slim smooth hand with
-            // a rounded tip - a mitten, not fingers - a soft knuckle ridge and a thin thumb (Art.Cylinder is 2 tall: y scale = half the length)
-            var round = new GameObject("round").transform;
-            round.SetParent(hand, false);
-            hook.Track(Art.Part(round, Art.Sphere, skin, new Vector3(0, -0.004f, 0.005f), new Vector3(0.062f, 0.052f, 0.118f)), HandColorHook.Skin);                  // hand
-            hook.Track(Art.Part(round, Art.Sphere, skin, new Vector3(0, -0.008f, 0.06f), new Vector3(0.054f, 0.044f, 0.06f)), HandColorHook.Skin);                    // rounded tip
-            hook.Track(Art.Part(round, Art.Capsule, dark, new Vector3(0, 0.012f, 0.042f), new Vector3(0.026f, 0.03f, 0.026f), new Vector3(0, 0, 90)), HandColorHook.Knuckles); // knuckle ridge
-            hook.Track(Art.Part(round, Art.Capsule, skin, new Vector3(-0.032f * side, 0.008f, 0.03f), new Vector3(0.02f, 0.03f, 0.02f), new Vector3(80, 25 * side, 0)), HandColorHook.Skin); // thumb
-            hook.Track(Art.Part(round, Art.Cylinder, skin, new Vector3(0, 0, -0.1f), new Vector3(0.042f, 0.06f, 0.042f), new Vector3(90, 0, 0)), HandColorHook.Skin);     // wrist
-            hook.Track(Art.Part(round, Art.Cylinder, skin, new Vector3(0, 0, -0.35f), new Vector3(0.05f, 0.21f, 0.05f), new Vector3(90, 0, 0)), HandColorHook.Skin);      // forearm
+            // the alien arm (four fingers and a thumb, every joint its own transform: ViewModel.Hands.cs)
+            alien = BuildAlienArm(hand, hook, skin, dark, right);
             ShowHandStyle(hand);
-            foreach (var r in hand.GetComponentsInChildren<Renderer>()) r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            foreach (var r in hand.GetComponentsInChildren<Renderer>(true)) r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off; // (the hidden style too)
             return hand;
         }
 
-        /// <summary>Round or square hands, as Settings > Display > Round hands says.</summary>
+        /// <summary>Alien or square hands, as Settings > Display > Alien hands says.</summary>
         static void ShowHandStyle(Transform hand)
         {
             if (hand == null) return;
             bool round = GameSettings.RoundHands;
             var sq = hand.Find("square");
-            var rd = hand.Find("round");
+            var rd = hand.Find("alien");
             if (sq) sq.gameObject.SetActive(!round);
             if (rd) rd.gameObject.SetActive(round);
         }
@@ -303,7 +297,7 @@ namespace RockGame
                 + Vector3.down * (1f - equip) * 0.45f;
             Quaternion sharedRot = Quaternion.Euler(m_Sway.y * 300f + pose * 14f + landDip * 60f, -m_Sway.x * 300f - pose * 22f, bx * bobAmt * (1.5f + 3f * m_SprintK) + pose * 12f);
 
-            if (s.Ball) { PoseBall(shared, sharedRot); return; }
+            if (s.Ball) { PoseBall(shared, sharedRot); UpdateAlienHands(s, swinging, swingE); return; }
             if (m_Item && !m_Item.activeSelf && s.Item != Item.Spear) m_Item.SetActive(true);
 
             switch (s.Item)
@@ -327,6 +321,7 @@ namespace RockGame
                 case Item.None: HideLeft(); Set(m_R, new Vector3(0.3f, -0.9f, 0.2f), Quaternion.identity); break;
                 default: PoseHeld(s.Item, shared, sharedRot); break;
             }
+            UpdateAlienHands(s, swinging, swingE);
         }
 
         void Set(Transform t, Vector3 pos, Quaternion rot) { t.localPosition = pos; t.localRotation = rot; }
@@ -484,7 +479,7 @@ namespace RockGame
                 else thrust = 1f + Smooth((e - ImpactTime) / 0.08f) * 0.15f - Smooth((e - ImpactTime - 0.1f) / Mathf.Max(0.15f, m_SwingDur * 0.6f)) * 1.15f;
             }
             var spearRot = sharedRot * Quaternion.Euler(80f, -5f, 0);
-            AttachItemToRoot(shared + new Vector3(0.22f, -0.25f, 0.08f + thrust * 0.4f), spearRot);
+            AttachItemToRoot(shared + new Vector3(0.22f, -0.13f, 0.14f + thrust * 0.4f), spearRot); // (carried high enough for the hands on it to show)
             m_R.localPosition = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(0.03f, 0.12f, 0)));
             m_R.localRotation = sharedRot * Quaternion.Euler(-25f, -28f, -15f);
             m_L.localPosition = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(-0.03f, 0.62f, 0)));
@@ -536,6 +531,12 @@ namespace RockGame
             var stringRest = grip + bowRot * new Vector3(0, 0, -0.03f);
             var pull = Vector3.Lerp(m_Arrow ? nock : stringRest, grip + new Vector3(0.015f, -0.015f, -0.47f), e);
             pull.z = Mathf.Max(pull.z, 0.12f); // keep the string in front of the camera
+            // (for the alien hand's fingers hooked on the string)
+            m_BowString = Vector3.Lerp(stringRest, pull, Mathf.Max(e, 0.05f));
+            m_BowString.z = Mathf.Max(m_BowString.z, 0.12f);
+            m_BowUp = bowRot * Vector3.up;
+            if (m_Item) m_BowLow = m_Root.InverseTransformPoint(m_Item.transform.TransformPoint(new Vector3(0, -0.375f, -0.02f)));
+            m_BowDir = dir;
             m_R.localPosition = Vector3.Lerp(pull + new Vector3(0.015f, -0.03f, -0.03f), new Vector3(0.3f, -0.5f, -0.3f), e);
             m_R.localRotation = Quaternion.LookRotation(dir, Vector3.up) * Quaternion.Euler(-10f, 0, -80f);
 

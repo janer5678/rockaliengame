@@ -907,47 +907,18 @@ namespace RockGame
             return true;
         }
 
-        /// <summary>A Martian pod bush: fleshy crimson lobes with clusters of glowing berries (the food) on them.</summary>
+        /// <summary>The game's own berry bush in Mars colours: dusty crimson leaves, glowing-green berries (the food).</summary>
         public override bool BuildBush(Transform tr, int seed)
         {
-            var rng = new System.Random(seed * 31 + 17);
-            float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
-            var k = new MeshKit(); var g = new MeshKit();
-            const float S = ResourceNode.BushSize;
-            Color[] flesh = { new Color(0.55f, 0.13f, 0.2f), new Color(0.45f, 0.1f, 0.22f), new Color(0.62f, 0.2f, 0.18f) };
-            var lobes = new List<(Vector3 c, Vector3 r)>();
-            int n = 5 + rng.Next(3);
-            float spin = R(0f, 6.28f);
-            lobes.Add((new Vector3(0, 0.45f, 0) * S, new Vector3(0.38f, 0.45f, 0.38f) * S));
-            for (int i = 0; i < n; i++)
-            {
-                float a = spin + i * 6.283f / n + R(-0.25f, 0.25f), d = R(0.38f, 0.52f), h = R(0.5f, 0.9f), w = R(0.2f, 0.28f);
-                var dir = new Vector3(Mathf.Cos(a), 0, Mathf.Sin(a));
-                // a stalk leaning out, a bulb on the end
-                var top = (dir * d + Vector3.up * h) * S;
-                ThemeKitB.Cyl(k, dir * 0.1f * S, top, w * 0.55f * S, w * 0.4f * S, 6, flesh[1], false, false);
-                lobes.Add((top, new Vector3(w, w * 1.25f, w) * S));
-            }
-            for (int i = 0; i < lobes.Count; i++)
-                ThemeKitB.Ball(k, lobes[i].c, lobes[i].r, Quaternion.Euler(0, R(0, 360), 0), flesh[i % flesh.Length], 1, 0.12f, seed + i);
-            // glowing berries in clusters on the bulbs
-            var berryCol = Color.white;
-            for (int i = 1; i < lobes.Count; i++)
-            {
-                int b = 3 + rng.Next(3);
-                for (int j = 0; j < b; j++)
-                {
-                    float a = R(0f, 6.28f), el = R(-0.2f, 1.1f);
-                    var d = new Vector3(Mathf.Cos(a) * Mathf.Cos(el), Mathf.Sin(el), Mathf.Sin(a) * Mathf.Cos(el));
-                    ThemeKitB.Ball(g, lobes[i].c + Vector3.Scale(d, lobes[i].r) * 1.05f, Vector3.one * R(0.075f, 0.1f) * S, Quaternion.identity, berryCol, 0);
-                }
-            }
-            ThemeKitB.Spawn(tr, "pod bush", k, null, true);
-            ThemeKitB.Spawn(tr, "pod berries", g, ThemeKitB.Glow(new Color(0.45f, 1f, 0.6f), 2f), false);
+            ResourceNode.BuildBerryBush(tr, seed, new Color(0.52f, 0.17f, 0.2f), new Color(0.4f, 1f, 0.55f));
             return true;
         }
 
         // ================================================================ trees: tall alien stalks with puffy red crowns and glowing spores
+        /// <summary>The stalk's radius where the X goes (it's straight and this thick from the ground to 3 m).</summary>
+        const float TrunkR = 0.36f;
+        public override float TreeTrunkRadius(int seed) => TrunkR;
+
         public override bool BuildTree(Transform tr, int seed, float h, GameObject trunk)
         {
             trunk.GetComponent<MeshRenderer>().enabled = false;
@@ -956,12 +927,18 @@ namespace RockGame
             var k = new MeshKit(); var g = new MeshKit();
             Color[] stalk = { new Color(0.38f, 0.14f, 0.16f), new Color(0.3f, 0.1f, 0.13f) };
             Color[] crown = { new Color(0.78f, 0.22f, 0.35f), new Color(0.92f, 0.42f, 0.25f), new Color(0.62f, 0.18f, 0.42f) };
-            var at = Vector3.up * 0.1f;
-            int segs = 3;
+            // the foot of the stalk: dead straight, round and TrunkR thick up to 3 m (where the X goes)
+            const float Straight = 3f;
+            ThemeKitB.Cyl(k, Vector3.zero, Vector3.up * Straight, TrunkR, TrunkR, 14, stalk[0], true, false);
+            var at = Vector3.up * Straight;
+            ThemeKitB.Ball(k, at + Vector3.up * 0.16f, new Vector3(0.4f, 0.16f, 0.4f), Quaternion.identity, stalk[1], 0);
+            // then it wobbles and narrows the rest of the way up
+            float upper = Mathf.Max(1.8f, h - Straight); // (the crown stays clear over the 3 m of bare stalk)
+            const int segs = 2;
             for (int i = 0; i < segs; i++)
             {
-                var next = Vector3.up * (h * (i + 1) / segs) + new Vector3(R(-0.35f, 0.35f), 0, R(-0.35f, 0.35f)) * (i > 0 ? 1f : 0.3f);
-                ThemeKitB.Cyl(k, at, next, Mathf.Lerp(0.36f, 0.2f, i / (float)segs), Mathf.Lerp(0.36f, 0.2f, (i + 1f) / segs), 7, stalk[i % 2], false, false);
+                var next = Vector3.up * (Straight + upper * (i + 1) / segs) + new Vector3(R(-0.35f, 0.35f), 0, R(-0.35f, 0.35f));
+                ThemeKitB.Cyl(k, at, next, Mathf.Lerp(TrunkR, 0.2f, i / (float)segs), Mathf.Lerp(TrunkR, 0.2f, (i + 1f) / segs), 9, stalk[(i + 1) % 2], false, false);
                 // a ring of little nodules where the segments meet
                 ThemeKitB.Ball(k, next, new Vector3(0.32f, 0.16f, 0.32f), Quaternion.identity, stalk[1], 0);
                 at = next;

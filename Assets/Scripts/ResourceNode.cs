@@ -295,6 +295,16 @@ namespace RockGame
         /// Smooth-shaded (the light rolls round each blob; the flat bottoms keep their edge) and BushSize times as big
         /// as the old bush.
         /// </summary>
+        /// <summary>THEME MAPS: the game's own berry bush (the same shape and sway), in a map's colours - its leaves and
+        /// its berries (or fruit / flowers) - so every map's bush is a version of the real one.</summary>
+        public static void BuildBerryBush(Transform tr, int seed, Color leaf, Color berry)
+        {
+            s_BerryOverride = berry;
+            try { BuildBush(tr, seed, leaf); }
+            finally { s_BerryOverride = null; }
+        }
+        static Color? s_BerryOverride;
+
         static void BuildBush(Transform tr, int seed, Color leaf)
         {
             var rng = new System.Random(seed * 31 + 7);
@@ -375,7 +385,8 @@ namespace RockGame
                 {
                     float br = R(0.065f, 0.085f) * BerrySize;
                     var bc = at + dir * br * 0.55f + (side * R(-1f, 1f) + up * R(-1f, 1f)) * 0.06f * BerrySize * (k == 0 ? 0f : 1f);
-                    var berry = k == 0 && rng.NextDouble() < 0.3 ? ItemModels.Berry * 0.8f : ItemModels.Berry;
+                    var bcol = s_BerryOverride ?? ItemModels.Berry;
+                    var berry = k == 0 && rng.NextDouble() < 0.3 ? bcol * 0.8f : bcol;
                     berry.a = 1f;
                     Berry(berries, bc, br, berry, Sway(bc, 0.6f));
                     made++;
@@ -446,7 +457,19 @@ namespace RockGame
             trunkRadius = 0.3f;
             bark = Art.Wood;
             leafColor = leaf;
-            if (ThemeMaps.BuildPalm(tr, seed, h, trunk)) return trunk; // THEME MAPS
+            if (ThemeMaps.BuildPalm(tr, seed, h, trunk))
+            {
+                // THEME MAPS: a map's own tree says how thick its trunk is where the X goes (0.3-2.2 m up); the X sits on
+                // that bark and the trunk collider is that thick too (it used to stay 0.3 m: the X ended up inside thick trunks)
+                var tm = ThemeMaps.Custom;
+                if (tm != null)
+                {
+                    trunkRadius = Mathf.Clamp(tm.TreeTrunkRadius(seed), 0.1f, 1.5f);
+                    var ts = trunk.transform.localScale;
+                    trunk.transform.localScale = new Vector3(trunkRadius * 2f, ts.y, trunkRadius * 2f);
+                }
+                return trunk;
+            }
             // (PSX graphics: the trees are twice the size; the AI PSX test keeps them as they were)
             if ((PsxArt.On || AiPsxArt.On) && PsxArt.BuildTree(tr, seed, (h * 0.45f + 5.2f + (r() - 0.5f) * 1.2f) * (PsxArt.On ? 2f : 1f), out var pr, out var pb, out var pl))
             {

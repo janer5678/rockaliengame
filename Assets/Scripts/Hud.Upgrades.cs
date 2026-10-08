@@ -33,7 +33,7 @@ namespace RockGame
         {
             int lvl = Cfg.BaseUpgradeLevel(id, team), max = Cfg.BaseUpgradeMax(id);
             if (Cfg.Jonah && id == Item.FortifyBuff)
-                return $"Upgrade 10 Walls ({Cfg.Upgrade10WallsDust} alien dust): you fly round a black copy of your base and click {Cfg.WallsPerUpgrade} of your pieces (click again to un-pick). The moment you pick the last one you're back and they've gone up a tier. Buy it as often as you like.";
+                return $"Upgrade 10 Walls (insert {Cfg.Upgrade10WallsDust} wood): you fly round a black copy of your base and click {Cfg.WallsPerUpgrade} of your pieces (click again to un-pick). The moment you pick the last one you're back and they've gone up a tier. Buy it as often as you like.";
             if (id == Item.WoodGenBuff)
                 return $"Wood Gen: the first level builds a wood machine in your base ({Cfg.WoodGenRate(1)} wood a second), the next two make it faster - {Cfg.WoodGenRate(2)}, then {Cfg.WoodGenRate(3)} a second. Level {lvl} of {max}.";
             return $"Fortify All Walls: every piece your team has built goes up a step at full health - stone, then metal, then armoured - and pieces you build after come out that strong too. Level {lvl} of {max}.";
@@ -133,7 +133,9 @@ namespace RockGame
             }
             GUI.Label(new Rect(tx, rr.y + row * 0.36f, tw, row * 0.3f), Cfg.BaseUpgradeBlurb(id, team),
                 CraftStyle(Mathf.Min(14 * k, row * 0.17f), FontStyle.Normal, TextAnchor.MiddleLeft, new Color(0.88f, 0.88f, 0.84f), true));
-            string sub = maxed && Cfg.Jonah && id == Item.FortifyBuff ? "<color=#a8a8a0>no walls to upgrade yet</color>" : maxed ? $"<color=#ffd24a>MAXED OUT</color>  <color=#a8a8a0>{Cfg.BaseUpgradeNow(id, team)}</color>"
+            string sub0 = null;
+            if (Cfg.Jonah && !maxed) sub0 = $"<color={(me.CanAfford(rec) ? "#f0b878" : "#ff6a5a")}>INSERT {Thousands(rec.Wood)} WOOD</color>"; // (Jonah mode: the machine takes your wood)
+            string sub = sub0 != null ? sub0 : maxed && Cfg.Jonah && id == Item.FortifyBuff ? "<color=#a8a8a0>no walls to upgrade yet</color>" : maxed ? $"<color=#ffd24a>MAXED OUT</color>  <color=#a8a8a0>{Cfg.BaseUpgradeNow(id, team)}</color>"
                 : CostColored(me, rec);
             if (problem == "at your station") sub += "  <color=#8fb8ff>at your upgrade station</color>";
             GUI.Label(new Rect(tx, rr.y + row * 0.66f, tw, row * 0.28f), sub, FitStyle(sub, tw, Mathf.Min(16 * k, row * 0.19f), FontStyle.Bold, TextAnchor.MiddleLeft, Color.white));
