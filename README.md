@@ -16,6 +16,16 @@ Both players start with a rock, gather wood and stone, build a Rust-style base, 
    Port 7777/UDP must be reachable; allow the Windows firewall prompt.
    You can also press Play in the editor and host or join from there against a build.
 
+### Option C: over the internet through Steam (no Hamachi, no port forwarding)
+Both players open Steam and log in (any normal account), then run the same build. The host clicks **HOST**; in the
+lobby, **INVITE FRIENDS** opens Steam's invite list (or the friend right-clicks the host on their friends list >
+**Join Game**, or pastes the host's **COPY ROOM ID** - their SteamID - into JOIN). Traffic goes through Valve's free
+relay. Solo, the tutorial and the `-autotest` runs stay on IP; with Steam closed (or `-nosteam`) everything works by IP
+as before. Code: `SteamConfig.cs` (the app ID), `SteamBoot.cs`, `SteamTransport.cs`, `SteamLobby.cs`.
+- It uses Valve's test app **480** ("Spacewar"), so Steam shows you as "playing Spacewar".
+- **Moving to the game's own Steam app:** change `AppId` in `SteamConfig.cs` to the new number and rebuild. That's all.
+  (The build writes `steam_appid.txt` next to the exe; leave that file out of what's uploaded to Steam.)
+
 ### Spectating
 JOIN GAME on a match that has already started (or is full) no longer turns you away: you come in as a **spectator** (up to 8 per match). You get no body and no team and can't do anything in the world; the camera is a player's own first-person view (their eyes, where they're looking, what's in their hands). **Left click** watches the next player, **right click** the previous one. If the one you're watching dies you move on to someone alive after a moment; if they leave you move on at once. The HUD is just a bar along the bottom (who you're watching, the clock, LEAVE) and the chat. You see the victory cutscene and then the end screen ("BLUE WINS") with Leave game, like everyone else. Spectators never count as players (teams, the lobby countdown, who wins, someone leaving) and they're listed on their own SPECTATORS line under the scoreboard. A spectator stays a spectator for that match even if a place frees up. Code: `Spectator.cs`, `Hud.Spectator.cs`, `Bootstrap.Approve`. Test: `Tools\run_autotests.ps1 "spectate+client2:-fast"` (a 1v1 host, a client that plays, and a second client that joins the running match).
 

@@ -28,7 +28,7 @@ namespace RockGame
             GUILayout.BeginArea(new Rect(r.x + 28 * k, r.y + 22 * k, r.width - 56 * k, r.height - 44 * k));
             GUILayout.Label($"<b><size={Mathf.RoundToInt(34 * k)}>WHAT'S YOUR NAME?</size></b>", m_Center);
             GUILayout.Space(14 * k);
-            if (m_NameEdit == null) m_NameEdit = GameSettings.PlayerName;
+            if (m_NameEdit == null) m_NameEdit = GameSettings.PlayerName.Length > 0 ? GameSettings.PlayerName : GameSettings.CleanName(SteamBoot.MyName); // (your Steam name to start with)
             GUI.SetNextControlName("first name");
             string typed = GUILayout.TextField(m_NameEdit, GameSettings.PlayerNameMax, m_Field, GUILayout.Height(44 * k));
             if (typed != m_NameEdit) m_NameEdit = typed.Replace("<", "").Replace(">", "");

@@ -27,12 +27,18 @@ namespace RockGame
 
         NetworkManager m_Nm;
         UnityTransport m_Ut;
+        SteamTransport m_St; // (Steam's relay: SteamTransport.cs - null without Steam)
         float m_MenuOrbit;
 
         /// <summary>This PC is hosting the session (the lobby's GAME OPTIONS, its own IP for COPY ROOM ID).</summary>
         public bool IsHostSession => m_Nm != null && m_Nm.IsHost;
         public bool InSession =>m_Nm != null && (m_Nm.IsListening || m_Nm.ShutdownInProgress);
         public bool IsHost => m_Nm != null && m_Nm.IsHost;
+        /// <summary>This session goes through Steam (SteamTransport), not IP.</summary>
+        public bool OnSteam => m_St != null && m_Nm != null && m_Nm.NetworkConfig.NetworkTransport == m_St;
+        /// <summary>What COPY ROOM ID copies: the host's SteamID on Steam, its IP otherwise (what JOIN takes).</summary>
+        public string RoomId => !IsHostSession ? Ip.Trim() : OnSteam ? SteamBoot.MyId.ToString() : Tutorial.LocalIp();
+        public void SetStatus(string s) => Status = s;
 
         void Awake()
         {
@@ -45,6 +51,7 @@ namespace RockGame
             // the refresh rate: the highest the screen has (or what was picked in Settings > Display)
             bool test = Testing = System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-autotest") >= 0;
             GameSettings.ApplyDisplayAtStartup(test);
+            SteamBoot.Init(); // (Steam, if it's running: hosting and joining through it - SteamBoot.cs)
             Application.runInBackground = true;
             // a first start: the (new) Classic, the Auto Wood rules
             MapChoice = PlayerPrefs.GetInt("RockGame.Map", test ? 0 : (int)GameRules.AutoWood << Cfg.RulesShift);
@@ -60,6 +67,7 @@ namespace RockGame
         {
             m_Nm = GetComponent<NetworkManager>();
             m_Ut = GetComponent<UnityTransport>();
+            if (SteamBoot.Ready) m_St = gameObject.AddComponent<SteamTransport>();
             foreach (var p in new[] { playerPrefab, netGamePrefab, structurePrefab, nodePrefab, ballPrefab, containerPrefab, vehiclePrefab })
                 if (p != null && !m_Nm.NetworkConfig.Prefabs.Contains(p)) m_Nm.AddNetworkPrefab(p);
 
@@ -89,6 +97,19 @@ namespace RockGame
             }
             if (host) Host();
             else if (client) Join();
+            else SteamLobby.FromConnectString(string.Join(" ", args)); // (Steam started us to join a friend: "+connect_lobby id")
+        }
+
+        /// <summary>Steam's relay or plain IP for the next session.</summary>
+        void UseSteam(bool steam)
+        {
+            m_Nm.NetworkConfig.NetworkTransport = steam ? m_St : m_Ut;
+        }
+
+        /// <summary>Just after a Steam session starts (Netcode's message settings are made fresh as it starts).</summary>
+        void SteamStarted()
+        {
+            if (OnSteam && m_Nm.IsListening) m_Nm.MaximumFragmentedMessageSize = SteamTransport.MaxMessage; // (Steam's messages top out at 512 KB)
         }
 
         static void ParseMapArgs()
@@ -166,24 +187,43 @@ namespace RockGame
             MapChoice = (MapChoice & ~(Cfg.GraphicsMask << Cfg.GraphicsShift)) | (GameSettings.GraphicsMode << Cfg.GraphicsShift);
             Cfg.SetMap(MapChoice, s_SeedOverride >= 0 ? s_SeedOverride : Random.Range(1, 999999));
             MapBuilder.Build();
-            m_Ut.SetConnectionData("127.0.0.1", ParsedPort, "0.0.0.0");
-            if (!m_Nm.StartHost()) Status = "Could not start host (is the port already in use?)";
+            // a real game with Steam up goes through Steam's relay (friends join by invite); solo and the tutorial stay on IP
+            bool steam = m_St != null && !Solo && !Cfg.Tutorial;
+            UseSteam(steam);
+            if (!steam) m_Ut.SetConnectionData("127.0.0.1", ParsedPort, "0.0.0.0");
+            if (!m_Nm.StartHost()) { Status = steam ? "Could not start hosting through Steam" : "Could not start host (is the port already in use?)"; return; }
+            SteamStarted();
+            if (steam) SteamLobby.Host(Cfg.PlayersNeeded + 8); // (the invite / Join Game side: SteamLobby.cs - room for spectators too)
         }
 
         public void Join()
         {
             Solo = false; // (joining is never solo - a solo game played before mustn't stick: the host decides the lobby)
-            Status = "Connecting to " + Ip + ":" + ParsedPort + " ...";
-            m_Ut.SetConnectionData(Ip.Trim(), ParsedPort);
+            // a Steam room ID (the host's SteamID) goes through Steam; anything else is an IP
+            if (SteamBoot.TryParseId(Ip, out ulong hostId))
+            {
+                if (m_St == null) { Status = "That's a Steam room ID - open Steam and log in, then restart the game"; return; }
+                UseSteam(true);
+                m_St.ConnectToSteamID = hostId;
+                Status = "Connecting through Steam...";
+            }
+            else
+            {
+                UseSteam(false);
+                Status = "Connecting to " + Ip + ":" + ParsedPort + " ...";
+                m_Ut.SetConnectionData(Ip.Trim(), ParsedPort);
+            }
             // our name goes with the request: if we end up spectating it's what the others see (Spectator.cs)
             m_Nm.NetworkConfig.ConnectionData = System.Text.Encoding.UTF8.GetBytes(GameSettings.PlayerName);
             if (!m_Nm.StartClient()) Status = "Could not start client";
+            else SteamStarted();
         }
 
         public void Leave()
         {
             m_Rejoining = false; s_RejoinExpectedUntil = -1f; // (leaving on purpose: no rejoining the lobby after)
             m_Nm.Shutdown();
+            SteamLobby.Leave();
             Status = "";
             CleanupLocal();
         }
@@ -290,7 +330,7 @@ namespace RockGame
             if (!m_Rejoining) return;
             if (m_Nm.IsConnectedClient && m_RejoinTried) { m_Rejoining = false; s_RejoinExpectedUntil = -1f; return; } // (back in)
             if (m_Nm.IsConnectedClient && !m_RejoinTried && !m_Nm.ShutdownInProgress) { m_Nm.Shutdown(); m_NextRejoin = Time.unscaledTime + 0.5f; return; } // (still on the old connection: drop it)
-            if (Time.unscaledTime > m_RejoinUntil) { m_Rejoining = false; Status = "Couldn't get back into the lobby"; return; }
+            if (Time.unscaledTime > m_RejoinUntil) { m_Rejoining = false; SteamLobby.Leave(); Status = "Couldn't get back into the lobby"; return; }
             if (m_Nm.ShutdownInProgress || Time.unscaledTime < m_NextRejoin) return;
             if (m_Nm.IsListening) { m_Nm.Shutdown(); m_NextRejoin = Time.unscaledTime + 0.5f; return; } // (the old connection's still open: close it first)
             m_NextRejoin = Time.unscaledTime + 1.5f;
@@ -310,11 +350,15 @@ namespace RockGame
                 Status = string.IsNullOrEmpty(reason) ? "Disconnected from host" : "Disconnected: " + reason;
                 CleanupLocal();
                 if (reason == BackToLobbyReason || Time.unscaledTime < s_RejoinExpectedUntil) { m_Rejoining = true; m_RejoinTried = false; m_RejoinUntil = Time.unscaledTime + 25f; m_NextRejoin = Time.unscaledTime + 1.2f; Status = "Back to the lobby..."; }
+                else SteamLobby.Leave(); // (out for good: out of the friend's Steam lobby too)
             }
         }
 
+        void OnApplicationQuit() => SteamBoot.Shutdown();
+
         void Update()
         {
+            SteamBoot.Tick(); // (Steam's callbacks: invites, connections)
             TickRejoin(); // (back to the lobby after a match)
             // Menu camera: one long, slow cinematic loop through the map while not in a match (and the menu's trees) - MenuScene.cs
             if (PlayerController.Local == null && Camera.main != null && InSession && !Spectator.Active) // (a spectator's camera: Spectator.cs)

@@ -50,3 +50,6 @@ crashlytics-build.properties
 Thumbs.db
 .claude/worktrees/
 .claude/settings.local.json
+
+# Steam (written from SteamConfig.cs in the editor)
+/steam_appid.txt

@@ -166,7 +166,7 @@ namespace RockGame
         void DrawJoinPage(Bootstrap boot, float x, ref float y, float w)
         {
             float k = m_Scale;
-            GUI.Label(new Rect(x, y, w, 26 * k), "<b>HOST IP</b>", m_Label);
+            GUI.Label(new Rect(x, y, w, 26 * k), "<b>ROOM ID</b>", m_Label);
             y += 28 * k;
             boot.Ip = GUI.TextField(new Rect(x, y, w - 130 * k, 46 * k), boot.Ip, new GUIStyle(m_Field) { fontSize = Mathf.RoundToInt(24 * k) });
             if (SmallBtn(new Rect(x + w - 122 * k, y, 122 * k, 46 * k), $"port {(m_ShowPort ? "▲" : "▼")}")) m_ShowPort = !m_ShowPort;
@@ -181,6 +181,8 @@ namespace RockGame
             y += 6 * k;
             if (BigBtn(ref y, x, w, "JOIN", k_Acid)) boot.Join();
             Note(ref y, x, w, "Ask the host for their room ID (the lobby's COPY ROOM ID) and paste it in.");
+            // Steam (SteamBoot.cs): with it, a friend's invite or Join Game on the friends list gets you in too
+            Note(ref y, x, w, SteamBoot.Ready ? "<color=#7dff7a>Steam is on</color> - or just accept your friend's Steam invite / right-click them > Join Game." : $"<color=#ffcc66>{SteamBoot.Error}</color> - only IP room IDs work.");
         }
 
         void DrawPlayersPage(float x, ref float y, float w)

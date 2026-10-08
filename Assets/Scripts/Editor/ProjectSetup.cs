@@ -136,6 +136,10 @@ namespace RockGame.EditorTools
                 options = BuildOptions.None,
             };
             var report = BuildPipeline.BuildPlayer(opts);
+            // steam_appid.txt next to the exe (SteamConfig.cs): the build runs on Steam's free relay without being started by
+            // Steam. (A build uploaded to Steam leaves this file out.)
+            if (report.summary.result == BuildResult.Succeeded)
+                System.IO.File.WriteAllText(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(ExePath), "steam_appid.txt"), RockGame.SteamConfig.AppId.ToString());
             Debug.Log($"[RockGame] Build result: {report.summary.result}, errors: {report.summary.totalErrors}, size: {report.summary.totalSize / (1024 * 1024)} MB");
             if (Application.isBatchMode && report.summary.result != BuildResult.Succeeded) EditorApplication.Exit(1);
         }
