@@ -15,6 +15,7 @@ Both players start with a rock, gather wood and stone, build a Rust-style base, 
 2. Run it twice (or on two PCs). One clicks **HOST GAME**, the other types the host's IP and clicks **JOIN GAME**.
    Port 7777/UDP must be reachable; allow the Windows firewall prompt.
    You can also press Play in the editor and host or join from there against a build.
+3. **Mac**: **Rock Game > Build Mac Player** (needs Unity's *Mac Build Support (Mono)* module; headless: `-buildTarget OSXUniversal -executeMethod RockGame.EditorTools.ProjectSetup.BuildMac`). It makes `Builds/Mac/Alien Rock Game.app` (one app for Intel and Apple Silicon) and `Builds/Mac/Alien Rock Game.zip`. **Send the zip**, not the .app folder: Windows can't mark files executable, so the zip carries the Mac permissions. On the Mac, double-click the zip, then right-click the app > **Open** the first time (it isn't notarised; or System Settings > Privacy & Security > Open Anyway). Steam and voice chat work the same; the Mac asks for the microphone once.
 
 ### Option C: over the internet through Steam (no Hamachi, no port forwarding)
 Both players open Steam and log in (any normal account), then run the same build. The host clicks **HOST**; in the

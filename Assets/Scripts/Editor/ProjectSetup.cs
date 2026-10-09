@@ -144,6 +144,99 @@ namespace RockGame.EditorTools
             if (Application.isBatchMode && report.summary.result != BuildResult.Succeeded) EditorApplication.Exit(1);
         }
 
+        /// <summary>Where the Mac build goes: one app for Intel and Apple Silicon Macs.</summary>
+        public const string MacAppPath = "Builds/Mac/Alien Rock Game.app";
+
+        /// <summary>
+        /// The Mac build (needs Unity's "Mac Build Support (Mono)" module). It isn't signed, so on the Mac the first launch
+        /// is right-click > Open (or System Settings > Privacy & Security > Open Anyway). Steam: SteamBoot sets SteamAppId,
+        /// so no steam_appid.txt is needed inside the app.
+        /// </summary>
+        [MenuItem("Rock Game/Build Mac Player")]
+        public static void BuildMac()
+        {
+            EnsurePostFxVariants();
+            PlayerSettings.SplashScreen.show = false;
+            PlayerSettings.SplashScreen.showUnityLogo = false;
+            // the Mac asks before the game gets the microphone, with this line (Unity keeps it under iOS for both)
+            PlayerSettings.iOS.microphoneUsageDescription = "Voice chat with the other players.";
+            // Intel + Apple Silicon in one app (what UnityEditor.OSXStandalone.UserBuildSettings.architecture sets; written
+            // this way so the editor still compiles without the Mac module)
+            EditorUserBuildSettings.SetPlatformSettings(BuildPipeline.GetBuildTargetName(BuildTarget.StandaloneOSX), "Architecture", "x64ARM64");
+            var opts = new BuildPlayerOptions
+            {
+                scenes = new[] { ScenePath },
+                locationPathName = MacAppPath,
+                target = BuildTarget.StandaloneOSX,
+                options = BuildOptions.None,
+            };
+            var report = BuildPipeline.BuildPlayer(opts);
+            if (report.summary.result == BuildResult.Succeeded) ZipMacApp();
+            Debug.Log($"[RockGame] Mac build result: {report.summary.result}, errors: {report.summary.totalErrors}, size: {report.summary.totalSize / (1024 * 1024)} MB");
+            if (Application.isBatchMode && report.summary.result != BuildResult.Succeeded) EditorApplication.Exit(1);
+        }
+
+        /// <summary>
+        /// Builds/Mac/Alien Rock Game.zip: the app with its Mac file permissions. Windows has no "executable" flag, so the
+        /// .app folder copied over as it is won't start; this zip marks the programs (Mach-O files) executable - send the
+        /// zip, double-click it on the Mac.
+        /// </summary>
+        static void ZipMacApp()
+        {
+            string app = System.IO.Path.GetFullPath(MacAppPath);
+            string zip = System.IO.Path.ChangeExtension(app, ".zip");
+            string root = System.IO.Path.GetDirectoryName(app);
+            if (System.IO.File.Exists(zip)) System.IO.File.Delete(zip);
+            using (var archive = new System.IO.Compression.ZipArchive(System.IO.File.Create(zip), System.IO.Compression.ZipArchiveMode.Create))
+            foreach (string file in System.IO.Directory.GetFiles(app, "*", System.IO.SearchOption.AllDirectories))
+            {
+                string name = file.Substring(root.Length + 1).Replace('\\', '/');
+                var entry = archive.CreateEntry(name, System.IO.Compression.CompressionLevel.Optimal);
+                bool exe = IsMachO(file);
+                // unix mode in the high 16 bits: regular file, 755 for programs, 644 for the rest
+                entry.ExternalAttributes = (int)((0x8000u | (exe ? 0x1EDu : 0x1A4u)) << 16);
+                using var src = System.IO.File.OpenRead(file);
+                using var dst = entry.Open();
+                src.CopyTo(dst);
+            }
+            MarkZipMadeOnUnix(zip);
+        }
+
+        /// <summary>
+        /// .NET on Windows writes "made by: Windows" in each entry, and the Mac's unzipper then ignores the permissions:
+        /// this sets it to Unix (the high byte of "version made by" in every central directory entry).
+        /// </summary>
+        static void MarkZipMadeOnUnix(string zip)
+        {
+            using var f = new System.IO.FileStream(zip, System.IO.FileMode.Open, System.IO.FileAccess.ReadWrite);
+            using var r = new System.IO.BinaryReader(f);
+            long eocd = f.Length - 22;
+            for (; eocd >= 0; eocd--) { f.Position = eocd; if (r.ReadUInt32() == 0x06054b50) break; }
+            if (eocd < 0) throw new System.Exception("Mac zip: no end of central directory");
+            f.Position = eocd + 10;
+            int count = r.ReadUInt16();
+            f.Position = eocd + 16;
+            long pos = r.ReadUInt32();
+            for (int i = 0; i < count; i++)
+            {
+                f.Position = pos;
+                if (r.ReadUInt32() != 0x02014b50) throw new System.Exception("Mac zip: bad central directory");
+                f.Position = pos + 5;
+                f.WriteByte(3);
+                f.Position = pos + 28;
+                int n = r.ReadUInt16(), e = r.ReadUInt16(), c = r.ReadUInt16();
+                pos += 46 + n + e + c;
+            }
+        }
+
+        static bool IsMachO(string file)
+        {
+            var b = new byte[4];
+            using (var f = System.IO.File.OpenRead(file)) if (f.Read(b, 0, 4) < 4) return false;
+            uint m = (uint)(b[0] << 24 | b[1] << 16 | b[2] << 8 | b[3]);
+            return m == 0xCAFEBABE || m == 0xFEEDFACF || m == 0xCFFAEDFE || m == 0xFEEDFACE || m == 0xCEFAEDFE;
+        }
+
         /// <summary>
         /// URP strips the post processing shader variants that no volume profile in Assets uses. The extra looks in
         /// Settings > Display (PostFx.cs) make their profile at runtime, so this profile - never used in the game - is
