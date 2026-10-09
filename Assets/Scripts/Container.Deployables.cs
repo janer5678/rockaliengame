@@ -232,13 +232,13 @@ namespace RockGame
                     bc.size = new Vector3(0.75f, LadderHeight, 0.12f);
                     var lg = new GameObject("ladder");
                     lg.transform.SetParent(visual, false);
-                    lg.transform.localPosition = new Vector3(0, (LadderHeight + 1f) * 0.5f, -0.45f); // (in front of it, on your side - and only in front)
+                    lg.transform.localPosition = new Vector3(0, (LadderHeight + 1f) * 0.5f, -0.26f); // (a thin slab right in front of the rungs: on it only when you touch it)
                     var vol = lg.AddComponent<BoxCollider>();
                     vol.isTrigger = true;
-                    vol.size = new Vector3(1f, LadderHeight + 1f, 0.7f);
+                    vol.size = new Vector3(0.85f, LadderHeight + 1f, 0.4f);
                     var lad = lg.AddComponent<Ladder>();
                     lad.Deployed = true;
-                    lad.BoardZ = 0.45f; // (the board is 0.45 m behind the climbing volume's centre)
+                    lad.BoardZ = 0.26f; // (the board is 0.26 m behind the climbing volume's centre)
                     lad.TopLocalY = LadderHeight - 0.3f;
                     lad.ExitHop = 4.6f; // (a big hop off the top: over a large wall it doesn't quite reach)
                     break;

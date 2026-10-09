@@ -234,6 +234,7 @@ namespace RockGame
             SpaceArena.ServerTick(this); // sudden death and the waiting stadium: falling off the platform into space
             ServerTickGraves(now); // old gravestones go (NetGame.Graves.cs)
             ThemeMaps.ServerTick(); // THEME MAPS
+            if (Cfg.NoBall && Ball.Instance != null && Ball.Instance.IsSpawned) Ball.Instance.NetworkObject.Despawn(true); // (Bedwars / Assassin: never a ball)
             int players = PlayerNet.All.Count;
             bool fast = Bootstrap.Fast;
             switch (S)

@@ -21,7 +21,7 @@ namespace RockGame
 
         /// <summary>Minecraft-like ice: pushing a direction you speed up / turn at IceSteer (a little resistance, never
         /// fighting you), and when you let go you glide on, slowing at IceGrip (a few seconds to stop from a run).</summary>
-        public override float IceSteer => 6f;
+        public override float IceSteer => 11f; // (more control while slipping - still glides when you let go)
         public override float IceGrip => 1f;
         public override string MountName => "Snow Pony";
 

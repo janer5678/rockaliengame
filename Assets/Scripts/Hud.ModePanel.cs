@@ -26,7 +26,7 @@ namespace RockGame
         /// <summary>The panel under the timer (only in the five modes, once the wall's down).</summary>
         void DrawModePanel(NetGame g, int myTeam, float k, float y)
         {
-            if (g == null || !Cfg.ClassicMode || g.S != GameState.BallLive) return;
+            if (g == null || !Cfg.ClassicMode || g.S != GameState.BallLive || Cfg.Bedwars) return; // (Bedwars: just the small bed list, top left - DrawBedList)
             float sw = Screen.width, cw = 170 * k, ch = 40 * k, gap = 8 * k;
             int n = Cfg.TeamCount;
             float x0 = sw / 2f - (n * cw + (n - 1) * gap) / 2f;
@@ -66,6 +66,32 @@ namespace RockGame
                     if (g.BallTeam.Value == t) { Fill(inner, new Color(c.r, c.g, c.b, 0.6f)); GUI.Label(inner, "TRADES", new GUIStyle(valSt) { alignment = TextAnchor.MiddleCenter }); }
                     else GUI.Label(inner, "-", new GUIStyle(valSt) { alignment = TextAnchor.MiddleCenter });
                 }
+            }
+        }
+
+        /// <summary>Bedwars: a small list in the top left (under the base radar) - each team and whether it still has its
+        /// bed (its machine), nothing more.</summary>
+        void DrawBedList(NetGame g, float k, float y)
+        {
+            if (g == null || !Cfg.Bedwars || (g.S != GameState.BallLive && !g.WallUp)) return;
+            for (int t = 0; t < Cfg.TeamCount; t++)
+            {
+                var c = Cfg.TeamColor[t];
+                bool bed = !g.MachineDown(t);
+                var r = new Rect(10, y, 200 * k, 24 * k);
+                Fill(r, new Color(0f, 0f, 0f, 0.45f));
+                Fill(new Rect(r.x, r.y, 5 * k, r.height), c);
+                Shadowed(new Rect(r.x + 10 * k, r.y, r.width, r.height), $"<b><color=#{ColorUtility.ToHtmlStringRGB(Color.Lerp(c, Color.white, 0.35f))}>{Cfg.TeamName[t]}</color></b>  " + (bed ? "<color=#9dff9d>BED</color>" : "<color=#ff7777>NO BED</color>"), m_Small);
+                y += 27 * k;
+            }
+            // the two clocks: when the chambers break (no respawns), then when the bases break down
+            float cl = g.ChambersLeft, bl = g.BasesLeft;
+            string clock = cl > 0f ? $"Chambers break in <b>{Clock(cl)}</b>" : bl > 0f ? $"<color=#ff9a7a>Bases break in <b>{Clock(bl)}</b></color>" : g.BasesBreakAt.Value > 0 ? "<color=#ff7777><b>BASES DOWN</b></color>" : null;
+            if (clock != null)
+            {
+                var r = new Rect(10, y, 200 * k, 24 * k);
+                Fill(r, new Color(0f, 0f, 0f, 0.45f));
+                Shadowed(new Rect(r.x + 10 * k, r.y, r.width, r.height), clock, m_Small);
             }
         }
 

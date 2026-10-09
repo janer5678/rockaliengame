@@ -7,8 +7,9 @@ namespace RockGame
     /// <summary>
     /// CHERRY BLOSSOM (the second version - the first is kept as CherryBlossomV1Map in Map.CherryV1.cs: set UseNew to false
     /// to play that one again): dusk-blue sky, a moon, purple grass, blocky pink cherry trees, petals on the ground and
-    /// drifting down, stone canals with red bridges and glowing stone lanterns - and a huge round
-    /// bottomless hole in the middle (terraced earth walls dropping into a dark void, a glowing orange rim). The ball's
+    /// drifting down, stone canals with red bridges and glowing stone lanterns, clusters of violet boulders for cover - and
+    /// a huge round bottomless hole in the middle (sheer earth walls dropping straight into a dark void - no ledges - and a
+    /// glowing orange rim). The ball's
     /// island stands in the middle of it on a rock pillar, and on it a giant HOLLOW CHERRY TREE: a round bark wall with a
     /// doorway high up on every high route, a canopy of blossom over it (open in the middle, so the ball drops in) and the
     /// ball on its floor among blossom hedges. Every chunk of earth in the hole is one you can stand on:
@@ -16,9 +17,11 @@ namespace RockGame
     ///    zigzagging; some chunks bob up and down or drift from side to side (they carry you; same time on every peer).
     ///  - THE WAY DOWN: no route from the rim - two chunks low in the pit on each team's side, that you can only reach by
     ///    dropping off a high route, then a hop onto the ledge at a cave mouth in the pillar: THE HOLLOW, a cave under the
-    ///    ball's floor (lanterns, glowing mushrooms, root columns, a little shack in the middle you can go into), with a
-    ///    ladder up through a fenced hatch into the tree.
-    /// All the chunks dip, tilt and wobble when someone lands on them. Falling in is a long drop into the void before you
+    ///    ball's floor (lanterns, glowing mushrooms, root columns, a little one-door shack in the middle you can go into),
+    ///    with a ladder up through a hatch into the tree. While the glass wall's up the hollow is shut (glass in its cave
+    ///    mouths and over its hatches: BuildGates) - nobody gets to the ball, or under into another team's half, early.
+    ///  - THE RAMPS down the inside of the tree always leave 2.4 m over your head.
+    /// All the chunks bounce (springy), tilt and wobble when someone lands on them. Falling in is a long drop into the void before you
     /// die (KillY), and you're back a bit sooner (FallRespawnMul); the ball falls past -20 and comes back from the sky.
     /// </summary>
     public class CherryBlossomMap : ThemeMap
@@ -29,7 +32,8 @@ namespace RockGame
         public override MapKind Kind => MapKind.CherryBlossom;
         public override string Label => "Cherry Blossom";
         public override string Blurb => "Cherry trees at dusk round a bottomless glowing hole. The ball is inside a giant hollow cherry tree in the middle: leap the floating chunks of earth up to its doorways - or down into the hollow under it and climb up through a hatch. Fall and you're gone.";
-        public override float KillY => -26f;
+        /// <summary>(twice as far down as it was: a long fall into the dark before you're gone)</summary>
+        public override float KillY => -52f;
         public override float FallRespawnMul => 0.6f;
         public override float MaxSpotHeight => 5f;
 
@@ -109,7 +113,119 @@ namespace RockGame
         public override bool SpotOk(Vector3 p)
         {
             float r = new Vector2(p.x, p.z).magnitude;
-            return r > PitOut + 4f && CanalLat(p.x, p.z) > CanalHalfW + 3.5f;
+            if (r <= PitOut + 4f || CanalLat(p.x, p.z) <= CanalHalfW + 3.5f) return false;
+            foreach (var k in Rocks()) if ((new Vector2(k.p.x - p.x, k.p.z - p.z)).magnitude < k.s + 1.6f) return false; // (not in a rock)
+            return true;
+        }
+
+        // ---------------------------------------------------------------- purple rocks (cover round the map)
+        static readonly List<(Vector3 p, float s, int seed, bool big)> s_Rocks = new List<(Vector3, float, int, bool)>();
+        static int s_RockKey = int.MinValue;
+
+        /// <summary>Clusters of violet boulders out round the map (outside the hole, clear of the bases, the canals and their
+        /// trees and the rim): a big one you can hide behind and a few smaller ones round it. Laid out in the first team's part
+        /// and copied round (every copy is in the list; y on the ground). Their own random numbers.</summary>
+        List<(Vector3 p, float s, int seed, bool big)> Rocks()
+        {
+            int key = Cfg.MapSeed * 7919 + (int)Cfg.Size * 131 + Cfg.TeamCount * 17 + (int)Cfg.BaseCenter[0].z;
+            if (key == s_RockKey) return s_Rocks;
+            s_RockKey = key;
+            s_Rocks.Clear();
+            var rng = new System.Random(Cfg.MapSeed * 13 + 8080);
+            float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
+            float sc = Half / 100f, pitOut = PitOut;
+            int want = Mathf.Clamp(Mathf.RoundToInt((Cfg.FourWay ? 4f : 7f) * sc * sc), 3, 18);
+            bool Clear(Vector2 c, float pad)
+            {
+                if (!Cfg.InFirstSector(new Vector3(c.x, 0, c.y), 3f + pad)) return false;
+                if (c.magnitude < pitOut + 7f + pad || Mathf.Max(Mathf.Abs(c.x), Mathf.Abs(c.y)) > Half - 10f - pad) return false;
+                if (CanalLat(c.x, c.y) < CanalHalfW + 6.5f + pad) return false;
+                for (int t = 0; t < Cfg.TeamCount; t++)
+                {
+                    var b = Cfg.BaseCenter[t];
+                    if (Mathf.Abs(c.x - b.x) < Cfg.BaseHalf + 5f + pad && Mathf.Abs(c.y - b.z) < Cfg.BaseHalf + 5f + pad) return false;
+                }
+                return true;
+            }
+            var first = new List<(Vector2 p, float s, int seed, bool big)>();
+            var centres = new List<Vector2>();
+            for (int tries = 0, made = 0; tries < want * 60 && made < want; tries++)
+            {
+                var c = new Vector2(R(-Half + 10f, Half - 10f), R(-Half + 10f, -4f));
+                float big = R(1.5f, 2.3f);
+                if (!Clear(c, big + 2f)) continue;
+                bool near = false;
+                foreach (var o in centres) if ((o - c).magnitude < 14f) { near = true; break; }
+                if (near) continue;
+                made++;
+                centres.Add(c);
+                first.Add((c, big, rng.Next(), true));
+                int more = 2 + rng.Next(3);
+                for (int j = 0; j < more; j++)
+                {
+                    float a = R(0f, 6.283f), d = big + R(0.7f, 2.4f), s = R(0.5f, 1.15f);
+                    var q = c + new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * d;
+                    if (Clear(q, s)) first.Add((q, s, rng.Next(), false));
+                }
+            }
+            for (int m = 0; m < Cfg.Copies; m++)
+                foreach (var f in first)
+                {
+                    var q = Cfg.Copy(new Vector3(f.p.x, 0f, f.p.y), m);
+                    // (on the lowest ground under it: never floating off a terrace's edge)
+                    float y = Height(q.x, q.z);
+                    for (int i = 0; i < 6; i++) { float a = i * 1.047f; y = Mathf.Min(y, Height(q.x + Mathf.Cos(a) * f.s * 0.8f, q.z + Mathf.Sin(a) * f.s * 0.8f)); }
+                    q.y = y;
+                    s_Rocks.Add((q, f.s, f.seed, f.big));
+                }
+            return s_Rocks;
+        }
+
+        /// <summary>The violet boulders (solid), a few pale amethyst crystals poking out of the big ones.</summary>
+        void BuildRocks(Transform root, Transform cols)
+        {
+            var k = new MeshKit();
+            Color[] vio = { new Color(0.4f, 0.24f, 0.58f), new Color(0.5f, 0.31f, 0.7f), new Color(0.33f, 0.2f, 0.48f), new Color(0.58f, 0.4f, 0.76f) };
+            var crystal = new Color(0.82f, 0.68f, 0.98f);
+            foreach (var rk in Rocks())
+            {
+                var rng = new System.Random(rk.seed);
+                float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
+                var rot = Quaternion.Euler(R(-6f, 6f), R(0f, 360f), R(-6f, 6f));
+                var radii = new Vector3(rk.s, rk.s * R(0.7f, 0.95f), rk.s * R(0.8f, 1f));
+                var c = rk.p + Vector3.up * (radii.y * 0.55f);
+                int js = rng.Next(1024);
+                ThemeKitB.Ball(k, c, radii, rot, vio[rng.Next(vio.Length)], rk.s > 1f ? 1 : 0, 0.26f, js);
+                if (rk.big)
+                {
+                    // a smaller knob of a different shade on it, and crystals
+                    ThemeKitB.Ball(k, c + rot * new Vector3(rk.s * 0.45f, radii.y * 0.55f, -rk.s * 0.2f), radii * 0.5f, rot, vio[rng.Next(vio.Length)], 0, 0.3f, rng.Next(1024));
+                    int cr = 2 + rng.Next(3);
+                    for (int i = 0; i < cr; i++)
+                    {
+                        float a = R(0f, 6.283f);
+                        var at = c + rot * new Vector3(Mathf.Cos(a) * rk.s * 0.55f, radii.y * R(0.35f, 0.75f), Mathf.Sin(a) * rk.s * 0.5f);
+                        var dir = (rot * new Vector3(Mathf.Cos(a) * 0.6f, 1f, Mathf.Sin(a) * 0.6f)).normalized;
+                        float len = R(0.5f, 1.1f);
+                        ThemeKitB.Cyl(k, at, at + dir * len, R(0.12f, 0.2f), 0.02f, 5, crystal, false, false, a);
+                    }
+                }
+                if (rk.s > 0.7f)
+                {
+                    // (solid: a convex hull of the same rock)
+                    var ck = new MeshKit();
+                    ThemeKitB.Ball(ck, Vector3.zero, radii, rot, Color.white, 0, 0.26f, js);
+                    var mesh = ck.ToMesh("rock collider");
+                    var go = new GameObject("rock");
+                    go.transform.SetParent(cols, false);
+                    go.transform.localPosition = c;
+                    go.AddComponent<OwnedMesh>().Mesh = mesh;
+                    var mc = go.AddComponent<MeshCollider>();
+                    mc.sharedMesh = mesh;
+                    mc.convex = true;
+                }
+            }
+            ThemeKitB.Spawn(root, "purple rocks", k, null, true);
         }
 
         public override float NodeMul(byte kind) => kind == ResourceNode.Tree ? 1.25f : kind == ResourceNode.Bush ? 0.8f : 0.7f;
@@ -149,29 +265,21 @@ namespace RockGame
             BuildPit(root);
         }
 
-        /// <summary>The hole: terraced earth walls with a glowing rim, the island's rock pillar with roots under it, a dark floor.</summary>
+        /// <summary>The hole: sheer earth walls with a glowing rim, the island's rock pillar with roots under it, a dark floor.</summary>
         void BuildPit(Transform root)
         {
             const int K = 120;
             float pitOut = PitOut, isl = IslandR;
-            float lip = Mathf.Clamp((pitOut - isl) * 0.05f, 0.35f, 1.4f);
             var rock = new MeshKit();
             var glow = new MeshKit();
             var deco = new MeshKit();
             Vector3 Dir(int s) { float a = s * Mathf.PI * 2f / K; return new Vector3(Mathf.Cos(a), 0, Mathf.Sin(a)); }
             float Jit(int s, int i) => (Mathf.PerlinNoise((s % K) * 0.41f + 3.1f, i * 1.7f + 0.3f) - 0.5f) * 0.7f;
 
-            // ---- the outer wall (faces the middle), down in ledges
-            var prof = new List<Vector2> { new Vector2(0, 0), new Vector2(0, -1f), new Vector2(0, -9f) };
-            float y = -9f;
-            for (int step = 1; step <= 4; step++)
-            {
-                prof.Add(new Vector2(lip * step, y));
-                y -= step < 4 ? 7f : 0f;
-                if (step < 4) prof.Add(new Vector2(lip * step, y));
-            }
-            prof.Add(new Vector2(lip * 4, PitFloor));
-            prof.Add(new Vector2(lip * 4 + 0.6f, PitDeep)); // (on down into the void: no floor)
+            // ---- the outer wall (faces the middle): one sheer face straight down into the void - no ledges, nothing to
+            // land on (it even leans back out a little as it goes down, so you can't catch on it)
+            var prof = new List<Vector2> { new Vector2(0, 0), new Vector2(0, -1f), new Vector2(0, -7f), new Vector2(-0.15f, -15f),
+                new Vector2(-0.35f, -24f), new Vector2(-0.6f, -34f), new Vector2(-0.9f, PitFloor), new Vector2(-1.5f, PitDeep) };
             var wallA = new Color(0.5f, 0.28f, 0.17f); var wallB = new Color(0.42f, 0.22f, 0.14f); var ledge = new Color(0.64f, 0.4f, 0.23f);
             var top = new float[K + 1];
             for (int s = 0; s <= K; s++) { var d = Dir(s); top[s] = Mathf.Min(0f, Height(d.x * (pitOut + 0.05f), d.z * (pitOut + 0.05f))); }
@@ -179,7 +287,7 @@ namespace RockGame
             {
                 var d = Dir(s);
                 float yy = i == 0 ? top[s] : i == 1 ? top[s] - 1f : prof[i].y;
-                float rr = pitOut - prof[i].x - (i >= 2 ? Mathf.Max(0f, Jit(s, i)) : 0f);
+                float rr = pitOut - prof[i].x + (i >= 3 ? Mathf.Abs(Jit(s, i)) * 0.6f : 0f);
                 return d * rr + Vector3.up * yy;
             }
             for (int s = 0; s < K; s++)
@@ -276,7 +384,7 @@ namespace RockGame
             public Transform T;
             public Vector3 Pos, Drift;
             public Quaternion Rot;
-            public float R, Phase, Sink, Kick, Amp, Spd, MPh;
+            public float R, Phase, Sink, Kick, Amp, Spd, MPh, Dip, DipV;
             public byte Move; // 0 still, 1 bobbing up and down, 2 drifting from side to side
             public Vector3 Tilt;
             public bool On;
@@ -823,6 +931,7 @@ namespace RockGame
             }
             stars.Build(m_Sky, "stars", ThemeKitB.SkyMat(Color.white, CullMode.Off), false);
             m_Drift = new PetalDrift(root, 180);
+            BuildRocks(root, cols);
         }
 
         Transform m_Sky;
@@ -1016,10 +1125,11 @@ namespace RockGame
             }
 
             // ---- each doorway: a frame of roots, a porch out over the hole, a landing inside and a ramp of root down to the floor
-            const float rampSlope = 0.5f, rampW = 2.4f, rampT = 0.8f, LandExt = 1.5f;
+            const float rampSlope = 0.5f, rampW = 2.4f, rampT = 0.8f, LandExt = 1.5f, Headroom = 2.45f;
             float rRamp = rIn - rampW * 0.5f;
-            foreach (var d in doors)
+            for (int di = 0; di < doors.Count; di++)
             {
+                var d = doors[di];
                 var o = Dir(d.ang); var rot = Face(d.ang);
                 var tan = rot * Vector3.right;
                 // (longer on the side the route's last chunk is on: an easier landing)
@@ -1049,21 +1159,49 @@ namespace RockGame
                 // a round paper lantern hanging in the doorway (it marks the way in)
                 ThemeKitB.Ball(glow, o * (rOut + 0.3f) + Vector3.up * (d.y + DoorH - 0.45f), new Vector3(0.22f, 0.28f, 0.22f), rot, Color.white, 1);
                 if (d.y < 0.6f) continue;
-                // a landing inside, as wide as the doorway and LandExt more to its left (seen from inside, facing the doorway),
+                // the ramp goes round anticlockwise toward the next doorway, whose landing (as high as that doorway) it may
+                // have to go under: by the time it gets there it's low enough to walk under that landing without hitting
+                // your head (Headroom) - steeper at first if it has to be, or done before it gets there. Never under
+                // anything lower than that, all the way down.
+                var nx = doors[(di + 1) % doors.Count];
+                bool nxLand = doors.Count > 1 && nx.y >= 0.6f;
+                float doorHalfArc = DoorW * 0.5f + 0.2f;
+                float gapArc = (doors.Count > 1 ? Mathf.Repeat(nx.ang - d.ang, 360f) : 360f) * Mathf.Deg2Rad * rRamp;
+                float nxStart = gapArc - doorHalfArc - 0.45f;      // (where the next landing starts, with a margin)
+                float target = 0f, k1 = rampSlope, landExt = LandExt;
+                if (nxLand)
+                {
+                    target = Mathf.Clamp(nx.y - rampT - Headroom, 0f, d.y);
+                    bool fits = false;
+                    foreach (float le in new[] { LandExt, 1f, 0.5f })
+                    {
+                        float room = nxStart - (doorHalfArc + le);
+                        if (room < 0.5f) continue;
+                        float need = (d.y - target) / room;
+                        if (need > 0.8f) continue;
+                        landExt = le; k1 = Mathf.Max(rampSlope, need); fits = true;
+                        break;
+                    }
+                    if (!fits) { landExt = 0.5f; k1 = Mathf.Clamp((d.y - target) / Mathf.Max(0.5f, nxStart - doorHalfArc - 0.5f), rampSlope, 0.95f); }
+                }
+                // a landing inside, as wide as the doorway and landExt more to its left (seen from inside, facing the doorway),
                 // where the ramp goes down from - its top end is that much further round
-                var landC = o * (rIn - rampW * 0.5f + 0.1f) - tan * (LandExt * 0.5f) + Vector3.up * (d.y - rampT * 0.5f);
-                var landS = new Vector3(DoorW + 0.4f + LandExt, rampT, rampW + 0.2f);
+                var landC = o * (rIn - rampW * 0.5f + 0.1f) - tan * (landExt * 0.5f) + Vector3.up * (d.y - rampT * 0.5f);
+                var landS = new Vector3(DoorW + 0.4f + landExt, rampT, rampW + 0.2f);
                 k.Box(landC, landS, rot, barkB, MeshKit.All);
                 ThemeKitB.BoxCol(cols, landC, landS, rot);
-                // the ramp: round the inside of the trunk (anticlockwise), down to the floor
-                float startArc = DoorW * 0.5f + 0.2f + LandExt, rampLen = d.y / rampSlope;
+                // the ramp: round the inside of the trunk (anticlockwise), down to the floor - k1 down to `target`, then the
+                // usual slope the rest of the way
+                float startArc = doorHalfArc + landExt;
+                float len1 = (d.y - target) / k1, rampLen = len1 + target / rampSlope;
+                float RampY(float sArc) => sArc <= len1 ? d.y - sArc * k1 : Mathf.Max(0f, target - (sArc - len1) * rampSlope);
                 int pieces = Mathf.Max(1, Mathf.CeilToInt(rampLen / 1.2f));
                 for (int j = 0; j < pieces; j++)
                 {
                     float s0 = rampLen * j / pieces, s1 = rampLen * (j + 1f) / pieces;
                     float ang0 = d.ang + (startArc + s0) / rRamp * Mathf.Rad2Deg - (j == 0 ? 0.6f : 0f), ang1 = d.ang + (startArc + s1) / rRamp * Mathf.Rad2Deg;
-                    var p0 = Dir(ang0) * rRamp + Vector3.up * (d.y - s0 * rampSlope);
-                    var p1 = Dir(ang1) * rRamp + Vector3.up * (d.y - s1 * rampSlope);
+                    var p0 = Dir(ang0) * rRamp + Vector3.up * RampY(s0);
+                    var p1 = Dir(ang1) * rRamp + Vector3.up * RampY(s1);
                     var along = p1 - p0;
                     var q = Quaternion.LookRotation(along, Vector3.up);
                     var c = (p0 + p1) * 0.5f - q * Vector3.up * (rampT * 0.5f);
@@ -1238,7 +1376,9 @@ namespace RockGame
             var spawned = ThemeKitB.Spawn(hol, "hollow", solid, null, true, true);
             spawned.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
 
-            // ---- each hatch: the shaft up through the floor, a low fence round it, the ladder (climb out toward the middle)
+            // ---- each hatch: the shaft up through the floor, a low fence round three sides of it and a low lip on the
+            // fourth (the ladder's side: step over it and off the edge, and the ladder has you as you drop past it), the
+            // ladder (climb out toward the middle), and a glass lid over it while the glass wall's up (BuildGates)
             var wood = new Color(0.4f, 0.24f, 0.16f); var ladderC = new Color(0.55f, 0.36f, 0.22f);
             foreach (var hc in hatches)
             {
@@ -1250,25 +1390,32 @@ namespace RockGame
                     var e = hc + n * 1f;
                     ThemeKitB.Quad(deco, e - t + up * cy, e + t + up * cy, e + t, e - t, earth2, -n);
                     ThemeKitB.BoxCol(cols, e + n * 0.15f + up * ((cy - 0.02f) * 0.5f), new Vector3(2.6f, -cy - 0.02f, 0.3f), Quaternion.LookRotation(n));
-                    // the fence: two rails between posts, a box to stop you (and the ball)
                     var f = hc + n * 1.12f;
+                    if (n == inw)
+                    {
+                        // the lip: low enough to just walk over (it keeps a rolling ball out)
+                        deco.Box(f + up * 0.14f, new Vector3(2.48f, 0.28f, 0.24f), Quaternion.LookRotation(n), wood, MeshKit.All);
+                        ThemeKitB.BoxCol(cols, f + up * 0.14f, new Vector3(2.48f, 0.28f, 0.24f), Quaternion.LookRotation(n));
+                        continue;
+                    }
+                    // the fence: two rails between posts, a box to stop you (and the ball)
                     ThemeKitB.Cyl(deco, f - t * 1.12f + up * 0.32f, f + t * 1.12f + up * 0.32f, 0.07f, 0.07f, 6, wood, true, true);
                     ThemeKitB.Cyl(deco, f - t * 1.12f + up * 0.66f, f + t * 1.12f + up * 0.66f, 0.07f, 0.07f, 6, wood, true, true);
-                    ThemeKitB.Cyl(deco, f - t * 1.12f, f - t * 1.12f + up * 0.82f, 0.1f, 0.09f, 6, wood * 0.85f, false, true);
                     ThemeKitB.BoxCol(cols, f + up * 0.375f, new Vector3(2.5f, 0.75f, 0.24f), Quaternion.LookRotation(n));
                 }
-                // a ring of blossom on the fence posts (you can spot the hatch across the floor)
+                // a post at each corner, and a ring of blossom on them (you can spot the hatch across the floor)
                 for (int i = 0; i < 4; i++)
                 {
-                    var corner = hc + (inw + side) * 1.12f;
-                    corner = hc + Quaternion.Euler(0, 90f * i, 0) * (corner - hc);
+                    var corner = hc + Quaternion.Euler(0, 90f * i, 0) * ((inw + side) * 1.12f);
+                    ThemeKitB.Cyl(deco, corner, corner + up * 0.82f, 0.1f, 0.09f, 6, wood * 0.85f, false, true);
                     ThemeKitB.Ball(deco, corner + up * 0.92f, new Vector3(0.24f, 0.18f, 0.24f), Quaternion.identity, k_Pinks[i % k_Pinks.Length], 0);
                 }
-                ThemeKitB.Ladder(hol, deco, hc + inw * 1f + up * fy, 0.75f, -inw, ladderC);
+                ThemeKitB.Ladder(hol, deco, hc + inw * 1f + up * fy, 0f, -inw, ladderC, true);
                 // a lantern by the ladder's foot
                 ThemeKitB.Ball(glow, hc + side * 0.9f + up * (fy + 2.4f), new Vector3(0.22f, 0.28f, 0.22f), Quaternion.identity, Color.white, 1);
                 ThemeKitB.Cyl(deco, hc + side * 0.9f + up * (fy + 2.68f), hc + side * 0.9f + up * cy, 0.02f, 0.02f, 4, wood, false, false);
             }
+            BuildGates(hol, hatches, fy);
 
             // ---- root columns (cover, and something to see), roots hanging from the ceiling, glowing mushrooms, petals
             var rootC = new Color(0.26f, 0.15f, 0.12f);
@@ -1282,7 +1429,7 @@ namespace RockGame
                     ThemeKitB.Cyl(deco, p + up * (cy - fy) * 0.5f, p + up * (cy - fy + 0.05f), r0, r0 * 1.5f, 8, rootC, false, false);
                     ThemeKitB.CapCol(cols, p, p + up * (cy - fy), r0);
                 }
-            BuildShack(deco, glow, cols, fy, th0);
+            BuildShack(deco, glow, cols, fy, th0 + span * 0.5f); // (its one doorway faces between two teams' sides)
             int hang = Mathf.RoundToInt(cr * 4f);
             for (int i = 0; i < hang; i++)
             {
@@ -1326,9 +1473,100 @@ namespace RockGame
             ThemeKitB.Spawn(hol, "hollow lights", glow, ThemeKitB.Glow(new Color(1f, 0.66f, 0.38f), 2.2f), false);
         }
 
-        /// <summary>A little wooden shack in the middle of the hollow (on its floor at fy): a ring of plank walls with a
-        /// doorway toward every team's side, a pointed roof (solid), a lantern inside. You can go in.</summary>
-        static void BuildShack(MeshKit deco, MeshKit glow, Transform cols, float fy, float th0)
+        // ---------------------------------------------------------------- the hollow's glass (shut while the glass wall's up)
+        /// <summary>A pane of glass in each cave mouth and a glass lid over each hatch: while the glass wall is up (before the
+        /// ball drops) nobody gets into the hollow - so nobody gets up into the ball's dome from under it, or along under the
+        /// middle into another team's half. When the wall drops they go with it (the panes sink into the floor, the lids
+        /// slide away under it); their colliders go at once. Every peer runs it from its own match state (ClientTick).</summary>
+        class Gate { public Transform Vis; public Collider Col; public Vector3 Home, Slide; public bool Sink; public float Open; }
+        readonly List<Gate> m_Gates = new List<Gate>();
+
+        void BuildGates(Transform hol, List<Vector3> hatches, float fy)
+        {
+            m_Gates.Clear();
+            var glass = Art.Ghost(new Color(0.6f, 0.9f, 1f, 0.24f));
+            var line = Art.Ghost(new Color(0.75f, 0.95f, 1f, 0.6f));
+            var up = Vector3.up;
+            float th0 = Th0Deg, isl = IslandR;
+            // the cave mouths: a pane right across each, floor to roof, near its outer end
+            foreach (float off in MouthOffs)
+                for (int m = 0; m < Cfg.Copies; m++)
+                {
+                    int s0 = MouthS0(th0 + off) + m * PitK / Cfg.Copies;
+                    float a0 = s0 * Mathf.PI * 2f / PitK, a1 = (s0 + MouthN) * Mathf.PI * 2f / PitK;
+                    Vector3 d0 = new Vector3(Mathf.Cos(a0), 0f, Mathf.Sin(a0)), d1 = new Vector3(Mathf.Cos(a1), 0f, Mathf.Sin(a1));
+                    float rg = isl - 0.7f;
+                    var o = (d0 + d1).normalized;
+                    var c = (d0 + d1) * 0.5f * rg + up * fy;
+                    float w = (d1 - d0).magnitude * rg + 0.5f, h = MouthTop - fy + 0.3f;
+                    var rot = Quaternion.LookRotation(o);
+                    var col = new GameObject("mouth glass (collider)");
+                    col.transform.SetParent(hol, false);
+                    col.transform.localPosition = c + up * (h * 0.5f - 0.15f);
+                    col.transform.localRotation = rot;
+                    var bc = col.AddComponent<BoxCollider>();
+                    bc.size = new Vector3(w, h + 0.3f, 0.35f);
+                    var vis = new GameObject("mouth glass").transform;
+                    vis.SetParent(hol, false);
+                    vis.localPosition = c;
+                    vis.localRotation = rot;
+                    float vw = w - 0.3f, vh = MouthTop - fy;
+                    Art.Box(vis, Color.white, up * (vh * 0.5f), new Vector3(vw, vh, 0.1f), default, false, glass);
+                    for (int i = 0; i <= 4; i++)
+                        Art.Box(vis, Color.white, new Vector3(Mathf.Lerp(-vw * 0.5f, vw * 0.5f, i / 4f), vh * 0.5f, 0f), new Vector3(0.06f, vh, 0.16f), default, false, line);
+                    for (int i = 0; i <= 3; i++)
+                        Art.Box(vis, Color.white, new Vector3(0f, Mathf.Lerp(0.03f, vh - 0.03f, i / 3f), 0f), new Vector3(vw, 0.06f, 0.16f), default, false, line);
+                    foreach (var r in vis.GetComponentsInChildren<MeshRenderer>()) r.shadowCastingMode = ShadowCastingMode.Off;
+                    m_Gates.Add(new Gate { Vis = vis, Col = bc, Home = c, Sink = true });
+                }
+            // the hatches: a lid over each (short of the ladder's rails), sliding away under the floor on the far side
+            foreach (var hc in hatches)
+            {
+                var inw = HatchIn(hc);
+                var rot = Quaternion.LookRotation(inw);
+                var c = hc - inw * 0.11f;
+                var col = new GameObject("hatch lid (collider)");
+                col.transform.SetParent(hol, false);
+                col.transform.localPosition = c + up * -0.15f;
+                col.transform.localRotation = rot;
+                var bc = col.AddComponent<BoxCollider>();
+                bc.size = new Vector3(2.02f, 0.3f, 1.8f);
+                var vis = new GameObject("hatch lid").transform;
+                vis.SetParent(hol, false);
+                vis.localPosition = c;
+                vis.localRotation = rot;
+                Art.Box(vis, Color.white, up * -0.08f, new Vector3(1.96f, 0.12f, 1.74f), default, false, glass);
+                foreach (float x in new[] { -0.95f, 0f, 0.95f })
+                    Art.Box(vis, Color.white, new Vector3(x, -0.05f, 0f), new Vector3(0.06f, 0.08f, 1.74f), default, false, line);
+                foreach (float z in new[] { -0.84f, 0f, 0.84f })
+                    Art.Box(vis, Color.white, new Vector3(0f, -0.05f, z), new Vector3(1.96f, 0.08f, 0.06f), default, false, line);
+                foreach (var r in vis.GetComponentsInChildren<MeshRenderer>()) r.shadowCastingMode = ShadowCastingMode.Off;
+                m_Gates.Add(new Gate { Vis = vis, Col = bc, Home = c, Slide = -inw * 2.1f });
+            }
+        }
+
+        void TickGates(float dt)
+        {
+            var game = NetGame.Instance;
+            bool shut = game == null || !game.IsSpawned || game.WallUp;
+            foreach (var g in m_Gates)
+            {
+                if (g.Vis == null) continue;
+                if (g.Col != null && g.Col.enabled != shut) g.Col.enabled = shut;
+                float want = shut ? 0f : 1f;
+                if (g.Open == want && g.Vis.gameObject.activeSelf == (want < 1f)) continue;
+                g.Open = Mathf.MoveTowards(g.Open, want, dt / 1.3f);
+                float e = g.Open * g.Open * (3f - 2f * g.Open);
+                if (g.Sink) g.Vis.localScale = new Vector3(1f, Mathf.Max(0.001f, 1f - e), 1f);
+                else g.Vis.localPosition = g.Home + g.Slide * e;
+                bool show = g.Open < 0.999f;
+                if (g.Vis.gameObject.activeSelf != show) g.Vis.gameObject.SetActive(show);
+            }
+        }
+
+        /// <summary>A little wooden shack in the middle of the hollow (on its floor at fy): a ring of plank walls with ONE
+        /// doorway (toward doorDeg), a pointed roof (solid), a lantern inside. You can go in.</summary>
+        static void BuildShack(MeshKit deco, MeshKit glow, Transform cols, float fy, float doorDeg)
         {
             int copies = Mathf.Max(1, Cfg.Copies);
             int sides = copies * 2 < 6 ? 6 : copies * 2;
@@ -1340,12 +1578,12 @@ namespace RockGame
             var up = Vector3.up;
             for (int i = 0; i < sides; i++)
             {
-                float a = (th0 + i * 360f / sides) * Mathf.Deg2Rad;
+                float a = (doorDeg + i * 360f / sides) * Mathf.Deg2Rad;
                 var n = new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a));
                 var q = Quaternion.LookRotation(n);
                 var t = q * Vector3.right;
                 var c = n * (ap - wt * 0.5f) + up * fy;
-                bool door = i % (sides / copies) == 0;
+                bool door = i == 0;
                 var col = i % 2 == 0 ? plank : plank2;
                 float hw = edge * 0.5f + 0.06f;
                 void Wall(float x0, float x1, float y0, float y1)
@@ -1377,7 +1615,7 @@ namespace RockGame
             }
             // the roof: a low pointed one with an overhang (solid, so you can stand on it too)
             var roof = new MeshKit();
-            float b0 = (th0 + 180f / sides) * Mathf.Deg2Rad;
+            float b0 = (doorDeg + 180f / sides) * Mathf.Deg2Rad;
             float rr = ap / Mathf.Cos(Mathf.PI / sides) + 0.45f;
             ThemeKitB.Cyl(roof, up * (fy + wallHt), up * (fy + wallHt + 1.4f), rr, 0.02f, sides, roofC, true, false, -(b0 + Mathf.PI * 0.5f));
             ThemeKitB.Spawn(cols, "shack roof", roof, null, true, true);
@@ -1386,8 +1624,8 @@ namespace RockGame
             ThemeKitB.Ball(glow, up * (fy + wallHt - 0.8f), new Vector3(0.22f, 0.28f, 0.22f), Quaternion.identity, Color.white, 1);
             // a crate to sit behind
             var crate = new Vector3(Mathf.Cos(b0), 0f, Mathf.Sin(b0)) * (ap * 0.45f) + up * (fy + 0.35f);
-            deco.Box(crate, Vector3.one * 0.7f, Quaternion.Euler(0, th0 + 20f, 0), plank2, MeshKit.All);
-            ThemeKitB.BoxCol(cols, crate, Vector3.one * 0.7f, Quaternion.Euler(0, th0 + 20f, 0));
+            deco.Box(crate, Vector3.one * 0.7f, Quaternion.Euler(0, doorDeg + 20f, 0), plank2, MeshKit.All);
+            ThemeKitB.BoxCol(cols, crate, Vector3.one * 0.7f, Quaternion.Euler(0, doorDeg + 20f, 0));
         }
 
         // ---------------------------------------------------------------- the blossom deer (the horse here) and the cherry bush
@@ -1497,26 +1735,34 @@ namespace RockGame
                     var d = lp - top;
                     if (d.y > -0.5f && d.y < 0.6f) { d.y = 0f; localOn = d.sqrMagnitude <= reach; }
                 }
-                if (on && !c.On) c.Kick = 1f;
+                // springy: landing on it drives it down with a bounce (a few, dying away) and it settles a little lower
+                // under you (as low as it always did, so the jumps off it are no harder); stepping off, it springs back up
+                if (on && !c.On) { c.Kick = 1f; c.DipV -= 3.1f; }
+                else if (!on && c.On) c.DipV += 1.3f;
                 c.On = on;
-                c.Sink = Mathf.MoveTowards(c.Sink, on ? 1f : 0f, dt * (on ? 2.4f : 0.8f));
+                c.DipV += ((on ? -0.15f : 0f) - c.Dip) * 70f * dt - c.DipV * 4.2f * dt;
+                c.Dip = Mathf.Clamp(c.Dip + c.DipV * dt, -0.8f, 0.35f);
                 var tiltT = on ? Vector3.ClampMagnitude(off / Mathf.Max(1, n) / c.R, 1f) : Vector3.zero;
-                c.Tilt = Vector3.Lerp(c.Tilt, tiltT, 1f - Mathf.Exp(-dt * 4f));
-                c.Kick = Mathf.Max(0f, c.Kick - dt * 1.3f);
-                float s = c.Sink * c.Sink * (3f - 2f * c.Sink);
+                c.Tilt = Vector3.Lerp(c.Tilt, tiltT, 1f - Mathf.Exp(-dt * 5f));
+                c.Kick = Mathf.Max(0f, c.Kick - dt * 1.1f);
                 var basePos = c.Pos;
                 if (c.Move == 1) basePos += Vector3.up * (Mathf.Sin(nt * c.Spd + c.MPh) * c.Amp);
                 else if (c.Move == 2) basePos += c.Drift * (Mathf.Sin(nt * c.Spd + c.MPh) * c.Amp);
-                float y = basePos.y + Mathf.Sin(t * 0.7f + c.Phase) * 0.07f - s * 0.15f - Mathf.Sin(t * 10f + c.Phase) * c.Kick * 0.06f;
+                float y = basePos.y + Mathf.Sin(t * 0.7f + c.Phase) * 0.07f + c.Dip;
                 var axis = new Vector3(c.Tilt.z, 0f, -c.Tilt.x);
-                var tilt = axis.sqrMagnitude > 1e-6f ? Quaternion.AngleAxis(c.Tilt.magnitude * 7f, axis.normalized) : Quaternion.identity;
-                var wob = Quaternion.Euler(Mathf.Sin(t * 0.53f + c.Phase) * 0.9f + Mathf.Sin(t * 9f + c.Phase) * c.Kick * 3f, 0f,
-                    Mathf.Cos(t * 0.61f + c.Phase * 1.3f) * 0.9f + Mathf.Cos(t * 8f + c.Phase) * c.Kick * 3f);
+                var tilt = axis.sqrMagnitude > 1e-6f ? Quaternion.AngleAxis(c.Tilt.magnitude * 9f, axis.normalized) : Quaternion.identity;
+                var wob = Quaternion.Euler(Mathf.Sin(t * 0.53f + c.Phase) * 0.9f + Mathf.Sin(t * 9f + c.Phase) * c.Kick * 5f, 0f,
+                    Mathf.Cos(t * 0.61f + c.Phase * 1.3f) * 0.9f + Mathf.Cos(t * 8f + c.Phase) * c.Kick * 5f);
                 var newPos = new Vector3(basePos.x, y, basePos.z);
-                // standing on a moving one: it takes you with it (you first, so you're never inside it)
-                if (localOn && c.Move != 0) { local.Carry(newPos - top); carried = true; }
+                // standing on it: it takes you with it - up (and along) you first, so you're never inside it; down, it
+                // first and you after it, so you stay on it through the bounce
+                var delta = newPos - top;
+                bool carry = localOn && (c.Move != 0 || Mathf.Abs(delta.y) > 0.0005f);
+                if (carry && delta.y >= 0f) { local.Carry(delta); carried = true; }
                 c.T.SetPositionAndRotation(newPos, tilt * wob * c.Rot);
+                if (carry && delta.y < 0f) { Physics.SyncTransforms(); local.Carry(delta); carried = true; }
             }
+            TickGates(dt);
             var cam = Camera.main;
             bool hide = ThemeKitB.SkyHidden(cam);
             if (m_Sky != null)
@@ -2031,18 +2277,21 @@ namespace RockGame
         /// <summary>A climbable ladder (the game's Ladder): rails and rungs into `k`, a solid backing behind them, and the
         /// climbing volume in front. foot: at its bottom, on the face it stands against; faceOut: away from that face (where
         /// you climb); topY: the floor you get off onto at the top (you're pushed toward the face, over it). The parent must
-        /// sit at the world's origin, unturned.</summary>
-        public static void Ladder(Transform parent, MeshKit k, Vector3 foot, float topY, Vector3 faceOut, Color c)
+        /// sit at the world's origin, unturned. tight: the climbing volume is only where you'd really be touching the ladder
+        /// (a thin slab right against its face, a little wider than it, reaching a bit over the floor at the top so that
+        /// stepping off the top edge onto it catches you as you drop past), and the rails stop just past the top rung.</summary>
+        public static void Ladder(Transform parent, MeshKit k, Vector3 foot, float topY, Vector3 faceOut, Color c, bool tight = false)
         {
             faceOut.y = 0f;
             faceOut.Normalize();
             float len = topY - foot.y + 0.9f;
+            float rails = tight ? topY - foot.y + 0.35f : len;
             var rot = Quaternion.LookRotation(-faceOut);
             var right = rot * Vector3.right;
             var b = foot + faceOut * 0.14f;
             for (int s = -1; s <= 1; s += 2)
-                k.Box(b + right * (0.36f * s) + Vector3.up * (len * 0.5f), new Vector3(0.09f, len, 0.09f), rot, c, MeshKit.All);
-            for (float y = 0.35f; y < len - 0.1f; y += 0.42f)
+                k.Box(b + right * (0.36f * s) + Vector3.up * (rails * 0.5f), new Vector3(0.09f, rails, 0.09f), rot, c, MeshKit.All);
+            for (float y = 0.35f; y < rails - 0.1f; y += 0.42f)
                 k.Box(b + Vector3.up * y, new Vector3(0.72f, 0.07f, 0.07f), rot, c * 0.85f, MeshKit.All);
             // the backing (solid: you lean on it), up to just under the floor at the top
             float sh = Mathf.Max(0.2f, topY - foot.y - 0.05f);
@@ -2054,11 +2303,23 @@ namespace RockGame
             body.AddComponent<BoxCollider>().size = new Vector3(0.9f, sh, 0.16f);
             var go = new GameObject("ladder");
             go.transform.SetParent(parent, false);
-            go.transform.localPosition = foot + faceOut * 0.5f + Vector3.up * (len * 0.5f);
-            go.transform.localRotation = rot;
             var bc = go.AddComponent<BoxCollider>();
             bc.isTrigger = true;
-            bc.size = new Vector3(1.1f, len, 0.9f);
+            if (tight)
+            {
+                // (0.02 to 0.44 m out from the face: with the 0.45 m the game reaches round you, it has you only once you're
+                // up against the rungs)
+                float th = topY - foot.y + 0.6f;
+                go.transform.localPosition = foot + faceOut * 0.23f + Vector3.up * (th * 0.5f);
+                go.transform.localRotation = rot;
+                bc.size = new Vector3(0.84f, th, 0.42f);
+            }
+            else
+            {
+                go.transform.localPosition = foot + faceOut * 0.5f + Vector3.up * (len * 0.5f);
+                go.transform.localRotation = rot;
+                bc.size = new Vector3(1.1f, len, 0.9f);
+            }
             go.AddComponent<Ladder>().TopLocalY = topY;
         }
 

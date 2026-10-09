@@ -5,7 +5,8 @@ using UnityEngine.Rendering;
 namespace RockGame
 {
     /// <summary>
-    /// MARS: red dust under a butterscotch sky (two little moons), dunes, craters, rock spires and boulders, an old rover
+    /// MARS: red dust under a butterscotch sky (two little moons), dunes, craters, rock spires and boulders, big flat-topped
+    /// buttes out in the wild (steep strata, too tall to climb: cover and lanes, like Canyon's mesas), an old rover
     /// and a habitat dome in each team's part, flat-topped mesas on the horizon - and a volcano in the middle: the ball
     /// drops into its crater (the flat ball zone). Its rim is too steep to climb except at the low passes cut through it
     /// (a walkable path over the rim on each side), and a TUNNEL SYSTEM runs under it: a square ring of tunnels under the
@@ -143,6 +144,157 @@ namespace RockGame
                     s_Craters.Add((new Vector2(q.x, q.z), cr, depth));
                 }
             }
+            LayoutButtes(sc);
+        }
+
+        // ================================================================ big rock formations (buttes, like Canyon's mesas)
+        /// <summary>The big flat-topped rock formations out in the wild, in the first team's part (copied round for the others:
+        /// s_ButteAll has every copy): steep-sided, too tall to climb, wide enough to hide a squad - cover and lanes between
+        /// the bases and the volcano. Never on a base, over a tunnel or its mouth, in a crater, on the volcano's slope or on
+        /// the way from a base to its passes over the rim. Their own random numbers (nothing else moves for them).</summary>
+        static readonly List<(Vector2 c, float r, float h, int seed)> s_Buttes = new List<(Vector2, float, float, int)>();
+        static readonly List<(Vector2 c, float r)> s_ButteAll = new List<(Vector2, float)>();
+        /// <summary>How far out a butte's scree reaches (share of its radius).</summary>
+        const float ButteFoot = 1.2f;
+
+        static void LayoutButtes(float sc)
+        {
+            s_Buttes.Clear(); s_ButteAll.Clear();
+            var rng = new System.Random(Cfg.MapSeed * 31 + 4049);
+            float Rn(float a, float b) => a + (float)rng.NextDouble() * (b - a);
+            int want = Mathf.Clamp(Mathf.RoundToInt((Cfg.FourWay ? 2.5f : 4f) * sc * sc), 2, 10);
+            float span = 360f / Cfg.Copies;
+            // the ways from each base up to its passes (a pass within 90 degrees of the base's side)
+            var ways = new List<(Vector2 a, Vector2 b)>();
+            for (int t = 0; t < Cfg.TeamCount; t++)
+            {
+                var bc = new Vector2(Cfg.BaseCenter[t].x, Cfg.BaseCenter[t].z);
+                float ba = Mathf.Atan2(bc.y, bc.x) * Mathf.Rad2Deg;
+                foreach (float pa in s_Passes)
+                {
+                    if (Mathf.Abs(Mathf.DeltaAngle(ba, pa)) > 90f) continue;
+                    ways.Add((bc, new Vector2(Mathf.Cos(pa * Mathf.Deg2Rad), Mathf.Sin(pa * Mathf.Deg2Rad)) * (RimOut + 2f)));
+                }
+            }
+            float SegDist(Vector2 p, Vector2 a, Vector2 b)
+            {
+                var ab = b - a;
+                float k = Mathf.Clamp01(Vector2.Dot(p - a, ab) / Mathf.Max(1e-4f, ab.sqrMagnitude));
+                return (a + ab * k - p).magnitude;
+            }
+            for (int tries = 0, made = 0; tries < want * 80 && made < want; tries++)
+            {
+                var p = new Vector2(Rn(-Half + 16f, Half - 16f), Rn(-Half + 16f, -6f));
+                float r = Rn(5f, 8.5f) * Mathf.Clamp(sc, 0.75f, 1.25f), foot = r * ButteFoot;
+                if (!Cfg.InFirstSector(new Vector3(p.x, 0, p.y), foot + 4f)) continue;
+                if (p.magnitude < RimOut + foot + 4f) continue;
+                if (Mathf.Max(Mathf.Abs(p.x), Mathf.Abs(p.y)) > Half - 14f - foot) continue;
+                bool bad = false;
+                for (int t = 0; t < Cfg.TeamCount && !bad; t++)
+                {
+                    var c = Cfg.BaseCenter[t];
+                    if (Mathf.Abs(p.x - c.x) < Cfg.BaseHalf + foot + 8f && Mathf.Abs(p.y - c.z) < Cfg.BaseHalf + foot + 8f) bad = true;
+                }
+                if (bad || TunnelNear(p.x, p.y, foot + 4f)) continue;
+                foreach (var c in s_Craters) if ((c.c - p).magnitude < c.r * 1.5f + foot + 3f) { bad = true; break; }
+                foreach (var w in ways) if (!bad && SegDist(p, w.a, w.b) < foot + 6f) bad = true;
+                // (room to walk between them: lanes, not a wall)
+                foreach (var o in s_Buttes) if (!bad && (o.c - p).magnitude < o.r * ButteFoot + foot + 9f) bad = true;
+                if (bad) continue;
+                made++;
+                s_Buttes.Add((p, r, Rn(9f, 15f) * Mathf.Clamp(sc, 0.8f, 1.2f), rng.Next()));
+                for (int m = 0; m < Cfg.Copies; m++)
+                {
+                    var q = Cfg.Copy(new Vector3(p.x, 0, p.y), m);
+                    s_ButteAll.Add((new Vector2(q.x, q.z), foot));
+                }
+            }
+        }
+
+        /// <summary>A butte (a small mesa): a ring of steep rock walls in coloured strata, a little narrower at each band, a
+        /// caprock sticking out over the top edge, a flat top and a steep scree slope round its foot - into `body` (solid), loose
+        /// rocks on top and round it into `k`. Built in the first team's part and turned to copy m (exactly the same for each).</summary>
+        void Butte(MeshKit body, MeshKit k, Transform cols, (Vector2 c, float r, float h, int seed) b, int m)
+        {
+            var rng = new System.Random(b.seed);
+            float R(float a, float c) => a + (float)rng.NextDouble() * (c - a);
+            Vector3 W(Vector3 v) => Cfg.Copy(v, m);
+            var c0 = new Vector3(b.c.x, 0f, b.c.y);
+            int n = 11 + rng.Next(4);
+            var ang = new float[n]; var jr = new float[n];
+            for (int i = 0; i < n; i++) { ang[i] = (i + R(-0.25f, 0.25f)) * Mathf.PI * 2f / n; jr[i] = R(0.84f, 1.1f); }
+            for (int pass = 0; pass < 1; pass++)
+            {
+                var sm = new float[n];
+                for (int i = 0; i < n; i++) sm[i] = (jr[(i + n - 1) % n] + jr[i] * 2f + jr[(i + 1) % n]) * 0.25f;
+                jr = sm;
+            }
+            Vector3 Dir(int i) { float a = ang[((i % n) + n) % n]; return new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a)); }
+            // the ground round it: its walls start a good way under the lowest of it
+            float g0 = Height(c0.x, c0.z), gMin = g0;
+            for (int i = 0; i < n; i++) { var q = c0 + Dir(i) * b.r * ButteFoot; gMin = Mathf.Min(gMin, Height(q.x, q.z)); }
+            float top = g0 + b.h;
+            // the strata: rings going up, each a little narrower, wobbling a little in and out
+            Color[] cs = { new Color(0.62f, 0.3f, 0.2f), new Color(0.74f, 0.42f, 0.28f), new Color(0.55f, 0.27f, 0.18f), new Color(0.8f, 0.5f, 0.34f), new Color(0.67f, 0.35f, 0.23f) };
+            const int bands = 7;
+            var ys = new float[bands + 1]; var ks = new float[bands + 1];
+            ys[0] = gMin - 1.5f; ks[0] = 1f;
+            for (int j = 1; j <= bands; j++)
+            {
+                ys[j] = Mathf.Lerp(g0 + 0.5f, top - 1.1f, (j - 1f) / (bands - 1f));
+                ks[j] = 1f - 0.12f * j / bands;
+            }
+            var wob = new float[(bands + 1) * n];
+            for (int j = 0; j <= bands; j++) for (int i = 0; i < n; i++) wob[j * n + i] = j == 0 ? 1f : 1f + R(-0.035f, 0.035f);
+            Vector3 P(int j, int i) => c0 + Dir(i) * (b.r * jr[((i % n) + n) % n] * ks[j] * wob[j * n + ((i % n) + n) % n]) + Vector3.up * ys[j];
+            int c1 = rng.Next(cs.Length);
+            for (int j = 0; j < bands; j++)
+            {
+                var col = cs[(c1 + j) % cs.Length];
+                for (int i = 0; i < n; i++)
+                {
+                    var o = Dir(i) + Dir(i + 1);
+                    var cc = col * (0.9f + 0.14f * Mathf.PerlinNoise(i * 0.7f + b.seed % 97, j * 1.3f)); cc.a = 1f;
+                    ThemeKitB.Quad(body, W(P(j, i)), W(P(j, i + 1)), W(P(j + 1, i + 1)), W(P(j + 1, i)), cc, W(o));
+                }
+            }
+            // the caprock: out over the top edge, a dark underside, a flat dusty top
+            float kCap = ks[bands] + 0.05f;
+            var cap = new Color(0.5f, 0.25f, 0.17f); var dusty = new Color(0.72f, 0.42f, 0.28f);
+            Vector3 Q(int i, float y) => c0 + Dir(i) * (b.r * jr[((i % n) + n) % n] * kCap) + Vector3.up * y;
+            for (int i = 0; i < n; i++)
+            {
+                var o = Dir(i) + Dir(i + 1);
+                ThemeKitB.Quad(body, W(P(bands, i)), W(P(bands, i + 1)), W(Q(i + 1, ys[bands])), W(Q(i, ys[bands])), cap * 0.75f, Vector3.down);
+                ThemeKitB.Quad(body, W(Q(i, ys[bands])), W(Q(i + 1, ys[bands])), W(Q(i + 1, top)), W(Q(i, top)), cap, W(o));
+                ThemeKitB.Tri(body, W(c0 + Vector3.up * top), W(Q(i, top)), W(Q(i + 1, top)), dusty, Vector3.up);
+            }
+            // the scree round its foot (steep: you can't walk up it)
+            for (int i = 0; i < n; i++)
+            {
+                var o = Dir(i) + Dir(i + 1);
+                Vector3 F(int ii) { var q = c0 + Dir(ii) * (b.r * jr[((ii % n) + n) % n] * ButteFoot); q.y = Height(q.x, q.z) - 0.35f; return q; }
+                Vector3 U(int ii) => c0 + Dir(ii) * (b.r * jr[((ii % n) + n) % n] * 1.01f) + Vector3.up * (g0 + 3f);
+                ThemeKitB.Quad(body, W(F(i)), W(F(i + 1)), W(U(i + 1)), W(U(i)), Color.Lerp(cs[2], new Color(0.45f, 0.23f, 0.16f), 0.5f), W(o + Vector3.up * 0.5f));
+            }
+            // loose rocks on top and fallen round its foot
+            for (int i = 0; i < 3; i++)
+            {
+                float a = R(0f, 6.28f), d = R(0f, 0.6f) * b.r;
+                var p = c0 + new Vector3(Mathf.Cos(a) * d, top, Mathf.Sin(a) * d);
+                float s = R(0.4f, 0.9f);
+                ThemeKitB.Ball(k, W(p + Vector3.up * s * 0.3f), new Vector3(s, s * 0.65f, s * 0.9f), Quaternion.Euler(0, R(0, 360), 0), cs[rng.Next(cs.Length)] * 0.9f, 0, 0.25f, rng.Next(1024));
+            }
+            int fallen = 4 + rng.Next(3);
+            for (int i = 0; i < fallen; i++)
+            {
+                float a = R(0f, 6.28f), d = b.r * ButteFoot + R(0.6f, 2.5f);
+                var p = c0 + new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d);
+                p = W(p); p.y = Height(p.x, p.z);
+                int sd = rng.Next();
+                float s = R(0.6f, 1.6f);
+                Boulder(k, cols, p, R(0, 360) + m * 360f / Cfg.Copies, s, sd);
+            }
         }
 
         // ================================================================ height
@@ -221,7 +373,9 @@ namespace RockGame
         public override bool SpotOk(Vector3 p)
         {
             Layout();
-            return new Vector2(p.x, p.z).magnitude > RimOut - 1f && !TunnelNear(p.x, p.z, 3f);
+            if (new Vector2(p.x, p.z).magnitude <= RimOut - 1f || TunnelNear(p.x, p.z, 3f)) return false;
+            foreach (var b in s_ButteAll) if ((b.c - new Vector2(p.x, p.z)).magnitude < b.r + 2.5f) return false; // (not in a butte)
+            return true;
         }
 
         public override float NodeMul(byte kind) => kind == ResourceNode.Tree ? 0.8f : kind == ResourceNode.Bush ? 0.5f : 1.4f;
@@ -503,6 +657,14 @@ namespace RockGame
             }
             int N(float n) => Mathf.Max(1, Mathf.RoundToInt(n * sc * sc));
             float wild = RimOut + 3f;
+            // the buttes first (everything else keeps clear of them)
+            var butte = new MeshKit();
+            foreach (var b in s_Buttes)
+            {
+                placed.Add((b.c, b.r * ButteFoot + 1.5f));
+                for (int m = 0; m < Cfg.Copies; m++) Butte(butte, k, cols, b, m);
+            }
+            ThemeKitB.Spawn(root, "mars buttes", butte, null, true, true);
 
             if (Spot(5f, wild, out var hp)) Each(hp, R(0, 360), (q, y) => Habitat(k, lava, cols, q, y));
             if (Spot(4f, wild, out var rp)) { var yaw = R(0, 360); Each(rp, yaw, (q, y) => Rover(k, cols, q, y)); }

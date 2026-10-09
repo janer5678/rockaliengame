@@ -226,24 +226,6 @@ namespace RockGame
             }
             TmKit.CopyRound(sec, IslandUsed);
 
-            // ---- red and white buoys out in the open sea between the islands (nothing to stand on) ----
-            float gap0 = CenterR + 5f, gap1 = D - IslandR - 5f;
-            if (gap1 - gap0 > 4f)
-            {
-                var sea = TmKit.Sector(root, "Islands buoys");
-                for (int i = 0; i < 3; i++)
-                {
-                    var p = TmKit.CentreSpot(-0.3f + i * 0.3f + Rn(-0.05f, 0.05f), Rn(gap0, gap1));
-                    if (!Cfg.InFirstSector(p, 2f) || Mathf.Abs(p.x) > Cfg.MapHalf - 6f || Mathf.Abs(p.z) > Cfg.MapHalf - 6f) continue;
-                    if (ThemeMaps.Height(p.x, p.z) > -3f) continue; // (out in the open sea, not by an island)
-                    p.y = ThemeMaps.WaterY;
-                    Art.Part(sea, Art.Cylinder, Color.white, p + Vector3.up * 0.2f, new Vector3(0.6f, 0.25f, 0.6f));
-                    Art.Part(sea, Art.Cylinder, new Color(0.9f, 0.2f, 0.15f), p + Vector3.up * 0.65f, new Vector3(0.45f, 0.2f, 0.45f));
-                    Art.Part(sea, Art.Sphere, new Color(0.9f, 0.2f, 0.15f), p + Vector3.up * 0.95f, Vector3.one * 0.3f);
-                }
-                TmKit.CopyRound(sea);
-            }
-
             // far-off little islands on the horizon (scenery only)
             float half = Cfg.MapHalf;
             for (int i = 0; i < 10; i++)
@@ -482,41 +464,51 @@ namespace RockGame
         /// topY: the floor you step off onto at the top (its edge must be right at the wall's face, open - no railing).
         /// Parent must be at the world origin, only turned about y (a Sector).
         /// Climbable from the front only: the ladder itself is a solid board (you can't walk through it or climb it from
-        /// behind or the sides) up to just under the floor at the top, and the climbing volume is only in front of it,
-        /// narrower than the rails. It reaches 0.6 m above the floor at the top, so you climb until your feet clear the
-        /// floor and simply walk forwards onto it.</summary>
+        /// behind or the sides) up to just under the floor at the top. The rungs are spread evenly so the last is just
+        /// under the floor, and the rails stop 0.2 m above it (nothing sticking up over the deck). The climbing volume is
+        /// a thin slab right on the board's front face (0.4 m deep, the ladder's width), so you only grab it when you're
+        /// touching the ladder; it reaches 0.6 m above the floor at the top (invisible), so you climb until your feet
+        /// clear the floor and simply walk forwards onto it.</summary>
         public static void Ladder(Transform parent, Vector3 foot, float topY, Vector3 faceOut, Color c, bool solid = true)
         {
             faceOut.y = 0;
             faceOut.Normalize();
-            float len = topY - foot.y + 0.9f;
+            float h = topY - foot.y;
             var rot = Quaternion.LookRotation(-faceOut);
             var right = rot * Vector3.right;
             var e = rot.eulerAngles;
             var b = foot + faceOut * 0.12f;
+            // rungs from 0.35 m up to just under the floor at the top, evenly spaced (about 0.45 m apart)
+            const float first = 0.35f;
+            float last = Mathf.Max(first, h - 0.1f);
+            int gaps = Mathf.CeilToInt((last - first) / 0.45f - 0.001f);
+            float step = gaps > 0 ? (last - first) / gaps : 0f;
+            for (int i = 0; i <= gaps; i++)
+                Art.Box(parent, c, b + Vector3.up * (first + i * step), new Vector3(0.72f, 0.07f, 0.07f), e);
+            // the rails end just past the top rung
+            float len = last + 0.2f;
             Art.Box(parent, c, b + right * 0.36f + Vector3.up * (len * 0.5f), new Vector3(0.09f, len, 0.09f), e);
             Art.Box(parent, c, b - right * 0.36f + Vector3.up * (len * 0.5f), new Vector3(0.09f, len, 0.09f), e);
-            for (float y = 0.35f; y < topY - foot.y - 0.1f; y += 0.45f)
-                Art.Box(parent, c, b + Vector3.up * y, new Vector3(0.72f, 0.07f, 0.07f), e);
             if (solid)
             {
                 // one solid board round the rails and rungs, up to just under the floor at the top (so you step off over it)
-                float sh = Mathf.Max(0.2f, topY - foot.y - 0.05f);
+                float sh = Mathf.Max(0.2f, h - 0.05f);
                 var body = new GameObject("ladder body");
                 body.transform.SetParent(parent, false);
                 body.transform.localPosition = b + Vector3.up * (sh * 0.5f);
                 body.transform.localRotation = rot;
                 body.AddComponent<BoxCollider>().size = new Vector3(0.84f, sh, 0.2f);
             }
-            // the climbing volume: in front of the board only (0.25 - 1.0 m out), up to 0.6 m over the floor at the top
-            float vh = Mathf.Max(0.6f, topY - foot.y + 0.6f);
+            // the climbing volume: a thin slab on the board's front face (0.22 - 0.62 m out from the wall), the ladder's
+            // width + 0.1, up to 0.6 m over the floor at the top
+            float vh = Mathf.Max(0.6f, h + 0.6f);
             var go = new GameObject("ladder");
             go.transform.SetParent(parent, false);
-            go.transform.localPosition = foot + faceOut * 0.62f + Vector3.up * (vh * 0.5f);
+            go.transform.localPosition = foot + faceOut * 0.42f + Vector3.up * (vh * 0.5f);
             go.transform.localRotation = rot;
             var bc = go.AddComponent<BoxCollider>();
             bc.isTrigger = true;
-            bc.size = new Vector3(0.9f, vh, 0.76f);
+            bc.size = new Vector3(0.92f, vh, 0.4f);
             go.AddComponent<Ladder>().TopLocalY = topY;
         }
 

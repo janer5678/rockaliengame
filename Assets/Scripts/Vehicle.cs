@@ -225,6 +225,7 @@ namespace RockGame
         /// <summary>Hooves on the ground, heard from where the horse is: a walk clops, a gallop drums (four beats a stride).</summary>
         void Hooves(float dt)
         {
+            if (!HasDriver) { m_LastHoofPos = transform.position; return; } // (a wild horse wandering about makes no sound: players took it for someone sneaking up)
             var p = transform.position;
             var d = p - m_LastHoofPos;
             d.y = 0;

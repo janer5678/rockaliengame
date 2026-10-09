@@ -26,7 +26,7 @@ namespace RockGame
         /// <summary>The pads' tops stand well clear of the water (ThemeMaps.InWater: feet under WaterY + 0.2 is wading), so
         /// on a pad you walk at full speed.</summary>
         const float PadTop = ThemeMaps.WaterY + 0.32f, PadBottom = ThemeMaps.WaterY - 0.12f;
-        /// <summary>Lily pads: at most one in each 3 m cell, anywhere in it, in only about three cells in ten (patchy: a few
+        /// <summary>Lily pads: at most one in each 3 m cell, anywhere in it, in only about a third of the cells (patchy: a few
         /// clusters, wide empty stretches) - 1 - 2 m across. Gaps run from an easy hop to too far to jump.</summary>
         const float PadStep = 3f;
         /// <summary>The middle mud island's radius (flat round the ball).</summary>
@@ -280,7 +280,7 @@ namespace RockGame
             float half = Cfg.MapHalf;
             bool Deep(float x, float z) => ThemeMaps.Height(x, z) < ThemeMaps.WaterY - 0.3f;
 
-            // ---- lily pads scattered over the water: at most one per 3 m cell (anywhere in it), only in about 30% of the
+            // ---- lily pads scattered over the water: at most one per 3 m cell (anywhere in it), only in about 35% of the
             //      cells and patchy (a slow noise makes clusters and bare stretches) - laid out in blue's sector, the grid the
             //      same turned round so the copies line up at the sector edges ----
             var pads = new PadBatch(sec);
@@ -296,7 +296,7 @@ namespace RockGame
                 // anywhere in its cell (well off the grid), not just near the middle
                 float room = PadStep * 0.5f - r - 0.05f;
                 var p = new Vector3((i + 0.5f) * PadStep + (TmKit.Hash(i, j, 81) - 0.5f) * 2f * room, 0, -(j + 0.5f) * PadStep + (TmKit.Hash(i, j, 82) - 0.5f) * 2f * room);
-                float keep = 0.12f + 0.38f * TmKit.SymN(p.x, p.z, 0.07f, ThemeMaps.SeedP + 55f); // (clusters and bare stretches)
+                float keep = (0.12f + 0.38f * TmKit.SymN(p.x, p.z, 0.07f, ThemeMaps.SeedP + 55f)) * 1.15f; // (clusters and bare stretches; x1.15: ~15% more pads)
                 if (TmKit.Hash(i, j, 80) > keep) continue;
                 if (Mathf.Abs(p.x) > half - 1.2f || Mathf.Abs(p.z) > half - 1.2f || !Deep(p.x, p.z)) continue;
                 if (!Deep(p.x + r, p.z) || !Deep(p.x - r, p.z) || !Deep(p.x, p.z + r) || !Deep(p.x, p.z - r)) continue;

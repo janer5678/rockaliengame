@@ -57,6 +57,16 @@ namespace RockGame
         /// <summary>The scoreboard key is held: the scoreboard is up and the mouse is free.</summary>
         public bool ScoreboardOpen { get; private set; }
         float m_TabDownAt = -1f; // when the scoreboard key went down (a tap = the bag, a hold = the scoreboard)
+        /// <summary>Holding the scoreboard key: how far to the scoreboard opening (0 = not holding, or still a tap, or it's open).</summary>
+        public float TabHoldProgress
+        {
+            get
+            {
+                if (m_TabDownAt < 0f || ScoreboardOpen || MenuOpen || !Binds.Held(Bind.Scoreboard)) return 0f;
+                float t = Time.time - m_TabDownAt;
+                return t < 0.12f ? 0f : Mathf.Clamp01((t - 0.12f) / Mathf.Max(0.05f, Cfg.TabHoldTime - 0.12f));
+            }
+        }
         public float DrawAmount { get; private set; } // bow draw / spear wind-up, 0..1
         public float RamCharge { get; private set; }  // ram wind-up, 0..1
         public bool Crouching { get; private set; }
@@ -548,7 +558,7 @@ namespace RockGame
                 }
 
                 // (sudden death: falling off the platform is a death - the server sees it; this is only a safety net)
-                if (transform.position.y < (sd ? Cfg.ArenaCenter.y - 150f : -30f))
+                if (transform.position.y < (sd ? Cfg.ArenaCenter.y - 150f : Mathf.Min(-30f, ThemeMaps.Custom != null && !float.IsNegativeInfinity(ThemeMaps.Custom.KillY) ? ThemeMaps.Custom.KillY - 12f : -30f)))
                 {
                     NetGame.SpawnPoint(m_Net.Team.Value, sd || (game != null && game.S == GameState.Waiting), m_Net.Slot.Value, out var p, out var y);
                     LocalTeleport(p, y);
@@ -749,7 +759,7 @@ namespace RockGame
         {
             var p = transform.position;
             CurrentLadder = null;
-            foreach (var c in Physics.OverlapCapsule(p + Vector3.up * 0.3f, p + Vector3.up * 1.4f, 0.45f, ~0, QueryTriggerInteraction.Collide))
+            foreach (var c in Physics.OverlapCapsule(p + Vector3.up * 0.3f, p + Vector3.up * 1.4f, 0.3f, ~0, QueryTriggerInteraction.Collide)) // (about your own width: on it only when you're touching it)
             {
                 if (!c.isTrigger || !c.TryGetComponent(out Ladder l)) continue;
                 // ladders work from the front only, and never from the top: standing on the floor it leads up to, you just walk

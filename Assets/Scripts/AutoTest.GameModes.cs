@@ -67,11 +67,11 @@ namespace RockGame
                     var pod = Cfg.SocketPos(team) - Vector3.up * 0.34f;
                     float off = new Vector2(me.transform.position.x - pod.x, me.transform.position.z - pod.z).magnitude;
                     Check(!me.Dead.Value && off < 1.2f, $"Bedwars: respawned inside the cryochamber ({off:0.00} m from its middle)");
-                    yield return Shot("gamemode_bedwars_pod_inside");
                     var p0 = me.transform.position;
                     Binds.TestHold(Bind.Forward, true);
                     yield return new WaitForSeconds(0.4f);
                     Check(Vector3.Distance(me.transform.position, p0) < 0.2f, "held in the pod until its doors open");
+                    yield return Shot("gamemode_bedwars_pod_inside"); // (after the check: a screenshot of a minimized test window can take most of the hold)
                     yield return new WaitForSeconds(1.2f);
                     Binds.TestReleaseAll();
                     Check(Vector3.Distance(me.transform.position, p0) > 0.6f, $"...then you walk out ({Vector3.Distance(me.transform.position, p0):0.0} m)");
@@ -91,6 +91,20 @@ namespace RockGame
                 yield return new WaitForSeconds(1f);
                 Check(g.MachineDown(enemy) && !g.CanRespawn(enemy), "an explosive right on it: the enemy machine is destroyed - they can't respawn");
                 yield return Shot("gamemode_bedwars_destroyed");
+                // the two clocks: the chambers break by themselves, then every base breaks down
+                {
+                    Check(g.ChambersLeft > 0f && g.BasesLeft > g.ChambersLeft, $"Bedwars clocks counting (chambers in {g.ChambersLeft:0} s, bases in {g.BasesLeft:0} s)");
+                    double now = Unity.Netcode.NetworkManager.Singleton.ServerTime.Time;
+                    g.ChambersBreakAt.Value = now + 0.5;
+                    g.BasesBreakAt.Value = now + 2.5;
+                    yield return new WaitForSeconds(1.2f);
+                    Check(g.MachineDown(team), "the chamber clock ran out: our chamber broke by itself");
+                    yield return Shot("gamemode_bedwars_chambers_broken");
+                    int before = Structure.All.Count;
+                    yield return new WaitForSeconds(4f);
+                    Check(Structure.All.Count == 0, $"the base clock ran out: every built piece came down ({before} -> {Structure.All.Count})");
+                    yield return Shot("gamemode_bedwars_bases_down");
+                }
                 // and ours: down, we're out
                 g.ServerMaybeHitMachine(mine, null, true);
                 yield return new WaitForSeconds(0.5f);

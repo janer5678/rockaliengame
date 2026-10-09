@@ -366,6 +366,7 @@ namespace RockGame
                 DrawBaseRadar(me, team, tc, k);
             // (no radar: the FPS counter goes under the team box - or into the corner with neither)
             if (m_RadarBottom < 0f) m_RadarBottom = GameSettings.HudTeamBox.Value ? 10 + 30 * k : 10 - 4 * k;
+            DrawBedList(game, k, m_RadarBottom + 34 * k); // (Bedwars: who still has a bed - under the radar and the FPS line)
             // ---- the gun's rounds, big, top left (pistol, revolver, shotgun) ----
             if ((Cfg.IsGun(me.HeldItem) || me.HeldItem == Item.Shotgun) && !me.Dead.Value)
             {
@@ -401,7 +402,7 @@ namespace RockGame
             }
             DrawHitMarker(cx, cy, k); // (ticks round the crosshair - it isn't replaced)
             if (pc.Scoped) DrawScope();
-            float charge = Mathf.Max(pc.DrawAmount, pc.RamCharge, pc.EatProgress, pc.PackUpProgress);
+            float charge = Mathf.Max(me.HeldItem == Item.Spear ? 0f : pc.DrawAmount, pc.RamCharge, pc.EatProgress, pc.PackUpProgress, pc.TabHoldProgress); // (no bar for the spear: it throws at once)
             if (pc.ClimbingOverWall) Shadowed(new Rect(0, cy + 42 * k, sw, 26 * k), "<color=#ff8a7a>Climbing over the spikes - hold W</color>", m_Center); // (no bar: it's slow, and it hurts) // (the last: holding E to pick up a chest / workbench)
             if (charge > 0)
             {
@@ -447,6 +448,14 @@ namespace RockGame
                 Fill(new Rect(hr.x + 3, hr.y + 3, (hr.width - 6) * hp, hr.height - 6), Color.Lerp(new Color(0.85f, 0.15f, 0.1f), new Color(0.3f, 0.85f, 0.3f), hp));
                 Shadowed(new Rect(hr.x + 8, hr.y + 2, hr.width, hr.height), $"<b>HP {me.Health.Value:0}</b>", m_Label);
                 float statY = hr.y - 26 * k;
+                if (pc.Breath < 0.999f)
+                {
+                    // your breath under a deep sea (Islands): bubbles that pop as it runs out - none left and you're drowning
+                    int full = Mathf.CeilToInt(pc.Breath * 10f - 0.001f);
+                    string bub = "<color=#8fdcff>" + new string('●', full) + "</color><color=#3a5566>" + new string('○', 10 - full) + "</color>";
+                    Shadowed(new Rect(hr.x + 2, statY, hw, 24 * k), full == 0 ? bub + "  <color=#ff6a5a><b>DROWNING - hold Space</b></color>" : bub, m_Label);
+                    statY -= 26 * k;
+                }
                 if (me.ArmorHp.Value > 0)
                 {
                     // second health bar, used up first
@@ -1146,7 +1155,7 @@ namespace RockGame
             if (Event.current.type == EventType.Repaint)
             {
                 Vector2 raw = Input.mousePosition;
-                moved = (raw - s_WheelLastMouse).sqrMagnitude > 4f && Application.isFocused; // (not while the game isn't the focused window: the mouse is somewhere else then)
+                moved = (raw - s_WheelLastMouse).sqrMagnitude > 4f && Application.isFocused && !Bootstrap.Testing; // (never in a test run - your real mouse is elsewhere; not while the game isn't the focused window: the mouse is somewhere else then)
                 s_WheelLastMouse = raw;
             }
             if (moved && d.magnitude > 18f * k)

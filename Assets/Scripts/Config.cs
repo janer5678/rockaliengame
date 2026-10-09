@@ -156,7 +156,7 @@ namespace RockGame
             {
                 case GameRules.Arsenal: return "Normal prices (the crossbow is cheaper), plus a POWER ITEMS menu next to crafting: sword, shotgun, revolver, C4 and headshot helmet. E on the upgrade station beside your alien machine: UPGRADES (fortify all your walls).";
                 case GameRules.Dna: return DnaDesc;
-                case GameRules.Bedwars: return "Classic, but no ball: smash the enemy alien machines (3 hits, or one explosive right on it). Your team respawns from its machine's cryochamber - lose it and you're out. Last team standing wins.";
+                case GameRules.Bedwars: return "Classic, but no ball: smash the enemy alien machines (3 hits, or one explosive right on it). Your team respawns from its machine's cryochamber - lose it and you're out. After 10 minutes every chamber breaks, 3 minutes later every base breaks down. Last team standing wins.";
                 case GameRules.ThreeGoal: return "Classic, but score 3 times: get the ball into your machine and a UFO drops it back in the middle. First to 3 wins (most goals when the clock runs out).";
                 case GameRules.Progress: return "Classic, but while the ball sits in your machine your progress bar fills - fill it and you win.";
                 case GameRules.Assassin: return "No ball: kill the enemies - each drops their skull - and hand a skull of every one of them into your machine (E). Skulls only drop in this mode.";
@@ -460,7 +460,7 @@ namespace RockGame
         [Tune("Building")] public static float BuildCooldown = 0f, UpgradeCooldown = 0f, DemolishRefund = 0.5f;
         [Tune("Building")] public static float PackUpHoldTime = 0.8f;   // hold E this long on an empty chest / workbench of yours to pick it up
         [Tune("Building")] public static float PackUpDelay = 0.2f;      // ...after first holding it this long (no bar until then: a tap stays a tap)
-        [Tune("Controls")] public static float TabHoldTime = 0.25f;     // Tab: a tap opens the bag, holding it this long shows the scoreboard
+        [Tune("Controls")] public static float TabHoldTime = 0.55f; // (longer than it was - 0.25 - with a bar filling while you hold it)     // Tab: a tap opens the bag, holding it this long shows the scoreboard
         [Tune("Building")] public static float WallRebuildCooldown = 25f; // seconds before a piece of a base can go back where one was just destroyed
         [Tune("Building")] public static int FoundationWood = 15, WallWood = 15, DoorwayWood = 20, WindowWood = 15, FloorWood = 12, StairsWood = 20;
         [Tune("Building")] public static int FoundationStone = 50, WallStone = 50, DoorwayStone = 40, WindowStone = 45, FloorStone = 30, StairsStone = 30;
@@ -511,9 +511,9 @@ namespace RockGame
         /// <summary>Fortify All Walls goes up a step every time your team buys it: stone, then sheet metal, then armoured
         /// (the old "refined" tier, back as the top step - only a little better than sheet metal).</summary>
         [Tune("Arsenal and Builder")] public static int FortifyStoneWood = 1000, FortifyMetalWood = 2000, FortifyArmouredWood = 3000;
-        [Tune("Arsenal and Builder")] public static int SwordWood = 500, C4Wood = 2500, HelmetWood = 800, ShotgunWood = 2000, ShellWood = 250, RevolverWood = 2500, RevolverAmmoWood = 1000;
+        [Tune("Arsenal and Builder")] public static int SwordWood = 500, C4Wood = 2500, HelmetWood = 800, ShotgunWood = 2000, ShellWood = 250, RevolverWood = 2500, RevolverAmmoWood = 500; // (a revolver bullet: 500 wood each)
         /// <summary>Revolver bullets come six at a time (a full cylinder) for RevolverAmmoWood.</summary>
-        [Tune("Arsenal and Builder")] public static int RevolverAmmoPerCraft = 6;
+        [Tune("Arsenal and Builder")] public static int RevolverAmmoPerCraft = 1;
         /// <summary>Sword: a slow, heavy swing (the swing time is adjustable) - its own head / body damage instead of the usual x2.</summary>
         [Tune("Arsenal and Builder")] public static float SwordSwingTime = 1.5f, SwordHeadDamage = 150f, SwordBodyDamage = 95f, SwordRange = 2.9f;
         /// <summary>Waterpipe shotgun: one shell at a time. Each pellet does full damage within PointBlank metres, falling off to FarMul at Range.</summary>
@@ -534,7 +534,7 @@ namespace RockGame
         /// <summary>The wood gen upgrade has three levels: the first builds the wood machine (Auto Wood Per Second), the
         /// next two speed it up - wood a second at each, and what each costs.</summary>
         [Tune("Auto Wood")] public static int AutoWoodLevel1 = 12, AutoWoodLevel2 = 25;
-        [Tune("Auto Wood")] public static int WoodGenBuildWood = 1000, WoodGen1Wood = 2000, WoodGen2Wood = 3000;
+        [Tune("Auto Wood")] public static int WoodGenBuildWood = 1000, WoodGen1Wood = 4000, WoodGen2Wood = 8000;
         /// <summary>Pistol: hitscan, this much damage a shot (a headshot has its own number instead of the usual x2).</summary>
         [Tune("Arsenal and Builder")] public static float PistolHeadDamage = 200f, PistolBodyDamage = 95f;
         /// <summary>Metal (Fortify All Walls' top step): its HP is the ...MetalHp numbers (MetalHpMul isn't used any more); melee does this share of its damage.</summary>
@@ -1005,7 +1005,7 @@ namespace RockGame
                 case Item.Shotgun: return $"one shell at a time, {ShotgunPellets * ShotgunPelletDamage:0} up close";
                 case Item.ShotgunShell: return "one shell for the shotgun";
                 case Item.Revolver: return $"{RevolverMag} rounds, {RevolverBodyDamage:0} body / {RevolverHeadDamage:0} head";
-                case Item.RevolverAmmo: return $"{RevolverAmmoPerCraft} bullets for the revolver (a full cylinder)";
+                case Item.RevolverAmmo: return RevolverAmmoPerCraft == 1 ? "one bullet for the revolver" : $"{RevolverAmmoPerCraft} bullets for the revolver";
                 case Item.C4: return "thrown: wrecks every building piece nearby";
                 case Item.Helmet: return "goes straight on: stops one headshot completely";
                 case Item.HeavyArmor: return $"{HeavyArmorHp} armour, goes straight on (wooden armour is {ArmorHp})";

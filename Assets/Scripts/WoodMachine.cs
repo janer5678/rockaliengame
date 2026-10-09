@@ -121,7 +121,7 @@ namespace RockGame
             body.transform.SetParent(t, false);
             var bc = body.AddComponent<BoxCollider>();
             bc.center = new Vector3(0, houseTop * 0.5f, -0.05f);
-            bc.size = new Vector3(hx * 2.3f, houseTop, hz * 2.2f);
+            bc.size = new Vector3(Mathf.Min(hx * 2.3f, 0.9f), houseTop, Mathf.Min(hz * 2.2f, 0.9f)); // (never out over the bedrock's edge: a wall goes there)
 
             // ---- the base ----
             if (level < 2)

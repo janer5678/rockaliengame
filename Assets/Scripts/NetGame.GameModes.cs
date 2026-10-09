@@ -20,6 +20,10 @@ namespace RockGame
         [Tune("Modes")] public static float ProgressSeconds = 90f;
         /// <summary>Bedwars: hits it takes to destroy a machine (one explosive right on it does it at once).</summary>
         [Tune("Modes")] public static int MachineHitsToBreak = 3;
+        /// <summary>Bedwars: seconds after the wall drops before every cryochamber (machine) breaks by itself - no more respawns.</summary>
+        [Tune("Modes")] public static float BedwarsChambersBreak = 600f;
+        /// <summary>Bedwars: seconds after the chambers break before every base breaks down completely (all built pieces go).</summary>
+        [Tune("Modes")] public static float BedwarsBasesBreak = 180f;
 
         /// <summary>A skull's Data: who it was (their team and slot), 1..16.</summary>
         public static int SkullData(int team, int slot) => Mathf.Clamp(team, 0, 3) * 4 + Mathf.Clamp(slot, 0, 3) + 1;
@@ -55,6 +59,14 @@ namespace RockGame
         public readonly NetworkVariable<Vector4> ProgressBars = new NetworkVariable<Vector4>();
         /// <summary>Bedwars: hits on each team's machine (4 bits each; MachineHitsToBreak = destroyed).</summary>
         public readonly NetworkVariable<int> MachineHits = new NetworkVariable<int>();
+        /// <summary>Bedwars: server time the cryochambers all break (0 = not counting yet).</summary>
+        public readonly NetworkVariable<double> ChambersBreakAt = new NetworkVariable<double>();
+        /// <summary>Bedwars: server time the bases all break down (0 = not counting yet).</summary>
+        public readonly NetworkVariable<double> BasesBreakAt = new NetworkVariable<double>();
+        /// <summary>Bedwars: seconds left on its two clocks (-1 = passed or not counting).</summary>
+        public float ChambersLeft => ChambersBreakAt.Value <= 0 || !IsSpawned ? -1f : Mathf.Max(-1f, (float)(ChambersBreakAt.Value - NetworkManager.ServerTime.Time));
+        public float BasesLeft => BasesBreakAt.Value <= 0 || !IsSpawned ? -1f : Mathf.Max(-1f, (float)(BasesBreakAt.Value - NetworkManager.ServerTime.Time));
+        bool m_ChambersBroken, m_BasesBroken;
         /// <summary>Assassin: the skulls handed in - (team &lt;&lt; 5) | skull data, in the order they went in.</summary>
         public readonly NetworkList<byte> SkullsIn = new NetworkList<byte>();
         /// <summary>Domination: the team that has the ball now (-1 nobody).</summary>
@@ -78,8 +90,14 @@ namespace RockGame
         /// <summary>Server, every frame (Update): the modes' own clocks and wins.</summary>
         void ServerTickGameModes(double now)
         {
-            if (!Cfg.ClassicMode || S != GameState.BallLive) return;
+            if (!Cfg.ClassicMode || S != GameState.BallLive)
+            {
+                if (S != GameState.GameOver && ChambersBreakAt.Value != 0) { ChambersBreakAt.Value = 0; BasesBreakAt.Value = 0; }
+                m_ChambersBroken = m_BasesBroken = false;
+                return;
+            }
             var ball = Ball.Instance;
+            if (Cfg.Bedwars) ServerBedwarsClocks(now);
             if (Cfg.ThreeGoal && m_GoalResetAt >= 0 && now >= m_GoalResetAt)
             {
                 // the goal's done: a UFO brings the ball back to the middle
@@ -118,6 +136,47 @@ namespace RockGame
                     if (any && teamHasPlayers) { alive++; last = t; }
                 }
                 if (alive == 1) ServerVictoryCutscene(last, $"{Cfg.TeamName[last]}: last team standing");
+            }
+        }
+
+        /// <summary>Server, Bedwars: the two clocks from the wall dropping - first every cryochamber breaks (nobody respawns),
+        /// then every base breaks down (all the built pieces go, a few at a time with a bang).</summary>
+        void ServerBedwarsClocks(double now)
+        {
+            if (ChambersBreakAt.Value <= 0)
+            {
+                float chambers = Mathf.Min(Cfg.BedwarsChambersBreak, BallPhase * 0.66f), bases = Mathf.Min(Cfg.BedwarsBasesBreak, BallPhase * 0.2f); // (a short test match: scaled down to fit)
+                ChambersBreakAt.Value = now + chambers;
+                BasesBreakAt.Value = now + chambers + bases;
+                m_ChambersBroken = m_BasesBroken = false;
+            }
+            if (!m_ChambersBroken && now >= ChambersBreakAt.Value)
+            {
+                m_ChambersBroken = true;
+                for (int t = 0; t < Cfg.TeamCount; t++)
+                {
+                    if (MachineDown(t)) continue;
+                    MachineHits.Value = (MachineHits.Value & ~(15 << (t * 4))) | (Cfg.MachineHitsToBreak << (t * 4));
+                    MachineFxRpc((byte)t, (byte)Cfg.MachineHitsToBreak);
+                }
+                BannerRpc(new FixedString64Bytes("THE CHAMBERS HAVE BROKEN"), new FixedString128Bytes("Nobody respawns any more"));
+            }
+            if (!m_BasesBroken && now >= BasesBreakAt.Value)
+            {
+                m_BasesBroken = true;
+                BannerRpc(new FixedString64Bytes("THE BASES ARE BREAKING DOWN"), new FixedString128Bytes("Every wall is coming down - fight it out"));
+            }
+            if (m_BasesBroken && Structure.All.Count > 0)
+            {
+                // a few pieces a frame (so it falls apart over a couple of seconds), with the odd blast for show
+                int n = Mathf.Max(4, Structure.All.Count / 60);
+                for (int i = 0; i < n && Structure.All.Count > 0; i++)
+                {
+                    var s = Structure.All[Random.Range(0, Structure.All.Count)];
+                    if (s == null || !s.IsSpawned) { Structure.All.Remove(s); continue; }
+                    if (Random.value < 0.15f) Fx.Server(FxKind.Break, s.transform.position, Vector3.up);
+                    s.ServerDamage(1e9f, false);
+                }
             }
         }
 

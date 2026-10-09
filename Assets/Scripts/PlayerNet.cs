@@ -804,6 +804,8 @@ namespace RockGame
             Health.Value = Cfg.MaxHealth;
             Dead.Value = false;
             NetGame.SpawnPoint(Team.Value, false, Slot.Value, out var pos, out var yaw);
+            // Bedwars: you start the match waking in your machine's cryochamber, like every respawn
+            if (CryoSpot(out var podPos, out var podYaw) && Slot.Value == 0) { TeleportRpc(podPos, podYaw); CryoWakeRpc(); return; }
             TeleportRpc(pos, yaw);
             Fx.Server(FxKind.Spawn, pos, Vector3.up);
         }

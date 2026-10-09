@@ -733,7 +733,7 @@ namespace RockGame
         {
             s_Glass = new GameObject("GlassWall");
             s_Glass.transform.SetParent(root, false);
-            BuildGlassDome(s_Glass.transform);
+            if (!Cfg.NoBall) BuildGlassDome(s_Glass.transform); // (no ball - Bedwars, Assassin: no dome over the middle, just the wall)
             if (Cfg.FourWay)
             {
                 // free for all: two diagonal walls in an X, one quarter of the map each
@@ -769,7 +769,7 @@ namespace RockGame
         static void BuildGlassPanel(Transform t, Vector3 dir)
         {
             float gy = Height(0, 0);
-            float notch = DomeRadius - 0.25f; // (a hair inside the faceted dome: no gap where they meet)
+            float notch = Cfg.NoBall ? 0.01f : DomeRadius - 0.25f; // (a hair inside the faceted dome: no gap where they meet; no dome: straight across)
             const float Bottom = -20f, Th = 0.15f;
             bool dome = MapDome.Built;
             float L = dome ? MapDome.ExtentAlong(dir) - 0.03f : Cfg.MapHalf + 2f;

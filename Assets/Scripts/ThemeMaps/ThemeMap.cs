@@ -276,13 +276,32 @@ namespace RockGame
             RestorePristine();
         }
 
-        static float s_NextFall;
+        static float s_NextFall, s_NextDrown;
+        static readonly System.Collections.Generic.Dictionary<PlayerNet, float> s_Under = new System.Collections.Generic.Dictionary<PlayerNet, float>();
+        /// <summary>Server, deep-water maps: a player whose head has been under the sea longer than their breath lasts
+        /// (PlayerController.BreathTime) drowns - it hurts every second until they come up.</summary>
+        static void ServerDrowning()
+        {
+            if (Time.time < s_NextDrown) return;
+            s_NextDrown = Time.time + 0.25f;
+            foreach (var p in PlayerNet.All.ToArray())
+            {
+                if (p == null) continue;
+                bool under = !p.Dead.Value && !p.Riding && PlayerController.HeadUnder(p.transform.position);
+                if (!under) { s_Under.Remove(p); continue; }
+                s_Under.TryGetValue(p, out float t);
+                t += 0.25f;
+                s_Under[p] = t;
+                if (t > PlayerController.BreathTime + 0.5f) p.ServerDamage(2.5f, null, KillCause.Died); // (10 a second, in quarter-second steps)
+            }
+        }
         /// <summary>Server: anyone below the map's KillY dies.</summary>
         static void ServerTickCustom()
         {
             var m = Custom;
             if (m == null) return;
             m.ServerTick();
+            if (m.DeepWater) ServerDrowning();
             if (float.IsNegativeInfinity(m.KillY) || Time.time < s_NextFall) return;
             s_NextFall = Time.time + 0.2f;
             foreach (var p in PlayerNet.All.ToArray())

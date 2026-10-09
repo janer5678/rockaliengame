@@ -12,7 +12,7 @@ namespace RockGame
     /// topiary, painted roses, chess pieces, a sign pointing every way - and cards, cups and clocks tumbling past in space.
     /// The band in from the slab's edges gets its own extra helping of all that (it was bare next to round the bases).
     /// The horses are Cheshire Cats; the berry bushes are clipped rose bushes full of strawberries, a jam tart on top.
-    /// LAUNCH PADS (bouncy mushroom caps on springs, arrows on them) throw you across the map: from by your base to the
+    /// LAUNCH PADS (shining gold mushroom caps on springs, glowing and sparkling, arrows on them) throw you across the map: from by your base to the
     /// edge of the middle, round from one flank into the next team's, and from the middle back out to your flank - a
     /// red and white target marks where each lands you. A lot of it moves: the teacups spin, the pocket watches and
     /// teapots rock, the big mushrooms squash and stretch, the card soldiers march on the spot, the topiary and signposts
@@ -312,12 +312,14 @@ namespace RockGame
             float th0 = Mathf.Atan2(bc.z, bc.x);
             float chessR = Mathf.Max(21f, PlazaR - 5f);
             float[] chessA = Cfg.FourWay ? new[] { -26f, 26f } : new[] { -50f, 50f };
+            var chessAt = new List<Vector2>();
             for (int i = 0; i < chessA.Length; i++)
             {
                 float a = th0 + chessA[i] * Mathf.Deg2Rad;
                 var p = new Vector3(Mathf.Cos(a) * chessR, 0, Mathf.Sin(a) * chessR);
                 int kind = i;
                 Each(p, 0f, (q, y) => Chess(k, cols, q, y, kind, (Mathf.RoundToInt(y / (360f / Cfg.Copies)) & 1) == 0));
+                if (Cfg.InFirstSector(p, 0f)) chessAt.Add(new Vector2(p.x, p.z));
             }
 
             // ---- the sides: lots more of it out toward the slab's edges (not the middle) - as busy as round the bases
@@ -441,6 +443,33 @@ namespace RockGame
             for (int i = 0; i < N(3); i++) if (RouteSpot(2.5f, out var p)) { int sd = rng.Next(); EachMove(p, R(0, 360), 0, 0.2f, 0f, (kk, cc, q, y) => Topiary(kk, cc, q, y, sd)); }
             for (int i = 0; i < N(2); i++) if (RouteSpot(3f, out var p)) { int sd = rng.Next(); Each(p, pathYaw + R(-20f, 20f), (q, y) => CardHouse(k, cols, q, y, sd)); }
             for (int i = 0; i < N(2); i++) if (RouteSpot(2f, out var p)) { int sd = rng.Next(); Each(p, R(0, 360), (q, y) => MushroomPatch(k, q, sd)); }
+            // ---- a little more toward the middle (just a few things - the ball's own few metres, the cover round it and
+            // the paths stay clear): its own random numbers, so everything else stays where it was
+            foreach (var c in chessAt) placed.Add((c, 2f));
+            var mrng = new System.Random(Cfg.MapSeed + 9393);
+            float MR(float a, float b) => a + (float)mrng.NextDouble() * (b - a);
+            bool MidSpot(float clear, out Vector3 p)
+            {
+                for (int tries = 0; tries < 160; tries++)
+                {
+                    float r = MR(15f + clear, Mathf.Max(15f + clear + 0.5f, PlazaR + 3f - clear * 0.5f)), a = MR(0f, 6.283f);
+                    p = new Vector3(Mathf.Cos(a) * r, 0f, Mathf.Sin(a) * r);
+                    if (!Cfg.InFirstSector(p, 3f + clear) || !InSlab(p.x, p.z)) continue;
+                    if (PathLat(p.x, p.z) < 5f + clear) continue;
+                    bool hit = false;
+                    foreach (var q in placed) if ((q.p - new Vector2(p.x, p.z)).magnitude < q.r + clear + 1.5f) { hit = true; break; }
+                    if (hit) continue;
+                    placed.Add((new Vector2(p.x, p.z), clear));
+                    return true;
+                }
+                p = default;
+                return false;
+            }
+            if (MidSpot(3.4f, out var mm)) { int sd = mrng.Next(); float s = MR(0.6f, 0.8f); EachMove(mm, MR(0, 360), 2, 1.3f, 0.045f, (kk, cc, q, y) => Mushroom(kk, cc, q, y, s, sd, true)); }
+            if (MidSpot(3f, out var mt)) { int sd = mrng.Next(); float s = MR(0.65f, 0.8f); EachMove(mt, MR(0, 360), 0, 0.45f, 0f, (kk, cc, q, y) => Teacup(kk, cc, q, y, s, sd)); }
+            for (int i = 0; i < 2; i++) if (MidSpot(2f, out var mr)) { int sd = mrng.Next(); Each(mr, MR(0, 360), (q, y) => RoseBush(k, cols, q, y, sd)); }
+            if (MidSpot(1.8f, out var mc)) { int sd = mrng.Next(); EachMove(mc, MR(0, 360), 1, 1.1f, 4f, (kk, cc, q, y) => LoneCard(kk, cc, q, y, sd)); }
+            if (MidSpot(2.2f, out var mb)) { int sd = mrng.Next(); Each(mb, MR(0, 360), (q, y) => Books(k, cols, q, y, sd)); }
             ThemeKitB.Spawn(root, "wonderland props", k, null, true);
 
             BuildFloaters(root);
@@ -448,7 +477,7 @@ namespace RockGame
         }
 
         // ---------------------------------------------------------------- launch pads (giant springy mushroom tops)
-        class Pad { public Transform Top; public Vector3 Pos, Target; public float Flight, Squash, Ph; }
+        class Pad { public Transform Top, Spin; public Vector3 Pos, Target; public float Flight, Squash, Ph; }
         readonly List<Pad> m_Pads = new List<Pad>();
 
         /// <summary>Things that move by themselves: 0 spin round (deg/s), 1 rock to and fro about Axis (deg), 2 squash and
@@ -528,10 +557,55 @@ namespace RockGame
             }
         }
 
-        static readonly Color k_PadCap = new Color(0.95f, 0.35f, 0.62f), k_PadSpot = new Color(1f, 0.97f, 0.9f);
+        static readonly Color k_PadCap = new Color(1f, 0.76f, 0.24f), k_PadSpot = new Color(1f, 0.93f, 0.62f);
+        static Material s_PadGold, s_PadGlow;
 
-        /// <summary>A launch pad: a gold ring on springs with a big bouncy spotted mushroom cap set in it (it squashes when it
-        /// throws you), glowing arrows on it pointing where it throws you.</summary>
+        /// <summary>The pads' gold: shiny, a little metallic, and glowing from inside (it shines even in the shade).</summary>
+        static Material PadGold()
+        {
+            if (s_PadGold != null) return s_PadGold;
+            var m = Art.NewMat(k_PadCap);
+            m.name = "launch pad gold";
+            if (m.HasProperty("_Metallic")) m.SetFloat("_Metallic", 0.45f);
+            if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.85f);
+            if (m.HasProperty("_EmissionColor")) { m.EnableKeyword("_EMISSION"); m.SetColor("_EmissionColor", new Color(1f, 0.66f, 0.16f) * 0.85f); }
+            return s_PadGold = m;
+        }
+
+        /// <summary>Light added on top (no depth writes, both sides; vertex colours, uv0 twinkles them - RockGame/SpaceSky):
+        /// the pads' soft glow and their sparkles.</summary>
+        static Material PadGlow()
+        {
+            if (s_PadGlow != null) return s_PadGlow;
+            var sh = Resources.Load<Shader>("SpaceArena/SpaceSky");
+            if (sh == null || !sh.isSupported) return s_PadGlow = ThemeKitB.Glow(new Color(1f, 0.8f, 0.35f), 1.6f);
+            var m = new Material(sh) { name = "launch pad glow" };
+            m.SetColor("_Color", new Color(1.6f, 1.35f, 0.9f, 1f));
+            m.SetFloat("_SrcBlend", (float)BlendMode.One);
+            m.SetFloat("_DstBlend", (float)BlendMode.One);
+            m.SetFloat("_ZWrite", 0f);
+            m.SetFloat("_Cull", (float)CullMode.Off);
+            m.renderQueue = (int)RenderQueue.Transparent;
+            return s_PadGlow = m;
+        }
+
+        /// <summary>A twinkle of light: a four-pointed star in two upright planes and one flat one (seen from anywhere).</summary>
+        static void Sparkle(MeshBatch mb, Vector3 c, float s)
+        {
+            var axes = new[] { (Vector3.right, Vector3.up), (Vector3.forward, Vector3.up), (Vector3.right, Vector3.forward) };
+            foreach (var (u0, v0) in axes)
+            {
+                Vector3 u = u0 * s, v = v0 * s, n = Vector3.Cross(u0, v0);
+                Vector3 p0 = c + v * 1.3f, p1 = c + u * 0.22f, p2 = c - v * 1.3f, p3 = c - u * 0.22f;
+                Vector3 q0 = c + u, q1 = c + v * 0.22f, q2 = c - u, q3 = c - v * 0.22f;
+                mb.Tri(p0, p1, p2, n); mb.Tri(p0, p2, p3, n);
+                mb.Tri(q0, q1, q2, n); mb.Tri(q0, q2, q3, n);
+            }
+        }
+
+        /// <summary>A launch pad: a gold ring on springs with a big bouncy shining GOLD mushroom cap set in it (it squashes
+        /// when it throws you), glittering spots and glowing arrows on it pointing where it throws you, a soft golden glow
+        /// round it and sparkles twinkling and circling over it.</summary>
         Pad MakePad(Transform parent, Vector3 at, Vector3 target, float flight)
         {
             var go = new GameObject("launch pad");
@@ -539,7 +613,7 @@ namespace RockGame
             go.transform.localPosition = at;
             var flat = target - at; flat.y = 0f;
             var look = Quaternion.LookRotation(flat.normalized);
-            var k = new MeshKit();
+            var k = new MeshKit(); var rim = new MeshKit();
             ThemeKitB.Cyl(k, Vector3.down * 0.15f, Vector3.up * 0.14f, 2.05f, 1.95f, 22, k_Gold, false, true);
             for (int i = 0; i < 10; i++)
             {
@@ -548,7 +622,15 @@ namespace RockGame
                 for (int c = 0; c < 3; c++)
                     ThemeKitB.Cyl(k, b + Vector3.up * (0.14f + c * 0.07f), b + Vector3.up * (0.18f + c * 0.07f), 0.12f, 0.12f, 6, new Color(0.75f, 0.75f, 0.8f), false, true);
             }
+            // a glowing gold band round the ring's top edge
+            for (int i = 0; i < 32; i++)
+            {
+                float a0 = i * Mathf.PI * 2f / 32f, a1 = (i + 1) * Mathf.PI * 2f / 32f;
+                Vector3 d0 = new Vector3(Mathf.Cos(a0), 0f, Mathf.Sin(a0)), d1 = new Vector3(Mathf.Cos(a1), 0f, Mathf.Sin(a1));
+                ThemeKitB.Quad(rim, d0 * 1.97f + Vector3.up * 0.15f, d1 * 1.97f + Vector3.up * 0.15f, d1 * 2.12f + Vector3.up * 0.15f, d0 * 2.12f + Vector3.up * 0.15f, Color.white, Vector3.up);
+            }
             ThemeKitB.Spawn(go.transform, "pad ring", k, null, true);
+            ThemeKitB.Spawn(go.transform, "pad ring glow", rim, ThemeKitB.Glow(new Color(1f, 0.78f, 0.3f), 2.2f), false);
             // (low enough to step up onto)
             ThemeKitB.BoxCol(go.transform, Vector3.up * 0.06f, new Vector3(2.5f, 0.42f, 2.5f), Quaternion.identity);
             ThemeKitB.BoxCol(go.transform, Vector3.up * 0.06f, new Vector3(2.5f, 0.42f, 2.5f), Quaternion.Euler(0, 45f, 0));
@@ -556,15 +638,15 @@ namespace RockGame
             top.SetParent(go.transform, false);
             top.localPosition = Vector3.up * 0.14f;
             top.localRotation = look;
-            var tk = new MeshKit(); var gk = new MeshKit();
-            ThemeKitB.Ball(tk, Vector3.zero, new Vector3(1.7f, 0.2f, 1.7f), Quaternion.identity, k_PadCap, 1);
-            for (int i = 0; i < 7; i++)
+            var tk = new MeshKit(); var gk = new MeshKit(); var sk = new MeshKit();
+            ThemeKitB.Ball(tk, Vector3.zero, new Vector3(1.7f, 0.2f, 1.7f), Quaternion.identity, Color.white, 1);
+            // glittering spots on the cap
+            for (int i = 1; i < 7; i++)
             {
-                float a = i * 0.9f + 0.4f, d = i == 0 ? 0f : 1.05f;
+                float a = i * 0.9f + 0.4f, d = 1.05f;
                 var c = new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d);
                 float h = 0.2f * Mathf.Sqrt(Mathf.Max(0f, 1f - (d * d) / (1.7f * 1.7f)));
-                if (i == 0) continue;
-                ThemeKitB.Ball(tk, c + Vector3.up * (h - 0.02f), new Vector3(0.28f, 0.05f, 0.28f), Quaternion.identity, k_PadSpot, 0);
+                ThemeKitB.Ball(sk, c + Vector3.up * (h - 0.02f), new Vector3(0.24f, 0.05f, 0.24f), Quaternion.identity, Color.white, 0);
             }
             // arrows (chevrons) along its top, pointing the way it throws you
             for (int i = 0; i < 3; i++)
@@ -575,9 +657,43 @@ namespace RockGame
                 ThemeKitB.Tri(gk, new Vector3(0.4f, y, z - 0.25f), new Vector3(0f, y, z - 0.05f), new Vector3(0f, y, z + 0.15f), Color.white, Vector3.up);
                 ThemeKitB.Tri(gk, new Vector3(0.4f, y, z - 0.25f), new Vector3(0.4f, y, z - 0.45f), new Vector3(0f, y, z - 0.05f), Color.white, Vector3.up);
             }
-            ThemeKitB.Spawn(top, "pad cap", tk, null, true);
-            ThemeKitB.Spawn(top, "pad arrows", gk, ThemeKitB.Glow(new Color(1f, 0.85f, 0.35f), 2.2f), false);
-            return new Pad { Top = top, Pos = at, Target = target, Flight = flight, Ph = Mathf.Repeat(at.x * 0.53f + at.z * 0.29f, 6.283f) };
+            ThemeKitB.Spawn(top, "pad cap", tk, PadGold(), true);
+            ThemeKitB.Spawn(top, "pad glitter", sk, ThemeKitB.Glow(k_PadSpot, 2.4f), false);
+            ThemeKitB.Spawn(top, "pad arrows", gk, ThemeKitB.Glow(new Color(1f, 0.97f, 0.86f), 2.8f), false);
+            float ph = Mathf.Repeat(at.x * 0.53f + at.z * 0.29f, 6.283f);
+            // the soft glow: a pool of golden light on the ground round it and a haze rising off it, fading out
+            var halo = new MeshBatch { Colored = true };
+            var warm = new Color(0.62f, 0.4f, 0.1f);
+            const int hs = 28;
+            for (int i = 0; i < hs; i++)
+            {
+                float a0 = i * Mathf.PI * 2f / hs, a1 = (i + 1) * Mathf.PI * 2f / hs;
+                Vector3 d0 = new Vector3(Mathf.Cos(a0), 0f, Mathf.Sin(a0)), d1 = new Vector3(Mathf.Cos(a1), 0f, Mathf.Sin(a1));
+                halo.TriC(d0 * 2.1f + Vector3.up * 0.06f, d1 * 2.1f + Vector3.up * 0.06f, d1 * 3.6f + Vector3.up * 0.06f, warm, warm, Color.black);
+                halo.TriC(d0 * 2.1f + Vector3.up * 0.06f, d1 * 3.6f + Vector3.up * 0.06f, d0 * 3.6f + Vector3.up * 0.06f, warm, Color.black, Color.black);
+                var hz = warm * 0.45f;
+                halo.TriC(d0 * 2.05f + Vector3.up * 0.15f, d1 * 2.05f + Vector3.up * 0.15f, d1 * 2.35f + Vector3.up * 2.2f, hz, hz, Color.black);
+                halo.TriC(d0 * 2.05f + Vector3.up * 0.15f, d1 * 2.35f + Vector3.up * 2.2f, d0 * 2.35f + Vector3.up * 2.2f, hz, Color.black, Color.black);
+            }
+            var hg = halo.Build(go.transform, "pad halo", PadGlow(), false);
+            hg.AddComponent<OwnedMesh>().Mesh = hg.GetComponent<MeshFilter>().sharedMesh;
+            // sparkles over it, each twinkling in its own time (the shader does it), the lot slowly circling
+            var spin = new GameObject("pad sparkles").transform;
+            spin.SetParent(go.transform, false);
+            var sp = new MeshBatch { Colored = true };
+            var srng = new System.Random(Mathf.RoundToInt(at.x * 31f + at.z * 17f) & 0xffff);
+            float S(float lo, float hi) => lo + (float)srng.NextDouble() * (hi - lo);
+            for (int i = 0; i < 16; i++)
+            {
+                float a = S(0f, 6.283f), d = S(0.5f, 2.5f);
+                var c = new Vector3(Mathf.Cos(a) * d, S(0.35f, 2.8f), Mathf.Sin(a) * d);
+                sp.Tint = Color.Lerp(new Color(1f, 0.85f, 0.45f), Color.white, S(0f, 0.6f));
+                sp.Extra = new Vector4(S(0f, 6.283f), 0.95f, S(1.5f, 4.5f), 0f);
+                Sparkle(sp, c, S(0.1f, 0.24f));
+            }
+            var sg = sp.Build(spin, "sparkles", PadGlow(), false);
+            sg.AddComponent<OwnedMesh>().Mesh = sg.GetComponent<MeshFilter>().sharedMesh;
+            return new Pad { Top = top, Spin = spin, Pos = at, Target = target, Flight = flight, Ph = ph };
         }
 
         /// <summary>Where a pad lands you: a big red and white target painted on the ground.</summary>
@@ -1451,6 +1567,12 @@ namespace RockGame
                 float spring = Mathf.Sin((1f - pad.Squash) * 18f) * pad.Squash;
                 pad.Top.localScale = new Vector3(1f + sq * 0.12f - idle * 0.3f, 1f + idle - spring * 0.8f, 1f + sq * 0.12f - idle * 0.3f);
                 pad.Top.localPosition = Vector3.up * (0.14f + spring * 0.25f);
+                // (its sparkles circle slowly, bob, and fling round when it throws someone)
+                if (pad.Spin != null)
+                {
+                    pad.Spin.localRotation = Quaternion.Euler(0f, t * 16f + pad.Ph * 57f + sq * 70f, 0f);
+                    pad.Spin.localPosition = Vector3.up * (Mathf.Sin(t * 0.9f + pad.Ph) * 0.12f + sq * 0.4f);
+                }
             }
             var cam = Camera.main;
             if (m_Sky != null)

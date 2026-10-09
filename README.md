@@ -513,3 +513,13 @@ Networking: movement is owner-authoritative (NetworkTransform in Owner mode). Re
 - **Ladders** (all): no push at the top and none when you jump off - you climb until you can walk forward onto the floor; climbable from the front only (`Ladder.FromFront`), never grabbed from the floor at their top.
 - **Theme map hooks**: `TreeTrunkRadius` (the tree X and trunk collider follow each map's real trunk), `WaterSpeed`, `IceSteer` (Minecraft-like ice), DeepWater now means slow swimming; `ResourceNode.BuildBerryBush` (every map's bush is the real berry bush in its colours). Diagonal bases keep the machines square to the grid (`Cfg.BackDir`).
 
+
+### Fifth round
+- **Jonah mode**: the starter items still say CRAFT; only the trade stations' items (tier 1+) say TRADE.
+- **Prices**: a revolver bullet is 500 wood each (`RevolverAmmoPerCraft` 1); the Wood Gen is 1000 / 4000 / 8000. The wood machine's collider stays on the bedrock so a wall can go on the edge next to it at every level.
+- **HUD**: no charge bar for the spear. Tab must be held longer (`Cfg.TabHoldTime` 0.55 s) and fills the centre bar while held (`PlayerController.TabHoldProgress`).
+- **Bedwars** (and Assassin, the no-ball modes): no glass dome in the middle - just the straight wall; a stray ball is despawned; the first player of each team starts the match in the cryochamber; the team chips under the timer are replaced by a small top-left list saying which teams still have a BED (`Hud.DrawBedList`).
+- **Islands**: no buoys; off a boat you sink very slowly, hold Space to swim up, forwards is slow; your breath (`PlayerController.BreathTime` 14 s) shows as bubbles over the health bar, then you drown at 10 HP a second (server: `ThemeMaps.ServerDrowning`).
+- **Ladders**: you're only on one when you touch it (smaller player check, thin slab in front of the rungs); theme ladders' rails end just above the last rung.
+- **Ice**: more steering while slipping (`IceSteer` 11). **Swamp**: 15% more lily pads. Wild horses make no hoof sounds (only ridden ones).
+- **Bedwars clocks**: 10 minutes after the wall drops every cryochamber breaks by itself (nobody respawns), and 3 minutes after that every base breaks down (all built pieces come down over a few seconds). Both counts show under the bed list, top left (`Cfg.BedwarsChambersBreak` / `BedwarsBasesBreak`; scaled down in short test matches).

@@ -449,7 +449,7 @@ namespace RockGame
             float bp = Mathf.Max(3 * k, row * 0.14f);
             var br = new Rect(rr.xMax - bw - 6 * k, rr.y + bp, bw, row - 2 * bp);
             if (FlatBtn(br, ok ? k_BtnOk : k_BtnNo, k_BtnOkHi, ok && canClick)) me.CraftRpc(idx);
-            GUI.Label(br, locked ? "LOCKED" : Cfg.Jonah ? "TRADE" : "CRAFT", /* (Jonah mode: the trade stations trade) */ CraftStyle(Mathf.Min(17 * k, row * 0.36f), FontStyle.Bold, TextAnchor.MiddleCenter, ok ? Color.white : new Color(1, 1, 1, 0.35f)));
+            GUI.Label(br, locked ? "LOCKED" : Cfg.Jonah && Cfg.CraftTier(rec.Output) >= 1 ? "TRADE" : "CRAFT", /* (Jonah mode: the trade stations' things TRADE; the starter ones still CRAFT) */ CraftStyle(Mathf.Min(17 * k, row * 0.36f), FontStyle.Bold, TextAnchor.MiddleCenter, ok ? Color.white : new Color(1, 1, 1, 0.35f)));
         }
     }
 }
