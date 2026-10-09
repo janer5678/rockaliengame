@@ -14,6 +14,7 @@ namespace RockGame
     /// </summary>
     public class SwampMap : ThemeMap
     {
+        struct PadSpot { public Vector3 P; public float R; public int I, J; }
         public override MapKind Kind => MapKind.Swamp;
         public override string Label => "Swamp";
         public override string Blurb => "Murky water everywhere but your base, lost in golden fog. Scattered lily pads are solid ground - hop from one to the next (they don't always reach). The water is VERY slow to wade - or craft a BOAT (1500 wood).";
@@ -288,6 +289,7 @@ namespace RockGame
             long Key(int i, int j) => ((long)i << 32) ^ (uint)j;
             int n = Mathf.CeilToInt(half / PadStep);
             int flowers = 0;
+            var placed = new List<PadSpot>();
             bool Crowds(Vector3 p, float r, int i, int j)
             {
                 for (int di = -2; di <= 2; di++)
@@ -316,9 +318,41 @@ namespace RockGame
                 if (Crowds(p, r, i, j)) continue; // (a knocked pad already sits here)
                 if (Mathf.Abs(p.x) > half - 1.2f || Mathf.Abs(p.z) > half - 1.2f || !Deep(p.x, p.z)) continue;
                 if (!Deep(p.x + r, p.z) || !Deep(p.x - r, p.z) || !Deep(p.x, p.z + r) || !Deep(p.x, p.z - r)) continue;
+                padAt[Key(i, j)] = new Vector3(p.x, r, p.z);
+                placed.Add(new PadSpot { P = p, R = r, I = i, J = j });
+            }
+            // the same pads, but a stranded one (too far from every other to hop) slides towards its nearest neighbour until
+            // the gap's a jump - so more routes join up across the water, without adding a single pad
+            for (int a = 0; a < placed.Count; a++)
+            {
+                var pa = placed[a];
+                int best = -1;
+                float bestGap = float.MaxValue;
+                for (int b = 0; b < placed.Count; b++)
+                {
+                    if (b == a) continue;
+                    var pb = placed[b];
+                    float gap = new Vector2(pb.P.x - pa.P.x, pb.P.z - pa.P.z).magnitude - pa.R - pb.R;
+                    if (gap < bestGap) { bestGap = gap; best = b; }
+                }
+                if (best < 0 || bestGap <= 3.2f || bestGap > 9f) continue;
+                var nb = placed[best];
+                var dir = new Vector3(nb.P.x - pa.P.x, 0f, nb.P.z - pa.P.z).normalized;
+                var np = pa.P + dir * (bestGap - 2.4f);
+                bool ok = Cfg.InFirstSector(np, pa.R + 0.3f) && Mathf.Abs(np.x) <= half - 1.2f && Mathf.Abs(np.z) <= half - 1.2f
+                    && Deep(np.x, np.z) && Deep(np.x + pa.R, np.z) && Deep(np.x - pa.R, np.z) && Deep(np.x, np.z + pa.R) && Deep(np.x, np.z - pa.R);
+                for (int b = 0; ok && b < placed.Count; b++)
+                    if (b != a && new Vector2(placed[b].P.x - np.x, placed[b].P.z - np.z).magnitude < placed[b].R + pa.R + 0.5f) ok = false;
+                if (!ok) continue;
+                pa.P = np;
+                placed[a] = pa;
+                padAt[Key(pa.I, pa.J)] = new Vector3(np.x, pa.R, np.z);
+            }
+            foreach (var sp in placed)
+            {
+                var p = sp.P; float r = sp.R; int i = sp.I, j = sp.J;
                 float notch = TmKit.Hash(i, j, 84) * 360f;
                 pads.Add(p, r, notch, TmKit.Hash(i, j, 85) < 0.5f ? 0 : 1);
-                padAt[Key(i, j)] = new Vector3(p.x, r, p.z);
                 if (TmKit.Hash(i, j, 86) < 0.1f && flowers < 60)
                 {
                     flowers++;

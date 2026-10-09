@@ -1167,6 +1167,20 @@ namespace RockGame
         public bool SpearWindingUp => m_DrawStart >= 0f && m_Net != null && m_Net.HeldItem == Item.Spear;
         public bool SpearThrowCommitted => m_SpearReleaseAt >= 0f;
 
+        /// <summary>The spear's launch from the hand so its arc comes down right on what the crosshair's on (lifted just
+        /// enough for the spear's drop over that distance). Out of reach: straight along the crosshair.</summary>
+        public static Vector3 SpearAimAt(Vector3 from, Vector3 target, float speed, Vector3 fallback)
+        {
+            var d = target - from;
+            var flat = new Vector3(d.x, 0f, d.z);
+            float x = flat.magnitude, y = d.y, g = Cfg.SpearGravity, v2 = speed * speed;
+            if (x < 0.05f || g <= 0f) return d.normalized * speed;
+            float disc = v2 * v2 - g * (g * x * x + 2f * y * v2);
+            if (disc < 0f) return fallback * speed;
+            float ang = Mathf.Atan((v2 - Mathf.Sqrt(disc)) / (g * x)); // (the low, flat arc)
+            return (flat / x * Mathf.Cos(ang) + Vector3.up * Mathf.Sin(ang)) * speed;
+        }
+
         /// <summary>The spear leaves the hand: thrown where you look, as hard as the wind-up was long.</summary>
         void ReleaseSpear()
         {
@@ -1182,11 +1196,11 @@ namespace RockGame
                 // from where the spear is on screen (your hand), aimed at what the crosshair's on - unless something's
                 // between your eye and your hand (then the old way, from the eye: no throwing through walls)
                 var hand = m_VM.HeldItemPos;
-                var target = Aim(ray, 200f, out var th) ? th.point : ray.GetPoint(200f);
+                var target = Aim(ray, 200f, out var th) ? th.point : ray.GetPoint(60f);
                 if ((hand - ray.origin).sqrMagnitude < 1.5f * 1.5f && !Physics.Linecast(ray.origin, hand, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore) && (target - hand).sqrMagnitude > 4f)
                 {
                     origin = hand;
-                    vel = (target - hand).normalized * Cfg.SpearThrowSpeed * m_SpearPower;
+                    vel = SpearAimAt(hand, target, Cfg.SpearThrowSpeed * m_SpearPower, ray.direction);
                 }
             }
             ArrowProjectile.SpawnSpear(origin, vel, m_Net, true);

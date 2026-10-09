@@ -70,6 +70,22 @@ namespace RockGame
 
         IEnumerator SpearThrowFeelTests(PlayerNet me, PlayerController pc, int team)
         {
+            // thrown from the hand, the spear's arc comes down right on what the crosshair's on (near, far, up, down)
+            {
+                var hand = me.EyePos + me.transform.right * 0.35f - Vector3.up * 0.3f;
+                float worst = 0f;
+                foreach (var tgt in new[] { new Vector3(0, -1.5f, 8f), new Vector3(3f, -1.5f, 25f), new Vector3(-4f, 6f, 30f), new Vector3(0, -8f, 15f) })
+                {
+                    var target = me.EyePos + tgt;
+                    var v = PlayerController.SpearAimAt(hand, target, Cfg.SpearThrowSpeed, Vector3.forward);
+                    // fly it (as ArrowProjectile does) and see how close it passes to the target
+                    Vector3 p = hand, vel = v;
+                    float best = 99f;
+                    for (int s = 0; s < 600; s++) { vel += Vector3.down * Cfg.SpearGravity * 0.005f; p += vel * 0.005f; best = Mathf.Min(best, Vector3.Distance(p, target)); }
+                    worst = Mathf.Max(worst, best);
+                }
+                Check(worst < 0.3f, $"the spear from the hand flies right to the crosshair's spot (misses by at most {worst:0.00} m)");
+            }
             for (int i = 0; i < Cfg.PlayerSlots; i++) if (me.SlotAt(i).Id == Item.Spear) me.Inv[i] = default;
             me.ServerGive(Item.Spear, 4);
             yield return new WaitForSeconds(0.3f);

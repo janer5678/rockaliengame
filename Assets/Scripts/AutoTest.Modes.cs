@@ -784,6 +784,31 @@ namespace RockGame
             pc.LocalTeleport(ground, yaw);
             pc.SetLook(yaw, 4f);
             yield return Snap("map_" + name + "_2_ground");
+            if (ThemeMaps.Custom != null && ThemeMaps.Custom.DeepWater)
+            {
+                // the deep sea: a jump in is caught by the water, you sink slowly, and holding Space floats you back up
+                Vector3 sea = default;
+                for (float r = 20f; r < Cfg.MapHalf && sea == default; r += 2f)
+                for (int a = 0; a < 36 && sea == default; a++)
+                {
+                    var d = Quaternion.Euler(0, a * 10f, 0) * Vector3.forward * r;
+                    if (MapBuilder.Height(d.x, d.z) < ThemeMaps.WaterY - 6f) sea = new Vector3(d.x, 0, d.z);
+                }
+                Check(sea != default, $"deep sea found at {sea}");
+                pc.LocalTeleport(sea + Vector3.up * (ThemeMaps.WaterY + 2f), 0f);
+                yield return new WaitForSeconds(1.5f);
+                float caught = me.transform.position.y;
+                Check(caught > ThemeMaps.WaterY - 3.5f, $"jumping in: the water catches you (feet {ThemeMaps.WaterY - caught:0.0} m under after 1.5 s)");
+                yield return new WaitForSeconds(2f);
+                float sank = caught - me.transform.position.y;
+                Check(pc.Swimming && sank > 0.2f && sank < 2f, $"left alone you sink slowly ({sank:0.0} m in 2 s)");
+                Binds.TestHold(Bind.Jump, true);
+                yield return new WaitForSeconds(3f);
+                float feet = ThemeMaps.WaterY - me.transform.position.y;
+                yield return Snap("map_" + name + "_3_floating");
+                Binds.TestReleaseAll();
+                Check(feet < 1.7f, $"holding Space floats you up to the surface, head out (feet {feet:0.0} m under)");
+            }
 
             // a spot of each zone in our half (first sector)
             Vector3 Find(System.Func<float, float, bool> ok)
