@@ -206,7 +206,7 @@ namespace RockGame
             var ray = CenterRay();
             best = default;
             bool found = false;
-            foreach (var h in Physics.RaycastAll(ray, 120f, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore))
+            foreach (var h in Physics.RaycastAll(ray, PlayerNet.PortalRange, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore))
             {
                 if (h.collider.transform.IsChildOf(transform) || h.collider.GetComponentInParent<PlayerNet>() != null) continue;
                 if (!found || h.distance < best.distance) { best = h; found = true; }

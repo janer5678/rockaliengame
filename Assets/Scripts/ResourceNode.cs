@@ -114,6 +114,7 @@ namespace RockGame
         void OnAmountChanged(int prev, int cur)
         {
             if (cur < prev && !IsBush) m_Shake = 0.3f;
+            if (cur < prev && Kind.Value == Tree && m_Visual != null) ThemeMaps.Custom?.TreeHit(m_Visual.transform); // THEME MAPS (the Cube's trees glitch)
             RefreshState();
         }
 

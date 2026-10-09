@@ -102,6 +102,9 @@ namespace RockGame
         public virtual void ServerTick() { }
         /// <summary>Every frame on every peer while the map is up (moving platforms, ambience).</summary>
         public virtual void ClientTick() { }
+        /// <summary>(every peer) A tree was just chopped (its wood went down); `visual` is the tree's visual root (what
+        /// BuildTree built under).</summary>
+        public virtual void TreeHit(Transform visual) { }
         /// <summary>Once the map is built (every peer): sky, fog, light. Undo it in Cleanup.</summary>
         public virtual void ApplySky() { }
         /// <summary>The map is being torn down (back to the menu, another map).</summary>

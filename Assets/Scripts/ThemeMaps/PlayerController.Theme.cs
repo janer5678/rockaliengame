@@ -43,11 +43,11 @@ namespace RockGame
             if (m_Net != null) TickBreath();
             if (Swimming)
             {
-                // swimming: you sink, very slowly; hold Space to swim up at a decent pace (and keep your head out at the
-                // top). Going forwards is the slow part.
+                // water like other games: let go and you sink, slowly; hold Space and you float up and stay bobbing at
+                // the surface with your head out. Going forwards is the slow part.
                 float surface = ThemeMaps.WaterY - 1.25f; // (feet this far under: the head is out)
-                float want = Binds.Held(Bind.Jump) ? (p.y < surface ? 3.2f : 0f) : -0.35f;
-                m_VelY = Mathf.MoveTowards(m_VelY, want, 10f * Time.deltaTime);
+                float want = Binds.Held(Bind.Jump) ? (p.y < surface - 0.15f ? 2f : Mathf.Sin(Time.time * 3f) * 0.25f + (surface - p.y) * 2f) : -0.3f;
+                m_VelY = Mathf.MoveTowards(m_VelY, want, 6f * Time.deltaTime);
                 return planar * 0.3f;
             }
             if (grounded && ThemeMaps.OnIce(p))

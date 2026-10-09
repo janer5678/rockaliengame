@@ -288,6 +288,13 @@ namespace RockGame
             long Key(int i, int j) => ((long)i << 32) ^ (uint)j;
             int n = Mathf.CeilToInt(half / PadStep);
             int flowers = 0;
+            bool Crowds(Vector3 p, float r, int i, int j)
+            {
+                for (int di = -2; di <= 2; di++)
+                for (int dj = -2; dj <= 2; dj++)
+                    if (padAt.TryGetValue(Key(i + di, j + dj), out var q) && new Vector2(q.x - p.x, q.z - p.z).magnitude < q.y + r + 0.5f) return true;
+                return false;
+            }
             for (int j = 0; j < n; j++)
             for (int i = -n; i < n; i++)
             {
@@ -296,8 +303,17 @@ namespace RockGame
                 // anywhere in its cell (well off the grid), not just near the middle
                 float room = PadStep * 0.5f - r - 0.05f;
                 var p = new Vector3((i + 0.5f) * PadStep + (TmKit.Hash(i, j, 81) - 0.5f) * 2f * room, 0, -(j + 0.5f) * PadStep + (TmKit.Hash(i, j, 82) - 0.5f) * 2f * room);
-                float keep = (0.12f + 0.38f * TmKit.SymN(p.x, p.z, 0.07f, ThemeMaps.SeedP + 55f)) * 1.15f; // (clusters and bare stretches; x1.15: ~15% more pads)
+                // (clusters and bare stretches; x0.9: about a fifth fewer pads than the x1.15 before - harder to hop across)
+                float keep = (0.12f + 0.38f * TmKit.SymN(p.x, p.z, 0.07f, ThemeMaps.SeedP + 55f)) * 0.9f;
                 if (TmKit.Hash(i, j, 80) > keep) continue;
+                // about 40% of them knocked off their spot by 0.5 - 1 m (even past their cell) so the hops don't line up and
+                // the gaps vary more - as long as it stays in blue's sector and clear of the pads already down
+                if (TmKit.Hash(i, j, 88) < 0.4f)
+                {
+                    var off = Quaternion.Euler(0, TmKit.Hash(i, j, 89) * 360f, 0) * new Vector3(0, 0, 0.5f + 0.5f * TmKit.Hash(i, j, 90));
+                    if (Cfg.InFirstSector(p + off, r + 0.3f) && !Crowds(p + off, r, i, j)) p += off;
+                }
+                if (Crowds(p, r, i, j)) continue; // (a knocked pad already sits here)
                 if (Mathf.Abs(p.x) > half - 1.2f || Mathf.Abs(p.z) > half - 1.2f || !Deep(p.x, p.z)) continue;
                 if (!Deep(p.x + r, p.z) || !Deep(p.x - r, p.z) || !Deep(p.x, p.z + r) || !Deep(p.x, p.z - r)) continue;
                 float notch = TmKit.Hash(i, j, 84) * 360f;

@@ -145,6 +145,25 @@ namespace RockGame
                 me.UseItemRpc();
                 yield return new WaitForSeconds(0.4f);
                 Check(me.Juiced, "Extreme Speed Juice: drunk, and we're fast");
+                float f0 = Hud.SpeedBarShown;
+                yield return Shot("deploy_speed_bar");
+                yield return new WaitForSeconds(1f);
+                Check(f0 > 0f && Hud.SpeedBarShown > 0f && Hud.SpeedBarShown < f0, $"the speed bar at the top runs down ({f0:0.00} -> {Hud.SpeedBarShown:0.00})");
+            }
+
+            // Invisibility Potion: your own hands vanish while it lasts
+            {
+                me.ServerGive(Item.InvisPotion, 1);
+                yield return Hold(me, Item.InvisPotion);
+                var vm = pc.DebugViewModel;
+                Check(vm != null && vm.Root.gameObject.activeSelf, "hands showing before the potion");
+                me.UseItemRpc();
+                yield return new WaitForSeconds(0.5f);
+                Check(me.Invisible && vm != null && !vm.Root.gameObject.activeSelf, "invisible: your hands are gone");
+                yield return Shot("deploy_invis_no_hands");
+                me.InvisUntil.Value = -1;
+                yield return new WaitForSeconds(0.3f);
+                Check(vm != null && vm.Root.gameObject.activeSelf, "...and back when it wears off");
             }
 
             // dead: respawn at our sleeping bag (then it waits)

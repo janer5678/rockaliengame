@@ -20,7 +20,7 @@ namespace RockGame
     public static partial class Cfg
     {
         public static bool Jonah => Rules == GameRules.JonahTest;
-        [Tune("Jonah test mode")] public static int Upgrade10WallsDust = 1000;
+        [Tune("Jonah test mode")] public static int Upgrade10WallsDust = 2000;
         /// <summary>What the "buy alien dust" craft gives, and what it costs in wood.</summary>
         [Tune("Jonah test mode")] public static int DustPerBuy = 1000, DustBuyWood = 1000;
         public const int WallsPerUpgrade = 10;
@@ -238,11 +238,13 @@ namespace RockGame
             m_Cam.farClipPlane = 600f;
             var main = Camera.main;
             m_Cam.depth = (main != null ? main.depth : 0f) + 50f;
-            // start where you are, looking the way you were
-            var start = m_FromPos + Vector3.up * Cfg.EyeHeight + Offset;
-            m_Cam.transform.position = new Vector3(Mathf.Clamp(start.x, m_Area.min.x, m_Area.max.x), Mathf.Clamp(start.y, m_Area.min.y, m_Area.max.y), Mathf.Clamp(start.z, m_Area.min.z, m_Area.max.z));
-            m_Yaw = m_FromYaw;
-            m_Pitch = m_FromPitch;
+            // start up over the middle of your base, looking at your machine (so it's clear you've gone somewhere else)
+            var baseMid = Cfg.BaseCenter[team];
+            var start = new Vector3(baseMid.x, 0f, baseMid.z) + new Vector3(Offset.x, 0f, Offset.z);
+            start.y = m_Area.min.y + Cfg.EyeHeight + 2.5f;
+            m_Cam.transform.position = new Vector3(Mathf.Clamp(start.x, m_Area.min.x, m_Area.max.x), start.y, Mathf.Clamp(start.z, m_Area.min.z, m_Area.max.z));
+            m_Yaw = Quaternion.LookRotation(Cfg.BackDir(team)).eulerAngles.y;
+            m_Pitch = 20f;
             Sfx.Play2D(Sfx.Place, 0.5f);
         }
 

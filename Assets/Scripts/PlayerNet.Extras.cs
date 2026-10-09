@@ -65,7 +65,7 @@ namespace RockGame
         {
             if (m_PendingForts <= 0) return;
             m_PendingForts--;
-            if (Vector3.Distance(point, transform.position) > 200f) point = transform.position + transform.forward * 3f;
+            if (!PortalPass.ReachOk(transform.position, point, 200f)) point = transform.position + transform.forward * 3f;
             if (!Physics.Raycast(point + Vector3.up * 2f, Vector3.down, out var hit, 60f, ~(1 << HitboxLayer), QueryTriggerInteraction.Ignore)) hit.point = new Vector3(point.x, MapBuilder.Height(point.x, point.z), point.z);
             var pos = hit.point;
             int bt = Cfg.BaseTeamAt(pos);

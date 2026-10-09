@@ -167,9 +167,9 @@ namespace RockGame
             Inv[HeldSlot.Value] = ItemStack.Of(gun, 1, st.Data - 1);
             m_NextPistol = Time.time + Cfg.GunFireRate(gun) * 0.8f;
             Reveal();
-            if (Vector3.Distance(point, EyePos) > 250f) point = EyePos + dir.normalized * 100f;
+            if (!PortalPass.ReachOk(EyePos, point, 250f)) point = EyePos + dir.normalized * 100f; // (a shot through a portal can land far off)
             // (not back to the shooter: they already drew their own tracer the moment they fired - two of them was the "double tracer")
-            Fx.Server(gun == Item.Revolver ? FxKind.RevolverTracer : FxKind.PistolTracer, EyePos + dir.normalized * 0.5f - Vector3.up * 0.15f, point, OwnerClientId);
+            PortalPass.ServerTracer(gun == Item.Revolver ? FxKind.RevolverTracer : FxKind.PistolTracer, EyePos + dir.normalized * 0.5f - Vector3.up * 0.15f, EyePos, dir, point, OwnerClientId); // (bends through portals)
             if (hasTarget && target.TryGet(out var tree)) ResourceNode.ServerStruck(tree); // (a bullet in a tree sends its birds up)
             if (!hasTarget) NetGame.Instance?.ServerMaybeHitMachine(point, this, false); // (Bedwars: a shot into an enemy machine)
             if (!hasTarget || !target.TryGet(out var no) || !GameAllowsCombat) return;
@@ -249,7 +249,7 @@ namespace RockGame
             {
                 if (GlassBetween(transform.position, p.transform.position)) return;
                 float dist = Vector3.Distance(m_ShotgunFrom, p.transform.position + Vector3.up * 1.1f);
-                if (dist > Cfg.ShotgunRange + 2f) return;
+                if (dist > Cfg.ShotgunRange + 2f) { if (!PortalPass.AnyLinked) return; dist = Cfg.ShotgunRange * 0.5f; } // (through a portal: far away, but fair)
                 float per = Cfg.ShotgunPelletDamage * Cfg.ShotgunFalloff(Mathf.Max(0f, dist - 0.4f));
                 float dmg = per * body;
                 if (head > 0)

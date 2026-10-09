@@ -447,6 +447,7 @@ namespace RockGame
             if (dir.sqrMagnitude < 0.01f) dir = Vector3.forward;
             var pos = stick ? at : Ground(at);
             if (!stick && (stack.Id == Item.Spear || stack.Id == Item.Arrow)) dir = Flat(dir);
+            if (stack.Id == Item.Spear || stack.Id == Item.Arrow) pos = PointedPose(stack.Id, pos, ref dir, stick);
             int id = m_NextItemId++;
             m_ItemBorn[id] = NetworkManager.ServerTime.Time;
             Items.Add(new DroppedItem { Id = id, Stack = stack, Pos = pos, Dir = dir.normalized, From = from });
@@ -470,6 +471,46 @@ namespace RockGame
             d.y = 0;
             if (d.sqrMagnitude < 0.01f) d = Vector3.forward;
             return (d.normalized + Vector3.down * 0.12f).normalized;
+        }
+
+        /// <summary>
+        /// Spears and arrows are drawn tip first along Dir from Pos, the shaft trailing back (a spear 1.7 m): keep all of it out
+        /// of the ground. A tip reported under the terrain comes back up onto it; a shaft that would go into the ground (a
+        /// spear lying on a slope that falls away in front of it, a shallow hit into a bump, a hit on a hillside) is tilted
+        /// out along the surface's normal until it's clear. `stuck`: stuck in where it hit (otherwise lying on the ground).
+        /// </summary>
+        static Vector3 PointedPose(Item id, Vector3 tip, ref Vector3 dir, bool stuck)
+        {
+            float len = id == Item.Spear ? 1.7f : 0.75f;
+            const int mask = ~(1 << PlayerNet.HitboxLayer);
+            if (dir.sqrMagnitude < 0.01f) dir = Vector3.forward;
+            dir.Normalize();
+            // just under the ground (not by much: a tunnel roof overhead is not "under the ground"): back up onto it
+            if (Physics.Raycast(tip + Vector3.up * 1.2f, Vector3.down, out var gh, 1.7f, mask, QueryTriggerInteraction.Ignore)
+                && gh.point.y > tip.y + 0.05f && gh.collider.GetComponentInParent<GroundMarker>() != null)
+                tip = gh.point + Vector3.up * 0.02f;
+            // the surface it's in / on
+            var normal = Vector3.up;
+            if (stuck && Physics.Raycast(tip - dir * 0.3f, dir, out var sh, 0.6f, mask, QueryTriggerInteraction.Ignore)) normal = sh.normal;
+            else if (!stuck && Physics.Raycast(tip + Vector3.up * 0.5f, Vector3.down, out var lh, 1f, mask, QueryTriggerInteraction.Ignore))
+            {
+                normal = lh.normal;
+                // lying: along the slope, the tip just touching (the same tilt Flat gives on flat ground)
+                var along = Vector3.ProjectOnPlane(dir, normal);
+                if (along.sqrMagnitude > 0.01f) dir = (along.normalized - normal * 0.12f).normalized;
+            }
+            var back = -dir;
+            for (int k = 0; k < 8 && ShaftBlocked(tip + back * 0.25f, tip + back * len, mask); k++)
+                back = Vector3.Slerp(back, normal, 0.3f).normalized;
+            dir = -back;
+            return tip;
+        }
+
+        /// <summary>Anything solid (not a player) along a - b, from either end (a start under the ground sees nothing on its own).</summary>
+        static bool ShaftBlocked(Vector3 a, Vector3 b, int mask)
+        {
+            if (Physics.Linecast(a, b, out var h1, mask, QueryTriggerInteraction.Ignore) && h1.collider.GetComponentInParent<PlayerNet>() == null) return true;
+            return Physics.Linecast(b, a, out var h2, mask, QueryTriggerInteraction.Ignore) && h2.collider.GetComponentInParent<PlayerNet>() == null;
         }
 
         static Vector3 Ground(Vector3 p)
@@ -513,7 +554,7 @@ namespace RockGame
                 if (Physics.CheckSphere(it.Pos, 0.25f, ~0, QueryTriggerInteraction.Ignore)) continue;
                 it.From = it.Pos;
                 it.Pos = Ground(it.Pos);
-                if (it.Pointed) it.Dir = Flat(it.Dir);
+                if (it.Pointed) { var d = Flat(it.Dir); it.Pos = PointedPose(it.Stack.Id, it.Pos, ref d, false); it.Dir = d; }
                 Items[i] = it;
             }
         }

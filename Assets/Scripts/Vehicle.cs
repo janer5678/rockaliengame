@@ -273,6 +273,7 @@ namespace RockGame
                 bool drivenByMe = HasDriver && me != null && me.NetworkObjectId == DriverId.Value;
                 if (drivenByMe) Drive(dt);
                 else if (IsServer && !HasDriver) Idle(dt);
+                TickPortals(drivenByMe); // (wherever it's moved from: whoever owns it)
             }
 
             // animation from how fast it actually moves (works on every peer)
@@ -282,6 +283,96 @@ namespace RockGame
             if (Mathf.Abs(fwd) > 40f) fwd = 0f; // teleport
             m_AnimSpeed = Mathf.Lerp(m_AnimSpeed, fwd, dt * 8f);
             Animate(dt);
+        }
+
+        // ---------------- portals (the owner's machine) ----------------
+
+        int m_PortalLock = -1, m_PortalNewestSeen = -1;
+        /// <summary>For the tests: how many times a mount has gone through a portal on this machine.</summary>
+        public static int PortalTrips { get; private set; }
+
+        /// <summary>Is a mount whose middle is at c in this portal? (As PlayerController.InPortal, a little bigger.)</summary>
+        static bool InPortal(Vector3 c, PortalInfo p)
+        {
+            var d = c - p.Pos;
+            float along = Vector3.Dot(d, p.Normal);
+            var lateral = d - p.Normal * along;
+            return along >= -0.4f && along <= 1.4f && lateral.magnitude <= 1.1f;
+        }
+
+        /// <summary>
+        /// Horses, the themed mounts and cars go through linked portals like players do (PlayerController.TickPortals), ridden
+        /// or not: in one, out of the other facing out of it, with the rider. Run by whoever owns it (the driver, or the server
+        /// when nobody is), so the teleport is authoritative (NetworkTransform.Teleport: no sliding across the map). It can't
+        /// go back in until it's moved away from both; a pair that opens right where it stands doesn't take it until it moves off.
+        /// </summary>
+        void TickPortals(bool drivenByMe)
+        {
+            if (IsBoat || IsSlender || IsDummy || m_CC == null) return; // THEME MAPS (a boat stays on its water)
+            var g = NetGame.Instance;
+            if (g == null) return;
+            var c = transform.position + Vector3.up * 0.9f;
+            int count = g.Portals.Count, newest = m_PortalNewestSeen;
+            for (int i = 0; i < count; i++)
+            {
+                var p = g.Portals[i];
+                if (p.Pair <= m_PortalNewestSeen) continue;
+                if (InPortal(c, p)) m_PortalLock = p.Pair;
+                newest = Mathf.Max(newest, p.Pair);
+            }
+            m_PortalNewestSeen = newest;
+            if (count < 2) return;
+            if (m_PortalLock >= 0)
+            {
+                bool near = false;
+                foreach (var p in g.Portals) if (p.Pair == m_PortalLock && Vector3.Distance(p.Pos, c) < 2.5f) near = true;
+                if (near) return;
+                m_PortalLock = -1;
+            }
+            for (int i = 0; i < count; i++)
+            {
+                var p = g.Portals[i];
+                if (!InPortal(c, p) || !g.TryPartner(i, out var to)) continue;
+                float oldYaw = m_Yaw, yaw = m_Yaw;
+                Vector3 feet;
+                if (to.Normal.y > 0.7f) feet = to.Pos + Vector3.up * 0.15f;                       // a floor portal: up out of it
+                else if (to.Normal.y < -0.7f) feet = to.Pos + Vector3.down * (m_CC.height + 0.4f); // a ceiling portal: drop out of it
+                else
+                {
+                    var flat = new Vector3(to.Normal.x, 0, to.Normal.z).normalized;
+                    feet = to.Pos + flat * (m_CC.radius + 0.6f) + Vector3.down * 0.9f;
+                    // (not into the ground under a portal low on a wall)
+                    if (Physics.Raycast(feet + Vector3.up * 1.5f, Vector3.down, out var gh, 2.5f, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore)
+                        && !gh.collider.transform.IsChildOf(transform) && gh.point.y > feet.y)
+                        feet.y = gh.point.y + 0.05f;
+                    yaw = Quaternion.LookRotation(flat).eulerAngles.y;
+                    m_Planar = flat * m_Planar.magnitude;
+                }
+                var rot = Quaternion.Euler(0, yaw, 0);
+                m_CC.enabled = false;
+                transform.SetPositionAndRotation(feet, rot);
+                var nt = GetComponent<Unity.Netcode.Components.NetworkTransform>();
+                if (nt != null && nt.IsSpawned) nt.Teleport(feet, rot, transform.localScale);
+                m_CC.enabled = true;
+                m_Yaw = yaw;
+                m_VelY = 0f;
+                m_LastPos = feet;
+                Physics.SyncTransforms();
+                m_PortalLock = to.Pair;
+                PortalTrips++;
+                // sparks and the portal sound where it comes out (for everyone when the server moved it)
+                if (IsServer) Fx.Server(FxKind.PortalOpen, feet + Vector3.up, to.Normal);
+                else Fx.Play(FxKind.PortalOpen, feet + Vector3.up, to.Normal);
+                if (drivenByMe && PlayerController.Local != null)
+                {
+                    // the rider comes too, still looking the same way relative to the horse
+                    var pc = PlayerController.Local;
+                    pc.LocalTeleport(SeatWorld, pc.LookYaw + Mathf.DeltaAngle(oldYaw, yaw));
+                    Sfx.Play2D(Sfx.Portal, 0.8f);
+                    Fx.Punch(8f);
+                }
+                break;
+            }
         }
 
         // ---------------- driving (the driver's machine) ----------------

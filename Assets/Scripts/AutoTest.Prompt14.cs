@@ -175,7 +175,7 @@ namespace RockGame
             var wb = Cfg.GetRecipe(Cfg.RecipeIndex(Item.Workbench));
             var hatchet = Cfg.GetRecipe(Cfg.RecipeIndex(Item.Hatchet));
             Check(wb.Wood > 0 && wb.Dust == 0 && hatchet.Wood > 0 && Cfg.RecipeIndex(Item.AlienDust) < 0 && Cfg.BuildItem == Item.Wood, "no alien dust any more: everything costs wood (the Trade Station, the hatchet, building)");
-            me.ServerGive(Item.Wood, 1000);
+            me.ServerGive(Item.Wood, 1000); me.ServerGive(Item.Wood, 1000); me.ServerGive(Item.Wood, 1000); // (Upgrade 10 Walls: 2000)
             var st = Cfg.UpgradeStationPos(team);
             pc.LocalTeleport(st - Cfg.BackDir(team) * -2.2f + Vector3.up * 0.1f, Quaternion.LookRotation(-Cfg.BackDir(team)).eulerAngles.y + 180f);
             yield return new WaitForSeconds(0.4f);

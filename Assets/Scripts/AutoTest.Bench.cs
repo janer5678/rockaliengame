@@ -386,6 +386,7 @@ namespace RockGame
                 pc.LocalTeleport(g.Portals[p0].Pos + Vector3.up * 0.1f, yaw);
                 yield return new WaitForSeconds(0.6f);
                 Check(Flat(me.transform.position, aim2) < 2.5f, $"walk into the first portal: out of the second ({Flat(me.transform.position, aim2):0.0} m from it)");
+                yield return PortalPassTests(me, pc, g, p0, stand, yaw, side);
             }
             for (int i = 0; i < 40; i++) g.ServerAddPortal(stand + Vector3.down * 50f, Vector3.up, g.ServerNewPortalPair());
             Check(g.Portals.Count <= NetGame.MaxPortals, $"no more than {NetGame.MaxPortals} portals at once ({g.Portals.Count})");
@@ -394,6 +395,54 @@ namespace RockGame
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
             yield return new WaitForSeconds(0.3f);
             yield return PortalRaidTests(me, pc, g, team);
+        }
+
+        /// <summary>
+        /// Everything else goes through portals too (PortalPass): an arrow shot down into the first portal comes up out of the
+        /// second; a hitscan shot (the sniper's / the guns') down into it carries on out of the other; a horse walked into it
+        /// comes out of the other.
+        /// </summary>
+        IEnumerator PortalPassTests(PlayerNet me, PlayerController pc, NetGame g, int p0, Vector3 stand, float yaw, Vector3 side)
+        {
+            var a = g.Portals[p0];
+            var b = g.Portals[p0 + 1];
+            // (out of the way of the shots)
+            pc.LocalTeleport(stand + side * 8f, yaw);
+            yield return new WaitForSeconds(0.4f);
+            int passes = ArrowProjectile.PortalPasses;
+            ArrowProjectile.Spawn(a.Pos + a.Normal * 3f, -a.Normal * 15f, null, false); // (straight into it along its facing: the ground may slope)
+            yield return new WaitForSeconds(0.3f);
+            ArrowProjectile near = null;
+            foreach (var ap in FindObjectsByType<ArrowProjectile>(FindObjectsSortMode.None))
+            {
+                if (ap == null) continue;
+                var off = ap.transform.position - b.Pos;
+                if (off.magnitude > 0.2f && off.magnitude < 8f && Vector3.Angle(off, b.Normal) < 30f) near = ap; // (out of the other one, along its facing)
+            }
+            Check(ArrowProjectile.PortalPasses > passes && near != null,
+                $"an arrow shot down into a portal comes up out of its partner ({ArrowProjectile.PortalPasses - passes} portal passes, {(near != null ? "one above the other portal" : "none above the other portal")})");
+            if (near != null) Destroy(near.gameObject);
+
+            // (straight into it along its facing: it comes out along the other's facing - the ground they're on may slope)
+            bool got = PortalPass.Hitscan(new Ray(a.Pos + a.Normal * 3f, -a.Normal), 60f, 0f,
+                (Ray r, float range, float radius, out RaycastHit h) => Physics.Raycast(r, out h, range, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore),
+                out _, out var end, out var endDir);
+            float outOff = PortalPass.Path.Count >= 4 ? Vector3.Distance(PortalPass.Path[2], b.Pos) : 99f, outAng = Vector3.Angle(endDir, b.Normal);
+            Check(PortalPass.Path.Count >= 4 && outOff < 1f && outAng < 10f,
+                $"a hitscan shot into a portal carries on out of its partner ({PortalPass.Path.Count / 2} pieces, comes out {outOff:0.0} m from it, {outAng:0} deg off its facing)");
+
+            var horse = Vehicle.ServerSpawn(Vehicle.Horse, a.Pos + side * 6f + Vector3.up * 0.3f, yaw);
+            yield return new WaitForSeconds(0.4f);
+            int trips = Vehicle.PortalTrips;
+            var cc = horse.GetComponent<CharacterController>();
+            if (cc != null) cc.enabled = false;
+            horse.transform.position = a.Pos + Vector3.up * 0.1f;
+            if (cc != null) cc.enabled = true;
+            Physics.SyncTransforms();
+            yield return new WaitForSeconds(0.5f);
+            Check(Vehicle.PortalTrips > trips && Flat(horse.transform.position, b.Pos) < 3f,
+                $"a horse that walks into a portal comes out of its partner ({Flat(horse.transform.position, b.Pos):0.0} m from it)");
+            if (horse != null && horse.IsSpawned) horse.NetworkObject.Despawn(true);
         }
 
         /// <summary>

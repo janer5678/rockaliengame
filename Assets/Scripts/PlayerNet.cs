@@ -1211,13 +1211,13 @@ namespace RockGame
         {
             if (m_PendingArrows.Count == 0) return;
             m_PendingArrows.Dequeue();
-            if (Vector3.Distance(point, transform.position) < 250f) NetGame.Instance?.ServerMaybeHitMachine(point, this, false); // (Bedwars: an arrow into an enemy machine)
+            if (PortalPass.ReachOk(transform.position, point, 250f)) NetGame.Instance?.ServerMaybeHitMachine(point, this, false); // (Bedwars: an arrow into an enemy machine; through a portal it can land anywhere)
             DropSpentArrow(point, dir);
         }
 
         void DropSpentArrow(Vector3 point, Vector3 dir)
         {
-            if (NetGame.Instance == null || Vector3.Distance(point, transform.position) > 250f) return;
+            if (NetGame.Instance == null || !PortalPass.ReachOk(transform.position, point, 250f)) return;
             if (dir.sqrMagnitude < 0.01f) dir = transform.forward;
             NetGame.Instance.ServerDropItem(ItemStack.Of(Item.Arrow, 1), point + dir.normalized * 0.08f, dir, point, true);
         }
@@ -1245,8 +1245,14 @@ namespace RockGame
             float power = m_PendingSpears.Dequeue();
             var game = NetGame.Instance;
             if (game == null) return;
-            if (Vector3.Distance(point, transform.position) > 250f) point = transform.position + Vector3.up; // nonsense report
             if (dir.sqrMagnitude < 0.01f) dir = transform.forward;
+            if (!PortalPass.ReachOk(transform.position, point, 250f))
+            {
+                // nonsense report: it drops on the ground at your feet (it used to be left stuck in the air where your
+                // middle was, pointing the way it flew)
+                game.ServerDropItem(ItemStack.Of(Item.Spear, 1), transform.position + transform.forward * 0.6f, dir, transform.position + Vector3.up, false);
+                return;
+            }
             if (hasTarget && target.TryGet(out var tree)) ResourceNode.ServerStruck(tree); // (a spear in a tree sends its birds up)
             if (!hasTarget) game.ServerMaybeHitMachine(point, this, false); // (Bedwars: a spear into an enemy machine)
 
@@ -1924,7 +1930,7 @@ namespace RockGame
         {
             if (m_PendingC4 <= 0 || NetGame.Instance == null) return;
             m_PendingC4--;
-            if (Vector3.Distance(point, transform.position) > 200f) point = transform.position + transform.forward;
+            if (!PortalPass.ReachOk(transform.position, point, 200f)) point = transform.position + transform.forward; // (through a portal it can land anywhere)
             NetGame.Instance.ServerArmC4(point, normal, this);
         }
 
@@ -1936,7 +1942,7 @@ namespace RockGame
             if (m_PendingC4 <= 0 || NetGame.Instance == null) return;
             m_PendingC4--;
             if (target.TryGet(out var no) && no != NetworkObject && (no.GetComponent<PlayerNet>() != null || no.GetComponent<Vehicle>() != null)
-                && Vector3.Distance(no.transform.position, transform.position) < 200f)
+                && PortalPass.ReachOk(transform.position, no.transform.position, 200f))
             {
                 // (kept on the target: never further out than something stuck to them could be)
                 NetGame.Instance.ServerArmC4On(no, Vector3.ClampMagnitude(local, 4f), localNormal, this);

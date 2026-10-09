@@ -61,6 +61,8 @@ namespace RockGame
         float Now => Clock >= 0f ? Clock : Time.time;
         /// <summary>The hands' root (under the camera): everything first-person is under it.</summary>
         public Transform Root => m_Root;
+        /// <summary>Where the held item is on screen, in the world (the spear's throw starts here: Cfg.SpearFromHand).</summary>
+        public Vector3 HeldItemPos => m_ItemHolder != null ? m_ItemHolder.position : m_Root.position;
 
         public Transform DebugHand(bool right) => right ? m_R : m_L;
         public Transform DebugRoot => m_Root;

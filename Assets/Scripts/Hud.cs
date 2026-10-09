@@ -211,6 +211,9 @@ namespace RockGame
             GUI.Label(r, text, style);
         }
 
+        /// <summary>For the tests: the Extreme Speed Juice bar's fill this frame (-1 = not shown).</summary>
+        public static float SpeedBarShown = -1f;
+
         static string Clock(float t)
         {
             int s = Mathf.CeilToInt(t);
@@ -343,12 +346,25 @@ namespace RockGame
                         break;
                 }
             }
+            float topBottom = 10f;
             if (topLabel != "")
             {
                 string tag = TestTimerTag ?? (Cfg.Rules != GameRules.Classic ? Cfg.RulesName(Cfg.Rules).ToUpper() : "");
                 float ph = DrawTopPanel(game, topLabel, topClock, tag, sub, topAccent, topLeft, k);
                 DrawModePanel(game, team, k, 8 + ph + 6 * k); // (the modes' score chips: Hud.ModePanel.cs)
+                topBottom = 8 + ph + 6 * k + (Cfg.ClassicMode && !Cfg.Bedwars && game != null && game.S == GameState.BallLive ? 48 * k : 0f);
             }
+            if (me.Juiced && !me.Dead.Value)
+            {
+                // Extreme Speed Juice: a bar at the top that runs down while it lasts
+                float left = Mathf.Clamp01((float)(me.SpeedUntil.Value - me.NetworkManager.ServerTime.Time) / Mathf.Max(0.1f, Cfg.SpeedJuiceTime));
+                float bw = 320 * k, bh = 12 * k, bx = sw / 2f - bw / 2f, byy = topBottom + 28 * k;
+                Shadowed(new Rect(0, topBottom + 8 * k, sw, 18 * k), "<b><color=#7ff0ff>EXTREME SPEED</color></b>", m_Center);
+                Fill(new Rect(bx - 2, byy - 2, bw + 4, bh + 4), new Color(0f, 0f, 0f, 0.6f));
+                Fill(new Rect(bx, byy, bw * left, bh), Color.Lerp(new Color(1f, 0.35f, 0.2f), new Color(0.45f, 0.95f, 1f), left));
+                SpeedBarShown = left;
+            }
+            else SpeedBarShown = -1f;
 
             // ---- top left: identity + compass ----
             var tc = Cfg.TeamColor[team];

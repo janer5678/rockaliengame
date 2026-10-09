@@ -25,7 +25,8 @@ namespace RockGame
             if (left <= 0) { ServerClearSlot(HeldSlot.Value); Notify("Out of sniper ammo - the rifle is gone"); }
             else Inv[HeldSlot.Value] = ItemStack.Of(Item.Sniper, 1, left);
             if (Vector3.Distance(point, EyePos) > 400f) point = EyePos + dir.normalized * 100f;
-            Fx.Server(FxKind.SniperTracer, EyePos + dir.normalized * 0.5f - Vector3.up * 0.15f, point, OwnerClientId); // (the shooter drew its own)
+            // (the shooter drew its own; bent through any portal the shot went into)
+            PortalPass.ServerTracer(FxKind.SniperTracer, EyePos + dir.normalized * 0.5f - Vector3.up * 0.15f, EyePos, dir, point, OwnerClientId);
             if (hasTarget && target.TryGet(out var tree)) ResourceNode.ServerStruck(tree); // (a bullet in a tree sends its birds up)
             if (!hasTarget || !target.TryGet(out var no) || !GameAllowsCombat) return;
             if (no.TryGetComponent(out PlayerNet p) && p != this && !p.Dead.Value)
@@ -50,6 +51,8 @@ namespace RockGame
 
         /// <summary>The portal gun's two portals have to be at least this far apart.</summary>
         public const float PortalMinGap = 3f;
+        /// <summary>How far the portal gun reaches (the aim ray and its preview ghost - PlayerController.PortalAim - and this check).</summary>
+        public const float PortalRange = 240f;
 
         /// <summary>The pair this player's portal gun is making (its first shot opened one end; -1 = the next shot starts a new pair).</summary>
         int m_PortalPair = -1;
@@ -65,7 +68,7 @@ namespace RockGame
         {
             var g = NetGame.Instance;
             if (Dead.Value || g == null || HeldItem != Item.PortalGun || Time.time < m_NextPortal) return;
-            if (Mathf.Abs(point.x) > Cfg.MapHalf + 2 || Mathf.Abs(point.z) > Cfg.MapHalf + 2 || Vector3.Distance(point, EyePos) > 120f) { Notify("Portals only work inside the battle area"); return; }
+            if (Mathf.Abs(point.x) > Cfg.MapHalf + 2 || Mathf.Abs(point.z) > Cfg.MapHalf + 2 || Vector3.Distance(point, EyePos) > PortalRange + 5f) { Notify("Portals only work inside the battle area"); return; }
             if (normal.sqrMagnitude < 0.01f) normal = Vector3.up;
             int shots = Mathf.Max(1, Cfg.PortalShots);
             var st = HeldStack;
@@ -163,7 +166,7 @@ namespace RockGame
             var g = NetGame.Instance;
             if (g == null || !m_PendingThrows.TryGetValue(kind, out int n) || n <= 0) return;
             m_PendingThrows[kind] = n - 1;
-            if (Vector3.Distance(point, transform.position) > 250f) point = transform.position + transform.forward * 3f;
+            if (!PortalPass.ReachOk(transform.position, point, 250f)) point = transform.position + transform.forward * 3f; // (through a portal it can land anywhere)
             switch (kind)
             {
                 case Item.RocketLauncher: g.ServerRocket(point, this); break;
@@ -183,7 +186,7 @@ namespace RockGame
             var g = NetGame.Instance;
             if (g == null || !m_PendingThrows.TryGetValue(Item.RocketLauncher, out int n) || n <= 0) return;
             m_PendingThrows[Item.RocketLauncher] = n - 1;
-            if (Vector3.Distance(point, transform.position) > 250f) return;
+            if (!PortalPass.ReachOk(transform.position, point, 250f)) return;
             if (target.TryGet(out var no) && no.TryGetComponent(out PlayerNet p) && p != this && !p.Dead.Value && GameAllowsCombat
                 && Vector3.Distance(p.transform.position + Vector3.up, point) < 2.5f && !GlassBetween(transform.position, p.transform.position))
             {

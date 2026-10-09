@@ -206,6 +206,7 @@ namespace RockGame
 
         /// <summary>AutoTest screenshots: force a draw amount (-1 = off) / trigger a swing animation.</summary>
         public float DebugDraw = -1f;
+        public ViewModel DebugViewModel => m_VM;
         public void DebugSwing(float dur) => m_VM.Swing(dur);
         public void DebugImpact(bool hit) => m_VM.Impact(hit);
 
@@ -704,7 +705,7 @@ namespace RockGame
                 VelY = m_VelY,
                 Item = m_Net.HeldItem,
                 Ball = m_Net.CarryingBall,
-                Visible = !m_Net.Dead.Value && m_Third < 0.5f,
+                Visible = !m_Net.Dead.Value && m_Third < 0.5f && !m_Net.Invisible, // (invisibility potion: your own hands vanish too, for as long as it lasts)
                 SpearAim = (m_DrawStart >= 0 || DebugDraw >= 0) && m_Net.HeldItem == Item.Spear,
                 HasArrow = m_Net.Count(Item.Arrow) > 0,
                 Draw = DebugDraw >= 0 ? DebugDraw : DrawAmount,
@@ -1176,6 +1177,18 @@ namespace RockGame
             var ray = CenterRay();
             Vector3 origin = SafeOrigin(ray, 0.8f);
             Vector3 vel = ray.direction * Cfg.SpearThrowSpeed * m_SpearPower;
+            if (Cfg.SpearFromHand && m_VM != null)
+            {
+                // from where the spear is on screen (your hand), aimed at what the crosshair's on - unless something's
+                // between your eye and your hand (then the old way, from the eye: no throwing through walls)
+                var hand = m_VM.HeldItemPos;
+                var target = Aim(ray, 200f, out var th) ? th.point : ray.GetPoint(200f);
+                if ((hand - ray.origin).sqrMagnitude < 1.5f * 1.5f && !Physics.Linecast(ray.origin, hand, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore) && (target - hand).sqrMagnitude > 4f)
+                {
+                    origin = hand;
+                    vel = (target - hand).normalized * Cfg.SpearThrowSpeed * m_SpearPower;
+                }
+            }
             ArrowProjectile.SpawnSpear(origin, vel, m_Net, true);
             m_Net.ThrowSpearRpc(origin, vel);
             Tutorial.SpearThrows++;

@@ -28,19 +28,19 @@ namespace RockGame
             if (m_Net.HeldStack.Data == 0) return;
             m_NextSwing = Time.time + 1.2f;
             var ray = CenterRay();
-            bool hit = AimWithAssist(ray, 400f, Cfg.ProjectileAssist, out var h);
+            // (through any portal on the way: PortalPass.Hitscan)
+            bool hit = PortalPass.Hitscan(ray, 400f, Cfg.ProjectileAssist, AimWithAssist, out var h, out var point, out var shotDir);
             var no = hit ? h.collider.GetComponentInParent<NetworkObject>() : null;
-            var point = hit ? h.point : ray.GetPoint(400f);
             if (no != null && no.TryGetComponent(out PlayerNet p) && p != m_Net && !p.Dead.Value)
             {
                 bool head = p.IsHeadshot(point);
-                Fx.Blood(point, ray.direction, head);
+                Fx.Blood(point, shotDir, head);
                 Hud.HitMarker(!(head && p.HelmetHp.Value > 0), head);
             }
             else if (no != null && no.TryGetComponent(out Vehicle hv)) Hud.AnimalHit(hv, point, Mathf.Max(1f, hv.Hp.Value), false); // (it kills them outright too)
             else if (hit) EnergyWall.Hit(h.collider, point, h.normal); // (into the energy wall: it flares and ripples)
             m_Net.SniperFireRpc(no != null, no != null ? new NetworkObjectReference(no) : default, point, ray.direction);
-            Fx.Tracer(ray.origin + ray.direction * 0.5f - Vector3.up * 0.15f, point, Fx.Gun.Sniper, true, false);
+            PortalPass.Tracers(ray.origin + ray.direction * 0.5f - Vector3.up * 0.15f, Fx.Gun.Sniper);
             Fx.Gunshot(Fx.Gun.Sniper, m_VM.Muzzle(), ray.direction, true);
             m_VM.Use();
             Fx.Kick(6f);

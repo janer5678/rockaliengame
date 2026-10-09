@@ -233,7 +233,7 @@ namespace RockGame
             for (int i = 0; i < 2; i++)
                 g.Box(ct + yaw * new Vector3((i == 0 ? 1f : -1f) * cs * 1.42f, R(-0.3f, 0.4f) * cs, R(-0.5f, 0.5f) * cs), Vector3.one * 0.22f, yaw * Quaternion.Euler(30f, 45f, 0), Color.white, MeshKit.All);
             Add(g, "synthetic glow", k_Neon, ThemeKitB.Glow(k_Neon, 1.8f), false);
-            m_Trees.Add(new Glitchy { Look = look, Parts = parts.ToArray(), Next = Time.time + Random.Range(6f, 40f) });
+            m_Trees.Add(new Glitchy { Look = look, Parts = parts.ToArray(), Next = Time.time + Random.Range(6f, 40f), BasePos = look.localPosition, BaseRot = look.localRotation, BaseScale = look.localScale });
             return true;
         }
 
@@ -316,6 +316,10 @@ namespace RockGame
             public Transform Look;
             public Part[] Parts;
             public float Next;
+            /// <summary>A hard glitch (the tree was just hit) runs until this time (0 = none); the look's own transform to go back to.</summary>
+            public float HardUntil, HardNext;
+            public Vector3 BasePos, BaseScale;
+            public Quaternion BaseRot;
         }
         readonly List<Glitchy> m_Trees = new List<Glitchy>();
         int m_Scan;
@@ -332,6 +336,71 @@ namespace RockGame
             if (lag.sqrMagnitude > p.Lag.sqrMagnitude) p.Lag = lag;
             if (p.On) return;
             p.On = true; p.NextFlick = 0f;
+        }
+
+        /// <summary>How long a tree glitches hard after a hit.</summary>
+        const float HitGlitch = 0.42f;
+        static Material s_SplitA, s_SplitB;
+
+        /// <summary>(every peer: the tree's wood went down) That tree glitches out hard for a moment.</summary>
+        public override void TreeHit(Transform visual)
+        {
+            if (visual == null) return;
+            foreach (var g in m_Trees)
+            {
+                if (g.Look == null || g.Look.parent != visual) continue;
+                if (g.HardUntil <= 0f)
+                    foreach (var p in g.Parts) if (p.On) EndGlitch(p); // (a little flicker in progress: start clean)
+                g.HardUntil = Time.time + HitGlitch;
+                g.HardNext = 0f;
+                return;
+            }
+        }
+
+        /// <summary>The hit glitch is over: the tree exactly as it was built.</summary>
+        static void EndHard(Glitchy g)
+        {
+            g.HardUntil = 0f;
+            if (g.Look != null)
+            {
+                g.Look.localPosition = g.BasePos;
+                g.Look.localRotation = g.BaseRot;
+                g.Look.localScale = g.BaseScale;
+            }
+            foreach (var p in g.Parts) EndGlitch(p);
+        }
+
+        /// <summary>One frame of the hit glitch: the whole tree stutters in scale and jumps a little, every piece is torn
+        /// sideways like a slipped slice, flickers see-through / gone, or flashes in a split colour (cyan or magenta).</summary>
+        static void HardFrame(Glitchy g, float t)
+        {
+            if (t < g.HardNext || g.Look == null) return;
+            g.HardNext = t + Random.Range(0.025f, 0.05f);
+            float left = Mathf.Clamp01((g.HardUntil - t) / HitGlitch); // (1 at the hit, fading to 0: it settles)
+            float amp = 0.35f + 0.65f * left;
+            if (s_SplitA == null) s_SplitA = Art.Ghost(new Color(0.1f, 1f, 1f, 0.55f));
+            if (s_SplitB == null) s_SplitB = Art.Ghost(new Color(1f, 0.15f, 0.85f, 0.55f));
+            // the whole tree: a scale stutter and a jolt
+            g.Look.localScale = Vector3.Scale(g.BaseScale, Random.value < 0.35f ? Vector3.one
+                : new Vector3(1f + Random.Range(-0.14f, 0.18f) * amp, 1f + Random.Range(-0.1f, 0.12f) * amp, 1f + Random.Range(-0.14f, 0.18f) * amp));
+            g.Look.localPosition = g.BasePos + new Vector3(Random.Range(-0.12f, 0.12f), 0f, Random.Range(-0.12f, 0.12f)) * amp;
+            g.Look.localRotation = g.BaseRot * Quaternion.Euler(0f, Random.Range(-6f, 6f) * amp, 0f);
+            // every piece: a slice torn sideways, and a look
+            float split = Random.Range(0.08f, 0.22f) * amp;
+            var axis = Random.value < 0.5f ? Vector3.right : Vector3.forward;
+            foreach (var p in g.Parts)
+            {
+                if (p.T == null) continue;
+                p.On = true;
+                p.Until = g.HardUntil;
+                float k = Random.value;
+                p.R.enabled = k > 0.12f;
+                if (p.Glow) p.R.sharedMaterial = p.Mat;
+                else p.R.sharedMaterial = k < 0.3f ? p.See : k < 0.45f ? s_SplitA : k < 0.6f ? s_SplitB : p.Mat;
+                float side = p.R.sharedMaterial == s_SplitA ? -1f : p.R.sharedMaterial == s_SplitB ? 1f : Random.Range(-1f, 1f);
+                p.T.localPosition = Random.value < 0.25f ? Vector3.zero
+                    : axis * side * (split + Random.Range(0f, 0.18f) * amp) + new Vector3(0f, Random.Range(-0.06f, 0.06f) * amp, 0f);
+            }
         }
 
         static void EndGlitch(Part p)
@@ -363,6 +432,14 @@ namespace RockGame
             float t = Time.time, dt = Mathf.Max(Time.deltaTime, 1e-4f);
             for (int i = m_Trees.Count - 1; i >= 0; i--) if (m_Trees[i].Look == null) m_Trees.RemoveAt(i); // (chopped down)
             if (m_Trees.Count == 0) return;
+
+            // a tree just hit: glitching out hard (then put back exactly as it was)
+            foreach (var g in m_Trees)
+            {
+                if (g.HardUntil <= 0f) continue;
+                if (t >= g.HardUntil) EndHard(g);
+                else HardFrame(g, t);
+            }
 
             // the camera turning really fast: now and then a piece of a near tree in view flickers, smeared a touch behind
             var ct = cam.transform;
@@ -403,6 +480,8 @@ namespace RockGame
             // the flickering pieces: every few hundredths of a second see-through or solid (once in a while gone for a
             // frame), twitching a few centimetres
             foreach (var g in m_Trees)
+            {
+            if (g.HardUntil > 0f) continue; // (glitching out from a hit: above)
             foreach (var p in g.Parts)
             {
                 if (!p.On || p.T == null) continue;
@@ -413,6 +492,7 @@ namespace RockGame
                 p.R.enabled = k > 0.08f;
                 p.R.sharedMaterial = k < 0.6f && !p.Glow ? p.See : p.Mat;
                 p.T.localPosition = p.Lag + (Random.value < 0.5f ? new Vector3(Random.Range(-0.05f, 0.05f), Random.Range(-0.02f, 0.03f), Random.Range(-0.05f, 0.05f)) : Vector3.zero);
+            }
             }
         }
 

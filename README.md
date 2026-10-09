@@ -523,3 +523,11 @@ Networking: movement is owner-authoritative (NetworkTransform in Owner mode). Re
 - **Ladders**: you're only on one when you touch it (smaller player check, thin slab in front of the rungs); theme ladders' rails end just above the last rung.
 - **Ice**: more steering while slipping (`IceSteer` 11). **Swamp**: 15% more lily pads. Wild horses make no hoof sounds (only ridden ones).
 - **Bedwars clocks**: 10 minutes after the wall drops every cryochamber breaks by itself (nobody respawns), and 3 minutes after that every base breaks down (all built pieces come down over a few seconds). Both counts show under the bed list, top left (`Cfg.BedwarsChambersBreak` / `BedwarsBasesBreak`; scaled down in short test matches).
+
+### Sixth round
+- **Islands water**: let go and you sink slowly; hold Space to float up and bob at the surface with your head out.
+- **Jonah mode**: Upgrade 10 Walls costs 2000 wood. The void starts you over the middle of your base, looking at your machine.
+- **Spikes**: climbing a ladder over a gate or wall hurts twice as much (`Cfg.WallClimbDps` 18).
+- **Spear throw from the hand**: the spear now leaves from where it is on screen (the hand), aimed at what the crosshair is on. **To go back to the old throw** (from the middle of you, straight along the crosshair) set `Cfg.SpearFromHand = false` (CHANGE VALUES > Spear).
+- **Potions**: the Invisibility Potion hides your own hands while it lasts; Extreme Speed Juice shows a bar at the top of the screen that runs down.
+- **Swamp**: about 22% fewer lily pads, and many nudged off their straight lines. **Cube**: a tree glitches out hard for a moment when anyone hits it (`ThemeMap.TreeHit`).

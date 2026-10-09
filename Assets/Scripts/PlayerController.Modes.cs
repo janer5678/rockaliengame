@@ -25,20 +25,19 @@ namespace RockGame
             m_NextPistolShot = Time.time + Cfg.GunFireRate(gun);
             // hitscan: whatever the crosshair is on, right now
             var ray = CenterRay();
-            bool hit = AimWithAssist(ray, 250f, Cfg.ProjectileAssist, out var h);
+            bool hit = PortalPass.Hitscan(ray, 250f, Cfg.ProjectileAssist, AimWithAssist, out var h, out var point, out var shotDir); // (through portals too)
             var no = hit ? h.collider.GetComponentInParent<Unity.Netcode.NetworkObject>() : null;
-            var point = hit ? h.point : ray.GetPoint(250f);
             if (no != null && no.TryGetComponent(out PlayerNet p) && p != m_Net && !p.Dead.Value)
             {
                 bool head = p.IsHeadshot(point);
-                Fx.Blood(point, ray.direction, head);
+                Fx.Blood(point, shotDir, head);
                 Fx.DamageNumber(point, head ? Cfg.GunHead(gun) : Cfg.GunBody(gun), head);
                 Hud.HitMarker(!(head && p.HelmetHp.Value > 0), head);
             }
             else if (no != null && no.TryGetComponent(out Vehicle hv)) Hud.AnimalHit(hv, point, Cfg.GunBody(gun) * hv.HeadMul(point)); // (as PlayerNet.FirePistolRpc)
             else if (hit) EnergyWall.Hit(h.collider, point, h.normal); // (a shot into the energy wall: it flares and ripples)
             m_Net.FirePistolRpc(no != null, no != null ? new Unity.Netcode.NetworkObjectReference(no) : default, point, ray.direction);
-            Fx.Tracer(ray.origin + ray.direction * 0.5f - Vector3.up * 0.15f, point, Fx.Gun.Sniper, true, false);
+            PortalPass.Tracers(ray.origin + ray.direction * 0.5f - Vector3.up * 0.15f, Fx.Gun.Sniper);
             // the shot: its own crack in your ears and a flash at the muzzle; the revolver bucks (the view model snaps up
             // at the wrist) with a little punch out of the view
             Fx.Gunshot(gun == Item.Revolver ? Fx.Gun.Revolver : Fx.Gun.Pistol, m_VM.Muzzle(), ray.direction, true);
@@ -127,9 +126,8 @@ namespace RockGame
                 float a = i * 2.39996f + Random.Range(-0.2f, 0.2f);
                 var dir = (rot * new Vector3(Mathf.Cos(a) * r, Mathf.Sin(a) * r, 1f)).normalized;
                 var pr = new Ray(ray.origin, dir);
-                bool hit = AimWithAssist(pr, Cfg.ShotgunRange, 0.04f, out var h);
-                var end = hit ? h.point : pr.GetPoint(Cfg.ShotgunRange);
-                if (i % 2 == 0) Fx.Tracer(ray.origin + dir * 0.5f - Vector3.up * 0.15f, end, Fx.Gun.Shotgun, true, false); // (one blast for them all, below)
+                bool hit = PortalPass.Hitscan(pr, Cfg.ShotgunRange, 0.04f, AimWithAssist, out var h, out var end, out _); // (through portals too)
+                if (i % 2 == 0) PortalPass.Tracers(ray.origin + dir * 0.5f - Vector3.up * 0.15f, Fx.Gun.Shotgun); // (one blast for them all, below)
                 if (!hit) continue;
                 var p = h.collider.GetComponentInParent<PlayerNet>();
                 if (p != null && p != m_Net && !p.Dead.Value)

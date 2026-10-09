@@ -128,10 +128,10 @@ namespace RockGame
             Check(Cfg.PowerMenu && Cfg.PowerCount == 7 && Cfg.PowerIndex(Item.Helmet) < 0 && Cfg.PowerIndex(Item.Pistol) < 0 && Cfg.PowerIndex(Item.FortifyBuff) < 0 && hat.Wood == Cfg.HatchetWood && xbow.Wood == 350, $"{Cfg.RulesName(Cfg.Rules)}: power menu ({Cfg.PowerCount} items, no pistol, no fortify - it's in UPGRADES), normal prices (hatchet {hat.Wood} wood), crossbow {xbow.Wood} wood");
             Check(Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.Sword)).Wood == 500 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.C4)).Wood == 2500
                 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.Shotgun)).Wood == 2000 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.ShotgunShell)).Wood == 250
-                && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.Revolver)).Wood == 2500 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.RevolverAmmo)).Wood == 1000,
-                "power prices: sword 500, C4 2500, shotgun 2000 + 250 a shell, revolver 2500 + 1000 for 6 bullets");
-            Check(Cfg.MeleePlayerDamage(Item.Sword, true) == 150f && Cfg.MeleePlayerDamage(Item.Sword, false) == 95f && Cfg.Melee(Item.Sword).Cooldown > Cfg.Melee(Item.Hatchet).Cooldown,
-                "sword: 150 head, 95 body, a slower swing");
+                && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.Revolver)).Wood == 2500 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.RevolverAmmo)).Wood == 500 && Cfg.RevolverAmmoPerCraft == 1,
+                "power prices: sword 500, C4 2500, shotgun 2000 + 250 a shell, revolver 2500 + 500 a bullet");
+            Check(Cfg.MeleePlayerDamage(Item.Sword, true) == Cfg.SwordHeadDamage && Cfg.MeleePlayerDamage(Item.Sword, false) == Cfg.SwordBodyDamage && Cfg.Melee(Item.Sword).Cooldown > Cfg.Melee(Item.Hatchet).Cooldown,
+                $"sword: its own head / body damage (CHANGE VALUES), a slower swing ({Cfg.MeleePlayerDamage(Item.Sword, true)} / {Cfg.MeleePlayerDamage(Item.Sword, false)}, {Cfg.Melee(Item.Sword).Cooldown} s vs the hatchet's {Cfg.Melee(Item.Hatchet).Cooldown} s)");
             Check(Mathf.Abs(Cfg.ShotgunPellets * Cfg.ShotgunPelletDamage * Cfg.ShotgunFalloff(0.9f) - 200f) < 0.5f && Cfg.ShotgunFalloff(10f) < 0.7f, "shotgun: 200 within a metre, less further out");
             Check(Cfg.PieceWood(PieceType.Wall) == Cfg.WallWood, $"building pieces at their normal price (wall {Cfg.PieceWood(PieceType.Wall)} wood)");
             for (int i = 0; i < 18; i++) me.ServerGive(Item.Wood, 1000); // leaves room in the 24 slots for what gets bought
@@ -146,6 +146,7 @@ namespace RockGame
             Check(me.HeldStack.Data == 0 && Cfg.RevolverMag == 6, $"the revolver comes empty and holds 6 ({me.HeldStack.Data})");
             yield return BenchBuy(me, pc, Item.RevolverAmmo);
             Check(me.Count(Item.RevolverAmmo) == Cfg.RevolverAmmoPerCraft, $"one buy is {Cfg.RevolverAmmoPerCraft} bullets ({me.Count(Item.RevolverAmmo)})");
+            for (int n = Cfg.RevolverAmmoPerCraft; n < Cfg.RevolverMag; n += Cfg.RevolverAmmoPerCraft) yield return BenchBuy(me, pc, Item.RevolverAmmo); // (a full cylinder: one buy a bullet)
             me.ReloadPistolRpc();
             yield return new WaitForSeconds(0.4f);
             Check(me.HeldStack.Data == Cfg.RevolverMag && me.Count(Item.RevolverAmmo) == 0, $"bought {Cfg.RevolverMag} bullets and loaded them ({me.HeldStack.Data})");
@@ -527,10 +528,10 @@ namespace RockGame
             }
             else Log("FAIL: no wood pile");
             // the wood gen's other two levels (UPGRADES at the upgrade station): 1000, then 3000 - faster each time
-            for (int i = 0; i < 5; i++) me.ServerGive(Item.Wood, 1000);
+            for (int i = 0; i < 13; i++) me.ServerGive(Item.Wood, 1000);
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
             yield return new WaitForSeconds(0.3f);
-            int[] cost = { 2000, 3000 };
+            int[] cost = { Cfg.WoodGen1Wood, Cfg.WoodGen2Wood };
             var wm = FindAnyObjectByType<WoodMachine>();
             Check(wm != null, "the wood machine stands next to the alien machine");
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));

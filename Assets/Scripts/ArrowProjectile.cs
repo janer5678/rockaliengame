@@ -19,6 +19,11 @@ namespace RockGame
         float m_Gravity = Cfg.ArrowGravity;
         float m_Power = 1f;
         AudioSource m_Whoosh;
+        // the portal pair it last came out of (not taken again straight away: no bouncing back and forth)
+        int m_PortalSkip = -1;
+        float m_PortalSkipUntil;
+        /// <summary>For the tests: how many times a projectile (anyone's, on this machine) has gone through a portal.</summary>
+        public static int PortalPasses { get; private set; }
 
         /// <summary>
         /// The whoosh of it flying, as a looping 3D sound with doppler: you hear where it is, which way it's heading and
@@ -155,6 +160,20 @@ namespace RockGame
                         limit = h.distance;
                     }
                 }
+                // a linked portal on the way (or where it hit): out of the other one, turned the same way, and on it goes
+                var stop = first != null ? first.Value.point : pos + step;
+                if (PortalPass.Cross(pos, stop, first != null && PortalPass.Surface(first.Value.collider), Time.time < m_PortalSkipUntil ? m_PortalSkip : -1,
+                        out var pin, out var pout, out var at))
+                {
+                    PortalPass.Through(pin, pout, at, m_Vel, out var np, out m_Vel);
+                    transform.position = np;
+                    if (m_Thrown == Item.None || m_Thrown == Item.RocketLauncher) { if (m_Vel.sqrMagnitude > 0.01f) transform.rotation = Quaternion.LookRotation(m_Vel); }
+                    m_PortalSkip = pout.Pair;
+                    m_PortalSkipUntil = Time.time + 0.2f;
+                    PortalPasses++;
+                    Sfx.Play(Sfx.Portal, np, 0.35f, 0.05f, 40f);
+                    return;
+                }
                 if (first != null)
                 {
                     OnHit(first.Value);
@@ -203,7 +222,15 @@ namespace RockGame
                     if (no != null) m_Shooter.SpearLandRpc(true, no, h.point, dir);
                     else m_Shooter.SpearLandRpc(false, default, h.point, dir);
                 }
-                Destroy(gameObject);
+                if (no != null && no.GetComponent<PlayerNet>() != null) { Destroy(gameObject); return; } // (it's drawn stuck in them)
+                // it stays stuck where it hit, tip first, until the dropped spear the server puts there takes over (it used to
+                // vanish on impact and pop back a round trip later - it looked like it had gone into the ground)
+                m_Stuck = true;
+                if (m_Whoosh) m_Whoosh.Stop();
+                m_Life = 0.45f;
+                transform.position = h.point;
+                if (dir.sqrMagnitude > 0.01f) transform.rotation = Quaternion.LookRotation(dir);
+                if (no != null) transform.SetParent(no.transform, true);
                 return;
             }
             // the energy wall: it doesn't stick - it's zapped to nothing in a crackle and a ripple of light

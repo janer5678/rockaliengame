@@ -426,6 +426,9 @@ namespace RockGame
         [Tune("Hatchet")] public static float HatchetCooldown = 0.7f, HatchetRange = 2.5f, HatchetPlayerDamage = 14f, HatchetWoodGather = 15f, HatchetStoneGather = 2f, HatchetStructureDamage = 12f;
         [Tune("Pickaxe")] public static float PickaxeCooldown = 0.8f, PickaxeRange = 2.5f, PickaxePlayerDamage = 14f, PickaxeWoodGather = 3f, PickaxeStoneGather = 12f, PickaxeStructureDamage = 12f;
         [Tune("Spear")] public static float SpearCooldown = 0.9f, SpearRange = 3.4f, SpearPlayerDamage = 35f, SpearWoodGather = 2f, SpearStoneGather = 1f, SpearStructureDamage = 10f;
+        /// <summary>The thrown spear starts from where it is on screen (in your hand), aimed at what the crosshair is on.
+        /// false = the old way: from the middle of you (the eye), straight along the crosshair.</summary>
+        [Tune("Spear")] public static bool SpearFromHand = true;
         [Tune("Spear")] public static float SpearDrawTime = 0.05f /* (full power at once: an instant throw) */, SpearThrowSpeed = 30f, SpearThrowDamage = 90f, SpearThrowStructureDamage = 8f;
         [Tune("Chainsaw")] public static float ChainsawCooldown = 0.15f, ChainsawRange = 2.4f, ChainsawPlayerDamage = 8f, ChainsawWoodGather = 12f, ChainsawStoneGather = 10f, ChainsawStructureDamage = 12f;
         [Tune("Melee")] public static float StoneStructureMeleeMul = 0.2f; // stone is very hard to melee - bring a ram
@@ -489,7 +492,7 @@ namespace RockGame
         [Tune("Ram")] public static int HeavyRamSteps = 3;
         /// <summary>Going over a large wall or gate from a ladder: how long it takes (s, holding W) and what the spikes on top
         /// do the whole way over (HP a second). A ladder can't go so high up one that its top is within LadderSpikeGap of the spikes.</summary>
-        [Tune("Building")] public static float WallClimbTime = 3f, WallClimbDps = 9f, LadderSpikeGap = 0.9f;
+        [Tune("Building")] public static float WallClimbTime = 3f, WallClimbDps = 18f, LadderSpikeGap = 0.9f;
         public static int FortTowerWood = 1000; // only used for the demolish refund (the fort is an airdrop item now)
 
         // ---------- Vehicles ----------
