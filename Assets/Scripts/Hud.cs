@@ -112,7 +112,7 @@ namespace RockGame
             s_BannerTitle = title; s_BannerSub = sub; s_BannerTime = Time.time; s_BannerTest = false;
         }
         /// <summary>The news that still gets a banner across the middle in a match (by the game's own words).</summary>
-        public static bool CentreNews(string title) => title != null && (title.StartsWith("TRADE STATION UNLOCKED") || title.StartsWith("AIRDROP"));
+        public static bool CentreNews(string title) => title != null && (title.StartsWith("TRADE STATION UNLOCKED") || title.StartsWith("AIRDROP") || title.StartsWith("SUDDEN DEATH"));
         /// <summary>Test hook: the last banner's title as it's shown (in the player's own words, if they've reworded it).</summary>
         public static string LastBannerShown => NotifText.Map(s_BannerTitle);
         public static void Clear() { s_Msgs.Clear(); s_Gains.Clear(); s_Kills.Clear(); s_BannerTime = -10f; Fx.Numbers.Clear(); }
@@ -337,6 +337,14 @@ namespace RockGame
                         sub = Two("The clock is stopped", "Go at your own pace");
                         topAccent = new Color(0.45f, 1f, 0.45f);
                         break;
+                    case GameState.PreBall when game.SuddenBall.Value:
+                        // the sudden death round: the bases wiped, the walls back up for a minute
+                        topLabel = "SUDDEN DEATH  WALL DROPS IN";
+                        topClock = Clock(game.TimeLeft);
+                        topLeft = game.TimeLeft;
+                        sub = Two("Bases wiped, basics only", "First ball in a machine wins!");
+                        topAccent = GameSettings.TimerColourNow(GameSettings.TimerColOvertime);
+                        break;
                     case GameState.PreBall:
                         topLabel = "WALL DROPS IN";
                         topClock = Clock(game.TimeLeft);
@@ -346,11 +354,11 @@ namespace RockGame
                         topAccent = GameSettings.TimerColourNow(GameSettings.TimerColPreBall);
                         break;
                     case GameState.BallLive:
-                        topLabel = game.Overtime.Value ? "OVERTIME" : "TIME LEFT";
+                        topLabel = game.Overtime.Value ? "OVERTIME" : game.SuddenBall.Value ? "SUDDEN DEATH" : "TIME LEFT";
                         topClock = game.Overtime.Value ? "" : Clock(game.TimeLeft);
                         topLeft = game.Overtime.Value ? -1f : game.TimeLeft;
-                        sub = game.Overtime.Value ? Two("First ball in a machine wins", "Get it into YOUR machine!") : BallStatus(team);
-                        topAccent = game.Overtime.Value ? GameSettings.TimerColourNow(GameSettings.TimerColOvertime) : GameSettings.TimerColourNow(GameSettings.TimerColBallLive);
+                        sub = game.Overtime.Value ? Two("First ball in a machine wins", "Get it into YOUR machine!") : game.SuddenBall.Value ? Two("First ball in a machine wins", "Nobody: a rock fight in the stadium") : BallStatus(team);
+                        topAccent = game.Overtime.Value || game.SuddenBall.Value ? GameSettings.TimerColourNow(GameSettings.TimerColOvertime) : GameSettings.TimerColourNow(GameSettings.TimerColBallLive);
                         // the glass wall sliding down (MapBuilder.GlassDropping, a few seconds): WALL DROPPING, no clock
                         if (!game.Overtime.Value && MapBuilder.GlassDropping)
                         {
@@ -360,7 +368,7 @@ namespace RockGame
                         }
                         break;
                     case GameState.SuddenDeath:
-                        topLabel = "SUDDEN DEATH";
+                        topLabel = "STADIUM FIGHT";
                         topClock = Clock(game.TimeLeft);
                         topLeft = game.TimeLeft;
                         sub = Two("Rocks only, first kill wins", "Don't fall into space!");
@@ -405,14 +413,25 @@ namespace RockGame
             // (no radar: the FPS counter goes under the team box - or into the corner with neither)
             if (m_RadarBottom < 0f) m_RadarBottom = GameSettings.HudTeamBox.Value ? 10 + 30 * k : 10 - 4 * k;
             DrawBedList(game, k, m_RadarBottom + 34 * k); // (Bedwars: who still has a bed - under the radar and the FPS line)
-            // ---- the gun's rounds, big, top left (pistol, revolver, shotgun) ----
-            if ((Cfg.IsGun(me.HeldItem) || me.HeldItem == Item.Shotgun) && !me.Dead.Value)
+            // ---- the weapon's ammo, big, top left (pistol, revolver, shotgun, bow, crossbow): tucked under the team box,
+            // the base radar and the FPS line (their slots kept, so it doesn't jump when the radar comes and goes) ----
+            if ((Cfg.IsGun(me.HeldItem) || me.HeldItem == Item.Shotgun || me.HeldItem == Item.Bow || me.HeldItem == Item.Crossbow) && !me.Dead.Value)
             {
                 var ps = me.HeldStack;
-                bool sg = ps.Id == Item.Shotgun;
-                int mag = sg ? 1 : Cfg.GunMag(ps.Id);
-                int spare = me.Count(sg ? Item.ShotgunShell : Cfg.GunAmmo(ps.Id));
-                Shadowed(new Rect(14, 150 * k, 420 * k, 70 * k), $"<b><size={Mathf.RoundToInt(52 * k)}>{ps.Data}</size></b><size={Mathf.RoundToInt(22 * k)}> / {mag}  {Cfg.ItemName(ps.Id).ToUpper()}   <color=#bbbbbb>{spare} spare</color></size>", m_Label);
+                float ay = 10 + (GameSettings.HudTeamBox.Value ? 34 * k : 0f) + 56 * k;
+                if (Cfg.Bedwars && game != null && (game.S == GameState.BallLive || game.WallUp)) ay += Cfg.TeamCount * 27 * k; // (under the bed list)
+                AmmoRect = new Rect(14, ay, 420 * k, 70 * k);
+                string big = $"<size={Mathf.RoundToInt(52 * k)}>", small = $"<size={Mathf.RoundToInt(22 * k)}>";
+                if (ps.Id == Item.Bow)
+                    Shadowed(AmmoRect, $"<b>{big}{me.Count(Item.Arrow)}</size></b>{small}  ARROWS</size>", m_Label);
+                else
+                {
+                    bool sg = ps.Id == Item.Shotgun, xb = ps.Id == Item.Crossbow;
+                    int mag = sg || xb ? 1 : Cfg.GunMag(ps.Id);
+                    int spare = me.Count(sg ? Item.ShotgunShell : xb ? Item.Arrow : Cfg.GunAmmo(ps.Id));
+                    Shadowed(AmmoRect, $"<b>{big}{ps.Data}</size></b>{small} / {mag}  {Cfg.ItemName(ps.Id).ToUpper()}   <color=#bbbbbb>{spare} spare</color></size>", m_Label);
+                }
+                AmmoShownFrame = Time.frameCount;
             }
 
             // ---- Builder crafting timers, then messages (top right) ----
@@ -529,7 +548,7 @@ namespace RockGame
                 {
                     bool mine = buffTeam == me.Team.Value;
                     var buffC = mine ? new Color(1f, 0.82f, 0.25f) : Color.Lerp(Cfg.TeamColor[Mathf.Clamp(buffTeam, 0, 3)], Color.white, 0.25f);
-                    string mul = $"{Cfg.BallGatherMul:0.#}X GATHERING FROM THE BALL";
+                    string mul = $"{Cfg.BallGatherNow:0.#}X GATHERING FROM THE BALL";
                     string line = mine ? $"<color=#ffd24a><b>YOUR TEAM HAS</b></color> <color=#eeeeee><b>{mul}</b></color>"
                         : $"<color=#{ColorUtility.ToHtmlStringRGB(buffC)}><b>{Cfg.TeamLabel(buffTeam)} HAS</b></color> <color=#eeeeee><b>{mul}</b></color>";
                     int buffSize = Mathf.RoundToInt(m_Small.fontSize * 1.3f);
@@ -635,7 +654,7 @@ namespace RockGame
                 case Item.Barrier: return $"<b>Large Wall</b> x{s.Count}    LMB: place it - in your base or out in the open (not in the enemy base)";
                 case Item.LargeGate: return $"<b>Large Gate</b> x{s.Count}    LMB: place it - a tall log gate your team opens with {KT(Bind.Interact)}";
                 case Item.SleepingBag: return $"<b>Sleeping Bag</b> x{s.Count}    LMB: put it down (not in an enemy base) - respawn at it when you die";
-                case Item.BearTrap: return $"<b>Bear Trap</b> x{s.Count}    LMB: set it on the ground or a floor - it snaps and holds ANYONE who steps on it (you too)";
+                case Item.BearTrap: return $"<b>Stun Trap</b> x{s.Count}    LMB: set it on the ground or any floor - an enemy who steps on it is held {Cfg.BearTrapHold:0.#} s and seen through walls";
                 case Item.Barricade: return $"<b>Barricade</b> x{s.Count}    LMB: put it down - cover anywhere, even in the enemy base (not right up against their buildings)";
                 case Item.Ladder: return $"<b>Ladder</b> x{s.Count}    LMB: aim at a wall (yours or theirs, or a large wall) - it stands against it; walk into it and hold {KT(Bind.Forward)} to climb";
                 case Item.AutoTurret: return $"<b>Auto Turret</b>    LMB: place it in your base - then {KT(Bind.Interact)} on it and PUT A WEAPON (any) AND ARROWS IN IT";
@@ -668,7 +687,7 @@ namespace RockGame
                 case Item.InvisPotion: return $"<b>Invisibility Potion</b>    LMB: drink ({Cfg.InvisTime:0}s, attacking shows you)";
                 case Item.SpeedJuice: return $"<b>Extreme Speed Juice</b>    LMB: drink ({Cfg.SpeedJuiceTime:0}s of extreme speed)";
                 case Item.Chainsaw: return $"<b>Chainsaw</b> ({s.Data * Cfg.ChainsawWearEvery} uses left)    hold LMB: cuts wood and stone fast";
-                case Item.Hammer: return $"<b>Hammer</b>    LMB on your own wall: upgrade it ({Cfg.HammerStoneWood} / {Cfg.HammerMetalWood} / {Cfg.HammerArmouredWood} {Cfg.CurrencyName})   anything else: a hit ({Cfg.HammerBodyDamage:0} body / {Cfg.HammerHeadDamage:0} head)";
+                case Item.Hammer: return $"<b>Hammer</b>    LMB on your own wall: upgrade it ({Cfg.HammerStoneWood} / {Cfg.HammerMetalWood} / {Cfg.HammerArmouredWood} {Cfg.CurrencyName})   (it can't hurt players)";
                 case Item.HeavyRam: return $"<b>High Strength Battering Ram</b> ({s.Data} hit{(s.Data == 1 ? "" : "s")} left)    hold LMB at an enemy piece: 3x a normal ram";
                 case Item.EnderPearl: return "<b>Ender Pearl</b>    LMB: throw it - you teleport to wherever it lands";
                 case Item.Pistol: return $"<b>Pistol</b>  ({s.Data} shot{(s.Data == 1 ? "" : "s")} left)    LMB: shoot" + (me.Count(Item.PistolAmmo) > 0 ? $"   {KT(Bind.Rotate)}: reload ({me.Count(Item.PistolAmmo)} spare ammo)" : "");
@@ -1360,7 +1379,7 @@ namespace RockGame
                 bool show = GameSettings.CountEnd.Value; // (Settings > Display > COUNTDOWN > End countdown: off, just the beeps)
                 if (n != m_LastCount) { m_LastCount = n; Sfx.Play2D(n <= 3 ? Sfx.Ding : Sfx.Beep, n <= 3 ? 0.9f : 0.6f, 0f); if (show) Fx.Shake(0.08f + (10 - n) * 0.02f); }
                 // (no coloured border round the screen - the number, its glow and shockwave, the label, the pips: Hud.Notify.cs)
-                string label = sock < 0 ? (Cfg.UseOvertime && !Cfg.Builder ? "OVERTIME IN" : "SUDDEN DEATH IN") : sock == myTeam ? "YOU WIN IN" : $"{Cfg.TeamName[sock]} WINS IN";
+                string label = sock < 0 ? (game.SuddenBall.Value || !Cfg.UseOvertime || Cfg.Builder ? "STADIUM FIGHT IN" : Cfg.ClassicMode && !Cfg.Domination || Cfg.Tutorial ? "OVERTIME IN" : "SUDDEN DEATH IN") : sock == myTeam ? "YOU WIN IN" : $"{Cfg.TeamName[sock]} WINS IN";
                 if (!dead && show) { DrawEndCountdown(n, frac, label, sock < 0, k); CountdownShownFrame = Time.frameCount; } // (the beeps go on while you're dead; the number doesn't show)
                 return;
             }
@@ -1534,6 +1553,9 @@ namespace RockGame
         float m_RadarBottom = -1f;
         /// <summary>(tests) where the base radar was last drawn, and the frame.</summary>
         public static Rect RadarRect;
+        /// <summary>(tests) where the held weapon's ammo was last drawn (top left), and on which frame.</summary>
+        public static Rect AmmoRect;
+        public static int AmmoShownFrame = -10;
         public static int RadarShownFrame = -10;
         /// <summary>(tests) the base radar arrow's turn last drawn, degrees clockwise from straight up (0 = the base is ahead).</summary>
         public static float RadarArrowAngle { get; private set; }

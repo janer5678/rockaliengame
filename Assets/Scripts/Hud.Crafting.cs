@@ -109,7 +109,7 @@ namespace RockGame
                 case Item.Barrier: return "Large Wall: a tall log wall for your base or out in the open.";
                 case Item.LargeGate: return "Large Gate: a tall log gate with a door your team opens - goes in your wall line.";
                 case Item.SleepingBag: return $"Sleeping Bag: put it down anywhere but an enemy base and respawn at it (once every {Cfg.SleepingBagCooldown:0} s).";
-                case Item.BearTrap: return $"Bear Trap: in your colour; snaps anyone who steps on it - you too ({Cfg.BearTrapDamage:0} damage, held {Cfg.BearTrapHold:0.#} s). Ground or floors.";
+                case Item.BearTrap: return $"Stun Trap: put it on the ground or any floor, anywhere. An enemy who steps on it can't move for {Cfg.BearTrapHold:0.#} s (they can still fight back) and your team sees them through walls.";
                 case Item.Barricade: return "Barricade: a concrete block of cover, tall enough to crouch behind. Put it down anywhere - even in the enemy base, just not right up against their buildings.";
                 case Item.Ladder: return "Ladder: aim it at any wall - yours, theirs or a large wall - and climb over.";
                 case Item.AutoTurret: return $"Auto Turret: does NOTHING until you put a weapon in it (any weapon) and arrows. Then it shoots enemies in its {Cfg.TurretCone * 2f:0} degree view out to {Cfg.TurretRange:0} m.";
@@ -122,7 +122,7 @@ namespace RockGame
                 case Item.Crossbow: return $"Crossbow: {Cfg.CrossbowDamage:0} damage, faster and flatter than the bow. Reloads itself from your arrows.";
                 case Item.Armor: return $"Armour: {Cfg.ArmorHp} extra health used up before your own.";
                 case Item.Chainsaw: return $"Chainsaw: rips through wood and stone. {Cfg.ChainsawUses * Cfg.ChainsawWearEvery} uses.";
-                case Item.Hammer: return $"Hammer: aim at one of your walls and LMB to upgrade it - stone {Cfg.HammerStoneWood}, metal {Cfg.HammerMetalWood}, armoured {Cfg.HammerArmouredWood} {Cfg.CurrencyName} a piece. Hits for half a sword.";
+                case Item.Hammer: return $"Hammer: aim at one of your walls and LMB to upgrade it - stone {Cfg.HammerStoneWood}, metal {Cfg.HammerMetalWood}, armoured {Cfg.HammerArmouredWood} {Cfg.CurrencyName} a piece. It can't hurt players.";
                 case Item.HeavyRam: return "High Strength Battering Ram: 3x a normal ram. Wood, stone and metal break in one slam; armoured drops to wood.";
                 case Item.Saddle: return $"Saddle: {KT(Bind.Interact)} on a wild horse to ride it.";
                 case Item.Boat: return $"Boat: put it on open water and {KT(Bind.Interact)} to drive it.";
@@ -216,6 +216,7 @@ namespace RockGame
         static string ListProblem(PlayerNet me, PlayerController pc, Recipe r)
         {
             int team = me.Team.Value;
+            if (Cfg.SuddenLocked(r.Output)) return "sudden death"; // (the sudden death round: the basics only)
             if (r.Output == Item.Workbench && !Cfg.BenchUnlocked(team)) return "locked"; // (until the team captures the ball)
             if (!(pc.CraftOpen || Cfg.CraftAnywhere(r.Output))) return "in your base";
             if (r.Output == Item.FortifyBuff && Cfg.FortifyLevel(team) >= Cfg.MaxFortify) return "maxed out";
@@ -451,7 +452,7 @@ namespace RockGame
             float bp = Mathf.Max(3 * k, row * 0.14f);
             var br = new Rect(rr.xMax - bw - 6 * k, rr.y + bp, bw, row - 2 * bp);
             if (FlatBtn(br, ok ? k_BtnOk : k_BtnNo, k_BtnOkHi, ok && canClick)) me.CraftRpc(idx);
-            GUI.Label(br, locked ? "LOCKED" : Cfg.Jonah && Cfg.CraftTier(rec.Output) >= 1 ? "TRADE" : "CRAFT", /* (Jonah mode: the trade stations' things TRADE; the starter ones still CRAFT) */ CraftStyle(Mathf.Min(17 * k, row * 0.36f), FontStyle.Bold, TextAnchor.MiddleCenter, ok ? Color.white : new Color(1, 1, 1, 0.35f)));
+            GUI.Label(br, locked ? "LOCKED" : Cfg.CraftTier(rec.Output) >= 1 ? "TRADE" : "CRAFT", /* (the Trade Stations' things - tier 1 and 2 - TRADE; the starter ones still CRAFT) */ CraftStyle(Mathf.Min(17 * k, row * 0.36f), FontStyle.Bold, TextAnchor.MiddleCenter, ok ? Color.white : new Color(1, 1, 1, 0.35f)));
         }
     }
 }

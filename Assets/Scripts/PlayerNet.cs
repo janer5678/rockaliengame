@@ -701,7 +701,7 @@ namespace RockGame
             }
             // wallhack glasses: enemies glow through walls while you hold them
             var local = Local;
-            bool esp = !Mine && local != null && local.SeesThroughWalls && !local.Dead.Value && local.Team.Value != Team.Value && !dead; // (worn or held - PlayerNet.Gear.cs)
+            bool esp = !Mine && local != null && (local.SeesThroughWalls || StunnedFor(local.Team.Value)) && !local.Dead.Value && local.Team.Value != Team.Value && !dead; // (worn or held - PlayerNet.Gear.cs; or caught in your team's stun trap)
             if (esp != m_Esp) SetEsp(esp);
             // test: alien outlines (enemies only, not while invisible)
             bool outline = Cfg.AlienOutlines && !Mine && local != null && local.Team.Value != Team.Value && !dead && !Hidden;
@@ -1131,7 +1131,7 @@ namespace RockGame
 
             if (no.TryGetComponent(out PlayerNet p))
             {
-                if (p == this || p.Dead.Value || !GameAllowsCombat) return;
+                if (p == this || p.Dead.Value || !GameAllowsCombat || !Cfg.HurtsPlayers(item)) return;
                 ServerHitPlayer(p, st.PlayerDamage, point, dir, Cfg.MeleeHeadDamage(item), (byte)item);
             }
             else if (no.TryGetComponent(out Vehicle v))
@@ -1145,7 +1145,7 @@ namespace RockGame
                 weak = weak && n.IsWeakSpotHit(point, 0.8f);
                 bool tree = n.IsWood; // (a tree or a fallen log)
                 // your team's ball in your base: everything you gather pays a bit more (DNA too)
-                int got = n.ServerHarvest(Mathf.RoundToInt((tree ? st.WoodGather : st.StoneGather) * (BallBuff ? Cfg.BallGatherMul : 1f)), weak, transform.position);
+                int got = n.ServerHarvest(Mathf.RoundToInt((tree ? st.WoodGather : st.StoneGather) * (BallBuff ? Cfg.BallGatherNow : 1f)), weak, transform.position);
                 if (got > 0) ServerGive(Cfg.GatherItem(n.Yield), Cfg.GatherCount(n.Yield, got)); // DNA mode: DNA instead
                 if (got > 0 && n.Kind.Value == ResourceNode.Tree && n.Amount.Value <= 0 && Cfg.TreeFellBonus > 0)
                 {
@@ -1457,6 +1457,7 @@ namespace RockGame
             if (InSuddenDeath || (NetGame.Instance != null && NetGame.Instance.S == GameState.GameOver)) return;
             var r = power ? Cfg.GetPowerRecipe(recipe - Cfg.PowerBase, Team.Value) : Cfg.GetRecipe(recipe);
             if (!Tutorial.AllowsItemFor(this, r.Output)) { Notify("Not yet - the tutorial gets to that soon"); return; }
+            if (Cfg.SuddenLocked(r.Output)) { Notify("Sudden death: only the basics can be made"); return; } // (NetGame.SuddenRound.cs)
             // the Workbench T1 is locked for everyone until a team (any team) has captured the ball (NetGame.Bench.cs)
             if (r.Output == Item.Workbench && !Cfg.BenchUnlocked(Team.Value))
             {
@@ -1672,16 +1673,7 @@ namespace RockGame
             // chests go anywhere but an enemy's base (out in the wild the grass clears round them: Container.OnNetworkSpawn)
             if ((kind == Item.Chest || kind == Item.SleepingBag) && baseTeam >= 0 && baseTeam != team && !Cfg.Builder) return "Not in the enemy base";
             if (kind == Item.AutoTurret && baseTeam != team && !Cfg.Builder) return "Auto turrets go in your own base";
-            if (kind == Item.BearTrap)
-            {
-                // on the ground or a floor - not on top of a foundation
-                if (Physics.Raycast(pos + Vector3.up * 0.3f, Vector3.down, out var under, 0.8f, ~(1 << HitboxLayer), QueryTriggerInteraction.Ignore))
-                {
-                    var us = under.collider.GetComponentInParent<Structure>();
-                    if (us != null && us.PType == PieceType.Foundation) return "Bear traps go on the ground or a floor, not a foundation";
-                }
-            }
-            bool anywhere = kind == Item.Ladder || kind == Item.BearTrap || kind == Item.Barricade; // (ladders, traps and barricades: their base too)
+            bool anywhere = kind == Item.Ladder || kind == Item.BearTrap || kind == Item.Barricade; // (ladders, stun traps and barricades: their base too; the trap on the ground or any floor)
             if (kind == Item.Barricade) { var bp = Deployables.BarricadeEnemyProblem(team, pos); if (bp != null) return bp; } // (...not right up against their buildings)
             // chests may go on the bedrock around the machine, just not on the spawn spot
             if (kind == Item.Chest && !Cfg.Builder && new Vector2(pos.x - Cfg.SpawnPos(team).x, pos.z - Cfg.SpawnPos(team).z).magnitude < 1.3f) return "Keep the spawn spot clear";
@@ -1723,7 +1715,7 @@ namespace RockGame
             else if (kind == Item.BearTrap) { c = new Vector3(0, 0.1f, 0); half = new Vector3(0.3f, 0.06f, 0.3f); }
             else if (kind == Item.Ladder) { c = new Vector3(0, 0.6f, 0); half = new Vector3(0.35f, 0.45f, 0.12f); } // (just its foot: it leans on the wall)
             else if (kind == Item.AutoTurret) { c = new Vector3(0, 0.65f, 0); half = new Vector3(0.4f, 0.55f, 0.4f); }
-            else if (kind == Item.Barricade) { c = new Vector3(0, 0.72f, 0); half = new Vector3(Deployables.BarricadeLen * 0.5f - 0.04f, 0.62f, Deployables.BarricadeFoot * 0.5f - 0.04f); }
+            else if (kind == Item.Barricade) { c = new Vector3(0, Deployables.BarricadeH * 0.5f + 0.045f, 0); half = new Vector3(Deployables.BarricadeLen * 0.5f - 0.04f, Deployables.BarricadeH * 0.5f - 0.055f, Deployables.BarricadeFoot * 0.5f - 0.04f); }
             else if (kind == Item.LargeGate) { c = new Vector3(0, 2.45f, 0); half = new Vector3(Structure.GatePostX + 0.2f, 2.2f, 0.2f); } // the large gate (5.4 m wide, 4.9 m tall)
             else { c = new Vector3(0, 2.1f, 0); half = new Vector3(2.7f, 1.85f, 0.2f); } // the large wall (5.5 m wide, 4 m tall)
             foreach (var h in Physics.OverlapBox(pos + rot * c, half, rot, ~0, QueryTriggerInteraction.Ignore))

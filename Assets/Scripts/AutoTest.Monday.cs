@@ -23,6 +23,7 @@ namespace RockGame
             for (float t = 0; t < 30f && g.S != GameState.BallLive; t += 0.25f) yield return new WaitForSeconds(0.25f);
             g.TimerPaused.Value = true;
             Check(g.S == GameState.BallLive, "the wall dropped");
+            yield return new WaitForSeconds(1.5f); // (the wood machine lands on the next second's tick)
 
             // ---- no upgrade station; the wood machine is there from the start and speeds up by itself
             Check(Cfg.HammerOn && !Cfg.HasBaseUpgrades, "the hammer is on and there are no base upgrades here");
@@ -65,8 +66,8 @@ namespace RockGame
             Check(ci >= 0 && Cfg.GetRecipe(ci).Wood == 500, $"the chainsaw costs 500 wood again ({(ci >= 0 ? Cfg.GetRecipe(ci).Wood : -1)})");
             Check(Cfg.MaxData(Item.Chainsaw) == Cfg.ChainsawUses && Cfg.ChainsawWearEvery == 2, "the chainsaw wears out again, at half the old rate");
             Check(Cfg.CraftIndexOf(Item.HeavyRam) < 0 && Cfg.Removed(Item.HeavyRam), "no High Strength Battering Ram");
-            Check(Mathf.Approximately(Cfg.MeleePlayerDamage(Item.Hammer, false), Cfg.SwordBodyDamage * 0.5f) && Mathf.Approximately(Cfg.MeleePlayerDamage(Item.Hammer, true), Cfg.SwordHeadDamage * 0.5f),
-                $"the hammer hits for half the sword ({Cfg.MeleePlayerDamage(Item.Hammer, false)} / {Cfg.MeleePlayerDamage(Item.Hammer, true)})");
+            Check(!Cfg.HurtsPlayers(Item.Hammer) && Cfg.MeleePlayerDamage(Item.Hammer, false) == 0f && Cfg.MeleePlayerDamage(Item.Hammer, true) == 0f,
+                $"the hammer can't hurt a player ({Cfg.MeleePlayerDamage(Item.Hammer, false)} / {Cfg.MeleePlayerDamage(Item.Hammer, true)})");
 
             // ---- craft the hammer at home (it needs a Trade Station now)
             pc.LocalTeleport(Cfg.SpawnPos(team), Quaternion.LookRotation(-Cfg.BackDir(team)).eulerAngles.y);
@@ -163,17 +164,17 @@ namespace RockGame
                 for (int i = 0; i < 60; i++)
                 {
                     var c = NetGame.RollAirdropCrate();
-                    bool ok = c.Count == 3 && c[0].Id == Cfg.CurrencyItem && c[1].Id == Cfg.CurrencyItem && c[0].Count >= 500 && c[1].Count >= 500 && c[2].Id != Item.Wood && !c[2].Empty;
+                    bool ok = c.Count == 1 && c[0].Id != Cfg.CurrencyItem && !c[0].Empty;
                     allOk &= ok;
-                    if (c.Count == 3) { if (c[2].Id == Item.C4 || c[2].Id == Item.RocketLauncher || c[2].Id == Item.BombBush) boom = true; else other = true; }
+                    if (c.Count == 1) { if (c[0].Id == Item.C4 || c[0].Id == Item.RocketLauncher || c[0].Id == Item.BombBush) boom = true; else other = true; }
                 }
-                Check(allOk, "every airdrop crate: two stacks of wood and one airdrop item");
+                Check(allOk, "every airdrop crate: just one airdrop item");
                 Check(boom && other, $"the item can be an explosive or something else ({boom}, {other})");
                 Cfg.AirdropItemMask = mask;
             }
 
             // ---- the ball buff: x3 gathering, and everyone sees who has it
-            Check(Mathf.Approximately(Cfg.BallGatherMul, 3f), $"the ball buff is x3 gathering ({Cfg.BallGatherMul})");
+            Check(Mathf.Approximately(Cfg.BallGatherMul, 3f) && Mathf.Approximately(Cfg.BallGatherMul1v1, 1.5f), $"the ball buff is x3 gathering, x1.5 in a 1v1 ({Cfg.BallGatherMul}, {Cfg.BallGatherMul1v1})");
             var ball = Ball.Instance;
             Check(ball != null, "the ball is out");
             if (ball != null)
@@ -183,12 +184,12 @@ namespace RockGame
                 pc.LocalTeleport(Cfg.SpawnPos(team), lookYaw);
                 pc.SetLook(lookYaw, 0f);
                 yield return new WaitForSeconds(1f);
-                Check(Time.time - Hud.BuffShownAt < 0.5f && Hud.BuffShown.Contains($"{Cfg.TeamLabel(enemy)} HAS") && Hud.BuffShown.Contains("3X GATHERING FROM THE BALL"),
-                    $"the enemy's ball buff shows on our screen: {Cfg.TeamLabel(enemy)} HAS 3X GATHERING FROM THE BALL ({Hud.BuffShown})");
+                Check(Time.time - Hud.BuffShownAt < 0.5f && Hud.BuffShown.Contains($"{Cfg.TeamLabel(enemy)} HAS") && Hud.BuffShown.Contains($"{Cfg.BallGatherNow:0.#}X GATHERING FROM THE BALL"),
+                    $"the enemy's ball buff shows on our screen: {Cfg.TeamLabel(enemy)} HAS {Cfg.BallGatherNow:0.#}X GATHERING FROM THE BALL ({Hud.BuffShown})");
                 yield return Snap("monday_buff_enemy");
                 ball.ServerSocket(team);
                 yield return new WaitForSeconds(1f);
-                Check(Hud.BuffShown.Contains("YOUR TEAM HAS") && Hud.BuffShown.Contains("3X GATHERING FROM THE BALL"), $"ours shows as YOUR TEAM HAS 3X GATHERING FROM THE BALL ({Hud.BuffShown})");
+                Check(Hud.BuffShown.Contains("YOUR TEAM HAS") && Hud.BuffShown.Contains($"{Cfg.BallGatherNow:0.#}X GATHERING FROM THE BALL"), $"ours shows as YOUR TEAM HAS {Cfg.BallGatherNow:0.#}X GATHERING FROM THE BALL ({Hud.BuffShown})");
                 yield return Snap("monday_buff_ours");
                 Check(me.BallBuff, "with the ball in our machine we have the buff");
                 yield return Snap("monday_ball_beacon");

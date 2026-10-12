@@ -192,6 +192,8 @@ namespace RockGame
             return key;
         }
         public static bool FreeForAll => Mode == GameMode.Ffa3 || Mode == GameMode.Ffa4;
+        /// <summary>A 1v1: two teams of one player each.</summary>
+        public static bool Is1v1 => Mode == GameMode.Duel && TeamCap(0) == 1 && TeamCap(1) == 1;
         /// <summary>How many teams (bases) a mode has.</summary>
         public static int ModeTeams(GameMode m) => m == GameMode.Ffa3 || m == GameMode.Trio ? 3 : m == GameMode.Ffa4 || m == GameMode.Quad ? 4 : 2;
         /// <summary>Players per team.</summary>
@@ -417,6 +419,10 @@ namespace RockGame
         [Tune("Player")] public static float BaseRegen = 2f;
         /// <summary>While your team's ball is in your machine's socket (Builder: planted for your team), everything you gather gives this much more.</summary>
         [Tune("Player")] public static float BallGatherMul = 3f;
+        /// <summary>The ball buff in a 1v1 (one player a side): smaller.</summary>
+        [Tune("Player")] public static float BallGatherMul1v1 = 1.5f;
+        /// <summary>The ball buff in this match: BallGatherMul1v1 in a 1v1, BallGatherMul otherwise.</summary>
+        public static float BallGatherNow => Is1v1 ? BallGatherMul1v1 : BallGatherMul;
         [Tune("Player")] public static float BerryHeal = 25f, BerryEatTime = 1.5f, MeatEatTime = 3f;
         [Tune("Player")] public static int ArmorHp = 25;               // wooden armour: a second health bar, used up first (max 255)
         [Tune("Player")] public static float HeadshotMul = 2f;
@@ -493,9 +499,9 @@ namespace RockGame
         [Tune("Crafting")] public static int BarricadeWood = 250;
         [Tune("Crafting")] public static float BarricadeHp = 600f;
         /// <summary>The Death Wand: no longer in airdrops - the last thing on the Advanced Trade Station's list.</summary>
-        [Tune("Crafting")] public static int DeathWandWood = 5000;
+        [Tune("Crafting")] public static int DeathWandWood = 4000;
         /// <summary>The Trade Station's ladder, bear trap, sleeping bag and large gate, and the Advanced one's auto turret.</summary>
-        [Tune("Crafting")] public static int LadderWood = 250, BearTrapWood = 200, SleepingBagWood = 175, LargeGateWood = 120, AutoTurretWood = 3000;
+        [Tune("Crafting")] public static int LadderWood = 250, BearTrapWood = 250, SleepingBagWood = 175, LargeGateWood = 120, AutoTurretWood = 3000;
         [Tune("Crafting")] public static int CrossbowWood = 500, SaddleWood = 750, ArmorWood = 250, ChainsawWood = 500;
         /// <summary>The High Strength Battering Ram (Trade Station): one slam does three normal rams' worth.</summary>
         [Tune("Crafting")] public static int HeavyRamWood = 600;
@@ -601,7 +607,7 @@ namespace RockGame
                 case Item.InvisPotion: return "Invisibility Potion";
                 case Item.SpeedJuice: return "Extreme Speed Juice";
                 case Item.Ladder: return "Ladder";
-                case Item.BearTrap: return "Bear Trap";
+                case Item.BearTrap: return "Stun Trap"; // (the old bear trap, made a stun trap: Container.Deployables.cs)
                 case Item.SleepingBag: return "Sleeping Bag";
                 case Item.LargeGate: return "Large Gate";
                 case Item.Skull: return "Skull";
@@ -698,7 +704,7 @@ namespace RockGame
         /// <summary>The airdrop items the host can pick from in the mode options (the others are unused for now).</summary>
         /// <summary>Taken out of the game for now (not craftable, not in any shop, airdrop or loot pool): the bear trap,
         /// the sleeping bag and the alien helmet. Their code stays, so they can come back by taking them off this list.</summary>
-        public static bool Removed(Item i) => i == Item.BearTrap || i == Item.SleepingBag || i == Item.Helmet || i == Item.AutoTurret || i == Item.HeavyRam // (the auto turret: out for now; the High Strength ram: gone)
+        public static bool Removed(Item i) => i == Item.SleepingBag || i == Item.Helmet || i == Item.AutoTurret || i == Item.HeavyRam // (the auto turret: out for now; the High Strength ram: gone)
             || i == Item.Armor || i == Item.Barrier || i == Item.LargeGate; // (the wooden armour: gone, heavy armour is "Armour" now; the large wall and gate: out for now)
         /// <summary>Whether an airdrop item can still come in airdrops (and respawn loot / Fun Random): the death wand is crafted now.</summary>
         public static bool InAirdropPool(Item i) => i != Item.DeathWand && !Removed(i);
@@ -841,7 +847,7 @@ namespace RockGame
                 case Item.TreeCracker: return new MeleeStats { Cooldown = 1.1f, Range = 2.8f, PlayerDamage = 30f, WoodGather = 9999f, StoneGather = 3f, StructureDamage = 20f };
                 // a heavy sword: a slow swing, big hits (its head and body damage are its own numbers)
                 case Item.Sword: return new MeleeStats { Cooldown = Mathf.Max(0.2f, SwordSwingTime), Range = SwordRange, PlayerDamage = SwordBodyDamage, WoodGather = 4f, StoneGather = 1f, StructureDamage = 15f };
-                // the hammer (Upgrades.cs): upgrades your own walls; as a weapon, half the sword's damage
+                // the hammer (Upgrades.cs): upgrades your own walls; it can't hurt a player
                 case Item.Hammer: return new MeleeStats { Cooldown = HammerSwingTime, Range = HammerRange, PlayerDamage = HammerBodyDamage, WoodGather = 3f, StoneGather = 2f, StructureDamage = 10f };
                 default: return default;
             }
@@ -849,6 +855,8 @@ namespace RockGame
         /// <summary>The battering rams: the normal one and the High Strength one (three steps a slam).</summary>
         public static bool IsRam(Item i) => i == Item.Ram || i == Item.HeavyRam;
         public static bool IsMelee(Item i) => i == Item.Rock || i == Item.Hatchet || i == Item.Pickaxe || i == Item.Spear || i == Item.Chainsaw || i == Item.TreeCracker || i == Item.Sword || i == Item.Hammer;
+        /// <summary>Can this melee item hurt a player? Not the hammer (a building tool).</summary>
+        public static bool HurtsPlayers(Item i) => i != Item.Hammer;
         /// <summary>Melee damage to a player: the sword has its own headshot number, everything else does x2 to the head.</summary>
         public static float MeleePlayerDamage(Item i, bool head) => i == Item.Sword ? (head ? SwordHeadDamage : SwordBodyDamage) : i == Item.Hammer ? (head ? HammerHeadDamage : HammerBodyDamage) : Melee(i).PlayerDamage * (head ? HeadshotMul : 1f);
         /// <summary>A melee weapon's own headshot number (the sword, the hammer), or -1: the usual x2.</summary>
@@ -915,7 +923,7 @@ namespace RockGame
         }
 
         // ---------- Crafting ----------
-        static readonly Item[] k_Recipes = { Item.Hatchet, Item.Pickaxe, Item.Spear, Item.BuildingPlan, Item.Chest, Item.Bow, Item.Arrow, Item.Crossbow, Item.Armor, Item.Chainsaw, Item.Ram, Item.Ladder, Item.Saddle, Item.Workbench, Item.Workbench2, Item.Hammer, Item.Barricade, Item.DeathWand }; // (the auto turret is out for now: Removed; the High Strength ram, the large wall and gate are gone; the wooden armour only in the tutorial, which teaches it)
+        static readonly Item[] k_Recipes = { Item.Hatchet, Item.Pickaxe, Item.Spear, Item.BuildingPlan, Item.Chest, Item.Bow, Item.Arrow, Item.Crossbow, Item.Armor, Item.Chainsaw, Item.Ram, Item.Ladder, Item.Saddle, Item.Workbench, Item.Workbench2, Item.Hammer, Item.Barricade, Item.BearTrap, Item.DeathWand }; // (the bear trap is the stun trap; the auto turret is out for now: Removed; the High Strength ram, the large wall and gate are gone; the wooden armour only in the tutorial, which teaches it)
 
         static readonly Item[] k_Limited = { Item.Hatchet, Item.Spear, Item.BuildingPlan, Item.Ram };
         static readonly List<Item> s_Active = new List<Item>();
@@ -1202,6 +1210,7 @@ namespace RockGame
             (11, new[] { "TabHoldTime" }),
             (12, new[] { "BallGatherMul", "ChainsawWood", "ChainsawUses" }),
             (13, new[] { "AirdropCount", "ArrowPlayerDamage", "CrossbowDamage", "ShellWood", "RevolverAmmoWood", "AutoWoodLevel2", "HeavyArmorWood" }),
+            (14, new[] { "DeathWandWood", "BearTrapWood", "BearTrapDamage", "BearTrapHold" }),
         };
         const string MigrateKey = "RockGame.Tunables.migrated";
 

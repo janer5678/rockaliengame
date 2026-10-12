@@ -140,12 +140,12 @@ namespace RockGame
 
             // the warning: one notice 15 s before an airdrop lands, saying where (no timer, no other countdown)
             {
-                Check(NetGame.DropWarning == 15f && NetGame.DropBeam == 8f, $"airdrop warning {NetGame.DropWarning}s ahead; the crate takes {NetGame.DropBeam}s to come down (half speed)");
+                Check(NetGame.DropWarning == 15f && NetGame.DropBeam == 23f, $"the ship comes at once; the crate takes {NetGame.DropBeam}s to come down (landing when the {NetGame.DropWarning}s warning used to have it land)");
                 bool centre = Cfg.AirdropCenter;
                 Cfg.AirdropCenter = true;
-                g.ServerAirdropWarning(g.NetworkManager.ServerTime.Time + NetGame.DropWarning);
+                g.ServerAirdropIncoming(g.NetworkManager.ServerTime.Time);
                 yield return new WaitForSeconds(0.5f);
-                Check(Hud.LastBanner.Contains("AIRDROP IN 15 SECONDS") && Hud.LastBanner.Contains("centre"), $"the warning says it's dropping in the centre ({Hud.LastBanner})");
+                Check(Hud.LastBanner.Contains("AIRDROP INCOMING") && Hud.LastBanner.Contains("centre"), $"the notice says it's dropping in the centre ({Hud.LastBanner})");
                 pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
                 yield return Snap("airdrop_warning_" + rn);
                 Cfg.AirdropCenter = centre;

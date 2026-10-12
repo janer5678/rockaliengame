@@ -41,8 +41,10 @@ namespace RockGame
         public const float BeamStart = NetGame.DropArrive - 0.2f, OpenTime = 0.7f, CutStart = BeamStart - 0.05f - OpenTime;
         /// <summary>Seconds for the beam to get from the hatch down to the ground.</summary>
         public const float BeamReach = 0.6f;
-        public const float SealStart = NetGame.DropLand + 0.8f, SealEnd = SealStart + 1.4f;
-        public const float LeaveStart = SealEnd + 0.4f, Gone = LeaveStart + Leave;
+        public static float SealStart => NetGame.DropLand + 0.8f;
+        public static float SealEnd => SealStart + 1.4f;
+        public static float LeaveStart => SealEnd + 0.4f;
+        public static float Gone => LeaveStart + Leave;
         /// <summary>How wide the hole is (a little wider than the beam).</summary>
         public const float HoleR = HatchR * 1.2f;
         /// <summary>Seconds for the hatch to swing open (it's open before the beam starts at NetGame.DropArrive) or shut.</summary>

@@ -215,7 +215,7 @@ namespace RockGame
             float ink = GameSettings.TimerInkNow;
             var font = GameSettings.TimerFontNow;
             if (!GameSettings.TimerAccentNow) accent = new Color(0.92f, 0.92f, 0.92f);
-            bool overtime = game != null && game.S == GameState.BallLive && game.Overtime.Value;
+            bool overtime = game != null && ((game.S == GameState.BallLive && game.Overtime.Value) || game.SuddenBall.Value); // (and the sudden death round)
             if (overtime) accent = GameSettings.TimerAccentNow ? GameSettings.TimerColourNow(GameSettings.TimerColOvertime) : new Color(1f, 0.22f, 0.15f);
             // the phase's length (for the bar): what the clock read when the phase began
             var st = game != null ? game.S : GameState.Waiting;

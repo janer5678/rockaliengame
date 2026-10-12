@@ -1103,7 +1103,7 @@ namespace RockGame
 
             var no = hit.collider.GetComponentInParent<NetworkObject>();
             bool weak = false;
-            if (no != null && no.TryGetComponent(out PlayerNet p) && p != m_Net && !p.Dead.Value)
+            if (no != null && no.TryGetComponent(out PlayerNet p) && p != m_Net && !p.Dead.Value && Cfg.HurtsPlayers(m_ImpactItem)) // (the hammer: just a thud)
             {
                 bool head = p.IsHeadshot(hit.point);
                 float dmg = Cfg.MeleePlayerDamage(m_ImpactItem, head);

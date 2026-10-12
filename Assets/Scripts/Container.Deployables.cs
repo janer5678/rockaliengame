@@ -16,9 +16,13 @@ namespace RockGame
 
     public partial class PlayerNet
     {
-        /// <summary>Caught in a bear trap: can't move until then (server time).</summary>
+        /// <summary>Caught in a stun trap: can't move until then (server time) - still free to swing and shoot.</summary>
         public readonly NetworkVariable<double> TrappedUntil = new NetworkVariable<double>(-1);
         public bool Trapped => TrappedUntil.Value > Now;
+        /// <summary>The team whose stun trap caught them: while they're held, that team sees them through walls (SetEsp).</summary>
+        public readonly NetworkVariable<byte> TrappedBy = new NetworkVariable<byte>(255);
+        /// <summary>Held in a stun trap of `team`'s: that team sees them through walls.</summary>
+        public bool StunnedFor(int team) => Trapped && TrappedBy.Value == team;
 
         /// <summary>Choosing where to respawn: at one of your team's sleeping bags (once a minute each).</summary>
         [Rpc(SendTo.Server)]
@@ -40,8 +44,9 @@ namespace RockGame
     {
         /// <summary>A sleeping bag: how long before anyone can respawn at it again.</summary>
         [Tune("Crafting")] public static float SleepingBagCooldown = 60f;
-        /// <summary>A bear trap: the damage when it snaps, how long it holds you, and how long until it's set again.</summary>
-        [Tune("Crafting")] public static float BearTrapDamage = 30f, BearTrapHold = 3.5f, BearTrapRearm = 3f; // (rearm: seconds after it lets you go)
+        /// <summary>The stun trap (Item.BearTrap): its damage when it goes off (none), how long it holds an enemy, and how
+        /// long until it's set again.</summary>
+        [Tune("Crafting")] public static float BearTrapDamage = 0f, BearTrapHold = 3f, BearTrapRearm = 3f; // (rearm: seconds after it lets you go)
         /// <summary>The auto turret: how far it sees, and its cone either side of where it faces (degrees).</summary>
         [Tune("Crafting")] public static float TurretRange = 24f, TurretCone = 32f; // (half as wide as it was; a bit shorter)
         /// <summary>How fast a turret's aim catches up with where its target is (1/s: lower = it lags further behind
@@ -54,9 +59,10 @@ namespace RockGame
     /// networked, take damage and break, and come back to the hand with a held E on an empty one):
     /// - SLEEPING BAG: anywhere but an enemy base; when you're dead, your team's bags are options on the respawn screen
     ///   (each can be used once a minute: ReadyAt).
-    /// - BEAR TRAP: in the team colour, anywhere - your base, the wild or theirs - on the ground or a floor (not on a
-    ///   foundation). Anyone stepping on it - its own team too - is snapped (BearTrapDamage) and held (BearTrapHold);
-    ///   it sets itself again BearTrapRearm seconds after it lets go (PlayerNet.Trapped).
+    /// - STUN TRAP (Item.BearTrap, an Advanced Trade Station item): in the team colour, anywhere - your base, the wild or
+    ///   theirs - on the ground or any floor. An ENEMY stepping on it is zapped and held still for BearTrapHold seconds
+    ///   (they can still fight back) and the trap's team sees them through walls meanwhile (PlayerNet.StunnedFor); it
+    ///   sets itself again BearTrapRearm seconds after it lets go (PlayerNet.Trapped).
     /// - LADDER: anywhere (to scale someone's walls, or your own); a climbable volume like the fort tower's (Ladder).
     /// - AUTO TURRET: in your own base. E on it opens its two slots - a ranged weapon (or a spear) and its ammo. It
     ///   watches a cone in front of it (shown on the placing ghost), hums as it pans, and with an enemy in view gives a
@@ -64,6 +70,8 @@ namespace RockGame
     /// </summary>
     public static class Deployables
     {
+        /// <summary>The stun trap's electric blue (its coil, the zap).</summary>
+        public static readonly Color StunBlue = new Color(0.35f, 0.75f, 1f);
         public const byte FxSnap = 1, FxWarn = 2, FxShot = 3, FxHum = 4, FxArrow = 5, FxBolt = 6, FxSpear = 7;
         public const float LadderHeight = 2.4f; // (half what it was: you put it as high up the wall as you aim)
         /// <summary>Put against a wall while not square on to it, a ladder turns this far your way at most (degrees).</summary>
@@ -110,12 +118,12 @@ namespace RockGame
             c.ServerBreakWithSupport();
         }
 
-        public static float CenterUp(byte kind) => kind == Container.SleepBag ? 0.2f : kind == Container.Trap ? 0.15f : kind == Container.Ladder ? 1.4f : kind == Container.Barricade ? 0.7f : 0.9f;
+        public static float CenterUp(byte kind) => kind == Container.SleepBag ? 0.2f : kind == Container.Trap ? 0.15f : kind == Container.Ladder ? 1.4f : kind == Container.Barricade ? BarricadeH * 0.5f : 0.9f;
         public static float MaxHp(byte kind) => kind == Container.SleepBag ? 100f : kind == Container.Trap ? 150f : kind == Container.Ladder ? 250f : kind == Container.Barricade ? Cfg.BarricadeHp : 500f;
 
-        /// <summary>The concrete barricade: 2 m long, tall enough to hide someone crouching behind it (Cfg.CrouchHeight) -
-        /// someone standing can still see and shoot over it - and its depth at the foot and at the top.</summary>
-        public const float BarricadeLen = 2f, BarricadeH = 1.35f, BarricadeFoot = 0.62f, BarricadeTop = 0.26f;
+        /// <summary>The concrete barricade: 2.4 m long, tall enough to hide someone crouching behind it (Cfg.CrouchHeight) -
+        /// someone standing (eyes at Cfg.EyeHeight) can still see and shoot over it - and its depth at the foot and at the top.</summary>
+        public const float BarricadeLen = 2.4f, BarricadeH = 1.45f, BarricadeFoot = 0.7f, BarricadeTop = 0.3f;
         /// <summary>A barricade can go in an enemy base, but not this close to their buildings (m) or their machine / spawn.</summary>
         public const float BarricadeEnemyGap = 3f, BarricadeMachineGap = 5f;
 
@@ -169,11 +177,13 @@ namespace RockGame
                 }
                 case Container.Trap:
                 {
-                    // a round steel plate, two toothed jaws (opened flat: "jawL" / "jawR", they snap up), a team-colour ring
+                    // the stun trap: a round steel plate, a team-colour ring round a glowing electric-blue coil, two
+                    // toothed prongs (opened flat: "jawL" / "jawR", they snap up when it goes off)
                     var steel = new Color(0.42f, 0.42f, 0.45f);
                     float cr = 2f * Art.Cylinder.bounds.extents.x, ch = 2f * Art.Cylinder.bounds.extents.y;
                     Art.Part(t, Art.Cylinder, steel * 0.8f, new Vector3(0, 0.02f, 0), new Vector3(0.62f / cr, 0.04f / ch, 0.62f / cr));
                     Art.Part(t, Art.Cylinder, tc, new Vector3(0, 0.045f, 0), new Vector3(0.3f / cr, 0.02f / ch, 0.3f / cr));
+                    Art.Part(t, Art.Cylinder, StunBlue, new Vector3(0, 0.058f, 0), new Vector3(0.16f / cr, 0.012f / ch, 0.16f / cr), default, false, null, "stun coil");
                     for (int s = -1; s <= 1; s += 2)
                     {
                         var jaw = new GameObject(s < 0 ? "jawL" : "jawR").transform;
@@ -204,27 +214,28 @@ namespace RockGame
                     var conc = new Color(0.6f, 0.59f, 0.55f);
                     float L = BarricadeLen;
                     Art.Box(t, conc * 0.92f, new Vector3(0, 0.07f, 0), new Vector3(L, 0.14f, BarricadeFoot));
-                    Art.Box(t, conc * 0.96f, new Vector3(0, 0.27f, 0), new Vector3(L, 0.27f, 0.42f));
+                    Art.Box(t, conc * 0.96f, new Vector3(0, 0.27f, 0), new Vector3(L, 0.27f, BarricadeFoot * 0.68f));
                     Art.Box(t, conc, new Vector3(0, 0.36f + (BarricadeH - 0.36f) * 0.5f, 0), new Vector3(L, BarricadeH - 0.36f, BarricadeTop));
                     for (int s = -1; s <= 1; s += 2)
                     {
                         // (the sloping lower faces, both sides)
-                        Art.Box(t, conc * 0.94f, new Vector3(0, 0.29f, s * 0.2f), new Vector3(L - 0.002f, 0.34f, 0.07f), new Vector3(s * -33f, 0, 0));
-                        Art.Box(t, Cfg.TeamColor[Mathf.Clamp(team, 0, 3)], new Vector3(0, 1.1f, s * (BarricadeTop * 0.5f + 0.003f)), new Vector3(L - 0.1f, 0.08f, 0.006f));
-                        Art.Box(t, conc * 0.8f, new Vector3(s * (L * 0.5f - 0.02f), 0.7f, 0), new Vector3(0.04f, 1.25f, 0.2f)); // (the ends, a little darker)
+                        Art.Box(t, conc * 0.94f, new Vector3(0, 0.29f, s * BarricadeFoot * 0.32f), new Vector3(L - 0.002f, 0.34f, 0.07f), new Vector3(s * -33f, 0, 0));
+                        Art.Box(t, Cfg.TeamColor[Mathf.Clamp(team, 0, 3)], new Vector3(0, BarricadeH - 0.25f, s * (BarricadeTop * 0.5f + 0.003f)), new Vector3(L - 0.1f, 0.08f, 0.006f));
+                        Art.Box(t, conc * 0.8f, new Vector3(s * (L * 0.5f - 0.02f), BarricadeH * 0.5f + 0.02f, 0), new Vector3(0.04f, BarricadeH - 0.1f, BarricadeTop * 0.77f)); // (the ends, a little darker)
                     }
                     Art.Box(t, conc * 1.06f, new Vector3(0, BarricadeH - 0.015f, 0), new Vector3(L - 0.02f, 0.03f, BarricadeTop - 0.02f));
                     for (int s = -1; s <= 1; s += 2)
                     {
                         var steel = new Color(0.35f, 0.33f, 0.3f);
-                        Art.Box(t, steel, new Vector3(s * 0.55f - 0.06f, BarricadeH + 0.04f, 0), new Vector3(0.025f, 0.08f, 0.025f));
-                        Art.Box(t, steel, new Vector3(s * 0.55f + 0.06f, BarricadeH + 0.04f, 0), new Vector3(0.025f, 0.08f, 0.025f));
-                        Art.Box(t, steel, new Vector3(s * 0.55f, BarricadeH + 0.075f, 0), new Vector3(0.145f, 0.025f, 0.025f));
+                        float lx = s * L * 0.275f;
+                        Art.Box(t, steel, new Vector3(lx - 0.06f, BarricadeH + 0.04f, 0), new Vector3(0.025f, 0.08f, 0.025f));
+                        Art.Box(t, steel, new Vector3(lx + 0.06f, BarricadeH + 0.04f, 0), new Vector3(0.025f, 0.08f, 0.025f));
+                        Art.Box(t, steel, new Vector3(lx, BarricadeH + 0.075f, 0), new Vector3(0.145f, 0.025f, 0.025f));
                     }
                     // weathering: a few darker patches and chips
                     for (int k = 0; k < 6; k++)
                     {
-                        float x = -0.8f + k * 0.32f, y = 0.55f + (k * 37 % 5) * 0.1f;
+                        float x = (-0.4f + k * 0.16f) * L, y = 0.55f + (k * 37 % 5) * 0.1f * (BarricadeH / 1.35f);
                         for (int s = -1; s <= 1; s += 2) Art.Box(t, conc * 0.82f, new Vector3(x, y, s * (BarricadeTop * 0.5f + 0.002f)), new Vector3(0.1f + (k % 3) * 0.05f, 0.06f + (k % 2) * 0.05f, 0.004f));
                     }
                     break;
@@ -439,14 +450,17 @@ namespace RockGame
             var p0 = c.transform.position;
             foreach (var p in PlayerNet.All)
             {
-                if (p == null || !p.IsSpawned || p.Dead.Value || p.Riding) continue; // (anyone - your own team too)
+                if (p == null || !p.IsSpawned || p.Dead.Value || p.Riding || p.Team.Value == c.Team.Value) continue; // (enemies only)
                 var d = p.transform.position - p0;
                 if (Mathf.Abs(d.y) > 0.7f || new Vector2(d.x, d.z).sqrMagnitude > 0.42f * 0.42f) continue;
                 c.Flag.Value = 1;
                 s_TrapSprung[c] = Time.time;
                 p.TrappedUntil.Value = now + Cfg.BearTrapHold;
-                p.ServerDamageFrom(Cfg.BearTrapDamage, (byte)Item.BearTrap, c.Team.Value);
+                p.TrappedBy.Value = (byte)Mathf.Clamp(c.Team.Value, 0, 254);
+                if (Cfg.BearTrapDamage > 0f) p.ServerDamageFrom(Cfg.BearTrapDamage, (byte)Item.BearTrap, c.Team.Value);
                 c.DeployFxRpc(FxSnap, p0);
+                p.NotifyPublic($"STUNNED! You're stuck for {Cfg.BearTrapHold:0.#} s - and they can see you through walls");
+                foreach (var q in PlayerNet.All) if (q != null && q.IsSpawned && q.Team.Value == c.Team.Value) q.NotifyPublic($"Your stun trap caught {p.DisplayName}! You can see them through walls");
                 break;
             }
         }
@@ -630,9 +644,10 @@ namespace RockGame
             switch (what)
             {
                 case FxSnap:
-                    Sfx.Play(Sfx.Smash, at, 1f, 0.05f, 40f);
+                    // the stun trap going off: a snap and an electric zap, blue sparks
                     Sfx.Play(Sfx.Clink, at, 1f, 0.1f, 40f);
-                    Fx.Play(FxKind.Blood, at + Vector3.up * 0.3f, Vector3.up);
+                    Sfx.Play(Sfx.Zap, at, 1f, 0.05f, 45f);
+                    Fx.Sparks(at + Vector3.up * 0.3f, Vector3.up, 24);
                     break;
                 case FxWarn:
                     // loud enough for enemies to hear it coming

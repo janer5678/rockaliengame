@@ -55,9 +55,9 @@ namespace RockGame
         public readonly NetworkVariable<double> CutsceneAt = new NetworkVariable<double>(-1);
         public readonly NetworkVariable<Vector3> CutsceneSpot = new NetworkVariable<Vector3>();
         public readonly NetworkList<ulong> CutsceneRiders = new NetworkList<ulong>();
-        /// <summary>Seconds of warning before an airdrop lands (the one and only airdrop announcement).</summary>
+        /// <summary>How much earlier than its scheduled time an airdrop is announced and its ship sets off (it used to be a
+        /// warning this far ahead of the ship; now the ship comes at once and beams the crate down slower: DropBeam).</summary>
         public const float DropWarning = 15f;
-        int m_DropsWarned;
 
         int m_NextItemId = 1;
         float m_NextItemCheck;
@@ -170,12 +170,13 @@ namespace RockGame
         {
             switch ((GameState)cur)
             {
+                case GameState.PreBall when SuddenBall.Value: break; // (the sudden death round: its own banner - ServerStartSuddenRound)
                 case GameState.PreBall: if (Cfg.FunRules) break; if (Cfg.Tutorial) { Hud.Banner("TUTORIAL", "Do each step on the left. The clock is stopped."); break; } Hud.Banner("GATHER & BUILD", $"The ball waits under the glass dome - the walls drop in {Clock(Bootstrap.Fast ? Cfg.FastBallDropDelay : Cfg.BallDropDelay)}. " + (Cfg.Builder ? $"BUILDER: build and craft anywhere ({Binds.Name(Bind.Inventory)})." : $"Craft anywhere inside your base ({Binds.Name(Bind.Inventory)}).")); break;
                 case GameState.BallLive:
                     // the build phase is over: the glass wall and the dome slide down into the ground (fun modes: no build phase, gone at once)
                     if ((GameState)prev == GameState.PreBall && !Cfg.FunRules) MapBuilder.DropGlassWall();
                     Hud.Banner(Cfg.FunRules ? "THE WALL IS DOWN" : "THE WALL IS DROPPING", Cfg.Builder ? "Grab the ball and plant it anywhere (E) - whoever's ball it is when time runs out wins!" : "Grab the ball from the middle and put it in YOUR machine's socket!"); break;
-                case GameState.SuddenDeath: Hud.Banner("SUDDEN DEATH", "Welcome to space. Rocks only. First kill wins - and don't fall off!"); break;
+                case GameState.SuddenDeath: Hud.Banner("STADIUM FIGHT", "Welcome to space. Rocks only. First kill wins - and don't fall off!"); break;
             }
         }
 
@@ -247,18 +248,20 @@ namespace RockGame
                         if (Ball.Instance == null) SpawnBall();
                         if (Ball.Instance != null) Ball.Instance.ServerRelease(); // the dome's gone: the ball is up for grabs
                         if (Cfg.NoBall) ServerUnlockBench(0, "the wall dropped"); // (Bedwars / Assassin: no ball to capture - the Trade Station unlocks now)
-                        SetPhase(GameState.BallLive, BallPhase);
+                        SetPhase(GameState.BallLive, BallPhaseNow); // (the sudden death round's walls dropping: its own 5 minutes)
+                        m_SuddenDeathAt = -1;
+                        if (SuddenBall.Value) { Broadcast("The walls are dropping - first ball in a machine wins! Nobody: a rock fight in the stadium"); break; }
                         m_BallStart = now;
                         m_DropsDone = 0;
-                        m_DropsWarned = 0;
-                        m_SuddenDeathAt = -1;
+                        m_DroppedItems.Clear();
                         if (!Cfg.FunRules) Broadcast(Cfg.Bedwars ? "The glass wall is dropping - go smash the enemy machines!" : Cfg.Assassin ? "The glass wall is dropping - hunt them down and take their skulls!" : "The glass wall and the dome are dropping - grab the BALL in the middle!");
                     }
                     break;
                 case GameState.BallLive:
-                    ServerTickScheduledDrops(now);
+                    if (!SuddenBall.Value) ServerTickScheduledDrops(now); // (no new airdrops in the sudden death round)
                     ServerTickDropWarning(now);
                     ServerTickAirdrop(now);
+                    if (ServerSuddenCapture()) break; // (the sudden death round: the first ball in a machine wins at once)
                     if (now >= PhaseEnd.Value)
                     {
                         if (m_SuddenDeathAt < 0)
@@ -280,9 +283,17 @@ namespace RockGame
                                 int t = Ball.Instance != null ? Ball.Instance.SocketTeam.Value : -1;
                                 if (t >= 0) { ServerVictoryCutscene(t, $"{Cfg.TeamName[t]} captured the ball"); break; }
                             }
-                            // nobody has it: OVERTIME - it carries on until a team gets the ball into its machine, and that
-                            // team wins (Cfg.UseOvertime; off: the old way, the countdown sits on 0, then the sudden death arena)
-                            if (Cfg.UseOvertime && !Cfg.Builder)
+                            // nobody has it: SUDDEN DEATH - the bases are wiped and the walls go back up for a minute, then
+                            // 5 minutes to get the ball into a machine (NetGame.SuddenRound.cs); that running out too: the
+                            // rock fight in the stadium
+                            if (HasSuddenRound && Cfg.UseOvertime)
+                            {
+                                if (!SuddenBall.Value) { ServerStartSuddenRound(); break; }
+                            }
+                            // the other modes level at the end (Bedwars, 3 Goal, Progress, Assassin) and the tutorial: OVERTIME -
+                            // it carries on until a team gets ahead (Cfg.UseOvertime; off: the old way, the countdown sits on
+                            // 0, then the sudden death arena)
+                            else if (Cfg.UseOvertime && !Cfg.Builder)
                             {
                                 if (!Overtime.Value)
                                 {
@@ -381,7 +392,7 @@ namespace RockGame
         {
             ServerModesOnKilled(victim, killer); // (Assassin: their skull drops)
             if (S != GameState.SuddenDeath) return;
-            // sudden death: no respawns; the last team with someone standing wins
+            // the stadium fight: no respawns; the last team with someone standing wins
             if (AliveTeams(out int w) <= 1 && !Bootstrap.Solo && !Cfg.Tutorial)
                 EndGame(w, w < 0 ? "Nobody survived" : PlayerNet.All.Count <= 2 ? $"{Cfg.TeamName[w]} won the duel" : $"{Cfg.TeamName[w]}: last one standing");
         }
@@ -772,10 +783,13 @@ namespace RockGame
 
         // ------------------------------------------------------------------ airdrops
 
-        /// <summary>The ship arrives and opens its hatch (DropArrive), then beams the crate down - slowly (DropBeam).</summary>
-        public const float DropArrive = AirdropShip.Arrive + 1f, DropBeam = 8f;
+        /// <summary>The ship arrives and opens its hatch (DropArrive), then beams the crate down - slowly (DropBeam). A
+        /// match's airdrop is announced (AIRDROP INCOMING) and its ship sets off at once, DropWarning seconds earlier than
+        /// it used to, so its beam is that much slower: the crate still lands when it used to (the tutorial's as before).</summary>
+        public const float DropArrive = AirdropShip.Arrive + 1f;
+        public static float DropBeam => Cfg.Tutorial ? 8f : 8f + DropWarning;
         /// <summary>Seconds after a lane's start when the crate touches down (the ship arrives, then beams it down).</summary>
-        public const float DropLand = DropArrive + DropBeam;
+        public static float DropLand => DropArrive + DropBeam;
         /// <summary>The tutorial's airdrop comes down this many times as fast (its ship, beam and crate all run on the sped-up clock).</summary>
         public static float DropSpeed => Cfg.Tutorial ? 3f : 1f;
         /// <summary>Lanes 0-3: the world airdrops (one for the whole map, or one per team's side).</summary>
@@ -819,15 +833,10 @@ namespace RockGame
             }
             int n = Mathf.Clamp(Cfg.AirdropCount, 0, 20);
             if (m_BallStart < 0 || m_DropsDone >= n) return;
-            double launch = m_BallStart + (m_DropsDone + 1) * (double)BallPhase / (n + 1);
-            if (launch + DropLand > PhaseEnd.Value - 1.0) return; // it couldn't land before the clock runs out: no warning, no ship
-            // 15 seconds before the ship comes in (not before the crate lands): the one and only airdrop announcement
-            // (where it's coming down)
-            if (m_DropsWarned <= m_DropsDone && now >= launch - DropWarning)
-            {
-                m_DropsWarned = m_DropsDone + 1;
-                ServerAirdropWarning(launch);
-            }
+            // AIRDROP INCOMING and the ship sets off DropWarning s ahead of the drop's time; its slower beam (DropBeam) puts the
+            // crate down when it always landed
+            double launch = m_BallStart + (m_DropsDone + 1) * (double)BallPhase / (n + 1) - DropWarning;
+            if (launch + DropLand > PhaseEnd.Value - 1.0) return; // it couldn't land before the clock runs out: no ship
             if (now < launch) return;
             bool split = Cfg.AirdropSides && !Cfg.AirdropCenter;
             int lanes = split ? Cfg.TeamCount : 1;
@@ -842,6 +851,7 @@ namespace RockGame
                 lane.Region = split ? i : -1;
                 ServerLaunchDrop(i, now, Cfg.AirdropCenter ? PickCenterSpot() : PickDropSpot(lane.Region), false);
             }
+            ServerAirdropIncoming(now);
         }
 
         /// <summary>Where scheduled airdrops come down, for the warning.</summary>
@@ -849,13 +859,12 @@ namespace RockGame
             : Cfg.AirdropSides ? "One is dropping on every side of the map - watch for the purple beams"
             : "Somewhere on the map - watch for the purple beam";
 
-        /// <summary>Server: the airdrop warning, DropWarning seconds before its ship comes in - the only notification an airdrop gets.</summary>
-        public void ServerAirdropWarning(double shipAt)
+        /// <summary>Server: AIRDROP INCOMING as its ship sets off - the only notification an airdrop gets.</summary>
+        public void ServerAirdropIncoming(double shipAt)
         {
             NextDropLands.Value = shipAt;
-            int secs = Mathf.Max(1, Mathf.RoundToInt((float)(shipAt - NetworkManager.ServerTime.Time)));
-            BannerRpc(new FixedString64Bytes($"AIRDROP IN {secs} SECONDS"), new FixedString128Bytes(DropWhere));
-            Broadcast($"Airdrop in {secs} seconds! " + DropWhere);
+            BannerRpc(new FixedString64Bytes("AIRDROP INCOMING"), new FixedString128Bytes(DropWhere));
+            Broadcast("An alien AIRDROP is beaming down! " + DropWhere);
         }
 
         /// <summary>Server: forget the countdown once that airdrop's ship is here.</summary>
@@ -895,8 +904,8 @@ namespace RockGame
                 var pos = LanePosAt(i);
                 var go = Instantiate(Bootstrap.I.containerPrefab, pos, Quaternion.Euler(0, Random.Range(0f, 360f), 0));
                 lane.Crate = go.GetComponent<Container>();
-                // three slots: two stacks of wood and one airdrop item (the tutorial's: just C4 for its raid)
-                var crate = Cfg.Tutorial ? new List<ItemStack> { Tutorial.DropLoot } : RollAirdropCrate();
+                // one slot: one airdrop item this game hasn't had yet (the tutorial's: just C4 for its raid)
+                var crate = Cfg.Tutorial ? new List<ItemStack> { Tutorial.DropLoot } : RollAirdropCrate(m_DroppedItems);
                 lane.Crate.ServerInit(Container.Airdrop, 7, Mathf.Max(1, crate.Count), crate);
                 go.GetComponent<NetworkObject>().Spawn(true);
                 Fx.Server(FxKind.Spawn, pos, Vector3.up);
@@ -930,22 +939,24 @@ namespace RockGame
         }
 
 
-        /// <summary>An airdrop crate's contents, three slots: two stacks of 500-1000 wood and one airdrop item - any of the
-        /// ones picked in the mode options (an explosive like C4 or the rocket launcher, or something like the tree camo),
-        /// by its Airdrop Rarity.</summary>
-        public static List<ItemStack> RollAirdropCrate()
+        /// <summary>The special items this game's airdrops have already brought (each comes once a game).</summary>
+        readonly HashSet<Item> m_DroppedItems = new HashSet<Item>();
+
+        /// <summary>An airdrop crate's contents: just one special item (no wood) - any of the ones picked in the mode options
+        /// (an explosive like C4 or the rocket launcher, or something like the tree camo), by its Airdrop Rarity, and not one
+        /// in `dropped` (it's added there). Once every picked item has come, any airdrop item that hasn't; then repeats.</summary>
+        public static List<ItemStack> RollAirdropCrate(HashSet<Item> dropped = null)
         {
             var pool = new List<Item>();
-            foreach (var i in Cfg.AirdropLoot) if (i != Item.Wood && i != Item.Stone) pool.Add(i);
-            if (pool.Count == 0) pool.AddRange(Cfg.AirdropChoices);
+            foreach (var i in Cfg.AirdropLoot) if (Special(i) && (dropped == null || !dropped.Contains(i))) pool.Add(i);
+            if (pool.Count == 0) foreach (var i in Cfg.AirdropChoices) if (Special(i) && Cfg.InAirdropPool(i) && (dropped == null || !dropped.Contains(i))) pool.Add(i);
+            if (pool.Count == 0) foreach (var i in Cfg.AirdropLoot) if (Special(i)) pool.Add(i);
+            if (pool.Count == 0) foreach (var i in Cfg.AirdropChoices) if (Special(i)) pool.Add(i);
             var o = Cfg.PickAirdropItem(pool);
-            return new List<ItemStack>
-            {
-                Cfg.DnaSwap(ItemStack.Of(Item.Wood, Random.Range(500, 1001))),
-                Cfg.DnaSwap(ItemStack.Of(Item.Wood, Random.Range(500, 1001))),
-                o == Item.Helmet ? ItemStack.Of(Item.Helmet, 1, 1) : ItemStack.Of(o, 1, Mathf.Clamp(Cfg.MaxData(o), 0, 255)),
-            };
+            dropped?.Add(o);
+            return new List<ItemStack> { o == Item.Helmet ? ItemStack.Of(Item.Helmet, 1, 1) : ItemStack.Of(o, 1, Mathf.Clamp(Cfg.MaxData(o), 0, 255)) };
         }
+        static bool Special(Item i) => i != Item.Wood && i != Item.Stone;
         /// <summary>One random OP item from the picked ones, rarer or commoner by its Airdrop Rarity weight.</summary>
         public static ItemStack RollAirdropLoot()
         {

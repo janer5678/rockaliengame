@@ -590,7 +590,7 @@ namespace RockGame
         static float Rate(Item it, Use u, float dist = 0f)
         {
             var st = Cfg.Melee(it);
-            if (st.Cooldown <= 0f) return -1f;
+            if (st.Cooldown <= 0f || (u == Use.Fight && !Cfg.HurtsPlayers(it))) return -1f;
             float v = u == Use.Fight ? Cfg.MeleePlayerDamage(it, false) : u == Use.Wood ? st.WoodGather : st.StructureDamage;
             v /= st.Cooldown;
             if (u == Use.Fight && dist > st.Range + 0.2f) v *= 0.45f;

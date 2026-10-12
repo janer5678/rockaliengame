@@ -20,12 +20,11 @@ namespace RockGame
             g.TimerPaused.Value = true;
             Check(Cfg.HeavyArmorHp == 50 && Cfg.HeavyArmorWood == 500 && Cfg.CraftIndexOf(Item.Armor) < 0, $"armour: +{Cfg.HeavyArmorHp} for {Cfg.HeavyArmorWood} wood (the wooden armour is gone)");
             Check(Cfg.ItemName(Item.Workbench2) == "Advanced Trade Station" && Cfg.ItemName(Item.Barrier) == "Large Wall" && Cfg.ItemName(Item.HeavyArmor) == "Armour", "renamed: Advanced Trade Station, Large Wall, Armour");
-            Check(Cfg.CraftIndexOf(Item.SleepingBag) < 0 && Cfg.CraftIndexOf(Item.BearTrap) < 0 && Cfg.CraftTier(Item.Ladder) == 1 && Cfg.CraftIndexOf(Item.LargeGate) < 0 && Cfg.CraftIndexOf(Item.Barrier) < 0 && Cfg.CraftTier(Item.Barricade) == 1 && Cfg.CraftTier(Item.AutoTurret) == 2,
-                "the bag, trap, large wall and large gate are out for now; the ladder and barricade are Trade Station items, the turret an Advanced one");
+            Check(Cfg.CraftIndexOf(Item.SleepingBag) < 0 && Cfg.CraftTier(Item.BearTrap) == 2 && Cfg.CraftRecipe(Cfg.CraftIndexOf(Item.BearTrap), team).Wood == 250 && Cfg.CraftTier(Item.Ladder) == 1 && Cfg.CraftIndexOf(Item.LargeGate) < 0 && Cfg.CraftIndexOf(Item.Barrier) < 0 && Cfg.CraftTier(Item.Barricade) == 1 && Cfg.CraftTier(Item.AutoTurret) == 2,
+                "the bag, large wall and large gate are out for now; the stun trap is an Advanced Trade Station item for 250; the ladder and barricade are Trade Station items, the turret an Advanced one");
             {
                 var crate = NetGame.RollAirdropCrate();
-                bool wood = crate.Count == 3 && crate[0].Id == Item.Wood && crate[1].Id == Item.Wood && crate[0].Count >= 500 && crate[1].Count <= 1000;
-                Check(wood && crate[2].Id != Item.Wood && !crate[2].Empty, $"an airdrop crate: two stacks of 500-1000 wood and one airdrop item ({string.Join(", ", crate.ConvertAll(s => s.Id + " x" + s.Count))})");
+                Check(crate.Count == 1 && crate[0].Id != Item.Wood && !crate[0].Empty, $"an airdrop crate: just one airdrop item ({string.Join(", ", crate.ConvertAll(s => s.Id + " x" + s.Count))})");
             }
             var spawn = Cfg.SpawnPos(team);
             var back = Cfg.BackDir(team);
@@ -98,7 +97,7 @@ namespace RockGame
                 Check(gate.DoorOpen.Value, "E opens our large gate");
             }
 
-            // an ENEMY bear trap where we step: snapped, hurt, held
+            // an ENEMY stun trap where we step: zapped (no damage), held, and its team sees us through walls
             {
                 var at = OnGround(spawn - back * 6f + side * 4f, 0f);
                 var go = Instantiate(Bootstrap.I.containerPrefab, at, Quaternion.identity);
@@ -109,7 +108,7 @@ namespace RockGame
                 pc.LocalTeleport(at + Vector3.up * 0.1f, 0f);
                 yield return new WaitForSeconds(0.5f);
                 var trap = go.GetComponent<Container>();
-                Check(trap.Flag.Value == 1 && me.Health.Value < Cfg.MaxHealth && me.Trapped, $"an enemy bear trap snapped shut on us ({me.Health.Value:0} HP, held: {me.Trapped})");
+                Check(trap.Flag.Value == 1 && me.Health.Value >= Cfg.MaxHealth && me.Trapped && me.StunnedFor(enemy), $"an enemy stun trap went off on us ({me.Health.Value:0} HP, held: {me.Trapped}, seen by their team: {me.StunnedFor(enemy)})");
                 var p0 = me.transform.position;
                 Binds.TestHold(Bind.Forward, true);
                 yield return new WaitForSeconds(0.8f);

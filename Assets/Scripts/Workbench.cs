@@ -21,10 +21,10 @@ namespace RockGame
         /// <summary>Tier 1 (Workbench T1 in your base): the hammer first, sword before crossbow, the barricade, the chainsaw and
         /// the saddle, then the T2 bench (the wooden armour only shows in the tutorial: Cfg.ActiveRecipes). (Fortify All Walls is only crafted in
         /// Builder, which has no bases or upgrade stations; everywhere else the base upgrades are in UPGRADES - Upgrades.cs.)</summary>
-        static readonly Item[] k_Tier1 = { Item.Hammer, Item.Sword, Item.Crossbow, Item.SleepingBag, Item.Armor, Item.Barricade, Item.Ladder, Item.BearTrap, Item.Chainsaw, Item.Saddle, Item.FortifyBuff, Item.Workbench2 };
+        static readonly Item[] k_Tier1 = { Item.Hammer, Item.Sword, Item.Crossbow, Item.SleepingBag, Item.Armor, Item.Barricade, Item.Ladder, Item.Chainsaw, Item.Saddle, Item.FortifyBuff, Item.Workbench2 };
         /// <summary>Tier 2 (Workbench T2 in your base): the ammo, then the guns, the alien helmet, C4, then whatever's left (pickaxe, boat...).
         /// Anything craftable that isn't tier 0 or 1 is tier 2.</summary>
-        static readonly Item[] k_Tier2 = { Item.Shotgun, Item.ShotgunShell, Item.Revolver, Item.RevolverAmmo, Item.Helmet, Item.HeavyArmor, Item.AutoTurret, Item.C4, Item.Pickaxe, Item.Boat, Item.PistolAmmo, Item.Pistol, Item.DeathWand };
+        static readonly Item[] k_Tier2 = { Item.Shotgun, Item.ShotgunShell, Item.Revolver, Item.RevolverAmmo, Item.Helmet, Item.HeavyArmor, Item.AutoTurret, Item.BearTrap, Item.C4, Item.Pickaxe, Item.Boat, Item.PistolAmmo, Item.Pistol, Item.DeathWand };
 
         public static bool IsStarter(Item i) => System.Array.IndexOf(k_Starter, i) >= 0;
         public static IReadOnlyList<Item> StarterOrder => k_Starter;

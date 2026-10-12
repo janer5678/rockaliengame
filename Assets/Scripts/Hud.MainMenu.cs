@@ -75,7 +75,7 @@ namespace RockGame
             // a dark wash down the left so the buttons read over the stars
             GUI.DrawTexture(new Rect(0, 0, 760 * k, sh), LeftFade());
             if (!lobby && m_New == NewPage.Map && MenuScene.Fade > 0.001f) Fill(new Rect(0, 0, Screen.width, Screen.height), new Color(0, 0, 0, MenuScene.Fade)); // (the map fading in behind the map page)
-            DrawPunkTitle(m_New == NewPage.Root ? MainTitle : PageTitle(), new Vector2(60 * k, 50 * k), m_New == NewPage.Root ? 86 : 64);
+            DrawPunkTitle(m_New == NewPage.Root ? MainTitle : PageTitle(), new Vector2(60 * k, (m_New == NewPage.Root ? 82 : 50) * k), m_New == NewPage.Root ? 86 : 64); // (the main title sits a little lower)
             float x = 70 * k, y = (m_New == NewPage.Root ? 230 : 190) * k, w = 470 * k;
             switch (m_New)
             {

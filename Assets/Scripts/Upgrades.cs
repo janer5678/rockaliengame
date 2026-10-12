@@ -53,8 +53,8 @@ namespace RockGame
         [Tune("Hammer")] public static int HammerWood = 100;
         /// <summary>A piece that's just been hit (by anyone) can't be hammered up a tier for this many seconds.</summary>
         [Tune("Hammer")] public static float HammerHitLock = 5f;
-        /// <summary>The hammer as a weapon: half the sword's damage, a quicker swing.</summary>
-        [Tune("Hammer")] public static float HammerBodyDamage = 47.5f, HammerHeadDamage = 75f, HammerSwingTime = 0.9f, HammerRange = 2.6f;
+        /// <summary>The hammer's swing. It never hurts a player (Cfg.HurtsPlayers): it's a building tool, not a weapon.</summary>
+        [Tune("Hammer")] public static float HammerBodyDamage = 0f, HammerHeadDamage = 0f, HammerSwingTime = 0.9f, HammerRange = 2.6f;
         /// <summary>What the hammer charges to take a piece from `tier` to the next one (0: it can't go higher).</summary>
         public static int HammerCost(int tier) => tier >= MaxFortify ? 0 : DnaPrice(tier >= 2 ? HammerArmouredWood : tier == 1 ? HammerMetalWood : HammerStoneWood);
         static int DnaPrice(int wood) => DnaPriced(new Recipe { Wood = wood }).Wood;

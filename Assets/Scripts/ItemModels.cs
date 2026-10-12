@@ -207,7 +207,7 @@ namespace RockGame
                     var steel = new Color(0.45f, 0.46f, 0.5f);
                     float cr = 2f * Art.Cylinder.bounds.extents.x, ch = 2f * Art.Cylinder.bounds.extents.y;
                     Art.Part(t, Art.Cylinder, steel * 0.75f, new Vector3(0, 0.01f, 0), new Vector3(0.2f / cr, 0.02f / ch, 0.2f / cr));
-                    Art.Part(t, Art.Cylinder, new Color(0.85f, 0.25f, 0.2f), new Vector3(0, 0.025f, 0), new Vector3(0.09f / cr, 0.012f / ch, 0.09f / cr));
+                    Art.Part(t, Art.Cylinder, Deployables.StunBlue, new Vector3(0, 0.025f, 0), new Vector3(0.09f / cr, 0.012f / ch, 0.09f / cr)); // (the stun trap's coil)
                     for (int s = -1; s <= 1; s += 2)
                     {
                         Art.Box(t, steel, new Vector3(s * 0.15f, 0.02f, 0), new Vector3(0.025f, 0.03f, 0.3f));
