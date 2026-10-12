@@ -110,6 +110,7 @@ namespace RockGame
                 case Item.LargeGate: return "Large Gate: a tall log gate with a door your team opens - goes in your wall line.";
                 case Item.SleepingBag: return $"Sleeping Bag: put it down anywhere but an enemy base and respawn at it (once every {Cfg.SleepingBagCooldown:0} s).";
                 case Item.BearTrap: return $"Bear Trap: in your colour; snaps anyone who steps on it - you too ({Cfg.BearTrapDamage:0} damage, held {Cfg.BearTrapHold:0.#} s). Ground or floors.";
+                case Item.Barricade: return "Barricade: a concrete block of cover, tall enough to crouch behind. Put it down anywhere - even in the enemy base, just not right up against their buildings.";
                 case Item.Ladder: return "Ladder: aim it at any wall - yours, theirs or a large wall - and climb over.";
                 case Item.AutoTurret: return $"Auto Turret: does NOTHING until you put a weapon in it (any weapon) and arrows. Then it shoots enemies in its {Cfg.TurretCone * 2f:0} degree view out to {Cfg.TurretRange:0} m.";
                 // (every description is "Name: what it does" - the name goes on top, the rest wraps under it; without the

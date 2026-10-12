@@ -229,6 +229,7 @@ namespace RockGame
         {
             if (s_I == null) s_I = host.GetComponent<ShipLobby>() ?? host.AddComponent<ShipLobby>();
             LobbyArcade.Ensure(host); // (the telly's game)
+            UfoArcade.Ensure(host);   // (the arcade machine's game: ShipLobby.Arcade.cs)
         }
 
         void Awake() => s_I = this;
@@ -333,9 +334,22 @@ namespace RockGame
             }
         }
 
-        /// <summary>Clicking the telly (or Esc to leave it): the camera moves in on it and you play its game (LobbyArcade).</summary>
+        /// <summary>Clicking the telly (or Esc to leave it): the camera moves in on it and you play its game (LobbyArcade).
+        /// The arcade machine the same (UfoArcade).</summary>
         void ClickTelly()
         {
+            if (UfoArcade.Focused)
+            {
+                if (Input.GetKeyDown(KeyCode.Escape) && !Chat.Open) UfoArcade.Focus(false);
+                TestClickTv = TestClickCabinet = false;
+                return;
+            }
+            if (TestClickCabinet)
+            {
+                TestClickCabinet = false;
+                if (m_CabScreen != null) { LobbyArcade.Focus(false); UfoArcade.Focus(true); }
+                return;
+            }
             if (LobbyArcade.Focused)
             {
                 if (Input.GetKeyDown(KeyCode.Escape) && !Chat.Open) LobbyArcade.Focus(false);
@@ -349,6 +363,7 @@ namespace RockGame
             var cam = Camera.main;
             if (cam == null) return;
             var ray = test ? new Ray(cam.transform.position, m_Tv.TransformPoint(k_Screen) - cam.transform.position) : cam.ScreenPointToRay(Input.mousePosition);
+            if (!test && CabinetHit(ray)) { UfoArcade.Focus(true); return; } // (the arcade machine: ShipLobby.Arcade.cs)
             var local = new Ray(m_Tv.InverseTransformPoint(ray.origin), m_Tv.InverseTransformDirection(ray.direction));
             if (k_TvBounds.IntersectRay(local)) LobbyArcade.Focus(true);
         }
@@ -368,6 +383,7 @@ namespace RockGame
             m_TonesSet = false;
             m_Tv = null;
             ClearRoomExtras(); // (ShipLobby.Room.cs)
+            ClearCabinet();    // (ShipLobby.Arcade.cs)
             if (m_Room) Destroy(m_Room);
             m_Room = null;
             m_Blinkers.Clear();
@@ -402,6 +418,15 @@ namespace RockGame
                 fov = 38f;
                 m_Yaw = Mathf.Lerp(m_Yaw, 0f, 1f - Mathf.Exp(-4f * dt));
                 m_Pitch = Mathf.Lerp(m_Pitch, 0f, 1f - Mathf.Exp(-4f * dt));
+            }
+            else if (UfoArcade.Focused && CabinetShot(out var cabPos, out var cabLook))
+            {
+                // the arcade machine: square on to its screen, the picture filling most of the view
+                pos = cabPos;
+                look = cabLook;
+                fov = 42f;
+                m_Yaw = Mathf.Lerp(m_Yaw, 0f, 1f - Mathf.Exp(-6f * dt));
+                m_Pitch = 0f;
             }
             else if (LobbyArcade.Focused && m_Tv != null)
             {
@@ -443,13 +468,14 @@ namespace RockGame
             // the ship's going flat out: the room hums and rattles (and jolts now and then)
             float jolt = Mathf.Pow(Mathf.Max(0f, Mathf.Sin(t * 1.9f)), 40f);
             var rattle = new Vector3(Mathf.PerlinNoise(t * 17f, 1.1f) - 0.5f, Mathf.PerlinNoise(t * 19f, 4.2f) - 0.5f, Mathf.PerlinNoise(t * 13f, 8.3f) - 0.5f) * (1f + jolt * 4f);
-            float shake = LobbyArcade.Focused ? 0.35f : 1f; // (gentler on the telly: the picture has to stay readable)
+            bool onGame = LobbyArcade.Focused || UfoArcade.Focused;
+            float shake = onGame ? 0.35f : 1f; // (gentler on the telly / the arcade machine: the picture has to stay readable)
             pos += rattle * 0.012f * shake;
             rot *= Quaternion.Euler(rattle.y * 0.35f * shake, rattle.x * 0.35f * shake, rattle.z * 0.5f * shake);
             // eased (a smooth move into and out of the close-ups)
             if (!m_CamSet) { m_CamPos = pos; m_CamRot = rot; m_CamSet = true; cam.fieldOfView = fov; }
-            float k = 1f - Mathf.Exp(-(Customising ? 5f : LobbyArcade.Focused || m_WasFocused ? 4f : 8f) * dt);
-            if (LobbyArcade.Focused) m_WasFocused = true;
+            float k = 1f - Mathf.Exp(-(Customising ? 5f : onGame || m_WasFocused ? 4f : 8f) * dt);
+            if (onGame) m_WasFocused = true;
             else if (Vector3.Distance(m_CamPos, pos) < 0.2f) m_WasFocused = false; // (eased all the way back from the telly)
             m_CamPos = Vector3.Lerp(m_CamPos, pos, k);
             m_CamRot = Quaternion.Slerp(m_CamRot, rot, k);
@@ -673,7 +699,7 @@ namespace RockGame
             if (rh == null || rf == null || lh == null || lf == null) return;
             var rp = rh.position + (rh.position - rf.position).normalized * (Grip * 0.7f);
             var lp = lh.position + (lh.position - lf.position).normalized * (Grip * 0.7f);
-            var at = (rp + lp) * 0.5f + a.Root.up * 0.01f; // (sat down in the hands, a bit under them)
+            var at = (rp + lp) * 0.5f - a.Root.up * 0.015f; // (sat down in the hands, a bit under them - down in the lap)
             var across = lp - rp;
             var fwd = Vector3.ProjectOnPlane(a.Root.forward, across.sqrMagnitude > 1e-4f ? across.normalized : a.Root.right);
             if (fwd.sqrMagnitude < 1e-4f) fwd = a.Root.forward;
@@ -853,6 +879,7 @@ namespace RockGame
                 if (m_TvMat != null) m_TvMat.SetColor("_Color", Color.Lerp(glow / lum, Color.white, 0.3f) * fl); // (only if the picture's material is missing)
                 TickTellyGlow(tint, fl); // (the light round it, the glow round the screen: ShipLobby.Room.cs)
             }
+            TickCabinet(t); // (the arcade machine's screen lighting the room: ShipLobby.Arcade.cs)
             TickBall(); // (the glowing ball: Settings > Display > SHIP LOBBY > Glowing ball)
             // the dying strip light in the corner: it stutters on and off
             if (m_Strip)

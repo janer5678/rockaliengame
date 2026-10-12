@@ -18,6 +18,10 @@ namespace RockGame
         /// <summary>A doorway's door leaf has health of its own (Cfg.DoorLeafHp: less than the frame's). At 0 the door is
         /// broken off: the frame stays standing, open to everyone.</summary>
         public readonly NetworkVariable<float> DoorHealth = new NetworkVariable<float>();
+        /// <summary>When it was last hit (server time): the hammer can't upgrade it for Cfg.HammerHitLock seconds after.</summary>
+        public readonly NetworkVariable<double> HitAt = new NetworkVariable<double>(-1000);
+        /// <summary>Seconds until the hammer can upgrade it again after a hit (0 = now).</summary>
+        public float UpgradeLockLeft => NetworkManager == null ? 0f : Mathf.Max(0f, (float)(HitAt.Value + Cfg.HammerHitLock - NetworkManager.ServerTime.Time));
 
         /// <summary>A doorway whose door is still on its hinges.</summary>
         public bool HasDoor => (PType == PieceType.Doorway || PType == PieceType.Gate) && DoorHealth.Value > 0f; // (a large gate's leaf too)
@@ -249,6 +253,7 @@ namespace RockGame
         public void ServerDamageDoor(float dmg)
         {
             if (!IsServer || !IsSpawned || dmg <= 0 || !(HasDoor || HasBars)) return; // (a window's bars the same way)
+            NoteHit();
             DoorHealth.Value = Mathf.Max(0f, DoorHealth.Value - dmg);
             if (DoorHealth.Value <= 0f) DoorOpen.Value = false;
         }
@@ -298,6 +303,7 @@ namespace RockGame
         public void ServerDamage(float dmg, bool collapse)
         {
             if (!IsServer || !IsSpawned || dmg <= 0) return;
+            NoteHit();
             Health.Value = Mathf.Max(0, Health.Value - dmg);
             if (Health.Value <= 0)
             {
@@ -337,6 +343,9 @@ namespace RockGame
             foreach (var c in gone) c.ServerBreakWithSupport();
         }
 
+        /// <summary>Server: it was just hit - no hammer upgrades for a few seconds (Cfg.HammerHitLock).</summary>
+        void NoteHit() { if (IsServer && IsSpawned) HitAt.Value = NetworkManager.ServerTime.Time; }
+
         public void ServerUpgrade(int tier = 1)
         {
             Tier.Value = (byte)tier;
@@ -347,6 +356,7 @@ namespace RockGame
         /// <summary>Battering ram hit: one tier down at full health (refined to metal, metal to stone, stone to wood).</summary>
         public void ServerDowngrade()
         {
+            NoteHit();
             Tier.Value = (byte)Mathf.Max(0, Tier.Value - 1);
             Health.Value = MaxHp;
             if (HasDoor || HasBars) DoorHealth.Value = DoorMaxHp;
@@ -442,9 +452,12 @@ namespace RockGame
                     Art.Box(tr, new Color(0.95f, 0.95f, 0.92f), new Vector3(0, 0.2f, 0), new Vector3(1.15f, 0.4f, 0.8f), default, col).name = "wool";
                     break;
                 case PieceType.Floor:
-                    Art.Box(tr, c, new Vector3(0, -0.125f, 0), new Vector3(3, 0.25f, 3), default, col);
-                    Art.Box(tr, trim, new Vector3(0, -0.2f, 0), new Vector3(3.02f, 0.1f, 0.2f));
-                    Art.Box(tr, trim, new Vector3(0, -0.2f, 0), new Vector3(0.2f, 0.1f, 3.02f));
+                    // (no face of it lies flat on another one any more - that flickered (z-fighting) on ceilings: its top is a
+                    // hair over the walls' tops under it, the beams under it hang a hair lower than it, and they stop short
+                    // of its edges so a neighbour's beams never overlap them)
+                    Art.Box(tr, c, new Vector3(0, -0.119f, 0), new Vector3(3, 0.262f, 3), default, col);
+                    Art.Box(tr, trim, new Vector3(0, -0.21f, 0), new Vector3(2.96f, 0.1f, 0.2f));
+                    Art.Box(tr, trim, new Vector3(0, -0.2075f, 0), new Vector3(0.2f, 0.115f, 2.96f));
                     break;
                 case PieceType.Stairs:
                 {
@@ -645,8 +658,8 @@ namespace RockGame
             }
             else if (t == PieceType.Floor || t == PieceType.Foundation)
             {
-                Art.Box(tr, rust, new Vector3(0.6f, t == PieceType.Floor ? 0.01f : 1.01f, -0.4f), new Vector3(0.7f, 0.01f, 0.5f), new Vector3(0, 20f, 0));
-                Art.Box(tr, rust * 1.2f, new Vector3(-0.7f, t == PieceType.Floor ? 0.01f : 1.01f, 0.6f), new Vector3(0.45f, 0.01f, 0.6f), new Vector3(0, -15f, 0));
+                Art.Box(tr, rust, new Vector3(0.6f, t == PieceType.Floor ? 0.024f : 1.012f, -0.4f), new Vector3(0.7f, 0.01f, 0.5f), new Vector3(0, 20f, 0));
+                Art.Box(tr, rust * 1.2f, new Vector3(-0.7f, t == PieceType.Floor ? 0.026f : 1.014f, 0.6f), new Vector3(0.45f, 0.01f, 0.6f), new Vector3(0, -15f, 0));
             }
         }
 

@@ -613,6 +613,7 @@ namespace RockGame
                         case Item.Ladder:
                         case Item.AutoTurret:
                         case Item.LargeGate:
+                        case Item.Barricade:
                         case Item.Boat: /* THEME MAPS */ HandleDeploy(held); break;
                         case Item.Berry:
                         case Item.Meat: HandleBerry(); break;
@@ -721,7 +722,7 @@ namespace RockGame
                 Item = m_Net.HeldItem,
                 Ball = m_Net.CarryingBall,
                 Visible = !m_Net.Dead.Value && m_Third < 0.5f, // (invisible or not, you always see your own hands and what's in them)
-                Ghost = m_Net.Invisible, // (the Invisibility Potion: your own alien hands go see-through and shimmery while it lasts)
+                Ghost = m_Net.Invisible, // (the Invisibility Potion: your own hands vanish while it lasts - what you hold still shows)
                 SpearAim = (m_DrawStart >= 0 || DebugDraw >= 0) && m_Net.HeldItem == Item.Spear,
                 HasArrow = m_Net.Count(Item.Arrow) > 0,
                 Draw = DebugDraw >= 0 ? DebugDraw : DrawAmount,
@@ -1077,6 +1078,7 @@ namespace RockGame
             if (!Binds.Down(Bind.Attack) || Time.time < m_NextSwing) return;
             m_NextSwing = Time.time + 0.3f;
             int cost = Cfg.HammerCost(s.Tier.Value);
+            if (s.UpgradeLockLeft > 0f) { Hud.Push($"Under attack - you can upgrade it in {Mathf.CeilToInt(s.UpgradeLockLeft)} s"); return; }
             if (m_Net.Count(Cfg.CurrencyItem) < cost) { Hud.Push($"Need {cost} {Cfg.CurrencyName} to upgrade it to {Cfg.TierName(s.Tier.Value + 1).ToLower()}"); return; }
             m_Net.HammerUpgradeRpc(s.NetworkObject);
             m_VM.Swing(0.3f, ViewModel.ImpactTime);
@@ -1971,6 +1973,7 @@ namespace RockGame
             else if (held == Item.SleepingBag) want = 108;
             else if (held == Item.LargeGate) want = 109;
             else if (held == Item.AutoTurret) want = 110;
+            else if (held == Item.Barricade) want = 111;
 
             if (want != m_GhostId)
             {
@@ -1983,7 +1986,7 @@ namespace RockGame
                     m_Ghost = new GameObject("Ghost");
                     if (want == 101) Container.CreateVisual(Container.Chest, m_Net.Team.Value, m_Ghost.transform, Art.Ghost(GhostOkColour));
                     else if (want == 104 || want == 105) Container.CreateVisual(want == 105 ? Container.Workbench2 : Container.Workbench, m_Net.Team.Value, m_Ghost.transform, Art.Ghost(GhostOkColour));
-                    else if (want >= 106 && want <= 110 && want != 109) Container.CreateVisual(want == 106 ? Container.Ladder : want == 107 ? Container.Trap : want == 108 ? Container.SleepBag : Container.Turret, m_Net.Team.Value, m_Ghost.transform, Art.Ghost(GhostOkColour));
+                    else if (want >= 106 && want <= 111 && want != 109) Container.CreateVisual(want == 106 ? Container.Ladder : want == 107 ? Container.Trap : want == 108 ? Container.SleepBag : want == 111 ? Container.Barricade : Container.Turret, m_Net.Team.Value, m_Ghost.transform, Art.Ghost(GhostOkColour));
                     else if (want == 109) Structure.CreateVisual(PieceType.Gate, 0, m_Ghost.transform, false, Art.Ghost(GhostOkColour), out _);
                     else if (want == 103) Vehicle.CreateVisual(Vehicle.Boat, m_Ghost.transform, Art.Ghost(GhostOkColour), out _, out _, out _, out _, null, null); // THEME MAPS
                     else if (want == 102) Vehicle.CreateVisual(Vehicle.Car, m_Ghost.transform, Art.Ghost(GhostOkColour), out _, out _, out _, out _, null, null);
@@ -2004,7 +2007,7 @@ namespace RockGame
 
             if (want >= 100)
             {
-                var kind = want == 100 ? Item.Barrier : want == 101 ? Item.Chest : want == 104 ? Item.Workbench : want == 105 ? Item.Workbench2 : want == 103 ? Item.Boat /* THEME MAPS */ : want == 106 ? Item.Ladder : want == 107 ? Item.BearTrap : want == 108 ? Item.SleepingBag : want == 109 ? Item.LargeGate : want == 110 ? Item.AutoTurret : Item.Car;
+                var kind = want == 100 ? Item.Barrier : want == 101 ? Item.Chest : want == 104 ? Item.Workbench : want == 105 ? Item.Workbench2 : want == 103 ? Item.Boat /* THEME MAPS */ : want == 106 ? Item.Ladder : want == 107 ? Item.BearTrap : want == 108 ? Item.SleepingBag : want == 109 ? Item.LargeGate : want == 110 ? Item.AutoTurret : want == 111 ? Item.Barricade : Item.Car;
                 bool bigWall = kind == Item.Barrier || kind == Item.LargeGate;
                 visible = hasHit && hit.distance <= Cfg.DeployRange + (bigWall ? Cfg.BigWallReachExtra : 0f) && hit.normal.y > 0.7f; // (large walls and gates from a bit further off)
                 // a ladder aimed at a wall (a building piece - yours or theirs - or a large wall): it stands straight up
@@ -2161,6 +2164,9 @@ namespace RockGame
         }
 
         const string k_NeedsFoundation = "Needs a foundation or floor underneath";
+        /// <summary>A wall aimed at bare ground in your base putting a foundation down under itself first (the second ghost,
+        /// both paid for): off - every piece needs a foundation (or floor) built under it first, and none is suggested.</summary>
+        public const bool AutoFoundationOn = false;
 
         /// <summary>The aimed slot is where a piece was just destroyed: the ghost stays there (red, counting down) instead of
         /// hopping to some other slot nearby.</summary>
@@ -2176,6 +2182,7 @@ namespace RockGame
         {
             fkey = default;
             reason = k_NeedsFoundation;
+            if (!AutoFoundationOn) return false; // (off: a wall needs a foundation put down first, like it used to)
             if (key.Kind != PieceKey.KEdge || key.L != 0 || Cfg.Builder) return false;
             int i2 = key.D == 0 ? key.I + 1 : key.I, j2 = key.D == 0 ? key.J : key.J + 1;
             var a = new PieceKey(PieceKey.KFoundation, key.I, key.J, 0, 0);
@@ -2382,7 +2389,9 @@ namespace RockGame
                 {
                     int cost = Cfg.HammerCost(st.Tier.Value);
                     bool afford = m_Net.Count(Cfg.CurrencyItem) >= cost;
+                    float lockLeft = st.UpgradeLockLeft;
                     detail += st.Tier.Value >= Cfg.MaxFortify ? "   <color=#bbbbbb>armoured - fully upgraded</color>"
+                        : lockLeft > 0f ? $"   <color=#ff8a7a><b>UNDER ATTACK - UPGRADE IN {Mathf.CeilToInt(lockLeft)} s</b></color>"
                         : $"   <color={(afford ? "#7dff8a" : "#ff8a7a")}><b>LMB: UPGRADE TO {Cfg.TierName(st.Tier.Value + 1).ToUpper()}  ({cost} {Cfg.CurrencyName})</b></color>";
                 }
                 if (Cfg.IsRam(m_Net.HeldItem) && hit.distance <= Cfg.RamRange)

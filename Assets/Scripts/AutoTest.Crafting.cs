@@ -133,7 +133,7 @@ namespace RockGame
             var listed = ListAt(team, me.transform.position);
             bool startersOnly = true;
             foreach (var it in listed) startersOnly &= Cfg.IsStarter(it);
-            Check(startersOnly && listed.Count == (Cfg.LimitedCrafting ? 4 : Cfg.HammerOn ? 9 : 8), $"TAB with no workbench: just the starter items ({string.Join(", ", listed)})");
+            Check(startersOnly && listed.Count == (Cfg.LimitedCrafting ? 4 : 8), $"TAB with no workbench: just the starter items ({string.Join(", ", listed)})");
             yield return BagRows(pc);
             string benchRow = RowState(Item.Workbench);
             float scroll0 = Hud.CraftScrollMax;
@@ -150,7 +150,7 @@ namespace RockGame
                 yield break;
             }
             pc.CloseMenu();
-            Check(!listed.Contains(Item.Barrier) && Cfg.CraftTier(Item.Barrier) == 1, "the high external wall moved to the T1 list");
+            Check(!listed.Contains(Item.Barricade) && Cfg.CraftTier(Item.Barricade) == 1 && Cfg.CraftIndexOf(Item.Barrier) < 0 && !listed.Contains(Item.Hammer), "the barricade and the hammer are on the T1 list (the large wall is out)");
 
             // tier items are refused without a bench
             int c0 = me.Count(cur);
@@ -237,7 +237,7 @@ namespace RockGame
             pc.LocalTeleport(spawn, Cfg.SpawnYaw(team));
             yield return new WaitForSeconds(0.4f);
             listed = ListAt(team, me.transform.position);
-            bool t1 = listed.Contains(Item.Crossbow) && listed.Contains(Item.Armor) && listed.Contains(Item.Chainsaw) && listed.Contains(Item.Barrier) && listed.Contains(Item.Workbench2) && listed.Contains(Item.Saddle);
+            bool t1 = listed.Contains(Item.Crossbow) && !listed.Contains(Item.Armor) && listed.Contains(Item.Chainsaw) && listed.Contains(Item.Barricade) && listed.Contains(Item.Workbench2) && listed.Contains(Item.Saddle) && (!Cfg.HammerOn || listed.Contains(Item.Hammer));
             bool noT2 = !listed.Contains(Item.Pickaxe);
             if (Cfg.PowerMenu) { t1 &= listed.Contains(Item.Sword); noT2 &= !listed.Contains(Item.Revolver) && !listed.Contains(Item.C4); }
             if (Cfg.Builder) t1 &= listed.Contains(Item.FortifyBuff); // (Builder has no alien machine: its fortify is still crafted)
@@ -265,12 +265,9 @@ namespace RockGame
             yield return CraftWait(me, Item.Crossbow);
             Check(me.Count(Item.Crossbow) == 1 && c0 - me.Count(cur) == xrec.Wood && WorldItemNear(Item.Crossbow, Workbench.Top(bench), 2f) < 0,
                 $"the crossbow goes straight into the inventory ({c0 - me.Count(cur)} {Cfg.CurrencyName}), nothing on the bench");
-            yield return CraftWait(me, Item.Barrier);
-            Check(me.Count(Item.Barrier) >= 1, "a high external wall from the T1 list");
-            // armour: goes straight on
-            c0 = me.Count(cur);
-            yield return CraftWait(me, Item.Armor);
-            Check(me.ArmorHp.Value == Cfg.ArmorHp && c0 - me.Count(cur) == Cfg.GetRecipe(Cfg.RecipeIndex(Item.Armor)).Wood, "armour from the T1 list goes straight on");
+            yield return CraftWait(me, Item.Barricade);
+            Check(me.Count(Item.Barricade) >= 1, "a barricade from the T1 list");
+            Check(Cfg.CraftIndexOf(Item.Armor) < 0, "no wooden armour on the T1 list any more");
             if (Cfg.CraftIndexOf(Item.FortifyBuff) >= 0)
             {
                 yield return CraftWait(me, Item.FortifyBuff);

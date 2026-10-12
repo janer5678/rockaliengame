@@ -150,7 +150,7 @@ namespace RockGame
                 case Item.Sword: case Item.Spear: case Item.Bow: case Item.Crossbow: case Item.Shotgun: case Item.Revolver: case Item.Pistol:
                 case Item.Sniper: case Item.RocketLauncher: case Item.DeathWand: case Item.C4: case Item.PortalGun: return 2;
                 case Item.Hatchet: case Item.Pickaxe: case Item.Chainsaw: case Item.TreeCracker: case Item.Ram: case Item.HeavyRam: case Item.BuildingPlan: case Item.Hammer: return 3;
-                case Item.Chest: case Item.Barrier: case Item.Saddle: case Item.Boat: case Item.FortTower: case Item.Car: return 4;
+                case Item.Chest: case Item.Barrier: case Item.Barricade: case Item.Saddle: case Item.Boat: case Item.FortTower: case Item.Car: return 4;
                 case Item.Helmet: case Item.Armor: case Item.HeavyArmor: return 5;
                 case Item.Berry: case Item.Meat: return 6;
                 default: return 7;

@@ -217,11 +217,11 @@ namespace RockGame
                     Rot(m_Spine, new Vector3(-16f + br * 0.5f, 0, sway));
                     Rot(m_Chest, new Vector3(-6f, 0, sway * 0.5f));
                     Rot(m_Head, new Vector3(8f + Mathf.Sin(t * 2.1f) * 2f, look, 0));
-                    // (the hands low, down towards the lap: the big controller held there)
-                    Rot(m_LArm, new Vector3(-24f, 0, -6f));
-                    Rot(m_LFore, new Vector3(-66f + mash, 40f, 0));
-                    Rot(m_RArm, new Vector3(-24f, 0, 6f));
-                    Rot(m_RFore, new Vector3(-66f + mash2, -40f, 0));
+                    // (the hands low, down in the lap: the big controller held there - lower than it was)
+                    Rot(m_LArm, new Vector3(-12f, 0, -8f));
+                    Rot(m_LFore, new Vector3(-50f + mash, 40f, 0));
+                    Rot(m_RArm, new Vector3(-12f, 0, 8f));
+                    Rot(m_RFore, new Vector3(-50f + mash2, -40f, 0));
                     break;
                 }
                 default: // on the phone: head down, both hands up in front, thumbs going, a laugh now and then

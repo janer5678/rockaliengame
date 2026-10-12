@@ -167,6 +167,8 @@ namespace RockGame
         GUIStyle m_BuffStyle;
         /// <summary>Test hooks: the ball buff line last drawn, and when.</summary>
         public static string BuffShown = "";
+        /// <summary>(tests) when the worn jetpack's and glasses' rows (bottom left) were last drawn.</summary>
+        public static float JetpackRowShownAt = -10f, GlassesRowShownAt = -10f;
         public static float BuffShownAt = -1f;
 
         void Styles()
@@ -501,25 +503,45 @@ namespace RockGame
                     Shadowed(new Rect(ab.x + 6, ab.y, ab.width, ab.height), $"<b>ARMOUR {me.ArmorHp.Value}</b>", m_Small);
                     statY -= 26 * k;
                 }
+                // worn gear, shown like the armour (PlayerNet.Gear.cs): the jetpack's fuel, and the wallhack glasses
+                if (me.WearingJetpack)
+                {
+                    var jb = new Rect(hr.x, statY, hw, 22 * k);
+                    Fill(jb, new Color(0, 0, 0, 0.55f));
+                    Fill(new Rect(jb.x + 2, jb.y + 2, (jb.width - 4) * me.FuelPercent / 100f, jb.height - 4), me.Jetting.Value ? new Color(1f, 0.6f, 0.2f) : new Color(0.35f, 0.75f, 1f));
+                    Shadowed(new Rect(jb.x + 6, jb.y, jb.width, jb.height), $"<b>JETPACK {me.FuelPercent}%</b>", m_Small);
+                    JetpackRowShownAt = Time.time;
+                    statY -= 26 * k;
+                }
+                if (me.WornGlasses.Value)
+                {
+                    var gb = new Rect(hr.x, statY, hw, 22 * k);
+                    Fill(gb, new Color(0, 0, 0, 0.55f));
+                    Fill(new Rect(gb.x + 2, gb.y + 2, gb.width - 4, gb.height - 4), new Color(0.75f, 0.2f, 0.25f, 0.85f));
+                    Shadowed(new Rect(gb.x + 6, gb.y, gb.width, gb.height), "<b>WALLHACK GLASSES</b>", m_Small);
+                    GlassesRowShownAt = Time.time;
+                    statY -= 26 * k;
+                }
                 // the ball buff, just above the armour: whichever team has the ball in its machine gathers x3 - shown to
-                // everyone, twice the size and in capitals, so the others see the enemy has it and go for the ball
+                // everyone, in capitals (a bit bigger than the other lines), so the others see the enemy has it and go for the ball
                 int buffTeam = Ball.Instance != null && Ball.Instance.IsSpawned && !Ball.Instance.IsCarried ? Ball.Instance.SocketTeam.Value : -1;
                 if (buffTeam >= 0 && (game == null || game.S != GameState.SuddenDeath))
                 {
                     bool mine = buffTeam == me.Team.Value;
                     var buffC = mine ? new Color(1f, 0.82f, 0.25f) : Color.Lerp(Cfg.TeamColor[Mathf.Clamp(buffTeam, 0, 3)], Color.white, 0.25f);
-                    string mul = $"{Cfg.BallGatherMul:0.#}X GATHERING";
-                    string line = mine ? $"<color=#ffd24a><b>BALL BUFF</b></color>  <color=#eeeeee><b>{mul}</b></color>"
-                        : $"<color=#{ColorUtility.ToHtmlStringRGB(buffC)}><b>{Cfg.TeamLabel(buffTeam)} HAS THE BALL BUFF</b></color>  <color=#eeeeee><b>{mul}</b></color>";
-                    if (m_BuffStyle == null || m_BuffStyle.fontSize != m_Small.fontSize * 2) m_BuffStyle = new GUIStyle(m_Small) { fontSize = m_Small.fontSize * 2, alignment = TextAnchor.MiddleLeft, wordWrap = false, richText = true, clipping = TextClipping.Overflow };
-                    float bw = m_BuffStyle.CalcSize(new GUIContent(line)).x + 34 * k; // (bold counted: the rich text measured as drawn)
-                    var br = new Rect(hr.x, statY - 58 * k, Mathf.Max(hw, bw), 44 * k); // (lifted clear of the hotbar)
+                    string mul = $"{Cfg.BallGatherMul:0.#}X GATHERING FROM THE BALL";
+                    string line = mine ? $"<color=#ffd24a><b>YOUR TEAM HAS</b></color> <color=#eeeeee><b>{mul}</b></color>"
+                        : $"<color=#{ColorUtility.ToHtmlStringRGB(buffC)}><b>{Cfg.TeamLabel(buffTeam)} HAS</b></color> <color=#eeeeee><b>{mul}</b></color>";
+                    int buffSize = Mathf.RoundToInt(m_Small.fontSize * 1.3f);
+                    if (m_BuffStyle == null || m_BuffStyle.fontSize != buffSize) m_BuffStyle = new GUIStyle(m_Small) { fontSize = buffSize, alignment = TextAnchor.MiddleLeft, wordWrap = false, richText = true, clipping = TextClipping.Overflow };
+                    float bw = m_BuffStyle.CalcSize(new GUIContent(line)).x + 28 * k; // (bold counted: the rich text measured as drawn)
+                    var br = new Rect(hr.x, statY - 34 * k, Mathf.Max(hw, bw), 30 * k); // (lifted clear of the hotbar)
                     Fill(br, new Color(buffC.r * 0.3f, buffC.g * 0.3f, buffC.b * 0.3f, 0.7f));
-                    Fill(new Rect(br.x, br.y, 8 * k, br.height), new Color(buffC.r, buffC.g, buffC.b, 0.95f));
-                    Shadowed(new Rect(br.x + 18 * k, br.y, br.width, br.height), line, m_BuffStyle);
+                    Fill(new Rect(br.x, br.y, 6 * k, br.height), new Color(buffC.r, buffC.g, buffC.b, 0.95f));
+                    Shadowed(new Rect(br.x + 14 * k, br.y, br.width, br.height), line, m_BuffStyle);
                     BuffShown = line;
                     BuffShownAt = Time.time;
-                    statY -= 88 * k;
+                    statY -= 60 * k;
                 }
                 if (me.HelmetHp.Value > 0)
                 {
@@ -553,13 +575,7 @@ namespace RockGame
             DrawCountdowns(game, team, dead);
             DrawReadySetRock(game, dead); // the 3, 2, 1 countdown before the match (Hud.ReadySetRock.cs)
 
-            // ---- banner ----
-            float bage = Time.time - s_BannerTime;
-            if (bage < GameSettings.NotifTimeNow && !dead && !s_BannerTest && game != null && game.S != GameState.GameOver && !game.FightFrozen && !(game.S == GameState.BallLive && !game.Overtime.Value && game.TimeLeft <= 10f)) // (not over the final countdown)
-            {
-                DrawBannerFx(s_BannerTitle, s_BannerSub, bage, k); // (animated: Hud.Notify.cs)
-                BannerShownFrame = Time.frameCount;
-            }
+            // (the banner is drawn last of all, over everything: below)
             if (notifLayer) UiLook.EndNotif(notifPrev);
 
             // ---- dead: the kill cam, its replay and the death screen (Hud.Death.cs) ----
@@ -581,6 +597,22 @@ namespace RockGame
             else m_PausePage = PausePage.Root;
 
             if (game != null && game.S == GameState.GameOver) DrawGameOver(boot, game, team);
+
+            // ---- banner (in a match only the airdrop news and TRADE STATION UNLOCKED: Banner): over every layer - the bag,
+            // an open chest, the death screen and kill cam, the scoreboard - so it's always seen ----
+            float bage = Time.time - s_BannerTime;
+            if (bage < GameSettings.NotifTimeNow && !s_BannerTest && game != null && game.S != GameState.GameOver && !game.FightFrozen && !(game.S == GameState.BallLive && !game.Overtime.Value && game.TimeLeft <= 10f)) // (not over the final countdown)
+            {
+                GUI.color = Color.white;
+                // (its own looks' layer goes in under the GUI drawn straight to the screen: with the bag, a chest, the
+                // death screen or a menu up it's drawn straight on top instead, so nothing ever covers it)
+                bool covered = pc.MenuOpen || me.Dead.Value || pc.Paused || pc.WheelOpen || pc.AirstrikeMapOpen;
+                RenderTexture bannerPrev = null;
+                bool bannerLayer = !covered && UiLook.BeginNotif(out bannerPrev);
+                DrawBannerFx(s_BannerTitle, s_BannerSub, bage, k); // (animated: Hud.Notify.cs)
+                if (bannerLayer) UiLook.EndNotif(bannerPrev);
+                BannerShownFrame = Time.frameCount;
+            }
         }
 
         /// <summary>An action's key in a hint, as "[E]" (Shadowed draws it as the keycap icon: Tutorial.WithKeyIcons).</summary>
@@ -604,6 +636,7 @@ namespace RockGame
                 case Item.LargeGate: return $"<b>Large Gate</b> x{s.Count}    LMB: place it - a tall log gate your team opens with {KT(Bind.Interact)}";
                 case Item.SleepingBag: return $"<b>Sleeping Bag</b> x{s.Count}    LMB: put it down (not in an enemy base) - respawn at it when you die";
                 case Item.BearTrap: return $"<b>Bear Trap</b> x{s.Count}    LMB: set it on the ground or a floor - it snaps and holds ANYONE who steps on it (you too)";
+                case Item.Barricade: return $"<b>Barricade</b> x{s.Count}    LMB: put it down - cover anywhere, even in the enemy base (not right up against their buildings)";
                 case Item.Ladder: return $"<b>Ladder</b> x{s.Count}    LMB: aim at a wall (yours or theirs, or a large wall) - it stands against it; walk into it and hold {KT(Bind.Forward)} to climb";
                 case Item.AutoTurret: return $"<b>Auto Turret</b>    LMB: place it in your base - then {KT(Bind.Interact)} on it and PUT A WEAPON (any) AND ARROWS IN IT";
                 case Item.Skull: return $"<b>Skull</b> x{s.Count}    Assassin: take it to your machine and {KT(Bind.Interact)}";
@@ -623,7 +656,7 @@ namespace RockGame
                     int left = s.Data <= 0 || s.Data > Cfg.PortalShots ? Cfg.PortalShots : s.Data;
                     return $"<b>Portal Gun</b> ({left} portal{(left == 1 ? "" : "s")} left)    LMB: shoot a portal onto any surface - " + (left >= Cfg.PortalShots ? "two shots make a linked pair" : "this shot links it to your first one");
                 }
-                case Item.Jetpack: return $"<b>Jetpack</b> (fuel {s.Data}%)    hold {KT(Bind.Jump)} to fly";
+                case Item.Jetpack: return $"<b>Jetpack</b> (fuel {s.Data}%)    goes on your back by itself: hold {KT(Bind.Jump)} to fly";
                 case Item.SlenderEgg: return "<b>Slenderman Egg</b>    LMB: throw it - Slenderman hatches and hunts your enemy";
                 case Item.BuildEgg: return "<b>Build Egg</b>    LMB: throw it - blocks appear along its path to walk on";
                 case Item.GiantStaff: return "<b>Staff of the Giant</b>    LMB: turn your nearest enemy into a giant";
@@ -631,7 +664,7 @@ namespace RockGame
                 case Item.BombBush: return "<b>Fake Bomb Bush</b>    LMB: throw it - whoever picks it blows up";
                 case Item.TreeCamo: return "<b>Tree Camo</b>    while you hold it you're a tree    hold LMB / RMB: stand still and just look around";
                 case Item.Airstrike: return "<b>Airstrike</b>    LMB: pick a spot on the map - everything there gets flattened";
-                case Item.Wallhack: return "<b>Wallhack Glasses</b>    hold them to see your enemies through walls";
+                case Item.Wallhack: return "<b>Wallhack Glasses</b>    go on by themselves: you see your enemies through walls";
                 case Item.InvisPotion: return $"<b>Invisibility Potion</b>    LMB: drink ({Cfg.InvisTime:0}s, attacking shows you)";
                 case Item.SpeedJuice: return $"<b>Extreme Speed Juice</b>    LMB: drink ({Cfg.SpeedJuiceTime:0}s of extreme speed)";
                 case Item.Chainsaw: return $"<b>Chainsaw</b> ({s.Data * Cfg.ChainsawWearEvery} uses left)    hold LMB: cuts wood and stone fast";

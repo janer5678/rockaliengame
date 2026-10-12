@@ -32,6 +32,19 @@ namespace RockGame
         static readonly System.Collections.Generic.List<ArrowProjectile> s_InBodies = new System.Collections.Generic.List<ArrowProjectile>();
         /// <summary>For the tests: how many times a projectile (anyone's, on this machine) has gone through a portal.</summary>
         public static int PortalPasses { get; private set; }
+        /// <summary>Every arrow, bolt and thrown spear on this screen (the kill cam's replay records where they flew: DeathReplay).</summary>
+        public static readonly System.Collections.Generic.List<ArrowProjectile> Flying = new System.Collections.Generic.List<ArrowProjectile>();
+        /// <summary>What it looks like in the replay: 0 an arrow, 1 a crossbow bolt, 2 a spear.</summary>
+        public byte ReplayKind => m_Spear ? (byte)2 : m_Damage >= 0f ? (byte)1 : (byte)0;
+
+        /// <summary>An arrow's look (a shaft, a hard wood head, two fletchings), tip along +Z.</summary>
+        public static void BuildArrowLook(Transform t)
+        {
+            Art.Box(t, Art.Wood, new Vector3(0, 0, -0.35f), new Vector3(0.03f, 0.03f, 0.75f));
+            Art.Box(t, ItemModels.HardWood, new Vector3(0, 0, 0.04f), new Vector3(0.07f, 0.07f, 0.12f), new Vector3(0, 0, 45));
+            Art.Box(t, Art.Wood, new Vector3(0, 0, -0.66f), new Vector3(0.13f, 0.01f, 0.12f));
+            Art.Box(t, Art.DarkWood, new Vector3(0, 0, -0.66f), new Vector3(0.01f, 0.13f, 0.12f));
+        }
 
         /// <summary>
         /// The whoosh of it flying, as a looping 3D sound with doppler: you hear where it is, which way it's heading and
@@ -48,11 +61,9 @@ namespace RockGame
         {
             var go = new GameObject("Arrow");
             go.transform.SetPositionAndRotation(pos, Quaternion.LookRotation(vel));
-            Art.Box(go.transform, Art.Wood, new Vector3(0, 0, -0.35f), new Vector3(0.03f, 0.03f, 0.75f));
-            Art.Box(go.transform, ItemModels.HardWood, new Vector3(0, 0, 0.04f), new Vector3(0.07f, 0.07f, 0.12f), new Vector3(0, 0, 45));
-            Art.Box(go.transform, Art.Wood, new Vector3(0, 0, -0.66f), new Vector3(0.13f, 0.01f, 0.12f));
-            Art.Box(go.transform, Art.DarkWood, new Vector3(0, 0, -0.66f), new Vector3(0.01f, 0.13f, 0.12f));
+            BuildArrowLook(go.transform);
             var a = go.AddComponent<ArrowProjectile>();
+            Flying.Add(a);
             a.m_Vel = vel;
             a.m_Shooter = shooter;
             a.m_ShooterRoot = shooter != null ? shooter.transform : null;
@@ -72,6 +83,7 @@ namespace RockGame
             go.transform.SetPositionAndRotation(pos, Quaternion.LookRotation(vel));
             ItemModels.CreateSpearTipForward(go.transform);
             var a = go.AddComponent<ArrowProjectile>();
+            Flying.Add(a);
             a.m_Vel = vel;
             a.m_Shooter = shooter;
             a.m_ShooterRoot = shooter != null ? shooter.transform : null;
@@ -229,7 +241,7 @@ namespace RockGame
                 if (a != null && (a.m_Follow == null || a.m_Follow.IsChildOf(player))) Destroy(a.gameObject);
         }
 
-        void OnDestroy() { if (m_Following) s_InBodies.Remove(this); }
+        void OnDestroy() { if (m_Following) s_InBodies.Remove(this); Flying.Remove(this); }
 
         void LateUpdate()
         {

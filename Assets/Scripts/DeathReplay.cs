@@ -28,6 +28,8 @@ namespace RockGame
         struct Ev { public float T; public bool Throw; public Item Held; }
         struct Hit { public float T; public Vector3 Pos; public float Amount; public bool Kill; }
         struct Fall { public float T; public Vector3[] Pos; public Quaternion[] Rot; }
+        /// <summary>An arrow, bolt or spear in the air (or stuck in something) at T: which one, where, which way, what it is.</summary>
+        struct Shot { public int Id; public float T; public Vector3 Pos; public Quaternion Rot; public byte Kind; }
 
         static DeathReplay s_Me;
         const float Keep = 8f, Every = 1f / 40f;
@@ -44,6 +46,9 @@ namespace RockGame
         readonly List<Pose> m_Poses = new List<Pose>();
         readonly List<Hit> m_Hits = new List<Hit>();
         readonly List<Fall> m_Falls = new List<Fall>();
+        readonly List<Shot> m_Shots = new List<Shot>();
+        List<Shot> m_RShots;
+        readonly Dictionary<int, GameObject> m_ShotModels = new Dictionary<int, GameObject>();
         Transform[] m_Bones;
         Transform m_BonesOf;
         float m_Next;
@@ -85,6 +90,9 @@ namespace RockGame
         public static float Rate { get; private set; } = 1f;
         /// <summary>How many hits were played back (damage numbers) this replay.</summary>
         public static int HitsPlayed { get; private set; }
+        /// <summary>(tests) arrows / spears showing in the replay right now, and the most there were at once this replay.</summary>
+        public static int ShotsShown { get; private set; }
+        public static int MostShotsShown { get; private set; }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void Make()
@@ -133,6 +141,10 @@ namespace RockGame
                 });
                 Trim(list, now);
             }
+            // every arrow, bolt and thrown spear on this screen, as it flies (and sticks)
+            foreach (var a in ArrowProjectile.Flying)
+                if (a != null) m_Shots.Add(new Shot { Id = a.GetInstanceID(), T = now, Pos = a.transform.position, Rot = a.transform.rotation, Kind = a.ReplayKind });
+            { int n = 0; while (n < m_Shots.Count && m_Shots[n].T < now - Keep) n++; if (n > 0) m_Shots.RemoveRange(0, n); }
             // your own alien, bone by bone (only while you're alive: after that it's your ragdoll)
             var me = PlayerNet.Local;
             var model = me != null ? me.AlienModel : null;
@@ -218,7 +230,7 @@ namespace RockGame
             if (s_Me == null || me == null || killer == null) return false;
             End();
             var r = s_Me;
-            GhostFell = false; Rate = 1f; HitsPlayed = 0; SlowFromReal = FellAtReal = -1f;
+            GhostFell = false; Rate = 1f; HitsPlayed = 0; SlowFromReal = FellAtReal = -1f; ShotsShown = MostShotsShown = 0;
             r.m_SpareDone = false;
             if (!r.m_Looks.TryGetValue(killer.NetworkObjectId, out var looks) || looks.Count < 4 || r.m_Poses.Count < 4) return false;
             r.m_KLooks = new List<Look>(looks);
@@ -226,6 +238,7 @@ namespace RockGame
             r.m_KEvs = r.m_Evs.TryGetValue(killer.NetworkObjectId, out var evs) ? new List<Ev>(evs) : new List<Ev>();
             r.m_RHits = new List<Hit>(r.m_Hits);
             r.m_RFalls = new List<Fall>(r.m_Falls);
+            r.m_RShots = new List<Shot>(r.m_Shots);
             r.m_RFallNames = r.m_FallNames;
             r.m_Died = Mathf.Abs(r.m_DeathT - r.m_MyPoses[r.m_MyPoses.Count - 1].T) < 0.5f ? r.m_DeathT : r.m_MyPoses[r.m_MyPoses.Count - 1].T;
             r.m_Killer = killer.NetworkObjectId;
@@ -297,6 +310,7 @@ namespace RockGame
                     foreach (var rd in p.GetComponentsInChildren<Renderer>(true))
                         if (!rd.forceRenderingOff) { rd.forceRenderingOff = true; r.m_Hidden.Add(rd); }
             PoseGhost(r, at);
+            PlayShots(r, at);
             // the camera: the killer's eyes and aim (smoothed over a moment of the recording, never blended across a jump)
             int li = SampleLook(r.m_KLooks, at, out var eye, out float yaw, out float pitch);
             float wSum = 3f, dyaw = 0f;
@@ -370,6 +384,50 @@ namespace RockGame
             r.m_Ghost.transform.SetPositionAndRotation(Vector3.Lerp(a.Pos, b.Pos, f), Quaternion.Slerp(a.Rot, b.Rot, f));
             int n = Mathf.Min(r.m_GhostBones.Length, a.Bones.Length);
             for (int j = 1; j < n; j++) if (r.m_GhostBones[j] != null) r.m_GhostBones[j].localRotation = Quaternion.Slerp(a.Bones[j], b.Bones[j], f);
+        }
+
+        struct ShotPair { public Shot A, B; public bool HasA, HasB; }
+        static readonly Dictionary<int, ShotPair> s_ShotAt = new Dictionary<int, ShotPair>();
+
+        /// <summary>The arrows, bolts and spears that were flying then, where they were at `at` on the recording's clock
+        /// (between the two samples either side; not yet thrown or already gone: not shown).</summary>
+        static void PlayShots(DeathReplay r, float at)
+        {
+            if (r.m_RShots == null) return;
+            s_ShotAt.Clear();
+            foreach (var s in r.m_RShots)
+            {
+                s_ShotAt.TryGetValue(s.Id, out var w);
+                if (s.T <= at) { w.A = s; w.HasA = true; }
+                else if (!w.HasB) { w.B = s; w.HasB = true; }
+                s_ShotAt[s.Id] = w;
+            }
+            int shown = 0;
+            foreach (var kv in s_ShotAt)
+            {
+                var w = kv.Value;
+                // (only between its first sample and its last: one that's gone stays gone)
+                bool on = w.HasA && (w.HasB || at - w.A.T < Every * 1.6f);
+                r.m_ShotModels.TryGetValue(kv.Key, out var go);
+                if (!on) { if (go != null) go.SetActive(false); continue; }
+                if (go == null)
+                {
+                    go = new GameObject("replay shot");
+                    if (w.A.Kind == 2) ItemModels.CreateSpearTipForward(go.transform);
+                    else ArrowProjectile.BuildArrowLook(go.transform);
+                    foreach (var c in go.GetComponentsInChildren<Collider>(true)) Destroy(c);
+                    r.m_ShotModels[kv.Key] = go;
+                }
+                go.SetActive(true);
+                float f = w.HasB ? Mathf.InverseLerp(w.A.T, w.B.T, at) : 0f;
+                if (w.HasB && (w.B.Pos - w.A.Pos).sqrMagnitude > 25f) f = f < 0.5f ? 0f : 1f; // (through a portal: a cut)
+                go.transform.SetPositionAndRotation(w.HasB ? Vector3.Lerp(w.A.Pos, w.B.Pos, f) : w.A.Pos, w.HasB ? Quaternion.Slerp(w.A.Rot, w.B.Rot, f) : w.A.Rot);
+                shown++;
+            }
+            // (one that never turned up in the recording again: hidden)
+            foreach (var kv in r.m_ShotModels) if (kv.Value != null && !s_ShotAt.ContainsKey(kv.Key)) kv.Value.SetActive(false);
+            ShotsShown = shown;
+            MostShotsShown = Mathf.Max(MostShotsShown, shown);
         }
 
         /// <summary>The killer's hands and weapon in front of the camera, on the recording's clock: what they held, what they
@@ -469,6 +527,10 @@ namespace RockGame
             if (r == null) return;
             if (r.m_Ghost != null) { Destroy(r.m_Ghost); r.m_Ghost = null; Ragdoll.SetHidden(r.m_Mine, false); }
             if (r.m_Spare != null) { Destroy(r.m_Spare); r.m_Spare = null; }
+            foreach (var go in r.m_ShotModels.Values) if (go != null) Destroy(go);
+            r.m_ShotModels.Clear();
+            r.m_RShots = null;
+            ShotsShown = 0;
             if (r.m_VM != null)
             {
                 r.m_VM.Destroy();

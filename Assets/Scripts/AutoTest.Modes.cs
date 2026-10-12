@@ -127,9 +127,9 @@ namespace RockGame
             var xbow = Cfg.GetRecipe(Cfg.RecipeIndex(Item.Crossbow));
             Check(Cfg.PowerMenu && Cfg.PowerCount == 7 && Cfg.PowerIndex(Item.Helmet) < 0 && Cfg.PowerIndex(Item.Pistol) < 0 && Cfg.PowerIndex(Item.FortifyBuff) < 0 && hat.Wood == Cfg.HatchetWood && xbow.Wood == 350, $"{Cfg.RulesName(Cfg.Rules)}: power menu ({Cfg.PowerCount} items, no pistol, no fortify - it's in UPGRADES), normal prices (hatchet {hat.Wood} wood), crossbow {xbow.Wood} wood");
             Check(Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.Sword)).Wood == 500 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.C4)).Wood == 2500
-                && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.Shotgun)).Wood == 2000 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.ShotgunShell)).Wood == 250
-                && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.Revolver)).Wood == 2500 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.RevolverAmmo)).Wood == 500 && Cfg.RevolverAmmoPerCraft == 1,
-                "power prices: sword 500, C4 2500, shotgun 2000 + 250 a shell, revolver 2500 + 500 a bullet");
+                && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.Shotgun)).Wood == 2000 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.ShotgunShell)).Wood == 100
+                && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.Revolver)).Wood == 2500 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.RevolverAmmo)).Wood == 100 && Cfg.RevolverAmmoPerCraft == 1,
+                "power prices: sword 500, C4 2500, shotgun 2000 + 100 a shell, revolver 2500 + 100 a bullet");
             Check(Cfg.MeleePlayerDamage(Item.Sword, true) == Cfg.SwordHeadDamage && Cfg.MeleePlayerDamage(Item.Sword, false) == Cfg.SwordBodyDamage && Cfg.Melee(Item.Sword).Cooldown > Cfg.Melee(Item.Hatchet).Cooldown,
                 $"sword: its own head / body damage (CHANGE VALUES), a slower swing ({Cfg.MeleePlayerDamage(Item.Sword, true)} / {Cfg.MeleePlayerDamage(Item.Sword, false)}, {Cfg.Melee(Item.Sword).Cooldown} s vs the hatchet's {Cfg.Melee(Item.Hatchet).Cooldown} s)");
             Check(Mathf.Abs(Cfg.ShotgunPellets * Cfg.ShotgunPelletDamage * Cfg.ShotgunFalloff(0.9f) - 200f) < 0.5f && Cfg.ShotgunFalloff(10f) < 0.7f, "shotgun: 200 within a metre, less further out");
@@ -457,6 +457,7 @@ namespace RockGame
             for (int i = 0; i < 5; i++) rowWalls.Add(Spawn(row0 + new Vector3(0, 0, 0.6f * i)));
             var besideA = Spawn(row0 + new Vector3(4.2f, 0, 0));
             var besideB = Spawn(row0 + new Vector3(-4.2f, 0, 0.6f));
+            if (!InvOps.HasEmpty(me.Inv)) me.Inv[Cfg.PlayerSlots - 1] = default; // (room for it)
             me.ServerGive(Item.Ram, 1, Cfg.MaxData(Item.Ram));
             yield return new WaitForSeconds(0.2f);
             yield return Hold(me, Item.Ram);
@@ -509,8 +510,15 @@ namespace RockGame
                 foreach (var it in g.Items) if (it.Stack.Id == Item.Wood && Cfg.BaseTeamAt(it.Pos) == team) anyPile = true;
                 if (Cfg.AutoWoodGen)
                 {
-                    // the hammer's modes: the machine is there from the start, levelling up by itself (AutoTest.Monday.cs)
-                    Check(g.WoodGenLevelOf(team) >= 1 && ours != null && ours.Built && ours.GetComponentInChildren<Collider>() != null, $"the wood machine is there from the start (level {g.WoodGenLevelOf(team)})");
+                    // the hammer's modes: the machine lands when the walls drop, then levels up by itself (AutoTest.Monday.cs)
+                    if (g.S == GameState.PreBall)
+                    {
+                        Check(g.WoodGenLevelOf(team) == 0 && ours != null && !ours.Built && !anyPile, $"no wood machine while the walls are up (level {g.WoodGenLevelOf(team)}, pile {anyPile})");
+                        g.ServerWoodGenUp(team); // (as if the walls had dropped: the checks below need it there)
+                        yield return new WaitForSeconds(0.5f);
+                    }
+                    else
+                        Check(g.WoodGenLevelOf(team) >= 1 && ours != null && ours.Built && ours.GetComponentInChildren<Collider>() != null, $"the wood machine is there once the walls are down (level {g.WoodGenLevelOf(team)})");
                 }
                 else
                 {

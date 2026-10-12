@@ -19,6 +19,8 @@ namespace RockGame
         /// handed in (Assassin), the ball changing hands (Domination) - their words come in the line itself.</summary>
         public const byte Goal = 207, MachineDown = 208, SkullIn = 209, Dominate = 210;
         public static bool IsEvent(byte c) => c >= Goal && c <= Dominate;
+        /// <summary>More deaths no weapon did: drowning (a deep sea), and the spikes on top of a large wall / gate.</summary>
+        public const byte Drown = 211, Spikes = 212;
     }
 
     public partial class NetGame
@@ -66,7 +68,7 @@ namespace RockGame
         struct Kill { public byte KillerTeam, KillerSlot, VictimTeam, VictimSlot, Cause; public bool Head; public string Killer, Victim; public float Time, Y; }
         static readonly List<Kill> s_Kills = new List<Kill>();
         const float KillShow = 6.5f, KillFade = 0.8f, KillPop = 0.22f;
-        static Texture2D s_Skull, s_Flame, s_HeadIcon, s_FallIcon, s_BallIcon;
+        static Texture2D s_Skull, s_Flame, s_HeadIcon, s_FallIcon, s_BallIcon, s_DropIcon;
 
         /// <summary>Test hooks: the last kill feed line (plain text), how many lines there have been, and whether the last was a headshot.</summary>
         public static string LastKillLine { get; private set; } = "";
@@ -89,6 +91,9 @@ namespace RockGame
             }
             s_Kills.Add(new Kill { KillerTeam = killerTeam, KillerSlot = killerSlot, VictimTeam = victimTeam, VictimSlot = victimSlot, Cause = cause, Head = head, Killer = killer, Victim = victim, Time = Time.time, Y = -1f });
             while (s_Kills.Count > 10) s_Kills.RemoveAt(0); // (Settings > Display > KILL FEED: up to 10 at once)
+            // (your own death: what really did it, for the death screen's "with ..." - not whatever they're holding now)
+            var lme = PlayerNet.Local;
+            if (lme != null && victimTeam == lme.Team.Value && victimSlot == lme.Slot.Value && !KillCause.IsBall(cause) && !KillCause.IsEvent(cause)) MyDeathCause = cause;
             LastKillLine = (killer + " [" + CauseName(cause) + (head ? ", headshot" : "") + "] " + victim).Trim();
             LastKillHead = head;
             KillLines++;
@@ -96,6 +101,8 @@ namespace RockGame
         }
 
         public static void ClearKills() => s_Kills.Clear();
+        /// <summary>What killed this PC's player last (a KillCause; 0 = not known).</summary>
+        public static byte MyDeathCause;
 
         static Color NameColor(byte team) => PlayerNet.NameColor(team);
 
@@ -108,6 +115,8 @@ namespace RockGame
                 case KillCause.Lava: return "lava";
                 case KillCause.Slenderman: return "slenderman";
                 case KillCause.Died: return "died";
+                case KillCause.Drown: return "drowned";
+                case KillCause.Spikes: return "spikes";
                 case KillCause.BallPickup: case KillCause.BallCapture: return "ball";
                 default: return KillCause.IsItem(cause) ? Cfg.ItemName((Item)cause) : "died";
             }
@@ -117,7 +126,9 @@ namespace RockGame
         {
             if (KillCause.IsItem(cause)) { var t = ItemIcons.Get((Item)cause); if (t != null) return t; }
             if (cause == KillCause.Slenderman) { var t = ItemIcons.Get(Item.SlenderEgg); if (t != null) return t; }
+            if (cause == KillCause.Spikes) { var t = ItemIcons.Get(Item.Barrier); if (t != null) return t; }
             EnsureKillIcons();
+            if (cause == KillCause.Drown) return s_DropIcon;
             return KillCause.IsBall(cause) || cause == KillCause.Goal || cause == KillCause.Dominate ? s_BallIcon : cause == KillCause.MachineDown ? s_Flame : cause == KillCause.SkullIn ? s_Skull : cause == KillCause.Lava ? s_Flame : cause == KillCause.Fall ? s_FallIcon : s_Skull;
         }
 
@@ -165,6 +176,17 @@ namespace RockGame
                 float ground = Box(u, v, -0.8f, 0.72f, 0.8f, 0.9f);
                 float a = Mathf.Max(shaft, Mathf.Max(headA, ground));
                 return ground > 0f && shaft + headA <= 0f ? new Color(0.75f, 0.75f, 0.78f, a) : new Color(0.96f, 0.96f, 0.98f, a);
+            });
+            s_DropIcon = Make((u, v) =>
+            {
+                // a water drop: pointed at the top, round at the bottom, a light glint
+                float w = v > 0.15f ? Mathf.Sqrt(Mathf.Max(0f, 1f - Mathf.Pow((v - 0.15f) / 0.62f, 2))) * 0.6f : Mathf.Lerp(0.02f, 0.6f, Mathf.Clamp01((v + 0.85f) / 1f));
+                float a = Mathf.Clamp01((w - Mathf.Abs(u)) * 20f) * (v > -0.85f ? 1f : 0f);
+                float glint = Disc(u, v, -0.2f, 0.25f, 0.1f, 0.16f);
+                var c = Color.Lerp(new Color(0.25f, 0.55f, 1f), new Color(0.6f, 0.85f, 1f), Mathf.Clamp01(-v * 0.5f + 0.5f));
+                c = Color.Lerp(c, Color.white, glint * 0.8f);
+                c.a = a;
+                return c;
             });
             s_BallIcon = Make((u, v) =>
             {

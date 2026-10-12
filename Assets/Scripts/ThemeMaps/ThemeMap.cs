@@ -295,7 +295,7 @@ namespace RockGame
                 s_Under.TryGetValue(p, out float t);
                 t += 0.25f;
                 s_Under[p] = t;
-                if (t > PlayerController.BreathTime + 0.5f) p.ServerDamage(2.5f, null, KillCause.Died); // (10 a second, in quarter-second steps)
+                if (t > PlayerController.BreathTime + 0.5f) p.ServerDamage(2.5f, null, KillCause.Drown); // (10 a second, in quarter-second steps)
             }
         }
         /// <summary>Server: anyone below the map's KillY dies.</summary>

@@ -239,7 +239,7 @@ namespace RockGame
         void BuildDressing(Transform t, System.Random rng)
         {
             float R() => (float)rng.NextDouble();
-            // ---- two trade stations against the back wall either side of the window, their screens going ----
+            // ---- a trade station against the back wall left of the window (the arcade machine is right of it), its screens going ----
             void Station(Vector3 at, int team, int tier)
             {
                 var root = new GameObject("trade station").transform;
@@ -261,7 +261,7 @@ namespace RockGame
                 }
             }
             Station(new Vector3(-4.8f, 0f, 3.62f), 0, 2);
-            Station(new Vector3(4.8f, 0f, 3.62f), 1, 1);
+            BuildCabinet(t); // (on the right, where the Trade Station stood: the arcade machine - ShipLobby.Arcade.cs)
 
             // ---- gear from the game, all round where you can see it ----
             Lay(t, Item.RocketLauncher, new Vector3(1.75f, 0.09f, -1.15f), 75f, 90f);

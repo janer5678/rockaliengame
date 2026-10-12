@@ -184,6 +184,7 @@ namespace RockGame
                 var ids = Cfg.NearestUpgradable(MyTeam, 1);
                 if (ids.Length == 0 || !Unity.Netcode.NetworkManager.Singleton.SpawnManager.SpawnedObjects.TryGetValue(ids[0], out var no) || !no.TryGetComponent(out Structure piece)) return false;
                 if (m_CraftFail.TryGetValue(Item.Hammer, out var wait) && Time.time < wait) return false;
+                if (Cfg.BenchTier(MyTeam) < Cfg.CraftTier(Item.Hammer)) return false; // (the hammer's a Trade Station item: none till there's one)
                 s.Item = Item.Hammer;
                 s.Cost = Cfg.HammerCost(piece.Tier.Value);
                 return true;

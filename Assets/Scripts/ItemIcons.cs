@@ -256,29 +256,26 @@ namespace RockGame
             return true;
         }
 
-        /// <summary>The spear's icon (only the icon: the held / thrown spear keeps its own model). The real spear is long and
-        /// thin, so squeezed into a square it came out a hairline much like the arrow; this one is short and bold instead - a
-        /// thick shaft with a dark butt cap and a leather grip, a big broad leaf-shaped flint head with a dark midrib, bound on
-        /// with twine - and nothing like the arrow's fletching.</summary>
+        /// <summary>The spear's icon (only the icon: the held / thrown spear keeps its own model), drawn like Rust's wooden
+        /// spear icon: one long pale pole right across the square, corner to corner (PoseForIcon lays it diagonally), its
+        /// end carved to a point and fire-blackened, a rag wound round the middle for a grip, tied off with twine either
+        /// side, and the butt rounded off. Thick enough to read at hotbar size, and nothing like the arrow's fletching.</summary>
         static GameObject SpearIconModel(Transform parent)
         {
             var go = new GameObject("spear icon");
             go.transform.SetParent(parent, false);
             var t = go.transform;
-            var shaft = new Color(0.72f, 0.53f, 0.3f);
-            var dark = new Color(0.22f, 0.13f, 0.07f);
-            var flint = new Color(0.74f, 0.76f, 0.8f);
-            var rib = new Color(0.42f, 0.44f, 0.5f);
-            Art.Part(t, Art.Cylinder, shaft, new Vector3(0f, 0.1f, 0f), new Vector3(0.075f, 0.39f, 0.075f));             // the thick shaft
-            Art.Part(t, Art.Sphere, dark, new Vector3(0f, -0.29f, 0f), new Vector3(0.1f, 0.1f, 0.1f));                    // the butt cap
-            Art.Part(t, Art.Cylinder, dark, new Vector3(0f, 0.0f, 0f), new Vector3(0.088f, 0.09f, 0.088f));               // the leather grip
-            Art.Part(t, Art.Cylinder, dark, new Vector3(0f, 0.5f, 0f), new Vector3(0.1f, 0.03f, 0.1f));                   // the collar under the head
-            for (int k = 0; k < 3; k++)                                                                                       // the twine binding
-                Art.Part(t, Art.Cylinder, ItemModels.Twine, new Vector3(0f, 0.39f + k * 0.04f, 0f), new Vector3(0.095f, 0.014f, 0.095f));
-            // the head: a broad leaf - a rounded lower half and a long point - flat towards the camera
-            Art.Part(t, Art.Sphere, flint, new Vector3(0f, 0.68f, 0f), new Vector3(0.28f, 0.3f, 0.06f));
-            Art.Part(t, Art.Cone, flint, new Vector3(0f, 0.66f, 0f), new Vector3(0.27f, 0.4f, 0.06f));
-            Art.Box(t, rib, new Vector3(0f, 0.74f, 0f), new Vector3(0.03f, 0.4f, 0.07f));                                // the midrib
+            var pole = new Color(0.8f, 0.62f, 0.4f);
+            var char_ = new Color(0.3f, 0.18f, 0.1f);
+            var rag = new Color(0.64f, 0.58f, 0.48f);
+            Art.Part(t, Art.Cylinder, pole, new Vector3(0f, 0.05f, 0f), new Vector3(0.085f, 0.62f, 0.085f));               // the pole
+            Art.Part(t, Art.Cylinder, pole * 0.88f, new Vector3(0.012f, 0.05f, -0.03f), new Vector3(0.03f, 0.6f, 0.03f));   // (a darker streak of grain)
+            Art.Part(t, Art.Sphere, pole * 0.9f, new Vector3(0f, -0.57f, 0f), new Vector3(0.085f, 0.07f, 0.085f));          // the rounded butt
+            Art.Part(t, Art.Cylinder, Color.Lerp(pole, char_, 0.55f), new Vector3(0f, 0.6f, 0f), new Vector3(0.087f, 0.05f, 0.087f)); // scorched where it's carved
+            Art.Part(t, Art.Cone, char_, new Vector3(0f, 0.645f, 0f), new Vector3(0.087f, 0.33f, 0.087f));                  // the carved, fire-hardened point
+            Art.Part(t, Art.Cylinder, rag, new Vector3(0f, -0.1f, 0f), new Vector3(0.102f, 0.17f, 0.102f));                 // the rag grip
+            for (int k = 0; k < 2; k++)                                                                                       // twine either end of it
+                Art.Part(t, Art.Cylinder, ItemModels.Twine * 0.8f, new Vector3(0f, k == 0 ? -0.27f : 0.07f, 0f), new Vector3(0.108f, 0.018f, 0.108f));
             return go;
         }
 
@@ -292,7 +289,10 @@ namespace RockGame
                     // laid out like Rust's hatchet icon: the handle across from bottom left to top right, the head at the top
                     // with its blade turned up and out to the side
                     t.localRotation = Quaternion.Euler(0, 0, 42) * Quaternion.Euler(0, 90, 0); break;
-                case Item.Spear: case Item.Arrow: case Item.Pickaxe: case Item.DeathWand: case Item.GiantStaff: case Item.TreeCracker: case Item.Sword:
+                case Item.Spear:
+                    // corner to corner like Rust's spear icon: the butt bottom left, the point top right
+                    t.localRotation = Quaternion.Euler(0, 0, 45); break;
+                case Item.Arrow: case Item.Pickaxe: case Item.DeathWand: case Item.GiantStaff: case Item.TreeCracker: case Item.Sword:
                     t.localRotation = Quaternion.Euler(0, 0, -40); break;
                 case Item.Bow:
                     t.localRotation = Quaternion.Euler(0, 90, -35); break;

@@ -18,15 +18,19 @@ namespace RockGame
         /// <summary>Jonah mode: the wood -> alien dust converter at a team's upgrade station (JonahMode.cs) - one slot, no model, nothing to hit.</summary>
         public const byte Converter = 10;
         public bool IsConverter => Kind.Value == Converter;
+        /// <summary>The Trade Station's concrete barricade: cover you can put down anywhere (Deployables.cs).</summary>
+        public const byte Barricade = 11;
+        /// <summary>A placeable of the Trade Stations' (Deployables.cs): the bag, the trap, the ladder, the turret, the barricade.</summary>
+        public static bool IsDeployableKind(byte kind) => (kind >= SleepBag && kind <= Turret) || kind == Barricade;
         /// <summary>A bear trap: 0 armed, 1 sprung. (Deployables.cs)</summary>
         public readonly NetworkVariable<byte> Flag = new NetworkVariable<byte>();
         /// <summary>An auto turret's aim (yaw, pitch in degrees, its own space), for every screen to pan it.</summary>
         public readonly NetworkVariable<Vector2> Aim = new NetworkVariable<Vector2>();
         /// <summary>A sleeping bag: when you can next respawn at it (server time).</summary>
         public readonly NetworkVariable<double> ReadyAt = new NetworkVariable<double>();
-        public bool IsDeployable => Kind.Value >= SleepBag && Kind.Value <= Turret;
+        public bool IsDeployable => IsDeployableKind(Kind.Value);
         /// <summary>The item a placed thing comes back as when it's picked up.</summary>
-        public static Item ItemOf(byte kind) => kind == SleepBag ? Item.SleepingBag : kind == Trap ? Item.BearTrap : kind == Ladder ? Item.Ladder : kind == Turret ? Item.AutoTurret
+        public static Item ItemOf(byte kind) => kind == SleepBag ? Item.SleepingBag : kind == Trap ? Item.BearTrap : kind == Ladder ? Item.Ladder : kind == Turret ? Item.AutoTurret : kind == Barricade ? Item.Barricade
             : kind == Workbench2 ? Item.Workbench2 : kind == Workbench ? Item.Workbench : Item.Chest;
         public static readonly List<Container> All = new List<Container>();
 
@@ -72,7 +76,7 @@ namespace RockGame
         {
             Kind.Value = kind;
             Team.Value = (byte)team;
-            Health.Value = kind == Chest ? Cfg.ChestHp : kind >= SleepBag && kind <= Turret ? Deployables.MaxHp(kind) : 1f;
+            Health.Value = kind == Chest ? Cfg.ChestHp : IsDeployableKind(kind) ? Deployables.MaxHp(kind) : 1f;
             m_PendingSize = size;
             m_Pending.Clear();
             if (contents != null) m_Pending.AddRange(contents);
@@ -123,7 +127,7 @@ namespace RockGame
             var root = new GameObject("visual");
             root.transform.SetParent(parent, false);
             var t = root.transform;
-            if (kind >= SleepBag && kind <= Turret) { Deployables.Build(kind, team, t, ghost); return root; }
+            if (IsDeployableKind(kind)) { Deployables.Build(kind, team, t, ghost); return root; }
             if (kind == Bag)
             {
                 var sack = new Color(0.45f, 0.36f, 0.24f);

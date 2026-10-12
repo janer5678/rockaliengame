@@ -24,7 +24,7 @@ namespace RockGame
             if (m_Mode == "menushot") { StartCoroutine(MenuShots()); return; }
             if (m_Mode == "newmenu") { StartCoroutine(NewMenuShots()); return; } // (AutoTest.Lobby.cs)
             if (m_Mode == "mapshots") { StartCoroutine(MapShots()); return; }
-            if (m_Mode == "lobby") NetGame.TestLobby = true; // (the ship lobby, though it's a test)
+            if (m_Mode == "lobby" || m_Mode == "arcade") NetGame.TestLobby = true; // (the ship lobby, though it's a test)
             if (m_Mode == "sd" || m_Mode == "arena") Cfg.UseOvertime = false; // (the clock running out goes to the sudden death arena, as these test)
             if (m_Mode == "voice") { StartCoroutine(VoiceRoutine()); return; }
             if (m_Mode == "spectate") { StartCoroutine(SpectateRoutine()); return; } // (AutoTest.Spectate.cs)
@@ -134,6 +134,7 @@ namespace RockGame
             if (NetGame.Instance.S == GameState.Waiting)
                 Check(Vector3.Distance(me.transform.position, Cfg.ArenaCenter) < 30f && me.HeldItem == Item.Rock, "waiting for players in the stadium with a rock");
             if (m_Mode == "lobby") { yield return LobbyRoutine(me); yield break; }
+            if (m_Mode == "arcade") { yield return ArcadeRoutine(me); yield break; } // (AutoTest.Prompt2.cs)
             if (m_Mode == "arena") { yield return ArenaRoutine(me, pc); yield break; }
             if (m_Mode == "voicenet") { yield return VoiceNetRoutine(me); yield break; }
             while (NetGame.Instance.S == GameState.Waiting) yield return null;
@@ -158,6 +159,7 @@ namespace RockGame
             if (m_Mode == "prompt13") { yield return Prompt13Routine(me, pc); yield break; } // (AutoTest.Prompt13.cs)
             if (m_Mode == "prompt14") { yield return Prompt14Routine(me, pc); yield break; } // (AutoTest.Prompt14.cs)
             if (m_Mode == "monday") { yield return MondayRoutine(me, pc); yield break; } // (AutoTest.Monday.cs)
+            if (m_Mode == "prompt2") { yield return Prompt2Routine(me, pc); yield break; } // (AutoTest.Prompt2.cs)
             Check(Cfg.BaseTeamAt(me.transform.position) == me.Team.Value, $"spawned inside own base ({me.transform.position})");
             Check(me.Count(Item.Rock) == 0 && me.HeldItem == Item.Rock, "empty hand = holding the rock (no rock item)");
             Check(Vector3.Distance(me.transform.position, Cfg.SpawnPos(me.Team.Value, me.Slot.Value)) < 1.5f, $"sent home to the bedrock when the match started on {Cfg.MapLabel} (seed {Cfg.MapSeed})");
@@ -263,11 +265,10 @@ namespace RockGame
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
             yield return new WaitForSeconds(0.4f);
             int wood = me.Count(Item.Wood);
-            // armour and the chainsaw need a Workbench T1
-            yield return BenchBuy(me, pc, Item.Armor);
+            // the chainsaw needs a Workbench T1 (the wooden armour is gone: Cfg.Removed)
             yield return BenchBuy(me, pc, Item.Chainsaw);
-            Check(me.ArmorHp.Value == Cfg.ArmorHp && me.Count(Item.Armor) == 0, "armour from the workbench goes straight on");
-            Check(me.Count(Item.Chainsaw) == 1 && me.Count(Item.Wood) == wood - Cfg.ArmorWood - Cfg.ChainsawWood, $"chainsaw made at the workbench for {Cfg.ChainsawWood} wood");
+            Check(Cfg.CraftIndexOf(Item.Armor) < 0, "no wooden armour to craft any more");
+            Check(me.Count(Item.Chainsaw) == 1 && me.Count(Item.Wood) == wood - Cfg.ChainsawWood, $"chainsaw made at the workbench for {Cfg.ChainsawWood} wood");
 
             // berries: one per eat time
             me.ServerGive(Item.Berry, 3);
@@ -567,17 +568,17 @@ namespace RockGame
                 me.CraftRpc(Cfg.RecipeIndex(it));
                 yield return new WaitForSeconds(0.3f);
             }
-            yield return BenchBuy(me, pc, Item.Barrier); // (a Workbench T1 item)
+            yield return BenchBuy(me, pc, Item.Barricade); // (a Workbench T1 item)
             yield return BenchBuy(me, pc, Item.Pickaxe); // (a Workbench T2 item)
             Check(me.Count(Item.BuildingPlan) == 1 && me.Count(Item.Hatchet) == 1 && me.Count(Item.Pickaxe) == 1 && me.Count(Item.Spear) == 1 && me.Count(Item.Bow) == 1
-                  && me.Count(Item.Arrow) == Cfg.ArrowsPerCraft && RamHits(me) == Cfg.RamUses && me.Count(Item.Chest) == 1 && me.Count(Item.Barrier) == 1,
+                  && me.Count(Item.Arrow) == Cfg.ArrowsPerCraft && RamHits(me) == Cfg.RamUses && me.Count(Item.Chest) == 1 && me.Count(Item.Barricade) == 1,
                   "host crafted every item in base");
             {
                 var sb = new System.Text.StringBuilder("inventory after crafting: ");
                 for (int i = 0; i < Cfg.PlayerSlots; i++) if (!me.SlotAt(i).Empty) sb.Append($"[{i}]{me.SlotAt(i).Id}x{me.SlotAt(i).Count}/{me.SlotAt(i).Data} ");
                 Log(sb.ToString());
             }
-            Check(me.Count(Item.Wood) == 3000 - (Cfg.PlanWood + Cfg.HatchetWood + Cfg.PickaxeWood + Cfg.SpearWood + Cfg.BowWood + Cfg.ArrowWood + Cfg.RamWood + Cfg.ChestWood + Cfg.BarrierWood),
+            Check(me.Count(Item.Wood) == 3000 - (Cfg.PlanWood + Cfg.HatchetWood + Cfg.PickaxeWood + Cfg.SpearWood + Cfg.BowWood + Cfg.ArrowWood + Cfg.RamWood + Cfg.ChestWood + Cfg.BarricadeWood),
                   $"crafting consumed wood items (left {me.Count(Item.Wood)})");
 
             // build + upgrade + door
@@ -661,6 +662,8 @@ namespace RockGame
             }
             var barrierPos = FreeWallSpot(p => Cfg.BaseTeamAt(p) < 0 && Mathf.Abs(p.z) > 6f);
             pc.LocalTeleport(barrierPos + new Vector3(0, 0.1f, -3f), 0);
+            me.ServerGive(Item.Barrier, 1); // (out of the crafting lists for now, but it still goes down)
+            yield return new WaitForSeconds(0.2f);
             yield return Hold(me, Item.Barrier);
             me.PlaceDeployableRpc((byte)Item.Barrier, barrierPos, 0f);
             yield return new WaitForSeconds(0.6f);
@@ -1067,17 +1070,17 @@ namespace RockGame
             Check(g.Portals.Count == portals + 2 && g.Portals[portals].Pair == g.Portals[portals + 1].Pair && me.Count(Item.PortalGun) == 0,
                 $"two portal gun shots made a linked pair and used the gun up ({g.Portals.Count - portals} portals, {me.Count(Item.PortalGun)} gun left)");
 
-            // jetpack burns fuel and runs out
+            // jetpack: it goes on by itself, burns fuel and runs out
             me.ServerGive(Item.Jetpack, 1, Cfg.JetpackFuel);
-            yield return new WaitForSeconds(0.2f);
-            yield return Hold(me, Item.Jetpack);
+            yield return new WaitForSeconds(0.5f);
+            Check(me.WearingJetpack && me.Count(Item.Jetpack) == 0, "the jetpack went straight on");
             me.JetFuelRpc(Cfg.JetpackSeconds * 0.25f);
             me.JetFuelRpc(Cfg.JetpackSeconds * 0.25f);
             yield return new WaitForSeconds(0.3f);
-            int fuel = me.HeldStack.Data;
+            int fuel = me.FuelPercent;
             me.JetFuelRpc(2f); me.JetFuelRpc(2f); me.JetFuelRpc(2f); me.JetFuelRpc(2f);
             yield return new WaitForSeconds(0.4f);
-            Check(fuel > 30 && fuel < 70 && me.Count(Item.Jetpack) == 0, $"jetpack used fuel ({fuel}%) and ran out");
+            Check(fuel > 30 && fuel < 70 && !me.WearingJetpack, $"jetpack used fuel ({fuel}%) and ran out"); 
 
             // rocket wrecks an enemy barrier
             var bar = Object.Instantiate(Bootstrap.I.structurePrefab, field + new Vector3(0, 0, 6f), Quaternion.identity);

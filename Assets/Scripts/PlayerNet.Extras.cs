@@ -32,7 +32,7 @@ namespace RockGame
             // every crossbow you have waits for the reload (no firing two loaded crossbows back to back)
             m_XbowReadyAt = Time.time + Cfg.CrossbowReload * 0.8f;
             Reveal();
-            m_PendingArrows.Enqueue(Cfg.CrossbowDamage);
+            m_PendingArrows.Enqueue((Cfg.CrossbowDamage, Item.Crossbow));
             while (m_PendingArrows.Count > 6) m_PendingArrows.Dequeue();
             ArrowVisualRpc(origin, velocity, true);
         }

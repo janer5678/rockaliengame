@@ -42,7 +42,7 @@ namespace RockGame
                     return;
                 }
                 p.ServerMarkHead(head);
-                p.ServerKill(this);
+                p.ServerKill(this, (byte)Item.Sniper);
                 if (p.Dead.Value) KillConfirmRpc();
             }
             else if (no.TryGetComponent(out Vehicle v)) v.ServerDamage(9999f, this);
@@ -92,7 +92,7 @@ namespace RockGame
         {
             if (Dead.Value || Time.time < m_NextSpike) return;
             m_NextSpike = Time.time + 0.4f;
-            ServerDamage(Cfg.WallClimbDps * 0.5f, null, KillCause.Died);
+            ServerDamage(Cfg.WallClimbDps * 0.5f, null, KillCause.Spikes);
         }
 
         /// <summary>How close to a portal a ram has to hit to smash it.</summary>
@@ -125,16 +125,12 @@ namespace RockGame
             return false;
         }
 
-        /// <summary>The jetpack reports how long it thrusted; fuel runs out and then it's gone.</summary>
+        /// <summary>The worn jetpack reports how long it thrusted; fuel runs out and then it's gone (PlayerNet.Gear.cs).</summary>
         [Rpc(SendTo.Server)]
         public void JetFuelRpc(float seconds)
         {
-            if (Dead.Value || HeldItem != Item.Jetpack) return;
-            var st = HeldStack;
-            int used = Mathf.CeilToInt(Mathf.Clamp(seconds, 0f, 2f) / Mathf.Max(0.5f, Cfg.JetpackSeconds) * Cfg.JetpackFuel);
-            int left = st.Data - used;
-            if (left <= 0) { ServerClearSlot(HeldSlot.Value); Notify("The jetpack ran out of fuel"); }
-            else Inv[HeldSlot.Value] = ItemStack.Of(Item.Jetpack, 1, left);
+            if (Dead.Value) return;
+            ServerBurnFuel(seconds);
         }
 
         /// <summary>Slenderman egg, build egg, rocket and fake bomb bush: thrown / fired, then the thrower's client reports where it landed.</summary>

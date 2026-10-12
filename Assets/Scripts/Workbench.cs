@@ -16,14 +16,15 @@ namespace RockGame
         [Tune("Crafting")] public static int WorkbenchWood = 150;
         [Tune("Crafting")] public static int Workbench2Wood = 2000;
 
-        /// <summary>Tier 0: always in the TAB list (in this order; the hammer, under the building plan, only where it's on: Cfg.HammerOn).</summary>
-        static readonly Item[] k_Starter = { Item.Hatchet, Item.Spear, Item.BuildingPlan, Item.Hammer, Item.Bow, Item.Arrow, Item.Chest, Item.Ram, Item.Workbench };
-        /// <summary>Tier 1 (Workbench T1 in your base): sword before crossbow, the chainsaw and the saddle, then the T2 bench. (Fortify All Walls is only crafted in
+        /// <summary>Tier 0: always in the TAB list (in this order).</summary>
+        static readonly Item[] k_Starter = { Item.Hatchet, Item.Spear, Item.BuildingPlan, Item.Bow, Item.Arrow, Item.Chest, Item.Ram, Item.Workbench };
+        /// <summary>Tier 1 (Workbench T1 in your base): the hammer first, sword before crossbow, the barricade, the chainsaw and
+        /// the saddle, then the T2 bench (the wooden armour only shows in the tutorial: Cfg.ActiveRecipes). (Fortify All Walls is only crafted in
         /// Builder, which has no bases or upgrade stations; everywhere else the base upgrades are in UPGRADES - Upgrades.cs.)</summary>
-        static readonly Item[] k_Tier1 = { Item.Sword, Item.Crossbow, Item.SleepingBag, Item.Armor, Item.Barrier, Item.LargeGate, Item.Ladder, Item.BearTrap, Item.Chainsaw, Item.Saddle, Item.FortifyBuff, Item.Workbench2 };
+        static readonly Item[] k_Tier1 = { Item.Hammer, Item.Sword, Item.Crossbow, Item.SleepingBag, Item.Armor, Item.Barricade, Item.Ladder, Item.BearTrap, Item.Chainsaw, Item.Saddle, Item.FortifyBuff, Item.Workbench2 };
         /// <summary>Tier 2 (Workbench T2 in your base): the ammo, then the guns, the alien helmet, C4, then whatever's left (pickaxe, boat...).
         /// Anything craftable that isn't tier 0 or 1 is tier 2.</summary>
-        static readonly Item[] k_Tier2 = { Item.Shotgun, Item.ShotgunShell, Item.Revolver, Item.RevolverAmmo, Item.Helmet, Item.HeavyArmor, Item.AutoTurret, Item.C4, Item.Pickaxe, Item.Boat, Item.PistolAmmo, Item.Pistol };
+        static readonly Item[] k_Tier2 = { Item.Shotgun, Item.ShotgunShell, Item.Revolver, Item.RevolverAmmo, Item.Helmet, Item.HeavyArmor, Item.AutoTurret, Item.C4, Item.Pickaxe, Item.Boat, Item.PistolAmmo, Item.Pistol, Item.DeathWand };
 
         public static bool IsStarter(Item i) => System.Array.IndexOf(k_Starter, i) >= 0;
         public static IReadOnlyList<Item> StarterOrder => k_Starter;
@@ -72,10 +73,13 @@ namespace RockGame
             if (tier == 0) { int b = CraftIndexOf(Item.Boat); if (b >= 0 && CraftTier(Item.Boat) == 0 && !into.Contains(b)) into.Add(b); } // THEME MAPS (boats from the start)
             if (tier != 2) return;
             // anything else craftable in this mode that isn't listed anywhere goes on the end of tier 2
+            int wand = CraftIndexOf(Item.DeathWand);
+            into.Remove(wand);
             for (int i = 0; i < RecipeCount; i++)
-                if (CraftTier(GetRecipe(i).Output) == 2 && GetRecipe(i).Output != Item.AlienDust && !into.Contains(i)) into.Add(i);
+                if (CraftTier(GetRecipe(i).Output) == 2 && GetRecipe(i).Output != Item.AlienDust && i != wand && !into.Contains(i)) into.Add(i);
             for (int i = 0; i < PowerCount; i++)
                 if (CraftTier(GetPowerRecipe(i).Output) == 2 && !into.Contains(PowerBase + i)) into.Add(PowerBase + i);
+            if (wand >= 0) into.Add(wand); // (the death wand is always the last thing on the list: 5k)
         }
     }
 

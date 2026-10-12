@@ -120,18 +120,18 @@ namespace RockGame
 
             // airdrops: per-item rarity (CHANGE VALUES > Airdrop rarity)
             {
-                int c4 = Cfg.RarityC4, wand = Cfg.RarityDeathWand;
-                var pool = new System.Collections.Generic.List<Item> { Item.C4, Item.DeathWand };
-                Cfg.RarityC4 = 0; Cfg.RarityDeathWand = 5;
+                int c4 = Cfg.RarityC4, wand = Cfg.RarityPortalGun;
+                var pool = new System.Collections.Generic.List<Item> { Item.C4, Item.PortalGun };
+                Cfg.RarityC4 = 0; Cfg.RarityPortalGun = 5;
                 bool onlyWand = true;
-                for (int i = 0; i < 50; i++) onlyWand &= Cfg.PickAirdropItem(pool) == Item.DeathWand;
-                Cfg.RarityC4 = 90; Cfg.RarityDeathWand = 10;
+                for (int i = 0; i < 50; i++) onlyWand &= Cfg.PickAirdropItem(pool) == Item.PortalGun;
+                Cfg.RarityC4 = 90; Cfg.RarityPortalGun = 10;
                 int nC4 = 0;
                 for (int i = 0; i < 2000; i++) if (Cfg.PickAirdropItem(pool) == Item.C4) nC4++;
-                Cfg.RarityC4 = 0; Cfg.RarityDeathWand = 0;
+                Cfg.RarityC4 = 0; Cfg.RarityPortalGun = 0;
                 int nEach = 0;
                 for (int i = 0; i < 400; i++) if (Cfg.PickAirdropItem(pool) == Item.C4) nEach++;
-                Cfg.RarityC4 = c4; Cfg.RarityDeathWand = wand;
+                Cfg.RarityC4 = c4; Cfg.RarityPortalGun = wand;
                 bool listed = false;
                 foreach (var f in Cfg.TuneFields) if (f.Name == "RarityPortalGun" && Cfg.SectionOf(f) == "Airdrop rarity") listed = true;
                 Check(onlyWand && nC4 > 1700 && nC4 < 1900 && nEach > 140 && nEach < 260 && listed,

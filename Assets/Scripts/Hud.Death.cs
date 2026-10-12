@@ -179,7 +179,8 @@ namespace RockGame
             ShadowedPlain(new Rect(0, by + bar * 0.12f, sw, 20 * k), "<color=#ff7a6e>K I L L E D   B Y</color>", cap);
             var big = new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt(34 * k) };
             InkText(new Rect(0, by + bar * 0.12f + 18 * k, sw, 42 * k), $"<color=#{hex}>{killer.DisplayName}</color>", big, Color.white, new Color(0f, 0f, 0f, 0.9f), 2f * k);
-            string with = killer.HeldItem == Item.None || killer.HeldItem == Item.Rock ? "a rock" : Cfg.ItemName(killer.HeldItem);
+            var withItem = KillCause.IsItem(MyDeathCause) ? (Item)MyDeathCause : killer.HeldItem; // (what the kill feed says did it: Hud.KillFeed.cs)
+            string with = withItem == Item.None || withItem == Item.Rock ? "a rock" : Cfg.ItemName(withItem);
             ShadowedPlain(new Rect(0, by + bar * 0.12f + 60 * k, sw, 22 * k), $"<color=#c8c8c8>with {with}  ·  </color><color=#ff8080>{Mathf.CeilToInt(killer.Health.Value)} HP</color><color=#c8c8c8> left</color>"
                 + (killer.ArmorHp.Value > 0 ? $"<color=#c8c8c8> (+{killer.ArmorHp.Value} armour)</color>" : ""), new GUIStyle(m_Center) { fontSize = Mathf.RoundToInt(15 * k) });
             if (!pc.KillCamReplay) return;

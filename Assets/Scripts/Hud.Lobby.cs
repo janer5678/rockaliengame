@@ -76,7 +76,8 @@ namespace RockGame
 
             // name tags over the aliens (a little over their heads; not while the camera's on the telly)
             var tag = new GUIStyle(m_Center) { fontSize = Mathf.RoundToInt(19 * k), fontStyle = FontStyle.Bold };
-            if (!LobbyArcade.Focused)
+            bool onGame = LobbyArcade.Focused || UfoArcade.Focused; // (the telly's game or the arcade machine)
+            if (!onGame)
             {
                 foreach (var p in ShipLobby.Seated)
                 {
@@ -118,11 +119,12 @@ namespace RockGame
             }
             if (boot.IsHostSession && !Cfg.Tutorial && FramedBtn(ref bx, by, bh, "GAME OPTIONS")) { m_LobbyOptions = !m_LobbyOptions; m_LobbyLook = false; } // (the AI bots are in there now)
             // (LOBBY LOOK - the room's look, for you - has no button: Tab opens and closes it, above)
-            if (LobbyArcade.Focused && FramedBtn(ref bx, by, bh, "STOP PLAYING")) LobbyArcade.Focus(false); // (back to the couch; no keys hint over it)
+            if (onGame && FramedBtn(ref bx, by, bh, "STOP PLAYING")) { LobbyArcade.Focus(false); UfoArcade.Focus(false); } // (back to the couch; no keys hint over it)
             float leftEnd = bx;
 
             // the teams: a JOIN button for each (how many are on it), and under them, twice as long and grey, SPECTATE
-            if (!Cfg.Tutorial || me != null) DrawLobbyTeams(g, me, leftEnd, by);
+            // (not while you're playing the telly's game or the arcade machine: they'd sit over the picture)
+            if ((!Cfg.Tutorial || me != null) && !onGame) DrawLobbyTeams(g, me, leftEnd, by);
 
             if (me == null)
             {
@@ -160,8 +162,12 @@ namespace RockGame
         /// <summary>The team options along the bottom middle: a JOIN button for each team in its colour (in free for all, one
         /// PLAY button), and under them a grey SPECTATE twice as long. Picking SPECTATE gets you up to watch (your alien
         /// stays on the end of the couch, grey); picking a team while you're watching takes a seat on it.</summary>
+        /// <summary>(tests) when the team buttons were last drawn.</summary>
+        public static float LobbyTeamsShownAt = -10f;
+
         void DrawLobbyTeams(NetGame g, PlayerNet me, float leftEnd, float by)
         {
+            LobbyTeamsShownAt = Time.time;
             float k = m_Scale, sw = Screen.width;
             float tw = 190 * k, th = 40 * k, gap = 10 * k;
             bool teams = Cfg.TeamCount >= 2 && !Cfg.FreeForAll;
@@ -208,12 +214,13 @@ namespace RockGame
         /// a spectator). Not while you're on it already, or the mouse is over the lobby's buttons and panels.</summary>
         void DrawTellyTip(bool player)
         {
-            if (LobbyArcade.Focused || ShipLobby.Customising || MouseOverUI || Chat.Open) return;
+            if (LobbyArcade.Focused || UfoArcade.Focused || ShipLobby.Customising || MouseOverUI || Chat.Open) return;
             var m = TestLobbyMouse.x >= 0f ? TestLobbyMouse : Event.current.mousePosition;
-            if (!ShipLobby.TellyUnder(m)) return;
+            bool cabinet = ShipLobby.CabinetUnder(m); // (the arcade machine: anyone can play it)
+            if (!cabinet && !ShipLobby.TellyUnder(m)) return;
             float k = m_Scale;
             var st = new GUIStyle(m_Label) { fontSize = Mathf.RoundToInt(20 * k), alignment = TextAnchor.MiddleLeft, wordWrap = false };
-            string text = player ? "<b>PLAY GAME?</b>" : "<b>WATCH?</b>";
+            string text = cabinet ? "<b>PLAY UFO DODGE?</b>" : player ? "<b>PLAY GAME?</b>" : "<b>WATCH?</b>";
             var size = st.CalcSize(new GUIContent(text));
             var r = new Rect(m.x + 20 * k, m.y - 4 * k, size.x + 20 * k, 32 * k);
             if (r.xMax > Screen.width - 4) r.x = m.x - r.width - 12 * k; // (the other side of the mouse at the screen's edge)

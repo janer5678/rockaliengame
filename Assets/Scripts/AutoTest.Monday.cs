@@ -31,7 +31,7 @@ namespace RockGame
             Check(!anyStation, "no upgrade station in any base");
             WoodMachine wm = null;
             foreach (var w in FindObjectsByType<WoodMachine>(FindObjectsSortMode.None)) if (w.Team == team) wm = w;
-            Check(wm != null && wm.Built, "our base has its wood machine from the start");
+            Check(wm != null && wm.Built, "our base has its wood machine once the walls are down");
             Check(g.WoodGenLevelOf(team) == 1, $"the wood machine starts at level 1 ({g.WoodGenLevelOf(team)})");
             float l2 = Cfg.WoodGenLevel2At, l3 = Cfg.WoodGenLevel3At;
             Cfg.WoodGenLevel2At = 0f;
@@ -57,7 +57,9 @@ namespace RockGame
             var list0 = new List<int>();
             Cfg.CraftList(list0, 0);
             int planAt = list0.IndexOf(Cfg.CraftIndexOf(Item.BuildingPlan)), hammerAt = list0.IndexOf(Cfg.CraftIndexOf(Item.Hammer));
-            Check(Cfg.CraftTier(Item.Hammer) == 0 && planAt >= 0 && hammerAt == planAt + 1, $"the hammer is a starter item, right under the building plan ({planAt}, {hammerAt})");
+            var list1 = new List<int>();
+            Cfg.AddTier(list1, 1);
+            Check(Cfg.CraftTier(Item.Hammer) == 1 && hammerAt < 0 && list1.Count > 0 && list1[0] == Cfg.CraftIndexOf(Item.Hammer), $"the hammer is a Trade Station (T1) item now, first on its list ({planAt}, {hammerAt})");
             Check(Cfg.CraftTier(Item.Chainsaw) == 1 && Cfg.CraftTier(Item.Saddle) == 1, "the chainsaw and the saddle are Trade Station (T1) items again");
             int ci = Cfg.RecipeIndex(Item.Chainsaw);
             Check(ci >= 0 && Cfg.GetRecipe(ci).Wood == 500, $"the chainsaw costs 500 wood again ({(ci >= 0 ? Cfg.GetRecipe(ci).Wood : -1)})");
@@ -66,8 +68,10 @@ namespace RockGame
             Check(Mathf.Approximately(Cfg.MeleePlayerDamage(Item.Hammer, false), Cfg.SwordBodyDamage * 0.5f) && Mathf.Approximately(Cfg.MeleePlayerDamage(Item.Hammer, true), Cfg.SwordHeadDamage * 0.5f),
                 $"the hammer hits for half the sword ({Cfg.MeleePlayerDamage(Item.Hammer, false)} / {Cfg.MeleePlayerDamage(Item.Hammer, true)})");
 
-            // ---- craft the hammer at home
+            // ---- craft the hammer at home (it needs a Trade Station now)
             pc.LocalTeleport(Cfg.SpawnPos(team), Quaternion.LookRotation(-Cfg.BackDir(team)).eulerAngles.y);
+            yield return new WaitForSeconds(0.4f);
+            if (Workbench.ForTeam(team, 1) == null) Workbench.ServerSpawn(team, Workbench.DefaultPos(team), Workbench.DefaultYaw(team));
             yield return new WaitForSeconds(0.4f);
             int wood0 = me.Count(Item.Wood);
             me.ServerGive(Item.Wood, Cfg.HammerWood);
@@ -179,12 +183,12 @@ namespace RockGame
                 pc.LocalTeleport(Cfg.SpawnPos(team), lookYaw);
                 pc.SetLook(lookYaw, 0f);
                 yield return new WaitForSeconds(1f);
-                Check(Time.time - Hud.BuffShownAt < 0.5f && Hud.BuffShown.Contains($"{Cfg.TeamLabel(enemy)} HAS THE BALL BUFF") && Hud.BuffShown.Contains("3X GATHERING"),
-                    $"the enemy's ball buff shows on our screen, in capitals ({Hud.BuffShown})");
+                Check(Time.time - Hud.BuffShownAt < 0.5f && Hud.BuffShown.Contains($"{Cfg.TeamLabel(enemy)} HAS") && Hud.BuffShown.Contains("3X GATHERING FROM THE BALL"),
+                    $"the enemy's ball buff shows on our screen: {Cfg.TeamLabel(enemy)} HAS 3X GATHERING FROM THE BALL ({Hud.BuffShown})");
                 yield return Snap("monday_buff_enemy");
                 ball.ServerSocket(team);
                 yield return new WaitForSeconds(1f);
-                Check(Hud.BuffShown.Contains("BALL BUFF") && !Hud.BuffShown.Contains("HAS THE") && Hud.BuffShown.Contains("3X GATHERING"), $"ours shows as BALL BUFF 3X GATHERING ({Hud.BuffShown})");
+                Check(Hud.BuffShown.Contains("YOUR TEAM HAS") && Hud.BuffShown.Contains("3X GATHERING FROM THE BALL"), $"ours shows as YOUR TEAM HAS 3X GATHERING FROM THE BALL ({Hud.BuffShown})");
                 yield return Snap("monday_buff_ours");
                 Check(me.BallBuff, "with the ball in our machine we have the buff");
                 yield return Snap("monday_ball_beacon");

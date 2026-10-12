@@ -584,7 +584,6 @@ namespace RockGame
             m_Flame = new GameObject("jetFlame");
             m_Flame.transform.SetParent(m_VisualRoot, false);
             m_Flame.transform.localPosition = new Vector3(0, 0.75f, -0.35f);
-            Art.Box(m_Flame.transform, new Color(0.3f, 0.3f, 0.32f), new Vector3(0, 0.3f, 0), new Vector3(0.45f, 0.5f, 0.2f));
             Art.Part(m_Flame.transform, Art.Cone, Color.white, new Vector3(0.12f, 0f, 0), new Vector3(0.14f, -0.5f, 0.14f), default, false, Art.Ghost(new Color(1f, 0.6f, 0.1f, 0.8f)));
             Art.Part(m_Flame.transform, Art.Cone, Color.white, new Vector3(-0.12f, 0f, 0), new Vector3(0.14f, -0.5f, 0.14f), default, false, Art.Ghost(new Color(1f, 0.6f, 0.1f, 0.8f)));
             if (Mine) Art.SetLayerShadowsOnly(m_Flame);
@@ -702,7 +701,7 @@ namespace RockGame
             }
             // wallhack glasses: enemies glow through walls while you hold them
             var local = Local;
-            bool esp = !Mine && local != null && local.HeldItem == Item.Wallhack && !local.Dead.Value && local.Team.Value != Team.Value && !dead;
+            bool esp = !Mine && local != null && local.SeesThroughWalls && !local.Dead.Value && local.Team.Value != Team.Value && !dead; // (worn or held - PlayerNet.Gear.cs)
             if (esp != m_Esp) SetEsp(esp);
             // test: alien outlines (enemies only, not while invisible)
             bool outline = Cfg.AlienOutlines && !Mine && local != null && local.Team.Value != Team.Value && !dead && !Hidden;
@@ -714,7 +713,9 @@ namespace RockGame
                 if (Time.time >= m_NextOutlineRefresh) { m_NextOutlineRefresh = Time.time + 1f; SetOutline(true); }
             }
             TickTeamSee(local, dead); // your teammates show through walls (PlayerNet.TeamSee.cs)
-            // jetpack flame
+            // the worn jetpack on the back (PlayerNet.Gear.cs) and its flame
+            TickGearLooks(dead);
+            if (IsServer) ServerAutoEquip();
             bool flame = Jetting.Value && !dead;
             if (flame != (m_Flame != null)) RebuildFlame(flame);
             if (m_Flame) m_Flame.transform.localScale = new Vector3(1f, 0.8f + Random.value * 0.5f, 1f);
@@ -783,7 +784,7 @@ namespace RockGame
         // =====================================================================
 
         float m_NextMelee, m_NextShot, m_NextBuild, m_NextUpgrade, m_NextThrow, m_NextRam, m_NextEat, m_NextFullMsg, m_NextWand;
-        readonly Queue<float> m_PendingArrows = new Queue<float>();
+        readonly Queue<(float dmg, Item from)> m_PendingArrows = new Queue<(float dmg, Item from)>();
         readonly Queue<float> m_PendingSpears = new Queue<float>();
         int m_PendingC4;
 
@@ -856,6 +857,16 @@ namespace RockGame
             ServerDamage(Health.Value + 1f, attacker, cause);
         }
 
+        /// <summary>Damage from something a team put down - its auto turret, its bear trap: the kill feed names that team's
+        /// thing as the killer ("RED TURRET").</summary>
+        public void ServerDamageFrom(float dmg, byte cause, int sourceTeam)
+        {
+            m_SourceTeam = sourceTeam;
+            ServerDamage(dmg, null, cause);
+            m_SourceTeam = -1;
+        }
+        int m_SourceTeam = -1;
+
         public void ServerDamage(float dmg, PlayerNet attacker, byte cause = 0)
         {
             if (Dead.Value || !GameAllowsCombat || m_God) return;
@@ -927,7 +938,7 @@ namespace RockGame
             var items = new List<ItemStack>();
             // a helmet that wasn't shot off drops too, and so does armour with the health it had left
             if (HelmetHp.Value > 0) items.Add(ItemStack.Of(Item.Helmet, 1, 1));
-            if (ArmorHp.Value > 0) items.Add(ItemStack.Of(Item.Armor, 1, ArmorHp.Value));
+            if (ArmorHp.Value > 0) items.Add(ItemStack.Of(Item.HeavyArmor, 1, ArmorHp.Value)); // (the armour, with what it had left)
             HelmetHp.Value = 0;
             ArmorHp.Value = 0;
             for (int i = 0; i < Inv.Count; i++)
@@ -956,8 +967,11 @@ namespace RockGame
                 bool byOther = killer != null && killer != this;
                 Deaths.Value = (ushort)Mathf.Min(ushort.MaxValue, Deaths.Value + 1);
                 if (byOther) killer.Kills.Value = (ushort)Mathf.Min(ushort.MaxValue, killer.Kills.Value + 1);
-                NetGame.Instance.KillFeedRpc(byOther ? killer.Team.Value : (byte)255, killer != null ? killer.Slot.Value : (byte)0, Team.Value, Slot.Value, cause,
-                    byOther && m_HeadHit, new Unity.Collections.FixedString32Bytes(byOther ? killer.DisplayName : ""), new Unity.Collections.FixedString32Bytes(DisplayName));
+                // (a team's turret or trap: that team's thing is the killer - slot 255, so it's nobody's own kill)
+                bool bySource = !byOther && m_SourceTeam >= 0 && m_SourceTeam < 4;
+                string killerName = byOther ? killer.DisplayName : bySource ? $"{Cfg.TeamName[m_SourceTeam]} {Cfg.ItemName((Item)cause).ToUpper()}" : "";
+                NetGame.Instance.KillFeedRpc(byOther ? killer.Team.Value : bySource ? (byte)m_SourceTeam : (byte)255, byOther ? killer.Slot.Value : bySource ? (byte)255 : (byte)0, Team.Value, Slot.Value, cause,
+                    byOther && m_HeadHit, new Unity.Collections.FixedString32Bytes(killerName), new Unity.Collections.FixedString32Bytes(DisplayName));
                 NetGame.Instance.ServerOnPlayerKilled(this, killer);
             }
         }
@@ -1118,7 +1132,7 @@ namespace RockGame
             if (no.TryGetComponent(out PlayerNet p))
             {
                 if (p == this || p.Dead.Value || !GameAllowsCombat) return;
-                ServerHitPlayer(p, st.PlayerDamage, point, dir, Cfg.MeleeHeadDamage(item));
+                ServerHitPlayer(p, st.PlayerDamage, point, dir, Cfg.MeleeHeadDamage(item), (byte)item);
             }
             else if (no.TryGetComponent(out Vehicle v))
             {
@@ -1184,7 +1198,7 @@ namespace RockGame
             m_NextShot = Time.time + 0.25f;
             Reveal();
             float power = Mathf.Clamp01(velocity.magnitude / Cfg.ArrowSpeed);
-            m_PendingArrows.Enqueue(Cfg.BowDamage(power));
+            m_PendingArrows.Enqueue((Cfg.BowDamage(power), Item.Bow));
             while (m_PendingArrows.Count > 6) m_PendingArrows.Dequeue();
             ArrowVisualRpc(origin, velocity, false);
         }
@@ -1193,13 +1207,13 @@ namespace RockGame
         public void ArrowHitRpc(NetworkObjectReference target, Vector3 point, Vector3 dir)
         {
             if (m_PendingArrows.Count == 0) return;
-            float damage = m_PendingArrows.Dequeue();
+            var (damage, from) = m_PendingArrows.Dequeue(); // (what shot it: the kill feed shows the bow or the crossbow, whatever's in their hands now)
             if (target.TryGet(out var tree)) ResourceNode.ServerStruck(tree); // (an arrow in a tree sends its birds up, like a chop)
             if (!target.TryGet(out var no) || !GameAllowsCombat) return;
             if (no.TryGetComponent(out PlayerNet p))
             {
                 if (p == this || p.Dead.Value) return;
-                ServerHitPlayer(p, damage, point, dir);
+                ServerHitPlayer(p, damage, point, dir, -1f, (byte)from);
                 return; // arrows that hit someone are gone
             }
             if (no.TryGetComponent(out Vehicle v)) { v.ServerDamage(damage * v.HeadMul(point), this); return; }
@@ -1514,6 +1528,7 @@ namespace RockGame
         public void PlaceOnNewFoundationRpc(byte type, int i, int j, int d, int fi, int fj)
         {
             var t = (PieceType)type;
+            if (!PlayerController.AutoFoundationOn) return; // (off: no wall puts its own foundation down)
             if (BuildGrid.KindOf(t) != PieceKey.KEdge || !Cfg.IsGridPiece(t) || type > (byte)PieceType.Tower) return;
             if (Dead.Value || CarryingBall || HeldItem != Item.BuildingPlan || InSuddenDeath) return;
             if (!Tutorial.AllowsFor(this, TutFeature.Build)) return;
@@ -1645,7 +1660,7 @@ namespace RockGame
         }
 
         /// <summary>The Trade Stations' placeables: put down like a chest (Container.Deployables.cs) or, the gate, like a large wall.</summary>
-        public static bool IsPlaceable(Item kind) => kind == Item.SleepingBag || kind == Item.BearTrap || kind == Item.Ladder || kind == Item.AutoTurret || kind == Item.LargeGate;
+        public static bool IsPlaceable(Item kind) => kind == Item.SleepingBag || kind == Item.BearTrap || kind == Item.Ladder || kind == Item.AutoTurret || kind == Item.LargeGate || kind == Item.Barricade;
 
         /// <summary>Client-side and server-side placement rules for chests and barriers. Returns null if OK, else the reason.</summary>
         public static string DeployProblem(Item kind, int team, Vector3 pos, float yaw)
@@ -1666,7 +1681,8 @@ namespace RockGame
                     if (us != null && us.PType == PieceType.Foundation) return "Bear traps go on the ground or a floor, not a foundation";
                 }
             }
-            bool anywhere = kind == Item.Ladder || kind == Item.BearTrap; // (ladders and traps: their base too)
+            bool anywhere = kind == Item.Ladder || kind == Item.BearTrap || kind == Item.Barricade; // (ladders, traps and barricades: their base too)
+            if (kind == Item.Barricade) { var bp = Deployables.BarricadeEnemyProblem(team, pos); if (bp != null) return bp; } // (...not right up against their buildings)
             // chests may go on the bedrock around the machine, just not on the spawn spot
             if (kind == Item.Chest && !Cfg.Builder && new Vector2(pos.x - Cfg.SpawnPos(team).x, pos.z - Cfg.SpawnPos(team).z).magnitude < 1.3f) return "Keep the spawn spot clear";
             // Auto Wood: the wood machine's spot stays free even before the machine is bought (it lands there later)
@@ -1707,6 +1723,7 @@ namespace RockGame
             else if (kind == Item.BearTrap) { c = new Vector3(0, 0.1f, 0); half = new Vector3(0.3f, 0.06f, 0.3f); }
             else if (kind == Item.Ladder) { c = new Vector3(0, 0.6f, 0); half = new Vector3(0.35f, 0.45f, 0.12f); } // (just its foot: it leans on the wall)
             else if (kind == Item.AutoTurret) { c = new Vector3(0, 0.65f, 0); half = new Vector3(0.4f, 0.55f, 0.4f); }
+            else if (kind == Item.Barricade) { c = new Vector3(0, 0.72f, 0); half = new Vector3(Deployables.BarricadeLen * 0.5f - 0.04f, 0.62f, Deployables.BarricadeFoot * 0.5f - 0.04f); }
             else if (kind == Item.LargeGate) { c = new Vector3(0, 2.45f, 0); half = new Vector3(Structure.GatePostX + 0.2f, 2.2f, 0.2f); } // the large gate (5.4 m wide, 4.9 m tall)
             else { c = new Vector3(0, 2.1f, 0); half = new Vector3(2.7f, 1.85f, 0.2f); } // the large wall (5.5 m wide, 4 m tall)
             foreach (var h in Physics.OverlapBox(pos + rot * c, half, rot, ~0, QueryTriggerInteraction.Ignore))
@@ -1761,10 +1778,10 @@ namespace RockGame
                 go.GetComponent<NetworkObject>().Spawn(true);
             }
             else if (Workbench.IsBench(kind)) Workbench.ServerSpawn(Team.Value, pos, yaw, Workbench.TierOfItem(kind));
-            else if (kind == Item.SleepingBag || kind == Item.BearTrap || kind == Item.Ladder || kind == Item.AutoTurret)
+            else if (kind == Item.SleepingBag || kind == Item.BearTrap || kind == Item.Ladder || kind == Item.AutoTurret || kind == Item.Barricade)
             {
                 // the Trade Stations' placeables (Container.Deployables.cs): the turret has two slots, a weapon and its ammo
-                byte ck = kind == Item.SleepingBag ? Container.SleepBag : kind == Item.BearTrap ? Container.Trap : kind == Item.Ladder ? Container.Ladder : Container.Turret;
+                byte ck = kind == Item.SleepingBag ? Container.SleepBag : kind == Item.BearTrap ? Container.Trap : kind == Item.Ladder ? Container.Ladder : kind == Item.Barricade ? Container.Barricade : Container.Turret;
                 var go = Instantiate(Bootstrap.I.containerPrefab, pos, rot);
                 go.GetComponent<Container>().ServerInit(ck, Team.Value, ck == Container.Turret ? 2 : 0, null);
                 go.GetComponent<NetworkObject>().Spawn(true);
@@ -1913,10 +1930,12 @@ namespace RockGame
             {
                 // heavy armour: a double-strength armour bar; any wooden armour you had on breaks off
                 m_NextEat = Time.time + 0.5f;
-                bool had = ArmorHp.Value > 0;
-                ArmorHp.Value = (byte)Mathf.Clamp(Cfg.HeavyArmorHp, 1, 255);
+                // armour: what it has left (dropped by someone who died in it) or full; any you had on goes back in your bag
+                int old = ArmorHp.Value;
+                ArmorHp.Value = (byte)Mathf.Clamp(st.Data > 0 ? st.Data : Cfg.HeavyArmorHp, 1, 255);
                 ServerClearSlot(HeldSlot.Value);
-                Notify($"Heavy armour on: {ArmorHp.Value} extra health" + (had ? " (your old armour broke off)" : ""));
+                if (old > 0) ServerGive(Item.HeavyArmor, 1, old);
+                Notify($"Armour on: {ArmorHp.Value} extra health, used up before your own");
             }
             else if (st.Id == Item.Armor)
             {

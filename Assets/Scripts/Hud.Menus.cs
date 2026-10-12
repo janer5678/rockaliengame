@@ -455,13 +455,15 @@ namespace RockGame
             GUILayout.EndHorizontal();
             float gridW = r.width - 40 * k - 20 * k; // (room for the scroll bar)
             var loot = Cfg.AirdropLoot;
+            int shown = 0;
             for (int i = 0; i < Cfg.AirdropChoices.Length; i++)
             {
                 var it = Cfg.AirdropChoices[i];
+                if (!Cfg.InAirdropPool(it)) continue; // (the death wand: crafted at the Advanced Trade Station now)
                 bool on = (Cfg.AirdropItemMask & (1 << i)) != 0;
-                if (DropCell(i, it, true, on, Cfg.AirdropChance(it, loot), gridW)) { Cfg.AirdropItemMask ^= 1 << i; Cfg.SavePrefs(); }
+                if (DropCell(shown++, it, true, on, Cfg.AirdropChance(it, loot), gridW)) { Cfg.AirdropItemMask ^= 1 << i; Cfg.SavePrefs(); }
             }
-            if (Cfg.AirdropChoices.Length % DropCols != 0) { GUILayout.EndHorizontal(); GUILayout.Space(5 * k); }
+            if (shown % DropCols != 0) { GUILayout.EndHorizontal(); GUILayout.Space(5 * k); }
             if ((Cfg.AirdropItemMask & ((1 << Cfg.AirdropChoices.Length) - 1)) == 0)
                 GUILayout.Label("<color=#ffcc66>Nothing picked: airdrops will have any of these.</color>", m_Small);
             GUILayout.Label("<color=#bbbbbb>The % is each picked item's chance to be in an airdrop (respawn loot too). - / + change how common it is: 20 comes twice as often as 10, 0 never (if every picked item is 0 they're all even).</color>", m_SmallWrap);
@@ -472,7 +474,7 @@ namespace RockGame
             int cell = 0;
             foreach (var it in Cfg.AllAirdropItems)
             {
-                if (System.Array.IndexOf(Cfg.AirdropChoices, it) >= 0) continue;
+                if (System.Array.IndexOf(Cfg.AirdropChoices, it) >= 0 || !Cfg.InAirdropPool(it)) continue;
                 DropCell(cell++, it, false, true, Cfg.AirdropChance(it, Cfg.AllAirdropItems), gridW);
             }
             if (cell % DropCols != 0) { GUILayout.EndHorizontal(); GUILayout.Space(5 * k); }

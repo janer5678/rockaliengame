@@ -342,13 +342,15 @@ namespace RockGame
         Color m_Team;
         bool m_Ghost;
 
-        /// <summary>Your own hands while you're invisible: the alien skin turns see-through and shimmery (still clearly there).</summary>
+        /// <summary>Your own hands while you're invisible: they vanish (the tools and items in them still show).</summary>
         public bool Ghost
         {
             get => m_Ghost;
             set { if (m_Ghost == value) return; m_Ghost = value; Apply(); }
         }
         readonly List<(Renderer r, int part)> m_Parts = new List<(Renderer, int)>();
+        /// <summary>(tests) every part of this hand is hidden (invisible: Ghost).</summary>
+        public bool HandsHidden { get { foreach (var p in m_Parts) if (p.r != null && p.r.enabled) return false; return m_Parts.Count > 0; } }
 
         /// <summary>The colour of one part of the hands for this team.</summary>
         public static Color Shade(Color team, int part)
@@ -404,6 +406,7 @@ namespace RockGame
             foreach (var p in m_Parts)
             {
                 if (p.r == null) continue;
+                p.r.enabled = !m_Ghost; // (invisible: your own hands are gone - what you hold still shows)
                 var c = Shade(m_Team, p.part);
                 if (p.part >= AlienSkin) { var want = Polished(c, m_Ghost); if (p.r.sharedMaterial != want) p.r.sharedMaterial = want; }
                 else if (p.r.sharedMaterial == null || p.r.sharedMaterial.color != c) p.r.sharedMaterial = Art.Mat(c);

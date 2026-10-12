@@ -17,7 +17,7 @@ namespace RockGame
         Workbench2,
         Ladder, BearTrap, SleepingBag, LargeGate, SpeedJuice, Skull, AutoTurret,
         HeavyRam, AlienDust,
-        Hammer }
+        Hammer, Barricade }
 
     /// <summary>
     /// The game mode (picked in the main menu, next to the players). They don't mix:
@@ -365,7 +365,7 @@ namespace RockGame
 
         // ---------- Airdrops (after the wall drops) ----------
         /// <summary>Mode options: how many airdrops come after the wall drops, evenly spaced (1 = half way through, 2 = at the thirds...).</summary>
-        [Tune("Mode options")] public static int AirdropCount = 3;
+        [Tune("Mode options")] public static int AirdropCount = 5;
         /// <summary>Mode options: which airdrop items are in the pool (bit i = AirdropChoices[i]).</summary>
         [Tune("Mode options")] public static int AirdropItemMask = 1023;
         [Tune("Airdrop")] public static float AirdropBaseDistance = 25f; // never this close to a base
@@ -438,7 +438,7 @@ namespace RockGame
         [Tune("Melee")] public static float StoneStructureMeleeMul = 0.2f; // stone is very hard to melee - bring a ram
 
         // ---------- Bow ----------
-        [Tune("Bow")] public static float BowDrawTime = 0.8f, ArrowSpeed = 55f, ArrowGravity = 9.81f, ArrowPlayerDamage = 50f, ArrowWoodStructureDamage = 4f;
+        [Tune("Bow")] public static float BowDrawTime = 0.8f, ArrowSpeed = 55f, ArrowGravity = 9.81f, ArrowPlayerDamage = 40f, ArrowWoodStructureDamage = 4f;
         /// <summary>The bow fires the moment you let go, however short the draw: an instant shot flies at this share of full speed (so it drops
         /// short) and does BowMinDamage; both grow the longer you hold it, the damage slowly at first and fastest near the full draw.</summary>
         [Tune("Bow")] public static float BowMinSpeed = 0.3f, BowMinDamage = 6f;
@@ -446,7 +446,7 @@ namespace RockGame
         public static float BowDrawFromPower(float power) => Mathf.Clamp01((power - BowMinSpeed) / Mathf.Max(0.01f, 1f - BowMinSpeed));
         /// <summary>Arrow damage for a shot at this power.</summary>
         public static float BowDamage(float power) { float d = BowDrawFromPower(power); return Mathf.Lerp(BowMinDamage, ArrowPlayerDamage, d * d); }
-        [Tune("Crossbow")] public static float CrossbowDamage = 55f, CrossbowSpeed = 58f, CrossbowGravity = 11f, CrossbowReload = 1.6f, CrossbowZoomFov = 45f;
+        [Tune("Crossbow")] public static float CrossbowDamage = 45f, CrossbowSpeed = 58f, CrossbowGravity = 11f, CrossbowReload = 1.6f, CrossbowZoomFov = 45f;
         [Tune("Spear")] public static float SpearGravity = 9.81f;
         /// <summary>Spear throw timing (s): the shortest wind-up before it can be let go, how long a click is remembered
         /// (pressed during the wind-up or the recovery it throws as soon as it can), the arm coming through before the spear
@@ -488,6 +488,12 @@ namespace RockGame
         [Tune("Crafting")] public static int ArrowWood = 50, ArrowStone = 0, ArrowsPerCraft = 5;
         [Tune("Crafting")] public static int RamWood = 125, RamStone = 50;
         [Tune("Crafting")] public static int ChestWood = 50, BarrierWood = 40;
+        /// <summary>The concrete barricade (Trade Station): cover you can put down anywhere, the enemy base too (not right
+        /// up against their buildings) - its price and how much it takes to break.</summary>
+        [Tune("Crafting")] public static int BarricadeWood = 250;
+        [Tune("Crafting")] public static float BarricadeHp = 600f;
+        /// <summary>The Death Wand: no longer in airdrops - the last thing on the Advanced Trade Station's list.</summary>
+        [Tune("Crafting")] public static int DeathWandWood = 5000;
         /// <summary>The Trade Station's ladder, bear trap, sleeping bag and large gate, and the Advanced one's auto turret.</summary>
         [Tune("Crafting")] public static int LadderWood = 250, BearTrapWood = 200, SleepingBagWood = 175, LargeGateWood = 120, AutoTurretWood = 3000;
         [Tune("Crafting")] public static int CrossbowWood = 500, SaddleWood = 750, ArmorWood = 250, ChainsawWood = 500;
@@ -518,7 +524,7 @@ namespace RockGame
         /// <summary>Fortify All Walls goes up a step every time your team buys it: stone, then sheet metal, then armoured
         /// (the old "refined" tier, back as the top step - only a little better than sheet metal).</summary>
         [Tune("Arsenal and Builder")] public static int FortifyStoneWood = 1000, FortifyMetalWood = 2000, FortifyArmouredWood = 3000;
-        [Tune("Arsenal and Builder")] public static int SwordWood = 500, C4Wood = 2500, HelmetWood = 800, ShotgunWood = 2000, ShellWood = 250, RevolverWood = 2500, RevolverAmmoWood = 500; // (a revolver bullet: 500 wood each)
+        [Tune("Arsenal and Builder")] public static int SwordWood = 500, C4Wood = 2500, HelmetWood = 800, ShotgunWood = 2000, ShellWood = 100, RevolverWood = 2500, RevolverAmmoWood = 100; // (a shell or a revolver bullet: 100 wood each)
         /// <summary>Revolver bullets come six at a time (a full cylinder) for RevolverAmmoWood.</summary>
         [Tune("Arsenal and Builder")] public static int RevolverAmmoPerCraft = 1;
         /// <summary>Sword: a slow, heavy swing (the swing time is adjustable) - its own head / body damage instead of the usual x2.</summary>
@@ -540,10 +546,10 @@ namespace RockGame
         [Tune("Auto Wood")] public static int AutoWoodPerSecond = 5;
         /// <summary>The wood gen upgrade has three levels: the first builds the wood machine (Auto Wood Per Second), the
         /// next two speed it up - wood a second at each, and what each costs.</summary>
-        [Tune("Auto Wood")] public static int AutoWoodLevel1 = 12, AutoWoodLevel2 = 25;
+        [Tune("Auto Wood")] public static int AutoWoodLevel1 = 12, AutoWoodLevel2 = 40; // (the third level was 25 a second)
         [Tune("Auto Wood")] public static int WoodGenBuildWood = 1000, WoodGen1Wood = 4000, WoodGen2Wood = 8000;
-        /// <summary>The hammer's modes (Cfg.AutoWoodGen): the wood machine is there from the start and goes up a level by
-        /// itself this far through the match (a fraction of the build phase and the ball phase together).</summary>
+        /// <summary>The hammer's modes (Cfg.AutoWoodGen): the wood machine lands when the walls drop and goes up a level by
+        /// itself this far through the ball phase.</summary>
         [Tune("Auto Wood")] public static float WoodGenLevel2At = 0.33f, WoodGenLevel3At = 0.66f;
         /// <summary>Pistol: hitscan, this much damage a shot (a headshot has its own number instead of the usual x2).</summary>
         [Tune("Arsenal and Builder")] public static float PistolHeadDamage = 200f, PistolBodyDamage = 95f;
@@ -559,8 +565,8 @@ namespace RockGame
         public static float TierMeleeMul(int tier) => tier >= 3 ? RefinedMeleeMul : tier == 2 ? MetalMeleeMul : tier == 1 ? StoneStructureMeleeMul : 1f;
         [Tune("Arsenal and Builder")] public static float PistolFireRate = 0.22f, PistolReload = 1.3f;
         [Tune("Arsenal and Builder")] public static int PistolMag = 5, HeavyArmorHp = 50, TreeCrackerUses = 40;
-        /// <summary>Heavy armour (100) at the Advanced Trade Station: its price.</summary>
-        [Tune("Crafting")] public static int HeavyArmorWood = 1500;
+        /// <summary>Armour (the code's HeavyArmor: +50 armour, at the Advanced Trade Station - the old wooden armour is gone): its price.</summary>
+        [Tune("Crafting")] public static int HeavyArmorWood = 500;
         /// <summary>Builder: every craft takes a while (seconds per 100 wood of its price, between the min and max).</summary>
         [Tune("Arsenal and Builder")] public static float BuilderCraftSecsPer100 = 0.6f, BuilderCraftMin = 2f, BuilderCraftMax = 20f;
         /// <summary>Alien outlines (always on, any mode): enemies have a faint glow in their team colour so they're easier to see.
@@ -602,7 +608,8 @@ namespace RockGame
                 case Item.AutoTurret: return "Auto Turret";
                 case Item.Chainsaw: return "Chainsaw";
                 case Item.Crossbow: return "Crossbow";
-                case Item.Armor: return "Armour";
+                case Item.Armor: return "Wooden Armour";
+                case Item.Barricade: return "Barricade";
                 case Item.FortTower: return "Fort Tower";
                 case Item.Car: return "Wooden Car";
                 case Item.Saddle: return "Saddle";
@@ -622,7 +629,7 @@ namespace RockGame
                 case Item.EnderPearl: return "Ender Pearl";
                 case Item.Pistol: return "Pistol";
                 case Item.PistolAmmo: return "Pistol Ammo";
-                case Item.HeavyArmor: return "Heavy Armour";
+                case Item.HeavyArmor: return "Armour"; // (was Heavy Armour: the wooden armour is gone)
                 case Item.TreeCracker: return "Tree Cracker";
                 case Item.FortifyBuff: return Upgrade10Walls ? "Upgrade 10 Walls" : "Fortify All Walls";
                 case Item.WoodGenBuff: return "Auto Wood Gen";
@@ -654,6 +661,7 @@ namespace RockGame
                 case Item.Berry: return 20;
                 case Item.Barrier: return 5;
                 case Item.LargeGate: return 3;
+                case Item.Barricade: return 3;
                 case Item.BearTrap: return 5;
                 case Item.SleepingBag: return 3;
                 case Item.Ladder: return 3;
@@ -675,6 +683,7 @@ namespace RockGame
                 case Item.Chainsaw: return ChainsawUses; // (it wears every ChainsawWearEvery hits: twice the old life)
                 case Item.HeavyRam: return RamUses;
                 case Item.Armor: return ArmorHp;
+                case Item.HeavyArmor: return HeavyArmorHp; // (armour dropped by someone who died in it keeps what it had left)
                 case Item.Sniper: return SniperAmmo;
                 case Item.Jetpack: return JetpackFuel;
                 case Item.PortalGun: return PortalShots;
@@ -689,7 +698,10 @@ namespace RockGame
         /// <summary>The airdrop items the host can pick from in the mode options (the others are unused for now).</summary>
         /// <summary>Taken out of the game for now (not craftable, not in any shop, airdrop or loot pool): the bear trap,
         /// the sleeping bag and the alien helmet. Their code stays, so they can come back by taking them off this list.</summary>
-        public static bool Removed(Item i) => i == Item.BearTrap || i == Item.SleepingBag || i == Item.Helmet || i == Item.AutoTurret || i == Item.HeavyRam; // (the auto turret: out for now; the High Strength ram: gone)
+        public static bool Removed(Item i) => i == Item.BearTrap || i == Item.SleepingBag || i == Item.Helmet || i == Item.AutoTurret || i == Item.HeavyRam // (the auto turret: out for now; the High Strength ram: gone)
+            || i == Item.Armor || i == Item.Barrier || i == Item.LargeGate; // (the wooden armour: gone, heavy armour is "Armour" now; the large wall and gate: out for now)
+        /// <summary>Whether an airdrop item can still come in airdrops (and respawn loot / Fun Random): the death wand is crafted now.</summary>
+        public static bool InAirdropPool(Item i) => i != Item.DeathWand && !Removed(i);
 
         public static readonly Item[] AirdropChoices =
         {
@@ -790,7 +802,7 @@ namespace RockGame
         /// <summary>A random airdrop item out of `pool`, weighted by its rarity (all equally likely if they're all 0).</summary>
         public static Item PickAirdropItem(IList<Item> pool)
         {
-            if (pool != null) { bool any = false; foreach (var x in pool) if (Removed(x)) { any = true; break; } if (any) { var kept = new List<Item>(); foreach (var x in pool) if (!Removed(x)) kept.Add(x); pool = kept; } }
+            if (pool != null) { bool any = false; foreach (var x in pool) if (!InAirdropPool(x)) { any = true; break; } if (any) { var kept = new List<Item>(); foreach (var x in pool) if (InAirdropPool(x)) kept.Add(x); pool = kept; } }
             if (pool == null || pool.Count == 0) return Item.C4;
             int total = 0;
             foreach (var i in pool) total += Mathf.Max(0, AirdropRarity(i));
@@ -810,8 +822,8 @@ namespace RockGame
             get
             {
                 var l = new List<Item>();
-                for (int i = 0; i < AirdropChoices.Length; i++) if ((AirdropItemMask & (1 << i)) != 0) l.Add(AirdropChoices[i]);
-                if (l.Count == 0) l.AddRange(AirdropChoices);
+                for (int i = 0; i < AirdropChoices.Length; i++) if ((AirdropItemMask & (1 << i)) != 0 && InAirdropPool(AirdropChoices[i])) l.Add(AirdropChoices[i]);
+                if (l.Count == 0) foreach (var i in AirdropChoices) if (InAirdropPool(i)) l.Add(i);
                 return l;
             }
         }
@@ -903,7 +915,7 @@ namespace RockGame
         }
 
         // ---------- Crafting ----------
-        static readonly Item[] k_Recipes = { Item.Hatchet, Item.Pickaxe, Item.Spear, Item.BuildingPlan, Item.Chest, Item.Bow, Item.Arrow, Item.Crossbow, Item.Armor, Item.Chainsaw, Item.Ram, Item.Barrier, Item.LargeGate, Item.Ladder, Item.Saddle, Item.Workbench, Item.Workbench2, Item.Hammer }; // (the auto turret is out for now: Removed; the High Strength ram is gone)
+        static readonly Item[] k_Recipes = { Item.Hatchet, Item.Pickaxe, Item.Spear, Item.BuildingPlan, Item.Chest, Item.Bow, Item.Arrow, Item.Crossbow, Item.Armor, Item.Chainsaw, Item.Ram, Item.Ladder, Item.Saddle, Item.Workbench, Item.Workbench2, Item.Hammer, Item.Barricade, Item.DeathWand }; // (the auto turret is out for now: Removed; the High Strength ram, the large wall and gate are gone; the wooden armour only in the tutorial, which teaches it)
 
         static readonly Item[] k_Limited = { Item.Hatchet, Item.Spear, Item.BuildingPlan, Item.Ram };
         static readonly List<Item> s_Active = new List<Item>();
@@ -913,7 +925,7 @@ namespace RockGame
         {
             s_Active.Clear();
             if (LimitedCrafting) { s_Active.AddRange(k_Limited); return s_Active; }
-            foreach (var it in k_Recipes) if (!(WoodMode && it == Item.Pickaxe) && (it != Item.Hammer || HammerOn)) s_Active.Add(it);
+            foreach (var it in k_Recipes) if (!(WoodMode && it == Item.Pickaxe) && (it != Item.Hammer || HammerOn) && (it != Item.Armor || Tutorial)) s_Active.Add(it);
             if (ThemeMaps.HasWater) s_Active.Add(Item.Boat); // THEME MAPS (the boat)
             return s_Active;
         }
@@ -949,6 +961,8 @@ namespace RockGame
                 case Item.SleepingBag: r = new Recipe { Output = Item.SleepingBag, Count = 1, Wood = SleepingBagWood }; break;
                 case Item.LargeGate: r = new Recipe { Output = Item.LargeGate, Count = 1, Wood = LargeGateWood }; break;
                 case Item.AutoTurret: r = new Recipe { Output = Item.AutoTurret, Count = 1, Wood = AutoTurretWood }; break;
+                case Item.Barricade: r = new Recipe { Output = Item.Barricade, Count = 1, Wood = BarricadeWood }; break;
+                case Item.DeathWand: r = new Recipe { Output = Item.DeathWand, Count = 1, Wood = DeathWandWood }; break;
                 case Item.AlienDust: r = new Recipe { Output = Item.AlienDust, Count = Mathf.Max(1, DustPerBuy), Wood = DustBuyWood }; break;
                 default: r = new Recipe { Output = Item.Barrier, Count = 1, Wood = BarrierWood }; break;
             }
@@ -1024,7 +1038,7 @@ namespace RockGame
                 case Item.RevolverAmmo: return RevolverAmmoPerCraft == 1 ? "one bullet for the revolver" : $"{RevolverAmmoPerCraft} bullets for the revolver";
                 case Item.C4: return "thrown: wrecks every building piece nearby";
                 case Item.Helmet: return "goes straight on: stops one headshot completely";
-                case Item.HeavyArmor: return $"{HeavyArmorHp} armour, goes straight on (wooden armour is {ArmorHp})";
+                case Item.HeavyArmor: return $"+{HeavyArmorHp} armour, goes straight on";
                 default: return BaseUpgradeBlurb(id, team);
             }
         }
@@ -1187,6 +1201,7 @@ namespace RockGame
             (10, new[] { "FortifyStoneWood", "FortifyMetalWood", "FortifyArmouredWood", "WoodGenBuildWood", "WoodGen1Wood", "WoodGen2Wood", "RocketStructureDamage" }),
             (11, new[] { "TabHoldTime" }),
             (12, new[] { "BallGatherMul", "ChainsawWood", "ChainsawUses" }),
+            (13, new[] { "AirdropCount", "ArrowPlayerDamage", "CrossbowDamage", "ShellWood", "RevolverAmmoWood", "AutoWoodLevel2", "HeavyArmorWood" }),
         };
         const string MigrateKey = "RockGame.Tunables.migrated";
 

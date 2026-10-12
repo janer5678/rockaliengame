@@ -361,11 +361,13 @@ namespace RockGame
             AddDemolishLit(aimed);
             // tint: the material's own colour pulled hard towards red
             if (s_DemoMpb == null) s_DemoMpb = new MaterialPropertyBlock();
+            // (the hammer on a piece that's just been hit: red until it can be upgraded again)
+            bool hammerOk = HammerAiming && !(aimed.TryGetComponent(out Structure hs) && hs.UpgradeLockLeft > 0f);
             foreach (var (r, _, prev) in m_DemoLit)
             {
                 if (r == null) continue;
                 var baseC = r.sharedMaterial.HasProperty(k_BaseColorId) ? r.sharedMaterial.GetColor(k_BaseColorId) : Color.white;
-                var c = Color.Lerp(baseC, HammerAiming ? k_HammerAimed : k_DemoAimed, HammerAiming ? 0.45f : 0.8f);
+                var c = Color.Lerp(baseC, hammerOk ? k_HammerAimed : k_DemoAimed, HammerAiming ? 0.45f : 0.8f);
                 c.a = baseC.a;
                 s_DemoMpb.Clear();
                 if (prev != null) r.GetPropertyBlock(s_DemoMpb); // (keep whatever else it had set)

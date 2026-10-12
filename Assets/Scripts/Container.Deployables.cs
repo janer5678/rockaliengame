@@ -110,8 +110,45 @@ namespace RockGame
             c.ServerBreakWithSupport();
         }
 
-        public static float CenterUp(byte kind) => kind == Container.SleepBag ? 0.2f : kind == Container.Trap ? 0.15f : kind == Container.Ladder ? 1.4f : 0.9f;
-        public static float MaxHp(byte kind) => kind == Container.SleepBag ? 100f : kind == Container.Trap ? 150f : kind == Container.Ladder ? 250f : 500f;
+        public static float CenterUp(byte kind) => kind == Container.SleepBag ? 0.2f : kind == Container.Trap ? 0.15f : kind == Container.Ladder ? 1.4f : kind == Container.Barricade ? 0.7f : 0.9f;
+        public static float MaxHp(byte kind) => kind == Container.SleepBag ? 100f : kind == Container.Trap ? 150f : kind == Container.Ladder ? 250f : kind == Container.Barricade ? Cfg.BarricadeHp : 500f;
+
+        /// <summary>The concrete barricade: 2 m long, tall enough to hide someone crouching behind it (Cfg.CrouchHeight) -
+        /// someone standing can still see and shoot over it - and its depth at the foot and at the top.</summary>
+        public const float BarricadeLen = 2f, BarricadeH = 1.35f, BarricadeFoot = 0.62f, BarricadeTop = 0.26f;
+        /// <summary>A barricade can go in an enemy base, but not this close to their buildings (m) or their machine / spawn.</summary>
+        public const float BarricadeEnemyGap = 3f, BarricadeMachineGap = 5f;
+
+        /// <summary>Why a barricade can't go here because of the enemy (null = fine): anywhere at all, the enemy base
+        /// too, just not right up against their building pieces, chests and benches, or their machine and spawn.</summary>
+        public static string BarricadeEnemyProblem(int team, Vector3 pos)
+        {
+            foreach (var s in Structure.All)
+            {
+                if (s == null || !s.IsSpawned || s.Team.Value == team) continue;
+                foreach (var col in s.GetComponentsInChildren<Collider>())
+                {
+                    if (col.isTrigger) continue;
+                    var b = col.bounds;
+                    b.Expand(new Vector3(BarricadeEnemyGap * 2f, 1f, BarricadeEnemyGap * 2f));
+                    if (b.Contains(pos + Vector3.up * 0.5f)) return "Too close to the enemy's buildings";
+                }
+            }
+            foreach (var c in Container.All)
+            {
+                if (c == null || !c.IsSpawned || c.Team.Value == team || c.IsAirdrop || c.IsBag || c.Kind.Value == Container.Barricade) continue;
+                if (new Vector2(c.transform.position.x - pos.x, c.transform.position.z - pos.z).magnitude < BarricadeEnemyGap) return "Too close to the enemy's buildings";
+            }
+            if (!Cfg.Builder)
+                for (int t = 0; t < Cfg.TeamCount; t++)
+                {
+                    if (t == team) continue;
+                    var m = Cfg.MachinePos(t); var sp = Cfg.SpawnPos(t);
+                    if (new Vector2(m.x - pos.x, m.z - pos.z).magnitude < BarricadeMachineGap || new Vector2(sp.x - pos.x, sp.z - pos.z).magnitude < BarricadeMachineGap)
+                        return "Too close to the enemy's machine";
+                }
+            return null;
+        }
 
         // ------------------------------------------------------------------ the models
 
@@ -160,6 +197,38 @@ namespace RockGame
                     Art.Box(lean, Cfg.TeamColor[Mathf.Clamp(team, 0, 3)], new Vector3(0, LadderHeight - 0.15f, 0.045f), new Vector3(0.3f, 0.06f, 0.01f));
                     break;
                 }
+                case Container.Barricade:
+                {
+                    // a concrete jersey barrier: a wide foot, sloping sides, a narrow upright wall - weathered grey, a
+                    // stripe of its team's paint along each face, steel lifting loops on top
+                    var conc = new Color(0.6f, 0.59f, 0.55f);
+                    float L = BarricadeLen;
+                    Art.Box(t, conc * 0.92f, new Vector3(0, 0.07f, 0), new Vector3(L, 0.14f, BarricadeFoot));
+                    Art.Box(t, conc * 0.96f, new Vector3(0, 0.27f, 0), new Vector3(L, 0.27f, 0.42f));
+                    Art.Box(t, conc, new Vector3(0, 0.36f + (BarricadeH - 0.36f) * 0.5f, 0), new Vector3(L, BarricadeH - 0.36f, BarricadeTop));
+                    for (int s = -1; s <= 1; s += 2)
+                    {
+                        // (the sloping lower faces, both sides)
+                        Art.Box(t, conc * 0.94f, new Vector3(0, 0.29f, s * 0.2f), new Vector3(L - 0.002f, 0.34f, 0.07f), new Vector3(s * -33f, 0, 0));
+                        Art.Box(t, Cfg.TeamColor[Mathf.Clamp(team, 0, 3)], new Vector3(0, 1.1f, s * (BarricadeTop * 0.5f + 0.003f)), new Vector3(L - 0.1f, 0.08f, 0.006f));
+                        Art.Box(t, conc * 0.8f, new Vector3(s * (L * 0.5f - 0.02f), 0.7f, 0), new Vector3(0.04f, 1.25f, 0.2f)); // (the ends, a little darker)
+                    }
+                    Art.Box(t, conc * 1.06f, new Vector3(0, BarricadeH - 0.015f, 0), new Vector3(L - 0.02f, 0.03f, BarricadeTop - 0.02f));
+                    for (int s = -1; s <= 1; s += 2)
+                    {
+                        var steel = new Color(0.35f, 0.33f, 0.3f);
+                        Art.Box(t, steel, new Vector3(s * 0.55f - 0.06f, BarricadeH + 0.04f, 0), new Vector3(0.025f, 0.08f, 0.025f));
+                        Art.Box(t, steel, new Vector3(s * 0.55f + 0.06f, BarricadeH + 0.04f, 0), new Vector3(0.025f, 0.08f, 0.025f));
+                        Art.Box(t, steel, new Vector3(s * 0.55f, BarricadeH + 0.075f, 0), new Vector3(0.145f, 0.025f, 0.025f));
+                    }
+                    // weathering: a few darker patches and chips
+                    for (int k = 0; k < 6; k++)
+                    {
+                        float x = -0.8f + k * 0.32f, y = 0.55f + (k * 37 % 5) * 0.1f;
+                        for (int s = -1; s <= 1; s += 2) Art.Box(t, conc * 0.82f, new Vector3(x, y, s * (BarricadeTop * 0.5f + 0.002f)), new Vector3(0.1f + (k % 3) * 0.05f, 0.06f + (k % 2) * 0.05f, 0.004f));
+                    }
+                    break;
+                }
                 default: // the auto turret
                 {
                     var metal = new Color(0.32f, 0.34f, 0.38f);
@@ -192,7 +261,7 @@ namespace RockGame
             }
             if (ghost != null) foreach (var r in t.GetComponentsInChildren<Renderer>(true)) r.sharedMaterial = ghost;
             if (ghost != null && kind == Container.Turret) BuildCone(t, ghost);
-            foreach (var r in t.GetComponentsInChildren<MeshRenderer>(true)) if (kind != Container.Turret) r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            foreach (var r in t.GetComponentsInChildren<MeshRenderer>(true)) if (kind != Container.Turret && (kind != Container.Barricade || ghost != null)) r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         }
 
         /// <summary>The turret's ghost shows what it'll watch: a red outline of its cone out to its range.</summary>
@@ -241,6 +310,14 @@ namespace RockGame
                     lad.BoardZ = 0.26f; // (the board is 0.26 m behind the climbing volume's centre)
                     lad.TopLocalY = LadderHeight - 0.3f;
                     lad.ExitHop = 4.6f; // (a big hop off the top: over a large wall it doesn't quite reach)
+                    break;
+                }
+                case Container.Barricade:
+                {
+                    // solid: you take cover behind it, and it stops shots (a box for the wall, a wider one for its foot)
+                    bc.center = new Vector3(0, BarricadeH * 0.5f, 0); bc.size = new Vector3(BarricadeLen, BarricadeH, BarricadeTop + 0.08f); bc.isTrigger = false;
+                    var foot = c.gameObject.AddComponent<BoxCollider>();
+                    foot.center = new Vector3(0, 0.2f, 0); foot.size = new Vector3(BarricadeLen, 0.4f, BarricadeFoot);
                     break;
                 }
                 default: bc.center = new Vector3(0, 0.6f, 0); bc.size = new Vector3(0.6f, 1.2f, 0.6f); break;
@@ -368,7 +445,7 @@ namespace RockGame
                 c.Flag.Value = 1;
                 s_TrapSprung[c] = Time.time;
                 p.TrappedUntil.Value = now + Cfg.BearTrapHold;
-                p.ServerDamage(Cfg.BearTrapDamage, null, (byte)Item.BearTrap);
+                p.ServerDamageFrom(Cfg.BearTrapDamage, (byte)Item.BearTrap, c.Team.Value);
                 c.DeployFxRpc(FxSnap, p0);
                 break;
             }
@@ -488,7 +565,7 @@ namespace RockGame
                 {
                     end = hit.point;
                     var p = hit.collider.GetComponentInParent<PlayerNet>();
-                    if (p != null && p.Team.Value != c.Team.Value && !p.Dead.Value) p.ServerDamage(dmg, null, (byte)Item.AutoTurret);
+                    if (p != null && p.Team.Value != c.Team.Value && !p.Dead.Value) p.ServerDamageFrom(dmg, (byte)Item.AutoTurret, c.Team.Value);
                     else
                     {
                         var s = hit.collider.GetComponentInParent<Structure>();
@@ -518,7 +595,7 @@ namespace RockGame
                 if (Physics.Raycast(f.Pos, step, out var hit, step.magnitude, ~0, QueryTriggerInteraction.Ignore))
                 {
                     var p = hit.collider.GetComponentInParent<PlayerNet>();
-                    if (p != null && p.Team.Value != f.Team && !p.Dead.Value) p.ServerDamage(f.Dmg, null, (byte)Item.AutoTurret);
+                    if (p != null && p.Team.Value != f.Team && !p.Dead.Value) p.ServerDamageFrom(f.Dmg, (byte)Item.AutoTurret, f.Team);
                     else
                     {
                         var s = hit.collider.GetComponentInParent<Structure>();

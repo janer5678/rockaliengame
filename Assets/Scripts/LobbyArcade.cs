@@ -141,8 +141,23 @@ namespace RockGame
                 return;
             }
             if (at >= 0 || s_Run.Count >= 32) return;
+            // someone new: a fresh game for everyone - the scores back to 0, everyone and the ball back where they start
+            ResetGame();
+            foreach (var r in s_Run)
+            {
+                r.Pos = r.Home;
+                r.Facing = (BallHome - r.Home).normalized;
+                r.Score = 0;
+                r.Dead = false;
+                r.ChopUntil = r.StunUntil = r.DeadUntil = r.ShootCool = 0f;
+            }
+            s_Resets++;
             AddRunner(p, (byte)(p.OwnerClientId & 255), p.Team.Value & 3);
         }
+
+        /// <summary>(tests, server) how many times a newcomer has restarted the game.</summary>
+        public static int ServerResets => s_Resets;
+        static int s_Resets;
 
         static Runner AddRunner(PlayerNet p, byte id, int team)
         {
@@ -176,6 +191,7 @@ namespace RockGame
         static void ResetGame()
         {
             s_Holder = null;
+            s_StealCool = 0f;
             s_Ball = BallHome;
             s_Arrows.Clear();
             for (int i = 0; i < s_TreeBackAt.Length; i++) s_TreeBackAt[i] = 0f;
@@ -470,6 +486,7 @@ namespace RockGame
         {
             if (Focused == on) return;
             Focused = on;
+            if (on && UfoArcade.Focused) UfoArcade.Focus(false); // (one game at a time)
             var me = PlayerNet.Local;
             if (me != null && me.IsSpawned) me.ArcadeJoinRpc(on);
             s_SentStick = new Vector2(99f, 99f);
@@ -630,8 +647,8 @@ namespace RockGame
         float m_NextDraw;
         byte m_GoalsSeen;
         bool m_GoalsKnown;
-        float m_GoalFlash = -10f;
-        int m_GoalTeam;
+        float m_GoalFlash = -10f, m_JoinFlash = -10f;
+        int m_GoalTeam, m_DotsSeen;
 
         /// <summary>The telly's screen material: the game's picture (lit by itself).</summary>
         public static Material ScreenMat
@@ -729,6 +746,12 @@ namespace RockGame
                 else if (cur.Goals != m_GoalsSeen) { m_GoalsSeen = cur.Goals; m_GoalFlash = now; m_GoalTeam = cur.GoalTeam; }
             }
             bool playing = s_Have && cur.Dots.Count > 0;
+            // someone joined: the game starts again (the server reset it) - "NEW PLAYER!" flashes up
+            if (s_Have)
+            {
+                if (cur.Dots.Count > m_DotsSeen && m_DotsSeen > 0) m_JoinFlash = now;
+                m_DotsSeen = cur.Dots.Count;
+            }
 
             // the grass (checked), darker at the edges
             for (int y = Bar; y < H; y++)
@@ -855,6 +878,11 @@ namespace RockGame
                     for (int y = Bar; y < H; y++) for (int x = 0; x < W; x++) if (((x + y) & 3) == 0) m_Px[(H - 1 - y) * W + x] = c;
                 Rect(W / 2 - 18, H / 2 - 5, 36, 11, k_Black);
                 Text("GOAL +5", W / 2 - 14, H / 2 - 2, c);
+            }
+            if (now - m_JoinFlash < 1.6f && Mathf.Repeat(now - m_JoinFlash, 0.4f) < 0.28f)
+            {
+                Rect(W / 2 - 30, H / 2 - 5, 60, 11, k_Black);
+                Text("NEW PLAYER!", W / 2 - 22, H / 2 - 2, k_Ball);
             }
             // scanlines, and the telly's glow from the picture
             long sr = 0, sg = 0, sb = 0;

@@ -19,8 +19,8 @@ namespace RockGame
     ///           diamond and studs on the lid, a second saw, four vents puffing pink.
     /// While it works it hums quietly (a 3D loop, Sfx.MachineHum), and looking at it says how fast it's making wood
     /// (AimLine, shown by PlayerController's look-at text).
-    /// Where the hammer is on (Cfg.AutoWoodGen) it isn't bought: it's there from the start and levels up by itself over
-    /// the match (NetGame.ServerAutoWoodGenLevels).
+    /// Where the hammer is on (Cfg.AutoWoodGen) it isn't bought: it lands in every base when the glass walls drop and
+    /// levels up by itself over the match (NetGame.ServerAutoWoodGenLevels).
     /// </summary>
     public class WoodMachine : MonoBehaviour
     {
@@ -71,7 +71,7 @@ namespace RockGame
             return w;
         }
 
-        int Level => Mathf.Max(Cfg.AutoWoodGen ? 1 : 0, NetGame.Instance != null && NetGame.Instance.IsSpawned ? NetGame.Instance.WoodGenLevelOf(m_Team) : 0); // (the hammer's modes: there from the start - Cfg.AutoWoodGen)
+        int Level => NetGame.Instance != null && NetGame.Instance.IsSpawned ? NetGame.Instance.WoodGenLevelOf(m_Team) : 0; // (the hammer's modes: it lands when the walls drop - NetGame.ServerAutoWoodGenLevels)
 
         /// <summary>The level colour as a glowing material, one per machine so it can pulse.</summary>
         Material AccentMat()

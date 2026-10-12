@@ -27,7 +27,7 @@ namespace RockGame
             float secs = Cfg.CraftSeconds(r);
             if (secs > 0f && m_Queued.Count >= MaxCraftQueue) { Notify("Your crafting queue is full"); return; }
             if (r.Output == Item.Armor && ArmorHp.Value >= Cfg.ArmorHp) { Notify("You're already wearing full armour"); return; }
-            if (r.Output == Item.HeavyArmor && ArmorHp.Value >= Cfg.HeavyArmorHp) { Notify("You're already wearing heavy armour"); return; }
+            if (r.Output == Item.HeavyArmor && ArmorHp.Value >= Cfg.HeavyArmorHp) { Notify("You're already wearing full armour"); return; }
             if (r.Output == Item.Helmet && (HelmetHp.Value > 0 || CraftingItem.Value == (byte)Item.Helmet || CraftQueue.Contains((byte)Item.Helmet))) { Notify("You're already wearing a helmet"); return; }
             if (r.Output == Item.FortifyBuff && Cfg.FortifyLevel(Team.Value) >= Cfg.MaxFortify) { Notify("Your walls are already armoured - fully fortified"); return; }
             if (r.Output == Item.WoodGenBuff && Cfg.WoodGenLevel(Team.Value) >= Cfg.MaxWoodGen) { Notify("Your wood gen is already maxed out"); return; }
@@ -87,7 +87,7 @@ namespace RockGame
                 {
                     bool had = ArmorHp.Value > 0;
                     ArmorHp.Value = (byte)Mathf.Clamp(Cfg.HeavyArmorHp, 1, 255);
-                    Notify($"Heavy armour on: {ArmorHp.Value} extra health" + (had ? " (your old armour broke off)" : ""));
+                    Notify($"Armour on: {ArmorHp.Value} extra health, used up before your own");
                     break;
                 }
                 case Item.Helmet:
@@ -186,7 +186,7 @@ namespace RockGame
                     return;
                 }
                 p.ServerMarkHead(head);
-                p.ServerDamage(head ? Cfg.GunHead(gun) : Cfg.GunBody(gun), this);
+                p.ServerDamage(head ? Cfg.GunHead(gun) : Cfg.GunBody(gun), this, (byte)gun);
                 p.ServerBleed(head, point, dir, OwnerClientId);
                 if (p.Dead.Value) KillConfirmRpc();
             }
@@ -266,7 +266,7 @@ namespace RockGame
                 }
                 if (dmg <= 0f) return;
                 p.ServerMarkHead(head > 0);
-                p.ServerDamage(dmg, this);
+                p.ServerDamage(dmg, this, (byte)Item.Shotgun);
                 p.ServerBleed(head > 0, point, (point - m_ShotgunFrom).normalized, OwnerClientId);
                 if (p.Dead.Value) KillConfirmRpc();
             }

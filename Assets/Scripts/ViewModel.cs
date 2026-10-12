@@ -22,7 +22,7 @@ namespace RockGame
         {
             public Item Item;
             public bool Ball, Visible, SpearAim, Crouch, HasArrow, Sprint, Grounded, Firing, Loaded, Aim, Visible2;
-            /// <summary>You're invisible (the Invisibility Potion): your own alien hands turn see-through and shimmery - still there.</summary>
+            /// <summary>You're invisible (the Invisibility Potion): your own hands vanish - only what you hold still shows.</summary>
             public bool Ghost;
             public float Draw, RamCharge, Bob, Speed, VelY, Reload;
             /// <summary>The revolver: how many rounds this reload puts in (just the fired ones).</summary>
@@ -754,6 +754,7 @@ namespace RockGame
                 case Item.Workbench:
                 case Item.Workbench2: AttachItemToRight(new Vector3(0, 0.04f, 0.08f), new Vector3(0, 200, 0), 0.8f); break;
                 case Item.Barrier: AttachItemToRight(new Vector3(0, 0.04f, 0.06f), new Vector3(0, 20, 0), 0.8f); break;
+                case Item.Barricade: AttachItemToRight(new Vector3(0, 0.03f, 0.07f), new Vector3(0, 20, 0), 0.7f); break;
                 case Item.Arrow: AttachItemToRight(new Vector3(0, -0.1f, 0.02f), new Vector3(-30, 0, 0), 0.8f); break;
                 default: AttachItemToRight(new Vector3(0, 0.05f, 0.07f), Vector3.zero, 1f); break;
             }

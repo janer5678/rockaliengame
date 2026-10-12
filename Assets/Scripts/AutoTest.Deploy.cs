@@ -18,10 +18,10 @@ namespace RockGame
             var g = NetGame.Instance;
             int team = me.Team.Value, enemy = 1 - team;
             g.TimerPaused.Value = true;
-            Check(Cfg.ArmorHp == 25 && Cfg.HeavyArmorHp == 50, $"wooden armour {Cfg.ArmorHp}, heavy armour {Cfg.HeavyArmorHp}");
-            Check(Cfg.ItemName(Item.Workbench2) == "Advanced Trade Station" && Cfg.ItemName(Item.Barrier) == "Large Wall", "renamed: Advanced Trade Station, Large Wall");
-            Check(Cfg.CraftIndexOf(Item.SleepingBag) < 0 && Cfg.CraftIndexOf(Item.BearTrap) < 0 && Cfg.CraftTier(Item.Ladder) == 1 && Cfg.CraftTier(Item.LargeGate) == 1 && Cfg.CraftTier(Item.AutoTurret) == 2,
-                "the bag and trap are out for now; the ladder and gate are Trade Station items, the turret an Advanced one");
+            Check(Cfg.HeavyArmorHp == 50 && Cfg.HeavyArmorWood == 500 && Cfg.CraftIndexOf(Item.Armor) < 0, $"armour: +{Cfg.HeavyArmorHp} for {Cfg.HeavyArmorWood} wood (the wooden armour is gone)");
+            Check(Cfg.ItemName(Item.Workbench2) == "Advanced Trade Station" && Cfg.ItemName(Item.Barrier) == "Large Wall" && Cfg.ItemName(Item.HeavyArmor) == "Armour", "renamed: Advanced Trade Station, Large Wall, Armour");
+            Check(Cfg.CraftIndexOf(Item.SleepingBag) < 0 && Cfg.CraftIndexOf(Item.BearTrap) < 0 && Cfg.CraftTier(Item.Ladder) == 1 && Cfg.CraftIndexOf(Item.LargeGate) < 0 && Cfg.CraftIndexOf(Item.Barrier) < 0 && Cfg.CraftTier(Item.Barricade) == 1 && Cfg.CraftTier(Item.AutoTurret) == 2,
+                "the bag, trap, large wall and large gate are out for now; the ladder and barricade are Trade Station items, the turret an Advanced one");
             {
                 var crate = NetGame.RollAirdropCrate();
                 bool wood = crate.Count == 3 && crate[0].Id == Item.Wood && crate[1].Id == Item.Wood && crate[0].Count >= 500 && crate[1].Count <= 1000;

@@ -93,17 +93,24 @@ namespace RockGame
                 }
                 case Item.Hammer:
                 {
-                    // a builder's hammer (Upgrades.cs): a pale wooden handle with a dark rubber grip, a steel head across the
-                    // top - the round striking face forward (+Z, where the hatchet's blade is) and a split claw curling down
-                    // behind
-                    var steel = new Color(0.62f, 0.64f, 0.68f);
-                    Art.Box(t, new Color(0.72f, 0.55f, 0.32f), new Vector3(0, 0.25f, 0), new Vector3(0.05f, 0.6f, 0.05f));
-                    Art.Box(t, new Color(0.18f, 0.18f, 0.2f), new Vector3(0, 0.03f, 0), new Vector3(0.064f, 0.18f, 0.064f));
-                    Art.Box(t, steel * 0.75f, new Vector3(0, 0.55f, 0f), new Vector3(0.078f, 0.12f, 0.08f));                       // the eye round the handle
-                    Art.Box(t, steel, new Vector3(0, 0.56f, 0.07f), new Vector3(0.068f, 0.075f, 0.16f));                             // the neck
-                    Art.Part(t, Art.Cylinder, steel * 0.85f, new Vector3(0, 0.56f, 0.155f), new Vector3(0.075f, 0.02f, 0.075f), new Vector3(90, 0, 0)); // the face
-                    for (int sx = -1; sx <= 1; sx += 2)                                                                              // the claw
-                        Art.Box(t, steel * 0.9f, new Vector3(sx * 0.018f, 0.545f, -0.1f), new Vector3(0.022f, 0.045f, 0.15f), new Vector3(-28, 0, 0));
+                    // Rust's building hammer, all wood: a pale handle with the grain running along it and a cloth grip at
+                    // the bottom, a chunky block of darker wood for the head - a flat, end-grain striking face forward
+                    // (+Z, where the hatchet's blade is) and a wooden claw tapering off behind - lashed on with rope and
+                    // pinned with two nails
+                    var pale = new Color(0.74f, 0.57f, 0.34f);
+                    var head = new Color(0.47f, 0.31f, 0.17f);
+                    Art.Box(t, pale, new Vector3(0, 0.26f, 0), new Vector3(0.05f, 0.62f, 0.048f));
+                    for (int g = 0; g < 3; g++) Art.Box(t, pale * 0.82f, new Vector3(-0.012f + g * 0.012f, 0.3f, 0.0245f), new Vector3(0.004f, 0.42f, 0.002f)); // (the grain)
+                    Art.Box(t, new Color(0.42f, 0.36f, 0.28f), new Vector3(0, 0.05f, 0), new Vector3(0.062f, 0.16f, 0.06f));      // the cloth grip
+                    for (int w = 0; w < 4; w++) Art.Box(t, new Color(0.32f, 0.27f, 0.2f), new Vector3(0, 0.0f + w * 0.035f, 0), new Vector3(0.066f, 0.008f, 0.064f), new Vector3(0, 0, 12f));
+                    Art.Box(t, head, new Vector3(0, 0.575f, 0.035f), new Vector3(0.085f, 0.1f, 0.2f));                               // the block
+                    Art.Box(t, head * 1.25f, new Vector3(0, 0.575f, 0.138f), new Vector3(0.09f, 0.104f, 0.012f));                       // its end-grain face
+                    for (int r = 0; r < 2; r++) Art.Box(t, head * 0.85f, new Vector3(0, 0.575f, 0.142f), new Vector3(0.05f - r * 0.022f, 0.06f - r * 0.022f, 0.004f)); // (the rings on it)
+                    for (int sx = -1; sx <= 1; sx += 2)                                                                               // the claw, tapering off behind
+                        Art.Box(t, head * 0.92f, new Vector3(sx * 0.02f, 0.555f, -0.1f), new Vector3(0.03f, 0.05f, 0.12f), new Vector3(-24, sx * 4f, 0));
+                    var rope = new Color(0.66f, 0.58f, 0.4f);
+                    for (int k = 0; k < 3; k++) Art.Box(t, rope, new Vector3(0, 0.505f - k * 0.016f, 0.0f), new Vector3(0.064f, 0.012f, 0.062f), new Vector3(0, k * 30f, 8f)); // (lashed under the head)
+                    for (int sx = -1; sx <= 1; sx += 2) Art.Box(t, new Color(0.3f, 0.3f, 0.32f), new Vector3(sx * 0.0435f, 0.6f, 0f), new Vector3(0.004f, 0.016f, 0.016f)); // (nail heads)
                     break;
                 }
                 case Item.Pickaxe:
@@ -216,6 +223,16 @@ namespace RockGame
                     mini.SetParent(t, false);
                     Deployables.Build(Container.Turret, PlayerNet.Local != null ? PlayerNet.Local.Team.Value : 0, mini, null);
                     mini.localScale = Vector3.one * 0.32f;
+                    break;
+                }
+                case Item.Barricade:
+                {
+                    // a little concrete jersey barrier: a wide foot, sloping sides, a narrow top, a team-colour stripe
+                    var conc = new Color(0.62f, 0.61f, 0.57f);
+                    Art.Box(t, conc * 0.92f, new Vector3(0, 0.025f, 0), new Vector3(0.42f, 0.05f, 0.15f));
+                    Art.Box(t, conc * 0.96f, new Vector3(0, 0.08f, 0), new Vector3(0.42f, 0.07f, 0.1f));
+                    Art.Box(t, conc, new Vector3(0, 0.18f, 0), new Vector3(0.42f, 0.17f, 0.06f));
+                    Art.Box(t, Cfg.TeamColor[PlayerNet.Local != null ? Mathf.Clamp(PlayerNet.Local.Team.Value, 0, 3) : 0], new Vector3(0, 0.22f, 0.031f), new Vector3(0.38f, 0.02f, 0.004f));
                     break;
                 }
                 case Item.LargeGate:

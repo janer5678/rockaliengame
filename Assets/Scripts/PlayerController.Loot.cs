@@ -10,7 +10,9 @@ namespace RockGame
         public bool Scoped { get; private set; }
         public bool AirstrikeMapOpen { get; private set; }
         int m_PortalLockPair = -1, m_PortalNewestSeen = -1;
-        float m_JetUsed, m_JetSendAt;
+        float m_JetUsed, m_JetSendAt, m_JumpHeldFor;
+        /// <summary>How long Space is held before the worn jetpack fires (a tap is just a jump).</summary>
+        const float JetHoldDelay = 0.18f;
 
         void HandleOnce(Item held, Action act)
         {
@@ -128,10 +130,12 @@ namespace RockGame
             }
         }
 
-        /// <summary>Jetpack (held): hold Space to fly up while there's fuel.</summary>
+        /// <summary>The worn jetpack (PlayerNet.Gear.cs): hold Space to fly up while there's fuel - after a moment, so a
+        /// quick jump doesn't burn any.</summary>
         void TickJetpack(Item held, bool canMove)
         {
-            bool want = held == Item.Jetpack && canMove && Binds.Held(Bind.Jump) && m_Net.HeldStack.Data > 0 && !MenuOpen;
+            m_JumpHeldFor = Binds.Held(Bind.Jump) && canMove && !MenuOpen ? m_JumpHeldFor + Time.deltaTime : 0f;
+            bool want = m_Net.WearingJetpack && m_JumpHeldFor >= JetHoldDelay;
             if (want)
             {
                 m_VelY = Mathf.Min(m_VelY + (Cfg.Gravity + Cfg.JetpackThrust) * Time.deltaTime, 7f);

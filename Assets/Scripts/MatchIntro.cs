@@ -19,7 +19,7 @@ namespace RockGame
     /// (NetGame.IntroDoneRpc), and once every screen has, everyone gets a 3, 2, 1 countdown (NetGame.ReadySetRock.cs).
     /// Client side only (each screen starts it when it sees the match begin). While it plays nobody can move, look, fight
     /// or open menus (PlayerController: like the victory cutscene), the camera is the intro's (CameraPose) and the HUD is
-    /// the intro's (DrawHud). Jump (Space) skips it. The scenes in space use the main menu cutscene's own post
+    /// the intro's (DrawHud). It can't be skipped (CanSkip: everyone sees how the match is won). The scenes in space use the main menu cutscene's own post
     /// processing (MenuLook: GameSettings.MenuPostNow).
     /// </summary>
     public static class MatchIntro
@@ -28,6 +28,8 @@ namespace RockGame
         /// the map shot (slow: MapShot seconds) until Length; then Outro seconds of fading back in on the game.</summary>
         public const float SpaceEnd = 1.6f, CrashLength = 3.7f, CrashEnd = SpaceEnd + CrashLength, MapShot = 10.4f, Length = CrashEnd + MapShot, Outro = 0.35f;
         public const float ImpactAt = SpaceEnd + MenuSpace.CrashImpact;
+        /// <summary>Jump (Space) skipping it: off - everyone watches it through (the tests still can: Skip).</summary>
+        public const bool CanSkip = false;
         /// <summary>When the captions come up (seconds into the map shot).</summary>
         public const float CaptionAt = 0.5f;
 
@@ -85,7 +87,7 @@ namespace RockGame
             float e = Elapsed;
             if (e >= Length && !s_Ended) { s_Ended = true; ShowTrees(); Report(g); AfterBanner(g); }
             if (e >= Length + Outro) { s_At = Off; return; }
-            if (e > 0.6f && e < Length - 0.3f && !Chat.Open && Input.GetKeyDown(KeyCode.Space)) Skip();
+            if (CanSkip && e > 0.6f && e < Length - 0.3f && !Chat.Open && Input.GetKeyDown(KeyCode.Space)) Skip();
             Cues(e);
         }
 
@@ -349,7 +351,7 @@ namespace RockGame
             fill(new Rect(0, sh - bars, sw, bars), Color.black);
 
             // the skip hint, small in the bottom bar's corner
-            if (e < Length - 0.5f && bars > 10f)
+            if (CanSkip && e < Length - 0.5f && bars > 10f)
             {
                 var hint = new GUIStyle(small) { alignment = TextAnchor.MiddleRight };
                 hint.normal.textColor = new Color(1f, 1f, 1f, 0.45f);

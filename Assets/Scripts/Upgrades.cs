@@ -51,6 +51,8 @@ namespace RockGame
         /// <summary>What the hammer charges to take one piece up to stone, metal, armoured (in the mode's currency).</summary>
         [Tune("Hammer")] public static int HammerStoneWood = 50, HammerMetalWood = 100, HammerArmouredWood = 250;
         [Tune("Hammer")] public static int HammerWood = 100;
+        /// <summary>A piece that's just been hit (by anyone) can't be hammered up a tier for this many seconds.</summary>
+        [Tune("Hammer")] public static float HammerHitLock = 5f;
         /// <summary>The hammer as a weapon: half the sword's damage, a quicker swing.</summary>
         [Tune("Hammer")] public static float HammerBodyDamage = 47.5f, HammerHeadDamage = 75f, HammerSwingTime = 0.9f, HammerRange = 2.6f;
         /// <summary>What the hammer charges to take a piece from `tier` to the next one (0: it can't go higher).</summary>
@@ -135,6 +137,7 @@ namespace RockGame
         {
             if (s == null || !s.IsSpawned || s.Team.Value != Team.Value || !s.Upgradable) return false;
             if (s.Tier.Value >= Cfg.MaxFortify) { Notify("That's already armoured"); return false; }
+            if (s.UpgradeLockLeft > 0f) { Notify($"Under attack - you can upgrade it in {Mathf.CeilToInt(s.UpgradeLockLeft)} s"); return false; }
             int cost = Cfg.HammerCost(s.Tier.Value);
             var r = new Recipe { Output = Item.FortifyBuff, Count = 1, Wood = cost }; // (Wood is the currency's slot: DNA in DNA mode)
             if (!CanAfford(r)) { Notify($"Need {cost} {Cfg.CurrencyName} to upgrade it to {Cfg.TierName(s.Tier.Value + 1).ToLower()}"); return false; }
