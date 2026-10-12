@@ -28,11 +28,11 @@ namespace RockGame
             Check(Cfg.CraftRecipe(Cfg.CraftIndexOf(Item.DeathWand), team).Wood == 4000, $"the death wand costs 4000 ({Cfg.CraftRecipe(Cfg.CraftIndexOf(Item.DeathWand), team).Wood})");
             Check(Cfg.ItemName(Item.BearTrap) == "Stun Trap" && Cfg.CraftTier(Item.BearTrap) == 2 && Cfg.CraftRecipe(Cfg.CraftIndexOf(Item.BearTrap), team).Wood == 250 && Mathf.Approximately(Cfg.BearTrapHold, 3f),
                 $"the stun trap: an Advanced Trade Station item for 250, holds {Cfg.BearTrapHold} s");
-            Check(Deployables.BarricadeH > 1.35f && Deployables.BarricadeLen > 2f && Deployables.BarricadeH + 0.1f < Cfg.EyeHeight, $"the barricade is taller and wider ({Deployables.BarricadeLen} x {Deployables.BarricadeH} m) - still lower than your eyes standing");
+            Check(Mathf.Abs(Deployables.BarricadeH - 1.45f * 1.3f) < 0.01f && Mathf.Abs(Deployables.BarricadeLen - 2.4f * 1.3f) < 0.01f, $"the barricade is 30% taller and wider ({Deployables.BarricadeLen} x {Deployables.BarricadeH} m)");
             Check(NetGame.DropBeam == NetGame.DropWarning + 8f, $"the airdrop's beam takes {NetGame.DropBeam} s: the ship comes at once and the crate lands when it used to");
             {
-                int mask = Cfg.AirdropItemMask;
-                Cfg.AirdropItemMask = (1 << Cfg.AirdropChoices.Length) - 1;
+                int mask = Cfg.AirdropItemMask, mask2 = Cfg.AirdropItemMask2;
+                Cfg.PickAllAirdrops(true);
                 var seen = new HashSet<Item>();
                 bool oneItem = true, repeat = false;
                 int n = Cfg.AirdropLoot.Count;
@@ -45,7 +45,7 @@ namespace RockGame
                 }
                 Check(oneItem, "an airdrop crate is one special item, no wood");
                 Check(seen.Count == n && !repeat, $"{n} airdrops in a game: {seen.Count} different items, none twice");
-                Cfg.AirdropItemMask = mask;
+                Cfg.AirdropItemMask = mask; Cfg.AirdropItemMask2 = mask2;
             }
 
             // ---- the walls down, the clock stopped
@@ -184,6 +184,11 @@ namespace RockGame
             Check(Cfg.BaseTeamAt(me.transform.position) == team, $"we're sent home ({me.transform.position})");
             Check(Cfg.SuddenLocked(Item.Workbench) && Cfg.SuddenLocked(Item.Sword) && Cfg.SuddenLocked(Item.BearTrap) && !Cfg.SuddenLocked(Item.Hatchet) && !Cfg.SuddenLocked(Item.Spear), "the basics only: no Trade Stations or their things");
             {
+                var list = new List<int>();
+                Cfg.CraftList(list, 2);
+                Check(!list.Contains(Cfg.CraftIndexOf(Item.Workbench)) && !list.Contains(Cfg.CraftIndexOf(Item.Workbench2)) && list.Contains(Cfg.CraftIndexOf(Item.Hatchet)), "the Trade Stations aren't even on the crafting list in sudden death");
+            }
+            {
                 me.ServerGive(Item.Wood, 3000);
                 int benches0 = me.Count(Item.Workbench), hatchets0 = me.Count(Item.Hatchet);
                 me.CraftRpc(Cfg.CraftIndexOf(Item.Workbench));
@@ -204,9 +209,13 @@ namespace RockGame
             yield return Snap("prompt3_sudden_death_ball");
             if (capture)
             {
+                // a capture doesn't end it any more: the ball has to be in your machine when the time runs out
                 Ball.Instance.ServerSocket(team);
-                yield return new WaitForSeconds(1f);
-                Check(g.S == GameState.GameOver && g.Winner.Value == team, $"the first ball in a machine wins at once ({g.S}, winner {g.Winner.Value})");
+                yield return new WaitForSeconds(1.5f);
+                Check(g.S == GameState.BallLive && g.SuddenBall.Value, $"a capture doesn't end sudden death on the spot ({g.S})");
+                g.DevSetTimeLeft(1.5f);
+                for (float t = 0; t < 8f && g.S != GameState.GameOver; t += 0.25f) yield return new WaitForSeconds(0.25f);
+                Check(g.S == GameState.GameOver && g.Winner.Value == team, $"when the time's up, the ball in our machine wins ({g.S}, winner {g.Winner.Value})");
             }
             else
             {

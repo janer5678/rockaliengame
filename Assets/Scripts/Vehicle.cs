@@ -36,10 +36,10 @@ namespace RockGame
         public bool IsHorse => Kind.Value == Horse;
         public bool IsSlender => Kind.Value == Slender;
         public bool IsCar => Kind.Value == Car;
-        public float MaxHp => IsDummy ? DummyHp : IsSlender ? Cfg.SlenderHp : Cfg.HorseHp * (IsUnicorn ? Mathf.Max(0.1f, Cfg.UnicornHpMul) : 1f);
-        public bool Rideable => Kind.Value != Slender && Kind.Value != Dummy;
+        public float MaxHp => IsWackyKind ? WackyMaxHp : IsDummy ? DummyHp : IsSlender ? Cfg.SlenderHp : Cfg.HorseHp * (IsUnicorn ? Mathf.Max(0.1f, Cfg.UnicornHpMul) : 1f);
+        public bool Rideable => Kind.Value != Slender && Kind.Value != Dummy && !IsWackyKind;
         public bool HasDriver => DriverId.Value != NoDriver;
-        public string DisplayName => IsDummy ? "Training Dummy" : IsBoat ? "Boat" /* THEME MAPS */ : IsSlender ? "Slenderman" : IsHorse ? (ThemeMaps.Custom?.MountName != null ? (Saddled.Value ? "Saddled " : "Wild ") + ThemeMaps.Custom.MountName : Saddled.Value ? (IsUnicorn ? "Saddled Unicorn" : "Saddled Horse") : (IsUnicorn ? "Wild Unicorn" : "Wild Horse")) : "Wooden Car";
+        public string DisplayName => IsWackyKind ? WackyName : IsDummy ? "Training Dummy" : IsBoat ? "Boat" /* THEME MAPS */ : IsSlender ? "Slenderman" : IsHorse ? (ThemeMaps.Custom?.MountName != null ? (Saddled.Value ? "Saddled " : "Wild ") + ThemeMaps.Custom.MountName : Saddled.Value ? (IsUnicorn ? "Saddled Unicorn" : "Saddled Horse") : (IsUnicorn ? "Wild Unicorn" : "Wild Horse")) : "Wooden Car";
         /// <summary>Where the rider's feet go (local space).</summary>
         public Vector3 SeatLocal => IsHorse ? new Vector3(0, 0.95f, -0.1f) : new Vector3(0, 0.3f, -0.25f);
         public Vector3 SeatWorld => transform.TransformPoint(SeatLocal + (IsHorse && m_Visual ? m_Visual.localPosition * 0.7f : Vector3.zero)); // (bobs a little with the horse's stride)
@@ -99,6 +99,7 @@ namespace RockGame
         public void ServerDamage(float dmg, PlayerNet attacker)
         {
             if (!IsServer || !IsSpawned || Kind.Value == Car || IsBoat /* THEME MAPS */ || dmg <= 0) return;
+            if (ServerWackyDamage(dmg, attacker)) return; // (the decoy, the shell, the turret bot, the drawn monster: Vehicle.Wacky.cs)
             if (attacker != null && HasDriver && attacker.NetworkObjectId == DriverId.Value) return; // you can't hurt the horse you're on
             Hp.Value = Mathf.Max(0f, Hp.Value - dmg);
             if (IsDummy)
@@ -165,6 +166,7 @@ namespace RockGame
             }
             m_Visual = CreateVisual(Kind.Value, transform, null, out m_Saddle, out m_Fan, out m_Head, out m_Tail, m_Wheels, m_Legs, IsUnicorn).transform;
             if (IsDummy) DressDummy(); // (its alien head, in the enemy's colour: Vehicle.Dummy.cs)
+            if (IsWackyKind) SetupWacky(); // (Vehicle.Wacky.cs)
             if (IsHorse && AiPsxArt.On) AiPsxArt.ApplyAnimal(m_Visual);
             // PSX graphics: the PS1 horse (a unicorn keeps its own white model and horn, so it's always plain to see)
             if (IsHorse && !IsUnicorn) PsxModels.Replace(m_Visual, "horse", PsxModels.Fit.Uniform);
@@ -247,6 +249,7 @@ namespace RockGame
         {
             float dt = Time.deltaTime;
             if (dt <= 0f) return;
+            if (IsWackyKind) { TickWacky(dt); return; } // (Vehicle.Wacky.cs)
             if (IsSlender)
             {
                 if (IsServer) Hunt(dt);

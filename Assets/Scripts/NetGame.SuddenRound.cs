@@ -7,11 +7,13 @@ namespace RockGame
     public static partial class Cfg
     {
         /// <summary>The sudden death round (no more overtime): the glass walls are back up this long (s) with the bases
-        /// wiped, then the ball phase lasts SuddenBallTime - first ball in a machine wins, or it's the stadium rock fight.</summary>
+        /// wiped, then the ball phase lasts SuddenBallTime - whoever has the ball in their machine when it runs out wins, or
+        /// it's the stadium rock fight.</summary>
         [Tune("Match")] public static float SuddenWallTime = 60f, SuddenBallTime = 300f;
         /// <summary>The sudden death round is on: only the starter (pre Trade Station) things can be made.</summary>
         public static bool SuddenRound => NetGame.Instance != null && NetGame.Instance.IsSpawned && NetGame.Instance.SuddenBall.Value;
-        /// <summary>Can't be made in the sudden death round: everything from the Trade Stations, and the stations themselves.</summary>
+        /// <summary>Can't be made in the sudden death round: everything from the Trade Stations, and the stations themselves
+        /// (those aren't even on the list: Cfg.AddTier).</summary>
         public static bool SuddenLocked(Item i) => SuddenRound && (CraftTier(i) >= 1 || Workbench.IsBench(i));
     }
 
@@ -21,14 +23,15 @@ namespace RockGame
     /// on the floor, the wood machine (it lands again when the walls drop) - while everything out of the bases (the
     /// middle, the wild, airdrop crates, horses) stays as it is. The ball goes back under the dome, everyone alive is sent
     /// home (keeping what they carry) and the glass walls come back up for Cfg.SuddenWallTime; only the starter things can
-    /// be made (Cfg.SuddenLocked). Then the walls drop for Cfg.SuddenBallTime: the first team to get the ball into its
-    /// machine wins on the spot; if nobody does, it's the rock fight in the space stadium (StartSuddenDeath). No airdrops
+    /// be made (Cfg.SuddenLocked; no trade stations on the list at all). Then the walls drop for Cfg.SuddenBallTime and it
+    /// plays like the normal match: a capture doesn't end it - when the time runs out, the team with the ball in its machine
+    /// wins; if nobody has it, it's the rock fight in the space stadium (StartSuddenDeath). No airdrops
     /// in the round. Not Builder, the tutorial or the modes that score something else (Bedwars, 3 Goal, Progress,
     /// Assassin keep their overtime).
     /// </summary>
     public partial class NetGame
     {
-        /// <summary>The sudden death round is on (bases wiped, starter things only, first ball in a machine wins).</summary>
+        /// <summary>The sudden death round is on (bases wiped, starter things only, the ball in your machine at the end wins).</summary>
         public readonly NetworkVariable<bool> SuddenBall = new NetworkVariable<bool>();
 
         /// <summary>This match goes to the sudden death round when the clock runs out with nobody's ball in a machine.</summary>
@@ -54,8 +57,8 @@ namespace RockGame
                 p.ServerSendHome();
             }
             SetPhase(GameState.PreBall, Cfg.SuddenWallTime);
-            BannerRpc(new FixedString64Bytes("SUDDEN DEATH"), new FixedString128Bytes($"The bases are wiped - basics only. The walls drop in {Mathf.RoundToInt(Cfg.SuddenWallTime)} s: first ball in a machine wins!"));
-            Broadcast("SUDDEN DEATH! Bases wiped, basics only - first ball in a machine wins once the walls drop");
+            BannerRpc(new FixedString64Bytes("SUDDEN DEATH"), new FixedString128Bytes($"The bases are wiped - basics only. The walls drop in {Mathf.RoundToInt(Cfg.SuddenWallTime)} s: the ball in your machine when time's up wins!"));
+            Broadcast("SUDDEN DEATH! Bases wiped, basics only - whoever has the ball in their machine when time runs out wins");
         }
 
         /// <summary>Server: every base back to how the match started (everything out of the bases stays).</summary>
@@ -96,14 +99,5 @@ namespace RockGame
             return false;
         }
 
-        /// <summary>Server, every frame of the round's ball phase: the first ball in a machine wins at once.</summary>
-        bool ServerSuddenCapture()
-        {
-            if (!SuddenBall.Value || Ball.Instance == null || !Ball.Instance.IsSpawned || Ball.Instance.IsCarried) return false;
-            int t = Ball.Instance.SocketTeam.Value;
-            if (t < 0) return false;
-            ServerVictoryCutscene(t, $"{Cfg.TeamName[t]} captured the ball in sudden death");
-            return true;
-        }
     }
 }

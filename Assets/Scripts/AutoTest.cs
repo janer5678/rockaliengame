@@ -161,6 +161,7 @@ namespace RockGame
             if (m_Mode == "monday") { yield return MondayRoutine(me, pc); yield break; } // (AutoTest.Monday.cs)
             if (m_Mode == "prompt2") { yield return Prompt2Routine(me, pc); yield break; } // (AutoTest.Prompt2.cs)
             if (m_Mode == "prompt3") { yield return Prompt3Routine(me, pc); yield break; } // (AutoTest.Prompt3.cs)
+            if (m_Mode == "prompt4") { yield return Prompt4Routine(me, pc); yield break; } // (AutoTest.Prompt4.cs)
             Check(Cfg.BaseTeamAt(me.transform.position) == me.Team.Value, $"spawned inside own base ({me.transform.position})");
             Check(me.Count(Item.Rock) == 0 && me.HeldItem == Item.Rock, "empty hand = holding the rock (no rock item)");
             Check(Vector3.Distance(me.transform.position, Cfg.SpawnPos(me.Team.Value, me.Slot.Value)) < 1.5f, $"sent home to the bedrock when the match started on {Cfg.MapLabel} (seed {Cfg.MapSeed})");
@@ -232,7 +233,7 @@ namespace RockGame
             // mode options: 3 airdrops after the wall drops (at 22.5 s, 45 s, 67.5 s of the 90 s fast ball phase), C4 only,
             // the first one "anywhere" (whatever was last picked in the menu on this PC)
             Cfg.AirdropCount = 3;
-            Cfg.AirdropItemMask = 1;
+            Cfg.PickOnlyAirdrop(Item.C4);
             Cfg.AirdropSides = Cfg.AirdropCenter = false;
             int team = me.Team.Value;
             bool onGrid = true;

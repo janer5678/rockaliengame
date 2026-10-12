@@ -158,8 +158,8 @@ namespace RockGame
 
             // ---- airdrop crates: two stacks of wood and one airdrop item (any of them: explosive or not)
             {
-                int mask = Cfg.AirdropItemMask;
-                Cfg.AirdropItemMask = (1 << Cfg.AirdropChoices.Length) - 1; // (every airdrop item picked: this PC's saved choice may have none of the explosives)
+                int mask = Cfg.AirdropItemMask, mask2 = Cfg.AirdropItemMask2;
+                Cfg.PickAllAirdrops(true); // (every airdrop item picked: this PC's saved choice may have none of the explosives)
                 bool allOk = true, boom = false, other = false;
                 for (int i = 0; i < 60; i++)
                 {
@@ -170,7 +170,7 @@ namespace RockGame
                 }
                 Check(allOk, "every airdrop crate: just one airdrop item");
                 Check(boom && other, $"the item can be an explosive or something else ({boom}, {other})");
-                Cfg.AirdropItemMask = mask;
+                Cfg.AirdropItemMask = mask; Cfg.AirdropItemMask2 = mask2;
             }
 
             // ---- the ball buff: x3 gathering, and everyone sees who has it

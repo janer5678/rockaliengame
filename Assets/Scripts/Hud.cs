@@ -342,7 +342,7 @@ namespace RockGame
                         topLabel = "SUDDEN DEATH  WALL DROPS IN";
                         topClock = Clock(game.TimeLeft);
                         topLeft = game.TimeLeft;
-                        sub = Two("Bases wiped, basics only", "First ball in a machine wins!");
+                        sub = Two("Bases wiped, basics only", "The ball in your machine at the end wins!");
                         topAccent = GameSettings.TimerColourNow(GameSettings.TimerColOvertime);
                         break;
                     case GameState.PreBall:
@@ -357,7 +357,7 @@ namespace RockGame
                         topLabel = game.Overtime.Value ? "OVERTIME" : game.SuddenBall.Value ? "SUDDEN DEATH" : "TIME LEFT";
                         topClock = game.Overtime.Value ? "" : Clock(game.TimeLeft);
                         topLeft = game.Overtime.Value ? -1f : game.TimeLeft;
-                        sub = game.Overtime.Value ? Two("First ball in a machine wins", "Get it into YOUR machine!") : game.SuddenBall.Value ? Two("First ball in a machine wins", "Nobody: a rock fight in the stadium") : BallStatus(team);
+                        sub = game.Overtime.Value ? Two("First ball in a machine wins", "Get it into YOUR machine!") : game.SuddenBall.Value ? SuddenStatus(team) : BallStatus(team);
                         topAccent = game.Overtime.Value || game.SuddenBall.Value ? GameSettings.TimerColourNow(GameSettings.TimerColOvertime) : GameSettings.TimerColourNow(GameSettings.TimerColBallLive);
                         // the glass wall sliding down (MapBuilder.GlassDropping, a few seconds): WALL DROPPING, no clock
                         if (!game.Overtime.Value && MapBuilder.GlassDropping)
@@ -541,6 +541,7 @@ namespace RockGame
                     GlassesRowShownAt = Time.time;
                     statY -= 26 * k;
                 }
+                statY = DrawWackyStatus(me, hr, statY, hw, k); // (the jump boots, a shield, slowed, an ant...: Hud.Wacky.cs)
                 // the ball buff, just above the armour: whichever team has the ball in its machine gathers x3 - shown to
                 // everyone, in capitals (a bit bigger than the other lines), so the others see the enemy has it and go for the ball
                 int buffTeam = Ball.Instance != null && Ball.Instance.IsSpawned && !Ball.Instance.IsCarried ? Ball.Instance.SocketTeam.Value : -1;
@@ -611,6 +612,7 @@ namespace RockGame
             DrawDragAndFlights(me, pc); // (on top of the bag, the tutorial panel and the chat)
             if (pc.WheelOpen) DrawWheel(pc);
             if (pc.AirstrikeMapOpen) DrawAirstrikeMap(me, pc);
+            DrawWacky(me, pc, game); // (the wacky items' screens, the minigames, the notes: Hud.Wacky.cs)
 
             if (pc.Paused && (game == null || game.S != GameState.GameOver)) DrawPause(boot, me, pc, game);
             else m_PausePage = PausePage.Root;
@@ -640,6 +642,8 @@ namespace RockGame
         string HeldHint(PlayerNet me, PlayerController pc)
         {
             var s = me.HeldStack;
+            string wacky = WackyHint(s, me); // (the wacky airdrop items: Hud.Wacky.cs)
+            if (wacky != null) return wacky;
             switch (s.Id)
             {
                 case Item.BuildingPlan:
@@ -833,6 +837,14 @@ namespace RockGame
 
             // Shift+drag: every slot the pointer passes over is shift-clicked, once each (Hud.Sweep below)
             if (m_Sweeping && e.type == EventType.MouseDrag && e.shift && !s.Empty && SweepCrosses(r, e.mousePosition)) SweepSlot(kind, index, me, pc);
+            if (e.type == EventType.MouseDown && hover && !s.Empty && kind == 1 && pc.LootTarget != null && pc.LootTarget.IsFakeDrop)
+            {
+                // the fake airdrop flare's crate: none of it comes out
+                WackyNote("It's a FAKE airdrop - nothing comes out!");
+                Sfx.Play2D(Sfx.Laugh, 0.7f);
+                e.Use();
+                return;
+            }
             if (e.type == EventType.MouseDown && hover && !s.Empty)
             {
                 if (e.shift && e.button == 0) SweepSlot(kind, index, me, pc); // (a shift-click: the sweep's first slot)
@@ -910,6 +922,7 @@ namespace RockGame
             if (pc.LootTarget != null)
             {
                 if (kind == 0 && pc.LootTarget.TakeOnly) return;
+                if (kind == 1 && pc.LootTarget.IsFakeDrop) { WackyNote("It's a FAKE airdrop - nothing comes out!"); return; }
                 ExpectFlight(SlotNow(kind, index, me, pc).Id);
                 me.MoveItemRpc(kind, (byte)index, (byte)(1 - kind), 255, 0, LootRef(pc));
                 Sfx.Play2D(Sfx.Pop, 0.3f, 0.2f);
@@ -1047,16 +1060,20 @@ namespace RockGame
                 Shadowed(new Rect(lootX, top - 34 * k, lootW, 30 * k), $"<b>{c.DisplayName.ToUpper()}</b>" + (c.TakeOnly ? "  <color=#bbbbbb>(take only)</color>" : ""), m_Label);
                 int n = c.Slots.Count;
                 bool turret = c.Kind.Value == Container.Turret;
+                // (the fake airdrop flare's crate holds every item in the game: twelve small slots a row)
+                int lcols = c.IsFakeDrop ? 12 : cols;
+                float lgap = c.IsFakeDrop ? 3 * k : gap;
+                float lslot = c.IsFakeDrop ? Mathf.Max(20f, Mathf.Min(slot * 0.62f, (sw - lootX - 16) / lcols - lgap)) : slot;
                 for (int i = 0; i < n; i++)
                 {
-                    var r = new Rect(lootX + (i % cols) * (slot + gap), top + (i / cols) * (slot + gap), slot, slot);
+                    var r = new Rect(lootX + (i % lcols) * (lslot + lgap), top + (i / lcols) * (lslot + lgap), lslot, lslot);
                     if (turret) r.x = lootX + i * (slot * 1.6f + gap); // (the turret: its two slots spaced out, each labelled)
                     // an empty weapon slot in a turret flashes red: it does nothing without one
                     if (turret && i == 0 && c.Slots[i].Empty) Fill(new Rect(r.x - 4 * k, r.y - 4 * k, r.width + 8 * k, r.height + 8 * k), new Color(1f, 0.15f, 0.1f, 0.35f + 0.35f * Mathf.Sin(Time.unscaledTime * 6f)));
                     DrawSlot(r, c.Slots[i], 1, i, false, me, pc);
                     if (turret) Shadowed(new Rect(r.x - 20 * k, r.yMax + 2 * k, r.width + 40 * k, 22 * k), i == 0 ? "<b>WEAPON</b> <color=#bbbbbb>(any)</color>" : "<b>ARROWS</b>", m_Center);
                 }
-                lootBottom = top + Mathf.Max(1, (n + cols - 1) / cols) * (slot + gap);
+                lootBottom = top + Mathf.Max(1, (n + lcols - 1) / lcols) * (lslot + lgap);
                 if (turret)
                 {
                     lootBottom += 26 * k;
@@ -1471,6 +1488,14 @@ namespace RockGame
         static string TeamInk(int t) => t >= 0 && t < Cfg.TeamColor.Length
             ? $"<color=#{ColorUtility.ToHtmlStringRGB(Color.Lerp(Cfg.TeamColor[t], Color.white, 0.35f))}>{Cfg.TeamName[t]}</color>" : Cfg.TeamLabel(t);
         const string SubGood = "#77ff77", SubBad = "#ff7777", SubMine = "#ffdd55";
+
+        /// <summary>The sudden death round's ball phase: it plays like the match (the ball in your machine when the time's
+        /// up wins) - the ball's news, or, while the ball is loose, what happens if nobody has it.</summary>
+        string SuddenStatus(int myTeam)
+        {
+            string ball = BallOnly(myTeam, out bool loose);
+            return loose || ball.Length == 0 ? Two("The ball in your machine at the end wins", "Nobody: a rock fight in the stadium") : ball;
+        }
 
         string BallStatus(int myTeam)
         {

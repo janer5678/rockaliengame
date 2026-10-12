@@ -33,6 +33,7 @@ namespace RockGame
             // (through any portal on the way: PortalPass.Hitscan)
             bool hit = PortalPass.Hitscan(ray, 400f, Cfg.ProjectileAssist, AimWithAssist, out var h, out var point, out var shotDir);
             var no = hit ? h.collider.GetComponentInParent<NetworkObject>() : null;
+            if (hit) DecoyBasePart.Report(h.collider);
             if (no != null && no.TryGetComponent(out PlayerNet p) && p != m_Net && !p.Dead.Value)
             {
                 bool head = p.IsHeadshot(point);

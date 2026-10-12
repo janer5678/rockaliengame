@@ -68,7 +68,7 @@ namespace RockGame
         public float EyeHeight => (Crouch.Value ? Cfg.CrouchEyeHeight : Cfg.EyeHeight) * Scale;
         public bool TreeCamo => HeldItem == Item.TreeCamo && !Dead.Value && !CarryingBall && !Riding;
         public Vector3 EyePos => transform.position + Vector3.up * EyeHeight;
-        public bool IsHeadshot(Vector3 point) => point.y > transform.position.y + (Crouch.Value ? 1.09f : 1.45f); // above the alien's neck
+        // (IsHeadshot: the head box round the alien's real head - PlayerNet.HeadHitbox.cs)
         double Now => NetworkManager != null ? NetworkManager.ServerTime.Time : 0;
         public bool Invisible => InvisUntil.Value > Now;
         /// <summary>Invisible and not currently attacking: other players can't see you.</summary>
@@ -136,6 +136,7 @@ namespace RockGame
             }
 
             BuildBody();
+            BuildHeadHitbox(); // (PlayerNet.HeadHitbox.cs)
             Team.OnValueChanged += OnTeamChanged;
             if (Mine)
             {
@@ -251,11 +252,12 @@ namespace RockGame
 
         void Recolor()
         {
-            var c = Cfg.TeamColor[Mathf.Clamp(Team.Value, 0, 3)];
+            int team = ApparentTeam; // (a disguise: the enemy's colour)
+            var c = Cfg.TeamColor[Mathf.Clamp(team, 0, 3)];
             foreach (var r in m_TeamRenderers) r.sharedMaterial = Art.Mat(c);
             foreach (var m in m_TeamMats)
             {
-                var tint = TeamTint(m, Team.Value);
+                var tint = TeamTint(m, team);
                 m.SetColor("_BaseColor", tint);
                 m.color = tint;
             }
@@ -638,12 +640,12 @@ namespace RockGame
         {
             bool dead = Dead.Value;
             if (!Mine) RemoteSounds(dead);
-            if (IsServer) { ServerTickCraft(); ServerTickBaseRegen(); ServerTickBleed(); ServerTickPing(); }
+            if (IsServer) { ServerTickCraft(); ServerTickBaseRegen(); ServerTickBleed(); ServerTickPing(); ServerTickWacky(); }
             if (dead && !m_WasDead) { m_DeadSince = Time.time; SpawnRagdoll(); }
             m_WasDead = dead;
             // the dead leave no body of their own: it drops as a ragdoll (Ragdoll.cs) and the real one is hidden
             bool showBody = !dead;
-            if (!Mine && Hidden && !dead) showBody = false; // invisibility potion
+            if (Hidden && !dead) showBody = false; // invisibility potion (your own body too: it's only drawn as your shadow, and that goes as well)
             // tree camo: everyone else sees a tree where you stand
             bool tree = TreeCamo;
             if (tree != (m_Tree != null) || (tree && m_TreePsx != (GameSettings.PsxGraphics || GameSettings.AiPsx))) RebuildTree(tree);
@@ -655,6 +657,7 @@ namespace RockGame
             bool bones = dead && showBody && PsxModels.On;
             if (bones) showBody = false;
             if (bones != (m_Skeleton != null)) SetSkeleton(bones);
+            TickWackyLooks(dead, ref showBody); // (a bear, an ant, a timeout ball, a shield...: PlayerNet.WackyLooks.cs)
             if (m_VisualRoot.gameObject.activeSelf != showBody) m_VisualRoot.gameObject.SetActive(showBody);
             bool cc = !dead && !Riding;
             if (m_CC.enabled != cc) m_CC.enabled = cc;
@@ -667,9 +670,7 @@ namespace RockGame
                 m_CC.height = h;
                 m_CC.center = new Vector3(0, h * 0.5f, 0);
             }
-            m_Hitbox.radius = Cfg.HitboxRadius;
-            m_Hitbox.height = Mathf.Max(h + 0.05f, Cfg.HitboxRadius * 2f);
-            m_Hitbox.center = new Vector3(0, m_Hitbox.height * 0.5f, 0);
+            TickBodyHitbox(dead, h); // (up to the neck; the head has its own box: PlayerNet.HeadHitbox.cs)
             if (m_Anim == null)
             {
                 m_CrouchVis = Mathf.MoveTowards(m_CrouchVis, Crouch.Value ? 1f : 0f, Time.deltaTime * 6f);
@@ -692,7 +693,7 @@ namespace RockGame
                 m_Lifted = lifted;
             }
             // in the cutscene you see yourself (your own body is normally only a shadow)
-            bool seeSelf = Mine && VictoryCutscene.Active;
+            bool seeSelf = Mine && (VictoryCutscene.Active || (Dancing && !dead)); // (dancing: seen from behind, like the tree camo)
             if (seeSelf != m_SeeSelf)
             {
                 m_SeeSelf = seeSelf;
@@ -704,7 +705,7 @@ namespace RockGame
             bool esp = !Mine && local != null && (local.SeesThroughWalls || StunnedFor(local.Team.Value)) && !local.Dead.Value && local.Team.Value != Team.Value && !dead; // (worn or held - PlayerNet.Gear.cs; or caught in your team's stun trap)
             if (esp != m_Esp) SetEsp(esp);
             // test: alien outlines (enemies only, not while invisible)
-            bool outline = Cfg.AlienOutlines && !Mine && local != null && local.Team.Value != Team.Value && !dead && !Hidden;
+            bool outline = Cfg.AlienOutlines && !Mine && local != null && local.Team.Value != ApparentTeam && !dead && !Hidden; // (disguised as your team: no enemy glow)
             if (outline != m_Outline) SetOutline(outline);
             else if (outline)
             {
@@ -736,7 +737,7 @@ namespace RockGame
         {
             // tree camo: a real tree never turns, so the disguise keeps one fixed facing while you look around
             if (m_Tree) { m_Tree.transform.rotation = TreeCamoRotation; TreeHop(Time.deltaTime); }
-            if (m_Anim == null || !m_VisualRoot.gameObject.activeSelf) return;
+            if (m_Anim == null || !m_VisualRoot.gameObject.activeSelf) { TickHeadHitbox(); return; }
             TickHat(); // (Cosmetics.cs)
             var item = m_HandItemId;
             m_Anim.Tick(new BodyAnimator.Pose
@@ -753,7 +754,10 @@ namespace RockGame
                 Action = (BodyAnimator.Act)Action.Value,
                 Throw = m_Throw,
                 Item = item,
+                Dance = m_DanceVis,
+                Knock = m_KnockVis,
             }, Time.deltaTime);
+            TickHeadHitbox(); // (the head box follows the head bone)
             m_Anim.GripPose(out var gp, out var gr);
             m_Hand.SetPositionAndRotation(gp, gr);
             if (m_HandItem) m_HandItem.transform.localRotation = Quaternion.identity;
@@ -792,6 +796,7 @@ namespace RockGame
         void Reveal()
         {
             if (Invisible) RevealUntil.Value = Now + Cfg.InvisRevealTime;
+            ServerWackyAttacked(); // (a disguise falls off)
         }
 
         bool GameAllowsCombat => NetGame.Instance == null || NetGame.Instance.S != GameState.GameOver;
@@ -870,6 +875,7 @@ namespace RockGame
         public void ServerDamage(float dmg, PlayerNet attacker, byte cause = 0)
         {
             if (Dead.Value || !GameAllowsCombat || m_God) return;
+            if (ServerWackyDamage(ref dmg, attacker)) return; // (shielded, an ant, timed out, a minigame on, a bear's hide: PlayerNet.Wacky.cs)
             if (ArmorHp.Value > 0 && dmg > 0)
             {
                 // the armour bar goes first
@@ -887,6 +893,7 @@ namespace RockGame
                 m_HurtFrame = Time.frameCount;
                 m_HurtDir = attacker != null && attacker != this ? transform.position - attacker.transform.position : Vector3.up;
             }
+            if (Health.Value <= 0 && ServerCheatDeath()) { m_HeadHit = false; return; } // (the golden rock: PlayerNet.Wacky.cs)
             if (Health.Value <= 0) ServerDie(attacker, cause);
             m_HeadHit = false; // (ServerMarkHead is for one hit)
         }
@@ -920,6 +927,7 @@ namespace RockGame
 
         void ServerDie(PlayerNet killer, byte cause = 0)
         {
+            ServerWackyDied(); // (the wacky items' states end: PlayerNet.Wacky.cs)
             Dead.Value = true;
             KilledBy.Value = killer != null && killer != this ? killer.NetworkObjectId : 0UL; // (the kill cam)
             Health.Value = 0;
@@ -1046,6 +1054,7 @@ namespace RockGame
             HelmetHp.Value = 0;
             ArmorHp.Value = 0;
             GiantUntil.Value = -1;
+            ServerWackyDied(); // (no bears, shields or ants in the stadium)
             for (int i = 0; i < Inv.Count; i++) Inv[i] = default;
             Dead.Value = false;
             InvisUntil.Value = -1;
@@ -1109,7 +1118,7 @@ namespace RockGame
         [Rpc(SendTo.Server)]
         public void MeleeRpc(bool hasTarget, NetworkObjectReference target, Vector3 point, bool weak)
         {
-            if (Dead.Value || CarryingBall) return;
+            if (Dead.Value || CarryingBall || WackyNoAttack || IsBear) return; // (a bear swipes with BearClawRpc)
             var item = HeldItem;
             if (!Cfg.IsMelee(item)) return;
             if (InSuddenDeath && item != Item.Rock) return;
@@ -1131,7 +1140,9 @@ namespace RockGame
 
             if (no.TryGetComponent(out PlayerNet p))
             {
-                if (p == this || p.Dead.Value || !GameAllowsCombat || !Cfg.HurtsPlayers(item)) return;
+                if (p == this || p.Dead.Value || !GameAllowsCombat) return;
+                if (item == Item.KnockStick || item == Item.KnockStick1) { ServerKnockStick(p, item, dir); return; } // (no damage: a shove)
+                if (!Cfg.HurtsPlayers(item)) return;
                 ServerHitPlayer(p, st.PlayerDamage, point, dir, Cfg.MeleeHeadDamage(item), (byte)item);
             }
             else if (no.TryGetComponent(out Vehicle v))
@@ -1142,6 +1153,7 @@ namespace RockGame
             else if (no.TryGetComponent(out ResourceNode n))
             {
                 if (n.IsBush) return;
+                if (item == Item.TreeBreaker && n.IsWood) { ServerTreeBreak(n, point, dir); return; } // (PlayerNet.WackyMelee)
                 weak = weak && n.IsWeakSpotHit(point, 0.8f);
                 bool tree = n.IsWood; // (a tree or a fallen log)
                 // your team's ball in your base: everything you gather pays a bit more (DNA too)
@@ -1314,6 +1326,7 @@ namespace RockGame
             if (kind == 1)
             {
                 if (!containerRef.TryGet(out var no) || !no.TryGetComponent(out Container c) || !c.InReachServer(EyePos)) return;
+                if (c.IsFakeDrop) { Note("It's a FAKE airdrop - nothing comes out!"); return; }
                 list = c.Slots;
             }
             if (idx >= list.Count) return;
@@ -1809,6 +1822,7 @@ namespace RockGame
             {
                 if (!containerRef.TryGet(out var no) || !no.TryGetComponent(out c) || !c.InReachServer(EyePos)) return;
                 if (dstKind == 1 && c.TakeOnly) return;
+                if (srcKind == 1 && c.IsFakeDrop) { Note("It's a FAKE airdrop - nothing comes out!"); return; } // (the fake airdrop flare)
                 // an auto turret: its own team only; its first slot takes any weapon, its second arrows (all it fires)
                 if (c.Kind.Value == Container.Turret)
                 {

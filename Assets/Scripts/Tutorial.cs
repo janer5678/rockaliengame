@@ -32,7 +32,7 @@ namespace RockGame
     }
 
     /// <summary>
-    /// Tutorial mode (the classic rules plus the upgrade station and its wood machine, always a small flat Plains map, the
+    /// Tutorial mode (the classic rules plus the hammer and the wood machine, always a small flat Plains map, the
     /// clock stopped until the very end, no scheduled airdrops): short, simple steps, and every one has to be DONE to move
     /// on (no skipping). Nothing in it needs stone. The order: the basics (look, move, chop, the bag, crafting, building,
     /// the spear), then a bow and arrows and the training dummies (destroy one with the bow, then a headshot: their alien
@@ -40,9 +40,11 @@ namespace RockGame
     /// base (the glass wall is still up; it always holds C4), then the glass wall drops and you raid the enemy's base:
     /// blow their padlocked door open with the C4 (no C4 left and still locked out: you're handed another), empty their
     /// chest - and, playing solo, the ball is in their machine, walled in round their bedrock: take it out and home into
-    /// yours. Capturing the ball is what unlocks the Trade Station (like in a match), so the trade station steps come
-    /// after it; then armour, the upgrade station (the wood gen, then Fortify All Walls), and the finale: the clock runs
-    /// out with the ball in your machine and the real victory cutscene.
+    /// yours. The wood machine lands in every base when the wall drops (like in a match: Cfg.AutoWoodGen) and a step
+    /// has you take the wood it made. Capturing the ball is what unlocks the Trade Station (like in a match), so the
+    /// trade station steps come after it; then armour, and it ends on the hammer: get one from the Trade Station list and
+    /// upgrade one of your walls with it. (No upgrade station.) After the axe - the one thing you chop for yourself -
+    /// you're handed the wood for everything (ServerWood).
     /// The game is revealed a bit at a time: at the start you can only look around; each control, HUD part and craftable
     /// item unlocks on the step that teaches it (Allows / AllowsItem, checked by Binds, PlayerController, the HUD and -
     /// for crafting, building, the trade station and upgrades - the server, using each player's own synced step
@@ -86,7 +88,7 @@ namespace RockGame
         public const byte FinishedStep = 255;
         /// <summary>What a guide asks the server for (PlayerNet.TutorialRpc -> ServerAction).</summary>
         public const byte AskWall = 1, AskHungry = 2, AskDummies = 3, AskAirdrop = 4, AskHut = 5, AskUpgradeWood = 6, AskFinale = 7, AskKit = 8, AskFortifyWood = 9, AskC4 = 10, AskWood = 11, AskBush = 12;
-        /// <summary>After the wall-breaking step nothing needs chopping any more: whenever you have less than WoodFloor wood you're topped up to WoodGift.</summary>
+        /// <summary>After the axe lesson nothing needs chopping any more: whenever you have less than WoodFloor wood you're topped up to WoodGift.</summary>
         public const int WoodFloor = 300, WoodGift = 800;
         /// <summary>The raid step: this long after your C4 is gone (thrown, dropped) with the door still on, you're handed
         /// another one (its fuse, plus a moment for the blast to count).</summary>
@@ -129,6 +131,10 @@ namespace RockGame
         static int s_Wood0, s_Weak0, s_Spear0, s_Berry0, s_LastBerries, s_WallMax, s_BowKill0, s_BowHead0, s_Fights0;
         static float s_SprintTime, s_GuardTime, s_CrouchTime;
         static bool s_Jumped, s_Slid, s_Ate, s_DuelBoth;
+        /// <summary>The wood machine step: you picked up wood from your machine's pile; the hammer step: your team's pieces
+        /// above wood when it started.</summary>
+        static bool s_GotMachineWood;
+        static int s_Upgraded0;
         // props seen once (so "it's gone" means it was dealt with, not that it hasn't arrived yet)
         static bool s_DropSeen, s_HutSeen, s_HutChestSeen;
         static int s_HutMax;
@@ -307,6 +313,31 @@ namespace RockGame
         }
 
         static int WallPieces => Pieces(PieceType.Wall) + Pieces(PieceType.Doorway) + Pieces(PieceType.Window);
+
+        /// <summary>Your team's pieces that have been upgraded past wood (the hammer step).</summary>
+        static int UpgradedPieces()
+        {
+            int n = 0;
+            foreach (var s in Structure.All) if (s != null && s.IsSpawned && s.Team.Value == Team && s.Tier.Value >= 1) n++;
+            return n;
+        }
+
+        /// <summary>The nearest wall (or doorway / window) of your team's that's still wood (null: none).</summary>
+        static Structure MyWall()
+        {
+            var me = Me;
+            if (me == null) return null;
+            Structure best = null;
+            float bd = float.MaxValue;
+            foreach (var s in Structure.All)
+            {
+                if (s == null || !s.IsSpawned || s.Team.Value != Team || s.Tier.Value != 0) continue;
+                if (s.PType != PieceType.Wall && s.PType != PieceType.Doorway && s.PType != PieceType.Window) continue;
+                float d = (s.transform.position - me.transform.position).sqrMagnitude;
+                if (d < bd) { bd = d; best = s; }
+            }
+            return best;
+        }
 
         /// <summary>The nearest tree / bush (...) with something left on it in your own team's part of the map - the
         /// marker never sends you over to the enemy's side.</summary>
@@ -1095,6 +1126,16 @@ namespace RockGame
                     Done = () => s_GuardTime >= 5f,
                     Target = () => Ball.Instance != null && Ball.Instance.SocketTeam.Value != Team ? BallSpot : MachineSpot, TargetLabel = "",
                 },
+                // ---- the wood machine: it landed in every base when the glass wall dropped (like in a match) ----
+                new Step
+                {
+                    Id = "woodmachine", Title = "Your wood machine",
+                    Body = "When the wall dropped, a " + Hi("wood machine") + " landed in your base. It makes wood " + Hi("by itself") + "!",
+                    Goal = "Grab the wood it made",
+                    Hint = $"Walk up to the machine beside yours in your base and press {K(Bind.Interact)} on the pile of wood in front of it.",
+                    Done = () => s_GotMachineWood,
+                    Target = () => Cfg.WoodGenLevel(Team) >= 1 ? Cfg.WoodTrayPos(Team) + Vector3.up * 1.2f : MachineSpot, TargetLabel = "WOOD MACHINE",
+                },
                 // ---- the trade station: locked until the ball has been captured (NetGame.Bench.cs) ----
                 new Step
                 {
@@ -1137,58 +1178,26 @@ namespace RockGame
                     Done = () => Me.ArmorHp.Value > 0,
                     Target = () => TreeIfShort(WoodOf(Item.Armor), InBase ? null : BaseSpot), TargetLabel = "",
                 },
-                // ---- the upgrade station: the wood gen, then your walls ----
+                // ---- the hammer (from the trade station's list) and a wall upgrade: the end ----
                 new Step
                 {
-                    Id = "upgrade", Title = "The upgrade station",
-                    Body = $"Press {K(Bind.Interact)} on the " + Hi("upgrade station") + " and buy the " + Hi(Cfg.ItemName(Item.WoodGenBuff)) + ".",
-                    Goal = "Buy the wood gen upgrade",
-                    Progress = () => WoodNeed(Cfg.BaseUpgradeRecipe(Item.WoodGenBuff, Team).Wood),
-                    Hint = $"Stand at the terminal with the big arrow in your colour, press {K(Bind.Interact)} and click UPGRADE next to " + Cfg.ItemName(Item.WoodGenBuff) + ".",
-                    Enter = () => Ask(AskUpgradeWood),
-                    Done = () => Cfg.WoodGenLevel(Team) >= 1,
-                    Target = () => StationSpot, TargetLabel = "UPGRADES",
-                    Unlocks = new[] { TutFeature.Station },
+                    Id = "hammer", Title = "The hammer",
+                    Body = "Get a " + Hi(Cfg.ItemName(Item.Hammer)) + " from the " + Hi("Trade Station") + " list.",
+                    Goal = "Get a " + Cfg.ItemName(Item.Hammer),
+                    Progress = () => WoodNeed(WoodOf(Item.Hammer)),
+                    Hint = $"Open your bag ({BagKey}) inside your base - the hammer is first in the TRADE STATION list. It costs {Price(Item.Hammer)}.",
+                    Done = () => Count(Item.Hammer) >= 1,
+                    Target = () => InBase ? null : BaseSpot, TargetLabel = "YOUR BASE",
                 },
                 new Step
                 {
-                    Id = "fortify", Title = "Stronger walls",
-                    Body = "Now buy " + Hi(Cfg.ItemName(Item.FortifyBuff)) + " there: stronger walls.",
-                    Goal = "Upgrade your base's walls",
-                    Progress = () => WoodNeed(Cfg.BaseUpgradeRecipe(Item.FortifyBuff, Team).Wood),
-                    Hint = $"Press {K(Bind.Interact)} on the upgrade station and click UPGRADE next to " + Cfg.ItemName(Item.FortifyBuff) + ".",
-                    Enter = () => Ask(AskFortifyWood),
-                    Done = () => Cfg.FortifyLevel(Team) >= 1,
-                    Target = () => StationSpot, TargetLabel = "UPGRADES",
-                    Unlocks = new[] { TutFeature.Fortify },
-                },
-                // ---- with a friend, the last part is a tiny real game: a fight, then a short match for the ball ----
-                new Step
-                {
-                    Id = "duel", Title = "Fight!",
-                    BodyF = () =>
-                    {
-                        var o = Other;
-                        if (o == null) return "Your friend left. Carrying on in a moment.";
-                        if (!s_DuelBoth) return "Waiting for your friend...";
-                        return "Find your friend and " + Hi("fight") + "!";
-                    },
-                    Goal = "Fight your friend: first knock-out",
-                    Hint = "Poke with the spear up close, or draw the bow from further off - aim for the head. Berries heal.",
-                    Skip = () => !Friend,
-                    Done = () => (s_DuelBoth && Fights() > s_Fights0) || (Other == null && Time.time - s_StepStart > FriendGoneWait),
-                    Target = () => { var o = Other; return o != null && !o.Dead.Value ? o.transform.position + Vector3.up * 2.4f : (Vector3?)null; }, TargetLabel = "FRIEND",
-                },
-                // ---- the finale: the clock runs out with the ball in a machine - the real end of a match ----
-                new Step
-                {
-                    Id = "win", Title = "Win the match",
-                    BodyF = () => Other != null ? "Last round! Have the " + Hi("ball") + " in " + Hi("your machine") + " when the clock hits 0." : "Keep the " + Hi("ball") + " in " + Hi("your machine") + " until the clock hits 0.",
-                    Goal = "Have the ball in your machine when the clock hits 0",
-                    Progress = () => G != null && !GameOver ? $"{Mathf.CeilToInt(G.TimeLeft)} s" : "",
-                    Enter = () => Ask(AskFinale),
-                    Done = () => GameOver,
-                    Target = () => GameOver ? null : Ball.Instance != null && Ball.Instance.SocketTeam.Value == Team ? MachineSpot : Me.CarryingBall ? MachineSpot : BallSpot, TargetLabel = "",
+                    Id = "hammerwall", Title = "Upgrade a wall",
+                    BodyF = () => (WallPieces == 0 ? "Build a wall first. " : "") + "Hold the hammer and click " + K(Bind.Attack) + " on " + Hi("one of your walls") + ": it turns to " + Hi("stone") + ".",
+                    Goal = "Upgrade a wall with the hammer",
+                    Progress = () => WoodNeed(Cfg.HammerCost(0)),
+                    Hint = $"Pick the hammer on your hotbar and look at one of your own walls - it lights up green with the price ({Cfg.HammerCost(0)} wood). Then click {K(Bind.Attack)}.",
+                    Done = () => UpgradedPieces() > s_Upgraded0,
+                    Target = () => { var w = MyWall(); return w != null ? w.transform.position + Vector3.up * 2.2f : InBase ? null : BaseSpot; }, TargetLabel = "YOUR WALL",
                 },
             };
 
@@ -1223,6 +1232,8 @@ namespace RockGame
             s_WallMax = WallPieces;
             s_SprintTime = s_GuardTime = s_CrouchTime = 0f;
             s_Jumped = s_Slid = s_Ate = s_DuelBoth = false;
+            s_GotMachineWood = false;
+            s_Upgraded0 = UpgradedPieces();
             // (starting the raid with no C4 at all - a friend who joined, or it got dropped: one comes straight away)
             s_NoC4Since = me != null && me.Count(Item.C4) == 0 ? Time.time - C4RefillAfter : -1f;
             s_NextAsk = Time.time + 3f;
@@ -1295,6 +1306,13 @@ namespace RockGame
             if (pc.Crouching && !pc.Sliding) s_CrouchTime += Time.deltaTime;
             int berries = me.Count(Item.Berry);
             if (berries < s_LastBerries && !me.Dead.Value) s_Ate = true;
+            // the wood machine step: more wood in the bag while standing at your machine's pile (it's what you picked up)
+            if (st.Id == "woodmachine")
+            {
+                int w = me.Count(Cfg.GatherItem(Item.Wood));
+                if (w > s_Wood0 && Cfg.WoodGenLevel(me.Team.Value) >= 1 && Flat(p, Cfg.WoodTrayPos(me.Team.Value)) < 5f) s_GotMachineWood = true;
+                s_Wood0 = Mathf.Min(s_Wood0, w);
+            }
             s_LastBerries = berries;
             if (st.Id == "breakwall") s_WallMax = Mathf.Max(s_WallMax, WallPieces);
             // eating needs you to be hurt: if you've healed up again (your base heals you), you get hungry again
@@ -1305,8 +1323,8 @@ namespace RockGame
             // that's still missing (a dummy to replace the one just destroyed, an airdrop or a hut that never came)
             bool ask = Time.time >= s_NextAsk;
             if (ask) s_NextAsk = Time.time + 3f;
-            // past the wall-breaking step: no more chopping - short of wood, the server tops you up
-            if (ask && s_Index > StepAt("breakwall") && me.Count(Cfg.GatherItem(Item.Wood)) < WoodFloor && !me.Dead.Value) me.TutorialRpc(AskWood);
+            // after the axe (the one thing you chop for yourself): no more chopping - short of wood, the server tops you up
+            if (ask && s_Index > StepAt("axechop") && s_Steps[s_Index].Id != "woodmachine" && me.Count(Cfg.GatherItem(Item.Wood)) < WoodFloor && !me.Dead.Value) me.TutorialRpc(AskWood);
             switch (st.Id)
             {
                 case "berry": case "eat":
@@ -1686,10 +1704,11 @@ namespace RockGame
 
         static readonly Dictionary<ulong, float> s_NextWood = new Dictionary<ulong, float>();
 
-        /// <summary>Server: past the wall-breaking step the tutorial doesn't make you chop - short of wood, you're topped up.</summary>
+        /// <summary>Server: after the axe (the first thing that needs wood, which you chop for) the tutorial doesn't make
+        /// you chop - short of wood for anything, you're topped up.</summary>
         static void ServerWood(PlayerNet p)
         {
-            if (p.Dead.Value || p.TutStep.Value <= StepAt("breakwall")) return;
+            if (p.Dead.Value || p.TutStep.Value <= StepAt("axechop")) return;
             if (s_NextWood.TryGetValue(p.OwnerClientId, out var at) && Time.time < at) return;
             var wood = Cfg.GatherItem(Item.Wood);
             int need = WoodGift - p.Count(wood);

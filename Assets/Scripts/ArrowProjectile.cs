@@ -253,6 +253,7 @@ namespace RockGame
 
         void OnHit(RaycastHit h)
         {
+            if (m_Report) DecoyBasePart.Report(h.collider); // (a decoy base: it's gone in smoke)
             var no = h.collider.GetComponentInParent<NetworkObject>();
             var dir = m_Vel.normalized;
             bool reporter = m_Report && m_Shooter != null && m_Shooter.IsSpawned;

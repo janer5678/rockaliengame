@@ -93,24 +93,27 @@ namespace RockGame
                 }
                 case Item.Hammer:
                 {
-                    // Rust's building hammer, all wood: a pale handle with the grain running along it and a cloth grip at
-                    // the bottom, a chunky block of darker wood for the head - a flat, end-grain striking face forward
-                    // (+Z, where the hatchet's blade is) and a wooden claw tapering off behind - lashed on with rope and
-                    // pinned with two nails
-                    var pale = new Color(0.74f, 0.57f, 0.34f);
-                    var head = new Color(0.47f, 0.31f, 0.17f);
-                    Art.Box(t, pale, new Vector3(0, 0.26f, 0), new Vector3(0.05f, 0.62f, 0.048f));
-                    for (int g = 0; g < 3; g++) Art.Box(t, pale * 0.82f, new Vector3(-0.012f + g * 0.012f, 0.3f, 0.0245f), new Vector3(0.004f, 0.42f, 0.002f)); // (the grain)
-                    Art.Box(t, new Color(0.42f, 0.36f, 0.28f), new Vector3(0, 0.05f, 0), new Vector3(0.062f, 0.16f, 0.06f));      // the cloth grip
-                    for (int w = 0; w < 4; w++) Art.Box(t, new Color(0.32f, 0.27f, 0.2f), new Vector3(0, 0.0f + w * 0.035f, 0), new Vector3(0.066f, 0.008f, 0.064f), new Vector3(0, 0, 12f));
-                    Art.Box(t, head, new Vector3(0, 0.575f, 0.035f), new Vector3(0.085f, 0.1f, 0.2f));                               // the block
-                    Art.Box(t, head * 1.25f, new Vector3(0, 0.575f, 0.138f), new Vector3(0.09f, 0.104f, 0.012f));                       // its end-grain face
-                    for (int r = 0; r < 2; r++) Art.Box(t, head * 0.85f, new Vector3(0, 0.575f, 0.142f), new Vector3(0.05f - r * 0.022f, 0.06f - r * 0.022f, 0.004f)); // (the rings on it)
-                    for (int sx = -1; sx <= 1; sx += 2)                                                                               // the claw, tapering off behind
-                        Art.Box(t, head * 0.92f, new Vector3(sx * 0.02f, 0.555f, -0.1f), new Vector3(0.03f, 0.05f, 0.12f), new Vector3(-24, sx * 4f, 0));
-                    var rope = new Color(0.66f, 0.58f, 0.4f);
-                    for (int k = 0; k < 3; k++) Art.Box(t, rope, new Vector3(0, 0.505f - k * 0.016f, 0.0f), new Vector3(0.064f, 0.012f, 0.062f), new Vector3(0, k * 30f, 8f)); // (lashed under the head)
-                    for (int sx = -1; sx <= 1; sx += 2) Art.Box(t, new Color(0.3f, 0.3f, 0.32f), new Vector3(sx * 0.0435f, 0.6f, 0f), new Vector3(0.004f, 0.016f, 0.016f)); // (nail heads)
+                    // a wooden mallet (like the reference picture): a big rough-hewn block of pale, weathered wood for the
+                    // head - long front to back, both ends flat end-grain faces - on a round handle of darker wood pushed
+                    // through its middle
+                    var handle = new Color(0.5f, 0.35f, 0.2f);
+                    var block = new Color(0.7f, 0.58f, 0.4f);
+                    Art.Part(t, Art.Cylinder, handle, new Vector3(0, 0.24f, 0), new Vector3(0.05f, 0.3f, 0.05f));                     // the handle
+                    for (int g = 0; g < 2; g++) Art.Box(t, handle * 0.8f, new Vector3(0.019f - g * 0.03f, 0.26f, 0.014f), new Vector3(0.004f, 0.5f, 0.004f)); // (its grain)
+                    Art.Part(t, Art.Sphere, handle * 0.92f, new Vector3(0, -0.06f, 0), new Vector3(0.052f, 0.03f, 0.052f));        // the rounded end
+                    Art.Box(t, block, new Vector3(0, 0.6f, 0), new Vector3(0.13f, 0.13f, 0.3f));                                   // the block
+                    for (int g = 0; g < 3; g++)                                                                                      // grain along its sides
+                        for (int sx = -1; sx <= 1; sx += 2)
+                            Art.Box(t, block * 0.84f, new Vector3(sx * 0.0655f, 0.565f + g * 0.035f, 0), new Vector3(0.002f, 0.006f, 0.27f - g * 0.03f));
+                    Art.Box(t, block * 0.9f, new Vector3(0, 0.666f, 0), new Vector3(0.12f, 0.002f, 0.28f));                       // (the top, a shade darker)
+                    for (int sz = -1; sz <= 1; sz += 2)
+                    {
+                        // the end-grain faces, paler and splintered at the edges, with a ring or two
+                        Art.Box(t, block * 1.12f, new Vector3(0, 0.6f, sz * 0.151f), new Vector3(0.124f, 0.124f, 0.004f));
+                        Art.Box(t, block * 0.95f, new Vector3(0, 0.6f, sz * 0.154f), new Vector3(0.07f, 0.07f, 0.002f));
+                        Art.Box(t, block * 1.08f, new Vector3(0, 0.6f, sz * 0.155f), new Vector3(0.04f, 0.04f, 0.002f));
+                        Art.Box(t, block * 0.78f, new Vector3(0.05f, 0.655f, sz * 0.14f), new Vector3(0.03f, 0.02f, 0.03f), new Vector3(0, 0, 25f));
+                    }
                     break;
                 }
                 case Item.Pickaxe:
@@ -677,6 +680,7 @@ namespace RockGame
                     Art.Part(t, Art.Cylinder, Art.Metal, new Vector3(0, -0.01f, 0.69f), new Vector3(0.12f, 0.02f, 0.12f), new Vector3(0, 0, 90));
                     break;
                 }
+                default: WackyModels.Build(item, t); break; // (the wacky airdrop items)
             }
             // PSX graphics: the PSX model takes the place of this one (same size, same grip)
             var psx = PsxModels.ItemKey(item);

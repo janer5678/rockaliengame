@@ -181,6 +181,15 @@ namespace RockGame
             return p;
         }
 
+        Vector3 m_Shove;
+
+        /// <summary>Knocked back (a knockback stick, the Stick of Truth, a car): thrown along v, like a player.</summary>
+        public void Knockback(Vector3 v)
+        {
+            m_Shove = new Vector3(v.x, 0f, v.z);
+            m_VelY = Mathf.Max(m_VelY, v.y);
+        }
+
         void Move(NetGame g, bool lobby, float dt)
         {
             var pos = transform.position;
@@ -210,6 +219,8 @@ namespace RockGame
 
             float speed = lobby ? Cfg.WalkSpeed * 0.5f : m_Sprint ? Cfg.SprintSpeed : Cfg.WalkSpeed;
             if (m_P.CarryingBall) speed *= Cfg.BallCarrySpeedMul;
+            speed *= m_P.WackySpeedMul; // (slowed, an ant, a bear)
+            if (m_P.WackyHeld) speed = 0f; // (timed out, dancing, knocked flat, a minigame on)
             bool grounded = m_CC.isGrounded;
             var vel = wish * speed;
 
@@ -235,8 +246,9 @@ namespace RockGame
             if (!sliding && Action == BodyAnimator.Act.Slide) SetAction(BodyAnimator.Act.None);
             else if (sliding) SetAction(BodyAnimator.Act.Slide);
 
-            if (grounded) m_VelY = Mathf.Max(m_VelY, -1f); else m_VelY -= Cfg.Gravity * dt;
-            m_CC.Move((vel + Vector3.up * m_VelY) * dt);
+            if (grounded && m_VelY <= 0f) m_VelY = Mathf.Max(m_VelY, -1f); else m_VelY -= Cfg.Gravity * dt;
+            m_Shove = Vector3.MoveTowards(m_Shove, Vector3.zero, (grounded ? 14f : 3f) * dt); // (a knockback fading out)
+            m_CC.Move((vel + m_Shove + Vector3.up * m_VelY) * dt);
 
             // face where it's looking (a target, a tree) or else where it's going
             var face = m_HasLook ? m_LookAt - pos : (vel.sqrMagnitude > 0.1f ? vel : to);

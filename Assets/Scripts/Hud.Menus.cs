@@ -449,8 +449,8 @@ namespace RockGame
             GUILayout.BeginHorizontal();
             GUILayout.Label("AIRDROP ITEMS  <color=#bbbbbb>(click to pick · - / + for how often it drops)</color>", m_Caption);
             GUILayout.FlexibleSpace();
-            if (Btn("All", GUILayout.Width(70 * k), GUILayout.Height(26 * k))) { Cfg.AirdropItemMask = (1 << Cfg.AirdropChoices.Length) - 1; Cfg.SavePrefs(); }
-            if (Btn("None", GUILayout.Width(70 * k), GUILayout.Height(26 * k))) { Cfg.AirdropItemMask = 0; Cfg.SavePrefs(); }
+            if (Btn("All", GUILayout.Width(70 * k), GUILayout.Height(26 * k))) { Cfg.PickAllAirdrops(true); Cfg.SavePrefs(); }
+            if (Btn("None", GUILayout.Width(70 * k), GUILayout.Height(26 * k))) { Cfg.PickAllAirdrops(false); Cfg.SavePrefs(); }
             if (Btn("Even chances", GUILayout.Width(130 * k), GUILayout.Height(26 * k))) { foreach (var it in Cfg.AllAirdropItems) Cfg.SetAirdropRarity(it, 10); Cfg.SavePrefs(); }
             GUILayout.EndHorizontal();
             float gridW = r.width - 40 * k - 20 * k; // (room for the scroll bar)
@@ -460,11 +460,11 @@ namespace RockGame
             {
                 var it = Cfg.AirdropChoices[i];
                 if (!Cfg.InAirdropPool(it)) continue; // (the death wand: crafted at the Advanced Trade Station now)
-                bool on = (Cfg.AirdropItemMask & (1 << i)) != 0;
-                if (DropCell(shown++, it, true, on, Cfg.AirdropChance(it, loot), gridW)) { Cfg.AirdropItemMask ^= 1 << i; Cfg.SavePrefs(); }
+                bool on = Cfg.AirdropPicked(i);
+                if (DropCell(shown++, it, true, on, Cfg.AirdropChance(it, loot), gridW)) { Cfg.SetAirdropPicked(i, !on); Cfg.SavePrefs(); }
             }
             if (shown % DropCols != 0) { GUILayout.EndHorizontal(); GUILayout.Space(5 * k); }
-            if ((Cfg.AirdropItemMask & ((1 << Cfg.AirdropChoices.Length) - 1)) == 0)
+            if (!Cfg.AnyAirdropPicked())
                 GUILayout.Label("<color=#ffcc66>Nothing picked: airdrops will have any of these.</color>", m_Small);
             GUILayout.Label("<color=#bbbbbb>The % is each picked item's chance to be in an airdrop (respawn loot too). - / + change how common it is: 20 comes twice as often as 10, 0 never (if every picked item is 0 they're all even).</color>", m_SmallWrap);
 

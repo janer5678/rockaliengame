@@ -315,10 +315,13 @@ namespace RockGame
 
             switch (s.Item)
             {
-                case Item.Rock: PoseRock(shared, sharedRot, swinging, swingE); break;
+                case Item.Rock: case Item.GoldenRock: PoseRock(shared, sharedRot, swinging, swingE); break;
                 case Item.Sword: PoseSword(shared, sharedRot, swinging, swingE); break;
+                case Item.Hammer: PoseHammer(shared, sharedRot, swinging, swingE); break;
                 case Item.Hatchet:
-                case Item.Hammer:
+                case Item.KnockStick:
+                case Item.KnockStick1:
+                case Item.TreeBreaker:
                 case Item.TreeCracker:
                 case Item.Pickaxe: PoseTool(shared, sharedRot, swinging, swingE); break;
                 case Item.Spear: PoseSpear(s, shared, sharedRot, swinging, swingE); break;
@@ -414,6 +417,20 @@ namespace RockGame
             HideLeft();
         }
 
+        /// <summary>The hammer: not a swing at all - a small, gentle tap forward, like fixing something (a lift of a few
+        /// centimetres and a light knock), then back.</summary>
+        void PoseHammer(Vector3 shared, Quaternion sharedRot, bool swinging, float e)
+        {
+            var idle = new KP(new Vector3(0.27f, -0.3f, 0.5f), -8f, 22f);
+            var raised = new KP(new Vector3(0.27f, -0.27f, 0.47f), -14f, 14f);
+            var tap = new KP(new Vector3(0.25f, -0.31f, 0.56f), -4f, 34f);
+            var back = new KP(new Vector3(0.26f, -0.295f, 0.52f), -8f, 26f);
+            var k = Chop(idle, raised, tap, back, tap, swinging, e);
+            Set(m_R, shared + k.Pos, sharedRot * Quaternion.Euler(k.HandX, -18f, -8f));
+            AttachItemToRight(new Vector3(0, -0.06f, 0.01f), new Vector3(k.ItemX, 0, 0));
+            HideLeft();
+        }
+
         /// <summary>
         /// The sword: a slash from the side. It's drawn back out to the right with the blade laid over, then swept flat
         /// across in a long, slow arc - the blade crossing the crosshair as it lands - and on through to the left on a
@@ -431,6 +448,9 @@ namespace RockGame
                 new KP(Vector3.zero, -88f, 0f), swinging, e, 0.7f, 0.2f);
             Set(m_R, shared + k.Pos, sharedRot * Quaternion.Euler(-8f, k.HandX, b.HandX));
             var blade = sharedRot * Quaternion.Euler(0f, k.ItemX, 0f) * Quaternion.Euler(b.ItemX, 0f, b.HandX);
+            // as it lands the blade points right at the crosshair: the slash hits where you aim
+            float aimW = swinging ? StrikeAimWeight(e, 0.7f) : 0f;
+            if (aimW > 0f) blade = AimAtCrosshair(blade, m_R.localPosition, 1.6f, aimW);
             // the grip (0.06 up the hilt) stays in the fist whichever way the blade points
             AttachItemToRoot(m_R.localPosition - blade * new Vector3(0f, 0.06f, 0f), blade);
             HideLeft();
@@ -468,6 +488,30 @@ namespace RockGame
 
         float m_SpearAimK;
 
+        /// <summary>How far ahead (m, in the view) a poke's spear point and a slash's blade meet the crosshair.</summary>
+        const float SpearPokeAimDepth = 2.2f;
+
+        /// <summary>Turns an item (it points along its own +Y) held at `from` (view space) so it points at the crosshair
+        /// `depth` ahead - all of the way at w = 1.</summary>
+        static Quaternion AimAtCrosshair(Quaternion rot, Vector3 from, float depth, float w)
+        {
+            var cur = rot * Vector3.up;
+            var want = new Vector3(0f, 0f, depth) - from;
+            if (want.sqrMagnitude < 1e-4f) return rot;
+            return Quaternion.Slerp(Quaternion.identity, Quaternion.FromToRotation(cur, want.normalized), Mathf.Clamp01(w)) * rot;
+        }
+
+        /// <summary>A swing's aim at the crosshair: none at the wind-up, all of it as the strike lands (m_Down), easing
+        /// off again on the way back.</summary>
+        float StrikeAimWeight(float e, float upShare)
+        {
+            float up = m_Up * upShare, down = m_Down;
+            if (e <= up) return 0f;
+            if (e < down) return Smooth((e - up) / Mathf.Max(0.01f, down - up));
+            if (e < down + 0.08f) return 1f;
+            return 1f - Smooth((e - down - 0.08f) / 0.22f);
+        }
+
         void PoseSpearAim(State s, Vector3 shared, Quaternion sharedRot, float throwK, bool throwing)
         {
             // the spear lives on the rig; both hands grab the shaft with natural wrist angles
@@ -493,7 +537,13 @@ namespace RockGame
                 else thrust = 1f + Smooth((e - ImpactTime) / 0.08f) * 0.15f - Smooth((e - ImpactTime - 0.1f) / Mathf.Max(0.15f, m_SwingDur * 0.6f)) * 1.15f;
             }
             var spearRot = sharedRot * Quaternion.Euler(80f, -5f, 0);
-            AttachItemToRoot(shared + new Vector3(0.22f, -0.13f, 0.14f + thrust * 0.4f), spearRot); // (carried high enough for the hands on it to show)
+            // the poke drives the spear in towards the crosshair (its point lands on the middle of the screen), not
+            // straight out past the right of it
+            var carry = new Vector3(0.22f, -0.13f, 0.14f);
+            var toMiddle = (new Vector3(0f, 0f, SpearPokeAimDepth) - carry).normalized;
+            float aim = Mathf.Clamp01(thrust * 1.6f);
+            if (aim > 0f) spearRot = AimAtCrosshair(spearRot, carry, SpearPokeAimDepth, aim);
+            AttachItemToRoot(shared + carry + toMiddle * (thrust * 0.42f), spearRot); // (carried high enough for the hands on it to show)
             m_R.localPosition = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(0.03f, 0.12f, 0)));
             m_R.localRotation = sharedRot * Quaternion.Euler(-25f, -28f, -15f);
             m_L.localPosition = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(-0.03f, 0.62f, 0)));

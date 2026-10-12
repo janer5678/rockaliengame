@@ -20,6 +20,9 @@ namespace RockGame
         public bool IsConverter => Kind.Value == Converter;
         /// <summary>The Trade Station's concrete barricade: cover you can put down anywhere (Deployables.cs).</summary>
         public const byte Barricade = 11;
+        /// <summary>The fake airdrop flare's crate (NetGame.Wacky.cs): looks like an airdrop, shows every item, gives none.</summary>
+        public const byte FakeDrop = 12;
+        public bool IsFakeDrop => Kind.Value == FakeDrop;
         /// <summary>A placeable of the Trade Stations' (Deployables.cs): the bag, the trap, the ladder, the turret, the barricade.</summary>
         public static bool IsDeployableKind(byte kind) => (kind >= SleepBag && kind <= Turret) || kind == Barricade;
         /// <summary>A bear trap: 0 armed, 1 sprung. (Deployables.cs)</summary>
@@ -40,7 +43,7 @@ namespace RockGame
         public readonly NetworkVariable<float> Health = new NetworkVariable<float>();
 
         public bool IsBag => Kind.Value == Bag;
-        public bool IsAirdrop => Kind.Value == Airdrop;
+        public bool IsAirdrop => Kind.Value == Airdrop || Kind.Value == FakeDrop;
         public bool IsGamble => Kind.Value == Gamble;
         /// <summary>A team's workbench, T1 or T2 (no slots, unbreakable): its tier's items show in the TAB list in your base.</summary>
         public bool IsWorkbench => Kind.Value == Workbench || Kind.Value == Workbench2;
@@ -135,7 +138,7 @@ namespace RockGame
                 Art.Part(t, Art.Sphere, sack * 0.9f, new Vector3(0, 0.55f, 0), new Vector3(0.28f, 0.22f, 0.28f));
                 Art.Part(t, Art.Cylinder, Cfg.TeamColor[Mathf.Clamp(team, 0, 3)], new Vector3(0, 0.5f, 0), new Vector3(0.24f, 0.03f, 0.24f));
             }
-            else if (kind == Airdrop)
+            else if (kind == Airdrop || kind == FakeDrop) // (the fake airdrop flare's looks just the same)
             {
                 // alien crate: dark metal with glowing seams, a floating crystal and a beacon so you can find it
                 var metal = new Color(0.22f, 0.24f, 0.28f);

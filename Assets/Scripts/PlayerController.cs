@@ -326,12 +326,13 @@ namespace RockGame
                 AirstrikeMapOpen = false;
                 if (Chat.Open) Chat.Close();
             }
-            if (!cutscene && !Chat.Open && !Paused && !MenuOpen && !Hud.Rebinding && (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))) Chat.Begin(false); // global chat
+            if (!cutscene && !Chat.Open && !Paused && !MenuOpen && !Hud.Rebinding && !WackyUiOpen && (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))) Chat.Begin(false); // global chat
             else if (!cutscene && !Chat.Open && !Paused && !MenuOpen && !Hud.Rebinding && !Hud.Typing && Input.GetKeyDown(KeyCode.T)) Chat.Begin(true); // team chat
             if (!cutscene && Input.GetKeyDown(KeyCode.Escape) && !Chat.Open && !Hud.BackOut())
             {
                 if (WheelOpen) WheelOpen = false;
                 else if (AirstrikeMapOpen) CloseAirstrikeMap();
+                else if (WackyUiOpen) CloseWackyUi(); // (Omen's map, the drawing canvas, the notebook)
                 else if (MenuOpen) CloseMenu();
                 else Paused = !Paused;
             }
@@ -373,7 +374,8 @@ namespace RockGame
             }
 
             // (the chat line frees the mouse too: a whisper in the log can be clicked to answer it)
-            bool cursorFree = (MenuOpen || Paused || gameOver || choosing || WheelOpen || AirstrikeMapOpen || ScoreboardOpen || Chat.Open) && !cutscene;
+            TickWackyUi(dead);
+            bool cursorFree = (MenuOpen || Paused || gameOver || choosing || WheelOpen || AirstrikeMapOpen || ScoreboardOpen || Chat.Open || WackyUiOpen || PlayerNet.MinigameOn) && !cutscene;
             var lockNow = cursorFree ? CursorLockMode.None : CursorLockMode.Locked;
             if (lockNow == CursorLockMode.Locked && Cursor.lockState != CursorLockMode.Locked) m_LookSkipUntil = Time.frameCount + 3; // (re-locking the cursor jumps the mouse: not a look)
             Cursor.lockState = lockNow;
@@ -381,7 +383,7 @@ namespace RockGame
             bool input = !cursorFree && !dead && !Hud.Rebinding && !Chat.Open && !cutscene;
             // you can keep walking, jumping and crouching with the inventory open
             bool frozen = game != null && game.FightFrozen;
-            bool move = !dead && !Paused && !gameOver && !frozen && !AirstrikeMapOpen && !Chat.Open && Time.time >= m_HoldUntil; // (held: waking in the cryochamber)
+            bool move = !dead && !Paused && !gameOver && !frozen && !AirstrikeMapOpen && !Chat.Open && Time.time >= m_HoldUntil && !WackyMoveBlocked; // (held: waking in the cryochamber; or by a wacky item)
             bool locked = Time.time < m_InputLockUntil;
 
             // ---- damage / respawn feedback ----
@@ -403,6 +405,7 @@ namespace RockGame
             if (input && !lobby && Time.frameCount > m_LookSkipUntil)
             {
                 m_LookDelta = new Vector2(Input.GetAxisRaw("Mouse X"), Input.GetAxisRaw("Mouse Y")) * GameSettings.MouseSensitivity * (CrossbowAiming ? 0.6f : RevolverAiming ? 0.75f : 1f) * (Scoped ? 0.35f : 1f);
+                if (m_Net.Flipped) m_LookDelta = -m_LookDelta; // (upside down: the mouse still moves the view the way you push it)
                 m_Yaw += m_LookDelta.x;
                 m_Pitch = Mathf.Clamp(m_Pitch - m_LookDelta.y, -89f, 89f);
             }
@@ -482,7 +485,7 @@ namespace RockGame
                 if (TreeLocked && m_SlideOn) { m_SlideVel = Vector3.zero; EndSlide(); }
                 if (move && !TreeLocked)
                 {
-                    float h = Binds.Axis(Bind.Right, Bind.Left);
+                    float h = Binds.Axis(Bind.Right, Bind.Left) * (m_Net.Flipped ? -1f : 1f); // (upside down, your right is the screen's left)
                     fwdInput = Binds.Axis(Bind.Forward, Bind.Back);
                     wish = transform.right * h + transform.forward * fwdInput;
                     if (wish.sqrMagnitude > 1f) wish.Normalize();
@@ -497,32 +500,36 @@ namespace RockGame
                 speed *= ThemeMaps.SpeedMul(transform.position); // THEME MAPS
                 if (m_Net.Juiced) speed *= Cfg.SpeedJuiceMul; // (Extreme Speed Juice)
                 if (m_Net.Trapped) speed = 0f; // (caught in a bear trap: held where you stand)
+                speed *= m_Net.WackySpeedMul; // (slowness goo, a bear, an ant: PlayerNet.Wacky.cs)
                 if (airCrouch) speed = Mathf.Max(speed, m_TakeoffSpeed);
 
-                bool grounded = m_CC.isGrounded;
+                bool grounded = m_Net.Flipped ? FlipGrounded : m_CC.isGrounded; // (falling up with the gravity staff: the ceiling is your floor)
                 if (grounded) m_GroundedAt = Time.time;
                 bool ladder = OnLadder();
                 // jump buffering: a press shortly before you land still jumps the moment you touch down
                 if (move && !TreeLocked && Binds.Down(Bind.Jump)) m_JumpPressedAt = Time.time;
                 bool jumpWanted = move && !TreeLocked && !m_Net.Trapped && Time.time - m_JumpPressedAt <= Mathf.Max(Time.deltaTime, Cfg.JumpBuffer);
+                float gs = GravSign;
                 if (grounded)
                 {
-                    if (m_VelY <= 0f) m_JumpedSinceGround = false;
+                    if (m_VelY * gs <= 0f) m_JumpedSinceGround = false;
                     // sliding: hug the ground going downhill instead of skipping off it
-                    if (m_VelY < 0) m_VelY = m_SlideOn ? -(2f + m_SlideVel.magnitude * 0.8f) : -2f;
+                    if (m_VelY * gs < 0) m_VelY = (m_SlideOn ? -(2f + m_SlideVel.magnitude * 0.8f) : -2f) * gs;
                 }
                 // coyote time: just walked off an edge, you can still jump for a moment (once - not a double jump)
-                bool coyote = !grounded && !ladder && !m_JumpedSinceGround && m_VelY <= 0f && Time.time - m_GroundedAt <= Cfg.CoyoteTime;
+                bool coyote = !grounded && !ladder && !m_JumpedSinceGround && m_VelY * gs <= 0f && Time.time - m_GroundedAt <= Cfg.CoyoteTime;
                 // you can jump out of a slide and keep all that speed
                 if ((grounded || coyote) && jumpWanted && (!Crouching || m_SlideOn))
                 {
                     if (grounded && Time.time - m_JumpPressedAt > Time.deltaTime + 0.001f) BufferedJumps++;
                     if (coyote) CoyoteJumps++;
                     Jumps++;
-                    m_VelY = Cfg.JumpSpeed;
+                    m_VelY = Cfg.JumpSpeed * gs;
                     m_JumpPressedAt = -10f;
                     m_JumpedSinceGround = true;
                 }
+                else if (!ladder && TryDoubleJump(grounded || coyote, move && !TreeLocked)) m_JumpPressedAt = -10f; // (the double jump boots)
+                TickBounce(grounded); // (a bouncy castle's floor)
                 if (ladder)
                 {
                     // climb: W up, S down, nothing = hang on
@@ -537,7 +544,7 @@ namespace RockGame
                     }
                     if (move && Binds.Down(Bind.Jump) && fwdInput <= 0) { m_VelY = 3f; m_JumpPressedAt = -10f; m_JumpedSinceGround = true; } // (let go: a small hop off, nothing throws you back)
                 }
-                else if (m_ClimbT < 0f) m_VelY -= Cfg.Gravity * Time.deltaTime;
+                else if (m_ClimbT < 0f) m_VelY -= Cfg.Gravity * Time.deltaTime * gs;
                 m_Grounded = grounded || ladder;
                 m_Sprinting = sprint && wish.sqrMagnitude > 0.1f;
                 // knockback (hit by a car) fades out, faster on the ground
@@ -554,6 +561,8 @@ namespace RockGame
                 var before = transform.position;
                 var flags = m_CC.Move((planar + m_Push + Vector3.up * m_VelY) * Time.deltaTime);
                 if ((flags & CollisionFlags.Above) != 0 && m_VelY > 0) m_VelY = 0;
+                if (m_Net.Flipped && (flags & CollisionFlags.Below) != 0 && m_VelY < 0) m_VelY = 0; // (flipped: jumping down onto the floor)
+                AfterMove(flags);
                 // how fast we really moved (walls stop a slide dead, and a slide needs a run-up)
                 var moved = transform.position - before;
                 moved.y = 0;
@@ -587,10 +596,11 @@ namespace RockGame
             TickShotgunReload(held);
             TickPortals(dead);
             TickJetpack(held, move && !dead);
+            TrackPrevHeld(held);
             if (input && !gameOver && !locked && !frozen)
             {
                 if (carrying) HandleBall();
-                else
+                else if (!WackyInput(held)) // (a bear, the turret bot, shielded, an ant, held still: PlayerController.Wacky.cs)
                 {
                     switch (held)
                     {
@@ -633,7 +643,10 @@ namespace RockGame
                         case Item.Armor:
                         case Item.HeavyArmor:
                         case Item.InvisPotion: case Item.SpeedJuice: HandleUseItem(held); break;
-                        default: if (Cfg.IsMelee(held)) HandleMelee(held); break;
+                        default:
+                            if (Cfg.IsWacky(held) && HandleWacky(held)) break; // (the wacky airdrop items: PlayerController.Wacky.cs)
+                            if (Cfg.IsMelee(held)) HandleMelee(held);
+                            break;
                     }
                 }
             }
@@ -654,7 +667,7 @@ namespace RockGame
 
             var target = FindInteract();
             Target = target;
-            if (input) HandleInteract(target, carrying);
+            if (input && !m_Net.Droning) HandleInteract(target, carrying);
             else { m_PackStart = -1f; m_PackObj = null; }
             // (the plan's demolish / upgrade modes hide the plan's ghost only: they used to hide every ghost, so after
             // picking one of them you couldn't put down a chest or a station either until you picked a piece again)
@@ -684,11 +697,11 @@ namespace RockGame
             if (m_Net.Riding) FollowSeat();
             Fx.TickCamera(Time.deltaTime);
             var rv = m_Net.Riding ? RidingVehicle : null;
-            float eye = rv != null ? (rv.IsHorse ? Cfg.EyeHeight + 0.75f : Cfg.EyeHeight - 0.35f) : m_Net.EyeHeight; // high up on a horse so you can see ahead
+            float eye = rv != null ? (rv.IsHorse ? Cfg.EyeHeight + 0.75f : Cfg.EyeHeight - 0.35f) : WackyEye(m_Net.EyeHeight); // high up on a horse so you can see ahead (an ant down low; flipped, your head's at the bottom)
             m_Eye = Mathf.Lerp(m_Eye, eye, Time.deltaTime * 12f);
             var rot = Quaternion.Euler(m_Pitch, m_Yaw, 0) * Quaternion.Euler(Fx.ShakeEuler());
             // holding the tree camo: the camera pulls back behind you so you can see the tree you've become
-            m_Third = Mathf.MoveTowards(m_Third, m_Net.TreeCamo ? 1f : 0f, Time.deltaTime * 4f);
+            m_Third = Mathf.MoveTowards(m_Third, m_Net.TreeCamo || WackyThird ? 1f : 0f, Time.deltaTime * 4f); // (a bear, dancing: PlayerController.Wacky.cs)
             var camPos = transform.position + Vector3.up * m_Eye;
             if (m_Third > 0f)
             {
@@ -705,8 +718,12 @@ namespace RockGame
                     camPos = eyePos + dir * len;
                 }
             }
+            bool hands = true;
+            float wackyFov = -1f;
+            WackyCamera(ref camPos, ref rot, ref wackyFov, ref hands); // (the turret bot, the snail, upside down: PlayerController.Wacky.cs)
             m_Cam.transform.SetPositionAndRotation(camPos, rot);
             float fov = 70f - DrawAmount * 18f + Fx.FovPunch + (m_Net.Juiced ? 14f : 0f); // (Extreme Speed Juice: the view stretches out)
+            if (wackyFov > 0f) fov = wackyFov;
             if (CrossbowAiming) fov = Cfg.CrossbowZoomFov + Fx.FovPunch;
             if (RevolverAiming) fov = Cfg.RevolverZoomFov + Fx.FovPunch;
             if (Scoped) fov = 15f;
@@ -721,7 +738,7 @@ namespace RockGame
                 VelY = m_VelY,
                 Item = m_Net.HeldItem,
                 Ball = m_Net.CarryingBall,
-                Visible = !m_Net.Dead.Value && m_Third < 0.5f, // (invisible or not, you always see your own hands and what's in them)
+                Visible = !m_Net.Dead.Value && m_Third < 0.5f && hands, // (invisible or not, you always see your own hands and what's in them)
                 Ghost = m_Net.Invisible, // (the Invisibility Potion: your own hands vanish while it lasts - what you hold still shows)
                 SpearAim = (m_DrawStart >= 0 || DebugDraw >= 0) && m_Net.HeldItem == Item.Spear,
                 HasArrow = m_Net.Count(Item.Arrow) > 0,
@@ -1064,7 +1081,7 @@ namespace RockGame
             // (a slash from the side: a short draw back, then a long arc across - it lands as the blade crosses the middle)
             float impact = held == Item.Sword ? Mathf.Clamp(Cfg.SwordSwingTime * 0.36f, ViewModel.ImpactTime, 0.75f) : ViewModel.ImpactTime;
             m_VM.Swing(st.Cooldown, impact);
-            Sfx.Play2D(Sfx.Swing, 0.35f, 0.15f);
+            Sfx.Play2D(Sfx.Swing, held == Item.Hammer ? 0.08f : 0.35f, 0.15f); // (the hammer's only a gentle tap)
             m_ImpactAt = Time.time + impact;
             m_ImpactItem = held;
         }
@@ -1092,7 +1109,7 @@ namespace RockGame
             var st = Cfg.Melee(m_ImpactItem);
             var ray = CenterRay();
             bool saw = m_ImpactItem == Item.Chainsaw;
-            Fx.Kick(saw ? 0.15f : 0.8f);
+            Fx.Kick(saw ? 0.15f : m_ImpactItem == Item.Hammer ? 0.2f : 0.8f);
             if (!AimWithAssist(ray, st.Range, Cfg.MeleeAssist, out var hit))
             {
                 if (!saw) m_VM.Impact(false);
@@ -1100,6 +1117,7 @@ namespace RockGame
                 return;
             }
             if (!saw) m_VM.Impact(true);
+            DecoyBasePart.Report(hit.collider); // (a decoy base: it's gone in smoke - Gadgets.cs)
 
             var no = hit.collider.GetComponentInParent<NetworkObject>();
             bool weak = false;
@@ -1221,21 +1239,13 @@ namespace RockGame
             m_DrawStart = -1f;
             m_NextSwing = Time.time + Mathf.Max(0.1f, Cfg.SpearThrowRecovery);
             if (m_Net.HeldItem != Item.Spear || m_Net.Dead.Value || m_Net.CarryingBall) return;
+            // from the middle of the screen (your eye) straight to what the crosshair's on - not from where the spear is
+            // drawn in your hand - lifted just enough for its drop over that distance
             var ray = CenterRay();
             Vector3 origin = SafeOrigin(ray, 0.8f);
             Vector3 vel = ray.direction * Cfg.SpearThrowSpeed * m_SpearPower;
-            if (Cfg.SpearFromHand && m_VM != null)
-            {
-                // from where the spear is on screen (your hand), aimed at what the crosshair's on - unless something's
-                // between your eye and your hand (then the old way, from the eye: no throwing through walls)
-                var hand = m_VM.HeldItemPos;
-                var target = Aim(ray, 200f, out var th) ? th.point : ray.GetPoint(60f);
-                if ((hand - ray.origin).sqrMagnitude < 1.5f * 1.5f && !Physics.Linecast(ray.origin, hand, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore) && (target - hand).sqrMagnitude > 4f)
-                {
-                    origin = hand;
-                    vel = SpearAimAt(hand, target, Cfg.SpearThrowSpeed * m_SpearPower, ray.direction);
-                }
-            }
+            var target = Aim(ray, 200f, out var th) ? th.point : ray.GetPoint(60f);
+            if ((target - origin).sqrMagnitude > 4f) vel = SpearAimAt(origin, target, Cfg.SpearThrowSpeed * m_SpearPower, ray.direction);
             ArrowProjectile.SpawnSpear(origin, vel, m_Net, true);
             m_Net.ThrowSpearRpc(origin, vel);
             Tutorial.SpearThrows++;
@@ -1738,7 +1748,7 @@ namespace RockGame
             if (obj.GetComponent<Container>() != null) return TargetKind.Container;
             if (obj.TryGetComponent(out ResourceNode n)) return n.IsBush && n.Amount.Value > 0 ? TargetKind.Bush : TargetKind.None;
             if (obj.TryGetComponent(out PlayerNet p) && p != m_Net && p.StuckSpears.Value > 0) return TargetKind.PlayerSpear;
-            if (obj.TryGetComponent(out Vehicle v) && !v.HasDriver && !v.IsDummy) return TargetKind.Vehicle; // (nobody rides a training dummy)
+            if (obj.TryGetComponent(out Vehicle v) && !v.HasDriver && !v.IsDummy && !v.IsWackyKind) return TargetKind.Vehicle; // (nobody rides a training dummy - or a decoy, a shell, a bot or a monster)
             return TargetKind.None;
         }
 
@@ -1880,6 +1890,7 @@ namespace RockGame
 
         void HandleInteract(Interactable t, bool carrying)
         {
+            if (m_Net.IsBear && t.Kind != TargetKind.None && !BearMayUse(t)) return; // (a bear can't loot or use things)
             if (TickPackUp(t)) return;
             if (!Binds.Down(Bind.Interact)) return;
             // Builder: E puts the ball down right in front of you - it's your team's until someone picks it up
@@ -2409,7 +2420,11 @@ namespace RockGame
             }
             else if (no.TryGetComponent(out PlayerNet p) && p != m_Net)
             {
-                if (!p.TreeCamo) AimText = TeamTip(p.DisplayName, p.Team.Value); // (their name, in their team's colour)
+                if (!p.TreeCamo) AimText = TeamTip(p.ApparentName, p.ApparentTeam); // (their name, in their team's colour - a disguise shows the enemy's)
+            }
+            else if (no.TryGetComponent(out Vehicle dv) && dv.IsDecoy)
+            {
+                AimText = TeamTip(dv.DisplayName, dv.OwnerTeam.Value); // (a decoy looks just like its owner)
             }
             else if (no.TryGetComponent(out Vehicle hv) && !hv.IsCar)
             {

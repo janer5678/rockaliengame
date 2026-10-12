@@ -67,6 +67,7 @@ namespace RockGame
             var order = tier == 0 ? k_Starter : tier == 1 ? k_Tier1 : k_Tier2;
             foreach (var id in order)
             {
+                if (SuddenRound && Workbench.IsBench(id)) continue; // (sudden death: no trade stations at all - they're just not there)
                 int i = CraftIndexOf(id);
                 if (i >= 0 && !into.Contains(i)) into.Add(i);
             }

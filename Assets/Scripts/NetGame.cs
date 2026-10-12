@@ -109,6 +109,7 @@ namespace RockGame
             if (IsServer && NetworkManager != null) NetworkManager.OnClientDisconnectCallback -= OnClientDisconnect;
             if (Instance == this) Instance = null;
             AirdropShip.Clear();
+            GadgetFx.Clear();
             VictoryCutscene.Clear();
             PortalFx.Clear();
             GraveFx.Clear();
@@ -199,6 +200,7 @@ namespace RockGame
             TickStartCountdown(); // the waiting stadium's 10 s countdown once everyone's in (NetGame.Lobby.cs)
             TickBenchUnlockNotice(); // "WORK BENCHES UNLOCKED" when our team captures the ball (NetGame.Bench.cs)
             TickReadySetRock(); // READY / SET / ROCK!'s beeps and boom (NetGame.ReadySetRock.cs)
+            GadgetFx.Sync(this); // the wacky items' things in the world (Gadgets.cs)
             if (!IsServer) return;
             ResourceNode.ServerFlocksTick(); // (flocks of birds sitting in a few trees, there before anyone hits them)
             if (Time.time >= m_NextItemCheck) { m_NextItemCheck = Time.time + 0.5f; ServerSettleItems(); }
@@ -220,6 +222,7 @@ namespace RockGame
             Tutorial.ServerTick(this); // tutorial: clock stopped, late joiners in, the wall drops once everyone reaches it
             SpaceArena.ServerTick(this); // sudden death and the waiting stadium: falling off the platform into space
             ServerTickGraves(now); // old gravestones go (NetGame.Graves.cs)
+            ServerTickWacky(now); // the wacky items: their things in the world, the minigames (NetGame.Wacky.cs)
             ThemeMaps.ServerTick(); // THEME MAPS
             if (Cfg.NoBall && Ball.Instance != null && Ball.Instance.IsSpawned) Ball.Instance.NetworkObject.Despawn(true); // (Bedwars / Assassin: never a ball)
             int players = PlayerNet.All.Count;
@@ -250,7 +253,7 @@ namespace RockGame
                         if (Cfg.NoBall) ServerUnlockBench(0, "the wall dropped"); // (Bedwars / Assassin: no ball to capture - the Trade Station unlocks now)
                         SetPhase(GameState.BallLive, BallPhaseNow); // (the sudden death round's walls dropping: its own 5 minutes)
                         m_SuddenDeathAt = -1;
-                        if (SuddenBall.Value) { Broadcast("The walls are dropping - first ball in a machine wins! Nobody: a rock fight in the stadium"); break; }
+                        if (SuddenBall.Value) { Broadcast("The walls are dropping - whoever has the ball in their machine when time runs out wins! Nobody: a rock fight in the stadium"); break; }
                         m_BallStart = now;
                         m_DropsDone = 0;
                         m_DroppedItems.Clear();
@@ -261,7 +264,7 @@ namespace RockGame
                     if (!SuddenBall.Value) ServerTickScheduledDrops(now); // (no new airdrops in the sudden death round)
                     ServerTickDropWarning(now);
                     ServerTickAirdrop(now);
-                    if (ServerSuddenCapture()) break; // (the sudden death round: the first ball in a machine wins at once)
+                    // (the sudden death round runs to its end like a normal match: whoever has the ball in their machine then wins)
                     if (now >= PhaseEnd.Value)
                     {
                         if (m_SuddenDeathAt < 0)
@@ -422,7 +425,7 @@ namespace RockGame
             foreach (var s in unsupported)
                 if (s != null && s.IsSpawned)
                 {
-                    if (destroyed) s.ServerNoteDestroyed();
+                    if (destroyed) { s.ServerNoteDestroyed(); ServerNoteStructureGone(s); }
                     s.NetworkObject.Despawn(true);
                 }
         }
@@ -801,6 +804,9 @@ namespace RockGame
             public int Region = -1; // -1 = anywhere, else that team's side of the map
             public bool Incoming;
             public Container Crate;
+            /// <summary>The fake airdrop flare's (NetGame.Wacky.cs): its crate's full of everything and gives nothing; when it pops.</summary>
+            public bool Fake;
+            public double FakeEnd;
         }
         readonly DropLane[] m_Lanes = new DropLane[LaneTotal];
         int WorldLaneCount => Cfg.AirdropSides && !Cfg.AirdropCenter ? Cfg.TeamCount : 1;
@@ -904,15 +910,34 @@ namespace RockGame
                 var pos = LanePosAt(i);
                 var go = Instantiate(Bootstrap.I.containerPrefab, pos, Quaternion.Euler(0, Random.Range(0f, 360f), 0));
                 lane.Crate = go.GetComponent<Container>();
+                if (lane.Fake)
+                {
+                    // the fake airdrop flare's: every item in the game, and none of them come out (NetGame.Wacky.cs)
+                    lane.Fake = false;
+                    lane.FakeEnd = now + 75.0;
+                    var all = FakeLoot();
+                    lane.Crate.ServerInit(Container.FakeDrop, 7, all.Count, all);
+                }
+                else
+                {
                 // one slot: one airdrop item this game hasn't had yet (the tutorial's: just C4 for its raid)
                 var crate = Cfg.Tutorial ? new List<ItemStack> { Tutorial.DropLoot } : RollAirdropCrate(m_DroppedItems);
                 lane.Crate.ServerInit(Container.Airdrop, 7, Mathf.Max(1, crate.Count), crate);
+                }
                 go.GetComponent<NetworkObject>().Spawn(true);
                 Fx.Server(FxKind.Spawn, pos, Vector3.up);
                 return;
             }
             if (lane.Crate != null)
             {
+                // a fake one pops in a puff of smoke (and a laugh) after a while
+                if (lane.Crate.IsSpawned && lane.Crate.IsFakeDrop && now > lane.FakeEnd)
+                {
+                    Fx.Server(FxKind.BigPoof, lane.Crate.transform.position + Vector3.up * 0.6f, Vector3.up);
+                    lane.Crate.NetworkObject.Despawn(true);
+                    lane.Crate = null;
+                    return;
+                }
                 // taken: the next one comes a minute after the last one was emptied
                 if (!lane.Crate.IsSpawned || lane.Crate.Empty)
                 {
@@ -1270,6 +1295,7 @@ namespace RockGame
             BlastKind kind = BlastKind.Other, Structure on = null, Vector3 normal = default, Container onBox = null)
         {
             Fx.Server(FxKind.Explosion, pos, Vector3.up);
+            ServerBlastDecoys(pos, radius); // (a decoy base caught in it is gone: NetGame.Wacky.cs)
             ServerMaybeHitMachine(pos, attacker, true); // (Bedwars: an explosive right on an enemy machine destroys it)
             var structures = new HashSet<Structure>();
             var chests = new HashSet<Container>();

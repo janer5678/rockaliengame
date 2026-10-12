@@ -133,7 +133,9 @@ namespace RockGame
                 case Item.RevolverAmmo: return $"{Cfg.ItemName(id)}: ammo for the revolver ({Cfg.RevolverMag} fill the cylinder; {KT(Bind.Rotate)} reloads).";
                 case Item.C4: return "C4: throw it at enemy buildings.";
                 case Item.Helmet: return "Alien Helmet: goes straight on - stops one headshot completely.";
-                default: return Cfg.ItemName(id) + (Cfg.PowerIndex(id) >= 0 ? ": " + Cfg.PowerBlurb(id, team) : "");
+                default:
+                    if (Cfg.WackyBlurb(id) != null) return $"{Cfg.ItemName(id)}: {Cfg.WackyBlurb(id)}"; // (the wacky airdrop items: Wacky.cs)
+                    return Cfg.ItemName(id) + (Cfg.PowerIndex(id) >= 0 ? ": " + Cfg.PowerBlurb(id, team) : "");
             }
         }
 

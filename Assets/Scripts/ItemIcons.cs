@@ -293,6 +293,8 @@ namespace RockGame
                     // corner to corner like Rust's spear icon: the butt bottom left, the point top right
                     t.localRotation = Quaternion.Euler(0, 0, 45); break;
                 case Item.Arrow: case Item.Pickaxe: case Item.DeathWand: case Item.GiantStaff: case Item.TreeCracker: case Item.Sword:
+                case Item.Connect4Wand: case Item.GameshowWand: case Item.StickOfTruth: case Item.GravityStaff: case Item.KnockStick: case Item.KnockStick1:
+                case Item.TreeBreaker: case Item.ChaosSigil: case Item.BallGrabber: case Item.Decoy:
                     t.localRotation = Quaternion.Euler(0, 0, -40); break;
                 case Item.Bow:
                     t.localRotation = Quaternion.Euler(0, 90, -35); break;
@@ -316,6 +318,8 @@ namespace RockGame
                 case Item.Shotgun:
                 case Item.PortalGun:
                 case Item.RocketLauncher:
+                case Item.SlowGun:
+                case Item.AntGun:
                     t.localRotation = Quaternion.Euler(0, 55, 0); break;
                 case Item.Ladder:
                     t.localRotation = Quaternion.Euler(0, 20, -18); break;

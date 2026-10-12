@@ -26,6 +26,7 @@ namespace RockGame
             // hitscan: whatever the crosshair is on, right now
             var ray = CenterRay();
             bool hit = PortalPass.Hitscan(ray, 250f, Cfg.ProjectileAssist, AimWithAssist, out var h, out var point, out var shotDir); // (through portals too)
+            if (hit) DecoyBasePart.Report(h.collider);
             var no = hit ? h.collider.GetComponentInParent<Unity.Netcode.NetworkObject>() : null;
             if (no != null && no.TryGetComponent(out PlayerNet p) && p != m_Net && !p.Dead.Value)
             {
@@ -129,6 +130,7 @@ namespace RockGame
                 bool hit = PortalPass.Hitscan(pr, Cfg.ShotgunRange, 0.04f, AimWithAssist, out var h, out var end, out _); // (through portals too)
                 if (i % 2 == 0) PortalPass.Tracers(ray.origin + dir * 0.5f - Vector3.up * 0.15f, Fx.Gun.Shotgun); // (one blast for them all, below)
                 if (!hit) continue;
+                DecoyBasePart.Report(h.collider);
                 var p = h.collider.GetComponentInParent<PlayerNet>();
                 if (p != null && p != m_Net && !p.Dead.Value)
                 {

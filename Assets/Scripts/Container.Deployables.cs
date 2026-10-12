@@ -121,9 +121,9 @@ namespace RockGame
         public static float CenterUp(byte kind) => kind == Container.SleepBag ? 0.2f : kind == Container.Trap ? 0.15f : kind == Container.Ladder ? 1.4f : kind == Container.Barricade ? BarricadeH * 0.5f : 0.9f;
         public static float MaxHp(byte kind) => kind == Container.SleepBag ? 100f : kind == Container.Trap ? 150f : kind == Container.Ladder ? 250f : kind == Container.Barricade ? Cfg.BarricadeHp : 500f;
 
-        /// <summary>The concrete barricade: 2.4 m long, tall enough to hide someone crouching behind it (Cfg.CrouchHeight) -
-        /// someone standing (eyes at Cfg.EyeHeight) can still see and shoot over it - and its depth at the foot and at the top.</summary>
-        public const float BarricadeLen = 2.4f, BarricadeH = 1.45f, BarricadeFoot = 0.7f, BarricadeTop = 0.3f;
+        /// <summary>The concrete barricade: 3.1 m long and 1.9 m tall (30% bigger each way than it was: it hides you standing
+        /// too now) - and its depth at the foot and at the top.</summary>
+        public const float BarricadeLen = 2.4f * 1.3f, BarricadeH = 1.45f * 1.3f, /* (30% longer and taller than 2.4 x 1.45) */ BarricadeFoot = 0.7f, BarricadeTop = 0.3f;
         /// <summary>A barricade can go in an enemy base, but not this close to their buildings (m) or their machine / spawn.</summary>
         public const float BarricadeEnemyGap = 3f, BarricadeMachineGap = 5f;
 

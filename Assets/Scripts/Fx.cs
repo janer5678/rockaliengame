@@ -4,7 +4,9 @@ using UnityEngine;
 namespace RockGame
 {
     // new kinds go at the end (they're sent over the network as bytes)
-    public enum FxKind : byte { Blood, BloodHead, WoodChips, StoneChips, WeakSpot, Break, Smash, StructureHit, Spawn, C4Placed, Explosion, WandBeam, HelmetBreak, Craft, Drink, AirstrikeWarn, SniperTracer, PortalOpen, Timber, WeakSpotTree, Heal, BloodKill, LogBreak, PistolTracer, RevolverTracer, ShotgunTracer, Poof }
+    public enum FxKind : byte { Blood, BloodHead, WoodChips, StoneChips, WeakSpot, Break, Smash, StructureHit, Spawn, C4Placed, Explosion, WandBeam, HelmetBreak, Craft, Drink, AirstrikeWarn, SniperTracer, PortalOpen, Timber, WeakSpotTree, Heal, BloodKill, LogBreak, PistolTracer, RevolverTracer, ShotgunTracer, Poof,
+        // the wacky airdrop items (WackyFx.cs)
+        ShieldPing, GoldBurst, Fuse, Goo, BearPoof, AntZap, Boing, OmenFlash, ShellBoom, Tractor, Clack, Swap, ChaosFlash, TruthBlast, DanceBlast, ClutterPop, BigPoof, Deflate, Scribble, DecoyPoof, Bonk, WackyBeam }
 
     /// <summary>
     /// Game feel: particles (blood, chips, sparks), camera shake/kick, floating damage numbers and sounds.
@@ -148,6 +150,7 @@ namespace RockGame
                     Sparks(pos, Vector3.up, 8);
                     Sfx.Play(Sfx.Eat, pos, 0.8f);
                     break;
+                default: WackyFx.Play(kind, pos, dir); break; // (the wacky airdrop items)
             }
         }
 
@@ -1234,7 +1237,7 @@ namespace RockGame
     /// Sound effects, all synthesised procedurally at startup. Recorded clips dropped in Resources/Sfx ("name_0.ogg",
     /// "name_1.ogg", ... are variations picked at random) would replace them.
     /// </summary>
-    public static class Sfx
+    public static partial class Sfx
     {
         public static AudioClip Swing, Flesh, Headshot, Chop, Clink, Thud, Ding, Smash, Twang, Throw, Pop, Eat, Place, Hurt, Kill, Step, Hiss, Boom, Beep, Zap, Saw, Hum,
             Hit, Rocket, Sniper, Portal, Jet, Glass, Door, Click, Crowd, Whiz, Slide, Hoof, UiHover, UiClick, UiSlide, EnemyStep,

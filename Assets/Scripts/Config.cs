@@ -17,7 +17,12 @@ namespace RockGame
         Workbench2,
         Ladder, BearTrap, SleepingBag, LargeGate, SpeedJuice, Skull, AutoTurret,
         HeavyRam, AlienDust,
-        Hammer, Barricade }
+        Hammer, Barricade,
+        // the wacky airdrop items (Wacky.cs)
+        BouncyCastle, Decoy, OmenMap, GoldenRock, BlueShell, Connect4Wand, JumpBoots, StickOfTruth, SuicideBomb, GravityStaff,
+        AttentionSnail, InvSwapper, TimeoutBall, KnockStick1, KnockStick, ShieldPotion, SlowGun, TreeBreaker, DrawMonster, BearJuice,
+        ChaosSigil, DroneBot, GameshowWand, DanceBomb, DecoyBase, BaseRebuild, FakeFlare, DisguiseKit, BallGrabber, Scribble,
+        AntGun, ClutterBomb }
 
     /// <summary>
     /// The game mode (picked in the main menu, next to the players). They don't mix:
@@ -650,7 +655,7 @@ namespace RockGame
                 case Item.Workbench: return "Trade Station";    // (the code still calls them workbenches, T1 and T2)
                 case Item.Workbench2: return "Advanced Trade Station";
                 case Item.None: return "";
-                default: return i.ToString();
+                default: return WackyName(i) ?? i.ToString();
             }
         }
 
@@ -697,7 +702,7 @@ namespace RockGame
                 case Item.Pistol: return PistolMag;
                 case Item.Revolver: return RevolverMag;
                 case Item.TreeCracker: return TreeCrackerUses;
-                default: return 0;
+                default: return WackyMaxData(i);
             }
         }
 
@@ -712,6 +717,11 @@ namespace RockGame
         public static readonly Item[] AirdropChoices =
         {
             Item.C4, Item.DeathWand, Item.PortalGun, Item.RocketLauncher, Item.TreeCamo, Item.InvisPotion, Item.Jetpack, Item.Wallhack, Item.BombBush, Item.EnderPearl, Item.SpeedJuice,
+            // the wacky ones (Wacky.cs): picked by AirdropItemMask2 (bit i - 32)
+            Item.BouncyCastle, Item.Decoy, Item.OmenMap, Item.GoldenRock, Item.BlueShell, Item.Connect4Wand, Item.JumpBoots, Item.StickOfTruth, Item.SuicideBomb, Item.GravityStaff,
+            Item.AttentionSnail, Item.InvSwapper, Item.TimeoutBall, Item.KnockStick1, Item.KnockStick, Item.ShieldPotion, Item.SlowGun, Item.TreeBreaker, Item.DrawMonster, Item.BearJuice,
+            Item.ChaosSigil, Item.DroneBot, Item.GameshowWand, Item.DanceBomb, Item.DecoyBase, Item.BaseRebuild, Item.FakeFlare, Item.DisguiseKit, Item.BallGrabber, Item.Scribble,
+            Item.AntGun, Item.ClutterBomb,
         };
 
         /// <summary>Fun Random: every airdrop item there is, the unused ones too.</summary>
@@ -719,6 +729,10 @@ namespace RockGame
         {
             Item.C4, Item.DeathWand, Item.PortalGun, Item.RocketLauncher, Item.TreeCamo, Item.InvisPotion, Item.Jetpack, Item.Wallhack, Item.BombBush, Item.EnderPearl, Item.SpeedJuice,
             Item.Armor, Item.Chainsaw, Item.FortTower, Item.Sniper, Item.SlenderEgg, Item.BuildEgg, Item.GiantStaff, Item.Airstrike, Item.Wood,
+            Item.BouncyCastle, Item.Decoy, Item.OmenMap, Item.GoldenRock, Item.BlueShell, Item.Connect4Wand, Item.JumpBoots, Item.StickOfTruth, Item.SuicideBomb, Item.GravityStaff,
+            Item.AttentionSnail, Item.InvSwapper, Item.TimeoutBall, Item.KnockStick1, Item.KnockStick, Item.ShieldPotion, Item.SlowGun, Item.TreeBreaker, Item.DrawMonster, Item.BearJuice,
+            Item.ChaosSigil, Item.DroneBot, Item.GameshowWand, Item.DanceBomb, Item.DecoyBase, Item.BaseRebuild, Item.FakeFlare, Item.DisguiseKit, Item.BallGrabber, Item.Scribble,
+            Item.AntGun, Item.ClutterBomb,
         };
 
         /// <summary>Fun: every item in the game (tools, weapons, loot, the unused ones) - not the rock, materials or buffs.</summary>
@@ -785,7 +799,7 @@ namespace RockGame
                 case Item.GiantStaff: return RarityGiantStaff;
                 case Item.Airstrike: return RarityAirstrike;
                 case Item.Wood: return RarityWood;
-                default: return 10;
+                default: return WackyRarity(i);
             }
         }
 
@@ -828,7 +842,7 @@ namespace RockGame
             get
             {
                 var l = new List<Item>();
-                for (int i = 0; i < AirdropChoices.Length; i++) if ((AirdropItemMask & (1 << i)) != 0 && InAirdropPool(AirdropChoices[i])) l.Add(AirdropChoices[i]);
+                for (int i = 0; i < AirdropChoices.Length; i++) if (AirdropPicked(i) && InAirdropPool(AirdropChoices[i])) l.Add(AirdropChoices[i]);
                 if (l.Count == 0) foreach (var i in AirdropChoices) if (InAirdropPool(i)) l.Add(i);
                 return l;
             }
@@ -849,14 +863,14 @@ namespace RockGame
                 case Item.Sword: return new MeleeStats { Cooldown = Mathf.Max(0.2f, SwordSwingTime), Range = SwordRange, PlayerDamage = SwordBodyDamage, WoodGather = 4f, StoneGather = 1f, StructureDamage = 15f };
                 // the hammer (Upgrades.cs): upgrades your own walls; it can't hurt a player
                 case Item.Hammer: return new MeleeStats { Cooldown = HammerSwingTime, Range = HammerRange, PlayerDamage = HammerBodyDamage, WoodGather = 3f, StoneGather = 2f, StructureDamage = 10f };
-                default: return default;
+                default: return WackyMelee(i);
             }
         }
         /// <summary>The battering rams: the normal one and the High Strength one (three steps a slam).</summary>
         public static bool IsRam(Item i) => i == Item.Ram || i == Item.HeavyRam;
-        public static bool IsMelee(Item i) => i == Item.Rock || i == Item.Hatchet || i == Item.Pickaxe || i == Item.Spear || i == Item.Chainsaw || i == Item.TreeCracker || i == Item.Sword || i == Item.Hammer;
+        public static bool IsMelee(Item i) => i == Item.Rock || i == Item.Hatchet || i == Item.Pickaxe || i == Item.Spear || i == Item.Chainsaw || i == Item.TreeCracker || i == Item.Sword || i == Item.Hammer || IsWackyMelee(i);
         /// <summary>Can this melee item hurt a player? Not the hammer (a building tool).</summary>
-        public static bool HurtsPlayers(Item i) => i != Item.Hammer;
+        public static bool HurtsPlayers(Item i) => i != Item.Hammer && i != Item.KnockStick && i != Item.KnockStick1; // (the knockback sticks only knock you back)
         /// <summary>Melee damage to a player: the sword has its own headshot number, everything else does x2 to the head.</summary>
         public static float MeleePlayerDamage(Item i, bool head) => i == Item.Sword ? (head ? SwordHeadDamage : SwordBodyDamage) : i == Item.Hammer ? (head ? HammerHeadDamage : HammerBodyDamage) : Melee(i).PlayerDamage * (head ? HeadshotMul : 1f);
         /// <summary>A melee weapon's own headshot number (the sword, the hammer), or -1: the usual x2.</summary>
@@ -1211,6 +1225,7 @@ namespace RockGame
             (12, new[] { "BallGatherMul", "ChainsawWood", "ChainsawUses" }),
             (13, new[] { "AirdropCount", "ArrowPlayerDamage", "CrossbowDamage", "ShellWood", "RevolverAmmoWood", "AutoWoodLevel2", "HeavyArmorWood" }),
             (14, new[] { "DeathWandWood", "BearTrapWood", "BearTrapDamage", "BearTrapHold" }),
+            (15, new[] { "HammerWood" }),
         };
         const string MigrateKey = "RockGame.Tunables.migrated";
 

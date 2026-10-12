@@ -20,6 +20,8 @@ namespace RockGame
         public readonly NetworkVariable<float> DoorHealth = new NetworkVariable<float>();
         /// <summary>When it was last hit (server time): the hammer can't upgrade it for Cfg.HammerHitLock seconds after.</summary>
         public readonly NetworkVariable<double> HitAt = new NetworkVariable<double>(-1000);
+        /// <summary>The Stick of Truth bent it out of shape (a seed for how: 0 = straight). Its look and its colliders.</summary>
+        public readonly NetworkVariable<byte> Warp = new NetworkVariable<byte>();
         /// <summary>Seconds until the hammer can upgrade it again after a hit (0 = now).</summary>
         public float UpgradeLockLeft => NetworkManager == null ? 0f : Mathf.Max(0f, (float)(HitAt.Value + Cfg.HammerHitLock - NetworkManager.ServerTime.Time));
 
@@ -224,6 +226,16 @@ namespace RockGame
                 else m_DoorAngle = Mathf.MoveTowards(m_DoorAngle, target, 300f * Time.deltaTime);
                 m_Hinge.localRotation = Quaternion.Euler(0, m_DoorAngle, 0);
             }
+            if (Warp.Value != 0 && m_Visual && m_Rise >= 1f) ApplyWarp();
+        }
+
+        /// <summary>The Stick of Truth's twist: leaning over, skewed and squashed or stretched (the same on every screen).</summary>
+        void ApplyWarp()
+        {
+            var r = new System.Random(Warp.Value * 7919 + (int)(transform.position.x * 13f) + (int)(transform.position.z * 31f));
+            float R(float a) => ((float)r.NextDouble() * 2f - 1f) * a;
+            m_Visual.localRotation = Quaternion.Euler(R(16f), R(25f), R(16f));
+            m_Visual.localScale = new Vector3(1f + R(0.25f), 1f + R(0.3f), 1f + R(0.25f));
         }
 
         // ---------------- Server ----------------
@@ -310,6 +322,7 @@ namespace RockGame
                 // a piece broken down: nobody can build in the same spot again for a while (PlayerNet.PlaceRpc)
                 ServerNoteDestroyed();
                 ServerBreakLeaning();
+                if (NetGame.Instance != null) NetGame.Instance.ServerNoteStructureGone(this); // (the instant base rebuild)
                 NetworkObject.Despawn(true);
                 if (collapse && NetGame.Instance) NetGame.Instance.ServerCollapseCheck();
             }

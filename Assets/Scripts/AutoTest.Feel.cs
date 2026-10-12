@@ -114,7 +114,8 @@ namespace RockGame
             float aimAt = Time.time;
             Binds.TestPress(Bind.Attack);
             yield return new WaitForSeconds(0.08f);
-            Check(pc.SpearCommits == c0 && pc.SpearReleases == r0, $"clicking straight after RMB doesn't throw at once ({pc.SpearCommits - c0} started)");
+            if (Cfg.SpearMinWindup > 0.1f) // (0 = the instant throw: a click straight after RMB throws)
+                Check(pc.SpearCommits == c0 && pc.SpearReleases == r0, $"clicking straight after RMB doesn't throw at once ({pc.SpearCommits - c0} started)");
             float commitAt = -1f, releaseAt = -1f, until = Time.time + 2f;
             while (Time.time < until && (commitAt < 0f || releaseAt < 0f))
             {

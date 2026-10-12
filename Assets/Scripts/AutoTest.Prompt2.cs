@@ -46,10 +46,10 @@ namespace RockGame
                 var last = all.Count > 0 ? Cfg.CraftRecipe(all[all.Count - 1], team) : default;
                 Check(last.Output == Item.DeathWand && last.Wood == 4000 && Cfg.CraftTier(Item.DeathWand) == 2, $"the death wand is the last thing on the Advanced Trade Station's list, for 4000 ({last.Output} {last.Wood})");
                 bool wandDrop = Cfg.AirdropLoot.Contains(Item.DeathWand);
-                int mask = Cfg.AirdropItemMask;
-                Cfg.AirdropItemMask = (1 << Cfg.AirdropChoices.Length) - 1;
+                int mask = Cfg.AirdropItemMask, mask2 = Cfg.AirdropItemMask2;
+                Cfg.PickAllAirdrops(true);
                 for (int i = 0; i < 300 && !wandDrop; i++) wandDrop |= NetGame.RollAirdropCrate()[0].Id == Item.DeathWand || NetGame.RollAirdropLoot().Id == Item.DeathWand;
-                Cfg.AirdropItemMask = mask;
+                Cfg.AirdropItemMask = mask; Cfg.AirdropItemMask2 = mask2;
                 Check(!wandDrop, "no death wand in the airdrops any more");
             }
             Check(!MatchIntro.CanSkip, "the match intro can't be skipped");

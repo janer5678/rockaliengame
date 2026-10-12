@@ -26,6 +26,8 @@ namespace RockGame
             public Item Item;
             /// <summary>1 right after a throw, falling to 0 (overhand throw).</summary>
             public float Throw;
+            /// <summary>The dance bomb: 0..1 how much it's dancing. The blue shell: 0..1 knocked flat on its back.</summary>
+            public float Dance, Knock;
         }
 
         readonly Transform m_Root;   // character space (unscaled visual root)
@@ -55,6 +57,9 @@ namespace RockGame
         /// <summary>head bone rotation x this = the head's own frame in character axes (x right, y up, z forward), whatever the pose.</summary>
         public Quaternion HeadFrameOffset => m_Head != null && m_Rest.TryGetValue(m_Head, out var r) ? Quaternion.Inverse(r.rel) : Quaternion.identity;
         public Transform ChestBone => m_Chest != null ? m_Chest : m_Spine;
+        /// <summary>The feet (the double jump boots go on them).</summary>
+        public Transform LeftFoot => m_LFoot != null ? m_LFoot : m_LLo;
+        public Transform RightFoot => m_RFoot != null ? m_RFoot : m_RLo;
 
         public static BodyAnimator TryCreate(Transform visualRoot, float width, out GameObject model)
         {
@@ -578,11 +583,53 @@ namespace RockGame
             else if (wLine > 0f) m_GripRot = Quaternion.LookRotation(aimDir, Vector3.up);                           // bow / crossbow / ram: +Z forward
             m_GripW = Mathf.Max(wSpear, wLine);
 
-            // ---- death: topple backwards ----
-            float d = p.Dead ? Smooth(p.DeadTime / 0.5f) : 0f;
+            // ---- the dance bomb: dancing (three moves, round and round) ----
+            if (p.Dance > 0.01f) Dance(p.Dance);
+
+            // ---- death: topple backwards (knocked flat by the blue shell: the same, then back up) ----
+            float d = p.Dead ? Smooth(p.DeadTime / 0.5f) : Smooth(Mathf.Clamp01(p.Knock));
             // leaning back into the slide (the whole body tips a little)
             m_Model.localRotation = Quaternion.Euler(-88f * d - 12f * Smooth(m_Slide) * (1f - d), 0, 0);
             if (d > 0) m_Model.localPosition += new Vector3(0, 0.25f * d, -0.15f * d);
+        }
+
+        /// <summary>Dancing (w: how much): a disco point, the arm wave and the floss, a couple of seconds each, bobbing to the beat.</summary>
+        void Dance(float w)
+        {
+            float t = Time.time;
+            float beat = Mathf.Sin(t * Mathf.PI * 2f * 2f);         // two bobs a second
+            float bob = Mathf.Abs(beat);
+            int move = Mathf.FloorToInt(t / 1.6f) % 3;
+            float sway = Mathf.Sin(t * Mathf.PI * 2f) * 18f;
+            Rot(m_Hips, new Vector3(0, sway * 0.5f, sway * 0.4f));
+            Rot(m_LUp, new Vector3(-20f * bob, 0, -6f));
+            Rot(m_RUp, new Vector3(-20f * (1f - bob), 0, 6f));
+            Rot(m_LLo, new Vector3(35f * bob, 0, 0));
+            Rot(m_RLo, new Vector3(35f * (1f - bob), 0, 0));
+            Rot(m_Spine, new Vector3(-6f, -sway * 0.6f, -sway * 0.3f));
+            Rot(m_Head, new Vector3(beat * 10f, sway * 0.8f, 0));
+            switch (move)
+            {
+                case 0: // the disco point: one arm to the sky, one on the hip
+                    Rot(m_RArm, new Vector3(-150f + beat * 20f, 0, 35f));
+                    Rot(m_RFore, new Vector3(-10f, 0, 0));
+                    Rot(m_LArm, new Vector3(-20f, 0, -50f));
+                    Rot(m_LFore, new Vector3(-100f, 0, 0));
+                    break;
+                case 1: // both arms up, waving side to side
+                    Rot(m_RArm, new Vector3(-165f, 0, 25f + beat * 25f));
+                    Rot(m_LArm, new Vector3(-165f, 0, -25f + beat * 25f));
+                    Rot(m_RFore, new Vector3(-20f, 0, 0));
+                    Rot(m_LFore, new Vector3(-20f, 0, 0));
+                    break;
+                default: // the floss: arms swinging front and back the opposite way to the hips
+                    Rot(m_RArm, new Vector3(beat * 45f, 0, 25f));
+                    Rot(m_LArm, new Vector3(-beat * 45f, 0, -25f));
+                    Rot(m_RFore, new Vector3(-10f, 0, 0));
+                    Rot(m_LFore, new Vector3(-10f, 0, 0));
+                    break;
+            }
+            m_Model.localPosition = m_ModelBase + new Vector3(0, -0.08f * bob * w, 0);
         }
 
         /// <summary>World pose for a held item: in the right fist, handle pointing forward.</summary>

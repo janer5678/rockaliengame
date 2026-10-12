@@ -185,7 +185,7 @@ namespace RockGame
         [Rpc(SendTo.Owner)]
         public void KnockbackRpc(Vector3 velocity)
         {
-            if (Bot.Value) return;
+            if (Bot.Value) { var bb = GetComponent<BotBrain>(); if (bb != null) bb.Knockback(velocity); return; } // (a bot's thrown back too)
             var pc = GetComponent<PlayerController>();
             if (pc != null) pc.Knockback(velocity);
         }
@@ -219,8 +219,18 @@ namespace RockGame
                 case DevCmd.GiveStone: ServerGive(Cfg.GatherItem(Item.Stone), 1000); break;
                 case DevCmd.GiveArrows: ServerGive(Item.Arrow, 50); break;
                 case DevCmd.GiveOpItems:
-                    foreach (var it in Cfg.AirdropChoices) ServerGive(it, 1, Mathf.Clamp(Cfg.MaxData(it), 0, 255));
+                {
+                    // every airdrop item (the wacky ones too); what doesn't fit in your bag lands on the ground round you
+                    var spill = new System.Collections.Generic.List<ItemStack>();
+                    foreach (var it in Cfg.AirdropChoices)
+                    {
+                        int data = Mathf.Clamp(Cfg.MaxData(it), 0, 255);
+                        int left = ServerGive(it, 1, data);
+                        if (left > 0) spill.Add(ItemStack.Of(it, left, data));
+                    }
+                    if (spill.Count > 0) g.ServerScatter(spill, transform.position + transform.forward * 1.5f + Vector3.up * 0.5f);
                     break;
+                }
                 case DevCmd.GiveCraftables:
                     for (int i = 0; i < Cfg.RecipeCount; i++)
                     {

@@ -10,7 +10,7 @@ namespace RockGame
         float m_NextSniper, m_NextPortal, m_NextUse;
         readonly Dictionary<Item, int> m_PendingThrows = new Dictionary<Item, int>();
 
-        static bool Throwable(Item i) => i == Item.SlenderEgg || i == Item.BuildEgg || i == Item.RocketLauncher || i == Item.BombBush || i == Item.EnderPearl;
+        static bool Throwable(Item i) => i == Item.SlenderEgg || i == Item.BuildEgg || i == Item.RocketLauncher || i == Item.BombBush || i == Item.EnderPearl || Cfg.WackyThrown(i);
 
         /// <summary>Sniper: one shot kills, whatever it hits - unless it's a headshot on someone wearing a helmet (the helmet breaks).</summary>
         [Rpc(SendTo.Server)]
@@ -137,7 +137,7 @@ namespace RockGame
         [Rpc(SendTo.Server)]
         public void ThrowItemRpc(Item kind, Vector3 origin, Vector3 velocity)
         {
-            if (Dead.Value || CarryingBall || InSuddenDeath || !Throwable(kind) || HeldItem != kind || Time.time < m_NextThrow) return;
+            if (Dead.Value || CarryingBall || InSuddenDeath || !Throwable(kind) || HeldItem != kind || Time.time < m_NextThrow || WackyNoAttack || IsBear) return;
             m_NextThrow = Time.time + 0.5f;
             Reveal();
             var held = HeldStack;
@@ -172,6 +172,7 @@ namespace RockGame
                     break;
                 case Item.BombBush: g.ServerSpawnBombBush(point, Team.Value); break;
                 case Item.EnderPearl: ServerPearlLanded(point, normal); break;
+                default: g.ServerWackyLanded(kind, point, this); break; // (the dance bomb, the clutter bomb, the decoy base: NetGame.Wacky.cs)
             }
         }
 

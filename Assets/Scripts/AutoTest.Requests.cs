@@ -205,10 +205,10 @@ namespace RockGame
 
             // airdrop rocket launchers come with 3 rockets, and fire them one by one
             {
-                int mask = Cfg.AirdropItemMask;
-                Cfg.AirdropItemMask = 1 << System.Array.IndexOf(Cfg.AirdropChoices, Item.RocketLauncher);
+                int mask = Cfg.AirdropItemMask, mask2 = Cfg.AirdropItemMask2;
+                Cfg.PickOnlyAirdrop(Item.RocketLauncher);
                 var rolled = NetGame.RollAirdropLoot();
-                Cfg.AirdropItemMask = mask;
+                Cfg.AirdropItemMask = mask; Cfg.AirdropItemMask2 = mask2;
                 Check(rolled.Id == Item.RocketLauncher && rolled.Data == 3, $"an airdrop rocket launcher holds 3 rockets ({rolled.Id}, {rolled.Data})");
                 me.ServerGive(Item.RocketLauncher, 1, rolled.Data);
                 yield return new WaitForSeconds(0.2f);

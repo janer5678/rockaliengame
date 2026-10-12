@@ -45,12 +45,12 @@ namespace RockGame
         /// and the wood machine there from the start, speeding up over the match. false = the stations as before.</summary>
         public const bool HammerUpgrades = true;
         /// <summary>The hammer is in this mode (a starter item): where the upgrade stations used to be, but the tutorial.</summary>
-        public static bool HammerOn => HammerUpgrades && PowerMenu && !Builder && !Tutorial;
+        public static bool HammerOn => HammerUpgrades && (PowerMenu || Tutorial) && !Builder; // (the tutorial ends on it: Tutorial.cs)
         /// <summary>The wood machine is there from the start and levels up by itself over the match (not bought).</summary>
-        public static bool AutoWoodGen => HammerUpgrades && AutoWood && !Tutorial;
+        public static bool AutoWoodGen => HammerUpgrades && AutoWood; // (the tutorial too: it lands when the wall drops)
         /// <summary>What the hammer charges to take one piece up to stone, metal, armoured (in the mode's currency).</summary>
         [Tune("Hammer")] public static int HammerStoneWood = 50, HammerMetalWood = 100, HammerArmouredWood = 250;
-        [Tune("Hammer")] public static int HammerWood = 100;
+        [Tune("Hammer")] public static int HammerWood = 5;
         /// <summary>A piece that's just been hit (by anyone) can't be hammered up a tier for this many seconds.</summary>
         [Tune("Hammer")] public static float HammerHitLock = 5f;
         /// <summary>The hammer's swing. It never hurts a player (Cfg.HurtsPlayers): it's a building tool, not a weapon.</summary>
@@ -60,7 +60,7 @@ namespace RockGame
         static int DnaPrice(int wood) => DnaPriced(new Recipe { Wood = wood }).Wood;
 
         /// <summary>This mode has base upgrades, and an upgrade station in every base (E on it opens UPGRADES).</summary>
-        public static bool HasBaseUpgrades => (PowerMenu || Tutorial) && !Builder && (!HammerUpgrades || Tutorial); // (the tutorial teaches the station: Tutorial.cs, the "upgrade" step)
+        public static bool HasBaseUpgrades => PowerMenu && !Builder && !HammerUpgrades; // (no upgrade station anywhere with the hammer - the tutorial neither)
 
         /// <summary>Is this upgrade in this mode?</summary>
         public static bool BaseUpgradeOn(Item id) => id == Item.FortifyBuff ? HasBaseUpgrades : id == Item.WoodGenBuff && AutoWood && HasBaseUpgrades;
