@@ -164,6 +164,11 @@ namespace RockGame
             m_DamageFlash = Mathf.Max(0, m_DamageFlash - Time.deltaTime);
         }
 
+        GUIStyle m_BuffStyle;
+        /// <summary>Test hooks: the ball buff line last drawn, and when.</summary>
+        public static string BuffShown = "";
+        public static float BuffShownAt = -1f;
+
         void Styles()
         {
             // (Settings > Display > INTERFACE: the UI scale and the font)
@@ -496,14 +501,25 @@ namespace RockGame
                     Shadowed(new Rect(ab.x + 6, ab.y, ab.width, ab.height), $"<b>ARMOUR {me.ArmorHp.Value}</b>", m_Small);
                     statY -= 26 * k;
                 }
-                // the ball buff, just above the armour: your team's ball is in your base, so gathering pays more
-                if (me.BallBuff && (game == null || game.S != GameState.SuddenDeath))
+                // the ball buff, just above the armour: whichever team has the ball in its machine gathers x3 - shown to
+                // everyone, twice the size and in capitals, so the others see the enemy has it and go for the ball
+                int buffTeam = Ball.Instance != null && Ball.Instance.IsSpawned && !Ball.Instance.IsCarried ? Ball.Instance.SocketTeam.Value : -1;
+                if (buffTeam >= 0 && (game == null || game.S != GameState.SuddenDeath))
                 {
-                    var br = new Rect(hr.x, statY, hw, 22 * k);
-                    Fill(br, new Color(0.3f, 0.22f, 0f, 0.65f));
-                    Fill(new Rect(br.x, br.y, 4 * k, br.height), new Color(1f, 0.82f, 0.25f, 0.95f));
-                    Shadowed(new Rect(br.x + 10 * k, br.y, br.width, br.height), $"<color=#ffd24a><b>BALL BUFF</b></color>  <color=#eeeeee>+{(Cfg.BallGatherMul - 1f) * 100f:0}% gathering</color>", m_Small);
-                    statY -= 26 * k;
+                    bool mine = buffTeam == me.Team.Value;
+                    var buffC = mine ? new Color(1f, 0.82f, 0.25f) : Color.Lerp(Cfg.TeamColor[Mathf.Clamp(buffTeam, 0, 3)], Color.white, 0.25f);
+                    string mul = $"{Cfg.BallGatherMul:0.#}X GATHERING";
+                    string line = mine ? $"<color=#ffd24a><b>BALL BUFF</b></color>  <color=#eeeeee><b>{mul}</b></color>"
+                        : $"<color=#{ColorUtility.ToHtmlStringRGB(buffC)}><b>{Cfg.TeamLabel(buffTeam)} HAS THE BALL BUFF</b></color>  <color=#eeeeee><b>{mul}</b></color>";
+                    if (m_BuffStyle == null || m_BuffStyle.fontSize != m_Small.fontSize * 2) m_BuffStyle = new GUIStyle(m_Small) { fontSize = m_Small.fontSize * 2, alignment = TextAnchor.MiddleLeft, wordWrap = false, richText = true, clipping = TextClipping.Overflow };
+                    float bw = m_BuffStyle.CalcSize(new GUIContent(line)).x + 34 * k; // (bold counted: the rich text measured as drawn)
+                    var br = new Rect(hr.x, statY - 58 * k, Mathf.Max(hw, bw), 44 * k); // (lifted clear of the hotbar)
+                    Fill(br, new Color(buffC.r * 0.3f, buffC.g * 0.3f, buffC.b * 0.3f, 0.7f));
+                    Fill(new Rect(br.x, br.y, 8 * k, br.height), new Color(buffC.r, buffC.g, buffC.b, 0.95f));
+                    Shadowed(new Rect(br.x + 18 * k, br.y, br.width, br.height), line, m_BuffStyle);
+                    BuffShown = line;
+                    BuffShownAt = Time.time;
+                    statY -= 88 * k;
                 }
                 if (me.HelmetHp.Value > 0)
                 {
@@ -618,7 +634,8 @@ namespace RockGame
                 case Item.Wallhack: return "<b>Wallhack Glasses</b>    hold them to see your enemies through walls";
                 case Item.InvisPotion: return $"<b>Invisibility Potion</b>    LMB: drink ({Cfg.InvisTime:0}s, attacking shows you)";
                 case Item.SpeedJuice: return $"<b>Extreme Speed Juice</b>    LMB: drink ({Cfg.SpeedJuiceTime:0}s of extreme speed)";
-                case Item.Chainsaw: return "<b>Chainsaw</b>    hold LMB: cuts wood and stone fast (never wears out)";
+                case Item.Chainsaw: return $"<b>Chainsaw</b> ({s.Data * Cfg.ChainsawWearEvery} uses left)    hold LMB: cuts wood and stone fast";
+                case Item.Hammer: return $"<b>Hammer</b>    LMB on your own wall: upgrade it ({Cfg.HammerStoneWood} / {Cfg.HammerMetalWood} / {Cfg.HammerArmouredWood} {Cfg.CurrencyName})   anything else: a hit ({Cfg.HammerBodyDamage:0} body / {Cfg.HammerHeadDamage:0} head)";
                 case Item.HeavyRam: return $"<b>High Strength Battering Ram</b> ({s.Data} hit{(s.Data == 1 ? "" : "s")} left)    hold LMB at an enemy piece: 3x a normal ram";
                 case Item.EnderPearl: return "<b>Ender Pearl</b>    LMB: throw it - you teleport to wherever it lands";
                 case Item.Pistol: return $"<b>Pistol</b>  ({s.Data} shot{(s.Data == 1 ? "" : "s")} left)    LMB: shoot" + (me.Count(Item.PistolAmmo) > 0 ? $"   {KT(Bind.Rotate)}: reload ({me.Count(Item.PistolAmmo)} spare ammo)" : "");
@@ -810,6 +827,7 @@ namespace RockGame
             switch (s.Id)
             {
                 case Item.Ram: case Item.HeavyRam: return $"  ({s.Data} hits left)";
+                case Item.Chainsaw: return $"  ({s.Data * Cfg.ChainsawWearEvery} uses left)";
                 case Item.TreeCracker: return $"  ({s.Data} uses left)";
                 case Item.Pistol: return $"  ({s.Data}/{Cfg.PistolMag})";
                 case Item.Revolver: return $"  ({s.Data}/{Cfg.RevolverMag})";

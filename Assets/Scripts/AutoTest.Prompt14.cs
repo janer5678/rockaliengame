@@ -48,11 +48,10 @@ namespace RockGame
             yield return Snap("p14_centre");
 
             // ---- items
-            Check(Cfg.CraftTier(Item.Chainsaw) == 2 && Cfg.CraftTier(Item.Saddle) == 2, "the chainsaw and saddle are Advanced Trade Station items");
-            int ci = Cfg.RecipeIndex(Item.Chainsaw);
-            Check(ci >= 0 && Cfg.GetRecipe(ci).Wood == 2000, $"the chainsaw costs 2000 wood ({(ci >= 0 ? Cfg.GetRecipe(ci).Wood : -1)})");
-            Check(Cfg.MaxData(Item.Chainsaw) == 0, "the chainsaw has no durability bar");
-            Check(Cfg.CraftTier(Item.HeavyRam) == 1 && Cfg.RecipeIndex(Item.HeavyRam) >= 0, "the High Strength Battering Ram is a Trade Station item");
+            // (the chainsaw and saddle went back to the Trade Station T1, the chainsaw at 500 wood with twice its old
+            // durability, and the High Strength ram is gone: AutoTest.Monday.cs checks them)
+            Check(Cfg.CraftTier(Item.Chainsaw) == 1 && Cfg.CraftTier(Item.Saddle) == 1, "the chainsaw and saddle are Trade Station items");
+            Check(Cfg.RecipeIndex(Item.HeavyRam) < 0, "no High Strength Battering Ram");
             // ---- rams on a metal wall
             var front = Cfg.BaseCenter[team] - Cfg.BackDir(team) * (Cfg.BaseHalf + 8f);
             front.y = MapBuilder.Height(front.x, front.z);
@@ -65,7 +64,6 @@ namespace RockGame
                 return s;
             }
             var w1 = Wall(front + side * 4f, 2);
-            var w2 = Wall(front - side * 4f, 2);
             yield return new WaitForSeconds(0.4f);
             IEnumerator Slam(Item ram, Structure w)
             {
@@ -79,9 +77,6 @@ namespace RockGame
             }
             yield return Slam(Item.Ram, w1);
             Check(w1 != null && w1.IsSpawned && w1.Tier.Value == 1, "a normal ram knocks a metal wall down a step");
-            yield return new WaitForSeconds(Cfg.RamWindup);
-            yield return Slam(Item.HeavyRam, w2);
-            Check(w2 == null || !w2.IsSpawned, "the High Strength ram breaks a metal wall in one slam");
 
             // ---- a rocket on an armoured wall
             var w3 = Wall(front, 3);

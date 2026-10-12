@@ -262,7 +262,21 @@ namespace RockGame
             foreach (var s in Structure.All) if (s.Team.Value == team && s.Upgradable && s.Tier.Value == 0) wood++;
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
             yield return new WaitForSeconds(0.3f);
-            if (Cfg.Upgrade10Walls)
+            if (Cfg.HammerOn)
+            {
+                // the hammer (Upgrades.cs): each piece up a tier at a time, for its own price (AutoTest.Monday.cs tests aiming it)
+                me.ServerGive(Cfg.CurrencyItem, 1000);
+                int before = me.Count(Cfg.CurrencyItem), tiers = 0;
+                foreach (var s in Structure.All) if (s.Team.Value == team && s.Upgradable) tiers += s.Tier.Value;
+                bool ok = me.ServerHammerNearest() && me.ServerHammerNearest();
+                yield return new WaitForSeconds(0.4f);
+                int after = 0;
+                foreach (var s in Structure.All) if (s.Team.Value == team && s.Upgradable) after += s.Tier.Value;
+                Check(ok && wood >= 2 && after - tiers == 2 && before - me.Count(Cfg.CurrencyItem) == Cfg.HammerStoneWood + Cfg.HammerMetalWood && Cfg.FortifyLevel(team) == 0,
+                    $"the hammer twice on the piece nearest the machine: stone, then metal, for {before - me.Count(Cfg.CurrencyItem)} {Cfg.CurrencyName}");
+                yield return Snap("arsenal_hammer_looks");
+            }
+            else if (Cfg.Upgrade10Walls)
             {
                 // Upgrade 10 Walls in Fortify All Walls' place (Cfg.Upgrade10WallsEverywhere): the 10 pieces nearest the machine
                 // (the wall picker's job: AutoTest.Prompt14.cs tests that) go up one tier for its price; the rest stay put
@@ -493,6 +507,13 @@ namespace RockGame
             {
                 bool anyPile = false;
                 foreach (var it in g.Items) if (it.Stack.Id == Item.Wood && Cfg.BaseTeamAt(it.Pos) == team) anyPile = true;
+                if (Cfg.AutoWoodGen)
+                {
+                    // the hammer's modes: the machine is there from the start, levelling up by itself (AutoTest.Monday.cs)
+                    Check(g.WoodGenLevelOf(team) >= 1 && ours != null && ours.Built && ours.GetComponentInChildren<Collider>() != null, $"the wood machine is there from the start (level {g.WoodGenLevelOf(team)})");
+                }
+                else
+                {
                 Check(!anyPile && g.WoodGenLevelOf(team) == 0 && Cfg.WoodGenRate(0) == 0 && Cfg.MaxWoodGen == 3 && ours != null && !ours.Built && ours.GetComponentInChildren<Collider>() == null && !ours.Humming,
                     $"no wood machine to start with: nothing there, no pile (level {g.WoodGenLevelOf(team)}, pile {anyPile})");
                 me.ServerGive(Item.Wood, 1000);
@@ -504,6 +525,7 @@ namespace RockGame
                 yield return new WaitForSeconds(0.4f);
                 Check(g.WoodGenLevelOf(team) == 1 && before - me.Count(Item.Wood) == Cfg.WoodGenBuildWood && Cfg.WoodGenRate(1) == Cfg.AutoWoodPerSecond && ours != null && ours.Built && ours.GetComponentInChildren<Collider>() != null,
                     $"the first wood gen upgrade builds the wood machine for {before - me.Count(Item.Wood)} wood: {Cfg.WoodGenRate(1)} a second (the default speed)");
+                }
                 Check(ours != null && ours.AimLine(team).Contains($"{Cfg.WoodGenRate(1)} wood a second") && ours.AimLine(1 - team).Contains("WOOD MACHINE") && !ours.AimLine(1 - team).Contains(Cfg.TeamLabel(team) + "'s"),
                     $"looking at the wood machine says its rate ({(ours != null ? ours.AimLine(team) : "")})");
                 for (int i = 0; i < me.Inv.Count; i++) if (me.Inv[i].Id == Item.Wood) me.Inv[i] = default; // (the pile checks count from nothing)
@@ -564,7 +586,7 @@ namespace RockGame
             }
             yield return Snap("autowood_machine_1");
             yield return WoodMachineCloseUp(me, pc, team, 1);
-            for (int lvl = 1; lvl < 3; lvl++)
+            for (int lvl = 1; lvl < 3 && !Cfg.AutoWoodGen; lvl++)
             {
                 int before = me.Count(Item.Wood);
                 yield return UpgradeBuy(me, pc, Item.WoodGenBuff);
@@ -575,6 +597,7 @@ namespace RockGame
                 yield return Snap("autowood_machine_" + (lvl + 1));
                 yield return WoodMachineCloseUp(me, pc, team, lvl + 1);
             }
+            if (!Cfg.AutoWoodGen)
             {
                 int before = me.Count(Item.Wood);
                 yield return UpgradeBuy(me, pc, Item.WoodGenBuff);

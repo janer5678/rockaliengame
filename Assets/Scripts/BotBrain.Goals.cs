@@ -178,6 +178,16 @@ namespace RockGame
         bool UpgradeStep(out Step s)
         {
             s = new Step { Goal = Goal.Upgrades, Kind = StepKind.Upgrade };
+            if (Cfg.HammerOn)
+            {
+                // the hammer (Upgrades.cs): the next of its pieces up a tier, nearest the machine first
+                var ids = Cfg.NearestUpgradable(MyTeam, 1);
+                if (ids.Length == 0 || !Unity.Netcode.NetworkManager.Singleton.SpawnManager.SpawnedObjects.TryGetValue(ids[0], out var no) || !no.TryGetComponent(out Structure piece)) return false;
+                if (m_CraftFail.TryGetValue(Item.Hammer, out var wait) && Time.time < wait) return false;
+                s.Item = Item.Hammer;
+                s.Cost = Cfg.HammerCost(piece.Tier.Value);
+                return true;
+            }
             if (!Tutorial.AllowsFor(m_P, TutFeature.Station)) return false;
             int team = MyTeam, best = int.MaxValue;
             Cfg.BaseUpgrades(s_UpgradeList);
@@ -328,6 +338,17 @@ namespace RockGame
         {
             int team = MyTeam;
             var id = m_UpgradeId;
+            if (id == Item.Hammer)
+            {
+                // the hammer: home, then the nearest piece that can go up a tier (no need to walk up to each one)
+                if (Cfg.BaseTeamAt(transform.position) != team) { GoTo(Cfg.BaseCenter[team], 3f, true); return; }
+                if (Time.time < m_NextUse) return;
+                m_NextUse = Time.time + 0.6f;
+                if (m_P.ServerHammerNearest()) Upgraded++;
+                else m_CraftFail[Item.Hammer] = Time.time + 20f;
+                Done();
+                return;
+            }
             if (!Cfg.BaseUpgradeOn(id) || Cfg.BaseUpgradeMaxed(id, team)) { Done(); return; }
             var c = Cfg.BaseCenter[team];
             var back = Cfg.BackDir(team);

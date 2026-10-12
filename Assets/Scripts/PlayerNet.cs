@@ -1118,7 +1118,7 @@ namespace RockGame
             if (no.TryGetComponent(out PlayerNet p))
             {
                 if (p == this || p.Dead.Value || !GameAllowsCombat) return;
-                ServerHitPlayer(p, st.PlayerDamage, point, dir, item == Item.Sword ? Cfg.SwordHeadDamage : -1f);
+                ServerHitPlayer(p, st.PlayerDamage, point, dir, Cfg.MeleeHeadDamage(item));
             }
             else if (no.TryGetComponent(out Vehicle v))
             {
@@ -1158,11 +1158,14 @@ namespace RockGame
             }
         }
 
-        /// <summary>The chainsaw wears out a little with every hit and breaks when it runs out.</summary>
+        /// <summary>The chainsaw wears out a little with every hit (one use every Cfg.ChainsawWearEvery hits: twice its old
+        /// life) and breaks when it runs out; the tree cracker every hit.</summary>
+        int m_SawHits;
         void WearChainsaw()
         {
             var st = HeldStack;
-            if (st.Id != Item.TreeCracker) return; // (the chainsaw never wears out)
+            if (st.Id != Item.Chainsaw && st.Id != Item.TreeCracker) return;
+            if (st.Id == Item.Chainsaw && ++m_SawHits % Mathf.Max(1, Cfg.ChainsawWearEvery) != 0) return;
             int left = st.Data - 1;
             if (left <= 0)
             {

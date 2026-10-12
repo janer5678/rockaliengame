@@ -308,7 +308,7 @@ namespace RockGame
         // in reach) is tinted red - nothing else. On your screen only, with a MaterialPropertyBlock (the shared materials
         // aren't touched); any block a renderer already had is put back afterwards. Glowing, see-through and unlit parts
         // (lamps, crystals, beacons, screens) are left alone so no light turns red. Letting go of the mode clears it.
-        static readonly Color k_DemoAimed = new Color(1f, 0.08f, 0.05f);
+        static readonly Color k_DemoAimed = new Color(1f, 0.08f, 0.05f), k_HammerAimed = new Color(0.2f, 1f, 0.3f);
         static readonly int k_BaseColorId = Shader.PropertyToID("_BaseColor"), k_ColorId = Shader.PropertyToID("_Color");
         static MaterialPropertyBlock s_DemoMpb;
         readonly List<(Renderer r, Unity.Netcode.NetworkObject owner, MaterialPropertyBlock prev)> m_DemoLit = new List<(Renderer, Unity.Netcode.NetworkObject, MaterialPropertyBlock)>();
@@ -318,12 +318,22 @@ namespace RockGame
         public int DemolishLitCount { get; private set; }
         public Unity.Netcode.NetworkObject DemolishAimed => m_DemoAimed;
 
-        /// <summary>The piece / chest in the crosshair that Demolish would take down (yours, in reach), or null.</summary>
+        /// <summary>The piece / chest in the crosshair that Demolish would take down (yours, in reach), or null. Holding the
+        /// hammer: the piece of yours it would upgrade (Upgrades.cs), lit green instead of red.</summary>
         Unity.Netcode.NetworkObject DemolishTarget()
         {
+            if (HammerAiming) { var hs = HammerTarget(); return hs != null ? hs.NetworkObject : null; }
             if (!Aim(CenterRay(), Cfg.BuildRange, out var h)) return null;
             var no = h.collider.GetComponentInParent<Unity.Netcode.NetworkObject>();
             return no != null && CanDemolish(no) ? no : null;
+        }
+
+        /// <summary>The hammer: your team's piece in the crosshair (in reach) that can still go up a tier, or null.</summary>
+        public Structure HammerTarget()
+        {
+            if (!Aim(CenterRay(), Cfg.BuildRange, out var h)) return null;
+            var s = h.collider.GetComponentInParent<Structure>();
+            return s != null && s.IsSpawned && s.Team.Value == m_Net.Team.Value && s.Upgradable && s.Tier.Value < Cfg.MaxFortify ? s : null;
         }
 
         bool CanDemolish(Unity.Netcode.NetworkObject no)
@@ -355,7 +365,7 @@ namespace RockGame
             {
                 if (r == null) continue;
                 var baseC = r.sharedMaterial.HasProperty(k_BaseColorId) ? r.sharedMaterial.GetColor(k_BaseColorId) : Color.white;
-                var c = Color.Lerp(baseC, k_DemoAimed, 0.8f);
+                var c = Color.Lerp(baseC, HammerAiming ? k_HammerAimed : k_DemoAimed, HammerAiming ? 0.45f : 0.8f);
                 c.a = baseC.a;
                 s_DemoMpb.Clear();
                 if (prev != null) r.GetPropertyBlock(s_DemoMpb); // (keep whatever else it had set)

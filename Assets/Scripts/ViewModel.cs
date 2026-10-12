@@ -318,6 +318,7 @@ namespace RockGame
                 case Item.Rock: PoseRock(shared, sharedRot, swinging, swingE); break;
                 case Item.Sword: PoseSword(shared, sharedRot, swinging, swingE); break;
                 case Item.Hatchet:
+                case Item.Hammer:
                 case Item.TreeCracker:
                 case Item.Pickaxe: PoseTool(shared, sharedRot, swinging, swingE); break;
                 case Item.Spear: PoseSpear(s, shared, sharedRot, swinging, swingE); break;

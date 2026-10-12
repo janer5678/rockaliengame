@@ -16,7 +16,8 @@ namespace RockGame
         Workbench,
         Workbench2,
         Ladder, BearTrap, SleepingBag, LargeGate, SpeedJuice, Skull, AutoTurret,
-        HeavyRam, AlienDust }
+        HeavyRam, AlienDust,
+        Hammer }
 
     /// <summary>
     /// The game mode (picked in the main menu, next to the players). They don't mix:
@@ -154,16 +155,16 @@ namespace RockGame
         {
             switch (r)
             {
-                case GameRules.Arsenal: return "Normal prices (the crossbow is cheaper), plus a POWER ITEMS menu next to crafting: sword, shotgun, revolver, C4 and headshot helmet. E on the upgrade station beside your alien machine: UPGRADES (" + (Upgrade10WallsEverywhere ? "upgrade 10 walls at a time" : "fortify all your walls") + ").";
+                case GameRules.Arsenal: return "Normal prices (the crossbow is cheaper), plus a POWER ITEMS menu next to crafting: sword, shotgun, revolver, C4 and headshot helmet. " + (HammerUpgrades ? "Upgrade your walls one at a time with the HAMMER." : "E on the upgrade station beside your alien machine: UPGRADES (" + (Upgrade10WallsEverywhere ? "upgrade 10 walls at a time" : "fortify all your walls") + ").");
                 case GameRules.Dna: return DnaDesc;
                 case GameRules.Bedwars: return "Classic, but no ball: smash the enemy alien machines (3 hits, or one explosive right on it). Your team respawns from its machine's cryochamber - lose it and you're out. After 10 minutes every chamber breaks, 3 minutes later every base breaks down. Last team standing wins.";
                 case GameRules.ThreeGoal: return "Classic, but score 3 times: get the ball into your machine and a UFO drops it back in the middle. First to 3 wins (most goals when the clock runs out).";
                 case GameRules.Progress: return "Classic, but while the ball sits in your machine your progress bar fills - fill it and you win.";
                 case GameRules.Assassin: return "No ball: kill the enemies - each drops their skull - and hand a skull of every one of them into your machine (E). Skulls only drop in this mode.";
-                case GameRules.JonahTest: return "Classic, plus Jonah's ideas: the trade stations TRADE (everything costs wood), and UPGRADE 10 WALLS at the upgrade station (insert 1000 wood) lets you fly round your base in a black void and pick 10 pieces to go up a tier.";
+                case GameRules.JonahTest: return HammerUpgrades ? "Classic (walls upgraded with the HAMMER; the trade stations TRADE, everything costs wood)." : "Classic, plus Jonah's ideas: the trade stations TRADE (everything costs wood), and UPGRADE 10 WALLS at the upgrade station (insert 1000 wood) lets you fly round your base in a black void and pick 10 pieces to go up a tier.";
                 case GameRules.Domination: return "Classic, but whoever has the ball (carried or in their machine) gets the Advanced Trade Station's items without building one. Lose the ball, lose them.";
                 case GameRules.Tutorial: return "New here? Start with this. Short, simple steps teach you the whole game - you do each one to go on, and each control unlocks as it's taught. The clock is stopped and it's always the small Plains map. Press PLAY TUTORIAL and pick Solo or With a friend.";
-                case GameRules.AutoWood: return "Buy a wood machine in UPGRADES (E on the upgrade station beside your alien machine) and wood piles up at your base by itself - go and pick it up; more upgrades speed it up. Arsenal's prices and POWER ITEMS.";
+                case GameRules.AutoWood: return HammerUpgrades ? "A wood machine in your base piles up wood by itself and speeds up as the match goes on - go and pick it up. Upgrade your walls one at a time with the HAMMER. Arsenal's prices and POWER ITEMS." : "Buy a wood machine in UPGRADES (E on the upgrade station beside your alien machine) and wood piles up at your base by itself - go and pick it up; more upgrades speed it up. Arsenal's prices and POWER ITEMS.";
                 case GameRules.Builder: return "No bases. Arsenal's items, but each takes a while to make. Craft and build anywhere - pieces lock onto each other. Plant the ball anywhere (E): whoever's ball it is at the end wins.";
                 case GameRules.Fun: return "No building phase, a short match, and every so often everyone gets the same random item - any item in the game.";
                 case GameRules.FunRandom: return "No building phase, a short match, and every so often each player gets their own random airdrop item.";
@@ -379,6 +380,9 @@ namespace RockGame
         /// <summary>Extreme Speed Juice: how long, and how many times as fast.</summary>
         [Tune("Airdrop")] public static float SpeedJuiceTime = 5f, SpeedJuiceMul = 2.3f;
         [Tune("Airdrop")] public static int ChainsawUses = 134, AirdropResources = 1000;
+        /// <summary>The chainsaw loses one of its ChainsawUses every this many hits (2: twice the original durability; the
+        /// uses are a byte, so they can't simply be doubled past 255).</summary>
+        public const int ChainsawWearEvery = 2;
         // how common each item is in airdrops (and respawn loot, Fun Random): a weight - 20 comes twice as often as 10, 0 never
         // (only among the items picked in the mode options; if every picked item is 0 they're all equally likely)
         [Tune("Airdrop rarity")] public static int RarityC4 = 10, RarityDeathWand = 10, RarityPortalGun = 10, RarityRocketLauncher = 10, RarityTreeCamo = 10,
@@ -412,7 +416,7 @@ namespace RockGame
         /// <summary>Standing in your own base heals you slowly (HP a second).</summary>
         [Tune("Player")] public static float BaseRegen = 2f;
         /// <summary>While your team's ball is in your machine's socket (Builder: planted for your team), everything you gather gives this much more.</summary>
-        [Tune("Player")] public static float BallGatherMul = 1.15f;
+        [Tune("Player")] public static float BallGatherMul = 3f;
         [Tune("Player")] public static float BerryHeal = 25f, BerryEatTime = 1.5f, MeatEatTime = 3f;
         [Tune("Player")] public static int ArmorHp = 25;               // wooden armour: a second health bar, used up first (max 255)
         [Tune("Player")] public static float HeadshotMul = 2f;
@@ -486,7 +490,7 @@ namespace RockGame
         [Tune("Crafting")] public static int ChestWood = 50, BarrierWood = 40;
         /// <summary>The Trade Station's ladder, bear trap, sleeping bag and large gate, and the Advanced one's auto turret.</summary>
         [Tune("Crafting")] public static int LadderWood = 250, BearTrapWood = 200, SleepingBagWood = 175, LargeGateWood = 120, AutoTurretWood = 3000;
-        [Tune("Crafting")] public static int CrossbowWood = 500, SaddleWood = 750, ArmorWood = 250, ChainsawWood = 2000;
+        [Tune("Crafting")] public static int CrossbowWood = 500, SaddleWood = 750, ArmorWood = 250, ChainsawWood = 500;
         /// <summary>The High Strength Battering Ram (Trade Station): one slam does three normal rams' worth.</summary>
         [Tune("Crafting")] public static int HeavyRamWood = 600;
         [Tune("Ram")] public static int HeavyRamSteps = 3;
@@ -538,6 +542,9 @@ namespace RockGame
         /// next two speed it up - wood a second at each, and what each costs.</summary>
         [Tune("Auto Wood")] public static int AutoWoodLevel1 = 12, AutoWoodLevel2 = 25;
         [Tune("Auto Wood")] public static int WoodGenBuildWood = 1000, WoodGen1Wood = 4000, WoodGen2Wood = 8000;
+        /// <summary>The hammer's modes (Cfg.AutoWoodGen): the wood machine is there from the start and goes up a level by
+        /// itself this far through the match (a fraction of the build phase and the ball phase together).</summary>
+        [Tune("Auto Wood")] public static float WoodGenLevel2At = 0.33f, WoodGenLevel3At = 0.66f;
         /// <summary>Pistol: hitscan, this much damage a shot (a headshot has its own number instead of the usual x2).</summary>
         [Tune("Arsenal and Builder")] public static float PistolHeadDamage = 200f, PistolBodyDamage = 95f;
         /// <summary>Metal (Fortify All Walls' top step): its HP is the ...MetalHp numbers (MetalHpMul isn't used any more); melee does this share of its damage.</summary>
@@ -576,6 +583,7 @@ namespace RockGame
                 case Item.Pickaxe: return "Stone Pickaxe";
                 case Item.Ram: return "Battering Ram";
                 case Item.HeavyRam: return "High Strength Battering Ram";
+                case Item.Hammer: return "Hammer";
                 case Item.Chest: return "Storage Chest";
                 case Item.Barrier: return "Large Wall";
                 case Item.Stone: return "Stone";
@@ -664,7 +672,7 @@ namespace RockGame
             switch (i)
             {
                 case Item.Ram: return RamUses;
-                case Item.Chainsaw: return 0; // (never wears out)
+                case Item.Chainsaw: return ChainsawUses; // (it wears every ChainsawWearEvery hits: twice the old life)
                 case Item.HeavyRam: return RamUses;
                 case Item.Armor: return ArmorHp;
                 case Item.Sniper: return SniperAmmo;
@@ -681,7 +689,7 @@ namespace RockGame
         /// <summary>The airdrop items the host can pick from in the mode options (the others are unused for now).</summary>
         /// <summary>Taken out of the game for now (not craftable, not in any shop, airdrop or loot pool): the bear trap,
         /// the sleeping bag and the alien helmet. Their code stays, so they can come back by taking them off this list.</summary>
-        public static bool Removed(Item i) => i == Item.BearTrap || i == Item.SleepingBag || i == Item.Helmet || i == Item.AutoTurret; // (the auto turret: out for now)
+        public static bool Removed(Item i) => i == Item.BearTrap || i == Item.SleepingBag || i == Item.Helmet || i == Item.AutoTurret || i == Item.HeavyRam; // (the auto turret: out for now; the High Strength ram: gone)
 
         public static readonly Item[] AirdropChoices =
         {
@@ -821,14 +829,18 @@ namespace RockGame
                 case Item.TreeCracker: return new MeleeStats { Cooldown = 1.1f, Range = 2.8f, PlayerDamage = 30f, WoodGather = 9999f, StoneGather = 3f, StructureDamage = 20f };
                 // a heavy sword: a slow swing, big hits (its head and body damage are its own numbers)
                 case Item.Sword: return new MeleeStats { Cooldown = Mathf.Max(0.2f, SwordSwingTime), Range = SwordRange, PlayerDamage = SwordBodyDamage, WoodGather = 4f, StoneGather = 1f, StructureDamage = 15f };
+                // the hammer (Upgrades.cs): upgrades your own walls; as a weapon, half the sword's damage
+                case Item.Hammer: return new MeleeStats { Cooldown = HammerSwingTime, Range = HammerRange, PlayerDamage = HammerBodyDamage, WoodGather = 3f, StoneGather = 2f, StructureDamage = 10f };
                 default: return default;
             }
         }
         /// <summary>The battering rams: the normal one and the High Strength one (three steps a slam).</summary>
         public static bool IsRam(Item i) => i == Item.Ram || i == Item.HeavyRam;
-        public static bool IsMelee(Item i) => i == Item.Rock || i == Item.Hatchet || i == Item.Pickaxe || i == Item.Spear || i == Item.Chainsaw || i == Item.TreeCracker || i == Item.Sword;
+        public static bool IsMelee(Item i) => i == Item.Rock || i == Item.Hatchet || i == Item.Pickaxe || i == Item.Spear || i == Item.Chainsaw || i == Item.TreeCracker || i == Item.Sword || i == Item.Hammer;
         /// <summary>Melee damage to a player: the sword has its own headshot number, everything else does x2 to the head.</summary>
-        public static float MeleePlayerDamage(Item i, bool head) => i == Item.Sword ? (head ? SwordHeadDamage : SwordBodyDamage) : Melee(i).PlayerDamage * (head ? HeadshotMul : 1f);
+        public static float MeleePlayerDamage(Item i, bool head) => i == Item.Sword ? (head ? SwordHeadDamage : SwordBodyDamage) : i == Item.Hammer ? (head ? HammerHeadDamage : HammerBodyDamage) : Melee(i).PlayerDamage * (head ? HeadshotMul : 1f);
+        /// <summary>A melee weapon's own headshot number (the sword, the hammer), or -1: the usual x2.</summary>
+        public static float MeleeHeadDamage(Item i) => i == Item.Sword ? SwordHeadDamage : i == Item.Hammer ? HammerHeadDamage : -1f;
 
         // ---------- Building ----------
         public static string PieceName(PieceType t) => t == PieceType.Tower ? "Fort Tower" : t.ToString();
@@ -891,7 +903,7 @@ namespace RockGame
         }
 
         // ---------- Crafting ----------
-        static readonly Item[] k_Recipes = { Item.Hatchet, Item.Pickaxe, Item.Spear, Item.BuildingPlan, Item.Chest, Item.Bow, Item.Arrow, Item.Crossbow, Item.Armor, Item.Chainsaw, Item.Ram, Item.HeavyRam, Item.Barrier, Item.LargeGate, Item.Ladder, Item.Saddle, Item.Workbench, Item.Workbench2 }; // (the auto turret is out for now: Removed)
+        static readonly Item[] k_Recipes = { Item.Hatchet, Item.Pickaxe, Item.Spear, Item.BuildingPlan, Item.Chest, Item.Bow, Item.Arrow, Item.Crossbow, Item.Armor, Item.Chainsaw, Item.Ram, Item.Barrier, Item.LargeGate, Item.Ladder, Item.Saddle, Item.Workbench, Item.Workbench2, Item.Hammer }; // (the auto turret is out for now: Removed; the High Strength ram is gone)
 
         static readonly Item[] k_Limited = { Item.Hatchet, Item.Spear, Item.BuildingPlan, Item.Ram };
         static readonly List<Item> s_Active = new List<Item>();
@@ -901,7 +913,7 @@ namespace RockGame
         {
             s_Active.Clear();
             if (LimitedCrafting) { s_Active.AddRange(k_Limited); return s_Active; }
-            foreach (var it in k_Recipes) if (!(WoodMode && it == Item.Pickaxe)) s_Active.Add(it);
+            foreach (var it in k_Recipes) if (!(WoodMode && it == Item.Pickaxe) && (it != Item.Hammer || HammerOn)) s_Active.Add(it);
             if (ThemeMaps.HasWater) s_Active.Add(Item.Boat); // THEME MAPS (the boat)
             return s_Active;
         }
@@ -924,6 +936,7 @@ namespace RockGame
                 case Item.Arrow: r = new Recipe { Output = Item.Arrow, Count = Mathf.Max(1, ArrowsPerCraft), Wood = ArrowWood, Stone = ArrowStone }; break;
                 case Item.Ram: r = new Recipe { Output = Item.Ram, Count = 1, Wood = RamWood, Stone = RamStone }; break;
                 case Item.HeavyRam: r = new Recipe { Output = Item.HeavyRam, Count = 1, Wood = HeavyRamWood }; break;
+                case Item.Hammer: r = new Recipe { Output = Item.Hammer, Count = 1, Wood = HammerWood }; break;
                 case Item.Chest: r = new Recipe { Output = Item.Chest, Count = 1, Wood = ChestWood }; break;
                 case Item.Crossbow: r = new Recipe { Output = Item.Crossbow, Count = 1, Wood = CrossbowWood }; break;
                 case Item.Saddle: r = new Recipe { Output = Item.Saddle, Count = 1, Wood = SaddleWood }; break;
@@ -1173,6 +1186,7 @@ namespace RockGame
             (9, new[] { "RocketPlayerDamage", "RocketStructureDamage", "ChainsawUses", "SwordSwingTime" }),
             (10, new[] { "FortifyStoneWood", "FortifyMetalWood", "FortifyArmouredWood", "WoodGenBuildWood", "WoodGen1Wood", "WoodGen2Wood", "RocketStructureDamage" }),
             (11, new[] { "TabHoldTime" }),
+            (12, new[] { "BallGatherMul", "ChainsawWood", "ChainsawUses" }),
         };
         const string MigrateKey = "RockGame.Tunables.migrated";
 

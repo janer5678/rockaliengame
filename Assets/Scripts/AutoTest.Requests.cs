@@ -70,8 +70,8 @@ namespace RockGame
                 bool wallAbove = Physics.Raycast(new Vector3(0, MapBuilder.Height(0, 0) + MapBuilder.DomeRadius + 3f, -5f), Vector3.forward, out var hit2, 10f) && hit2.collider.name == "glass";
                 Check(domeHit && (Cfg.FourWay || wallAbove), $"the glass walls meet the dome (the wall goes over its top) ({(domeHit ? hit.collider.name : "nothing")}, {(wallAbove ? hit2.collider.name : "nothing")})");
 
-                // the ball buff: only while the ball is in your machine's socket, +15%
-                Check(Mathf.Approximately(Cfg.BallGatherMul, 1.15f), $"the ball buff is +15% ({Cfg.BallGatherMul})");
+                // the ball buff: only while the ball is in your machine's socket, x3
+                Check(Mathf.Approximately(Cfg.BallGatherMul, 3f), $"the ball buff is x3 ({Cfg.BallGatherMul})");
                 ball.ServerDrop(Cfg.BaseCenter[team] - Cfg.BackDir(team) * 5f + Vector3.Cross(Vector3.up, Cfg.BackDir(team)) * 3f + Vector3.up * 2f, Vector3.zero); // (lying in our base, away from the socket)
                 yield return new WaitForSeconds(1.2f);
                 bool lying = me.BallBuff;

@@ -219,6 +219,13 @@ namespace RockGame
             if (Cfg.Builder) AnimatePlant();
             else if (carrier == null && SocketTeam.Value >= 0) AnimateSocket(SocketTeam.Value);
             m_LastVisual = m_Visual.position;
+            // the beacon stands on the ball you SEE (carried: in the carrier's arms, not the lagging network ball - it
+            // used to jitter along behind the carrier) and stays upright, set last thing before the frame is drawn
+            if (m_Beacon)
+            {
+                m_Beacon.transform.position = carrier != null ? m_Visual.position : transform.position;
+                m_Beacon.transform.rotation = Quaternion.identity;
+            }
         }
 
         // ---------------- in a machine's socket: pulled in, then turning ----------------

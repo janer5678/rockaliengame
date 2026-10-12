@@ -49,9 +49,16 @@ namespace RockGame
             yield return HorseFeedTests(me, pc, g, team);
             yield return PortalGunTests(me, pc, g, team); // (and PortalRaidTests)
             yield return SaddleTierTest(me, pc, team);
-            yield return UpgradesScreenTests(me, pc, g, team);
+            if (!Cfg.HasBaseUpgrades)
+            {
+                // the hammer (Cfg.HammerUpgrades): no upgrade stations to test - AutoTest.Monday.cs checks the hammer
+                bool any = false;
+                foreach (var st in UpgradeStation.ByTeam) if (st != null) any = true;
+                Check(!any, "no upgrade station in any base (walls are upgraded with the hammer)");
+            }
+            else yield return UpgradesScreenTests(me, pc, g, team);
             // a client: wait for it to do its part (it feeds a horse and buys Fortify at its own upgrade station)
-            if (!Bootstrap.Solo)
+            if (!Bootstrap.Solo && Cfg.HasBaseUpgrades)
             {
                 PlayerNet other = null;
                 float until = Time.time + 30f;
@@ -325,8 +332,8 @@ namespace RockGame
             }
             int benchBefore = Cfg.BenchTier(team);
             yield return BenchBuy(me, pc, Item.Saddle);
-            Check(Cfg.CraftTier(Item.Saddle) == 2 && Cfg.BenchTier(team) == 2 && me.Count(Item.Saddle) == s0 + 1,
-                $"the saddle is crafted at the Advanced Trade Station (benches: T{Cfg.BenchTier(team)})");
+            Check(Cfg.CraftTier(Item.Saddle) == 1 && Cfg.BenchTier(team) == Mathf.Max(1, benchBefore) && me.Count(Item.Saddle) == s0 + 1,
+                $"the saddle is crafted with the Trade Station T1 (no T2 needed; benches: T{Cfg.BenchTier(team)})");
             Drop(me, Item.Saddle);
         }
 

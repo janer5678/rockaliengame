@@ -58,6 +58,13 @@ namespace RockGame
             Application.runInBackground = true;
             // a first start: the (new) Classic, the Auto Wood rules
             MapChoice = PlayerPrefs.GetInt("RockGame.Map", test ? 0 : (int)GameRules.AutoWood << Cfg.RulesShift);
+            // airdrops land anywhere on the map by default now: a choice saved with "Middle of the map" goes back to
+            // anywhere once (MODE OPTIONS can still pick the middle)
+            if (!test && PlayerPrefs.GetInt("RockGame.AirdropsAnywhere", 0) == 0)
+            {
+                PlayerPrefs.SetInt("RockGame.AirdropsAnywhere", 1);
+                if ((MapChoice & Cfg.CenterBit) != 0) { MapChoice &= ~Cfg.CenterBit; PlayerPrefs.SetInt("RockGame.Map", MapChoice); }
+            }
             // wood is the normal materials now (the menu has no Materials row). The tests keep the old stone materials
             // unless they ask for -wood, so they don't depend on what this PC last hosted; -normal still gets stone.
             if (test || !Cfg.WoodIsNormal) MapChoice &= ~Cfg.WoodBit; else MapChoice |= Cfg.WoodBit;

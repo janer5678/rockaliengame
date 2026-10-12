@@ -133,7 +133,7 @@ namespace RockGame
             var listed = ListAt(team, me.transform.position);
             bool startersOnly = true;
             foreach (var it in listed) startersOnly &= Cfg.IsStarter(it);
-            Check(startersOnly && listed.Count == (Cfg.LimitedCrafting ? 4 : 8), $"TAB with no workbench: just the starter items ({string.Join(", ", listed)})");
+            Check(startersOnly && listed.Count == (Cfg.LimitedCrafting ? 4 : Cfg.HammerOn ? 9 : 8), $"TAB with no workbench: just the starter items ({string.Join(", ", listed)})");
             yield return BagRows(pc);
             string benchRow = RowState(Item.Workbench);
             float scroll0 = Hud.CraftScrollMax;
@@ -337,8 +337,8 @@ namespace RockGame
                 var shown = new List<Item>();
                 foreach (var r in Hud.CraftRowsShown) shown.Add(r.Id);
                 if (Cfg.PowerMenu)
-                    Check(InOrder(shown, Item.Shotgun, Item.ShotgunShell, Item.Revolver, Item.RevolverAmmo, Item.Helmet, Item.C4),
-                        $"T2: the shotgun, its shells, the revolver, its bullets, the helmet, then C4 ({string.Join(", ", shown)})");
+                    Check(InOrder(shown, Item.Shotgun, Item.ShotgunShell, Item.Revolver, Item.RevolverAmmo, Item.C4),
+                        $"T2: the shotgun, its shells, the revolver, its bullets, then C4 (the helmet is out for now) ({string.Join(", ", shown)})");
             }
             float max = Hud.CraftScrollMax;
             yield return Snap(P("tab_t2"));

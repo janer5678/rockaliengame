@@ -288,6 +288,7 @@ namespace RockGame
             switch (i)
             {
                 case Item.Hatchet:
+                case Item.Hammer:
                     // laid out like Rust's hatchet icon: the handle across from bottom left to top right, the head at the top
                     // with its blade turned up and out to the side
                     t.localRotation = Quaternion.Euler(0, 0, 42) * Quaternion.Euler(0, 90, 0); break;

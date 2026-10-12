@@ -34,7 +34,7 @@ namespace RockGame
         /// </summary>
         public const bool Upgrade10WallsEverywhere = true;
         /// <summary>Upgrade 10 Walls takes Fortify All Walls' place in this mode (everything about it is gated on this).</summary>
-        public static bool Upgrade10Walls => Jonah || (Upgrade10WallsEverywhere && HasBaseUpgrades && !Tutorial && !Builder);
+        public static bool Upgrade10Walls => !HammerUpgrades && (Jonah || (Upgrade10WallsEverywhere && HasBaseUpgrades && !Tutorial && !Builder)); // (the hammer: no stations, so no Upgrade 10 Walls - Upgrades.cs)
 
         /// <summary>Alien dust is gone (everything costs wood again, Jonah mode too): nothing is bought with it. (The item and
         /// the Recipe.Dust plumbing stay, unused, in case it comes back.)</summary>

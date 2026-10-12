@@ -72,6 +72,21 @@ Shader "RockGame/Beam"
             {
                 Varyings o;
                 o.ws = TransformObjectToWorld(v.positionOS.xyz);
+                // a beam far away is never thinner than about MinPx pixels: a column a pixel or less across crawled and
+                // sparkled (worse under bloom) as you moved - it read as a glitch. Narrower than that it's widened about
+                // its axis and dimmed by as much, so it looks just as bright overall.
+                float widen = 1.0;
+                if (_DistFade > 0.5 && _Mode < 0.5)
+                {
+                    const float MinPx = 3.0;
+                    float3 axis = TransformObjectToWorld(float3(0, v.positionOS.y, 0));
+                    float3 off = o.ws - axis;
+                    float r = length(off);
+                    float dist = length(GetCameraPositionWS() - axis);
+                    float pix = dist * 2.0 / (abs(UNITY_MATRIX_P[1][1]) * _ScreenParams.y); // (one pixel, in metres, out there)
+                    float minR = pix * MinPx * 0.5;
+                    if (r > 1e-5 && r < minR) { o.ws = axis + off * (minR / r); widen = r / minR; }
+                }
                 o.positionCS = TransformWorldToHClip(o.ws);
                 o.nw = TransformObjectToWorldNormal(v.normalOS);
                 o.data = float4(v.uv, v.positionOS.y, abs(v.normalOS.y));
@@ -83,7 +98,7 @@ Shader "RockGame/Beam"
                     float ramp = _BeamFalloff > 0.01 ? smoothstep(2.0, max(2.5, _BeamFalloff), d) : 1.0;
                     k = lerp(saturate(_BeamNearK), 1.0, ramp) * max(0.0, _BeamStrength);
                 }
-                o.near = k;
+                o.near = k * widen;
                 return o;
             }
 

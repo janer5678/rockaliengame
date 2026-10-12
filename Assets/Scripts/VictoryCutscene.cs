@@ -168,7 +168,7 @@ namespace RockGame
                 float top = pos.y + AirdropShip.HatchY * scale;
                 float bottom = Mathf.Lerp(top, s_Spot.y - 0.3f, Mathf.SmoothStep(0f, 1f, (e - (BeamOn - 0.2f)) / 0.5f));
                 float a = Mathf.Clamp01(Mathf.Min((e - BeamOn + 0.2f) / 0.25f, (BeamOff - e) / 0.4f));
-                float flicker = 0.92f + 0.08f * Mathf.Sin(Time.time * 11f);
+                const float flicker = 1f; // (it used to flicker 2x a second: it read as a glitch)
                 AirdropShip.PlaceBeam(s_Beam.transform, s_Main, s_Core, s_Halo, s_Spot, top, bottom, AirdropShip.HatchR * 0.8f * scale);
                 var c = BeamColour(g);
                 // (as bright as the other beams; it goes see-through round each winner in it, so you see them inside it)

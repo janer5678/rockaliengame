@@ -120,7 +120,8 @@ namespace RockGame
                 case Item.Workbench2: return $"{Cfg.ItemName(id)}: lets you obtain EVEN MORE STUFF by trading resources intergalactically.";
                 case Item.Crossbow: return $"Crossbow: {Cfg.CrossbowDamage:0} damage, faster and flatter than the bow. Reloads itself from your arrows.";
                 case Item.Armor: return $"Armour: {Cfg.ArmorHp} extra health used up before your own.";
-                case Item.Chainsaw: return "Chainsaw: rips through wood and stone. Never wears out.";
+                case Item.Chainsaw: return $"Chainsaw: rips through wood and stone. {Cfg.ChainsawUses * Cfg.ChainsawWearEvery} uses.";
+                case Item.Hammer: return $"Hammer: aim at one of your walls and LMB to upgrade it - stone {Cfg.HammerStoneWood}, metal {Cfg.HammerMetalWood}, armoured {Cfg.HammerArmouredWood} {Cfg.CurrencyName} a piece. Hits for half a sword.";
                 case Item.HeavyRam: return "High Strength Battering Ram: 3x a normal ram. Wood, stone and metal break in one slam; armoured drops to wood.";
                 case Item.Saddle: return $"Saddle: {KT(Bind.Interact)} on a wild horse to ride it.";
                 case Item.Boat: return $"Boat: put it on open water and {KT(Bind.Interact)} to drive it.";

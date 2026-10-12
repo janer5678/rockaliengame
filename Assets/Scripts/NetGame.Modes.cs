@@ -54,12 +54,31 @@ namespace RockGame
         /// <summary>Where a team's wood pile is: on the bedrock, beside the machine.</summary>
         static Vector3 WoodPilePos(int team) => Cfg.WoodTrayPos(team); // out of the wood machine's chute
 
+        /// <summary>Cfg.AutoWoodGen: seconds of the match so far (the wood machines speed up as it goes on).</summary>
+        int m_WoodGenSecs;
+
+        /// <summary>Cfg.AutoWoodGen: every team's wood machine at the level for this far into the match - level 1 from the
+        /// start, 2 at Cfg.WoodGenLevel2At of the way through (the build phase and the ball phase together), 3 at
+        /// Cfg.WoodGenLevel3At - and everyone's told when they speed up.</summary>
+        void ServerAutoWoodGenLevels()
+        {
+            float total = (Cfg.FunRules ? 0f : Bootstrap.Fast ? Cfg.FastBallDropDelay : Cfg.BallDropDelay) + BallPhase;
+            float f = m_WoodGenSecs / Mathf.Max(1f, total);
+            int lvl = f >= Cfg.WoodGenLevel3At ? 3 : f >= Cfg.WoodGenLevel2At ? 2 : 1;
+            bool up = false;
+            for (int t = 0; t < Cfg.TeamCount; t++)
+                if (WoodGenLevelOf(t) < lvl) { WoodGenLevels.Value = (WoodGenLevels.Value & ~(3 << (t * 2))) | (lvl << (t * 2)); up = true; }
+            if (up && lvl > 1) Broadcast($"The wood machines sped up: {Cfg.WoodGenRate(lvl)} wood a second!");
+        }
+
         void ServerTickAutoWood(double now, bool playing)
         {
+            if (S == GameState.Waiting) m_WoodGenSecs = 0;
             if (!Cfg.AutoWood || !playing) { m_NextWoodTick = -1; return; }
-            if (m_NextWoodTick < 0) m_NextWoodTick = now + 1.0;
+            if (m_NextWoodTick < 0) { m_NextWoodTick = now + 1.0; if (Cfg.AutoWoodGen) ServerAutoWoodGenLevels(); }
             if (now < m_NextWoodTick) return;
             m_NextWoodTick += 1.0;
+            if (Cfg.AutoWoodGen) { m_WoodGenSecs++; ServerAutoWoodGenLevels(); }
             for (int t = 0; t < Cfg.TeamCount; t++)
             {
                 int add = Mathf.Max(0, Cfg.WoodGenRate(WoodGenLevelOf(t)));

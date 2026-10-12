@@ -91,6 +91,21 @@ namespace RockGame
                         Art.Box(t, new Color(0.62f, 0.5f, 0.32f), new Vector3(0, 0.46f + g * 0.04f, 0.01f), new Vector3(0.075f, 0.014f, 0.075f), new Vector3(0, 0, g * 8f - 8f));
                     break;
                 }
+                case Item.Hammer:
+                {
+                    // a builder's hammer (Upgrades.cs): a pale wooden handle with a dark rubber grip, a steel head across the
+                    // top - the round striking face forward (+Z, where the hatchet's blade is) and a split claw curling down
+                    // behind
+                    var steel = new Color(0.62f, 0.64f, 0.68f);
+                    Art.Box(t, new Color(0.72f, 0.55f, 0.32f), new Vector3(0, 0.25f, 0), new Vector3(0.05f, 0.6f, 0.05f));
+                    Art.Box(t, new Color(0.18f, 0.18f, 0.2f), new Vector3(0, 0.03f, 0), new Vector3(0.064f, 0.18f, 0.064f));
+                    Art.Box(t, steel * 0.75f, new Vector3(0, 0.55f, 0f), new Vector3(0.078f, 0.12f, 0.08f));                       // the eye round the handle
+                    Art.Box(t, steel, new Vector3(0, 0.56f, 0.07f), new Vector3(0.068f, 0.075f, 0.16f));                             // the neck
+                    Art.Part(t, Art.Cylinder, steel * 0.85f, new Vector3(0, 0.56f, 0.155f), new Vector3(0.075f, 0.02f, 0.075f), new Vector3(90, 0, 0)); // the face
+                    for (int sx = -1; sx <= 1; sx += 2)                                                                              // the claw
+                        Art.Box(t, steel * 0.9f, new Vector3(sx * 0.018f, 0.545f, -0.1f), new Vector3(0.022f, 0.045f, 0.15f), new Vector3(-28, 0, 0));
+                    break;
+                }
                 case Item.Pickaxe:
                 {
                     // dark handle, a long curved double-pointed iron head (a T), red cloth wrap

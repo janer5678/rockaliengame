@@ -238,7 +238,7 @@ namespace RockGame
                 float bottom = Mathf.Lerp(top, ground.y, Mathf.Clamp01((e - BeamStart) / BeamReach));
                 if (this == Lane0) BeamBottom = bottom;
                 float a = Mathf.Clamp01(e < beamT ? (e - BeamStart) / 0.2f : e > land ? 1f - (e - land) / 0.8f : 1f);
-                float flicker = 0.9f + 0.1f * Mathf.Sin(Time.time * 12f);
+                const float flicker = 1f; // (it used to flicker 2x a second: it read as a glitch)
                 PlaceBeam(m_Beam.transform, m_Main, m_Core, m_Halo, new Vector3(ground.x, 0f, ground.z), top, bottom, HatchR * 0.95f * scale);
                 BeamFx.Set(m_BeamMat, Glow, 1.3f * a * flicker);
                 BeamFx.Set(m_CoreMat, new Color(0.95f, 0.85f, 1f), 2.0f * a * flicker);

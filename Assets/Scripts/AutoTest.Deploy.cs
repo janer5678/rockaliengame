@@ -11,7 +11,7 @@ namespace RockGame
         /// bag, a bear trap, a ladder, a large gate and an auto turret go down; you climb the ladder; an enemy's bear trap
         /// snaps you and holds you; an enemy turret with a pistol and ammo shoots you; the gate opens; Extreme Speed Juice
         /// makes you fast; dead, you respawn at your sleeping bag (and it waits a minute after); armour 25 / heavy 100;
-        /// airdrop crates hold an explosive, 500-1000 wood and one more airdrop item.
+        /// airdrop crates hold two stacks of 500-1000 wood and one airdrop item.
         /// </summary>
         IEnumerator DeployRoutine(PlayerNet me, PlayerController pc)
         {
@@ -24,9 +24,8 @@ namespace RockGame
                 "the bag and trap are out for now; the ladder and gate are Trade Station items, the turret an Advanced one");
             {
                 var crate = NetGame.RollAirdropCrate();
-                bool boom = crate.Count == 3 && (crate[0].Id == Item.C4 || crate[0].Id == Item.RocketLauncher || crate[0].Id == Item.BombBush);
-                bool wood = crate.Count == 3 && crate[1].Id == Item.Wood && crate[1].Count >= 500 && crate[1].Count <= 1000;
-                Check(boom && wood && crate[2].Id != Item.Wood, $"an airdrop crate: an explosive, 500-1000 wood and one more ({string.Join(", ", crate.ConvertAll(s => s.Id + " x" + s.Count))})");
+                bool wood = crate.Count == 3 && crate[0].Id == Item.Wood && crate[1].Id == Item.Wood && crate[0].Count >= 500 && crate[1].Count <= 1000;
+                Check(wood && crate[2].Id != Item.Wood && !crate[2].Empty, $"an airdrop crate: two stacks of 500-1000 wood and one airdrop item ({string.Join(", ", crate.ConvertAll(s => s.Id + " x" + s.Count))})");
             }
             var spawn = Cfg.SpawnPos(team);
             var back = Cfg.BackDir(team);

@@ -17,6 +17,14 @@ namespace RockGame
     /// only. Builder has no bases (no stations), so its Fortify stays a POWER ITEMS craft.
     /// While Cfg.Upgrade10WallsEverywhere is on (JonahMode.cs) every mode with a station but the tutorial has Upgrade 10
     /// Walls in Fortify's place (Cfg.Upgrade10Walls: the wall picker -> UpgradeWallsRpc), as Jonah mode always does.
+    ///
+    /// THE HAMMER (Cfg.HammerUpgrades, on): there's no upgrade station in any base any more (only the tutorial keeps its
+    /// own, for its station step). Walls are upgraded one at a time with the HAMMER, a starter item (under the building
+    /// plan in the crafting list): aim it at one of your team's pieces and it lights up green with what the next tier
+    /// costs (HammerStoneWood / HammerMetalWood / HammerArmouredWood a piece); LMB upgrades it (HammerUpgradeRpc). At
+    /// anything else it's a weapon: half the sword's damage. The wood machine is in every base from the start and speeds
+    /// up by itself over the match (Cfg.AutoWoodGen, NetGame.ServerTickAutoWood) instead of being bought.
+    /// Set HammerUpgrades false to bring the upgrade stations, Upgrade 10 Walls / Fortify and the bought wood gen back.
     /// </summary>
     public static partial class Cfg
     {
@@ -33,8 +41,24 @@ namespace RockGame
         public static Vector3 UpgradeStationPos(int team) => MachinePos(team) + Quaternion.LookRotation(-BackDir(team)) * UpgradeStationLocal;
         public static Quaternion UpgradeStationRot(int team) => Quaternion.LookRotation(-BackDir(team)) * Quaternion.Euler(0, UpgradeStationTurn, 0);
 
+        /// <summary>THE HAMMER: true = no upgrade stations (but the tutorial's), walls upgraded one by one with the hammer,
+        /// and the wood machine there from the start, speeding up over the match. false = the stations as before.</summary>
+        public const bool HammerUpgrades = true;
+        /// <summary>The hammer is in this mode (a starter item): where the upgrade stations used to be, but the tutorial.</summary>
+        public static bool HammerOn => HammerUpgrades && PowerMenu && !Builder && !Tutorial;
+        /// <summary>The wood machine is there from the start and levels up by itself over the match (not bought).</summary>
+        public static bool AutoWoodGen => HammerUpgrades && AutoWood && !Tutorial;
+        /// <summary>What the hammer charges to take one piece up to stone, metal, armoured (in the mode's currency).</summary>
+        [Tune("Hammer")] public static int HammerStoneWood = 50, HammerMetalWood = 100, HammerArmouredWood = 250;
+        [Tune("Hammer")] public static int HammerWood = 100;
+        /// <summary>The hammer as a weapon: half the sword's damage, a quicker swing.</summary>
+        [Tune("Hammer")] public static float HammerBodyDamage = 47.5f, HammerHeadDamage = 75f, HammerSwingTime = 0.9f, HammerRange = 2.6f;
+        /// <summary>What the hammer charges to take a piece from `tier` to the next one (0: it can't go higher).</summary>
+        public static int HammerCost(int tier) => tier >= MaxFortify ? 0 : DnaPrice(tier >= 2 ? HammerArmouredWood : tier == 1 ? HammerMetalWood : HammerStoneWood);
+        static int DnaPrice(int wood) => DnaPriced(new Recipe { Wood = wood }).Wood;
+
         /// <summary>This mode has base upgrades, and an upgrade station in every base (E on it opens UPGRADES).</summary>
-        public static bool HasBaseUpgrades => (PowerMenu || Tutorial) && !Builder; // (the tutorial teaches the station: Tutorial.cs, the "upgrade" step)
+        public static bool HasBaseUpgrades => (PowerMenu || Tutorial) && !Builder && (!HammerUpgrades || Tutorial); // (the tutorial teaches the station: Tutorial.cs, the "upgrade" step)
 
         /// <summary>Is this upgrade in this mode?</summary>
         public static bool BaseUpgradeOn(Item id) => id == Item.FortifyBuff ? HasBaseUpgrades : id == Item.WoodGenBuff && AutoWood && HasBaseUpgrades;
@@ -95,6 +119,51 @@ namespace RockGame
 
     public partial class PlayerNet
     {
+        /// <summary>The hammer: LMB on one of your team's pieces takes it up a tier, for HammerCost of the tier it's at.</summary>
+        [Rpc(SendTo.Server)]
+        public void HammerUpgradeRpc(NetworkObjectReference target)
+        {
+            var g = NetGame.Instance;
+            if (!Cfg.HammerOn || Dead.Value || HeldItem != Item.Hammer || InSuddenDeath || g == null || g.S == GameState.GameOver) return;
+            if (!target.TryGet(out var no) || !no.TryGetComponent(out Structure s)) return;
+            if (Vector3.Distance(s.transform.position, transform.position) > Cfg.BuildRange + 4f) return;
+            ServerHammer(s);
+        }
+
+        /// <summary>Server: one piece up a tier with the hammer (the checks, the price, the upgrade). True if it went up.</summary>
+        public bool ServerHammer(Structure s)
+        {
+            if (s == null || !s.IsSpawned || s.Team.Value != Team.Value || !s.Upgradable) return false;
+            if (s.Tier.Value >= Cfg.MaxFortify) { Notify("That's already armoured"); return false; }
+            int cost = Cfg.HammerCost(s.Tier.Value);
+            var r = new Recipe { Output = Item.FortifyBuff, Count = 1, Wood = cost }; // (Wood is the currency's slot: DNA in DNA mode)
+            if (!CanAfford(r)) { Notify($"Need {cost} {Cfg.CurrencyName} to upgrade it to {Cfg.TierName(s.Tier.Value + 1).ToLower()}"); return false; }
+            ServerPay(r);
+            s.ServerUpgrade(s.Tier.Value + 1);
+            Fx.Server(FxKind.StructureHit, s.transform.position + Vector3.up * 1.2f, Vector3.up);
+            HammeredRpc((byte)s.Tier.Value);
+            return true;
+        }
+
+        /// <summary>Server (bots): the hammer on the piece of ours nearest our machine that can still go up a tier.</summary>
+        public bool ServerHammerNearest()
+        {
+            var ids = Cfg.NearestUpgradable(Team.Value, 1);
+            if (ids.Length == 0 || !NetworkManager.SpawnManager.SpawnedObjects.TryGetValue(ids[0], out var no) || !no.TryGetComponent(out Structure s)) return false;
+            return ServerHammer(s);
+        }
+
+        /// <summary>The hammerer: it worked (a clink and the upgrade chime).</summary>
+        [Rpc(SendTo.Owner)]
+        void HammeredRpc(byte tier)
+        {
+            Sfx.Play2D(Sfx.Unlock, 0.55f, 0.05f);
+            HammerUpgradesDone++;
+        }
+
+        /// <summary>Test hook: pieces this client has upgraded with the hammer.</summary>
+        public static int HammerUpgradesDone;
+
         /// <summary>UPGRADE pressed on the UPGRADES screen: the server checks you're at your own upgrade station, it's in this
         /// mode and not maxed out and you can pay; then it pays, upgrades the whole team and every client sees the station celebrate.</summary>
         [Rpc(SendTo.Server)]

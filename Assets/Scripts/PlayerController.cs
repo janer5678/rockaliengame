@@ -53,6 +53,8 @@ namespace RockGame
         public static float WheelAngle(int i) => (i + 0.5f) * 360f / WheelOptions.Length;
         /// <summary>Holding the building plan with Demolish picked on the wheel (pieces you could take down light up red).</summary>
         public bool DemolishAiming => m_Net != null && m_Net.HeldItem == Item.BuildingPlan && DemolishMode;
+        /// <summary>Holding the hammer: your own piece in the crosshair lights up green (the demolish highlight's code).</summary>
+        public bool HammerAiming => m_Net != null && m_Net.HeldItem == Item.Hammer && Cfg.HammerOn;
         public string AimText = "", BuildHint = "";
         /// <summary>The scoreboard key is held: the scoreboard is up and the mouse is free.</summary>
         public bool ScoreboardOpen { get; private set; }
@@ -600,6 +602,7 @@ namespace RockGame
                         case Item.Shotgun: HandleShotgun(); break;
                         case Item.BuildingPlan: HandleBuildInput(); break;
                         case Item.Ram: case Item.HeavyRam: HandleRam(); break;
+                        case Item.Hammer: HandleHammer(); break;
                         case Item.Chest:
                         case Item.Barrier:
                         case Item.Car:
@@ -656,7 +659,7 @@ namespace RockGame
             // picking one of them you couldn't put down a chest or a station either until you picked a piece again)
             bool planMode = held == Item.BuildingPlan && (DemolishMode || UpgradeMode);
             UpdateGhost(input && !carrying && !gameOver && !riding && !planMode ? held : Item.None);
-            UpdateDemolishHighlight(!dead && !gameOver && !cutscene && !riding && DemolishAiming); // (PlayerController.Preview.cs)
+            UpdateDemolishHighlight(!dead && !gameOver && !cutscene && !riding && !carrying && (DemolishAiming || HammerAiming)); // (PlayerController.Preview.cs; the hammer's green)
             UpdateAimPreviews(input && !carrying && !gameOver && !locked && !frozen ? held : Item.None); // (PlayerController.Preview.cs)
             UpdateAimText(target);
         }
@@ -1063,6 +1066,21 @@ namespace RockGame
             Sfx.Play2D(Sfx.Swing, 0.35f, 0.15f);
             m_ImpactAt = Time.time + impact;
             m_ImpactItem = held;
+        }
+
+        /// <summary>The hammer: a click on your own piece (lit green) upgrades it a tier (Upgrades.cs: HammerUpgradeRpc);
+        /// at anything else it's a melee weapon.</summary>
+        void HandleHammer()
+        {
+            var s = Cfg.HammerOn ? HammerTarget() : null;
+            if (s == null) { HandleMelee(Item.Hammer); return; }
+            if (!Binds.Down(Bind.Attack) || Time.time < m_NextSwing) return;
+            m_NextSwing = Time.time + 0.3f;
+            int cost = Cfg.HammerCost(s.Tier.Value);
+            if (m_Net.Count(Cfg.CurrencyItem) < cost) { Hud.Push($"Need {cost} {Cfg.CurrencyName} to upgrade it to {Cfg.TierName(s.Tier.Value + 1).ToLower()}"); return; }
+            m_Net.HammerUpgradeRpc(s.NetworkObject);
+            m_VM.Swing(0.3f, ViewModel.ImpactTime);
+            Sfx.Play(Sfx.Clink, s.transform.position + Vector3.up * 1.2f, 0.9f);
         }
 
         void DoImpact()
@@ -2359,6 +2377,13 @@ namespace RockGame
                 {
                     if (st.Tier.Value == 0 && st.Upgradable && !Cfg.WoodMode) detail += $"   {KT(Bind.Upgrade)}: upgrade to stone ({Cfg.UpgradeCost(st.PType)} {Cfg.UpgradeName})";
                     if (DemolishMode) detail += "   <color=#ff8a7a>LMB: demolish</color>";
+                }
+                if (m_Net.HeldItem == Item.Hammer && Cfg.HammerOn && st.Team.Value == m_Net.Team.Value && st.Upgradable && hit.distance <= Cfg.BuildRange)
+                {
+                    int cost = Cfg.HammerCost(st.Tier.Value);
+                    bool afford = m_Net.Count(Cfg.CurrencyItem) >= cost;
+                    detail += st.Tier.Value >= Cfg.MaxFortify ? "   <color=#bbbbbb>armoured - fully upgraded</color>"
+                        : $"   <color={(afford ? "#7dff8a" : "#ff8a7a")}><b>LMB: UPGRADE TO {Cfg.TierName(st.Tier.Value + 1).ToUpper()}  ({cost} {Cfg.CurrencyName})</b></color>";
                 }
                 if (Cfg.IsRam(m_Net.HeldItem) && hit.distance <= Cfg.RamRange)
                 {

@@ -450,7 +450,15 @@ namespace RockGame
                 LookAt(pc, me, sc);
                 yield return new WaitForSeconds(0.1f);
                 yield return TutPress(Bind.Interact, 0.6f);
-                if (me.Count(Item.Spear) == 0) { Log("(E didn't pick the spear up - by RPC)"); me.PickupItemRpc(sid); }
+                if (me.Count(Item.Spear) == 0)
+                {
+                    // (it can land up on a rock or a slope, out of reach from the ground under it: stand right by it)
+                    Log($"(E didn't pick the spear up - by RPC, from beside it: {sc}, we were {Vector3.Distance(me.EyePos, sc):0.0} m away)");
+                    pc.LocalTeleport(sc - Vector3.up * 1.4f, 0f);
+                    yield return new WaitForSeconds(0.3f);
+                    me.PickupItemRpc(sid);
+                    yield return new WaitForSeconds(0.3f);
+                }
             }
             yield return TutWaitStep("bow");
             Check(Tutorial.StepId == "bow" && me.Count(Item.Spear) == 1 && Tutorial.AllowsItem(Item.Bow) && Tutorial.AllowsItem(Item.Arrow) && !Tutorial.Allows(TutFeature.Health)

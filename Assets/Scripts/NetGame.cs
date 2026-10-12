@@ -562,7 +562,7 @@ namespace RockGame
                     {
                         var m = ItemModels.Create(it.Stack.Id, go.transform);
                         // tools lie flat; small stuff is scaled up a little so it reads on the ground
-                        bool longItem = it.Stack.Id == Item.Hatchet || it.Stack.Id == Item.Pickaxe || it.Stack.Id == Item.Bow || it.Stack.Id == Item.BuildingPlan || it.Stack.Id == Item.DeathWand;
+                        bool longItem = it.Stack.Id == Item.Hatchet || it.Stack.Id == Item.Hammer || it.Stack.Id == Item.Pickaxe || it.Stack.Id == Item.Bow || it.Stack.Id == Item.BuildingPlan || it.Stack.Id == Item.DeathWand;
                         m.transform.localRotation = longItem ? Quaternion.Euler(90, 0, 0) : Quaternion.identity;
                         m.transform.localScale = Vector3.one * (it.Stack.Id == Item.Skull ? 4.5f : Cfg.IsRam(it.Stack.Id) || it.Stack.Id == Item.Chainsaw ? 1f : 1.6f); // (Assassin's skulls: big, so they're seen)
                         if (it.Stack.Id == Item.Helmet) m.transform.localPosition = new Vector3(0, 0.25f, 0);
@@ -895,7 +895,7 @@ namespace RockGame
                 var pos = LanePosAt(i);
                 var go = Instantiate(Bootstrap.I.containerPrefab, pos, Quaternion.Euler(0, Random.Range(0f, 360f), 0));
                 lane.Crate = go.GetComponent<Container>();
-                // three slots: an explosive, 500-1000 wood and another airdrop item (the tutorial's: just C4 for its raid)
+                // three slots: two stacks of wood and one airdrop item (the tutorial's: just C4 for its raid)
                 var crate = Cfg.Tutorial ? new List<ItemStack> { Tutorial.DropLoot } : RollAirdropCrate();
                 lane.Crate.ServerInit(Container.Airdrop, 7, Mathf.Max(1, crate.Count), crate);
                 go.GetComponent<NetworkObject>().Spawn(true);
@@ -930,25 +930,18 @@ namespace RockGame
         }
 
 
-        static readonly Item[] k_Explosives = { Item.C4, Item.RocketLauncher, Item.BombBush };
-
-        /// <summary>An airdrop crate's contents, three slots: always an explosive of some kind (C4, a rocket launcher or a
-        /// bomb bush - whichever are picked in the mode options, else C4), always 500-1000 wood, and always one more
-        /// airdrop item (not an explosive), by its Airdrop Rarity.</summary>
+        /// <summary>An airdrop crate's contents, three slots: two stacks of 500-1000 wood and one airdrop item - any of the
+        /// ones picked in the mode options (an explosive like C4 or the rocket launcher, or something like the tree camo),
+        /// by its Airdrop Rarity.</summary>
         public static List<ItemStack> RollAirdropCrate()
         {
-            var pool = Cfg.AirdropLoot;
-            var boom = new List<Item>();
-            foreach (var i in k_Explosives) if (pool.Contains(i)) boom.Add(i);
-            if (boom.Count == 0) boom.Add(Item.C4);
-            var b = boom[Random.Range(0, boom.Count)];
-            var other = new List<Item>();
-            foreach (var i in pool) if (i != Item.Wood && i != Item.Stone && System.Array.IndexOf(k_Explosives, i) < 0) other.Add(i);
-            if (other.Count == 0) foreach (var i in Cfg.AirdropChoices) if (System.Array.IndexOf(k_Explosives, i) < 0) other.Add(i);
-            var o = Cfg.PickAirdropItem(other);
+            var pool = new List<Item>();
+            foreach (var i in Cfg.AirdropLoot) if (i != Item.Wood && i != Item.Stone) pool.Add(i);
+            if (pool.Count == 0) pool.AddRange(Cfg.AirdropChoices);
+            var o = Cfg.PickAirdropItem(pool);
             return new List<ItemStack>
             {
-                ItemStack.Of(b, 1, Mathf.Clamp(Cfg.MaxData(b), 0, 255)),
+                Cfg.DnaSwap(ItemStack.Of(Item.Wood, Random.Range(500, 1001))),
                 Cfg.DnaSwap(ItemStack.Of(Item.Wood, Random.Range(500, 1001))),
                 o == Item.Helmet ? ItemStack.Of(Item.Helmet, 1, 1) : ItemStack.Of(o, 1, Mathf.Clamp(Cfg.MaxData(o), 0, 255)),
             };

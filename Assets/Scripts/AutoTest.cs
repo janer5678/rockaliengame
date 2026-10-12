@@ -157,6 +157,7 @@ namespace RockGame
             if (m_Mode == "intro") { yield return IntroRoutine(me, pc); yield break; } // (AutoTest.Intro.cs)
             if (m_Mode == "prompt13") { yield return Prompt13Routine(me, pc); yield break; } // (AutoTest.Prompt13.cs)
             if (m_Mode == "prompt14") { yield return Prompt14Routine(me, pc); yield break; } // (AutoTest.Prompt14.cs)
+            if (m_Mode == "monday") { yield return MondayRoutine(me, pc); yield break; } // (AutoTest.Monday.cs)
             Check(Cfg.BaseTeamAt(me.transform.position) == me.Team.Value, $"spawned inside own base ({me.transform.position})");
             Check(me.Count(Item.Rock) == 0 && me.HeldItem == Item.Rock, "empty hand = holding the rock (no rock item)");
             Check(Vector3.Distance(me.transform.position, Cfg.SpawnPos(me.Team.Value, me.Slot.Value)) < 1.5f, $"sent home to the bedrock when the match started on {Cfg.MapLabel} (seed {Cfg.MapSeed})");
