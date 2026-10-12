@@ -15,7 +15,7 @@ namespace RockGame
     public partial class Hud
     {
         bool m_LobbyOptions;
-        float m_CopiedAt = -10f;
+        float m_CopiedAt = -10f, m_CopiedIpAt = -10f;
         float m_InviteNoteAt = -10f; // (INVITE FRIENDS with no Steam overlay: says to use COPY ROOM ID)
 
         /// <summary>(tests) the lobby's screen was drawn this frame.</summary>
@@ -63,7 +63,7 @@ namespace RockGame
             int readyN = 0;
             foreach (var p in ShipLobby.Seated) if (ShipLobby.IsReady(p)) readyN++; // (bots always count as READY)
             string wait = g != null && g.StartCounting ? $"<color=#7dff7a>Starting in {Mathf.CeilToInt(g.StartsIn)}...</color>"
-                : players < 2 ? (boot.OnSteam ? "Waiting for someone to join - INVITE FRIENDS, or they right-click you on Steam > Join Game" : "Waiting for someone to join - COPY ROOM ID and send it to a friend")
+                : players < 2 ? (boot.OnSteam ? "Waiting for someone to join - INVITE FRIENDS, they right-click you on Steam > Join Game, or COPY LAN IP for someone on your network" : "Waiting for someone to join - COPY ROOM ID and send it to a friend")
                 : $"{readyN}/{players} ready - the match starts when everyone is";
             Shadowed(new Rect(30 * k, 144 * k, sw, 26 * k), wait, new GUIStyle(m_Small) { fontSize = Mathf.RoundToInt(15 * k) });
             // who's watching
@@ -104,6 +104,12 @@ namespace RockGame
                 string ip = boot.RoomId; // (the host's SteamID on Steam, its IP otherwise)
                 GUIUtility.systemCopyBuffer = string.IsNullOrEmpty(ip) ? "127.0.0.1" : ip;
                 m_CopiedAt = Time.time;
+            }
+            // a Steam host takes IP joins too (HybridTransport): its IP for a friend on the same network
+            if (boot.IsHostSession && boot.OnSteam && FramedBtn(ref bx, by, bh, Time.time - m_CopiedIpAt < 2f ? "COPIED!" : "COPY LAN IP"))
+            {
+                GUIUtility.systemCopyBuffer = Bootstrap.LanIp;
+                m_CopiedIpAt = Time.time;
             }
             // Steam: the overlay's invite list (SteamLobby.cs) - without the overlay, COPY ROOM ID or Join Game on the friends list
             if (boot.OnSteam && SteamLobby.InLobby && FramedBtn(ref bx, by, bh, Time.time - m_InviteNoteAt < 4f ? "USE COPY ROOM ID" : "INVITE FRIENDS"))

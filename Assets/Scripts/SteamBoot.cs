@@ -26,7 +26,7 @@ namespace RockGame
         {
             if (s_Tried) return;
             s_Tried = true;
-            if (Bootstrap.Testing || Array.IndexOf(Environment.GetCommandLineArgs(), "-nosteam") >= 0) { Error = "Steam is off (-nosteam)"; return; }
+            if ((Bootstrap.Testing && Array.IndexOf(Environment.GetCommandLineArgs(), "-steam") < 0) || Array.IndexOf(Environment.GetCommandLineArgs(), "-nosteam") >= 0) { Error = "Steam is off (-nosteam)"; return; } // (a test can ask for Steam with -steam)
             try
             {
                 if (!Packsize.Test() || !DllCheck.Test()) { Error = "Steam's files are the wrong version"; return; }

@@ -28,6 +28,7 @@ namespace RockGame
         NetworkManager m_Nm;
         UnityTransport m_Ut;
         SteamTransport m_St; // (Steam's relay: SteamTransport.cs - null without Steam)
+        HybridTransport m_Hy; // (a Steam host: Steam and IP at once, HybridTransport.cs - null without Steam)
         float m_MenuOrbit;
 
         /// <summary>This PC is hosting the session (the lobby's GAME OPTIONS, its own IP for COPY ROOM ID).</summary>
@@ -35,7 +36,9 @@ namespace RockGame
         public bool InSession =>m_Nm != null && (m_Nm.IsListening || m_Nm.ShutdownInProgress);
         public bool IsHost => m_Nm != null && m_Nm.IsHost;
         /// <summary>This session goes through Steam (SteamTransport), not IP.</summary>
-        public bool OnSteam => m_St != null && m_Nm != null && m_Nm.NetworkConfig.NetworkTransport == m_St;
+        public bool OnSteam => m_St != null && m_Nm != null && (m_Nm.NetworkConfig.NetworkTransport == m_St || m_Nm.NetworkConfig.NetworkTransport == m_Hy);
+        /// <summary>This PC's IP on the local network (a Steam host can be joined with it too: HybridTransport).</summary>
+        public static string LanIp => Tutorial.LocalIp();
         /// <summary>What COPY ROOM ID copies: the host's SteamID on Steam, its IP otherwise (what JOIN takes).</summary>
         public string RoomId => !IsHostSession ? Ip.Trim() : OnSteam ? SteamBoot.MyId.ToString() : Tutorial.LocalIp();
         public void SetStatus(string s) => Status = s;
@@ -67,7 +70,12 @@ namespace RockGame
         {
             m_Nm = GetComponent<NetworkManager>();
             m_Ut = GetComponent<UnityTransport>();
-            if (SteamBoot.Ready) m_St = gameObject.AddComponent<SteamTransport>();
+            if (SteamBoot.Ready)
+            {
+                m_St = gameObject.AddComponent<SteamTransport>();
+                m_Hy = gameObject.AddComponent<HybridTransport>();
+                m_Hy.Ip = m_Ut; m_Hy.Steam = m_St;
+            }
             foreach (var p in new[] { playerPrefab, netGamePrefab, structurePrefab, nodePrefab, ballPrefab, containerPrefab, vehiclePrefab })
                 if (p != null && !m_Nm.NetworkConfig.Prefabs.Contains(p)) m_Nm.AddNetworkPrefab(p);
 
@@ -100,10 +108,10 @@ namespace RockGame
             else SteamLobby.FromConnectString(string.Join(" ", args)); // (Steam started us to join a friend: "+connect_lobby id")
         }
 
-        /// <summary>Steam's relay or plain IP for the next session.</summary>
-        void UseSteam(bool steam)
+        /// <summary>Steam's relay or plain IP for the next session (hosting on Steam: both at once, HybridTransport).</summary>
+        void UseSteam(bool steam, bool host = false)
         {
-            m_Nm.NetworkConfig.NetworkTransport = steam ? m_St : m_Ut;
+            m_Nm.NetworkConfig.NetworkTransport = !steam ? m_Ut : host ? m_Hy : m_St;
         }
 
         /// <summary>Just after a Steam session starts (Netcode's message settings are made fresh as it starts).</summary>
@@ -188,10 +196,11 @@ namespace RockGame
             MapChoice = (MapChoice & ~(Cfg.GraphicsMask << Cfg.GraphicsShift)) | (GameSettings.GraphicsMode << Cfg.GraphicsShift);
             Cfg.SetMap(MapChoice, s_SeedOverride >= 0 ? s_SeedOverride : Random.Range(1, 999999));
             MapBuilder.Build();
-            // a real game with Steam up goes through Steam's relay (friends join by invite); solo and the tutorial stay on IP
+            // a real game with Steam up goes through Steam's relay (friends join by invite) and takes IP joins on the
+            // usual port as well (someone on the same network); solo and the tutorial stay on IP
             bool steam = m_St != null && !Solo && !Cfg.Tutorial;
-            UseSteam(steam);
-            if (!steam) m_Ut.SetConnectionData("127.0.0.1", ParsedPort, "0.0.0.0");
+            UseSteam(steam, true);
+            m_Ut.SetConnectionData("127.0.0.1", ParsedPort, "0.0.0.0");
             if (!m_Nm.StartHost()) { Status = steam ? "Could not start hosting through Steam" : "Could not start host (is the port already in use?)"; return; }
             SteamStarted();
             if (steam) SteamLobby.Host(Cfg.PlayersNeeded + 8); // (the invite / Join Game side: SteamLobby.cs - room for spectators too)

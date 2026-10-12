@@ -21,7 +21,7 @@ Both players start with a rock, gather wood and stone, build a Rust-style base, 
 Both players open Steam and log in (any normal account), then run the same build. The host clicks **HOST**; in the
 lobby, **INVITE FRIENDS** opens Steam's invite list (or the friend right-clicks the host on their friends list >
 **Join Game**, or pastes the host's **COPY ROOM ID** - their SteamID - into JOIN). Traffic goes through Valve's free
-relay. Solo, the tutorial and the `-autotest` runs stay on IP; with Steam closed (or `-nosteam`) everything works by IP
+relay. **IP still works too**: a Steam host also listens on port 7777 (`HybridTransport.cs`), so someone on the same network can JOIN with the host's IP (**COPY LAN IP** in the lobby) as before. Solo, the tutorial and the `-autotest` runs stay on IP (`-steam` lets a test host through Steam: `Toolsun_autotests.ps1 "lobby+client:-steam"`); with Steam closed (or `-nosteam`) everything works by IP
 as before. Code: `SteamConfig.cs` (the app ID), `SteamBoot.cs`, `SteamTransport.cs`, `SteamLobby.cs`.
 - It uses Valve's test app **480** ("Spacewar"), so Steam shows you as "playing Spacewar".
 - **Moving to the game's own Steam app:** change `AppId` in `SteamConfig.cs` to the new number and rebuild. That's all.

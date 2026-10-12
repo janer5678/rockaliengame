@@ -247,6 +247,10 @@ namespace RockGame
             while (PlayerNet.All.Count < 3 && Time.time < until) yield return null;
             yield return new WaitForSeconds(2.5f);
             Check(ShipLobby.Seated.Count == PlayerNet.All.Count, $"every player sits in the ship ({ShipLobby.Seated.Count} seated, {PlayerNet.All.Count} players)");
+            // (-steam on the host: it hosts through Steam and IP at once - HybridTransport - and the client came in by IP)
+            if (nm.IsHost && System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-steam") >= 0)
+                Check(Bootstrap.I.OnSteam && nm.NetworkConfig.NetworkTransport is HybridTransport && nm.ConnectedClientsIds.Count >= 2,
+                    $"a Steam host takes an IP join too ({nm.NetworkConfig.NetworkTransport.GetType().Name}, {nm.ConnectedClientsIds.Count} connected)");
             int onScreen = 0;
             foreach (var p in ShipLobby.Seated) if (ShipLobby.HeadOnScreen(p, out var at) && at.x > 0 && at.x < Screen.width && at.y > 0 && at.y < Screen.height) onScreen++;
             Check(onScreen == ShipLobby.Seated.Count, $"everyone's name tag is on screen ({onScreen})");
