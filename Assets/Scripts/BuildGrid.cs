@@ -333,6 +333,9 @@ namespace RockGame
         /// <summary>Extra bias, reach and score bonus (m) for that wall when it faces you (parallel to you: you're looking
         /// across the line, the way you stand to build one) - the turned one would run away from you.</summary>
         public const float FacingBias = 0.5f;
+        /// <summary>Extra bias, reach and score bonus (m) for the slot the bias picked last frame (`keep`): hysteresis, so
+        /// with the aim near the edge between two slots the ghost stays put instead of flicking between them.</summary>
+        public const float StickyBias = 0.4f;
 
         /// <summary>A wall slot faces someone looking along `facing` (flat): its line runs across their view.</summary>
         public static bool WallFaces(PieceKey k, Vector3 facing)
@@ -447,7 +450,8 @@ namespace RockGame
         /// bigger reach and bias, SameRotation*), the more so when it faces you (`facing`: where you look; FacingBias).
         /// </summary>
         public static bool PreferRecent(PieceType t, IList<PieceKey> recent, PieceKey current, bool currentOk,
-            Func<PieceKey, (bool ok, Vector3 p)> aimAt, Func<PieceKey, bool> valid, out PieceKey key, Vector3 facing = default, Func<PieceKey, bool> exists = null)
+            Func<PieceKey, (bool ok, Vector3 p)> aimAt, Func<PieceKey, bool> valid, out PieceKey key, Vector3 facing = default, Func<PieceKey, bool> exists = null,
+            PieceKey? keep = null)
         {
             key = default;
             byte want = KindOf(t);
@@ -492,10 +496,11 @@ namespace RockGame
                     // wall in the same rotation on another line, just the usual one, so aiming at that line still works)
                     bool vsTurned = sameRot && age == 0 && (!currentOk || current.Kind != PieceKey.KEdge || current.D != r.D);
                     bool faces = sameRot && age == 0 && WallFaces(k, facing);
-                    float bias = vsTurned ? SameRotationBias + (faces ? FacingBias : 0f) : RecentBias;
-                    float reach = vsTurned ? SameRotationReach + (faces ? FacingBias : 0f) : RecentReach;
+                    float sticky = keep.HasValue && keep.Value.Equals(k) ? StickyBias : 0f;
+                    float bias = (vsTurned ? SameRotationBias + (faces ? FacingBias : 0f) : RecentBias) + sticky;
+                    float reach = (vsTurned ? SameRotationReach + (faces ? FacingBias : 0f) : RecentReach) + sticky;
                     if (d > reach || d > curDist + bias) continue;
-                    float score = d - (sameRot ? SameRotationBonus + (faces ? FacingBias : 0f) : straight[s] && r.Kind == want && held ? StraightBonus : 0f) - (age == 0 ? NewestBonus : 0f);
+                    float score = d - (sameRot ? SameRotationBonus + (faces ? FacingBias : 0f) : straight[s] && r.Kind == want && held ? StraightBonus : 0f) - (age == 0 ? NewestBonus : 0f) - sticky;
                     if (score >= best || !valid(k)) continue;
                     best = score;
                     key = k;

@@ -417,6 +417,19 @@ namespace RockGame
                     $"a tree in the way stops the arrow - it sticks in it - and the enemy behind it is fine (blocked {blocked0} -> {LobbyArcade.ServerBlocked}, {LobbyArcade.ArrowsShown} arrow showing)");
                 ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "lobby_arcade_blocked.png"));
                 yield return null;
+                // AIMED: the bow points at the mouse (any way, not just the 8 the keys give) and the arrow goes there
+                LobbyArcade.TestDummy(true, enemy, new Vector2(36f, 52f));
+                LobbyArcade.TestPlace(nm.LocalClientId, new Vector2(14f, 68f), Vector2.left);
+                LobbyArcade.TestAimAt = new Vector2(36f, 52f); // (up and to the right - about 36 degrees, between two of the keys' ways)
+                yield return new WaitForSeconds(0.5f);
+                int kills2 = LobbyArcade.Kills;
+                LobbyArcade.TestShoot = true;
+                until = Time.time + 2f;
+                while (!LobbyArcade.DummyDown && Time.time < until) yield return null;
+                LobbyArcade.TestAimAt = new Vector2(-1f, -1f);
+                Check(LobbyArcade.DummyDown && LobbyArcade.Kills > kills2, $"the mouse aims the bow: an arrow shot at it flies that way and kills the enemy there (kills {kills2} -> {LobbyArcade.Kills})");
+                ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(ShotDir(), "lobby_arcade_aimed.png"));
+                yield return null;
                 LobbyArcade.TestDummy(false, 0, default);
                 LobbyArcade.TestStick = new Vector2(9f, 9f);
                 // the clients see it too (they wait for a few seconds of it), then STOP PLAYING

@@ -103,8 +103,16 @@ namespace RockGame
         }
         public static void Wake() => s_WakeTime = Time.time;
         /// <summary>A banner across the middle. The title is the game's own words: it's shown in the player's own words when
-        /// they've reworded it (Settings > Display > NOTIFICATIONS > WORDING: NotifText.Map, when it's drawn).</summary>
-        public static void Banner(string title, string sub) { s_BannerTitle = title; s_BannerSub = sub; s_BannerTime = Time.time; s_BannerTest = false; }
+        /// they've reworded it (Settings > Display > NOTIFICATIONS > WORDING: NotifText.Map, when it's drawn).
+        /// Outside the tutorial only TRADE STATION UNLOCKED and the airdrop warnings come up in the middle: the rest (the
+        /// wall, overtime, goals, the lobby...) are left out - the timer at the top already says what's going on.</summary>
+        public static void Banner(string title, string sub)
+        {
+            if (!Cfg.Tutorial && !CentreNews(title)) return;
+            s_BannerTitle = title; s_BannerSub = sub; s_BannerTime = Time.time; s_BannerTest = false;
+        }
+        /// <summary>The news that still gets a banner across the middle in a match (by the game's own words).</summary>
+        public static bool CentreNews(string title) => title != null && (title.StartsWith("TRADE STATION UNLOCKED") || title.StartsWith("AIRDROP"));
         /// <summary>Test hook: the last banner's title as it's shown (in the player's own words, if they've reworded it).</summary>
         public static string LastBannerShown => NotifText.Map(s_BannerTitle);
         public static void Clear() { s_Msgs.Clear(); s_Gains.Clear(); s_Kills.Clear(); s_BannerTime = -10f; Fx.Numbers.Clear(); }
@@ -312,36 +320,43 @@ namespace RockGame
                     case GameState.Waiting:
                         topLabel = "WAITING FOR PLAYERS";
                         topClock = $"{PlayerNet.All.Count}/{Cfg.PlayersNeeded}";
-                        sub = "Rock brawl in the stadium while you wait!" + (boot.IsHost && PlayerNet.All.Count < 2 ? "  Friends join your IP." : "");
+                        sub = Two("Rock brawl in the stadium while you wait!", boot.IsHost && PlayerNet.All.Count < 2 ? "Friends join your IP" : "The match starts when everyone's here");
                         topAccent = GameSettings.TimerColourNow(GameSettings.TimerColWaiting);
                         // everyone's in: the countdown to the start (NetGame.Lobby.cs)
-                        if (game.StartCounting) { topLabel = "MATCH STARTS IN"; topClock = Mathf.CeilToInt(game.StartsIn).ToString(); sub = "Everyone's here - get ready!"; topAccent = GameSettings.TimerColourNow(GameSettings.TimerColStart); }
+                        if (game.StartCounting) { topLabel = "MATCH STARTS IN"; topClock = Mathf.CeilToInt(game.StartsIn).ToString(); sub = Two("Everyone's here", "Get ready!"); topAccent = GameSettings.TimerColourNow(GameSettings.TimerColStart); }
                         break;
                     case GameState.PreBall when Cfg.Tutorial:
                         topLabel = "TUTORIAL";
-                        sub = "The clock is stopped - go at your own pace";
+                        sub = Two("The clock is stopped", "Go at your own pace");
                         topAccent = new Color(0.45f, 1f, 0.45f);
                         break;
                     case GameState.PreBall:
                         topLabel = "WALL DROPS IN";
                         topClock = Clock(game.TimeLeft);
                         topLeft = game.TimeLeft;
-                        sub = Cfg.Builder ? "Gather, craft and build anywhere - then plant the ball for your team"
-                            : Cfg.DnaRules ? "Mine trees and rocks for DNA, build your base" : Cfg.WoodMode ? "Gather wood and build your base" : "Gather wood & stone, build your base";
+                        sub = Cfg.Builder ? Two("Gather, craft and build anywhere", "Then plant the ball for your team")
+                            : Two(Cfg.DnaRules ? "Mine trees and rocks for DNA" : Cfg.WoodMode ? "Gather wood" : "Gather wood & stone", "Build your base!");
                         topAccent = GameSettings.TimerColourNow(GameSettings.TimerColPreBall);
                         break;
                     case GameState.BallLive:
                         topLabel = game.Overtime.Value ? "OVERTIME" : "TIME LEFT";
                         topClock = game.Overtime.Value ? "" : Clock(game.TimeLeft);
                         topLeft = game.Overtime.Value ? -1f : game.TimeLeft;
-                        sub = game.Overtime.Value ? "First team to get the ball into its machine wins" : BallStatus(team);
+                        sub = game.Overtime.Value ? Two("First ball in a machine wins", "Get it into YOUR machine!") : BallStatus(team);
                         topAccent = game.Overtime.Value ? GameSettings.TimerColourNow(GameSettings.TimerColOvertime) : GameSettings.TimerColourNow(GameSettings.TimerColBallLive);
+                        // the glass wall sliding down (MapBuilder.GlassDropping, a few seconds): WALL DROPPING, no clock
+                        if (!game.Overtime.Value && MapBuilder.GlassDropping)
+                        {
+                            topLabel = "WALL DROPPING";
+                            topClock = "";
+                            sub = Two("Collect the ball from the middle", Cfg.Builder ? "Plant it for your team!" : "Get it into YOUR machine!");
+                        }
                         break;
                     case GameState.SuddenDeath:
                         topLabel = "SUDDEN DEATH";
                         topClock = Clock(game.TimeLeft);
                         topLeft = game.TimeLeft;
-                        sub = "Rocks only - first kill wins - don't fall into space";
+                        sub = Two("Rocks only, first kill wins", "Don't fall into space!");
                         topAccent = GameSettings.TimerColourNow(GameSettings.TimerColSudden);
                         break;
                 }
@@ -520,7 +535,7 @@ namespace RockGame
             bool dead = me.Dead.Value;
             bool notifLayer = UiLook.BeginNotif(out var notifPrev);
             DrawCountdowns(game, team, dead);
-            DrawReadySetRock(game, dead); // READY / SET / ROCK! before the match (Hud.ReadySetRock.cs)
+            DrawReadySetRock(game, dead); // the 3, 2, 1 countdown before the match (Hud.ReadySetRock.cs)
 
             // ---- banner ----
             float bage = Time.time - s_BannerTime;
@@ -1291,10 +1306,11 @@ namespace RockGame
             {
                 int n = Mathf.CeilToInt(game.TimeLeft);
                 float frac = n == 0 ? 1f : game.TimeLeft - Mathf.Floor(game.TimeLeft);
-                if (n != m_LastCount) { m_LastCount = n; Sfx.Play2D(n <= 3 ? Sfx.Ding : Sfx.Beep, n <= 3 ? 0.9f : 0.6f, 0f); Fx.Shake(0.08f + (10 - n) * 0.02f); }
+                bool show = GameSettings.CountEnd.Value; // (Settings > Display > COUNTDOWN > End countdown: off, just the beeps)
+                if (n != m_LastCount) { m_LastCount = n; Sfx.Play2D(n <= 3 ? Sfx.Ding : Sfx.Beep, n <= 3 ? 0.9f : 0.6f, 0f); if (show) Fx.Shake(0.08f + (10 - n) * 0.02f); }
                 // (no coloured border round the screen - the number, its glow and shockwave, the label, the pips: Hud.Notify.cs)
                 string label = sock < 0 ? (Cfg.UseOvertime && !Cfg.Builder ? "OVERTIME IN" : "SUDDEN DEATH IN") : sock == myTeam ? "YOU WIN IN" : $"{Cfg.TeamName[sock]} WINS IN";
-                if (!dead) { DrawEndCountdown(n, frac, label, sock < 0, k); CountdownShownFrame = Time.frameCount; } // (the beeps go on while you're dead; the number doesn't show)
+                if (!dead && show) { DrawEndCountdown(n, frac, label, sock < 0, k); CountdownShownFrame = Time.frameCount; } // (the beeps go on while you're dead; the number doesn't show)
                 return;
             }
             string word = FightWord(game, out float t);
@@ -1377,40 +1393,57 @@ namespace RockGame
 
         // ------------------------------------------------------------------ misc
 
+        /// <summary>The timer's what-to-do text: two lines, what's going on and then what to do about it (Settings >
+        /// Display > TIMER: the second line can be left out, and both can be bold - Hud.Notify.cs DrawTopPanel).</summary>
+        static string Two(string first, string second, string col = null)
+            => col == null ? first + "\n" + second : $"<color={col}>{first}</color>\n<color={col}>{second}</color>";
+        /// <summary>A team's name in its colour (lightened a little, so the blue reads on the dark).</summary>
+        static string TeamInk(int t) => t >= 0 && t < Cfg.TeamColor.Length
+            ? $"<color=#{ColorUtility.ToHtmlStringRGB(Color.Lerp(Cfg.TeamColor[t], Color.white, 0.35f))}>{Cfg.TeamName[t]}</color>" : Cfg.TeamLabel(t);
+        const string SubGood = "#77ff77", SubBad = "#ff7777", SubMine = "#ffdd55";
+
         string BallStatus(int myTeam)
         {
-            // the game modes (NetGame.GameModes.cs): what you're after, and the score
-            string mode = ModeGoal(myTeam); // (the score is in its own panel under the timer: Hud.ModePanel.cs)
+            // the game modes (NetGame.GameModes.cs): what you're after (the score is in its own panel under the timer:
+            // Hud.ModePanel.cs) - the ball's own news over it once there's something to say about the ball
+            string mode = ModeGoal(myTeam);
             if (mode != null && (Cfg.NoBall || Ball.Instance == null)) return mode;
-            string ball = BallOnly(myTeam);
-            return mode == null ? ball : ball.Length == 0 ? mode : mode + "\n" + ball;
+            string ball = BallOnly(myTeam, out bool loose);
+            return mode != null && (loose || ball.Length == 0) ? mode : ball;
         }
 
-        string BallOnly(int myTeam)
+        /// <summary>The ball's news (two lines). `loose`: nobody has it and it's in no machine or base (nothing to say
+        /// beyond "go and get it"). No key hints while you hold it: the middle of the screen shows those.</summary>
+        string BallOnly(int myTeam, out bool loose)
         {
+            loose = false;
             var b = Ball.Instance;
             if (b == null) return "";
+            var c = b.IsCarried ? b.Carrier : null;
             if (Cfg.Builder)
             {
                 int own = b.IsCarried ? -1 : b.SocketTeam.Value;
                 if (own >= 0)
-                    return own == myTeam ? "<color=#77ff77>The ball is planted for YOUR team - don't let anyone pick it up!</color>" : $"<color=#ff7777>The ball is planted for {Cfg.TeamLabel(own)} - pick it up and plant it for your team!</color>";
-                if (b.IsCarried && b.Carrier != null && b.Carrier.Mine) return "<color=#ffdd55>You have the ball - LMB to plant it anywhere (then it's your team's)</color>";
-                if (b.IsCarried && b.Carrier != null) return $"<color=#ff7777>{Cfg.TeamLabel(b.Carrier.Team.Value)} has the ball!</color>";
-                return "The ball is loose - pick it up and plant it for your team!";
+                    return own == myTeam ? Two("The ball is planted for YOUR team", "Don't let anyone pick it up!", SubGood) : Two($"{TeamInk(own)} planted the ball", "Pick it up and plant it for your team!", SubBad);
+                if (c != null && c.Mine) return Two("You have the ball", "Plant it anywhere for your team!", SubMine);
+                if (c != null && c.Team.Value == myTeam) return Two($"{c.DisplayName} has the ball", "Help them plant it!", SubGood);
+                if (c != null) return Two($"{TeamInk(c.Team.Value)} has the ball in their hands", "Kill them and take it!", SubBad);
+                loose = !b.IsCarried;
+                return Two("The ball is loose", "Pick it up and plant it for your team!");
             }
             if (b.IsCarried)
             {
-                var c = b.Carrier;
-                if (c == null) return "Ball is being carried";
-                return c.Mine ? "<color=#ffdd55>You have the ball - throw it (LMB) into your machine's socket!</color>" : $"<color=#ff7777>{Cfg.TeamName[c.Team.Value]} has the ball!</color>";
+                if (c == null) return Two("Someone has the ball", "Go and get it!");
+                if (c.Mine) return Two("You have the ball", "Throw it into your machine's socket!", SubMine);
+                if (c.Team.Value == myTeam) return Two($"{c.DisplayName} has the ball", "Help them get it into your machine!", SubGood);
+                return Two($"{TeamInk(c.Team.Value)} has the ball in their hands", "Kill them and take it!", SubBad);
             }
             int sock = b.SocketTeam.Value;
             if (sock >= 0)
-                return sock == myTeam ? "<color=#77ff77>The ball is in YOUR machine - defend it!</color>" : $"<color=#ff7777>The ball is in the {Cfg.TeamName[sock]} machine - raid them and take it!</color>";
+                return sock == myTeam ? Two("The ball is in YOUR machine", "DEFEND IT!", SubGood) : Two($"The ball is in the {TeamInk(sock)} machine", "Raid them and take it!", SubBad);
             int t = b.BaseTeam.Value;
-            if (t < 0) return "The ball is loose - put it in your machine!";
-            return t == myTeam ? "<color=#ffdd55>The ball is in your base but NOT in the machine - it only counts in the socket!</color>" : $"<color=#ff7777>The ball is in the {Cfg.TeamName[t]} base (not in their machine yet)</color>";
+            if (t < 0) { loose = true; return Two("The ball is loose", "Put it in your machine!"); }
+            return t == myTeam ? Two("The ball is in your base", "Only the socket counts: put it in the machine!", SubMine) : Two($"The ball is in the {TeamInk(t)} base", "Not in their machine yet: go and take it!", SubBad);
         }
 
         /// <summary>

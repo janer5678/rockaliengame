@@ -180,19 +180,6 @@ namespace RockGame
         }
 
 
-        float m_LastTimeLeft = -1f;
-        /// <summary>Every peer: "1 MINUTE LEFT" across the middle of the screen as the match clock passes a minute.</summary>
-        void TickMinuteNotice()
-        {
-            if (!IsSpawned || S != GameState.BallLive || Overtime.Value || Cfg.Tutorial) { m_LastTimeLeft = -1f; return; }
-            float tl = TimeLeft;
-            if (m_LastTimeLeft > 60f && tl <= 60f && tl > 50f)
-            {
-                Hud.Banner("1 MINUTE LEFT", "Get the ball into your machine before the clock runs out!");
-                Sfx.Play2D(Sfx.Ding, 0.6f, 0f);
-            }
-            m_LastTimeLeft = tl;
-        }
         static string Clock(float t)
         {
             int s = Mathf.CeilToInt(t);
@@ -210,7 +197,6 @@ namespace RockGame
             GraveFx.Sync(this);
             TickStartCountdown(); // the waiting stadium's 10 s countdown once everyone's in (NetGame.Lobby.cs)
             TickBenchUnlockNotice(); // "WORK BENCHES UNLOCKED" when our team captures the ball (NetGame.Bench.cs)
-            TickMinuteNotice();
             TickReadySetRock(); // READY / SET / ROCK!'s beeps and boom (NetGame.ReadySetRock.cs)
             if (!IsServer) return;
             ResourceNode.ServerFlocksTick(); // (flocks of birds sitting in a few trees, there before anyone hits them)
@@ -245,7 +231,7 @@ namespace RockGame
                     {
                         float delay = Cfg.FunRules ? 0f : fast ? Cfg.FastBallDropDelay : Cfg.BallDropDelay; // fun modes: wall down and ball in from the start
                         SetPhase(GameState.PreBall, delay);
-                        ServerBeginReadySetRock(now); // everyone held still through the intro, then READY / SET / ROCK! (NetGame.ReadySetRock.cs)
+                        ServerBeginReadySetRock(now); // everyone held still through the intro, then a 3, 2, 1 countdown (NetGame.ReadySetRock.cs)
                         if (Cfg.Tutorial) TimerPaused.Value = true; // the tutorial goes at your pace
                         // the ball is there from the start: in the middle of the map, under the glass dome
                         SpawnBall();
@@ -586,12 +572,14 @@ namespace RockGame
                     m_ItemSeenAt[it.Id] = Time.time;
                 }
                 var rot = it.Pointed ? Quaternion.LookRotation(it.Dir) : Quaternion.LookRotation(new Vector3(it.Dir.x, 0, it.Dir.z).sqrMagnitude > 0.001f ? new Vector3(it.Dir.x, 0, it.Dir.z) : Vector3.forward);
-                // toss animation: arc from where it was thrown to where it rests
-                float t = Mathf.Clamp01((Time.time - m_ItemSeenAt[it.Id]) / 0.45f);
+                // toss animation: arc from where it was thrown to where it rests (a longer toss - a drop flies a few metres
+                // now, PlayerNet.DropLanding - takes a little longer and goes a little higher)
+                float flat = new Vector2(it.Pos.x - it.From.x, it.Pos.z - it.From.z).magnitude;
+                float t = Mathf.Clamp01((Time.time - m_ItemSeenAt[it.Id]) / (0.45f + 0.05f * Mathf.Min(flat, 6f)));
                 var pos = it.Pos;
                 if (t < 1f && (it.From - it.Pos).sqrMagnitude > 0.01f)
                 {
-                    pos = Vector3.Lerp(it.From, it.Pos, t) + Vector3.up * Mathf.Sin(t * Mathf.PI) * 0.6f;
+                    pos = Vector3.Lerp(it.From, it.Pos, t) + Vector3.up * Mathf.Sin(t * Mathf.PI) * (0.6f + 0.12f * Mathf.Min(flat, 6f));
                     rot *= Quaternion.Euler((1f - t) * 360f, 0, 0);
                 }
                 go.transform.SetPositionAndRotation(pos, rot);

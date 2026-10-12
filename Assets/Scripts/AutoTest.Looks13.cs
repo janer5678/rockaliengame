@@ -179,10 +179,8 @@ namespace RockGame
             // ---- the scoreboard leaves the mouse to the game until a right-click ----
             Hud.TestScoreboard = true;
             yield return new WaitForSeconds(0.3f);
-            Check(!Hud.ScoreboardMouse, "SCOREBOARD: it doesn't ask for the mouse (look and move as usual)");
-            yield return Snap("looks_64_scoreboard_mouse_stays");
-            Hud.TestScoreboardMouse(true);
-            Check(Hud.ScoreboardMouse, "SCOREBOARD: a right-click asks for the mouse (its MESSAGE buttons)");
+            Check(Hud.ScoreboardMouse, "SCOREBOARD: it frees the mouse at once (its MESSAGE buttons, no right-click first)");
+            yield return Snap("looks_64_scoreboard_mouse_free");
             Hud.TestScoreboard = false;
             yield return new WaitForSeconds(0.2f);
             Check(!Hud.ScoreboardMouse, "SCOREBOARD: put away, the mouse goes back to the game");

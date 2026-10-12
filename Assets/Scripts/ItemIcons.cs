@@ -96,7 +96,7 @@ namespace RockGame
             foreach (Item item in System.Enum.GetValues(typeof(Item)))
             {
                 if (item == Item.None) continue;
-                var model = ItemModels.Create(item, rig.transform);
+                var model = item == Item.Spear ? SpearIconModel(rig.transform) : ItemModels.Create(item, rig.transform);
                 PoseForIcon(item, model.transform);
                 var tex = Snap(model, item.ToString());
                 if (tex != null) s_Icons[item] = tex;
@@ -254,6 +254,32 @@ namespace RockGame
             }
             cam.Render();
             return true;
+        }
+
+        /// <summary>The spear's icon (only the icon: the held / thrown spear keeps its own model). The real spear is long and
+        /// thin, so squeezed into a square it came out a hairline much like the arrow; this one is short and bold instead - a
+        /// thick shaft with a dark butt cap and a leather grip, a big broad leaf-shaped flint head with a dark midrib, bound on
+        /// with twine - and nothing like the arrow's fletching.</summary>
+        static GameObject SpearIconModel(Transform parent)
+        {
+            var go = new GameObject("spear icon");
+            go.transform.SetParent(parent, false);
+            var t = go.transform;
+            var shaft = new Color(0.72f, 0.53f, 0.3f);
+            var dark = new Color(0.22f, 0.13f, 0.07f);
+            var flint = new Color(0.74f, 0.76f, 0.8f);
+            var rib = new Color(0.42f, 0.44f, 0.5f);
+            Art.Part(t, Art.Cylinder, shaft, new Vector3(0f, 0.1f, 0f), new Vector3(0.075f, 0.39f, 0.075f));             // the thick shaft
+            Art.Part(t, Art.Sphere, dark, new Vector3(0f, -0.29f, 0f), new Vector3(0.1f, 0.1f, 0.1f));                    // the butt cap
+            Art.Part(t, Art.Cylinder, dark, new Vector3(0f, 0.0f, 0f), new Vector3(0.088f, 0.09f, 0.088f));               // the leather grip
+            Art.Part(t, Art.Cylinder, dark, new Vector3(0f, 0.5f, 0f), new Vector3(0.1f, 0.03f, 0.1f));                   // the collar under the head
+            for (int k = 0; k < 3; k++)                                                                                       // the twine binding
+                Art.Part(t, Art.Cylinder, ItemModels.Twine, new Vector3(0f, 0.39f + k * 0.04f, 0f), new Vector3(0.095f, 0.014f, 0.095f));
+            // the head: a broad leaf - a rounded lower half and a long point - flat towards the camera
+            Art.Part(t, Art.Sphere, flint, new Vector3(0f, 0.68f, 0f), new Vector3(0.28f, 0.3f, 0.06f));
+            Art.Part(t, Art.Cone, flint, new Vector3(0f, 0.66f, 0f), new Vector3(0.27f, 0.4f, 0.06f));
+            Art.Box(t, rib, new Vector3(0f, 0.74f, 0f), new Vector3(0.03f, 0.4f, 0.07f));                                // the midrib
+            return go;
         }
 
         /// <summary>Lay long things diagonally so they read well in a square icon.</summary>

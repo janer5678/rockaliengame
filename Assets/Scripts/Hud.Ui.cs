@@ -135,6 +135,7 @@ namespace RockGame
 
         void Caption(string text)
         {
+            SearchHeader(1); // (a section header for the display search: Hud.DisplaySearch.cs)
             GUILayout.Space(6 * m_Scale);
             GUILayout.Label(text, m_Caption);
         }

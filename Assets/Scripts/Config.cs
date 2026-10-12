@@ -95,9 +95,9 @@ namespace RockGame
         /// <summary>Bases are 36x36m (a theme map can make them smaller: ThemeMap.BaseHalfSize), aligned to the 3m build grid.</summary>
         public static float BaseHalf => s_BaseHalf;
         static float s_BaseHalf = 18f;
-        /// <summary>The crashed UFO in the middle (CrashSite.cs). Off for now: the middle has cover round the ball instead
-        /// (CentreCover.cs, or the theme map's own). Set true to bring the crash site back exactly as it was.</summary>
-        public const bool CrashSiteOn = false;
+        /// <summary>The crashed UFO in the middle (CrashSite.cs): on the Highlands only. Every other map (the Highlands Jonah
+        /// clone too) has cover round the ball instead (CentreCover.cs, or the theme map's own).</summary>
+        public static bool CrashSiteOn => Map == MapKind.Highlands;
         public static readonly Vector3[] BaseCenter = { new Vector3(0, 0, -75), new Vector3(0, 0, 75), new Vector3(75, 0, 0), new Vector3(-75, 0, 0) };
         public static string MapLabel => ModeLabel + ", " + SizeLabel(Size).ToLower() + " " + ThemeMaps.Label(Map) /* THEME MAPS */ + (WoodMode ? " (Wood mode)" : "") + (AirdropCenter ? " (airdrops in the middle)" : AirdropSides ? " (airdrops on both sides)" : "") + (RespawnLoot ? " (respawn loot)" : "");
         /// <summary>Airdrops come down on both sides (one in each half, each on its own timer) instead of anywhere.</summary>
@@ -154,7 +154,7 @@ namespace RockGame
         {
             switch (r)
             {
-                case GameRules.Arsenal: return "Normal prices (the crossbow is cheaper), plus a POWER ITEMS menu next to crafting: sword, shotgun, revolver, C4 and headshot helmet. E on the upgrade station beside your alien machine: UPGRADES (fortify all your walls).";
+                case GameRules.Arsenal: return "Normal prices (the crossbow is cheaper), plus a POWER ITEMS menu next to crafting: sword, shotgun, revolver, C4 and headshot helmet. E on the upgrade station beside your alien machine: UPGRADES (" + (Upgrade10WallsEverywhere ? "upgrade 10 walls at a time" : "fortify all your walls") + ").";
                 case GameRules.Dna: return DnaDesc;
                 case GameRules.Bedwars: return "Classic, but no ball: smash the enemy alien machines (3 hits, or one explosive right on it). Your team respawns from its machine's cryochamber - lose it and you're out. After 10 minutes every chamber breaks, 3 minutes later every base breaks down. Last team standing wins.";
                 case GameRules.ThreeGoal: return "Classic, but score 3 times: get the ball into your machine and a UFO drops it back in the middle. First to 3 wins (most goals when the clock runs out).";
@@ -463,7 +463,7 @@ namespace RockGame
         [Tune("Building")] public static float BuildCooldown = 0f, UpgradeCooldown = 0f, DemolishRefund = 0.5f;
         [Tune("Building")] public static float PackUpHoldTime = 0.8f;   // hold E this long on an empty chest / workbench of yours to pick it up
         [Tune("Building")] public static float PackUpDelay = 0.2f;      // ...after first holding it this long (no bar until then: a tap stays a tap)
-        [Tune("Controls")] public static float TabHoldTime = 0.55f; // (longer than it was - 0.25 - with a bar filling while you hold it)     // Tab: a tap opens the bag, holding it this long shows the scoreboard
+        [Tune("Controls")] public static float TabHoldTime = 0.3f; // (was 0.55; the bar only shows after 0.2 s of holding: PlayerController.TabHoldProgress)     // Tab: a tap opens the bag, holding it this long shows the scoreboard
         [Tune("Building")] public static float WallRebuildCooldown = 25f; // seconds before a piece of a base can go back where one was just destroyed
         [Tune("Building")] public static int FoundationWood = 15, WallWood = 15, DoorwayWood = 20, WindowWood = 15, FloorWood = 12, StairsWood = 20;
         [Tune("Building")] public static int FoundationStone = 50, WallStone = 50, DoorwayStone = 40, WindowStone = 45, FloorStone = 30, StairsStone = 30;
@@ -616,7 +616,7 @@ namespace RockGame
                 case Item.PistolAmmo: return "Pistol Ammo";
                 case Item.HeavyArmor: return "Heavy Armour";
                 case Item.TreeCracker: return "Tree Cracker";
-                case Item.FortifyBuff: return Jonah ? "Upgrade 10 Walls" : "Fortify All Walls";
+                case Item.FortifyBuff: return Upgrade10Walls ? "Upgrade 10 Walls" : "Fortify All Walls";
                 case Item.WoodGenBuff: return "Auto Wood Gen";
                 case Item.Boat: return "Wooden Boat";
                 case Item.Sword: return "Sword";
@@ -1172,6 +1172,7 @@ namespace RockGame
             (8, new[] { "FortifyStoneWood", "RefinedHpMul", "RefinedMeleeMul", "RefinedRocketMul" }),
             (9, new[] { "RocketPlayerDamage", "RocketStructureDamage", "ChainsawUses", "SwordSwingTime" }),
             (10, new[] { "FortifyStoneWood", "FortifyMetalWood", "FortifyArmouredWood", "WoodGenBuildWood", "WoodGen1Wood", "WoodGen2Wood", "RocketStructureDamage" }),
+            (11, new[] { "TabHoldTime" }),
         };
         const string MigrateKey = "RockGame.Tunables.migrated";
 

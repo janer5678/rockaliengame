@@ -23,6 +23,8 @@ namespace RockGame
         Quaternion m_KillCamFromRot;
         bool m_Replay, m_KcDone;
         float m_ReplayT = -1f;
+        // how far from their head the camera may be (kept clear of walls: pulled in at once, eased back out)
+        float m_KcClear = -1f;
 
         /// <summary>Who the kill cam is looking at right now (null: it isn't on).</summary>
         public PlayerNet KillCamTarget { get; private set; }
@@ -46,6 +48,7 @@ namespace RockGame
                 m_DiedAt = Time.time;
                 m_KillCamFrom = m_Cam.transform.position;
                 m_KillCamFromRot = m_Cam.transform.rotation;
+                m_KcClear = -1f;
             }
             float t = Time.time - m_DiedAt;
             if (m_KcDone || m_Net.KilledBy.Value == 0) return false;
@@ -73,14 +76,44 @@ namespace RockGame
             // (after the glide over, it keeps easing in closer and round a little, so the shot never sits still)
             float drift = Smooth01(Mathf.Clamp01((t - 0.85f) / Mathf.Max(0.1f, Cfg.KillCamTime - 0.85f)));
             var to = head + away * Mathf.Lerp(3.4f, 2.5f, drift) + side * Mathf.Lerp(1.1f, 0.6f, drift) + Vector3.up * Mathf.Lerp(0.55f, 0.35f, drift);
-            // (not through a wall: stop short of whatever's between them and the spot)
-            if (Physics.Linecast(head, to, out var hit, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore)) to = hit.point + (head - to).normalized * 0.3f;
+            // (not through a wall: stop short of whatever's between them and the spot - with a ball the size of the view,
+            // not a thin line, and ignoring bodies and ragdolls (your own falling one flicked the camera in and out every
+            // frame); pulled in straight away, eased back out, so it never jumps back and forth)
+            float clear = KillCamClear(head, to);
+            m_KcClear = m_KcClear < 0f || clear < m_KcClear ? clear : Mathf.MoveTowards(m_KcClear, clear, Time.deltaTime * 3f);
+            var toDir = to - head;
+            if (toDir.magnitude > m_KcClear) to = head + toDir.normalized * m_KcClear;
             float e = Smooth01(Mathf.Clamp01(t / 0.85f)); // (a quick glide over)
             var pos = Vector3.Lerp(m_KillCamFrom, to, e);
+            // (the glide over doesn't cut through walls either: anywhere along it, kept on their side of whatever's in the way)
+            if (e < 1f)
+            {
+                var pd = pos - head;
+                float pc = KillCamClear(head, pos);
+                if (pd.magnitude > pc) pos = head + pd.normalized * pc;
+            }
             var rot = Quaternion.Slerp(m_KillCamFromRot, Quaternion.LookRotation(head - pos), Smooth01(Mathf.Clamp01(t / 0.55f)));
             m_Cam.transform.SetPositionAndRotation(pos, rot);
             m_Cam.fieldOfView = Mathf.Lerp(m_Cam.fieldOfView, 52f, Time.deltaTime * 6f);
             return true;
+        }
+
+        /// <summary>How far from `head` towards `to` the kill cam can go before it would be in something solid (players,
+        /// their hit boxes and ragdolls don't count).</summary>
+        static float KillCamClear(Vector3 head, Vector3 to)
+        {
+            var d = to - head;
+            float len = d.magnitude;
+            if (len < 0.01f) return len;
+            d /= len;
+            float best = len;
+            const int mask = ~((1 << PlayerNet.HitboxLayer) | (1 << 2)); // (2: Ignore Raycast - the ragdolls)
+            foreach (var h in Physics.SphereCastAll(head, 0.2f, d, len, mask, QueryTriggerInteraction.Ignore))
+            {
+                if (h.distance <= 0f || h.collider.GetComponentInParent<PlayerNet>() != null) continue;
+                best = Mathf.Min(best, Mathf.Max(0.3f, h.distance - 0.05f));
+            }
+            return best;
         }
     }
 }

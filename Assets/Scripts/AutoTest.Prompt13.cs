@@ -8,8 +8,8 @@ namespace RockGame
     {
         /// <summary>
         /// -autotest prompt13 -host -solo:
-        /// 1. READY / SET / ROCK! (NetGame.ReadySetRock.cs): everyone frozen (FightFrozen - a bot doesn't move either) through
-        ///    READY and SET, the build clock not running; at ROCK! they're let go. And the start's wait for the intros: an
+        /// 1. The 3, 2, 1 countdown (NetGame.ReadySetRock.cs): everyone frozen (FightFrozen - a bot doesn't move either)
+        ///    through 3, 2 and 1, the build clock not running; as it ends they're let go. And the start's wait for the intros: an
         ///    intro played and skipped here tells the host, which pulls the countdown in at once.
         /// 2. Killed by someone, the respawn comes the moment the kill cam and its replay end (RespawnAt = the kill cam's
         ///    length); a death with no killer keeps Cfg.RespawnTime.
@@ -19,7 +19,7 @@ namespace RockGame
         {
             var g = NetGame.Instance;
             int team = me.Team.Value, enemy = (team + 1) % Mathf.Max(2, Cfg.TeamCount);
-            Check(g.S == GameState.PreBall && !g.RockHeld && g.RockAt.Value < 0, "the tests start with no READY / SET / ROCK! (solo)");
+            Check(g.S == GameState.PreBall && !g.RockHeld && g.RockAt.Value < 0, "the tests start with no 3, 2, 1 countdown (solo)");
             PlayerNet.ServerAddBot(enemy);
             yield return new WaitForSeconds(1.5f);
             PlayerNet bot = null;
@@ -27,25 +27,25 @@ namespace RockGame
             if (bot != null && bot.Dead.Value) bot.ServerRespawn(false);
             yield return new WaitForSeconds(1f);
 
-            // ---- 1. READY / SET / ROCK!
+            // ---- 1. 3, 2, 1
             float clock0 = g.TimeLeft;
             var bot0 = bot != null ? bot.transform.position : Vector3.zero;
             g.ServerTestReadySetRock(false);
             yield return null;
             yield return null;
-            Check(g.RockHeld && g.FightFrozen && NetGame.RockWord(g, out _) == "READY", $"READY: everyone's frozen ({NetGame.RockWord(g, out _)})");
+            Check(g.RockHeld && g.FightFrozen && NetGame.RockWord(g, out _) == "3", $"3: everyone's frozen ({NetGame.RockWord(g, out _)})");
             yield return new WaitForSeconds(0.4f);
             yield return Snap("rsr_ready");
             float until = Time.time + 3f;
-            while (NetGame.RockWord(g, out _) != "SET" && Time.time < until) yield return null;
-            Check(NetGame.RockWord(g, out _) == "SET" && g.FightFrozen, "then SET, still frozen");
-            Check(Hud.RockShownWord == "READY" || Hud.RockShownWord == "SET", $"...the HUD draws the words (needs the Hud.DrawGame hook: {Hud.RockShownWord})");
+            while (NetGame.RockWord(g, out _) != "2" && Time.time < until) yield return null;
+            Check(NetGame.RockWord(g, out _) == "2" && g.FightFrozen, "then 2, still frozen");
+            Check(Hud.RockShownWord == "3" || Hud.RockShownWord == "2", $"...the HUD draws the numbers (needs the Hud.DrawGame hook: {Hud.RockShownWord})");
             yield return Snap("rsr_set");
             until = Time.time + 3f;
             while (g.RockHeld && Time.time < until) yield return null;
             float botMoved = bot != null ? Vector3.Distance(bot0, bot.transform.position) : 0f;
-            Check(bot == null || botMoved < 0.6f, $"...a bot doesn't move before ROCK! either ({botMoved:0.00} m)");
-            Check(!g.RockHeld && !g.FightFrozen && NetGame.RockWord(g, out _) == "ROCK!", "ROCK!: everyone's let go");
+            Check(bot == null || botMoved < 0.6f, $"...a bot doesn't move before the countdown ends either ({botMoved:0.00} m)");
+            Check(!g.RockHeld && !g.FightFrozen && NetGame.RockWord(g, out _) == "", "the countdown's over: everyone's let go");
             Check(Mathf.Abs(g.TimeLeft - clock0) < 0.6f, $"...and the build clock didn't run meanwhile ({clock0:0.0} -> {g.TimeLeft:0.0} s)");
             yield return new WaitForSeconds(0.1f);
             yield return Snap("rsr_rock");
@@ -60,10 +60,10 @@ namespace RockGame
             until = Time.time + 3f;
             while (NetGame.RockAllReported == reported && Time.time < until) yield return null;
             yield return null;
-            Check(NetGame.RockAllReported > reported && g.RockCounting && g.RockLeft <= NetGame.RockCountdown + 0.1, $"...the intro skipped here: the host starts READY / SET / ROCK! at once ({g.RockLeft:0.0} s)");
+            Check(NetGame.RockAllReported > reported && g.RockCounting && g.RockLeft <= NetGame.RockCountdown + 0.1, $"...the intro skipped here: the host starts the 3, 2, 1 at once ({g.RockLeft:0.0} s)");
             until = Time.time + 5f;
             while (g.RockHeld && Time.time < until) yield return null;
-            Check(!g.FightFrozen, "...and lets everyone go at ROCK!");
+            Check(!g.FightFrozen, "...and lets everyone go as it ends");
             yield return new WaitForSeconds(1.5f);
 
             // ---- 2. the respawn comes the moment the kill cam ends

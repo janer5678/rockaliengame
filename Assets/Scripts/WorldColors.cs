@@ -313,18 +313,41 @@ namespace RockGame
         /// slightly glossy material (smooth and polished, like the rest of the game's rounded art) - not the team / picked hand colour.</summary>
         public const int AlienSkin = 3, AlienPad = 4;
         public static readonly Color AlienBlue = new Color32(26, 43, 117, 255), AlienBluePad = new Color32(20, 34, 91, 255); // (exact bytes: no rounding drift)
-        static readonly Dictionary<Color, Material> s_Polished = new Dictionary<Color, Material>();
+        static readonly Dictionary<(Color, bool), Material> s_Polished = new Dictionary<(Color, bool), Material>();
+        static Shader s_Skin;
+        static bool s_SkinTried;
 
-        /// <summary>A gently glossy material in this colour (the alien hands').</summary>
-        static Material Polished(Color c)
+        /// <summary>The alien hands' material in this colour: the stylised skin (Resources/World/AlienSkin: a soft two-tone
+        /// light, a sheen, a blue fresnel rim), or, if that shader can't run, URP Lit made gently glossy. ghost: the see-through
+        /// look your own hands get while the Invisibility Potion lasts.</summary>
+        static Material Polished(Color c, bool ghost = false)
         {
-            if (s_Polished.TryGetValue(c, out var m) && m) return m;
-            m = Art.NewMat(c);
-            if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.45f);
-            s_Polished[c] = m;
+            if (s_Polished.TryGetValue((c, ghost), out var m) && m) return m;
+            if (!s_SkinTried) { s_SkinTried = true; s_Skin = Resources.Load<Shader>("World/AlienSkin"); if (s_Skin != null && !s_Skin.isSupported) s_Skin = null; }
+            if (s_Skin != null)
+            {
+                m = new Material(s_Skin) { name = ghost ? "alien skin (ghost)" : "alien skin" };
+                m.SetColor("_BaseColor", c);
+                m.color = c;
+                m.SetFloat("_Ghost", ghost ? 1f : 0f);
+            }
+            else
+            {
+                m = Art.NewMat(c);
+                if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.45f);
+            }
+            s_Polished[(c, ghost)] = m;
             return m;
         }
         Color m_Team;
+        bool m_Ghost;
+
+        /// <summary>Your own hands while you're invisible: the alien skin turns see-through and shimmery (still clearly there).</summary>
+        public bool Ghost
+        {
+            get => m_Ghost;
+            set { if (m_Ghost == value) return; m_Ghost = value; Apply(); }
+        }
         readonly List<(Renderer r, int part)> m_Parts = new List<(Renderer, int)>();
 
         /// <summary>The colour of one part of the hands for this team.</summary>
@@ -352,7 +375,7 @@ namespace RockGame
             if (r != null)
             {
                 m_Parts.Add((r, part));
-                if (part >= AlienSkin) r.sharedMaterial = Polished(Shade(m_Team, part)); // (the alien hands: dark blue straight away)
+                if (part >= AlienSkin) r.sharedMaterial = Polished(Shade(m_Team, part), m_Ghost); // (the alien hands: dark blue straight away)
             }
             return box;
         }
@@ -382,7 +405,8 @@ namespace RockGame
             {
                 if (p.r == null) continue;
                 var c = Shade(m_Team, p.part);
-                if (p.r.sharedMaterial == null || p.r.sharedMaterial.color != c) p.r.sharedMaterial = p.part >= AlienSkin ? Polished(c) : Art.Mat(c);
+                if (p.part >= AlienSkin) { var want = Polished(c, m_Ghost); if (p.r.sharedMaterial != want) p.r.sharedMaterial = want; }
+                else if (p.r.sharedMaterial == null || p.r.sharedMaterial.color != c) p.r.sharedMaterial = Art.Mat(c);
             }
         }
     }

@@ -12,6 +12,8 @@ namespace RockGame
     public static partial class GameSettings
     {
         const string GCount = "COUNTDOWN";
+        /// <summary>The end countdown (YOU WIN IN 7) shows at all; off: just the top timer says it (its beeps go on).</summary>
+        public static readonly DisplayPref.Bool CountEnd = new("count.end", GCount, true);
         /// <summary>How big the words and the numbers are (1 = as designed).</summary>
         public static readonly DisplayPref.Float CountSize = new("count.size", GCount, 1f, 0.4f, 2f);
         public static readonly DisplayPref.Choice CountFont = new("count.font", GCount, FontPrefNames, 0);
@@ -52,7 +54,7 @@ namespace RockGame
 
         public static void ResetCountdown(bool save = true)
         {
-            CountSize.Set(1f, save); CountFont.Set(0, save); CountInkOn.Set(true, save); CountInk.Set(1f, save); CountInkColour.Set(Color.black, save);
+            CountEnd.Set(true, save); CountSize.Set(1f, save); CountFont.Set(0, save); CountInkOn.Set(true, save); CountInk.Set(1f, save); CountInkColour.Set(Color.black, save);
             CountY.Set(0f, save); CountWidth.Set(1f, save); CountPlate.Set(1f, save);
             CountGlow.Set(true, save); CountPips.Set(true, save); CountDim.Set(true, save);
             foreach (var c in CountColours) c.pref.Set(c.pref.Default, save);
@@ -117,6 +119,7 @@ namespace RockGame
             if (Btn("Test Ready / Set / ROCK!", GUILayout.Width(230 * k), GUILayout.Height(30 * k))) TestFightWords();
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
+            Toggle("End countdown", GameSettings.CountEnd, "the big YOU WIN IN 7 at the end of a match (the top timer shows it too)");
             Slider("Size", GameSettings.CountSize, $"{GameSettings.CountSize.Value * 100f:0}%", 0.05f);
             Slider("Height on screen", GameSettings.CountY, Mathf.Abs(GameSettings.CountY.Value) < 0.5f ? "as usual" : $"{(GameSettings.CountY.Value > 0 ? "+" : "")}{GameSettings.CountY.Value:0} px", 5f);
             ChoiceRow("Font", GameSettings.CountFont, true);

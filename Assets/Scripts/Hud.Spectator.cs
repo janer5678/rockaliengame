@@ -22,7 +22,7 @@ namespace RockGame
             if (game != null && VictoryCutscene.Active) { DrawVictoryCutscene(game, -1); return; }
             if (MatchIntro.DrawHud(k, m_Big, m_Label, m_Small, Fill, Shadowed)) return; // (the match intro: MatchIntro.cs)
             if (game != null && game.S == GameState.GameOver) { DrawSpectatorGameOver(boot, game); return; }
-            DrawReadySetRock(game, false); // (READY / SET / ROCK!: Hud.ReadySetRock.cs)
+            DrawReadySetRock(game, false); // (the 3, 2, 1 countdown: Hud.ReadySetRock.cs)
 
             Chat.Draw(k, m_Small, Fill, Shadowed);
             var t = Spectator.Target;

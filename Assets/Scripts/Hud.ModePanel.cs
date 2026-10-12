@@ -6,21 +6,21 @@ namespace RockGame
     /// The game modes' own panel (NetGame.GameModes.cs), under the timer: one chip per team in its colour - yours framed
     /// in white - showing the mode's score at a glance: 3 Goal's goals as pips, Progress's bar, Bedwars' machine health
     /// (or DOWN) and how many are still alive, Assassin's skulls handed in out of the enemies there are, and in
-    /// Domination who holds the advanced trades. The line under the timer just says the goal in a few words (ModeGoal).
+    /// Domination who holds the advanced trades. The line under the timer just says the goal in two short lines (ModeGoal).
     /// </summary>
     public partial class Hud
     {
-        /// <summary>The mode's goal in a few words (null: Classic / Primitive / the tutorial).</summary>
+        /// <summary>The mode's goal in two short lines (null: Classic / Primitive / the tutorial).</summary>
         static string ModeGoal(int myTeam)
         {
             var g = NetGame.Instance;
             if (g == null || !Cfg.ClassicMode) return null;
-            if (Cfg.Bedwars) return g.MachineDown(myTeam) ? "<color=#ff7777>Your machine is gone - no more respawns!</color>" : "Smash their machines - guard yours";
-            if (Cfg.ThreeGoal) return $"First to {Cfg.GoalsToWin} goals wins";
-            if (Cfg.ProgressMode) return "Keep the ball in your machine to fill your bar";
-            if (Cfg.Assassin) return "Kill them - take their skulls to your machine (E)";
+            if (Cfg.Bedwars) return g.MachineDown(myTeam) ? Two("Your machine is gone", "No more respawns!", SubBad) : Two("Smash their machines", "Guard yours!");
+            if (Cfg.ThreeGoal) return Two($"First to {Cfg.GoalsToWin} goals wins", "Get the ball into your machine!");
+            if (Cfg.ProgressMode) return Two("Keep the ball in your machine", "Fill your bar to win!");
+            if (Cfg.Assassin) return Two("Kill them and take their skulls", "Bring them to your machine (E)");
             int bt = g.BallTeam.Value;
-            return bt == myTeam ? "<color=#77ff77>You have the ball: advanced trades unlocked!</color>" : "Hold the ball for the advanced trades";
+            return bt == myTeam ? Two("Your team holds the ball", "Advanced trades unlocked!", SubGood) : Two("Get the ball into your machine", "It unlocks the advanced trades");
         }
 
         /// <summary>The panel under the timer (only in the five modes, once the wall's down).</summary>

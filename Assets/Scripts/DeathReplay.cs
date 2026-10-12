@@ -34,6 +34,13 @@ namespace RockGame
         readonly Dictionary<ulong, List<Look>> m_Looks = new Dictionary<ulong, List<Look>>();
         readonly Dictionary<ulong, List<Ev>> m_Evs = new Dictionary<ulong, List<Ev>>();
         readonly Dictionary<ulong, Vector2> m_PrevAnim = new Dictionary<ulong, Vector2>();
+        readonly Dictionary<ulong, float> m_EyeH = new Dictionary<ulong, float>();
+        /// <summary>Two samples further apart than this (m), or with a gap between them (s) - a respawn, a teleport, a
+        /// portal - aren't blended: it cuts from one to the other (blending flew the camera / your copy through the map).</summary>
+        const float JumpDist = 2.5f, JumpGap = 0.25f;
+        /// <summary>The replay camera is smoothed over this much of the recording either side (s): the aim comes over the
+        /// network in steps (pitch only when it's changed a degree, at the tick rate), which jittered - worse in slow motion.</summary>
+        const float SmoothWin = 0.08f;
         readonly List<Pose> m_Poses = new List<Pose>();
         readonly List<Hit> m_Hits = new List<Hit>();
         readonly List<Fall> m_Falls = new List<Fall>();
@@ -114,9 +121,14 @@ namespace RockGame
             {
                 if (p == null || !p.IsSpawned || p.Dead.Value) continue;
                 if (!m_Looks.TryGetValue(p.NetworkObjectId, out var list)) m_Looks[p.NetworkObjectId] = list = new List<Look>();
+                // the eye height eased like your own camera's (PlayerController: m_Eye), so crouching doesn't jerk the view
+                float eh = p.EyeHeight;
+                if (list.Count > 0 && m_EyeH.TryGetValue(p.NetworkObjectId, out var was) && now - list[list.Count - 1].T < JumpGap)
+                    eh = Mathf.Lerp(was, eh, 1f - Mathf.Exp(-12f * (now - list[list.Count - 1].T)));
+                m_EyeH[p.NetworkObjectId] = eh;
                 list.Add(new Look
                 {
-                    T = now, Eye = p.EyePos, Yaw = p.transform.eulerAngles.y, Pitch = p.Pitch.Value,
+                    T = now, Eye = p.transform.position + Vector3.up * eh, Yaw = p.transform.eulerAngles.y, Pitch = p.Pitch.Value,
                     Held = p.HeldItem, Act = p.Action.Value, Crouch = p.Crouch.Value, Ball = p.CarryingBall, Arrow = p.Count(Item.Arrow) > 0,
                 });
                 Trim(list, now);
@@ -126,7 +138,7 @@ namespace RockGame
             var model = me != null ? me.AlienModel : null;
             if (me != null && !me.Dead.Value && model != null && model.gameObject.activeInHierarchy)
             {
-                if (m_BonesOf != model) { m_BonesOf = model; m_Bones = model.GetComponentsInChildren<Transform>(true); m_Poses.Clear(); }
+                if (m_BonesOf != model) { m_BonesOf = model; m_Bones = Skeleton(model); m_Poses.Clear(); }
                 var bones = new Quaternion[m_Bones.Length];
                 for (int i = 0; i < bones.Length; i++) bones[i] = m_Bones[i] != null ? m_Bones[i].localRotation : Quaternion.identity;
                 m_Poses.Add(new Pose { T = now, Pos = model.position, Rot = model.rotation, Bones = bones });
@@ -235,13 +247,20 @@ namespace RockGame
                 if (rd.name == "outline copy") rd.enabled = false;
             }
             foreach (var c in r.m_Ghost.GetComponentsInChildren<Collider>(true)) Destroy(c);
-            r.m_GhostBones = r.m_Ghost.GetComponentsInChildren<Transform>(true);
+            // the copy's bones lined up with the recorded ones by name (by place in the hierarchy they went wrong: a helmet
+            // on the head bone or armour on the chest put on or broken off since the recording began shifted every bone
+            // after it onto another bone's recording, and the copy's limbs popped about)
+            var ghostByName = new Dictionary<string, Transform>();
+            foreach (var t in r.m_Ghost.GetComponentsInChildren<Transform>(true)) if (!ghostByName.ContainsKey(t.name)) ghostByName[t.name] = t;
+            r.m_GhostBones = new Transform[r.m_Bones != null ? r.m_Bones.Length : 0];
+            for (int j = 0; j < r.m_GhostBones.Length; j++)
+                r.m_GhostBones[j] = j == 0 ? r.m_Ghost.transform : r.m_Bones[j] != null && ghostByName.TryGetValue(r.m_Bones[j].name, out var gb) ? gb : null;
             // the copy's bones by name, for the fall
             r.m_GhostFall = null;
             if (r.m_RFallNames != null && r.m_RFalls.Count > 1)
             {
                 var byName = new Dictionary<string, Transform>();
-                foreach (var t in r.m_GhostBones) if (!byName.ContainsKey(t.name)) byName[t.name] = t;
+                foreach (var t in r.m_Ghost.GetComponentsInChildren<Transform>(true)) if (!byName.ContainsKey(t.name)) byName[t.name] = t;
                 r.m_GhostFall = new Transform[r.m_RFallNames.Length];
                 for (int i = 0; i < r.m_RFallNames.Length; i++)
                     r.m_GhostFall[i] = i == 0 ? r.m_Ghost.transform : byName.TryGetValue(r.m_RFallNames[i], out var t) ? t : null;
@@ -278,12 +297,25 @@ namespace RockGame
                     foreach (var rd in p.GetComponentsInChildren<Renderer>(true))
                         if (!rd.forceRenderingOff) { rd.forceRenderingOff = true; r.m_Hidden.Add(rd); }
             PoseGhost(r, at);
-            // the camera: the killer's eyes and aim
-            int li = FindLook(r.m_KLooks, at, out float lf);
-            var la = r.m_KLooks[li];
-            var lb = r.m_KLooks[Mathf.Min(li + 1, r.m_KLooks.Count - 1)];
-            var eye = Vector3.Lerp(la.Eye, lb.Eye, lf);
-            var rot = Quaternion.Euler(Mathf.LerpAngle(la.Pitch, lb.Pitch, lf), Mathf.LerpAngle(la.Yaw, lb.Yaw, lf), 0f);
+            // the camera: the killer's eyes and aim (smoothed over a moment of the recording, never blended across a jump)
+            int li = SampleLook(r.m_KLooks, at, out var eye, out float yaw, out float pitch);
+            float wSum = 3f, dyaw = 0f;
+            var eyeSum = eye * 3f;
+            float pitchSum = pitch * 3f;
+            for (int k = -2; k <= 2; k++)
+            {
+                if (k == 0) continue;
+                SampleLook(r.m_KLooks, at + k * SmoothWin * 0.5f, out var e2, out float y2, out float p2);
+                if ((e2 - eye).sqrMagnitude > 1f) continue; // (the other side of a jump)
+                float w = k == -1 || k == 1 ? 2f : 1f;
+                eyeSum += e2 * w; pitchSum += p2 * w; dyaw += Mathf.DeltaAngle(yaw, y2) * w; wSum += w;
+            }
+            eye = eyeSum / wSum;
+            var rot = Quaternion.Euler(pitchSum / wSum, yaw + dyaw / wSum, 0f);
+            // (never up inside a ceiling: a low roof over a crouched killer)
+            if (Physics.Linecast(eye - Vector3.up * 0.7f, eye, out var roof, ~((1 << PlayerNet.HitboxLayer) | (1 << 2)), QueryTriggerInteraction.Ignore)
+                && roof.normal.y < -0.5f && roof.collider.GetComponentInParent<PlayerNet>() == null && roof.collider.GetComponentInParent<Vehicle>() == null)
+                eye = roof.point - Vector3.up * 0.1f;
             cam.transform.SetPositionAndRotation(eye, rot);
             cam.fieldOfView = Mathf.Lerp(cam.fieldOfView, 70f, Time.deltaTime * 8f);
             Hands(r, cam, at, li);
@@ -303,6 +335,7 @@ namespace RockGame
                     int fi = FindFall(r.m_RFalls, at, out float ff);
                     var fa = r.m_RFalls[fi];
                     var fb = r.m_RFalls[Mathf.Min(fi + 1, r.m_RFalls.Count - 1)];
+                    if (fb.T - fa.T > JumpGap) ff = ff < 0.5f ? 0f : 1f;
                     for (int j = 0; j < r.m_GhostFall.Length; j++)
                     {
                         var g = r.m_GhostFall[j];
@@ -333,9 +366,10 @@ namespace RockGame
             int i = Find(r.m_MyPoses, at, out float f);
             var a = r.m_MyPoses[i];
             var b = r.m_MyPoses[Mathf.Min(i + 1, r.m_MyPoses.Count - 1)];
+            if (b.T - a.T > JumpGap || (b.Pos - a.Pos).sqrMagnitude > JumpDist * JumpDist) f = f < 0.5f ? 0f : 1f; // (a respawn, a teleport: a cut)
             r.m_Ghost.transform.SetPositionAndRotation(Vector3.Lerp(a.Pos, b.Pos, f), Quaternion.Slerp(a.Rot, b.Rot, f));
             int n = Mathf.Min(r.m_GhostBones.Length, a.Bones.Length);
-            for (int j = 1; j < n; j++) r.m_GhostBones[j].localRotation = Quaternion.Slerp(a.Bones[j], b.Bones[j], f);
+            for (int j = 1; j < n; j++) if (r.m_GhostBones[j] != null) r.m_GhostBones[j].localRotation = Quaternion.Slerp(a.Bones[j], b.Bones[j], f);
         }
 
         /// <summary>The killer's hands and weapon in front of the camera, on the recording's clock: what they held, what they
@@ -377,6 +411,31 @@ namespace RockGame
             int s = li;
             while (s > 0 && r.m_KLooks[s - 1].Act == look.Act) s--;
             r.m_VM.Update(ViewModel.Watched(look.Held, (BodyAnimator.Act)look.Act, at - r.m_KLooks[s].T, look.Crouch, look.Ball, look.Arrow, true));
+        }
+
+        /// <summary>The killer's eye and aim at `at` on the recording's clock, between the two samples either side of it -
+        /// or, across a jump (a respawn, a teleport, a gap), the nearer of them. Returns the earlier sample's index.</summary>
+        static int SampleLook(List<Look> l, float at, out Vector3 eye, out float yaw, out float pitch)
+        {
+            int li = FindLook(l, at, out float f);
+            var a = l[li];
+            var b = l[Mathf.Min(li + 1, l.Count - 1)];
+            if (b.T - a.T > JumpGap || (b.Eye - a.Eye).sqrMagnitude > JumpDist * JumpDist) f = f < 0.5f ? 0f : 1f;
+            eye = Vector3.Lerp(a.Eye, b.Eye, f);
+            yaw = a.Yaw + Mathf.DeltaAngle(a.Yaw, b.Yaw) * f;
+            pitch = Mathf.Lerp(a.Pitch, b.Pitch, f);
+            return li;
+        }
+
+        /// <summary>The alien's own bones, root first: the skinned mesh's bones (not whatever's been hung on them since - a
+        /// helmet, armour), so the list stays the same for as long as the model's there. (No skinned mesh: everything.)</summary>
+        static Transform[] Skeleton(Transform model)
+        {
+            var list = new List<Transform> { model };
+            foreach (var smr in model.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                foreach (var b in smr.bones)
+                    if (b != null && b != model && b.IsChildOf(model) && !list.Contains(b)) list.Add(b);
+            return list.Count > 1 ? list.ToArray() : model.GetComponentsInChildren<Transform>(true);
         }
 
         static bool Ranged(Item i) => Cfg.IsGun(i) || i == Item.Shotgun || i == Item.Sniper || i == Item.Crossbow || i == Item.Bow

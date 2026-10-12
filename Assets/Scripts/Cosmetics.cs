@@ -373,6 +373,14 @@ namespace RockGame
         /// from whoever killed them.</summary>
         void SpawnRagdoll()
         {
+            SpawnRagdollBody();
+            // the arrows stuck in them that didn't move over onto the ragdoll go (left on the hidden body they hung in the
+            // air where they died)
+            ArrowProjectile.ClearOn(transform);
+        }
+
+        void SpawnRagdollBody()
+        {
             if (m_Anim == null || m_VisualRoot == null || PsxModels.On || !m_VisualRoot.gameObject.activeSelf) return;
             var model = m_VisualRoot.Find("alien");
             if (model == null) return;
@@ -385,6 +393,24 @@ namespace RockGame
                 if (d.sqrMagnitude > 0.01f) push = d.normalized * 4.5f + Vector3.up * 2f;
             }
             Ragdoll.Spawn(model.gameObject, m_HatGo, push, NetworkObjectId);
+        }
+
+        /// <summary>What an arrow that hit this player at `point` sticks to: the nearest big bone of their alien, so it moves
+        /// with them and drops with their ragdoll (their root while the body isn't shown: invisible, tree camo, PSX).</summary>
+        public Transform StickBone(Vector3 point)
+        {
+            if (m_VisualRoot == null || !m_VisualRoot.gameObject.activeInHierarchy || PsxModels.On) return transform;
+            var model = m_VisualRoot.Find("alien");
+            if (model == null) return transform;
+            Transform best = transform;
+            float bestD = float.MaxValue;
+            foreach (var t in model.GetComponentsInChildren<Transform>())
+            {
+                if (System.Array.IndexOf(Ragdoll.k_Bones, t.name) < 0) continue;
+                float d = (t.position - point).sqrMagnitude;
+                if (d < bestD) { bestD = d; best = t; }
+            }
+            return best;
         }
 
         [Rpc(SendTo.Server)]

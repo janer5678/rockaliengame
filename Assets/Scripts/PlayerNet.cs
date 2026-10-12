@@ -1305,7 +1305,37 @@ namespace RockGame
             int n = Mathf.Clamp(amount, 1, st.Count);
             list[idx] = st.WithCount(st.Count - n);
             var fwd = Quaternion.Euler(0, transform.eulerAngles.y, 0) * Vector3.forward;
-            NetGame.Instance.ServerDropItem(st.WithCount(n), transform.position + fwd * 1.3f + Vector3.up * 0.6f, fwd, EyePos - Vector3.up * 0.3f + fwd * 0.4f);
+            var from = EyePos - Vector3.up * 0.3f + fwd * 0.4f;
+            NetGame.Instance.ServerDropItem(st.WithCount(n), DropLanding(from, fwd), fwd, from);
+        }
+
+        /// <summary>Where a dropped item lands: tossed out of your hand the way you look, a bit upward, with some speed
+        /// (DropThrowSpeed) - it flies a few metres, not just plops down in front of you - and stops at the first thing in
+        /// the way (a wall: it drops at its foot).</summary>
+        Vector3 DropLanding(Vector3 from, Vector3 fwd)
+        {
+            const float DropThrowSpeed = 5f;
+            var look = Quaternion.Euler(Mathf.Clamp(Pitch.Value, -89f, 89f), transform.eulerAngles.y, 0f) * Vector3.forward;
+            // (always a little forward and up, so looking at your feet still tosses it out in front)
+            var vel = (look + fwd * 0.3f + Vector3.up * 0.35f).normalized * DropThrowSpeed;
+            var p = from;
+            const float dt = 0.03f;
+            for (int i = 0; i < 80; i++)
+            {
+                var next = p + vel * dt;
+                vel += Vector3.down * 9.81f * dt;
+                var d = next - p;
+                RaycastHit? first = null;
+                foreach (var h in Physics.RaycastAll(p, d.normalized, d.magnitude, ~(1 << HitboxLayer), QueryTriggerInteraction.Ignore))
+                {
+                    if (h.collider.GetComponentInParent<PlayerNet>() != null) continue; // (you - or anyone - don't catch it)
+                    if (first == null || h.distance < first.Value.distance) first = h;
+                }
+                // (off a ceiling it's pushed well down, so the drop to the ground below starts under it, not on the roof)
+                if (first != null) return first.Value.point + first.Value.normal * (first.Value.normal.y < -0.3f ? 0.7f : 0.15f);
+                p = next;
+            }
+            return p;
         }
 
         /// <summary>Pull a stuck spear out of a player (yourself or someone else) and keep it.</summary>

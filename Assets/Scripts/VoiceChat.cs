@@ -156,8 +156,9 @@ namespace RockGame
         }
 
         /// <summary>
-        /// At startup: the display settings picked last time; otherwise keep the window as it is and run at the highest
-        /// refresh rate the monitor has. keepWindow: test runs and the editor never touch the window.
+        /// At startup: the display settings picked last time; otherwise full screen (borderless, at the monitor's own size -
+        /// whatever window Unity remembers from an older build) at the highest refresh rate the monitor has. keepWindow:
+        /// test runs and the editor never touch the window.
         /// </summary>
         public static void ApplyDisplayAtStartup(bool keepWindow)
         {
@@ -173,7 +174,9 @@ namespace RockGame
                 SetDisplay(size, mode, want);
                 return;
             }
-            if (Screen.fullScreenMode != FullScreenMode.Windowed) Screen.SetResolution(Screen.width, Screen.height, Screen.fullScreenMode, ChosenRate);
+            var native = Screen.currentResolution;
+            var fs = Screen.fullScreenMode == FullScreenMode.ExclusiveFullScreen ? FullScreenMode.ExclusiveFullScreen : FullScreenMode.FullScreenWindow;
+            Screen.SetResolution(native.width, native.height, fs, ChosenRate);
         }
     }
 

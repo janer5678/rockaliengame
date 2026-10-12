@@ -9,12 +9,13 @@ namespace RockGame
     /// playing - a tiny pixelated top-down version of the real game on the old CRT (128 x 96, point filtered). Everyone
     /// playing is a little alien in their team's colour, moved with WASD (the lobby has no other use for them). Walk into
     /// a tree and you've got it (+1, it grows back), grab the ball in the middle and run it to your team's machine on your
-    /// side (+5) - run into whoever's carrying it to knock it off them. Space (or a click) shoots an arrow the way you're
-    /// facing (the little bow pixel shows it): trees stop arrows (they stick in them), an enemy it reaches is shot - down
+    /// side (+5) - run into whoever's carrying it to knock it off them. Your little bow goes round you, pointing at the
+    /// mouse on the screen (any way at all; everyone sees everyone's), and Space (or a click) shoots an arrow that way
+    /// (without the mouse on it: the way you're facing): trees stop arrows (they stick in them), an enemy it reaches is shot - down
     /// for a moment where they fell, dropping the ball, then back on their side - and the shooter gets +2. The bar along the top lists everyone playing:
     /// their colour and their own score (a newcomer shows up on it straight away). STOP PLAYING (Hud.Lobby.cs) goes back
     /// to the couch.
-    /// Networked: whoever plays sends their stick to the server (PlayerNet.Arcade.cs), the server runs the game and sends
+    /// Networked: whoever plays sends their stick and their aim (an angle) to the server (PlayerNet.Arcade.cs), the server runs the game and sends
     /// everyone a small snapshot ~15 times a second (NetGame.Arcade.cs), so every telly shows the same game; who's playing
     /// is synced too (PlayerNet.ArcadePlaying), so their alien on the couch holds a controller and watches the screen.
     /// Lives on the Bootstrap object next to ShipLobby.
@@ -190,11 +191,13 @@ namespace RockGame
             }
         }
 
-        /// <summary>Server: a player fires an arrow the way they're facing (PlayerNet.ArcadeShootRpc).</summary>
-        public static void ServerShoot(PlayerNet p)
+        /// <summary>Server: a player fires an arrow along `dir` (the mouse's aim; zero: the way they're facing) (PlayerNet.ArcadeShootRpc).</summary>
+        public static void ServerShoot(PlayerNet p, Vector2 dir)
         {
             int at = IndexOf(p);
-            if (at >= 0) Shoot(s_Run[at], Time.time);
+            if (at < 0) return;
+            if (dir.sqrMagnitude > 0.01f) s_Run[at].Facing = dir.normalized;
+            Shoot(s_Run[at], Time.time);
         }
 
         static void Shoot(Runner r, float now)
@@ -297,7 +300,9 @@ namespace RockGame
                 }
                 bool stunned = now < r.StunUntil;
                 var stick = stunned || r.P == null ? Vector2.zero : r.P.ServerArcadeStick;
-                if (stick.sqrMagnitude > 0.04f) r.Facing = new Vector2(stick.x, -stick.y).normalized; // (where the next arrow goes)
+                var aim = r.P == null ? Vector2.zero : r.P.ServerArcadeAim;
+                if (aim.sqrMagnitude > 0.01f) r.Facing = aim; // (where the next arrow goes: the mouse's aim, or else the stick)
+                else if (stick.sqrMagnitude > 0.04f) r.Facing = new Vector2(stick.x, -stick.y).normalized;
                 float sp = Speed * (s_Holder == r ? CarrySlow : 1f);
                 var move = new Vector2(stick.x, -stick.y) * sp * dt;
                 r.Pos += move;
@@ -413,6 +418,9 @@ namespace RockGame
         /// <summary>A direction as a byte (0..255 round the circle), and back.</summary>
         static byte Ang(Vector2 d) => (byte)(Mathf.RoundToInt(Mathf.Repeat(Mathf.Atan2(d.y, d.x) / (Mathf.PI * 2f), 1f) * 256f) & 255);
         static Vector2 Dir(byte a) { float r = a / 256f * Mathf.PI * 2f; return new Vector2(Mathf.Cos(r), Mathf.Sin(r)); }
+        /// <summary>The mouse's aim as sent (0..65535 round the circle - finer than the snapshot's byte), and back.</summary>
+        public static ushort AimAng(Vector2 d) => (ushort)(Mathf.RoundToInt(Mathf.Repeat(Mathf.Atan2(d.y, d.x) / (Mathf.PI * 2f), 1f) * 65536f) & 65535);
+        public static Vector2 AimDir(ushort a) { float r = a / 65536f * Mathf.PI * 2f; return new Vector2(Mathf.Cos(r), Mathf.Sin(r)); }
 
         // ------------------------------------------------------------------ (tests) the arrows
 
@@ -448,6 +456,8 @@ namespace RockGame
         public static int ArrowsShown => s_Have ? s_Cur.Arrows.Count : 0;
         /// <summary>(tests) shoot once (as if Space were pressed).</summary>
         public static bool TestShoot;
+        /// <summary>(tests) aim at this field point as if the mouse were on it (x &lt; 0: the real mouse, with the real keys).</summary>
+        public static Vector2 TestAimAt = new Vector2(-1f, -1f);
 
 
         // ================================================================== this PC: looking at it, playing it
@@ -499,7 +509,34 @@ namespace RockGame
         public static bool InGame(PlayerNet p) => p != null && p.IsSpawned && p.ArcadePlaying.Value;
 
         static Vector2 s_SentStick = new Vector2(99f, 99f);
-        static float s_NextStick, s_NextJoin;
+        static float s_NextStick, s_NextJoin, s_NextAim;
+        /// <summary>This PC's aim: where its bow points (field, y down) and whether the mouse is aiming it; what was sent last.</summary>
+        static Vector2 s_Aim;
+        static bool s_Aiming;
+        static int s_SentAim = -1;
+        /// <summary>Where this PC's own little alien was drawn last (field point; what the mouse aims from).</summary>
+        static Vector2 s_MyDrawn;
+        static bool s_MyDrawnOk;
+
+        /// <summary>Where the mouse points this PC's bow (a field direction), if it's aiming it.</summary>
+        static bool ReadAim(out Vector2 dir)
+        {
+            dir = default;
+            Vector2 target;
+            if (TestAimAt.x >= 0f) target = TestAimAt;
+            else
+            {
+                // (the tests' own stick and steering shoot the way they face: the real mouse only with the real keys)
+                if (TestAuto > 0 || TestStick.x <= 1f || !Application.isFocused) return false;
+                if (!ShipLobby.TellyPictureUv(Input.mousePosition, out var uv)) return false;
+                target = new Vector2(uv.x * W, (1f - uv.y) * H - Bar); // (the picture's pixels: y down from the top, the field under the bar)
+            }
+            if (!s_MyDrawnOk) return false;
+            var d = target - s_MyDrawn;
+            if (d.sqrMagnitude < 0.25f) { dir = s_Aim; return s_Aiming; } // (right on top of you: keep the last way)
+            dir = d.normalized;
+            return true;
+        }
 
         void LocalInput(float now)
         {
@@ -521,12 +558,22 @@ namespace RockGame
                 s_NextStick = now + 0.5f;
                 if (me.ArcadePlaying.Value) me.ArcadeStickRpc((sbyte)q.x, (sbyte)q.y);
             }
-            // shoot: Space or a click on the picture (not on the lobby's buttons) - an arrow the way you're facing
+            // aim: the bow points at the mouse on the picture (sent when it turns, 20 times a second at most)
+            if (ReadAim(out var aim)) { s_Aim = aim; s_Aiming = true; }
+            else s_Aiming = false;
+            int sendAim = s_Aiming ? AimAng(s_Aim) : -1;
+            if (me.ArcadePlaying.Value && (sendAim != s_SentAim ? now > s_NextAim : now > s_NextAim + 0.45f))
+            {
+                s_SentAim = sendAim;
+                s_NextAim = now + 0.05f;
+                me.ArcadeAimRpc((ushort)Mathf.Max(0, sendAim), sendAim >= 0);
+            }
+            // shoot: Space or a click on the picture (not on the lobby's buttons) - an arrow where the bow points
             bool shoot = TestShoot;
             TestShoot = false;
             if (!shoot && !Chat.Open && GUIUtility.keyboardControl == 0 && Application.isFocused)
                 shoot = Input.GetKeyDown(KeyCode.Space) || (Input.GetMouseButtonDown(0) && !Hud.MouseOverUI);
-            if (shoot && me.ArcadePlaying.Value) me.ArcadeShootRpc();
+            if (shoot && me.ArcadePlaying.Value) me.ArcadeShootRpc(s_Aiming ? AimAng(s_Aim) : (ushort)0, s_Aiming);
         }
 
         static Vector2 ReadStick()
@@ -714,6 +761,7 @@ namespace RockGame
             // the players: little aliens in their team's colours (you: blinking white outline and a marker over you)
             byte myId = (byte)((NetworkManager.Singleton != null ? NetworkManager.Singleton.LocalClientId : 0) & 255);
             bool meDown = false;
+            s_MyDrawnOk = false;
             if (s_Have)
                 foreach (var d in cur.Dots)
                 {
@@ -729,13 +777,10 @@ namespace RockGame
                         if (me) { meDown = true; Px(p.x, p.y - 6, k_White); Rect(p.x - 1, p.y - 7, 3, 1, k_White); }
                         continue;
                     }
+                    if (me) { s_MyDrawn = new Vector2(p.x, p.y - Bar); s_MyDrawnOk = true; } // (what the mouse aims from)
                     if (me && Mathf.Repeat(now * 3f, 1f) < 0.6f) Rect(p.x - 3, p.y - 3, 6, 6, k_White);
-                    // the bow: a pixel or two the way they're facing (where the next arrow goes)
-                    {
-                        var fd = Dir(d.Face);
-                        Px(Mathf.RoundToInt(p.x - 0.5f + fd.x * 3.4f), Mathf.RoundToInt(p.y - 0.5f + fd.y * 3.4f), k_Trunk);
-                        Px(Mathf.RoundToInt(p.x - 0.5f + fd.x * 4.4f), Mathf.RoundToInt(p.y - 0.5f + fd.y * 4.4f), k_Stump);
-                    }
+                    // the bow, going round them: pointing where the next arrow goes (yours: straight at the mouse)
+                    Bow(new Vector2(p.x, p.y), me && s_Aiming ? s_Aim : Dir(d.Face));
                     bool stun = (d.Flags & FStun) != 0;
                     Rect(p.x - 2, p.y - 2, 4, 4, stun && Mathf.Repeat(now * 8f, 1f) < 0.5f ? TeamC(d.Team, 0.4f) : TeamC(d.Team));
                     Px(p.x - 1, p.y - 1, k_Black); Px(p.x + 1, p.y - 1, k_Black); // (the eyes)
@@ -832,6 +877,23 @@ namespace RockGame
             m_Tex.SetPixels32(m_Px);
             m_Tex.Apply(false);
         }
+
+        /// <summary>A little bow orbiting a player (`o`: their middle, in pixels) pointing along `fd`: its wood curved round
+        /// at a small radius, the string behind it and an arrow nocked on it.</summary>
+        void Bow(Vector2 o, Vector2 fd)
+        {
+            var side = new Vector2(-fd.y, fd.x);
+            for (int k = 0; k <= 4; k++) PxAt(o + fd * (3.5f + k * 0.9f), k == 4 ? k_White : k_ArrowWood); // (the arrow, its tip past the bow)
+            for (int k = -6; k <= 6; k++)
+            {
+                float t = k / 6f;
+                PxAt(o + fd * 3.6f + side * (2.6f * t), k_Stump);                         // (the string)
+                PxAt(o + fd * (5.2f - 1.6f * t * t) + side * (3f * t), k_Trunk);         // (the wood, bent back at the tips)
+            }
+        }
+
+        /// <summary>The pixel this point (pixels, continuous: pixel i covers i..i+1) is in.</summary>
+        void PxAt(Vector2 c, Color32 col) => Px(Mathf.FloorToInt(c.x), Mathf.FloorToInt(c.y), col);
 
         /// <summary>Draws text in the 3x5 pixel font at (x, y) (top left); returns the x after it.</summary>
         int Text(string s, int x, int y, Color32 c)

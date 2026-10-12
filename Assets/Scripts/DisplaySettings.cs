@@ -53,20 +53,20 @@ namespace RockGame
         // Resources/Settings/DefaultDisplay.txt - made the defaults; AutoTest.Defaults.cs checks every default against it)
         public const bool HandsOwn = true;                  // hands.own                (was off)
         public const bool HandsOutline = true;              // hands.outline
-        public const float HandsOutlineStrength = 0.35f;    // hands.outline.strength   (0..1; was 0.45)
+        public const float HandsOutlineStrength = 0.45f;    // hands.outline.strength   (0..1; was 0.35 - the 2026-10-12 export)
         public const bool HandsCel = false;                 // hands.cel                (was on)
-        public const float HandsCelStrength = 0.8f;         // hands.cel.strength       (0..1: fewer steps; was 0.5)
+        public const float HandsCelStrength = 0.6f;         // hands.cel.strength       (0..1: fewer steps; was 0.8 - 2026-10-12)
         public const float HandsSaturation = 1f;            // hands.saturation         (0..2, 1 = as drawn)
         public const float HandsContrast = 1.05f;           // hands.contrast           (0.5..1.6, 1 = as drawn; was 1)
-        public const float HandsOutlineDark = 1f;           // hands.outline.dark       (0.5..2.5 x how dark the outlines are; past ~1.6 they reach black)
+        public const float HandsOutlineDark = 2.5f;         // hands.outline.dark       (0.5..2.5 x how dark the outlines are; past ~1.6 they reach black; was 1 - 2026-10-12)
         // ---- tools & weapons (what the hands hold: the same make-up as the hands', set apart from them) ----
-        // (newer than the 2026-10-08 export: they keep the defaults they were added with)
-        public const bool ToolsOwn = false;                 // tools.own
+        // ("was ..." with 2026-10-12: a third export, the same file again, made these the defaults)
+        public const bool ToolsOwn = true;                  // tools.own                (was off - 2026-10-12)
         public const bool ToolsOutline = true;              // tools.outline
-        public const float ToolsOutlineStrength = 0.45f;    // tools.outline.strength   (0..1)
-        public const float ToolsOutlineDark = 1f;           // tools.outline.dark       (0.5..2.5)
-        public const bool ToolsCel = true;                  // tools.cel
-        public const float ToolsCelStrength = 0.5f;         // tools.cel.strength       (0..1)
+        public const float ToolsOutlineStrength = 0.4f;     // tools.outline.strength   (0..1; was 0.45 - 2026-10-12)
+        public const float ToolsOutlineDark = 2.5f;         // tools.outline.dark       (0.5..2.5; was 1 - 2026-10-12)
+        public const bool ToolsCel = false;                 // tools.cel                (was on - 2026-10-12)
+        public const float ToolsCelStrength = 0f;           // tools.cel.strength       (0..1; was 0.5 - 2026-10-12)
         public const float ToolsSaturation = 1f;            // tools.saturation         (0..2)
         public const float ToolsContrast = 1f;              // tools.contrast           (0.5..1.6)
 
@@ -103,7 +103,7 @@ namespace RockGame
         public const float GlowWidth = 0.0105f;             // glow.width               (0.005..0.12 m; was 0.005)
 
         // ---- shading ----
-        public const bool SmoothHands = false;              // shade.smooth.hands       (first-person hands + held items)
+        public const bool SmoothHands = true;               // shade.smooth.hands       (first-person hands + held items; was off - 2026-10-12)
         public const bool SmoothAliens = true;              // shade.smooth.aliens      (alien players + the stadium crowd; was off)
 
         // ---- grass ----
@@ -122,7 +122,9 @@ namespace RockGame
         //  building plan preview's colour (colour.BuildPlan) - WorldColors.cs: the .StartAt(...) ones were changed.
         //  The 2026-10-08 export's defaults that live in their own files: menu.* - LayerLooks.cs; timer.* - TimerLooks.cs;
         //  lobby.* - LobbyLooks.cs; notif.ink / width / plate / font / size / y and hud.* - NotifLooks.cs; killfeed.* -
-        //  KillFeedLooks.cs; menu.colour.dome - Hud.MenuColours.cs; colour.BuildWheel - WorldColors.cs)
+        //  KillFeedLooks.cs; menu.colour.dome - Hud.MenuColours.cs; colour.BuildWheel - WorldColors.cs.
+        //  The 2026-10-12 export changed timer.sub / timer.colour.timeleft - TimerLooks.cs; killfeed.ink - KillFeedLooks.cs;
+        //  notif.ink / width / font / size / y / enter / time / colour.airdrop - NotifLooks.cs)
 
         public static Color Hex(string hex) => ColorUtility.TryParseHtmlString(hex, out var c) ? c : Color.black;
     }

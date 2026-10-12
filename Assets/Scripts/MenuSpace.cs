@@ -100,6 +100,16 @@ namespace RockGame
 
         // ------------------------------------------------------------------ the ship and the stars
 
+        /// <summary>The barrel roll's shape (0..1 over the roll, 0 to 1 turn): a springy one - it eases in with a small
+        /// wind-up the other way, whips round, overshoots past the full turn and settles back (still at both ends).</summary>
+        static float RollCurve(float u)
+        {
+            u = Mathf.Clamp01(u);
+            float ease = u * u * u * (u * (u * 6f - 15f) + 10f);                       // (smoother step)
+            float sp = Mathf.Sin(Mathf.PI * u);
+            return ease - 0.35f * sp * sp * Mathf.Sin(2f * Mathf.PI * u);               // (lags early, overshoots late)
+        }
+
         static void Animate(float t)
         {
             var ship = s_Ship.Root.transform;
@@ -108,7 +118,7 @@ namespace RockGame
             float bank = Mathf.Sin(t * 0.45f) * 22f + Mathf.Sin(t * 1.3f) * 4f;
             float boost = Mathf.Pow(Mathf.Max(0f, Mathf.Sin(t * 0.8f)), 6f);           // 0..1 pulses
             float rollT = Mathf.Repeat(t, 14f) - 10f;                                     // a roll every 14 s
-            float roll = rollT > 0f && rollT < 1.3f ? Mathf.SmoothStep(0f, 360f, rollT / 1.3f) : 0f;
+            float roll = rollT > 0f && rollT < 1.9f ? 360f * RollCurve(rollT / 1.9f) : 0f;
             ship.localPosition = new Vector3(Mathf.Sin(t * 0.45f - 1.2f) * 8f, Mathf.Sin(t * 0.9f) * 2f + Mathf.Sin(t * 7f) * 0.06f, boost * 6f);
             ship.localRotation = Quaternion.Euler(Mathf.Sin(t * 0.6f) * 4f - boost * 6f, Mathf.Sin(t * 0.45f - 1.2f) * 10f, -bank - roll);
             if (s_Ship.Rim) s_Ship.Rim.localRotation = Quaternion.Euler(0f, t * (140f + boost * 400f), 0f);
@@ -287,7 +297,7 @@ namespace RockGame
         /// setting that colours it: straight (the setting's colour, keeping the built alpha) or, with a reference
         /// colour, shifted (the built colour's hue turned, and its saturation and brightness scaled, by how far the
         /// setting is from the reference - so a layered flame keeps its white-hot core and its fading outer layers).</summary>
-        class PaintJob { public Material M; public Color Orig; public DisplayPref.Colour Pref; public Color? Ref; }
+        class PaintJob { public Material M; public Color Orig; public DisplayPref.Colour Pref; public Color? Ref; public float Glow; }
         class LightJob { public Light L; public Color Orig; public DisplayPref.Colour Pref; public Color? Ref; }
         static readonly List<PaintJob> s_Paints = new List<PaintJob>();
         static readonly List<LightJob> s_LightJobs = new List<LightJob>();
@@ -296,7 +306,9 @@ namespace RockGame
         static bool s_ColoursDirty = true;
 
         /// <summary>This renderer gets its own copy of its material, coloured by the setting (copies shared per material).</summary>
-        static void Paint(Renderer r, DisplayPref.Colour pref, Color? shiftRef)
+        /// <param name="glow">Over 0: the copy also glows - added on top of what's behind it (fire lights up, it never
+        /// darkens) with an HDR emission of its colour x glow, so the bloom catches it.</param>
+        static void Paint(Renderer r, DisplayPref.Colour pref, Color? shiftRef, float glow = 0f)
         {
             if (r == null || r.sharedMaterial == null) return;
             var src = r.sharedMaterial;
@@ -306,9 +318,23 @@ namespace RockGame
                 m = new Material(src) { name = src.name + " (menu " + pref.Key + ")" };
                 s_PaintCache[(src, pref)] = m;
                 s_Owned.Add(m);
-                s_Paints.Add(new PaintJob { M = m, Orig = ColourOf(src), Pref = pref, Ref = shiftRef });
+                s_Paints.Add(new PaintJob { M = m, Orig = ColourOf(src), Pref = pref, Ref = shiftRef, Glow = glow });
+                if (glow > 0f) MakeGlow(m);
             }
             r.sharedMaterial = m;
+        }
+
+        /// <summary>A see-through (Ghost) material made additive and emissive: the colour is set by ApplyColours.</summary>
+        static void MakeGlow(Material m)
+        {
+            if (m.HasProperty("_Blend")) m.SetFloat("_Blend", 2f);        // (Additive)
+            if (m.HasProperty("_SrcBlend")) m.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            if (m.HasProperty("_DstBlend")) m.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.One);
+            if (m.HasProperty("_ZWrite")) m.SetFloat("_ZWrite", 0f);
+            m.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+            m.DisableKeyword("_ALPHAMODULATE_ON");
+            m.EnableKeyword("_EMISSION");
+            m.globalIlluminationFlags = MaterialGlobalIlluminationFlags.None;
         }
 
         static void PaintLight(Light l, DisplayPref.Colour pref, Color? shiftRef)
@@ -343,6 +369,7 @@ namespace RockGame
                 var c = Tinted(p.Orig, p.Pref, p.Ref);
                 if (p.M.HasProperty("_BaseColor")) p.M.SetColor("_BaseColor", c);
                 if (p.M.HasProperty("_Color")) p.M.SetColor("_Color", c);
+                if (p.Glow > 0f && p.M.HasProperty("_EmissionColor")) p.M.SetColor("_EmissionColor", new Color(c.r, c.g, c.b) * p.Glow);
             }
             foreach (var l in s_LightJobs) if (l.L != null) l.L.color = Tinted(l.Orig, l.Pref, l.Ref);
         }
@@ -437,6 +464,8 @@ namespace RockGame
 
 
         static readonly List<(Transform t, Vector3 baseScale)> s_Fire = new List<(Transform, Vector3)>();
+        /// <summary>How hard the meteor fire glows (its HDR emission, x its colour: well over the bloom threshold).</summary>
+        const float FireGlow = 4f;
         /// <summary>Each fire piece's resting place and turn, and whether it's a flame sheet down the side (else a shell of heat).</summary>
         static readonly List<(Vector3 pos, Quaternion rot, bool trail)> s_FireRest = new List<(Vector3, Quaternion, bool)>();
 
@@ -469,7 +498,7 @@ namespace RockGame
             {
                 var p = Art.Part(ship, Art.Sphere, Color.white, at, s, default, false, Art.Ghost(c));
                 p.GetComponent<Renderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-                Paint(p.GetComponent<Renderer>(), GameSettings.MenuFireColour, MenuLooks.FireRef);
+                Paint(p.GetComponent<Renderer>(), GameSettings.MenuFireColour, MenuLooks.FireRef, FireGlow);
                 s_Fire.Add((p.transform, s));
                 s_FireRest.Add((p.transform.localPosition, p.transform.localRotation, false));
             }
@@ -503,14 +532,14 @@ namespace RockGame
                     var cone = Art.Part(lick, Art.Cone, Color.white, Vector3.zero, new Vector3(w, len, w * 0.6f), default, false,
                         Art.Ghost(Color.Lerp(new Color(1f, 0.75f, 0.3f, 0.5f), new Color(1f, 0.35f, 0.08f, 0.35f), f)));
                     cone.GetComponent<Renderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-                    Paint(cone.GetComponent<Renderer>(), GameSettings.MenuFireColour, MenuLooks.FireRef);
+                    Paint(cone.GetComponent<Renderer>(), GameSettings.MenuFireColour, MenuLooks.FireRef, FireGlow);
                     s_Fire.Add((lick, Vector3.one));
                     s_FireRest.Add((lick.localPosition, lick.localRotation, true));
                 }
             var fl = new GameObject("meteor light").AddComponent<Light>();
             fl.transform.SetParent(ship, false);
             fl.transform.localPosition = new Vector3(0, 2f, 34f);
-            fl.type = LightType.Point; fl.range = 95f; fl.intensity = 9f; fl.color = new Color(1f, 0.55f, 0.2f);
+            fl.type = LightType.Point; fl.range = 110f; fl.intensity = 16f; fl.color = new Color(1f, 0.55f, 0.2f);
             PaintLight(fl, GameSettings.MenuFireColour, MenuLooks.FireRef);
         }
         /// <summary>Speed lines: long thin streaks close round the ship's path, whipping past (two tiles).</summary>

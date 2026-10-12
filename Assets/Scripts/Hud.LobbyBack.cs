@@ -18,7 +18,6 @@ namespace RockGame
     {
         bool m_LobbyMenu;
         float m_LobbyUnreadyAt = -10f;
-        static readonly Dictionary<MapKind, Texture2D> s_MapShots = new Dictionary<MapKind, Texture2D>();
 
         /// <summary>The host is in the main menu's pages over the running lobby (BACK from the lobby).</summary>
         public static bool LobbyMenuOpen => s_I != null && s_I.m_LobbyMenu;
@@ -156,7 +155,7 @@ namespace RockGame
         /// map) are hidden on this PC meanwhile, the main menu's picture-only trees stand in for them, and the hosted map
         /// comes back (rebuilt, its things shown again) the moment the page shows it again, is left, or CONFIRM is
         /// pressed (a new map then restarts the session as before). While another map's being built (a moment after the
-        /// arrows stop on it) its picture drifts behind instead.
+        /// arrows stop on it) the page is over a plain black loading screen.
         /// </summary>
         public static bool LobbyMapLive => s_I != null && s_I.LobbyMapLiveNow();
 
@@ -296,11 +295,8 @@ namespace RockGame
             }
         }
 
-        int m_PicKind = -1;
-        float m_PicFrom;
-
         /// <summary>Behind the lobby menu's pages: the lobby, dimmed nearly away - and on the map page, the map itself
-        /// (the hosted one: LobbyMapLive) or another map's picture, slowly drifting and zooming in shots like the live ones.</summary>
+        /// (the hosted one, or another map's live preview: LobbyMapLive), or a black loading screen while that's built.</summary>
         void DrawLobbyMenuBackdrop()
         {
             var full = new Rect(0, 0, Screen.width, Screen.height);
@@ -308,34 +304,16 @@ namespace RockGame
             {
                 // the live map: only the shots' fade through black between them
                 if (MenuScene.Fade > 0.001f) Fill(full, new Color(0, 0, 0, MenuScene.Fade));
-                m_PicKind = -1;
                 return;
             }
-            Fill(full, new Color(0.02f, 0.01f, 0.05f, m_New == NewPage.Map ? 1f : 0.94f));
-            if (m_New != NewPage.Map) { m_PicKind = -1; return; }
-            var kind = k_Maps[Mathf.Clamp(m_MapPick, 0, k_Maps.Length - 1)];
-            if (!s_MapShots.TryGetValue(kind, out var tex)) { tex = Resources.Load<Texture2D>("MapShots/" + kind); s_MapShots[kind] = tex; }
-            if (tex == null) return;
-            if ((int)kind != m_PicKind) { m_PicKind = (int)kind; m_PicFrom = Time.unscaledTime; }
-            // the picture as slow shots: each a gentle zoom and drift across part of it, cut through a short fade
-            float t = Time.unscaledTime - m_PicFrom, len = MenuScene.ShotSeconds;
-            int shot = Mathf.FloorToInt(t / len);
-            float st = t - shot * len, u = st / len, e = u * u * (3f - 2f * u) * 0.5f + u * 0.5f;
-            var rng = new System.Random(shot * 7919 + (int)kind * 31);
-            float R() => (float)rng.NextDouble();
-            float z0 = 1.05f + R() * 0.1f, z1 = z0 + 0.12f + R() * 0.08f;
-            if (shot % 2 == 1) (z0, z1) = (z1, z0);
-            float zoom = Mathf.Lerp(z0, z1, e);
-            float sa = Screen.width / (float)Mathf.Max(1, Screen.height), ta = tex.width / (float)Mathf.Max(1, tex.height);
-            float uw = sa > ta ? 1f : sa / ta, uh = sa > ta ? ta / sa : 1f;
-            uw /= zoom; uh /= zoom;
-            var c0 = new Vector2(R(), R()); var c1 = new Vector2(R(), R());
-            var c = Vector2.Lerp(c0, c1, e * 0.6f + 0.2f);
-            float cx = Mathf.Lerp(uw / 2f, 1f - uw / 2f, c.x), cy = Mathf.Lerp(uh / 2f, 1f - uh / 2f, c.y);
-            GUI.DrawTextureWithTexCoords(full, tex, new Rect(cx - uw / 2f, cy - uh / 2f, uw, uh));
-            float fin = Mathf.Clamp01(st / MenuScene.ShotFade), fout = Mathf.Clamp01((len - st) / MenuScene.ShotFade);
-            float fade = 1f - Mathf.SmoothStep(0f, 1f, Mathf.Min(fin, fout));
-            if (fade > 0.001f) Fill(full, new Color(0, 0, 0, fade));
+            if (m_New != NewPage.Map) { Fill(full, new Color(0.02f, 0.01f, 0.05f, 0.94f)); return; }
+            // another map being built: black, and a quiet LOADING MAP... (above the page's band along the bottom)
+            Fill(full, Color.black);
+            float k = m_Scale;
+            var st = new GUIStyle(m_Big) { alignment = TextAnchor.MiddleCenter, fontSize = Mathf.RoundToInt(30 * k) };
+            st.normal.textColor = new Color(1f, 1f, 1f, 0.8f);
+            float dots = Mathf.Repeat(Time.unscaledTime * 2f, 4f);
+            GUI.Label(new Rect(0, Screen.height * 0.38f, Screen.width, 44 * k), "LOADING MAP" + new string('.', Mathf.FloorToInt(dots)), st);
         }
 
         /// <summary>Top right on the lobby menu: the lobby's still open, and how to close it.</summary>
@@ -343,8 +321,9 @@ namespace RockGame
         {
             float k = m_Scale, sw = Screen.width;
             int n = ShipLobby.Seated.Count;
-            string s = $"<b>YOUR LOBBY IS STILL OPEN</b>  ·  {n} in it\n<color=#bbbbbb>CONFIRM takes you back to it with the new picks.  BACK to the main menu closes it.</color>";
-            if (m_New == NewPage.Map && !LobbyPickIsHosted()) s += LobbyMapLive ? "\n<color=#bbbbbb>A preview of this map (only you can see it): CONFIRM builds it for everyone.</color>" : "\n<color=#bbbbbb>Loading a preview of this map...</color>";
+            string s = $"<b>YOUR LOBBY IS STILL OPEN</b>  ·  {n} in it";
+            // (no grey help lines on the map page: just the map)
+            if (m_New != NewPage.Map) s += "\n<color=#bbbbbb>CONFIRM takes you back to it with the new picks.  BACK to the main menu closes it.</color>";
             var st = new GUIStyle(m_Small) { alignment = TextAnchor.UpperRight, fontSize = Mathf.RoundToInt(15 * k), wordWrap = false };
             Shadowed(new Rect(0, 18 * k, sw - 22 * k, 80 * k), s, st);
         }

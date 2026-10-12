@@ -40,8 +40,8 @@ namespace RockGame
 
         static bool s_ScoreMouse;
         /// <summary>
-        /// The scoreboard wants the mouse free: only after a right-click while it's up (for its MESSAGE buttons) - until then
-        /// you keep looking round, moving and fighting with it held. Goes back to false when it closes.
+        /// The scoreboard wants the mouse free: all the while it's up (for its MESSAGE buttons - no right-click first), so
+        /// you can't look round with it held; goes back to false when it closes and the cursor locks again.
         /// PlayerController frees the cursor for the scoreboard only while this is true.
         /// </summary>
         public static bool ScoreboardMouse => s_ScoreMouse;
@@ -51,11 +51,9 @@ namespace RockGame
         void DrawScoreboard(PlayerNet me, PlayerController pc)
         {
             bool open = pc.ScoreboardOpen || TestScoreboard;
-            if (open && !m_ScoreWasOpen) { m_ScoreOpened = Time.unscaledTime; s_ScoreMouse = false; }
+            if (open && !m_ScoreWasOpen) { m_ScoreOpened = Time.unscaledTime; s_ScoreMouse = true; }
             m_ScoreWasOpen = open;
             if (!open) { s_ScoreMouse = false; return; }
-            // a right-click while it's up frees the mouse for the MESSAGE buttons (until it's put away)
-            if (!s_ScoreMouse && Input.GetMouseButtonDown(1)) s_ScoreMouse = true;
             bool mouseFree = Cursor.lockState != CursorLockMode.Locked; // (locked: the buttons can't be clicked by the crosshair)
             ScoreboardShownAt = Time.time;
             float sw = Screen.width, sh = Screen.height, k = m_Scale;
@@ -185,7 +183,7 @@ namespace RockGame
             }
             var foot = new GUIStyle(m_Small) { alignment = TextAnchor.MiddleCenter };
             foot.normal.textColor = new Color(0.65f, 0.65f, 0.7f, ease);
-            Shadowed(new Rect(x, y + h - 30 * k, w, 24 * k), (mouseFree ? $"Hold [{Binds.Name(Bind.Scoreboard)}]  ·  MESSAGE: a private message only that player sees  ·  click a whisper in the chat to answer it" : $"Hold [{Binds.Name(Bind.Scoreboard)}]  ·  look and move as usual  ·  RMB: free the mouse to MESSAGE a player"), foot);
+            Shadowed(new Rect(x, y + h - 30 * k, w, 24 * k), (mouseFree ? $"Hold [{Binds.Name(Bind.Scoreboard)}]  ·  MESSAGE: a private message only that player sees  ·  click a whisper in the chat to answer it" : $"Hold [{Binds.Name(Bind.Scoreboard)}]  ·  MESSAGE: a private message only that player sees"), foot);
             GUI.color = oldCol;
             ScoreboardRows = rows;
             ScoreboardButtons = buttons;

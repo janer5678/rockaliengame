@@ -33,7 +33,7 @@ namespace RockGame
         /// EdgeText) - how thick (pixels at the UI scale) and its colour.</summary>
         public static readonly DisplayPref.Choice KillFeedFont = new("killfeed.font", GKillFeed, FontPrefNames, 0);
         public static readonly DisplayPref.Choice KillFeedEdge = new("killfeed.edge", GKillFeed, EdgeNames, 0);
-        public static readonly DisplayPref.Float KillFeedInk = new("killfeed.ink", GKillFeed, 1.5f, 0.25f, 4f);
+        public static readonly DisplayPref.Float KillFeedInk = new("killfeed.ink", GKillFeed, 2f, 0.25f, 4f); // (was 1.5 - 2026-10-12)
         public static readonly DisplayPref.Colour KillFeedInkColour = new("killfeed.ink.colour", GKillFeed, Color.black);
 
         public static int KillFeedLinesNow => Mathf.Clamp(Mathf.RoundToInt(KillFeedLines.Value), 1, 10);

@@ -41,8 +41,9 @@ namespace RockGame
                 yield return Snap("p14_light_after");
             }
 
-            // ---- no crashed UFO: cover round the ball instead; no auto turret to craft
-            Check(CrashSite.Current == null && MapBuilder.Root != null && MapBuilder.Root.Find("CentreCover") != null, "no crashed UFO in the middle, cover round the ball instead");
+            // ---- no crashed UFO (but on the Highlands, Cfg.CrashSiteOn): cover round the ball instead; no auto turret to craft
+            if (Cfg.CrashSiteOn) Check(CrashSite.Current != null && MapBuilder.Root != null && MapBuilder.Root.Find("CentreCover") == null, "the Highlands: the crashed UFO is in the middle (no cover ring)");
+            else Check(CrashSite.Current == null && MapBuilder.Root != null && (MapBuilder.Root.Find("CentreCover") != null || ThemeMaps.IsTheme), $"no crashed UFO in the middle of {Cfg.Map}, cover round the ball instead");
             Check(Cfg.CraftIndexOf(Item.AutoTurret) < 0, "the auto turret is out for now");
             yield return Snap("p14_centre");
 

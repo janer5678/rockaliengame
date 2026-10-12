@@ -14,6 +14,7 @@ namespace RockGame
     ///   LOBBY          - the ship lobby's own post processing and room
     ///   MAIN MENU      - the main menu cutscene's own post processing and colours
     ///   SHARE          - COPY SETTINGS / PASTE SETTINGS (the display settings code, every category's settings)
+    /// A search box over the tabs finds a setting in any category (Hud.DisplaySearch.cs).
     /// Every option the long page had is still here, each in one category. Hud.Menus.cs: DrawDisplayTab's body is just
     /// DrawDisplayTabbed() (the screen, frame rate, shadows, shading, interface and glow rows it used to draw are here).
     /// </summary>
@@ -47,6 +48,14 @@ namespace RockGame
                 m_FoldsOpened = true;
                 m_TimerOpen = m_LobbyLooksOpen = m_MenuLooksOpen = m_NotifLooksOpen = true;
             }
+            // the search box: while something's typed, the matching rows of every category instead of the tabs (Hud.DisplaySearch.cs)
+            if (DisplaySearchBox())
+            {
+                m_DisplayTabbed = true;
+                try { DrawDisplaySearch(); }
+                finally { m_DisplayTabbed = false; }
+                return;
+            }
             // the tabs: two rows of four
             for (int row = 0; row < 2; row++)
             {
@@ -66,9 +75,15 @@ namespace RockGame
             }
             GUILayout.Space(4 * k);
             m_DisplayTabbed = true;
-            try
+            try { DrawDisplayCategory(m_DisplayCat); }
+            finally { m_DisplayTabbed = false; }
+        }
+
+        /// <summary>One category's rows (the chosen tab, or each in turn for the search).</summary>
+        void DrawDisplayCategory(DisplayCat cat)
+        {
             {
-                switch (m_DisplayCat)
+                switch (cat)
                 {
                     case DisplayCat.Graphics:
                         DrawScreenSection();
@@ -114,7 +129,6 @@ namespace RockGame
                         break;
                 }
             }
-            finally { m_DisplayTabbed = false; }
         }
 
         // ------------------------------------------------------------------ GRAPHICS

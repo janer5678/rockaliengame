@@ -375,7 +375,7 @@ namespace RockGame
                 GUILayout.EndHorizontal();
             }
             // its colours (Hud.MenuColours.cs): whenever the section is open - they don't need the own look switched on
-            if (m_MenuLooksOpen) DrawMenuCutsceneColours();
+            if (m_MenuLooksOpen || s_SearchOn) DrawMenuCutsceneColours();
         }
 
         /// <summary>NOTIFICATIONS: their own post processing layer (cel shading, glow, outlines, colour).</summary>
@@ -433,6 +433,7 @@ namespace RockGame
         bool FoldRow(string title, ref bool open, DisplayPref.Bool own)
         {
             float k = m_Scale;
+            SearchHeader(2); // (a fold is a header for the display search, and searched folded or not: Hud.DisplaySearch.cs)
             GUILayout.BeginHorizontal();
             GUILayout.Space(16 * k);
             if (Btn($"{title}  {(open ? "▲" : "▼")}", GUILayout.Width(260 * k), GUILayout.Height(28 * k))) open = !open;
@@ -441,7 +442,7 @@ namespace RockGame
             own.Set(on);
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
-            if (!open) return false;
+            if (!open && !s_SearchOn) return false;
             if (!on) { Hint("Off: they look like everything else. Switch Own look on to set them apart."); return false; }
             return true;
         }
@@ -491,7 +492,7 @@ namespace RockGame
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
             Hint("cel shading, outlines, glow, colour - just the menus and HUD (while On the UI too is on)");
-            if (!m_UiLooksOpen) return;
+            if (!m_UiLooksOpen && !s_SearchOn) return;
             GUILayout.BeginHorizontal();
             GUILayout.Space(16 * k);
             bool world = ToggleBtn(GameSettings.UiWorldPost.Value, "World effects too", GUILayout.Width(214 * k), GUILayout.Height(28 * k));

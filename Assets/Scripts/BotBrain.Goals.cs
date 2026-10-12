@@ -347,9 +347,11 @@ namespace RockGame
             m_NextUse = Time.time + 0.8f;
             int before = Cfg.BaseUpgradeLevel(id, team);
             if (!m_P.CanAfford(Cfg.BaseUpgradeRecipe(id, team))) { Done(); return; }
-            m_P.BaseUpgradeRpc(id);
+            int cash = m_P.Count(Cfg.CurrencyItem);
+            if (Cfg.Upgrade10Walls && id == Item.FortifyBuff) m_P.ServerUpgradeNearestWalls(); // (Upgrade 10 Walls: no picker - the 10 nearest the machine)
+            else m_P.BaseUpgradeRpc(id);
             m_HoldFor = 0;
-            if (Cfg.BaseUpgradeLevel(id, team) > before) Upgraded++;
+            if (Cfg.BaseUpgradeLevel(id, team) > before || m_P.Count(Cfg.CurrencyItem) < cash) Upgraded++;
             else m_CraftFail[id] = Time.time + 30f;
             Done();
         }

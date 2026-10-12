@@ -23,7 +23,7 @@ namespace RockGame
         /// <summary>TEXT OUTLINE: the words' own ink stroke (Hud.InkText round the banner's title and the countdown's
         /// label and number) - its thickness (1 = as designed, 0 = none), on / off, colour and opacity. Not the OWN LOOK
         /// post outline, which is an extra line laid on round everything after.</summary>
-        public static readonly DisplayPref.Float NotifInk = new("notif.ink", GNotifStyle, 0.45f, 0f, 3f);
+        public static readonly DisplayPref.Float NotifInk = new("notif.ink", GNotifStyle, 0.35f, 0f, 3f); // (was 0.45 - the 2026-10-12 defaults)
         public static readonly DisplayPref.Bool NotifInkOn = new("notif.ink.on", GNotifStyle, true);
         public static readonly DisplayPref.Colour NotifInkColour = new("notif.ink.colour", GNotifStyle, Color.black);
         public static readonly DisplayPref.Float NotifInkOpacity = new("notif.ink.opacity", GNotifStyle, 1f, 0f, 1f);
@@ -37,14 +37,14 @@ namespace RockGame
             return c;
         }
         /// <summary>How wide the dark band behind a banner / the countdown's label is (1 = as designed).</summary>
-        public static readonly DisplayPref.Float NotifWidth = new("notif.width", GNotifStyle, 0.85f, 0.4f, 1.8f);
+        public static readonly DisplayPref.Float NotifWidth = new("notif.width", GNotifStyle, 0.8f, 0f, 1.8f); // (was 0.85 - 2026-10-12)
         /// <summary>How dark that band is (1 = as designed).</summary>
         public static readonly DisplayPref.Float NotifPlate = new("notif.plate", GNotifStyle, 0.2f, 0f, 1.5f);
-        public static readonly DisplayPref.Choice NotifFont = new("notif.font", GNotifStyle, FontPrefNames, 4); // (4 = Consolas)
+        public static readonly DisplayPref.Choice NotifFont = new("notif.font", GNotifStyle, FontPrefNames, 0); // (0 = Same as the UI; was 4 = Consolas - 2026-10-12)
         /// <summary>How big the words (and the countdown's number) are (1 = as designed).</summary>
-        public static readonly DisplayPref.Float NotifSize = new("notif.size", GNotifStyle, 1.25f, 0.5f, 1.8f);
+        public static readonly DisplayPref.Float NotifSize = new("notif.size", GNotifStyle, 1.05f, 0.5f, 1.8f); // (was 1.25 - 2026-10-12)
         /// <summary>How far up (-) or down (+) the screen they sit, in pixels at the UI scale.</summary>
-        public static readonly DisplayPref.Float NotifY = new("notif.y", GNotifStyle, -25f, -200f, 400f);
+        public static readonly DisplayPref.Float NotifY = new("notif.y", GNotifStyle, -65f, -200f, 400f); // (was -25 - 2026-10-12)
 
         public static Font NotifFontNow => FontForPref(NotifFont.Value);
 
@@ -57,11 +57,11 @@ namespace RockGame
         const string GNotifMove = "NOTIFICATION ANIMATION";
         /// <summary>How a banner comes in: the band snapping open from the middle (as designed), sliding down from above,
         /// fading in, popping in from small, or just there.</summary>
-        public static readonly DisplayPref.Choice NotifEnter = new("notif.enter", GNotifMove, new[] { "Snap open", "Slide down", "Fade in", "Pop", "None" }, 0);
+        public static readonly DisplayPref.Choice NotifEnter = new("notif.enter", GNotifMove, new[] { "Snap open", "Slide down", "Fade in", "Pop", "None" }, 2); // (Fade in; was Snap open - 2026-10-12)
         /// <summary>How it goes: lifting up as it fades (as designed), just fading, sliding up off the screen, or shrinking away.</summary>
         public static readonly DisplayPref.Choice NotifExit = new("notif.exit", GNotifMove, new[] { "Lift & fade", "Fade", "Slide up", "Shrink" }, 0);
         /// <summary>How long a banner stays (seconds, the way in and out included).</summary>
-        public static readonly DisplayPref.Float NotifTime = new("notif.time", GNotifMove, 4f, 1.5f, 12f);
+        public static readonly DisplayPref.Float NotifTime = new("notif.time", GNotifMove, 5f, 1.5f, 12f); // (was 4 - 2026-10-12)
         /// <summary>How far up the screen it flies as it leaves (pixels at the UI scale; Lift & fade and Slide up).</summary>
         public static readonly DisplayPref.Float NotifFly = new("notif.fly", GNotifMove, 40f, 0f, 600f);
 
@@ -69,13 +69,13 @@ namespace RockGame
 
         public static void ResetNotifMove(bool save = true)
         {
-            NotifEnter.Set(0, save); NotifExit.Set(0, save); NotifTime.Set(4f, save); NotifFly.Set(40f, save);
+            DisplayPref.ResetAll(save, NotifEnter, NotifExit, NotifTime, NotifFly);
         }
 
         // ---- each kind of news' accent colour (the band's lines and the title settle into it: Hud.BannerAccent) ----
         const string GNotifColours = "NOTIFICATION COLOURS";
         public static readonly DisplayPref.Colour NotifColUnlock = new("notif.colour.unlock", GNotifColours, new Color(1f, 0.88f, 0.2f));
-        public static readonly DisplayPref.Colour NotifColAirdrop = new("notif.colour.airdrop", GNotifColours, new Color(1f, 0.38f, 0.78f));
+        public static readonly DisplayPref.Colour NotifColAirdrop = new("notif.colour.airdrop", GNotifColours, new Color(1f, 10f / 255f, 207f / 255f)); // (#FF0ACF; was #FF61C7 - 2026-10-12)
         public static readonly DisplayPref.Colour NotifColWall = new("notif.colour.wall", GNotifColours, new Color(0.4f, 0.85f, 1f));
         public static readonly DisplayPref.Colour NotifColDown = new("notif.colour.down", GNotifColours, new Color(1f, 0.3f, 0.25f));
         public static readonly DisplayPref.Colour NotifColGoal = new("notif.colour.goal", GNotifColours, new Color(1f, 0.85f, 0.3f));
@@ -95,7 +95,7 @@ namespace RockGame
             ("Goals", "GOAL! BLUE", NotifColGoal),
             ("Airstrikes", "AIRSTRIKE INBOUND", NotifColAirstrike),
             ("The ball", "BALL INCOMING", NotifColBall),
-            ("The clock", "1 MINUTE LEFT, OVERTIME, SUDDEN DEATH, GATHER & BUILD", NotifColClock),
+            ("The clock", "OVERTIME, SUDDEN DEATH, GATHER & BUILD", NotifColClock),
             ("The lobby", "EVERYONE'S READY / HERE, LOBBY / TEAM FULL", NotifColLobby),
             ("Anything else", "the tutorial and the rest", NotifColDefault),
         };
@@ -155,7 +155,6 @@ namespace RockGame
             new("gather", "GATHER & BUILD", "the match starts"),
             new("wall_dropping", "THE WALL IS DROPPING", "the ball is out"),
             new("wall_down", "THE WALL IS DOWN", "the ball is out (fun modes)"),
-            new("one_minute", "1 MINUTE LEFT", "a minute to go"),
             new("overtime", "OVERTIME", "time ran out with no ball in"),
             new("sudden_death", "SUDDEN DEATH", "the space arena"),
             new("trade_station", "TRADE STATION UNLOCKED", "a workbench unlocks"),
@@ -205,6 +204,7 @@ namespace RockGame
             new("timer_waiting", "WAITING FOR PLAYERS", "timer: the lobby is filling up"),
             new("timer_starts", "MATCH STARTS IN", "timer: everyone's in"),
             new("timer_wall", "WALL DROPS IN", "timer: gathering and building"),
+            new("timer_walldropping", "WALL DROPPING", "timer: the wall sliding down"),
             new("timer_timeleft", "TIME LEFT", "timer: the ball is out"),
             new("timer_overtime", "OVERTIME", "timer: overtime"),
             new("timer_sudden", "SUDDEN DEATH", "timer: the space arena"),

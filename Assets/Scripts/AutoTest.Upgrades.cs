@@ -56,7 +56,8 @@ namespace RockGame
                 PlayerNet other = null;
                 float until = Time.time + 30f;
                 while (other == null && Time.time < until) { foreach (var p in PlayerNet.All) if (p != me) other = p; yield return null; }
-                if (other != null)
+                if (other != null && Cfg.Upgrade10Walls) yield return new WaitForSeconds(20f); // (Upgrade 10 Walls in Fortify's place: the client doesn't buy it - no pieces to pick)
+                else if (other != null)
                 {
                     int ot = other.Team.Value;
                     until = Time.time + 180f;
@@ -354,6 +355,10 @@ namespace RockGame
             }
             var ups = new List<Item>();
             Cfg.BaseUpgrades(ups);
+            // Upgrade 10 Walls in Fortify All Walls' place (Cfg.Upgrade10Walls): no levels, and with no pieces to pick its row
+            // says NO WALLS ("maxed out"). Its buying is tested in Arsenal (AutoTest.Modes.cs) and Jonah mode (AutoTest.Prompt14.cs).
+            bool u10 = Cfg.Upgrade10Walls;
+            bool NoWalls(Item id) => u10 && id == Item.FortifyBuff && Cfg.UpgradablePieces(team) == 0;
             for (int i = 0; i < me.Inv.Count; i++) me.Inv[i] = default;
             yield return FaceMachine();
             Check(pc.Target.Kind == PlayerController.TargetKind.Machine && pc.Target.MachineTeam == team, $"looking at our alien machine ({pc.Target.Kind})");
@@ -393,13 +398,13 @@ namespace RockGame
             yield return new WaitForSeconds(0.3f);
             yield return Frames();
             Check(pc.UpgradesOpen && pc.MenuOpen && pc.LootTarget == null, "E on our upgrade station opens UPGRADES");
-            Check(Row(Item.FortifyBuff) == "can't afford" && Hud.CraftRowsShown.Count == 0, $"with no {Cfg.CurrencyName} its rows say so ({Row(Item.FortifyBuff)}), and the crafting list isn't drawn ({Hud.CraftRowsShown.Count} rows)");
+            Check(Row(Item.FortifyBuff) == (NoWalls(Item.FortifyBuff) ? "maxed out" : "can't afford") && Hud.CraftRowsShown.Count == 0, $"with no {Cfg.CurrencyName} its rows say so ({Row(Item.FortifyBuff)}), and the crafting list isn't drawn ({Hud.CraftRowsShown.Count} rows)");
             yield return Snap($"upgrades_{rn}_poor");
             for (int i = 0; i < 20; i++) me.ServerGive(cur, 1000); // (every level of both: 6000 + 13000)
             yield return new WaitForSeconds(0.3f);
             yield return Frames();
             bool allOk = true;
-            foreach (var id in ups) allOk &= Row(id) == "ok";
+            foreach (var id in ups) allOk &= Row(id) == "ok" || (NoWalls(id) && Row(id) == "maxed out");
             Check(allOk, $"with enough {Cfg.CurrencyName} every upgrade is ready to buy ({string.Join(", ", Hud.UpgradeRowsShown)})");
             yield return Snap($"upgrades_{rn}");
 
@@ -415,15 +420,27 @@ namespace RockGame
             yield return new WaitForSeconds(0.3f);
 
             // buy every level: the price goes up each time, then it's maxed out and refused
+            Item firstBuy = Item.FortifyBuff;
+            foreach (var id in ups) if (!(u10 && id == Item.FortifyBuff)) { firstBuy = id; break; }
             foreach (var id in ups)
             {
+                if (u10 && id == Item.FortifyBuff)
+                {
+                    Check(Cfg.BaseUpgradeMax(id) == 0 && Cfg.ItemName(id) == "Upgrade 10 Walls" && Cfg.BaseUpgradeRecipe(id, team).Wood == Cfg.Upgrade10WallsDust,
+                        $"Upgrade 10 Walls is here instead of Fortify All Walls ({Cfg.ItemName(id)}, {Cfg.BaseUpgradeRecipe(id, team).Wood} {Cfg.CurrencyName}, no levels)");
+                    int before = me.Count(cur);
+                    me.BaseUpgradeRpc(id);
+                    yield return new WaitForSeconds(0.4f);
+                    Check(me.Count(cur) == before && Cfg.FortifyLevel(team) == 0, "UPGRADE on it doesn't fortify everything (it opens the wall picker instead)");
+                    continue;
+                }
                 int max = Cfg.BaseUpgradeMax(id);
                 for (int lvl = 0; lvl < max; lvl++)
                 {
                     int price = Cfg.BaseUpgradeRecipe(id, team).Wood;
                     int before = me.Count(cur), bought = PlayerNet.UpgradesBought, cel = UpgradeStation.Celebrations;
                     me.BaseUpgradeRpc(id);
-                    if (lvl == 0 && id == Item.FortifyBuff)
+                    if (lvl == 0 && id == firstBuy)
                     {
                         // the station's show: close the screen and photograph it mid-celebration
                         float until = Time.time + 3f;
@@ -448,7 +465,7 @@ namespace RockGame
                     yield return Frames();
                     Check(Cfg.BaseUpgradeLevel(id, team) == lvl + 1 && before - me.Count(cur) == price && PlayerNet.UpgradesBought == bought + 1 && UpgradeStation.Celebrations == cel + 1,
                         $"UPGRADE {Cfg.ItemName(id)} to level {lvl + 1} for {before - me.Count(cur)} {Cfg.CurrencyName} (price {price}), the station celebrated");
-                    if (lvl == 0 && id == Item.FortifyBuff) yield return Snap($"upgrades_{rn}_level1");
+                    if (lvl == 0 && id == firstBuy) yield return Snap($"upgrades_{rn}_level1");
                 }
                 {
                     int before = me.Count(cur);
@@ -649,8 +666,8 @@ namespace RockGame
                 }
             }
 
-            // UPGRADES at our upgrade station: E opens it, buy Fortify
-            if (Cfg.HasBaseUpgrades)
+            // UPGRADES at our upgrade station: E opens it, buy Fortify (not with Upgrade 10 Walls in its place: no pieces to pick here)
+            if (Cfg.HasBaseUpgrades && !Cfg.Upgrade10Walls)
             {
                 pc.LocalTeleport(Cfg.SpawnPos(team, me.Slot.Value), Cfg.SpawnYaw(team));
                 yield return new WaitForSeconds(0.5f);

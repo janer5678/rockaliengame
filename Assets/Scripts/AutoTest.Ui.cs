@@ -231,6 +231,9 @@ namespace RockGame
             // ---- the extra looks: each one on its own (over the usual post processing), all together, then all off ----
             GameSettings.SetPostFx(true, true, true, true, 0.5f, 0.5f, 0.5f, false);
             GameSettings.PostExtrasOff();
+            // (the hands' and tools' own looks also draw our pass: off for this, as they were)
+            bool handsOwnWas = GameSettings.HandsOwn.Value, toolsOwnWas = GameSettings.ToolsOwn.Value;
+            GameSettings.HandsOwn.Set(false, false); GameSettings.ToolsOwn.Set(false, false);
             ScreenStats xBase = default, xBase2 = default, xBack = default;
             yield return new WaitForSecondsRealtime(0.5f);
             yield return Grab(s => xBase = s);
@@ -275,6 +278,7 @@ namespace RockGame
             float backNoise = Diff(xBack, xBack2), dBack2 = Diff(xBase2, xBack2);
             Check(Mathf.Min(dBack, dBack2) <= Mathf.Max(xNoise, backNoise) * 1.6f + 0.01f && !PostFx.StylizeOn && Mathf.Approximately(PostFx.AoIntensity, PostFx.AoBaseIntensity),
                 $"every extra look off again: the usual look ({dBack:F3} / {dBack2:F3} mean difference from it, {xNoise:F3} / {backNoise:F3} between two plain frames), our pass not drawn, the SSAO back to {PostFx.AoBaseIntensity:F2}");
+            GameSettings.HandsOwn.Set(handsOwnWas, false); GameSettings.ToolsOwn.Set(toolsOwnWas, false);
             yield return Look(null, false, true, true, true, s => off2 = s);
             if (testSun != null) Destroy(testSun);
             Time.timeScale = 1f;

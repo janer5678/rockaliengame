@@ -156,6 +156,8 @@ namespace RockGame
         // the top panel's memory: which phase it's showing, how long that phase was, the last whole second shown
         /// <summary>(tests) the top panel as last drawn: the frame, its accent colour, whether its label sat above the clock.</summary>
         public static int TopPanelFrame = -10;
+        /// <summary>(tests) the timer's what-to-do text as last drawn ("" when it wasn't).</summary>
+        public static string TopPanelSub = "";
         public static Color TopPanelAccent;
         public static bool TopPanelLabelAbove;
         /// <summary>(tests) the top panel's drain bar was last drawn over the plate (TIMER > Drain bar: On top).</summary>
@@ -331,15 +333,18 @@ namespace RockGame
             }
             // the mode's tag under the bar
             if (hasTag && tagPos == 1) { y += 2 * k; Tag(new Rect(cx - tw / 2f, y, tw, 26 * k)); y += 30 * k; }
-            // the line about what to do
+            // the lines about what to do: what's going on, and under it what to do about it (TIMER > What to do: the
+            // second line can be left out, and it can be bold)
+            if (!string.IsNullOrEmpty(sub) && !GameSettings.TimerSubSecondNow) { int nl = sub.IndexOf('\n'); if (nl >= 0) sub = sub.Substring(0, nl); }
             int lines = string.IsNullOrEmpty(sub) || !GameSettings.TimerSubNow ? 0 : sub.Split('\n').Length;
+            TopPanelSub = lines > 0 ? sub : ""; // (tests)
             if (lines > 0)
             {
                 float sh2 = lines * 20 * k + 6 * k;
                 Tinted(new Rect(cx - pw * 0.55f, y, pw * 1.1f, sh2), s_BandTex, new Color(0f, 0f, 0f, plate * 0.75f));
-                var sst = new GUIStyle(m_Center) { fontSize = Mathf.RoundToInt(15 * k) };
+                var sst = new GUIStyle(m_Center) { fontSize = Mathf.RoundToInt(15 * k), fontStyle = GameSettings.TimerSubBoldNow ? FontStyle.Bold : FontStyle.Normal };
                 if (font != null) sst.font = font;
-                if (overtime) sub = $"<color=#ffb0a0>{sub}</color>";
+                if (overtime) sub = $"<color=#ffb0a0>{sub.Replace("\n", "</color>\n<color=#ffb0a0>")}</color>";
                 Shadowed(new Rect(0, y + 3 * k, sw, lines * 20 * k), sub, sst);
                 y += sh2;
             }
@@ -406,13 +411,17 @@ namespace RockGame
             float bw = Mathf.Min(sw, 820 * k * GameSettings.NotifWidth.Value * scale) * open; // (smaller and lower than it was; just the title)
             BannerAccentShown = accent; BannerAlphaShown = alpha; BannerLiftShown = lift; BannerScaleShown = scale; // (tests)
             if (alpha <= 0.001f || bh < 1f) return;
-            Tinted(new Rect(cx - bw / 2f, by, bw, bh), s_BandTex, new Color(0f, 0f, 0f, Mathf.Clamp01(0.62f * GameSettings.NotifPlate.Value) * alpha));
-            // accent lines racing out along the band's edges
-            float lines = EaseOut3((lineAge - 0.08f) / 0.45f);
-            float lw = bw * 0.8f * lines;
-            var ac = new Color(accent.r, accent.g, accent.b, alpha);
-            Fill(new Rect(cx - lw / 2f, by, lw, 3 * k), ac);
-            Fill(new Rect(cx - lw / 2f, by + bh - 3 * k, lw, 3 * k), ac);
+            bool band = GameSettings.NotifWidth.Value >= 0.01f && bw >= 1f; // (Band width all the way down: no band, just the title)
+            if (band)
+            {
+                Tinted(new Rect(cx - bw / 2f, by, bw, bh), s_BandTex, new Color(0f, 0f, 0f, Mathf.Clamp01(0.62f * GameSettings.NotifPlate.Value) * alpha));
+                // accent lines racing out along the band's edges
+                float lines = EaseOut3((lineAge - 0.08f) / 0.45f);
+                float lw = bw * 0.8f * lines;
+                var ac = new Color(accent.r, accent.g, accent.b, alpha);
+                Fill(new Rect(cx - lw / 2f, by, lw, 3 * k), ac);
+                Fill(new Rect(cx - lw / 2f, by + bh - 3 * k, lw, 3 * k), ac);
+            }
             // the title: drops in big and settles with a bounce
             float tt = Mathf.Clamp01((titleAge - 0.05f) / 0.5f);
             float bnc = bounce ? 1f + 0.45f * Mathf.Exp(-6f * tt) * Mathf.Cos(tt * 16f) * (tt > 0f ? 1f : 0f) : 1f;
@@ -425,7 +434,7 @@ namespace RockGame
             InkText(new Rect(0, by + 4 * k * scale, sw, bh - 8 * k * scale), title, tst, fill, GameSettings.NotifInkEdge(0.9f * ta), 3f * k * ink);
             // a glint sweeping across the title
             float g = Mathf.Clamp01((titleAge - 0.35f) / 0.55f);
-            if (g > 0f && g < 1f)
+            if (band && g > 0f && g < 1f)
             {
                 float gx = cx - bw * 0.4f + bw * 0.8f * g;
                 Tinted(new Rect(gx - 24 * k, by + 6 * k, 48 * k, bh - 12 * k), s_GlintTex, new Color(1f, 1f, 1f, 0.35f * Mathf.Sin(g * Mathf.PI) * alpha));

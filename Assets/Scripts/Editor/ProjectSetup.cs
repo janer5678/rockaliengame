@@ -104,7 +104,7 @@ namespace RockGame.EditorTools
             PlayerSettings.productName = "Rock Base Brawl";
             PlayerSettings.companyName = "RockGame";
             PlayerSettings.runInBackground = true;
-            PlayerSettings.fullScreenMode = FullScreenMode.Windowed;
+            PlayerSettings.fullScreenMode = FullScreenMode.FullScreenWindow; // (a fresh launch is full screen)
             PlayerSettings.defaultScreenWidth = 1280;
             PlayerSettings.defaultScreenHeight = 720;
             PlayerSettings.resizableWindow = true;
@@ -124,10 +124,13 @@ namespace RockGame.EditorTools
             // no Unity splash on launch (Unity 6 allows this on every licence)
             PlayerSettings.SplashScreen.show = false;
             PlayerSettings.SplashScreen.showUnityLogo = false;
+            // a fresh launch is full screen (borderless at the monitor's size; Settings > Display can change it)
+            PlayerSettings.fullScreenMode = FullScreenMode.FullScreenWindow;
+            PlayerSettings.defaultIsNativeResolution = true;
             // The exe is "Alien Rock Game.exe" but productName stays "Rock Base Brawl": on Windows PlayerPrefs live under
             // HKCU\Software\<company>\<product> (persistentDataPath uses it too), so renaming the product would reset
-            // everyone's saved settings, binds and looks. (An old RockBaseBrawl.exe + RockBaseBrawl_Data next to it is
-            // just a stale build: safe to delete by hand.)
+            // everyone's saved settings, binds and looks.
+            DeleteStaleWindowsBuilds();
             var opts = new BuildPlayerOptions
             {
                 scenes = new[] { ScenePath },
@@ -142,6 +145,25 @@ namespace RockGame.EditorTools
                 System.IO.File.WriteAllText(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(ExePath), "steam_appid.txt"), RockGame.SteamConfig.AppId.ToString());
             Debug.Log($"[RockGame] Build result: {report.summary.result}, errors: {report.summary.totalErrors}, size: {report.summary.totalSize / (1024 * 1024)} MB");
             if (Application.isBatchMode && report.summary.result != BuildResult.Succeeded) EditorApplication.Exit(1);
+        }
+
+        /// <summary>Old builds' leftovers next to the exe (from when it was RockBaseBrawl.exe, and an unused data folder):
+        /// deleted before each build, so Builds/Windows only ever has the one exe, Alien Rock Game.exe.</summary>
+        static void DeleteStaleWindowsBuilds()
+        {
+            var dir = System.IO.Path.GetDirectoryName(ExePath);
+            foreach (var f in new[] { "RockBaseBrawl.exe", "Rock Base Brawl.exe" })
+            {
+                var p = System.IO.Path.Combine(dir, f);
+                if (System.IO.File.Exists(p)) System.IO.File.Delete(p);
+            }
+            foreach (var d in new[] { "RockBaseBrawl_Data", "Rock Base Brawl_Data", "Rock Base Brawl_BurstDebugInformation_DoNotShip",
+                                      "RockBaseBrawl_BurstDebugInformation_DoNotShip", "AlienRockGame_Data", "AlienRockGame_BurstDebugInformation_DoNotShip" })
+            {
+                var p = System.IO.Path.Combine(dir, d);
+                try { if (System.IO.Directory.Exists(p)) System.IO.Directory.Delete(p, true); }
+                catch (System.Exception e) { Debug.LogWarning($"[RockGame] couldn't delete the stale {p}: {e.Message}"); }
+            }
         }
 
         /// <summary>Where the Mac build goes: one app for Intel and Apple Silicon Macs.</summary>

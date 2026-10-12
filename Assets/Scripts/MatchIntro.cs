@@ -7,7 +7,7 @@ namespace RockGame
     /// <summary>
     /// The match intro: once everyone's READY in the ship lobby and the match begins (the state leaves Waiting in a lobby
     /// game - NetGame.ReadyLobby; not the tutorial, not the tests unless TestsToo or TestPlay), every screen plays a
-    /// ~10 s cutscene, in letterbox bars with hard cuts and flashes:
+    /// ~16 s cutscene, in letterbox bars with hard cuts and flashes:
     /// 1. SPACE (0 .. SpaceEnd): the main menu's UFO tearing through space (MenuSpace's own scene and shots).
     /// 2. CRASH (SpaceEnd .. CrashEnd): the same UFO streaking down into a planet's atmosphere in a sheath of fire, through
     ///    the clouds, and slamming into the ground - flash, fireball, dust ring, debris (MenuSpace.Crash.cs).
@@ -16,7 +16,7 @@ namespace RockGame
     ///    lines of the same size in the bottom bar (GoalLines: GET THE BALL INTO YOUR MACHINE! / HAVE IT IN YOUR BASE WHEN
     ///    TIMER ENDS TO WIN. for the ball modes; each other mode its own goal). No markers over the ball.
     /// Then the camera's handed back (a quick dip through black), this screen tells the host it's done
-    /// (NetGame.IntroDoneRpc), and once every screen has, everyone gets READY / SET / ROCK! (NetGame.ReadySetRock.cs).
+    /// (NetGame.IntroDoneRpc), and once every screen has, everyone gets a 3, 2, 1 countdown (NetGame.ReadySetRock.cs).
     /// Client side only (each screen starts it when it sees the match begin). While it plays nobody can move, look, fight
     /// or open menus (PlayerController: like the victory cutscene), the camera is the intro's (CameraPose) and the HUD is
     /// the intro's (DrawHud). Jump (Space) skips it. The scenes in space use the main menu cutscene's own post
@@ -26,14 +26,16 @@ namespace RockGame
     {
         /// <summary>The timeline (seconds): space until SpaceEnd, the crash until CrashEnd (it hits the ground at ImpactAt),
         /// the map shot (slow: MapShot seconds) until Length; then Outro seconds of fading back in on the game.</summary>
-        public const float SpaceEnd = 1.6f, CrashLength = 3.7f, CrashEnd = SpaceEnd + CrashLength, MapShot = 5.2f, Length = CrashEnd + MapShot, Outro = 0.35f;
+        public const float SpaceEnd = 1.6f, CrashLength = 3.7f, CrashEnd = SpaceEnd + CrashLength, MapShot = 10.4f, Length = CrashEnd + MapShot, Outro = 0.35f;
         public const float ImpactAt = SpaceEnd + MenuSpace.CrashImpact;
         /// <summary>When the captions come up (seconds into the map shot).</summary>
         public const float CaptionAt = 0.5f;
 
         public enum Scene { None, Space, Crash, Map }
 
-        static float s_At = -1f;
+        static float s_At = Off;
+        /// <summary>s_At while it isn't playing (not -1: a skip early in a session can put the start before 0).</summary>
+        const float Off = float.NegativeInfinity;
         static NetGame s_Game;
         static GameState s_Last;
         static bool s_Ended, s_MapPlanned, s_Reported;
@@ -53,9 +55,9 @@ namespace RockGame
         public static string ShownLine2 { get; private set; } = "";
 
         /// <summary>Seconds into it (-1: not playing).</summary>
-        public static float Elapsed => s_At < 0f ? -1f : Time.unscaledTime - s_At;
+        public static float Elapsed => s_At == Off ? -1f : Time.unscaledTime - s_At;
         /// <summary>It's playing: the camera, the HUD and the controls are its.</summary>
-        public static bool Active => s_At >= 0f && Elapsed < Length;
+        public static bool Active => s_At != Off && Elapsed < Length;
         /// <summary>Which scene's on.</summary>
         public static Scene Now => !Active ? Scene.None : Elapsed < SpaceEnd ? Scene.Space : Elapsed < CrashEnd ? Scene.Crash : Scene.Map;
         /// <summary>The space / crash scenes want MenuSpace up.</summary>
@@ -67,7 +69,7 @@ namespace RockGame
         public static void Tick()
         {
             var g = NetGame.Instance;
-            if (g == null || !g.IsSpawned) { s_Game = null; s_At = -1f; return; }
+            if (g == null || !g.IsSpawned) { s_Game = null; s_At = Off; ShowTrees(); return; }
             if (g != s_Game) { s_Game = g; s_Last = g.S; s_Reported = false; } // (joined mid-match: no intro)
             if (g.S != s_Last)
             {
@@ -75,21 +77,21 @@ namespace RockGame
                 {
                     s_Reported = false;
                     if (Wanted()) Begin();
-                    else Report(g); // (no intro on this screen: ready for READY / SET / ROCK! at once)
+                    else Report(g); // (no intro on this screen: ready for the 3, 2, 1 at once)
                 }
                 s_Last = g.S;
             }
-            if (s_At < 0f) return;
+            if (s_At == Off) return;
             float e = Elapsed;
-            if (e >= Length && !s_Ended) { s_Ended = true; Report(g); AfterBanner(g); }
-            if (e >= Length + Outro) { s_At = -1f; return; }
+            if (e >= Length && !s_Ended) { s_Ended = true; ShowTrees(); Report(g); AfterBanner(g); }
+            if (e >= Length + Outro) { s_At = Off; return; }
             if (e > 0.6f && e < Length - 0.3f && !Chat.Open && Input.GetKeyDown(KeyCode.Space)) Skip();
             Cues(e);
         }
 
         static bool Wanted() => NetGame.ReadyLobby && !Cfg.Tutorial && (!Bootstrap.Testing || TestsToo) && (PlayerNet.Local != null || Spectator.Active);
 
-        /// <summary>This screen's intro is over (or it had none): the host starts READY / SET / ROCK! once every screen has
+        /// <summary>This screen's intro is over (or it had none): the host starts the 3, 2, 1 countdown once every screen has
         /// said so (NetGame.ReadySetRock.cs).</summary>
         static void Report(NetGame g)
         {
@@ -100,6 +102,7 @@ namespace RockGame
 
         static void Begin()
         {
+            ShowTrees();
             s_At = Time.unscaledTime;
             s_Ended = false;
             s_MapPlanned = false;
@@ -122,8 +125,8 @@ namespace RockGame
             if (Active) s_At = Time.unscaledTime - (Length - 0.25f);
         }
 
-        /// <summary>Back in the game: the build phase's banner again (it came up under the intro). With READY / SET / ROCK!
-        /// to come it waits for ROCK! instead (NetGame.TickReadySetRock shows it then).</summary>
+        /// <summary>Back in the game: the build phase's banner again (it came up under the intro). With the 3, 2, 1
+        /// to come it waits for that to end instead (NetGame.TickReadySetRock shows it then).</summary>
         static void AfterBanner(NetGame g)
         {
             if (g == null || !g.IsSpawned || g.RockAt.Value > 0) return;
@@ -203,6 +206,72 @@ namespace RockGame
                     s_Yaw0 = s_Yaw1 + 26f * side; // (a slow drift round, not a swoop)
                 }
             }
+            HideTreesInWay();
+        }
+
+        // ------------------------------------------------------------------ trees in the way
+
+        static readonly List<Renderer> s_HiddenTrees = new List<Renderer>();
+        /// <summary>Test hook: how many trees the map shot hid (they stood between the camera and the ball or the wreck).</summary>
+        public static int TreesHidden { get; private set; }
+
+        /// <summary>Hide (just their pictures, for the map shot) the trees that would stand between the camera and the ball,
+        /// its dome or the wreck anywhere on the camera's move, or that it passes through. A tree's taken as an upright
+        /// column as wide as its crown (the colliders are only trunks, so no casts).</summary>
+        static void HideTreesInWay()
+        {
+            ShowTrees();
+            TreesHidden = 0;
+            var cams = new List<Vector3>();
+            for (float m = 0f; m <= MapShot + 0.01f; m += 0.1f) { MapPose(m, out var p, out _, out _); cams.Add(p); }
+            var targets = new[] { s_Ball + Vector3.up * 0.6f, s_Ball + Vector3.up * 3f, s_Wreck, s_Wreck + Vector3.up * 3f, Vector3.Lerp(s_Ball, s_Wreck, 0.5f) + Vector3.up * 2f };
+            foreach (var n in ResourceNode.All)
+            {
+                if (n == null || !n.IsSpawned || n.Kind.Value != ResourceNode.Tree) continue;
+                var rs = n.GetComponentsInChildren<Renderer>();
+                bool any = false;
+                Bounds b = default;
+                foreach (var r in rs)
+                {
+                    if (!r.enabled || !r.gameObject.activeInHierarchy || r is ParticleSystemRenderer) continue;
+                    if (any) b.Encapsulate(r.bounds); else { b = r.bounds; any = true; }
+                }
+                if (!any || (new Vector2(b.center.x - s_Ball.x, b.center.z - s_Ball.z)).magnitude > 90f) continue;
+                float rad = Mathf.Max(b.extents.x, b.extents.z) * 0.9f + 0.6f;
+                bool hit = false;
+                for (int i = 0; i < cams.Count && !hit; i++)
+                {
+                    if (i > 0 && Crosses(b, rad, cams[i - 1], cams[i])) hit = true;
+                    foreach (var tg in targets) if (!hit && Crosses(b, rad, cams[i], tg)) hit = true;
+                }
+                if (!hit) continue;
+                foreach (var r in rs) if (r.enabled) { r.enabled = false; s_HiddenTrees.Add(r); }
+                TreesHidden++;
+            }
+        }
+
+        /// <summary>Does the line a..b pass through the upright column of bounds b (rad wide)?</summary>
+        static bool Crosses(Bounds b, float rad, Vector3 a, Vector3 c)
+        {
+            if (Mathf.Min(a.x, c.x) > b.center.x + rad || Mathf.Max(a.x, c.x) < b.center.x - rad
+                || Mathf.Min(a.z, c.z) > b.center.z + rad || Mathf.Max(a.z, c.z) < b.center.z - rad) return false; // (nowhere near it)
+            const int steps = 24;
+            for (int i = 0; i <= steps; i++)
+            {
+                var p = Vector3.Lerp(a, c, i / (float)steps);
+                if (p.y > b.max.y + 0.3f || p.y < b.min.y - 0.5f) continue;
+                float dx = p.x - b.center.x, dz = p.z - b.center.z;
+                if (dx * dx + dz * dz < rad * rad) return true;
+            }
+            return false;
+        }
+
+        /// <summary>Show the trees the map shot hid again.</summary>
+        static void ShowTrees()
+        {
+            if (s_HiddenTrees.Count == 0) return;
+            foreach (var r in s_HiddenTrees) if (r != null) r.enabled = true;
+            s_HiddenTrees.Clear();
         }
 
 
@@ -251,7 +320,7 @@ namespace RockGame
         /// and returns false (the HUD goes on over it).</summary>
         public static bool DrawHud(float k, GUIStyle big, GUIStyle label, GUIStyle small, Action<Rect, Color> fill, Action<Rect, string, GUIStyle> shadowed)
         {
-            if (s_At < 0f) return false;
+            if (s_At == Off) return false;
             float e = Elapsed, sw = Screen.width, sh = Screen.height;
             var full = new Rect(0, 0, sw, sh);
             if (!Active)

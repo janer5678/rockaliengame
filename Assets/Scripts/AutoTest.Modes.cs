@@ -262,54 +262,77 @@ namespace RockGame
             foreach (var s in Structure.All) if (s.Team.Value == team && s.Upgradable && s.Tier.Value == 0) wood++;
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
             yield return new WaitForSeconds(0.3f);
-            // fortify (UPGRADES at the upgrade station) goes up a step every time it's bought: stone 1000, metal 2000, armoured 3000 (the top)
-            int[] price = { 1000, 2000, 3000 };
-            string[] names = { "Stone Wall", "Metal Wall", "Armoured Wall" };
-            for (int i = 0; i < 5; i++) me.ServerGive(Item.Wood, 1000); // (the three steps cost 6000 between them)
-            Check(Cfg.PieceHp(PieceType.Wall, 3) > Cfg.PieceHp(PieceType.Wall, 2) && Cfg.PieceHp(PieceType.Wall, 3) <= Cfg.PieceHp(PieceType.Wall, 2) * 1.3f
-                && Cfg.TierMeleeMul(3) < Cfg.TierMeleeMul(2) && Cfg.TierMeleeMul(3) >= Cfg.TierMeleeMul(2) * 0.6f,
-                $"armoured is only slightly better than sheet metal ({Cfg.PieceHp(PieceType.Wall, 3):0} HP against {Cfg.PieceHp(PieceType.Wall, 2):0}, melee {Cfg.TierMeleeMul(3):0.00} against {Cfg.TierMeleeMul(2):0.00})");
-            Check(Cfg.MaxFortify == 3 &&Cfg.PieceHp(PieceType.Wall, 2) > Cfg.PieceHp(PieceType.Wall, 1) && Cfg.PieceHp(PieceType.Wall, 1) > Cfg.PieceHp(PieceType.Wall, 0) * 2f,
-                $"fortify has three steps: wood is flimsy, stone is the old wood, metal the old stone ({Cfg.PieceHp(PieceType.Wall, 2):0} HP, stone {Cfg.PieceHp(PieceType.Wall, 1):0})");
-            for (int step = 0; step < 3; step++)
+            if (Cfg.Upgrade10Walls)
             {
-                int before = me.Count(Item.Wood);
-                Check(Cfg.BaseUpgradeRecipe(Item.FortifyBuff, team).Wood == price[step], $"fortify step {step + 1} costs {Cfg.BaseUpgradeRecipe(Item.FortifyBuff, team).Wood}");
-                yield return UpgradeBuy(me, pc, Item.FortifyBuff);
-                yield return new WaitForSeconds(0.3f);
-                int up = 0, still = 0;
-                foreach (var s in Structure.All) if (s.Team.Value == team && s.Upgradable) { if (s.Tier.Value == step + 1) up++; else still++; }
-                var w = Structure.All.Find(s => s.Team.Value == team && s.PType == PieceType.Wall);
-                Check(wood >= 2 && up >= wood && still == 0 && before - me.Count(Item.Wood) == price[step] && w != null && w.DisplayName == names[step] && Mathf.Approximately(w.Health.Value, Cfg.PieceHp(PieceType.Wall, step + 1)),
-                    $"fortify {step + 1}: {up} pieces to {names[step]} for {before - me.Count(Item.Wood)} wood ({(w != null ? w.Health.Value : 0):0} HP)");
-            }
-            {
-                int before = me.Count(Item.Wood);
-                yield return UpgradeBuy(me, pc, Item.FortifyBuff);
-                yield return new WaitForSeconds(0.2f);
-                Check(me.Count(Item.Wood) == before && Cfg.FortifyLevel(team) == 3, "a fourth fortify isn't sold (armoured is the top)");
-            }
-            // an armoured piece takes 4 ram hits: each knocks it down one step
-            {
-                var w = Structure.All.Find(s => s.Team.Value == team && s.PType == PieceType.Wall);
-                if (w != null)
-                {
-                    w.ServerDowngrade();
-                    Check(w.Tier.Value == 2 && w.DisplayName == "Metal Wall", "a ram hit knocks armoured down to metal");
-                    w.ServerUpgrade(3);
-                }
-            }
-            // pieces built after fortifying come out fortified too
-            {
-                yield return Hold(me, Item.BuildingPlan);
-                pc.LocalTeleport(BuildGrid.CellCenter(ci, cj) + new Vector3(-4f, 0.1f, -1.5f), 0);
+                // Upgrade 10 Walls in Fortify All Walls' place (Cfg.Upgrade10WallsEverywhere): the 10 pieces nearest the machine
+                // (the wall picker's job: AutoTest.Prompt14.cs tests that) go up one tier for its price; the rest stay put
+                var price = Cfg.BaseUpgradeRecipe(Item.FortifyBuff, team);
+                for (int i = 0; i < 3; i++) me.ServerGive(Cfg.CurrencyItem, 1000);
+                int before = me.Count(Cfg.CurrencyItem), tiers = 0, pieces = 0, can = Cfg.UpgradablePieces(team);
+                foreach (var s in Structure.All) if (s.Team.Value == team && s.Upgradable) { tiers += s.Tier.Value; pieces++; }
+                pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
                 yield return new WaitForSeconds(0.4f);
-                var k2 = new PieceKey(PieceKey.KEdge, ci, cj, 0, 1);
-                me.PlaceRpc((byte)PieceType.Wall, k2.I, k2.J, k2.L, k2.D);
-                yield return new WaitForSeconds(0.8f);
-                BuildGrid.Registry.TryGetValue(k2, out var fresh);
-                Check(fresh != null && fresh.Tier.Value == 3, $"a wall built after fortifying is armoured straight away (tier {(fresh != null ? fresh.Tier.Value : -1)})");
-                yield return Snap("arsenal_fortify_looks");
+                me.ServerUpgradeNearestWalls();
+                yield return new WaitForSeconds(0.4f);
+                int after = 0;
+                foreach (var s in Structure.All) if (s.Team.Value == team && s.Upgradable) after += s.Tier.Value;
+                int want = Mathf.Min(Cfg.WallsPerUpgrade, can);
+                Check(Cfg.ItemName(Item.FortifyBuff) == "Upgrade 10 Walls" && price.Wood == Cfg.Upgrade10WallsDust && wood >= 2 && after - tiers == want
+                    && before - me.Count(Cfg.CurrencyItem) == price.Wood && Cfg.FortifyLevel(team) == 0,
+                    $"Upgrade 10 Walls: {after - tiers} of our {pieces} pieces up a tier (want {want}) for {before - me.Count(Cfg.CurrencyItem)} {Cfg.CurrencyName}");
+                yield return Snap("arsenal_upgrade10_looks");
+            }
+            else
+            {
+                // fortify (UPGRADES at the upgrade station) goes up a step every time it's bought: stone 1000, metal 2000, armoured 3000 (the top)
+                int[] price = { 1000, 2000, 3000 };
+                string[] names = { "Stone Wall", "Metal Wall", "Armoured Wall" };
+                for (int i = 0; i < 5; i++) me.ServerGive(Item.Wood, 1000); // (the three steps cost 6000 between them)
+                Check(Cfg.PieceHp(PieceType.Wall, 3) > Cfg.PieceHp(PieceType.Wall, 2) && Cfg.PieceHp(PieceType.Wall, 3) <= Cfg.PieceHp(PieceType.Wall, 2) * 1.3f
+                    && Cfg.TierMeleeMul(3) < Cfg.TierMeleeMul(2) && Cfg.TierMeleeMul(3) >= Cfg.TierMeleeMul(2) * 0.6f,
+                    $"armoured is only slightly better than sheet metal ({Cfg.PieceHp(PieceType.Wall, 3):0} HP against {Cfg.PieceHp(PieceType.Wall, 2):0}, melee {Cfg.TierMeleeMul(3):0.00} against {Cfg.TierMeleeMul(2):0.00})");
+                Check(Cfg.MaxFortify == 3 &&Cfg.PieceHp(PieceType.Wall, 2) > Cfg.PieceHp(PieceType.Wall, 1) && Cfg.PieceHp(PieceType.Wall, 1) > Cfg.PieceHp(PieceType.Wall, 0) * 2f,
+                    $"fortify has three steps: wood is flimsy, stone is the old wood, metal the old stone ({Cfg.PieceHp(PieceType.Wall, 2):0} HP, stone {Cfg.PieceHp(PieceType.Wall, 1):0})");
+                for (int step = 0; step < 3; step++)
+                {
+                    int before = me.Count(Item.Wood);
+                    Check(Cfg.BaseUpgradeRecipe(Item.FortifyBuff, team).Wood == price[step], $"fortify step {step + 1} costs {Cfg.BaseUpgradeRecipe(Item.FortifyBuff, team).Wood}");
+                    yield return UpgradeBuy(me, pc, Item.FortifyBuff);
+                    yield return new WaitForSeconds(0.3f);
+                    int up = 0, still = 0;
+                    foreach (var s in Structure.All) if (s.Team.Value == team && s.Upgradable) { if (s.Tier.Value == step + 1) up++; else still++; }
+                    var w = Structure.All.Find(s => s.Team.Value == team && s.PType == PieceType.Wall);
+                    Check(wood >= 2 && up >= wood && still == 0 && before - me.Count(Item.Wood) == price[step] && w != null && w.DisplayName == names[step] && Mathf.Approximately(w.Health.Value, Cfg.PieceHp(PieceType.Wall, step + 1)),
+                        $"fortify {step + 1}: {up} pieces to {names[step]} for {before - me.Count(Item.Wood)} wood ({(w != null ? w.Health.Value : 0):0} HP)");
+                }
+                {
+                    int before = me.Count(Item.Wood);
+                    yield return UpgradeBuy(me, pc, Item.FortifyBuff);
+                    yield return new WaitForSeconds(0.2f);
+                    Check(me.Count(Item.Wood) == before && Cfg.FortifyLevel(team) == 3, "a fourth fortify isn't sold (armoured is the top)");
+                }
+                // an armoured piece takes 4 ram hits: each knocks it down one step
+                {
+                    var w = Structure.All.Find(s => s.Team.Value == team && s.PType == PieceType.Wall);
+                    if (w != null)
+                    {
+                        w.ServerDowngrade();
+                        Check(w.Tier.Value == 2 && w.DisplayName == "Metal Wall", "a ram hit knocks armoured down to metal");
+                        w.ServerUpgrade(3);
+                    }
+                }
+                // pieces built after fortifying come out fortified too
+                {
+                    yield return Hold(me, Item.BuildingPlan);
+                    pc.LocalTeleport(BuildGrid.CellCenter(ci, cj) + new Vector3(-4f, 0.1f, -1.5f), 0);
+                    yield return new WaitForSeconds(0.4f);
+                    var k2 = new PieceKey(PieceKey.KEdge, ci, cj, 0, 1);
+                    me.PlaceRpc((byte)PieceType.Wall, k2.I, k2.J, k2.L, k2.D);
+                    yield return new WaitForSeconds(0.8f);
+                    BuildGrid.Registry.TryGetValue(k2, out var fresh);
+                    Check(fresh != null && fresh.Tier.Value == 3, $"a wall built after fortifying is armoured straight away (tier {(fresh != null ? fresh.Tier.Value : -1)})");
+                    yield return Snap("arsenal_fortify_looks");
+                }
             }
 
             // tree cracker (a Fun mode item now) fells a tree in one hit

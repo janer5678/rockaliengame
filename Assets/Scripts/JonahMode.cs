@@ -15,7 +15,7 @@ namespace RockGame
     ///    are - laid out to scale (WallPicker). Fly round, look straight at a piece (it goes yellow) and click 10 of them -
     ///    click one again to put it back - and the moment the 10th is picked you're back exactly where you were, looking
     ///    the same way, with an upgrade sound, and those 10 have gone up a tier. Again as often as you like.
-    /// Every other mode is untouched.
+    /// Upgrade 10 Walls is in every other mode with an upgrade station too while Cfg.Upgrade10WallsEverywhere is on.
     /// </summary>
     public static partial class Cfg
     {
@@ -24,6 +24,17 @@ namespace RockGame
         /// <summary>What the "buy alien dust" craft gives, and what it costs in wood.</summary>
         [Tune("Jonah test mode")] public static int DustPerBuy = 1000, DustBuyWood = 1000;
         public const int WallsPerUpgrade = 10;
+
+        /// <summary>
+        /// UPGRADE 10 WALLS IN EVERY MODE: true = every mode with an upgrade station has Upgrade 10 Walls (the wall picker,
+        /// Upgrade10WallsDust in that mode's currency) in Fortify All Walls' place, as Jonah mode does. Set it false to bring
+        /// Fortify All Walls back in the other modes exactly as before (Jonah mode keeps Upgrade 10 Walls either way).
+        /// The tutorial always keeps Fortify All Walls (its own step), and Builder (no stations: fortify is a POWER ITEMS
+        /// craft) keeps it too.
+        /// </summary>
+        public const bool Upgrade10WallsEverywhere = true;
+        /// <summary>Upgrade 10 Walls takes Fortify All Walls' place in this mode (everything about it is gated on this).</summary>
+        public static bool Upgrade10Walls => Jonah || (Upgrade10WallsEverywhere && HasBaseUpgrades && !Tutorial && !Builder);
 
         /// <summary>Alien dust is gone (everything costs wood again, Jonah mode too): nothing is bought with it. (The item and
         /// the Recipe.Dust plumbing stay, unused, in case it comes back.)</summary>
@@ -43,8 +54,21 @@ namespace RockGame
             return r;
         }
 
-        /// <summary>Jonah mode's "Upgrade 10 Walls" (it takes Fortify All Walls' place on the UPGRADES screen).</summary>
-        public static Recipe Upgrade10WallsRecipe => new Recipe { Output = Item.FortifyBuff, Count = 1, Wood = Upgrade10WallsDust }; // (wood now: Upgrade10WallsDust is its price in wood)
+        /// <summary>"Upgrade 10 Walls" (it takes Fortify All Walls' place on the UPGRADES screen): Upgrade10WallsDust in this
+        /// mode's currency (wood, or DNA in DNA mode).</summary>
+        public static Recipe Upgrade10WallsRecipe => DnaPriced(new Recipe { Output = Item.FortifyBuff, Count = 1, Wood = Upgrade10WallsDust }); // (Wood is the currency's slot: DNA in DNA mode)
+
+        /// <summary>(bots, tests) The network ids of up to n of a team's upgradable pieces, the nearest its alien machine first.</summary>
+        public static ulong[] NearestUpgradable(int team, int n)
+        {
+            var m = MachinePos(team);
+            var list = new List<Structure>();
+            foreach (var s in Structure.All) if (s != null && s.IsSpawned && s.Team.Value == team && s.Upgradable && s.Tier.Value < MaxFortify) list.Add(s);
+            list.Sort((a, b) => (a.transform.position - m).sqrMagnitude.CompareTo((b.transform.position - m).sqrMagnitude));
+            var ids = new ulong[Mathf.Min(n, list.Count)];
+            for (int i = 0; i < ids.Length; i++) ids[i] = list[i].NetworkObjectId;
+            return ids;
+        }
 
         /// <summary>How many of a team's pieces can still go up a tier.</summary>
         public static int UpgradablePieces(int team)
@@ -62,7 +86,7 @@ namespace RockGame
         public void UpgradeWallsRpc(ulong[] ids)
         {
             var g = NetGame.Instance;
-            if (!Cfg.Jonah || Dead.Value || g == null || ids == null || InSuddenDeath || g.S == GameState.GameOver) return;
+            if (!Cfg.Upgrade10Walls || Dead.Value || g == null || ids == null || InSuddenDeath || g.S == GameState.GameOver) return;
             int team = Team.Value;
             if (!Cfg.AtOwnStation(team, transform.position)) { Notify("Upgrade 10 Walls is bought at your upgrade station"); return; }
             var picked = new List<Structure>();
@@ -83,10 +107,13 @@ namespace RockGame
             UpgradedRpc((byte)Item.FortifyBuff, (byte)picked.Count);
             UpgradeFxRpc((byte)team);
         }
+
+        /// <summary>Server (bots, tests): Upgrade 10 Walls without the picker - the 10 pieces nearest the team's machine.</summary>
+        public void ServerUpgradeNearestWalls() => UpgradeWallsRpc(Cfg.NearestUpgradable(Team.Value, Cfg.WallsPerUpgrade));
     }
 
     /// <summary>
-    /// Jonah mode's Upgrade 10 Walls screen (this machine only): a black void with copies of your team's building pieces
+    /// The Upgrade 10 Walls screen (Cfg.Upgrade10Walls) (this machine only): a black void with copies of your team's building pieces
     /// where they stand, to scale, over a copy of your base (its floor, bedrock, machine and stations - for reference, not
     /// pickable). Fly about (WASD, Space up, Crouch down, Sprint faster), kept near them; the piece the crosshair is right
     /// on goes yellow, a click picks it (green; click again to put it back). Picking the 10th (or the last there is, with
@@ -267,7 +294,7 @@ namespace RockGame
         void Update()
         {
             var me = PlayerNet.Local;
-            if (me == null || me.Dead.Value || !Cfg.Jonah || (NetGame.Instance != null && NetGame.Instance.S == GameState.GameOver)) { End(false); return; }
+            if (me == null || me.Dead.Value || !Cfg.Upgrade10Walls || (NetGame.Instance != null && NetGame.Instance.S == GameState.GameOver)) { End(false); return; }
             if (Input.GetKeyDown(KeyCode.Escape)) { End(false); return; }
             Cursor.lockState = CursorLockMode.Locked;
             Cursor.visible = false;

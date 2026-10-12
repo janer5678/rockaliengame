@@ -8,7 +8,9 @@ namespace RockGame
     /// player alien (Tools/Alien2) - a slender tapering forearm with no wrist band, a narrow palm and long thin fingers with
     /// round pads on their tips - but with four fingers and a thumb instead of its three. Every finger has three jointed
     /// pieces (one transform per joint, so each curls from its own knuckle) and the thumb a fleshy base and two pieces.
-    /// It's all smooth: lathed, rounded, tapering finger and arm pieces, a soft rounded-slab palm, ellipsoid pads.
+    /// It's all smooth: lathed, rounded, tapering finger and arm pieces, a soft rounded-slab palm, ellipsoid pads. Built
+    /// chunky and stylised (thick fingers, a broad fleshy palm, a sturdy wrist) so they read boldly on screen; the skin is
+    /// its own shader (Resources/World/AlienSkin: soft two-tone light, a sheen, a blue fresnel rim; HandColorHook).
     ///
     /// The hand's own frame (the RIGHT hand; the left is its mirror image): the wrist at the origin, the fingers along +Z,
     /// the palm facing -Y, the thumb on the -X side. A finger curls with +X rotations (towards the palm), spreads with Y.
@@ -19,7 +21,7 @@ namespace RockGame
     {
         // ---- measurements (metres) ----
         /// <summary>Half the palm's thickness.</summary>
-        const float PalmHalf = 0.0115f;
+        const float PalmHalf = 0.0145f;
         /// <summary>How far in front of the wrist a handle held in the fist runs (under the palm's end, so the fingers wrap it from the knuckles).</summary>
         const float GripZ = 0.063f;
         /// <summary>The forearm runs this far back from the wrist - off the screen, like the block arms did.</summary>
@@ -31,11 +33,11 @@ namespace RockGame
         /// <summary>The knuckle (MCP) of each finger - index, middle, ring, little - and the thumb's root deep in the palm.</summary>
         static readonly Vector3[] s_Base =
         {
-            new Vector3(-0.0195f, 0.0015f, 0.075f),
-            new Vector3(-0.0065f, 0.0020f, 0.079f),
-            new Vector3(0.0065f, 0.0015f, 0.0765f),
-            new Vector3(0.0185f, -0.0005f, 0.0705f),
-            new Vector3(-0.0185f, -0.0070f, 0.016f),
+            new Vector3(-0.0265f, 0.0015f, 0.075f),
+            new Vector3(-0.0088f, 0.0020f, 0.079f),
+            new Vector3(0.0088f, 0.0015f, 0.0765f),
+            new Vector3(0.0252f, -0.0005f, 0.0705f),
+            new Vector3(-0.0235f, -0.0085f, 0.016f),
         };
         /// <summary>Each digit's three bones (the alien's fingers are long: the middle one is nearly 10 cm).</summary>
         static readonly float[] s_Len =
@@ -46,14 +48,14 @@ namespace RockGame
             0.033f, 0.021f, 0.018f,
             0.034f, 0.029f, 0.024f, // (the thumb: its fleshy base, then two pieces)
         };
-        /// <summary>Each digit's radius at its root, its two joints and its tip (thin, tapering).</summary>
+        /// <summary>Each digit's radius at its root, its two joints and its tip (chunky, gently tapering).</summary>
         static readonly float[] s_Rad =
         {
-            0.0070f, 0.0061f, 0.0053f, 0.0057f,
-            0.0072f, 0.0063f, 0.0054f, 0.0058f,
-            0.0068f, 0.0060f, 0.0052f, 0.0056f,
-            0.0060f, 0.0053f, 0.0046f, 0.0050f,
-            0.0110f, 0.0085f, 0.0072f, 0.0076f, // (each tip flares a little: the alien's round finger pads)
+            0.0092f, 0.0081f, 0.0071f, 0.0076f,
+            0.0095f, 0.0083f, 0.0072f, 0.0078f,
+            0.0090f, 0.0079f, 0.0069f, 0.0074f,
+            0.0080f, 0.0071f, 0.0062f, 0.0067f,
+            0.0142f, 0.0112f, 0.0096f, 0.0100f, // (each tip flares a little: the alien's round finger pads)
         };
         static float Len(int d, int j) => s_Len[d * 3 + j];
         static float Rad(int d, int j) => s_Rad[d * 4 + j];
@@ -106,9 +108,9 @@ namespace RockGame
                 P(j2, Lathe(Rad(d, 2), Rad(d, 3), Len(d, 2) - Rad(d, 3) * 0.6f), skin, Vector3.zero, Vector3.one, Vector3.zero);
             }
             // the forearm: one smooth tapering limb from the wrist back off the screen (its +Z points along it to the wrist;
-            // it's laid along -Z from the wrist), slim at the wrist, filling out a little, slightly oval
+            // it's laid along -Z from the wrist), a sturdy wrist filling out towards the elbow, slightly oval
             a.Forearm = Node(a.Root, "forearm", Vector3.zero);
-            P(a.Forearm, Lathe(0.0195f, 0.034f, ForearmLen), skin, Vector3.zero, new Vector3(1.12f, 0.9f, 1f), new Vector3(0f, 180f, 0f));
+            P(a.Forearm, Lathe(0.0250f, 0.042f, ForearmLen), skin, Vector3.zero, new Vector3(1.12f, 0.9f, 1f), new Vector3(0f, 180f, 0f));
             return a;
         }
 
@@ -207,9 +209,9 @@ namespace RockGame
             float sx = right ? 1f : -1f;
             const int sides = 56;
             var ring = new List<Vector4>(); // (z, half width, half thickness, how far along the palm 0..1)
-            const float z0 = -0.004f, z1 = 0.08f, cap = 0.009f;
-            float W(float t) => Mathf.Lerp(0.0165f, 0.0285f, Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t / 0.7f)));
-            float T(float t) => Mathf.Lerp(0.0135f, 0.0098f, Mathf.SmoothStep(0f, 1f, t));
+            const float z0 = -0.004f, z1 = 0.08f, cap = 0.011f;
+            float W(float t) => Mathf.Lerp(0.0212f, 0.0368f, Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t / 0.7f)));
+            float T(float t) => Mathf.Lerp(0.0172f, 0.0130f, Mathf.SmoothStep(0f, 1f, t));
             for (int k = 8; k >= 1; k--) // (the dome inside the wrist)
             {
                 float ph = Mathf.PI * 0.5f * k / 8f;
@@ -238,8 +240,8 @@ namespace RockGame
                     // the swell under the thumb (palm side, thumb side, the back half) and the heel (palm side, little finger side)
                     float under = Mathf.Max(0f, -sn);
                     float thumbSide = Mathf.Max(0f, -c), littleSide = Mathf.Max(0f, c);
-                    float thenar = Mathf.Sin(Mathf.Clamp01(t / 0.65f) * Mathf.PI) * under * thumbSide * 0.0055f;
-                    float heel = Mathf.Sin(Mathf.Clamp01(t / 0.55f) * Mathf.PI) * under * littleSide * 0.003f;
+                    float thenar = Mathf.Sin(Mathf.Clamp01(t / 0.65f) * Mathf.PI) * under * thumbSide * 0.0075f;
+                    float heel = Mathf.Sin(Mathf.Clamp01(t / 0.55f) * Mathf.PI) * under * littleSide * 0.0045f;
                     x += -thenar * 0.6f + heel * 0.4f;
                     y -= thenar + heel;
                     v.Add(new Vector3(x * sx, y, r.x));

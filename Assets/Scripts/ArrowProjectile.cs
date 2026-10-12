@@ -7,6 +7,7 @@ namespace RockGame
     /// Locally simulated ballistic arrow, thrown spear or thrown C4. The shooter's copy reports hits to the server
     /// (client-side hit detection); everyone else's copy is purely visual. Arrows that miss stay in the world as items.
     /// </summary>
+    [DefaultExecutionOrder(3000)] // (after PlayerNet poses the bones: one stuck in someone keeps up with them)
     public class ArrowProjectile : MonoBehaviour
     {
         Vector3 m_Vel;
@@ -22,6 +23,13 @@ namespace RockGame
         // the portal pair it last came out of (not taken again straight away: no bouncing back and forth)
         int m_PortalSkip = -1;
         float m_PortalSkipUntil;
+        // stuck in a player (or their ragdoll): it rides along on that bone, in the bone's own space (not parented: the
+        // alien is scaled wider than it's tall, and an arrow under a turning bone came out skewed)
+        Transform m_Follow;
+        Vector3 m_FollowPos;
+        Quaternion m_FollowRot;
+        bool m_Following;
+        static readonly System.Collections.Generic.List<ArrowProjectile> s_InBodies = new System.Collections.Generic.List<ArrowProjectile>();
         /// <summary>For the tests: how many times a projectile (anyone's, on this machine) has gone through a portal.</summary>
         public static int PortalPasses { get; private set; }
 
@@ -190,6 +198,47 @@ namespace RockGame
             else if (m_Vel.sqrMagnitude > 0.01f) transform.rotation = Quaternion.LookRotation(m_Vel);
         }
 
+        void StickIn(Transform bone)
+        {
+            m_Follow = bone;
+            m_FollowPos = bone.InverseTransformPoint(transform.position);
+            m_FollowRot = Quaternion.Inverse(bone.rotation) * transform.rotation;
+            m_Following = true;
+            s_InBodies.Add(this);
+        }
+
+        /// <summary>Ragdoll.Spawn: the arrows stuck in `model` move over onto the same-named bones of its ragdoll (`bones`),
+        /// and stay in it for `life` seconds (until it's sunk away).</summary>
+        public static void CarryOnto(Transform model, System.Collections.Generic.Dictionary<string, Transform> bones, float life)
+        {
+            foreach (var a in s_InBodies)
+            {
+                if (a == null || a.m_Follow == null || !a.m_Follow.IsChildOf(model)) continue;
+                if (!bones.TryGetValue(a.m_Follow.name, out var to)) continue;
+                a.m_Follow = to;
+                a.m_Life = Mathf.Max(a.m_Life, life);
+                // (the ones in you were shadows only, like your body: your ragdoll is seen)
+                foreach (var r in a.GetComponentsInChildren<Renderer>()) r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+            }
+        }
+
+        /// <summary>A player died: the arrows still stuck in them (not carried onto a ragdoll) go.</summary>
+        public static void ClearOn(Transform player)
+        {
+            foreach (var a in s_InBodies)
+                if (a != null && (a.m_Follow == null || a.m_Follow.IsChildOf(player))) Destroy(a.gameObject);
+        }
+
+        void OnDestroy() { if (m_Following) s_InBodies.Remove(this); }
+
+        void LateUpdate()
+        {
+            if (!m_Following) return;
+            // what it was in is gone, or hidden (they died with no ragdoll, drank invisibility...): so is the arrow
+            if (m_Follow == null || !m_Follow.gameObject.activeInHierarchy) { Destroy(gameObject); return; }
+            transform.SetPositionAndRotation(m_Follow.TransformPoint(m_FollowPos), m_Follow.rotation * m_FollowRot);
+        }
+
         void OnHit(RaycastHit h)
         {
             var no = h.collider.GetComponentInParent<NetworkObject>();
@@ -242,11 +291,19 @@ namespace RockGame
             }
             m_Stuck = true;
             if (m_Whoosh) m_Whoosh.Stop();
-            bool player = no != null && no.GetComponent<PlayerNet>() != null;
+            var victim = no != null ? no.GetComponent<PlayerNet>() : null;
+            bool player = victim != null;
             // an arrow in a player stays in them a while; anywhere else the server leaves a pick-up-able arrow item there
             m_Life = player ? 5f : 0.4f;
             transform.position = h.point - transform.forward * 0.1f;
-            if (no != null) transform.SetParent(no.transform, true);
+            // in a player it sticks to the bone it hit, so it moves with them and falls with their ragdoll (parented to
+            // their root it hung in the air where they died)
+            if (player)
+            {
+                StickIn(victim.StickBone(h.point));
+                if (victim.Mine) Art.SetLayerShadowsOnly(gameObject);
+            }
+            else if (no != null) transform.SetParent(no.transform, true);
             if (!player && !EnergyWall.Hit(h.collider, h.point, h.normal)) Sfx.Play(Sfx.Thud, h.point, 0.8f, 0.1f, 80f); // (the energy wall crackles instead)
             if (reporter)
             {

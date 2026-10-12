@@ -6,8 +6,8 @@ namespace RockGame
     /// The ship lobby's screen (ShipLobby.cs is the room): everyone's name over their alien (in their team's colour, with a
     /// tick once they're READY - AI bots always are), the buttons along the bottom left like the reference - LEAVE (closes the lobby), COPY ROOM
     /// ID (the host's IPv4 address, for a friend to type into JOIN) and GAME OPTIONS (the host: change the game mode,
-    /// length and team sizes; everyone READYs again after) and, on the telly's game (LobbyArcade.cs), STOP PLAYING (its
-    /// keys, small, over it) - Tab opens LOBBY LOOK (everyone: the room's colours, lights and post processing, for you), the
+    /// length and team sizes; everyone READYs again after) and, on the telly's game (LobbyArcade.cs), STOP PLAYING (no
+    /// keys hint while it's on screen) - Tab opens LOBBY LOOK (everyone: the room's colours, lights and post processing, for you), the
     /// mouse over the telly says PLAY GAME? beside it - a JOIN option for each team with a
     /// grey SPECTATE twice as long under them (spectating, your alien stays on the couch, grey; a team takes a seat on it
     /// again), and the big green READY bottom right. The chat works as usual.
@@ -52,24 +52,26 @@ namespace RockGame
             }
             LobbyLookOpen = m_LobbyLook;
             if (ev.type == EventType.Layout) s_LobbyBtns.Clear();
-            // the title, top left: what's being played and how full it is
+            // the title, top left: what's being played, on what map, and how full it is
             var title = new GUIStyle(m_Big) { alignment = TextAnchor.UpperLeft, fontSize = Mathf.RoundToInt(40 * k) };
             Shadowed(new Rect(28 * k, 44 * k, sw, 60 * k), "<b>LOBBY</b>", title); // (under the FPS counter)
             int players = ShipLobby.Seated.Count;
             string sub = $"{Cfg.RulesName(Cfg.Rules).ToUpper()}  ·  {Cfg.ModeLabel}  ·  {players}/{Cfg.PlayersNeeded} players";
             Shadowed(new Rect(30 * k, 90 * k, sw, 30 * k), sub, new GUIStyle(m_Label) { fontSize = Mathf.RoundToInt(18 * k) });
+            // the map and its size under it
+            Shadowed(new Rect(30 * k, 116 * k, sw, 28 * k), $"MAP: {ThemeMaps.Label(Cfg.Map).ToUpper()}  ·  {Cfg.SizeLabel(Cfg.Size).ToUpper()}", new GUIStyle(m_Label) { fontSize = Mathf.RoundToInt(17 * k) });
             int readyN = 0;
             foreach (var p in ShipLobby.Seated) if (ShipLobby.IsReady(p)) readyN++; // (bots always count as READY)
             string wait = g != null && g.StartCounting ? $"<color=#7dff7a>Starting in {Mathf.CeilToInt(g.StartsIn)}...</color>"
                 : players < 2 ? (boot.OnSteam ? "Waiting for someone to join - INVITE FRIENDS, or they right-click you on Steam > Join Game" : "Waiting for someone to join - COPY ROOM ID and send it to a friend")
                 : $"{readyN}/{players} ready - the match starts when everyone is";
-            Shadowed(new Rect(30 * k, 118 * k, sw, 26 * k), wait, new GUIStyle(m_Small) { fontSize = Mathf.RoundToInt(15 * k) });
+            Shadowed(new Rect(30 * k, 144 * k, sw, 26 * k), wait, new GUIStyle(m_Small) { fontSize = Mathf.RoundToInt(15 * k) });
             // who's watching
             if (g != null && g.Spectators.Count > 0)
             {
                 var names = new System.Text.StringBuilder();
                 foreach (var s in g.Spectators) { if (names.Length > 0) names.Append(", "); names.Append(s.Name.ToString()); }
-                Shadowed(new Rect(30 * k, 142 * k, sw, 26 * k), $"<color=#bbbbbb>Spectating: {names}</color>", new GUIStyle(m_Small) { fontSize = Mathf.RoundToInt(15 * k) });
+                Shadowed(new Rect(30 * k, 168 * k, sw, 26 * k), $"<color=#bbbbbb>Spectating: {names}</color>", new GUIStyle(m_Small) { fontSize = Mathf.RoundToInt(15 * k) });
             }
 
             // name tags over the aliens (a little over their heads; not while the camera's on the telly)
@@ -110,14 +112,7 @@ namespace RockGame
             }
             if (boot.IsHostSession && !Cfg.Tutorial && FramedBtn(ref bx, by, bh, "GAME OPTIONS")) { m_LobbyOptions = !m_LobbyOptions; m_LobbyLook = false; } // (the AI bots are in there now)
             // (LOBBY LOOK - the room's look, for you - has no button: Tab opens and closes it, above)
-            float stopX = bx;
-            if (LobbyArcade.Focused && FramedBtn(ref bx, by, bh, "STOP PLAYING")) LobbyArcade.Focus(false); // (back to the couch)
-            if (LobbyArcade.Focused && me != null)
-            {
-                // the telly game's keys, small, over STOP PLAYING (the picture itself stays clean)
-                var hint = new GUIStyle(m_Small) { fontSize = Mathf.RoundToInt(14 * k), alignment = TextAnchor.LowerLeft, wordWrap = false };
-                Shadowed(new Rect(stopX + 2 * k, by - 30 * k, 420 * k, 26 * k), "<color=#dddddd>WASD move    Space / LMB shoot</color>", hint);
-            }
+            if (LobbyArcade.Focused && FramedBtn(ref bx, by, bh, "STOP PLAYING")) LobbyArcade.Focus(false); // (back to the couch; no keys hint over it)
             float leftEnd = bx;
 
             // the teams: a JOIN button for each (how many are on it), and under them, twice as long and grey, SPECTATE

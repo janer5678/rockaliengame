@@ -57,16 +57,18 @@ namespace RockGame
         /// <summary>The scoreboard key is held: the scoreboard is up and the mouse is free.</summary>
         public bool ScoreboardOpen { get; private set; }
         float m_TabDownAt = -1f; // when the scoreboard key went down (a tap = the bag, a hold = the scoreboard)
-        /// <summary>Holding the scoreboard key: how far to the scoreboard opening (0 = not holding, or still a tap, or it's open).</summary>
+        /// <summary>Holding the scoreboard key: how far to the scoreboard opening (0 = not holding, or still a tap, or it's open;
+        /// nothing for the first TabBarDelay seconds, so a tap for the bag doesn't flash the bar).</summary>
         public float TabHoldProgress
         {
             get
             {
                 if (m_TabDownAt < 0f || ScoreboardOpen || MenuOpen || !Binds.Held(Bind.Scoreboard)) return 0f;
                 float t = Time.time - m_TabDownAt;
-                return t < 0.12f ? 0f : Mathf.Clamp01((t - 0.12f) / Mathf.Max(0.05f, Cfg.TabHoldTime - 0.12f));
+                return t < TabBarDelay ? 0f : Mathf.Clamp01((t - TabBarDelay) / Mathf.Max(0.05f, Cfg.TabHoldTime - TabBarDelay));
             }
         }
+        public const float TabBarDelay = 0.2f;
         public float DrawAmount { get; private set; } // bow draw / spear wind-up, 0..1
         public float RamCharge { get; private set; }  // ram wind-up, 0..1
         public bool Crouching { get; private set; }
@@ -126,6 +128,15 @@ namespace RockGame
         }
         /// <summary>For the tests: the ghost went to a slot carrying on your last pieces instead of the one nearest the aim.</summary>
         public bool GhostFromRecent { get; private set; }
+        /// <summary>Pieces you've just put down that the server hasn't sent back yet (key -> when): counted as built for a
+        /// moment, so the ghost doesn't flash onto the slot you just filled, or lose the line it was carrying on, for the
+        /// round trip (the bias dropped the newest piece until it turned up, and the ghost jumped to a turned wall).</summary>
+        readonly Dictionary<PieceKey, float> m_PendingKeys = new Dictionary<PieceKey, float>();
+        const float k_PendingFor = 1.5f;
+        /// <summary>The slot the line bias picked last frame: it keeps a little extra pull (StickyBias), so the ghost
+        /// doesn't flick between it and another slot while the aim sits near the edge between them.</summary>
+        PieceKey m_LastRecentKey;
+        bool m_HadRecentKey;
 
         public override void OnNetworkSpawn()
         {
@@ -340,7 +351,8 @@ namespace RockGame
                 WheelOpen = false;
             }
             // hold the scoreboard key (Tab): every player with their kills, deaths and ping, the mouse free for its MESSAGE
-            // buttons (Hud.Scoreboard.cs). Typing mutes the key, so clicking MESSAGE (the chat opens) puts it away
+            // buttons (Hud.Scoreboard.cs) and no looking round while it's up. Typing mutes the key, so clicking MESSAGE (the
+            // chat opens) puts it away
             ScoreboardOpen = !cutscene && !Paused && !MenuOpen && !Hud.Rebinding && !AirstrikeMapOpen && tabHeld && Time.time - m_TabDownAt >= Cfg.TabHoldTime;
             if (sd || dead) CloseMenu();
             if (LootTarget != null && (!LootTarget.IsSpawned || !LootTarget.InReach(m_Net.EyePos))) LootTarget = null;
@@ -359,7 +371,7 @@ namespace RockGame
             }
 
             // (the chat line frees the mouse too: a whisper in the log can be clicked to answer it)
-            bool cursorFree = (MenuOpen || Paused || gameOver || choosing || WheelOpen || AirstrikeMapOpen || (ScoreboardOpen && Hud.ScoreboardMouse) || Chat.Open) && !cutscene;
+            bool cursorFree = (MenuOpen || Paused || gameOver || choosing || WheelOpen || AirstrikeMapOpen || ScoreboardOpen || Chat.Open) && !cutscene;
             var lockNow = cursorFree ? CursorLockMode.None : CursorLockMode.Locked;
             if (lockNow == CursorLockMode.Locked && Cursor.lockState != CursorLockMode.Locked) m_LookSkipUntil = Time.frameCount + 3; // (re-locking the cursor jumps the mouse: not a look)
             Cursor.lockState = lockNow;
@@ -705,7 +717,8 @@ namespace RockGame
                 VelY = m_VelY,
                 Item = m_Net.HeldItem,
                 Ball = m_Net.CarryingBall,
-                Visible = !m_Net.Dead.Value && m_Third < 0.5f && !m_Net.Invisible, // (invisibility potion: your own hands vanish too, for as long as it lasts)
+                Visible = !m_Net.Dead.Value && m_Third < 0.5f, // (invisible or not, you always see your own hands and what's in them)
+                Ghost = m_Net.Invisible, // (the Invisibility Potion: your own alien hands go see-through and shimmery while it lasts)
                 SpearAim = (m_DrawStart >= 0 || DebugDraw >= 0) && m_Net.HeldItem == Item.Spear,
                 HasArrow = m_Net.Count(Item.Arrow) > 0,
                 Draw = DebugDraw >= 0 ? DebugDraw : DrawAmount,
@@ -1527,6 +1540,8 @@ namespace RockGame
                         Hud.Push($"Foundation put down under it  (-{Cfg.PieceWood(PieceType.Foundation)} {Cfg.BuildName})");
                     }
                     else m_Net.PlaceRpc((byte)BuildPiece, m_GhostKey.I, m_GhostKey.J, m_GhostKey.L, m_GhostKey.D);
+                    m_PendingKeys[m_GhostKey] = Time.time;
+                    if (GhostAutoFoundation) m_PendingKeys[GhostFoundation] = Time.time;
                     NoteBuilt(m_GhostKey);
                     m_VM.Use();
                     BuildGrid.Pose(BuildPiece, m_GhostKey, out var pos, out _);
@@ -2040,6 +2055,9 @@ namespace RockGame
                     visible = true;
                     GhostFromRecent = true;
                 }
+                // (also when the nearest slot already was the line's: the pull stays on it next frame either way)
+                m_HadRecentKey = !cooling && visible && (GhostFromRecent || m_RecentPieces.Count > 0 && m_LastRecentKey.Equals(m_GhostKey));
+                if (GhostFromRecent) m_LastRecentKey = m_GhostKey;
                 if (!visible) reason = t == PieceType.Floor ? "Look up at where the floor/ceiling should go" : "Aim at the ground or your building";
                 else
                 {
@@ -2120,7 +2138,8 @@ namespace RockGame
                 if (d < 0.5f || d > Cfg.BuildRange + 1.5f) return (false, default);
                 if (hasHit && hit.distance < d - 0.6f) return (false, default); // (something in the way first)
                 return (true, ray.GetPoint(d));
-            }, k => Vector3.Distance(BuildGrid.PieceCenter(k), feet) <= Cfg.BuildRange + 2.5f && Buildable(k), out key, ray.direction);
+            }, k => Vector3.Distance(BuildGrid.PieceCenter(k), feet) <= Cfg.BuildRange + 2.5f && Buildable(k), out key, ray.direction,
+                m_ClientKeys.Contains, m_HadRecentKey ? m_LastRecentKey : (PieceKey?)null);
         }
 
         const string k_NeedsFoundation = "Needs a foundation or floor underneath";
@@ -2206,11 +2225,23 @@ namespace RockGame
             return false;
         }
 
+        static readonly List<PieceKey> s_PendingDone = new List<PieceKey>();
         void RefreshClientKeys()
         {
             m_ClientKeys.Clear();
             foreach (var s in Structure.All)
                 if (BuildGrid.TryKeyFromTransform(s.PType, s.transform, out var k)) m_ClientKeys.Add(k);
+            // (and what you've just put down, until the server's piece turns up - or it's clearly not coming)
+            if (m_PendingKeys.Count > 0)
+            {
+                s_PendingDone.Clear();
+                foreach (var kv in m_PendingKeys)
+                {
+                    if (m_ClientKeys.Contains(kv.Key) || Time.time - kv.Value > k_PendingFor) s_PendingDone.Add(kv.Key);
+                    else m_ClientKeys.Add(kv.Key);
+                }
+                foreach (var k in s_PendingDone) m_PendingKeys.Remove(k);
+            }
         }
 
         // ------------------------------------------------------------------ HUD info

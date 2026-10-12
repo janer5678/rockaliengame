@@ -18,7 +18,11 @@ namespace RockGame
         public static readonly DisplayPref.Float TimerSize = new("timer.size", GTimer, 1.15f, 0.3f, 1.5f);
         public static readonly DisplayPref.Float TimerPlate = new("timer.plate", GTimer, 0f, 0f, 1f);
         public static readonly DisplayPref.Bool TimerBar = new("timer.bar", GTimer, true);
-        public static readonly DisplayPref.Bool TimerSub = new("timer.sub", GTimer, false);
+        public static readonly DisplayPref.Bool TimerSub = new("timer.sub", GTimer, true); // (was off - the 2026-10-12 defaults)
+        /// <summary>The what-to-do text in bold.</summary>
+        public static readonly DisplayPref.Bool TimerSubBold = new("timer.sub.bold", GTimer, false);
+        /// <summary>The what-to-do text's second line (what to do about it); off: just the first.</summary>
+        public static readonly DisplayPref.Bool TimerSubSecond = new("timer.sub.second", GTimer, true);
         public static readonly DisplayPref.Bool TimerTag = new("timer.tag", GTimer, false);
         public static readonly DisplayPref.Bool TimerFlash = new("timer.flash", GTimer, true);
         public static readonly DisplayPref.Bool TimerAccent = new("timer.accent", GTimer, true);
@@ -60,7 +64,7 @@ namespace RockGame
         public static readonly DisplayPref.Colour TimerColWaiting = new("timer.colour.waiting", GTimer, new Color(0.85f, 0.88f, 0.95f));
         public static readonly DisplayPref.Colour TimerColStart = new("timer.colour.start", GTimer, new Color(0.45f, 1f, 0.45f));
         public static readonly DisplayPref.Colour TimerColPreBall = new("timer.colour.preball", GTimer, Color.white);
-        public static readonly DisplayPref.Colour TimerColBallLive = new("timer.colour.timeleft", GTimer, new Color(1f, 0.85f, 0.3f));
+        public static readonly DisplayPref.Colour TimerColBallLive = new("timer.colour.timeleft", GTimer, Color.white); // (was gold - 2026-10-12)
         public static readonly DisplayPref.Colour TimerColOvertime = new("timer.colour.overtime", GTimer, new Color(1f, 0.22f, 0.15f));
         public static readonly DisplayPref.Colour TimerColSudden = new("timer.colour.suddendeath", GTimer, new Color(1f, 0.3f, 0.25f));
 
@@ -83,6 +87,8 @@ namespace RockGame
         public static float TimerPlateNow => TimerOwn.Value ? TimerPlate.Value : 0.6f;
         public static bool TimerBarNow => !TimerOwn.Value || TimerBar.Value;
         public static bool TimerSubNow => !TimerOwn.Value || TimerSub.Value;
+        public static bool TimerSubBoldNow => TimerOwn.Value && TimerSubBold.Value;
+        public static bool TimerSubSecondNow => !TimerOwn.Value || TimerSubSecond.Value;
         public static bool TimerTagNow => !TimerOwn.Value || TimerTag.Value;
         public static bool TimerFlashNow => !TimerOwn.Value || TimerFlash.Value;
         public static bool TimerAccentNow => !TimerOwn.Value || TimerAccent.Value;
@@ -109,7 +115,7 @@ namespace RockGame
 
         public static void ResetTimer(bool save = true)
         {
-            DisplayPref.ResetAll(save, TimerOwn, TimerSize, TimerPlate, TimerBar, TimerSub, TimerTag, TimerFlash, TimerAccent,
+            DisplayPref.ResetAll(save, TimerOwn, TimerSize, TimerPlate, TimerBar, TimerSub, TimerSubBold, TimerSubSecond, TimerTag, TimerFlash, TimerAccent,
                 TimerInk, TimerWidth, TimerFont, TimerY, TimerTopLine, TimerBarBack, TimerLabelPos, TimerBarPos,
                 TimerTagPos, TimerBarHeight, TimerBarWidth, TimerBarOwnColour, TimerBarColour, TimerBarGlow, TimerBarRound,
                 TimerBarBackOpacity, TimerBarDrain);
@@ -172,6 +178,11 @@ namespace RockGame
                 SubHead("PARTS");
                 Toggle("Top line", GameSettings.TimerTopLine);
                 Toggle("What to do line", GameSettings.TimerSub);
+                if (GameSettings.TimerSub.Value)
+                {
+                    Toggle("What to do: bold", GameSettings.TimerSubBold);
+                    Toggle("What to do: 2nd line", GameSettings.TimerSubSecond);
+                }
                 Toggle("Game mode tag", GameSettings.TimerTag);
                 if (GameSettings.TimerTag.Value) ChoiceRow("Game mode tag goes", GameSettings.TimerTagPos, false, "Right of the clock", "Below the bar", "Above the label");
                 SubHead("DRAIN BAR");
@@ -207,6 +218,7 @@ namespace RockGame
         void SubHead(string text)
         {
             GUILayout.Space(4 * m_Scale);
+            SearchHeader(3); // (a sub-header for the display search: Hud.DisplaySearch.cs)
             GUILayout.BeginHorizontal();
             GUILayout.Space(16 * m_Scale);
             GUILayout.Label($"<color=#9ab8d8><b>{text}</b></color>", m_Small);

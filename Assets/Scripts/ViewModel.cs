@@ -22,6 +22,8 @@ namespace RockGame
         {
             public Item Item;
             public bool Ball, Visible, SpearAim, Crouch, HasArrow, Sprint, Grounded, Firing, Loaded, Aim, Visible2;
+            /// <summary>You're invisible (the Invisibility Potion): your own alien hands turn see-through and shimmery - still there.</summary>
+            public bool Ghost;
             public float Draw, RamCharge, Bob, Speed, VelY, Reload;
             /// <summary>The revolver: how many rounds this reload puts in (just the fired ones).</summary>
             public int Rounds;
@@ -204,6 +206,13 @@ namespace RockGame
 
         void OnHandStyle() { ShowHandStyle(m_R); ShowHandStyle(m_L); }
 
+        /// <summary>The invisible look on or off for one arm's alien skin.</summary>
+        static void SetGhost(Transform arm, bool on)
+        {
+            var hook = arm != null ? arm.GetComponent<HandColorHook>() : null;
+            if (hook != null) hook.Ghost = on;
+        }
+
         static float Smooth(float t) { t = Mathf.Clamp01(t); return t * t * (3f - 2f * t); }
 
         public void Update(State s)
@@ -214,6 +223,8 @@ namespace RockGame
             bool vis = s.Visible && s.Visible2; // hidden while looking through the sniper scope
             if (m_Root.gameObject.activeSelf != vis) m_Root.gameObject.SetActive(vis);
             if (!vis) return;
+            SetGhost(m_R, s.Ghost);
+            SetGhost(m_L, s.Ghost);
             if (DebugAim) s.Aim = true;
             if (DebugBall) s.Ball = true;
             if (DebugSwingE >= 0f) { m_SwingStart = Now - DebugSwingE; m_FreezeUntil = -10f; m_ImpactKnown = false; }

@@ -165,6 +165,22 @@ namespace RockGame
             return k_TvBounds.IntersectRay(new Ray(tv.InverseTransformPoint(ray.origin), tv.InverseTransformDirection(ray.direction)));
         }
 
+        /// <summary>Where a point of the screen (Input.mousePosition space: y up from the bottom) falls on the telly's picture,
+        /// as the picture's uv (0..1 across, 0..1 up; past its edges outside it) - the mouse aiming the telly game's bow.</summary>
+        public static bool TellyPictureUv(Vector2 screen, out Vector2 uv)
+        {
+            uv = default;
+            var cam = Camera.main;
+            if (s_I == null || s_I.m_Tv == null || cam == null) return false;
+            var q = s_I.m_Tv.Find("telly screen"); // (the picture's quad: -0.5..0.5 each way, uv 0..1)
+            if (q == null) return false;
+            var ray = cam.ScreenPointToRay(new Vector3(screen.x, screen.y, 0f));
+            if (!new Plane(q.forward, q.position).Raycast(ray, out float d) || d <= 0f) return false;
+            var lp = q.InverseTransformPoint(ray.GetPoint(d));
+            uv = new Vector2(lp.x + 0.5f, lp.y + 0.5f);
+            return true;
+        }
+
         /// <summary>(tests) the middle of the telly's picture on screen (GUI space), if it's in view.</summary>
         public static bool TellyMiddleOnScreen(out Vector2 gui)
         {

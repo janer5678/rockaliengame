@@ -305,13 +305,13 @@ namespace RockGame
 
         // ------------------------------------------------------------------ building it
 
-        static GameObject Ghosted(Transform parent, Mesh mesh, Vector3 pos, Vector3 scale, Color c, DisplayPref.Colour pref = null, Color? shiftRef = null)
+        static GameObject Ghosted(Transform parent, Mesh mesh, Vector3 pos, Vector3 scale, Color c, DisplayPref.Colour pref = null, Color? shiftRef = null, float glow = 0f)
         {
             var g = Art.Part(parent, mesh, Color.white, pos, scale, default, false, Art.Ghost(c));
             var r = g.GetComponent<Renderer>();
             r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             r.receiveShadows = false;
-            if (pref != null) Paint(r, pref, shiftRef);
+            if (pref != null) Paint(r, pref, shiftRef, glow);
             return g;
         }
 
@@ -401,7 +401,7 @@ namespace RockGame
             s_SheathCones.Clear();
             foreach (var (w, col) in new[] { (54f, new Color(1f, 0.38f, 0.08f, 0.2f)), (40f, new Color(1f, 0.6f, 0.2f, 0.28f)), (28f, new Color(1f, 0.85f, 0.55f, 0.36f)) })
             {
-                var cone = Ghosted(sheath, Art.Cone, Vector3.zero, new Vector3(w, w * 1.6f, w * 0.55f), col, GameSettings.MenuFireColour, MenuLooks.FireRef);
+                var cone = Ghosted(sheath, Art.Cone, Vector3.zero, new Vector3(w, w * 1.6f, w * 0.55f), col, GameSettings.MenuFireColour, MenuLooks.FireRef, FireGlow);
                 s_SheathCones.Add((cone.transform, w));
             }
             s_Sheath = sheath;

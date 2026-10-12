@@ -100,7 +100,7 @@ namespace RockGame
             // ---- style ----
             Caption("STYLE  ·  the banners (the countdowns have their own: COUNTDOWN below)");
             Slider("Size", GameSettings.NotifSize, $"{GameSettings.NotifSize.Value * 100f:0}%", 0.05f);
-            Slider("Band width", GameSettings.NotifWidth, $"{GameSettings.NotifWidth.Value * 100f:0}%", 0.05f);
+            Slider("Band width", GameSettings.NotifWidth, GameSettings.NotifWidth.Value < 0.01f ? "no band" : $"{GameSettings.NotifWidth.Value * 100f:0}%", 0.05f);
             Slider("Band darkness", GameSettings.NotifPlate, GameSettings.NotifPlate.Value < 0.01f ? "none" : $"{GameSettings.NotifPlate.Value * 100f:0}%", 0.05f);
             Slider("Height on screen", GameSettings.NotifY, Mathf.Abs(GameSettings.NotifY.Value) < 0.5f ? "as usual" : $"{(GameSettings.NotifY.Value > 0 ? "+" : "")}{GameSettings.NotifY.Value:0} px", 5f);
             ChoiceRow("Font", GameSettings.NotifFont, true);

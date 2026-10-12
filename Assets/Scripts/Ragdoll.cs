@@ -27,7 +27,7 @@ namespace RockGame
         /// <summary>(tests) the newest ragdoll's hips (null: none).</summary>
         public static Transform NewestHips => s_Bodies.Count > 0 ? s_Bodies[s_Bodies.Count - 1].Hips : null;
 
-        static readonly string[] k_Bones =
+        internal static readonly string[] k_Bones =
         {
             "Hips", "Spine", "Chest", "Head", "LeftUpperArm", "LeftLowerArm", "RightUpperArm", "RightLowerArm",
             "LeftUpperLeg", "LeftLowerLeg", "RightUpperLeg", "RightLowerLeg",
@@ -55,6 +55,9 @@ namespace RockGame
             }
             var map = new Dictionary<string, Transform>();
             foreach (var t in go.GetComponentsInChildren<Transform>(true)) if (!map.ContainsKey(t.name)) map[t.name] = t;
+            // the arrows stuck in them (ArrowProjectile.StickIn) move over onto the same bones of the body, and stay in it
+            // until it's gone
+            ArrowProjectile.CarryOnto(model.transform, map, Lie + Sink + 0.5f);
             if (hat != null && map.TryGetValue("Head", out var headBone))
             {
                 var h = Object.Instantiate(hat, hat.transform.position, hat.transform.rotation);
