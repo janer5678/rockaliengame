@@ -28,11 +28,12 @@ namespace RockGame
         /// <summary>An ant: how fast it walks and how high it jumps next to an alien (both way down).</summary>
         [Tune("Wacky items")] public static float AntSpeedMul = 0.3f, AntJumpMul = 0.35f;
         [Tune("Wacky items")] public static float DanceTime = 4f, DanceRadius = 9f, KnockDownTime = 2.5f, DecoyLife = 20f, DecoySpeed = 6.5f;
-        [Tune("Wacky items")] public static float CastleLife = 180f, CastleBounce = 17f, SnailTime = 10f, SnailShortTime = 5f;
+        [Tune("Wacky items")] public static float CastleLife = 180f, CastleBounce = 17f, SnailTime = 15f, SnailShortTime = 5f;
         [Tune("Wacky items")] public static float TruthRadius = 7f, TruthLaunch = 55f, SuicideRadius = 6f, SuicideFuse = 1.2f;
-        /// <summary>The lifting stick: how high a building / chest / tree / horse goes, how long it hangs up there before it
-        /// drops back into its place, and how hard a player is thrown up.</summary>
-        [Tune("Wacky items")] public static float LiftHeight = 9f, LiftTime = 10f, LiftLaunch = 32f;
+        /// <summary>The lifting stick: how high a building / chest / tree / horse goes (10x what it was - fast, and never
+        /// through the map's glass dome: NetGame.LiftTop), how long it hangs up there before it drops back into its place,
+        /// and how hard a player is thrown up (10x as high as it was, up to just under the glass).</summary>
+        [Tune("Wacky items")] public static float LiftHeight = 90f, LiftTime = 10f, LiftLaunch = 101f;
         [Tune("Wacky items")] public static float BearHp = 300f, BearClawDamage = 45f, BearClawStructure = 220f, BearSpeedMul = 0.375f, BearTime = 120f, BearSplash = 3.5f;
         [Tune("Wacky items")] public static float DroneSpeed = 7f, DroneBlastRadius = 4.5f, DroneHp = 40f, BallGrabRange = 120f, BallGrabSpeed = 18f;
         [Tune("Wacky items")] public static float ClutterTime = 12f, ClutterRadius = 10f, MinigameClock = 60f, GameshowAnswerTime = 20f, ChaosGlowTime = 120f;
@@ -53,8 +54,8 @@ namespace RockGame
             RarityDisguiseKit = 10, RarityBallGrabber = 10, RarityScribble = 10, RarityAntGun = 10, RarityClutterBomb = 10;
 
         /// <summary>Mode options: which of the airdrop choices past the 32nd are picked (bit i - 32 = AirdropChoices[i]):
-        /// all of them to start with.</summary>
-        [Tune("Mode options")] public static int AirdropItemMask2 = -1;
+        /// just the dance bomb (34) to start with (AirdropItemMask).</summary>
+        [Tune("Mode options")] public static int AirdropItemMask2 = 1 << 2;
 
         /// <summary>Is airdrop choice i picked in the mode options (either mask)?</summary>
         public static bool AirdropPicked(int i) => i < 32 ? (AirdropItemMask & (1 << i)) != 0 : (AirdropItemMask2 & (1 << (i - 32))) != 0;

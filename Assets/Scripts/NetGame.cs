@@ -764,6 +764,33 @@ namespace RockGame
             yaw = Cfg.SpawnYaw(team);
         }
 
+        /// <summary>Jonah Test Mode Bruh's "respawn in the wild": as near the picked spot as there's room (never in an enemy's
+        /// base - then just outside it - in water, lava or up a mesa, or inside something).</summary>
+        public static void PickedSpawnPoint(int team, Vector3 pick, out Vector3 pos, out float yaw)
+        {
+            float half = Cfg.MapHalf - 6f;
+            pick = new Vector3(Mathf.Clamp(pick.x, -half, half), 0f, Mathf.Clamp(pick.z, -half, half));
+            yaw = Quaternion.LookRotation(new Vector3(-pick.x, 0f, -pick.z).sqrMagnitude > 1f ? new Vector3(-pick.x, 0f, -pick.z) : Vector3.forward).eulerAngles.y; // (facing the middle)
+            for (int ring = 0; ring < 14; ring++)
+            {
+                int n = ring == 0 ? 1 : 10 + ring * 2;
+                for (int i = 0; i < n; i++)
+                {
+                    float a = i * Mathf.PI * 2f / n + ring * 0.37f, r = ring * 1.5f;
+                    var p = pick + new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a)) * r;
+                    if (Mathf.Abs(p.x) > half || Mathf.Abs(p.z) > half) continue;
+                    int bt = Cfg.BaseTeamAt(p);
+                    if (bt >= 0 && bt != team) continue;
+                    if (!ThemeMaps.SpotOk(p)) continue; // THEME MAPS (not in water, lava or up on a mesa)
+                    p.y = MapBuilder.Height(p.x, p.z) + 0.1f;
+                    if (Blocked(p + Vector3.up * 1.1f, new Vector3(0.45f, 0.6f, 0.45f))) continue;
+                    pos = p;
+                    return;
+                }
+            }
+            WildSpawnPoint(team, out pos, out yaw);
+        }
+
         /// <summary>"Respawn in the wild": a truly random free spot anywhere out in the wild (any side of the map, never in a base or the middle).</summary>
         public static void WildSpawnPoint(int team, out Vector3 pos, out float yaw)
         {
@@ -794,8 +821,11 @@ namespace RockGame
         /// <summary>The ship arrives and opens its hatch (DropArrive), then beams the crate down - slowly (DropBeam). A
         /// match's airdrop is announced (AIRDROP INCOMING) and its ship sets off at once, DropWarning seconds earlier than
         /// it used to, so its beam is that much slower: the crate still lands when it used to (the tutorial's as before).</summary>
-        public const float DropArrive = AirdropShip.Arrive + 1f;
-        public static float DropBeam => Cfg.Tutorial ? 8f : 8f + DropWarning;
+        /// The ship swoops in now (AirdropShip.Arrive): the beam comes out as soon as AIRDROP INCOMING is up, and takes the
+        /// time the ship used to spend flying in (OldArrive) on top - the crate lands when it always did.
+        public const float DropArrive = AirdropShip.Arrive + 0.6f;
+        const float OldArrive = 9f;
+        public static float DropBeam => (Cfg.Tutorial ? 8f : 8f + DropWarning) + (OldArrive - DropArrive);
         /// <summary>Seconds after a lane's start when the crate touches down (the ship arrives, then beams it down).</summary>
         public static float DropLand => DropArrive + DropBeam;
         /// <summary>The tutorial's airdrop comes down this many times as fast (its ship, beam and crate all run on the sped-up clock).</summary>

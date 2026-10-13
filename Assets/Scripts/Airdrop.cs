@@ -24,8 +24,9 @@ namespace RockGame
     /// </summary>
     public class AirdropShip
     {
-        /// <summary>Seconds to fly in to its hover point (half the speed it used to: 4 s - more time to see it and get there) and to fly off.</summary>
-        public const float Arrive = 8f, Leave = 6f;
+        /// <summary>Seconds to fly in to its hover point - it swoops in at once, so its beam's there as soon as the AIRDROP
+        /// INCOMING notification (the beam's that much slower: the crate lands when it always did) - and to fly off.</summary>
+        public const float Arrive = 0.8f, Leave = 6f;
         /// <summary>How high it hovers over the drop spot (it used to be 45 m), but never above HoverCeiling - its top stays
         /// well under the clouds (their undersides start about 100 m up) and nowhere near the Highlands' sky planets (over
         /// a kilometre out) - unless the dome's glass makes it go higher.</summary>

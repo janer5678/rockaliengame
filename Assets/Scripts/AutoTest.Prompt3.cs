@@ -24,12 +24,12 @@ namespace RockGame
             bool capture = System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-capture") >= 0;
 
             // ---- the numbers
-            Check(Cfg.Is1v1 && Mathf.Approximately(Cfg.BallGatherNow, 1.5f) && Mathf.Approximately(Cfg.BallGatherMul, 3f), $"the ball buff is x1.5 in a 1v1 (x{Cfg.BallGatherNow}; other modes x{Cfg.BallGatherMul})");
+            Check(Mathf.Approximately(Cfg.BallGatherNow, 1.5f) && Mathf.Approximately(Cfg.BallGatherMul, 1.5f), $"the ball buff is x1.5 (x{Cfg.BallGatherNow}; every mode x{Cfg.BallGatherMul})");
             Check(Cfg.CraftRecipe(Cfg.CraftIndexOf(Item.DeathWand), team).Wood == 4000, $"the death wand costs 4000 ({Cfg.CraftRecipe(Cfg.CraftIndexOf(Item.DeathWand), team).Wood})");
             Check(Cfg.ItemName(Item.BearTrap) == "Stun Trap" && Cfg.CraftTier(Item.BearTrap) == 2 && Cfg.CraftRecipe(Cfg.CraftIndexOf(Item.BearTrap), team).Wood == 250 && Mathf.Approximately(Cfg.BearTrapHold, 3f),
                 $"the stun trap: an Advanced Trade Station item for 250, holds {Cfg.BearTrapHold} s");
             Check(Mathf.Abs(Deployables.BarricadeH - 1.45f * 1.3f) < 0.01f && Mathf.Abs(Deployables.BarricadeLen - 2.4f * 1.3f) < 0.01f, $"the barricade is 30% taller and wider ({Deployables.BarricadeLen} x {Deployables.BarricadeH} m)");
-            Check(NetGame.DropBeam == NetGame.DropWarning + 8f, $"the airdrop's beam takes {NetGame.DropBeam} s: the ship comes at once and the crate lands when it used to");
+            Check(Mathf.Approximately(NetGame.DropLand, 9f + 8f + NetGame.DropWarning) && NetGame.DropArrive < 2f, $"the airdrop's beam is out {NetGame.DropArrive} s after the notice and takes {NetGame.DropBeam} s: the crate lands when it used to ({NetGame.DropLand} s)");
             {
                 int mask = Cfg.AirdropItemMask, mask2 = Cfg.AirdropItemMask2;
                 Cfg.PickAllAirdrops(true);

@@ -72,6 +72,7 @@ namespace RockGame
             var go = new GameObject("WoodMachine " + Cfg.TeamName[team]);
             go.transform.SetParent(root, false);
             go.transform.SetPositionAndRotation(Cfg.WoodMachinePos(team), Quaternion.LookRotation(-Cfg.BackDir(team)));
+            if (Cfg.SmallBedrock) go.transform.localScale = Vector3.one * Cfg.SmallMachineScale; // (Jonah Test Mode Bruh: smaller, on the one-cell bedrock)
             var w = go.AddComponent<WoodMachine>();
             w.m_Team = team;
             w.Build(0); // (nothing there until the team buys it)

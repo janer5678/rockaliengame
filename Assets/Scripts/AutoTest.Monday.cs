@@ -173,8 +173,8 @@ namespace RockGame
                 Cfg.AirdropItemMask = mask; Cfg.AirdropItemMask2 = mask2;
             }
 
-            // ---- the ball buff: x3 gathering, and everyone sees who has it
-            Check(Mathf.Approximately(Cfg.BallGatherMul, 3f) && Mathf.Approximately(Cfg.BallGatherMul1v1, 1.5f), $"the ball buff is x3 gathering, x1.5 in a 1v1 ({Cfg.BallGatherMul}, {Cfg.BallGatherMul1v1})");
+            // ---- the ball buff: x1.5 gathering (every mode, every team size), and everyone sees who has it
+            Check(Mathf.Approximately(Cfg.BallGatherMul, 1.5f) && Mathf.Approximately(Cfg.BallGatherNow, 1.5f), $"the ball buff is x1.5 gathering in every match ({Cfg.BallGatherMul}, now {Cfg.BallGatherNow})");
             var ball = Ball.Instance;
             Check(ball != null, "the ball is out");
             if (ball != null)

@@ -65,6 +65,7 @@ namespace RockGame
         public static void AddTier(List<int> into, int tier)
         {
             var order = tier == 0 ? k_Starter : tier == 1 ? k_Tier1 : k_Tier2;
+            if (tier == 2 && JonahBruh) { int a = CraftIndexOf(Item.HeavyArmor); if (a >= 0) into.Add(a); } // (Jonah Test Mode Bruh: Armour at the top of the Advanced Trade Station)
             foreach (var id in order)
             {
                 if (SuddenRound && Workbench.IsBench(id)) continue; // (sudden death: no trade stations at all - they're just not there)

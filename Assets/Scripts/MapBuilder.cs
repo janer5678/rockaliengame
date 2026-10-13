@@ -576,7 +576,7 @@ namespace RockGame
             var c = Cfg.BedrockCenter(team);
             var tc = Cfg.TeamColor[team];
             var glow = Color.Lerp(tc, Color.white, 0.35f);
-            float s = Cfg.BedrockHalf * 2f;
+            float s = Cfg.BedrockHalfNow * 2f, seam = Cfg.BedrockHalfNow * 0.5f; // (Jonah Test Mode Bruh: one cell - JonahBruh.cs)
             var go = new GameObject("Bedrock " + Cfg.TeamName[team]);
             go.transform.SetParent(root, false);
             go.transform.position = c;
@@ -591,13 +591,13 @@ namespace RockGame
             // glowing seams and rivets on top
             for (int k = -1; k <= 1; k += 2)
             {
-                Art.Box(t, glow, new Vector3(k * 1.5f, Cfg.BaseY + 0.005f, 0), new Vector3(0.05f, 0.01f, s - 0.2f));
-                Art.Box(t, glow, new Vector3(0, Cfg.BaseY + 0.005f, k * 1.5f), new Vector3(s - 0.2f, 0.01f, 0.05f));
+                Art.Box(t, glow, new Vector3(k * seam, Cfg.BaseY + 0.005f, 0), new Vector3(0.05f, 0.01f, s - 0.2f));
+                Art.Box(t, glow, new Vector3(0, Cfg.BaseY + 0.005f, k * seam), new Vector3(s - 0.2f, 0.01f, 0.05f));
             }
             using (ColorSlots.Use(ColorSlots.Bedrock))
             for (int x = -1; x <= 1; x += 2)
             for (int z = -1; z <= 1; z += 2)
-                Art.Part(t, Art.Cylinder, k_SilverDark, new Vector3(x * (Cfg.BedrockHalf - 0.25f), Cfg.BaseY + 0.01f, z * (Cfg.BedrockHalf - 0.25f)), new Vector3(0.22f, 0.02f, 0.22f));
+                Art.Part(t, Art.Cylinder, k_SilverDark, new Vector3(x * (Cfg.BedrockHalfNow - 0.25f), Cfg.BaseY + 0.01f, z * (Cfg.BedrockHalfNow - 0.25f)), new Vector3(0.22f, 0.02f, 0.22f));
             // PSX graphics: concrete
             PsxModels.Retexture(go, go.GetComponentsInChildren<Renderer>(), r => Art.IsArtMat(r.sharedMaterial, out var col) && (col == k_Silver || col == k_SilverDark) ? (col == k_Silver ? "concrete_00" : "concrete_10") : null, 2f);
             BuildMachine(root, team, glow);
@@ -615,6 +615,7 @@ namespace RockGame
             go.transform.SetParent(root, false);
             // local +z faces the spawn / the middle of the map
             go.transform.SetPositionAndRotation(Cfg.MachinePos(team), Quaternion.LookRotation(-Cfg.BackDir(team)));
+            if (Cfg.SmallBedrock) go.transform.localScale = Vector3.one * Cfg.SmallMachineScale; // (Jonah Test Mode Bruh: a smaller machine on its one-cell bedrock)
             var t = go.transform;
             var metal = new Color(0.3f, 0.33f, 0.36f);
             var screen = Art.Ghost(new Color(0.4f, 1f, 0.8f, 0.7f));
@@ -693,6 +694,7 @@ namespace RockGame
             var socket = new GameObject("socket").transform;
             socket.SetParent(t, false);
             socket.position = Cfg.SocketPos(team) - Vector3.up * 0.64f; // on the bedrock
+            if (Cfg.SmallBedrock) socket.localScale = Vector3.one * (Cfg.SmallSocketScale / Cfg.SmallMachineScale); // (big enough for the ball)
             for (int i = 0; i < 10; i++)
             {
                 float a = i * 36f * Mathf.Deg2Rad;
@@ -713,7 +715,7 @@ namespace RockGame
             var l = lg.AddComponent<Light>();
             l.type = LightType.Point;
             l.color = MachineLightColor(team); // (a light shade of the team's colour - it was alien green for everyone)
-            l.range = 7f;
+            l.range = Cfg.SmallBedrock ? 4.5f : 7f;
             l.intensity = 1.8f;
 
             go.AddComponent<Machine>().Init(team, rings, orb, l, beam);

@@ -277,7 +277,24 @@ namespace RockGame
             GUI.Label(new Rect(cx + bw, y, lw, bh), $"{Clock(Cfg.MatchLength)} <size={Mathf.RoundToInt(13 * k)}>match</size>", val);
             if (SmallBtn(new Rect(cx + bw + lw, y, bw, bh), "+")) { Cfg.MatchLength = Mathf.Min(3600f, Cfg.MatchLength + 60f); Cfg.SavePrefs(); }
             y += bh + 14 * k;
-            if (rules == GameRules.Progress)
+            if (rules == GameRules.JonahBruh)
+            {
+                // Jonah Test Mode Bruh: won like Classic, or like Progress (JonahBruh.cs)
+                GUI.Label(new Rect(x, y, w, 24 * k), "HOW YOU WIN", cap);
+                y += 28 * k;
+                float hw = (w - 10 * k) * 0.5f;
+                for (int i = 0; i < 2; i++)
+                {
+                    var r = new Rect(x + i * (hw + 10 * k), y, hw, bh);
+                    if (SmallBtn(r, i == 0 ? "NORMAL" : "PROGRESSION")) { Cfg.JonahBruhProgress = i; Cfg.SavePrefs(); }
+                    if (Cfg.JonahBruhProgress == i || (i == 1 && Cfg.JonahBruhProgress > 1)) { Fill(r, new Color(k_Acid.r, k_Acid.g, k_Acid.b, 0.22f)); Frame(r, k_Acid, 3f); }
+                }
+                y += bh + 6 * k;
+                Shadowed(new Rect(x, y, w, 22 * k), $"<color=#bbbbbb>{(Cfg.JonahBruhProgress != 0 ? "Keep the ball in your machine to fill your bar - fill it to win." : "Like Classic: have the ball in your machine when the clock runs out.")}</color>", m_Small);
+                y += 30 * k;
+                JonahBruhMenuShownAt = Time.time;
+            }
+            if (rules == GameRules.Progress || (rules == GameRules.JonahBruh && Cfg.JonahBruhProgress != 0))
             {
                 // Progress: how long the ball has to sit in your machine to fill your bar
                 GUI.Label(new Rect(x, y, w, 24 * k), "PROGRESS TIME", cap);
@@ -296,6 +313,9 @@ namespace RockGame
             y += 30 * k;
             if (BigBtn(ref y, x, w, "CONTINUE", k_Acid)) { m_New = NewPage.Map; m_MapPick = Mathf.Max(0, System.Array.IndexOf(k_Maps, Cfg.Map)); }
         }
+
+        /// <summary>Test hook: when the mode page's HOW YOU WIN row (Jonah Test Mode Bruh) was last drawn (Time.time; -1 never).</summary>
+        public static float JonahBruhMenuShownAt { get; private set; } = -1f;
 
         /// <summary>The game mode as a drop-down of the menu's modes, with what it is under it. Returns the new map key.</summary>
         int DrawRulesPicker(int key)

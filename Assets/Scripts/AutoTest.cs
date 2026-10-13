@@ -24,6 +24,7 @@ namespace RockGame
             if (m_Mode == "menushot") { StartCoroutine(MenuShots()); return; }
             if (m_Mode == "newmenu") { StartCoroutine(NewMenuShots()); return; } // (AutoTest.Lobby.cs)
             if (m_Mode == "prompt7menu") { StartCoroutine(Prompt7MenuShots()); return; } // (AutoTest.Prompt7.cs)
+            if (m_Mode == "prompt8menu") { StartCoroutine(Prompt8MenuShots()); return; } // (AutoTest.Prompt8.cs)
             if (m_Mode == "mapshots") { StartCoroutine(MapShots()); return; }
             if (m_Mode == "lobby" || m_Mode == "arcade") NetGame.TestLobby = true; // (the ship lobby, though it's a test)
             if (m_Mode == "sd" || m_Mode == "arena") Cfg.UseOvertime = false; // (the clock running out goes to the sudden death arena, as these test)
@@ -166,6 +167,7 @@ namespace RockGame
             if (m_Mode == "prompt5") { yield return Prompt5Routine(me, pc); yield break; } // (AutoTest.Prompt5.cs)
             if (m_Mode == "prompt6") { yield return Prompt6Routine(me, pc); yield break; } // (AutoTest.Prompt6.cs)
             if (m_Mode == "prompt7") { yield return Prompt7Routine(me, pc); yield break; } // (AutoTest.Prompt7.cs)
+            if (m_Mode == "prompt8") { yield return Prompt8Routine(me, pc); yield break; } // (AutoTest.Prompt8.cs)
             Check(Cfg.BaseTeamAt(me.transform.position) == me.Team.Value, $"spawned inside own base ({me.transform.position})");
             Check(me.Count(Item.Rock) == 0 && me.HeldItem == Item.Rock, "empty hand = holding the rock (no rock item)");
             Check(Vector3.Distance(me.transform.position, Cfg.SpawnPos(me.Team.Value, me.Slot.Value)) < 1.5f, $"sent home to the bedrock when the match started on {Cfg.MapLabel} (seed {Cfg.MapSeed})");

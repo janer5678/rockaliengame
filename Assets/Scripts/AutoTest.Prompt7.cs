@@ -45,9 +45,9 @@ namespace RockGame
             {
                 var loot = Cfg.AirdropLoot;
                 var missing = new List<string>();
-                foreach (var it in Cfg.AirdropChoices) if (Cfg.InAirdropPool(it) && it != Item.C4 && !loot.Contains(it)) missing.Add(it.ToString());
-                Check(!Cfg.AirdropPicked(0) && !loot.Contains(Item.C4) && missing.Count == 0 && loot.Contains(Item.AntGun) && loot.Contains(Item.BouncyCastle),
-                    $"the airdrop pool by default: every newer item, no C4 ({loot.Count} items{(missing.Count > 0 ? ", missing " + string.Join(" ", missing) : "")})");
+                foreach (var it in new[] { Item.C4, Item.Jetpack, Item.BouncyCastle, Item.DanceBomb }) if (!loot.Contains(it)) missing.Add(it.ToString());
+                Check(missing.Count == 0 && (Cfg.AirdropTest || !loot.Contains(Item.AntGun)),
+                    $"the airdrop pool by default: just the nine picked ones (AutoTest.Prompt8.cs) ({loot.Count} items{(missing.Count > 0 ? ", missing " + string.Join(" ", missing) : "")})");
             }
             Check(Mathf.Approximately(Cfg.ProgressSeconds, 400f), $"Progress takes {Cfg.ProgressSeconds:0} s to fill");
             {
@@ -84,7 +84,7 @@ namespace RockGame
                 var from = wmPos - back * 3f;
                 pc.LocalTeleport(OnGround(from, 0.1f), Quaternion.LookRotation(wmPos - from).eulerAngles.y);
                 yield return new WaitForSeconds(0.4f);
-                var lk = Quaternion.LookRotation(wmPos + Vector3.up * 0.6f - me.EyePos).eulerAngles;
+                var lk = Quaternion.LookRotation(wmPos + Vector3.up * (0.6f * (Cfg.SmallBedrock ? Cfg.SmallMachineScale : 1f)) - me.EyePos).eulerAngles; // (Jonah Test Mode Bruh: a half-size machine)
                 pc.SetLook(lk.y, lk.x > 180f ? lk.x - 360f : lk.x);
                 yield return new WaitForSeconds(0.4f);
                 Check(pc.AimText.Contains("till the wall drops"), $"looking at it: it doesn't give wood till the wall drops ({pc.AimText})");
@@ -208,11 +208,11 @@ namespace RockGame
                 Check(Cfg.RulesName(Cfg.Rules) == "Jonah Test Mode Bruh", $"the mode is called {Cfg.RulesName(Cfg.Rules)}");
                 Check(Cfg.RecipeIndex(Item.Ladder) < 0 && Cfg.RecipeIndex(Item.BearTrap) < 0 && Cfg.RecipeIndex(Item.DeathWand) < 0 && Cfg.RecipeIndex(Item.Chainsaw) < 0,
                     "no ladder, stun trap, death wand or chainsaw to craft");
-                Check(!Cfg.AllFunItems.Contains(Item.Ladder) && !Cfg.AllFunItems.Contains(Item.Chainsaw) && !Cfg.AllFunItems.Contains(Item.BearTrap) && !Cfg.AllFunItems.Contains(Item.DeathWand), "...nor anywhere else");
+                Check(!Cfg.AllFunItems.Contains(Item.Ladder) && !Cfg.AllFunItems.Contains(Item.Chainsaw) && !Cfg.AllFunItems.Contains(Item.BearTrap), "...nor anywhere else (the death wand: in its airdrops - AutoTest.Prompt8.cs)");
                 int bh = Cfg.RecipeIndex(Item.BetterHatchet);
                 Check(bh >= 0 && Cfg.GetRecipe(bh).Wood == 50 && Cfg.CraftTier(Item.BetterHatchet) == 1, $"the Better Hatchet in the chainsaw's place ({(bh >= 0 ? Cfg.GetRecipe(bh).Wood : -1)} wood, T{Cfg.CraftTier(Item.BetterHatchet)})");
                 int ai = Cfg.PowerIndex(Item.HeavyArmor);
-                Check(ai >= 0 && Cfg.GetPowerRecipe(ai).Wood == 250, $"armour costs {(ai >= 0 ? Cfg.GetPowerRecipe(ai).Wood : -1)}");
+                Check(ai >= 0 && Cfg.GetPowerRecipe(ai).Wood == 150, $"armour costs {(ai >= 0 ? Cfg.GetPowerRecipe(ai).Wood : -1)}");
                 Check(Cfg.HammerCost(0) == 150 && Cfg.HammerCost(1) == 0 && Mathf.Approximately(Cfg.PieceHp(PieceType.Wall, 1), Cfg.WallStoneHp * Cfg.JonahBruhStoneHpMul) && Cfg.JonahBruhStoneHpMul > 1f,
                     $"the hammer: stone for {Cfg.HammerCost(0)} and no further; stone walls {Cfg.PieceHp(PieceType.Wall, 1):0} HP (was {Cfg.WallStoneHp:0})");
 

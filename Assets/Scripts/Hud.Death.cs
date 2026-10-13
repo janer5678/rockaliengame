@@ -113,7 +113,12 @@ namespace RockGame
             {
                 float bw = 300 * k, bh = 54 * k;
                 if (DeathCard(new Rect(cx - bw - 8 * k, y, bw, bh), "1", "RESPAWN IN BASE", "", true, KeyCode.Alpha1)) pc.ChooseRespawn(false);
-                if (DeathCard(new Rect(cx + 8 * k, y, bw, bh), "2", "RESPAWN IN THE WILD", "", true, KeyCode.Alpha2)) pc.ChooseRespawn(true);
+                if (m_WildPick && Cfg.JonahBruh) { DrawWildPicker(me, k); return; }
+                if (DeathCard(new Rect(cx + 8 * k, y, bw, bh), "2", "RESPAWN IN THE WILD", Cfg.JonahBruh ? "pick the spot" : "", true, KeyCode.Alpha2))
+                {
+                    if (Cfg.JonahBruh) m_WildPick = true; // (Jonah Test Mode Bruh: pick where on the map)
+                    else pc.ChooseRespawn(true);
+                }
                 // your team's sleeping bags (Container.Deployables.cs): one more card each, once a minute each
                 Deployables.BagsOf(me.Team.Value, s_Bags);
                 double now = me.NetworkManager.ServerTime.Time;
@@ -136,6 +141,108 @@ namespace RockGame
         }
 
         static float Smooth(float x) => x * x * (3f - 2f * x);
+
+        // ---------------- Jonah Test Mode Bruh: pick where to respawn in the wild ----------------
+
+        bool m_WildPick;
+        /// <summary>Test hook: open (or shut) the map for picking where to respawn.</summary>
+        public static void TestWildPick(bool on) { if (s_I != null) s_I.m_WildPick = on; }
+        static Texture2D s_WildMap;
+        static string s_WildMapKey;
+        /// <summary>Test hooks: the picker's up (when it was last drawn, Time.time; -1 never) and where the map is on screen.</summary>
+        public static float WildPickerShownAt { get; private set; } = -1f;
+        public static Rect WildPickerRect { get; private set; }
+
+        /// <summary>A little map of the whole map, seen from above (the hills shaded, water and lava dark): made once a map.</summary>
+        static Texture2D WildMapTexture()
+        {
+            string key = $"{Cfg.Map}/{Cfg.Size}/{Cfg.MapSeed}/{Cfg.TeamCount}";
+            if (s_WildMap != null && s_WildMapKey == key) return s_WildMap;
+            const int N = 160;
+            if (s_WildMap == null) s_WildMap = new Texture2D(N, N, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear };
+            s_WildMapKey = key;
+            float half = Cfg.MapHalf, step = 2f * half / N;
+            var h = new float[N * N];
+            float lo = float.MaxValue, hi = float.MinValue;
+            for (int j = 0; j < N; j++)
+                for (int i = 0; i < N; i++)
+                {
+                    float v = MapBuilder.Height(-half + (i + 0.5f) * step, -half + (j + 0.5f) * step);
+                    h[j * N + i] = v; lo = Mathf.Min(lo, v); hi = Mathf.Max(hi, v);
+                }
+            var px = new Color32[N * N];
+            var low = new Color(0.22f, 0.4f, 0.2f); var high = new Color(0.62f, 0.7f, 0.42f);
+            for (int j = 0; j < N; j++)
+                for (int i = 0; i < N; i++)
+                {
+                    float v = h[j * N + i];
+                    float dx = h[j * N + Mathf.Min(N - 1, i + 1)] - h[j * N + Mathf.Max(0, i - 1)], dz = h[Mathf.Min(N - 1, j + 1) * N + i] - h[Mathf.Max(0, j - 1) * N + i];
+                    float shade = Mathf.Clamp(1f + (-dx + dz) / (2f * step) * 0.6f, 0.55f, 1.35f); // (lit from the top left)
+                    var c = Color.Lerp(low, high, hi - lo > 0.01f ? (v - lo) / (hi - lo) : 0.5f) * shade;
+                    var w = new Vector3(-half + (i + 0.5f) * step, 0f, -half + (j + 0.5f) * step);
+                    if (!ThemeMaps.SpotOk(w)) c = new Color(0.12f, 0.2f, 0.32f); // (water, lava, a mesa: nowhere to come back)
+                    c.a = 1f;
+                    px[j * N + i] = c;
+                }
+            s_WildMap.SetPixels32(px);
+            s_WildMap.Apply();
+            return s_WildMap;
+        }
+
+        /// <summary>Jonah Test Mode Bruh's death screen after "respawn in the wild": the whole map from above - the bases, the
+        /// ball, your team - click where you want to come back (anywhere but an enemy's base); RMB / Esc: back.</summary>
+        void DrawWildPicker(PlayerNet me, float k)
+        {
+            float sw = Screen.width, sh = Screen.height;
+            MouseOverUI = true;
+            WildPickerShownAt = Time.time;
+            float size = Mathf.Min(sw * 0.8f, sh * 0.72f);
+            var map = new Rect((sw - size) / 2f, sh * 0.2f, size, size);
+            WildPickerRect = map;
+            float half = Cfg.MapHalf;
+            Vector2 ToMap(Vector3 w) => new Vector2(map.center.x + w.x / (2 * half) * size, map.center.y - w.z / (2 * half) * size);
+            Fill(new Rect(map.x - 4, map.y - 4, size + 8, size + 8), new Color(0f, 0f, 0f, 0.85f));
+            GUI.DrawTextureWithTexCoords(map, WildMapTexture(), new Rect(0, 0, 1, 1)); // (texture rows go up the map: v = 0 at the bottom, like the screen's map)
+            for (int t = 0; t < Cfg.TeamCount; t++)
+            {
+                var bc = Cfg.BaseCenter[t];
+                var a = ToMap(bc + new Vector3(-Cfg.BaseHalf, 0, Cfg.BaseHalf));
+                float bs = Cfg.BaseHalf * 2 / (2 * half) * size;
+                var col = Cfg.TeamColor[t];
+                Fill(new Rect(a.x, a.y, bs, bs), new Color(col.r, col.g, col.b, t == me.Team.Value ? 0.35f : 0.55f));
+                Frame(new Rect(a.x, a.y, bs, bs), new Color(col.r, col.g, col.b, 0.9f), 2f);
+                GUI.Label(new Rect(a.x, a.y + bs / 2 - 12, bs, 24), $"<b>{(t == me.Team.Value ? "YOUR BASE" : Cfg.TeamName[t])}</b>", m_Center);
+            }
+            if (Ball.Instance != null && Ball.Instance.IsSpawned) { var q = ToMap(Ball.Instance.transform.position); DrawDot(new Rect(q.x - 7, q.y - 7, 14, 14), new Color(1f, 0.85f, 0.15f)); }
+            foreach (var p in PlayerNet.All)
+            {
+                if (p == null || p == me || p.Dead.Value || p.Team.Value != me.Team.Value) continue; // (your team only: no spotting the enemy from here)
+                var q = ToMap(p.transform.position);
+                DrawDot(new Rect(q.x - 6, q.y - 6, 12, 12), Cfg.TeamColor[Mathf.Clamp(p.Team.Value, 0, 3)]);
+                GUI.Label(new Rect(q.x - 60, q.y + 6, 120, 20), p.DisplayName, new GUIStyle(m_Small) { alignment = TextAnchor.UpperCenter });
+            }
+            var head = new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt(26 * k) };
+            Shadowed(new Rect(0, map.y - 66 * k, sw, 34 * k), "<b>RESPAWN IN THE WILD</b>", head);
+            Shadowed(new Rect(0, map.y - 32 * k, sw, 26 * k), "Click where you want to come back  ·  RMB / Esc: back", m_Center);
+            var e = Event.current;
+            var m = e.mousePosition;
+            if (map.Contains(m))
+            {
+                var world = new Vector3((m.x - map.center.x) / size * 2 * half, 0, -(m.y - map.center.y) / size * 2 * half);
+                int bt = Cfg.BaseTeamAt(world);
+                bool ok = bt < 0 || bt == me.Team.Value;
+                DrawRing(m, 14 * k, 3, ok ? new Color(0.45f, 1f, 0.55f, 0.95f) : new Color(1f, 0.35f, 0.3f, 0.95f));
+                if (!ok) Shadowed(new Rect(m.x - 120 * k, m.y + 16 * k, 240 * k, 24 * k), "<color=#ff8a7a>not in an enemy base</color>", m_Center);
+                if (ok && e.type == EventType.MouseDown && e.button == 0)
+                {
+                    me.RespawnAtRpc(world);
+                    m_WildPick = false;
+                    ClickSound();
+                    e.Use();
+                }
+            }
+            if ((e.type == EventType.MouseDown && e.button == 1) || (e.type == EventType.KeyDown && e.keyCode == KeyCode.Escape)) { m_WildPick = false; e.Use(); }
+        }
 
         /// <summary>One respawn choice: a dark card, its key in a box on the left; true when it's clicked (or its key pressed).</summary>
         bool DeathCard(Rect r, string key, string title, string sub, bool on, KeyCode code)

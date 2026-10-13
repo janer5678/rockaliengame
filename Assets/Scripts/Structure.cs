@@ -393,6 +393,8 @@ namespace RockGame
             bool col = colliders;
             // (Settings > Display colours: each tier has its own colour)
             using var tint = ColorSlots.Use(refined ? ColorSlots.BuildRefined : sheet ? ColorSlots.BuildSheetMetal : stone ? ColorSlots.BuildStone : ColorSlots.BuildWood);
+            bool magic = stone && !metal && ghost == null && Cfg.JonahBruh; // (Jonah Test Mode Bruh: MAGICAL STONE - JonahBruh.cs)
+            if (magic) { c = MagicStone.Stone; trim = MagicStone.Seam; }
 
             switch (t)
             {
@@ -552,6 +554,7 @@ namespace RockGame
             }
 
             if (sheet) RustSheets(tr, t, c, trim);
+            if (magic) MagicStone.Enchant(tr, t, trim);
             // (no extra plank seams / mortar lines / rivets merged on any more: the pieces are back to their original detail)
 
             // Builder: walls built straight on the ground (no foundation) reach down into it, so nothing rolls out underneath

@@ -371,7 +371,7 @@ namespace RockGame
             if (choosing && !Paused)
             {
                 if (Input.GetKeyDown(KeyCode.Alpha1)) ChooseRespawn(false);
-                else if (Input.GetKeyDown(KeyCode.Alpha2)) ChooseRespawn(true);
+                else if (Input.GetKeyDown(KeyCode.Alpha2) && !Cfg.JonahBruh) ChooseRespawn(true); // (Jonah Test Mode Bruh: 2 opens the map to pick the spot - Hud.Death.cs)
             }
 
             // (the chat line frees the mouse too: a whisper in the log can be clicked to answer it)

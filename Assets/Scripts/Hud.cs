@@ -483,7 +483,7 @@ namespace RockGame
             }
 
             // ---- hotbar (the tutorial shows it once you get your first wood) ----
-            if (!pc.MenuOpen && Tutorial.Allows(TutFeature.HotbarHud))
+            if (!pc.MenuOpen && Tutorial.Allows(TutFeature.HotbarHud) && !PlayerController.PipOn) // (the attention snail: a tiny one in your window - Hud.Wacky.cs)
             {
                 float slot = 80 * k, gap = 6 * k; // (six slots: a little bigger than the seven used to be)
                 int n = Cfg.HotbarSize;
@@ -603,6 +603,7 @@ namespace RockGame
 
             // ---- dead: the kill cam, its replay and the death screen (Hud.Death.cs) ----
             if (me.Dead.Value && (game == null || game.S != GameState.GameOver)) DrawDeath(game, me, pc, k);
+            else m_WildPick = false; // (the map for picking where to respawn: Hud.Death.cs)
 
             // (the HUD's opacity stops here: the inventory, wheel, tutorial panel and menus are drawn solid)
             s_HudAlpha = 1f;

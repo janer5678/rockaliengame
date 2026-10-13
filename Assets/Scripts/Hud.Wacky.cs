@@ -110,7 +110,7 @@ namespace RockGame
                 if (game != null) foreach (var g in game.Gadgets) if (g.Kind == Gadget.Snail && g.Until > now) left = System.Math.Max(left, g.Until - now);
                 var st = new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt(30 * k) };
                 Shadowed(new Rect(0, bar * 0.2f, sw, bar * 0.7f), $"<color=#ffd24a>ATTENTION SNAIL</color>  <size={Mathf.RoundToInt(20 * k)}>{Mathf.CeilToInt((float)left)}</size>", st);
-                Shadowed(new Rect(0, sh - bar * 0.8f, sw, bar * 0.6f), "Everyone is looking at the snail. You can still move and fight - your own view is in the corner.", m_Center);
+                Shadowed(new Rect(0, sh - bar * 0.8f, sw, bar * 0.6f), "Everyone is looking at the snail. You can still move and fight - your own view is in the window.", m_Center);
                 if (PlayerController.PipOn)
                 {
                     var pr = PlayerController.PipGuiRect;
@@ -121,6 +121,7 @@ namespace RockGame
                     Fill(new Rect(pr.x - t, pr.y, t, pr.height), fc);
                     Fill(new Rect(pr.xMax, pr.y, t, pr.height), fc);
                     Shadowed(new Rect(pr.x, pr.y + 4 * k, pr.width, 24 * k), "<b>YOU</b>", m_Center);
+                    DrawPipHotbar(me, pr, k);
                 }
             }
             if (me.Droning)
@@ -315,6 +316,27 @@ namespace RockGame
                     GUI.matrix = old;
                 }
             }
+        }
+
+        /// <summary>Test hook: when the tiny hotbar in the attention snail's window was last drawn (Time.time; -1 never).</summary>
+        public static float PipHotbarShownAt { get; private set; } = -1f;
+
+        /// <summary>The attention snail: your hotbar, really tiny, along the bottom of your own window (what's in your hand
+        /// picked out) - the big one's hidden under the snail's black bar.</summary>
+        void DrawPipHotbar(PlayerNet me, Rect pr, float k)
+        {
+            if (!Tutorial.Allows(TutFeature.HotbarHud)) return;
+            int n = Cfg.HotbarSize;
+            float slot = Mathf.Clamp(pr.width * 0.055f, 18f, 34f * k), gap = Mathf.Max(2f, slot * 0.08f);
+            float hx = pr.center.x - (n * slot + (n - 1) * gap) / 2f, hy = pr.yMax - slot - 6f * k;
+            for (int i = 0; i < n; i++)
+            {
+                var r = new Rect(hx + i * (slot + gap), hy, slot, slot);
+                bool sel = me.HeldSlot.Value == i && !me.CarryingBall;
+                DrawSlotVisual(r, me.SlotAt(i), sel, me);
+                if (sel && me.SlotAt(i).Empty) DrawRockGhost(r);
+            }
+            PipHotbarShownAt = Time.time;
         }
 
         // ---------------- Omen's map ----------------

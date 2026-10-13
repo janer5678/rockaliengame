@@ -123,7 +123,7 @@ namespace RockGame
         /// <summary>Arsenal and Builder: cheap items and the powerful items menu.</summary>
         public static bool PowerMenu => Rules == GameRules.Arsenal || Rules == GameRules.Builder || Rules == GameRules.AutoWood || ClassicMode || Jonah || AirdropTest || JonahBruh;
         /// <summary>The five modes that are Classic with another way to win (Bedwars, 3 Goal, Progress, Assassin, Domination).</summary>
-        public static bool ClassicMode => Rules >= GameRules.Bedwars && Rules <= GameRules.Domination;
+        public static bool ClassicMode => (Rules >= GameRules.Bedwars && Rules <= GameRules.Domination) || JonahBruhProgression; // (Jonah Test Mode Bruh played as PROGRESSION: JonahBruh.cs)
         /// <summary>The last game mode there is (the menus and the map key clamp to it).</summary>
         public const GameRules LastRules = GameRules.JonahBruh;
         /// <summary>The rules are 4 bits of the map key at RulesShift, and a fifth up here (modes 16 and on: Jonah Ideas Test).</summary>
@@ -171,7 +171,7 @@ namespace RockGame
                 case GameRules.Assassin: return "No ball: kill the enemies - each drops their skull - and hand a skull of every one of them into your machine (E). Skulls only drop in this mode.";
                 case GameRules.JonahTest: return HammerUpgrades ? "Classic (walls upgraded with the HAMMER; the trade stations TRADE, everything costs wood)." : "Classic, plus Jonah's ideas: the trade stations TRADE (everything costs wood), and UPGRADE 10 WALLS at the upgrade station (insert 1000 wood) lets you fly round your base in a black void and pick 10 pieces to go up a tier.";
                 case GameRules.AirdropTest: return "Classic, plus purple AIRDROP BERRY BUSHES all over the map: pick one (E) and you get an airdrop item - a different one every time (you never get the same one twice; the others can still get it).";
-                case GameRules.JonahBruh: return $"Classic with Jonah's changes: Armour costs {JonahBruhArmorWood}, no stun trap, death wand, ladder or chainsaw - a BETTER HATCHET instead (chops faster, {BetterHatchetWood} wood). The hammer only upgrades walls to stone ({JonahBruhStoneWood} wood a piece), but stone is {JonahBruhStoneHpMul:0.#}x as strong.";
+                case GameRules.JonahBruh: return $"Classic with Jonah's changes (pick NORMAL or PROGRESSION below): a one-cell spawn base, Armour at the top of the Advanced Trade Station ({JonahBruhArmorWood}; the station {JonahBruhBench2Wood}), no stun trap, ladder or chainsaw - a BETTER HATCHET instead (chops faster, {BetterHatchetWood} wood), the death wand only from airdrops. The hammer only upgrades walls to MAGICAL STONE ({JonahBruhStoneWood} wood a piece, {JonahBruhStoneHpMul:0.#}x as strong). Respawn in the wild: pick the spot on the map.";
                 case GameRules.Domination: return "Classic, but whoever has the ball (carried or in their machine) gets the Advanced Trade Station's items without building one. Lose the ball, lose them.";
                 case GameRules.Tutorial: return "New here? Start with this. Short, simple steps teach you the whole game - you do each one to go on, and each control unlocks as it's taught. The clock is stopped and it's always the small Plains map. Press PLAY TUTORIAL and pick Solo or With a friend.";
                 case GameRules.AutoWood: return HammerUpgrades ? "A wood machine in your base piles up wood by itself and speeds up as the match goes on - go and pick it up. Upgrade your walls one at a time with the HAMMER. Arsenal's prices and POWER ITEMS." : "Buy a wood machine in UPGRADES (E on the upgrade station beside your alien machine) and wood piles up at your base by itself - go and pick it up; more upgrades speed it up. Arsenal's prices and POWER ITEMS.";
@@ -288,13 +288,14 @@ namespace RockGame
 
         /// <summary>Direction from a base's centre to the back of its bedrock (away from the middle of the map).</summary>
         public static Vector3 BackDir(int team) => s_Diagonal ? new Vector3(0, 0, Mathf.Sign(BaseCenter[team].z)) : new Vector3(BaseCenter[team].x, 0, BaseCenter[team].z).normalized; // (bases on the diagonal: the machine still squares up with the grid)
-        public static Vector3 BedrockCenter(int team) => BaseCenter[team];
+        /// (Jonah Test Mode Bruh: a one-cell bedrock with everything on it smaller - JonahBruh.cs, SmallBedrock.)
+        public static Vector3 BedrockCenter(int team) => SmallBedrock ? SmallBedrockCenter(team) : BaseCenter[team];
         // the machine stands clear of the bedrock's back edge so walls fit behind it
-        public static Vector3 MachinePos(int team) => BaseCenter[team] + BackDir(team) * 2.0f + Vector3.up * BaseY;
+        public static Vector3 MachinePos(int team) => SmallBedrock ? SmallMachinePos(team) : BaseCenter[team] + BackDir(team) * 2.0f + Vector3.up * BaseY;
         /// <summary>Centre of the ball when it sits in the machine's socket.</summary>
-        public static Vector3 SocketPos(int team) => BaseCenter[team] + BackDir(team) * 0.35f + Vector3.up * (BaseY + 0.64f);
+        public static Vector3 SocketPos(int team) => SmallBedrock ? SmallSocketPos(team) : BaseCenter[team] + BackDir(team) * 0.35f + Vector3.up * (BaseY + 0.64f);
         /// <summary>Where you (re)spawn: on the front half of your bedrock, facing the middle of the map.</summary>
-        public static Vector3 SpawnPos(int team, int slot = 0) => BaseCenter[team] - BackDir(team) * 1.7f + Vector3.Cross(Vector3.up, BackDir(team)) * SlotOffset(slot, 1.3f) + Vector3.up * (BaseY + 0.05f);
+        public static Vector3 SpawnPos(int team, int slot = 0) => SmallBedrock ? SmallSpawnPos(team, slot) : BaseCenter[team] - BackDir(team) * 1.7f + Vector3.Cross(Vector3.up, BackDir(team)) * SlotOffset(slot, 1.3f) + Vector3.up * (BaseY + 0.05f);
 
         /// <summary>Rotate a point about the map centre by 90 degrees `quarter` times (four-way symmetric layouts).</summary>
         public static Vector3 Rotate(Vector3 p, int quarter) => Quaternion.Euler(0, 90f * quarter, 0) * p;
@@ -309,6 +310,7 @@ namespace RockGame
 
         public static bool IsBedrockCell(int i, int j)
         {
+            if (SmallBedrock) return IsSmallBedrockCell(i, j); // (Jonah Test Mode Bruh: one cell)
             for (int t = 0; t < TeamCount; t++)
             {
                 int ci = Mathf.RoundToInt(BaseCenter[t].x / Cell), cj = Mathf.RoundToInt(BaseCenter[t].z / Cell);
@@ -378,9 +380,11 @@ namespace RockGame
         // ---------- Airdrops (after the wall drops) ----------
         /// <summary>Mode options: how many airdrops come after the wall drops, evenly spaced (1 = half way through, 2 = at the thirds...).</summary>
         [Tune("Mode options")] public static int AirdropCount = 5;
-        /// <summary>Mode options: which airdrop items are in the pool (bit i = AirdropChoices[i]): every one to start with
-        /// (the newer ones too) but C4 (bit 0).</summary>
-        [Tune("Mode options")] public static int AirdropItemMask = ~1;
+        /// <summary>Mode options: which airdrop items are in the pool (bit i = AirdropChoices[i]). To start with just these:
+        /// C4 (0), the jetpack (6), the wallhack glasses (7), the bomb bush (8), the bouncy castle (11), the gravity staff
+        /// (20), the slowness gun (27) and the bear juice (30) - and the dance bomb (34: AirdropItemMask2). Airdrop Test
+        /// has every airdrop item whatever's picked (AirdropLoot).</summary>
+        [Tune("Mode options")] public static int AirdropItemMask = (1 << 0) | (1 << 6) | (1 << 7) | (1 << 8) | (1 << 11) | (1 << 20) | (1 << 27) | (1 << 30);
         [Tune("Airdrop")] public static float AirdropBaseDistance = 25f; // never this close to a base
         [Tune("Airdrop")] public static float C4Fuse = 3f, C4Radius = 5f, C4PlayerDamage = 150f, C4KillRadius = 1.6f;
         [Tune("Airdrop")] public static int SniperAmmo = 3, JetpackFuel = 100, PortalShots = 2, RocketAmmo = 3; // (the portal gun: two shots = one linked pair)
@@ -428,12 +432,11 @@ namespace RockGame
         [Tune("Player")] public static float EnemyStepRange = 55f, EnemyStepRangeSprint = 75f;
         /// <summary>Standing in your own base heals you slowly (HP a second).</summary>
         [Tune("Player")] public static float BaseRegen = 2f;
-        /// <summary>While your team's ball is in your machine's socket (Builder: planted for your team), everything you gather gives this much more.</summary>
-        [Tune("Player")] public static float BallGatherMul = 3f;
-        /// <summary>The ball buff in a 1v1 (one player a side): smaller.</summary>
-        [Tune("Player")] public static float BallGatherMul1v1 = 1.5f;
-        /// <summary>The ball buff in this match: BallGatherMul1v1 in a 1v1, BallGatherMul otherwise.</summary>
-        public static float BallGatherNow => Is1v1 ? BallGatherMul1v1 : BallGatherMul;
+        /// <summary>While your team's ball is in your machine's socket (Builder: planted for your team), everything you gather
+        /// gives this much more: x1.5 in every mode and every team size (it was x3 outside a 1v1).</summary>
+        [Tune("Player")] public static float BallGatherMul = 1.5f;
+        /// <summary>The ball buff in this match (the same in every match now).</summary>
+        public static float BallGatherNow => BallGatherMul;
         [Tune("Player")] public static float BerryHeal = 25f, BerryEatTime = 1.5f, MeatEatTime = 3f;
         [Tune("Player")] public static int ArmorHp = 25;               // wooden armour: a second health bar, used up first (max 255)
         [Tune("Player")] public static float HeadshotMul = 2f;
@@ -720,10 +723,11 @@ namespace RockGame
             || i == Item.Armor || i == Item.Barrier || i == Item.LargeGate // (the wooden armour: gone, heavy armour is "Armour" now; the large wall and gate: out for now)
             || i == Item.DecoyBase || i == Item.ChaosSigil // (the decoy base and the Sigil of CHAOS: taken out)
             || i == Item.GoldenRock || i == Item.InvSwapper // (the Rock of Immortality and the inventory swapper: taken out)
-            || JonahBruhOut(i) || (i == Item.BetterHatchet && !JonahBruh); // (Jonah Test Mode Bruh: JonahBruh.cs)
+            || (JonahBruhOut(i) && i != Item.DeathWand) || (i == Item.BetterHatchet && !JonahBruh); // (Jonah Test Mode Bruh: JonahBruh.cs - its death wand isn't crafted, but comes in airdrops)
         /// <summary>Whether an airdrop item can still come in airdrops (and respawn loot / Fun Random): the death wand is crafted now.</summary>
         /// (The disguise kit only comes in team games: in a 1v1 there's nobody to blend in with.)
-        public static bool InAirdropPool(Item i) => i != Item.DeathWand && !Removed(i) && (i != Item.DisguiseKit || TeamGame);
+        /// (Jonah Test Mode Bruh: the death wand's back in the airdrops.)
+        public static bool InAirdropPool(Item i) => (i != Item.DeathWand || JonahBruh) && !Removed(i) && (i != Item.DisguiseKit || TeamGame);
 
         public static readonly Item[] AirdropChoices =
         {
@@ -853,8 +857,10 @@ namespace RockGame
             get
             {
                 var l = new List<Item>();
+                if (AirdropTest) { foreach (var i in AirdropChoices) if (InAirdropPool(i)) l.Add(i); return l; } // (Airdrop Test: every airdrop item, whatever's picked)
                 for (int i = 0; i < AirdropChoices.Length; i++) if (AirdropPicked(i) && InAirdropPool(AirdropChoices[i])) l.Add(AirdropChoices[i]);
                 if (l.Count == 0) foreach (var i in AirdropChoices) if (InAirdropPool(i)) l.Add(i);
+                if (JonahBruh && !l.Contains(Item.DeathWand)) l.Add(Item.DeathWand); // (Jonah Test Mode Bruh: the death wand comes in airdrops)
                 return l;
             }
         }
@@ -993,7 +999,7 @@ namespace RockGame
                 case Item.Chainsaw: r = new Recipe { Output = Item.Chainsaw, Count = 1, Wood = ChainsawWood }; break;
                 case Item.BetterHatchet: r = new Recipe { Output = Item.BetterHatchet, Count = 1, Wood = BetterHatchetWood }; break;
                 case Item.Workbench: r = new Recipe { Output = Item.Workbench, Count = 1, Wood = WorkbenchWood }; break;
-                case Item.Workbench2: r = new Recipe { Output = Item.Workbench2, Count = 1, Wood = Workbench2Wood }; break;
+                case Item.Workbench2: r = new Recipe { Output = Item.Workbench2, Count = 1, Wood = JonahBruh ? JonahBruhBench2Wood : Workbench2Wood }; break; // (Jonah Test Mode Bruh: cheaper)
                 case Item.Ladder: r = new Recipe { Output = Item.Ladder, Count = 1, Wood = LadderWood }; break;
                 case Item.BearTrap: r = new Recipe { Output = Item.BearTrap, Count = 1, Wood = BearTrapWood }; break;
                 case Item.SleepingBag: r = new Recipe { Output = Item.SleepingBag, Count = 1, Wood = SleepingBagWood }; break;
@@ -1028,12 +1034,12 @@ namespace RockGame
         /// <summary>What each wood gen level costs (the level being bought: 1 builds the machine, 2 and 3 speed it up).</summary>
         public static int WoodGenWood(int level) => level >= 3 ? WoodGen2Wood : level == 2 ? WoodGen1Wood : WoodGenBuildWood;
         /// <summary>Auto Wood: the wood machine stands on the bedrock to the right of the alien machine (as you look at it from your spawn).</summary>
-        public static Vector3 WoodMachinePos(int team) => MachinePos(team) + Quaternion.LookRotation(-BackDir(team)) * new Vector3(-2.35f, 0, 0.1f);
+        public static Vector3 WoodMachinePos(int team) => SmallBedrock ? SmallWoodMachinePos(team) : MachinePos(team) + Quaternion.LookRotation(-BackDir(team)) * new Vector3(-2.35f, 0, 0.1f);
         /// <summary>Where the wood machine's logs land and its pile grows, in the machine's own space (+z out of the front):
         /// on the bedrock well out in front of the chute, so the logs clearly drop off the end of it.</summary>
         public static readonly Vector3 WoodTrayLocal = new Vector3(0, 0.3f, 1.65f);
         /// <summary>Where the wood machine's pile of wood comes out: on the bedrock in front of its chute.</summary>
-        public static Vector3 WoodTrayPos(int team) => WoodMachinePos(team) + Quaternion.LookRotation(-BackDir(team)) * WoodTrayLocal;
+        public static Vector3 WoodTrayPos(int team) => WoodMachinePos(team) + Quaternion.LookRotation(-BackDir(team)) * (WoodTrayLocal * (SmallBedrock ? SmallMachineScale : 1f));
         /// <summary>Power recipes are numbered from here in CraftRpc.</summary>
         public const int PowerBase = 100;
         /// <summary>Where an item is in the power menu (-1 if it isn't there).</summary>
@@ -1243,6 +1249,7 @@ namespace RockGame
             (14, new[] { "DeathWandWood", "BearTrapWood", "BearTrapDamage", "BearTrapHold" }),
             (15, new[] { "HammerWood" }),
             (16, new[] { "ProgressSeconds", "AirdropItemMask", "AirdropItemMask2", "SpearThrowSpeed" }),
+            (17, new[] { "BallGatherMul", "AirdropItemMask", "AirdropItemMask2", "SnailTime", "LiftHeight", "LiftLaunch", "JonahBruhArmorWood" }),
         };
         const string MigrateKey = "RockGame.Tunables.migrated";
 

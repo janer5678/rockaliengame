@@ -71,7 +71,7 @@ namespace RockGame
                 Check(domeHit && (Cfg.FourWay || wallAbove), $"the glass walls meet the dome (the wall goes over its top) ({(domeHit ? hit.collider.name : "nothing")}, {(wallAbove ? hit2.collider.name : "nothing")})");
 
                 // the ball buff: only while the ball is in your machine's socket, x3
-                Check(Mathf.Approximately(Cfg.BallGatherMul, 3f), $"the ball buff is x3 ({Cfg.BallGatherMul})");
+                Check(Mathf.Approximately(Cfg.BallGatherMul, 1.5f), $"the ball buff is x1.5 ({Cfg.BallGatherMul})");
                 ball.ServerDrop(Cfg.BaseCenter[team] - Cfg.BackDir(team) * 5f + Vector3.Cross(Vector3.up, Cfg.BackDir(team)) * 3f + Vector3.up * 2f, Vector3.zero); // (lying in our base, away from the socket)
                 yield return new WaitForSeconds(1.2f);
                 bool lying = me.BallBuff;
@@ -140,7 +140,7 @@ namespace RockGame
 
             // the warning: one notice 15 s before an airdrop lands, saying where (no timer, no other countdown)
             {
-                Check(NetGame.DropWarning == 15f && NetGame.DropBeam == 23f, $"the ship comes at once; the crate takes {NetGame.DropBeam}s to come down (landing when the {NetGame.DropWarning}s warning used to have it land)");
+                Check(NetGame.DropWarning == 15f && Mathf.Approximately(NetGame.DropLand, 32f) && NetGame.DropArrive < 2f, $"the ship comes at once and beams at once ({NetGame.DropArrive}s); the crate takes {NetGame.DropBeam}s to come down (landing {NetGame.DropLand}s after the notice, as it always did)");
                 bool centre = Cfg.AirdropCenter;
                 Cfg.AirdropCenter = true;
                 g.ServerAirdropIncoming(g.NetworkManager.ServerTime.Time);

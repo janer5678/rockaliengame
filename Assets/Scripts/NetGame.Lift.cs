@@ -45,7 +45,7 @@ namespace RockGame
                 if (p.Dead.Value || p.WackySafe) return false;
                 if (p.Riding) p.ServerDismount();
                 if (p.CarryingBall) Ball.Instance.ServerDrop(p.transform.position + Vector3.up * 1.5f, Vector3.up * 6f);
-                p.KnockbackRpc(Vector3.up * Cfg.LiftLaunch);
+                p.KnockbackRpc(Vector3.up * LaunchSpeed(p.transform.position + Vector3.up * 2f, Cfg.LiftLaunch));
                 p.WackyNoteRpc(new FixedString128Bytes(p == by ? "You LIFTED yourself!" : "LIFTED!"));
                 Fx.Server(FxKind.Lift, p.transform.position, Vector3.up);
                 return true;
@@ -53,13 +53,13 @@ namespace RockGame
             if (target.TryGetComponent(out Ball b))
             {
                 if (b.IsCarried) return false;
-                b.ServerDrop(b.transform.position + Vector3.up * 0.4f, Vector3.up * 22f);
+                b.ServerDrop(b.transform.position + Vector3.up * 0.4f, Vector3.up * LaunchSpeed(b.transform.position, 70f, 9.81f));
                 Fx.Server(FxKind.Lift, b.transform.position, Vector3.up);
                 return true;
             }
             if (target.TryGetComponent(out Vehicle v))
             {
-                v.LiftUpRpc(Cfg.LiftLaunch * 0.75f);
+                v.LiftUpRpc(LaunchSpeed(v.transform.position + Vector3.up * 2f, Cfg.LiftLaunch * 0.75f));
                 Fx.Server(FxKind.Lift, v.transform.position, Vector3.up);
                 return true;
             }
@@ -99,12 +99,37 @@ namespace RockGame
             Fx.Server(FxKind.Lift, no.transform.position + Vector3.up * 0.3f, Vector3.up);
         }
 
-        const float LiftRise = 1.2f, LiftFall = 0.45f;
+        const float LiftRise = 1.0f, LiftFall = 1.1f;
 
-        /// <summary>How high a lifted thing is `t` seconds after it was lifted (done: it's back down).</summary>
-        static float HoistHeight(float t, out bool done)
+        /// <summary>How high above `at` the lifting stick can take something: Cfg.LiftHeight, but never up into the map's
+        /// glass dome (a few metres under it).</summary>
+        public static float LiftTop(Vector3 at)
         {
-            float hang = Mathf.Max(0.5f, Cfg.LiftTime), h = Cfg.LiftHeight;
+            float h = Cfg.LiftHeight;
+            if (MapDome.Built)
+            {
+                float glass = MapDome.HighestOver(at.x, at.z, 0f);
+                if (glass > float.MinValue) h = Mathf.Min(h, glass - at.y - 4f);
+            }
+            return Mathf.Max(2f, h);
+        }
+
+        /// <summary>How fast to throw something up from `at` so it goes `speed`'s height - but stops just under the glass
+        /// dome (gravity: Cfg.Gravity for players and anything that drives).</summary>
+        static float LaunchSpeed(Vector3 at, float speed, float gravity = -1f)
+        {
+            float g = gravity > 0f ? gravity : Cfg.Gravity;
+            if (!MapDome.Built) return speed;
+            float glass = MapDome.HighestOver(at.x, at.z, 0f);
+            if (glass == float.MinValue) return speed;
+            float room = Mathf.Max(3f, glass - at.y - 3f);
+            return Mathf.Min(speed, Mathf.Sqrt(2f * g * room));
+        }
+
+        /// <summary>How high a lifted thing is `t` seconds after it was lifted (done: it's back down), lifted from `at`.</summary>
+        static float HoistHeight(float t, Vector3 at, out bool done)
+        {
+            float hang = Mathf.Max(0.5f, Cfg.LiftTime), h = LiftTop(at);
             done = t >= LiftRise + hang + LiftFall;
             if (t <= 0f || done) return 0f;
             if (t < LiftRise) { float u = t / LiftRise; return h * (1f - (1f - u) * (1f - u) * (1f - u)); }
@@ -119,7 +144,7 @@ namespace RockGame
             {
                 var h = Hoists[i];
                 bool gone = !NetworkManager.SpawnManager.SpawnedObjects.TryGetValue(h.Id, out var no) || no == null;
-                HoistHeight((float)(now - h.Start), out bool done);
+                HoistHeight((float)(now - h.Start), h.Base, out bool done);
                 if (!done && !gone) continue;
                 Hoists.RemoveAt(i);
                 if (gone) continue;
@@ -152,8 +177,8 @@ namespace RockGame
                 s_HoistSeen.Add(h.Id);
                 s_HoistBase[h.Id] = h;
                 float t = (float)(now - h.Start);
-                float y = HoistHeight(t, out _);
-                float k = Cfg.LiftHeight > 0.01f ? Mathf.Clamp01(y / Cfg.LiftHeight) : 0f;
+                float y = HoistHeight(t, h.Base, out _);
+                float k = Mathf.Clamp01(y / LiftTop(h.Base));
                 var wobble = Quaternion.Euler(Mathf.Sin(t * 1.3f + h.Id) * 5f * k, 0f, Mathf.Cos(t * 1.1f + h.Id) * 5f * k);
                 no.transform.SetPositionAndRotation(h.Base + Vector3.up * y, h.Rot * wobble);
             }

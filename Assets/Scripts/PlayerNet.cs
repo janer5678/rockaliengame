@@ -983,13 +983,15 @@ namespace RockGame
             }
         }
 
-        /// <summary>Back to life on your bedrock, or (wild) somewhere random in the enemy's half of the map.</summary>
-        public void ServerRespawn(bool wild)
+        /// <summary>Back to life on your bedrock, or (wild) somewhere random in the wild - or (picked: Jonah Test Mode Bruh)
+        /// at the spot picked on the map.</summary>
+        public void ServerRespawn(bool wild, bool picked = false, Vector3 pick = default)
         {
             Health.Value = Cfg.MaxHealth;
             Vector3 pos;
             float yaw;
-            if (wild) NetGame.WildSpawnPoint(Team.Value, out pos, out yaw);
+            if (wild && picked) NetGame.PickedSpawnPoint(Team.Value, pick, out pos, out yaw);
+            else if (wild) NetGame.WildSpawnPoint(Team.Value, out pos, out yaw);
             else NetGame.SpawnPoint(Team.Value, InWaitingArena, Slot.Value, out pos, out yaw);
             // Bedwars: back home you wake up inside your machine's cryochamber, and its doors slide open to let you out
             Vector3 podPos = default; float podYaw = 0f;
@@ -1041,6 +1043,18 @@ namespace RockGame
             if (g.S == GameState.SuddenDeath || g.S == GameState.GameOver) return;
             if (!g.CanRespawn(Team.Value)) { Notify("Your machine is destroyed - no more respawns"); return; } // (Bedwars)
             ServerRespawn(wild && g.S == GameState.BallLive); // dying behind the wall always brings you back home
+        }
+
+        /// <summary>Jonah Test Mode Bruh: "respawn in the wild" at the spot picked on the map (Hud.Death.cs).</summary>
+        [Rpc(SendTo.Server)]
+        public void RespawnAtRpc(Vector3 spot)
+        {
+            var g = NetGame.Instance;
+            if (!Dead.Value || g == null || NetworkManager.ServerTime.Time < RespawnAt.Value) return;
+            if (g.S == GameState.SuddenDeath || g.S == GameState.GameOver) return;
+            if (!g.CanRespawn(Team.Value)) { Notify("Your machine is destroyed - no more respawns"); return; }
+            bool wild = g.S == GameState.BallLive;
+            ServerRespawn(wild, wild && Cfg.JonahBruh, spot);
         }
 
         public void ServerEnterArena()

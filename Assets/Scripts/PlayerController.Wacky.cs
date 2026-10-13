@@ -372,8 +372,9 @@ namespace RockGame
         bool m_PipHooked;
         static bool s_PipOn;
         /// <summary>The corner window during the attention snail - your own eyes, so you can still fight - as a part of the
-        /// screen (x, y from the bottom left, width, height: above the snail's black bar, bottom right).</summary>
-        public static readonly Rect PipViewport = new Rect(0.675f, 0.135f, 0.31f, 0.31f);
+        /// screen (x, y from the bottom left, width, height: half the screen, above the snail's black bar, bottom right; your
+        /// hotbar's in it, tiny - Hud.Wacky.cs).</summary>
+        public static readonly Rect PipViewport = new Rect(0.49f, 0.125f, 0.5f, 0.5f);
         /// <summary>The corner window is up (the attention snail, and you're alive).</summary>
         public static bool PipOn => s_PipOn;
         /// <summary>The corner window on the screen, in GUI coordinates (from the top left).</summary>
