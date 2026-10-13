@@ -22,6 +22,9 @@ namespace RockGame
         public readonly NetworkVariable<double> HitAt = new NetworkVariable<double>(-1000);
         /// <summary>The Stick of Truth bent it out of shape (a seed for how: 0 = straight). Its look and its colliders.</summary>
         public readonly NetworkVariable<byte> Warp = new NetworkVariable<byte>();
+        /// <summary>Jonah Test Mode Bruh: how cracked the battering ram's left it (0 whole, 1 cracked stone, 2 down to cracked
+        /// wood - the next hit breaks it). Drawn on its faces (MagicStone.Crack); the hammer mends it.</summary>
+        public readonly NetworkVariable<byte> RamCracks = new NetworkVariable<byte>();
         /// <summary>Seconds until the hammer can upgrade it again after a hit (0 = now).</summary>
         public float UpgradeLockLeft => NetworkManager == null ? 0f : Mathf.Max(0f, (float)(HitAt.Value + Cfg.HammerHitLock - NetworkManager.ServerTime.Time));
 
@@ -60,7 +63,8 @@ namespace RockGame
 
         public PieceType PType => (PieceType)Type.Value;
         public float MaxHp => Cfg.PieceHp(PType, Tier.Value);
-        public string DisplayName => PType == PieceType.Tower ? "Fort Tower" : PType == PieceType.Barrier ? "Large Wall" : PType == PieceType.Gate ? "Large Gate" : PType == PieceType.EggBlock ? "Egg Block" : Cfg.TierName(Tier.Value) + " " + Cfg.PieceName(PType);
+        public string DisplayName => RamCracks.Value > 0 ? "Cracked " + PlainName : PlainName;
+        string PlainName => PType == PieceType.Tower ? "Fort Tower" : PType == PieceType.Barrier ? "Large Wall" : PType == PieceType.Gate ? "Large Gate" : PType == PieceType.EggBlock ? "Egg Block" : Cfg.TierName(Tier.Value) + " " + Cfg.PieceName(PType);
         public bool Upgradable => Cfg.IsGridPiece(PType);
 
         public override void OnNetworkSpawn()
@@ -69,6 +73,7 @@ namespace RockGame
             Rebuild();
             m_Rise = 0f;
             Tier.OnValueChanged += OnTierChanged;
+            RamCracks.OnValueChanged += OnCracksChanged;
             DoorOpen.OnValueChanged += OnDoorChanged;
             DoorHealth.OnValueChanged += OnDoorHealthChanged;
             ClearGrass();
@@ -84,6 +89,7 @@ namespace RockGame
             All.Remove(this);
             GrassField.Unblock(GetInstanceID());
             Tier.OnValueChanged -= OnTierChanged;
+            RamCracks.OnValueChanged -= OnCracksChanged;
             DoorOpen.OnValueChanged -= OnDoorChanged;
             DoorHealth.OnValueChanged -= OnDoorHealthChanged;
             if (IsServer && HasKey && BuildGrid.Registry.TryGetValue(Key, out var s) && s == this)
@@ -185,6 +191,12 @@ namespace RockGame
             m_Rise = 0.4f; // little "rebuild" pop
         }
 
+        void OnCracksChanged(byte prev, byte cur)
+        {
+            Rebuild();
+            if (cur > prev) m_Rise = 0.8f; // (a jolt as it cracks)
+        }
+
         void Rebuild()
         {
             if (m_Visual) Destroy(m_Visual.gameObject);
@@ -196,6 +208,7 @@ namespace RockGame
             m_Bars = PType == PieceType.Window && m_Visual != null ? m_Visual.Find(BarsName) : null;
             if ((PType == PieceType.Doorway || PType == PieceType.Gate) && !HasDoor) RemoveDoorLeaf(); // (its door was broken off)
             if (PType == PieceType.Window && !HasBars) RemoveBars(); // (its bars were broken out)
+            if (RamCracks.Value > 0 && m_Visual != null) MagicStone.Crack(m_Visual, PType, RamCracks.Value, (int)NetworkObjectId); // (Jonah Test Mode Bruh: the ram's cracks)
         }
 
         /// <summary>A door's padlocks are in the colour of the team it belongs to (the only team that can open it).</summary>
@@ -361,10 +374,16 @@ namespace RockGame
 
         public void ServerUpgrade(int tier = 1)
         {
+            RamCracks.Value = 0; // (upgraded: mended)
             Tier.Value = (byte)tier;
             Health.Value = MaxHp;
             if (HasDoor || HasBars) DoorHealth.Value = DoorMaxHp; // (a door or bars that were broken off stay off)
         }
+
+        /// <summary>Server: a ram hit that only cracked it (Jonah Test Mode Bruh): no hammer for a while, like any hit.</summary>
+        public void ServerNoteRamHit() => NoteHit();
+        /// <summary>Its name without "Cracked".</summary>
+        public string PlainNameOf() => PlainName;
 
         /// <summary>Battering ram hit: one tier down at full health (refined to metal, metal to stone, stone to wood).</summary>
         public void ServerDowngrade()

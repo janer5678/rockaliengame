@@ -157,6 +157,84 @@ namespace RockGame
             return r;
         }
 
+        static readonly Color k_Crack = new Color(0.07f, 0.05f, 0.09f);
+
+        /// <summary>The battering ram's cracks (Structure.RamCracks): dark jagged lines across the piece's faces - a few at
+        /// stage 1, more and longer, branching, at stage 2. The same on every screen (seeded by the piece).</summary>
+        public static void Crack(Transform tr, PieceType t, int stage, int seed)
+        {
+            var rng = new System.Random(seed * 7349 + 11);
+            float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
+            int lines = stage >= 2 ? 5 : 3;
+            // where a crack can start on each face: (centre, half size, the face's way out)
+            var faces = new System.Collections.Generic.List<(Vector3 c, Vector2 half, Quaternion rot)>();
+            switch (t)
+            {
+                case PieceType.Wall:
+                    faces.Add((new Vector3(0, 1.5f, 0.175f), new Vector2(1.3f, 1.3f), Quaternion.identity));
+                    faces.Add((new Vector3(0, 1.5f, -0.175f), new Vector2(1.3f, 1.3f), Quaternion.Euler(0, 180f, 0)));
+                    break;
+                case PieceType.Doorway:
+                case PieceType.Window:
+                {
+                    float x = t == PieceType.Doorway ? 1.05f : 1.225f, w = t == PieceType.Doorway ? 0.35f : 0.2f;
+                    for (int k = -1; k <= 1; k += 2)
+                    {
+                        faces.Add((new Vector3(k * x, 1.5f, 0.175f), new Vector2(w, 1.3f), Quaternion.identity));
+                        faces.Add((new Vector3(k * x, 1.5f, -0.175f), new Vector2(w, 1.3f), Quaternion.Euler(0, 180f, 0)));
+                    }
+                    break;
+                }
+                case PieceType.Foundation:
+                    for (int s = 0; s < 4; s++) { var q = Quaternion.Euler(0, s * 90f, 0); faces.Add((q * new Vector3(0, 0.55f, 1.515f), new Vector2(1.3f, 0.25f), q)); }
+                    break;
+                case PieceType.Floor:
+                    faces.Add((new Vector3(0, 0.02f, 0), new Vector2(1.3f, 1.3f), Quaternion.Euler(-90f, 0, 0)));
+                    break;
+                default:
+                    faces.Add((new Vector3(0, 1.5f, 0.2f), new Vector2(1.0f, 1.0f), Quaternion.identity));
+                    break;
+            }
+            var root = new GameObject("cracks").transform;
+            root.SetParent(tr, false);
+            foreach (var f in faces)
+            {
+                int n = Mathf.Max(1, Mathf.RoundToInt(lines * Mathf.Clamp01(f.half.x * f.half.y / 1.6f) + (stage >= 2 ? 1 : 0)));
+                for (int i = 0; i < n; i++)
+                {
+                    // a zig-zag: from a point, a few short segments heading roughly one way, a branch off it at stage 2
+                    var p = new Vector2(R(-f.half.x, f.half.x) * 0.8f, R(-f.half.y, f.half.y) * 0.8f);
+                    float dir = R(0f, 360f);
+                    int segs = stage >= 2 ? 6 : 4;
+                    for (int k = 0; k < segs; k++)
+                    {
+                        float len = R(0.14f, stage >= 2 ? 0.34f : 0.26f), a = (dir + R(-40f, 40f)) * Mathf.Deg2Rad;
+                        var q = p + new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * len;
+                        q.x = Mathf.Clamp(q.x, -f.half.x, f.half.x); q.y = Mathf.Clamp(q.y, -f.half.y, f.half.y);
+                        Segment(root, f.c, f.rot, p, q, stage >= 2 ? 0.035f : 0.025f);
+                        if (stage >= 2 && k == 2)
+                        {
+                            float b = (dir + (R(0f, 1f) < 0.5f ? 70f : -70f)) * Mathf.Deg2Rad;
+                            Segment(root, f.c, f.rot, q, q + new Vector2(Mathf.Cos(b), Mathf.Sin(b)) * R(0.15f, 0.3f), 0.022f);
+                        }
+                        p = q;
+                    }
+                }
+            }
+        }
+
+        /// <summary>One straight bit of a crack on a face (face centre c, turned rot: its x and y across the face, z out of it).</summary>
+        static void Segment(Transform root, Vector3 c, Quaternion rot, Vector2 a, Vector2 b, float w)
+        {
+            var d = b - a;
+            if (d.sqrMagnitude < 0.0004f) return;
+            var mid = (a + b) * 0.5f;
+            float ang = Mathf.Atan2(d.y, d.x) * Mathf.Rad2Deg;
+            var go = Art.Box(root, k_Crack, c + rot * new Vector3(mid.x, mid.y, 0f), new Vector3(d.magnitude + w, w, 0.02f));
+            go.transform.localRotation = rot * Quaternion.Euler(0, 0, ang);
+            go.name = "crack";
+        }
+
         /// <summary>The glow breathes in and out (one material for every magical piece: set once a frame).</summary>
         class Pulser : MonoBehaviour
         {

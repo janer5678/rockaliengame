@@ -26,11 +26,28 @@ namespace RockGame
         public static readonly Color AirdropBerry = new Color(0.62f, 0.2f, 1f);
         public const float AirdropGemHeight = 2.3f;
 
-        /// <summary>Server: the airdrop items each player (team &lt;&lt; 4 | slot) has had from the bushes this match.</summary>
+        /// <summary>Server: the airdrop items each player (team &lt;&lt; 4 | slot) has had this match - from the bushes, out of
+        /// an airdrop crate, as respawn loot or from the notebook: nobody gets the same airdrop item twice in a game (in
+        /// Airdrop Test the list starts over once you've had them all).</summary>
         readonly Dictionary<int, HashSet<Item>> m_BushItemsHad = new Dictionary<int, HashSet<Item>>();
         readonly List<(double at, int region)> m_AirdropBushQueue = new List<(double, int)>();
 
-        /// <summary>For the tests: the airdrop items a player has had from the bushes.</summary>
+        /// <summary>Server: `p` just got an airdrop item (out of a crate, respawn loot, the notebook): not again this game.</summary>
+        public void NoteAirdropItem(PlayerNet p, Item it)
+        {
+            if (p == null || System.Array.IndexOf(Cfg.AllAirdropItems, it) < 0 || it == Item.Wood) return;
+            BushItemsHad(p).Add(it);
+        }
+
+        /// <summary>Server: every airdrop item anyone has had this game (a crate never brings one of those).</summary>
+        public HashSet<Item> AirdropItemsAnyoneHad()
+        {
+            var s = new HashSet<Item>();
+            foreach (var h in m_BushItemsHad.Values) s.UnionWith(h);
+            return s;
+        }
+
+        /// <summary>The airdrop items a player has had this game (every way: NoteAirdropItem).</summary>
         public HashSet<Item> BushItemsHad(PlayerNet p)
         {
             int key = (p.Team.Value << 4) | p.Slot.Value;

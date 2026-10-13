@@ -120,7 +120,7 @@ namespace RockGame
                     Fill(new Rect(pr.x - t, pr.yMax, pr.width + 2 * t, t), fc);
                     Fill(new Rect(pr.x - t, pr.y, t, pr.height), fc);
                     Fill(new Rect(pr.xMax, pr.y, t, pr.height), fc);
-                    Shadowed(new Rect(pr.x, pr.y + 4 * k, pr.width, 24 * k), "<b>YOU</b>", m_Center);
+                    Shadowed(new Rect(pr.x, pr.y + 2 * k, pr.width, 20 * k), "<b>YOU</b>", m_Small);
                     DrawPipHotbar(me, pr, k);
                 }
             }
@@ -327,7 +327,7 @@ namespace RockGame
         {
             if (!Tutorial.Allows(TutFeature.HotbarHud)) return;
             int n = Cfg.HotbarSize;
-            float slot = Mathf.Clamp(pr.width * 0.055f, 18f, 34f * k), gap = Mathf.Max(2f, slot * 0.08f);
+            float slot = Mathf.Clamp(pr.width * 0.1f, 14f, 30f * k), gap = Mathf.Max(1.5f, slot * 0.08f);
             float hx = pr.center.x - (n * slot + (n - 1) * gap) / 2f, hy = pr.yMax - slot - 6f * k;
             for (int i = 0; i < n; i++)
             {

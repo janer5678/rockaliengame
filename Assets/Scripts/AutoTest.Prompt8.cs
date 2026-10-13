@@ -62,11 +62,12 @@ namespace RockGame
                 }
                 else
                 {
-                    if (Cfg.JonahBruh) want.Add(Item.DeathWand);
-                    var extra = new List<string>(); var missing = new List<string>();
-                    foreach (var it in loot) if (!want.Contains(it)) extra.Add(it.ToString());
-                    foreach (var it in want) if (!loot.Contains(it)) missing.Add(it.ToString());
-                    Check(extra.Count == 0 && missing.Count == 0, $"the airdrop pool by default: {string.Join(", ", loot)}{(extra.Count > 0 ? " - extra " + string.Join(" ", extra) : "")}{(missing.Count > 0 ? " - missing " + string.Join(" ", missing) : "")}");
+                    // everything BUT those nine (the death wand too in Jonah Test Mode Bruh)
+                    var wrong = new List<string>(); var missing = new List<string>();
+                    foreach (var it in want) if (loot.Contains(it)) wrong.Add(it.ToString());
+                    foreach (var it in Cfg.AirdropChoices) if (Cfg.InAirdropPool(it) && !want.Contains(it) && !loot.Contains(it)) missing.Add(it.ToString());
+                    Check(wrong.Count == 0 && missing.Count == 0 && loot.Contains(Item.DeathWand) == Cfg.JonahBruh,
+                        $"the airdrop pool by default: every airdrop item but those nine ({loot.Count}){(wrong.Count > 0 ? " - in it but shouldn't be: " + string.Join(" ", wrong) : "")}{(missing.Count > 0 ? " - missing " + string.Join(" ", missing) : "")}");
                 }
                 Check(Cfg.ItemName(Item.BombBush).Contains("Bush"), $"(the berry bush is the {Cfg.ItemName(Item.BombBush)})");
             }
@@ -198,8 +199,8 @@ namespace RockGame
                 foreach (var gd in g.Gadgets) if (gd.Kind == Gadget.Snail) life = gd.Until - t0;
                 var pr = PlayerController.PipGuiRect;
                 Check(life > 14.5 && life < 15.5, $"the attention snail lasts 15 s ({life:0.0})");
-                Check(PlayerController.PipOn && Mathf.Abs(pr.width - Screen.width * 0.5f) < 2f && Mathf.Abs(pr.height - Screen.height * 0.5f) < 2f,
-                    $"your own view is half the screen ({pr.width:0} x {pr.height:0} of {Screen.width} x {Screen.height})");
+                Check(PlayerController.PipOn && pr.width <= Screen.width * 0.25f + 1f && pr.height <= Screen.height * 0.25f + 1f && pr.width > 100f,
+                    $"your own view is tiny: under a quarter of a quarter of the screen ({pr.width:0} x {pr.height:0} of {Screen.width} x {Screen.height})");
                 Check(Time.time - Hud.PipHotbarShownAt < 0.5f, "your hotbar's in it, tiny");
                 yield return Snap("prompt8_snail_window");
                 for (float t = 0; t < 16f && PlayerController.PipOn; t += 0.25f) yield return new WaitForSeconds(0.25f);
@@ -235,6 +236,29 @@ namespace RockGame
                 for (float t = 0; t < 8f && me.transform.position.y > y0 + 1f; t += 0.25f) yield return new WaitForSeconds(0.25f);
             }
 
+            // ---- no airdrop item twice for anyone in a game: a crate never brings what anyone's had, respawn loot never
+            // gives you one you've had
+            {
+                var bad = new List<string>();
+                // (12 rolls, all different)
+                var seen = new HashSet<Item>(); bool dup = false;
+                g.BushItemsHad(me).Clear();
+                for (int i = 0; i < 12; i++) { var st2 = NetGame.RollAirdropLoot(me); if (!seen.Add(st2.Id)) { dup = true; bad.Add(st2.Id.ToString()); } }
+                Check(!dup && g.BushItemsHad(me).Count >= 12, $"respawn loot: 12 in a row, never the same one twice ({string.Join(" ", seen)}{(dup ? " - repeated " + string.Join(" ", bad) : "")})");
+                var anyone = g.AirdropItemsAnyoneHad();
+                bool crateFresh = true;
+                var dropped = new HashSet<Item>();
+                for (int i = 0; i < 6; i++)
+                {
+                    var ex = new HashSet<Item>(dropped); ex.UnionWith(anyone);
+                    var c = NetGame.RollAirdropCrate(ex)[0].Id;
+                    if (anyone.Contains(c) || dropped.Contains(c)) crateFresh = false;
+                    dropped.Add(c);
+                }
+                Check(crateFresh, "a crate never brings an airdrop item anyone's had this game, or one a crate brought");
+                g.BushItemsHad(me).Clear();
+            }
+
             // ---- the airdrop: its beam's out straight after AIRDROP INCOMING; the crate lands when it always did
             if (!Cfg.JonahBruh)
             {
@@ -259,6 +283,46 @@ namespace RockGame
                 while (E() < NetGame.DropLand + 1.0) yield return null;
                 int after = Crates();
                 Check(before == 0 && after >= 1 && Mathf.Approximately(NetGame.DropLand, 32f), $"the crate lands {NetGame.DropLand:0} s after the notice, as it always did ({before} -> {after} crates)");
+            }
+
+            // ---- Jonah Test Mode Bruh: magical stone takes three battering ram hits - cracked, cracked wood, broken
+            if (Cfg.JonahBruh)
+            {
+                for (int i = 0; i < me.Inv.Count; i++) me.Inv[i] = default;
+                float yaw = Quaternion.LookRotation(-back).eulerAngles.y;
+                var wallAt = OnGround(spot - back * 5f, 0f);
+                var w = SpawnKeylessPiece(PieceType.Wall, enemy, wallAt, Quaternion.Euler(0, yaw, 0));
+                yield return new WaitForSeconds(0.3f);
+                w.ServerUpgrade(1);
+                yield return new WaitForSeconds(0.4f);
+                var face = w.transform.position + Vector3.up * 1.3f + back * 0.1f;
+                pc.LocalTeleport(OnGround(face + back * 2.2f, 0.1f), Quaternion.LookRotation(-back).eulerAngles.y);
+                yield return new WaitForSeconds(0.5f);
+                pc.SetLook(Quaternion.LookRotation(-back).eulerAngles.y, 0f);
+                var states = new List<string>();
+                for (int hit = 0; hit < 3; hit++)
+                {
+                    me.ServerGive(Item.Ram, 1, Cfg.MaxData(Item.Ram)); // (a ram is good for one hit: three rams)
+                    yield return Hold(me, Item.Ram);
+                    yield return new WaitForSeconds(0.3f);
+                    me.RamStrikeRpc(w.NetworkObject, face);
+                    yield return new WaitForSeconds(0.7f);
+                    int cracks = 0;
+                    if (w != null && w.IsSpawned) foreach (var tr in w.GetComponentsInChildren<Transform>()) if (tr.name == "crack") cracks++;
+                    states.Add(w != null && w.IsSpawned ? $"{Cfg.TierName(w.Tier.Value)} cracks {w.RamCracks.Value} ({cracks} drawn)" : "broken");
+                    if (hit == 0)
+                    {
+                        Check(w.IsSpawned && w.Tier.Value == 1 && w.RamCracks.Value == 1 && cracks > 0, $"the first ram hit cracks the magical stone ({states[0]})");
+                        yield return Snap("prompt8_ram_cracked_stone");
+                    }
+                    if (hit == 1)
+                    {
+                        Check(w.IsSpawned && w.Tier.Value == 0 && w.RamCracks.Value == 2 && cracks > 0, $"the second takes it down to cracked wood ({states[1]})");
+                        yield return Snap("prompt8_ram_cracked_wood");
+                    }
+                    if (hit == 2) Check(w == null || !w.IsSpawned, $"the third breaks it ({states[2]})");
+                    yield return new WaitForSeconds(Cfg.RamWindup);
+                }
             }
 
             // ---- Jonah Test Mode Bruh: respawn in the wild where you pick on the map

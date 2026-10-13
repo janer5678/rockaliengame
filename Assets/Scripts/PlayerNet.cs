@@ -1004,7 +1004,7 @@ namespace RockGame
             // game option: come back with a random airdrop item
             if (Cfg.RespawnLoot && !InWaitingArena)
             {
-                var loot = NetGame.RollAirdropLoot();
+                var loot = NetGame.RollAirdropLoot(this); // (never one you've had this game)
                 ServerGive(loot.Id, loot.Count, loot.Data);
                 Notify($"Respawn loot: {Cfg.ItemName(loot.Id)}");
             }
@@ -1450,7 +1450,21 @@ namespace RockGame
                 int after = s.Tier.Value - steps;
                 bool hard = after >= 0 && s.PType != PieceType.Barrier; // the high external wall always goes in one hit
                 msg = hard ? $"Smashed the {s.DisplayName} down to {Cfg.TierName(after).ToLower()}" : $"Smashed the {s.DisplayName}!";
-                if (s.PType == PieceType.Barrier)
+                // Jonah Test Mode Bruh: magical stone takes three hits - it cracks, then it's down to (cracked) wood, then it breaks
+                bool magicCrack = Cfg.JonahBruh && s.Tier.Value == 1 && s.RamCracks.Value == 0 && s.PType != PieceType.Barrier && steps == 1;
+                if (magicCrack)
+                {
+                    s.RamCracks.Value = 1;
+                    s.ServerNoteRamHit();
+                    msg = $"Cracked the {s.PlainNameOf()} - 2 more rams to break it";
+                }
+                else if (Cfg.JonahBruh && s.Tier.Value == 1 && s.RamCracks.Value > 0 && s.PType != PieceType.Barrier && steps == 1)
+                {
+                    s.ServerDowngrade();
+                    s.RamCracks.Value = 2;
+                    msg = $"Smashed the stone down to cracked wood - 1 more ram breaks it";
+                }
+                else if (s.PType == PieceType.Barrier)
                 {
                     int chain = ServerRamBarrierChain(s, point);
                     if (chain > 1) msg = $"Smashed {chain} high external walls in a row!";
@@ -1828,6 +1842,16 @@ namespace RockGame
         /// </summary>
         [Rpc(SendTo.Server)]
         public void MoveItemRpc(byte srcKind, byte srcIdx, byte dstKind, byte dstIdx, ushort amount, NetworkObjectReference containerRef)
+        {
+            // (taken out of an airdrop crate: you've had that airdrop item this game - NetGame.NoteAirdropItem)
+            Container crate = srcKind == 1 && containerRef.TryGet(out var cno) && cno.TryGetComponent(out Container cc) && cc.Kind.Value == Container.Airdrop ? cc : null;
+            var was = crate != null && srcIdx < crate.Slots.Count ? crate.Slots[srcIdx] : default;
+            MoveItem(srcKind, srcIdx, dstKind, dstIdx, amount, containerRef);
+            if (crate != null && !was.Empty && NetGame.Instance != null && (srcIdx >= crate.Slots.Count || crate.Slots[srcIdx].Id != was.Id || crate.Slots[srcIdx].Count < was.Count))
+                NetGame.Instance.NoteAirdropItem(this, was.Id);
+        }
+
+        void MoveItem(byte srcKind, byte srcIdx, byte dstKind, byte dstIdx, ushort amount, NetworkObjectReference containerRef)
         {
             if (Dead.Value) return;
             Container c = null;

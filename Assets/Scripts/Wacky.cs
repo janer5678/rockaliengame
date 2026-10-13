@@ -54,8 +54,8 @@ namespace RockGame
             RarityDisguiseKit = 10, RarityBallGrabber = 10, RarityScribble = 10, RarityAntGun = 10, RarityClutterBomb = 10;
 
         /// <summary>Mode options: which of the airdrop choices past the 32nd are picked (bit i - 32 = AirdropChoices[i]):
-        /// just the dance bomb (34) to start with (AirdropItemMask).</summary>
-        [Tune("Mode options")] public static int AirdropItemMask2 = 1 << 2;
+        /// every one but the dance bomb (34) to start with (AirdropItemMask).</summary>
+        [Tune("Mode options")] public static int AirdropItemMask2 = ~(1 << 2);
 
         /// <summary>Is airdrop choice i picked in the mode options (either mask)?</summary>
         public static bool AirdropPicked(int i) => i < 32 ? (AirdropItemMask & (1 << i)) != 0 : (AirdropItemMask2 & (1 << (i - 32))) != 0;

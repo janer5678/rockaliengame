@@ -45,9 +45,9 @@ namespace RockGame
             {
                 var loot = Cfg.AirdropLoot;
                 var missing = new List<string>();
-                foreach (var it in new[] { Item.C4, Item.Jetpack, Item.BouncyCastle, Item.DanceBomb }) if (!loot.Contains(it)) missing.Add(it.ToString());
-                Check(missing.Count == 0 && (Cfg.AirdropTest || !loot.Contains(Item.AntGun)),
-                    $"the airdrop pool by default: just the nine picked ones (AutoTest.Prompt8.cs) ({loot.Count} items{(missing.Count > 0 ? ", missing " + string.Join(" ", missing) : "")})");
+                foreach (var it in new[] { Item.AntGun, Item.PortalGun, Item.ClutterBomb }) if (!loot.Contains(it)) missing.Add(it.ToString());
+                Check(missing.Count == 0 && (Cfg.AirdropTest || !loot.Contains(Item.C4)),
+                    $"the airdrop pool by default: everything but nine (AutoTest.Prompt8.cs) ({loot.Count} items{(missing.Count > 0 ? ", missing " + string.Join(" ", missing) : "")})");
             }
             Check(Mathf.Approximately(Cfg.ProgressSeconds, 400f), $"Progress takes {Cfg.ProgressSeconds:0} s to fill");
             {

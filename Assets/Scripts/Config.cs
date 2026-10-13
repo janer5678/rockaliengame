@@ -380,11 +380,11 @@ namespace RockGame
         // ---------- Airdrops (after the wall drops) ----------
         /// <summary>Mode options: how many airdrops come after the wall drops, evenly spaced (1 = half way through, 2 = at the thirds...).</summary>
         [Tune("Mode options")] public static int AirdropCount = 5;
-        /// <summary>Mode options: which airdrop items are in the pool (bit i = AirdropChoices[i]). To start with just these:
-        /// C4 (0), the jetpack (6), the wallhack glasses (7), the bomb bush (8), the bouncy castle (11), the gravity staff
-        /// (20), the slowness gun (27) and the bear juice (30) - and the dance bomb (34: AirdropItemMask2). Airdrop Test
-        /// has every airdrop item whatever's picked (AirdropLoot).</summary>
-        [Tune("Mode options")] public static int AirdropItemMask = (1 << 0) | (1 << 6) | (1 << 7) | (1 << 8) | (1 << 11) | (1 << 20) | (1 << 27) | (1 << 30);
+        /// <summary>Mode options: which airdrop items are in the pool (bit i = AirdropChoices[i]). To start with every one BUT
+        /// these: C4 (0), the jetpack (6), the wallhack glasses (7), the bomb bush (8), the bouncy castle (11), the gravity
+        /// staff (20), the slowness gun (27) and the bear juice (30) - and the dance bomb (34: AirdropItemMask2). Airdrop
+        /// Test has every airdrop item whatever's picked (AirdropLoot).</summary>
+        [Tune("Mode options")] public static int AirdropItemMask = ~((1 << 0) | (1 << 6) | (1 << 7) | (1 << 8) | (1 << 11) | (1 << 20) | (1 << 27) | (1 << 30));
         [Tune("Airdrop")] public static float AirdropBaseDistance = 25f; // never this close to a base
         [Tune("Airdrop")] public static float C4Fuse = 3f, C4Radius = 5f, C4PlayerDamage = 150f, C4KillRadius = 1.6f;
         [Tune("Airdrop")] public static int SniperAmmo = 3, JetpackFuel = 100, PortalShots = 2, RocketAmmo = 3; // (the portal gun: two shots = one linked pair)
@@ -1250,6 +1250,7 @@ namespace RockGame
             (15, new[] { "HammerWood" }),
             (16, new[] { "ProgressSeconds", "AirdropItemMask", "AirdropItemMask2", "SpearThrowSpeed" }),
             (17, new[] { "BallGatherMul", "AirdropItemMask", "AirdropItemMask2", "SnailTime", "LiftHeight", "LiftLaunch", "JonahBruhArmorWood" }),
+            (18, new[] { "AirdropItemMask", "AirdropItemMask2" }),
         };
         const string MigrateKey = "RockGame.Tunables.migrated";
 

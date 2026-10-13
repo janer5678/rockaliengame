@@ -956,7 +956,8 @@ namespace RockGame
                 else
                 {
                 // one slot: one airdrop item this game hasn't had yet (the tutorial's: just C4 for its raid)
-                var crate = Cfg.Tutorial ? new List<ItemStack> { Tutorial.DropLoot } : RollAirdropCrate(m_DroppedItems);
+                // (never one this game's airdrops brought before, nor one anybody's had already - from a bush, say)
+                var crate = Cfg.Tutorial ? new List<ItemStack> { Tutorial.DropLoot } : RollAirdropCrate(AirdropExclusions());
                 lane.Crate.ServerInit(Container.Airdrop, 7, Mathf.Max(1, crate.Count), crate);
                 }
                 go.GetComponent<NetworkObject>().Spawn(true);
@@ -1002,6 +1003,18 @@ namespace RockGame
         /// <summary>The special items this game's airdrops have already brought (each comes once a game).</summary>
         readonly HashSet<Item> m_DroppedItems = new HashSet<Item>();
 
+        /// <summary>What the next crate mustn't bring: what crates brought already and what anyone's had (when that leaves
+        /// nothing, just what crates brought). Whatever it rolls goes on m_DroppedItems.</summary>
+        HashSet<Item> AirdropExclusions() => new TrackingSet(m_DroppedItems, AirdropItemsAnyoneHad());
+
+        /// <summary>A set made of the crates' list plus the extra items, that adds what's rolled to the crates' list too.</summary>
+        class TrackingSet : HashSet<Item>
+        {
+            readonly HashSet<Item> m_Into;
+            public TrackingSet(HashSet<Item> into, HashSet<Item> extra) : base(into) { m_Into = into; UnionWith(extra); }
+            public new bool Add(Item i) { m_Into.Add(i); return base.Add(i); }
+        }
+
         /// <summary>An airdrop crate's contents: just one special item (no wood) - any of the ones picked in the mode options
         /// (an explosive like C4 or the rocket launcher, or something like the tree camo), by its Airdrop Rarity, and not one
         /// in `dropped` (it's added there). Once every picked item has come, any airdrop item that hasn't; then repeats.</summary>
@@ -1013,14 +1026,26 @@ namespace RockGame
             if (pool.Count == 0) foreach (var i in Cfg.AirdropLoot) if (Special(i)) pool.Add(i);
             if (pool.Count == 0) foreach (var i in Cfg.AirdropChoices) if (Special(i) && !Cfg.Removed(i) && (i != Item.DisguiseKit || Cfg.TeamGame)) pool.Add(i);
             var o = Cfg.PickAirdropItem(pool);
-            dropped?.Add(o);
+            if (dropped is TrackingSet ts) ts.Add(o); else dropped?.Add(o);
             return new List<ItemStack> { o == Item.Helmet ? ItemStack.Of(Item.Helmet, 1, 1) : ItemStack.Of(o, 1, Mathf.Clamp(Cfg.MaxData(o), 0, 255)) };
         }
         static bool Special(Item i) => i != Item.Wood && i != Item.Stone;
         /// <summary>One random OP item from the picked ones, rarer or commoner by its Airdrop Rarity weight.</summary>
-        public static ItemStack RollAirdropLoot()
+        public static ItemStack RollAirdropLoot(PlayerNet forWho = null)
         {
-            var id = Cfg.PickAirdropItem(Cfg.AirdropLoot);
+            // (never one they've had this game, while there's anything left they haven't)
+            var pool = Cfg.AirdropLoot;
+            var g = Instance;
+            if (forWho != null && g != null)
+            {
+                var had = g.BushItemsHad(forWho);
+                var left = new List<Item>();
+                foreach (var i in pool) if (!had.Contains(i)) left.Add(i);
+                if (left.Count == 0) foreach (var i in Cfg.AirdropChoices) if (Cfg.InAirdropPool(i) && !had.Contains(i)) left.Add(i);
+                if (left.Count > 0) pool = left;
+            }
+            var id = Cfg.PickAirdropItem(pool);
+            if (forWho != null && g != null) g.NoteAirdropItem(forWho, id);
             if (id == Item.Wood) return Cfg.DnaSwap(ItemStack.Of(Cfg.WoodMode || Random.value < 0.5f ? Item.Wood : Item.Stone, Mathf.Clamp(Cfg.AirdropResources, 1, 1000)));
             if (id == Item.Helmet) return ItemStack.Of(Item.Helmet, 1, 1);
             return ItemStack.Of(id, 1, Mathf.Clamp(Cfg.MaxData(id), 0, 255));

@@ -149,9 +149,11 @@ namespace RockGame
         string RandomAirdrop(PlayerNet p)
         {
             var pool = new List<Item>();
-            foreach (var i in Cfg.AirdropLoot) if (i != Item.Wood && i != Item.Stone && i != Item.Scribble && i != Item.FakeFlare) pool.Add(i);
+            var had = BushItemsHad(p); // (never one they've had this game)
+            foreach (var i in Cfg.AirdropLoot) if (i != Item.Wood && i != Item.Stone && i != Item.Scribble && i != Item.FakeFlare && !had.Contains(i)) pool.Add(i);
             if (pool.Count == 0) return null;
             var it = Cfg.PickAirdropItem(pool);
+            NoteAirdropItem(p, it);
             ScribbleGive(p, it);
             return $"Loot! A {Cfg.ItemName(it)}!";
         }
