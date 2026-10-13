@@ -24,6 +24,26 @@ namespace RockGame
 
         /// <summary>For the tests: how many gadgets this screen has built right now.</summary>
         public static int Count => s_Built.Count;
+
+        /// <summary>How deep in a clutter bomb's cloud a point is (0 outside, 1 in the thick of it) - Hud.Wacky's screen
+        /// full of junk when your eyes are in one.</summary>
+        public static float ClutterAt(NetGame g, Vector3 p)
+        {
+            if (g == null || !g.IsSpawned) return 0f;
+            double now = g.NetworkManager.ServerTime.Time;
+            float best = 0f;
+            foreach (var gd in g.Gadgets)
+            {
+                if (gd.Kind != Gadget.Clutter || (gd.Until > 0 && gd.Until <= now)) continue;
+                var d = p - gd.Pos;
+                if (d.y < -1f || d.y > 6f) continue;
+                float flat = new Vector2(d.x, d.z).magnitude;
+                float k = Mathf.Clamp01((Cfg.ClutterRadius + 1f - flat) / 3f);
+                float fade = Mathf.Clamp01((float)(gd.Until - now) / 1.5f) * Mathf.Clamp01((float)(now - gd.Born) / 0.4f);
+                best = Mathf.Max(best, k * fade);
+            }
+            return best;
+        }
         public static GameObject Find(int id) => s_Built.TryGetValue(id, out var go) ? go : null;
 
         public static void Sync(NetGame g)
@@ -73,19 +93,21 @@ namespace RockGame
 
         static readonly Color[] k_Bright = { new Color(0.95f, 0.2f, 0.2f), new Color(1f, 0.85f, 0.15f), new Color(0.2f, 0.45f, 1f), new Color(0.3f, 0.85f, 0.3f), new Color(1f, 0.45f, 0.8f), new Color(1f, 0.55f, 0.1f) };
 
+        /// <summary>The bouncy castle's pink gradient: hot pink at the bottom up to candy-floss pink at the top (0..1).</summary>
+        public static Color CastlePink(float up) => Color.Lerp(new Color(0.92f, 0.12f, 0.5f), new Color(1f, 0.82f, 0.93f), Mathf.Clamp01(up));
+
         static void BuildCastle(Transform t, int team, System.Random r)
         {
             var body = new GameObject("castle").transform;
             body.SetParent(t, false);
             var teamC = Cfg.TeamColor[Mathf.Clamp(team, 0, 3)];
-            Color A = k_Bright[r.Next(k_Bright.Length)], B = k_Bright[r.Next(k_Bright.Length)];
-            if (A == B) B = Color.white;
-            const float S = 6f, H = 0.55f;
+            const float S = 6f, H = 0.55f, Top = 5.2f;
+            Color P(float y) => CastlePink(y / Top);   // (every part the pink of its height: a gradient up the whole castle)
             // the bouncy floor (solid, and it bounces you)
-            var floor = Art.Box(body, Color.Lerp(teamC, Color.white, 0.25f), new Vector3(0, H * 0.5f, 0), new Vector3(S, H, S), default, true);
+            var floor = Art.Box(body, P(0f), new Vector3(0, H * 0.5f, 0), new Vector3(S, H, S), default, true);
             floor.AddComponent<BouncySurface>();
-            for (int i = -2; i <= 2; i++) Art.Box(body, i % 2 == 0 ? A : B, new Vector3(i * 1.15f, H + 0.005f, 0), new Vector3(1.1f, 0.01f, S - 0.3f)); // (stripes)
-            // puffy walls round three sides (low enough to bounce over), open at the front
+            for (int i = -2; i <= 2; i++) Art.Box(body, i % 2 == 0 ? P(0.9f) : P(0.3f), new Vector3(i * 1.15f, H + 0.005f, 0), new Vector3(1.1f, 0.01f, S - 0.3f)); // (stripes)
+            // puffy walls round three sides (low enough to bounce over), open at the front: two rows, the top one paler
             for (int side = 0; side < 3; side++)
             {
                 var rot = Quaternion.Euler(0, side * 90f + 90f, 0);
@@ -93,20 +115,21 @@ namespace RockGame
                 {
                     float x = -S * 0.5f + 0.5f + k * (S - 1f) / 5f;
                     var p = rot * new Vector3(x, H + 0.7f, S * 0.5f - 0.3f);
-                    var col = Art.Part(body, Art.Capsule, k % 2 == 0 ? A : B, p, new Vector3(0.6f, 0.7f, 0.6f), default, true);
+                    var col = Art.Part(body, Art.Capsule, P(H + 0.4f + (k % 2) * 0.25f), p, new Vector3(0.6f, 0.7f, 0.6f), default, true);
                     col.AddComponent<BouncySurface>();
                 }
             }
             // the front's arch
-            Art.Part(body, Art.Cylinder, B, new Vector3(0, H + 2.1f, -S * 0.5f + 0.3f), new Vector3(0.5f, 2.6f, 0.5f), new Vector3(0, 0, 90));
-            // towers at the corners, with pointy roofs and flags
+            Art.Part(body, Art.Cylinder, P(H + 2.1f), new Vector3(0, H + 2.1f, -S * 0.5f + 0.3f), new Vector3(0.5f, 2.6f, 0.5f), new Vector3(0, 0, 90));
+            // towers at the corners (in three bands, darker to lighter going up), with pointy roofs and flags
             for (int cx = -1; cx <= 1; cx += 2)
                 for (int cz = -1; cz <= 1; cz += 2)
                 {
                     var p = new Vector3(cx * (S * 0.5f - 0.2f), 0, cz * (S * 0.5f - 0.2f));
-                    Art.Part(body, Art.Cylinder, A, p + Vector3.up * 1.8f, new Vector3(0.9f, 1.8f, 0.9f), default, true);
-                    for (int b = 0; b < 4; b++) Art.Box(body, B, p + Vector3.up * 3.7f + Quaternion.Euler(0, b * 90f, 0) * new Vector3(0, 0, 0.35f), new Vector3(0.22f, 0.25f, 0.22f));
-                    Art.Part(body, Art.Cone, B, p + Vector3.up * 3.85f, new Vector3(1f, 1.1f, 1f));
+                    for (int band = 0; band < 3; band++)
+                        Art.Part(body, Art.Cylinder, P(0.6f + band * 1.2f), p + Vector3.up * (0.6f + band * 1.2f), new Vector3(0.9f, 0.6f, 0.9f), default, true);
+                    for (int b = 0; b < 4; b++) Art.Box(body, P(3.7f), p + Vector3.up * 3.7f + Quaternion.Euler(0, b * 90f, 0) * new Vector3(0, 0, 0.35f), new Vector3(0.22f, 0.25f, 0.22f));
+                    Art.Part(body, Art.Cone, P(Top), p + Vector3.up * 3.85f, new Vector3(1f, 1.1f, 1f));
                     Art.Box(body, Art.DarkWood, p + Vector3.up * 5.2f, new Vector3(0.04f, 0.7f, 0.04f));
                     Art.Box(body, teamC, p + new Vector3(0.22f, 5.4f, 0), new Vector3(0.4f, 0.25f, 0.02f));
                 }
@@ -115,11 +138,14 @@ namespace RockGame
 
         // ---------------- the attention snail ----------------
 
+        /// <summary>The attention snail's size (its model is about 30 cm long at 1): tiny.</summary>
+        const float SnailScale = 0.7f;
+
         static void BuildSnail(Transform t)
         {
             var body = new GameObject("snail").transform;
             body.SetParent(t, false);
-            body.localScale = Vector3.one * 2.5f; // (a big snail: it's got everyone's attention)
+            body.localScale = Vector3.one * SnailScale; // (a tiny snail - right in front of every camera)
             var skin = new Color(0.55f, 0.6f, 0.45f);
             var shell = new Color(0.65f, 0.38f, 0.18f);
             Art.Part(body, Art.Capsule, skin, new Vector3(0, 0.07f, 0.02f), new Vector3(0.14f, 0.24f, 0.14f), new Vector3(90, 0, 0));
@@ -144,8 +170,9 @@ namespace RockGame
             float rad = Cfg.ClutterRadius;
             var bits = new GameObject("clutter").transform;
             bits.SetParent(t, false);
-            // glitter and confetti everywhere, balloons, big shapes and blobs of colour hanging in the air
-            for (int i = 0; i < 220; i++)
+            // glitter and confetti everywhere, balloons, big shapes and thick blobs of colour hanging in the air - dense
+            // enough that an alien in it is hard to make out
+            for (int i = 0; i < 420; i++)
             {
                 var p = new Vector3(R(r, -rad, rad), R(r, 0.2f, 4.5f), R(r, -rad, rad));
                 if (new Vector2(p.x, p.z).magnitude > rad) continue;
@@ -153,7 +180,7 @@ namespace RockGame
                 var go = Art.Box(bits, c, p, Vector3.one * R(r, 0.05f, 0.14f), new Vector3(R(r, 0, 360), R(r, 0, 360), 0));
                 go.name = "bit";
             }
-            for (int i = 0; i < 26; i++)
+            for (int i = 0; i < 40; i++)
             {
                 var p = new Vector3(R(r, -rad, rad) * 0.8f, R(r, 1f, 3.5f), R(r, -rad, rad) * 0.8f);
                 var c = k_Bright[r.Next(k_Bright.Length)];
@@ -161,20 +188,20 @@ namespace RockGame
                 b.name = "balloon";
                 Art.Box(b.transform, Color.white, new Vector3(0, -1.1f, 0), new Vector3(0.02f, 1.6f, 0.02f));
             }
-            for (int i = 0; i < 18; i++)
+            for (int i = 0; i < 34; i++)
             {
-                var p = new Vector3(R(r, -rad, rad) * 0.7f, R(r, 0.8f, 2.8f), R(r, -rad, rad) * 0.7f);
+                var p = new Vector3(R(r, -rad, rad) * 0.75f, R(r, 0.6f, 2.8f), R(r, -rad, rad) * 0.75f);
                 var c = k_Bright[r.Next(k_Bright.Length)];
                 var mesh = i % 3 == 0 ? Art.Cone : i % 3 == 1 ? Art.Ico : Art.Cube;
                 var go = Art.Part(bits, mesh, c, p, Vector3.one * R(r, 0.6f, 1.4f), new Vector3(R(r, 0, 360), R(r, 0, 360), R(r, 0, 360)));
                 go.name = "junk";
             }
-            for (int i = 0; i < 14; i++)
+            for (int i = 0; i < 46; i++)
             {
-                var p = new Vector3(R(r, -rad, rad) * 0.6f, R(r, 0.8f, 2.4f), R(r, -rad, rad) * 0.6f);
+                var p = new Vector3(R(r, -rad, rad) * 0.8f, R(r, 0.6f, 2.6f), R(r, -rad, rad) * 0.8f);
                 var c = k_Bright[r.Next(k_Bright.Length)];
-                c.a = 0.55f;
-                Art.Part(bits, Art.Sphere, Color.white, p, Vector3.one * R(r, 1.6f, 3f), default, false, Art.Ghost(c)).name = "blob";
+                c.a = 0.78f;
+                Art.Part(bits, Art.Sphere, Color.white, p, Vector3.one * R(r, 2f, 3.6f), default, false, Art.Ghost(c)).name = "blob";
             }
             foreach (var mr in bits.GetComponentsInChildren<MeshRenderer>()) mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         }
@@ -318,7 +345,7 @@ namespace RockGame
                 {
                     var body = tr.childCount > 0 ? tr.GetChild(0) : null;
                     if (body == null) break;
-                    body.localScale = new Vector3(2.5f, 2.5f, 2.5f * (1f + Mathf.Sin(t * 2f) * 0.06f));
+                    body.localScale = new Vector3(SnailScale, SnailScale, SnailScale * (1f + Mathf.Sin(t * 2f) * 0.06f));
                     // it turns to look at you (the camera, in its close-up)
                     var cam = Camera.main;
                     if (cam != null)

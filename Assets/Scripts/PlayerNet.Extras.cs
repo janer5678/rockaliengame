@@ -224,6 +224,7 @@ namespace RockGame
                     var spill = new System.Collections.Generic.List<ItemStack>();
                     foreach (var it in Cfg.AirdropChoices)
                     {
+                        if (Cfg.Removed(it)) continue; // (the decoy base: taken out)
                         int data = Mathf.Clamp(Cfg.MaxData(it), 0, 255);
                         int left = ServerGive(it, 1, data);
                         if (left > 0) spill.Add(ItemStack.Of(it, left, data));

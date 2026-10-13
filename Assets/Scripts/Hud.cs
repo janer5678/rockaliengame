@@ -679,7 +679,7 @@ namespace RockGame
                     int left = s.Data <= 0 || s.Data > Cfg.PortalShots ? Cfg.PortalShots : s.Data;
                     return $"<b>Portal Gun</b> ({left} portal{(left == 1 ? "" : "s")} left)    LMB: shoot a portal onto any surface - " + (left >= Cfg.PortalShots ? "two shots make a linked pair" : "this shot links it to your first one");
                 }
-                case Item.Jetpack: return $"<b>Jetpack</b> (fuel {s.Data}%)    goes on your back by itself: hold {KT(Bind.Jump)} to fly";
+                case Item.Jetpack: return $"<b>Jetpack</b> (fuel {s.Data}%)    LMB: put it on - then hold {KT(Bind.Jump)} to fly";
                 case Item.SlenderEgg: return "<b>Slenderman Egg</b>    LMB: throw it - Slenderman hatches and hunts your enemy";
                 case Item.BuildEgg: return "<b>Build Egg</b>    LMB: throw it - blocks appear along its path to walk on";
                 case Item.GiantStaff: return "<b>Staff of the Giant</b>    LMB: turn your nearest enemy into a giant";
@@ -687,7 +687,7 @@ namespace RockGame
                 case Item.BombBush: return "<b>Fake Bomb Bush</b>    LMB: throw it - whoever picks it blows up";
                 case Item.TreeCamo: return "<b>Tree Camo</b>    while you hold it you're a tree    hold LMB / RMB: stand still and just look around";
                 case Item.Airstrike: return "<b>Airstrike</b>    LMB: pick a spot on the map - everything there gets flattened";
-                case Item.Wallhack: return "<b>Wallhack Glasses</b>    go on by themselves: you see your enemies through walls";
+                case Item.Wallhack: return "<b>Wallhack Glasses</b>    LMB: put them on - you see your enemies through walls";
                 case Item.InvisPotion: return $"<b>Invisibility Potion</b>    LMB: drink ({Cfg.InvisTime:0}s, attacking shows you)";
                 case Item.SpeedJuice: return $"<b>Extreme Speed Juice</b>    LMB: drink ({Cfg.SpeedJuiceTime:0}s of extreme speed)";
                 case Item.Chainsaw: return $"<b>Chainsaw</b> ({s.Data * Cfg.ChainsawWearEvery} uses left)    hold LMB: cuts wood and stone fast";
@@ -839,9 +839,8 @@ namespace RockGame
             if (m_Sweeping && e.type == EventType.MouseDrag && e.shift && !s.Empty && SweepCrosses(r, e.mousePosition)) SweepSlot(kind, index, me, pc);
             if (e.type == EventType.MouseDown && hover && !s.Empty && kind == 1 && pc.LootTarget != null && pc.LootTarget.IsFakeDrop)
             {
-                // the fake airdrop flare's crate: none of it comes out
-                WackyNote("It's a FAKE airdrop - nothing comes out!");
-                Sfx.Play2D(Sfx.Laugh, 0.7f);
+                // the fake airdrop flare's crate: none of it comes out (and nothing says why - keep them guessing)
+                Sfx.Play2D(Sfx.Click, 0.4f);
                 e.Use();
                 return;
             }
@@ -922,7 +921,7 @@ namespace RockGame
             if (pc.LootTarget != null)
             {
                 if (kind == 0 && pc.LootTarget.TakeOnly) return;
-                if (kind == 1 && pc.LootTarget.IsFakeDrop) { WackyNote("It's a FAKE airdrop - nothing comes out!"); return; }
+                if (kind == 1 && pc.LootTarget.IsFakeDrop) { Sfx.Play2D(Sfx.Click, 0.4f); return; } // (the fake airdrop: nothing comes out, nothing says why)
                 ExpectFlight(SlotNow(kind, index, me, pc).Id);
                 me.MoveItemRpc(kind, (byte)index, (byte)(1 - kind), 255, 0, LootRef(pc));
                 Sfx.Play2D(Sfx.Pop, 0.3f, 0.2f);

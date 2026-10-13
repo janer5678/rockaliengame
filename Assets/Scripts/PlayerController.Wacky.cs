@@ -70,11 +70,6 @@ namespace RockGame
             var ray = CenterRay();
             switch (held)
             {
-                case Item.BouncyCastle:
-                    if (!Clicked()) return true;
-                    UseWacky(held, Aim(ray, 45f, out var ch) ? ch.point : ray.GetPoint(8f));
-                    m_VM.Use(); Sfx.Play2D(Sfx.Pop, 0.6f);
-                    return true;
                 case Item.Decoy:
                     if (!Clicked()) return true;
                     UseWacky(held, Vector3.zero, null, (int)m_PrevHeld);
@@ -87,7 +82,6 @@ namespace RockGame
                 case Item.SuicideBomb:
                 case Item.InvSwapper:
                 case Item.ShieldPotion:
-                case Item.BearJuice:
                 case Item.ChaosSigil:
                 case Item.DroneBot:
                 case Item.BaseRebuild:
@@ -96,7 +90,7 @@ namespace RockGame
                     if (!(Clicked(0.8f) || (Binds.Down(Bind.Aim) && Time.time >= m_NextSwing))) return true;
                     m_NextSwing = Time.time + 0.8f;
                     UseWacky(held, Vector3.zero);
-                    if (held == Item.ShieldPotion || held == Item.BearJuice) { m_VM.Eat(); Sfx.Play2D(Sfx.Eat, 0.6f); m_EatFlashUntil = Time.time + 0.9f; }
+                    if (held == Item.ShieldPotion) { m_VM.Eat(); Sfx.Play2D(Sfx.Eat, 0.6f); m_EatFlashUntil = Time.time + 0.9f; }
                     else { m_VM.Use(); Sfx.Play2D(held == Item.SuicideBomb ? Sfx.Beep : Sfx.Zap, 0.6f); }
                     return true;
                 case Item.Connect4Wand:
@@ -118,10 +112,27 @@ namespace RockGame
                     return true;
                 }
                 case Item.StickOfTruth:
+                {
+                    // the lifting stick: whatever it's pointed at (a player - with a little aim help - or a wall, a chest,
+                    // a tree, a horse, the ball) goes up (NetGame.Lift.cs)
+                    if (!Clicked(0.8f)) return true;
+                    var end = ray.GetPoint(40f);
+                    NetworkObject lno = null;
+                    if (AimWithAssist(ray, 120f, Cfg.ProjectileAssist + 0.25f, out var lh))
+                    {
+                        end = lh.point;
+                        lno = lh.collider.GetComponentInParent<NetworkObject>();
+                        if (lno != null && lno.GetComponent<PlayerNet>() == m_Net) lno = null;
+                    }
+                    UseWacky(held, end, lno);
+                    Fx.Play(FxKind.WackyBeam, m_VM.Muzzle(), end - m_VM.Muzzle());
+                    m_VM.Use(); Fx.Kick(3f);
+                    return true;
+                }
                 case Item.SlowGun:
                 {
                     if (!Clicked(0.8f)) return true;
-                    var end = Aim(ray, held == Item.StickOfTruth ? 120f : 90f, out var sh) ? sh.point : ray.GetPoint(held == Item.StickOfTruth ? 40f : 30f);
+                    var end = Aim(ray, 90f, out var sh) ? sh.point : ray.GetPoint(30f);
                     UseWacky(held, end);
                     Fx.Play(FxKind.WackyBeam, m_VM.Muzzle(), end - m_VM.Muzzle());
                     m_VM.Use(); Fx.Kick(3f); Fx.Shake(0.15f);
@@ -160,6 +171,8 @@ namespace RockGame
                 case Item.DanceBomb:
                 case Item.ClutterBomb:
                 case Item.DecoyBase:
+                case Item.BouncyCastle: // (thrown like a grenade: it pops up where it lands)
+                case Item.BearJuice:    // (thrown: whoever it splashes is a bear - you too, at your feet)
                     HandleLootThrow(held);
                     return true;
                 case Item.BallGrabber:
@@ -174,7 +187,6 @@ namespace RockGame
                     m_VM.Use();
                     return true;
                 }
-                case Item.JumpBoots: return true; // (they go on by themselves)
             }
             return false;
         }
@@ -222,10 +234,12 @@ namespace RockGame
 
         void HandleBear()
         {
-            if (Input.GetKeyDown(KeyCode.X)) { m_Net.BearOffRpc(); Sfx.Play2D(Sfx.Pop, 0.6f); return; }
+            // (no turning back: a bear stays a bear for Cfg.BearTime, or until it dies)
             if (!Clicked(0.6f)) return;
             var ray = CenterRay();
+            m_Net.LocalSwingAnim(); // (the swipe on your own bear, seen from behind)
             Sfx.Play2D(Sfx.Swing, 0.5f, 0.1f);
+            Sfx.Play2D(Sfx.Growl, 0.35f, 0.1f);
             Fx.Kick(1.5f);
             if (AimWithAssist(ray, 4f, Cfg.MeleeAssist, out var hit))
             {
@@ -282,7 +296,7 @@ namespace RockGame
             if (grounded) { m_DoubleJumped = false; return false; }
             if (!move || !m_Net.WornBoots.Value || m_DoubleJumped || !Binds.Down(Bind.Jump)) return false;
             m_DoubleJumped = true;
-            m_VelY = Cfg.JumpSpeed * 1.05f * GravSign;
+            m_VelY = Cfg.JumpSpeed * 1.05f * GravSign * (m_Net.IsAnt ? Cfg.AntJumpMul : 1f);
             DoubleJumps++;
             Sfx.Play2D(Sfx.Pop, 0.5f);
             for (int i = 0; i < 6; i++) FxParticle.Puff(transform.position + Random.insideUnitSphere * 0.3f, new Color(1f, 1f, 1f, 0.5f), Random.Range(0.3f, 0.5f));
@@ -336,20 +350,23 @@ namespace RockGame
                 hands = false;
                 return;
             }
-            if (SnailShot(out var sp, out var sr))
+            if (SnailShot(out var sp, out var sr, out float sf))
             {
                 camPos = sp;
                 rot = sr;
-                fov = 34f;
+                fov = sf;
                 hands = false;
             }
         }
 
-        /// <summary>The attention snail: while one's down every camera is on it - close in behind it, looking past it at
-        /// whoever's nearest to it.</summary>
-        public static bool SnailShot(out Vector3 pos, out Quaternion rot)
+        public static bool SnailShot(out Vector3 pos, out Quaternion rot) => SnailShot(out pos, out rot, out _);
+
+        /// <summary>The attention snail: while one's down every camera is on it - down at its level, right behind the tiny
+        /// snail (big in the bottom of the shot), looking past it at EVERY player: the camera turns to the middle of them
+        /// and the view widens until they're all in the background (you too - your body shows in the shot).</summary>
+        public static bool SnailShot(out Vector3 pos, out Quaternion rot, out float fov)
         {
-            pos = default; rot = Quaternion.identity;
+            pos = default; rot = Quaternion.identity; fov = 60f;
             var g = NetGame.Instance;
             if (g == null || !g.IsSpawned) return false;
             double now = g.NetworkManager.ServerTime.Time;
@@ -357,25 +374,52 @@ namespace RockGame
             bool any = false;
             foreach (var gd in g.Gadgets) if (gd.Kind == Gadget.Snail && gd.Until > now && (!any || gd.Born > snail.Born)) { snail = gd; any = true; }
             if (!any) return false;
-            var s = snail.Pos + Vector3.up * 0.3f;
-            PlayerNet near = null;
-            float best = float.MaxValue;
+            var s = snail.Pos + Vector3.up * 0.08f;
+            // where everyone is, seen from the snail: the camera looks at the middle of them
+            Vector3 sum = Vector3.zero;
+            int n = 0;
             foreach (var p in PlayerNet.All)
             {
                 if (p == null || p.Dead.Value) continue;
-                float d = Vector3.Distance(p.transform.position, s);
-                if (d < best) { best = d; near = p; }
+                var d = p.transform.position - s; d.y = 0f;
+                if (d.sqrMagnitude < 0.3f) continue;
+                sum += d.normalized / Mathf.Max(1f, Mathf.Sqrt(d.magnitude)); // (the near ones count a bit more)
+                n++;
             }
-            var look = near != null ? near.transform.position + Vector3.up * 1.1f : s + Quaternion.Euler(0, snail.Yaw, 0) * Vector3.forward * 5f;
-            var away = s - look; away.y = 0f;
-            if (away.sqrMagnitude < 0.01f) away = Quaternion.Euler(0, snail.Yaw, 0) * Vector3.back;
-            away.Normalize();
-            // a little off to one side and up, close in: the snail big in the bottom of the shot, whoever's nearest
-            // to it in the background
-            var across = Vector3.Cross(Vector3.up, away);
-            pos = s + away * 2.1f + across * 0.6f + Vector3.up * 0.45f;
-            var focus = s + Vector3.up * 0.1f + (look - s).normalized * 2.2f;
-            rot = Quaternion.LookRotation(focus - pos);
+            var dir = n > 0 && sum.sqrMagnitude > 0.0001f ? sum.normalized : Quaternion.Euler(0, snail.Yaw, 0) * Vector3.forward;
+            // just behind the snail, a little above it (never under the ground)
+            pos = s - dir * 1.3f + Vector3.up * 0.34f;
+            pos.y = Mathf.Max(pos.y, MapBuilder.Height(pos.x, pos.z) + 0.3f);
+            // (not inside a rock or a wall behind it: closer in, then)
+            var from = s + Vector3.up * 0.12f;
+            var back = pos - from;
+            foreach (var h in Physics.SphereCastAll(from, 0.15f, back.normalized, back.magnitude, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore))
+            {
+                if (h.distance <= 0f || h.collider.GetComponentInParent<PlayerNet>() != null) continue;
+                var closer = from + back.normalized * Mathf.Max(0.35f, h.distance - 0.05f);
+                if ((closer - from).sqrMagnitude < (pos - from).sqrMagnitude) pos = closer;
+            }
+            // frame it all: the snail at the bottom, every player (uphill, downhill, off to the sides) in the background -
+            // the camera tips up or down to the middle of them and widens until they all fit (never narrower than 40)
+            var eyeAt = pos;
+            float Elev(Vector3 p) { var d = p - eyeAt; return Mathf.Atan2(d.y, new Vector2(d.x, d.z).magnitude) * Mathf.Rad2Deg; }
+            float lo = Elev(s) - 4f, hi = Elev(s) + 8f, half = 22f;
+            foreach (var p in PlayerNet.All)
+            {
+                if (p == null || p.Dead.Value) continue;
+                var c = p.transform.position + Vector3.up * 0.9f;
+                var flat = new Vector3(c.x - pos.x, 0f, c.z - pos.z);
+                if (flat.sqrMagnitude < 0.3f) continue;
+                half = Mathf.Max(half, Mathf.Min(75f, Vector3.Angle(dir, flat) + 7f));
+                lo = Mathf.Min(lo, Elev(p.transform.position) - 3f);
+                hi = Mathf.Max(hi, Elev(p.transform.position + Vector3.up * 1.9f) + 3f);
+            }
+            lo = Mathf.Max(lo, -60f); hi = Mathf.Min(hi, 60f);
+            float pitch = (lo + hi) * 0.5f;
+            rot = Quaternion.LookRotation(dir) * Quaternion.Euler(-pitch, 0f, 0f);
+            float aspect = Camera.main != null ? Mathf.Max(0.5f, Camera.main.aspect) : 16f / 9f;
+            float fromSides = 2f * Mathf.Atan(Mathf.Tan(half * Mathf.Deg2Rad) / aspect) * Mathf.Rad2Deg;
+            fov = Mathf.Clamp(Mathf.Max(fromSides, hi - lo), 40f, 100f);
             return true;
         }
     }

@@ -166,6 +166,7 @@ namespace RockGame
                                 : rs == "tutorial" ? 9 : rs == "dna" ? (int)GameRules.Dna : rs == "bedwars" ? (int)GameRules.Bedwars : rs == "threegoal" || rs == "3goal" ? (int)GameRules.ThreeGoal
                                 : rs == "progress" ? (int)GameRules.Progress : rs == "assassin" ? (int)GameRules.Assassin : rs == "domination" ? (int)GameRules.Domination : 0; // (classic, original: 0)
                             if (rs == "jonah" || rs == "jonahtest") rv = (int)GameRules.JonahTest;
+                            if (rs == "airdroptest" || rs == "airdrop") rv = (int)GameRules.AirdropTest;
                             MapChoice = Cfg.WithRules(MapChoice, (GameRules)rv);
                         }
                         break;

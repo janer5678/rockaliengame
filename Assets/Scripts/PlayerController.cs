@@ -524,7 +524,7 @@ namespace RockGame
                     if (grounded && Time.time - m_JumpPressedAt > Time.deltaTime + 0.001f) BufferedJumps++;
                     if (coyote) CoyoteJumps++;
                     Jumps++;
-                    m_VelY = Cfg.JumpSpeed * gs;
+                    m_VelY = Cfg.JumpSpeed * gs * (m_Net.IsAnt ? Cfg.AntJumpMul : 1f); // (an ant: a tiny hop)
                     m_JumpPressedAt = -10f;
                     m_JumpedSinceGround = true;
                 }
@@ -643,6 +643,7 @@ namespace RockGame
                         case Item.Armor:
                         case Item.HeavyArmor:
                         case Item.InvisPotion: case Item.SpeedJuice: HandleUseItem(held); break;
+                        case Item.Jetpack: case Item.Wallhack: case Item.JumpBoots: HandleUseItem(held); break; // (worn gear: put on when you click, never by itself)
                         default:
                             if (Cfg.IsWacky(held) && HandleWacky(held)) break; // (the wacky airdrop items: PlayerController.Wacky.cs)
                             if (Cfg.IsMelee(held)) HandleMelee(held);
@@ -2364,7 +2365,12 @@ namespace RockGame
                     if (feeding) AimText += FeedHint(v);
                     return;
                 }
-                case TargetKind.Bush: AimText = Tip("Berry Bush", TipPlant, $"{KT(Bind.Interact)}: pick it"); return;
+                case TargetKind.Bush:
+                {
+                    bool air = t.Obj != null && t.Obj.TryGetComponent(out ResourceNode bn) && bn.IsAirdropBush; // (Airdrop Test)
+                    AimText = air ? Tip("Airdrop Berry Bush", new Color(0.77f, 0.55f, 1f), $"{KT(Bind.Interact)}: pick it - an airdrop item you haven't had") : Tip("Berry Bush", TipPlant, $"{KT(Bind.Interact)}: pick it");
+                    return;
+                }
                 case TargetKind.PlayerSpear: AimText = Tip("Stuck spear", TipPlain, $"{KT(Bind.Interact)}: pull it out"); return;
                 case TargetKind.WorldItem: AimText = Tip(Cfg.ItemName(t.Stack.Id) + (t.Stack.Count > 1 ? $" x{t.Stack.Count}" : ""), TipPlain, $"{KT(Bind.Interact)}: pick up"); return;
             }

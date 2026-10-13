@@ -25,6 +25,12 @@ namespace RockGame
         /// <summary>Fake bomb bush: the team that threw it (NoTrap = a real bush). Looks exactly the same.</summary>
         public readonly NetworkVariable<byte> TrapTeam = new NetworkVariable<byte>(NoTrap);
         public const byte NoTrap = 255;
+        /// <summary>Airdrop Test: TrapTeam's value on an AIRDROP BERRY BUSH (purple berries, a beam over it): picking it gives
+        /// an airdrop item you haven't had yet (NetGame.AirdropBushes.cs).</summary>
+        public const byte AirdropBush = 254;
+        public bool IsAirdropBush => IsBush && TrapTeam.Value == AirdropBush;
+        /// <summary>The airdrop berry bush's floating gem and beam (spun in Update).</summary>
+        Transform m_AirdropGem;
         /// <summary>Trees: how many birds are sitting in it (0 = none; you can see them on its branches). The server puts
         /// flocks in a few trees; a flock flies on to another, further tree when the one it's in is hit (Birds.cs).</summary>
         public readonly NetworkVariable<byte> Birds = new NetworkVariable<byte>();
@@ -77,7 +83,7 @@ namespace RockGame
         static int AmountOf(byte k) => k == Tree ? Cfg.TreeAmount : k == Log ? Mathf.Max(1, Cfg.TreeAmount / 2) : k == Boulder ? Cfg.StoneAmount : 1;
         /// <summary>How much there is in a whole one of these (a tree's wood, a log's, a rock's stone).</summary>
         public int FullAmount => AmountOf(Kind.Value);
-        public string DisplayName => Kind.Value == Tree ? "Tree" : Kind.Value == Log ? "Fallen Log" : Kind.Value == Boulder ? "Stone" : "Berry Bush";
+        public string DisplayName => Kind.Value == Tree ? "Tree" : Kind.Value == Log ? "Fallen Log" : Kind.Value == Boulder ? "Stone" : IsAirdropBush ? "Airdrop Berry Bush" : "Berry Bush";
         public Item Yield => IsWood ? Item.Wood : Kind.Value == Boulder ? Item.Stone : Item.Berry;
 
         public override void OnNetworkSpawn()
@@ -241,7 +247,8 @@ namespace RockGame
             {
                 // Normal graphics: a round clump of leafy blobs with berries on it, swaying in the wind like the pines
                 Color leaf = Color.Lerp(ItemModels.Leaf, new Color(0.18f, 0.4f, 0.16f), r());
-                if (ThemeMaps.Custom != null && ThemeMaps.Custom.BuildBush(tr, Seed.Value)) { } // THEME MAPS (its own bush)
+                if (IsAirdropBush) BuildBerryBush(tr, Seed.Value, leaf, NetGame.AirdropBerry); // (Airdrop Test: purple berries)
+                else if (ThemeMaps.Custom != null && ThemeMaps.Custom.BuildBush(tr, Seed.Value)) { } // THEME MAPS (its own bush)
                 else BuildBush(tr, Seed.Value, leaf);
                 m_PaintedBush = true;
                 if (GetComponent<SphereCollider>() == null)
@@ -284,6 +291,7 @@ namespace RockGame
                 }
             }
             m_VisualBase = tr.localPosition;
+            if (IsAirdropBush) m_AirdropGem = NetGame.BuildAirdropBushMarker(tr, IsBush && m_PaintedBush ? BushSize : OldBushSize);
             if (Kind.Value == Boulder) PsxModels.Replace(tr, "rock" + (1 + (Seed.Value & 0x7fffffff) % 6), PsxModels.Fit.Uniform, new Vector3(0, (Seed.Value % 360), 0), 1f, m_Marker);
             else if (Kind.Value == Bush && !m_PaintedBush) PsxModels.Replace(tr, "bush", PsxModels.Fit.Ground, new Vector3(0, (Seed.Value % 360), 0));
             if (AiPsxArt.On) AiPsxArt.Apply(tr);
@@ -1785,6 +1793,7 @@ namespace RockGame
         void Update()
         {
             if (IsServer && m_BirdsIncoming > 0) ServerBirdsUpdate();
+            if (m_AirdropGem) { m_AirdropGem.localRotation = Quaternion.Euler(0, Time.time * 90f, 0); m_AirdropGem.localPosition = new Vector3(0, NetGame.AirdropGemHeight + Mathf.Sin(Time.time * 2.2f) * 0.12f, 0); }
             if (m_Grow < 1f && m_Visual)
             {
                 m_Grow = Mathf.Min(1f, m_Grow + Time.deltaTime / 1.6f);
@@ -1857,6 +1866,7 @@ namespace RockGame
             {
                 // a new bush grows somewhere else in this half of the map later
                 if (NetGame.Instance != null && TrapTeam.Value == NoTrap) NetGame.Instance.ServerScheduleBush(transform.position);
+                else if (NetGame.Instance != null && TrapTeam.Value == AirdropBush) NetGame.Instance.ServerScheduleAirdropBush(transform.position); // (Airdrop Test)
                 NetworkObject.Despawn(true);
                 return got;
             }

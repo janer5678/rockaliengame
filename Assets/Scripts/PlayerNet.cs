@@ -693,7 +693,7 @@ namespace RockGame
                 m_Lifted = lifted;
             }
             // in the cutscene you see yourself (your own body is normally only a shadow)
-            bool seeSelf = Mine && (VictoryCutscene.Active || (Dancing && !dead)); // (dancing: seen from behind, like the tree camo)
+            bool seeSelf = Mine && (VictoryCutscene.Active || (Dancing && !dead) || (!dead && PlayerController.SnailShot(out _, out _))); // (dancing: seen from behind, like the tree camo; the attention snail's shot has you in it)
             if (seeSelf != m_SeeSelf)
             {
                 m_SeeSelf = seeSelf;
@@ -716,7 +716,6 @@ namespace RockGame
             TickTeamSee(local, dead); // your teammates show through walls (PlayerNet.TeamSee.cs)
             // the worn jetpack on the back (PlayerNet.Gear.cs) and its flame
             TickGearLooks(dead);
-            if (IsServer) ServerAutoEquip();
             bool flame = Jetting.Value && !dead;
             if (flame != (m_Flame != null)) RebuildFlame(flame);
             if (m_Flame) m_Flame.transform.localScale = new Vector3(1f, 0.8f + Random.value * 0.5f, 1f);
@@ -1326,7 +1325,7 @@ namespace RockGame
             if (kind == 1)
             {
                 if (!containerRef.TryGet(out var no) || !no.TryGetComponent(out Container c) || !c.InReachServer(EyePos)) return;
-                if (c.IsFakeDrop) { Note("It's a FAKE airdrop - nothing comes out!"); return; }
+                if (c.IsFakeDrop) return; // (the fake airdrop: nothing comes out, and nothing says why)
                 list = c.Slots;
             }
             if (idx >= list.Count) return;
@@ -1822,7 +1821,7 @@ namespace RockGame
             {
                 if (!containerRef.TryGet(out var no) || !no.TryGetComponent(out c) || !c.InReachServer(EyePos)) return;
                 if (dstKind == 1 && c.TakeOnly) return;
-                if (srcKind == 1 && c.IsFakeDrop) { Note("It's a FAKE airdrop - nothing comes out!"); return; } // (the fake airdrop flare)
+                if (srcKind == 1 && c.IsFakeDrop) return; // (the fake airdrop flare: nothing comes out, and nothing says why)
                 // an auto turret: its own team only; its first slot takes any weapon, its second arrows (all it fires)
                 if (c.Kind.Value == Container.Turret)
                 {
@@ -1891,6 +1890,7 @@ namespace RockGame
         {
             if (Dead.Value || !bushRef.TryGet(out var no) || !no.TryGetComponent(out ResourceNode n) || !n.IsBush) return;
             if (Vector3.Distance(n.transform.position, transform.position) > Cfg.InteractRange + 2f) return;
+            if (n.IsAirdropBush) { if (NetGame.Instance != null) NetGame.Instance.ServerPickAirdropBush(this, n); return; } // (Airdrop Test: NetGame.AirdropBushes.cs)
             if (InvOps.Space(Inv, Item.Berry) < 1) { Notify("Inventory full!"); return; }
             if (n.TrapTeam.Value != ResourceNode.NoTrap)
             {
@@ -1924,6 +1924,7 @@ namespace RockGame
         {
             if (Dead.Value || CarryingBall || Time.time < m_NextEat) return;
             var st = HeldStack;
+            if (ServerWearGear(st)) { m_NextEat = Time.time + 0.5f; return; } // (the jetpack, the wallhack glasses, the jump boots: PlayerNet.Gear.cs)
             if (st.Id == Item.Helmet)
             {
                 if (HelmetHp.Value > 0) { Notify("You're already wearing a helmet"); return; }
@@ -2205,6 +2206,8 @@ namespace RockGame
 
         /// <summary>Owner side: the throw shows on your own body too (seen in third person / the tree camo view).</summary>
         public void LocalThrowAnim() => m_Throw = 1f;
+        /// <summary>The owner's own swing on their body (a bear's swipe is seen from behind: PlayerNet.WackyLooks.cs).</summary>
+        public void LocalSwingAnim() => m_Swing = 1f;
 
         [Rpc(SendTo.NotOwner)]
         public void SwingRpc()

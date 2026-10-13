@@ -19,11 +19,11 @@ namespace RockGame
                 case Item.BouncyCastle:
                     // a toy bouncy castle in a capsule
                     Art.Box(t, Silver, new Vector3(0, 0.02f, 0), new Vector3(0.2f, 0.04f, 0.2f));
-                    Art.Box(t, Red, new Vector3(0, 0.07f, 0), new Vector3(0.16f, 0.06f, 0.16f));
+                    Art.Box(t, GadgetFx.CastlePink(0f), new Vector3(0, 0.07f, 0), new Vector3(0.16f, 0.06f, 0.16f));
                     for (int x = -1; x <= 1; x += 2) for (int z = -1; z <= 1; z += 2)
                     {
-                        Art.Part(t, Art.Cylinder, Yellow, new Vector3(x * 0.065f, 0.12f, z * 0.065f), new Vector3(0.04f, 0.05f, 0.04f));
-                        Art.Part(t, Art.Cone, Blue, new Vector3(x * 0.065f, 0.17f, z * 0.065f), new Vector3(0.05f, 0.05f, 0.05f));
+                        Art.Part(t, Art.Cylinder, GadgetFx.CastlePink(0.45f), new Vector3(x * 0.065f, 0.12f, z * 0.065f), new Vector3(0.04f, 0.05f, 0.04f));
+                        Art.Part(t, Art.Cone, GadgetFx.CastlePink(1f), new Vector3(x * 0.065f, 0.17f, z * 0.065f), new Vector3(0.05f, 0.05f, 0.05f));
                     }
                     Art.Part(t, Art.Sphere, Color.white, new Vector3(0, 0.12f, 0), new Vector3(0.24f, 0.26f, 0.24f), default, false, Art.Ghost(new Color(0.85f, 0.95f, 1f, 0.25f)));
                     break;

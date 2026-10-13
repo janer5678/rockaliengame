@@ -188,18 +188,19 @@ namespace RockGame
             Check(bot.KnockedDown && bot.Count(Item.Wood) == 5 && bot.Health.Value >= Cfg.MaxHealth, $"the blue shell knocks them flat: half their wood spills ({bot.Count(Item.Wood)} left), no damage");
             yield return new WaitForSeconds(Cfg.KnockDownTime);
 
-            // ---- bear juice: a bear's hide takes the hits
+            // ---- bear juice: a bear's hide takes the hits (thrown now: AutoTest.Prompt5.cs)
             yield return Ready();
-            yield return Use(Item.BearJuice, Vector3.zero);
+            me.ServerMakeBear();
+            yield return new WaitForSeconds(0.3f);
             Check(me.IsBear, "bear juice: you're a bear");
             me.ServerDamage(100f, bot);
             yield return new WaitForSeconds(0.2f);
             Check(me.Health.Value >= Cfg.MaxHealth && Mathf.Approximately(me.BearHpLeft.Value, Cfg.BearHp - 100f), $"a bear's health takes the hit ({me.BearHpLeft.Value:0} bear HP)");
             yield return new WaitForSeconds(0.8f);
             yield return Snap("prompt4_bear");
-            me.BearOffRpc();
-            yield return new WaitForSeconds(0.3f);
-            Check(!me.IsBear, "X turns you back");
+            me.BearUntil.Value = Now() + 0.2;
+            yield return new WaitForSeconds(0.6f);
+            Check(!me.IsBear, "its time up, you're back");
 
             // ---- the inventory swapper
             yield return Ready();
@@ -246,7 +247,7 @@ namespace RockGame
             // ---- the bouncy castle: it bounces you
             yield return Ready();
             var castleAt = OnGround(spot - side * 9f, 0f);
-            yield return Use(Item.BouncyCastle, castleAt);
+            me.ServerCastleLanded(g, castleAt); // (thrown now: AutoTest.Prompt5.cs)
             bool castle = false;
             foreach (var gd in g.Gadgets) if (gd.Kind == Gadget.Castle) castle = true;
             Check(castle, "a bouncy castle went up");
@@ -282,28 +283,10 @@ namespace RockGame
             yield return Use(Item.StickOfTruth, truthAt);
             bool truth = false;
             foreach (var gd in g.Gadgets) if (gd.Kind == Gadget.Truth) truth = true;
-            Check(truth && bent != null && bent.IsSpawned && bent.Warp.Value != 0, "the Stick of Truth bends the ground and the building there");
+            yield return new WaitForSeconds(1.5f);
+            Check(!truth && bent != null && bent.IsSpawned && NetGame.LiftedBy(bent.NetworkObject) > 2f, "the Lifting Stick (was the Stick of Truth) lifts the building it's shot at - no bent ground");
             pc.SetLook(Quaternion.LookRotation(truthAt - spot).eulerAngles.y, 10f);
             yield return Snap("prompt4_stick_of_truth");
-
-            // ---- the decoy base: a copy of ours, gone when it's hit
-            yield return Ready();
-            SpawnKeylessPiece(PieceType.Wall, team, OnGround(Cfg.BaseCenter[team] + side * 5f, 0f), Quaternion.identity);
-            var decoyAt = OnGround(spot - back * 30f, 0f);
-            g.ServerWackyLanded(Item.DecoyBase, decoyAt, me);
-            yield return new WaitForSeconds(0.6f);
-            int decoyId = -1;
-            foreach (var gd in g.Gadgets) if (gd.Kind == Gadget.DecoyBase) decoyId = gd.Id;
-            var decoyGo = GadgetFx.Find(decoyId);
-            Check(decoyId > 0 && decoyGo != null && decoyGo.transform.childCount > 10, $"the decoy base copies our base ({(decoyGo != null ? decoyGo.transform.childCount : 0)} parts)");
-            pc.LocalTeleport(decoyAt + back * (Cfg.BaseHalf + 8f) + Vector3.up * 3f, Quaternion.LookRotation(-back).eulerAngles.y);
-            pc.SetLook(Quaternion.LookRotation(-back).eulerAngles.y, 12f);
-            yield return Snap("prompt4_decoy_base");
-            me.DecoyBaseHitRpc(decoyId);
-            yield return new WaitForSeconds(0.4f);
-            bool still = false;
-            foreach (var gd in g.Gadgets) if (gd.Id == decoyId) still = true;
-            Check(!still, "hitting it: gone in smoke");
 
             // ---- the instant base rebuild
             yield return Ready();
@@ -439,8 +422,11 @@ namespace RockGame
             // ---- the double jump boots
             yield return Ready();
             me.ServerGive(Item.JumpBoots, 1);
+            yield return Hold(me, Item.JumpBoots);
             yield return new WaitForSeconds(0.6f);
-            Check(me.WornBoots.Value && me.Count(Item.JumpBoots) == 0, "the jump boots go on by themselves");
+            me.UseItemRpc();
+            yield return new WaitForSeconds(0.4f);
+            Check(me.WornBoots.Value && me.Count(Item.JumpBoots) == 0, "the jump boots go on when you click with them");
             int dj0 = pc.DoubleJumps;
             Binds.TestPress(Bind.Jump);
             yield return new WaitForSeconds(0.25f);
@@ -491,7 +477,7 @@ namespace RockGame
                 me.MoveItemRpc(1, 0, 0, 255, fake.Slots[0].Count, fake.NetworkObject);
                 yield return new WaitForSeconds(0.4f);
                 int has = 0; for (int i = 0; i < me.Inv.Count; i++) if (!me.Inv[i].Empty) has++;
-                Check(has == had && !fake.Slots[0].Empty, "nothing comes out of it");
+                Check(has == had && !fake.Slots[0].Empty && !Hud.LastWackyNote.ToUpperInvariant().Contains("FAKE"), $"nothing comes out of it - and nothing says it's fake ({Hud.LastWackyNote})");
             }
 
             // ---- the suicide bomb: us and everyone round us
@@ -519,6 +505,7 @@ namespace RockGame
             int missing = 0;
             foreach (var it in Cfg.AirdropChoices)
             {
+                if (Cfg.Removed(it)) continue; // (the decoy base: taken out)
                 bool there = me.Count(it) > 0 || (it == Item.JumpBoots && me.WornBoots.Value) || (it == Item.Jetpack && me.WornJetFuel.Value > 0) || (it == Item.Wallhack && me.WornGlasses.Value); // (worn gear goes straight on)
                 if (!there) foreach (var d in g.Items) if (d.Stack.Id == it && Flat(d.Pos, me.transform.position) < 8f) there = true;
                 if (!there) { missing++; Log($"(not given: {it})"); }

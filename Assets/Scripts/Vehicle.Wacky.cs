@@ -35,6 +35,10 @@ namespace RockGame
         GameObject m_DecoyItem;
         readonly List<Material> m_DecoyMats = new List<Material>();
 
+        /// <summary>The lifting stick (NetGame.Lift.cs): thrown straight up - on whoever's machine moves it.</summary>
+        [Rpc(SendTo.Owner)]
+        public void LiftUpRpc(float speed) { m_VelY = Mathf.Max(m_VelY, speed); }
+
         PlayerNet WackyOwnerPlayer => NetworkManager != null && NetworkManager.SpawnManager.SpawnedObjects.TryGetValue(WackyOwner.Value, out var no) ? no.GetComponent<PlayerNet>() : null;
 
         string WackyName

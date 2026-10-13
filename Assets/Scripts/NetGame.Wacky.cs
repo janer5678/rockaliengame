@@ -306,8 +306,14 @@ namespace RockGame
             b.WackyNoteRpc(new FixedString128Bytes($"Your bag was swapped with {a.DisplayName}'s!"));
         }
 
+        /// <summary>The Sigil of CHAOS: until this server time every item lying in the world glows through walls on every
+        /// screen (NetGame.SyncItemVisuals - ChaosGlow).</summary>
+        public readonly NetworkVariable<double> ChaosGlowUntil = new NetworkVariable<double>(-1);
+        public bool ChaosGlowOn => IsSpawned && ChaosGlowUntil.Value > NetworkManager.ServerTime.Time;
+
         /// <summary>Server: every item in the game - everyone's bags, every chest and crate, everything on the ground - rains
-        /// down from the sky all over the map.</summary>
+        /// down from the sky, spread evenly over the whole map (a shuffled grid of spots, one each), and they all glow
+        /// through walls for Cfg.ChaosGlowTime so everyone can see where they went.</summary>
         public void ServerChaos(PlayerNet by)
         {
             var all = new List<ItemStack>();
@@ -322,21 +328,47 @@ namespace RockGame
                 for (int i = 0; i < c.Slots.Count; i++) { if (!c.Slots[i].Empty) all.Add(c.Slots[i]); c.Slots[i] = default; }
             }
             for (int i = Items.Count - 1; i >= 0; i--) { all.Add(Items[i].Stack); m_ItemBorn.Remove(Items[i].Id); Items.RemoveAt(i); }
-            float half = Cfg.MapHalf - 8f;
-            foreach (var st in all)
+            all.RemoveAll(st => st.Empty);
+            var spots = ChaosSpots(all.Count);
+            for (int i = 0; i < all.Count; i++)
             {
-                if (st.Empty) continue;
-                Vector3 at = Vector3.zero;
-                for (int tries = 0; tries < 8; tries++)
-                {
-                    at = new Vector3(Random.Range(-half, half), 0f, Random.Range(-half, half));
-                    if (!MapBuilder.GlassUp || new Vector2(at.x, at.z).magnitude > MapBuilder.DomeRadius + 2f) break;
-                }
-                at.y = MapBuilder.Height(at.x, at.z);
-                ServerDropItem(st, at + Vector3.up * 0.5f, Random.insideUnitSphere, at + Vector3.up * 70f + Random.insideUnitSphere * 6f);
+                var at = spots[i];
+                ServerDropItem(all[i], at + Vector3.up * 0.5f, Random.insideUnitSphere, at + Vector3.up * 70f + Random.insideUnitSphere * 6f);
             }
+            ChaosGlowUntil.Value = NetworkManager.ServerTime.Time + Cfg.ChaosGlowTime;
             Fx.Server(FxKind.ChaosFlash, by != null ? by.transform.position + Vector3.up : Vector3.up * 10f, Vector3.up);
             Broadcast($"{(by != null ? by.DisplayName : "Someone")} raised the SIGIL OF CHAOS - every item in the game is raining down!");
+        }
+
+        /// <summary>n spots spread evenly over the whole map: a grid of cells over it (not the dome while the glass is up, not
+        /// the sea on a theme map), shuffled, one item in each - a little off the middle of its cell so it's not a parade.
+        /// More items than cells: round again.</summary>
+        static List<Vector3> ChaosSpots(int n)
+        {
+            var spots = new List<Vector3>();
+            if (n <= 0) return spots;
+            float half = Cfg.MapHalf - 8f;
+            int side = Mathf.Max(2, Mathf.CeilToInt(Mathf.Sqrt(n * 1.15f)));
+            float cell = half * 2f / side;
+            var cells = new List<Vector3>();
+            for (int x = 0; x < side; x++)
+                for (int z = 0; z < side; z++)
+                {
+                    var c = new Vector3(-half + (x + 0.5f) * cell, 0f, -half + (z + 0.5f) * cell);
+                    if (MapBuilder.GlassUp && new Vector2(c.x, c.z).magnitude < MapBuilder.DomeRadius + 2f) continue;
+                    if (!ThemeMaps.SpotOk(c)) continue; // THEME MAPS (not in the sea)
+                    cells.Add(c);
+                }
+            if (cells.Count == 0) cells.Add(new Vector3(0f, 0f, -half * 0.5f));
+            for (int i = cells.Count - 1; i > 0; i--) { int j = Random.Range(0, i + 1); var t = cells[i]; cells[i] = cells[j]; cells[j] = t; }
+            for (int i = 0; i < n; i++)
+            {
+                var c = cells[i % cells.Count] + new Vector3(Random.Range(-0.3f, 0.3f), 0f, Random.Range(-0.3f, 0.3f)) * cell;
+                c.x = Mathf.Clamp(c.x, -half, half); c.z = Mathf.Clamp(c.z, -half, half);
+                c.y = MapBuilder.Height(c.x, c.z);
+                spots.Add(c);
+            }
+            return spots;
         }
 
         // =====================================================================
@@ -478,7 +510,7 @@ namespace RockGame
                 else if (Is("dance", "party", "disco", "music", "rave")) { ServerDanceAt(ground, p); said = "PARTY!"; }
                 else if (Is("glitter", "confetti", "sparkle", "fireworks", "rainbow", "junk", "mess")) { ServerAddGadget(Gadget.Clutter, ground, 0f, p.Team.Value, Cfg.ClutterTime, Random.Range(1, 99999)); said = "What a mess!"; }
                 else if (Is("snail", "slug")) { ServerAddGadget(Gadget.Snail, ground, p.transform.eulerAngles.y + 180f, p.Team.Value, Cfg.SnailTime, Random.Range(1, 99999)); said = "Everyone, look at the snail!"; }
-                else if (Is("bear", "grizzly", "panda")) { p.BearHpLeft.Value = Cfg.BearHp; Fx.Server(FxKind.BearPoof, p.transform.position + Vector3.up, Vector3.up); said = "You're a BEAR! (X turns you back)"; }
+                else if (Is("bear", "grizzly", "panda")) { p.ServerMakeBear(); said = "You're a BEAR!"; }
                 else if (Is("ant", "bug", "insect", "tiny", "small", "shrink")) { var e = NearestEnemy(); if (e != null && !e.WackySafe) { e.AntUntil.Value = e.NetworkManager.ServerTime.Time + Cfg.AntTime; Fx.Server(FxKind.AntZap, e.transform.position + Vector3.up, Vector3.up); said = $"{e.DisplayName} is an ant!"; } }
                 else if (Is("slow", "sloth", "turtle", "glue", "goo", "mud", "sticky", "honey")) { var e = NearestEnemy(); if (e != null && !e.WackySafe) { e.SlowUntil.Value = e.NetworkManager.ServerTime.Time + Cfg.SlowTime; Fx.Server(FxKind.Goo, e.transform.position, Vector3.up); said = $"{e.DisplayName} is stuck in goo!"; } }
                 else if (Is("tornado", "wind", "storm", "hurricane", "rain", "earthquake")) { ServerStickOfTruth(ground, p); said = "A STORM!"; }
@@ -536,6 +568,8 @@ namespace RockGame
         {
             switch (kind)
             {
+                case Item.BouncyCastle: if (by != null) by.ServerCastleLanded(this, point); break;
+                case Item.BearJuice: ServerBearSplash(point, by); break;
                 case Item.DanceBomb: ServerDanceAt(point, by); break;
                 case Item.ClutterBomb:
                     ServerAddGadget(Gadget.Clutter, PlayerNet.WackyGround(point, 3f), 0f, by != null ? by.Team.Value : 0, Cfg.ClutterTime, Random.Range(1, 99999));
@@ -550,6 +584,24 @@ namespace RockGame
                     break;
                 }
             }
+        }
+
+        /// <summary>Server: the thrown bear juice smashed here - everyone it splashes (Cfg.BearSplash: an enemy it hit, or the
+        /// thrower, if they threw it at their own feet) is a BEAR for Cfg.BearTime.</summary>
+        public void ServerBearSplash(Vector3 point, PlayerNet by)
+        {
+            Fx.Server(FxKind.BearPoof, point + Vector3.up * 0.5f, Vector3.up);
+            int n = 0;
+            foreach (var p in PlayerNet.All)
+            {
+                if (p == null || p.Dead.Value || p.WackySafe || p.IsBear) continue;
+                var c = p.transform.position + Vector3.up * 0.9f;
+                if (Vector3.Distance(c, point) > Cfg.BearSplash) continue;
+                p.ServerMakeBear();
+                n++;
+                if (p != by) Broadcast($"{(by != null ? by.DisplayName : "Someone")} turned {p.DisplayName} into a BEAR!");
+            }
+            if (n == 0 && by != null) by.WackyNoteRpc(new FixedString128Bytes("The bear juice splashed nobody"));
         }
 
         /// <summary>Server: an explosion here - any decoy base it reaches is found out (gone in smoke).</summary>
@@ -573,6 +625,7 @@ namespace RockGame
         {
             ServerTickGadgets(now);
             ServerTickMinigame(now);
+            ServerTickLifts(now); // (the lifting stick: NetGame.Lift.cs)
         }
     }
 }

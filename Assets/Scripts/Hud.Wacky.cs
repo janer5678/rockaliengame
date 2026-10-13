@@ -56,7 +56,7 @@ namespace RockGame
             }
             float Left(double until) => Mathf.Max(0f, (float)(until - now));
             if (me.WornBoots.Value) Row("DOUBLE JUMP BOOTS", new Color(0.35f, 0.8f, 0.45f, 0.85f));
-            if (me.IsBear) Row($"BEAR {me.BearHpLeft.Value:0} HP    X: turn back", new Color(0.55f, 0.35f, 0.18f, 0.95f), me.BearHpLeft.Value / Mathf.Max(1f, Cfg.BearHp));
+            if (me.IsBear) Row($"BEAR {me.BearHpLeft.Value:0} HP    {Clock(Left(me.BearUntil.Value))} left", new Color(0.55f, 0.35f, 0.18f, 0.95f), me.BearHpLeft.Value / Mathf.Max(1f, Cfg.BearHp));
             if (me.Shielded) Row($"SHIELD {Mathf.CeilToInt(Left(me.ShieldUntil.Value))}s", new Color(0.3f, 0.85f, 1f, 0.85f), Left(me.ShieldUntil.Value) / Mathf.Max(1f, Cfg.ShieldTime));
             if (me.Slowed) Row($"SLOWED {Mathf.CeilToInt(Left(me.SlowUntil.Value))}s", new Color(0.6f, 0.3f, 0.85f, 0.85f), Left(me.SlowUntil.Value) / Mathf.Max(1f, Cfg.SlowTime));
             if (me.IsAnt) Row($"ANT {Mathf.CeilToInt(Left(me.AntUntil.Value))}s", new Color(0.35f, 0.3f, 0.25f, 0.95f), Left(me.AntUntil.Value) / Mathf.Max(1f, Cfg.AntTime));
@@ -73,6 +73,7 @@ namespace RockGame
             float sw = Screen.width, sh = Screen.height, k = m_Scale;
             double now = me.NetworkManager != null ? me.NetworkManager.ServerTime.Time : 0;
             DrawMonsterSplats(sw, sh);
+            DrawClutterScreen(sw, sh, k);
             // the views
             if (PlayerController.SnailShot(out _, out _))
             {
@@ -96,8 +97,8 @@ namespace RockGame
             if (me.IsBear)
             {
                 var st = new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt(26 * k) };
-                Shadowed(new Rect(0, sh - 205 * k, sw, 40 * k), "<color=#ffcf8a>PRESS X TO TURN BACK</color>", st);
-                Shadowed(new Rect(0, sh - 172 * k, sw, 26 * k), "LMB: claws (tear through bases)   You can carry the ball - but no looting or items", m_Center);
+                Shadowed(new Rect(0, sh - 205 * k, sw, 40 * k), $"<color=#ffcf8a>BEAR  {Clock(Mathf.Max(0f, (float)(me.BearUntil.Value - now)))}</color>", st);
+                Shadowed(new Rect(0, sh - 172 * k, sw, 26 * k), "LMB: claws (tear through bases)   No turning back until the time's up (or you die)   You can carry the ball - but no looting or items", m_Center);
             }
             if (me.Prisoned)
             {
@@ -162,6 +163,38 @@ namespace RockGame
                 GUI.color = new Color(1, 1, 1, a);
                 Shadowed(new Rect(0, sh * 0.26f - row * 38 * k, sw, 40 * k), s_Notes[i].Text, st);
                 GUI.color = old;
+            }
+        }
+
+        /// <summary>Your eyes are in a clutter bomb's cloud: a haze of colour and junk all over the screen - you can hardly
+        /// see a thing (the aliens in there least of all).</summary>
+        void DrawClutterScreen(float sw, float sh, float k)
+        {
+            var cam = Camera.main;
+            float c = cam != null ? GadgetFx.ClutterAt(NetGame.Instance, cam.transform.position) : 0f;
+            if (c <= 0.01f) return;
+            // a thick shifting haze
+            float hue = Mathf.Repeat(Time.time * 0.15f, 1f);
+            var haze = Color.HSVToRGB(hue, 0.35f, 0.95f); haze.a = 0.62f * c;
+            Fill(new Rect(0, 0, sw, sh), haze);
+            // big soft blobs of colour drifting over it
+            var rr = new System.Random(7);
+            for (int i = 0; i < 26; i++)
+            {
+                float sp = 0.03f + (float)rr.NextDouble() * 0.06f;
+                float x = Mathf.Repeat((float)rr.NextDouble() + Time.time * sp * ((i & 1) == 0 ? 1f : -1f), 1.2f) - 0.1f;
+                float y = Mathf.Repeat((float)rr.NextDouble() + Time.time * sp * 0.6f, 1.2f) - 0.1f;
+                float sz = (180f + (float)rr.NextDouble() * 320f) * k;
+                var col = Color.HSVToRGB((float)rr.NextDouble(), 0.75f, 1f); col.a = 0.5f * c;
+                DrawDot(new Rect(x * sw - sz / 2, y * sh - sz / 2, sz, sz), col);
+            }
+            // glitter and confetti everywhere, flickering
+            var fr = new System.Random(Mathf.FloorToInt(Time.time * 12f));
+            for (int i = 0; i < 160; i++)
+            {
+                float sz = (5f + (float)fr.NextDouble() * 16f) * k;
+                var col = Color.HSVToRGB((float)fr.NextDouble(), 0.8f, 1f); col.a = 0.9f * c;
+                Fill(new Rect((float)fr.NextDouble() * sw, (float)fr.NextDouble() * sh, sz, sz * (0.5f + (float)fr.NextDouble())), col);
             }
         }
 

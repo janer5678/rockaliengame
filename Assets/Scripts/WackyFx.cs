@@ -124,6 +124,19 @@ namespace RockGame
                     Sfx.Play(Sfx.Thud, pos, 1f, 0.1f);
                     for (int i = 0; i < 6; i++) FxParticle.Spawn(pos + Vector3.up * 0.5f, Random.insideUnitSphere * 2f + Vector3.up * 2f, new Color(1f, 0.9f, 0.3f), 0.08f, 0.8f, 3f, false);
                     break;
+                case FxKind.Lift:
+                    // the lifting stick: a whoosh of purple and white sparkles shooting up from under it
+                    for (int i = 0; i < 26; i++) FxParticle.Spawn(pos + new Vector3(Random.Range(-1f, 1f), Random.Range(-0.3f, 0.6f), Random.Range(-1f, 1f)), Vector3.up * Random.Range(4f, 9f) + Random.insideUnitSphere, Color.Lerp(new Color(0.7f, 0.45f, 1f), Color.white, Random.value * 0.6f), Random.Range(0.05f, 0.12f), Random.Range(0.6f, 1.2f), -1f, false);
+                    for (int i = 0; i < 8; i++) FxParticle.Puff(pos + Random.insideUnitSphere * 1.2f, new Color(0.85f, 0.85f, 0.85f, 0.5f), Random.Range(0.7f, 1.2f), 0.8f, Vector3.up * 1.5f);
+                    Sfx.Play(Sfx.Portal, pos, 1f, 0.1f, 70f);
+                    break;
+                case FxKind.BearSwipe:
+                    // three claw streaks raked across the air, and a growl
+                    for (int k = 0; k < 3; k++)
+                        for (int i = 0; i < 6; i++)
+                            FxParticle.Spawn(pos + Vector3.up * (k - 1) * 0.18f + dir * (i * 0.12f - 0.3f), dir * 2f, new Color(1f, 1f, 1f, 0.8f), 0.05f, 0.25f, 0f, false);
+                    Sfx.Play(Sfx.Growl, pos, 0.8f, 0.15f, 50f);
+                    break;
                 case FxKind.WackyBeam:
                 {
                     var end = pos + dir;

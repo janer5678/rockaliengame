@@ -4,11 +4,13 @@ using UnityEngine;
 namespace RockGame
 {
     /// <summary>
-    /// Worn gear, put on by itself like armour the moment it's in your inventory:
+    /// Worn gear. Nothing goes on by itself any more: it sits in your bag until you hold it and click (LMB / RMB -
+    /// UseItemRpc -> ServerWearGear), like armour:
     /// - the JETPACK goes on your back (hold Space to fly while there's fuel - PlayerController.TickJetpack); its fuel % shows
-    ///   bottom left, under the armour. Run dry, it's gone, and the next jetpack you have goes straight on.
+    ///   bottom left, under the armour. Run dry, it's gone.
     /// - the WALLHACK GLASSES go on your face: enemies glow through walls for as long as you wear them (no durability).
-    /// Once worn, neither drops when you die: you keep them on.
+    /// - the DOUBLE JUMP BOOTS go on your feet (PlayerNet.Wacky.cs: they break when you die).
+    /// Once worn, the jetpack and glasses don't drop when you die: you keep them on.
     /// </summary>
     public partial class PlayerNet
     {
@@ -21,31 +23,35 @@ namespace RockGame
         /// <summary>Enemies show through walls for this player: glasses on, or a pair held.</summary>
         public bool SeesThroughWalls => WornGlasses.Value || HeldItem == Item.Wallhack;
 
-        float m_NextGearCheck;
         GameObject m_JetPack;
 
-        /// <summary>Server, a few times a second: a jetpack or a pair of glasses in the inventory goes straight on.</summary>
-        void ServerAutoEquip()
+        /// <summary>Server, UseItemRpc: the held jetpack, glasses or jump boots go on (true = it was one of them).</summary>
+        bool ServerWearGear(ItemStack st)
         {
-            if (Time.time < m_NextGearCheck || Dead.Value) return;
-            m_NextGearCheck = Time.time + 0.2f;
-            for (int i = 0; i < Inv.Count; i++)
+            if (!Cfg.WornGear(st.Id)) return false;
+            if (st.Id == Item.Jetpack)
             {
-                var st = Inv[i];
-                if (st.Id == Item.Jetpack && WornJetFuel.Value <= 0)
-                {
-                    int fuel = st.Data > 0 ? st.Data : Cfg.JetpackFuel;
-                    Inv[i] = default;
-                    WornJetFuel.Value = (short)Mathf.Clamp(fuel, 1, 999);
-                    Notify($"Jetpack on: hold jump to fly ({FuelPercent}% fuel)");
-                }
-                else if (st.Id == Item.Wallhack && !WornGlasses.Value)
-                {
-                    Inv[i] = default;
-                    WornGlasses.Value = true;
-                    Notify("Wallhack glasses on: you see your enemies through walls");
-                }
+                if (WornJetFuel.Value > 0) { Notify("You're already wearing a jetpack"); return true; }
+                int fuel = st.Data > 0 ? st.Data : Cfg.JetpackFuel;
+                ServerClearSlot(HeldSlot.Value);
+                WornJetFuel.Value = (short)Mathf.Clamp(fuel, 1, 999);
+                Notify($"Jetpack on: hold jump to fly ({FuelPercent}% fuel)");
             }
+            else if (st.Id == Item.Wallhack)
+            {
+                if (WornGlasses.Value) { Notify("You're already wearing wallhack glasses"); return true; }
+                ServerClearSlot(HeldSlot.Value);
+                WornGlasses.Value = true;
+                Notify("Wallhack glasses on: you see your enemies through walls");
+            }
+            else if (st.Id == Item.JumpBoots)
+            {
+                if (WornBoots.Value) { Notify("You're already wearing jump boots"); return true; }
+                ServerClearSlot(HeldSlot.Value);
+                WornBoots.Value = true;
+                Note("Double jump boots on: jump again in the air!");
+            }
+            return true;
         }
 
         /// <summary>The worn jetpack's fuel as a percentage (0 with none on).</summary>
@@ -57,7 +63,7 @@ namespace RockGame
             if (WornJetFuel.Value <= 0) return;
             int used = Mathf.CeilToInt(Mathf.Clamp(seconds, 0f, 2f) / Mathf.Max(0.5f, Cfg.JetpackSeconds) * Cfg.JetpackFuel);
             int left = WornJetFuel.Value - used;
-            if (left <= 0) { WornJetFuel.Value = -1; Notify("The jetpack ran out of fuel"); m_NextGearCheck = 0f; }
+            if (left <= 0) { WornJetFuel.Value = -1; Notify("The jetpack ran out of fuel"); }
             else WornJetFuel.Value = (short)left;
         }
 

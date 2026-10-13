@@ -6,7 +6,7 @@ namespace RockGame
     // new kinds go at the end (they're sent over the network as bytes)
     public enum FxKind : byte { Blood, BloodHead, WoodChips, StoneChips, WeakSpot, Break, Smash, StructureHit, Spawn, C4Placed, Explosion, WandBeam, HelmetBreak, Craft, Drink, AirstrikeWarn, SniperTracer, PortalOpen, Timber, WeakSpotTree, Heal, BloodKill, LogBreak, PistolTracer, RevolverTracer, ShotgunTracer, Poof,
         // the wacky airdrop items (WackyFx.cs)
-        ShieldPing, GoldBurst, Fuse, Goo, BearPoof, AntZap, Boing, OmenFlash, ShellBoom, Tractor, Clack, Swap, ChaosFlash, TruthBlast, DanceBlast, ClutterPop, BigPoof, Deflate, Scribble, DecoyPoof, Bonk, WackyBeam }
+        ShieldPing, GoldBurst, Fuse, Goo, BearPoof, AntZap, Boing, OmenFlash, ShellBoom, Tractor, Clack, Swap, ChaosFlash, TruthBlast, DanceBlast, ClutterPop, BigPoof, Deflate, Scribble, DecoyPoof, Bonk, WackyBeam, Lift, BearSwipe }
 
     /// <summary>
     /// Game feel: particles (blood, chips, sparks), camera shake/kick, floating damage numbers and sounds.

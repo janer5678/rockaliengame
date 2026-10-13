@@ -19,6 +19,8 @@ namespace RockGame
         int m_LookTeam = -1;
         /// <summary>For the tests: is this player's own body (the alien) being drawn?</summary>
         public bool BodyShownForTests => m_VisualRoot != null && m_VisualRoot.gameObject.activeSelf;
+        /// <summary>For the tests: is your own body drawn in full (not just its shadow) - the attention snail's shot, dancing...</summary>
+        public bool SeeSelfForTests => m_SeeSelf;
         bool m_WasFlipVis;
 
         /// <summary>Update, before the body's shown or hidden: what the wacky items make of this player.</summary>
@@ -28,10 +30,11 @@ namespace RockGame
             bool hidden = !Mine && Hidden;
             // the bear and the ant take the alien's place
             bool bear = IsBear && !dead, ant = IsAnt && !dead && !bear;
-            if (bear != (m_BearLook != null)) { if (m_BearLook) Destroy(m_BearLook); m_BearLook = bear ? BuildBear() : null; m_CritterLegs.Clear(); if (bear) CollectLegs(m_BearLook); }
+            if (bear != (m_BearLook != null)) { if (m_BearLook) Destroy(m_BearLook); m_BearLook = bear ? BuildBear() : null; m_CritterLegs.Clear(); m_CritterLast = transform.position; }
             if (ant != (m_AntLook != null)) { if (m_AntLook) Destroy(m_AntLook); m_AntLook = ant ? BuildAnt() : null; if (!bear) m_CritterLegs.Clear(); if (ant) CollectLegs(m_AntLook); }
             if (bear || ant) showBody = false;
-            var critter = bear ? m_BearLook : ant ? m_AntLook : null;
+            if (bear && m_BearLook != null) { m_BearLook.SetActive(!hidden); AnimateBear(dt); }
+            var critter = ant ? m_AntLook : null;
             if (critter != null)
             {
                 critter.SetActive(!hidden);
@@ -92,6 +95,17 @@ namespace RockGame
             m_CritterLast = transform.position;
         }
 
+        // ---------------- the bear ----------------
+
+        Transform m_BearBody, m_BearHead, m_BearJaw;
+        readonly Transform[] m_BearLegs = new Transform[4];   // front left, front right, back left, back right
+        float m_LastSwingVis, m_BearSwipe = 1f;
+        int m_SwipeSide;
+        /// <summary>For the tests' screenshots: hold every bear's swipe at this point (0..1; -1 = play it as normal).</summary>
+        public static float DebugBearSwipe = -1f;
+
+        /// <summary>The bear: its body hinges at the hips (so it can rear up), the head and front legs go with it, the jaw
+        /// opens, and its front paws have claws. AnimateBear moves it all.</summary>
         GameObject BuildBear()
         {
             var go = new GameObject("bear");
@@ -99,34 +113,108 @@ namespace RockGame
             var t = go.transform;
             var fur = new Color(0.45f, 0.29f, 0.16f);
             var dark = new Color(0.22f, 0.13f, 0.07f);
+            var muzzle = new Color(0.6f, 0.45f, 0.3f);
             var team = Cfg.TeamColor[Mathf.Clamp(Team.Value, 0, 3)];
-            Art.Part(t, Art.Sphere, fur, new Vector3(0, 0.95f, -0.15f), new Vector3(1.0f, 0.85f, 1.75f));    // the body
-            Art.Part(t, Art.Sphere, fur * 1.05f, new Vector3(0, 1.18f, 0.5f), new Vector3(0.85f, 0.8f, 0.8f));  // the hump
+            var hips = new Vector3(0, 0.9f, -0.62f);
+            m_BearBody = new GameObject("body").transform;
+            m_BearBody.SetParent(t, false);
+            m_BearBody.localPosition = hips;
+            var b = m_BearBody;
+            Vector3 L(float x, float y, float z) => new Vector3(x, y, z) - hips; // (placed as on the bear, hung off the hips)
+            Art.Part(b, Art.Sphere, fur, L(0, 0.95f, -0.15f), new Vector3(1.0f, 0.85f, 1.75f));    // the body
+            Art.Part(b, Art.Sphere, fur * 1.05f, L(0, 1.18f, 0.5f), new Vector3(0.85f, 0.8f, 0.8f));  // the hump
+            Art.Part(b, Art.Sphere, fur * 1.15f, L(0, 1.32f, -0.1f), new Vector3(0.7f, 0.25f, 1.2f)); // (the light along its back)
+            Art.Part(b, Art.Cylinder, team, L(0, 1.25f, 0.85f), new Vector3(0.66f, 0.05f, 0.66f), new Vector3(70, 0, 0)); // a collar in their team's colour
             for (int s2 = -1; s2 <= 1; s2 += 2) Art.Part(t, Art.Sphere, fur * 0.92f, new Vector3(s2 * 0.3f, 0.95f, -0.75f), new Vector3(0.45f, 0.6f, 0.5f)); // the haunches
-            var head = new GameObject("head").transform;
-            head.SetParent(t, false);
-            head.localPosition = new Vector3(0, 1.42f, 1.0f);
+            Art.Part(t, Art.Sphere, muzzle, new Vector3(0, 1.08f, -1.02f), Vector3.one * 0.22f); // the tail
+            m_BearHead = new GameObject("head").transform;
+            m_BearHead.SetParent(b, false);
+            m_BearHead.localPosition = L(0, 1.42f, 1.0f);
+            var head = m_BearHead;
             Art.Part(head, Art.Sphere, fur, Vector3.zero, new Vector3(0.62f, 0.58f, 0.62f));
-            Art.Part(head, Art.Sphere, new Color(0.6f, 0.45f, 0.3f), new Vector3(0, -0.08f, 0.3f), new Vector3(0.3f, 0.24f, 0.32f)); // the snout
-            Art.Part(head, Art.Sphere, Color.black, new Vector3(0, -0.02f, 0.46f), new Vector3(0.11f, 0.08f, 0.08f));
+            Art.Part(head, Art.Sphere, muzzle, new Vector3(0, -0.03f, 0.3f), new Vector3(0.3f, 0.18f, 0.32f)); // the snout
+            Art.Part(head, Art.Sphere, Color.black, new Vector3(0, 0.02f, 0.46f), new Vector3(0.11f, 0.08f, 0.08f));
+            m_BearJaw = new GameObject("jaw").transform;
+            m_BearJaw.SetParent(head, false);
+            m_BearJaw.localPosition = new Vector3(0, -0.12f, 0.12f);
+            Art.Part(m_BearJaw, Art.Sphere, muzzle * 0.9f, new Vector3(0, -0.02f, 0.18f), new Vector3(0.26f, 0.1f, 0.28f));
+            Art.Part(m_BearJaw, Art.Sphere, new Color(0.55f, 0.12f, 0.15f), new Vector3(0, 0.02f, 0.16f), new Vector3(0.18f, 0.04f, 0.2f)); // (inside the mouth)
             for (int s = -1; s <= 1; s += 2)
             {
                 Art.Part(head, Art.Sphere, dark, new Vector3(s * 0.22f, 0.28f, -0.02f), new Vector3(0.17f, 0.17f, 0.09f));
                 Art.Part(head, Art.Sphere, Color.black, new Vector3(s * 0.13f, 0.1f, 0.27f), Vector3.one * 0.07f);
+                Art.Box(head, Color.white, new Vector3(s * 0.06f, -0.1f, 0.4f), new Vector3(0.025f, 0.05f, 0.025f)); // (fangs)
             }
-            Art.Part(t, Art.Cylinder, team, new Vector3(0, 1.25f, 0.85f), new Vector3(0.66f, 0.05f, 0.66f), new Vector3(70, 0, 0)); // a collar in their team's colour
             for (int i = 0; i < 4; i++)
             {
+                bool front = i < 2;
                 var leg = new GameObject("leg").transform;
-                leg.SetParent(t, false);
-                leg.localPosition = new Vector3(i % 2 == 0 ? -0.36f : 0.36f, 0.85f, i < 2 ? 0.55f : -0.65f);
+                leg.SetParent(front ? b : t, false);
+                var at = new Vector3(i % 2 == 0 ? -0.36f : 0.36f, 0.85f, front ? 0.55f : -0.65f);
+                leg.localPosition = front ? L(at.x, at.y, at.z) : at;
                 Art.Part(leg, Art.Capsule, dark * 1.4f, new Vector3(0, -0.42f, 0), new Vector3(0.3f, 0.42f, 0.32f));
                 Art.Box(leg, dark, new Vector3(0, -0.82f, 0.06f), new Vector3(0.3f, 0.08f, 0.38f));
+                if (front) for (int c = -1; c <= 1; c++) Art.Box(leg, new Color(0.92f, 0.9f, 0.82f), new Vector3(c * 0.09f, -0.84f, 0.28f), new Vector3(0.035f, 0.035f, 0.12f), new Vector3(25, 0, 0)); // (claws)
+                m_BearLegs[i] = leg;
             }
-            Art.Part(t, Art.Sphere, new Color(0.62f, 0.45f, 0.28f), new Vector3(0, 1.08f, -1.02f), Vector3.one * 0.22f); // the tail
-            Art.Part(t, Art.Sphere, fur * 1.15f, new Vector3(0, 1.32f, -0.1f), new Vector3(0.7f, 0.25f, 1.2f)); // (the light along its back)
             t.localScale = Vector3.one * 1.15f;
+            m_LastSwingVis = 0f;
+            m_BearSwipe = 1f;
             return go; // (your own bear is seen too: a bear's view is from behind it)
+        }
+
+        /// <summary>Every frame: the bear walks (a proper diagonal gait - front left with back right - its body rolling and
+        /// bobbing, head nodding), breathes and looks about standing still, and SWIPES: it rears up on its back legs, one
+        /// front paw comes up high and rakes down, the head lunges with its jaw open (the paws take turns).</summary>
+        void AnimateBear(float dt)
+        {
+            if (m_BearBody == null) return;
+            var d = transform.position - m_CritterLast; d.y = 0f;
+            m_CritterLast = transform.position;
+            float speed = dt > 0f ? Mathf.Min(d.magnitude / dt, 12f) : 0f;
+            float walk = Mathf.Clamp01(speed / 1.2f);
+            if (walk > 0.05f) m_CritterPhase += dt * (1.5f + speed * 3.4f);
+            float t = Time.time;
+            // a new swipe: the other paw this time
+            if (m_Swing > m_LastSwingVis + 0.3f) { m_SwipeSide = 1 - m_SwipeSide; m_BearSwipe = 0f; }
+            m_LastSwingVis = m_Swing;
+            m_BearSwipe = Mathf.Min(1f, m_BearSwipe + dt / 0.6f);
+            float u = DebugBearSwipe >= 0f ? DebugBearSwipe : m_BearSwipe;
+            // the swipe's three beats: rear up and raise the paw (0 - 0.35), rake it down (0.35 - 0.6), settle (0.6 - 1)
+            float rear, paw, lunge, jaw;
+            if (u < 0.35f) { float e = Mathf.SmoothStep(0f, 1f, u / 0.35f); rear = -20f * e; paw = -125f * e; lunge = 0f; jaw = 15f * e; }
+            else if (u < 0.6f) { float e = Mathf.SmoothStep(0f, 1f, (u - 0.35f) / 0.25f); rear = Mathf.Lerp(-20f, 8f, e); paw = Mathf.Lerp(-125f, 40f, e); lunge = e; jaw = Mathf.Lerp(15f, 35f, e); }
+            else { float e = Mathf.SmoothStep(0f, 1f, (u - 0.6f) / 0.4f); rear = Mathf.Lerp(8f, 0f, e); paw = Mathf.Lerp(40f, 0f, e); lunge = 1f - e; jaw = Mathf.Lerp(35f, 0f, e); }
+            float swiping = u < 1f ? 1f : 0f;
+            // the walk: diagonal pairs (front left + back right, then front right + back left)
+            float ph = m_CritterPhase;
+            float bob = Mathf.Abs(Mathf.Sin(ph)) * 0.07f * walk;
+            float breathe = 1f + Mathf.Sin(t * 2.1f) * 0.025f * (1f - walk);
+            m_BearBody.localRotation = Quaternion.Euler(rear + Mathf.Sin(ph * 2f) * 2f * walk, 0f, Mathf.Sin(ph) * 3.5f * walk);
+            m_BearBody.localScale = new Vector3(1f, breathe, 1f);
+            m_BearLook.transform.localPosition = Vector3.up * bob;
+            m_BearLook.transform.localRotation = Quaternion.identity;
+            for (int i = 0; i < 4; i++)
+            {
+                var leg = m_BearLegs[i];
+                if (leg == null) continue;
+                bool pair = i == 0 || i == 3;
+                float swing = Mathf.Sin(ph + (pair ? 0f : Mathf.PI)) * 32f * walk;
+                if (i < 2 && swiping > 0f)
+                {
+                    // the swiping paw comes right up and rakes down across; the other one braces
+                    if (i == m_SwipeSide) leg.localRotation = Quaternion.Euler(paw, 0f, (i == 0 ? 1f : -1f) * 18f * Mathf.Clamp01(-paw / 60f));
+                    else leg.localRotation = Quaternion.Euler(-rear * 0.6f + swing * 0.3f, 0f, 0f);
+                }
+                else leg.localRotation = Quaternion.Euler(swing - (i < 2 ? rear * 0.4f : 0f), 0f, 0f);
+            }
+            // the head: nods with the walk, looks about standing still, lunges into the swipe; the jaw opens
+            if (m_BearHead != null)
+            {
+                float look = Mathf.Sin(t * 0.6f) * 14f * (1f - walk) * (1f - swiping);
+                m_BearHead.localRotation = Quaternion.Euler(Mathf.Sin(ph * 2f) * 5f * walk - lunge * 12f + rear * 0.5f, look, 0f);
+            }
+            if (m_BearJaw != null) m_BearJaw.localRotation = Quaternion.Euler(jaw + Mathf.Max(0f, Mathf.Sin(t * 0.9f)) * 4f * (1f - walk), 0f, 0f);
         }
 
         GameObject BuildAnt()

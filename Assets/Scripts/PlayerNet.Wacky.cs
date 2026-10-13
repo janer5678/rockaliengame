@@ -22,8 +22,10 @@ namespace RockGame
         public readonly NetworkVariable<double> GlitterUntil = new NetworkVariable<double>(-1);
         /// <summary>The disguise kit: the team this player looks like (255 = none).</summary>
         public readonly NetworkVariable<byte> DisguiseTeam = new NetworkVariable<byte>(255);
-        /// <summary>Bear juice: the bear's health left (0 = not a bear).</summary>
+        /// <summary>Bear juice: the bear's health left (0 = not a bear), and the server time it wears off (Cfg.BearTime - no
+        /// turning back before then, unless you die).</summary>
         public readonly NetworkVariable<float> BearHpLeft = new NetworkVariable<float>(0f);
+        public readonly NetworkVariable<double> BearUntil = new NetworkVariable<double>(-1);
         /// <summary>Wearing the double jump boots (they break when you die).</summary>
         public readonly NetworkVariable<bool> WornBoots = new NetworkVariable<bool>();
         /// <summary>The turret bot this player is driving (its NetworkObjectId; 0 = none).</summary>
@@ -50,7 +52,7 @@ namespace RockGame
         public bool WackyNoAttack => Shielded || IsAnt || WackyHeld;
         /// <summary>Nothing can hurt this player right now.</summary>
         public bool WackySafe => Shielded || IsAnt || Prisoned || MinigameOn;
-        public float WackySpeedMul => (Slowed ? Cfg.SlowMul : 1f) * (IsBear ? Cfg.BearSpeedMul : 1f) * (IsAnt ? 0.6f : 1f);
+        public float WackySpeedMul => (Slowed ? Cfg.SlowMul : 1f) * (IsBear ? Cfg.BearSpeedMul : 1f) * (IsAnt ? Cfg.AntSpeedMul : 1f);
         /// <summary>The team this player looks like they're on (a disguise shows the enemy's).</summary>
         public int ApparentTeam => Disguised ? DisguiseTeam.Value : Team.Value;
         /// <summary>The name over / on them: a disguised player borrows one of that team's players' names.</summary>
@@ -102,8 +104,8 @@ namespace RockGame
             Health.Value = Cfg.MaxHealth;
             GlitterUntil.Value = Now + Cfg.GlitterTime;
             Fx.Server(FxKind.GoldBurst, transform.position + Vector3.up * 1.1f, Vector3.up);
-            WackyNoteRpc(new FixedString128Bytes("The GOLDEN ROCK saved you!"));
-            if (NetGame.Instance != null) NetGame.Instance.Broadcast($"{DisplayName}'s golden rock saved them from death!");
+            WackyNoteRpc(new FixedString128Bytes("The ROCK OF IMMORTALITY saved you!"));
+            if (NetGame.Instance != null) NetGame.Instance.Broadcast($"{DisplayName}'s Rock of Immortality saved them from death!");
             return true;
         }
 
@@ -113,10 +115,10 @@ namespace RockGame
             ShieldUntil.Value = SlowUntil.Value = AntUntil.Value = PrisonUntil.Value = DanceUntil.Value = KnockUntil.Value = -1;
             DisguiseTeam.Value = 255;
             BearHpLeft.Value = 0f;
+            BearUntil.Value = -1;
             if (WornBoots.Value) { WornBoots.Value = false; Notify("Your double jump boots broke"); }
             ServerEndDrone(false);
             UnflipRpc();
-            m_GrabBall = false;
         }
 
         /// <summary>Server, whenever this player attacks (Reveal): a disguise falls off.</summary>
@@ -159,13 +161,13 @@ namespace RockGame
             if ((origin - EyePos).sqrMagnitude > 25f) origin = EyePos;
             dir = dir.sqrMagnitude > 0.01f ? dir.normalized : transform.forward;
             PlayerNet tp = null;
-            if (hasTarget && target.TryGet(out var tno)) tp = tno.GetComponent<PlayerNet>();
+            NetworkObject tobj = null;
+            if (hasTarget && target.TryGet(out var tno)) { tobj = tno; tp = tno.GetComponent<PlayerNet>(); }
             // the zappy ones: their beam for everyone else (the user drew their own)
             if (kind == Item.Connect4Wand || kind == Item.GameshowWand || kind == Item.AntGun || kind == Item.SlowGun || kind == Item.StickOfTruth)
                 Fx.Server(FxKind.WackyBeam, origin + dir * 0.4f, Vector3.ClampMagnitude(point - origin, 150f), OwnerClientId);
             switch (kind)
             {
-                case Item.BouncyCastle: ServerCastle(g, point); break;
                 case Item.Decoy:
                 {
                     ServerConsumeHeld();
@@ -187,9 +189,11 @@ namespace RockGame
                 }
                 case Item.StickOfTruth:
                 {
-                    if (!PortalPass.ReachOk(EyePos, point, 120f)) point = EyePos + dir * 40f;
+                    // the lifting stick: whatever it hits goes up (NetGame.Lift.cs)
+                    if (!PortalPass.ReachOk(EyePos, point, 125f)) point = EyePos + dir * 40f;
+                    if (tobj != null && (Vector3.Distance(tobj.transform.position, EyePos) > 130f || GlassBetween(transform.position, tobj.transform.position))) tobj = null;
                     ServerUseCharge(Item.StickOfTruth);
-                    g.ServerStickOfTruth(point, this);
+                    if (!g.ServerLift(point, tobj, this)) Note("Nothing there to lift");
                     break;
                 }
                 case Item.SuicideBomb:
@@ -228,13 +232,6 @@ namespace RockGame
                     }
                     break;
                 }
-                case Item.BearJuice:
-                    ServerConsumeHeld();
-                    if (CarryingBall) { } // (a bear can carry the ball)
-                    BearHpLeft.Value = Cfg.BearHp;
-                    Fx.Server(FxKind.BearPoof, transform.position + Vector3.up, Vector3.up);
-                    Note("You're a BEAR! Claws: LMB.  X: turn back");
-                    break;
                 case Item.ChaosSigil: ServerConsumeHeld(); g.ServerChaos(this); break;
                 case Item.DroneBot: ServerStartDrone(); break;
                 case Item.BaseRebuild:
@@ -302,16 +299,21 @@ namespace RockGame
             return new Vector3(p.x, best, p.z);
         }
 
-        void ServerCastle(NetGame g, Vector3 point)
+        /// <summary>The thrown bouncy castle landed (ThrownLandRpc -> NetGame.ServerWackyLanded): it pops up there - unless
+        /// that's right against the enemy's buildings or over the glass wall, when it bounces back into your bag.</summary>
+        public void ServerCastleLanded(NetGame g, Vector3 point)
         {
-            if (!PortalPass.ReachOk(EyePos, point, 45f)) { Note("Too far - aim closer"); return; }
             var at = WackyGround(point, 4f);
-            if (GlassBetween(transform.position, at)) { Note("Not on the other side of the glass wall"); return; }
-            string problem = Deployables.BarricadeEnemyProblem(Team.Value, at);
-            if (problem != null) { Note(problem); return; }
+            string problem = GlassBetween(transform.position, at) ? "Not on the other side of the glass wall" : Deployables.BarricadeEnemyProblem(Team.Value, at);
+            if (problem != null)
+            {
+                Note(problem + " - it bounced back to you");
+                int left = ServerGive(Item.BouncyCastle, 1);
+                if (left > 0) g.ServerDropItem(ItemStack.Of(Item.BouncyCastle, left), transform.position + transform.forward, transform.forward, EyePos);
+                return;
+            }
             var toMe = transform.position - at; toMe.y = 0f;
             float yaw = toMe.sqrMagnitude > 0.01f ? Quaternion.LookRotation(toMe).eulerAngles.y : 0f;
-            ServerConsumeHeld();
             g.ServerAddGadget(Gadget.Castle, at, yaw, Team.Value, Cfg.CastleLife, Random.Range(1, 99999));
             Fx.Server(FxKind.Boing, at + Vector3.up, Vector3.up);
         }
@@ -464,9 +466,7 @@ namespace RockGame
 
         // ---------------- the ball grabber ----------------
 
-        bool m_GrabBall;
-        float m_GrabUntil;
-
+        /// <summary>The ball snaps straight into your hands (a beam from it to you), and the grabber breaks.</summary>
         void ServerStartBallGrab()
         {
             var b = Ball.Instance;
@@ -477,30 +477,13 @@ namespace RockGame
             float d = Vector3.Distance(b.transform.position, EyePos);
             if (d > Cfg.BallGrabRange) { Note($"Too far away ({d:0} m) - get within {Cfg.BallGrabRange:0} m"); return; }
             if (WallBetween(EyePos, b.transform.position, this)) { Note("Something's in the way - it can't pull through walls"); return; }
-            m_GrabBall = true;
-            m_GrabUntil = Time.time + 6f;
-            Fx.Server(FxKind.Tractor, EyePos, (b.transform.position - EyePos).normalized);
-        }
-
-        /// <summary>Server, every frame of a pull: the ball flies straight at you; in your hands, the grabber breaks.</summary>
-        void ServerTickBallGrab()
-        {
-            if (!m_GrabBall) return;
-            var b = Ball.Instance;
-            if (Dead.Value || b == null || !b.IsSpawned || b.IsCarried || Time.time > m_GrabUntil || HeldItem != Item.BallGrabber) { m_GrabBall = false; return; }
-            var to = Ball.CarryPoint(this);
-            var d = to - b.transform.position;
-            if (d.magnitude < 1.4f)
-            {
-                m_GrabBall = false;
-                if (HeldItem == Item.BallGrabber) ServerConsumeHeld();
-                b.ServerPickup(this);
-                Fx.Server(FxKind.Break, to, Vector3.up);
-                Note("Got it! The Ball Grabber 3000 broke");
-                return;
-            }
-            if (WallBetween(b.transform.position, to, this)) { m_GrabBall = false; Note("The ball hit something - it can't come through walls"); return; }
-            b.ServerDrop(b.transform.position, d.normalized * Cfg.BallGrabSpeed);
+            var from = b.transform.position;
+            Fx.Server(FxKind.Tractor, EyePos, (from - EyePos).normalized);
+            if (!b.ServerPickup(this)) { Note("It slipped out of the beam"); return; }
+            ServerClearSlot(HeldSlot.Value); // (it breaks)
+            Fx.Server(FxKind.Poof, from, Vector3.up);
+            Fx.Server(FxKind.Break, Ball.CarryPoint(this), Vector3.up);
+            Note("Got it! The Ball Grabber 3000 broke");
         }
 
         // ---------------- the melee ones ----------------
@@ -584,13 +567,26 @@ namespace RockGame
 
         // ---------------- bear juice ----------------
 
-        /// <summary>X: a bear turns back into an alien.</summary>
-        [Rpc(SendTo.Server)]
-        public void BearOffRpc()
+        /// <summary>Server: this player is a BEAR for Cfg.BearTime (no turning back until then, unless they die).</summary>
+        public void ServerMakeBear()
         {
-            if (!IsBear) return;
-            BearHpLeft.Value = 0f;
+            if (Dead.Value) return;
+            if (Riding) ServerDismount();
+            BearHpLeft.Value = Cfg.BearHp;
+            BearUntil.Value = Now + Cfg.BearTime;
             Fx.Server(FxKind.BearPoof, transform.position + Vector3.up, Vector3.up);
+            Note($"You're a BEAR for {Cfg.BearTime / 60f:0.#} minutes! Claws: LMB");
+        }
+
+        /// <summary>Server: the bear's time is up - back to an alien.</summary>
+        void ServerTickBear()
+        {
+            if (BearHpLeft.Value <= 0f || Now < BearUntil.Value) return;
+            BearHpLeft.Value = 0f;
+            BearUntil.Value = -1;
+            if (Dead.Value) return;
+            Fx.Server(FxKind.BearPoof, transform.position + Vector3.up, Vector3.up);
+            Note("The bear juice wore off - you're an alien again");
         }
 
         float m_NextClaw;
@@ -603,6 +599,7 @@ namespace RockGame
             m_NextClaw = Time.time + 0.6f;
             SwingRpc();
             Reveal();
+            Fx.Server(FxKind.BearSwipe, EyePos + transform.forward * 1.7f - Vector3.up * 0.4f, transform.right);
             if (!hasTarget || !target.TryGet(out var no) || Vector3.Distance(EyePos, point) > 4.5f) return;
             var dir = (point - EyePos).normalized;
             if (no.TryGetComponent(out PlayerNet p))
@@ -660,21 +657,11 @@ namespace RockGame
         // every frame (server)
         // =====================================================================
 
-        float m_NextBootsCheck;
-
         void ServerTickWacky()
         {
             ServerTickSuicide();
-            ServerTickBallGrab();
             ServerTickPrison();
-            if (Time.time >= m_NextBootsCheck && !Dead.Value)
-            {
-                // the jump boots go on by themselves like the jetpack
-                m_NextBootsCheck = Time.time + 0.25f;
-                if (!WornBoots.Value)
-                    for (int i = 0; i < Inv.Count; i++)
-                        if (Inv[i].Id == Item.JumpBoots) { Inv[i] = default; WornBoots.Value = true; Note("Double jump boots on: jump again in the air!"); break; }
-            }
+            ServerTickBear();
             // a drone that's gone (shot down) gives you your body back
             if (Droning && MyDrone == null) DroneId.Value = 0;
             // carrying the ball as an ant: you drop it

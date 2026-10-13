@@ -201,6 +201,7 @@ namespace RockGame
             TickBenchUnlockNotice(); // "WORK BENCHES UNLOCKED" when our team captures the ball (NetGame.Bench.cs)
             TickReadySetRock(); // READY / SET / ROCK!'s beeps and boom (NetGame.ReadySetRock.cs)
             GadgetFx.Sync(this); // the wacky items' things in the world (Gadgets.cs)
+            TickLiftsLocal(); // what the lifting stick lifted, where it is now (NetGame.Lift.cs)
             if (!IsServer) return;
             ResourceNode.ServerFlocksTick(); // (flocks of birds sitting in a few trees, there before anyone hits them)
             if (Time.time >= m_NextItemCheck) { m_NextItemCheck = Time.time + 0.5f; ServerSettleItems(); }
@@ -216,6 +217,7 @@ namespace RockGame
             ServerTickC4(now);
             ServerTickAirstrikes(now);
             ServerTickBushes(now);
+            ServerTickAirdropBushes(now); // (Airdrop Test)
             ServerTickModes(now);
             ServerTickGameModes(now); // (Bedwars, 3 Goal, Progress, Assassin, Domination: NetGame.GameModes.cs)
             ServerTickBenchUnlock(); // the Workbench T1 unlocks once a team has captured the ball
@@ -562,6 +564,7 @@ namespace RockGame
         void SyncItemVisuals()
         {
             m_Seen.Clear();
+            bool chaos = ChaosGlowOn;
             foreach (var it in Items)
             {
                 m_Seen.Add(it.Id);
@@ -599,6 +602,7 @@ namespace RockGame
                 go.transform.SetPositionAndRotation(pos, rot);
                 ItemBounce(it, go.transform, fresh); // (a stack that's been added to bounces)
                 ItemGlint(it, go.transform, t < 1f); // (and it glints now and then when you're near: NetGame.ItemGlint.cs)
+                ChaosGlow(it, go, chaos); // (the Sigil of CHAOS: through walls - NetGame.Lift.cs)
             }
             if (m_ItemVisuals.Count == m_Seen.Count) return;
             var gone = new List<int>();
@@ -703,6 +707,7 @@ namespace RockGame
                     break;
                 }
             }
+            if (Cfg.AirdropTest) SpawnAirdropBushes(rng, placed); // Airdrop Test: airdrop berry bushes all over (NetGame.AirdropBushes.cs)
         }
 
         /// <summary>A fallen log (turned by its seed, like every node) lies flat enough here: not across a steep slope, and
@@ -976,7 +981,7 @@ namespace RockGame
             foreach (var i in Cfg.AirdropLoot) if (Special(i) && (dropped == null || !dropped.Contains(i))) pool.Add(i);
             if (pool.Count == 0) foreach (var i in Cfg.AirdropChoices) if (Special(i) && Cfg.InAirdropPool(i) && (dropped == null || !dropped.Contains(i))) pool.Add(i);
             if (pool.Count == 0) foreach (var i in Cfg.AirdropLoot) if (Special(i)) pool.Add(i);
-            if (pool.Count == 0) foreach (var i in Cfg.AirdropChoices) if (Special(i)) pool.Add(i);
+            if (pool.Count == 0) foreach (var i in Cfg.AirdropChoices) if (Special(i) && !Cfg.Removed(i)) pool.Add(i);
             var o = Cfg.PickAirdropItem(pool);
             dropped?.Add(o);
             return new List<ItemStack> { o == Item.Helmet ? ItemStack.Of(Item.Helmet, 1, 1) : ItemStack.Of(o, 1, Mathf.Clamp(Cfg.MaxData(o), 0, 255)) };
