@@ -333,7 +333,7 @@ namespace RockGame
         {
             if (!Aim(CenterRay(), Cfg.BuildRange, out var h)) return null;
             var s = h.collider.GetComponentInParent<Structure>();
-            return s != null && s.IsSpawned && s.Team.Value == m_Net.Team.Value && s.Upgradable && s.Tier.Value < Cfg.MaxFortify ? s : null;
+            return s != null && s.IsSpawned && s.Team.Value == m_Net.Team.Value && s.Upgradable && s.Tier.Value < Cfg.HammerMaxTier ? s : null;
         }
 
         bool CanDemolish(Unity.Netcode.NetworkObject no)

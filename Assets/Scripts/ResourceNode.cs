@@ -195,9 +195,11 @@ namespace RockGame
             {
                 var trunk = BuildTreeVisual(tr, Seed.Value, true, out float trunkR, out Bark, out Leaf);
                 m_SpotCollider = trunk.GetComponent<Collider>();
-                m_MarkerOut = trunkR - 0.3f; // can be negative: a thin PSX trunk has the X further in than the collider
                 m_PsxTrunk = tr.GetComponentInChildren<PsxArt.Trunk>();
-                if (PsxArt.On && m_PsxTrunk != null) m_MarkerOut = 0f; // (the trunk collider wraps the PSX trunk there)
+                // can be negative: a thin PSX trunk has the X further in than the (0.3 m) collider. Nowhere else: a theme map's
+                // trunk collider is already as thick as its trunk (BuildTreeVisual), and pushing the X out by the difference
+                // again left it floating off the bark
+                m_MarkerOut = m_PsxTrunk != null && !PsxArt.On ? trunkR - 0.3f : 0f; // (PSX: the trunk collider wraps the PSX trunk)
                 m_TrunkR = trunkR;
                 m_Decal = null;
                 var needles = tr.Find("needles");
@@ -892,7 +894,12 @@ namespace RockGame
             }
             if (s_HaloMesh != null) FillHalo(s_HaloMesh);
             foreach (var n in All)
-                if (n != null && n.IsWood) { n.m_BarkSpotFor = -1; n.PlaceMarker(); }
+                if (n != null && n.IsWood)
+                {
+                    if (n.m_Marker != null && n.m_Marker.TryGetComponent(out XBend xb) && xb.Radius > 0f) xb.Bend(xb.Radius, true); // (the halo was redrawn)
+                    n.m_BarkSpotFor = -1;
+                    n.PlaceMarker();
+                }
         }
 
         /// <summary>The Normal X is drawn this many times its made size (Settings > Display > TREE X; PSX X's stay as they are).</summary>
@@ -908,8 +915,10 @@ namespace RockGame
             foreach (float z in new[] { 45f, -45f })
             {
                 var bar = Art.Box(marker, GameSettings.TreeXColour, Vector3.zero, new Vector3(0.34f, 0.06f, 0.02f), new Vector3(0, 0, z), false, glow);
+                bar.GetComponent<MeshFilter>().sharedMesh = XBend.BarMesh; // (a box in many pieces, so it can bend round the trunk)
                 bar.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             }
+            marker.gameObject.AddComponent<XBend>(); // (bent round the trunk where it's placed: PlaceMarker)
             if (s_HaloMat == null) return;
             if (s_HaloMesh == null) s_HaloMesh = HaloMesh();
             var h = new GameObject("x halo");
@@ -1765,8 +1774,16 @@ namespace RockGame
             if (m_Marker == null) return;
             if (!TryGetSpot(out var p, out var n, out bool onVisual)) { m_Marker.gameObject.SetActive(false); return; }
             m_Marker.gameObject.SetActive(true);
-            m_Marker.position = p + n * (onVisual ? 0.03f : m_BarkTris != null ? 0.025f : 0.015f + m_MarkerOut);
+            m_Marker.position = p + n * (onVisual ? 0.03f : m_BarkTris != null ? 0.025f : 0.03f + m_MarkerOut); // (a theme map's trunk: just clear of its bumps)
             m_Marker.rotation = Quaternion.LookRotation(-n, Mathf.Abs(n.y) > 0.9f ? transform.forward : Vector3.up);
+            // standing trees: the X bent round the trunk (lying on the bark from the side too, not a flat card sticking out)
+            if (Kind.Value == Tree && m_Visual != null && m_Marker.TryGetComponent(out XBend bend))
+            {
+                var axis = m_Visual.transform.position;
+                float r = new Vector2(m_Marker.position.x - axis.x, m_Marker.position.z - axis.z).magnitude;
+                float units = XScale * (m_Marker.parent != null ? m_Marker.parent.lossyScale.x : 1f);
+                bend.Bend(r / Mathf.Max(0.01f, units) * (m_BarkTris != null ? 1.2f : 1f)); // (a pine's ten-sided bark: a little flatter, so its corners don't poke through)
+            }
             // PSX trunks: the X is printed onto the bark (a decal following the trunk), not a card in front of it
             if (onVisual && m_PsxTrunk != null)
             {

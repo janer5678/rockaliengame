@@ -17,7 +17,7 @@ namespace RockGame
 
         [Tune("Modes")] public static int GoalsToWin = 3;
         /// <summary>Progress: seconds of the ball in your machine to fill your bar.</summary>
-        [Tune("Modes")] public static float ProgressSeconds = 90f;
+        [Tune("Modes")] public static float ProgressSeconds = 400f;
         /// <summary>Bedwars: hits it takes to destroy a machine (one explosive right on it does it at once).</summary>
         [Tune("Modes")] public static int MachineHitsToBreak = 3;
         /// <summary>Bedwars: seconds after the wall drops before every cryochamber (machine) breaks by itself - no more respawns.</summary>

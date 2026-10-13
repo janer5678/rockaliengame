@@ -206,6 +206,14 @@ namespace RockGame
 
         void OnHandStyle() { ShowHandStyle(m_R); ShowHandStyle(m_L); }
 
+        /// <summary>The hands take this team's colour (they're built in the team the player had then; a team change in the
+        /// lobby recolours them).</summary>
+        public void SetTeam(Color team)
+        {
+            if (m_R != null && m_R.TryGetComponent(out HandColorHook r)) r.SetTeam(team);
+            if (m_L != null && m_L.TryGetComponent(out HandColorHook l)) l.SetTeam(team);
+        }
+
         /// <summary>The invisible look on or off for one arm's alien skin.</summary>
         static void SetGhost(Transform arm, bool on)
         {
@@ -319,6 +327,7 @@ namespace RockGame
                 case Item.Sword: PoseSword(shared, sharedRot, swinging, swingE); break;
                 case Item.Hammer: PoseHammer(shared, sharedRot, swinging, swingE); break;
                 case Item.Hatchet:
+                case Item.BetterHatchet:
                 case Item.KnockStick:
                 case Item.KnockStick1:
                 case Item.TreeBreaker:

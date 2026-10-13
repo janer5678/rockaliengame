@@ -111,20 +111,7 @@ namespace RockGame
             foreach (var gd in new List<Gadget>(GadgetList(g))) g.ServerRemoveGadget(gd.Id, false);
             foreach (var v in new List<Vehicle>(Vehicle.All)) if (v != null && v.IsSpawned && v.Kind.Value == Vehicle.Car) v.NetworkObject.Despawn(true);
 
-            // ---- the Rock of Immortality: in your hand you can't die; in your bag it does nothing
-            yield return Ready();
-            me.ServerGive(Item.GoldenRock, 1);
-            yield return Hold(me, Item.GoldenRock);
-            me.ServerKill(bot);
-            me.ServerDamage(500f, bot);
-            yield return new WaitForSeconds(0.3f);
-            Check(!me.Dead.Value && me.Count(Item.GoldenRock) == 1 && me.Health.Value <= 1.5f, $"holding the Rock of Immortality: killing hits leave you on 1 HP and it's never used up ({me.Health.Value:0} HP)");
-            me.ServerGive(Item.Spear, 1);
-            yield return Hold(me, Item.Spear);
-            me.Health.Value = Cfg.MaxHealth;
-            me.ServerKill(bot);
-            yield return new WaitForSeconds(0.3f);
-            Check(me.Dead.Value, "with it in your bag (holding something else) you die like anyone");
+            // (the Rock of Immortality: taken out of the game - AutoTest.Prompt7.cs)
 
             // ---- triple jump boots: two jumps in the air, not three
             yield return Ready();

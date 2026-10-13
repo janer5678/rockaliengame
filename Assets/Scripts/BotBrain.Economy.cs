@@ -233,7 +233,7 @@ namespace RockGame
         static readonly Item[] k_Basics = { Item.Hatchet, Item.Spear };
 
         /// <summary>A gathering tool that beats the rock for wood.</summary>
-        bool HasAxe => Has(Item.Hatchet) || Has(Item.Chainsaw) || Has(Item.TreeCracker);
+        bool HasAxe => Has(Item.Hatchet) || Has(Item.BetterHatchet) || Has(Item.Chainsaw) || Has(Item.TreeCracker);
         /// <summary>A real weapon.</summary>
         bool HasWeapon => Has(Item.Spear) || Has(Item.Sword);
 

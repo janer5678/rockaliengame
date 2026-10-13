@@ -84,6 +84,7 @@ namespace RockGame
 
         string Gives(PlayerNet p, Item it, int count = 1, string say = null)
         {
+            if (it == Item.Chainsaw && Cfg.JonahBruh) { it = Item.BetterHatchet; say = null; } // (Jonah Test Mode Bruh: no chainsaws)
             if (Cfg.Removed(it)) return null;
             ScribbleGive(p, it, count);
             return say ?? $"{(count > 1 ? count + " x " : "A ")}{Cfg.ItemName(it)}!";

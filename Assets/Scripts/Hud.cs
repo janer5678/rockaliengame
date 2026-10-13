@@ -382,7 +382,7 @@ namespace RockGame
                 string tag = TestTimerTag ?? (Cfg.Rules != GameRules.Classic ? Cfg.RulesName(Cfg.Rules).ToUpper() : "");
                 float ph = DrawTopPanel(game, topLabel, topClock, tag, sub, topAccent, topLeft, k);
                 DrawModePanel(game, team, k, 8 + ph + 6 * k); // (the modes' score chips: Hud.ModePanel.cs)
-                topBottom = 8 + ph + 6 * k + (Cfg.ClassicMode && !Cfg.Bedwars && game != null && game.S == GameState.BallLive ? 48 * k : 0f);
+                topBottom = 8 + ph + 6 * k + (Cfg.ClassicMode && !Cfg.Bedwars && !Cfg.ProgressMode && game != null && game.S == GameState.BallLive ? 48 * k : 0f);
             }
             if (me.Juiced && !me.Dead.Value)
             {
@@ -436,6 +436,8 @@ namespace RockGame
 
             // ---- Builder crafting timers, then messages (top right) ----
             float my = 10 + DrawCraftStack(me, k, 10);
+            float pc0 = DrawProgressCorner(game, team, k, my); // (Progress: the bars, small, top right - Hud.ModePanel.cs)
+            if (pc0 > 0) my += pc0 + 4 * k;
             float kf = DrawKillFeed(k, my); // the kill feed (Hud.KillFeed.cs), then the messages under it
             if (kf > 0) my += kf + 4 * k;
             // (no white messages up here any more - the kill feed, banners and the line under the crosshair say it; Push
@@ -692,7 +694,7 @@ namespace RockGame
                 case Item.InvisPotion: return $"<b>Invisibility Potion</b>    LMB: drink ({Cfg.InvisTime:0}s, attacking shows you)";
                 case Item.SpeedJuice: return $"<b>Extreme Speed Juice</b>    LMB: drink ({Cfg.SpeedJuiceTime:0}s of extreme speed)";
                 case Item.Chainsaw: return $"<b>Chainsaw</b> ({s.Data * Cfg.ChainsawWearEvery} uses left)    hold LMB: cuts wood and stone fast";
-                case Item.Hammer: return $"<b>Hammer</b>    LMB on your own wall: upgrade it ({Cfg.HammerStoneWood} / {Cfg.HammerMetalWood} / {Cfg.HammerArmouredWood} {Cfg.CurrencyName})   (it can't hurt players)";
+                case Item.Hammer: return $"<b>Hammer</b>    LMB on your own wall: upgrade it ({Cfg.HammerPrices})   (it can't hurt players)";
                 case Item.HeavyRam: return $"<b>High Strength Battering Ram</b> ({s.Data} hit{(s.Data == 1 ? "" : "s")} left)    hold LMB at an enemy piece: 3x a normal ram";
                 case Item.EnderPearl: return "<b>Ender Pearl</b>    LMB: throw it - you teleport to wherever it lands";
                 case Item.Pistol: return $"<b>Pistol</b>  ({s.Data} shot{(s.Data == 1 ? "" : "s")} left)    LMB: shoot" + (me.Count(Item.PistolAmmo) > 0 ? $"   {KT(Bind.Rotate)}: reload ({me.Count(Item.PistolAmmo)} spare ammo)" : "");

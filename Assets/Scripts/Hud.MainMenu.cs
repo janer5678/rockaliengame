@@ -24,7 +24,7 @@ namespace RockGame
             MapKind.Islands, MapKind.Jungle, MapKind.Ice, MapKind.CherryBlossom, MapKind.Wonderland, MapKind.Swamp, MapKind.Cube, MapKind.Mars };
 
         /// <summary>The modes the main menu offers (the others are hidden for now; the dev main menu still has them all).</summary>
-        public static readonly GameRules[] MenuModes = { GameRules.AutoWood, GameRules.Classic, GameRules.Bedwars, GameRules.ThreeGoal, GameRules.Progress, GameRules.Assassin, GameRules.Domination, GameRules.JonahTest, GameRules.AirdropTest };
+        public static readonly GameRules[] MenuModes = { GameRules.AutoWood, GameRules.Classic, GameRules.Bedwars, GameRules.ThreeGoal, GameRules.Progress, GameRules.Assassin, GameRules.Domination, GameRules.JonahTest, GameRules.AirdropTest, GameRules.JonahBruh };
 
         /// <summary>The dev main menu (the old all-in-one page) is up instead of the new one: Tab swaps them.</summary>
         public static bool DevMenuShown => s_I != null && (s_I.m_DevMenu || (Bootstrap.Testing && !TestNewMenu));
@@ -33,6 +33,8 @@ namespace RockGame
         /// <summary>The new menu's map page is up: the background is the map itself (MenuScene's flight round it), not the UFO.</summary>
         public static bool MapPreview => s_I != null && !DevMenuShown && s_I.m_New == NewPage.Map;
         int m_PreviewKey = -1;
+        /// <summary>(tests) Open or shut the mode page's drop-down of modes.</summary>
+        public static void TestModesOpen(bool open) { if (s_I != null) s_I.m_ModesOpen = open; }
         public static void TestNewPage(int p) { if (s_I != null) { s_I.m_New = (NewPage)p; s_I.m_Battle = p == (int)NewPage.Players ? 1 : s_I.m_Battle; if (p == (int)NewPage.Join) s_I.m_JoinFromTutorial = false; } }
         /// <summary>(tests) which of the new menu's pages is up (NewPage: 3 join, 7 map, 8 the tutorial's HOST / JOIN).</summary>
         public static int TestMenuPage => s_I != null ? (int)s_I.m_New : -1;
@@ -275,6 +277,16 @@ namespace RockGame
             GUI.Label(new Rect(cx + bw, y, lw, bh), $"{Clock(Cfg.MatchLength)} <size={Mathf.RoundToInt(13 * k)}>match</size>", val);
             if (SmallBtn(new Rect(cx + bw + lw, y, bw, bh), "+")) { Cfg.MatchLength = Mathf.Min(3600f, Cfg.MatchLength + 60f); Cfg.SavePrefs(); }
             y += bh + 14 * k;
+            if (rules == GameRules.Progress)
+            {
+                // Progress: how long the ball has to sit in your machine to fill your bar
+                GUI.Label(new Rect(x, y, w, 24 * k), "PROGRESS TIME", cap);
+                y += 28 * k;
+                if (SmallBtn(new Rect(x, y, bw, bh), "−")) { Cfg.ProgressSeconds = Mathf.Max(30f, Cfg.ProgressSeconds - 25f); Cfg.SavePrefs(); }
+                GUI.Label(new Rect(x + bw, y, lw, bh), $"{Clock(Cfg.ProgressSeconds)} <size={Mathf.RoundToInt(13 * k)}>to fill</size>", val);
+                if (SmallBtn(new Rect(x + bw + lw, y, bw, bh), "+")) { Cfg.ProgressSeconds = Mathf.Min(1800f, Cfg.ProgressSeconds + 25f); Cfg.SavePrefs(); }
+                y += bh + 14 * k;
+            }
             // the options pages, and what's set
             float half = (w - 10 * k) * 0.5f;
             if (SmallBtn(new Rect(x, y, half, 40 * k), "MODE OPTIONS")) m_Page = MenuPage.ModeOptions;

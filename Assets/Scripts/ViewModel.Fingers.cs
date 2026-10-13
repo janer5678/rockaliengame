@@ -635,13 +635,14 @@ namespace RockGame
                         break;
                     }
                     case Item.Hatchet:
+                    case Item.BetterHatchet:
                     case Item.Hammer:
                     case Item.Pickaxe:
                     case Item.TreeCracker:
                     {
                         // a fist round the handle (a little way up it, so it's well in view), thumb on top, the knuckles
                         // facing the way the head points
-                        float r = s.Item == Item.TreeCracker ? 0.035f : s.Item == Item.Hatchet || s.Item == Item.Hammer ? 0.03f : 0.027f;
+                        float r = s.Item == Item.TreeCracker ? 0.035f : s.Item == Item.Hatchet || s.Item == Item.BetterHatchet || s.Item == Item.Hammer ? 0.03f : 0.027f;
                         var gt = Grip(true, hold, H, new Vector3(0f, 0.1f, 0f), down, fwd, r);
                         gt.ElbowK = 0.3f;
                         One(m_TR, gt, true, 0);

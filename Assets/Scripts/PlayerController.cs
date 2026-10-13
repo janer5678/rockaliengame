@@ -733,6 +733,7 @@ namespace RockGame
             m_Cam.fieldOfView = Mathf.Lerp(m_Cam.fieldOfView, fov, Time.deltaTime * 12f);
 
             var hs = m_Net.HeldStack;
+            m_VM.SetTeam(Cfg.TeamColor[Mathf.Clamp(m_Net.Team.Value, 0, 3)]); // (your hands are your alien's colour)
             m_VM.Update(new ViewModel.State
             {
                 Firing = m_Net.HeldItem == Item.Chainsaw && Binds.Held(Bind.Attack) && !MenuOpen && !Paused,
@@ -1220,6 +1221,8 @@ namespace RockGame
         /// <summary>For the tests: the spear's wind-up has started (RMB held, past any recovery).</summary>
         public bool SpearWindingUp => m_DrawStart >= 0f && m_Net != null && m_Net.HeldItem == Item.Spear;
         public bool SpearThrowCommitted => m_SpearReleaseAt >= 0f;
+        /// <summary>For the tests: what the crosshair was on when the last spear left the hand.</summary>
+        public static Vector3 LastSpearTarget;
 
         /// <summary>The spear's launch from the hand so its arc comes down right on what the crosshair's on (lifted just
         /// enough for the spear's drop over that distance). Out of reach: straight along the crosshair.</summary>
@@ -1249,6 +1252,7 @@ namespace RockGame
             Vector3 vel = ray.direction * Cfg.SpearThrowSpeed * m_SpearPower;
             var target = Aim(ray, 200f, out var th) ? th.point : ray.GetPoint(60f);
             if ((target - origin).sqrMagnitude > 4f) vel = SpearAimAt(origin, target, Cfg.SpearThrowSpeed * m_SpearPower, ray.direction);
+            LastSpearTarget = target;
             ArrowProjectile.SpawnSpear(origin, vel, m_Net, true);
             m_Net.ThrowSpearRpc(origin, vel);
             Tutorial.SpearThrows++;
@@ -2390,7 +2394,7 @@ namespace RockGame
             var woodMachine = hit.collider.GetComponentInParent<WoodMachine>();
             if (woodMachine != null)
             {
-                if (woodMachine.Built && string.IsNullOrEmpty(AimText)) AimText = woodMachine.AimLine(m_Net.Team.Value);
+                if (woodMachine.Shown && string.IsNullOrEmpty(AimText)) AimText = woodMachine.AimLine(m_Net.Team.Value); // (switched off till the wall drops: it says so)
                 return;
             }
             var no = hit.collider.GetComponentInParent<NetworkObject>();
@@ -2409,7 +2413,7 @@ namespace RockGame
                     int cost = Cfg.HammerCost(st.Tier.Value);
                     bool afford = m_Net.Count(Cfg.CurrencyItem) >= cost;
                     float lockLeft = st.UpgradeLockLeft;
-                    detail += st.Tier.Value >= Cfg.MaxFortify ? "   <color=#bbbbbb>armoured - fully upgraded</color>"
+                    detail += st.Tier.Value >= Cfg.HammerMaxTier ? (Cfg.HammerMaxTier < Cfg.MaxFortify ? "   <color=#bbbbbb>stone - as far as the hammer goes</color>" : "   <color=#bbbbbb>armoured - fully upgraded</color>")
                         : lockLeft > 0f ? $"   <color=#ff8a7a><b>UNDER ATTACK - UPGRADE IN {Mathf.CeilToInt(lockLeft)} s</b></color>"
                         : $"   <color={(afford ? "#7dff8a" : "#ff8a7a")}><b>LMB: UPGRADE TO {Cfg.TierName(st.Tier.Value + 1).ToUpper()}  ({cost} {Cfg.CurrencyName})</b></color>";
                 }

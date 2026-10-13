@@ -30,6 +30,9 @@ namespace RockGame
         Quaternion m_FollowRot;
         bool m_Following;
         static readonly System.Collections.Generic.List<ArrowProjectile> s_InBodies = new System.Collections.Generic.List<ArrowProjectile>();
+        /// <summary>For the tests: where this machine's last thrown spear hit something, and how many have.</summary>
+        public static Vector3 LastSpearHit;
+        public static int SpearHits;
         /// <summary>For the tests: how many times a projectile (anyone's, on this machine) has gone through a portal.</summary>
         public static int PortalPasses { get; private set; }
         /// <summary>Every arrow, bolt and thrown spear on this screen (the kill cam's replay records where they flew: DeathReplay).</summary>
@@ -281,6 +284,7 @@ namespace RockGame
                 if ((no == null || no.GetComponent<PlayerNet>() == null) && !EnergyWall.Hit(h.collider, h.point, h.normal)) Sfx.Play(Sfx.Thud, h.point, 1f, 0.08f, 90f);
                 if (reporter)
                 {
+                    LastSpearHit = h.point; SpearHits++;
                     if (no != null) m_Shooter.SpearLandRpc(true, no, h.point, dir);
                     else m_Shooter.SpearLandRpc(false, default, h.point, dir);
                 }

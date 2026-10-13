@@ -122,7 +122,8 @@ namespace RockGame
                 case Item.Crossbow: return $"Crossbow: {Cfg.CrossbowDamage:0} damage, faster and flatter than the bow. Reloads itself from your arrows.";
                 case Item.Armor: return $"Armour: {Cfg.ArmorHp} extra health used up before your own.";
                 case Item.Chainsaw: return $"Chainsaw: rips through wood and stone. {Cfg.ChainsawUses * Cfg.ChainsawWearEvery} uses.";
-                case Item.Hammer: return $"Hammer: aim at one of your walls and LMB to upgrade it - stone {Cfg.HammerStoneWood}, metal {Cfg.HammerMetalWood}, armoured {Cfg.HammerArmouredWood} {Cfg.CurrencyName} a piece. It can't hurt players.";
+                case Item.Hammer: return $"Hammer: aim at one of your walls and LMB to upgrade it - {Cfg.HammerPrices}. It can't hurt players.";
+                case Item.BetterHatchet: return $"Better Hatchet: a steel hatchet - quicker swings and more wood a hit than the hatchet.";
                 case Item.HeavyRam: return "High Strength Battering Ram: 3x a normal ram. Wood, stone and metal break in one slam; armoured drops to wood.";
                 case Item.Saddle: return $"Saddle: {KT(Bind.Interact)} on a wild horse to ride it.";
                 case Item.Boat: return $"Boat: put it on open water and {KT(Bind.Interact)} to drive it.";

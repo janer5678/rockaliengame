@@ -69,7 +69,7 @@ namespace RockGame
             for (int t = 0; t < Cfg.TeamCount; t++)
                 if (WoodGenLevelOf(t) < lvl) { WoodGenLevels.Value = (WoodGenLevels.Value & ~(3 << (t * 2))) | (lvl << (t * 2)); up = true; }
             if (up && lvl > 1) Broadcast($"The wood machines sped up: {Cfg.WoodGenRate(lvl)} wood a second!");
-            else if (up) Broadcast($"The walls are down - a wood machine landed in every base: {Cfg.WoodGenRate(1)} wood a second!");
+            else if (up) Broadcast(Cfg.Tutorial ? $"The walls are down - a wood machine landed in every base: {Cfg.WoodGenRate(1)} wood a second!" : $"The walls are down - the wood machines started up: {Cfg.WoodGenRate(1)} wood a second!");
         }
 
         void ServerTickAutoWood(double now, bool playing)

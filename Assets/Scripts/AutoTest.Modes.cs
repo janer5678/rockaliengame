@@ -513,7 +513,7 @@ namespace RockGame
                     // the hammer's modes: the machine lands when the walls drop, then levels up by itself (AutoTest.Monday.cs)
                     if (g.S == GameState.PreBall)
                     {
-                        Check(g.WoodGenLevelOf(team) == 0 && ours != null && !ours.Built && !anyPile, $"no wood machine while the walls are up (level {g.WoodGenLevelOf(team)}, pile {anyPile})");
+                        Check(g.WoodGenLevelOf(team) == 0 && ours != null && !ours.Built && !anyPile, $"the wood machine isn't working while the walls are up (level {g.WoodGenLevelOf(team)}, pile {anyPile})");
                         g.ServerWoodGenUp(team); // (as if the walls had dropped: the checks below need it there)
                         yield return new WaitForSeconds(0.5f);
                     }

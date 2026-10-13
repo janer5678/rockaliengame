@@ -26,7 +26,7 @@ namespace RockGame
         /// <summary>The panel under the timer (only in the five modes, once the wall's down).</summary>
         void DrawModePanel(NetGame g, int myTeam, float k, float y)
         {
-            if (g == null || !Cfg.ClassicMode || g.S != GameState.BallLive || Cfg.Bedwars) return; // (Bedwars: just the small bed list, top left - DrawBedList)
+            if (g == null || !Cfg.ClassicMode || g.S != GameState.BallLive || Cfg.Bedwars || Cfg.ProgressMode) return; // (Bedwars: just the small bed list, top left - DrawBedList; Progress: small bars top right - DrawProgressCorner)
             float sw = Screen.width, cw = 170 * k, ch = 40 * k, gap = 8 * k;
             int n = Cfg.TeamCount;
             float x0 = sw / 2f - (n * cw + (n - 1) * gap) / 2f;
@@ -68,6 +68,34 @@ namespace RockGame
                 }
             }
         }
+
+        /// <summary>Progress: each team's bar, small and out of the way in the top right (yours framed in white), stacked
+        /// over the kill feed. Returns how tall it is.</summary>
+        float DrawProgressCorner(NetGame g, int myTeam, float k, float top)
+        {
+            if (g == null || !Cfg.ProgressMode || g.S != GameState.BallLive) return 0f;
+            float sw = Screen.width, w = 230 * k, h = 28 * k, gap = 4 * k, x = sw - w - 10, y = top;
+            var st = new GUIStyle(m_Label) { fontSize = Mathf.RoundToInt(16 * k), fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
+            for (int t = 0; t < Cfg.TeamCount; t++)
+            {
+                var c = Cfg.TeamColor[t];
+                float p = g.ProgressOf(t);
+                var r = new Rect(x, y, w, h);
+                Fill(r, new Color(0f, 0f, 0f, 0.5f));
+                var bar = new Rect(r.x + 64 * k, r.y + 5 * k, r.width - 70 * k, r.height - 10 * k);
+                Fill(bar, new Color(1f, 1f, 1f, 0.12f));
+                Fill(new Rect(bar.x, bar.y, bar.width * p, bar.height), c);
+                if (t == myTeam) Frame(r, new Color(1f, 1f, 1f, 0.8f), 1f);
+                GUI.Label(new Rect(r.x + 8 * k, r.y, 56 * k, r.height), $"<color=#{ColorUtility.ToHtmlStringRGB(Color.Lerp(c, Color.white, 0.35f))}>{Cfg.TeamName[t]}</color>", st);
+                GUI.Label(bar, $"{Mathf.FloorToInt(p * 100f)}%", new GUIStyle(st) { alignment = TextAnchor.MiddleCenter, fontSize = Mathf.RoundToInt(15 * k) });
+                y += h + gap;
+            }
+            ProgressCornerShown = Time.frameCount;
+            return y - top;
+        }
+
+        /// <summary>(tests) The frame the Progress bars were last drawn in the top right.</summary>
+        public static int ProgressCornerShown = -1;
 
         /// <summary>Bedwars: a small list in the top left (under the base radar) - each team and whether it still has its
         /// bed (its machine), nothing more.</summary>

@@ -63,7 +63,7 @@ namespace RockGame
         {
             var m = MachinePos(team);
             var list = new List<Structure>();
-            foreach (var s in Structure.All) if (s != null && s.IsSpawned && s.Team.Value == team && s.Upgradable && s.Tier.Value < MaxFortify) list.Add(s);
+            foreach (var s in Structure.All) if (s != null && s.IsSpawned && s.Team.Value == team && s.Upgradable && s.Tier.Value < (HammerUpgrades ? HammerMaxTier : MaxFortify)) list.Add(s);
             list.Sort((a, b) => (a.transform.position - m).sqrMagnitude.CompareTo((b.transform.position - m).sqrMagnitude));
             var ids = new ulong[Mathf.Min(n, list.Count)];
             for (int i = 0; i < ids.Length; i++) ids[i] = list[i].NetworkObjectId;

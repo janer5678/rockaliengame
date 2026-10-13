@@ -579,7 +579,7 @@ namespace RockGame
                     {
                         var m = ItemModels.Create(it.Stack.Id, go.transform);
                         // tools lie flat; small stuff is scaled up a little so it reads on the ground
-                        bool longItem = it.Stack.Id == Item.Hatchet || it.Stack.Id == Item.Hammer || it.Stack.Id == Item.Pickaxe || it.Stack.Id == Item.Bow || it.Stack.Id == Item.BuildingPlan || it.Stack.Id == Item.DeathWand;
+                        bool longItem = it.Stack.Id == Item.Hatchet || it.Stack.Id == Item.BetterHatchet || it.Stack.Id == Item.Hammer || it.Stack.Id == Item.Pickaxe || it.Stack.Id == Item.Bow || it.Stack.Id == Item.BuildingPlan || it.Stack.Id == Item.DeathWand;
                         m.transform.localRotation = longItem ? Quaternion.Euler(90, 0, 0) : Quaternion.identity;
                         m.transform.localScale = Vector3.one * (it.Stack.Id == Item.Skull ? 4.5f : Cfg.IsRam(it.Stack.Id) || it.Stack.Id == Item.Chainsaw ? 1f : 1.6f); // (Assassin's skulls: big, so they're seen)
                         if (it.Stack.Id == Item.Helmet) m.transform.localPosition = new Vector3(0, 0.25f, 0);

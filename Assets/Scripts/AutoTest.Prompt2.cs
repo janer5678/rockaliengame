@@ -24,11 +24,11 @@ namespace RockGame
             var back = Cfg.BackDir(team);
             var side = Vector3.Cross(Vector3.up, back);
 
-            // ---- the wood machine: none while the walls are up
+            // ---- the wood machine: not working while the walls are up (it stands there switched off: AutoTest.Prompt7.cs)
             WoodMachine wm = null;
             foreach (var w in FindObjectsByType<WoodMachine>(FindObjectsSortMode.None)) if (w.Team == team) wm = w;
             if (g.S == GameState.PreBall)
-                Check(wm != null && !wm.Built && g.WoodGenLevelOf(team) == 0, $"no wood machine while the glass walls are up (level {g.WoodGenLevelOf(team)})");
+                Check(wm != null && !wm.Built && g.WoodGenLevelOf(team) == 0, $"no working wood machine while the glass walls are up (level {g.WoodGenLevelOf(team)})");
 
             // ---- the numbers and the lists
             Check(Cfg.CraftTier(Item.Hammer) == 1 && !Cfg.IsStarter(Item.Hammer), "the hammer is a Trade Station (T1) item");
@@ -163,7 +163,7 @@ namespace RockGame
                     var b = new Bounds(ours.transform.position, Vector3.zero);
                     foreach (var col in ours.GetComponentsInChildren<Collider>()) if (!col.isTrigger) b.Encapsulate(col.bounds);
                     float h = b.max.y - ours.transform.position.y, wd = Mathf.Max(b.size.x, b.size.z);
-                    Check(h > Cfg.CrouchHeight + 0.05f && h < Cfg.EyeHeight - 0.1f && wd > 1.5f, $"it's tall enough to hide someone crouching, low enough to shoot over standing ({h:0.00} m tall, {wd:0.0} m wide)");
+                    Check(h > Cfg.CrouchHeight + 0.05f && h < Cfg.EyeHeight + 0.4f && wd > 1.5f, $"it's tall enough to hide someone crouching (30% bigger since b1e14f9) ({h:0.00} m tall, {wd:0.0} m wide)");
                     // crouched behind it
                     pc.LocalTeleport(ours.transform.position + ours.transform.forward * 0.9f + Vector3.up * 0.1f, Quaternion.LookRotation(-ours.transform.forward).eulerAngles.y);
                     Binds.TestHold(Bind.Crouch, true);
@@ -201,14 +201,22 @@ namespace RockGame
                 }
             }
 
-            // ---- the jetpack and the wallhack glasses: on by themselves, bottom left, kept through death
+            // ---- the jetpack and the wallhack glasses: put on when you click with them (nothing goes on by itself since
+            // 95fa0b8), bottom left, kept through death
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
             yield return new WaitForSeconds(0.4f);
             me.ServerGive(Item.Jetpack, 1, Cfg.JetpackFuel);
             me.ServerGive(Item.Wallhack, 1);
             yield return new WaitForSeconds(0.8f);
-            Check(me.WearingJetpack && me.FuelPercent == 100 && me.Count(Item.Jetpack) == 0, $"the jetpack went straight on ({me.FuelPercent}% fuel)");
-            Check(me.WornGlasses.Value && me.SeesThroughWalls && me.Count(Item.Wallhack) == 0, "the wallhack glasses went straight on");
+            Check(!me.WearingJetpack && me.Count(Item.Jetpack) == 1 && !me.WornGlasses.Value, "the jetpack and glasses wait in the bag");
+            foreach (var gear in new[] { Item.Jetpack, Item.Wallhack })
+            {
+                yield return Hold(me, gear);
+                me.UseItemRpc();
+                yield return new WaitForSeconds(0.7f);
+            }
+            Check(me.WearingJetpack && me.FuelPercent == 100 && me.Count(Item.Jetpack) == 0, $"the jetpack goes on with a click ({me.FuelPercent}% fuel)");
+            Check(me.WornGlasses.Value && me.SeesThroughWalls && me.Count(Item.Wallhack) == 0, "the wallhack glasses go on with a click");
             Check(Time.time - Hud.JetpackRowShownAt < 0.5f && Time.time - Hud.GlassesRowShownAt < 0.5f, "both show bottom left, like the armour");
             yield return Snap("prompt2_gear_hud");
             {

@@ -91,29 +91,53 @@ namespace RockGame
                         Art.Box(t, new Color(0.62f, 0.5f, 0.32f), new Vector3(0, 0.46f + g * 0.04f, 0.01f), new Vector3(0.075f, 0.014f, 0.075f), new Vector3(0, 0, g * 8f - 8f));
                     break;
                 }
+                case Item.BetterHatchet:
+                {
+                    // the hatchet's shape in steel (Jonah Test Mode Bruh): a dark grip-taped handle and a big polished steel
+                    // blade with a bright honed edge
+                    var steel = new Color(0.66f, 0.69f, 0.74f);
+                    Art.Box(t, new Color(0.24f, 0.2f, 0.18f), new Vector3(0, 0.25f, 0), new Vector3(0.05f, 0.62f, 0.05f));
+                    Art.Box(t, new Color(0.12f, 0.12f, 0.13f), new Vector3(0, 0.04f, 0), new Vector3(0.062f, 0.2f, 0.062f)); // (the grip tape)
+                    Art.Box(t, steel, new Vector3(0, 0.5f, 0.12f), new Vector3(0.03f, 0.22f, 0.22f));
+                    Art.Box(t, new Color(0.92f, 0.94f, 0.97f), new Vector3(0, 0.5f, 0.24f), new Vector3(0.026f, 0.28f, 0.035f)); // (the honed edge)
+                    Art.Box(t, steel * 0.7f, new Vector3(0, 0.5f, 0.0f), new Vector3(0.07f, 0.11f, 0.07f));
+                    Art.Box(t, steel * 0.85f, new Vector3(0, 0.5f, -0.06f), new Vector3(0.04f, 0.06f, 0.06f)); // (the poll at the back)
+                    break;
+                }
                 case Item.Hammer:
                 {
-                    // a wooden mallet (like the reference picture): a big rough-hewn block of pale, weathered wood for the
-                    // head - long front to back, both ends flat end-grain faces - on a round handle of darker wood pushed
-                    // through its middle
-                    var handle = new Color(0.5f, 0.35f, 0.2f);
-                    var block = new Color(0.7f, 0.58f, 0.4f);
-                    Art.Part(t, Art.Cylinder, handle, new Vector3(0, 0.24f, 0), new Vector3(0.05f, 0.3f, 0.05f));                     // the handle
-                    for (int g = 0; g < 2; g++) Art.Box(t, handle * 0.8f, new Vector3(0.019f - g * 0.03f, 0.26f, 0.014f), new Vector3(0.004f, 0.5f, 0.004f)); // (its grain)
-                    Art.Part(t, Art.Sphere, handle * 0.92f, new Vector3(0, -0.06f, 0), new Vector3(0.052f, 0.03f, 0.052f));        // the rounded end
-                    Art.Box(t, block, new Vector3(0, 0.6f, 0), new Vector3(0.13f, 0.13f, 0.3f));                                   // the block
-                    for (int g = 0; g < 3; g++)                                                                                      // grain along its sides
-                        for (int sx = -1; sx <= 1; sx += 2)
-                            Art.Box(t, block * 0.84f, new Vector3(sx * 0.0655f, 0.565f + g * 0.035f, 0), new Vector3(0.002f, 0.006f, 0.27f - g * 0.03f));
-                    Art.Box(t, block * 0.9f, new Vector3(0, 0.666f, 0), new Vector3(0.12f, 0.002f, 0.28f));                       // (the top, a shade darker)
+                    // the mallet's shape exactly (the same handle and head, so it's held and swung the same) in a futuristic
+                    // skin: a dark gunmetal handle with glowing cyan rings, a graphite head banded in light, cyan seams down
+                    // its sides and glowing cores in its steel end plates - the glow breathes slowly (HammerGlow)
+                    var metal = new Color(0.26f, 0.28f, 0.33f);
+                    var head = new Color(0.14f, 0.15f, 0.19f);
+                    var plate = new Color(0.62f, 0.66f, 0.72f);
+                    var cyan = new Color(0.3f, 0.95f, 1f);
+                    var glow = new Material(Workbench.Glow(cyan, 2.2f)) { name = "hammer glow" };
+                    Art.Part(t, Art.Cylinder, metal, new Vector3(0, 0.24f, 0), new Vector3(0.05f, 0.3f, 0.05f));                       // the handle
+                    Art.Box(t, cyan, new Vector3(0.0255f, 0.24f, 0), new Vector3(0.004f, 0.42f, 0.008f), default, false, glow);       // (a light line up it)
+                    foreach (float ry in new[] { 0.24f, 0.44f })                                                                       // glowing rings
+                        Art.Part(t, Art.Cylinder, cyan, new Vector3(0, ry, 0), new Vector3(0.058f, 0.008f, 0.058f), default, false, glow);
+                    Art.Part(t, Art.Sphere, metal * 0.85f, new Vector3(0, -0.06f, 0), new Vector3(0.052f, 0.03f, 0.052f));           // the end cap
+                    Art.Part(t, Art.Sphere, cyan, new Vector3(0, -0.074f, 0), new Vector3(0.022f, 0.012f, 0.022f), default, false, glow);
+                    Art.Box(t, head, new Vector3(0, 0.6f, 0), new Vector3(0.13f, 0.13f, 0.3f));                                       // the head
+                    Art.Box(t, cyan, new Vector3(0, 0.6f, 0), new Vector3(0.134f, 0.134f, 0.022f), default, false, glow);             // its band of light
+                    for (int sx = -1; sx <= 1; sx += 2)                                                                                // seams down its sides
+                    {
+                        Art.Box(t, cyan, new Vector3(sx * 0.0662f, 0.64f, 0), new Vector3(0.002f, 0.006f, 0.26f), default, false, glow);
+                        Art.Box(t, cyan, new Vector3(sx * 0.0662f, 0.56f, 0), new Vector3(0.002f, 0.006f, 0.26f), default, false, glow);
+                    }
+                    Art.Box(t, head * 1.3f, new Vector3(0, 0.666f, 0), new Vector3(0.1f, 0.004f, 0.22f));                            // (a raised panel on top)
                     for (int sz = -1; sz <= 1; sz += 2)
                     {
-                        // the end-grain faces, paler and splintered at the edges, with a ring or two
-                        Art.Box(t, block * 1.12f, new Vector3(0, 0.6f, sz * 0.151f), new Vector3(0.124f, 0.124f, 0.004f));
-                        Art.Box(t, block * 0.95f, new Vector3(0, 0.6f, sz * 0.154f), new Vector3(0.07f, 0.07f, 0.002f));
-                        Art.Box(t, block * 1.08f, new Vector3(0, 0.6f, sz * 0.155f), new Vector3(0.04f, 0.04f, 0.002f));
-                        Art.Box(t, block * 0.78f, new Vector3(0.05f, 0.655f, sz * 0.14f), new Vector3(0.03f, 0.02f, 0.03f), new Vector3(0, 0, 25f));
+                        // steel end plates with a glowing core
+                        Art.Box(t, plate, new Vector3(0, 0.6f, sz * 0.152f), new Vector3(0.126f, 0.126f, 0.006f));
+                        Art.Box(t, metal, new Vector3(0, 0.6f, sz * 0.155f), new Vector3(0.08f, 0.08f, 0.003f));
+                        Art.Box(t, cyan, new Vector3(0, 0.6f, sz * 0.157f), new Vector3(0.045f, 0.045f, 0.003f), new Vector3(0, 0, 45f), false, glow);
                     }
+                    var hg = root.AddComponent<HammerGlow>();
+                    hg.Mat = glow;
+                    hg.Base = cyan;
                     break;
                 }
                 case Item.Pickaxe:
@@ -729,5 +753,21 @@ namespace RockGame
             Art.Box(root.transform, new Color(0.9f, 0.5f, 0.1f), Vector3.zero, new Vector3(0.12f, 0.12f, 1.28f) * k);
             return root;
         }
+    }
+
+    /// <summary>The hammer's glow breathes: its light parts pulse slowly brighter and dimmer.</summary>
+    public class HammerGlow : MonoBehaviour
+    {
+        public Material Mat;
+        public Color Base;
+
+        void Update()
+        {
+            if (Mat == null || !Mat.HasProperty("_EmissionColor")) return;
+            float k = 1.6f + Mathf.Sin(Time.time * 2.6f) * 0.8f;
+            Mat.SetColor("_EmissionColor", Base * k);
+        }
+
+        void OnDestroy() { if (Mat != null) Destroy(Mat); }
     }
 }

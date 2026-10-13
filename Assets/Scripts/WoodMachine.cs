@@ -19,12 +19,14 @@ namespace RockGame
     ///           diamond and studs on the lid, a second saw, four vents puffing pink.
     /// While it works it hums quietly (a 3D loop, Sfx.MachineHum), and looking at it says how fast it's making wood
     /// (AimLine, shown by PlayerController's look-at text).
-    /// Where the hammer is on (Cfg.AutoWoodGen) it isn't bought: it lands in every base when the glass walls drop and
-    /// levels up by itself over the match (NetGame.ServerAutoWoodGenLevels).
+    /// Where the hammer is on (Cfg.AutoWoodGen) it isn't bought: it stands in every base from the start, switched off
+    /// (Dormant: no wood, and looking at it says it won't give any till the wall drops), starts up when the glass walls
+    /// drop and levels up by itself over the match (NetGame.ServerAutoWoodGenLevels).
     /// </summary>
     public class WoodMachine : MonoBehaviour
     {
         int m_Team, m_Level = -1;
+        bool m_Dormant;
         Transform m_Visual;
         readonly List<Transform> m_Vents = new List<Transform>();
         readonly List<Transform> m_Saws = new List<Transform>();
@@ -41,14 +43,19 @@ namespace RockGame
         const float HumVolume = 0.11f, HumRange = 16f;
 
         public int Team => m_Team;
-        /// <summary>Is the machine there (has the team bought the wood gen's first level)?</summary>
-        public bool Built => m_Level >= 1;
+        /// <summary>Is the machine working (has the team bought the wood gen's first level / have the walls dropped)?</summary>
+        public bool Built => m_Level >= 1 && !m_Dormant;
+        /// <summary>Is the machine there to see (switched off, before the walls drop, too)?</summary>
+        public bool Shown => m_Level >= 1;
+        /// <summary>Standing there switched off: no wood till the glass walls drop (Cfg.AutoWoodGen).</summary>
+        public bool Dormant => m_Dormant;
         /// <summary>Test hook: is the working hum playing right now?</summary>
         public bool Humming => m_Hum != null && m_Hum.isPlaying && m_Hum.volume > 0.001f;
 
         /// <summary>What you read when you look at it: its name and the rate it's making wood at.</summary>
         public string AimLine(int myTeam)
         {
+            if (m_Dormant) return PlayerController.TeamTip("Wood machine", m_Team, "switched off - it doesn't give you wood till the wall drops");
             int rate = Cfg.WoodGenRate(m_Level);
             // (the shared look-at format - PlayerController.Tips.cs: WOOD MACHINE in its team's colour, a dash, the details)
             return PlayerController.TeamTip("Wood machine", m_Team, m_Team != myTeam ? $"{rate} wood a second"
@@ -315,6 +322,17 @@ namespace RockGame
         {
             int level = Level;
             bool net = NetGame.Instance != null && NetGame.Instance.IsSpawned;
+            // the hammer's modes: there from the start, switched off (level 1's look) until the walls drop
+            bool dormant = level <= 0 && Cfg.AutoWoodGen && !Cfg.Tutorial; // (the tutorial keeps it landing when the wall drops: its step says so)
+            if (dormant) level = 1;
+            if (m_Dormant && !dormant && level == m_Level && m_Synced)
+            {
+                // the walls dropped: it starts up
+                m_Pop = 0f;
+                Fx.Play(FxKind.WeakSpot, transform.position + Vector3.up * 1.2f, Vector3.up);
+                Sfx.Play(Sfx.Ding, transform.position + Vector3.up, 1f);
+            }
+            m_Dormant = dormant;
             if (level != m_Level)
             {
                 // (the first look at a game's levels - joining late - just shows what's there, without the fanfare)
@@ -336,7 +354,7 @@ namespace RockGame
                 }
             }
             m_Synced = net;
-            bool running = m_Level >= 1 && net && (NetGame.Instance.S == GameState.PreBall || NetGame.Instance.S == GameState.BallLive);
+            bool running = m_Level >= 1 && !m_Dormant && net && (NetGame.Instance.S == GameState.PreBall || NetGame.Instance.S == GameState.BallLive);
             float time = Time.time, dt = Time.deltaTime;
             TickHum(running, dt);
             if (m_Level <= 0) return; // nothing there yet

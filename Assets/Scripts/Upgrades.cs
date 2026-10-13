@@ -56,7 +56,9 @@ namespace RockGame
         /// <summary>The hammer's swing. It never hurts a player (Cfg.HurtsPlayers): it's a building tool, not a weapon.</summary>
         [Tune("Hammer")] public static float HammerBodyDamage = 0f, HammerHeadDamage = 0f, HammerSwingTime = 0.9f, HammerRange = 2.6f;
         /// <summary>What the hammer charges to take a piece from `tier` to the next one (0: it can't go higher).</summary>
-        public static int HammerCost(int tier) => tier >= MaxFortify ? 0 : DnaPrice(tier >= 2 ? HammerArmouredWood : tier == 1 ? HammerMetalWood : HammerStoneWood);
+        public static int HammerCost(int tier) => tier >= HammerMaxTier ? 0 : DnaPrice(tier >= 2 ? HammerArmouredWood : tier == 1 ? HammerMetalWood : JonahBruh ? JonahBruhStoneWood : HammerStoneWood); // (Jonah Test Mode Bruh: stone only, its own price - JonahBruh.cs)
+        /// <summary>The hammer's prices in a few words, for its descriptions.</summary>
+        public static string HammerPrices => JonahBruh ? $"stone only, {JonahBruhStoneWood} {CurrencyName} a piece" : $"stone {HammerStoneWood}, metal {HammerMetalWood}, armoured {HammerArmouredWood} {CurrencyName} a piece";
         static int DnaPrice(int wood) => DnaPriced(new Recipe { Wood = wood }).Wood;
 
         /// <summary>This mode has base upgrades, and an upgrade station in every base (E on it opens UPGRADES).</summary>
@@ -136,7 +138,7 @@ namespace RockGame
         public bool ServerHammer(Structure s)
         {
             if (s == null || !s.IsSpawned || s.Team.Value != Team.Value || !s.Upgradable) return false;
-            if (s.Tier.Value >= Cfg.MaxFortify) { Notify("That's already armoured"); return false; }
+            if (s.Tier.Value >= Cfg.HammerMaxTier) { Notify(Cfg.HammerMaxTier < Cfg.MaxFortify ? "Stone is as far as the hammer goes in this mode" : "That's already armoured"); return false; }
             if (s.UpgradeLockLeft > 0f) { Notify($"Under attack - you can upgrade it in {Mathf.CeilToInt(s.UpgradeLockLeft)} s"); return false; }
             int cost = Cfg.HammerCost(s.Tier.Value);
             var r = new Recipe { Output = Item.FortifyBuff, Count = 1, Wood = cost }; // (Wood is the currency's slot: DNA in DNA mode)

@@ -22,7 +22,8 @@ namespace RockGame
         BouncyCastle, Decoy, OmenMap, GoldenRock, BlueShell, Connect4Wand, JumpBoots, StickOfTruth, SuicideBomb, GravityStaff,
         AttentionSnail, InvSwapper, TimeoutBall, KnockStick1, KnockStick, ShieldPotion, SlowGun, TreeBreaker, DrawMonster, BearJuice,
         ChaosSigil, DroneBot, GameshowWand, DanceBomb, DecoyBase, BaseRebuild, FakeFlare, DisguiseKit, BallGrabber, Scribble,
-        AntGun, ClutterBomb }
+        AntGun, ClutterBomb,
+        BetterHatchet } // (Jonah Test Mode Bruh: the chainsaw's place - JonahBruh.cs)
 
     /// <summary>
     /// The game mode (picked in the main menu, next to the players). They don't mix:
@@ -36,7 +37,8 @@ namespace RockGame
     public enum GameRules : byte { Classic, Arsenal, Builder, Fun, FunRandom, FunRandomLimited, Primitive, BuildingPrimitive, AutoWood, Tutorial, Dna,
         Bedwars, ThreeGoal, Progress, Assassin, Domination, // (these five: Classic with their own way to win - NetGame.GameModes.cs)
         JonahTest, // Jonah Ideas Test: Classic plus alien dust and Upgrade 10 Walls (JonahMode.cs). 16+ needs RulesHighBit in the map key
-        AirdropTest } // Airdrop Test: Classic plus airdrop berry bushes all over the map (NetGame.AirdropBushes.cs)
+        AirdropTest, // Airdrop Test: Classic plus airdrop berry bushes all over the map (NetGame.AirdropBushes.cs)
+        JonahBruh } // Jonah Test Mode Bruh: Classic with Jonah's changes, only in this mode (JonahBruh.cs)
 
     public enum PieceType : byte { Foundation, Wall, Doorway, Floor, Stairs, Barrier, Window, Tower, EggBlock, Gate }
 
@@ -119,11 +121,11 @@ namespace RockGame
         public static GameMode Mode = GameMode.Duel;
         public static GameRules Rules = GameRules.Classic;
         /// <summary>Arsenal and Builder: cheap items and the powerful items menu.</summary>
-        public static bool PowerMenu => Rules == GameRules.Arsenal || Rules == GameRules.Builder || Rules == GameRules.AutoWood || ClassicMode || Jonah || AirdropTest;
+        public static bool PowerMenu => Rules == GameRules.Arsenal || Rules == GameRules.Builder || Rules == GameRules.AutoWood || ClassicMode || Jonah || AirdropTest || JonahBruh;
         /// <summary>The five modes that are Classic with another way to win (Bedwars, 3 Goal, Progress, Assassin, Domination).</summary>
         public static bool ClassicMode => Rules >= GameRules.Bedwars && Rules <= GameRules.Domination;
         /// <summary>The last game mode there is (the menus and the map key clamp to it).</summary>
-        public const GameRules LastRules = GameRules.AirdropTest;
+        public const GameRules LastRules = GameRules.JonahBruh;
         /// <summary>The rules are 4 bits of the map key at RulesShift, and a fifth up here (modes 16 and on: Jonah Ideas Test).</summary>
         public const int RulesHighBit = 1 << 30;
         /// <summary>The game mode in a map key.</summary>
@@ -132,7 +134,7 @@ namespace RockGame
         public static int WithRules(int key, GameRules r) => (key & ~(RulesMask << RulesShift) & ~RulesHighBit) | (((int)r & RulesMask) << RulesShift) | ((int)r >= 16 ? RulesHighBit : 0);
         /// <summary>Auto Wood: Arsenal, plus wood piles up at every base by itself.</summary>
         /// <summary>(The tutorial has the wood machine too, bought at its upgrade station like in Classic - but none of the POWER ITEMS.)</summary>
-        public static bool AutoWood => Rules == GameRules.AutoWood || Rules == GameRules.Tutorial || ClassicMode || Jonah || AirdropTest;
+        public static bool AutoWood => Rules == GameRules.AutoWood || Rules == GameRules.Tutorial || ClassicMode || Jonah || AirdropTest || JonahBruh;
         /// <summary>The graphics everyone plays with, picked by the host (0 Normal, 1 PSX, 2 AI PSX TEST). Synced in the map key.</summary>
         public static int HostGraphics;
         /// <summary>Builder: craft anywhere (with a wait), build anywhere, win with the ball in your own fort.</summary>
@@ -149,14 +151,14 @@ namespace RockGame
         /// the old names.
         /// </summary>
         public static string RulesName(GameRules r) => r == GameRules.Arsenal ? "Arsenal" : r == GameRules.Builder ? "Builder" : r == GameRules.Fun ? "Fun"
-            : r == GameRules.FunRandom ? "Fun Random" : r == GameRules.FunRandomLimited ? "Fun Random Limited" : r == GameRules.Primitive ? "Primitive Limited" : r == GameRules.BuildingPrimitive ? "Building Primitive" : r == GameRules.AutoWood ? "Classic" : r == GameRules.Tutorial ? "Tutorial" : r == GameRules.Dna ? "DNA" : r == GameRules.Bedwars ? "Bedwars" : r == GameRules.ThreeGoal ? "3 Goal" : r == GameRules.Progress ? "Progress" : r == GameRules.Assassin ? "Assassin" : r == GameRules.Domination ? "Domination" : r == GameRules.JonahTest ? "Jonah Ideas Test" : r == GameRules.AirdropTest ? "Airdrop Test" : "Primitive";
+            : r == GameRules.FunRandom ? "Fun Random" : r == GameRules.FunRandomLimited ? "Fun Random Limited" : r == GameRules.Primitive ? "Primitive Limited" : r == GameRules.BuildingPrimitive ? "Building Primitive" : r == GameRules.AutoWood ? "Classic" : r == GameRules.Tutorial ? "Tutorial" : r == GameRules.Dna ? "DNA" : r == GameRules.Bedwars ? "Bedwars" : r == GameRules.ThreeGoal ? "3 Goal" : r == GameRules.Progress ? "Progress" : r == GameRules.Assassin ? "Assassin" : r == GameRules.Domination ? "Domination" : r == GameRules.JonahTest ? "Jonah Ideas Test" : r == GameRules.AirdropTest ? "Airdrop Test" : r == GameRules.JonahBruh ? "Jonah Test Mode Bruh" : "Primitive";
         /// <summary>The mode's -rules name (the enum's, never renamed: classic, autowood, primitive...) - the tests' file names.</summary>
         public static string RulesId(GameRules r) => r.ToString().ToLowerInvariant();
         /// <summary>The game modes on the main menu's first row (the rest are under "More modes").</summary>
         public static readonly GameRules[] MainRules = { GameRules.Tutorial, GameRules.AutoWood, GameRules.Classic };
         /// <summary>The rest of the game modes, under "More modes".</summary>
         public static readonly GameRules[] MoreRules = { GameRules.Arsenal, GameRules.Builder, GameRules.Primitive, GameRules.BuildingPrimitive, GameRules.Dna, GameRules.Fun, GameRules.FunRandom, GameRules.FunRandomLimited,
-            GameRules.Bedwars, GameRules.ThreeGoal, GameRules.Progress, GameRules.Assassin, GameRules.Domination, GameRules.JonahTest, GameRules.AirdropTest };
+            GameRules.Bedwars, GameRules.ThreeGoal, GameRules.Progress, GameRules.Assassin, GameRules.Domination, GameRules.JonahTest, GameRules.AirdropTest, GameRules.JonahBruh };
         public static string RulesDesc(GameRules r)
         {
             switch (r)
@@ -169,6 +171,7 @@ namespace RockGame
                 case GameRules.Assassin: return "No ball: kill the enemies - each drops their skull - and hand a skull of every one of them into your machine (E). Skulls only drop in this mode.";
                 case GameRules.JonahTest: return HammerUpgrades ? "Classic (walls upgraded with the HAMMER; the trade stations TRADE, everything costs wood)." : "Classic, plus Jonah's ideas: the trade stations TRADE (everything costs wood), and UPGRADE 10 WALLS at the upgrade station (insert 1000 wood) lets you fly round your base in a black void and pick 10 pieces to go up a tier.";
                 case GameRules.AirdropTest: return "Classic, plus purple AIRDROP BERRY BUSHES all over the map: pick one (E) and you get an airdrop item - a different one every time (you never get the same one twice; the others can still get it).";
+                case GameRules.JonahBruh: return $"Classic with Jonah's changes: Armour costs {JonahBruhArmorWood}, no stun trap, death wand, ladder or chainsaw - a BETTER HATCHET instead (chops faster, {BetterHatchetWood} wood). The hammer only upgrades walls to stone ({JonahBruhStoneWood} wood a piece), but stone is {JonahBruhStoneHpMul:0.#}x as strong.";
                 case GameRules.Domination: return "Classic, but whoever has the ball (carried or in their machine) gets the Advanced Trade Station's items without building one. Lose the ball, lose them.";
                 case GameRules.Tutorial: return "New here? Start with this. Short, simple steps teach you the whole game - you do each one to go on, and each control unlocks as it's taught. The clock is stopped and it's always the small Plains map. Press PLAY TUTORIAL and pick Solo or With a friend.";
                 case GameRules.AutoWood: return HammerUpgrades ? "A wood machine in your base piles up wood by itself and speeds up as the match goes on - go and pick it up. Upgrade your walls one at a time with the HAMMER. Arsenal's prices and POWER ITEMS." : "Buy a wood machine in UPGRADES (E on the upgrade station beside your alien machine) and wood piles up at your base by itself - go and pick it up; more upgrades speed it up. Arsenal's prices and POWER ITEMS.";
@@ -375,8 +378,9 @@ namespace RockGame
         // ---------- Airdrops (after the wall drops) ----------
         /// <summary>Mode options: how many airdrops come after the wall drops, evenly spaced (1 = half way through, 2 = at the thirds...).</summary>
         [Tune("Mode options")] public static int AirdropCount = 5;
-        /// <summary>Mode options: which airdrop items are in the pool (bit i = AirdropChoices[i]).</summary>
-        [Tune("Mode options")] public static int AirdropItemMask = 1023;
+        /// <summary>Mode options: which airdrop items are in the pool (bit i = AirdropChoices[i]): every one to start with
+        /// (the newer ones too) but C4 (bit 0).</summary>
+        [Tune("Mode options")] public static int AirdropItemMask = ~1;
         [Tune("Airdrop")] public static float AirdropBaseDistance = 25f; // never this close to a base
         [Tune("Airdrop")] public static float C4Fuse = 3f, C4Radius = 5f, C4PlayerDamage = 150f, C4KillRadius = 1.6f;
         [Tune("Airdrop")] public static int SniperAmmo = 3, JetpackFuel = 100, PortalShots = 2, RocketAmmo = 3; // (the portal gun: two shots = one linked pair)
@@ -446,7 +450,7 @@ namespace RockGame
         /// <summary>The thrown spear starts from where it is on screen (in your hand), aimed at what the crosshair is on.
         /// false = the old way: from the middle of you (the eye), straight along the crosshair.</summary>
         [Tune("Spear")] public static bool SpearFromHand = true;
-        [Tune("Spear")] public static float SpearDrawTime = 0.05f /* (full power at once: an instant throw) */, SpearThrowSpeed = 30f, SpearThrowDamage = 90f, SpearThrowStructureDamage = 8f;
+        [Tune("Spear")] public static float SpearDrawTime = 0.05f /* (full power at once: an instant throw) */, SpearThrowSpeed = 42f /* (was 30: faster and flatter, so it flies straight at the crosshair instead of lobbing over it) */, SpearThrowDamage = 90f, SpearThrowStructureDamage = 8f;
         [Tune("Chainsaw")] public static float ChainsawCooldown = 0.15f, ChainsawRange = 2.4f, ChainsawPlayerDamage = 8f, ChainsawWoodGather = 12f, ChainsawStoneGather = 10f, ChainsawStructureDamage = 12f;
         [Tune("Melee")] public static float StoneStructureMeleeMul = 0.2f; // stone is very hard to melee - bring a ram
 
@@ -599,6 +603,7 @@ namespace RockGame
             {
                 case Item.BuildingPlan: return "Building Plan";
                 case Item.Hatchet: return "Hatchet";
+                case Item.BetterHatchet: return "Better Hatchet";
                 case Item.Pickaxe: return "Stone Pickaxe";
                 case Item.Ram: return "Battering Ram";
                 case Item.HeavyRam: return "High Strength Battering Ram";
@@ -713,7 +718,9 @@ namespace RockGame
         /// the sleeping bag and the alien helmet. Their code stays, so they can come back by taking them off this list.</summary>
         public static bool Removed(Item i) => i == Item.SleepingBag || i == Item.Helmet || i == Item.AutoTurret || i == Item.HeavyRam // (the auto turret: out for now; the High Strength ram: gone)
             || i == Item.Armor || i == Item.Barrier || i == Item.LargeGate // (the wooden armour: gone, heavy armour is "Armour" now; the large wall and gate: out for now)
-            || i == Item.DecoyBase || i == Item.ChaosSigil; // (the decoy base and the Sigil of CHAOS: taken out)
+            || i == Item.DecoyBase || i == Item.ChaosSigil // (the decoy base and the Sigil of CHAOS: taken out)
+            || i == Item.GoldenRock || i == Item.InvSwapper // (the Rock of Immortality and the inventory swapper: taken out)
+            || JonahBruhOut(i) || (i == Item.BetterHatchet && !JonahBruh); // (Jonah Test Mode Bruh: JonahBruh.cs)
         /// <summary>Whether an airdrop item can still come in airdrops (and respawn loot / Fun Random): the death wand is crafted now.</summary>
         /// (The disguise kit only comes in team games: in a 1v1 there's nobody to blend in with.)
         public static bool InAirdropPool(Item i) => i != Item.DeathWand && !Removed(i) && (i != Item.DisguiseKit || TeamGame);
@@ -860,6 +867,7 @@ namespace RockGame
                 case Item.Hatchet: return new MeleeStats { Cooldown = HatchetCooldown, Range = HatchetRange, PlayerDamage = HatchetPlayerDamage, WoodGather = HatchetWoodGather, StoneGather = HatchetStoneGather, StructureDamage = HatchetStructureDamage };
                 case Item.Pickaxe: return new MeleeStats { Cooldown = PickaxeCooldown, Range = PickaxeRange, PlayerDamage = PickaxePlayerDamage, WoodGather = PickaxeWoodGather, StoneGather = PickaxeStoneGather, StructureDamage = PickaxeStructureDamage };
                 case Item.Spear:   return new MeleeStats { Cooldown = SpearCooldown, Range = SpearRange, PlayerDamage = SpearPlayerDamage, WoodGather = SpearWoodGather, StoneGather = SpearStoneGather, StructureDamage = SpearStructureDamage };
+                case Item.BetterHatchet: return new MeleeStats { Cooldown = BetterHatchetCooldown, Range = HatchetRange, PlayerDamage = BetterHatchetPlayerDamage, WoodGather = BetterHatchetWoodGather, StoneGather = BetterHatchetStoneGather, StructureDamage = BetterHatchetStructureDamage };
                 case Item.Chainsaw: return new MeleeStats { Cooldown = ChainsawCooldown, Range = ChainsawRange, PlayerDamage = ChainsawPlayerDamage, WoodGather = ChainsawWoodGather, StoneGather = ChainsawStoneGather, StructureDamage = ChainsawStructureDamage };
                 // a huge axe: slow, fells any tree in one hit (the server gives the whole tree)
                 case Item.TreeCracker: return new MeleeStats { Cooldown = 1.1f, Range = 2.8f, PlayerDamage = 30f, WoodGather = 9999f, StoneGather = 3f, StructureDamage = 20f };
@@ -872,7 +880,7 @@ namespace RockGame
         }
         /// <summary>The battering rams: the normal one and the High Strength one (three steps a slam).</summary>
         public static bool IsRam(Item i) => i == Item.Ram || i == Item.HeavyRam;
-        public static bool IsMelee(Item i) => i == Item.Rock || i == Item.Hatchet || i == Item.Pickaxe || i == Item.Spear || i == Item.Chainsaw || i == Item.TreeCracker || i == Item.Sword || i == Item.Hammer || IsWackyMelee(i);
+        public static bool IsMelee(Item i) => i == Item.Rock || i == Item.Hatchet || i == Item.BetterHatchet || i == Item.Pickaxe || i == Item.Spear || i == Item.Chainsaw || i == Item.TreeCracker || i == Item.Sword || i == Item.Hammer || IsWackyMelee(i);
         /// <summary>Can this melee item hurt a player? Not the hammer (a building tool).</summary>
         public static bool HurtsPlayers(Item i) => i != Item.Hammer && i != Item.KnockStick && i != Item.KnockStick1; // (the knockback sticks only knock you back)
         /// <summary>Melee damage to a player: the sword has its own headshot number, everything else does x2 to the head.</summary>
@@ -924,7 +932,10 @@ namespace RockGame
                     case PieceType.Floor: return FloorMetalHp;
                     case PieceType.Stairs: return StairsMetalHp;
                 }
-            bool stone = tier == 1;
+            return tier == 1 ? WoodOrStoneHp(t, true) * StoneHpMul : WoodOrStoneHp(t, false); // (Jonah Test Mode Bruh: tougher stone - JonahBruh.cs)
+        }
+        static float WoodOrStoneHp(PieceType t, bool stone)
+        {
             switch (t)
             {
                 case PieceType.Foundation: return stone ? FoundationStoneHp : FoundationHp;
@@ -941,7 +952,7 @@ namespace RockGame
         }
 
         // ---------- Crafting ----------
-        static readonly Item[] k_Recipes = { Item.Hatchet, Item.Pickaxe, Item.Spear, Item.BuildingPlan, Item.Chest, Item.Bow, Item.Arrow, Item.Crossbow, Item.Armor, Item.Chainsaw, Item.Ram, Item.Ladder, Item.Saddle, Item.Workbench, Item.Workbench2, Item.Hammer, Item.Barricade, Item.BearTrap, Item.DeathWand }; // (the bear trap is the stun trap; the auto turret is out for now: Removed; the High Strength ram, the large wall and gate are gone; the wooden armour only in the tutorial, which teaches it)
+        static readonly Item[] k_Recipes = { Item.Hatchet, Item.Pickaxe, Item.Spear, Item.BuildingPlan, Item.Chest, Item.Bow, Item.Arrow, Item.Crossbow, Item.Armor, Item.Chainsaw, Item.BetterHatchet, Item.Ram, Item.Ladder, Item.Saddle, Item.Workbench, Item.Workbench2, Item.Hammer, Item.Barricade, Item.BearTrap, Item.DeathWand }; // (the bear trap is the stun trap; the auto turret is out for now: Removed; the High Strength ram, the large wall and gate are gone; the wooden armour only in the tutorial, which teaches it)
 
         static readonly Item[] k_Limited = { Item.Hatchet, Item.Spear, Item.BuildingPlan, Item.Ram };
         static readonly List<Item> s_Active = new List<Item>();
@@ -951,7 +962,7 @@ namespace RockGame
         {
             s_Active.Clear();
             if (LimitedCrafting) { s_Active.AddRange(k_Limited); return s_Active; }
-            foreach (var it in k_Recipes) if (!(WoodMode && it == Item.Pickaxe) && (it != Item.Hammer || HammerOn) && (it != Item.Armor || Tutorial)) s_Active.Add(it);
+            foreach (var it in k_Recipes) if (!(WoodMode && it == Item.Pickaxe) && (it != Item.Hammer || HammerOn) && (it != Item.Armor || Tutorial) && !JonahBruhOut(it) && (it != Item.BetterHatchet || JonahBruh)) s_Active.Add(it); // (Jonah Test Mode Bruh: JonahBruh.cs)
             if (ThemeMaps.HasWater) s_Active.Add(Item.Boat); // THEME MAPS (the boat)
             return s_Active;
         }
@@ -980,6 +991,7 @@ namespace RockGame
                 case Item.Saddle: r = new Recipe { Output = Item.Saddle, Count = 1, Wood = SaddleWood }; break;
                 case Item.Armor: r = new Recipe { Output = Item.Armor, Count = 1, Wood = ArmorWood }; break;
                 case Item.Chainsaw: r = new Recipe { Output = Item.Chainsaw, Count = 1, Wood = ChainsawWood }; break;
+                case Item.BetterHatchet: r = new Recipe { Output = Item.BetterHatchet, Count = 1, Wood = BetterHatchetWood }; break;
                 case Item.Workbench: r = new Recipe { Output = Item.Workbench, Count = 1, Wood = WorkbenchWood }; break;
                 case Item.Workbench2: r = new Recipe { Output = Item.Workbench2, Count = 1, Wood = Workbench2Wood }; break;
                 case Item.Ladder: r = new Recipe { Output = Item.Ladder, Count = 1, Wood = LadderWood }; break;
@@ -1047,7 +1059,7 @@ namespace RockGame
                 case Item.RevolverAmmo: return JonahPriced(new Recipe { Output = id, Count = Mathf.Max(1, RevolverAmmoPerCraft), Wood = RevolverAmmoWood });
                 case Item.C4: return JonahPriced(new Recipe { Output = id, Count = 1, Wood = C4Wood });
                 case Item.Helmet: return JonahPriced(new Recipe { Output = id, Count = 1, Wood = HelmetWood });
-                case Item.HeavyArmor: return JonahPriced(new Recipe { Output = id, Count = 1, Wood = HeavyArmorWood });
+                case Item.HeavyArmor: return JonahPriced(new Recipe { Output = id, Count = 1, Wood = JonahBruh ? JonahBruhArmorWood : HeavyArmorWood }); // (Jonah Test Mode Bruh: cheaper)
                 default: return BaseUpgradeRecipe(id, team); // (Builder's Fortify All Walls)
             }
         }
@@ -1230,6 +1242,7 @@ namespace RockGame
             (13, new[] { "AirdropCount", "ArrowPlayerDamage", "CrossbowDamage", "ShellWood", "RevolverAmmoWood", "AutoWoodLevel2", "HeavyArmorWood" }),
             (14, new[] { "DeathWandWood", "BearTrapWood", "BearTrapDamage", "BearTrapHold" }),
             (15, new[] { "HammerWood" }),
+            (16, new[] { "ProgressSeconds", "AirdropItemMask", "AirdropItemMask2", "SpearThrowSpeed" }),
         };
         const string MigrateKey = "RockGame.Tunables.migrated";
 

@@ -167,6 +167,7 @@ namespace RockGame
                                 : rs == "progress" ? (int)GameRules.Progress : rs == "assassin" ? (int)GameRules.Assassin : rs == "domination" ? (int)GameRules.Domination : 0; // (classic, original: 0)
                             if (rs == "jonah" || rs == "jonahtest") rv = (int)GameRules.JonahTest;
                             if (rs == "airdroptest" || rs == "airdrop") rv = (int)GameRules.AirdropTest;
+                            if (rs == "jonahbruh" || rs == "bruh") rv = (int)GameRules.JonahBruh;
                             MapChoice = Cfg.WithRules(MapChoice, (GameRules)rv);
                         }
                         break;

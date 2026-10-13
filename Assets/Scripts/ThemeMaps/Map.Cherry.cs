@@ -799,7 +799,6 @@ namespace RockGame
             float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
             var stone = new MeshKit();
             var glow = new MeshKit();
-            var trees = new MeshKit();
             var cols = new GameObject("cherry colliders").transform;
             cols.SetParent(root, false);
             float pitOut = PitOut;
@@ -834,7 +833,8 @@ namespace RockGame
                 }
             }
 
-            // ---- the canals: water, stone edges, red bridges, lanterns and cherry trees arching over them
+            // ---- the canals: water, stone edges, red bridges and lanterns (the cherry trees that arched over them are gone:
+            // every cherry tree on the map is a real tree you can chop)
             var water = new Material(Art.Mat(new Color(0.16f, 0.17f, 0.34f))) { name = "canal water" };
             if (water.HasProperty("_Smoothness")) water.SetFloat("_Smoothness", 0.9f);
             float c0 = CanalStart, c1 = CanalEnd, len = c1 - c0;
@@ -868,21 +868,11 @@ namespace RockGame
                         ThemeKitB.BoxCol(cols, rail + Vector3.up * 0.75f, new Vector3(0.2f, 0.9f, bl), across);
                     }
                 }
-                // lanterns and trees along both banks
-                int seedBase = 900;
+                // lanterns along both banks
                 for (float a = c0 + 7f; a < c1 - 4f; a += 9f)
                 {
-                    seedBase++;
                     for (int sgn = -1; sgn <= 1; sgn += 2)
                     {
-                        var tp = d * a + side * sgn * (CanalHalfW + 3.6f);
-                        if (NearBase(tp, 3f)) continue;
-                        tp.y = Height(tp.x, tp.z);
-                        float h = 5f + (seedBase * 7 % 10) * 0.2f;
-                        // (leaning over the water: the tree's +x points at the canal)
-                        var rot = Quaternion.LookRotation(Vector3.Cross(-side * sgn, Vector3.up), Vector3.up);
-                        CherryTree(trees, tp, rot, seedBase * 31 + (sgn > 0 ? 1 : 0) + k * 0, h, 2.6f, 1.15f, 9f);
-                        ThemeKitB.CapCol(cols, tp, tp + Vector3.up * h * 0.6f, 0.4f);
                         var lp = d * (a + 4.5f) + side * sgn * (CanalHalfW + 1.5f);
                         if (a + 4.5f < c1 - 3f && !NearBase(lp, 2f)) { lp.y = Height(lp.x, lp.z); Lantern(stone, glow, cols, lp, k * span); }
                     }
@@ -890,7 +880,6 @@ namespace RockGame
             }
             ThemeKitB.Spawn(root, "stone and bridges", stone, null, true);
             ThemeKitB.Spawn(root, "lantern light", glow, ThemeKitB.Glow(new Color(1f, 0.72f, 0.38f), 2.4f), false);
-            ThemeKitB.Spawn(root, "canal cherry trees", trees, null, true);
 
             // ---- petals everywhere on the ground (and floating on the canals)
             var pk = new MeshKit();

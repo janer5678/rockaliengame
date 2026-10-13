@@ -116,13 +116,7 @@ namespace RockGame
             Check(!me.Dead.Value && me.Health.Value >= Cfg.MaxHealth, $"shielded: a hit and a kill do nothing ({me.Health.Value:0} HP)");
             me.ShieldUntil.Value = -1;
 
-            // ---- the Rock of Immortality: in your hand you can't die (AutoTest.Prompt6.cs: in your bag you can)
-            yield return Ready();
-            me.ServerGive(Item.GoldenRock, 1);
-            yield return Hold(me, Item.GoldenRock);
-            me.ServerKill(bot);
-            yield return new WaitForSeconds(0.3f);
-            Check(!me.Dead.Value && me.Count(Item.GoldenRock) == 1 && me.Glittering, $"the Rock of Immortality: held, a kill leaves you alive and it's kept ({me.Health.Value:0} HP)");
+            // (the Rock of Immortality: taken out of the game - AutoTest.Prompt7.cs)
 
             // ---- the timeout ball: locked in, can't be hurt, smoke when it's over
             yield return Ready();
@@ -202,13 +196,7 @@ namespace RockGame
             yield return new WaitForSeconds(0.6f);
             Check(!me.IsBear, "its time up, you're back");
 
-            // ---- the inventory swapper
-            yield return Ready();
-            for (int i = 0; i < bot.Inv.Count; i++) bot.Inv[i] = default;
-            bot.ServerGive(Item.Crossbow, 1);
-            me.ServerGive(Item.Sword, 1);
-            yield return Use(Item.InvSwapper, Vector3.zero);
-            Check(me.Count(Item.Crossbow) == 1 && bot.Count(Item.Sword) == 1, "the inventory swapper swaps two players' bags");
+            // (the inventory swapper: taken out of the game - AutoTest.Prompt7.cs)
 
             // ---- Connect 4: everything stops, the loser dies
             yield return Ready();
