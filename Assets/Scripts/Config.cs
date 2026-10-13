@@ -447,7 +447,7 @@ namespace RockGame
 
         // ---------- Melee ----------
         [Tune("Rock")] public static float RockCooldown = 0.7f, RockRange = 2.3f, RockPlayerDamage = 12f, RockWoodGather = 5f, RockStoneGather = 4f, RockStructureDamage = 6f;
-        [Tune("Hatchet")] public static float HatchetCooldown = 0.7f, HatchetRange = 2.5f, HatchetPlayerDamage = 14f, HatchetWoodGather = 15f, HatchetStoneGather = 2f, HatchetStructureDamage = 12f;
+        [Tune("Hatchet")] public static float HatchetCooldown = 0.7f, HatchetRange = 2.5f, HatchetPlayerDamage = 17f, HatchetWoodGather = 15f, HatchetStoneGather = 2f, HatchetStructureDamage = 12f;
         [Tune("Pickaxe")] public static float PickaxeCooldown = 0.8f, PickaxeRange = 2.5f, PickaxePlayerDamage = 14f, PickaxeWoodGather = 3f, PickaxeStoneGather = 12f, PickaxeStructureDamage = 12f;
         [Tune("Spear")] public static float SpearCooldown = 0.9f, SpearRange = 3.4f, SpearPlayerDamage = 35f, SpearWoodGather = 2f, SpearStoneGather = 1f, SpearStructureDamage = 10f;
         /// <summary>The thrown spear starts from where it is on screen (in your hand), aimed at what the crosshair is on.
@@ -468,6 +468,8 @@ namespace RockGame
         public static float BowDamage(float power) { float d = BowDrawFromPower(power); return Mathf.Lerp(BowMinDamage, ArrowPlayerDamage, d * d); }
         [Tune("Crossbow")] public static float CrossbowDamage = 45f, CrossbowSpeed = 58f, CrossbowGravity = 11f, CrossbowReload = 1.6f, CrossbowZoomFov = 45f;
         [Tune("Spear")] public static float SpearGravity = 9.81f;
+        /// <summary>A thrown spear flies dead straight along the crosshair this far (m) before it starts to drop.</summary>
+        [Tune("Spear")] public static float SpearStraightRange = 80f;
         /// <summary>Spear throw timing (s): the shortest wind-up before it can be let go, how long a click is remembered
         /// (pressed during the wind-up or the recovery it throws as soon as it can), the arm coming through before the spear
         /// leaves the hand (it can't be called off once started), the recovery after a throw and lowering it again.</summary>
@@ -504,10 +506,10 @@ namespace RockGame
         // ---------- Crafting (at the alien machine) ----------
         [Tune("Crafting")] public static int PlanWood = 5;
         [Tune("Crafting")] public static int HatchetWood = 50, HatchetStone = 0, PickaxeWood = 30, PickaxeStone = 10;
-        [Tune("Crafting")] public static int SpearWood = 100, SpearStone = 0, BowWood = 100, BowStone = 15;
-        [Tune("Crafting")] public static int ArrowWood = 50, ArrowStone = 0, ArrowsPerCraft = 5;
-        [Tune("Crafting")] public static int RamWood = 125, RamStone = 50;
-        [Tune("Crafting")] public static int ChestWood = 50, BarrierWood = 40;
+        [Tune("Crafting")] public static int SpearWood = 125, SpearStone = 0, BowWood = 250, BowStone = 0;
+        [Tune("Crafting")] public static int ArrowWood = 100, ArrowStone = 0, ArrowsPerCraft = 5;
+        [Tune("Crafting")] public static int RamWood = 200, RamStone = 0;
+        [Tune("Crafting")] public static int ChestWood = 125, BarrierWood = 40;
         /// <summary>The concrete barricade (Trade Station): cover you can put down anywhere, the enemy base too (not right
         /// up against their buildings) - its price and how much it takes to break.</summary>
         [Tune("Crafting")] public static int BarricadeWood = 250;
@@ -527,7 +529,7 @@ namespace RockGame
 
         // ---------- Vehicles ----------
         [Tune("Vehicles")] public static float CarSpeed = 17f, CarReverseSpeed = 6f, CarAccel = 9f, CarTurn = 95f, CarHitDamage = 30f, CarKnockback = 11f;
-        [Tune("Vehicles")] public static float HorseWalk = 4.5f, HorseSprint = 11f, HorseJump = 8.5f, HorseHp = 120f; // (doubled: the horse and every map's own mount)
+        [Tune("Vehicles")] public static float HorseWalk = 5f, HorseSprint = 12.5f, HorseJump = 8.5f, HorseHp = 120f; // (doubled: the horse and every map's own mount)
         [Tune("Vehicles")] public static int HorsesPerSide = 3;
         /// <summary>The chance (0..1) each wild horse is a Wild Unicorn instead: white with a horn, a little faster and tougher,
         /// and it leaves a rainbow behind it at a gallop.</summary>
@@ -551,7 +553,7 @@ namespace RockGame
         [Tune("Arsenal and Builder")] public static float SwordSwingTime = 1.5f, SwordHeadDamage = 150f, SwordBodyDamage = 95f, SwordRange = 2.9f;
         /// <summary>Waterpipe shotgun: one shell at a time. Each pellet does full damage within PointBlank metres, falling off to FarMul at Range.</summary>
         [Tune("Arsenal and Builder")] public static int ShotgunPellets = 10;
-        [Tune("Arsenal and Builder")] public static float ShotgunPelletDamage = 20f, ShotgunSpread = 5f, ShotgunPointBlank = 1f, ShotgunRange = 25f, ShotgunFarMul = 0.15f, ShotgunReload = 2.4f;
+        [Tune("Arsenal and Builder")] public static float ShotgunPelletDamage = 20f, ShotgunSpread = 5f, ShotgunPointBlank = 1f, ShotgunRange = 32f, ShotgunFarMul = 0.15f, ShotgunReload = 2.4f;
         /// <summary>Shotgun pellets that hit the head do this many times their damage.</summary>
         [Tune("Arsenal and Builder")] public static float ShotgunHeadMul = 1.5f;
         /// <summary>Shotgun pellet damage share at this distance: full up close, down to FarMul at the range.</summary>
@@ -927,6 +929,7 @@ namespace RockGame
         }
         public static float PieceHp(PieceType t, int tier)
         {
+            if (DoorIsPiece && t == PieceType.Doorway) t = PieceType.Wall; // (Jonah Test Mode Bruh: a doorway takes as much breaking as a wall)
             if (tier >= 3) return PieceHp(t, 2) * RefinedHpMul; // refined
             if (tier >= 2)
                 switch (t) // metal
@@ -1016,7 +1019,7 @@ namespace RockGame
         /// <summary>A recipe's price in this game mode (Arsenal / Builder: the crossbow is cheaper).</summary>
         public static Recipe Priced(Recipe r)
         {
-            if (PowerMenu && r.Output == Item.Crossbow) r.Wood = ModesCrossbowWood;
+            if (PowerMenu && r.Output == Item.Crossbow) r.Wood = JonahBruh ? JonahBruhCrossbowWood : ModesCrossbowWood; // (Jonah Test Mode Bruh: its own price)
             return r;
         }
 
@@ -1251,6 +1254,7 @@ namespace RockGame
             (16, new[] { "ProgressSeconds", "AirdropItemMask", "AirdropItemMask2", "SpearThrowSpeed" }),
             (17, new[] { "BallGatherMul", "AirdropItemMask", "AirdropItemMask2", "SnailTime", "LiftHeight", "LiftLaunch", "JonahBruhArmorWood" }),
             (18, new[] { "AirdropItemMask", "AirdropItemMask2" }),
+            (19, new[] { "SpearWood", "BowWood", "BowStone", "ArrowWood", "RamWood", "RamStone", "ChestWood", "HatchetPlayerDamage", "HorseWalk", "HorseSprint", "ShotgunRange", "JonahBruhStoneWood" }),
         };
         const string MigrateKey = "RockGame.Tunables.migrated";
 

@@ -127,6 +127,40 @@ namespace RockGame
         /// <summary>A barricade can go in an enemy base, but not this close to their buildings (m) or their machine / spawn.</summary>
         public const float BarricadeEnemyGap = 3f, BarricadeMachineGap = 5f;
 
+        /// <summary>Does a barricade at pos (turned rot) stand on something - the ground, a foundation, a floor? Felt for
+        /// under its middle and both ends: at least two of them have to be on something (self: the barricade itself, skipped).</summary>
+        public static bool BarricadeStandsOn(Vector3 pos, Quaternion rot, Container self)
+        {
+            int on = 0;
+            for (int k = -1; k <= 1; k++)
+            {
+                var from = pos + rot * new Vector3(k * BarricadeLen * 0.4f, 0f, 0f) + Vector3.up * 0.3f;
+                foreach (var h in Physics.RaycastAll(from, Vector3.down, 0.65f, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore))
+                {
+                    if (self != null && h.collider.transform.IsChildOf(self.transform)) continue;
+                    if (h.collider.GetComponentInParent<PlayerNet>() != null) continue; // (the ground itself counts)
+                    var c = h.collider.GetComponentInParent<Container>();
+                    if (c != null && c.Kind.Value == Container.Barricade) continue; // (not on top of another one)
+                    on++;
+                    break;
+                }
+            }
+            return on >= 2;
+        }
+
+        /// <summary>Is anyone (alive) standing where a barricade at pos would go? They'd be stuck inside it.</summary>
+        public static bool BarricadeOnSomeone(Vector3 pos, Quaternion rot)
+        {
+            var c = pos + rot * new Vector3(0, BarricadeH * 0.5f + 0.05f, 0);
+            var half = new Vector3(BarricadeLen * 0.5f + 0.1f, BarricadeH * 0.5f, BarricadeFoot * 0.5f + 0.15f);
+            foreach (var h in Physics.OverlapBox(c, half, rot, ~0, QueryTriggerInteraction.Ignore))
+            {
+                var p = h.GetComponentInParent<PlayerNet>();
+                if (p != null && !p.Dead.Value) return true;
+            }
+            return false;
+        }
+
         /// <summary>Why a barricade can't go here because of the enemy (null = fine): anywhere at all, the enemy base
         /// too, just not right up against their building pieces, chests and benches, or their machine and spawn.</summary>
         public static string BarricadeEnemyProblem(int team, Vector3 pos)

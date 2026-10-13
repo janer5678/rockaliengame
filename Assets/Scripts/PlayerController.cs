@@ -1032,7 +1032,7 @@ namespace RockGame
         /// </summary>
         bool AimWithAssist(Ray ray, float range, float radius, out RaycastHit best)
         {
-            bool exact = Aim(ray, range, out best);
+            bool exact = Aim(ray, range, out best, true);
             var ep = exact ? best.collider.GetComponentInParent<PlayerNet>() : null;
             if (ep != null) return !PlayerNet.GlassBetween(transform.position, ep.transform.position); // not through the glass wall
             if (radius <= 0f) return exact;
@@ -1052,7 +1052,7 @@ namespace RockGame
             return exact;
         }
 
-        bool Aim(Ray ray, float range, out RaycastHit best)
+        bool Aim(Ray ray, float range, out RaycastHit best, bool shot = false)
         {
             best = default;
             bool found = false;
@@ -1061,6 +1061,7 @@ namespace RockGame
             foreach (var h in hits)
             {
                 if (h.collider.transform.IsChildOf(transform)) continue;
+                if (shot && Structure.ShotPasses(h.collider, m_Net.Team.Value)) continue; // (out through your own window's bars)
                 if (h.distance < bestDist) { bestDist = h.distance; best = h; found = true; }
             }
             return found;
@@ -1223,6 +1224,8 @@ namespace RockGame
         public bool SpearThrowCommitted => m_SpearReleaseAt >= 0f;
         /// <summary>For the tests: what the crosshair was on when the last spear left the hand.</summary>
         public static Vector3 LastSpearTarget;
+        /// <summary>For the tests: where the last spear was thrown from, and which way.</summary>
+        public static Ray LastSpearRay;
 
         /// <summary>The spear's launch from the hand so its arc comes down right on what the crosshair's on (lifted just
         /// enough for the spear's drop over that distance). Out of reach: straight along the crosshair.</summary>
@@ -1245,14 +1248,14 @@ namespace RockGame
             m_DrawStart = -1f;
             m_NextSwing = Time.time + Mathf.Max(0.1f, Cfg.SpearThrowRecovery);
             if (m_Net.HeldItem != Item.Spear || m_Net.Dead.Value || m_Net.CarryingBall) return;
-            // from the middle of the screen (your eye) straight to what the crosshair's on - not from where the spear is
-            // drawn in your hand - lifted just enough for its drop over that distance
+            // from the middle of the screen (your eye) dead straight along the crosshair - no arc, nothing of how you're
+            // moving or jumping: it flies in a straight line (ArrowProjectile: no drop for Cfg.SpearStraightRange)
             var ray = CenterRay();
             Vector3 origin = SafeOrigin(ray, 0.8f);
-            Vector3 vel = ray.direction * Cfg.SpearThrowSpeed * m_SpearPower;
-            var target = Aim(ray, 200f, out var th) ? th.point : ray.GetPoint(60f);
-            if ((target - origin).sqrMagnitude > 4f) vel = SpearAimAt(origin, target, Cfg.SpearThrowSpeed * m_SpearPower, ray.direction);
+            Vector3 vel = ray.direction * Cfg.SpearThrowSpeed;
+            var target = Aim(ray, 200f, out var th, true) ? th.point : ray.GetPoint(60f);
             LastSpearTarget = target;
+            LastSpearRay = new Ray(origin, vel.normalized);
             ArrowProjectile.SpawnSpear(origin, vel, m_Net, true);
             m_Net.ThrowSpearRpc(origin, vel);
             Tutorial.SpearThrows++;
@@ -2316,7 +2319,7 @@ namespace RockGame
                 case TargetKind.Door:
                 {
                     var s = t.Obj.GetComponent<Structure>();
-                    AimText = TeamTip(s.DisplayName, s.Team.Value, $"{s.Health.Value:0}/{s.MaxHp:0}  ·  door {s.DoorHealth.Value:0}/{s.DoorMaxHp:0}   "
+                    AimText = TeamTip(s.DisplayName, s.Team.Value, (Cfg.DoorIsPiece ? $"{s.Health.Value:0}/{s.MaxHp:0}   " : $"{s.Health.Value:0}/{s.MaxHp:0}  ·  door {s.DoorHealth.Value:0}/{s.DoorMaxHp:0}   ")
                         + (s.Team.Value == m_Net.Team.Value ? $"{KT(Bind.Interact)}: open/close" : "locked - only its team can open it (the door itself breaks easier than the frame)"));
                     return;
                 }

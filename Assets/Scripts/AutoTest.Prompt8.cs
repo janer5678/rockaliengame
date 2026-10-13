@@ -317,7 +317,7 @@ namespace RockGame
                     }
                     if (hit == 1)
                     {
-                        Check(w.IsSpawned && w.Tier.Value == 0 && w.RamCracks.Value == 2 && cracks > 0, $"the second takes it down to cracked wood ({states[1]})");
+                        Check(w.IsSpawned && w.Tier.Value == 0 && w.RamCracks.Value == 0 && cracks == 0, $"the second takes it down to wood, no cracks on it ({states[1]})");
                         yield return Snap("prompt8_ram_cracked_wood");
                     }
                     if (hit == 2) Check(w == null || !w.IsSpawned, $"the third breaks it ({states[2]})");

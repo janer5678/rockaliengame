@@ -54,8 +54,8 @@ namespace RockGame
                 Check(Cfg.Rules == rules0, "the game mode survives the map key round trip");
             }
             // prices and order asked for
-            Check(Cfg.SpearWood == 100 && Cfg.ArmorWood == 250 && Cfg.ArmorHp == 25 && Cfg.SaddleWood == 750 && Cfg.RamUses == 1,
-                $"spear 100, armour 250 (+25 HP), saddle 750, ram 1 hit ({Cfg.SpearWood}, {Cfg.ArmorWood}, {Cfg.ArmorHp}, {Cfg.SaddleWood}, {Cfg.RamUses})");
+            Check(Cfg.SpearWood == 125 && Cfg.ArmorWood == 250 && Cfg.ArmorHp == 25 && Cfg.SaddleWood == 750 && Cfg.RamUses == 1,
+                $"spear 125, armour 250 (+25 HP), saddle 750, ram 1 hit ({Cfg.SpearWood}, {Cfg.ArmorWood}, {Cfg.ArmorHp}, {Cfg.SaddleWood}, {Cfg.RamUses})");
             if (!Cfg.LimitedCrafting) Check(Cfg.RecipeIndex(Item.Chest) >= 0 && Cfg.RecipeIndex(Item.Chest) < Cfg.RecipeIndex(Item.Bow), "the storage chest is above the bow in crafting");
             // the glass wall: nobody hurts anyone on the other side of it
             if (MapBuilder.GlassUp)
@@ -132,7 +132,7 @@ namespace RockGame
                 "power prices: sword 500, C4 2500, shotgun 2000 + 100 a shell, revolver 2500 + 100 a bullet");
             Check(Cfg.MeleePlayerDamage(Item.Sword, true) == Cfg.SwordHeadDamage && Cfg.MeleePlayerDamage(Item.Sword, false) == Cfg.SwordBodyDamage && Cfg.Melee(Item.Sword).Cooldown > Cfg.Melee(Item.Hatchet).Cooldown,
                 $"sword: its own head / body damage (CHANGE VALUES), a slower swing ({Cfg.MeleePlayerDamage(Item.Sword, true)} / {Cfg.MeleePlayerDamage(Item.Sword, false)}, {Cfg.Melee(Item.Sword).Cooldown} s vs the hatchet's {Cfg.Melee(Item.Hatchet).Cooldown} s)");
-            Check(Mathf.Abs(Cfg.ShotgunPellets * Cfg.ShotgunPelletDamage * Cfg.ShotgunFalloff(0.9f) - 200f) < 0.5f && Cfg.ShotgunFalloff(10f) < 0.7f, "shotgun: 200 within a metre, less further out");
+            Check(Mathf.Abs(Cfg.ShotgunPellets * Cfg.ShotgunPelletDamage * Cfg.ShotgunFalloff(0.9f) - 200f) < 0.5f && Cfg.ShotgunFalloff(Cfg.ShotgunRange * 0.4f) < 0.7f, "shotgun: 200 within a metre, less further out");
             Check(Cfg.PieceWood(PieceType.Wall) == Cfg.WallWood, $"building pieces at their normal price (wall {Cfg.PieceWood(PieceType.Wall)} wood)");
             for (int i = 0; i < 18; i++) me.ServerGive(Item.Wood, 1000); // leaves room in the 24 slots for what gets bought
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));

@@ -82,8 +82,8 @@ namespace RockGame
                     if (m_DrawStart < 0f && !committed) return false;
                     charge = committed ? Mathf.InverseLerp(0.65f, 1f, m_SpearPower) : Mathf.Clamp01((Time.time - m_DrawStart) / Mathf.Max(0.05f, Cfg.SpearDrawTime));
                     origin = SafeOrigin(ray, 0.8f);
-                    vel = ray.direction * Cfg.SpearThrowSpeed * Mathf.Lerp(0.65f, 1f, charge);
-                    gravity = Cfg.SpearGravity;
+                    vel = ray.direction * Cfg.SpearThrowSpeed;
+                    gravity = 0f; // (it flies straight: ArrowProjectile)
                     return true;
                 }
             }

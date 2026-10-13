@@ -22,8 +22,8 @@ namespace RockGame
         public readonly NetworkVariable<double> HitAt = new NetworkVariable<double>(-1000);
         /// <summary>The Stick of Truth bent it out of shape (a seed for how: 0 = straight). Its look and its colliders.</summary>
         public readonly NetworkVariable<byte> Warp = new NetworkVariable<byte>();
-        /// <summary>Jonah Test Mode Bruh: how cracked the battering ram's left it (0 whole, 1 cracked stone, 2 down to cracked
-        /// wood - the next hit breaks it). Drawn on its faces (MagicStone.Crack); the hammer mends it.</summary>
+        /// <summary>Jonah Test Mode Bruh: how cracked the battering ram's left it (0 whole, 1 cracked stone - the next ram
+        /// takes it down to wood). Drawn all over its faces (MagicStone.Crack); the hammer mends it.</summary>
         public readonly NetworkVariable<byte> RamCracks = new NetworkVariable<byte>();
         /// <summary>Seconds until the hammer can upgrade it again after a hit (0 = now).</summary>
         public float UpgradeLockLeft => NetworkManager == null ? 0f : Mathf.Max(0f, (float)(HitAt.Value + Cfg.HammerHitLock - NetworkManager.ServerTime.Time));
@@ -50,6 +50,14 @@ namespace RockGame
         public bool HasBars => PType == PieceType.Window && DoorHealth.Value > 0f;
         /// <summary>The window bars' object (its one collider covers the opening).</summary>
         public const string BarsName = "bars";
+        /// <summary>Shots (bullets, arrows, spears) go through your own team's window bars: you can shoot out of your base's
+        /// windows (the enemy's still stop yours).</summary>
+        public static bool ShotPasses(Collider c, int team)
+        {
+            if (c == null || c.name != BarsName) return false;
+            var s = c.GetComponentInParent<Structure>();
+            return s != null && s.PType == PieceType.Window && s.Team.Value == team;
+        }
         Transform m_Bars;
         public float DoorMaxHp => PType == PieceType.Gate ? Cfg.BarrierHp : Cfg.DoorLeafHp(Tier.Value);
         /// <summary>For the tests: doors broken off their frames on this screen.</summary>
@@ -154,6 +162,7 @@ namespace RockGame
         /// <summary>Whether a hit at this point in the world landed on the door leaf (not the frame round it).</summary>
         public bool IsDoorHit(Vector3 point)
         {
+            if (Cfg.DoorIsPiece && PType == PieceType.Doorway) return false; // (Jonah Test Mode Bruh: the door is just part of the doorway)
             if (HasBars)
             {
                 // the bars fill the window's opening

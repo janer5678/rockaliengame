@@ -602,7 +602,22 @@ namespace RockGame
             PsxModels.Retexture(go, go.GetComponentsInChildren<Renderer>(), r => Art.IsArtMat(r.sharedMaterial, out var col) && (col == k_Silver || col == k_SilverDark) ? (col == k_Silver ? "concrete_00" : "concrete_10") : null, 2f);
             BuildMachine(root, team, glow);
             if (Cfg.AutoWood) WoodMachine.Create(root, team); // Auto Wood: the wood machine, right of the alien machine
+            if (Cfg.SmallBedrock) BuildClimbStep(root, team, glow); // (Jonah Test Mode Bruh: the step up onto the machine)
             if (Cfg.HasBaseUpgrades) UpgradeStation.Create(root, team); // Arsenal / Auto Wood: the upgrade station, left of it
+        }
+
+        /// <summary>Jonah Test Mode Bruh's one-cell base: a metal step beside the machine - onto it, onto the machine's top,
+        /// and over the wall (JonahBruh.cs: ClimbStepH, MachineTopY).</summary>
+        static void BuildClimbStep(Transform root, int team, Color glow)
+        {
+            var go = new GameObject("ClimbStep " + Cfg.TeamName[team]);
+            go.transform.SetParent(root, false);
+            go.transform.SetPositionAndRotation(Cfg.OnSmallBedrock(team, Cfg.ClimbStepLocal + Vector3.up * Cfg.BaseY), Quaternion.LookRotation(-Cfg.BackDir(team)));
+            var t = go.transform;
+            var sz = Cfg.ClimbStepSize;
+            Art.Box(t, new Color(0.3f, 0.33f, 0.36f), new Vector3(0, sz.y * 0.5f, 0), sz, default, true);
+            Art.Box(t, k_SilverDark, new Vector3(0, sz.y - 0.02f, 0), new Vector3(sz.x + 0.03f, 0.05f, sz.z + 0.03f));
+            for (int k = 0; k < 3; k++) Art.Box(t, glow, new Vector3(0, 0.2f + k * 0.3f, sz.z * 0.5f + 0.005f), new Vector3(sz.x * 0.7f, 0.03f, 0.01f), default, false, Workbench.Glow(glow));
         }
 
         /// <summary>The point light over the alien machine's crystal: a light shade of the owning team's colour.</summary>
@@ -615,7 +630,7 @@ namespace RockGame
             go.transform.SetParent(root, false);
             // local +z faces the spawn / the middle of the map
             go.transform.SetPositionAndRotation(Cfg.MachinePos(team), Quaternion.LookRotation(-Cfg.BackDir(team)));
-            if (Cfg.SmallBedrock) go.transform.localScale = Vector3.one * Cfg.SmallMachineScale; // (Jonah Test Mode Bruh: a smaller machine on its one-cell bedrock)
+            if (Cfg.SmallBedrock) go.transform.localScale = new Vector3(Cfg.SmallMachineScale, Cfg.SmallMachineTall, Cfg.SmallMachineScale); // (Jonah Test Mode Bruh: a smaller machine on its one-cell bedrock - tall enough to jump out from: JonahBruh.cs)
             var t = go.transform;
             var metal = new Color(0.3f, 0.33f, 0.36f);
             var screen = Art.Ghost(new Color(0.4f, 1f, 0.8f, 0.7f));
@@ -694,7 +709,13 @@ namespace RockGame
             var socket = new GameObject("socket").transform;
             socket.SetParent(t, false);
             socket.position = Cfg.SocketPos(team) - Vector3.up * 0.64f; // on the bedrock
-            if (Cfg.SmallBedrock) socket.localScale = Vector3.one * (Cfg.SmallSocketScale / Cfg.SmallMachineScale); // (big enough for the ball)
+            if (Cfg.SmallBedrock)
+            {
+                socket.localScale = new Vector3(Cfg.SmallSocketScale / Cfg.SmallMachineScale, Cfg.SmallSocketScale / Cfg.SmallMachineTall, Cfg.SmallSocketScale / Cfg.SmallMachineScale); // (big enough for the ball)
+                // a flat top to stand on (jump from there and you clear a wall on the bedrock's edge)
+                Art.Box(t, metal, new Vector3(0, Cfg.MachineTopY / Cfg.SmallMachineTall - 0.06f, -0.05f), new Vector3(1.75f, 0.12f, 1.75f), default, true).name = "machine top";
+                Art.Box(t, glow, new Vector3(0, Cfg.MachineTopY / Cfg.SmallMachineTall + 0.005f, -0.05f), new Vector3(1.2f, 0.01f, 0.08f), default, false, Workbench.Glow(glow));
+            }
             for (int i = 0; i < 10; i++)
             {
                 float a = i * 36f * Mathf.Deg2Rad;

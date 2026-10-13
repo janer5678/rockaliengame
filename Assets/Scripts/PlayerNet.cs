@@ -71,8 +71,11 @@ namespace RockGame
         // (IsHeadshot: the head box round the alien's real head - PlayerNet.HeadHitbox.cs)
         double Now => NetworkManager != null ? NetworkManager.ServerTime.Time : 0;
         public bool Invisible => InvisUntil.Value > Now;
-        /// <summary>Invisible and not currently attacking: other players can't see you.</summary>
-        public bool Hidden => Invisible && RevealUntil.Value < Now;
+        /// <summary>Invisible: other players can't see you - not even when you attack (then they see what's in your hand
+        /// instead, until the potion runs out: HeldShowing).</summary>
+        public bool Hidden => Invisible;
+        /// <summary>Invisible, but you've used a weapon since you drank it: what's in your hand shows (floating), till it runs out.</summary>
+        public bool HeldShowing => Invisible && RevealUntil.Value >= InvisUntil.Value - 0.01;
         /// <summary>Dead, timer done and the ball is live: waiting for "respawn in base / in the wild".</summary>
         public bool ChoosingRespawn => Dead.Value && Now >= RespawnAt.Value && NetGame.Instance != null && NetGame.Instance.S == GameState.BallLive;
 
@@ -591,6 +594,19 @@ namespace RockGame
             if (Mine) Art.SetLayerShadowsOnly(m_Flame);
         }
 
+        bool m_HeldOnly;
+        /// <summary>For the tests: the model of what's in their hand.</summary>
+        public GameObject HandItemForTests => m_HandItem;
+        /// <summary>Only the thing in their hand is drawn (the invisibility potion after attacking): every other part of
+        /// them is switched off.</summary>
+        void SetHeldOnly(bool on)
+        {
+            m_HeldOnly = on;
+            var keep = m_HandItem != null ? m_HandItem.transform : null;
+            foreach (var r in m_VisualRoot.GetComponentsInChildren<Renderer>(true))
+                r.forceRenderingOff = on && (keep == null || !r.transform.IsChildOf(keep));
+        }
+
         void RebuildHandItem(Item item)
         {
             if (m_HandItem) Destroy(m_HandItem);
@@ -657,7 +673,11 @@ namespace RockGame
             bool bones = dead && showBody && PsxModels.On;
             if (bones) showBody = false;
             if (bones != (m_Skeleton != null)) SetSkeleton(bones);
+            // invisible but they've attacked: everyone else sees just the thing in their hand, floating along
+            bool heldOnly = !showBody && !dead && !tree && !Mine && HeldShowing && !lifted;
+            if (heldOnly) showBody = true;
             TickWackyLooks(dead, ref showBody); // (a bear, an ant, a timeout ball, a shield...: PlayerNet.WackyLooks.cs)
+            if (heldOnly != m_HeldOnly || heldOnly) SetHeldOnly(heldOnly);
             if (m_VisualRoot.gameObject.activeSelf != showBody) m_VisualRoot.gameObject.SetActive(showBody);
             bool cc = !dead && !Riding;
             if (m_CC.enabled != cc) m_CC.enabled = cc;
@@ -791,10 +811,10 @@ namespace RockGame
         readonly Queue<float> m_PendingSpears = new Queue<float>();
         int m_PendingC4;
 
-        /// <summary>Attacking while invisible shows you for a moment.</summary>
+        /// <summary>Attacking while invisible: you stay unseen, but what's in your hand shows from now until it runs out.</summary>
         void Reveal()
         {
-            if (Invisible) RevealUntil.Value = Now + Cfg.InvisRevealTime;
+            if (Invisible) RevealUntil.Value = InvisUntil.Value;
             ServerWackyAttacked(); // (a disguise falls off)
         }
 
@@ -1461,8 +1481,8 @@ namespace RockGame
                 else if (Cfg.JonahBruh && s.Tier.Value == 1 && s.RamCracks.Value > 0 && s.PType != PieceType.Barrier && steps == 1)
                 {
                     s.ServerDowngrade();
-                    s.RamCracks.Value = 2;
-                    msg = $"Smashed the stone down to cracked wood - 1 more ram breaks it";
+                    s.RamCracks.Value = 0; // (plain wood: no cracks on it)
+                    msg = $"Smashed the stone down to wood - 1 more ram breaks it";
                 }
                 else if (s.PType == PieceType.Barrier)
                 {
@@ -1637,6 +1657,15 @@ namespace RockGame
             if (fort > 0 && s.Upgradable) s.ServerUpgrade(fort);
         }
 
+        /// <summary>Part of what stands on a base's bedrock: the alien machine (its socket too), the wood machine, the step,
+        /// the ball sitting in a socket.</summary>
+        static bool OnTheBedrock(Collider h)
+        {
+            if (h.GetComponentInParent<Machine>() != null || h.GetComponentInParent<WoodMachine>() != null || h.GetComponentInParent<Ball>() != null) return true;
+            for (var t = h.transform; t != null; t = t.parent) if (t.name.StartsWith("ClimbStep ") || t.name.StartsWith("AlienMachine ")) return true;
+            return false;
+        }
+
         static bool AreaClear(PieceType t, Vector3 pos, Quaternion rot)
         {
             BuildGrid.LocalBounds(t, out var c, out var size);
@@ -1649,6 +1678,7 @@ namespace RockGame
                 if (h.GetComponentInParent<PlayerNet>() != null) continue; // you can build right under yourself (you get lifted out)
                 var s = h.GetComponentInParent<Structure>();
                 if (s != null && s.HasKey) continue; // grid pieces are handled by the grid registry
+                if (Cfg.SmallBedrock && OnTheBedrock(h)) continue; // (Jonah Test Mode Bruh: walls and doors go right round the one-cell base)
                 return false;
             }
             return true;
@@ -1715,6 +1745,13 @@ namespace RockGame
             if (kind == Item.AutoTurret && baseTeam != team && !Cfg.Builder) return "Auto turrets go in your own base";
             bool anywhere = kind == Item.Ladder || kind == Item.BearTrap || kind == Item.Barricade; // (ladders, stun traps and barricades: their base too; the trap on the ground or any floor)
             if (kind == Item.Barricade) { var bp = Deployables.BarricadeEnemyProblem(team, pos); if (bp != null) return bp; } // (...not right up against their buildings)
+            if (kind == Item.Barricade)
+            {
+                // on something solid (it breaks if that goes - NetGame.ServerTickBarricades), and not on top of anyone (stuck inside it)
+                var brot = Quaternion.Euler(0, yaw, 0);
+                if (!Deployables.BarricadeStandsOn(pos, brot, null)) return "Barricades go on the ground or a floor";
+                if (Deployables.BarricadeOnSomeone(pos, brot)) return "Someone's standing there";
+            }
             // chests may go on the bedrock around the machine, just not on the spawn spot
             if (kind == Item.Chest && !Cfg.Builder && new Vector2(pos.x - Cfg.SpawnPos(team).x, pos.z - Cfg.SpawnPos(team).z).magnitude < 1.3f) return "Keep the spawn spot clear";
             // Auto Wood: the wood machine's spot stays free even before the machine is bought (it lands there later)

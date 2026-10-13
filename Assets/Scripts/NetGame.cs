@@ -215,6 +215,7 @@ namespace RockGame
             }
             ServerTickReadySetRock(now); // (held still before ROCK!: the clock waits too)
             ServerTickC4(now);
+            ServerTickBarricades();
             ServerTickAirstrikes(now);
             ServerTickBushes(now);
             ServerTickAirdropBushes(now); // (Airdrop Test)
@@ -1280,6 +1281,15 @@ namespace RockGame
         bool ServerBlastPiece(Structure s, BlastKind kind, float structureDamage, Vector3 pos, float radius, Structure on, Vector3 normal)
         {
             int tier = s.Upgradable ? s.Tier.Value : 0;
+            // Jonah Test Mode Bruh: C4 takes one layer of stone - the piece it's on, the ones round it on that side, and the
+            // foundation(s) it stands on; stone behind that layer stands (wood goes as ever)
+            if (kind == BlastKind.C4 && tier == 1 && Cfg.JonahBruh)
+            {
+                bool hit = s == on || (on != null && on.IsSpawned && (SameLayer(s, on, normal) || UnderIt(s, on)));
+                if (!hit) return false;
+                s.ServerDamage(s.Health.Value + 1f, false);
+                return true;
+            }
             if (kind == BlastKind.C4 && tier >= 2)
             {
                 bool stuck = s == on;
@@ -1305,6 +1315,43 @@ namespace RockGame
         }
 
         public enum BlastKind { Other, C4, Rocket, Airstrike }
+
+        float m_NextBarricadeCheck;
+        /// <summary>Server, a couple of times a second: a barricade whose foundation / floor (or whatever it stood on) is gone
+        /// breaks - it can't hang in the air.</summary>
+        void ServerTickBarricades()
+        {
+            if (Time.time < m_NextBarricadeCheck) return;
+            m_NextBarricadeCheck = Time.time + 0.4f;
+            for (int i = Container.All.Count - 1; i >= 0; i--)
+            {
+                var c = Container.All[i];
+                if (c == null || !c.IsSpawned || c.Kind.Value != Container.Barricade) continue;
+                if (Deployables.BarricadeStandsOn(c.transform.position, c.transform.rotation, c)) continue;
+                BarricadesFell++;
+                c.ServerBreak();
+            }
+        }
+        /// <summary>For the tests: barricades that broke with nothing under them.</summary>
+        public static int BarricadesFell;
+
+        /// <summary>A piece next to the one the C4's on, on the same side of it (not behind it): its layer.</summary>
+        static bool SameLayer(Structure s, Structure on, Vector3 normal)
+        {
+            var off = s.transform.position - on.transform.position;
+            bool flatS = s.PType == PieceType.Floor || s.PType == PieceType.Foundation, flatOn = on.PType == PieceType.Floor || on.PType == PieceType.Foundation;
+            return flatS == flatOn && Mathf.Abs(Vector3.Dot(off, normal)) < 0.8f && off.magnitude < 3.4f;
+        }
+
+        /// <summary>A foundation (or floor) right under the wall the C4's on: what it stands on.</summary>
+        static bool UnderIt(Structure s, Structure on)
+        {
+            if (!(s.PType == PieceType.Foundation || s.PType == PieceType.Floor) || s == on) return false;
+            if (on.PType == PieceType.Foundation || on.PType == PieceType.Floor) return false;
+            var b = on.transform.position;
+            var d = s.transform.position - b;
+            return d.y < 0.2f && d.y > -1.6f && new Vector2(d.x, d.z).magnitude < 1.6f;
+        }
 
         void ServerTickC4(double now)
         {

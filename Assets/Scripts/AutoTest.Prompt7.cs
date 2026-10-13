@@ -213,7 +213,7 @@ namespace RockGame
                 Check(bh >= 0 && Cfg.GetRecipe(bh).Wood == 50 && Cfg.CraftTier(Item.BetterHatchet) == 1, $"the Better Hatchet in the chainsaw's place ({(bh >= 0 ? Cfg.GetRecipe(bh).Wood : -1)} wood, T{Cfg.CraftTier(Item.BetterHatchet)})");
                 int ai = Cfg.PowerIndex(Item.HeavyArmor);
                 Check(ai >= 0 && Cfg.GetPowerRecipe(ai).Wood == 150, $"armour costs {(ai >= 0 ? Cfg.GetPowerRecipe(ai).Wood : -1)}");
-                Check(Cfg.HammerCost(0) == 150 && Cfg.HammerCost(1) == 0 && Mathf.Approximately(Cfg.PieceHp(PieceType.Wall, 1), Cfg.WallStoneHp * Cfg.JonahBruhStoneHpMul) && Cfg.JonahBruhStoneHpMul > 1f,
+                Check(Cfg.HammerCost(0) == 250 && Cfg.HammerCost(1) == 0 && Mathf.Approximately(Cfg.PieceHp(PieceType.Wall, 1), Cfg.WallStoneHp * Cfg.JonahBruhStoneHpMul) && Cfg.JonahBruhStoneHpMul > 1f,
                     $"the hammer: stone for {Cfg.HammerCost(0)} and no further; stone walls {Cfg.PieceHp(PieceType.Wall, 1):0} HP (was {Cfg.WallStoneHp:0})");
 
                 // the better hatchet against the hatchet, on a tree each
@@ -253,12 +253,12 @@ namespace RockGame
                 pc.LocalTeleport(wallAt + back * 3.2f, lookYaw);
                 pc.SetLook(lookYaw, 4f);
                 yield return new WaitForSeconds(0.5f);
-                Check(pc.AimText.Contains("UPGRADE TO STONE") && pc.AimText.Contains("150"), $"aiming the hammer: upgrade to stone for 150 ({pc.AimText})");
+                Check(pc.AimText.Contains("UPGRADE TO STONE") && pc.AimText.Contains(Cfg.JonahBruhStoneWood.ToString()), $"aiming the hammer: upgrade to stone for {Cfg.JonahBruhStoneWood} ({pc.AimText})");
                 int w0 = me.Count(Cfg.GatherItem(Item.Wood));
                 me.HammerUpgradeRpc(wall.NetworkObject);
                 yield return new WaitForSeconds(0.5f);
-                Check(wall.Tier.Value == 1 && w0 - me.Count(Cfg.GatherItem(Item.Wood)) == 150 && Mathf.Approximately(wall.MaxHp, Cfg.WallStoneHp * Cfg.JonahBruhStoneHpMul),
-                    $"stone for 150 wood, with {wall.MaxHp:0} HP");
+                Check(wall.Tier.Value == 1 && w0 - me.Count(Cfg.GatherItem(Item.Wood)) == Cfg.JonahBruhStoneWood && Mathf.Approximately(wall.MaxHp, Cfg.WallStoneHp * Cfg.JonahBruhStoneHpMul),
+                    $"stone for {Cfg.JonahBruhStoneWood} wood, with {wall.MaxHp:0} HP");
                 me.HammerUpgradeRpc(wall.NetworkObject);
                 yield return new WaitForSeconds(0.5f);
                 Check(wall.Tier.Value == 1 && pc.HammerTarget() == null && pc.AimText.Contains("as far as the hammer goes"), $"...and no further ({pc.AimText})");

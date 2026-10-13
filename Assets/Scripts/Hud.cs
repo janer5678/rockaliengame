@@ -584,7 +584,7 @@ namespace RockGame
                 if (me.Invisible)
                 {
                     float left = (float)(me.InvisUntil.Value - me.NetworkManager.ServerTime.Time);
-                    Shadowed(new Rect(hr.x, statY, 400 * k, 22 * k), me.Hidden ? $"<color=#c98bff><b>INVISIBLE</b> {Mathf.CeilToInt(left)}s</color>" : $"<color=#ff9f5a><b>VISIBLE (attacking)</b></color> <color=#c98bff>{Mathf.CeilToInt(left)}s</color>", m_Label);
+                    Shadowed(new Rect(hr.x, statY, 400 * k, 22 * k), !me.HeldShowing ? $"<color=#c98bff><b>INVISIBLE</b> {Mathf.CeilToInt(left)}s</color>" : $"<color=#c98bff><b>INVISIBLE</b> {Mathf.CeilToInt(left)}s</color> <color=#ff9f5a>(they can see what's in your hand)</color>", m_Label);
                 }
             }
 

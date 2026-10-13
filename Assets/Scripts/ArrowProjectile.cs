@@ -18,6 +18,10 @@ namespace RockGame
         float m_Damage = -1f;
         float m_Life = 6f;
         float m_Gravity = Cfg.ArrowGravity;
+        /// <summary>Metres left before gravity starts pulling it down (a thrown spear flies straight first).</summary>
+        float m_StraightLeft;
+        /// <summary>For the tests: a thrown spear (not an arrow or a thrown item).</summary>
+        public bool IsSpearForTests => m_Spear;
         float m_Power = 1f;
         AudioSource m_Whoosh;
         // the portal pair it last came out of (not taken again straight away: no bouncing back and forth)
@@ -93,6 +97,7 @@ namespace RockGame
             a.m_Report = report;
             a.m_Spear = true;
             a.m_Gravity = Cfg.SpearGravity;
+            a.m_StraightLeft = Cfg.SpearStraightRange; // (straight along the crosshair, then it drops)
             a.m_Life = 8f;
             a.m_Power = Mathf.Clamp01(vel.magnitude / Mathf.Max(1f, Cfg.SpearThrowSpeed));
             a.StartWhoosh(0.8f, 0.9f);
@@ -152,7 +157,8 @@ namespace RockGame
             float dt = Time.deltaTime;
             Vector3 pos = transform.position;
             Vector3 step = m_Vel * dt;
-            m_Vel += Vector3.down * m_Gravity * dt;
+            if (m_StraightLeft > 0f) m_StraightLeft -= step.magnitude; // (a spear: no drop yet)
+            else m_Vel += Vector3.down * m_Gravity * dt;
             float dist = step.magnitude;
             if (dist > 0.0001f)
             {
@@ -163,6 +169,7 @@ namespace RockGame
                 {
                     if (m_ShooterRoot != null && h.collider.transform.IsChildOf(m_ShooterRoot)) continue;
                     if (h.collider.transform.IsChildOf(transform)) continue;
+                    if (m_Shooter != null && Structure.ShotPasses(h.collider, m_Shooter.Team.Value)) continue; // (out through your own window's bars)
                     // (nor the horse you're riding: it has hit boxes all over it now - Vehicle.CreateVisual - and you
                     // can't hurt your own mount anyway)
                     if (m_Shooter != null && m_Shooter.Riding && h.collider.GetComponentInParent<NetworkObject>() is NetworkObject hn

@@ -146,7 +146,7 @@ namespace RockGame
         {
             if (Dead.Value || !GameAllowsCombat) return;
             // not again within 30 seconds
-            if (Time.time < m_NextSuicide) { Notify($"You can't kill yourself again for {Mathf.CeilToInt(m_NextSuicide - Time.time)} s"); return; }
+            if (Time.time < m_NextSuicide) { Note($"You can't kill yourself yet - {Mathf.CeilToInt(m_NextSuicide - Time.time)} s cooldown left"); return; } // (big, in the middle of the screen)
             m_NextSuicide = Time.time + 30f;
             ArmorHp.Value = 0;
             ServerDie(null, KillCause.Suicide); // (the kill feed says so)

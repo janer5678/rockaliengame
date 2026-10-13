@@ -20,7 +20,7 @@ namespace RockGame
     public static partial class Cfg
     {
         public static bool JonahBruh => Rules == GameRules.JonahBruh;
-        [Tune("Jonah Test Mode Bruh")] public static int JonahBruhArmorWood = 150, JonahBruhStoneWood = 150, BetterHatchetWood = 50, JonahBruhBench2Wood = 1000;
+        [Tune("Jonah Test Mode Bruh")] public static int JonahBruhArmorWood = 150, JonahBruhStoneWood = 250, BetterHatchetWood = 50, JonahBruhBench2Wood = 1000, JonahBruhCrossbowWood = 500;
         [Tune("Jonah Test Mode Bruh")] public static float JonahBruhStoneHpMul = 2f;
         /// <summary>How Jonah Test Mode Bruh is won (picked on the menu's mode page): 0 NORMAL (like Classic), 1 PROGRESSION
         /// (like Progress: keep the ball in your machine to fill your bar - Cfg.ProgressSeconds).</summary>
@@ -29,6 +29,10 @@ namespace RockGame
         public static bool JonahBruhProgression => JonahBruh && JonahBruhProgress != 0;
         /// <summary>The better hatchet: faster swings and more wood a hit than the hatchet.</summary>
         [Tune("Jonah Test Mode Bruh")] public static float BetterHatchetCooldown = 0.55f, BetterHatchetWoodGather = 24f, BetterHatchetStoneGather = 3f, BetterHatchetPlayerDamage = 16f, BetterHatchetStructureDamage = 14f;
+
+        /// <summary>Jonah Test Mode Bruh: no door raiding - a doorway is one piece (hitting its door hurts the doorway), with
+        /// a wall's health (Cfg.PieceHp).</summary>
+        public static bool DoorIsPiece => JonahBruh;
 
         /// <summary>Taken out of Jonah Test Mode Bruh's crafting (only there). The death wand still comes in its airdrops.</summary>
         public static bool JonahBruhOut(Item i) => JonahBruh && (i == Item.BearTrap || i == Item.DeathWand || i == Item.Ladder || i == Item.Chainsaw);
@@ -45,6 +49,12 @@ namespace RockGame
         /// machine (SmallMachineScale), its ball socket (SmallSocketScale) and the wood machine (SmallMachineScale) all on it.</summary>
         public static bool SmallBedrock => JonahBruh;
         public const float SmallMachineScale = 0.5f, SmallSocketScale = 0.7f;
+        /// <summary>The small machine is taller than it is wide (x this on its height): stood on its flat top (MachineTopY over
+        /// the bedrock) you can jump over a wall on the bedrock's edge - out of a one-cell base. A step beside it
+        /// (ClimbStepH high) gets you up there.</summary>
+        public const float SmallMachineTall = 0.82f, MachineTopY = 2.55f * SmallMachineTall, ClimbStepH = 1.0f;
+        /// <summary>Where the step up onto the small machine stands (between it and the wood machine), and its size.</summary>
+        public static readonly Vector3 ClimbStepLocal = new Vector3(-0.33f, 0f, -1.1f), ClimbStepSize = new Vector3(0.42f, ClimbStepH, 0.55f);
         /// <summary>Half the bedrock's size now.</summary>
         public static float BedrockHalfNow => SmallBedrock ? Cell * 0.5f : BedrockHalf;
 
@@ -66,7 +76,8 @@ namespace RockGame
         static readonly float[] k_SmallSpawnX = { -0.5f, -1.12f, 0.12f, 0.75f };
         const float SmallSpawnZ = 1.02f;
 
-        static Vector3 OnSmallBedrock(int team, Vector3 local) => SmallBedrockCenter(team) + Quaternion.LookRotation(-BackDir(team)) * local;
+        /// <summary>A point on the small bedrock, in the alien machine's frame (k_SmallMachine...).</summary>
+        public static Vector3 OnSmallBedrock(int team, Vector3 local) => SmallBedrockCenter(team) + Quaternion.LookRotation(-BackDir(team)) * local;
         static Vector3 SmallMachinePos(int team) => OnSmallBedrock(team, k_SmallMachine + Vector3.up * BaseY);
         static Vector3 SmallSocketPos(int team) => OnSmallBedrock(team, k_SmallSocket + Vector3.up * (BaseY + 0.64f));
         static Vector3 SmallWoodMachinePos(int team) => OnSmallBedrock(team, k_SmallWood + Vector3.up * BaseY);
@@ -157,7 +168,7 @@ namespace RockGame
             return r;
         }
 
-        static readonly Color k_Crack = new Color(0.07f, 0.05f, 0.09f);
+        static readonly Color k_Crack = new Color(0.03f, 0.02f, 0.04f), k_CrackEdge = new Color(0.93f, 0.88f, 1f);
 
         /// <summary>The battering ram's cracks (Structure.RamCracks): dark jagged lines across the piece's faces - a few at
         /// stage 1, more and longer, branching, at stage 2. The same on every screen (seeded by the piece).</summary>
@@ -165,7 +176,7 @@ namespace RockGame
         {
             var rng = new System.Random(seed * 7349 + 11);
             float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
-            int lines = stage >= 2 ? 5 : 3;
+            int lines = stage >= 2 ? 14 : 11; // (all over it)
             // where a crack can start on each face: (centre, half size, the face's way out)
             var faces = new System.Collections.Generic.List<(Vector3 c, Vector2 half, Quaternion rot)>();
             switch (t)
@@ -199,23 +210,29 @@ namespace RockGame
             root.SetParent(tr, false);
             foreach (var f in faces)
             {
-                int n = Mathf.Max(1, Mathf.RoundToInt(lines * Mathf.Clamp01(f.half.x * f.half.y / 1.6f) + (stage >= 2 ? 1 : 0)));
+                int n = Mathf.Max(2, Mathf.RoundToInt(lines * Mathf.Clamp01(f.half.x * f.half.y / 1.6f)));
                 for (int i = 0; i < n; i++)
                 {
-                    // a zig-zag: from a point, a few short segments heading roughly one way, a branch off it at stage 2
-                    var p = new Vector2(R(-f.half.x, f.half.x) * 0.8f, R(-f.half.y, f.half.y) * 0.8f);
+                    // a zig-zag: from a point spread evenly over the face (a jittered grid, so it's cracked ALL over), long
+                    // segments heading roughly one way, branching
+                    int cols = Mathf.Max(1, Mathf.RoundToInt(Mathf.Sqrt(n * f.half.x / Mathf.Max(0.1f, f.half.y))));
+                    int rows = Mathf.Max(1, Mathf.CeilToInt(n / (float)cols));
+                    float cx = (-1f + (i % cols + 0.5f) * 2f / cols) * f.half.x, cy = (-1f + (i / cols + 0.5f) * 2f / rows) * f.half.y;
+                    var p = new Vector2(cx + R(-0.3f, 0.3f) * f.half.x / cols, cy + R(-0.3f, 0.3f) * f.half.y / rows);
                     float dir = R(0f, 360f);
-                    int segs = stage >= 2 ? 6 : 4;
+                    int segs = 6;
                     for (int k = 0; k < segs; k++)
                     {
-                        float len = R(0.14f, stage >= 2 ? 0.34f : 0.26f), a = (dir + R(-40f, 40f)) * Mathf.Deg2Rad;
+                        float len = R(0.18f, 0.36f), a = (dir + R(-45f, 45f)) * Mathf.Deg2Rad;
                         var q = p + new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * len;
                         q.x = Mathf.Clamp(q.x, -f.half.x, f.half.x); q.y = Mathf.Clamp(q.y, -f.half.y, f.half.y);
-                        Segment(root, f.c, f.rot, p, q, stage >= 2 ? 0.035f : 0.025f);
-                        if (stage >= 2 && k == 2)
+                        Segment(root, f.c, f.rot, p, q, 0.05f);
+                        if (k == 2 || k == 4)
                         {
                             float b = (dir + (R(0f, 1f) < 0.5f ? 70f : -70f)) * Mathf.Deg2Rad;
-                            Segment(root, f.c, f.rot, q, q + new Vector2(Mathf.Cos(b), Mathf.Sin(b)) * R(0.15f, 0.3f), 0.022f);
+                            var e = q + new Vector2(Mathf.Cos(b), Mathf.Sin(b)) * R(0.15f, 0.32f);
+                            e.x = Mathf.Clamp(e.x, -f.half.x, f.half.x); e.y = Mathf.Clamp(e.y, -f.half.y, f.half.y);
+                            Segment(root, f.c, f.rot, q, e, 0.035f);
                         }
                         p = q;
                     }
@@ -230,7 +247,11 @@ namespace RockGame
             if (d.sqrMagnitude < 0.0004f) return;
             var mid = (a + b) * 0.5f;
             float ang = Mathf.Atan2(d.y, d.x) * Mathf.Rad2Deg;
-            var go = Art.Box(root, k_Crack, c + rot * new Vector3(mid.x, mid.y, 0f), new Vector3(d.magnitude + w, w, 0.02f));
+            // a near-black split with a pale chipped edge round it, so it stands out on any stone
+            var edge = Art.Box(root, k_CrackEdge, c + rot * new Vector3(mid.x, mid.y, -0.004f), new Vector3(d.magnitude + w * 2.2f, w * 2.2f, 0.016f));
+            edge.transform.localRotation = rot * Quaternion.Euler(0, 0, ang);
+            edge.name = "crack edge";
+            var go = Art.Box(root, k_Crack, c + rot * new Vector3(mid.x, mid.y, 0.002f), new Vector3(d.magnitude + w, w, 0.022f));
             go.transform.localRotation = rot * Quaternion.Euler(0, 0, ang);
             go.name = "crack";
         }

@@ -103,6 +103,7 @@ namespace RockGame
             else if (IsConverter) bc.enabled = false; // (Jonah's converter: you get at it through the upgrade station)
             else { bc.center = new Vector3(0, 0.33f, 0); bc.size = new Vector3(1.1f, 0.66f, 0.62f); }
             m_Pop = 0f;
+            if (Kind.Value == Barricade && PlayerController.Local != null) PlayerController.Local.ResolveOverlap(transform); // (never stuck inside one)
             // no grass through a chest, a workbench or a gamble machine (it grows back when it's gone; bags and airdrops lie in it)
             if (!IsBag && !IsAirdrop) GrassField.BlockRenderers(GetInstanceID(), transform);
         }
