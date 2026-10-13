@@ -981,7 +981,7 @@ namespace RockGame
             foreach (var i in Cfg.AirdropLoot) if (Special(i) && (dropped == null || !dropped.Contains(i))) pool.Add(i);
             if (pool.Count == 0) foreach (var i in Cfg.AirdropChoices) if (Special(i) && Cfg.InAirdropPool(i) && (dropped == null || !dropped.Contains(i))) pool.Add(i);
             if (pool.Count == 0) foreach (var i in Cfg.AirdropLoot) if (Special(i)) pool.Add(i);
-            if (pool.Count == 0) foreach (var i in Cfg.AirdropChoices) if (Special(i) && !Cfg.Removed(i)) pool.Add(i);
+            if (pool.Count == 0) foreach (var i in Cfg.AirdropChoices) if (Special(i) && !Cfg.Removed(i) && (i != Item.DisguiseKit || Cfg.TeamGame)) pool.Add(i);
             var o = Cfg.PickAirdropItem(pool);
             dropped?.Add(o);
             return new List<ItemStack> { o == Item.Helmet ? ItemStack.Of(Item.Helmet, 1, 1) : ItemStack.Of(o, 1, Mathf.Clamp(Cfg.MaxData(o), 0, 255)) };

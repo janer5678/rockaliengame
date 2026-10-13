@@ -475,7 +475,7 @@ namespace RockGame
             // an item's own name: you get that item
             foreach (Item it in System.Enum.GetValues(typeof(Item)))
             {
-                if (it == Item.None || it == Item.Scribble || it == Item.FortifyBuff || it == Item.WoodGenBuff || Cfg.Removed(it)) continue;
+                if (it == Item.None || it == Item.Scribble || it == Item.FortifyBuff || it == Item.WoodGenBuff || Cfg.Removed(it) || (it == Item.DisguiseKit && !Cfg.TeamGame)) continue;
                 string name = Cfg.ItemName(it).ToLowerInvariant();
                 if (w == name || w == it.ToString().ToLowerInvariant() || (w.Length >= 4 && name.Length >= 4 && (name == w + "s" || w == name + "s")))
                 {
@@ -485,6 +485,8 @@ namespace RockGame
                     break;
                 }
             }
+            // what people really write (guns, food, "aimbot", "nuke", "noob", "rizz", dragons...: NetGame.ScribbleWords.cs)
+            if (said == null && ServerScribbleWords(p, w, ground, out var gamer)) said = gamer;
             if (said == null)
             {
                 if (Is("unicorn")) { Vehicle.ServerSpawn(Vehicle.Horse, ground + Vector3.up * 0.3f, p.transform.eulerAngles.y, true); said = "A UNICORN!"; }
@@ -514,10 +516,9 @@ namespace RockGame
                 else if (Is("ant", "bug", "insect", "tiny", "small", "shrink")) { var e = NearestEnemy(); if (e != null && !e.WackySafe) { e.AntUntil.Value = e.NetworkManager.ServerTime.Time + Cfg.AntTime; Fx.Server(FxKind.AntZap, e.transform.position + Vector3.up, Vector3.up); said = $"{e.DisplayName} is an ant!"; } }
                 else if (Is("slow", "sloth", "turtle", "glue", "goo", "mud", "sticky", "honey")) { var e = NearestEnemy(); if (e != null && !e.WackySafe) { e.SlowUntil.Value = e.NetworkManager.ServerTime.Time + Cfg.SlowTime; Fx.Server(FxKind.Goo, e.transform.position, Vector3.up); said = $"{e.DisplayName} is stuck in goo!"; } }
                 else if (Is("tornado", "wind", "storm", "hurricane", "rain", "earthquake")) { ServerStickOfTruth(ground, p); said = "A STORM!"; }
-                else if (Is("jump", "boot", "spring", "kangaroo", "frog")) { Give(Item.JumpBoots); said = "Jump boots!"; }
+                else if (Is("jump", "boot", "spring", "kangaroo", "frog")) { Give(Item.JumpBoots); said = "Triple jump boots!"; }
                 else if (Is("drone", "robot", "bot", "camera")) { Give(Item.DroneBot); said = "A turret bot!"; }
                 else if (Is("magnet", "ball")) { Give(Item.BallGrabber); said = "A Ball Grabber 3000!"; }
-                else if (Is("chaos", "anarchy", "madness")) { Give(Item.ChaosSigil); said = "The Sigil of CHAOS..."; }
                 else if (Is("box", "chest", "crate", "storage")) { Give(Item.Chest); said = "A storage chest!"; }
                 else if (Is("map", "compass", "gps")) { Give(Item.OmenMap); said = "Omen's map!"; }
                 else if (Is("clone", "twin", "decoy", "copy", "mirror")) { Vehicle.ServerSpawnDecoy(ground + Vector3.up * 0.1f, p.transform.eulerAngles.y, p, p.HeldItem); said = "A copy of you!"; }

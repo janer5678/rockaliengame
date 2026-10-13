@@ -26,7 +26,7 @@ namespace RockGame
         /// turning back before then, unless you die).</summary>
         public readonly NetworkVariable<float> BearHpLeft = new NetworkVariable<float>(0f);
         public readonly NetworkVariable<double> BearUntil = new NetworkVariable<double>(-1);
-        /// <summary>Wearing the double jump boots (they break when you die).</summary>
+        /// <summary>Wearing the triple jump boots (they break when you die).</summary>
         public readonly NetworkVariable<bool> WornBoots = new NetworkVariable<bool>();
         /// <summary>The turret bot this player is driving (its NetworkObjectId; 0 = none).</summary>
         public readonly NetworkVariable<ulong> DroneId = new NetworkVariable<ulong>();
@@ -48,6 +48,8 @@ namespace RockGame
         public static bool MinigameOn => NetGame.Instance != null && NetGame.Instance.IsSpawned && NetGame.Instance.MinigameOn;
         /// <summary>Held where you are (locked in a ball, dancing, knocked flat, a minigame on).</summary>
         public bool WackyHeld => Prisoned || Dancing || KnockedDown || MinigameOn;
+        /// <summary>Can't move (locked in a ball, knocked flat, a minigame on) - dancing you can still walk about.</summary>
+        public bool WackyFrozen => Prisoned || KnockedDown || MinigameOn;
         /// <summary>Can't attack or use things right now.</summary>
         public bool WackyNoAttack => Shielded || IsAnt || WackyHeld;
         /// <summary>Nothing can hurt this player right now.</summary>
@@ -94,19 +96,31 @@ namespace RockGame
             return false;
         }
 
-        /// <summary>Server, when a hit would kill: holding the golden rock, you don't die - it's used up instead, you're back
-        /// to full health and covered in gold glitter.</summary>
+        /// <summary>Server, when a hit would kill: while the Rock of Immortality is IN YOUR HAND you can't die - the hit
+        /// leaves you on 1 health and you flash gold (it's never used up). In your bag it does nothing.</summary>
         bool ServerCheatDeath()
         {
             var st = HeldStack;
             if (st.Id != Item.GoldenRock || InSuddenDeath) return false;
-            ServerConsumeHeld();
-            Health.Value = Cfg.MaxHealth;
-            GlitterUntil.Value = Now + Cfg.GlitterTime;
-            Fx.Server(FxKind.GoldBurst, transform.position + Vector3.up * 1.1f, Vector3.up);
-            WackyNoteRpc(new FixedString128Bytes("The ROCK OF IMMORTALITY saved you!"));
-            if (NetGame.Instance != null) NetGame.Instance.Broadcast($"{DisplayName}'s Rock of Immortality saved them from death!");
+            Health.Value = 1f;
+            if (Time.time >= m_NextImmortalFx)
+            {
+                m_NextImmortalFx = Time.time + 1f;
+                GlitterUntil.Value = Now + 1.5f;
+                Fx.Server(FxKind.GoldBurst, transform.position + Vector3.up * 1.1f, Vector3.up);
+                WackyNoteRpc(new FixedString128Bytes("The ROCK OF IMMORTALITY won't let you die!"));
+            }
             return true;
+        }
+        float m_NextImmortalFx;
+
+        /// <summary>Airdrop Test: you've had every airdrop item there is from the bushes - the list starts over.</summary>
+        [Rpc(SendTo.Owner)]
+        public void AllAirdropsRpc()
+        {
+            if (Bot.Value) return;
+            Hud.BigFade("ALL AIRDROP ITEMS TESTING");
+            Sfx.Play2D(Sfx.Hum, 0.5f, 0f);
         }
 
         /// <summary>Server, as this player dies: everything wacky on them ends (the boots break, a bear's a player again).</summary>
@@ -116,7 +130,7 @@ namespace RockGame
             DisguiseTeam.Value = 255;
             BearHpLeft.Value = 0f;
             BearUntil.Value = -1;
-            if (WornBoots.Value) { WornBoots.Value = false; Notify("Your double jump boots broke"); }
+            if (WornBoots.Value) { WornBoots.Value = false; Notify("Your triple jump boots broke"); }
             ServerEndDrone(false);
             UnflipRpc();
         }

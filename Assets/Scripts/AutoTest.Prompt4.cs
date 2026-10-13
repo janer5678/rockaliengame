@@ -116,13 +116,13 @@ namespace RockGame
             Check(!me.Dead.Value && me.Health.Value >= Cfg.MaxHealth, $"shielded: a hit and a kill do nothing ({me.Health.Value:0} HP)");
             me.ShieldUntil.Value = -1;
 
-            // ---- the golden rock: saves you from death once
+            // ---- the Rock of Immortality: in your hand you can't die (AutoTest.Prompt6.cs: in your bag you can)
             yield return Ready();
             me.ServerGive(Item.GoldenRock, 1);
             yield return Hold(me, Item.GoldenRock);
             me.ServerKill(bot);
             yield return new WaitForSeconds(0.3f);
-            Check(!me.Dead.Value && me.Health.Value >= Cfg.MaxHealth && me.Count(Item.GoldenRock) == 0 && me.Glittering, $"the golden rock: a kill just uses it up, back to full health, glittering ({me.Health.Value:0} HP)");
+            Check(!me.Dead.Value && me.Count(Item.GoldenRock) == 1 && me.Glittering, $"the Rock of Immortality: held, a kill leaves you alive and it's kept ({me.Health.Value:0} HP)");
 
             // ---- the timeout ball: locked in, can't be hurt, smoke when it's over
             yield return Ready();
@@ -489,13 +489,7 @@ namespace RockGame
             Check(me.Dead.Value && bot.Dead.Value, "the suicide bomb kills us and whoever's close");
             yield return new WaitForSeconds(1f);
 
-            // ---- the Sigil of CHAOS: every item rains down all over the map
-            yield return Ready();
-            me.ServerGive(Item.Wood, 200);
-            int items0 = g.Items.Count;
-            yield return Use(Item.ChaosSigil, Vector3.zero);
-            int left = 0; for (int i = 0; i < me.Inv.Count; i++) if (!me.Inv[i].Empty) left++;
-            Check(left == 0 && g.Items.Count > items0, $"the Sigil of CHAOS empties every bag onto the map ({g.Items.Count - items0} more things lying about)");
+            // (the Sigil of CHAOS: taken out of the game - AutoTest.Prompt6.cs)
 
             // ---- the dev menu: every airdrop item (what doesn't fit lands at your feet)
             yield return Ready();
@@ -505,7 +499,7 @@ namespace RockGame
             int missing = 0;
             foreach (var it in Cfg.AirdropChoices)
             {
-                if (Cfg.Removed(it)) continue; // (the decoy base: taken out)
+                if (Cfg.Removed(it) || (it == Item.DisguiseKit && !Cfg.TeamGame)) continue; // (the decoy base, the sigil: taken out; the disguise kit: team games only)
                 bool there = me.Count(it) > 0 || (it == Item.JumpBoots && me.WornBoots.Value) || (it == Item.Jetpack && me.WornJetFuel.Value > 0) || (it == Item.Wallhack && me.WornGlasses.Value); // (worn gear goes straight on)
                 if (!there) foreach (var d in g.Items) if (d.Stack.Id == it && Flat(d.Pos, me.transform.position) < 8f) there = true;
                 if (!there) { missing++; Log($"(not given: {it})"); }

@@ -103,18 +103,34 @@ namespace RockGame
         public void ServerPickAirdropBush(PlayerNet p, ResourceNode n)
         {
             var had = BushItemsHad(p);
-            var pool = new List<Item>();
-            foreach (var i in Cfg.AirdropLoot) if (Special(i) && !had.Contains(i)) pool.Add(i);
-            if (pool.Count == 0) foreach (var i in Cfg.AirdropChoices) if (Special(i) && Cfg.InAirdropPool(i) && !had.Contains(i)) pool.Add(i);
-            if (pool.Count == 0) { p.WackyNoteRpc(new Unity.Collections.FixedString128Bytes("You've had every airdrop item there is!")); return; }
+            var pool = BushPool(had);
+            if (pool.Count == 0) { had.Clear(); pool = BushPool(had); } // (safety: everything had - start over)
+            if (pool.Count == 0) return;
             var it = Cfg.PickAirdropItem(pool);
             if (n.ServerHarvest(1, false, p.transform.position) <= 0) return;
             had.Add(it);
+            // that was the last one they hadn't had: the list starts over (anything can come again) - and they're told
+            bool all = BushPool(had).Count == 0;
+            if (all) had.Clear();
             var st = Cfg.GiftStack(it);
             int left = p.ServerGive(st.Id, st.Count, st.Data);
             if (left > 0) ServerDropItem(ItemStack.Of(st.Id, left, st.Data), p.transform.position + p.transform.forward, p.transform.forward, p.EyePos);
             Fx.Server(FxKind.OmenFlash, n.transform.position + Vector3.up, Vector3.up);
             p.WackyNoteRpc(new Unity.Collections.FixedString128Bytes($"AIRDROP BERRY: {Cfg.ItemName(it)}!"));
+            if (all) { p.AllAirdropsRpc(); AllAirdropResets++; }
+        }
+
+        /// <summary>For the tests: how many times a player's had every airdrop item and the list started over.</summary>
+        public int AllAirdropResets { get; private set; }
+
+        /// <summary>What an airdrop berry bush can give a player who's had `had`: the picked airdrop items they haven't had
+        /// (by the mode options), then any airdrop item they haven't had. Empty = they've had them all.</summary>
+        static List<Item> BushPool(HashSet<Item> had)
+        {
+            var pool = new List<Item>();
+            foreach (var i in Cfg.AirdropLoot) if (Special(i) && !had.Contains(i)) pool.Add(i);
+            if (pool.Count == 0) foreach (var i in Cfg.AirdropChoices) if (Special(i) && Cfg.InAirdropPool(i) && !had.Contains(i)) pool.Add(i);
+            return pool;
         }
 
         /// <summary>Every screen: the airdrop berry bush's marker - a purple gem spinning over it and a faint beam, so they're

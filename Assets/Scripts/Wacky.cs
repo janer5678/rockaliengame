@@ -38,6 +38,10 @@ namespace RockGame
         [Tune("Wacky items")] public static float ClutterTime = 12f, ClutterRadius = 10f, MinigameClock = 60f, GameshowAnswerTime = 20f, ChaosGlowTime = 120f;
         [Tune("Wacky items")] public static float KnockStickPush = 18f, KnockStick1Push = 62f, RebuildWindow = 20f, GlitterTime = 6f;
         [Tune("Wacky items")] public static float MonsterLife = 30f, MonsterSpeed = 7f, MonsterSplatTime = 4f, DrawTime = 20f, ShellSpeed = 26f;
+        /// <summary>The triple jump boots: jumps in the air (before you land again). The scribble notebook's lightning
+        /// ("kill", "smite", "thor"...): its damage to the nearest enemy.</summary>
+        [Tune("Wacky items")] public static int BootsAirJumps = 2;
+        [Tune("Wacky items")] public static float ScribbleSmite = 60f;
         [Tune("Wacky items")] public static int StickOfTruthShots = 2, SlowGunShots = 3, AntGunShots = 2, TreeBreakerUses = 10, TreeBreakerWood = 300;
 
         // how common each one is in airdrops (CHANGE VALUES > Airdrop rarity, like the others)
@@ -104,7 +108,7 @@ namespace RockGame
                 case Item.GoldenRock: return "Rock of Immortality";
                 case Item.BlueShell: return "Blue Shell";
                 case Item.Connect4Wand: return "Connect 4 Wand";
-                case Item.JumpBoots: return "Double Jump Boots";
+                case Item.JumpBoots: return "Triple Jump Boots";
                 case Item.StickOfTruth: return "Lifting Stick";
                 case Item.SuicideBomb: return "Suicide Bomb";
                 case Item.GravityStaff: return "Gravity Staff";
@@ -142,10 +146,10 @@ namespace RockGame
                 case Item.BouncyCastle: return "LMB: throw it like a grenade - a pink bouncy castle pops up where it lands (anywhere - even their base, just not right against their buildings). Jump on it!";
                 case Item.Decoy: return "LMB: a fake you, holding what you held, runs at the nearest enemy. Hit it and it's gone in a puff of smoke and a laugh.";
                 case Item.OmenMap: return "LMB: a map of the whole game - click a spot and you're teleported there.";
-                case Item.GoldenRock: return "Hold it (it hits like your rock): the next time you'd die you don't - the rock's gone, you're back to full health and covered in gold glitter.";
+                case Item.GoldenRock: return "Hold it in your hand (it hits like your rock) and you can't die - a killing hit leaves you on 1 health. In your bag it does nothing.";
                 case Item.BlueShell: return "LMB: it flies up and homes in on the leader (whoever has the ball, or the most kills) and knocks them flat - they drop half their things. No damage.";
                 case Item.Connect4Wand: return $"LMB: zap someone and everything stops for a game of Connect 4 - {MinigameClock:0} s on each clock. Lose (or run out of time) and you die. Everyone watches.";
-                case Item.JumpBoots: return "LMB: put them on - then jump again in the air. They break when you die.";
+                case Item.JumpBoots: return "LMB: put them on - then jump twice more in the air. They break when you die.";
                 case Item.StickOfTruth: return $"LMB ({StickOfTruthShots} shots): whatever you shoot is LIFTED - a player goes sky high; a wall, a chest, a tree or a horse floats up for {LiftTime:0} s, then drops back.";
                 case Item.SuicideBomb: return "LMB: you blow up - and so does everyone round you (not through walls).";
                 case Item.GravityStaff: return "LMB: flip your own gravity - you fall up and walk upside down. Again to flip back. Never runs out.";

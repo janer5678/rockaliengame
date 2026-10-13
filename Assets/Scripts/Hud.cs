@@ -452,6 +452,7 @@ namespace RockGame
 
             // ---- crosshair / hit marker / charge ----
             float cx = sw / 2, cy = sh / 2;
+            if (PlayerController.PipOn) { var pr = PlayerController.PipGuiRect; cx = pr.center.x; cy = pr.center.y; } // (the attention snail: you aim in the corner window)
             if (!pc.MenuOpen)
             {
                 Fill(new Rect(cx - 1, cy - 8, 2, 16), new Color(1, 1, 1, 0.8f));

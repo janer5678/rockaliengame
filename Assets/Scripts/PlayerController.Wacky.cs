@@ -1,5 +1,6 @@
 using Unity.Netcode;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace RockGame
 {
@@ -20,7 +21,8 @@ namespace RockGame
         float m_DrawOpenedAt;
         /// <summary>What you held before the decoy (the decoy holds it too).</summary>
         Item m_PrevHeld = Item.Rock;
-        bool m_DoubleJumped, m_FlipBump;
+        int m_AirJumps;
+        bool m_FlipBump;
         float m_NextBounce, m_FlipRoll, m_KnockRoll;
         /// <summary>For the tests: double jumps and castle bounces done.</summary>
         public int DoubleJumps { get; private set; }
@@ -33,7 +35,7 @@ namespace RockGame
         void TrackPrevHeld(Item held) { if (held != Item.Decoy && held != Item.None) m_PrevHeld = held; }
 
         /// <summary>Held still by a wacky item (or flying the turret bot, or with one of their screens up).</summary>
-        bool WackyMoveBlocked => m_Net.WackyHeld || m_Net.Droning || WackyUiOpen;
+        bool WackyMoveBlocked => m_Net.WackyFrozen || m_Net.Droning || WackyUiOpen; // (dancing: you can still walk about)
 
         /// <summary>Update, before the held item's own controls: true = they're skipped (a bear has claws, the turret bot
         /// has its own buttons, and nobody shielded, an ant or held still can attack).</summary>
@@ -142,7 +144,7 @@ namespace RockGame
                     if (!Clicked(0.6f)) return true;
                     m_Net.GravFlip.Value = !m_Net.GravFlip.Value;
                     m_VelY = 0f;
-                    m_DoubleJumped = false;
+                    m_AirJumps = 0;
                     m_VM.Use();
                     Sfx.Play2D(Sfx.Portal, 0.7f);
                     Fx.Punch(6f);
@@ -290,12 +292,12 @@ namespace RockGame
             }
         }
 
-        /// <summary>The double jump boots: a second jump in the air (once until you land).</summary>
+        /// <summary>The triple jump boots: two more jumps in the air (Cfg.BootsAirJumps) before you land.</summary>
         bool TryDoubleJump(bool grounded, bool move)
         {
-            if (grounded) { m_DoubleJumped = false; return false; }
-            if (!move || !m_Net.WornBoots.Value || m_DoubleJumped || !Binds.Down(Bind.Jump)) return false;
-            m_DoubleJumped = true;
+            if (grounded) { m_AirJumps = 0; return false; }
+            if (!move || !m_Net.WornBoots.Value || m_AirJumps >= Cfg.BootsAirJumps || !Binds.Down(Bind.Jump)) return false;
+            m_AirJumps++;
             m_VelY = Cfg.JumpSpeed * 1.05f * GravSign * (m_Net.IsAnt ? Cfg.AntJumpMul : 1f);
             DoubleJumps++;
             Sfx.Play2D(Sfx.Pop, 0.5f);
@@ -303,10 +305,11 @@ namespace RockGame
             return true;
         }
 
-        /// <summary>Landed on a bouncy castle's floor: up you go (higher if you jump as you land).</summary>
+        /// <summary>Landed on a bouncy castle's floor: up you go (higher if you jump as you land). Crouched or sliding you
+        /// don't bounce - you can stand (or slide about) on it.</summary>
         void TickBounce(bool grounded)
         {
-            if (!grounded || m_VelY > 0.5f || Time.time < m_NextBounce || m_Net.Flipped) return;
+            if (!grounded || m_VelY > 0.5f || Time.time < m_NextBounce || m_Net.Flipped || Crouching || m_SlideOn) return;
             if (!Physics.Raycast(transform.position + Vector3.up * 0.3f, Vector3.down, out var h, 0.6f, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore)) return;
             if (h.collider.GetComponentInParent<BouncySurface>() == null) return;
             m_NextBounce = Time.time + 0.25f;
@@ -352,6 +355,8 @@ namespace RockGame
             }
             if (SnailShot(out var sp, out var sr, out float sf))
             {
+                // (your own eyes stay up in a window in the corner: you can still aim, hit and shoot)
+                if (!m_Net.Dead.Value) ShowPip(transform.position + Vector3.up * m_Eye, Quaternion.Euler(m_Pitch, m_Yaw, 0f) * Quaternion.Euler(Fx.ShakeEuler()));
                 camPos = sp;
                 rot = sr;
                 fov = sf;
@@ -360,6 +365,66 @@ namespace RockGame
         }
 
         public static bool SnailShot(out Vector3 pos, out Quaternion rot) => SnailShot(out pos, out rot, out _);
+
+        // ---------------- the attention snail's corner window ----------------
+
+        Camera m_Pip;
+        bool m_PipHooked;
+        static bool s_PipOn;
+        /// <summary>The corner window during the attention snail - your own eyes, so you can still fight - as a part of the
+        /// screen (x, y from the bottom left, width, height: above the snail's black bar, bottom right).</summary>
+        public static readonly Rect PipViewport = new Rect(0.675f, 0.135f, 0.31f, 0.31f);
+        /// <summary>The corner window is up (the attention snail, and you're alive).</summary>
+        public static bool PipOn => s_PipOn;
+        /// <summary>The corner window on the screen, in GUI coordinates (from the top left).</summary>
+        public static Rect PipGuiRect => new Rect(PipViewport.x * Screen.width, (1f - PipViewport.y - PipViewport.height) * Screen.height, PipViewport.width * Screen.width, PipViewport.height * Screen.height);
+
+        /// <summary>LateUpdate, first: the corner window's off unless WackyCamera puts it up again this frame.</summary>
+        void PipOff()
+        {
+            if (m_Pip != null && m_Pip.enabled) m_Pip.enabled = false;
+            s_PipOn = false;
+        }
+
+        void ShowPip(Vector3 pos, Quaternion rot)
+        {
+            if (m_Pip == null)
+            {
+                var go = new GameObject("SnailCornerCam");
+                m_Pip = go.AddComponent<Camera>();
+                m_Pip.CopyFrom(m_Cam);
+                m_Pip.rect = PipViewport;
+                m_Pip.depth = m_Cam.depth + 1f;
+                m_Pip.nearClipPlane = 0.05f;
+                m_Pip.fieldOfView = 70f;
+                if (!m_PipHooked)
+                {
+                    RenderPipelineManager.beginCameraRendering += PipBegin;
+                    RenderPipelineManager.endCameraRendering += PipEnd;
+                    m_PipHooked = true;
+                }
+            }
+            m_Pip.transform.SetPositionAndRotation(pos, rot);
+            m_Pip.enabled = true;
+            s_PipOn = true;
+        }
+
+        // (in the corner window your own body is only its shadow, as it always is from your eyes)
+        void PipBegin(ScriptableRenderContext ctx, Camera cam) { if (cam == m_Pip && m_Net != null) m_Net.DrawOwnBody(false); }
+        void PipEnd(ScriptableRenderContext ctx, Camera cam) { if (cam == m_Pip && m_Net != null) m_Net.DrawOwnBody(m_Net.SeeSelfForTests); }
+
+        void DestroyPip()
+        {
+            if (m_PipHooked)
+            {
+                RenderPipelineManager.beginCameraRendering -= PipBegin;
+                RenderPipelineManager.endCameraRendering -= PipEnd;
+                m_PipHooked = false;
+            }
+            if (m_Pip != null) Destroy(m_Pip.gameObject);
+            m_Pip = null;
+            s_PipOn = false;
+        }
 
         /// <summary>The attention snail: while one's down every camera is on it - down at its level, right behind the tiny
         /// snail (big in the bottom of the shot), looking past it at EVERY player: the camera turns to the middle of them

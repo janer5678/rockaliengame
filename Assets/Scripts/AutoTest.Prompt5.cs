@@ -267,34 +267,7 @@ namespace RockGame
                 if (me.CarryingBall) Ball.Instance.ServerDrop(me.transform.position + Vector3.up, Vector3.zero);
             }
 
-            // ---- the Sigil of CHAOS: everything spread evenly over the map, glowing through walls
-            yield return Ready();
-            for (int i = 0; i < 12; i++) me.ServerGive(i % 2 == 0 ? Item.Wood : Item.Arrow, 20);
-            me.ServerGive(Item.Spear, 1); me.ServerGive(Item.Sword, 1); me.ServerGive(Item.Hatchet, 1);
-            for (int i = 0; i < bot.Inv.Count; i++) bot.Inv[i] = default;
-            bot.ServerGive(Item.Crossbow, 1); bot.ServerGive(Item.Pickaxe, 1); bot.ServerGive(Item.Berry, 3);
-            int before = g.Items.Count;
-            me.ServerGive(Item.ChaosSigil, 1);
-            yield return Hold(me, Item.ChaosSigil);
-            yield return new WaitForSeconds(0.45f);
-            me.UseWackyRpc(Item.ChaosSigil, me.EyePos, me.transform.forward, Vector3.zero, false, default, 0);
-            yield return new WaitForSeconds(1.2f);
-            var pos = new List<Vector3>();
-            foreach (var it in g.Items) pos.Add(it.Pos);
-            float minGap = float.MaxValue;
-            for (int i = 0; i < pos.Count; i++) for (int j = i + 1; j < pos.Count; j++) minGap = Mathf.Min(minGap, Flat(pos[i], pos[j]));
-            int quads = 0;
-            for (int q = 0; q < 4; q++) foreach (var p in pos) if ((p.x >= 0) == (q % 2 == 0) && (p.z >= 0) == (q < 2)) { quads |= 1 << q; break; }
-            Check(pos.Count >= 8 && minGap > 6f && quads == 15, $"the Sigil of CHAOS spreads everything evenly over the map ({pos.Count} things, the closest two {minGap:0} m apart, in every quarter)");
-            Check(g.ChaosGlowOn, "...and they glow through walls");
-            int glowing = 0;
-            foreach (var w in GameObject.FindObjectsByType<Transform>(FindObjectsSortMode.None)) if (w.name == "chaos glow") glowing++;
-            Check(glowing >= pos.Count - 1, $"every one has its glow ({glowing} of {pos.Count})");
-            pc.LocalTeleport(OnGround(Cfg.BaseCenter[team], 0.1f) + Vector3.up * 0.1f, Quaternion.LookRotation(-back).eulerAngles.y);
-            pc.SetLook(Quaternion.LookRotation(-back).eulerAngles.y, 4f);
-            yield return new WaitForSeconds(0.4f);
-            yield return Snap("prompt5_chaos_glow");
-            g.ChaosGlowUntil.Value = -1;
+            // (the Sigil of CHAOS: taken out of the game - AutoTest.Prompt6.cs)
 
             // ---- AIRDROP TEST: airdrop berry bushes all over, a different airdrop item every pick
             yield return Ready();

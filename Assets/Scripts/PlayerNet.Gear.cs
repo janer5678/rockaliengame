@@ -9,7 +9,7 @@ namespace RockGame
     /// - the JETPACK goes on your back (hold Space to fly while there's fuel - PlayerController.TickJetpack); its fuel % shows
     ///   bottom left, under the armour. Run dry, it's gone.
     /// - the WALLHACK GLASSES go on your face: enemies glow through walls for as long as you wear them (no durability).
-    /// - the DOUBLE JUMP BOOTS go on your feet (PlayerNet.Wacky.cs: they break when you die).
+    /// - the TRIPLE JUMP BOOTS go on your feet (PlayerNet.Wacky.cs: they break when you die).
     /// Once worn, the jetpack and glasses don't drop when you die: you keep them on.
     /// </summary>
     public partial class PlayerNet
@@ -49,7 +49,7 @@ namespace RockGame
                 if (WornBoots.Value) { Notify("You're already wearing jump boots"); return true; }
                 ServerClearSlot(HeldSlot.Value);
                 WornBoots.Value = true;
-                Note("Double jump boots on: jump again in the air!");
+                Note("Triple jump boots on: jump twice more in the air!");
             }
             return true;
         }

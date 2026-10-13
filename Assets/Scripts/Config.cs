@@ -713,9 +713,10 @@ namespace RockGame
         /// the sleeping bag and the alien helmet. Their code stays, so they can come back by taking them off this list.</summary>
         public static bool Removed(Item i) => i == Item.SleepingBag || i == Item.Helmet || i == Item.AutoTurret || i == Item.HeavyRam // (the auto turret: out for now; the High Strength ram: gone)
             || i == Item.Armor || i == Item.Barrier || i == Item.LargeGate // (the wooden armour: gone, heavy armour is "Armour" now; the large wall and gate: out for now)
-            || i == Item.DecoyBase; // (the decoy base: taken out)
+            || i == Item.DecoyBase || i == Item.ChaosSigil; // (the decoy base and the Sigil of CHAOS: taken out)
         /// <summary>Whether an airdrop item can still come in airdrops (and respawn loot / Fun Random): the death wand is crafted now.</summary>
-        public static bool InAirdropPool(Item i) => i != Item.DeathWand && !Removed(i);
+        /// (The disguise kit only comes in team games: in a 1v1 there's nobody to blend in with.)
+        public static bool InAirdropPool(Item i) => i != Item.DeathWand && !Removed(i) && (i != Item.DisguiseKit || TeamGame);
 
         public static readonly Item[] AirdropChoices =
         {
@@ -747,7 +748,7 @@ namespace RockGame
                 foreach (Item i in Enum.GetValues(typeof(Item)))
                 {
                     if (i == Item.None || i == Item.Rock || i == Item.FortifyBuff || i == Item.WoodGenBuff || i == Item.AirdropSignal || i == Item.Workbench || i == Item.Workbench2) continue;
-                    if (Removed(i)) continue;
+                    if (Removed(i) || (i == Item.DisguiseKit && !TeamGame)) continue;
                     if (i == Item.Boat && !ThemeMaps.HasWater) continue; // THEME MAPS
                     l.Add(i);
                 }

@@ -21,6 +21,16 @@ namespace RockGame
         public bool BodyShownForTests => m_VisualRoot != null && m_VisualRoot.gameObject.activeSelf;
         /// <summary>For the tests: is your own body drawn in full (not just its shadow) - the attention snail's shot, dancing...</summary>
         public bool SeeSelfForTests => m_SeeSelf;
+        static readonly System.Collections.Generic.List<Renderer> s_OwnRends = new System.Collections.Generic.List<Renderer>();
+
+        /// <summary>Your own body drawn in full, or only its shadow (the attention snail's corner window is your own eyes).</summary>
+        public void DrawOwnBody(bool full)
+        {
+            if (m_VisualRoot == null) return;
+            var mode = full ? UnityEngine.Rendering.ShadowCastingMode.On : UnityEngine.Rendering.ShadowCastingMode.ShadowsOnly;
+            m_VisualRoot.GetComponentsInChildren(true, s_OwnRends);
+            foreach (var r in s_OwnRends) if (r != null) r.shadowCastingMode = mode;
+        }
         bool m_WasFlipVis;
 
         /// <summary>Update, before the body's shown or hidden: what the wacky items make of this player.</summary>

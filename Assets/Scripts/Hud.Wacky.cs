@@ -55,7 +55,7 @@ namespace RockGame
                 statY -= 26 * k;
             }
             float Left(double until) => Mathf.Max(0f, (float)(until - now));
-            if (me.WornBoots.Value) Row("DOUBLE JUMP BOOTS", new Color(0.35f, 0.8f, 0.45f, 0.85f));
+            if (me.WornBoots.Value) Row("TRIPLE JUMP BOOTS", new Color(0.35f, 0.8f, 0.45f, 0.85f));
             if (me.IsBear) Row($"BEAR {me.BearHpLeft.Value:0} HP    {Clock(Left(me.BearUntil.Value))} left", new Color(0.55f, 0.35f, 0.18f, 0.95f), me.BearHpLeft.Value / Mathf.Max(1f, Cfg.BearHp));
             if (me.Shielded) Row($"SHIELD {Mathf.CeilToInt(Left(me.ShieldUntil.Value))}s", new Color(0.3f, 0.85f, 1f, 0.85f), Left(me.ShieldUntil.Value) / Mathf.Max(1f, Cfg.ShieldTime));
             if (me.Slowed) Row($"SLOWED {Mathf.CeilToInt(Left(me.SlowUntil.Value))}s", new Color(0.6f, 0.3f, 0.85f, 0.85f), Left(me.SlowUntil.Value) / Mathf.Max(1f, Cfg.SlowTime));
@@ -68,9 +68,35 @@ namespace RockGame
 
         // ---------------- everything else ----------------
 
+        // ---------------- big words that fade away (ALL AIRDROP ITEMS TESTING) ----------------
+
+        static string s_BigText;
+        static float s_BigTime = -100f;
+        const float BigTextTime = 4.5f;
+
+        /// <summary>Big words across the middle of the screen that fade away after a few seconds.</summary>
+        public static void BigFade(string text) { s_BigText = text; s_BigTime = Time.time; }
+        /// <summary>For the tests: the big fading words up right now (null = none).</summary>
+        public static string BigFadeShown => Time.time - s_BigTime < BigTextTime ? s_BigText : null;
+
+        void DrawBigFade(float sw, float sh, float k)
+        {
+            float age = Time.time - s_BigTime;
+            if (age >= BigTextTime || string.IsNullOrEmpty(s_BigText)) return;
+            float a = Mathf.Clamp01((BigTextTime - age) / 1.5f) * Mathf.Clamp01(age * 6f);
+            float pop = 1f + Mathf.Max(0f, 0.25f - age) * 1.2f;
+            var st = new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt(58 * k * pop) };
+            Color c = Color.HSVToRGB(Mathf.Repeat(Time.time * 0.35f, 1f), 0.45f, 1f);
+            var old = GUI.color;
+            GUI.color = new Color(1f, 1f, 1f, a);
+            Shadowed(new Rect(0, sh * 0.33f, sw, 90 * k), $"<color=#{ColorUtility.ToHtmlStringRGB(c)}>{s_BigText}</color>", st); // (under the notes)
+            GUI.color = old;
+        }
+
         void DrawWacky(PlayerNet me, PlayerController pc, NetGame game)
         {
             float sw = Screen.width, sh = Screen.height, k = m_Scale;
+            DrawBigFade(sw, sh, k);
             double now = me.NetworkManager != null ? me.NetworkManager.ServerTime.Time : 0;
             DrawMonsterSplats(sw, sh);
             DrawClutterScreen(sw, sh, k);
@@ -84,7 +110,18 @@ namespace RockGame
                 if (game != null) foreach (var g in game.Gadgets) if (g.Kind == Gadget.Snail && g.Until > now) left = System.Math.Max(left, g.Until - now);
                 var st = new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt(30 * k) };
                 Shadowed(new Rect(0, bar * 0.2f, sw, bar * 0.7f), $"<color=#ffd24a>ATTENTION SNAIL</color>  <size={Mathf.RoundToInt(20 * k)}>{Mathf.CeilToInt((float)left)}</size>", st);
-                Shadowed(new Rect(0, sh - bar * 0.8f, sw, bar * 0.6f), "Everyone is looking at the snail. You can still move.", m_Center);
+                Shadowed(new Rect(0, sh - bar * 0.8f, sw, bar * 0.6f), "Everyone is looking at the snail. You can still move and fight - your own view is in the corner.", m_Center);
+                if (PlayerController.PipOn)
+                {
+                    var pr = PlayerController.PipGuiRect;
+                    float t = Mathf.Max(2f, 3f * k);
+                    var fc = new Color(1f, 0.82f, 0.29f, 0.95f);
+                    Fill(new Rect(pr.x - t, pr.y - t, pr.width + 2 * t, t), fc);
+                    Fill(new Rect(pr.x - t, pr.yMax, pr.width + 2 * t, t), fc);
+                    Fill(new Rect(pr.x - t, pr.y, t, pr.height), fc);
+                    Fill(new Rect(pr.xMax, pr.y, t, pr.height), fc);
+                    Shadowed(new Rect(pr.x, pr.y + 4 * k, pr.width, 24 * k), "<b>YOU</b>", m_Center);
+                }
             }
             if (me.Droning)
             {
@@ -116,6 +153,7 @@ namespace RockGame
                 var st = new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt(56 * k * pulse) };
                 Color c = Color.HSVToRGB(Mathf.Repeat(Time.time * 0.6f, 1f), 0.6f, 1f);
                 Shadowed(new Rect(0, sh * 0.18f, sw, 90 * k), $"<color=#{ColorUtility.ToHtmlStringRGB(c)}>DANCE!</color>", st);
+                Shadowed(new Rect(0, sh * 0.18f + 135 * k, sw, 26 * k), "You can still move about (but not attack)", m_Center); // (under the DANCE! note)
             }
             if (me.KnockedDown)
             {
@@ -339,6 +377,8 @@ namespace RockGame
         static Texture2D s_CanvasTex;
         static bool s_CanvasDirty = true;
         static int s_Ink = 1, s_Brush = 2;
+        /// <summary>The paint bucket (like MS Paint's): a click fills the shape under it with the colour.</summary>
+        static bool s_Bucket;
         static Vector2Int s_LastPx = new Vector2Int(-1, -1);
 
         public static void BeginDrawing()
@@ -359,6 +399,31 @@ namespace RockGame
             s_CanvasDirty = true;
         }
 
+        /// <summary>The paint bucket: everything joined to (x, y) that's the same colour becomes the ink.</summary>
+        static void BucketFill(int x, int y, int ink)
+        {
+            if (x < 0 || y < 0 || x >= MonsterArt.Size || y >= MonsterArt.Size) return;
+            int from = MonsterArt.Get(s_Pixels, x, y);
+            if (from == ink) return;
+            var todo = new Stack<Vector2Int>();
+            todo.Push(new Vector2Int(x, y));
+            while (todo.Count > 0)
+            {
+                var q = todo.Pop();
+                if (q.x < 0 || q.y < 0 || q.x >= MonsterArt.Size || q.y >= MonsterArt.Size || MonsterArt.Get(s_Pixels, q.x, q.y) != from) continue;
+                MonsterArt.Set(s_Pixels, q.x, q.y, ink);
+                todo.Push(new Vector2Int(q.x + 1, q.y)); todo.Push(new Vector2Int(q.x - 1, q.y));
+                todo.Push(new Vector2Int(q.x, q.y + 1)); todo.Push(new Vector2Int(q.x, q.y - 1));
+            }
+            s_CanvasDirty = true;
+        }
+
+        /// <summary>For the tests: draw on the canvas (a line of brush dabs, or a bucket fill) and read a pixel back.</summary>
+        public static void TestDab(int x, int y, int ink, int brush) { s_Ink = ink; s_Brush = brush; s_I?.Paint(x, y); }
+        public static void TestBucket(int x, int y, int ink) => BucketFill(x, y, ink);
+        public static int CanvasPixel(int x, int y) => MonsterArt.Get(s_Pixels, x, y);
+        public static bool BucketOn { get => s_Bucket; set => s_Bucket = value; }
+
         void DrawCanvas(PlayerController pc)
         {
             float sw = Screen.width, sh = Screen.height, k = m_Scale;
@@ -367,7 +432,7 @@ namespace RockGame
             float size = Mathf.Min(sh * 0.72f, sw * 0.55f);
             var canvas = new Rect((sw - size) / 2 - 60 * k, (sh - size) / 2 + 10 * k, size, size);
             Shadowed(new Rect(0, canvas.y - 64 * k, sw, 34 * k), $"<b>DRAW A MONSTER</b>   <color=#ffd24a>{Mathf.CeilToInt(pc.DrawTimeLeft)} s</color>", new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt(28 * k) });
-            Shadowed(new Rect(0, canvas.y - 32 * k, sw, 26 * k), "It comes alive, finds an enemy and covers their screen. White is see-through.", m_Center);
+            Shadowed(new Rect(0, canvas.y - 32 * k, sw, 26 * k), "It comes alive, finds an enemy and covers their screen. White is see-through. The paint bucket fills a shape.", m_Center);
             if (s_CanvasTex == null || s_CanvasDirty)
             {
                 if (s_CanvasTex) Destroy(s_CanvasTex);
@@ -382,6 +447,12 @@ namespace RockGame
             {
                 int px = Mathf.Clamp(Mathf.FloorToInt((m.x - canvas.x) / size * MonsterArt.Size), 0, MonsterArt.Size - 1);
                 int py = Mathf.Clamp(MonsterArt.Size - 1 - Mathf.FloorToInt((m.y - canvas.y) / size * MonsterArt.Size), 0, MonsterArt.Size - 1);
+                if (s_Bucket)
+                {
+                    if (e.type == EventType.MouseDown) { BucketFill(px, py, s_Ink); Sfx.Play2D(Sfx.Pop, 0.4f); }
+                    e.Use();
+                    goto Tools;
+                }
                 // a line from the last point, so a fast stroke doesn't leave gaps
                 if (e.type == EventType.MouseDrag && s_LastPx.x >= 0)
                 {
@@ -392,6 +463,7 @@ namespace RockGame
                 s_LastPx = new Vector2Int(px, py);
                 e.Use();
             }
+            Tools:
             if (e.type == EventType.MouseUp) s_LastPx = new Vector2Int(-1, -1);
             // the paints, brushes and buttons, down the right
             float bx = canvas.xMax + 24 * k, by = canvas.y, cs = 40 * k;
@@ -409,12 +481,28 @@ namespace RockGame
             for (int i = 0; i < brushes.Length; i++)
             {
                 var r = new Rect(bx + i * (cs + 6 * k), by, cs, cs);
-                Fill(r, s_Brush == brushes[i] ? new Color(0.4f, 0.4f, 0.45f) : new Color(0.2f, 0.2f, 0.22f));
+                Fill(r, s_Brush == brushes[i] && !s_Bucket ? new Color(0.4f, 0.4f, 0.45f) : new Color(0.2f, 0.2f, 0.22f));
                 float d = Mathf.Lerp(6f, cs - 6f, brushes[i] / 7f);
                 DrawDot(new Rect(r.center.x - d / 2, r.center.y - d / 2, d, d), Color.white);
-                if (e.type == EventType.MouseDown && r.Contains(m)) { s_Brush = brushes[i]; e.Use(); }
+                if (e.type == EventType.MouseDown && r.Contains(m)) { s_Brush = brushes[i]; s_Bucket = false; e.Use(); }
             }
-            by += cs + 18 * k;
+            by += cs + 14 * k;
+            // the paint bucket: click inside a shape and it fills with the colour
+            {
+                var br = new Rect(bx, by, 4 * cs + 18 * k, 44 * k);
+                Fill(br, s_Bucket ? new Color(0.95f, 0.75f, 0.2f) : new Color(0.2f, 0.2f, 0.22f));
+                var ic = new Rect(br.x + 8 * k, br.y + 6 * k, 32 * k, 32 * k);
+                Color line = s_Bucket ? new Color(0.1f, 0.1f, 0.1f) : Color.white;
+                Fill(new Rect(ic.x + 3 * k, ic.y + 9 * k, 18 * k, 20 * k), line);                   // the pail
+                Fill(new Rect(ic.x + 5 * k, ic.y + 11 * k, 14 * k, 6 * k), MonsterArt.Palette[s_Ink]); // the paint in it
+                Fill(new Rect(ic.x + 1 * k, ic.y + 6 * k, 22 * k, 4 * k), line);                    // the rim
+                DrawDot(new Rect(ic.x + 22 * k, ic.y + 16 * k, 9 * k, 12 * k), MonsterArt.Palette[s_Ink]); // a drip
+                var lst = new GUIStyle(m_Label) { alignment = TextAnchor.MiddleLeft };
+                lst.normal.textColor = s_Bucket ? new Color(0.1f, 0.1f, 0.1f) : Color.white;
+                GUI.Label(new Rect(br.x + 48 * k, br.y, br.width - 52 * k, br.height), "<b>PAINT BUCKET</b>", lst);
+                if (e.type == EventType.MouseDown && br.Contains(m)) { s_Bucket = !s_Bucket; Sfx.Play2D(Sfx.UiClick, 0.4f); e.Use(); }
+                by += 44 * k + 14 * k;
+            }
             if (BtnAt(new Rect(bx, by, 4 * cs + 18 * k, 40 * k), "Clear", m_Button)) { BeginDrawing(); }
             by += 50 * k;
             if (BtnAt(new Rect(bx, by, 4 * cs + 18 * k, 56 * k), "DONE - BRING IT TO LIFE!", m_Button)) pc.SubmitDrawing(DrawingPixels());
@@ -444,7 +532,7 @@ namespace RockGame
             GUI.Label(new Rect(page.x + 70 * k, page.y + 10 * k, w - 80 * k, 44 * k), "<b>SCRIBBLENAUTS NOTEBOOK</b>", ink);
             var small = new GUIStyle(m_Small) { wordWrap = true };
             small.normal.textColor = new Color(0.25f, 0.25f, 0.3f);
-            GUI.Label(new Rect(page.x + 70 * k, page.y + 54 * k, w - 90 * k, 40 * k), "Write anything and it appears - and does something. Try a horse, a bomb, pizza, a tower, a unicorn, speed, a storm... or any item's name.", small);
+            GUI.Label(new Rect(page.x + 70 * k, page.y + 54 * k, w - 90 * k, 40 * k), "Write anything and it appears - and does something. Try an AK, a nuke, aimbot, god mode, pizza, a dragon, a Lambo, free robux, noob... or any item's name.", small);
             var field = new GUIStyle(m_Field) { fontSize = Mathf.RoundToInt(28 * k), alignment = TextAnchor.MiddleLeft };
             GUI.SetNextControlName("scribble");
             var fr = new Rect(page.x + 70 * k, page.y + 120 * k, w - 100 * k, 52 * k);

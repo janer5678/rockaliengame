@@ -220,7 +220,7 @@ namespace RockGame
             float speed = lobby ? Cfg.WalkSpeed * 0.5f : m_Sprint ? Cfg.SprintSpeed : Cfg.WalkSpeed;
             if (m_P.CarryingBall) speed *= Cfg.BallCarrySpeedMul;
             speed *= m_P.WackySpeedMul; // (slowed, an ant, a bear)
-            if (m_P.WackyHeld) speed = 0f; // (timed out, dancing, knocked flat, a minigame on)
+            if (m_P.WackyFrozen) speed = 0f; // (timed out, knocked flat, a minigame on - dancing they still walk)
             bool grounded = m_CC.isGrounded;
             var vel = wish * speed;
 

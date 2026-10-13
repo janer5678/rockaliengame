@@ -177,6 +177,7 @@ namespace RockGame
         public override void OnNetworkDespawn()
         {
             if (Local == this) Local = null;
+            DestroyPip();
             if (m_Ghost) Destroy(m_Ghost);
             if (m_FoundationGhost) Destroy(m_FoundationGhost);
             DestroyAimPreviews();
@@ -682,6 +683,7 @@ namespace RockGame
         void LateUpdate()
         {
             if (!IsSpawned || !IsOwner || m_Cam == null) return;
+            PipOff(); // (the attention snail's corner window: WackyCamera puts it back up)
             // the ship lobby has the camera (ShipLobby.cs) and your hands are put away
             if (ShipLobby.Active) { m_VM.Update(new ViewModel.State { Item = m_Net.HeldItem, Visible = false, Visible2 = false }); return; }
             if (TickKillCam()) { m_VM.Update(new ViewModel.State { Item = m_Net.HeldItem, Visible = false, Visible2 = false }); return; }
