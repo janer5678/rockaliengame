@@ -1000,11 +1000,12 @@ namespace RockGame
                 NetGame.Instance.KillFeedRpc(byOther ? killer.Team.Value : bySource ? (byte)m_SourceTeam : (byte)255, byOther ? killer.Slot.Value : bySource ? (byte)255 : (byte)0, Team.Value, Slot.Value, cause,
                     byOther && m_HeadHit, new Unity.Collections.FixedString32Bytes(killerName), new Unity.Collections.FixedString32Bytes(DisplayName));
                 NetGame.Instance.ServerOnPlayerKilled(this, killer);
+                NetGame.Instance.ServerClipKill(this, byOther ? killer : null, byOther && m_HeadHit); // (Clip Farm's hype: ClipFarm.cs)
             }
         }
 
-        /// <summary>Back to life on your bedrock, or (wild) somewhere random in the wild - or (picked: Jonah Test Mode Bruh)
-        /// at the spot picked on the map.</summary>
+        /// <summary>Back to life on your bedrock, or (wild) somewhere random in the wild - or (picked) at the spot picked on
+        /// the map (never close to an enemy base or an airdrop: WildRespawn.cs).</summary>
         public void ServerRespawn(bool wild, bool picked = false, Vector3 pick = default)
         {
             Health.Value = Cfg.MaxHealth;
@@ -1022,7 +1023,7 @@ namespace RockGame
             if (pod) CryoWakeRpc();
             else Fx.Server(FxKind.Spawn, pos, Vector3.up);
             // game option: come back with a random airdrop item
-            if (Cfg.RespawnLoot && !InWaitingArena)
+            if ((Cfg.RespawnLoot || Cfg.ClipFarm) && !InWaitingArena) // (Clip Farm: always)
             {
                 var loot = NetGame.RollAirdropLoot(this); // (never one you've had this game)
                 ServerGive(loot.Id, loot.Count, loot.Data);
@@ -1074,7 +1075,7 @@ namespace RockGame
             if (g.S == GameState.SuddenDeath || g.S == GameState.GameOver) return;
             if (!g.CanRespawn(Team.Value)) { Notify("Your machine is destroyed - no more respawns"); return; }
             bool wild = g.S == GameState.BallLive;
-            ServerRespawn(wild, wild && Cfg.JonahBruh, spot);
+            ServerRespawn(wild, wild && Cfg.WildPicker, spot);
         }
 
         public void ServerEnterArena()

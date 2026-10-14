@@ -50,7 +50,7 @@ namespace RockGame
                 Cfg.PickAllAirdrops(true);
                 for (int i = 0; i < 300 && !wandDrop; i++) wandDrop |= NetGame.RollAirdropCrate()[0].Id == Item.DeathWand || NetGame.RollAirdropLoot().Id == Item.DeathWand;
                 Cfg.AirdropItemMask = mask; Cfg.AirdropItemMask2 = mask2;
-                Check(!wandDrop, "no death wand in the airdrops any more");
+                Check(wandDrop, "the death wand's back in the airdrops (as well as on the Advanced Trade Station)");
             }
             Check(!MatchIntro.CanSkip, "the match intro can't be skipped");
             Check(!PlayerController.AutoFoundationOn, "a wall on bare ground doesn't put its own foundation down any more");

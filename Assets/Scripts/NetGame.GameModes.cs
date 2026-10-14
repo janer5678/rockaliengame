@@ -9,7 +9,7 @@ namespace RockGame
     {
         public static bool Bedwars => Rules == GameRules.Bedwars;
         public static bool ThreeGoal => Rules == GameRules.ThreeGoal;
-        public static bool ProgressMode => Rules == GameRules.Progress || Rules == GameRules.AutoWood || JonahBruhProgression; // (Classic plays like Progress now) // (Jonah Test Mode Bruh played as PROGRESSION: JonahBruh.cs)
+        public static bool ProgressMode => Rules == GameRules.Progress || Rules == GameRules.AutoWood || JonahBruhProgression || ClipFarm; // (Classic plays like Progress now) // (Jonah Test Mode Bruh played as PROGRESSION: JonahBruh.cs)
         public static bool Assassin => Rules == GameRules.Assassin;
         public static bool Domination => Rules == GameRules.Domination;
         /// <summary>Bedwars and Assassin have no ball (and their Trade Station unlocks for everyone when the wall drops).</summary>

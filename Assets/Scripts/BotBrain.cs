@@ -248,7 +248,14 @@ namespace RockGame
 
             if (grounded && m_VelY <= 0f) m_VelY = Mathf.Max(m_VelY, -1f); else m_VelY -= Cfg.Gravity * dt;
             m_Shove = Vector3.MoveTowards(m_Shove, Vector3.zero, (grounded ? 14f : 3f) * dt); // (a knockback fading out)
-            m_CC.Move((vel + m_Shove + Vector3.up * m_VelY) * dt);
+            var was = transform.position;
+            var shoved = m_CC.Move((vel + m_Shove + Vector3.up * m_VelY) * dt);
+            if ((shoved & CollisionFlags.Sides) != 0 && m_Shove.sqrMagnitude > 4f) // (a knockback into a wall stops there: blocked = hardly moving)
+            {
+                var tried = (vel + m_Shove) * dt; tried.y = 0f;
+                var went = transform.position - was; went.y = 0f;
+                if (tried.magnitude > 0.02f && went.magnitude < tried.magnitude * 0.3f) m_Shove = Vector3.zero;
+            }
 
             // face where it's looking (a target, a tree) or else where it's going
             var face = m_HasLook ? m_LookAt - pos : (vel.sqrMagnitude > 0.1f ? vel : to);

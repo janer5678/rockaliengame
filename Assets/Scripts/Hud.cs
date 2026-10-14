@@ -428,6 +428,7 @@ namespace RockGame
                 var ps = me.HeldStack;
                 float ay = 10 + (GameSettings.HudTeamBox.Value ? 34 * k : 0f) + 56 * k;
                 if (Cfg.Bedwars && game != null && (game.S == GameState.BallLive || game.WallUp)) ay += Cfg.TeamCount * 27 * k; // (under the bed list)
+                if (Cfg.BallDoublesWood(team)) ay += 62 * k; // (under the wood machine x2 box: BallWood.cs)
                 AmmoRect = new Rect(14, ay, 420 * k, 70 * k);
                 string big = $"<size={Mathf.RoundToInt(52 * k)}>", small = $"<size={Mathf.RoundToInt(22 * k)}>";
                 if (ps.Id == Item.Bow)
@@ -442,6 +443,7 @@ namespace RockGame
                 AmmoShownFrame = Time.frameCount;
             }
 
+            DrawBallWoodCorner(me, k); // (top left: the ball in your machine doubles your wood machine - BallWood.cs)
             // ---- Builder crafting timers, then messages (top right) ----
             float my = 10 + DrawCraftStack(me, k, 10);
             float pc0 = DrawProgressCorner(game, team, k, my); // (Progress: the bars, small, top right - Hud.ModePanel.cs)

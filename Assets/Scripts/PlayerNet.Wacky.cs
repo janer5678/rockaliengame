@@ -509,7 +509,11 @@ namespace RockGame
             var flat = new Vector3(dir.x, 0f, dir.z);
             flat = flat.sqrMagnitude > 0.001f ? flat.normalized : transform.forward;
             bool big = item == Item.KnockStick1;
-            p.KnockbackRpc(flat * (big ? Cfg.KnockStick1Push : Cfg.KnockStickPush) + Vector3.up * (big ? 16f : 6f));
+            float push = big ? Cfg.KnockStick1Push : Cfg.KnockStickPush, up = big ? 16f : 6f;
+            Cfg.SafeKnock(p.transform.position, ref flat, ref push, up); // (never into the map's edge or a corner of it: they'd get stuck)
+            p.KnockbackRpc(flat * push + Vector3.up * up);
+            if (big) StartCoroutine(UnstickAfterKnock(p));
+            if (big && Cfg.ClipFarm && NetGame.Instance != null) NetGame.Instance.ServerClipHype("YEET", $"{DisplayName} sent {p.DisplayName} flying", this, p); // (ClipFarm.cs)
             if (p.Disguised) p.DisguiseTeam.Value = 255;
             Fx.Server(FxKind.Bonk, p.transform.position + Vector3.up * 1.2f, flat);
             if (big)
@@ -520,16 +524,42 @@ namespace RockGame
             }
         }
 
-        /// <summary>The tree breaker: the whole tree comes down in one hit, for a flat Cfg.TreeBreakerWood.</summary>
+        /// <summary>After the one-use knockback stick: if whoever it hit still ended up on the map's edge (up the rise
+        /// against the glass, or in a corner), they're put back down on open ground a little way in.</summary>
+        System.Collections.IEnumerator UnstickAfterKnock(PlayerNet p)
+        {
+            yield return new WaitForSeconds(4f);
+            if (p == null || !p.IsSpawned || p.Dead.Value) yield break;
+            var at = p.transform.position;
+            float edge = Cfg.MapHalf - Cfg.KnockEdge;
+            if (Mathf.Abs(at.x) <= edge && Mathf.Abs(at.z) <= edge) yield break;
+            float inner = Cfg.MapHalf - Cfg.KnockEdge - 6f;
+            var to = new Vector3(Mathf.Clamp(at.x, -inner, inner), 0f, Mathf.Clamp(at.z, -inner, inner));
+            to.y = MapBuilder.Height(to.x, to.z) + 0.15f;
+            p.TeleportRpc(to, p.transform.eulerAngles.y);
+            Fx.Server(FxKind.Spawn, to, Vector3.up);
+            Unsticks++;
+        }
+        /// <summary>(tests) how many times someone knocked to the edge was put back.</summary>
+        public static int Unsticks;
+
+        /// <summary>The tree breaker: the whole tree comes down in one hit, for a whole tree's Cfg.TreeBreakerWood (400) -
+        /// and that much comes off its durability (Cfg.TreeBreakerDurability wood of trees in all).</summary>
         void ServerTreeBreak(ResourceNode n, Vector3 point, Vector3 dir)
         {
             int got = n.ServerHarvest(999999, false, transform.position);
             if (got <= 0) return;
-            ServerGive(Cfg.GatherItem(Item.Wood), Cfg.GatherCount(Item.Wood, Mathf.Max(1, Cfg.TreeBreakerWood)));
-            TimberRpc(Cfg.TreeBreakerWood);
+            int wood = Mathf.Max(1, Cfg.TreeBreakerWood);
+            ServerGive(Cfg.GatherItem(Item.Wood), Cfg.GatherCount(Item.Wood, wood));
+            TimberRpc(wood);
             Fx.Server(FxKind.Timber, n.transform.position + Vector3.up * 2f, Vector3.up);
             Fx.Server(FxKind.WoodChips, point, -dir, OwnerClientId);
-            ServerUseCharge(Item.TreeBreaker);
+            var st = HeldStack;
+            if (st.Id != Item.TreeBreaker) return;
+            int max = Mathf.Max(1, Cfg.MaxData(Item.TreeBreaker));
+            int left = (st.Data <= 0 || st.Data > max ? max : st.Data) - Mathf.CeilToInt(wood / (float)Cfg.TreeBreakerUnit);
+            if (left <= 0) { ServerClearSlot(HeldSlot.Value); Note("The Tree Breaker broke"); }
+            else Inv[HeldSlot.Value] = ItemStack.Of(Item.TreeBreaker, 1, left);
         }
 
         // ---------------- the timeout ball ----------------

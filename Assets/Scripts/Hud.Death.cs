@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace RockGame
@@ -113,10 +114,10 @@ namespace RockGame
             {
                 float bw = 300 * k, bh = 54 * k;
                 if (DeathCard(new Rect(cx - bw - 8 * k, y, bw, bh), "1", "RESPAWN IN BASE", "", true, KeyCode.Alpha1)) pc.ChooseRespawn(false);
-                if (m_WildPick && Cfg.JonahBruh) { DrawWildPicker(me, k); return; }
-                if (DeathCard(new Rect(cx + 8 * k, y, bw, bh), "2", "RESPAWN IN THE WILD", Cfg.JonahBruh ? "pick the spot" : "", true, KeyCode.Alpha2))
+                if (m_WildPick && Cfg.WildPicker) { DrawWildPicker(me, k); return; }
+                if (DeathCard(new Rect(cx + 8 * k, y, bw, bh), "2", "RESPAWN IN THE WILD", Cfg.WildPicker ? "pick the spot" : "", true, KeyCode.Alpha2))
                 {
-                    if (Cfg.JonahBruh) m_WildPick = true; // (Jonah Test Mode Bruh: pick where on the map)
+                    if (Cfg.WildPicker) m_WildPick = true; // (pick where on the map: WildRespawn.cs)
                     else pc.ChooseRespawn(true);
                 }
                 // your team's sleeping bags (Container.Deployables.cs): one more card each, once a minute each
@@ -142,9 +143,10 @@ namespace RockGame
 
         static float Smooth(float x) => x * x * (3f - 2f * x);
 
-        // ---------------- Jonah Test Mode Bruh: pick where to respawn in the wild ----------------
+        // ---------------- pick where to respawn in the wild (WildRespawn.cs) ----------------
 
         bool m_WildPick;
+        static readonly List<Vector3> s_PickerDrops = new List<Vector3>();
         /// <summary>Test hook: open (or shut) the map for picking where to respawn.</summary>
         public static void TestWildPick(bool on) { if (s_I != null) s_I.m_WildPick = on; }
         static Texture2D s_WildMap;
@@ -189,8 +191,41 @@ namespace RockGame
             return s_WildMap;
         }
 
-        /// <summary>Jonah Test Mode Bruh's death screen after "respawn in the wild": the whole map from above - the bases, the
-        /// ball, your team - click where you want to come back (anywhere but an enemy's base); RMB / Esc: back.</summary>
+        static Texture2D s_NoGo;
+        static float s_NoGoAt = -10f;
+        static int s_NoGoTeam = -1;
+        /// <summary>Test hook: how many of the no-go overlay's cells were red when it was last made.</summary>
+        public static int WildNoGoCells { get; private set; }
+
+        /// <summary>The red no-go zones over the picker's map (too close to an enemy base or an airdrop: Cfg.WildSpotOk),
+        /// remade twice a second (the airdrops come and go).</summary>
+        static Texture2D NoGoTexture(int team)
+        {
+            const int N = 72;
+            if (s_NoGo == null) s_NoGo = new Texture2D(N, N, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear };
+            if (Time.unscaledTime - s_NoGoAt < 0.5f && s_NoGoTeam == team) return s_NoGo;
+            s_NoGoAt = Time.unscaledTime;
+            s_NoGoTeam = team;
+            float half = Cfg.MapHalf, step = 2f * half / N;
+            var px = new Color32[N * N];
+            int red = 0;
+            for (int j = 0; j < N; j++)
+                for (int i = 0; i < N; i++)
+                {
+                    var w = new Vector3(-half + (i + 0.5f) * step, 0f, -half + (j + 0.5f) * step);
+                    bool ok = Cfg.WildSpotOk(team, w);
+                    if (!ok) red++;
+                    px[j * N + i] = ok ? new Color32(0, 0, 0, 0) : new Color32(230, 40, 40, 120);
+                }
+            s_NoGo.SetPixels32(px);
+            s_NoGo.Apply();
+            WildNoGoCells = red;
+            return s_NoGo;
+        }
+
+        /// <summary>The death screen after "respawn in the wild": the whole map from above - the bases, the ball, the airdrops,
+        /// your team - click where you want to come back: anywhere but the red zones (too close to an enemy base or an
+        /// airdrop: Cfg.WildSpotOk); RMB / Esc: back.</summary>
         void DrawWildPicker(PlayerNet me, float k)
         {
             float sw = Screen.width, sh = Screen.height;
@@ -203,6 +238,7 @@ namespace RockGame
             Vector2 ToMap(Vector3 w) => new Vector2(map.center.x + w.x / (2 * half) * size, map.center.y - w.z / (2 * half) * size);
             Fill(new Rect(map.x - 4, map.y - 4, size + 8, size + 8), new Color(0f, 0f, 0f, 0.85f));
             GUI.DrawTextureWithTexCoords(map, WildMapTexture(), new Rect(0, 0, 1, 1)); // (texture rows go up the map: v = 0 at the bottom, like the screen's map)
+            GUI.DrawTextureWithTexCoords(map, NoGoTexture(me.Team.Value), new Rect(0, 0, 1, 1)); // (where you can't come back: red)
             for (int t = 0; t < Cfg.TeamCount; t++)
             {
                 var bc = Cfg.BaseCenter[t];
@@ -214,6 +250,8 @@ namespace RockGame
                 GUI.Label(new Rect(a.x, a.y + bs / 2 - 12, bs, 24), $"<b>{(t == me.Team.Value ? "YOUR BASE" : Cfg.TeamName[t])}</b>", m_Center);
             }
             if (Ball.Instance != null && Ball.Instance.IsSpawned) { var q = ToMap(Ball.Instance.transform.position); DrawDot(new Rect(q.x - 7, q.y - 7, 14, 14), new Color(1f, 0.85f, 0.15f)); }
+            NetGame.AirdropSpots(s_PickerDrops);
+            foreach (var d in s_PickerDrops) { var q = ToMap(d); Fill(new Rect(q.x - 6, q.y - 6, 12, 12), new Color(1f, 0.38f, 0.78f)); GUI.Label(new Rect(q.x - 60, q.y + 6, 120, 20), "AIRDROP", new GUIStyle(m_Small) { alignment = TextAnchor.UpperCenter }); }
             foreach (var p in PlayerNet.All)
             {
                 if (p == null || p == me || p.Dead.Value || p.Team.Value != me.Team.Value) continue; // (your team only: no spotting the enemy from here)
@@ -223,16 +261,15 @@ namespace RockGame
             }
             var head = new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt(26 * k) };
             Shadowed(new Rect(0, map.y - 66 * k, sw, 34 * k), "<b>RESPAWN IN THE WILD</b>", head);
-            Shadowed(new Rect(0, map.y - 32 * k, sw, 26 * k), "Click where you want to come back  ·  RMB / Esc: back", m_Center);
+            Shadowed(new Rect(0, map.y - 32 * k, sw, 26 * k), "Click where you want to come back - not in the red (too close to an enemy base or an airdrop)  ·  RMB / Esc: back", m_Center);
             var e = Event.current;
             var m = e.mousePosition;
             if (map.Contains(m))
             {
                 var world = new Vector3((m.x - map.center.x) / size * 2 * half, 0, -(m.y - map.center.y) / size * 2 * half);
-                int bt = Cfg.BaseTeamAt(world);
-                bool ok = bt < 0 || bt == me.Team.Value;
+                bool ok = Cfg.WildSpotOk(me.Team.Value, world, out string why);
                 DrawRing(m, 14 * k, 3, ok ? new Color(0.45f, 1f, 0.55f, 0.95f) : new Color(1f, 0.35f, 0.3f, 0.95f));
-                if (!ok) Shadowed(new Rect(m.x - 120 * k, m.y + 16 * k, 240 * k, 24 * k), "<color=#ff8a7a>not in an enemy base</color>", m_Center);
+                if (!ok) Shadowed(new Rect(m.x - 160 * k, m.y + 16 * k, 320 * k, 24 * k), $"<color=#ff8a7a>too close to {why}</color>", m_Center);
                 if (ok && e.type == EventType.MouseDown && e.button == 0)
                 {
                     me.RespawnAtRpc(world);

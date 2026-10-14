@@ -435,7 +435,7 @@ namespace RockGame
             if (tree != null)
             {
                 pc.LocalTeleport(OnGround(tree.transform.position - side * 1.6f), Quaternion.LookRotation(side).eulerAngles.y);
-                me.ServerGive(Item.TreeBreaker, 1, Cfg.TreeBreakerUses);
+                me.ServerGive(Item.TreeBreaker, 1, Cfg.MaxData(Item.TreeBreaker));
                 yield return Hold(me, Item.TreeBreaker);
                 yield return new WaitForSeconds(1f);
                 int w0 = me.Count(Item.Wood);

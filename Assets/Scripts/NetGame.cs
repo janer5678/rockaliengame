@@ -264,6 +264,7 @@ namespace RockGame
                         m_BallStart = now;
                         m_DropsDone = 0;
                         m_DroppedItems.Clear();
+                        if (Cfg.ClipFarm) ServerClipFarmLoadUp(); // (Clip Farm: an airdrop item each - ClipFarm.cs)
                         if (!Cfg.FunRules) Broadcast(Cfg.Bedwars ? "The glass wall is dropping - go smash the enemy machines!" : Cfg.Assassin ? "The glass wall is dropping - hunt them down and take their skulls!" : "The glass wall and the dome are dropping - grab the BALL in the middle!");
                     }
                     break;
@@ -713,7 +714,7 @@ namespace RockGame
                     break;
                 }
             }
-            if (Cfg.AirdropTest) SpawnAirdropBushes(rng, placed); // Airdrop Test: airdrop berry bushes all over (NetGame.AirdropBushes.cs)
+            if (Cfg.AirdropTest || Cfg.ClipFarm) SpawnAirdropBushes(rng, placed); // Airdrop Test, Clip Farm: airdrop berry bushes all over (NetGame.AirdropBushes.cs)
         }
 
         /// <summary>A fallen log (turned by its seed, like every node) lies flat enough here: not across a steep slope, and
@@ -777,7 +778,7 @@ namespace RockGame
             float half = Cfg.MapHalf - 6f;
             pick = new Vector3(Mathf.Clamp(pick.x, -half, half), 0f, Mathf.Clamp(pick.z, -half, half));
             yaw = Quaternion.LookRotation(new Vector3(-pick.x, 0f, -pick.z).sqrMagnitude > 1f ? new Vector3(-pick.x, 0f, -pick.z) : Vector3.forward).eulerAngles.y; // (facing the middle)
-            for (int ring = 0; ring < 14; ring++)
+            for (int ring = 0; ring < 30; ring++)
             {
                 int n = ring == 0 ? 1 : 10 + ring * 2;
                 for (int i = 0; i < n; i++)
@@ -785,8 +786,7 @@ namespace RockGame
                     float a = i * Mathf.PI * 2f / n + ring * 0.37f, r = ring * 1.5f;
                     var p = pick + new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a)) * r;
                     if (Mathf.Abs(p.x) > half || Mathf.Abs(p.z) > half) continue;
-                    int bt = Cfg.BaseTeamAt(p);
-                    if (bt >= 0 && bt != team) continue;
+                    if (!Cfg.WildSpotOk(team, p)) continue; // (never close to an enemy base or an airdrop: WildRespawn.cs)
                     if (!ThemeMaps.SpotOk(p)) continue; // THEME MAPS (not in water, lava or up on a mesa)
                     p.y = MapBuilder.Height(p.x, p.z) + 0.1f;
                     if (Blocked(p + Vector3.up * 1.1f, new Vector3(0.45f, 0.6f, 0.45f))) continue;
@@ -812,6 +812,7 @@ namespace RockGame
                     inBase = Mathf.Abs(p.x - bc.x) < Cfg.BaseHalf + 6f && Mathf.Abs(p.z - bc.z) < Cfg.BaseHalf + 6f;
                 }
                 if (inBase) continue;
+                if (tries < 300 && !Cfg.WildSpotOk(team, p)) continue; // (nor close to an enemy base or an airdrop)
                 if (!ThemeMaps.SpotOk(p)) continue; // THEME MAPS (not in water, lava or up on a mesa)
                 p.y = MapBuilder.Height(p.x, p.z) + 0.1f;
                 if (Blocked(p + Vector3.up * 1.1f, new Vector3(0.45f, 0.6f, 0.45f))) continue;
@@ -878,11 +879,12 @@ namespace RockGame
                 if (c != null && c.IsSpawned) c.NetworkObject.Despawn(true);
                 m_OldCrates.RemoveAt(i);
             }
-            int n = Mathf.Clamp(Cfg.AirdropCount, 0, 20);
+            int n = Cfg.ClipFarm ? 20 : Mathf.Clamp(Cfg.AirdropCount, 0, 20);
             if (m_BallStart < 0 || n == 0 || (m_DropsDone >= n && !NoClock)) return; // (no clock: they keep coming, as far apart as ever)
             // AIRDROP INCOMING and the ship sets off DropWarning s ahead of the drop's time; its slower beam (DropBeam) puts the
-            // crate down when it always landed
-            double launch = m_BallStart + (m_DropsDone + 1) * (double)BallPhase / (n + 1) - DropWarning;
+            // crate down when it always landed (Clip Farm: one every ClipFarmDropEvery s)
+            double every = Cfg.ClipFarm ? Mathf.Max(DropLand + 5f, Cfg.ClipFarmDropEvery) : (double)BallPhase / (n + 1);
+            double launch = m_BallStart + (m_DropsDone + 1) * every - DropWarning;
             if (launch + DropLand > PhaseEnd.Value - 1.0) return; // it couldn't land before the clock runs out: no ship
             if (now < launch) return;
             bool split = Cfg.AirdropSides && !Cfg.AirdropCenter;

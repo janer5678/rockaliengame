@@ -46,24 +46,25 @@ namespace RockGame
                 Cfg.CraftList(all, 2);
                 var last = all.Count > 0 ? Cfg.CraftRecipe(all[all.Count - 1], team) : default;
                 if (Cfg.JonahBruh) Check(Cfg.RecipeIndex(Item.DeathWand) < 0 && Cfg.AirdropLoot.Contains(Item.DeathWand), "Jonah Test Mode Bruh: the death wand still only comes in airdrops");
+                if (!Cfg.AirdropTest) Check(Cfg.AirdropLoot.Contains(Item.DeathWand), "the death wand's in the airdrops");
                 else Check(Cfg.DeathWandWood == 5000 && last.Output == Item.DeathWand && last.Wood == 5000, $"the death wand costs 5000, last on the list ({last.Output} {last.Wood})");
             }
 
             // ---- the airdrop items picked to start with
             if (!Cfg.AirdropTest)
             {
-                var want = new List<Item> { Item.PortalGun, Item.RocketLauncher, Item.TreeCamo, Item.SpeedJuice, Item.StickOfTruth, Item.KnockStick1, Item.TreeBreaker, Item.Scribble };
+                var want = new List<Item> { Item.DeathWand, Item.PortalGun, Item.RocketLauncher, Item.TreeCamo, Item.SpeedJuice, Item.StickOfTruth, Item.KnockStick1, Item.TreeBreaker, Item.Scribble };
                 var loot = Cfg.AirdropLoot;
                 var wrong = new List<string>(); var missing = new List<string>();
-                foreach (var it in loot) if (!want.Contains(it) && !(Cfg.JonahBruh && it == Item.DeathWand)) wrong.Add(it.ToString());
+                foreach (var it in loot) if (!want.Contains(it)) wrong.Add(it.ToString());
                 foreach (var it in want) if (!loot.Contains(it)) missing.Add(it.ToString());
                 Check(wrong.Count == 0 && missing.Count == 0,
-                    $"picked by default: those 8 ({loot.Count}){(wrong.Count > 0 ? " - extra: " + string.Join(" ", wrong) : "")}{(missing.Count > 0 ? " - missing: " + string.Join(" ", missing) : "")}");
+                    $"picked by default: those 9 - the death wand's back ({loot.Count}){(wrong.Count > 0 ? " - extra: " + string.Join(" ", wrong) : "")}{(missing.Count > 0 ? " - missing: " + string.Join(" ", missing) : "")}");
                 if (!Cfg.JonahBruh)
                 {
                     bool even = true;
-                    foreach (var it in want) even &= Mathf.Abs(Cfg.AirdropChance(it, loot) - 0.125f) < 0.001f;
-                    Check(even, $"12.5% each ({Cfg.AirdropChance(Item.PortalGun, loot) * 100f:0.#}% the portal gun)");
+                    foreach (var it in want) even &= Mathf.Abs(Cfg.AirdropChance(it, loot) - 1f / 9f) < 0.001f;
+                    Check(even, $"11.1% each ({Cfg.AirdropChance(Item.PortalGun, loot) * 100f:0.#}% the portal gun)");
                 }
                 bool onlyThose = true;
                 for (int i = 0; i < 200; i++) { var c = NetGame.RollAirdropCrate(); if (c.Count > 0 && !want.Contains(c[0].Id) && c[0].Id != Item.DeathWand) onlyThose = false; }

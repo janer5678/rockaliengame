@@ -38,6 +38,7 @@ namespace RockGame
             string name = Cfg.ItemName(s.Id);
             int max = Cfg.MaxData(s.Id);
             string shots = max > 0 ? $" ({(s.Data <= 0 || s.Data > max ? max : s.Data)} left)" : "";
+            if (s.Id == Item.TreeBreaker) shots = $" ({(s.Data <= 0 || s.Data > max ? max : s.Data) * Cfg.TreeBreakerUnit} wood of trees left)";
             return $"<b>{name}</b>{shots}    {Cfg.WackyBlurb(s.Id)}";
         }
 
@@ -75,7 +76,7 @@ namespace RockGame
         const float BigTextTime = 4.5f;
 
         /// <summary>Big words across the middle of the screen that fade away after a few seconds.</summary>
-        public static void BigFade(string text) { s_BigText = text; s_BigTime = Time.time; }
+        public static void BigFade(string text) { s_BigText = text; s_BigTime = Time.time; s_BigSub = null; }
         /// <summary>For the tests: the big fading words up right now (null = none).</summary>
         public static string BigFadeShown => Time.time - s_BigTime < BigTextTime ? s_BigText : null;
 
@@ -90,6 +91,7 @@ namespace RockGame
             var old = GUI.color;
             GUI.color = new Color(1f, 1f, 1f, a);
             Shadowed(new Rect(0, sh * 0.33f, sw, 90 * k), $"<color=#{ColorUtility.ToHtmlStringRGB(c)}>{s_BigText}</color>", st); // (under the notes)
+            if (!string.IsNullOrEmpty(s_BigSub)) Shadowed(new Rect(0, sh * 0.33f + 84 * k, sw, 34 * k), $"<b>{s_BigSub}</b>", new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt(24 * k) }); // (Clip Farm's hype: who did it)
             GUI.color = old;
         }
 

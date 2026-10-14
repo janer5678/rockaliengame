@@ -42,7 +42,7 @@ namespace RockGame
                     Check(Mathf.Approximately(Cfg.PieceHp(PieceType.Doorway, 1), Cfg.PieceHp(PieceType.Wall, 1)) && Mathf.Approximately(Cfg.PieceHp(PieceType.Doorway, 0), Cfg.PieceHp(PieceType.Wall, 0)),
                         $"a doorway takes as much breaking as a wall ({Cfg.PieceHp(PieceType.Doorway, 1)} / {Cfg.PieceHp(PieceType.Wall, 1)})");
                 }
-                else Check(Cfg.HammerCost(0) != 250 && Price(Item.Crossbow) != 500 && Cfg.PieceHp(PieceType.Doorway, 1) < Cfg.PieceHp(PieceType.Wall, 1), "(outside Jonah Test Mode Bruh: the usual stone price, crossbow and doorway)");
+                else Check(Cfg.HammerCost(0) != 250 && Price(Item.Crossbow) == 500 && Cfg.PieceHp(PieceType.Doorway, 1) < Cfg.PieceHp(PieceType.Wall, 1), "(outside Jonah Test Mode Bruh: the usual stone price and doorway; the crossbow 500 everywhere now)");
             }
 
             // ---- hold E to pick up your trade station and an empty chest
@@ -70,14 +70,14 @@ namespace RockGame
                 }
             }
 
-            // ---- the spear: thrown while running and jumping it flies dead straight along the crosshair
+            // ---- the spear: thrown while running and jumping it leaves along the crosshair and arcs well down under it
             {
                 var start = OnGround(Vector3.Lerp(Cfg.BaseCenter[team], Vector3.zero, 0.5f) + side * 10f, 0.1f);
                 pc.LocalTeleport(start, Quaternion.LookRotation(-back).eulerAngles.y);
                 me.ServerGive(Item.Spear, 1);
                 yield return Hold(me, Item.Spear);
                 yield return new WaitForSeconds(0.5f);
-                pc.SetLook(Quaternion.LookRotation(-back + side * 0.3f).eulerAngles.y, -4f);
+                pc.SetLook(Quaternion.LookRotation(-back + side * 0.3f).eulerAngles.y, -8f);
                 Binds.TestHold(Bind.Forward, true);
                 Binds.TestHold(Bind.Right, true);
                 yield return new WaitForSeconds(0.5f);
@@ -94,14 +94,19 @@ namespace RockGame
                 ArrowProjectile sp = null;
                 for (float t = 0; t < 1f && sp == null; t += Time.deltaTime) { foreach (var a in ArrowProjectile.Flying) if (a != null && a.IsSpearForTests) sp = a; yield return null; }
                 var ray2 = PlayerController.LastSpearRay;
-                float worst = 0f;
+                float side0 = 0f, drop = 0f;
+                var flatDir = new Vector3(ray2.direction.x, 0f, ray2.direction.z).normalized;
                 for (float t = 0; t < 0.8f && sp != null; t += Time.deltaTime)
                 {
                     var p = sp.transform.position;
-                    worst = Mathf.Max(worst, Vector3.Cross(ray2.direction, p - ray2.origin).magnitude);
+                    var d = p - ray2.origin;
+                    side0 = Mathf.Max(side0, Mathf.Abs(Vector3.Dot(d, Vector3.Cross(Vector3.up, flatDir))));
+                    var onLine = ray2.origin + ray2.direction * Vector3.Dot(d, ray2.direction);
+                    drop = Mathf.Max(drop, onLine.y - p.y);
                     yield return null;
                 }
-                Check(sp != null && worst < 0.15f && Vector3.Angle(ray.direction, ray2.direction) < 10f, $"a spear thrown running and jumping flies dead straight along the crosshair (at most {worst:0.00} m off the line)");
+                Check(sp != null && Vector3.Angle(ray.direction, ray2.direction) < 10f && side0 < 0.3f, $"a spear thrown running and jumping goes where the crosshair points (at most {side0:0.00} m to the side)");
+                Check(drop > 1.2f && Cfg.SpearGravity >= 20f && Cfg.SpearStraightRange <= 0f, $"...and arcs well down under the crosshair ({drop:0.0} m under the line)");
                 yield return Snap("prompt9_spear_straight");
                 yield return new WaitForSeconds(1.5f);
             }

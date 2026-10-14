@@ -65,7 +65,7 @@ namespace RockGame
                     // none of those nine (the death wand too in Jonah Test Mode Bruh) - the default picks are AutoTest.Prompt11.cs's now
                     var wrong = new List<string>();
                     foreach (var it in want) if (loot.Contains(it)) wrong.Add(it.ToString());
-                    Check(wrong.Count == 0 && loot.Contains(Item.DeathWand) == Cfg.JonahBruh,
+                    Check(wrong.Count == 0 && loot.Contains(Item.DeathWand),
                         $"the airdrop pool by default: none of those nine ({loot.Count}){(wrong.Count > 0 ? " - in it but shouldn't be: " + string.Join(" ", wrong) : "")}");
                 }
                 Check(Cfg.ItemName(Item.BombBush).Contains("Bush"), $"(the berry bush is the {Cfg.ItemName(Item.BombBush)})");
@@ -95,8 +95,8 @@ namespace RockGame
                 }
                 else
                 {
-                    Check(w2Wood == Cfg.Workbench2Wood && t2.Count > 0 && t2[0] == armour && !Cfg.AirdropLoot.Contains(Item.DeathWand) && Cfg.SmallBedrock == !Cfg.BigTeams && !Cfg.JonahBruhProgression,
-                        $"(not Jonah Test Mode Bruh: the station {w2Wood}, Armour first there too now, no death wand in airdrops, the one-cell bedrock outside team games)");
+                    Check(w2Wood == Cfg.Workbench2Wood && t2.Count > 0 && t2[0] == armour && Cfg.AirdropLoot.Contains(Item.DeathWand) && Cfg.SmallBedrock == !Cfg.BigTeams && !Cfg.JonahBruhProgression,
+                        $"(not Jonah Test Mode Bruh: the station {w2Wood}, Armour first there too now, the death wand in airdrops too now, the one-cell bedrock outside team games)");
                 }
             }
 
@@ -227,6 +227,8 @@ namespace RockGame
                 yield return new WaitForSeconds(Cfg.LiftTime + 2f);
                 Check(NetGame.LiftedBy(wall.NetworkObject) == 0f && Vector3.Distance(wall.transform.position, wallAt) < 0.05f, "...and it comes back down into its place");
                 wall.NetworkObject.Despawn(true);
+                me.ServerGive(Item.StickOfTruth, 1, Cfg.StickOfTruthShots); // (it's one use now)
+                yield return Hold(me, Item.StickOfTruth);
                 float y0 = me.transform.position.y;
                 me.UseWackyRpc(Item.StickOfTruth, me.EyePos, Vector3.down, me.transform.position, true, new NetworkObjectReference(me.NetworkObject), 0);
                 float topY = y0, glass = MapDome.Built ? MapDome.HighestOver(spot.x, spot.z, 0f) : float.MaxValue;

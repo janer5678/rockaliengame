@@ -567,6 +567,13 @@ namespace RockGame
                 else planar = ThemeGround(planar, grounded); // THEME MAPS
                 var before = transform.position;
                 var flags = m_CC.Move((planar + m_Push + Vector3.up * m_VelY) * Time.deltaTime);
+                // (a knockback into a wall stops there - it doesn't grind you into a corner: blocked = hardly moving)
+                if (m_Push.sqrMagnitude > 4f && (flags & CollisionFlags.Sides) != 0)
+                {
+                    var tried = (planar + m_Push) * Time.deltaTime; tried.y = 0f;
+                    var went = transform.position - before; went.y = 0f;
+                    if (tried.magnitude > 0.02f && went.magnitude < tried.magnitude * 0.3f) m_Push = Vector3.zero;
+                }
                 if ((flags & CollisionFlags.Above) != 0 && m_VelY > 0) m_VelY = 0;
                 if (m_Net.Flipped && (flags & CollisionFlags.Below) != 0 && m_VelY < 0) m_VelY = 0; // (flipped: jumping down onto the floor)
                 AfterMove(flags);
@@ -1254,8 +1261,8 @@ namespace RockGame
             m_DrawStart = -1f;
             m_NextSwing = Time.time + Mathf.Max(0.1f, Cfg.SpearThrowRecovery);
             if (m_Net.HeldItem != Item.Spear || m_Net.Dead.Value || m_Net.CarryingBall) return;
-            // from the middle of the screen (your eye) dead straight along the crosshair - no arc, nothing of how you're
-            // moving or jumping: it flies in a straight line (ArrowProjectile: no drop for Cfg.SpearStraightRange)
+            // from the middle of the screen (your eye) along the crosshair - nothing of how you're moving or jumping - and
+            // it arcs down well under it (Cfg.SpearGravity; ArrowProjectile)
             var ray = CenterRay();
             Vector3 origin = SafeOrigin(ray, 0.8f);
             Vector3 vel = ray.direction * Cfg.SpearThrowSpeed;

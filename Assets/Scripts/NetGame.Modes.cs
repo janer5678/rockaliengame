@@ -82,7 +82,7 @@ namespace RockGame
             if (Cfg.AutoWoodGen) { if (S == GameState.BallLive) m_WoodGenSecs++; ServerAutoWoodGenLevels(); }
             for (int t = 0; t < Cfg.TeamCount; t++)
             {
-                int add = Mathf.Max(0, Cfg.WoodGenRate(WoodGenLevelOf(t)));
+                int add = Cfg.WoodPerSecondNow(t); // (doubled while the ball's in this team's machine: BallWood.cs)
                 if (add == 0) continue;
                 // top up this base's pile - it keeps stacking past 1000 (it splits into stacks when it's picked up) - or start
                 // a new one if it was picked up

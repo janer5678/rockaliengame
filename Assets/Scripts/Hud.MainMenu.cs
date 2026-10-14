@@ -24,7 +24,7 @@ namespace RockGame
             MapKind.Islands, MapKind.Jungle, MapKind.Ice, MapKind.CherryBlossom, MapKind.Wonderland, MapKind.Swamp, MapKind.Cube, MapKind.Mars };
 
         /// <summary>The modes the main menu offers (the others are hidden for now; the dev main menu still has them all).</summary>
-        public static readonly GameRules[] MenuModes = { GameRules.AutoWood, GameRules.Classic, GameRules.Bedwars, GameRules.ThreeGoal, GameRules.Assassin, GameRules.Domination, GameRules.JonahTest, GameRules.AirdropTest, GameRules.JonahBruh };
+        public static readonly GameRules[] MenuModes = { GameRules.AutoWood, GameRules.Classic, GameRules.Bedwars, GameRules.ThreeGoal, GameRules.Assassin, GameRules.Domination, GameRules.JonahTest, GameRules.AirdropTest, GameRules.JonahBruh, GameRules.ClipFarm };
 
         /// <summary>The dev main menu (the old all-in-one page) is up instead of the new one: Tab swaps them.</summary>
         public static bool DevMenuShown => s_I != null && (s_I.m_DevMenu || (Bootstrap.Testing && !TestNewMenu));
@@ -294,7 +294,7 @@ namespace RockGame
                 y += 30 * k;
                 JonahBruhMenuShownAt = Time.time;
             }
-            if (rules == GameRules.AutoWood || rules == GameRules.Progress || (rules == GameRules.JonahBruh && Cfg.JonahBruhProgress != 0))
+            if (rules == GameRules.AutoWood || rules == GameRules.Progress || rules == GameRules.ClipFarm || (rules == GameRules.JonahBruh && Cfg.JonahBruhProgress != 0))
             {
                 // Progress: how long the ball has to sit in your machine to fill your bar
                 GUI.Label(new Rect(x, y, w, 24 * k), "PROGRESS TIME", cap);

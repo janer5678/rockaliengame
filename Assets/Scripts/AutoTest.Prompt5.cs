@@ -104,12 +104,16 @@ namespace RockGame
             yield return Snap("prompt5_lifted_wall");
             yield return new WaitForSeconds(Cfg.LiftTime + 1.6f);
             Check(wall.IsSpawned && Vector3.Distance(wall.transform.position, wallWas) < 0.05f && NetGame.LiftedBy(wall.NetworkObject) == 0f, "...and it drops back into its place");
-            // a player goes sky high (us: the stick shot at ourselves)
+            // it's one use: used up already
+            Check(me.Count(Item.StickOfTruth) == 0 && Cfg.StickOfTruthShots == 1, $"the lifting stick is one use: gone after that ({me.Count(Item.StickOfTruth)} left)");
+            // a player goes sky high (us: the stick shot at ourselves - a new one)
+            me.ServerGive(Item.StickOfTruth, 1, Cfg.StickOfTruthShots);
+            yield return Hold(me, Item.StickOfTruth);
             float y0 = me.transform.position.y;
             me.UseWackyRpc(Item.StickOfTruth, me.EyePos, Vector3.down, me.transform.position, true, new NetworkObjectReference(me.NetworkObject), 0);
             float topY = y0;
             for (float t = 0; t < 1.5f; t += Time.deltaTime) { topY = Mathf.Max(topY, me.transform.position.y); yield return null; }
-            Check(topY > y0 + 6f && me.Count(Item.StickOfTruth) == 0, $"a player it's shot at is lifted sky high ({topY - y0:0.0} m) - and after 2 shots it's used up");
+            Check(topY > y0 + 6f && me.Count(Item.StickOfTruth) == 0, $"a player it's shot at is lifted sky high ({topY - y0:0.0} m) - and it's used up");
             yield return new WaitForSeconds(6f);
 
             // ---- the bouncy castle: thrown like a grenade, pops up where it lands, pink

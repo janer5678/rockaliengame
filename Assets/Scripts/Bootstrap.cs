@@ -168,6 +168,7 @@ namespace RockGame
                             if (rs == "jonah" || rs == "jonahtest") rv = (int)GameRules.JonahTest;
                             if (rs == "airdroptest" || rs == "airdrop") rv = (int)GameRules.AirdropTest;
                             if (rs == "jonahbruh" || rs == "bruh") rv = (int)GameRules.JonahBruh;
+                            if (rs == "clipfarm" || rs == "clip") rv = (int)GameRules.ClipFarm;
                             MapChoice = Cfg.WithRules(MapChoice, (GameRules)rv);
                         }
                         break;
