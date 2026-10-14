@@ -170,6 +170,7 @@ namespace RockGame
             if (m_Mode == "prompt8") { yield return Prompt8Routine(me, pc); yield break; } // (AutoTest.Prompt8.cs)
             if (m_Mode == "prompt9") { yield return Prompt9Routine(me, pc); yield break; } // (AutoTest.Prompt9.cs)
             if (m_Mode == "prompt10") { yield return Prompt10Routine(me, pc); yield break; } // (AutoTest.Prompt10.cs)
+            if (m_Mode == "prompt11") { yield return Prompt11Routine(me, pc); yield break; } // (AutoTest.Prompt11.cs)
             if (m_Mode == "aliens") { yield return AlienShots(me, pc); yield break; } // (AutoTest.AlienShots.cs)
             Check(Cfg.BaseTeamAt(me.transform.position) == me.Team.Value, $"spawned inside own base ({me.transform.position})");
             Check(me.Count(Item.Rock) == 0 && me.HeldItem == Item.Rock, "empty hand = holding the rock (no rock item)");

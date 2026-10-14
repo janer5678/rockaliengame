@@ -62,12 +62,11 @@ namespace RockGame
                 }
                 else
                 {
-                    // everything BUT those nine (the death wand too in Jonah Test Mode Bruh)
-                    var wrong = new List<string>(); var missing = new List<string>();
+                    // none of those nine (the death wand too in Jonah Test Mode Bruh) - the default picks are AutoTest.Prompt11.cs's now
+                    var wrong = new List<string>();
                     foreach (var it in want) if (loot.Contains(it)) wrong.Add(it.ToString());
-                    foreach (var it in Cfg.AirdropChoices) if (Cfg.InAirdropPool(it) && !want.Contains(it) && !loot.Contains(it)) missing.Add(it.ToString());
-                    Check(wrong.Count == 0 && missing.Count == 0 && loot.Contains(Item.DeathWand) == Cfg.JonahBruh,
-                        $"the airdrop pool by default: every airdrop item but those nine ({loot.Count}){(wrong.Count > 0 ? " - in it but shouldn't be: " + string.Join(" ", wrong) : "")}{(missing.Count > 0 ? " - missing " + string.Join(" ", missing) : "")}");
+                    Check(wrong.Count == 0 && loot.Contains(Item.DeathWand) == Cfg.JonahBruh,
+                        $"the airdrop pool by default: none of those nine ({loot.Count}){(wrong.Count > 0 ? " - in it but shouldn't be: " + string.Join(" ", wrong) : "")}");
                 }
                 Check(Cfg.ItemName(Item.BombBush).Contains("Bush"), $"(the berry bush is the {Cfg.ItemName(Item.BombBush)})");
             }
@@ -96,8 +95,8 @@ namespace RockGame
                 }
                 else
                 {
-                    Check(w2Wood == Cfg.Workbench2Wood && (t2.Count == 0 || t2[0] != armour) && !Cfg.AirdropLoot.Contains(Item.DeathWand) && !Cfg.SmallBedrock && !Cfg.JonahBruhProgression,
-                        $"(not Jonah Test Mode Bruh: the station {w2Wood}, Armour not first, no death wand in airdrops, the big bedrock)");
+                    Check(w2Wood == Cfg.Workbench2Wood && t2.Count > 0 && t2[0] == armour && !Cfg.AirdropLoot.Contains(Item.DeathWand) && Cfg.SmallBedrock == !Cfg.BigTeams && !Cfg.JonahBruhProgression,
+                        $"(not Jonah Test Mode Bruh: the station {w2Wood}, Armour first there too now, no death wand in airdrops, the one-cell bedrock outside team games)");
                 }
             }
 
@@ -112,7 +111,7 @@ namespace RockGame
                 bool On(Vector3 p) => Mathf.Abs(p.x - bc.x) <= hb && Mathf.Abs(p.z - bc.z) <= hb;
                 bool spawnsOn = true;
                 for (int s = 0; s < 4; s++) spawnsOn &= On(Cfg.SpawnPos(team, s));
-                if (Cfg.JonahBruh)
+                if (Cfg.SmallBedrock) // (every mode but team games now)
                 {
                     Check(cells == 1 && Mathf.Approximately(Cfg.BedrockHalfNow, 1.5f), $"the spawn bedrock is one cell ({cells} cell, {Cfg.BedrockHalfNow * 2f} m across)");
                     Check(On(Cfg.MachinePos(team)) && On(Cfg.SocketPos(team)) && On(Cfg.WoodMachinePos(team)) && On(Cfg.WoodTrayPos(team)) && spawnsOn, "the machine, its socket, the wood machine, its wood and the spawn spots are all on it");

@@ -380,11 +380,11 @@ namespace RockGame
         // ---------- Airdrops (after the wall drops) ----------
         /// <summary>Mode options: how many airdrops come after the wall drops, evenly spaced (1 = half way through, 2 = at the thirds...).</summary>
         [Tune("Mode options")] public static int AirdropCount = 5;
-        /// <summary>Mode options: which airdrop items are in the pool (bit i = AirdropChoices[i]). To start with every one BUT
-        /// these: C4 (0), the jetpack (6), the wallhack glasses (7), the bomb bush (8), the bouncy castle (11), the gravity
-        /// staff (20), the slowness gun (27) and the bear juice (30) - and the dance bomb (34: AirdropItemMask2). Airdrop
+        /// <summary>Mode options: which airdrop items are in the pool (bit i = AirdropChoices[i]). To start with just these:
+        /// the portal gun (2), the rocket (3), tree camo (4), Extreme Speed Juice (10), the lifting stick (18), the one-use
+        /// knockback stick (24) and the tree breaker (28) - and the Scribblenauts notebook (40: AirdropItemMask2). Airdrop
         /// Test has every airdrop item whatever's picked (AirdropLoot).</summary>
-        [Tune("Mode options")] public static int AirdropItemMask = ~((1 << 0) | (1 << 6) | (1 << 7) | (1 << 8) | (1 << 11) | (1 << 20) | (1 << 27) | (1 << 30));
+        [Tune("Mode options")] public static int AirdropItemMask = (1 << 2) | (1 << 3) | (1 << 4) | (1 << 10) | (1 << 18) | (1 << 24) | (1 << 28);
         [Tune("Airdrop")] public static float AirdropBaseDistance = 25f; // never this close to a base
         [Tune("Airdrop")] public static float C4Fuse = 3f, C4Radius = 5f, C4PlayerDamage = 150f, C4KillRadius = 1.6f;
         [Tune("Airdrop")] public static int SniperAmmo = 3, JetpackFuel = 100, PortalShots = 2, RocketAmmo = 3; // (the portal gun: two shots = one linked pair)
@@ -515,7 +515,7 @@ namespace RockGame
         [Tune("Crafting")] public static int BarricadeWood = 250;
         [Tune("Crafting")] public static float BarricadeHp = 600f;
         /// <summary>The Death Wand: no longer in airdrops - the last thing on the Advanced Trade Station's list.</summary>
-        [Tune("Crafting")] public static int DeathWandWood = 4000;
+        [Tune("Crafting")] public static int DeathWandWood = 5000;
         /// <summary>The Trade Station's ladder, bear trap, sleeping bag and large gate, and the Advanced one's auto turret.</summary>
         [Tune("Crafting")] public static int LadderWood = 250, BearTrapWood = 250, SleepingBagWood = 175, LargeGateWood = 120, AutoTurretWood = 3000;
         [Tune("Crafting")] public static int CrossbowWood = 500, SaddleWood = 750, ArmorWood = 250, ChainsawWood = 500;
@@ -587,8 +587,8 @@ namespace RockGame
         public static float TierMeleeMul(int tier) => tier >= 3 ? RefinedMeleeMul : tier == 2 ? MetalMeleeMul : tier == 1 ? StoneStructureMeleeMul : 1f;
         [Tune("Arsenal and Builder")] public static float PistolFireRate = 0.22f, PistolReload = 1.3f;
         [Tune("Arsenal and Builder")] public static int PistolMag = 5, HeavyArmorHp = 50, TreeCrackerUses = 40;
-        /// <summary>Armour (the code's HeavyArmor: +50 armour, at the Advanced Trade Station - the old wooden armour is gone): its price.</summary>
-        [Tune("Crafting")] public static int HeavyArmorWood = 500;
+        /// <summary>Armour (the code's HeavyArmor: +50 armour, first on the Advanced Trade Station - the old wooden armour is gone): its price.</summary>
+        [Tune("Crafting")] public static int HeavyArmorWood = 250;
         /// <summary>Builder: every craft takes a while (seconds per 100 wood of its price, between the min and max).</summary>
         [Tune("Arsenal and Builder")] public static float BuilderCraftSecsPer100 = 0.6f, BuilderCraftMin = 2f, BuilderCraftMax = 20f;
         /// <summary>Alien outlines (always on, any mode): enemies have a faint glow in their team colour so they're easier to see.
@@ -725,6 +725,7 @@ namespace RockGame
             || i == Item.Armor || i == Item.Barrier || i == Item.LargeGate // (the wooden armour: gone, heavy armour is "Armour" now; the large wall and gate: out for now)
             || i == Item.DecoyBase || i == Item.ChaosSigil // (the decoy base and the Sigil of CHAOS: taken out)
             || i == Item.GoldenRock || i == Item.InvSwapper // (the Rock of Immortality and the inventory swapper: taken out)
+            || i == Item.BearTrap // (the stun trap: taken out)
             || (JonahBruhOut(i) && i != Item.DeathWand) || (i == Item.BetterHatchet && !JonahBruh) || (i == Item.Hammer && !HammerOn); // (the hammer: only the tutorial's - UPGRADE is on the building plan now) // (Jonah Test Mode Bruh: JonahBruh.cs - its death wand isn't crafted, but comes in airdrops)
         /// <summary>Whether an airdrop item can still come in airdrops (and respawn loot / Fun Random): the death wand is crafted now.</summary>
         /// (The disguise kit only comes in team games: in a 1v1 there's nobody to blend in with.)
@@ -971,7 +972,7 @@ namespace RockGame
         {
             s_Active.Clear();
             if (LimitedCrafting) { s_Active.AddRange(k_Limited); return s_Active; }
-            foreach (var it in k_Recipes) if (!(WoodMode && it == Item.Pickaxe) && (it != Item.Hammer || HammerOn) && (it != Item.Armor || Tutorial) && !JonahBruhOut(it) && (it != Item.BetterHatchet || JonahBruh)) s_Active.Add(it); // (Jonah Test Mode Bruh: JonahBruh.cs)
+            foreach (var it in k_Recipes) if (!(WoodMode && it == Item.Pickaxe) && (it != Item.Hammer || HammerOn) && (it != Item.Armor || Tutorial) && !JonahBruhOut(it) && (it != Item.BetterHatchet || JonahBruh) && it != Item.BearTrap) s_Active.Add(it); // (the stun trap: taken out) // (Jonah Test Mode Bruh: JonahBruh.cs)
             if (ThemeMaps.HasWater) s_Active.Add(Item.Boat); // THEME MAPS (the boat)
             return s_Active;
         }
@@ -1255,6 +1256,7 @@ namespace RockGame
             (17, new[] { "BallGatherMul", "AirdropItemMask", "AirdropItemMask2", "SnailTime", "LiftHeight", "LiftLaunch", "JonahBruhArmorWood" }),
             (18, new[] { "AirdropItemMask", "AirdropItemMask2" }),
             (20, new[] { "RevolverAmmoWood", "RevolverAmmoPerCraft" }),
+            (21, new[] { "HeavyArmorWood", "DeathWandWood", "AirdropItemMask", "AirdropItemMask2" }),
             (19, new[] { "SpearWood", "BowWood", "BowStone", "ArrowWood", "RamWood", "RamStone", "ChestWood", "HatchetPlayerDamage", "HorseWalk", "HorseSprint", "ShotgunRange", "JonahBruhStoneWood" }),
         };
         const string MigrateKey = "RockGame.Tunables.migrated";

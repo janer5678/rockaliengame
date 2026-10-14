@@ -32,7 +32,7 @@ namespace RockGame
 
             // ---- the numbers and the lists
             Check(Cfg.CraftIndexOf(Item.Hammer) < 0 && Cfg.PlanUpgradeOn, "no hammer: UPGRADE is on the building plan");
-            Check(Cfg.CraftIndexOf(Item.Armor) < 0 && Cfg.ItemName(Item.HeavyArmor) == "Armour" && Cfg.HeavyArmorWood == 500 && Cfg.HeavyArmorHp == 50,
+            Check(Cfg.CraftIndexOf(Item.Armor) < 0 && Cfg.ItemName(Item.HeavyArmor) == "Armour" && Cfg.HeavyArmorWood == 250 && Cfg.HeavyArmorHp == 50,
                 $"no wooden armour; the heavy armour is just Armour: +{Cfg.HeavyArmorHp} for {Cfg.HeavyArmorWood}");
             Check(Cfg.CraftIndexOf(Item.Barrier) < 0 && Cfg.CraftIndexOf(Item.LargeGate) < 0, "no large wall or large gate to craft");
             Check(Cfg.CraftTier(Item.Barricade) == 1 && Cfg.CraftIndexOf(Item.Barricade) >= 0, "the barricade is a Trade Station (T1) item");
@@ -44,7 +44,7 @@ namespace RockGame
                 var all = new List<int>();
                 Cfg.CraftList(all, 2);
                 var last = all.Count > 0 ? Cfg.CraftRecipe(all[all.Count - 1], team) : default;
-                Check(last.Output == Item.DeathWand && last.Wood == 4000 && Cfg.CraftTier(Item.DeathWand) == 2, $"the death wand is the last thing on the Advanced Trade Station's list, for 4000 ({last.Output} {last.Wood})");
+                Check(last.Output == Item.DeathWand && last.Wood == 5000 && Cfg.CraftTier(Item.DeathWand) == 2, $"the death wand is the last thing on the Advanced Trade Station's list, for 5000 ({last.Output} {last.Wood})");
                 bool wandDrop = Cfg.AirdropLoot.Contains(Item.DeathWand);
                 int mask = Cfg.AirdropItemMask, mask2 = Cfg.AirdropItemMask2;
                 Cfg.PickAllAirdrops(true);

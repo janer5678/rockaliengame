@@ -18,10 +18,10 @@ namespace RockGame
             var g = NetGame.Instance;
             int team = me.Team.Value, enemy = 1 - team;
             g.TimerPaused.Value = true;
-            Check(Cfg.HeavyArmorHp == 50 && Cfg.HeavyArmorWood == 500 && Cfg.CraftIndexOf(Item.Armor) < 0, $"armour: +{Cfg.HeavyArmorHp} for {Cfg.HeavyArmorWood} wood (the wooden armour is gone)");
+            Check(Cfg.HeavyArmorHp == 50 && Cfg.HeavyArmorWood == 250 && Cfg.CraftIndexOf(Item.Armor) < 0, $"armour: +{Cfg.HeavyArmorHp} for {Cfg.HeavyArmorWood} wood (the wooden armour is gone)");
             Check(Cfg.ItemName(Item.Workbench2) == "Advanced Trade Station" && Cfg.ItemName(Item.Barrier) == "Large Wall" && Cfg.ItemName(Item.HeavyArmor) == "Armour", "renamed: Advanced Trade Station, Large Wall, Armour");
-            Check(Cfg.CraftIndexOf(Item.SleepingBag) < 0 && Cfg.CraftTier(Item.BearTrap) == 2 && Cfg.CraftRecipe(Cfg.CraftIndexOf(Item.BearTrap), team).Wood == 250 && Cfg.CraftTier(Item.Ladder) == 1 && Cfg.CraftIndexOf(Item.LargeGate) < 0 && Cfg.CraftIndexOf(Item.Barrier) < 0 && Cfg.CraftTier(Item.Barricade) == 1 && Cfg.CraftTier(Item.AutoTurret) == 2,
-                "the bag, large wall and large gate are out for now; the stun trap is an Advanced Trade Station item for 250; the ladder and barricade are Trade Station items, the turret an Advanced one");
+            Check(Cfg.CraftIndexOf(Item.SleepingBag) < 0 && Cfg.CraftIndexOf(Item.BearTrap) < 0 && Cfg.CraftTier(Item.Ladder) == 1 && Cfg.CraftIndexOf(Item.LargeGate) < 0 && Cfg.CraftIndexOf(Item.Barrier) < 0 && Cfg.CraftTier(Item.Barricade) == 1 && Cfg.CraftTier(Item.AutoTurret) == 2,
+                "the bag, large wall and large gate are out for now; the stun trap is out; the ladder and barricade are Trade Station items, the turret an Advanced one");
             {
                 var crate = NetGame.RollAirdropCrate();
                 Check(crate.Count == 1 && crate[0].Id != Item.Wood && !crate[0].Empty, $"an airdrop crate: just one airdrop item ({string.Join(", ", crate.ConvertAll(s => s.Id + " x" + s.Count))})");
