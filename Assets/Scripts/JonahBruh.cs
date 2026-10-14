@@ -47,7 +47,9 @@ namespace RockGame
 
         /// <summary>Jonah Test Mode Bruh: the spawn bedrock is a single build cell (3 x 3 m) instead of 2 x 2 - the alien
         /// machine (SmallMachineScale), its ball socket (SmallSocketScale) and the wood machine (SmallMachineScale) all on it.</summary>
-        public static bool SmallBedrock => JonahBruh;
+        public static bool SmallBedrock => JonahBruh || (!Tutorial && !Builder && !BigTeams); // (every mode now, but team games: 2 x 2 there)
+        /// <summary>A team game: any team with room for more than one player (they keep the 2 x 2 spawn base).</summary>
+        public static bool BigTeams { get { for (int t = 0; t < TeamCount; t++) if (TeamCap(t) > 1) return true; return false; } }
         public const float SmallMachineScale = 0.5f, SmallSocketScale = 0.7f;
         /// <summary>The small machine is taller than it is wide (x this on its height): stood on its flat top (MachineTopY over
         /// the bedrock) you can jump over a wall on the bedrock's edge - out of a one-cell base. A step beside it

@@ -44,8 +44,14 @@ namespace RockGame
         /// <summary>THE HAMMER: true = no upgrade stations (but the tutorial's), walls upgraded one by one with the hammer,
         /// and the wood machine there from the start, speeding up over the match. false = the stations as before.</summary>
         public const bool HammerUpgrades = true;
-        /// <summary>The hammer is in this mode (a starter item): where the upgrade stations used to be, but the tutorial.</summary>
-        public static bool HammerOn => HammerUpgrades && (PowerMenu || Tutorial) && !Builder; // (the tutorial ends on it: Tutorial.cs)
+        /// <summary>The hammer is in this mode: only the tutorial still has it (it ends on it: Tutorial.cs). Everywhere else
+        /// walls go up a tier with UPGRADE on the building plan's wheel (PlanUpgradeOn).</summary>
+        public static bool HammerOn => HammerUpgrades && Tutorial;
+        /// <summary>UPGRADE on the building plan's wheel (the green plus at the top): LMB on one of your team's pieces (lit up
+        /// green, like Demolish's red) takes it up a tier - stone for PlanStoneWood, metal for PlanMetalWood. Metal is the top:
+        /// there are no armoured walls any more (MaxFortify).</summary>
+        public static bool PlanUpgradeOn => HammerUpgrades && !Tutorial;
+        [Tune("Upgrade")] public static int PlanStoneWood = 200, PlanMetalWood = 500;
         /// <summary>The wood machine is there from the start and levels up by itself over the match (not bought).</summary>
         public static bool AutoWoodGen => HammerUpgrades && AutoWood; // (the tutorial too: it lands when the wall drops)
         /// <summary>What the hammer charges to take one piece up to stone, metal, armoured (in the mode's currency).</summary>
@@ -55,10 +61,11 @@ namespace RockGame
         [Tune("Hammer")] public static float HammerHitLock = 5f;
         /// <summary>The hammer's swing. It never hurts a player (Cfg.HurtsPlayers): it's a building tool, not a weapon.</summary>
         [Tune("Hammer")] public static float HammerBodyDamage = 0f, HammerHeadDamage = 0f, HammerSwingTime = 0.9f, HammerRange = 2.6f;
-        /// <summary>What the hammer charges to take a piece from `tier` to the next one (0: it can't go higher).</summary>
-        public static int HammerCost(int tier) => tier >= HammerMaxTier ? 0 : DnaPrice(tier >= 2 ? HammerArmouredWood : tier == 1 ? HammerMetalWood : JonahBruh ? JonahBruhStoneWood : HammerStoneWood); // (Jonah Test Mode Bruh: stone only, its own price - JonahBruh.cs)
-        /// <summary>The hammer's prices in a few words, for its descriptions.</summary>
-        public static string HammerPrices => JonahBruh ? $"stone only, {JonahBruhStoneWood} {CurrencyName} a piece" : $"stone {HammerStoneWood}, metal {HammerMetalWood}, armoured {HammerArmouredWood} {CurrencyName} a piece";
+        /// <summary>What taking a piece from `tier` to the next one costs (0: it can't go higher) - the plan's UPGRADE, or the
+        /// tutorial's hammer at its own prices.</summary>
+        public static int HammerCost(int tier) => tier >= HammerMaxTier ? 0 : DnaPrice(Tutorial ? (tier >= 1 ? HammerMetalWood : HammerStoneWood) : tier >= 1 ? PlanMetalWood : JonahBruh ? JonahBruhStoneWood : PlanStoneWood); // (Jonah Test Mode Bruh: stone only, its own price - JonahBruh.cs)
+        /// <summary>The upgrade prices in a few words, for the descriptions.</summary>
+        public static string HammerPrices => JonahBruh ? $"stone only, {JonahBruhStoneWood} {CurrencyName} a piece" : Tutorial ? $"stone {HammerStoneWood}, metal {HammerMetalWood} {CurrencyName} a piece" : $"stone {PlanStoneWood}, metal {PlanMetalWood} {CurrencyName} a piece";
         static int DnaPrice(int wood) => DnaPriced(new Recipe { Wood = wood }).Wood;
 
         /// <summary>This mode has base upgrades, and an upgrade station in every base (E on it opens UPGRADES).</summary>
@@ -100,7 +107,7 @@ namespace RockGame
                 return $"level {lvl + 1}: your base makes {WoodGenRate(lvl + 1)} wood a second (now {WoodGenRate(lvl)})";
             }
             if (Upgrade10Walls) return UpgradablePieces(team) == 0 ? "build some walls first (or they're all armoured)" : $"fly round your base and pick {WallsPerUpgrade} pieces: each goes up a tier";
-            if (lvl >= MaxFortify) return "your pieces are all armoured - fully fortified";
+            if (lvl >= MaxFortify) return "your pieces are all metal - fully fortified";
             return $"all your team's pieces from {TierName(lvl).ToLower()} to {TierName(lvl + 1).ToLower()} ({lvl + 2} ram hits each)";
         }
 
@@ -134,11 +141,23 @@ namespace RockGame
             ServerHammer(s);
         }
 
-        /// <summary>Server: one piece up a tier with the hammer (the checks, the price, the upgrade). True if it went up.</summary>
+        /// <summary>The building plan's UPGRADE (the green plus on its wheel) + LMB on one of your team's pieces: up a tier.</summary>
+        [Rpc(SendTo.Server)]
+        public void PlanUpgradeRpc(NetworkObjectReference target)
+        {
+            var g = NetGame.Instance;
+            if (!Cfg.PlanUpgradeOn || Dead.Value || HeldItem != Item.BuildingPlan || InSuddenDeath || g == null || g.S == GameState.GameOver) return;
+            if (!target.TryGet(out var no) || !no.TryGetComponent(out Structure s)) return;
+            if (Vector3.Distance(s.transform.position, transform.position) > Cfg.BuildRange + 4f) return;
+            ServerHammer(s);
+        }
+
+        /// <summary>Server: one piece up a tier (the plan's UPGRADE, the tutorial's hammer, the bots): the checks, the price,
+        /// the upgrade. True if it went up.</summary>
         public bool ServerHammer(Structure s)
         {
             if (s == null || !s.IsSpawned || s.Team.Value != Team.Value || !s.Upgradable) return false;
-            if (s.Tier.Value >= Cfg.HammerMaxTier) { Notify(Cfg.HammerMaxTier < Cfg.MaxFortify ? "Stone is as far as the hammer goes in this mode" : "That's already armoured"); return false; }
+            if (s.Tier.Value >= Cfg.HammerMaxTier) { Notify(Cfg.HammerMaxTier < Cfg.MaxFortify ? "Stone is as far as upgrades go in this mode" : "That's already metal - fully upgraded"); return false; }
             if (s.UpgradeLockLeft > 0f) { Notify($"Under attack - you can upgrade it in {Mathf.CeilToInt(s.UpgradeLockLeft)} s"); return false; }
             int cost = Cfg.HammerCost(s.Tier.Value);
             var r = new Recipe { Output = Item.FortifyBuff, Count = 1, Wood = cost }; // (Wood is the currency's slot: DNA in DNA mode)
@@ -181,7 +200,7 @@ namespace RockGame
             if (Cfg.Upgrade10Walls && id == Item.FortifyBuff) { Notify("Upgrade 10 Walls: press UPGRADE and pick the pieces"); return; } // (JonahMode.cs: WallPicker -> UpgradeWallsRpc)
             if (id == Item.FortifyBuff && !Tutorial.AllowsFor(this, TutFeature.Fortify)) { Notify("Not yet - the wood gen first, then the tutorial gets to your walls"); return; }
             if (!Cfg.AtOwnStation(team, transform.position)) { Notify("Upgrades are bought at your upgrade station (E on it - the orange arrow, left of your alien machine)"); return; }
-            if (Cfg.BaseUpgradeMaxed(id, team)) { Notify(id == Item.WoodGenBuff ? "Your wood gen is already maxed out" : "Your walls are already armoured - fully fortified"); return; }
+            if (Cfg.BaseUpgradeMaxed(id, team)) { Notify(id == Item.WoodGenBuff ? "Your wood gen is already maxed out" : "Your walls are already metal - fully fortified"); return; }
             var r = Cfg.BaseUpgradeRecipe(id, team);
             if (!CanAfford(r)) { Notify($"Not enough {Cfg.CurrencyName} for {Cfg.ItemName(id)}"); return; }
             ServerPay(r);

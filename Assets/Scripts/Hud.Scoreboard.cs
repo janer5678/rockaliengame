@@ -87,7 +87,7 @@ namespace RockGame
             var game = NetGame.Instance;
             string mode = Cfg.RulesName(Cfg.Rules).ToUpper() + "  ·  " + Cfg.ModeLabel;
             Shadowed(new Rect(x + 16 * k, y + 8 * k, w, 30 * k), $"<b><size={Mathf.RoundToInt(22 * k)}>SCOREBOARD</size></b>   <color=#aaaaaa>{mode}</color>", m_Label);
-            if (game != null && (game.S == GameState.PreBall || game.S == GameState.BallLive || game.S == GameState.SuddenDeath) && !Cfg.Tutorial)
+            if (game != null && (game.S == GameState.PreBall || game.S == GameState.BallLive || game.S == GameState.SuddenDeath) && !Cfg.Tutorial && !game.NoClock)
                 Shadowed(new Rect(x, y + 10 * k, w - 16 * k, 28 * k), Clock(game.TimeLeft), new GUIStyle(m_Label) { alignment = TextAnchor.UpperRight, fontStyle = FontStyle.Bold });
 
             // columns: name | kills | deaths | ping | message

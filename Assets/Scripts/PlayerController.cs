@@ -38,23 +38,29 @@ namespace RockGame
         /// <summary>Down the sights of the crossbow or the revolver: slower to turn and to walk, no sprinting.</summary>
         public bool SightsUp => CrossbowAiming || RevolverAiming;
 
-        /// <summary>The build wheel's slices, clockwise from just right of the top (see WheelAngle).</summary>
+        /// <summary>The build wheel's slices, clockwise from straight up (see WheelAngle).</summary>
         public static readonly (string Label, PieceType Piece, bool Demolish, bool Upgrade)[] WheelOptions =
         {
-            // clockwise: the ceiling top right, the wall straight out to the right, the stairs under it, DEMOLISH straight
-            // down at the bottom (like Rust), the window bottom left, the doorway straight out to the left and the
-            // foundation top left. Upgrades are at the upgrade station; they aren't a slice any more
+            // clockwise: UPGRADE straight up at the top (the green plus - it replaced the hammer), the ceiling top right, the
+            // wall straight out to the right, the stairs, DEMOLISH straight down at the bottom (like Rust), the window, the
+            // doorway straight out to the left and the foundation top left
+            ("Upgrade", PieceType.Wall, false, true),
             ("Ceiling", PieceType.Floor, false, false), ("Wall", PieceType.Wall, false, false), ("Stairs", PieceType.Stairs, false, false),
             ("Demolish", PieceType.Wall, true, false),
             ("Window", PieceType.Window, false, false), ("Doorway", PieceType.Doorway, false, false), ("Foundation", PieceType.Foundation, false, false),
         };
-        /// <summary>Where a wheel slice's middle is, in degrees clockwise from straight up. The slices are turned half a
-        /// slice so the middle one (demolish) sits exactly at the bottom; a slice covers WheelAngle +- half a slice.</summary>
-        public static float WheelAngle(int i) => (i + 0.5f) * 360f / WheelOptions.Length;
+        /// <summary>Where a wheel slice's middle is, in degrees clockwise from straight up: upgrade's exactly at the top and
+        /// demolish exactly at the bottom; a slice covers WheelAngle +- half a slice.</summary>
+        public static float WheelAngle(int i) => i * 360f / WheelOptions.Length;
+        /// <summary>The wheel slice the direction `ang` (degrees clockwise from straight up) is in.</summary>
+        public static int WheelSliceAt(float ang) { int n = WheelOptions.Length; return ((Mathf.FloorToInt((ang + 180f / n) / (360f / n)) % n) + n) % n; }
         /// <summary>Holding the building plan with Demolish picked on the wheel (pieces you could take down light up red).</summary>
         public bool DemolishAiming => m_Net != null && m_Net.HeldItem == Item.BuildingPlan && DemolishMode;
-        /// <summary>Holding the hammer: your own piece in the crosshair lights up green (the demolish highlight's code).</summary>
-        public bool HammerAiming => m_Net != null && m_Net.HeldItem == Item.Hammer && Cfg.HammerOn;
+        /// <summary>The building plan with UPGRADE picked on its wheel (or the tutorial's hammer): your own piece in the
+        /// crosshair lights up green (the demolish highlight's code), and LMB takes it up a tier.</summary>
+        public bool HammerAiming => m_Net != null && ((m_Net.HeldItem == Item.Hammer && Cfg.HammerOn) || PlanUpgradeAiming);
+        /// <summary>Holding the building plan with UPGRADE (the green plus) picked on its wheel.</summary>
+        public bool PlanUpgradeAiming => m_Net != null && m_Net.HeldItem == Item.BuildingPlan && UpgradeMode && Cfg.PlanUpgradeOn;
         public string AimText = "", BuildHint = "";
         /// <summary>The scoreboard key is held: the scoreboard is up and the mouse is free.</summary>
         public bool ScoreboardOpen { get; private set; }
@@ -1532,15 +1538,27 @@ namespace RockGame
             if (WheelOpen) Hud.WheelHover = WheelIndex; // (picked while the wheel is up: it's the slice letting go takes)
         }
 
+        /// <summary>UPGRADE on the plan's wheel + LMB (or its key): the piece of yours in the crosshair (lit green) up a tier
+        /// (Upgrades.cs: PlanUpgradeRpc).</summary>
         void TryUpgrade()
         {
-            if (Cfg.WoodMode) { Hud.Push("Wood mode: no stone upgrades"); return; }
-            if (!Aim(CenterRay(), Cfg.BuildRange, out var hit)) return;
-            var s = hit.collider.GetComponentInParent<Structure>();
-            if (s == null || !s.Upgradable || s.Team.Value != m_Net.Team.Value) return;
-            m_Net.UpgradeRpc(s.NetworkObject);
+            if (!Cfg.PlanUpgradeOn) { Hud.Push("Upgrades come after the tutorial"); return; }
+            if (Time.time < m_NextUpgrade) return;
+            m_NextUpgrade = Time.time + 0.25f;
+            var s = HammerTarget();
+            if (s == null)
+            {
+                // a piece of yours that can't go any higher: say so
+                if (Aim(CenterRay(), Cfg.BuildRange, out var h) && h.collider.GetComponentInParent<Structure>() is Structure mine && mine.Team.Value == m_Net.Team.Value && mine.Upgradable)
+                    Hud.Push(Cfg.HammerMaxTier < Cfg.MaxFortify ? "Stone is as far as upgrades go in this mode" : "That's metal - fully upgraded");
+                return;
+            }
+            int cost = Cfg.HammerCost(s.Tier.Value);
+            if (s.UpgradeLockLeft > 0f) { Hud.Push($"Under attack - you can upgrade it in {Mathf.CeilToInt(s.UpgradeLockLeft)} s"); return; }
+            if (m_Net.Count(Cfg.CurrencyItem) < cost) { Hud.Push($"Need {cost} {Cfg.CurrencyName} to upgrade it to {Cfg.TierName(s.Tier.Value + 1).ToLower()}"); return; }
+            m_Net.PlanUpgradeRpc(s.NetworkObject);
             m_VM.Use();
-            Sfx.Play(Sfx.Clink, hit.point, 0.8f);
+            Sfx.Play(Sfx.Clink, s.transform.position + Vector3.up * 1.2f, 0.9f);
         }
 
         void TryDemolish()
@@ -1592,7 +1610,8 @@ namespace RockGame
 
             // (no X-to-demolish any more: Demolish is the slice at the bottom of the wheel, then LMB - above)
 
-            if (Binds.Down(Bind.Upgrade) && Time.time >= m_NextUpgrade && !Cfg.WoodMode)
+            if (Binds.Down(Bind.Upgrade) && Cfg.PlanUpgradeOn) TryUpgrade(); // (the key does what UPGRADE on the wheel does)
+            else if (Binds.Down(Bind.Upgrade) && Time.time >= m_NextUpgrade && !Cfg.WoodMode)
             {
                 if (Aim(CenterRay(), Cfg.BuildRange, out var hit))
                 {
@@ -2390,8 +2409,9 @@ namespace RockGame
                 return;
             }
             if (m_Net.HeldItem == Item.BuildingPlan && DemolishMode) AimText = "<color=#ff9f5a>DEMOLISH</color>  LMB on your own piece  ·  hold RMB to change";
+            if (PlanUpgradeAiming) AimText = "<color=#7dff8a>UPGRADE</color>  LMB on your own piece  ·  hold RMB to change";
             string self = m_Net.StuckSpears.Value > 0 ? $"<color=#ff8888>{m_Net.StuckSpears.Value} spear(s) stuck in you - {KT(Bind.Interact)}: pull out</color>" : "";
-            if (!(m_Net.HeldItem == Item.BuildingPlan && DemolishMode)) AimText = self;
+            if (!(m_Net.HeldItem == Item.BuildingPlan && DemolishMode) && !PlanUpgradeAiming) AimText = self;
             if (!Aim(CenterRay(), 6f, out var hit)) return;
             // the wood machine (Auto Wood, once it's been bought): the rate it's making wood at, in the upgrade station's style
             var woodMachine = hit.collider.GetComponentInParent<WoodMachine>();
@@ -2408,15 +2428,15 @@ namespace RockGame
                 string detail = $"{st.Health.Value:0}/{st.MaxHp:0}" + (st.HasBars ? $"  ·  bars {st.DoorHealth.Value:0}/{st.DoorMaxHp:0}" : ""); // (a window: its bars have their own, like a door)
                 if (m_Net.HeldItem == Item.BuildingPlan && st.Team.Value == m_Net.Team.Value)
                 {
-                    if (st.Tier.Value == 0 && st.Upgradable && !Cfg.WoodMode) detail += $"   {KT(Bind.Upgrade)}: upgrade to stone ({Cfg.UpgradeCost(st.PType)} {Cfg.UpgradeName})";
+                    if (st.Tier.Value == 0 && st.Upgradable && !Cfg.WoodMode && !Cfg.PlanUpgradeOn) detail += $"   {KT(Bind.Upgrade)}: upgrade to stone ({Cfg.UpgradeCost(st.PType)} {Cfg.UpgradeName})";
                     if (DemolishMode) detail += "   <color=#ff8a7a>LMB: demolish</color>";
                 }
-                if (m_Net.HeldItem == Item.Hammer && Cfg.HammerOn && st.Team.Value == m_Net.Team.Value && st.Upgradable && hit.distance <= Cfg.BuildRange)
+                if (HammerAiming && st.Team.Value == m_Net.Team.Value && st.Upgradable && hit.distance <= Cfg.BuildRange)
                 {
                     int cost = Cfg.HammerCost(st.Tier.Value);
                     bool afford = m_Net.Count(Cfg.CurrencyItem) >= cost;
                     float lockLeft = st.UpgradeLockLeft;
-                    detail += st.Tier.Value >= Cfg.HammerMaxTier ? (Cfg.HammerMaxTier < Cfg.MaxFortify ? "   <color=#bbbbbb>stone - as far as the hammer goes</color>" : "   <color=#bbbbbb>armoured - fully upgraded</color>")
+                    detail += st.Tier.Value >= Cfg.HammerMaxTier ? (Cfg.HammerMaxTier < Cfg.MaxFortify ? "   <color=#bbbbbb>stone - as far as upgrades go here</color>" : "   <color=#bbbbbb>metal - fully upgraded</color>")
                         : lockLeft > 0f ? $"   <color=#ff8a7a><b>UNDER ATTACK - UPGRADE IN {Mathf.CeilToInt(lockLeft)} s</b></color>"
                         : $"   <color={(afford ? "#7dff8a" : "#ff8a7a")}><b>LMB: UPGRADE TO {Cfg.TierName(st.Tier.Value + 1).ToUpper()}  ({cost} {Cfg.CurrencyName})</b></color>";
                 }

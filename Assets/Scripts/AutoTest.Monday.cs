@@ -26,7 +26,7 @@ namespace RockGame
             yield return new WaitForSeconds(1.5f); // (the wood machine lands on the next second's tick)
 
             // ---- no upgrade station; the wood machine is there from the start and speeds up by itself
-            Check(Cfg.HammerOn && !Cfg.HasBaseUpgrades, "the hammer is on and there are no base upgrades here");
+            Check(Cfg.PlanUpgradeOn && !Cfg.HammerOn && !Cfg.HasBaseUpgrades, "UPGRADE is on the building plan (no hammer) and there are no base upgrades here");
             bool anyStation = false;
             foreach (var st in UpgradeStation.ByTeam) if (st != null) anyStation = true;
             Check(!anyStation, "no upgrade station in any base");
@@ -60,7 +60,7 @@ namespace RockGame
             int planAt = list0.IndexOf(Cfg.CraftIndexOf(Item.BuildingPlan)), hammerAt = list0.IndexOf(Cfg.CraftIndexOf(Item.Hammer));
             var list1 = new List<int>();
             Cfg.AddTier(list1, 1);
-            Check(Cfg.CraftTier(Item.Hammer) == 1 && hammerAt < 0 && list1.Count > 0 && list1[0] == Cfg.CraftIndexOf(Item.Hammer), $"the hammer is a Trade Station (T1) item now, first on its list ({planAt}, {hammerAt})");
+            Check(Cfg.CraftIndexOf(Item.Hammer) < 0 && hammerAt < 0 && planAt >= 0, $"no hammer to craft any more - the building plan's UPGRADE does its job ({planAt}, {hammerAt})");
             Check(Cfg.CraftTier(Item.Chainsaw) == 1 && Cfg.CraftTier(Item.Saddle) == 1, "the chainsaw and the saddle are Trade Station (T1) items again");
             int ci = Cfg.RecipeIndex(Item.Chainsaw);
             Check(ci >= 0 && Cfg.GetRecipe(ci).Wood == 500, $"the chainsaw costs 500 wood again ({(ci >= 0 ? Cfg.GetRecipe(ci).Wood : -1)})");
@@ -69,21 +69,14 @@ namespace RockGame
             Check(!Cfg.HurtsPlayers(Item.Hammer) && Cfg.MeleePlayerDamage(Item.Hammer, false) == 0f && Cfg.MeleePlayerDamage(Item.Hammer, true) == 0f,
                 $"the hammer can't hurt a player ({Cfg.MeleePlayerDamage(Item.Hammer, false)} / {Cfg.MeleePlayerDamage(Item.Hammer, true)})");
 
-            // ---- craft the hammer at home (it needs a Trade Station now)
+            // ---- the building plan's UPGRADE on our own wall: green, its price, then up a tier at a time (it took the hammer's place)
             pc.LocalTeleport(Cfg.SpawnPos(team), Quaternion.LookRotation(-Cfg.BackDir(team)).eulerAngles.y);
             yield return new WaitForSeconds(0.4f);
-            if (Workbench.ForTeam(team, 1) == null) Workbench.ServerSpawn(team, Workbench.DefaultPos(team), Workbench.DefaultYaw(team));
-            yield return new WaitForSeconds(0.4f);
             int wood0 = me.Count(Item.Wood);
-            me.ServerGive(Item.Wood, Cfg.HammerWood);
-            me.CraftRpc(Cfg.CraftIndexOf(Item.Hammer));
-            yield return new WaitForSeconds(0.6f);
-            Check(me.Count(Item.Hammer) == 1, "the hammer can be crafted");
-            // (spend whatever wood is left, so the prices can be counted)
             InvOps.Remove(me.Inv, Item.Wood, me.Count(Item.Wood));
-            yield return Hold(me, Item.Hammer);
-
-            // ---- the hammer on our own wall: green, its price, then up a tier at a time
+            if (me.Count(Item.BuildingPlan) == 0) me.ServerGive(Item.BuildingPlan, 1);
+            yield return Hold(me, Item.BuildingPlan);
+            pc.SelectWheel(0);
             var back = Cfg.BackDir(team);
             var wallAt = Cfg.BaseCenter[team] - back * 9f + Vector3.Cross(Vector3.up, back) * 6f;
             wallAt.y = MapBuilder.Height(wallAt.x, wallAt.z);
@@ -95,38 +88,39 @@ namespace RockGame
             pc.LocalTeleport(stand, lookYaw);
             pc.SetLook(lookYaw, 4f);
             yield return new WaitForSeconds(0.6f);
-            Check(pc.HammerTarget() == wall, "aiming the hammer at our own wall picks it");
+            Check(pc.UpgradeMode && pc.HammerTarget() == wall, "UPGRADE on the plan, aimed at our own wall, picks it");
             Check(pc.DemolishLitCount == 1 && pc.DemolishAimed == wall.NetworkObject, "...and it lights up (green)");
-            Check(pc.AimText.Contains("UPGRADE TO STONE") && pc.AimText.Contains($"{Cfg.HammerStoneWood} wood"), $"...with the price shown ({pc.AimText})");
+            Check(pc.AimText.Contains("UPGRADE TO STONE") && pc.AimText.Contains($"{Cfg.PlanStoneWood} wood"), $"...with the price shown ({pc.AimText})");
             yield return Snap("monday_hammer_aim");
             // no wood: nothing happens
-            me.HammerUpgradeRpc(wall.NetworkObject);
+            me.PlanUpgradeRpc(wall.NetworkObject);
             yield return new WaitForSeconds(0.4f);
             Check(wall.Tier.Value == 0, "without the wood it stays wood");
-            me.ServerGive(Item.Wood, Cfg.HammerStoneWood + Cfg.HammerMetalWood + Cfg.HammerArmouredWood);
-            int[] prices = { Cfg.HammerStoneWood, Cfg.HammerMetalWood, Cfg.HammerArmouredWood };
-            for (int tier = 1; tier <= 3; tier++)
+            me.ServerGive(Item.Wood, Cfg.PlanStoneWood + Cfg.PlanMetalWood);
+            int[] prices = { Cfg.PlanStoneWood, Cfg.PlanMetalWood };
+            for (int tier = 1; tier <= 2; tier++)
             {
                 int before = me.Count(Item.Wood);
-                me.HammerUpgradeRpc(wall.NetworkObject);
+                me.PlanUpgradeRpc(wall.NetworkObject);
                 yield return new WaitForSeconds(0.5f);
                 Check(wall.Tier.Value == tier && before - me.Count(Item.Wood) == prices[tier - 1], $"a click: {Cfg.TierName(tier).ToLower()} for {prices[tier - 1]} wood (tier {wall.Tier.Value}, paid {before - me.Count(Item.Wood)})");
                 if (tier == 1) yield return Snap("monday_hammer_stone");
             }
-            Check(prices[0] == 50 && prices[1] == 100 && prices[2] == 250, "the prices are 50 / 100 / 250 a piece");
+            Check(prices[0] == 200 && prices[1] == 500, "the prices are 200 / 500 a piece");
             me.ServerGive(Item.Wood, 500);
             int w4 = me.Count(Item.Wood);
-            me.HammerUpgradeRpc(wall.NetworkObject);
+            me.PlanUpgradeRpc(wall.NetworkObject);
             yield return new WaitForSeconds(0.4f);
-            Check(wall.Tier.Value == 3 && me.Count(Item.Wood) == w4, "armoured is as far as it goes (nothing charged)");
-            Check(pc.HammerTarget() == null, "an armoured wall doesn't light up any more");
+            Check(wall.Tier.Value == 2 && me.Count(Item.Wood) == w4, "metal is as far as it goes - no armoured walls (nothing charged)");
+            Check(pc.HammerTarget() == null, "a metal wall doesn't light up any more");
             yield return Snap("monday_hammer_armoured");
-            // an enemy wall can't be hammered up
+            // an enemy wall can't be upgraded
             var enemyWall = SpawnKeylessPiece(PieceType.Wall, (team + 1) % Cfg.TeamCount, wallAt + Vector3.Cross(Vector3.up, back) * 4f, Quaternion.Euler(0, wallYaw, 0));
             yield return new WaitForSeconds(0.4f);
-            me.HammerUpgradeRpc(enemyWall.NetworkObject);
+            me.PlanUpgradeRpc(enemyWall.NetworkObject);
             yield return new WaitForSeconds(0.4f);
-            Check(enemyWall.Tier.Value == 0, "the hammer doesn't upgrade an enemy's wall");
+            Check(enemyWall.Tier.Value == 0, "UPGRADE doesn't work on an enemy's wall");
+            pc.SelectWheel(System.Array.FindIndex(PlayerController.WheelOptions, x => x.Piece == PieceType.Foundation && !x.Demolish && !x.Upgrade));
 
             // ---- the chainsaw wears one use every two hits
             ResourceNode tree = null;

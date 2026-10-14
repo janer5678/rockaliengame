@@ -9,7 +9,7 @@ namespace RockGame
     {
         public static bool Bedwars => Rules == GameRules.Bedwars;
         public static bool ThreeGoal => Rules == GameRules.ThreeGoal;
-        public static bool ProgressMode => Rules == GameRules.Progress || JonahBruhProgression; // (Jonah Test Mode Bruh played as PROGRESSION: JonahBruh.cs)
+        public static bool ProgressMode => Rules == GameRules.Progress || Rules == GameRules.AutoWood || JonahBruhProgression; // (Classic plays like Progress now) // (Jonah Test Mode Bruh played as PROGRESSION: JonahBruh.cs)
         public static bool Assassin => Rules == GameRules.Assassin;
         public static bool Domination => Rules == GameRules.Domination;
         /// <summary>Bedwars and Assassin have no ball (and their Trade Station unlocks for everyone when the wall drops).</summary>
@@ -18,6 +18,9 @@ namespace RockGame
         [Tune("Modes")] public static int GoalsToWin = 3;
         /// <summary>Progress: seconds of the ball in your machine to fill your bar.</summary>
         [Tune("Modes")] public static float ProgressSeconds = 400f;
+        /// <summary>Progress: while the ball's in one machine every other team's bar drains this many times slower than a
+        /// bar fills.</summary>
+        [Tune("Modes")] public static float ProgressDrainSlower = 5f;
         /// <summary>Bedwars: hits it takes to destroy a machine (one explosive right on it does it at once).</summary>
         [Tune("Modes")] public static int MachineHitsToBreak = 3;
         /// <summary>Bedwars: seconds after the wall drops before every cryochamber (machine) breaks by itself - no more respawns.</summary>
@@ -108,8 +111,8 @@ namespace RockGame
             {
                 int t = ball.SocketTeam.Value;
                 var v = ProgressBars.Value;
-                float add = Time.deltaTime / Mathf.Max(1f, Cfg.ProgressSeconds);
-                if (t == 0) v.x = Mathf.Min(1f, v.x + add); else if (t == 1) v.y = Mathf.Min(1f, v.y + add); else if (t == 2) v.z = Mathf.Min(1f, v.z + add); else v.w = Mathf.Min(1f, v.w + add);
+                float add = Time.deltaTime / Mathf.Max(1f, Cfg.ProgressSeconds), drain = add / Mathf.Max(1f, Cfg.ProgressDrainSlower);
+                for (int u = 0; u < 4; u++) v[u] = u == t ? Mathf.Min(1f, v[u] + add) : Mathf.Max(0f, v[u] - drain); // (everyone else's slowly goes down)
                 ProgressBars.Value = v;
                 if (ProgressOf(t) >= 1f) { ServerVictoryCutscene(t, $"{Cfg.TeamName[t]} filled their progress bar"); return; }
             }

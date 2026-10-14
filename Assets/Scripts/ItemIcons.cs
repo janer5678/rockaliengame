@@ -161,7 +161,13 @@ namespace RockGame
                 Cut(Line(V(x1, y0 - 0.02f), V(x1, y1), gap));
                 Cut(Line(V(x1, y1), V(x1 + dx + 0.02f, y1 + dy + 0.02f * dy / Mathf.Max(0.001f, dx)), gap));
             }
-            if (o.Demolish)
+            if (o.Upgrade)
+            {
+                // a big plus (drawn white; the wheel tints it green)
+                Add(Rect(0.39f, 0.12f, 0.61f, 0.88f));
+                Add(Rect(0.12f, 0.39f, 0.88f, 0.61f));
+            }
+            else if (o.Demolish)
             {
                 // the trash can: a tapered bin with three slots, a lid with a handle on top
                 Add(V(0.27f, 0.1f), V(0.73f, 0.1f), V(0.78f, 0.68f), V(0.22f, 0.68f));

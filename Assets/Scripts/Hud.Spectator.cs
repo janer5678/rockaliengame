@@ -31,7 +31,7 @@ namespace RockGame
             if (game != null)
                 clock = game.S == GameState.Waiting ? "Waiting for players"
                     : game.S == GameState.PreBall ? (Cfg.Tutorial ? "Tutorial" : "Wall drops in " + Clock(game.TimeLeft))
-                    : game.S == GameState.BallLive ? "Time left " + Clock(game.TimeLeft)
+                    : game.S == GameState.BallLive ? (game.NoClock ? "Fill your bar to win" : "Time left " + Clock(game.TimeLeft))
                     : game.S == GameState.SuddenDeath ? "SUDDEN DEATH " + Clock(game.TimeLeft) : "";
 
             float w = Mathf.Min(760 * k, sw - 32), h = 58 * k;

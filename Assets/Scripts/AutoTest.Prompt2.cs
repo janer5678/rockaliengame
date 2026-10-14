@@ -31,12 +31,12 @@ namespace RockGame
                 Check(wm != null && !wm.Built && g.WoodGenLevelOf(team) == 0, $"no working wood machine while the glass walls are up (level {g.WoodGenLevelOf(team)})");
 
             // ---- the numbers and the lists
-            Check(Cfg.CraftTier(Item.Hammer) == 1 && !Cfg.IsStarter(Item.Hammer), "the hammer is a Trade Station (T1) item");
+            Check(Cfg.CraftIndexOf(Item.Hammer) < 0 && Cfg.PlanUpgradeOn, "no hammer: UPGRADE is on the building plan");
             Check(Cfg.CraftIndexOf(Item.Armor) < 0 && Cfg.ItemName(Item.HeavyArmor) == "Armour" && Cfg.HeavyArmorWood == 500 && Cfg.HeavyArmorHp == 50,
                 $"no wooden armour; the heavy armour is just Armour: +{Cfg.HeavyArmorHp} for {Cfg.HeavyArmorWood}");
             Check(Cfg.CraftIndexOf(Item.Barrier) < 0 && Cfg.CraftIndexOf(Item.LargeGate) < 0, "no large wall or large gate to craft");
             Check(Cfg.CraftTier(Item.Barricade) == 1 && Cfg.CraftIndexOf(Item.Barricade) >= 0, "the barricade is a Trade Station (T1) item");
-            Check(Cfg.ShellWood == 100 && Cfg.RevolverAmmoWood == 100, $"shotgun shells and revolver bullets 100 each ({Cfg.ShellWood}, {Cfg.RevolverAmmoWood})");
+            Check(Cfg.ShellWood == 100 && Cfg.RevolverAmmoWood == 500 && Cfg.RevolverAmmoPerCraft == 6, $"shotgun shells 100 each, revolver bullets 500 for 6 ({Cfg.ShellWood}, {Cfg.RevolverAmmoWood})");
             Check(Cfg.AirdropCount == 5, $"5 airdrops a match by default ({Cfg.AirdropCount})");
             Check(Cfg.ArrowPlayerDamage < 50f && Cfg.CrossbowDamage < 55f, $"the bow and crossbow hit softer ({Cfg.ArrowPlayerDamage}, {Cfg.CrossbowDamage})");
             Check(Cfg.WoodGenRate(3) > 25 && Cfg.WoodGenRate(3) > Cfg.WoodGenRate(2), $"the wood gen's third level makes more wood ({Cfg.WoodGenRate(3)} a second, was 25)");
@@ -104,10 +104,9 @@ namespace RockGame
             if (Workbench.ForTeam(team, 1) == null) Workbench.ServerSpawn(team, Workbench.DefaultPos(team), Workbench.DefaultYaw(team));
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
             yield return new WaitForSeconds(0.5f);
-            me.CraftRpc(Cfg.CraftIndexOf(Item.Hammer));
-            yield return new WaitForSeconds(0.6f);
-            Check(me.Count(Item.Hammer) == 1, "the hammer crafts with a Trade Station down");
-            yield return Hold(me, Item.Hammer);
+            if (me.Count(Item.BuildingPlan) == 0) me.ServerGive(Item.BuildingPlan, 1);
+            yield return Hold(me, Item.BuildingPlan);
+            pc.SelectWheel(0); // (UPGRADE: it took the hammer's place)
             var wallAt = Cfg.BaseCenter[team] - back * 9f - side * 9f; // (clear of the walls built above)
             wallAt.y = MapBuilder.Height(wallAt.x, wallAt.z);
             float wallYaw = Quaternion.LookRotation(back).eulerAngles.y;
@@ -119,15 +118,17 @@ namespace RockGame
             yield return Snap("prompt2_wooden_hammer");
             wall.ServerDamage(5f);
             yield return new WaitForSeconds(0.4f);
-            me.HammerUpgradeRpc(wall.NetworkObject);
+            me.PlanUpgradeRpc(wall.NetworkObject);
             yield return new WaitForSeconds(0.4f);
             Check(wall.Tier.Value == 0 && wall.UpgradeLockLeft > 3f, $"just hit: the hammer can't take it up ({wall.UpgradeLockLeft:0.0} s left)");
             Check(pc.HammerTarget() == wall && pc.AimText.Contains("UNDER ATTACK"), $"...and aiming at it says so ({pc.AimText})");
             yield return Snap("prompt2_hammer_under_attack");
             yield return new WaitForSeconds(Cfg.HammerHitLock);
-            me.HammerUpgradeRpc(wall.NetworkObject);
+            me.ServerGive(Cfg.CurrencyItem, Cfg.HammerCost(0));
+            me.PlanUpgradeRpc(wall.NetworkObject);
             yield return new WaitForSeconds(0.5f);
             Check(wall.Tier.Value == 1, "5 seconds later it goes up to stone");
+            pc.SelectWheel(System.Array.FindIndex(PlayerController.WheelOptions, x => x.Piece == PieceType.Foundation && !x.Demolish && !x.Upgrade));
 
             // ---- the barricade: crouch-high cover; in the enemy base too, but not right by their buildings
             {
@@ -234,7 +235,8 @@ namespace RockGame
                 yield return Hold(me, Item.InvisPotion);
                 me.UseItemRpc();
                 yield return new WaitForSeconds(0.5f);
-                yield return Hold(me, Item.Hammer);
+                if (me.Count(Item.Spear) == 0) me.ServerGive(Item.Spear, 1);
+                yield return Hold(me, Item.Spear); // (the hammer's gone)
                 yield return new WaitForSeconds(0.4f);
                 var vm = pc.DebugViewModel;
                 var hooks = vm != null ? vm.Root.GetComponentsInChildren<HandColorHook>() : new HandColorHook[0];
@@ -242,7 +244,7 @@ namespace RockGame
                 foreach (var hk in hooks) hidden &= hk.Ghost && hk.HandsHidden;
                 int shown = 0;
                 if (vm != null) foreach (var r in vm.Root.GetComponentsInChildren<Renderer>()) if (r.enabled && r.gameObject.activeInHierarchy) shown++;
-                Check(me.Invisible && hidden && shown > 0, $"invisible: our own hands are gone, the hammer in them still shows ({shown} parts)");
+                Check(me.Invisible && hidden && shown > 0, $"invisible: our own hands are gone, the spear in them still shows ({shown} parts)");
                 yield return Snap("prompt2_invisible_hands");
                 me.InvisUntil.Value = -1;
                 yield return new WaitForSeconds(0.4f);

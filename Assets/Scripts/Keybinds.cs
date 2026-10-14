@@ -45,7 +45,7 @@ namespace RockGame
 
             new Info { Bind = Bind.Rotate, Group = "BUILDING  (holding the building plan)", Label = "Rotate", Hint = "turns stairs · hold Aim for the building wheel", Main = KeyCode.R },
             // (no Demolish key any more - it's the slice at the bottom of the building wheel; Bind.Demolish stays unbound)
-            new Info { Bind = Bind.Upgrade, Group = "BUILDING  (holding the building plan)", Label = "Upgrade to stone", Main = KeyCode.F },
+            new Info { Bind = Bind.Upgrade, Group = "BUILDING  (holding the building plan)", Label = "Upgrade (a tier up)", Main = KeyCode.F },
 
             new Info { Bind = Bind.PushToTalk, Group = "VOICE CHAT", Label = "Push to talk", Hint = "when voice chat is set to push to talk", Main = KeyCode.V },
 

@@ -32,7 +32,7 @@ namespace RockGame
             var spearIcon = ItemIcons.Get(Item.Spear);
             var hammerIcon = ItemIcons.Get(Item.Hammer);
             Check(spearIcon != null && spearIcon.name == "spear" && hammerIcon != null && hammerIcon.name == "hammer", $"the spear and hammer icons are the pictures ({(spearIcon != null ? spearIcon.name : "none")}, {(hammerIcon != null ? hammerIcon.name : "none")})");
-            Check(Cfg.HammerWood == 5 && Cfg.CraftRecipe(Cfg.CraftIndexOf(Item.Hammer), team).Wood == 5, $"the hammer costs 5 wood ({Cfg.HammerWood})");
+            Check(Cfg.HammerWood == 5 && (Cfg.CraftIndexOf(Item.Hammer) < 0 || Cfg.CraftRecipe(Cfg.CraftIndexOf(Item.Hammer), team).Wood == 5), $"the hammer costs 5 wood ({Cfg.HammerWood}; only the tutorial has it now)");
             Check(Mathf.Abs(Deployables.BarricadeH - 1.45f * 1.3f) < 0.01f && Mathf.Abs(Deployables.BarricadeLen - 2.4f * 1.3f) < 0.01f, $"the barricade is 30% taller and wider ({Deployables.BarricadeLen} x {Deployables.BarricadeH})");
             // invisible: your own shadow goes too
             g.DevSkipPhase(GameState.PreBall);

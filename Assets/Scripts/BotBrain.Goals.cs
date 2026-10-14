@@ -178,13 +178,13 @@ namespace RockGame
         bool UpgradeStep(out Step s)
         {
             s = new Step { Goal = Goal.Upgrades, Kind = StepKind.Upgrade };
-            if (Cfg.HammerOn)
+            if (Cfg.HammerOn || Cfg.PlanUpgradeOn)
             {
                 // the hammer (Upgrades.cs): the next of its pieces up a tier, nearest the machine first
                 var ids = Cfg.NearestUpgradable(MyTeam, 1);
                 if (ids.Length == 0 || !Unity.Netcode.NetworkManager.Singleton.SpawnManager.SpawnedObjects.TryGetValue(ids[0], out var no) || !no.TryGetComponent(out Structure piece)) return false;
                 if (m_CraftFail.TryGetValue(Item.Hammer, out var wait) && Time.time < wait) return false;
-                if (Cfg.BenchTier(MyTeam) < Cfg.CraftTier(Item.Hammer)) return false; // (the hammer's a Trade Station item: none till there's one)
+                if (Cfg.HammerOn && Cfg.BenchTier(MyTeam) < Cfg.CraftTier(Item.Hammer)) return false; // (the hammer's a Trade Station item: none till there's one; the plan's UPGRADE needs nothing)
                 s.Item = Item.Hammer;
                 s.Cost = Cfg.HammerCost(piece.Tier.Value);
                 return true;

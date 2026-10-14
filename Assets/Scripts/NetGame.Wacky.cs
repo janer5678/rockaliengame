@@ -522,7 +522,7 @@ namespace RockGame
                 else if (Is("box", "chest", "crate", "storage")) { Give(Item.Chest); said = "A storage chest!"; }
                 else if (Is("map", "compass", "gps")) { Give(Item.OmenMap); said = "Omen's map!"; }
                 else if (Is("clone", "twin", "decoy", "copy", "mirror")) { Vehicle.ServerSpawnDecoy(ground + Vector3.up * 0.1f, p.transform.eulerAngles.y, p, p.HeldItem); said = "A copy of you!"; }
-                else if (Is("hammer", "tool", "builder")) { Give(Item.Hammer); said = "A hammer!"; }
+                else if (Is("hammer", "tool", "builder")) { Give(Cfg.HammerOn ? Item.Hammer : Item.BuildingPlan); said = Cfg.HammerOn ? "A hammer!" : "A building plan - UPGRADE is on its wheel!"; }
                 else if (Is("gun", "pistol", "weapon", "shooter")) { Give(Item.Revolver); Give(Item.RevolverAmmo, 18); said = "A revolver!"; }
             }
             if (said == null)

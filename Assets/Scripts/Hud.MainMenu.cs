@@ -24,7 +24,7 @@ namespace RockGame
             MapKind.Islands, MapKind.Jungle, MapKind.Ice, MapKind.CherryBlossom, MapKind.Wonderland, MapKind.Swamp, MapKind.Cube, MapKind.Mars };
 
         /// <summary>The modes the main menu offers (the others are hidden for now; the dev main menu still has them all).</summary>
-        public static readonly GameRules[] MenuModes = { GameRules.AutoWood, GameRules.Classic, GameRules.Bedwars, GameRules.ThreeGoal, GameRules.Progress, GameRules.Assassin, GameRules.Domination, GameRules.JonahTest, GameRules.AirdropTest, GameRules.JonahBruh };
+        public static readonly GameRules[] MenuModes = { GameRules.AutoWood, GameRules.Classic, GameRules.Bedwars, GameRules.ThreeGoal, GameRules.Assassin, GameRules.Domination, GameRules.JonahTest, GameRules.AirdropTest, GameRules.JonahBruh };
 
         /// <summary>The dev main menu (the old all-in-one page) is up instead of the new one: Tab swaps them.</summary>
         public static bool DevMenuShown => s_I != null && (s_I.m_DevMenu || (Bootstrap.Testing && !TestNewMenu));
@@ -290,11 +290,11 @@ namespace RockGame
                     if (Cfg.JonahBruhProgress == i || (i == 1 && Cfg.JonahBruhProgress > 1)) { Fill(r, new Color(k_Acid.r, k_Acid.g, k_Acid.b, 0.22f)); Frame(r, k_Acid, 3f); }
                 }
                 y += bh + 6 * k;
-                Shadowed(new Rect(x, y, w, 22 * k), $"<color=#bbbbbb>{(Cfg.JonahBruhProgress != 0 ? "Keep the ball in your machine to fill your bar - fill it to win." : "Like Classic: have the ball in your machine when the clock runs out.")}</color>", m_Small);
+                Shadowed(new Rect(x, y, w, 22 * k), $"<color=#bbbbbb>{(Cfg.JonahBruhProgress != 0 ? "Keep the ball in your machine to fill your bar - fill it to win." : "The old way: have the ball in your machine when the clock runs out.")}</color>", m_Small);
                 y += 30 * k;
                 JonahBruhMenuShownAt = Time.time;
             }
-            if (rules == GameRules.Progress || (rules == GameRules.JonahBruh && Cfg.JonahBruhProgress != 0))
+            if (rules == GameRules.AutoWood || rules == GameRules.Progress || (rules == GameRules.JonahBruh && Cfg.JonahBruhProgress != 0))
             {
                 // Progress: how long the ball has to sit in your machine to fill your bar
                 GUI.Label(new Rect(x, y, w, 24 * k), "PROGRESS TIME", cap);

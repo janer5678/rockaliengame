@@ -69,6 +69,10 @@ namespace RockGame
         public GameState S => (GameState)State.Value;
         public bool WallUp => S == GameState.Waiting || S == GameState.PreBall;
         public float TimeLeft => IsSpawned ? Mathf.Max(0f, (float)(PhaseEnd.Value - NetworkManager.ServerTime.Time)) : 0f;
+        /// <summary>The ball's out in Progress (and so Classic): there's no clock - only a full bar ends the match.</summary>
+        public bool NoClock => Cfg.ProgressMode && S == GameState.BallLive && !SuddenBall.Value;
+        /// <summary>What the clock's set to while there isn't one (NoClock): far enough off never to come.</summary>
+        const float NoClockSeconds = 1e7f;
 
         public override void OnNetworkSpawn()
         {
@@ -254,7 +258,7 @@ namespace RockGame
                         if (Ball.Instance == null) SpawnBall();
                         if (Ball.Instance != null) Ball.Instance.ServerRelease(); // the dome's gone: the ball is up for grabs
                         if (Cfg.NoBall) ServerUnlockBench(0, "the wall dropped"); // (Bedwars / Assassin: no ball to capture - the Trade Station unlocks now)
-                        SetPhase(GameState.BallLive, BallPhaseNow); // (the sudden death round's walls dropping: its own 5 minutes)
+                        SetPhase(GameState.BallLive, Cfg.ProgressMode && !SuddenBall.Value ? NoClockSeconds : BallPhaseNow); // (the sudden death round's walls dropping: its own 5 minutes; Progress / Classic: no clock at all)
                         m_SuddenDeathAt = -1;
                         if (SuddenBall.Value) { Broadcast("The walls are dropping - whoever has the ball in their machine when time runs out wins! Nobody: a rock fight in the stadium"); break; }
                         m_BallStart = now;
@@ -268,7 +272,8 @@ namespace RockGame
                     ServerTickDropWarning(now);
                     ServerTickAirdrop(now);
                     // (the sudden death round runs to its end like a normal match: whoever has the ball in their machine then wins)
-                    if (now >= PhaseEnd.Value)
+                    // (Progress - and so Classic - has no clock: only a full bar ends it)
+                    if (now >= PhaseEnd.Value && !(Cfg.ProgressMode && !SuddenBall.Value))
                     {
                         if (m_SuddenDeathAt < 0)
                         {
@@ -874,7 +879,7 @@ namespace RockGame
                 m_OldCrates.RemoveAt(i);
             }
             int n = Mathf.Clamp(Cfg.AirdropCount, 0, 20);
-            if (m_BallStart < 0 || m_DropsDone >= n) return;
+            if (m_BallStart < 0 || n == 0 || (m_DropsDone >= n && !NoClock)) return; // (no clock: they keep coming, as far apart as ever)
             // AIRDROP INCOMING and the ship sets off DropWarning s ahead of the drop's time; its slower beam (DropBeam) puts the
             // crate down when it always landed
             double launch = m_BallStart + (m_DropsDone + 1) * (double)BallPhase / (n + 1) - DropWarning;

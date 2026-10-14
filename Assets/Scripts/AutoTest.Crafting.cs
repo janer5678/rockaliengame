@@ -150,7 +150,7 @@ namespace RockGame
                 yield break;
             }
             pc.CloseMenu();
-            Check(!listed.Contains(Item.Barricade) && Cfg.CraftTier(Item.Barricade) == 1 && Cfg.CraftIndexOf(Item.Barrier) < 0 && !listed.Contains(Item.Hammer), "the barricade and the hammer are on the T1 list (the large wall is out)");
+            Check(!listed.Contains(Item.Barricade) && Cfg.CraftTier(Item.Barricade) == 1 && Cfg.CraftIndexOf(Item.Barrier) < 0 && !listed.Contains(Item.Hammer), "the barricade is on the T1 list (the large wall and the hammer are out)");
 
             // tier items are refused without a bench
             int c0 = me.Count(cur);

@@ -240,10 +240,11 @@ namespace RockGame
                     }
                 }
 
-                // the hammer: up to stone for 150, then no further
-                me.ServerGive(Item.Hammer, 1);
+                // UPGRADE on the plan (the hammer's gone): up to stone, then no further
+                me.ServerGive(Item.BuildingPlan, 1);
                 me.ServerGive(Cfg.GatherItem(Item.Wood), 1000);
-                yield return Hold(me, Item.Hammer);
+                yield return Hold(me, Item.BuildingPlan);
+                pc.SelectWheel(0);
                 var wallAt = Cfg.BaseCenter[team] - back * 9f - side * 9f;
                 wallAt.y = MapBuilder.Height(wallAt.x, wallAt.z);
                 float wallYaw = Quaternion.LookRotation(back).eulerAngles.y;
@@ -255,18 +256,19 @@ namespace RockGame
                 yield return new WaitForSeconds(0.5f);
                 Check(pc.AimText.Contains("UPGRADE TO STONE") && pc.AimText.Contains(Cfg.JonahBruhStoneWood.ToString()), $"aiming the hammer: upgrade to stone for {Cfg.JonahBruhStoneWood} ({pc.AimText})");
                 int w0 = me.Count(Cfg.GatherItem(Item.Wood));
-                me.HammerUpgradeRpc(wall.NetworkObject);
+                me.PlanUpgradeRpc(wall.NetworkObject);
                 yield return new WaitForSeconds(0.5f);
                 Check(wall.Tier.Value == 1 && w0 - me.Count(Cfg.GatherItem(Item.Wood)) == Cfg.JonahBruhStoneWood && Mathf.Approximately(wall.MaxHp, Cfg.WallStoneHp * Cfg.JonahBruhStoneHpMul),
                     $"stone for {Cfg.JonahBruhStoneWood} wood, with {wall.MaxHp:0} HP");
-                me.HammerUpgradeRpc(wall.NetworkObject);
+                me.PlanUpgradeRpc(wall.NetworkObject);
                 yield return new WaitForSeconds(0.5f);
-                Check(wall.Tier.Value == 1 && pc.HammerTarget() == null && pc.AimText.Contains("as far as the hammer goes"), $"...and no further ({pc.AimText})");
+                Check(wall.Tier.Value == 1 && pc.HammerTarget() == null && pc.AimText.Contains("as far as upgrades go"), $"...and no further ({pc.AimText})");
+                pc.SelectWheel(System.Array.FindIndex(PlayerController.WheelOptions, x => x.Piece == PieceType.Foundation && !x.Demolish && !x.Upgrade));
                 yield return Snap("prompt7_stone_only");
             }
             else
             {
-                Check(Cfg.RecipeIndex(Item.Chainsaw) >= 0 && Cfg.RecipeIndex(Item.Ladder) >= 0 && Cfg.RecipeIndex(Item.BetterHatchet) < 0 && Cfg.HammerCost(0) == Cfg.HammerStoneWood && Cfg.HammerCost(1) > 0
+                Check(Cfg.RecipeIndex(Item.Chainsaw) >= 0 && Cfg.RecipeIndex(Item.Ladder) >= 0 && Cfg.RecipeIndex(Item.BetterHatchet) < 0 && Cfg.HammerCost(0) == Cfg.PlanStoneWood && Cfg.HammerCost(1) > 0
                     && Mathf.Approximately(Cfg.PieceHp(PieceType.Wall, 1), Cfg.WallStoneHp) && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.HeavyArmor)).Wood == Cfg.HeavyArmorWood,
                     "the Jonah Test Mode Bruh changes stay in that mode (chainsaw, ladder, metal walls, armour price as before here)");
             }

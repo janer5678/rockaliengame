@@ -110,6 +110,7 @@ namespace RockGame
         {
             if (!Cfg.Tutorial && !CentreNews(title)) return;
             s_BannerTitle = title; s_BannerSub = sub; s_BannerTime = Time.time; s_BannerTest = false;
+            if (title.StartsWith("AIRDROP")) { Sfx.Play2D(Sfx.Ding, 1f, 0f); Fx.Shake(0.25f); } // (so you DEFINITELY know)
         }
         /// <summary>The news that still gets a banner across the middle in a match (by the game's own words).</summary>
         public static bool CentreNews(string title) => title != null && (title.StartsWith("TRADE STATION UNLOCKED") || title.StartsWith("AIRDROP") || title.StartsWith("SUDDEN DEATH"));
@@ -358,6 +359,13 @@ namespace RockGame
                         topClock = game.Overtime.Value ? "" : Clock(game.TimeLeft);
                         topLeft = game.Overtime.Value ? -1f : game.TimeLeft;
                         sub = game.Overtime.Value ? Two("First ball in a machine wins", "Get it into YOUR machine!") : game.SuddenBall.Value ? SuddenStatus(team) : BallStatus(team);
+                        if (game.NoClock)
+                        {
+                            // Progress / Classic: no clock - your bar instead
+                            topLabel = "YOUR PROGRESS";
+                            topClock = $"{Mathf.FloorToInt(game.ProgressOf(team) * 100f)}%";
+                            topLeft = -1f;
+                        }
                         topAccent = game.Overtime.Value || game.SuddenBall.Value ? GameSettings.TimerColourNow(GameSettings.TimerColOvertime) : GameSettings.TimerColourNow(GameSettings.TimerColBallLive);
                         // the glass wall sliding down (MapBuilder.GlassDropping, a few seconds): WALL DROPPING, no clock
                         if (!game.Overtime.Value && MapBuilder.GlassDropping)
@@ -626,9 +634,17 @@ namespace RockGame
             // ---- banner (in a match only the airdrop news and TRADE STATION UNLOCKED: Banner): over every layer - the bag,
             // an open chest, the death screen and kill cam, the scoreboard - so it's always seen ----
             float bage = Time.time - s_BannerTime;
-            if (bage < GameSettings.NotifTimeNow && !s_BannerTest && game != null && game.S != GameState.GameOver && !game.FightFrozen && !(game.S == GameState.BallLive && !game.Overtime.Value && game.TimeLeft <= 10f)) // (not over the final countdown)
+            bool airdropNews = s_BannerTitle != null && s_BannerTitle.StartsWith("AIRDROP");
+            if (bage < (airdropNews ? Mathf.Max(GameSettings.NotifTimeNow, AirdropTakeover + 1.5f) : GameSettings.NotifTimeNow) && !s_BannerTest && game != null && game.S != GameState.GameOver && !game.FightFrozen && !(game.S == GameState.BallLive && !game.Overtime.Value && game.TimeLeft <= 10f)) // (not over the final countdown)
             {
                 GUI.color = Color.white;
+                if (airdropNews && bage < AirdropTakeover)
+                {
+                    // AIRDROP INCOMING takes over the whole screen for a moment, over everything (Hud.Notify.cs)
+                    DrawAirdropTakeover(s_BannerTitle, s_BannerSub, bage, k);
+                    BannerShownFrame = AirdropTakeoverFrame = Time.frameCount;
+                    return;
+                }
                 // (its own looks' layer goes in under the GUI drawn straight to the screen: with the bag, a chest, the
                 // death screen or a menu up it's drawn straight on top instead, so nothing ever covers it)
                 bool covered = pc.MenuOpen || me.Dead.Value || pc.Paused || pc.WheelOpen || pc.AirstrikeMapOpen;
@@ -652,7 +668,8 @@ namespace RockGame
             {
                 case Item.BuildingPlan:
                     if (pc.DemolishMode) return "<b>Demolish</b>    LMB: take down your own piece (lit up red; half the wood back)    hold RMB: building wheel";
-                    return $"<b>{Cfg.PieceName(pc.BuildPiece)}</b>  ({Cfg.PieceWood(pc.BuildPiece)} {Cfg.BuildName})    hold RMB: building wheel (demolish at the bottom)   {KT(Bind.Rotate)}: rotate stairs" + (Cfg.WoodMode || Tutorial.HideStone ? "" : $"   {KT(Bind.Upgrade)}: upgrade to stone");
+                    if (pc.UpgradeMode) return Cfg.PlanUpgradeOn ? $"<b><color=#7dff8a>Upgrade</color></b>    LMB: your own piece (lit up green) goes up a tier - {Cfg.HammerPrices}    hold RMB: building wheel" : "<b>Upgrade</b>    after the tutorial    hold RMB: building wheel";
+                    return $"<b>{Cfg.PieceName(pc.BuildPiece)}</b>  ({Cfg.PieceWood(pc.BuildPiece)} {Cfg.BuildName})    hold RMB: building wheel (upgrade at the top, demolish at the bottom)   {KT(Bind.Rotate)}: rotate stairs" + (Cfg.WoodMode || Tutorial.HideStone || Cfg.PlanUpgradeOn ? "" : $"   {KT(Bind.Upgrade)}: upgrade to stone");
                 case Item.Ram: return $"<b>Battering Ram</b> ({s.Data} hit{(s.Data == 1 ? "" : "s")} left)    hold LMB at an enemy piece: wood breaks instantly, stone / metal drop one step";
                 case Item.Spear: return $"<b>Spear</b>    LMB: stab    hold RMB + LMB: throw    {KT(Bind.Interact)}: pick thrown spears back up";
                 case Item.Bow: return $"<b>Bow</b>  ({me.Count(Item.Arrow)} arrows)    hold LMB to draw, release to fire";
@@ -1226,7 +1243,7 @@ namespace RockGame
             {
                 var tex = new Texture2D(S, S, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
                 var px = new Color32[S * S];
-                float centre = (i + 0.5f) * 360f / n, half = 180f / n - 1.2f; // (PlayerController.WheelAngle: half a slice round)
+                float centre = i * 360f / n, half = 180f / n - 1.2f; // (PlayerController.WheelAngle: slice 0 - upgrade - straight up)
                 for (int y = 0; y < S; y++)
                 for (int x = 0; x < S; x++)
                 {
@@ -1283,7 +1300,7 @@ namespace RockGame
             {
                 float ang = Mathf.Atan2(d.x, -d.y) * Mathf.Rad2Deg;
                 if (ang < 0) ang += 360f;
-                WheelHover = Mathf.FloorToInt(ang / (360f / opts.Length)) % opts.Length; // (slices start at straight up: WheelAngle)
+                WheelHover = PlayerController.WheelSliceAt(ang); // (slice 0 - upgrade - centred straight up: WheelAngle)
             }
             else if (WheelHover < 0) WheelHover = pc.WheelIndex;
             float R = 190f * k;
@@ -1293,13 +1310,13 @@ namespace RockGame
             for (int i = 0; i < opts.Length; i++)
             {
                 bool hover = i == WheelHover;
-                bool disabled = (opts[i].Upgrade && Cfg.WoodMode) || (opts[i].Demolish && !Tutorial.Allows(TutFeature.Demolish)); // (the tutorial: greyed until its step)
-                GUI.color = hover ? new Color(0.85f, 0.55f, 0.2f, 0.92f) : opts[i].Demolish ? new Color(0.35f, 0.1f, 0.08f, 0.75f) : new Color(wheel.r, wheel.g, wheel.b, 0.82f);
+                bool disabled = (opts[i].Upgrade && !Cfg.PlanUpgradeOn) || (opts[i].Demolish && !Tutorial.Allows(TutFeature.Demolish)); // (the tutorial: greyed until its step; its upgrades are the hammer's)
+                GUI.color = hover ? (opts[i].Upgrade ? new Color(0.25f, 0.75f, 0.3f, 0.92f) : new Color(0.85f, 0.55f, 0.2f, 0.92f)) : opts[i].Demolish ? new Color(0.35f, 0.1f, 0.08f, 0.75f) : opts[i].Upgrade ? new Color(0.06f, 0.3f, 0.1f, 0.8f) : new Color(wheel.r, wheel.g, wheel.b, 0.82f);
                 GUI.DrawTexture(area, s_Wedges[i]);
                 float a = PlayerController.WheelAngle(i) * Mathf.Deg2Rad;
                 var p = c + new Vector2(Mathf.Sin(a), -Mathf.Cos(a)) * R * 0.67f;
                 float isz = (opts.Length <= 7 ? 90f : 78f) * k; // (seven wide slices: bigger icons)
-                GUI.color = disabled ? new Color(1, 1, 1, 0.25f) : Color.white;
+                GUI.color = disabled ? new Color(1, 1, 1, 0.25f) : opts[i].Upgrade ? (hover ? Color.white : new Color(0.4f, 1f, 0.45f)) : Color.white; // (upgrade: the green plus)
                 var icon = ItemIcons.Wheel(i);
                 if (icon != null) GUI.DrawTexture(new Rect(p.x - isz / 2, p.y - isz / 2, isz, isz), icon, ScaleMode.ScaleToFit, true);
                 else GUI.Label(new Rect(p.x - 50, p.y - 12, 100, 24), opts[i].Label, m_Center);
@@ -1309,9 +1326,9 @@ namespace RockGame
             GUI.DrawTexture(new Rect(c.x - R * 0.32f, c.y - R * 0.32f, R * 0.64f, R * 0.64f), s_Disc);
             GUI.color = old;
             var o = opts[Mathf.Clamp(WheelHover, 0, opts.Length - 1)];
-            string cost = o.Demolish ? "your own pieces\nhalf the wood back" : o.Upgrade ? (Cfg.WoodMode ? "not in wood mode" : Tutorial.HideStone ? "after the tutorial" : "to stone\nLMB on your piece") : $"{Cfg.PieceWood(o.Piece)} {Cfg.BuildName}";
+            string cost = o.Demolish ? "your own pieces\nhalf the wood back" : o.Upgrade ? (!Cfg.PlanUpgradeOn ? "after the tutorial" : Cfg.HammerMaxTier < Cfg.MaxFortify ? $"to stone: {Cfg.HammerCost(0)} {Cfg.CurrencyName}\nLMB on your piece" : $"stone {Cfg.HammerCost(0)} · metal {Cfg.HammerCost(1)}\nLMB on your piece") : $"{Cfg.PieceWood(o.Piece)} {Cfg.BuildName}";
             var title = new GUIStyle(m_Center) { fontStyle = FontStyle.Bold, fontSize = Mathf.RoundToInt(20 * k) };
-            title.normal.textColor = o.Demolish ? new Color(1f, 0.5f, 0.4f) : Color.white;
+            title.normal.textColor = o.Demolish ? new Color(1f, 0.5f, 0.4f) : o.Upgrade ? new Color(0.45f, 1f, 0.5f) : Color.white;
             GUI.Label(new Rect(c.x - 100 * k, c.y - 28 * k, 200 * k, 26 * k), o.Label.ToUpper(), title);
             GUI.Label(new Rect(c.x - 100 * k, c.y - 2 * k, 200 * k, 44 * k), $"<size={Mathf.RoundToInt(13 * k)}><color=#cccccc>{cost}</color></size>", m_Center);
             Fill(new Rect(mouse.x - 3, mouse.y - 3, 6, 6), Color.white);

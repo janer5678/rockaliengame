@@ -128,7 +128,7 @@ namespace RockGame
             Check(Cfg.PowerMenu && Cfg.PowerCount == 7 && Cfg.PowerIndex(Item.Helmet) < 0 && Cfg.PowerIndex(Item.Pistol) < 0 && Cfg.PowerIndex(Item.FortifyBuff) < 0 && hat.Wood == Cfg.HatchetWood && xbow.Wood == 350, $"{Cfg.RulesName(Cfg.Rules)}: power menu ({Cfg.PowerCount} items, no pistol, no fortify - it's in UPGRADES), normal prices (hatchet {hat.Wood} wood), crossbow {xbow.Wood} wood");
             Check(Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.Sword)).Wood == 500 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.C4)).Wood == 2500
                 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.Shotgun)).Wood == 2000 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.ShotgunShell)).Wood == 100
-                && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.Revolver)).Wood == 2500 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.RevolverAmmo)).Wood == 100 && Cfg.RevolverAmmoPerCraft == 1,
+                && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.Revolver)).Wood == 2500 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.RevolverAmmo)).Wood == 500 && Cfg.RevolverAmmoPerCraft == 6,
                 "power prices: sword 500, C4 2500, shotgun 2000 + 100 a shell, revolver 2500 + 100 a bullet");
             Check(Cfg.MeleePlayerDamage(Item.Sword, true) == Cfg.SwordHeadDamage && Cfg.MeleePlayerDamage(Item.Sword, false) == Cfg.SwordBodyDamage && Cfg.Melee(Item.Sword).Cooldown > Cfg.Melee(Item.Hatchet).Cooldown,
                 $"sword: its own head / body damage (CHANGE VALUES), a slower swing ({Cfg.MeleePlayerDamage(Item.Sword, true)} / {Cfg.MeleePlayerDamage(Item.Sword, false)}, {Cfg.Melee(Item.Sword).Cooldown} s vs the hatchet's {Cfg.Melee(Item.Hatchet).Cooldown} s)");
@@ -262,9 +262,9 @@ namespace RockGame
             foreach (var s in Structure.All) if (s.Team.Value == team && s.Upgradable && s.Tier.Value == 0) wood++;
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
             yield return new WaitForSeconds(0.3f);
-            if (Cfg.HammerOn)
+            if (Cfg.HammerOn || Cfg.PlanUpgradeOn)
             {
-                // the hammer (Upgrades.cs): each piece up a tier at a time, for its own price (AutoTest.Monday.cs tests aiming it)
+                // UPGRADE on the plan (Upgrades.cs): each piece up a tier at a time, for its own price (AutoTest.Monday.cs tests aiming it)
                 me.ServerGive(Cfg.CurrencyItem, 1000);
                 int before = me.Count(Cfg.CurrencyItem), tiers = 0;
                 foreach (var s in Structure.All) if (s.Team.Value == team && s.Upgradable) tiers += s.Tier.Value;
@@ -272,7 +272,7 @@ namespace RockGame
                 yield return new WaitForSeconds(0.4f);
                 int after = 0;
                 foreach (var s in Structure.All) if (s.Team.Value == team && s.Upgradable) after += s.Tier.Value;
-                Check(ok && wood >= 2 && after - tiers == 2 && before - me.Count(Cfg.CurrencyItem) == Cfg.HammerStoneWood + Cfg.HammerMetalWood && Cfg.FortifyLevel(team) == 0,
+                Check(ok && wood >= 2 && after - tiers == 2 && before - me.Count(Cfg.CurrencyItem) == Cfg.HammerCost(0) + Cfg.HammerCost(1) && Cfg.FortifyLevel(team) == 0,
                     $"the hammer twice on the piece nearest the machine: stone, then metal, for {before - me.Count(Cfg.CurrencyItem)} {Cfg.CurrencyName}");
                 yield return Snap("arsenal_hammer_looks");
             }
@@ -305,7 +305,7 @@ namespace RockGame
                 Check(Cfg.PieceHp(PieceType.Wall, 3) > Cfg.PieceHp(PieceType.Wall, 2) && Cfg.PieceHp(PieceType.Wall, 3) <= Cfg.PieceHp(PieceType.Wall, 2) * 1.3f
                     && Cfg.TierMeleeMul(3) < Cfg.TierMeleeMul(2) && Cfg.TierMeleeMul(3) >= Cfg.TierMeleeMul(2) * 0.6f,
                     $"armoured is only slightly better than sheet metal ({Cfg.PieceHp(PieceType.Wall, 3):0} HP against {Cfg.PieceHp(PieceType.Wall, 2):0}, melee {Cfg.TierMeleeMul(3):0.00} against {Cfg.TierMeleeMul(2):0.00})");
-                Check(Cfg.MaxFortify == 3 &&Cfg.PieceHp(PieceType.Wall, 2) > Cfg.PieceHp(PieceType.Wall, 1) && Cfg.PieceHp(PieceType.Wall, 1) > Cfg.PieceHp(PieceType.Wall, 0) * 2f,
+                Check(Cfg.MaxFortify == 2 &&Cfg.PieceHp(PieceType.Wall, 2) > Cfg.PieceHp(PieceType.Wall, 1) && Cfg.PieceHp(PieceType.Wall, 1) > Cfg.PieceHp(PieceType.Wall, 0) * 2f,
                     $"fortify has three steps: wood is flimsy, stone is the old wood, metal the old stone ({Cfg.PieceHp(PieceType.Wall, 2):0} HP, stone {Cfg.PieceHp(PieceType.Wall, 1):0})");
                 for (int step = 0; step < 3; step++)
                 {
@@ -651,7 +651,7 @@ namespace RockGame
                 yield return null;
                 var pile = Cfg.WoodTrayPos(team);
                 var machineLocal = Quaternion.Inverse(rot) * (pile - wmPos);
-                Check(caught && machineLocal.z > 1.4f, $"wood machine level {level}: logs drop off the end of the chute onto the pile well out in front ({machineLocal.z:0.00} m out)");
+                Check(caught && machineLocal.z > 1.4f * (Cfg.SmallBedrock ? Cfg.SmallMachineScale : 1f), $"wood machine level {level}: logs drop off the end of the chute onto the pile well out in front ({machineLocal.z:0.00} m out)");
                 yield return new WaitForSeconds(0.2f);
             }
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));

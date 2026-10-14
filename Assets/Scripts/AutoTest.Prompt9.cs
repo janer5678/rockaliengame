@@ -36,7 +36,7 @@ namespace RockGame
                     var t1 = new List<int>();
                     Cfg.AddTier(t1, 1);
                     int h = t1.IndexOf(Cfg.CraftIndexOf(Item.Hammer)), bh = t1.IndexOf(Cfg.CraftIndexOf(Item.BetterHatchet));
-                    Check(h >= 0 && bh == h + 1, $"the better hatchet is right after the hammer on the Trade Station (hammer {h}, better hatchet {bh})");
+                    Check(h < 0 && bh == 0, $"the better hatchet is first on the Trade Station, where the hammer was (hammer {h}, better hatchet {bh})");
                     Check(Cfg.HammerCost(0) == 250, $"a stone wall upgrade costs {Cfg.HammerCost(0)}");
                     Check(Price(Item.Crossbow) == 500, $"the crossbow costs {Price(Item.Crossbow)}");
                     Check(Mathf.Approximately(Cfg.PieceHp(PieceType.Doorway, 1), Cfg.PieceHp(PieceType.Wall, 1)) && Mathf.Approximately(Cfg.PieceHp(PieceType.Doorway, 0), Cfg.PieceHp(PieceType.Wall, 0)),

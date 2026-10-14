@@ -123,7 +123,7 @@ namespace RockGame
         /// <summary>Arsenal and Builder: cheap items and the powerful items menu.</summary>
         public static bool PowerMenu => Rules == GameRules.Arsenal || Rules == GameRules.Builder || Rules == GameRules.AutoWood || ClassicMode || Jonah || AirdropTest || JonahBruh;
         /// <summary>The five modes that are Classic with another way to win (Bedwars, 3 Goal, Progress, Assassin, Domination).</summary>
-        public static bool ClassicMode => (Rules >= GameRules.Bedwars && Rules <= GameRules.Domination) || JonahBruhProgression; // (Jonah Test Mode Bruh played as PROGRESSION: JonahBruh.cs)
+        public static bool ClassicMode => (Rules >= GameRules.Bedwars && Rules <= GameRules.Domination) || Rules == GameRules.AutoWood || JonahBruhProgression; // (Classic plays like Progress now; Jonah Test Mode Bruh played as PROGRESSION: JonahBruh.cs)
         /// <summary>The last game mode there is (the menus and the map key clamp to it).</summary>
         public const GameRules LastRules = GameRules.JonahBruh;
         /// <summary>The rules are 4 bits of the map key at RulesShift, and a fifth up here (modes 16 and on: Jonah Ideas Test).</summary>
@@ -158,23 +158,23 @@ namespace RockGame
         public static readonly GameRules[] MainRules = { GameRules.Tutorial, GameRules.AutoWood, GameRules.Classic };
         /// <summary>The rest of the game modes, under "More modes".</summary>
         public static readonly GameRules[] MoreRules = { GameRules.Arsenal, GameRules.Builder, GameRules.Primitive, GameRules.BuildingPrimitive, GameRules.Dna, GameRules.Fun, GameRules.FunRandom, GameRules.FunRandomLimited,
-            GameRules.Bedwars, GameRules.ThreeGoal, GameRules.Progress, GameRules.Assassin, GameRules.Domination, GameRules.JonahTest, GameRules.AirdropTest, GameRules.JonahBruh };
+            GameRules.Bedwars, GameRules.ThreeGoal, GameRules.Assassin, GameRules.Domination, GameRules.JonahTest, GameRules.AirdropTest, GameRules.JonahBruh }; // (Progress is gone: Classic plays like it now)
         public static string RulesDesc(GameRules r)
         {
             switch (r)
             {
-                case GameRules.Arsenal: return "Normal prices (the crossbow is cheaper), plus a POWER ITEMS menu next to crafting: sword, shotgun, revolver, C4 and headshot helmet. " + (HammerUpgrades ? "Upgrade your walls one at a time with the HAMMER." : "E on the upgrade station beside your alien machine: UPGRADES (" + (Upgrade10WallsEverywhere ? "upgrade 10 walls at a time" : "fortify all your walls") + ").");
+                case GameRules.Arsenal: return "Normal prices (the crossbow is cheaper), plus a POWER ITEMS menu next to crafting: sword, shotgun, revolver, C4 and headshot helmet. " + (HammerUpgrades ? "Upgrade your walls one at a time: UPGRADE (the green plus) on the building plan's wheel." : "E on the upgrade station beside your alien machine: UPGRADES (" + (Upgrade10WallsEverywhere ? "upgrade 10 walls at a time" : "fortify all your walls") + ").");
                 case GameRules.Dna: return DnaDesc;
                 case GameRules.Bedwars: return "Classic, but no ball: smash the enemy alien machines (3 hits, or one explosive right on it). Your team respawns from its machine's cryochamber - lose it and you're out. After 10 minutes every chamber breaks, 3 minutes later every base breaks down. Last team standing wins.";
                 case GameRules.ThreeGoal: return "Classic, but score 3 times: get the ball into your machine and a UFO drops it back in the middle. First to 3 wins (most goals when the clock runs out).";
                 case GameRules.Progress: return "Classic, but while the ball sits in your machine your progress bar fills - fill it and you win.";
                 case GameRules.Assassin: return "No ball: kill the enemies - each drops their skull - and hand a skull of every one of them into your machine (E). Skulls only drop in this mode.";
-                case GameRules.JonahTest: return HammerUpgrades ? "Classic (walls upgraded with the HAMMER; the trade stations TRADE, everything costs wood)." : "Classic, plus Jonah's ideas: the trade stations TRADE (everything costs wood), and UPGRADE 10 WALLS at the upgrade station (insert 1000 wood) lets you fly round your base in a black void and pick 10 pieces to go up a tier.";
+                case GameRules.JonahTest: return HammerUpgrades ? "Classic (walls upgraded with UPGRADE on the building plan's wheel; the trade stations TRADE, everything costs wood)." : "Classic, plus Jonah's ideas: the trade stations TRADE (everything costs wood), and UPGRADE 10 WALLS at the upgrade station (insert 1000 wood) lets you fly round your base in a black void and pick 10 pieces to go up a tier.";
                 case GameRules.AirdropTest: return "Classic, plus purple AIRDROP BERRY BUSHES all over the map: pick one (E) and you get an airdrop item - a different one every time (you never get the same one twice; the others can still get it).";
-                case GameRules.JonahBruh: return $"Classic with Jonah's changes (pick NORMAL or PROGRESSION below): a one-cell spawn base, Armour at the top of the Advanced Trade Station ({JonahBruhArmorWood}; the station {JonahBruhBench2Wood}), no stun trap, ladder or chainsaw - a BETTER HATCHET instead (chops faster, {BetterHatchetWood} wood), the death wand only from airdrops. The hammer only upgrades walls to MAGICAL STONE ({JonahBruhStoneWood} wood a piece, {JonahBruhStoneHpMul:0.#}x as strong). Respawn in the wild: pick the spot on the map.";
+                case GameRules.JonahBruh: return $"Classic with Jonah's changes (pick NORMAL or PROGRESSION below): a one-cell spawn base, Armour at the top of the Advanced Trade Station ({JonahBruhArmorWood}; the station {JonahBruhBench2Wood}), no stun trap, ladder or chainsaw - a BETTER HATCHET instead (chops faster, {BetterHatchetWood} wood), the death wand only from airdrops. Walls only upgrade to MAGICAL STONE ({JonahBruhStoneWood} wood a piece, {JonahBruhStoneHpMul:0.#}x as strong). Respawn in the wild: pick the spot on the map.";
                 case GameRules.Domination: return "Classic, but whoever has the ball (carried or in their machine) gets the Advanced Trade Station's items without building one. Lose the ball, lose them.";
                 case GameRules.Tutorial: return "New here? Start with this. Short, simple steps teach you the whole game - you do each one to go on, and each control unlocks as it's taught. The clock is stopped and it's always the small Plains map. Press PLAY TUTORIAL and pick Solo or With a friend.";
-                case GameRules.AutoWood: return HammerUpgrades ? "A wood machine in your base piles up wood by itself and speeds up as the match goes on - go and pick it up. Upgrade your walls one at a time with the HAMMER. Arsenal's prices and POWER ITEMS." : "Buy a wood machine in UPGRADES (E on the upgrade station beside your alien machine) and wood piles up at your base by itself - go and pick it up; more upgrades speed it up. Arsenal's prices and POWER ITEMS.";
+                case GameRules.AutoWood: return HammerUpgrades ? "Keep the ball in your machine to fill your progress bar - fill it and you win (there's no clock). While it's in someone's machine everyone else's bar slowly drains. A wood machine in your base piles up wood by itself and speeds up as the match goes on. Upgrade your walls with UPGRADE (the green plus) on the building plan's wheel. Arsenal's prices and POWER ITEMS." : "Buy a wood machine in UPGRADES (E on the upgrade station beside your alien machine) and wood piles up at your base by itself - go and pick it up; more upgrades speed it up. Arsenal's prices and POWER ITEMS.";
                 case GameRules.Builder: return "No bases. Arsenal's items, but each takes a while to make. Craft and build anywhere - pieces lock onto each other. Plant the ball anywhere (E): whoever's ball it is at the end wins.";
                 case GameRules.Fun: return "No building phase, a short match, and every so often everyone gets the same random item - any item in the game.";
                 case GameRules.FunRandom: return "No building phase, a short match, and every so often each player gets their own random airdrop item.";
@@ -546,9 +546,9 @@ namespace RockGame
         /// <summary>Fortify All Walls goes up a step every time your team buys it: stone, then sheet metal, then armoured
         /// (the old "refined" tier, back as the top step - only a little better than sheet metal).</summary>
         [Tune("Arsenal and Builder")] public static int FortifyStoneWood = 1000, FortifyMetalWood = 2000, FortifyArmouredWood = 3000;
-        [Tune("Arsenal and Builder")] public static int SwordWood = 500, C4Wood = 2500, HelmetWood = 800, ShotgunWood = 2000, ShellWood = 100, RevolverWood = 2500, RevolverAmmoWood = 100; // (a shell or a revolver bullet: 100 wood each)
+        [Tune("Arsenal and Builder")] public static int SwordWood = 500, C4Wood = 2500, HelmetWood = 800, ShotgunWood = 2000, ShellWood = 100, RevolverWood = 2500, RevolverAmmoWood = 500; // (a shell: 100 wood; six revolver bullets: 500)
         /// <summary>Revolver bullets come six at a time (a full cylinder) for RevolverAmmoWood.</summary>
-        [Tune("Arsenal and Builder")] public static int RevolverAmmoPerCraft = 1;
+        [Tune("Arsenal and Builder")] public static int RevolverAmmoPerCraft = 6;
         /// <summary>Sword: a slow, heavy swing (the swing time is adjustable) - its own head / body damage instead of the usual x2.</summary>
         [Tune("Arsenal and Builder")] public static float SwordSwingTime = 1.5f, SwordHeadDamage = 150f, SwordBodyDamage = 95f, SwordRange = 2.9f;
         /// <summary>Waterpipe shotgun: one shell at a time. Each pellet does full damage within PointBlank metres, falling off to FarMul at Range.</summary>
@@ -725,7 +725,7 @@ namespace RockGame
             || i == Item.Armor || i == Item.Barrier || i == Item.LargeGate // (the wooden armour: gone, heavy armour is "Armour" now; the large wall and gate: out for now)
             || i == Item.DecoyBase || i == Item.ChaosSigil // (the decoy base and the Sigil of CHAOS: taken out)
             || i == Item.GoldenRock || i == Item.InvSwapper // (the Rock of Immortality and the inventory swapper: taken out)
-            || (JonahBruhOut(i) && i != Item.DeathWand) || (i == Item.BetterHatchet && !JonahBruh); // (Jonah Test Mode Bruh: JonahBruh.cs - its death wand isn't crafted, but comes in airdrops)
+            || (JonahBruhOut(i) && i != Item.DeathWand) || (i == Item.BetterHatchet && !JonahBruh) || (i == Item.Hammer && !HammerOn); // (the hammer: only the tutorial's - UPGRADE is on the building plan now) // (Jonah Test Mode Bruh: JonahBruh.cs - its death wand isn't crafted, but comes in airdrops)
         /// <summary>Whether an airdrop item can still come in airdrops (and respawn loot / Fun Random): the death wand is crafted now.</summary>
         /// (The disguise kit only comes in team games: in a 1v1 there's nobody to blend in with.)
         /// (Jonah Test Mode Bruh: the death wand's back in the airdrops.)
@@ -1050,7 +1050,7 @@ namespace RockGame
         public static int PowerCount => PowerMenu ? k_Power.Length : 0;
         /// <summary>How many times a team has bought Fortify All Walls (0 never, 1 stone, 2 metal, 3 armoured), synced by NetGame.</summary>
         public static int FortifyLevel(int team) => NetGame.Instance != null && team >= 0 && team < 4 ? NetGame.Instance.FortifyLevelOf(team) : 0;
-        public const int MaxFortify = 3;
+        public const int MaxFortify = 2; // (wood, stone, metal: there are no armoured walls any more)
         public static string TierName(int tier) => tier >= 3 ? "Armoured" : tier == 2 ? "Metal" : tier == 1 ? "Stone" : "Wooden";
         /// <summary>What each Fortify All Walls step costs (the step being bought: 1 stone, 2 metal, 3 armoured).</summary>
         public static int FortifyWoodFor(int step) => step >= 3 ? FortifyArmouredWood : step == 2 ? FortifyMetalWood : FortifyStoneWood;
@@ -1254,6 +1254,7 @@ namespace RockGame
             (16, new[] { "ProgressSeconds", "AirdropItemMask", "AirdropItemMask2", "SpearThrowSpeed" }),
             (17, new[] { "BallGatherMul", "AirdropItemMask", "AirdropItemMask2", "SnailTime", "LiftHeight", "LiftLaunch", "JonahBruhArmorWood" }),
             (18, new[] { "AirdropItemMask", "AirdropItemMask2" }),
+            (20, new[] { "RevolverAmmoWood", "RevolverAmmoPerCraft" }),
             (19, new[] { "SpearWood", "BowWood", "BowStone", "ArrowWood", "RamWood", "RamStone", "ChestWood", "HatchetPlayerDamage", "HorseWalk", "HorseSprint", "ShotgunRange", "JonahBruhStoneWood" }),
         };
         const string MigrateKey = "RockGame.Tunables.migrated";

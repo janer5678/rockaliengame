@@ -256,6 +256,6 @@ namespace RockGame
             return n;
         }
 
-        static float TimeLeft(NetGame g) => NetworkManager.Singleton != null ? (float)(g.PhaseEnd.Value - NetworkManager.Singleton.ServerTime.Time) : 999f;
+        static float TimeLeft(NetGame g) => NetworkManager.Singleton != null && !g.NoClock ? (float)(g.PhaseEnd.Value - NetworkManager.Singleton.ServerTime.Time) : 999f;
     }
 }

@@ -364,6 +364,41 @@ namespace RockGame
 
         static float EaseOut3(float x) { x = Mathf.Clamp01(x); return 1f - Mathf.Pow(1f - x, 3f); }
 
+        /// <summary>How long AIRDROP INCOMING takes over the whole screen before it settles into its banner in the middle.</summary>
+        public const float AirdropTakeover = 2.2f;
+        /// <summary>(tests) The frame the airdrop takeover was last drawn.</summary>
+        public static int AirdropTakeoverFrame = -10;
+        static bool BannerAccentIsAirdrop(string shownTitle) => s_BannerTitle != null && s_BannerTitle.StartsWith("AIRDROP") && shownTitle == NotifText.Map(s_BannerTitle);
+
+        /// <summary>AIRDROP INCOMING, its first AirdropTakeover seconds: a white flash, the whole screen washed dark purple
+        /// over everything (the bag, a chest, the death screen...), and the title huge in the middle, punching in and
+        /// pulsing, with where it's coming down under it - then it all fades and the normal banner carries on in the middle.</summary>
+        void DrawAirdropTakeover(string title, string sub, float age, float k)
+        {
+            EnsureNotifyTextures();
+            float sw = Screen.width, sh = Screen.height;
+            float a = Mathf.Clamp01(age / 0.12f) * (1f - Mathf.Clamp01((age - (AirdropTakeover - 0.5f)) / 0.5f));
+            var full = new Rect(0, 0, sw, sh);
+            Fill(full, new Color(0.13f, 0.02f, 0.22f, 0.72f * a));
+            if (age < 0.3f) Fill(full, new Color(1f, 0.92f, 1f, 0.55f * (1f - age / 0.3f))); // (the flash)
+            // purple glow bursting out behind the words, and stripes racing across top and bottom
+            float pulse = 0.5f + 0.5f * Mathf.Sin(age * 14f);
+            float gr = Mathf.Max(sw, sh) * (0.35f + 0.25f * EaseOut3(age / 0.5f));
+            Tinted(new Rect(sw / 2f - gr, sh / 2f - gr * 0.55f, gr * 2f, gr * 1.1f), s_GlowTex, new Color(0.75f, 0.3f, 1f, (0.35f + 0.2f * pulse) * a));
+            var stripe = new Color(0.8f, 0.45f, 1f, 0.9f * a);
+            float run = EaseOut3(age / 0.4f);
+            Fill(new Rect(0, sh * 0.5f - 120 * k, sw * run, 6 * k), stripe);
+            Fill(new Rect(sw * (1f - run), sh * 0.5f + 110 * k, sw * run, 6 * k), stripe);
+            // the title: punches in huge and settles, pulsing
+            float pop = 1f + 0.7f * Mathf.Exp(-9f * age) + 0.04f * pulse;
+            var tst = new GUIStyle(m_Big) { fontSize = Mathf.Max(8, Mathf.RoundToInt(92 * k * pop)), alignment = TextAnchor.MiddleCenter, clipping = TextClipping.Overflow, fontStyle = FontStyle.Bold };
+            var fill = Color.Lerp(Color.white, new Color(0.88f, 0.62f, 1f), Mathf.Clamp01(age * 3f));
+            fill.a = a;
+            InkText(new Rect(0, sh * 0.5f - 95 * k, sw, 150 * k), NotifText.Map(title), tst, fill, new Color(0.05f, 0f, 0.1f, 0.95f * a), 4f * k);
+            var sst = new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt(26 * k), alignment = TextAnchor.MiddleCenter, clipping = TextClipping.Overflow };
+            InkText(new Rect(0, sh * 0.5f + 62 * k, sw, 40 * k), sub ?? "", sst, new Color(1f, 1f, 1f, a), new Color(0f, 0f, 0f, 0.9f * a), 2f * k);
+        }
+
         /// <summary>A banner `age` seconds old. How long it stays, how it comes in and goes, and how far up it flies on the
         /// way out: Settings > Display > NOTIFICATIONS > ANIMATION (NotifLooks.cs). As designed: the band snaps open from
         /// the middle, the title drops in and bounces, and after 4 s it all lifts 40 px and fades.</summary>
@@ -407,6 +442,7 @@ namespace RockGame
             float zs = GameSettings.NotifSize.Value * scale, ink = GameSettings.NotifInkNow * Mathf.Min(1f, scale); // (TEXT OUTLINE)
             var font = GameSettings.NotifFontNow;
             float mid = sh * 0.27f + GameSettings.NotifY.Value * k + 33 * k * GameSettings.NotifSize.Value; // (the band's middle stays put while it scales)
+            if (BannerAccentIsAirdrop(title)) mid = sh * 0.5f; // (the airdrop news: right in the middle of the screen)
             float bh = 66 * k * zs, by = mid - bh / 2f - lift, cx = sw / 2f;
             float bw = Mathf.Min(sw, 820 * k * GameSettings.NotifWidth.Value * scale) * open; // (smaller and lower than it was; just the title)
             BannerAccentShown = accent; BannerAlphaShown = alpha; BannerLiftShown = lift; BannerScaleShown = scale; // (tests)

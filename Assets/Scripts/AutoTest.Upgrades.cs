@@ -483,7 +483,7 @@ namespace RockGame
                     Check(pc.UpgradesOpen, "(UPGRADES still open)");
                 }
             }
-            Check(Cfg.FortifyStoneWood == 1000 && Cfg.FortifyMetalWood == 2000 && Cfg.FortifyArmouredWood == 3000 && Cfg.MaxFortify == 3
+            Check(Cfg.FortifyStoneWood == 1000 && Cfg.FortifyMetalWood == 2000 && Cfg.FortifyArmouredWood == 3000 && Cfg.MaxFortify == 2
                 && (!Cfg.AutoWood || (Cfg.MaxWoodGen == 3 && Cfg.WoodGenBuildWood == 1000 && Cfg.WoodGen1Wood == 4000 && Cfg.WoodGen2Wood == 8000)),
                 "the prices are the CHANGE VALUES entries (fortify 1000 / 2000 / 3000 - stone, metal, armoured - wood gen 1000 to build it, then 4000 / 8000)");
             yield return Snap($"upgrades_{rn}_maxed");
