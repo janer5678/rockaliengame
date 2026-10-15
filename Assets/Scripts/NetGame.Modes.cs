@@ -109,6 +109,7 @@ namespace RockGame
         {
             bool playing = S == GameState.PreBall || S == GameState.BallLive;
             ServerTickAutoWood(now, playing);
+            if (playing) ServerTickEmeralds(now); // (Emerald mode: Emerald.cs)
 
             // Fun / Fun Random: a free item every few seconds
             if (Cfg.FunRules && playing)

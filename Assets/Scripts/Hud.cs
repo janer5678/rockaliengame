@@ -444,6 +444,7 @@ namespace RockGame
             }
 
             DrawBallWoodCorner(me, k); // (top left: the ball in your machine doubles your wood machine - BallWood.cs)
+            DrawEmeraldHud(me, k); // (Emerald mode: the spawners' clocks, your emeralds - Hud.Emerald.cs)
             // ---- Builder crafting timers, then messages (top right) ----
             float my = 10 + DrawCraftStack(me, k, 10);
             float pc0 = DrawProgressCorner(game, team, k, my); // (Progress: the bars, small, top right - Hud.ModePanel.cs)
@@ -666,6 +667,8 @@ namespace RockGame
             var s = me.HeldStack;
             string wacky = WackyHint(s, me); // (the wacky airdrop items: Hud.Wacky.cs)
             if (wacky != null) return wacky;
+            string emerald = EmeraldHint(s, me); // (Emerald mode's things: Hud.Emerald.cs)
+            if (emerald != null) return emerald;
             switch (s.Id)
             {
                 case Item.BuildingPlan:
@@ -1051,7 +1054,8 @@ namespace RockGame
             float top = sh * 0.14f;
             // the crafting list: one column (Hud.Crafting.cs)
             bool upgrades = !loot && pc.UpgradesOpen; // E on your alien machine: UPGRADES instead of crafting (Hud.Upgrades.cs)
-            bool craft = !loot && !upgrades && Tutorial.Allows(TutFeature.Craft); // (the tutorial: once crafting is taught)
+            bool shop = !loot && !upgrades && pc.ShopOpen != 0; // (Emerald mode: E on the Trade Station / emerald shop - Hud.Emerald.cs)
+            bool craft = !loot && !upgrades && !shop && Tutorial.Allows(TutFeature.Craft); // (the tutorial: once crafting is taught)
             int craftCols = craft ? LayoutCraftList(me, pc, top, sh - 8 * k, k) : 1;
             float colGap = 10 * k;
             float craftW = 440 * k;
@@ -1133,6 +1137,7 @@ namespace RockGame
             bool hoverShown = false;
             if (craft) { DrawCraftList(me, pc, cxp, top, craftW, colGap, sh - 8 * k, k); hoverShown = true; }
             if (upgrades) { DrawUpgradeList(me, pc, cxp, top, craftW, sh - 8 * k, k); hoverShown = true; }
+            if (shop) { DrawShopList(me, pc, cxp, top, craftW, sh - 8 * k, k); hoverShown = true; }
             // how to move things: always these three lines under the bag
             Shadowed(new Rect(invX, infoY, gridW, 66 * k), $"<color=#ffffff>{InvHelpShown}</color>", m_SmallWrap); // (with the mouse / key icons)
             // no crafting list beside the bag (a chest is open, or the tutorial hasn't got there): the description goes

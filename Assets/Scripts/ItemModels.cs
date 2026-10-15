@@ -704,7 +704,7 @@ namespace RockGame
                     Art.Part(t, Art.Cylinder, Art.Metal, new Vector3(0, -0.01f, 0.69f), new Vector3(0.12f, 0.02f, 0.12f), new Vector3(0, 0, 90));
                     break;
                 }
-                default: WackyModels.Build(item, t); break; // (the wacky airdrop items)
+                default: if (!EmeraldModels.Build(item, t)) WackyModels.Build(item, t); break; // (Emerald mode's things, the wacky airdrop items)
             }
             // PSX graphics: the PSX model takes the place of this one (same size, same grip)
             var psx = PsxModels.ItemKey(item);

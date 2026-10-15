@@ -118,8 +118,8 @@ namespace RockGame
             c.ServerBreakWithSupport();
         }
 
-        public static float CenterUp(byte kind) => kind == Container.SleepBag ? 0.2f : kind == Container.Trap ? 0.15f : kind == Container.Ladder ? 1.4f : kind == Container.Barricade ? BarricadeH * 0.5f : 0.9f;
-        public static float MaxHp(byte kind) => kind == Container.SleepBag ? 100f : kind == Container.Trap ? 150f : kind == Container.Ladder ? 250f : kind == Container.Barricade ? Cfg.BarricadeHp : 500f;
+        public static float CenterUp(byte kind) => kind == Container.SleepBag ? 0.2f : kind == Container.Trap || kind == Container.Mine ? 0.12f : kind == Container.Ladder ? 1.4f : kind == Container.Barricade ? BarricadeH * 0.5f : 0.9f;
+        public static float MaxHp(byte kind) => kind == Container.SleepBag ? 100f : kind == Container.Trap ? 150f : kind == Container.Mine ? 60f : kind == Container.Ladder ? 250f : kind == Container.Barricade ? Cfg.BarricadeHp : 500f;
 
         /// <summary>The concrete barricade: 3.1 m long and 1.9 m tall (30% bigger each way than it was: it hides you standing
         /// too now) - and its depth at the foot and at the top.</summary>
@@ -229,6 +229,17 @@ namespace RockGame
                     }
                     break;
                 }
+                case Container.Mine:
+                {
+                    // Emerald mode's land mine: a squat drab disc mostly sunk in the ground (hard to spot), a pressure plate,
+                    // and a little red light that only its own team sees ("led": Tick)
+                    var drab = new Color(0.27f, 0.29f, 0.2f);
+                    float cr = 2f * Art.Cylinder.bounds.extents.x, ch = 2f * Art.Cylinder.bounds.extents.y;
+                    Art.Part(t, Art.Cylinder, drab, new Vector3(0, 0.0f, 0), new Vector3(0.34f / cr, 0.07f / ch, 0.34f / cr));
+                    Art.Part(t, Art.Cylinder, drab * 0.8f, new Vector3(0, 0.04f, 0), new Vector3(0.2f / cr, 0.02f / ch, 0.2f / cr));
+                    if (ghost == null) Art.Part(t, Art.Sphere, Color.white, new Vector3(0.11f, 0.045f, 0), Vector3.one * 0.03f, default, false, Workbench.Glow(new Color(1f, 0.12f, 0.08f), 2.5f), "led");
+                    break;
+                }
                 case Container.Ladder:
                 {
                     // two rails and rungs, straight up, its back to +z (the wall it's put against)
@@ -306,6 +317,7 @@ namespace RockGame
             }
             if (ghost != null) foreach (var r in t.GetComponentsInChildren<Renderer>(true)) r.sharedMaterial = ghost;
             if (ghost != null && kind == Container.Turret) BuildCone(t, ghost);
+            if (ghost != null && kind == Container.Mine) foreach (var r in t.GetComponentsInChildren<Renderer>(true)) r.sharedMaterial = ghost;
             foreach (var r in t.GetComponentsInChildren<MeshRenderer>(true)) if (kind != Container.Turret && (kind != Container.Barricade || ghost != null)) r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         }
 
@@ -324,6 +336,12 @@ namespace RockGame
                 seg.GetComponent<Renderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             }
             Vector3 At(float deg, float r) => new Vector3(Mathf.Sin(deg * Mathf.Deg2Rad) * r, 0.08f, Mathf.Cos(deg * Mathf.Deg2Rad) * r);
+            if (Cfg.Emerald)
+            {
+                // Emerald mode's base turret: it sees all the way round - a circle at its reach
+                for (int i = 0; i < 36; i++) Line(At(i * 10f, Cfg.TurretRange), At((i + 1) * 10f, Cfg.TurretRange));
+                return;
+            }
             Line(At(-Cfg.TurretCone, 0.6f), At(-Cfg.TurretCone, Cfg.TurretRange));
             Line(At(Cfg.TurretCone, 0.6f), At(Cfg.TurretCone, Cfg.TurretRange));
             const int seg2 = 12;
@@ -338,6 +356,7 @@ namespace RockGame
             {
                 case Container.SleepBag: bc.center = new Vector3(0, 0.1f, 0); bc.size = new Vector3(0.8f, 0.2f, 1.9f); break;
                 case Container.Trap: bc.center = new Vector3(0, 0.05f, 0); bc.size = new Vector3(0.62f, 0.1f, 0.62f); bc.isTrigger = false; break;
+                case Container.Mine: bc.center = new Vector3(0, 0.03f, 0); bc.size = new Vector3(0.36f, 0.08f, 0.36f); bc.isTrigger = true; break; // (you walk onto it, not over it)
                 case Container.Ladder:
                 {
                     // a thin board along the rails to hit / look at; the climbing volume in front of it (Ladder, like the
@@ -384,6 +403,19 @@ namespace RockGame
                 case Container.Ladder:
                     if (c.IsServer) ServerLadder(c);
                     break;
+                case Container.Mine:
+                {
+                    // its red light blinks - for its own team only (the enemy just sees a drab disc in the grass)
+                    var led = visual.Find("led");
+                    if (led != null)
+                    {
+                        bool mine = PlayerNet.Local != null && PlayerNet.Local.Team.Value == c.Team.Value;
+                        bool on = mine && Mathf.Repeat(Time.time, 1.2f) < 0.25f;
+                        if (led.gameObject.activeSelf != on) led.gameObject.SetActive(on);
+                    }
+                    if (c.IsServer) ServerMine(c);
+                    break;
+                }
                 case Container.Trap:
                 {
                     float shut = c.Flag.Value == 1 ? 1f : 0f;
@@ -411,7 +443,7 @@ namespace RockGame
                         yaw.localRotation = Quaternion.Euler(0, ny, 0);
                         pitch.localRotation = Quaternion.Euler(np, 0, 0);
                         // the weapon it's been given, mounted in its head
-                        var w = c.Slots.Count > 0 ? c.Slots[0].Id : Item.None;
+                        var w = Cfg.Emerald ? Item.Pistol : c.Slots.Count > 0 ? c.Slots[0].Id : Item.None; // (Emerald mode's base turret: its own gun, nothing to put in)
                         TickNeedsWeapon(c, visual, w == Item.None);
                         if (w != st.Shown)
                         {
@@ -471,6 +503,42 @@ namespace RockGame
             sign.position = c.transform.position + Vector3.up * (2.1f + Mathf.Sin(Time.time * 3f) * 0.12f);
             var cam = Camera.main;
             if (cam != null) sign.rotation = Quaternion.LookRotation(sign.position - cam.transform.position);
+        }
+
+        /// <summary>Test hook: base turret shots that hit someone (server).</summary>
+        public static int BaseTurretHits;
+        /// <summary>Test hook: land mines that went off (server).</summary>
+        public static int MinesBlown;
+
+        /// <summary>Emerald mode's land mine: an enemy steps on it - they blow up (dead, whatever armour), anyone else of
+        /// theirs close by takes the splash, and the mine's gone.</summary>
+        static void ServerMine(Container c)
+        {
+            var p0 = c.transform.position;
+            PlayerNet victim = null;
+            foreach (var p in PlayerNet.All)
+            {
+                if (p == null || !p.IsSpawned || p.Dead.Value || p.Team.Value == c.Team.Value) continue; // (enemies only)
+                var d = p.transform.position - p0;
+                if (d.y < -0.4f || d.y > 0.9f || new Vector2(d.x, d.z).sqrMagnitude > 0.5f * 0.5f) continue;
+                victim = p;
+                break;
+            }
+            if (victim == null) return;
+            MinesBlown++;
+            int team = c.Team.Value;
+            Fx.Server(FxKind.Explosion, p0 + Vector3.up * 0.2f, Vector3.up);
+            victim.NotifyPublic("You stepped on a LAND MINE!");
+            victim.ArmorHp.Value = 0;
+            victim.ServerDamageFrom(victim.Health.Value + 999f, (byte)Item.LandMine, team);
+            foreach (var p in PlayerNet.All)
+            {
+                if (p == null || p == victim || !p.IsSpawned || p.Dead.Value || p.Team.Value == team) continue;
+                float dist = Vector3.Distance(p.transform.position, p0);
+                if (dist > Cfg.MineSplashRadius || PlayerNet.GlassBetween(p0 + Vector3.up * 0.3f, p.transform.position + Vector3.up)) continue;
+                p.ServerDamageFrom(Cfg.MineSplashDamage * (1f - dist / Mathf.Max(0.1f, Cfg.MineSplashRadius) * 0.6f), (byte)Item.LandMine, team);
+            }
+            if (c.IsSpawned) c.NetworkObject.Despawn(true);
         }
 
         static void ServerTrap(Container c)
@@ -554,7 +622,7 @@ namespace RockGame
                         float d = to.magnitude;
                         if (d > Cfg.TurretRange || d < 0.5f) continue;
                         var flat = new Vector3(to.x, 0, to.z);
-                        if (Vector3.Angle(new Vector3(fwd.x, 0, fwd.z), flat) > Cfg.TurretCone) continue;
+                        if (!Cfg.Emerald && Vector3.Angle(new Vector3(fwd.x, 0, fwd.z), flat) > Cfg.TurretCone) continue; // (Emerald mode's base turret: all the way round)
                         if (!Clear(eye, p)) continue;
                         if (d < bestD) { bestD = d; best = p; }
                     }
@@ -582,6 +650,24 @@ namespace RockGame
             if ((st.Aim - c.Aim.Value).sqrMagnitude > 1f) c.Aim.Value = st.Aim;
             if (st.Target == null || Time.time - st.WarnedAt < 0.9f || Time.time < st.NextShot) return;
             if (Mathf.Abs(Mathf.DeltaAngle(st.Aim.x, want.x)) > 6f || Mathf.Abs(Mathf.DeltaAngle(st.Aim.y, want.y)) > 8f) return;
+            if (Cfg.Emerald)
+            {
+                // Emerald mode's base turret: its own gun, no ammo - BaseTurretDamage a shot, at a medium pace
+                st.NextShot = Time.time + Mathf.Max(0.1f, Cfg.BaseTurretEvery);
+                var bd = c.transform.TransformDirection(Quaternion.Euler(st.Aim.y, st.Aim.x, 0) * Vector3.forward);
+                var bm = eye + bd * 0.55f;
+                float bs = 2f + Mathf.Min(st.Speed, 10f) * Cfg.TurretMovingSpread * 0.5f;
+                var dd = Quaternion.Euler(Random.Range(-bs, bs), Random.Range(-bs, bs), 0) * bd;
+                var be = bm + dd * Cfg.TurretRange;
+                if (Physics.Raycast(bm, dd, out var bh, Cfg.TurretRange, ~0, QueryTriggerInteraction.Ignore))
+                {
+                    be = bh.point;
+                    var p = bh.collider.GetComponentInParent<PlayerNet>();
+                    if (p != null && p.Team.Value != c.Team.Value && !p.Dead.Value) { p.ServerDamageFrom(Cfg.BaseTurretDamage, (byte)Item.AutoTurret, c.Team.Value); BaseTurretHits++; }
+                }
+                c.DeployFxRpc(FxShot, be);
+                return;
+            }
             // fire, if it has a weapon and ammo for it
             if (c.Slots.Count < 2) return;
             var w = c.Slots[0];

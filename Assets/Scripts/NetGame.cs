@@ -554,7 +554,7 @@ namespace RockGame
             for (int i = Items.Count - 1; i >= 0; i--)
             {
                 var it = Items[i];
-                if (m_ItemBorn.TryGetValue(it.Id, out var born) && now - born > Cfg.ItemDespawnTime)
+                if (m_ItemBorn.TryGetValue(it.Id, out var born) && now - born > Cfg.ItemDespawnTime && it.Stack.Id != Item.Emerald) // (an emerald never goes)
                 {
                     Items.RemoveAt(i);
                     m_ItemBorn.Remove(it.Id);
@@ -887,7 +887,7 @@ namespace RockGame
             double launch = m_BallStart + (m_DropsDone + 1) * every - DropWarning;
             if (launch + DropLand > PhaseEnd.Value - 1.0) return; // it couldn't land before the clock runs out: no ship
             if (now < launch) return;
-            bool split = Cfg.AirdropSides && !Cfg.AirdropCenter;
+            bool split = Cfg.AirdropSides && !Cfg.AirdropCenter && !Cfg.Emerald; // (Emerald mode: one at a time, in one of its three spots)
             int lanes = split ? Cfg.TeamCount : 1;
             for (int i = 0; i < lanes; i++) if (m_Lanes[i].Incoming) return; // one still on its way: right after it lands
             m_DropsDone++;
@@ -898,13 +898,14 @@ namespace RockGame
                 if (lane.Crate != null && lane.Crate.IsSpawned) m_OldCrates.Add(lane.Crate);
                 lane.Crate = null;
                 lane.Region = split ? i : -1;
-                ServerLaunchDrop(i, now, Cfg.AirdropCenter ? PickCenterSpot() : PickDropSpot(lane.Region), false);
+                ServerLaunchDrop(i, now, Cfg.Emerald ? PickEmeraldDropSpot() : Cfg.AirdropCenter ? PickCenterSpot() : PickDropSpot(lane.Region), false);
             }
             ServerAirdropIncoming(now);
         }
 
         /// <summary>Where scheduled airdrops come down, for the warning.</summary>
-        static string DropWhere => Cfg.AirdropCenter ? "It's dropping in the centre of the map!"
+        static string DropWhere => Cfg.Emerald ? (LastEmeraldDropSpot == 0 ? "It's dropping in the middle of the map!" : "It's dropping in the middle of a side of the map - watch for the purple beam")
+            : Cfg.AirdropCenter ? "It's dropping in the centre of the map!"
             : Cfg.AirdropSides ? "One is dropping on every side of the map - watch for the purple beams"
             : "Somewhere on the map - watch for the purple beam";
 
@@ -1139,7 +1140,7 @@ namespace RockGame
                 if (lane.Crate != null && lane.Crate.IsSpawned) lane.Crate.NetworkObject.Despawn(true);
                 lane.Crate = null;
                 lane.Region = WorldLaneCount > 1 ? i : -1;
-                ServerLaunchDrop(i, now, Cfg.AirdropCenter && !WallUp ? PickCenterSpot() : PickDropSpot(lane.Region), true); // (not under the glass dome)
+                ServerLaunchDrop(i, now, Cfg.Emerald ? PickEmeraldDropSpot() : Cfg.AirdropCenter && !WallUp ? PickCenterSpot() : PickDropSpot(lane.Region), true); // (not under the glass dome)
             }
         }
 

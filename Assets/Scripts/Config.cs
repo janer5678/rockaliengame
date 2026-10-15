@@ -23,7 +23,9 @@ namespace RockGame
         AttentionSnail, InvSwapper, TimeoutBall, KnockStick1, KnockStick, ShieldPotion, SlowGun, TreeBreaker, DrawMonster, BearJuice,
         ChaosSigil, DroneBot, GameshowWand, DanceBomb, DecoyBase, BaseRebuild, FakeFlare, DisguiseKit, BallGrabber, Scribble,
         AntGun, ClutterBomb,
-        BetterHatchet } // (Jonah Test Mode Bruh: the chainsaw's place - JonahBruh.cs)
+        BetterHatchet, // (Jonah Test Mode Bruh: the chainsaw's place - JonahBruh.cs)
+        // Emerald mode's (Emerald.cs): the money, and the emerald shop's own things
+        Emerald, HighArmor, Lightsaber, HealBerry, LandMine, FortCreator }
 
     /// <summary>
     /// The game mode (picked in the main menu, next to the players). They don't mix:
@@ -39,7 +41,8 @@ namespace RockGame
         JonahTest, // Jonah Ideas Test: Classic plus alien dust and Upgrade 10 Walls (JonahMode.cs). 16+ needs RulesHighBit in the map key
         AirdropTest, // Airdrop Test: Classic plus airdrop berry bushes all over the map (NetGame.AirdropBushes.cs)
         JonahBruh, // Jonah Test Mode Bruh: Classic with Jonah's changes, only in this mode (JonahBruh.cs)
-        ClipFarm } // Clip Farm: Classic turned up for highlight clips (ClipFarm.cs)
+        ClipFarm, // Clip Farm: Classic turned up for highlight clips (ClipFarm.cs)
+        Emerald } // Emerald mode: Classic with emerald spawners and an emerald shop (Emerald.cs)
 
     public enum PieceType : byte { Foundation, Wall, Doorway, Floor, Stairs, Barrier, Window, Tower, EggBlock, Gate }
 
@@ -122,11 +125,11 @@ namespace RockGame
         public static GameMode Mode = GameMode.Duel;
         public static GameRules Rules = GameRules.Classic;
         /// <summary>Arsenal and Builder: cheap items and the powerful items menu.</summary>
-        public static bool PowerMenu => Rules == GameRules.Arsenal || Rules == GameRules.Builder || Rules == GameRules.AutoWood || ClassicMode || Jonah || AirdropTest || JonahBruh || ClipFarm;
+        public static bool PowerMenu => Rules == GameRules.Arsenal || Rules == GameRules.Builder || Rules == GameRules.AutoWood || ClassicMode || Jonah || AirdropTest || JonahBruh || ClipFarm || Emerald;
         /// <summary>The five modes that are Classic with another way to win (Bedwars, 3 Goal, Progress, Assassin, Domination).</summary>
-        public static bool ClassicMode => (Rules >= GameRules.Bedwars && Rules <= GameRules.Domination) || Rules == GameRules.AutoWood || JonahBruhProgression || ClipFarm; // (Classic plays like Progress now; Jonah Test Mode Bruh played as PROGRESSION: JonahBruh.cs)
+        public static bool ClassicMode => (Rules >= GameRules.Bedwars && Rules <= GameRules.Domination) || Rules == GameRules.AutoWood || JonahBruhProgression || ClipFarm || Emerald; // (Classic plays like Progress now; Jonah Test Mode Bruh played as PROGRESSION: JonahBruh.cs)
         /// <summary>The last game mode there is (the menus and the map key clamp to it).</summary>
-        public const GameRules LastRules = GameRules.ClipFarm;
+        public const GameRules LastRules = GameRules.Emerald;
         /// <summary>The rules are 4 bits of the map key at RulesShift, and a fifth up here (modes 16 and on: Jonah Ideas Test).</summary>
         public const int RulesHighBit = 1 << 30;
         /// <summary>The game mode in a map key.</summary>
@@ -152,14 +155,14 @@ namespace RockGame
         /// the old names.
         /// </summary>
         public static string RulesName(GameRules r) => r == GameRules.Arsenal ? "Arsenal" : r == GameRules.Builder ? "Builder" : r == GameRules.Fun ? "Fun"
-            : r == GameRules.FunRandom ? "Fun Random" : r == GameRules.FunRandomLimited ? "Fun Random Limited" : r == GameRules.Primitive ? "Primitive Limited" : r == GameRules.BuildingPrimitive ? "Building Primitive" : r == GameRules.AutoWood ? "Classic" : r == GameRules.Tutorial ? "Tutorial" : r == GameRules.Dna ? "DNA" : r == GameRules.Bedwars ? "Bedwars" : r == GameRules.ThreeGoal ? "3 Goal" : r == GameRules.Progress ? "Progress" : r == GameRules.Assassin ? "Assassin" : r == GameRules.Domination ? "Domination" : r == GameRules.JonahTest ? "Jonah Ideas Test" : r == GameRules.AirdropTest ? "Airdrop Test" : r == GameRules.JonahBruh ? "Jonah Test Mode Bruh" : r == GameRules.ClipFarm ? "Clip Farm" : "Primitive";
+            : r == GameRules.FunRandom ? "Fun Random" : r == GameRules.FunRandomLimited ? "Fun Random Limited" : r == GameRules.Primitive ? "Primitive Limited" : r == GameRules.BuildingPrimitive ? "Building Primitive" : r == GameRules.AutoWood ? "Classic" : r == GameRules.Tutorial ? "Tutorial" : r == GameRules.Dna ? "DNA" : r == GameRules.Bedwars ? "Bedwars" : r == GameRules.ThreeGoal ? "3 Goal" : r == GameRules.Progress ? "Progress" : r == GameRules.Assassin ? "Assassin" : r == GameRules.Domination ? "Domination" : r == GameRules.JonahTest ? "Jonah Ideas Test" : r == GameRules.AirdropTest ? "Airdrop Test" : r == GameRules.JonahBruh ? "Jonah Test Mode Bruh" : r == GameRules.ClipFarm ? "Clip Farm" : r == GameRules.Emerald ? "Emerald Mode" : "Primitive";
         /// <summary>The mode's -rules name (the enum's, never renamed: classic, autowood, primitive...) - the tests' file names.</summary>
         public static string RulesId(GameRules r) => r.ToString().ToLowerInvariant();
         /// <summary>The game modes on the main menu's first row (the rest are under "More modes").</summary>
         public static readonly GameRules[] MainRules = { GameRules.Tutorial, GameRules.AutoWood, GameRules.Classic };
         /// <summary>The rest of the game modes, under "More modes".</summary>
         public static readonly GameRules[] MoreRules = { GameRules.Arsenal, GameRules.Builder, GameRules.Primitive, GameRules.BuildingPrimitive, GameRules.Dna, GameRules.Fun, GameRules.FunRandom, GameRules.FunRandomLimited,
-            GameRules.Bedwars, GameRules.ThreeGoal, GameRules.Assassin, GameRules.Domination, GameRules.JonahTest, GameRules.AirdropTest, GameRules.JonahBruh, GameRules.ClipFarm }; // (Progress is gone: Classic plays like it now)
+            GameRules.Bedwars, GameRules.ThreeGoal, GameRules.Assassin, GameRules.Domination, GameRules.JonahTest, GameRules.AirdropTest, GameRules.JonahBruh, GameRules.ClipFarm, GameRules.Emerald }; // (Progress is gone: Classic plays like it now)
         public static string RulesDesc(GameRules r)
         {
             switch (r)
@@ -174,6 +177,7 @@ namespace RockGame
                 case GameRules.AirdropTest: return "Classic, plus purple AIRDROP BERRY BUSHES all over the map: pick one (E) and you get an airdrop item - a different one every time (you never get the same one twice; the others can still get it).";
                 case GameRules.JonahBruh: return $"Classic with Jonah's changes (pick NORMAL or PROGRESSION below): a one-cell spawn base, Armour at the top of the Advanced Trade Station ({JonahBruhArmorWood}; the station {JonahBruhBench2Wood}), no stun trap, ladder or chainsaw - a BETTER HATCHET instead (chops faster, {BetterHatchetWood} wood), the death wand only from airdrops. Walls only upgrade to MAGICAL STONE ({JonahBruhStoneWood} wood a piece, {JonahBruhStoneHpMul:0.#}x as strong). Respawn in the wild: pick the spot on the map.";
                 case GameRules.ClipFarm: return $"Classic turned up for clips. Everyone gets a random airdrop item when the wall drops and every time they respawn (every airdrop item's in), an airdrop every {ClipFarmDropEvery:0} s, airdrop berry bushes all over. Multi-kills, long shots, headshots, streaks, shutdowns, revenge and YEETs go up huge on everyone's screen with an air horn - and get marked on Steam's game recording timeline.";
+                case GameRules.Emerald: return $"Classic, plus EMERALDS: one grows on each emerald spawner (a raised platform on every team's way to the middle) every {EmeraldEvery / 60f:0.#} minutes. Spend them at the EMERALD SHOP beside your machine (E): shotgun, revolver, C4, the death wand, ammo, High Power Armour, a lightsaber, Instant Heal Berries, ender pearls, the knockback stick, tall defensive walls with a gate, land mines, an invisibility potion, a base turret and the fort creator. The Trade Station is a shop too (E on it; craft it any time in your base) - no Advanced one. Airdrops only come down in the middle or the middle of the left or right side.";
                 case GameRules.Domination: return "Classic, but whoever has the ball (carried or in their machine) gets the Advanced Trade Station's items without building one. Lose the ball, lose them.";
                 case GameRules.Tutorial: return "New here? Start with this. Short, simple steps teach you the whole game - you do each one to go on, and each control unlocks as it's taught. The clock is stopped and it's always the small Plains map. Press PLAY TUTORIAL and pick Solo or With a friend.";
                 case GameRules.AutoWood: return HammerUpgrades ? "Keep the ball in your machine to fill your progress bar - fill it and you win (there's no clock). While it's in someone's machine everyone else's bar slowly drains. A wood machine in your base piles up wood by itself and speeds up as the match goes on. Upgrade your walls with UPGRADE (the green plus) on the building plan's wheel. Arsenal's prices and POWER ITEMS." : "Buy a wood machine in UPGRADES (E on the upgrade station beside your alien machine) and wood piles up at your base by itself - go and pick it up; more upgrades speed it up. Arsenal's prices and POWER ITEMS.";
@@ -618,7 +622,7 @@ namespace RockGame
                 case Item.HeavyRam: return "High Strength Battering Ram";
                 case Item.Hammer: return "Hammer";
                 case Item.Chest: return "Storage Chest";
-                case Item.Barrier: return "Large Wall";
+                case Item.Barrier: return Emerald ? "High Defensive Wall" : "Large Wall";
                 case Item.Stone: return "Stone";
                 case Item.Arrow: return "Arrow";
                 case Item.Berry: return "Berries";
@@ -630,9 +634,9 @@ namespace RockGame
                 case Item.Ladder: return "Ladder";
                 case Item.BearTrap: return "Stun Trap"; // (the old bear trap, made a stun trap: Container.Deployables.cs)
                 case Item.SleepingBag: return "Sleeping Bag";
-                case Item.LargeGate: return "Large Gate";
+                case Item.LargeGate: return Emerald ? "High Defensive Gate" : "Large Gate";
                 case Item.Skull: return "Skull";
-                case Item.AutoTurret: return "Auto Turret";
+                case Item.AutoTurret: return Emerald ? "Base Turret" : "Auto Turret";
                 case Item.Chainsaw: return "Chainsaw";
                 case Item.Crossbow: return "Crossbow";
                 case Item.Armor: return "Wooden Armour";
@@ -671,7 +675,7 @@ namespace RockGame
                 case Item.Workbench: return "Trade Station";    // (the code still calls them workbenches, T1 and T2)
                 case Item.Workbench2: return "Advanced Trade Station";
                 case Item.None: return "";
-                default: return WackyName(i) ?? i.ToString();
+                default: return WackyName(i) ?? EmeraldName(i) ?? i.ToString();
             }
         }
 
@@ -686,8 +690,11 @@ namespace RockGame
                 case Item.RevolverAmmo: return 120;
                 case Item.EnderPearl: return 4;
                 case Item.Berry: return 20;
-                case Item.Barrier: return 5;
+                case Item.Barrier: return 8; // (Emerald mode's high defensive walls come 8 at a time)
                 case Item.LargeGate: return 3;
+                case Item.Emerald: return 99;
+                case Item.HealBerry: return 10;
+                case Item.LandMine: return 5;
                 case Item.Barricade: return 3;
                 case Item.BearTrap: return 5;
                 case Item.SleepingBag: return 3;
@@ -710,6 +717,7 @@ namespace RockGame
                 case Item.Chainsaw: return ChainsawUses; // (it wears every ChainsawWearEvery hits: twice the old life)
                 case Item.HeavyRam: return RamUses;
                 case Item.Armor: return ArmorHp;
+                case Item.HighArmor: return Mathf.Clamp(HighArmorHp, 1, 255);
                 case Item.HeavyArmor: return HeavyArmorHp; // (armour dropped by someone who died in it keeps what it had left)
                 case Item.Sniper: return SniperAmmo;
                 case Item.Jetpack: return JetpackFuel;
@@ -725,8 +733,9 @@ namespace RockGame
         /// <summary>The airdrop items the host can pick from in the mode options (the others are unused for now).</summary>
         /// <summary>Taken out of the game for now (not craftable, not in any shop, airdrop or loot pool): the bear trap,
         /// the sleeping bag and the alien helmet. Their code stays, so they can come back by taking them off this list.</summary>
-        public static bool Removed(Item i) => i == Item.SleepingBag || i == Item.Helmet || i == Item.AutoTurret || i == Item.HeavyRam // (the auto turret: out for now; the High Strength ram: gone)
-            || i == Item.Armor || i == Item.Barrier || i == Item.LargeGate // (the wooden armour: gone, heavy armour is "Armour" now; the large wall and gate: out for now)
+        public static bool Removed(Item i) => i == Item.SleepingBag || i == Item.Helmet || (i == Item.AutoTurret && !Emerald) || i == Item.HeavyRam // (the auto turret: out for now - but Emerald mode's base turret; the High Strength ram: gone)
+            || i == Item.Armor || ((i == Item.Barrier || i == Item.LargeGate) && !Emerald) // (the wooden armour: gone, heavy armour is "Armour" now; the large wall and gate: out for now - but Emerald mode's high defensive walls)
+            || (EmeraldOnly(i) && !Emerald) // (Emerald mode's own things: Emerald.cs)
             || i == Item.DecoyBase || i == Item.ChaosSigil // (the decoy base and the Sigil of CHAOS: taken out)
             || i == Item.GoldenRock || i == Item.InvSwapper // (the Rock of Immortality and the inventory swapper: taken out)
             || i == Item.BearTrap // (the stun trap: taken out)
@@ -885,6 +894,7 @@ namespace RockGame
                 // a huge axe: slow, fells any tree in one hit (the server gives the whole tree)
                 case Item.TreeCracker: return new MeleeStats { Cooldown = 1.1f, Range = 2.8f, PlayerDamage = 30f, WoodGather = 9999f, StoneGather = 3f, StructureDamage = 20f };
                 // a heavy sword: a slow swing, big hits (its head and body damage are its own numbers)
+                case Item.Lightsaber: return LightsaberMelee; // (Emerald mode: Emerald.cs)
                 case Item.Sword: return new MeleeStats { Cooldown = Mathf.Max(0.2f, SwordSwingTime), Range = SwordRange, PlayerDamage = SwordBodyDamage, WoodGather = 4f, StoneGather = 1f, StructureDamage = 15f };
                 // the hammer (Upgrades.cs): upgrades your own walls; it can't hurt a player
                 case Item.Hammer: return new MeleeStats { Cooldown = HammerSwingTime, Range = HammerRange, PlayerDamage = HammerBodyDamage, WoodGather = 3f, StoneGather = 2f, StructureDamage = 10f };
@@ -893,7 +903,7 @@ namespace RockGame
         }
         /// <summary>The battering rams: the normal one and the High Strength one (three steps a slam).</summary>
         public static bool IsRam(Item i) => i == Item.Ram || i == Item.HeavyRam;
-        public static bool IsMelee(Item i) => i == Item.Rock || i == Item.Hatchet || i == Item.BetterHatchet || i == Item.Pickaxe || i == Item.Spear || i == Item.Chainsaw || i == Item.TreeCracker || i == Item.Sword || i == Item.Hammer || IsWackyMelee(i);
+        public static bool IsMelee(Item i) => i == Item.Rock || i == Item.Hatchet || i == Item.BetterHatchet || i == Item.Pickaxe || i == Item.Spear || i == Item.Chainsaw || i == Item.TreeCracker || i == Item.Sword || i == Item.Hammer || i == Item.Lightsaber || IsWackyMelee(i);
         /// <summary>Can this melee item hurt a player? Not the hammer (a building tool).</summary>
         public static bool HurtsPlayers(Item i) => i != Item.Hammer && i != Item.KnockStick && i != Item.KnockStick1; // (the knockback sticks only knock you back)
         /// <summary>Melee damage to a player: the sword has its own headshot number, everything else does x2 to the head.</summary>
@@ -934,7 +944,7 @@ namespace RockGame
         }
         public static float PieceHp(PieceType t, int tier)
         {
-            if (DoorIsPiece && t == PieceType.Doorway) t = PieceType.Wall; // (Jonah Test Mode Bruh: a doorway takes as much breaking as a wall)
+            if (DoorwayAsWall && t == PieceType.Doorway) t = PieceType.Wall; // (Jonah Test Mode Bruh: a doorway takes as much breaking as a wall)
             if (tier >= 3) return PieceHp(t, 2) * RefinedHpMul; // refined
             if (tier >= 2)
                 switch (t) // metal
@@ -960,7 +970,7 @@ namespace RockGame
                 case PieceType.EggBlock: return EggBlockHp;
                 case PieceType.Floor: return stone ? FloorStoneHp : FloorHp;
                 case PieceType.Stairs: return stone ? StairsStoneHp : StairsHp;
-                case PieceType.Barrier: case PieceType.Gate: return BarrierHp;
+                case PieceType.Barrier: case PieceType.Gate: return BarrierHp * (Emerald ? Mathf.Max(0.1f, BigWallHpMul) : 1f); // (Emerald mode's high defensive walls: stronger)
                 default: return 100;
             }
         }
@@ -976,7 +986,7 @@ namespace RockGame
         {
             s_Active.Clear();
             if (LimitedCrafting) { s_Active.AddRange(k_Limited); return s_Active; }
-            foreach (var it in k_Recipes) if (!(WoodMode && it == Item.Pickaxe) && (it != Item.Hammer || HammerOn) && (it != Item.Armor || Tutorial) && !JonahBruhOut(it) && (it != Item.BetterHatchet || JonahBruh) && it != Item.BearTrap) s_Active.Add(it); // (the stun trap: taken out) // (Jonah Test Mode Bruh: JonahBruh.cs)
+            foreach (var it in k_Recipes) if (!(WoodMode && it == Item.Pickaxe) && (it != Item.Hammer || HammerOn) && (it != Item.Armor || Tutorial) && !JonahBruhOut(it) && (it != Item.BetterHatchet || JonahBruh) && it != Item.BearTrap && !EmeraldOut(it)) s_Active.Add(it); // (the stun trap: taken out) // (Jonah Test Mode Bruh: JonahBruh.cs)
             if (ThemeMaps.HasWater) s_Active.Add(Item.Boat); // THEME MAPS (the boat)
             return s_Active;
         }
@@ -997,7 +1007,7 @@ namespace RockGame
                 case Item.Spear: r = new Recipe { Output = Item.Spear, Count = 1, Wood = SpearWood, Stone = SpearStone }; break;
                 case Item.Bow: r = new Recipe { Output = Item.Bow, Count = 1, Wood = BowWood, Stone = BowStone }; break;
                 case Item.Arrow: r = new Recipe { Output = Item.Arrow, Count = Mathf.Max(1, ArrowsPerCraft), Wood = ArrowWood, Stone = ArrowStone }; break;
-                case Item.Ram: r = new Recipe { Output = Item.Ram, Count = 1, Wood = RamWood, Stone = RamStone }; break;
+                case Item.Ram: r = new Recipe { Output = Item.Ram, Count = 1, Wood = Emerald ? EmeraldRamWood : RamWood, Stone = Emerald ? 0 : RamStone }; break; // (Emerald mode: a Trade Station item, dearer)
                 case Item.HeavyRam: r = new Recipe { Output = Item.HeavyRam, Count = 1, Wood = HeavyRamWood }; break;
                 case Item.Hammer: r = new Recipe { Output = Item.Hammer, Count = 1, Wood = HammerWood }; break;
                 case Item.Chest: r = new Recipe { Output = Item.Chest, Count = 1, Wood = ChestWood }; break;

@@ -23,8 +23,10 @@ namespace RockGame
         /// <summary>The fake airdrop flare's crate (NetGame.Wacky.cs): looks like an airdrop, shows every item, gives none.</summary>
         public const byte FakeDrop = 12;
         public bool IsFakeDrop => Kind.Value == FakeDrop;
+        /// <summary>Emerald mode's land mine (Deployables.cs): whoever steps on it blows up.</summary>
+        public const byte Mine = 13;
         /// <summary>A placeable of the Trade Stations' (Deployables.cs): the bag, the trap, the ladder, the turret, the barricade.</summary>
-        public static bool IsDeployableKind(byte kind) => (kind >= SleepBag && kind <= Turret) || kind == Barricade;
+        public static bool IsDeployableKind(byte kind) => (kind >= SleepBag && kind <= Turret) || kind == Barricade || kind == Mine;
         /// <summary>A bear trap: 0 armed, 1 sprung. (Deployables.cs)</summary>
         public readonly NetworkVariable<byte> Flag = new NetworkVariable<byte>();
         /// <summary>An auto turret's aim (yaw, pitch in degrees, its own space), for every screen to pan it.</summary>
@@ -33,7 +35,7 @@ namespace RockGame
         public readonly NetworkVariable<double> ReadyAt = new NetworkVariable<double>();
         public bool IsDeployable => IsDeployableKind(Kind.Value);
         /// <summary>The item a placed thing comes back as when it's picked up.</summary>
-        public static Item ItemOf(byte kind) => kind == SleepBag ? Item.SleepingBag : kind == Trap ? Item.BearTrap : kind == Ladder ? Item.Ladder : kind == Turret ? Item.AutoTurret : kind == Barricade ? Item.Barricade
+        public static Item ItemOf(byte kind) => kind == SleepBag ? Item.SleepingBag : kind == Trap ? Item.BearTrap : kind == Ladder ? Item.Ladder : kind == Turret ? Item.AutoTurret : kind == Barricade ? Item.Barricade : kind == Mine ? Item.LandMine
             : kind == Workbench2 ? Item.Workbench2 : kind == Workbench ? Item.Workbench : Item.Chest;
         public static readonly List<Container> All = new List<Container>();
 

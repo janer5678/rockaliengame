@@ -30,9 +30,11 @@ namespace RockGame
         /// <summary>The better hatchet: faster swings and more wood a hit than the hatchet.</summary>
         [Tune("Jonah Test Mode Bruh")] public static float BetterHatchetCooldown = 0.55f, BetterHatchetWoodGather = 24f, BetterHatchetStoneGather = 3f, BetterHatchetPlayerDamage = 16f, BetterHatchetStructureDamage = 14f;
 
-        /// <summary>Jonah Test Mode Bruh: no door raiding - a doorway is one piece (hitting its door hurts the doorway), with
-        /// a wall's health (Cfg.PieceHp).</summary>
-        public static bool DoorIsPiece => JonahBruh;
+        /// <summary>No door raiding (every mode now): a doorway is one piece - hitting its door hurts the doorway - and a
+        /// large gate's leaf is part of the gate. (Window bars still break on their own.)</summary>
+        public static bool DoorIsPiece => true;
+        /// <summary>Jonah Test Mode Bruh: a doorway has a wall's health (Cfg.PieceHp).</summary>
+        public static bool DoorwayAsWall => JonahBruh;
 
         /// <summary>Taken out of Jonah Test Mode Bruh's crafting (only there). The death wand still comes in its airdrops.</summary>
         public static bool JonahBruhOut(Item i) => JonahBruh && (i == Item.BearTrap || i == Item.DeathWand || i == Item.Ladder || i == Item.Chainsaw);
@@ -74,7 +76,12 @@ namespace RockGame
         /// <summary>Where things stand on the small bedrock, in the alien machine's frame (+z out towards the middle of the
         /// map, +x the LEFT as you look at the machine from the spawn): the machine at the back on the left, its socket in
         /// front of it, the wood machine at the back on the right (its logs land in front of it), the spawn along the front.</summary>
-        static readonly Vector3 k_SmallMachine = new Vector3(0.6f, 0f, -1.05f), k_SmallSocket = new Vector3(0.6f, 0f, 0.02f), k_SmallWood = new Vector3(-0.9f, 0f, -1.0f);
+        static readonly Vector3 k_SmallWood = new Vector3(-0.9f, 0f, -1.0f);
+        /// <summary>(Emerald mode: the machine is narrower and moved over to the right, so the emerald shop fits on its left.)</summary>
+        static Vector3 k_SmallMachine => new Vector3(Emerald ? 0.36f : 0.6f, 0f, -1.05f);
+        static Vector3 k_SmallSocket => new Vector3(Emerald ? 0.36f : 0.6f, 0f, 0.02f);
+        /// <summary>The small alien machine's width (x and z): narrower in Emerald mode (the emerald shop beside it).</summary>
+        public static float SmallMachineWide => Emerald ? 0.34f : SmallMachineScale;
         static readonly float[] k_SmallSpawnX = { -0.5f, -1.12f, 0.12f, 0.75f };
         const float SmallSpawnZ = 1.02f;
 

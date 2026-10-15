@@ -162,7 +162,7 @@ namespace RockGame
         /// <summary>Whether a hit at this point in the world landed on the door leaf (not the frame round it).</summary>
         public bool IsDoorHit(Vector3 point)
         {
-            if (Cfg.DoorIsPiece && PType == PieceType.Doorway) return false; // (Jonah Test Mode Bruh: the door is just part of the doorway)
+            if (Cfg.DoorIsPiece && (PType == PieceType.Doorway || PType == PieceType.Gate)) return false; // (no door raiding: the door is just part of the doorway, the gate's leaf part of the gate)
             if (HasBars)
             {
                 // the bars fill the window's opening
@@ -232,13 +232,16 @@ namespace RockGame
             }
         }
 
+        /// <summary>How tall the piece is drawn (Emerald mode's high defensive walls: taller - Cfg.BigWallTall).</summary>
+        float TallY => PType == PieceType.Barrier || PType == PieceType.Gate ? Cfg.BigWallTall : 1f;
+
         void Update()
         {
             if (m_Visual && m_Rise < 1f)
             {
                 m_Rise = Mathf.Min(1f, m_Rise + Time.deltaTime / (PType == PieceType.Tower ? 0.8f : 0.25f));
                 float e = 1f - (1f - m_Rise) * (1f - m_Rise);
-                m_Visual.localScale = new Vector3(1f, Mathf.Lerp(0.05f, 1f, e), 1f);
+                m_Visual.localScale = new Vector3(1f, Mathf.Lerp(0.05f, 1f, e) * TallY, 1f);
             }
             if (m_Hinge)
             {
@@ -257,7 +260,7 @@ namespace RockGame
             var r = new System.Random(Warp.Value * 7919 + (int)(transform.position.x * 13f) + (int)(transform.position.z * 31f));
             float R(float a) => ((float)r.NextDouble() * 2f - 1f) * a;
             m_Visual.localRotation = Quaternion.Euler(R(16f), R(25f), R(16f));
-            m_Visual.localScale = new Vector3(1f + R(0.25f), 1f + R(0.3f), 1f + R(0.25f));
+            m_Visual.localScale = new Vector3(1f + R(0.25f), (1f + R(0.3f)) * TallY, 1f + R(0.25f));
         }
 
         // ---------------- Server ----------------
@@ -603,6 +606,7 @@ namespace RockGame
                     r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
                 }
             }
+            if ((t == PieceType.Barrier || t == PieceType.Gate) && Cfg.BigWallTall > 1f) tr.localScale = new Vector3(1f, Cfg.BigWallTall, 1f); // (Emerald mode's high defensive walls: really tall)
             return root;
         }
 

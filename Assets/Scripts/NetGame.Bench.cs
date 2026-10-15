@@ -14,7 +14,7 @@ namespace RockGame
         [Tune("Crafting")] public static float BenchUnlockSeconds = 10f; // (it used to be 30)
 
         /// <summary>Can this team craft its Workbench T1 yet? (synced: NetGame.BenchUnlocks - every team's bit comes on together)</summary>
-        public static bool BenchUnlocked(int team) => Builder || NetGame.Instance == null || NetGame.Instance.BenchUnlockedFor(team);
+        public static bool BenchUnlocked(int team) => Builder || Emerald || NetGame.Instance == null || NetGame.Instance.BenchUnlockedFor(team);
 
         /// <summary>What the crafting list says on the locked Workbench T1.</summary>
         public const string BenchLockedText = "Can only craft once the ball has been captured";

@@ -368,7 +368,7 @@ namespace RockGame
             Binds.TestHold(Bind.Aim, true);
             yield return new WaitForSeconds(0.3f);
             Check(pc.WheelOpen, $"({who}) holding RMB opens the building wheel on the wall step");
-            pc.SelectWheel(System.Array.FindIndex(PlayerController.WheelOptions, o => o.Piece == PieceType.Wall && !o.Demolish)); // (the mouse onto Wall)
+            pc.SelectWheel(System.Array.FindIndex(PlayerController.WheelOptions, o => o.Piece == PieceType.Wall && !o.Demolish && !o.Upgrade)); // (the mouse onto Wall)
             Binds.TestHold(Bind.Aim, false);
             yield return new WaitForSeconds(0.3f);
             Check(!pc.WheelOpen && pc.BuildPiece == PieceType.Wall, $"({who}) letting go picks the Wall ({pc.BuildPiece})");
@@ -413,7 +413,7 @@ namespace RockGame
                 // (back to building walls, so the plan isn't left demolishing)
                 Binds.TestHold(Bind.Aim, true);
                 yield return new WaitForSeconds(0.3f);
-                pc.SelectWheel(System.Array.FindIndex(PlayerController.WheelOptions, o => o.Piece == PieceType.Wall && !o.Demolish));
+                pc.SelectWheel(System.Array.FindIndex(PlayerController.WheelOptions, o => o.Piece == PieceType.Wall && !o.Demolish && !o.Upgrade));
                 Binds.TestHold(Bind.Aim, false);
                 yield return new WaitForSeconds(0.2f);
             }

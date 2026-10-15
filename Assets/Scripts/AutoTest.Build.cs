@@ -152,7 +152,7 @@ namespace RockGame
 
             // Demolish is back on the wheel, straight down at the bottom (no X key): picked, only the piece in the crosshair
             // lights up red, and LMB takes it down. (Wall sits on the right of the wheel.)
-            int wallSlice = System.Array.FindIndex(PlayerController.WheelOptions, o => o.Piece == PieceType.Wall && !o.Demolish);
+            int wallSlice = System.Array.FindIndex(PlayerController.WheelOptions, o => o.Piece == PieceType.Wall && !o.Demolish && !o.Upgrade);
             Check(wallSlice >= 0 && Mathf.Abs(Mathf.DeltaAngle(PlayerController.WheelAngle(wallSlice), 90f)) < 30f,
                 $"the Wall slice is on the right of the wheel ({(wallSlice >= 0 ? PlayerController.WheelAngle(wallSlice) : -1f):0} deg)");
             int demo = System.Array.FindIndex(PlayerController.WheelOptions, o => o.Demolish);

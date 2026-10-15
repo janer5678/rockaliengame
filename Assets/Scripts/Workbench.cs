@@ -30,7 +30,7 @@ namespace RockGame
         public static IReadOnlyList<Item> StarterOrder => k_Starter;
 
         /// <summary>Which workbench tier an item needs (0 = none: a starter item).</summary>
-        public static int CraftTier(Item i) => IsStarter(i) || (i == Item.Boat && ThemeMaps.Custom != null && ThemeMaps.Custom.BoatsAnytime) || i == Item.AlienDust ? 0 : System.Array.IndexOf(k_Tier1, i) >= 0 ? 1 : 2;
+        public static int CraftTier(Item i) => Emerald && (i == Item.HeavyArmor || i == Item.Ram) ? 1 : IsStarter(i) || (i == Item.Boat && ThemeMaps.Custom != null && ThemeMaps.Custom.BoatsAnytime) || i == Item.AlienDust ? 0 : System.Array.IndexOf(k_Tier1, i) >= 0 ? 1 : 2;
 
         /// <summary>The best workbench a team has placed (0 none, 1, 2).</summary>
         public static int BenchTier(int team) => Domination && NetGame.Instance != null && NetGame.Instance.BallTeam.Value == team ? 2 : Workbench.TierOf(team); // (Domination: the team with the ball gets the advanced trades)
@@ -65,6 +65,20 @@ namespace RockGame
         public static void AddTier(List<int> into, int tier)
         {
             var order = tier == 0 ? k_Starter : tier == 1 ? k_Tier1 : k_Tier2;
+            if (Emerald)
+            {
+                // Emerald mode: the Trade Station has Armour at the top and the ram at the bottom; there's no Advanced one
+                if (tier == 2) return;
+                if (tier == 1) { int a = CraftIndexOf(Item.HeavyArmor); if (a >= 0) into.Add(a); }
+                foreach (var id in order)
+                {
+                    if (id == Item.Ram || id == Item.Workbench2) continue;
+                    int i = CraftIndexOf(id);
+                    if (i >= 0 && !into.Contains(i)) into.Add(i);
+                }
+                if (tier == 1) { int r = CraftIndexOf(Item.Ram); if (r >= 0) into.Add(r); }
+                return;
+            }
             if (tier == 2) { int a = CraftIndexOf(Item.HeavyArmor); if (a >= 0) into.Add(a); } // (Armour at the top of the Advanced Trade Station)
             foreach (var id in order)
             {

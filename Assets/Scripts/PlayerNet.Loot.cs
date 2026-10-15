@@ -10,7 +10,7 @@ namespace RockGame
         float m_NextSniper, m_NextPortal, m_NextUse;
         readonly Dictionary<Item, int> m_PendingThrows = new Dictionary<Item, int>();
 
-        static bool Throwable(Item i) => i == Item.SlenderEgg || i == Item.BuildEgg || i == Item.RocketLauncher || i == Item.BombBush || i == Item.EnderPearl || Cfg.WackyThrown(i);
+        static bool Throwable(Item i) => i == Item.SlenderEgg || i == Item.BuildEgg || i == Item.RocketLauncher || i == Item.BombBush || i == Item.EnderPearl || i == Item.FortCreator || Cfg.WackyThrown(i);
 
         /// <summary>Sniper: one shot kills, whatever it hits - unless it's a headshot on someone wearing a helmet (the helmet breaks).</summary>
         [Rpc(SendTo.Server)]
@@ -172,6 +172,7 @@ namespace RockGame
                     break;
                 case Item.BombBush: g.ServerSpawnBombBush(point, Team.Value); break;
                 case Item.EnderPearl: ServerPearlLanded(point, normal); break;
+                case Item.FortCreator: ServerFortCreator(point); break; // (Emerald mode: Emerald.cs)
                 default: g.ServerWackyLanded(kind, point, this); break; // (the dance bomb, the clutter bomb, the decoy base: NetGame.Wacky.cs)
             }
         }

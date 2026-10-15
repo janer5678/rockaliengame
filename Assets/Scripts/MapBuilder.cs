@@ -190,6 +190,7 @@ namespace RockGame
             }
             // further out, layers of mountain ranges, each taller and paler; and big boulders about the map (MapScenery)
             if (mountains) MapScenery.Build(root);
+            if (Cfg.Emerald) EmeraldSpawner.BuildAll(root); // Emerald mode: the emerald spawners, clear of everything above (Emerald.cs)
 
             BuildArena(root);
             if (Cfg.Map == MapKind.Plains || Cfg.IsHighlands)
@@ -604,6 +605,7 @@ namespace RockGame
             if (Cfg.AutoWood) WoodMachine.Create(root, team); // Auto Wood: the wood machine, right of the alien machine
             if (Cfg.SmallBedrock) BuildClimbStep(root, team, glow); // (Jonah Test Mode Bruh: the step up onto the machine)
             if (Cfg.HasBaseUpgrades) UpgradeStation.Create(root, team); // Arsenal / Auto Wood: the upgrade station, left of it
+            if (Cfg.Emerald) EmeraldShop.Create(root, team); // Emerald mode: the emerald shop, left of it (Emerald.cs)
         }
 
         /// <summary>Jonah Test Mode Bruh's one-cell base: a metal step beside the machine - onto it, onto the machine's top,
@@ -630,7 +632,7 @@ namespace RockGame
             go.transform.SetParent(root, false);
             // local +z faces the spawn / the middle of the map
             go.transform.SetPositionAndRotation(Cfg.MachinePos(team), Quaternion.LookRotation(-Cfg.BackDir(team)));
-            if (Cfg.SmallBedrock) go.transform.localScale = new Vector3(Cfg.SmallMachineScale, Cfg.SmallMachineTall, Cfg.SmallMachineScale); // (Jonah Test Mode Bruh: a smaller machine on its one-cell bedrock - tall enough to jump out from: JonahBruh.cs)
+            if (Cfg.SmallBedrock) go.transform.localScale = new Vector3(Cfg.SmallMachineWide, Cfg.SmallMachineTall, Cfg.SmallMachineWide); // (Jonah Test Mode Bruh: a smaller machine on its one-cell bedrock - tall enough to jump out from: JonahBruh.cs)
             var t = go.transform;
             var metal = new Color(0.3f, 0.33f, 0.36f);
             var screen = Art.Ghost(new Color(0.4f, 1f, 0.8f, 0.7f));
@@ -711,9 +713,10 @@ namespace RockGame
             socket.position = Cfg.SocketPos(team) - Vector3.up * 0.64f; // on the bedrock
             if (Cfg.SmallBedrock)
             {
-                socket.localScale = new Vector3(Cfg.SmallSocketScale / Cfg.SmallMachineScale, Cfg.SmallSocketScale / Cfg.SmallMachineTall, Cfg.SmallSocketScale / Cfg.SmallMachineScale); // (big enough for the ball)
+                socket.localScale = new Vector3(Cfg.SmallSocketScale / Cfg.SmallMachineWide, Cfg.SmallSocketScale / Cfg.SmallMachineTall, Cfg.SmallSocketScale / Cfg.SmallMachineWide); // (big enough for the ball)
                 // a flat top to stand on (jump from there and you clear a wall on the bedrock's edge)
-                Art.Box(t, metal, new Vector3(0, Cfg.MachineTopY / Cfg.SmallMachineTall - 0.06f, -0.05f), new Vector3(1.75f, 0.12f, 1.75f), default, true).name = "machine top";
+                float topW = 1.75f * Cfg.SmallMachineScale / Cfg.SmallMachineWide; // (as wide as ever to stand on, even on Emerald mode's narrower machine)
+                Art.Box(t, metal, new Vector3(0, Cfg.MachineTopY / Cfg.SmallMachineTall - 0.06f, -0.05f), new Vector3(Mathf.Min(topW, 2.2f), 0.12f, 1.75f), default, true).name = "machine top";
                 Art.Box(t, glow, new Vector3(0, Cfg.MachineTopY / Cfg.SmallMachineTall + 0.005f, -0.05f), new Vector3(1.2f, 0.01f, 0.08f), default, false, Workbench.Glow(glow));
             }
             for (int i = 0; i < 10; i++)

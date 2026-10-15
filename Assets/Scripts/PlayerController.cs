@@ -235,7 +235,26 @@ namespace RockGame
             MenuOpen = false;
             LootTarget = null;
             UpgradesOpen = false;
+            ShopOpen = 0;
         }
+
+        /// <summary>Emerald mode's shops (Hud.Emerald.cs): 0 none, the Trade Station's, the emerald shop.</summary>
+        public int ShopOpen;
+        public const int ShopTrade = 1, ShopEmerald = 2;
+
+        /// <summary>E on your Trade Station / emerald shop in Emerald mode: its shop beside your bag.</summary>
+        public void OpenShop(int which)
+        {
+            LootTarget = null;
+            UpgradesOpen = false;
+            ShopOpen = which;
+            MenuOpen = true;
+            WheelOpen = false;
+            Sfx.Play2D(Sfx.Place, 0.4f);
+        }
+
+        /// <summary>Still close enough to the shop that's open.</summary>
+        bool AtOpenShop() => ShopOpen == ShopEmerald ? Cfg.AtOwnEmeraldShop(m_Net.Team.Value, transform.position) : ShopOpen == ShopTrade && Cfg.AtOwnBench(m_Net.Team.Value, transform.position);
 
         /// <summary>E on your own upgrade station (UpgradeStation.cs): the UPGRADES screen (in the modes that have base upgrades - Upgrades.cs).</summary>
         public void OpenUpgrades()
@@ -369,6 +388,7 @@ namespace RockGame
             // the UPGRADES screen goes with the menu, and closes if you walk away from your upgrade station
             if (UpgradesOpen && (!MenuOpen || !Cfg.AtOwnStation(m_Net.Team.Value, transform.position))) { if (MenuOpen) MenuOpen = false; UpgradesOpen = false; }
             if (LootTarget != null && LootTarget.IsConverter && !UpgradesOpen) LootTarget = null; // (the converter only shows with UPGRADES)
+            if (ShopOpen != 0 && (!MenuOpen || !AtOpenShop())) { if (MenuOpen) MenuOpen = false; ShopOpen = 0; } // (Emerald mode's shops close as you walk off)
             if (Paused || MenuOpen || dead) WheelOpen = false;
             TickWatchSync(); // (PlayerController.Watch.cs: tells spectators which screen is open)
             if (dead || m_Net.HeldItem != Item.Airstrike) AirstrikeMapOpen = false;
@@ -638,6 +658,7 @@ namespace RockGame
                         case Item.AutoTurret:
                         case Item.LargeGate:
                         case Item.Barricade:
+                        case Item.LandMine: // (Emerald mode)
                         case Item.Boat: /* THEME MAPS */ HandleDeploy(held); break;
                         case Item.Berry:
                         case Item.Meat: HandleBerry(); break;
@@ -657,6 +678,8 @@ namespace RockGame
                         case Item.Armor:
                         case Item.HeavyArmor:
                         case Item.InvisPotion: case Item.SpeedJuice: HandleUseItem(held); break;
+                        case Item.HighArmor: case Item.HealBerry: HandleUseItem(held); break; // (Emerald mode)
+                        case Item.FortCreator: HandleLootThrow(held); break; // (Emerald mode: thrown, a fort where it lands)
                         case Item.Jetpack: case Item.Wallhack: case Item.JumpBoots: HandleUseItem(held); break; // (worn gear: put on when you click, never by itself)
                         default:
                             if (Cfg.IsWacky(held) && HandleWacky(held)) break; // (the wacky airdrop items: PlayerController.Wacky.cs)
@@ -1511,7 +1534,7 @@ namespace RockGame
             if (!(Binds.Down(Bind.Attack) || Binds.Down(Bind.Aim)) || Time.time < m_NextEat) return;
             m_NextEat = Time.time + 0.8f;
             m_Net.UseItemRpc();
-            if (held == Item.InvisPotion || held == Item.SpeedJuice) { m_VM.Eat(); Sfx.Play2D(Sfx.Eat, 0.6f); m_EatFlashUntil = Time.time + 0.9f; }
+            if (held == Item.InvisPotion || held == Item.SpeedJuice || held == Item.HealBerry) { m_VM.Eat(); Sfx.Play2D(Sfx.Eat, 0.6f); m_EatFlashUntil = Time.time + 0.9f; }
             else { m_VM.Use(); Sfx.Play2D(Sfx.Clink, 0.6f); }
         }
 
@@ -1636,7 +1659,7 @@ namespace RockGame
 
         // ------------------------------------------------------------------ interaction (whatever you're looking at)
 
-        public enum TargetKind { None, Ball, Door, Container, Bush, PlayerSpear, WorldItem, SelfSpear, Machine, Vehicle, UpgradeStation }
+        public enum TargetKind { None, Ball, Door, Container, Bush, PlayerSpear, WorldItem, SelfSpear, Machine, Vehicle, UpgradeStation, EmeraldShop }
 
         public struct Interactable
         {
@@ -1690,6 +1713,14 @@ namespace RockGame
                 {
                     result.Kind = TargetKind.UpgradeStation;
                     result.MachineTeam = station.Team;
+                    found = h.distance;
+                    break;
+                }
+                var eshop = h.collider.GetComponentInParent<EmeraldShop>();
+                if (eshop != null && h.distance <= Cfg.InteractRange + 1f)
+                {
+                    result.Kind = TargetKind.EmeraldShop;
+                    result.MachineTeam = eshop.Team;
                     found = h.distance;
                     break;
                 }
@@ -1781,7 +1812,7 @@ namespace RockGame
             if (obj == null) return TargetKind.None;
             if (obj.GetComponent<Ball>() != null) return TargetKind.Ball;
             if (obj.TryGetComponent(out Structure s)) return s.HasDoor ? TargetKind.Door : TargetKind.None; // (a doorway with its door broken off is just a hole)
-            if (obj.GetComponent<Container>() != null) return TargetKind.Container;
+            if (obj.TryGetComponent(out Container ct)) return ct.Kind.Value == Container.Mine && ct.Team.Value != m_Net.Team.Value ? TargetKind.None : TargetKind.Container; // (an enemy's land mine: nothing to say it's there)
             if (obj.TryGetComponent(out ResourceNode n)) return n.IsBush && n.Amount.Value > 0 ? TargetKind.Bush : TargetKind.None;
             if (obj.TryGetComponent(out PlayerNet p) && p != m_Net && p.StuckSpears.Value > 0) return TargetKind.PlayerSpear;
             if (obj.TryGetComponent(out Vehicle v) && !v.HasDriver && !v.IsDummy && !v.IsWackyKind) return TargetKind.Vehicle; // (nobody rides a training dummy - or a decoy, a shell, a bot or a monster)
@@ -1868,6 +1899,18 @@ namespace RockGame
         void TapContainer(Container box)
         {
             if (box == null || !box.IsSpawned) return;
+            if (box.IsWorkbench && Cfg.Emerald && box.Team.Value == m_Net.Team.Value)
+            {
+                // Emerald mode: the Trade Station is a shop - its things are bought here (Hud.Emerald.cs)
+                OpenShop(ShopTrade);
+                return;
+            }
+            if (box.Kind.Value == Container.Turret && Cfg.Emerald)
+            {
+                // (the base turret needs nothing put in it)
+                Hud.Push(box.Team.Value == m_Net.Team.Value ? $"Your base turret: it shoots any enemy it can see, all the way round - hold {Binds.Name(Bind.Interact)} to pick it up" : "That's the enemy's base turret");
+                return;
+            }
             if (box.IsWorkbench)
             {
                 // nothing is made AT a bench: it unlocks its tier in the TAB crafting list anywhere in your base
@@ -1964,6 +2007,11 @@ namespace RockGame
                     if (!Tutorial.Allows(TutFeature.Station)) { Hud.Push("Not yet - the tutorial gets to the upgrade station soon"); break; }
                     if (!carrying) OpenUpgrades();
                     break;
+                case TargetKind.EmeraldShop:
+                    // Emerald mode: your own emerald shop opens (Hud.Emerald.cs)
+                    if (t.MachineTeam != m_Net.Team.Value) { Hud.Push("That's the enemy's emerald shop"); break; }
+                    if (!carrying) OpenShop(ShopEmerald);
+                    break;
                 case TargetKind.Vehicle:
                     if (m_SkipInteract == Time.frameCount || m_Net.Riding) break; // (that E got you off the boat)
                     m_Net.MountRpc(t.Obj);
@@ -2021,6 +2069,7 @@ namespace RockGame
             else if (held == Item.LargeGate) want = 109;
             else if (held == Item.AutoTurret) want = 110;
             else if (held == Item.Barricade) want = 111;
+            else if (held == Item.LandMine) want = 112; // (Emerald mode)
 
             if (want != m_GhostId)
             {
@@ -2033,6 +2082,7 @@ namespace RockGame
                     m_Ghost = new GameObject("Ghost");
                     if (want == 101) Container.CreateVisual(Container.Chest, m_Net.Team.Value, m_Ghost.transform, Art.Ghost(GhostOkColour));
                     else if (want == 104 || want == 105) Container.CreateVisual(want == 105 ? Container.Workbench2 : Container.Workbench, m_Net.Team.Value, m_Ghost.transform, Art.Ghost(GhostOkColour));
+                    else if (want == 112) Container.CreateVisual(Container.Mine, m_Net.Team.Value, m_Ghost.transform, Art.Ghost(GhostOkColour));
                     else if (want >= 106 && want <= 111 && want != 109) Container.CreateVisual(want == 106 ? Container.Ladder : want == 107 ? Container.Trap : want == 108 ? Container.SleepBag : want == 111 ? Container.Barricade : Container.Turret, m_Net.Team.Value, m_Ghost.transform, Art.Ghost(GhostOkColour));
                     else if (want == 109) Structure.CreateVisual(PieceType.Gate, 0, m_Ghost.transform, false, Art.Ghost(GhostOkColour), out _);
                     else if (want == 103) Vehicle.CreateVisual(Vehicle.Boat, m_Ghost.transform, Art.Ghost(GhostOkColour), out _, out _, out _, out _, null, null); // THEME MAPS
@@ -2054,7 +2104,7 @@ namespace RockGame
 
             if (want >= 100)
             {
-                var kind = want == 100 ? Item.Barrier : want == 101 ? Item.Chest : want == 104 ? Item.Workbench : want == 105 ? Item.Workbench2 : want == 103 ? Item.Boat /* THEME MAPS */ : want == 106 ? Item.Ladder : want == 107 ? Item.BearTrap : want == 108 ? Item.SleepingBag : want == 109 ? Item.LargeGate : want == 110 ? Item.AutoTurret : want == 111 ? Item.Barricade : Item.Car;
+                var kind = want == 100 ? Item.Barrier : want == 101 ? Item.Chest : want == 104 ? Item.Workbench : want == 105 ? Item.Workbench2 : want == 103 ? Item.Boat /* THEME MAPS */ : want == 106 ? Item.Ladder : want == 107 ? Item.BearTrap : want == 108 ? Item.SleepingBag : want == 109 ? Item.LargeGate : want == 110 ? Item.AutoTurret : want == 111 ? Item.Barricade : want == 112 ? Item.LandMine : Item.Car;
                 bool bigWall = kind == Item.Barrier || kind == Item.LargeGate;
                 visible = hasHit && hit.distance <= Cfg.DeployRange + (bigWall ? Cfg.BigWallReachExtra : 0f) && hit.normal.y > 0.7f; // (large walls and gates from a bit further off)
                 // a ladder aimed at a wall (a building piece - yours or theirs - or a large wall): it stands straight up
@@ -2355,7 +2405,7 @@ namespace RockGame
                     string detail;
                     if (c.IsAirdrop) detail = $"{KT(Bind.Interact)}: open";
                     else if (c.IsGamble) detail = $"{KT(Bind.Interact)}: bet DNA - double it or lose it";
-                    else if (c.IsWorkbench) detail = c.Team.Value == m_Net.Team.Value ? $"its items are in your crafting list ({KT(Bind.Inventory)}) in your base" : "";
+                    else if (c.IsWorkbench) detail = c.Team.Value == m_Net.Team.Value ? (Cfg.Emerald ? $"{KT(Bind.Interact)}: trade  <color=#f0b878>({m_Net.Count(Item.Wood)} wood)</color>" : $"its items are in your crafting list ({KT(Bind.Inventory)}) in your base") : "";
                     else if (c.IsBag) detail = $"{KT(Bind.Interact)}: open";
                     // the placeables that don't open: just their health (the turret: its weapon and ammo)
                     else if (c.IsDeployable)
@@ -2386,6 +2436,9 @@ namespace RockGame
                     return;
                 case TargetKind.UpgradeStation:
                     AimText = TeamTip("Upgrade station", t.MachineTeam, t.MachineTeam != m_Net.Team.Value ? "" : $"{KT(Bind.Interact)} to open");
+                    return;
+                case TargetKind.EmeraldShop:
+                    AimText = TeamTip("Emerald shop", t.MachineTeam, t.MachineTeam != m_Net.Team.Value ? "" : $"{KT(Bind.Interact)}: shop  <color=#5dff8a>({m_Net.Count(Item.Emerald)} emeralds)</color>");
                     return;
                 case TargetKind.Vehicle:
                 {

@@ -106,12 +106,15 @@ namespace RockGame
                 case Item.Bow: return "Bow: hold LMB to draw, let go to fire. Uses arrows.";
                 case Item.Arrow: return $"Arrows: {Mathf.Max(1, Cfg.ArrowsPerCraft)} a craft, for the bow and the crossbow.";
                 case Item.Ram: return $"Battering Ram ({Cfg.RamUses} hit{(Cfg.RamUses == 1 ? "" : "s")}): hold LMB at an enemy piece - wood breaks, stone and up drop a step.";
+                case Item.Barrier when Cfg.Emerald: return "High Defensive Wall: a very tall, strong log wall - put them round your base.";
+                case Item.LargeGate when Cfg.Emerald: return "High Defensive Gate: a very tall log gate in your wall line - your team opens and closes it.";
                 case Item.Barrier: return "Large Wall: a tall log wall for your base or out in the open.";
                 case Item.LargeGate: return "Large Gate: a tall log gate with a door your team opens - goes in your wall line.";
                 case Item.SleepingBag: return $"Sleeping Bag: put it down anywhere but an enemy base and respawn at it (once every {Cfg.SleepingBagCooldown:0} s).";
                 case Item.BearTrap: return $"Stun Trap: put it on the ground or any floor, anywhere. An enemy who steps on it can't move for {Cfg.BearTrapHold:0.#} s (they can still fight back) and your team sees them through walls.";
                 case Item.Barricade: return "Barricade: a concrete block of cover, tall enough to crouch behind. Put it down anywhere - even in the enemy base, just not right up against their buildings.";
                 case Item.Ladder: return "Ladder: aim it at any wall - yours, theirs or a large wall - and climb over.";
+                case Item.AutoTurret when Cfg.Emerald: return $"Base Turret: put it in your base - it looks all the way round and shoots any enemy it can see, {Cfg.BaseTurretDamage:0} a shot. No weapon or ammo needed.";
                 case Item.AutoTurret: return $"Auto Turret: does NOTHING until you put a weapon in it (any weapon) and arrows. Then it shoots enemies in its {Cfg.TurretCone * 2f:0} degree view out to {Cfg.TurretRange:0} m.";
                 // (every description is "Name: what it does" - the name goes on top, the rest wraps under it; without the
                 // name the whole lot would be the one-line title and run off the edge)
@@ -136,6 +139,7 @@ namespace RockGame
                 case Item.Helmet: return "Alien Helmet: goes straight on - stops one headshot completely.";
                 default:
                     if (Cfg.WackyBlurb(id) != null) return $"{Cfg.ItemName(id)}: {Cfg.WackyBlurb(id)}"; // (the wacky airdrop items: Wacky.cs)
+                    if (Cfg.EmeraldBlurb(id) != null) return $"{Cfg.ItemName(id)}: {Cfg.EmeraldBlurb(id)}"; // (Emerald mode's: Emerald.cs)
                     return Cfg.ItemName(id) + (Cfg.PowerIndex(id) >= 0 ? ": " + Cfg.PowerBlurb(id, team) : "");
             }
         }
@@ -274,7 +278,7 @@ namespace RockGame
         {
             int team = me.Team.Value;
             // your team's benches decide what's listed wherever you are (out of your base it's greyed: ListProblem)
-            m_CraftTier = Cfg.BenchTier(team);
+            m_CraftTier = Cfg.Emerald ? 0 : Cfg.BenchTier(team); // (Emerald mode: the Trade Station's things are bought at it - E - not from the bag)
             m_CraftRows.Clear();
             for (int tier = 0; tier <= m_CraftTier; tier++)
             {

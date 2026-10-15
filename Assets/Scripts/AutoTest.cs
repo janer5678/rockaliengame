@@ -26,6 +26,7 @@ namespace RockGame
             if (m_Mode == "prompt7menu") { StartCoroutine(Prompt7MenuShots()); return; } // (AutoTest.Prompt7.cs)
             if (m_Mode == "prompt8menu") { StartCoroutine(Prompt8MenuShots()); return; } // (AutoTest.Prompt8.cs)
             if (m_Mode == "prompt12menu") { StartCoroutine(Prompt12MenuShots()); return; } // (AutoTest.Prompt12.cs)
+            if (m_Mode == "prompt15menu") { StartCoroutine(Prompt15MenuShots()); return; } // (AutoTest.Prompt15.cs)
             if (m_Mode == "mapshots") { StartCoroutine(MapShots()); return; }
             if (m_Mode == "lobby" || m_Mode == "arcade") NetGame.TestLobby = true; // (the ship lobby, though it's a test)
             if (m_Mode == "sd" || m_Mode == "arena") Cfg.UseOvertime = false; // (the clock running out goes to the sudden death arena, as these test)
@@ -173,6 +174,7 @@ namespace RockGame
             if (m_Mode == "prompt10") { yield return Prompt10Routine(me, pc); yield break; } // (AutoTest.Prompt10.cs)
             if (m_Mode == "prompt11") { yield return Prompt11Routine(me, pc); yield break; } // (AutoTest.Prompt11.cs)
             if (m_Mode == "prompt12") { yield return Prompt12Routine(me, pc); yield break; } // (AutoTest.Prompt12.cs)
+            if (m_Mode == "prompt15") { yield return Prompt15Routine(me, pc); yield break; } // (AutoTest.Prompt15.cs)
             if (m_Mode == "aliens") { yield return AlienShots(me, pc); yield break; } // (AutoTest.AlienShots.cs)
             Check(Cfg.BaseTeamAt(me.transform.position) == me.Team.Value, $"spawned inside own base ({me.transform.position})");
             Check(me.Count(Item.Rock) == 0 && me.HeldItem == Item.Rock, "empty hand = holding the rock (no rock item)");

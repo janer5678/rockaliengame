@@ -169,6 +169,7 @@ namespace RockGame
                             if (rs == "airdroptest" || rs == "airdrop") rv = (int)GameRules.AirdropTest;
                             if (rs == "jonahbruh" || rs == "bruh") rv = (int)GameRules.JonahBruh;
                             if (rs == "clipfarm" || rs == "clip") rv = (int)GameRules.ClipFarm;
+                            if (rs == "emerald" || rs == "emeraldmode") rv = (int)GameRules.Emerald;
                             MapChoice = Cfg.WithRules(MapChoice, (GameRules)rv);
                         }
                         break;
