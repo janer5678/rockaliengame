@@ -4,12 +4,10 @@ using UnityEngine;
 namespace RockGame
 {
     /// <summary>
-    /// The first-person arms (Settings > Display > Alien hands; off brings back the old square ones): your alien's own bare
-    /// arms - the aliens are naked - with its four-digit hands (three fingers and a thumb, like the player model's), but
-    /// with shorter, more human fingers so they hold things naturally. Each arm is ONE smoothly shaded skinned mesh: the
-    /// slender forearm, the wrist, the palm, the fingers and the thumb all flow into each other, and the skin bends round
-    /// every knuckle and over the wrist, so the hands read as seamless and stay out of the way. In your alien's skin colour
-    /// (your team's, softened towards its grey: HandColorHook.AlienShade).
+    /// The first-person arms (Settings > Display > Alien hands; off brings back the old square ones): the arms model
+    /// (ViewModel.Rig.cs - a real rigged pair of arms, three fingers and a thumb, in your team's colour) driven by the pose
+    /// skeleton built here. If the model can't be loaded, the skeleton wears the built mesh below instead: ONE smoothly
+    /// shaded skinned mesh per arm (forearm, wrist, palm, fingers and thumb flowing into each other).
     ///
     /// The skeleton: the hand (scaled HandScale), each finger's three joints and the thumb's (one transform each, so they
     /// curl from their own knuckles - ViewModel.Fingers.cs poses them), and the forearm (from the wrist back towards the
@@ -24,18 +22,20 @@ namespace RockGame
         /// <summary>The fingers (digits 0..FingerCount-1); the thumb is digit 4.</summary>
         const int FingerCount = 3;
 
-        // ---- measurements (metres, in the hand's own size - it's drawn HandScale bigger) ----
-        /// <summary>Half the palm's thickness.</summary>
-        const float PalmHalf = 0.013f;
+        // ---- measurements (metres; taken from the arms model when it's there - MeasureRig) ----
+        /// <summary>Half the palm's thickness (the palm's underside is this far under the wrist's line).</summary>
+        static float PalmHalf = 0.013f;
         /// <summary>How far in front of the wrist a handle held in the fist runs (under the palm's end, so the fingers wrap it from the knuckles).</summary>
-        const float GripZ = 0.062f;
+        static float GripZ = 0.062f;
         /// <summary>About where the fingers' knuckles are, in front of the wrist.</summary>
-        const float KnuckleZ = 0.077f;
+        static float KnuckleZ = 0.077f;
+        /// <summary>How big this hand is next to the one the grips were first worked out for (knuckles 7.85 cm out).</summary>
+        static float HS => KnuckleZ / 0.0785f;
         /// <summary>Where each forearm heads, in the view (right hand; the left's is its mirror): down by your side, so the
         /// arms come in from the bottom corners of the screen like an FPS rig's instead of reaching across it.</summary>
         static readonly Vector3 k_ElbowAnchor = new Vector3(0.36f, -0.66f, -0.02f);
         /// <summary>The hand (everything from the wrist out, measured below) is drawn this much bigger.</summary>
-        const float HandScale = 1.2f;
+        const float HandScale = 1f;
 
         /// <summary>The knuckle of each finger - index, middle, outer - (slot 3 unused) and the thumb's root deep in the palm.</summary>
         static readonly Vector3[] s_Base =
@@ -71,6 +71,8 @@ namespace RockGame
         {
             public bool Right;
             public Transform Root, Hand, Forearm;
+            /// <summary>The arms model on this skeleton (null: the built mesh).</summary>
+            public ArmRig Rig;
             /// <summary>[digit, joint]: 0-2 the fingers (index, middle, outer), 4 the thumb (3: none); joint 0 is the knuckle.</summary>
             public readonly Transform[,] J = new Transform[5, 3];
         }
@@ -91,6 +93,7 @@ namespace RockGame
         /// <summary>Builds the arm under `arm` (hidden while the square hands are picked): its skeleton and the skin on it.</summary>
         static AlienArm BuildAlienArm(Transform arm, HandColorHook hook, bool right)
         {
+            MeasureRig(); // (the skeleton takes the model's measurements)
             float sx = right ? 1f : -1f;
             var a = new AlienArm { Right = right };
             a.Root = Node(arm, "alien", Vector3.zero);
@@ -104,8 +107,10 @@ namespace RockGame
                 a.J[d, 0] = j0; a.J[d, 1] = j1; a.J[d, 2] = j2;
             }
             a.Forearm = Node(a.Root, "forearm", Vector3.zero);
+            a.Rig = BuildRig(a.Root, hook, right);
+            if (a.Rig != null) return a;
 
-            // the skin: one mesh on the whole skeleton (bound in this rest pose: everything straight, the forearm behind the wrist)
+            // (no model:) the skin: one mesh on the whole skeleton (bound in this rest pose: everything straight, the forearm behind the wrist)
             var bones = new Transform[BoneCount];
             bones[BoneHand] = a.Hand;
             bones[BoneArm] = a.Forearm;
@@ -160,6 +165,7 @@ namespace RockGame
             back.Normalize();
             a.Forearm.localPosition = p.Pos;
             a.Forearm.localRotation = Quaternion.LookRotation(-back, yh);
+            if (a.Rig != null) ApplyRig(a, a.Rig);
         }
 
         // ======== the mesh ========

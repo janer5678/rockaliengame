@@ -239,7 +239,7 @@ namespace RockGame
             yield return HandsPoseShots(me, pc, dir, poses, name =>
             {
                 // a fist round a handle: the middle and outer fingers of the hand holding it are well curled
-                if (name.EndsWith("_idle") && (name.StartsWith("hatchet") || name.StartsWith("pickaxe") || name.StartsWith("sword") || name.StartsWith("pistol") || name.StartsWith("revolver") || name.StartsWith("aliengun") || name.StartsWith("crossbow")))
+                if (name.EndsWith("_idle") && (name.StartsWith("hatchet") || name.StartsWith("pickaxe") || name.StartsWith("sword") || (name.StartsWith("pistol") && !name.Contains("ammo")) || (name.StartsWith("revolver") && !name.Contains("ammo")) || name.StartsWith("aliengun") || name.StartsWith("crossbow")))
                 {
                     gripped++;
                     var hand = vm.DebugHand(true).Find("alien/hand");

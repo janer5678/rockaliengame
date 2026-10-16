@@ -340,7 +340,7 @@ namespace RockGame
 
         static Vector3 PowerG(float r) => new Vector3(0f, -(PalmHalf + r / HandScale), GripZ);
         /// <summary>Where a bowstring sits in the hooked fingers.</summary>
-        static readonly Vector3 HookG = new Vector3(0f, -0.022f, 0.112f);
+        static Vector3 HookG => new Vector3(0f, -0.022f, 0.112f) * HS;
 
         /// <summary>A fist round a handle: c on its axis, a along it from the thumb's side to the outer finger's, the
         /// knuckles facing f, r its thickness (all in `space`); diag turns the hand so the handle runs across the palm
@@ -374,11 +374,11 @@ namespace RockGame
             if (z.sqrMagnitude < 1e-8f) z = Vector3.Cross(Vector3.right, y);
             z.Normalize();
             var rot = Quaternion.LookRotation(z, y);
-            return new HandGoal { Pos = cA - rot * (new Vector3(0f, -PalmHalf, 0.046f) * HandScale), Rot = rot, Shapes = set, Seat = set != null, ElbowK = 0.45f, Fingers = Fp.Support, Thumb = Tp.Support };
+            return new HandGoal { Pos = cA - rot * (new Vector3(0f, -PalmHalf, 0.046f * HS) * HandScale), Rot = rot, Shapes = set, Seat = set != null, ElbowK = 0.45f, Fingers = Fp.Support, Thumb = Tp.Support };
         }
 
         /// <summary>A hand holding nothing, its palm where the block fist was.</summary>
-        static HandGoal Free(Quaternion rot, Fp f, Tp t) => new HandGoal { Rot = rot, Pos = -(rot * (new Vector3(0f, -0.004f, 0.045f) * HandScale)), Fingers = f, Thumb = t, ElbowK = 0.3f };
+        static HandGoal Free(Quaternion rot, Fp f, Tp t) => new HandGoal { Rot = rot, Pos = -(rot * (new Vector3(0f, -0.004f, 0.045f) * HS * HandScale)), Fingers = f, Thumb = t, ElbowK = 0.3f };
 
         /// <summary>The free left hand: out of view and relaxed, or a loose fist pumping as you sprint.</summary>
         HandGoal LeftFree() => m_SprintK > 0.01f ? Free(Quaternion.identity, Fp.LooseFist, Tp.Tuck) : Free(Quaternion.identity, Fp.Relaxed, Tp.Relaxed);
@@ -463,8 +463,8 @@ namespace RockGame
             if (g.Seat && s_Near.Count > 0)
             {
                 // the palm comes to rest right on the surface (not floating off it, not sunk into it)
-                seat = Mathf.Min(Mathf.Min(Field(new Vector3(0f, -PalmHalf, 0.03f)), Field(new Vector3(0f, -PalmHalf, 0.058f))),
-                    Mathf.Min(Field(new Vector3(0.012f, -PalmHalf, 0.045f)), Field(new Vector3(-0.012f, -PalmHalf, 0.045f))));
+                seat = Mathf.Min(Mathf.Min(Field(new Vector3(0f, -PalmHalf, 0.03f * HS)), Field(new Vector3(0f, -PalmHalf, 0.058f * HS))),
+                    Mathf.Min(Field(new Vector3(0.012f * HS, -PalmHalf, 0.045f * HS)), Field(new Vector3(-0.012f * HS, -PalmHalf, 0.045f * HS))));
                 seat = Mathf.Clamp(seat, -0.05f, 0.05f);
                 s_M = M * Matrix4x4.Translate(new Vector3(0f, -seat / HandScale, 0f));
                 into.Pos += into.Rot * new Vector3(0f, -seat, 0f);
