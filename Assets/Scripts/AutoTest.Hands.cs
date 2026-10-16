@@ -184,9 +184,9 @@ namespace RockGame
                     { ok = false; why = $"box {i} ({t.name}) at {t.localPosition.ToString("F3")} size {t.localScale.ToString("F3")} (want {wp.ToString("F3")} {want[i].size.ToString("F3")}) shadows {rs[i].shadowCastingMode} cube {cube}"; }
                 }
                 Check(ok, $"the {(right ? "right" : "left")} arm keeps the original box arm for the square style: fist, darker knuckles, thumb, team wrist band, forearm ({why})");
-                // the alien hand: simple - a round fist, a thumb, a wrist and a forearm; no shadows
+                // the alien hand: simple - a rounded fist with darker knuckles, a thumb, a wrist and a forearm; no shadows
                 var al = h.Find("alien");
-                bool parts = al != null && al.Find("fist") != null && al.Find("thumb") != null && al.Find("wrist") != null && al.Find("forearm/arm") != null;
+                bool parts = al != null && al.Find("fist") != null && al.Find("thumb") != null && al.Find("knuckles") != null && al.Find("forearm/wrist") != null && al.Find("forearm/arm") != null;
                 bool shadowless = true;
                 if (al != null) foreach (var r in al.GetComponentsInChildren<Renderer>(true)) if (r.shadowCastingMode != UnityEngine.Rendering.ShadowCastingMode.Off) shadowless = false;
                 var sqPart = h.Find("square");
@@ -338,7 +338,7 @@ namespace RockGame
                 yield return new WaitForSeconds(0.3f);
                 int smooth = 0, total = 0, handSmooth = 0;
                 foreach (var r in held) { var m = r.GetComponent<MeshFilter>()?.sharedMesh; if (m == null || !m.isReadable) continue; total++; if (SmoothShade.IsSmooth(m)) smooth++; }
-                foreach (var r in handRs) { var hm = MeshOf(r); if (SmoothShade.IsSmooth(hm) || hm == Art.Sphere || hm == Art.Capsule) handSmooth++; } // (the alien hand's round parts are smooth already)
+                foreach (var r in handRs) { var hm = MeshOf(r); if (SmoothShade.IsSmooth(hm) || (hm != null && hm.name == "rounded box")) handSmooth++; } // (the alien hand's rounded blocks are smooth already)
                 ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(dir, "handssmooth_" + it.ToString().ToLower() + "_on.png"));
                 yield return new WaitForEndOfFrame();
                 Check(total > 0 && smooth == total, $"shade smooth: every held {it} mesh is its smooth copy ({smooth}/{total})");
