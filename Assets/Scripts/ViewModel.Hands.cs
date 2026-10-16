@@ -15,12 +15,15 @@ namespace RockGame
     {
         /// <summary>Which way each elbow points (the right arm's, in the view; the left's is its mirror): down and out.</summary>
         static readonly Vector3 k_ElbowHint = new Vector3(0.75f, -1f, -0.2f);
+        /// <summary>The model's shoulders moved down and back from where it has them (just below the eye): like a real
+        /// body's, so the arms reach into the view from the bottom corners and never sweep right past the camera.</summary>
+        static readonly Vector3 k_ShoulderShift = new Vector3(0f, -0.09f, -0.16f);
 
         sealed class HandRig
         {
             public bool Right;
             public Transform Root, Upper, Fore, Wrist, Grip, GripA, Knuck, Palm, PalmN;
-            public GameObject Fist, Cup;
+            public GameObject Fist, Cup, Wrap;
             public Quaternion UpperRest, ForeRest;
         }
 
@@ -56,12 +59,13 @@ namespace RockGame
                 Palm = FindDeep(t, "palm" + s), PalmN = FindDeep(t, "palmN" + s),
                 Fist = FindDeep(t, mine + "Fist")?.gameObject,
                 Cup = FindDeep(t, mine + "Cup")?.gameObject,
+                Wrap = FindDeep(t, mine + "Wrap")?.gameObject,
             };
             if (h.Upper == null || h.Fore == null || h.Wrist == null || h.Grip == null || h.Fist == null || h.Cup == null) { Object.Destroy(inst); return null; }
             h.UpperRest = h.Upper.localRotation;
             h.ForeRest = h.Fore.localRotation;
-            foreach (var go in new[] { h.Fist, h.Cup })
-                if (go.TryGetComponent(out SkinnedMeshRenderer smr))
+            foreach (var go in new[] { h.Fist, h.Cup, h.Wrap })
+                if (go != null && go.TryGetComponent(out SkinnedMeshRenderer smr))
                 {
                     smr.updateWhenOffscreen = true; // (it swings all over the view: never culled on a stale box)
                     hook.Track(go, HandColorHook.AlienSkin);
@@ -69,9 +73,10 @@ namespace RockGame
             return h;
         }
 
-        /// <summary>What a hand does with the item: wrap a fist round a handle running along `axis` (world), or carry it in
-        /// a cupped palm facing `axis`.</summary>
-        enum Hold { Fist, Cup }
+        /// <summary>What a hand does with the item: wrap a fist round a handle running along `axis` (world), carry it in
+        /// a cupped palm facing `axis`, or wrap the fingers round the side of something big and round (the rock) - the palm
+        /// facing `axis`, the fingers pointing along `facing`.</summary>
+        enum Hold { Fist, Cup, Wrap }
 
         /// <summary>Each gun's grip, in the gun's own space: its middle, and how far it leans back (degrees).</summary>
         static bool GunGrip(Item it, out Vector3 at, out float tilt)
@@ -113,7 +118,19 @@ namespace RockGame
             if (ball) { hold = Hold.Cup; axis = toItem; return; }
             switch (item)
             {
-                case Item.Rock: case Item.GoldenRock: case Item.Ram: case Item.HeavyRam:
+                case Item.Rock: case Item.GoldenRock:
+                {
+                    // Rust's rock: a hand up each side of it, the palm on it and the fingers curling up and over its top
+                    float sx = right ? 1f : -1f;
+                    var c = H.TransformPoint(new Vector3(0f, 0.02f, 0.04f));                 // (the rock's middle)
+                    var side = H.right * sx;
+                    point = c + side * (0.118f * H.lossyScale.x) - H.up * (0.02f * H.lossyScale.x) - H.forward * (0.03f * H.lossyScale.x); // (its side, a touch nearer you)
+                    hold = Hold.Wrap;
+                    axis = -side + H.up * 0.15f;                                              // (the palm faces in, onto it)
+                    facing = H.up * 0.85f + H.forward * 0.35f - side * 0.1f;                  // (the fingers up and over)
+                    return;
+                }
+                case Item.Ram: case Item.HeavyRam:
                     hold = Hold.Cup; axis = toItem; return;
                 case Item.Chainsaw:
                     axis = right ? H.up : H.forward; return; // (the rear handle stands up; the top bar runs along it)
@@ -148,11 +165,12 @@ namespace RockGame
             bool away = m_Root.InverseTransformPoint(arm.position).y < -0.7f;
             HandHold(h.Right, s.Item, s.Ball, out var hold, out var axis, out var point, out var facing);
             SetActive(h.Fist, !away && hold == Hold.Fist);
-            SetActive(h.Cup, !away && hold == Hold.Cup);
+            SetActive(h.Cup, !away && (hold == Hold.Cup || (hold == Hold.Wrap && h.Wrap == null)));
+            SetActive(h.Wrap, !away && hold == Hold.Wrap);
             if (away) return;
             float sx = h.Right ? 1f : -1f;
-            // the model's rest pose: put it back, the shoulders where they go
-            h.Root.SetPositionAndRotation(m_Root.position, m_Root.rotation);
+            // the model's rest pose: put it back, the shoulders where they go (down and back from the eye)
+            h.Root.SetPositionAndRotation(m_Root.TransformPoint(k_ShoulderShift), m_Root.rotation);
             h.Upper.localRotation = h.UpperRest;
             h.Fore.localRotation = h.ForeRest;
 
@@ -179,7 +197,7 @@ namespace RockGame
                 var want = axis.sqrMagnitude > 1e-6f ? axis.normalized : arm.up;
                 to = Quaternion.LookRotation(Perp(fwd, want), -want);
                 marker = h.Palm.position;
-                at = arm.position;
+                at = hold == Hold.Wrap ? point : arm.position;
             }
             var turn = to * Quaternion.Inverse(from);
             var wristRot = turn * h.Wrist.rotation;
@@ -192,10 +210,19 @@ namespace RockGame
             float dist = d.magnitude, reach = (L1 + L2) * 0.999f;
             if (dist > reach)
             {
-                // out of reach: the shoulder comes along (it's out of sight) rather than the hand coming off the arm
+                // out of reach: the shoulder comes along - but never forward into the view (its open end would show): what's
+                // left over, the hand falls just short
                 var shift = d * ((dist - reach) / dist);
+                var sv = m_Root.InverseTransformPoint(S + shift);
+                if (sv.z > 0.08f) { sv.z = 0.08f; /* (still well out to the side of the view) */ shift = m_Root.TransformPoint(sv) - S; }
                 h.Root.position += shift;
-                S += shift; d = wristPos - S; dist = reach;
+                S += shift; d = wristPos - S; dist = d.magnitude;
+                if (dist > reach)
+                {
+                    var pull = d * ((dist - reach) / dist);
+                    wristPos -= pull;
+                    d = wristPos - S; dist = reach;
+                }
             }
             dist = Mathf.Max(dist, Mathf.Abs(L1 - L2) + 0.02f);
             var dn = d.normalized;

@@ -12,6 +12,7 @@ What it does:
   (the fingers fixed in place on the wrist):
     "Fist" - every finger curled round a handle, the thumb over them;
     "Cup"  - the fingers gently curled, the thumb out: a hand that carries or cradles;
+    "Wrap" - the fingers well curled round something big and round (the rock), the thumb partly across;
 - adds marker bones on each wrist that the game lines things up with (none of them move any skin):
     grip / gripA  - the middle of the fist's hole, and a point along the handle's line from it (towards the little-finger side);
     palm / palmN  - the middle of the cupped palm, and a point out from it along the palm's normal;
@@ -35,6 +36,9 @@ FINGERS = ["index", "middle", "ring", "pinky"]
 CURL = float(os.environ.get("CURL_SIGN", "1"))
 FIST = {"index": (78, 96, 62), "middle": (84, 98, 64), "ring": (88, 100, 64), "pinky": (92, 100, 64)}
 CUP = {"index": (16, 22, 14), "middle": (20, 26, 16), "ring": (24, 30, 18), "pinky": (28, 32, 20)}
+# wrapped round something big and round (the rock): the fingers well curled, the thumb partly across
+WRAP = {"index": (38, 46, 30), "middle": (42, 50, 32), "ring": (46, 52, 34), "pinky": (50, 54, 36)}
+WRAP_THUMB = [(-18, 0, -4), (-12, 0, 0), (-10, 0, 0)]
 FIST_THUMB = [tuple(float(v) for v in t.split(",")) for t in os.environ.get("THUMB", "-40,0,-8;-26,0,0;-18,0,0").split(";")]  # (x, y, z) per thumb bone: across and over the curled fingers
 CUP_THUMB = [(0, 0, 0), (0, 0, 8), (0, 0, 6)]
 
@@ -110,6 +114,7 @@ for s in (".r", ".l"):
     knuckles = [P(f"finger_{f}1{s}") for f in FINGERS]
     fistPts[s] = (sum(heads, Vector()) / len(heads), (knuckles[3] - knuckles[0]).normalized(), P(f"finger_middle1{s}"))
 cup = bake("Cup", CUP, CUP_THUMB)
+wrap = bake("Wrap", WRAP, WRAP_THUMB)
 cupPts = {}
 for s in (".r", ".l"):
     w = P("wrist" + s)
@@ -158,6 +163,7 @@ def split(obj, base):
         o.name = ("ArmR_" if isR else "ArmL_") + base; o.data.name = o.name
 split(fist, "Fist")
 split(cup, "Cup")
+split(wrap, "Wrap")
 parts = [o for o in bpy.data.objects if o.type == 'MESH']
 for o in parts: print("[alien_hands]", o.name, "verts", len(o.data.vertices))
 

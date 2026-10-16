@@ -12,6 +12,26 @@ namespace RockGame
     {
         string m_Mode;
 
+        /// <summary>Test runs (-autotest) are silent from the very first frame - before any menu music or start-up sound
+        /// (AutoTest.Start used to mute them, but only once the test began).</summary>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        static void MuteTestRuns()
+        {
+            if (System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-autotest") < 0) return;
+            GameSettings.Muted = true;
+            AudioListener.volume = 0f;
+        }
+
+        /// <summary>...and stay silent, whatever turns the volume back up.</summary>
+        void KeepSilent()
+        {
+            if (m_Mode != null && AudioListener.volume > 0.001f && !s_TestNeedsSound) AudioListener.volume = 0f;
+        }
+
+        /// <summary>A test that needs the mixer running (the voice test turns it down to near nothing itself).</summary>
+        static bool s_TestNeedsSound => m_VoiceTestRunning;
+        static bool m_VoiceTestRunning;
+
         void Start()
         {
             var args = System.Environment.GetCommandLineArgs();
@@ -189,6 +209,7 @@ namespace RockGame
             if (m_Mode == "rig") { yield return RigShots(me, pc); yield break; }
             if (m_Mode == "psxmodels") { yield return PsxModelShots(me, pc); yield break; }
             if (m_Mode == "hands") { yield return HandsShots(me, pc); yield break; }
+            if (m_Mode == "handanim") { yield return HandAnimShots(me, pc); yield break; } // (AutoTest.HandAnim.cs)
             if (m_Mode == "psx") { yield return PsxShots(me, pc); yield break; }
             if (m_Mode == "grass") { yield return GrassShots(me, pc); yield break; }
             if (m_Mode == "nodes") { yield return NodesRoutine(me, pc); yield break; }
@@ -1812,7 +1833,7 @@ namespace RockGame
         }
 
         static System.Action s_LateTick;
-        void LateUpdate() => s_LateTick?.Invoke();
+        void LateUpdate() { KeepSilent(); s_LateTick?.Invoke(); }
 
         static void Check(bool ok, string what) => Log((ok ? "PASS: " : "FAIL: ") + what);
     }

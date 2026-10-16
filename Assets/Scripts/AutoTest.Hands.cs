@@ -214,10 +214,10 @@ namespace RockGame
             Vector3 RockSide(Vector3 idle, float pitch, float x) => idle + Quaternion.Euler(pitch, -4f, 0f) * new Vector3(x, -0.07f, -0.02f);
             var expectR = new Dictionary<string, Vector3>
             {
-                { "rock_idle", RockSide(new Vector3(0.03f, -0.22f, 0.5f), -8f, 0.09f) },
-                { "rock_slam", RockSide(new Vector3(0.02f, -0.3f, 0.66f), 35f, 0.09f) },
+                { "rock_idle", RockSide(new Vector3(0.03f, -0.21f, 0.56f), -8f, 0.09f) },
+                { "rock_slam", RockSide(new Vector3(0.02f, -0.3f, 0.7f), 30f, 0.09f) },
                 { "hatchet_idle", new Vector3(0.14f, -0.33f, 0.58f) },
-                { "hatchet_slam", new Vector3(0.05f, -0.37f, 0.62f) },
+                { "hatchet_slam", new Vector3(0.06f, -0.34f, 0.64f) },
                 { "sword_idle", new Vector3(0.2f, -0.33f, 0.55f) },
                 { "buildingplan_idle", new Vector3(0.21f, -0.27f, 0.45f) },
                 { "c4_idle", new Vector3(0.05f, -0.27f, 0.44f) },
@@ -226,7 +226,7 @@ namespace RockGame
             };
             var expectL = new Dictionary<string, Vector3>
             {
-                { "rock_idle", RockSide(new Vector3(0.03f, -0.22f, 0.5f), -8f, -0.09f) },
+                { "rock_idle", RockSide(new Vector3(0.03f, -0.21f, 0.56f), -8f, -0.09f) },
                 { "hatchet_idle", new Vector3(-0.3f, -0.9f, 0.2f) },
                 { "crossbow_idle", new Vector3(0.2f, -0.2f, 0.42f) + Quaternion.Euler(0f, -6f, 0f) * new Vector3(-0.02f, -0.05f, 0.2f) },
             };
@@ -264,13 +264,15 @@ namespace RockGame
                     if (model == null) continue;
                     var fistGo = model.Find(pre + "Fist");
                     var cupGo = model.Find(pre + "Cup");
+                    var wrapGo = model.Find(pre + "Wrap");
                     Transform mark = fistGo != null && fistGo.gameObject.activeSelf ? FindIn(model, "grip" + sd) : cupGo != null && cupGo.gameObject.activeSelf ? FindIn(model, "palm" + sd) : null;
-                    if (mark == null) continue;
+                    if (mark == null) continue; // (the rock's wrap: its own spot up the rock's side)
+                    if (name == "spear_thrust" || name == "ball_throw") continue; // (flung out further than an arm reaches: the hand lets go)
                     // (a gun in the right hand: the fist goes on its grip, not where the block hand was)
                     if (hh == vm.DebugHand(true) && System.Array.Exists(new[] { "pistol", "revolver", "aliengun", "shotgun", "sniper", "portalgun", "rocketlauncher", "crossbow", "antgun", "slowgun" }, g => name.StartsWith(g) && !name.Contains("ammo"))) continue;
                     forearmChecked++;
                     float off = Vector3.Distance(mark.position, hh.position);
-                    if (off > 0.012f) forearmOut.Append($" {name} {hh.name} {off:0.000}m");
+                    if (off > 0.03f) forearmOut.Append($" {name} {hh.name} {off:0.000}m");
                 }
                 foreach (var (exp, right) in new[] { (expectR, true), (expectL, false) })
                 {

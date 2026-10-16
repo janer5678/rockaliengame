@@ -604,6 +604,7 @@ namespace RockGame
             AudioSettings.GetDSPBufferSize(out int dspLen, out int dspN);
             Log($"audio: {AudioSettings.outputSampleRate} Hz, DSP buffer {dspLen} x {dspN}, driver caps {AudioSettings.driverCapabilities}");
             float listenerWas = AudioListener.volume;
+            m_VoiceTestRunning = true;
             AudioListener.volume = 0.0005f; // (nearly silent, but the mixer runs)
             if (FindAnyObjectByType<AudioListener>() == null) gameObject.AddComponent<AudioListener>();
             var tone = new float[VoiceCodec.FrameSamples];
@@ -684,6 +685,7 @@ namespace RockGame
                 Destroy(go);
             }
             AudioListener.volume = listenerWas;
+            m_VoiceTestRunning = false;
             if (newMs < 0 && oldMs < 0) { Log("SKIP: no audio output here (the mixer never ran), real audio path not measured"); yield break; }
             Log($"real Unity audio path, first packet in -> sound at the mixer: before {oldMs:0} ms (100 ms chunks, 200 ms pre-buffer, streaming clip), after {newMs:0} ms (jitter buffer target {target * 1000:0} ms)");
             Check(newMs >= 0 && (oldMs < 0 || newMs < oldMs * 0.6f) && newMs < 150f, $"real audio path delay {oldMs:0} -> {newMs:0} ms");
