@@ -526,16 +526,19 @@ namespace RockGame
                     // E, your team only, from a good way off), with its own health; broken off, the gap's open. A big
                     // padlock in the team's colour hangs on each side of it near the free end, clear of the logs
                     float px = GatePostX;
+                    var gh = new GameObject("hinge").transform;
+                    gh.SetParent(tr, false);
+                    gh.localPosition = new Vector3(GateHingeX, 0, 0);
+                    float leaf = GateLeafLogs * 0.43f;
+                    if (Cfg.HighTechWalls) BuildTechGate(tr, gh, px, leaf, col, ghost != null);
+                    else
+                    {
                     for (int k = -1; k <= 1; k += 2)
                     {
                         Art.Box(tr, Art.DarkWood, new Vector3(k * px, 2.45f, 0), new Vector3(0.5f, 4.9f, 0.5f), default, col);
                         Art.Part(tr, Art.Cone, Art.Wood * 1.05f, new Vector3(k * px, 4.9f, 0), new Vector3(0.5f, 0.6f, 0.5f));
                     }
                     Art.Box(tr, Art.DarkWood, new Vector3(0, 4.45f, 0), new Vector3(px * 2f + 0.5f, 0.35f, 0.42f), default, col);
-                    var gh = new GameObject("hinge").transform;
-                    gh.SetParent(tr, false);
-                    gh.localPosition = new Vector3(GateHingeX, 0, 0);
-                    float leaf = GateLeafLogs * 0.43f;
                     for (int k = 0; k < GateLeafLogs; k++)
                     {
                         float x = 0.215f + k * 0.43f, h = GateLeafH - 0.12f + ((k * 29) % 4) * 0.06f;
@@ -544,6 +547,7 @@ namespace RockGame
                     }
                     for (int k = 0; k < 2; k++) Art.Box(gh, Art.DarkWood, new Vector3(leaf * 0.5f, 0.9f + k * 2.1f, 0.24f), new Vector3(leaf, 0.2f, 0.1f));
                     Art.Box(gh, Art.DarkWood, new Vector3(leaf * 0.5f, 1.95f, 0.26f), new Vector3(0.18f, 2.9f, 0.08f), new Vector3(0, 0, 50f));
+                    }
                     foreach (float side in new[] { -1f, 1f })
                     {
                         // the hasp plate, the lock's body and its shackle, standing proud of the logs
@@ -562,7 +566,10 @@ namespace RockGame
                 {
                     // a large wall like Rust's high external wall, but lower and wider: a row of big sharpened logs about
                     // 5.5 m wide and 4 m tall, tied together with two cross beams and propped up by braces on the back
+                    // (Emerald mode's: a high tech steel wall the same size - BuildTechWall)
                     const int logs = 13;
+                    if (Cfg.HighTechWalls) BuildTechWall(tr, ghost != null);
+                    else
                     for (int k = 0; k < logs; k++)
                     {
                         float x = -2.52f + k * 0.42f;
@@ -570,10 +577,13 @@ namespace RockGame
                         Art.Box(tr, k % 2 == 0 ? Art.Wood : Art.Wood * 0.9f, new Vector3(x, h * 0.5f, 0), new Vector3(0.44f, h, 0.44f), new Vector3(0, k * 13f, 0));
                         Art.Part(tr, Art.Cone, Art.Wood * 1.05f, new Vector3(x, h, 0), new Vector3(0.44f, 0.5f, 0.44f));
                     }
-                    for (int k = 0; k < 2; k++)
-                        Art.Box(tr, Art.DarkWood, new Vector3(0, 1.0f + k * 1.9f, 0.26f), new Vector3(5.5f, 0.22f, 0.12f));
-                    for (int k = -1; k <= 1; k += 2)
-                        Art.Box(tr, Art.DarkWood, new Vector3(k * 1.8f, 1.25f, 0.8f), new Vector3(0.18f, 2.8f, 0.18f), new Vector3(-28f, 0, 0));
+                    if (!Cfg.HighTechWalls)
+                    {
+                        for (int k = 0; k < 2; k++)
+                            Art.Box(tr, Art.DarkWood, new Vector3(0, 1.0f + k * 1.9f, 0.26f), new Vector3(5.5f, 0.22f, 0.12f));
+                        for (int k = -1; k <= 1; k += 2)
+                            Art.Box(tr, Art.DarkWood, new Vector3(k * 1.8f, 1.25f, 0.8f), new Vector3(0.18f, 2.8f, 0.18f), new Vector3(-28f, 0, 0));
+                    }
                     if (col)
                     {
                         var bc = root.AddComponent<BoxCollider>();
@@ -608,6 +618,65 @@ namespace RockGame
             }
             if ((t == PieceType.Barrier || t == PieceType.Gate) && Cfg.BigWallTall > 1f) tr.localScale = new Vector3(1f, Cfg.BigWallTall, 1f); // (Emerald mode's high defensive walls: really tall)
             return root;
+        }
+
+        /// <summary>Emerald mode's walls: steel and glowing seams.</summary>
+        static readonly Color TechSteel = new Color(0.36f, 0.4f, 0.47f), TechDark = new Color(0.16f, 0.17f, 0.21f), TechGlow = new Color(0.3f, 0.85f, 1f);
+
+        /// <summary>The high tech wall (Emerald mode's large wall, same size as the log one: 5.5 m wide, about 4 m tall): a
+        /// steel slab on a heavy footing between four dark ribs, glowing cyan seams across both faces, a rail along the top
+        /// with a glowing edge and an emitter on each rib.</summary>
+        static void BuildTechWall(Transform tr, bool ghost)
+        {
+            var glow = ghost ? null : Workbench.Glow(TechGlow, 1.7f);
+            Art.Box(tr, TechDark, new Vector3(0, 0.2f, 0), new Vector3(5.5f, 0.4f, 0.72f));
+            Art.Box(tr, TechSteel, new Vector3(0, 2.05f, 0), new Vector3(5.3f, 3.7f, 0.34f));
+            float[] ribs = { -2.62f, -0.88f, 0.88f, 2.62f };
+            foreach (var x in ribs)
+            {
+                Art.Box(tr, TechDark, new Vector3(x, 2.1f, 0), new Vector3(0.26f, 4.0f, 0.48f));
+                Art.Part(tr, Art.Sphere, TechGlow, new Vector3(x, 4.2f, 0), Vector3.one * 0.18f, default, false, glow);
+            }
+            for (int s = -1; s <= 1; s += 2)
+            {
+                float z = s * 0.175f;
+                for (int p = 0; p < 3; p++)
+                {
+                    float cx = (ribs[p] + ribs[p + 1]) * 0.5f, w = ribs[p + 1] - ribs[p] - 0.34f;
+                    // a lighter inset panel, a dark seam round it, two glowing strips across
+                    Art.Box(tr, TechSteel * 1.15f, new Vector3(cx, 2.15f, z), new Vector3(w, 3.1f, 0.02f));
+                    Art.Box(tr, TechGlow, new Vector3(cx, 1.2f, z + s * 0.012f), new Vector3(w * 0.9f, 0.06f, 0.012f), default, false, glow);
+                    Art.Box(tr, TechGlow, new Vector3(cx, 3.1f, z + s * 0.012f), new Vector3(w * 0.9f, 0.06f, 0.012f), default, false, glow);
+                    Art.Box(tr, TechDark, new Vector3(cx, 2.15f, z + s * 0.012f), new Vector3(0.05f, 1.6f, 0.012f));
+                }
+            }
+            Art.Box(tr, TechDark, new Vector3(0, 4.0f, 0), new Vector3(5.5f, 0.2f, 0.5f));
+            Art.Box(tr, TechGlow, new Vector3(0, 4.11f, 0), new Vector3(5.4f, 0.03f, 0.1f), default, false, glow);
+        }
+
+        /// <summary>The high tech gate: steel posts with glowing strips up their faces, a beam over the top, and a steel leaf
+        /// (on the same hinge as the log one) with glowing seams and a dark brace.</summary>
+        static void BuildTechGate(Transform tr, Transform gh, float px, float leaf, bool col, bool ghost)
+        {
+            var glow = ghost ? null : Workbench.Glow(TechGlow, 1.7f);
+            for (int k = -1; k <= 1; k += 2)
+            {
+                Art.Box(tr, TechDark, new Vector3(k * px, 2.45f, 0), new Vector3(0.5f, 4.9f, 0.5f), default, col);
+                for (int s = -1; s <= 1; s += 2) Art.Box(tr, TechGlow, new Vector3(k * px, 2.4f, s * 0.256f), new Vector3(0.07f, 4.3f, 0.012f), default, false, glow);
+                Art.Part(tr, Art.Sphere, TechGlow, new Vector3(k * px, 5.0f, 0), Vector3.one * 0.22f, default, false, glow);
+            }
+            Art.Box(tr, TechDark, new Vector3(0, 4.45f, 0), new Vector3(px * 2f + 0.5f, 0.35f, 0.42f), default, col);
+            Art.Box(tr, TechGlow, new Vector3(0, 4.26f, 0), new Vector3(px * 2f - 0.5f, 0.03f, 0.3f), default, false, glow);
+            float h = GateLeafH;
+            Art.Box(gh, TechSteel, new Vector3(leaf * 0.5f, h * 0.5f + 0.05f, 0), new Vector3(leaf, h, 0.3f), default, col);
+            for (int s = -1; s <= 1; s += 2)
+            {
+                float z = s * 0.158f;
+                Art.Box(gh, TechSteel * 1.15f, new Vector3(leaf * 0.5f, h * 0.5f + 0.05f, z), new Vector3(leaf - 0.3f, h - 0.4f, 0.02f));
+                for (int k = 0; k < 3; k++) Art.Box(gh, TechGlow, new Vector3(leaf * 0.5f, 0.8f + k * (h - 1.4f) * 0.5f, z + s * 0.012f), new Vector3(leaf - 0.5f, 0.06f, 0.012f), default, false, glow);
+                Art.Box(gh, TechDark, new Vector3(leaf * 0.5f, h * 0.5f, z + s * 0.02f), new Vector3(0.14f, h - 0.6f, 0.02f), new Vector3(0, 0, 40f));
+            }
+            Art.Box(gh, TechDark, new Vector3(leaf * 0.5f, h + 0.05f, 0), new Vector3(leaf, 0.14f, 0.36f));
         }
 
         /// <summary>A big padlock under the handle on each face of a door leaf: body, steel shackle and a dark keyhole. (Brass

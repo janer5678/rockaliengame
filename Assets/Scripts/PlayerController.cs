@@ -659,6 +659,7 @@ namespace RockGame
                         case Item.LargeGate:
                         case Item.Barricade:
                         case Item.LandMine: // (Emerald mode)
+                        case Item.BaseGuardian: // (Emerald mode)
                         case Item.Boat: /* THEME MAPS */ HandleDeploy(held); break;
                         case Item.Berry:
                         case Item.Meat: HandleBerry(); break;
@@ -1739,6 +1740,7 @@ namespace RockGame
                 float bestPerp = mount != null ? 0.65f : 0.5f, reach = Cfg.InteractRange + (mount != null ? 1.8f : 1f);
                 foreach (var it in game.Items)
                 {
+                    if (game.PickedUpHere(it.Id)) continue; // (just picked up: it's gone)
                     var mid = it.Center;
                     float t = Vector3.Dot(mid - ray.origin, ray.direction);
                     if (t < 0 || t > found + 0.4f || t > reach) continue;
@@ -1995,7 +1997,12 @@ namespace RockGame
                 }
                 case TargetKind.Bush: m_Net.PickBerriesRpc(t.Obj); m_VM.Use(); Sfx.Play2D(Sfx.Pop, 0.5f); break;
                 case TargetKind.PlayerSpear: m_Net.PullSpearRpc(t.Obj); m_VM.Use(); break;
-                case TargetKind.WorldItem: m_Net.PickupItemRpc(t.ItemId); m_VM.Use(); break;
+                case TargetKind.WorldItem:
+                    m_Net.PickupItemRpc(t.ItemId);
+                    m_VM.Use();
+                    // it's gone from your screen straight away (a thrown spear you pick back up, anything) - if it all fits
+                    if (NetGame.Instance != null && InvOps.Space(m_Net.Inv, t.Stack.Id, t.Stack.Data) >= t.Stack.Count) NetGame.Instance.HidePickedUp(t.ItemId);
+                    break;
                 case TargetKind.SelfSpear: m_Net.PullSpearRpc(m_Net.NetworkObject); Sfx.Play2D(Sfx.Flesh, 0.6f); break;
                 case TargetKind.Machine:
                     // Assassin: your own machine takes the skulls you're carrying (NetGame.GameModes.cs)
@@ -2070,6 +2077,7 @@ namespace RockGame
             else if (held == Item.AutoTurret) want = 110;
             else if (held == Item.Barricade) want = 111;
             else if (held == Item.LandMine) want = 112; // (Emerald mode)
+            else if (held == Item.BaseGuardian) want = 113; // (Emerald mode)
 
             if (want != m_GhostId)
             {
@@ -2083,6 +2091,7 @@ namespace RockGame
                     if (want == 101) Container.CreateVisual(Container.Chest, m_Net.Team.Value, m_Ghost.transform, Art.Ghost(GhostOkColour));
                     else if (want == 104 || want == 105) Container.CreateVisual(want == 105 ? Container.Workbench2 : Container.Workbench, m_Net.Team.Value, m_Ghost.transform, Art.Ghost(GhostOkColour));
                     else if (want == 112) Container.CreateVisual(Container.Mine, m_Net.Team.Value, m_Ghost.transform, Art.Ghost(GhostOkColour));
+                    else if (want == 113) Container.CreateVisual(Container.Guardian, m_Net.Team.Value, m_Ghost.transform, Art.Ghost(GhostOkColour));
                     else if (want >= 106 && want <= 111 && want != 109) Container.CreateVisual(want == 106 ? Container.Ladder : want == 107 ? Container.Trap : want == 108 ? Container.SleepBag : want == 111 ? Container.Barricade : Container.Turret, m_Net.Team.Value, m_Ghost.transform, Art.Ghost(GhostOkColour));
                     else if (want == 109) Structure.CreateVisual(PieceType.Gate, 0, m_Ghost.transform, false, Art.Ghost(GhostOkColour), out _);
                     else if (want == 103) Vehicle.CreateVisual(Vehicle.Boat, m_Ghost.transform, Art.Ghost(GhostOkColour), out _, out _, out _, out _, null, null); // THEME MAPS
@@ -2104,7 +2113,7 @@ namespace RockGame
 
             if (want >= 100)
             {
-                var kind = want == 100 ? Item.Barrier : want == 101 ? Item.Chest : want == 104 ? Item.Workbench : want == 105 ? Item.Workbench2 : want == 103 ? Item.Boat /* THEME MAPS */ : want == 106 ? Item.Ladder : want == 107 ? Item.BearTrap : want == 108 ? Item.SleepingBag : want == 109 ? Item.LargeGate : want == 110 ? Item.AutoTurret : want == 111 ? Item.Barricade : want == 112 ? Item.LandMine : Item.Car;
+                var kind = want == 100 ? Item.Barrier : want == 101 ? Item.Chest : want == 104 ? Item.Workbench : want == 105 ? Item.Workbench2 : want == 103 ? Item.Boat /* THEME MAPS */ : want == 106 ? Item.Ladder : want == 107 ? Item.BearTrap : want == 108 ? Item.SleepingBag : want == 109 ? Item.LargeGate : want == 110 ? Item.AutoTurret : want == 111 ? Item.Barricade : want == 112 ? Item.LandMine : want == 113 ? Item.BaseGuardian : Item.Car;
                 bool bigWall = kind == Item.Barrier || kind == Item.LargeGate;
                 visible = hasHit && hit.distance <= Cfg.DeployRange + (bigWall ? Cfg.BigWallReachExtra : 0f) && hit.normal.y > 0.7f; // (large walls and gates from a bit further off)
                 // a ladder aimed at a wall (a building piece - yours or theirs - or a large wall): it stands straight up

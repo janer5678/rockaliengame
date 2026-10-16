@@ -128,7 +128,7 @@ namespace RockGame
             string problem = me.Count(Item.Emerald) < d.Price ? "can't afford" : me.EmeraldProblem(d) != null ? (d.Id == Item.HighArmor ? "wearing it" : "bag full") : null;
             if (ev.type == EventType.Repaint) ShopRowsShown.Add((d.Id, problem));
             if (!visible) return;
-            string name = Cfg.ItemName(d.Id) + (d.Count > 1 ? $" <color=#bbbbbb>x{d.Count}</color>" : "") + (d.Extra != Item.None ? $" <color=#bbbbbb>+ {Cfg.ItemName(d.Extra).ToLower()}</color>" : "");
+            string name = Cfg.ItemName(d.Id) + (d.Count > 1 ? $" <color=#bbbbbb>x{d.Count}</color>" : "") + (d.Extra != Item.None ? $" <color=#bbbbbb>+ {Cfg.ItemName(d.Extra).ToLower()}</color>" : "") + (d.Extra2 != Item.None ? $" <color=#bbbbbb>+ {Cfg.ItemName(d.Extra2).ToLower()}</color>" : "");
             bool afford = me.Count(Item.Emerald) >= d.Price;
             string price = $"<color={(afford ? "#5dff8a" : "#ff6a5a")}>{d.Price} emerald{(d.Price == 1 ? "" : "s")}</color>";
             ShopRow(rr, d.Id, name, d.Blurb, price, problem, true, k, ev, canClick, () => { me.EmeraldBuyRpc((byte)index); Sfx.PlayUi(Sfx.UiClick, 0.8f, 0.7f); });
@@ -201,8 +201,9 @@ namespace RockGame
             if (!Cfg.Emerald) return null;
             switch (s.Id)
             {
-                case Item.Barrier: return $"<b>High Defensive Wall</b> x{s.Count}    LMB: place it - a very tall log wall, round your base or out in the open (not in the enemy base)";
-                case Item.LargeGate: return $"<b>High Defensive Gate</b> x{s.Count}    LMB: place it in your wall line - your team opens it with {KT(Bind.Interact)}";
+                case Item.Barrier: return $"<b>High Tech Wall</b> x{s.Count}    LMB: place it - a very tall, strong steel wall, round your base or out in the open (not in the enemy base)";
+                case Item.LargeGate: return $"<b>High Tech Gate</b> x{s.Count}    LMB: place it in your wall line - your team opens it with {KT(Bind.Interact)}";
+                case Item.BaseGuardian: return $"<b>Base Guardian</b>    LMB: put it in your base - it lasers any enemy who comes in ({Cfg.GuardianDamage:0} a bolt)";
                 case Item.AutoTurret: return $"<b>Base Turret</b>    LMB: place it in your base - it looks all the way round and shoots any enemy it sees ({Cfg.BaseTurretDamage:0} a shot)";
                 default: return null;
             }

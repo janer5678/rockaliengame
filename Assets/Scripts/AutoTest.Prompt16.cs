@@ -95,10 +95,11 @@ namespace RockGame
                 var deals = Cfg.EmeraldDeals;
                 var want = new (Item id, int n, int price)[]
                 {
-                    (Item.KnockStick, 1, 1), (Item.EnderPearl, 1, 2), (Item.Lightsaber, 1, 3), (Item.AlienGun, 1, 4), (Item.C4, 1, 3),
+                    (Item.KnockStick, 1, 1), (Item.EnderPearl, 1, 2), (Item.Lightsaber, 1, 3), (Item.AlienGun, 1, 4), (Item.C4, 1, 3), (Item.Barrier, 8, 5),
                 };
                 bool same = deals.Count == want.Length;
-                for (int i = 0; same && i < want.Length; i++) same = deals[i].Id == want[i].id && deals[i].Count == want[i].n && deals[i].Price == want[i].price && deals[i].Extra == Item.None;
+                for (int i = 0; same && i < want.Length; i++) same = deals[i].Id == want[i].id && deals[i].Count == want[i].n && deals[i].Price == want[i].price
+                    && (want[i].id == Item.Barrier ? deals[i].Extra == Item.LargeGate && deals[i].ExtraCount == 1 && deals[i].Extra2 == Item.BaseGuardian && deals[i].Extra2Count == 1 : deals[i].Extra == Item.None);
                 var list = new List<string>(); foreach (var d in deals) list.Add($"{d.Id} x{d.Count} {d.Price}");
                 Check(same, $"the shop: just these, at these prices ({string.Join(", ", list)})");
                 for (int i = 0; i < me.Inv.Count; i++) me.Inv[i] = default;
@@ -116,7 +117,9 @@ namespace RockGame
                 yield return new WaitForSeconds(0.3f);
                 var missing = new List<string>();
                 foreach (var w in want) if (me.Count(w.id) < w.n) missing.Add($"{w.id} ({me.Count(w.id)})");
-                Check(missing.Count == 0 && spent == 13 && me.Count(Item.Emerald) == 25 - spent, $"bought one of each for {spent} emeralds ({me.Count(Item.Emerald)} left){(missing.Count > 0 ? " - missing " + string.Join(", ", missing) : "")}");
+                if (me.Count(Item.LargeGate) < 1) missing.Add("LargeGate");
+                if (me.Count(Item.BaseGuardian) < 1) missing.Add("BaseGuardian");
+                Check(missing.Count == 0 && spent == 18 && me.Count(Item.Emerald) == 25 - spent, $"bought one of each for {spent} emeralds ({me.Count(Item.Emerald)} left){(missing.Count > 0 ? " - missing " + string.Join(", ", missing) : "")}");
                 bool noGuns = true;
                 foreach (var d in deals) if (d.Id == Item.Revolver || d.Id == Item.RevolverAmmo || d.Id == Item.Shotgun || d.Id == Item.ShotgunShell || d.Id == Item.Pistol || d.Id == Item.Sniper) noGuns = false;
                 Check(noGuns && !Cfg.Removed(Item.AlienGun) && !Cfg.Removed(Item.Lightsaber), "no revolver, shotgun or ammo in the shop - the lightsaber and the alien gun instead");
@@ -138,7 +141,7 @@ namespace RockGame
                 int n = 0; foreach (var it in g.Items) if (it.Stack.Id == Item.Emerald) n++;
                 Check(n == tops.Count, $"then they grow: {n} emeralds out");
                 var dir = new Vector3(tops[0].x, 0, tops[0].z).normalized;
-                var at = OnGround(tops[0] + Quaternion.Euler(0, 35f, 0) * dir * 8f);
+                var at = Solid(tops[0] + Quaternion.Euler(0, 35f, 0) * dir * 8f);
                 var look = Quaternion.LookRotation(new Vector3(tops[0].x - at.x, 0, tops[0].z - at.z)).eulerAngles.y;
                 pc.LocalTeleport(at, look);
                 pc.SetLook(look, 6f);
@@ -159,14 +162,21 @@ namespace RockGame
                     foreach (var mb in bot.GetComponents<MonoBehaviour>()) if (mb.GetType().Name.StartsWith("BotBrain")) mb.enabled = false;
                     g.TimerPaused.Value = true;
                     if (bot.Dead.Value) bot.ServerRespawn(false);
+                    // (our own things for this part, whatever happened to the ones bought above - a fall drops your bag)
+                    if (me.Dead.Value) { me.ServerRespawn(false); yield return new WaitForSeconds(1f); }
+                    for (int i = 0; i < me.Inv.Count; i++) me.Inv[i] = default;
+                    me.ServerGive(Item.AlienGun, 1, Cfg.GunMag(Item.AlienGun));
+                    me.ServerGive(Item.BaseGuardian, 1);
+                    me.ServerGive(Item.Barrier, 1);
+                    me.ServerGive(Item.LargeGate, 1);
                     yield return new WaitForSeconds(0.3f);
                     // the two of us out in the open, the bot a few metres in front
                     var side = Vector3.Cross(Vector3.up, back);
-                    var spot = OnGround(back * (MapBuilder.DomeRadius + 14f) + side * 12f);
+                    var spot = Solid(back * (MapBuilder.DomeRadius + 14f) + side * 12f);
                     float yaw = Quaternion.LookRotation(-back).eulerAngles.y;
                     pc.LocalTeleport(spot, yaw);
                     pc.SetLook(yaw, 0f);
-                    bot.TeleportRpc(OnGround(spot - back * 6f), yaw + 180f);
+                    bot.TeleportRpc(Solid(spot - back * 6f), yaw + 180f);
                     yield return Hold(me, Item.AlienGun);
                     yield return new WaitForSeconds(0.8f);
                     Check(Hud.AmmoRect.x > Screen.width * 0.5f && Hud.AmmoRect.y > Screen.height * 0.5f && Time.frameCount - Hud.AmmoShownFrame < 5,
@@ -191,11 +201,74 @@ namespace RockGame
                         yield return new WaitForSeconds(0.4f);
                     }
                     Check(me.Count(Item.AlienGun) == 0 && me.HeldItem != Item.AlienGun, $"after its 10th shot it's gone ({me.Count(Item.AlienGun)} left)");
+
+                    // ---- the walls pack: a high tech wall and gate, and the base guardian lasering the enemy in our base
+                    Check(Cfg.ItemName(Item.Barrier) == "High Tech Wall" && Cfg.ItemName(Item.LargeGate) == "High Tech Gate" && Cfg.ItemName(Item.BaseGuardian) == "Base Guardian", "high tech walls, a high tech gate, a base guardian");
+                    var bside = Vector3.Cross(Vector3.up, back);
+                    var home = Cfg.BaseCenter[team];
+                    float byaw = Quaternion.LookRotation(-back).eulerAngles.y;
+                    var gpos = Solid(home - back * 9f + bside * 7f, 0f);
+                    pc.LocalTeleport(gpos - back * -3f, byaw + 180f);
+                    yield return new WaitForSeconds(0.4f);
+                    yield return Hold(me, Item.BaseGuardian);
+                    yield return new WaitForSeconds(0.3f);
+                    me.PlaceDeployableRpc((byte)Item.BaseGuardian, gpos, byaw);
+                    yield return new WaitForSeconds(0.5f);
+                    Container guard = null;
+                    foreach (var c in Container.All) if (c != null && c.Kind.Value == Container.Guardian && c.Team.Value == team) guard = c;
+                    Check(guard != null && me.Count(Item.BaseGuardian) == 0, "the base guardian is put down in our base");
+                    // a wall and the gate beside it
+                    var wpos = Solid(home - back * 13f - bside * 3f, 0f);
+                    yield return Hold(me, Item.Barrier);
+                    yield return new WaitForSeconds(0.3f);
+                    pc.LocalTeleport(wpos - back * 3f, byaw);
+                    yield return new WaitForSeconds(0.3f);
+                    me.PlaceDeployableRpc((byte)Item.Barrier, wpos, byaw);
+                    yield return new WaitForSeconds(0.3f);
+                    yield return Hold(me, Item.LargeGate);
+                    yield return new WaitForSeconds(0.3f);
+                    var gatePos = Solid(wpos - bside * 5.6f, 0f);
+                    me.PlaceDeployableRpc((byte)Item.LargeGate, gatePos, byaw);
+                    yield return new WaitForSeconds(0.5f);
+                    int walls = 0, gates = 0;
+                    foreach (var s in Structure.All) if (s != null && s.Team.Value == team) { if (s.PType == PieceType.Barrier) walls++; if (s.PType == PieceType.Gate) gates++; }
+                    Check(walls >= 1 && gates >= 1, $"a high tech wall ({walls}) and gate ({gates}) put up");
+                    // the bot walks into our base: the guardian opens up on it
+                    if (bot.Dead.Value) bot.ServerRespawn(false);
+                    yield return new WaitForSeconds(0.3f);
+                    int hits0 = Guardian.Hits;
+                    float bhp = bot.Health.Value;
+                    bot.TeleportRpc(Solid(gpos + bside * 9f - back * 2f), byaw);
+                    var look = gpos + bside * 4f - back * 1f - (wpos - gpos).normalized * 0f;
+                    pc.LocalTeleport(Solid(gpos - bside * 7f - back * 6f), Quaternion.LookRotation(Flat3(gpos + bside * 3f - (gpos - bside * 7f - back * 6f))).eulerAngles.y);
+                    pc.SetLook(Quaternion.LookRotation(Flat3(gpos + bside * 3f - (gpos - bside * 7f - back * 6f))).eulerAngles.y, 4f);
+                    yield return new WaitForSeconds(2.2f);
+                    yield return Snap("prompt17_guardian");
+                    yield return new WaitForSeconds(1.5f);
+                    Check(Guardian.Hits > hits0 && (bot.Health.Value < bhp || bot.Dead.Value), $"the guardian lasers the enemy in our base ({Guardian.Hits - hits0} hits, {bhp:0} -> {bot.Health.Value:0} HP)");
+                    // the walls up close
+                    pc.LocalTeleport(Solid(wpos - back * 7f - bside * 2f), byaw + 180f);
+                    pc.SetLook(byaw + 180f, -8f);
+                    yield return new WaitForSeconds(0.8f);
+                    yield return Snap("prompt17_techwalls");
                 }
             }
             Log("prompt16 done");
             Application.Quit(0);
         }
+
+        /// <summary>A spot on whatever's really there (the ground, a platform, the bedrock): straight down from high above.</summary>
+        static Vector3 Solid(Vector3 p, float up = 0.1f)
+        {
+            var from = new Vector3(p.x, MapBuilder.Height(p.x, p.z) + 40f, p.z);
+            float y = MapBuilder.Height(p.x, p.z);
+            foreach (var h in Physics.RaycastAll(from, Vector3.down, 80f, ~(1 << PlayerNet.HitboxLayer), QueryTriggerInteraction.Ignore))
+                if (!h.collider.isTrigger && h.collider.GetComponentInParent<PlayerNet>() == null && h.point.y > y) y = h.point.y;
+            p.y = y + up;
+            return p;
+        }
+
+        static Vector3 Flat3(Vector3 v) { v.y = 0f; return v.sqrMagnitude < 1e-6f ? Vector3.forward : v; }
 
         IEnumerator Prompt16Lucky(PlayerNet me, PlayerController pc, NetGame g, int team, Vector3 back, Quaternion face)
         {

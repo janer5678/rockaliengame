@@ -118,8 +118,8 @@ namespace RockGame
             c.ServerBreakWithSupport();
         }
 
-        public static float CenterUp(byte kind) => kind == Container.SleepBag ? 0.2f : kind == Container.Trap || kind == Container.Mine ? 0.12f : kind == Container.Ladder ? 1.4f : kind == Container.Barricade ? BarricadeH * 0.5f : 0.9f;
-        public static float MaxHp(byte kind) => kind == Container.SleepBag ? 100f : kind == Container.Trap ? 150f : kind == Container.Mine ? 60f : kind == Container.Ladder ? 250f : kind == Container.Barricade ? Cfg.BarricadeHp : 500f;
+        public static float CenterUp(byte kind) => kind == Container.SleepBag ? 0.2f : kind == Container.Trap || kind == Container.Mine ? 0.12f : kind == Container.Ladder ? 1.4f : kind == Container.Barricade ? BarricadeH * 0.5f : kind == Container.Guardian ? 1.1f : 0.9f;
+        public static float MaxHp(byte kind) => kind == Container.SleepBag ? 100f : kind == Container.Trap ? 150f : kind == Container.Mine ? 60f : kind == Container.Ladder ? 250f : kind == Container.Barricade ? Cfg.BarricadeHp : kind == Container.Guardian ? Mathf.Max(1f, Cfg.GuardianHp) : 500f;
 
         /// <summary>The concrete barricade: 3.1 m long and 1.9 m tall (30% bigger each way than it was: it hides you standing
         /// too now) - and its depth at the foot and at the top.</summary>
@@ -197,6 +197,7 @@ namespace RockGame
         public static void Build(byte kind, int team, Transform t, Material ghost)
         {
             var tc = Cfg.TeamColor[Mathf.Clamp(team, 0, 3)];
+            if (kind == Container.Guardian) { Guardian.Build(team, t, ghost); return; } // (Emerald mode's base guardian: BaseGuardian.cs)
             switch (kind)
             {
                 case Container.SleepBag:
@@ -357,6 +358,7 @@ namespace RockGame
                 case Container.SleepBag: bc.center = new Vector3(0, 0.1f, 0); bc.size = new Vector3(0.8f, 0.2f, 1.9f); break;
                 case Container.Trap: bc.center = new Vector3(0, 0.05f, 0); bc.size = new Vector3(0.62f, 0.1f, 0.62f); bc.isTrigger = false; break;
                 case Container.Mine: bc.center = new Vector3(0, 0.03f, 0); bc.size = new Vector3(0.36f, 0.08f, 0.36f); bc.isTrigger = true; break; // (you walk onto it, not over it)
+                case Container.Guardian: bc.center = new Vector3(0, 1.0f, 0); bc.size = new Vector3(0.95f, 1.9f, 0.8f); bc.isTrigger = false; break;
                 case Container.Ladder:
                 {
                     // a thin board along the rails to hit / look at; the climbing volume in front of it (Ladder, like the
@@ -402,6 +404,9 @@ namespace RockGame
             {
                 case Container.Ladder:
                     if (c.IsServer) ServerLadder(c);
+                    break;
+                case Container.Guardian:
+                    Guardian.Tick(c, visual);
                     break;
                 case Container.Mine:
                 {
@@ -744,7 +749,7 @@ namespace RockGame
         }
 
         /// <summary>A clear line from the turret's eye to someone (no walls, no glass).</summary>
-        static bool Clear(Vector3 eye, PlayerNet p)
+        public static bool Clear(Vector3 eye, PlayerNet p)
         {
             var to = p.transform.position + Vector3.up * 1.1f;
             if (PlayerNet.GlassBetween(eye, to)) return false;
@@ -761,6 +766,7 @@ namespace RockGame
 
         public static void ClientFx(Container c, byte what, Vector3 at)
         {
+            if (what == Guardian.FxLaser) { Guardian.ClientFx(c, at); return; }
             switch (what)
             {
                 case FxSnap:
@@ -807,6 +813,6 @@ namespace RockGame
         }
 
         /// <summary>Server: forget a turret / trap that's gone.</summary>
-        public static void Forget(Container c) { s_Turrets.Remove(c); s_TrapSprung.Remove(c); }
+        public static void Forget(Container c) { s_Turrets.Remove(c); s_TrapSprung.Remove(c); Guardian.Forget(c); }
     }
 }

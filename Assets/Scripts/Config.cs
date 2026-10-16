@@ -27,7 +27,8 @@ namespace RockGame
         // Emerald mode's (Emerald.cs): the money, and the emerald shop's own things
         Emerald, HighArmor, Lightsaber, HealBerry, LandMine, FortCreator,
         LuckyBlock, // (Lucky Block mode: the emerald shop's one row - a random airdrop item, LuckyBlock.cs; never an item itself)
-        AlienGun } // (Emerald mode's shop: a hard-hitting revolver that breaks after its shots - Emerald.cs)
+        AlienGun, // (Emerald mode's shop: a hard-hitting revolver that breaks after its shots - Emerald.cs)
+        BaseGuardian } // (Emerald mode's walls pack: a robot that guards your base - BaseGuardian.cs)
 
     /// <summary>
     /// The game mode (picked in the main menu, next to the players). They don't mix:
@@ -628,7 +629,7 @@ namespace RockGame
                 case Item.HeavyRam: return "High Strength Battering Ram";
                 case Item.Hammer: return "Hammer";
                 case Item.Chest: return "Storage Chest";
-                case Item.Barrier: return Emerald ? "High Defensive Wall" : "Large Wall";
+                case Item.Barrier: return Emerald ? "High Tech Wall" : "Large Wall";
                 case Item.Stone: return "Stone";
                 case Item.Arrow: return "Arrow";
                 case Item.Berry: return "Berries";
@@ -640,7 +641,7 @@ namespace RockGame
                 case Item.Ladder: return "Ladder";
                 case Item.BearTrap: return "Stun Trap"; // (the old bear trap, made a stun trap: Container.Deployables.cs)
                 case Item.SleepingBag: return "Sleeping Bag";
-                case Item.LargeGate: return Emerald ? "High Defensive Gate" : "Large Gate";
+                case Item.LargeGate: return Emerald ? "High Tech Gate" : "Large Gate";
                 case Item.Skull: return "Skull";
                 case Item.AutoTurret: return Emerald ? "Base Turret" : "Auto Turret";
                 case Item.Chainsaw: return "Chainsaw";
@@ -1281,6 +1282,7 @@ namespace RockGame
             (20, new[] { "RevolverAmmoWood", "RevolverAmmoPerCraft" }),
             (21, new[] { "HeavyArmorWood", "DeathWandWood", "AirdropItemMask", "AirdropItemMask2" }),
             (22, new[] { "ModesCrossbowWood", "AirdropItemMask", "StickOfTruthShots", "TreeBreakerWood", "SpearGravity", "SpearStraightRange" }),
+            (26, new[] { "EmeraldPriceWalls", "GuardianDamage", "GuardianEvery", "GuardianRange", "GuardianHp" }),
             (25, new[] { "EmeraldPriceLightsaber", "EmeraldPriceAlienGun", "AlienGunShots", "AlienGunBodyDamage", "AlienGunHeadDamage", "AlienGunFireRate" }),
             (24, new[] { "EmeraldPriceRevolver", "EmeraldPriceShotgun", "LuckyBlockPrice" }),
             (23, new[] { "EmeraldPriceKnockStick", "EmeraldPricePearls", "EmeraldPriceRevolver", "EmeraldPriceAmmo", "EmeraldPriceShotgun", "EmeraldPriceShells", "EmeraldPriceC4" }),

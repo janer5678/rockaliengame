@@ -106,8 +106,8 @@ namespace RockGame
                 case Item.Bow: return "Bow: hold LMB to draw, let go to fire. Uses arrows.";
                 case Item.Arrow: return $"Arrows: {Mathf.Max(1, Cfg.ArrowsPerCraft)} a craft, for the bow and the crossbow.";
                 case Item.Ram: return $"Battering Ram ({Cfg.RamUses} hit{(Cfg.RamUses == 1 ? "" : "s")}): hold LMB at an enemy piece - wood breaks, stone and up drop a step.";
-                case Item.Barrier when Cfg.Emerald: return "High Defensive Wall: a very tall, strong log wall - put them round your base.";
-                case Item.LargeGate when Cfg.Emerald: return "High Defensive Gate: a very tall log gate in your wall line - your team opens and closes it.";
+                case Item.Barrier when Cfg.Emerald: return "High Tech Wall: a very tall, strong steel wall - put them round your base.";
+                case Item.LargeGate when Cfg.Emerald: return "High Tech Gate: a very tall steel gate in your wall line - your team opens and closes it.";
                 case Item.Barrier: return "Large Wall: a tall log wall for your base or out in the open.";
                 case Item.LargeGate: return "Large Gate: a tall log gate with a door your team opens - goes in your wall line.";
                 case Item.SleepingBag: return $"Sleeping Bag: put it down anywhere but an enemy base and respawn at it (once every {Cfg.SleepingBagCooldown:0} s).";

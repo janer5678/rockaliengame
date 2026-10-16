@@ -1734,7 +1734,7 @@ namespace RockGame
         }
 
         /// <summary>The Trade Stations' placeables: put down like a chest (Container.Deployables.cs) or, the gate, like a large wall.</summary>
-        public static bool IsPlaceable(Item kind) => kind == Item.SleepingBag || kind == Item.BearTrap || kind == Item.Ladder || kind == Item.AutoTurret || kind == Item.LargeGate || kind == Item.Barricade || kind == Item.LandMine;
+        public static bool IsPlaceable(Item kind) => kind == Item.SleepingBag || kind == Item.BearTrap || kind == Item.Ladder || kind == Item.AutoTurret || kind == Item.LargeGate || kind == Item.Barricade || kind == Item.LandMine || kind == Item.BaseGuardian;
 
         /// <summary>Client-side and server-side placement rules for chests and barriers. Returns null if OK, else the reason.</summary>
         public static string DeployProblem(Item kind, int team, Vector3 pos, float yaw)
@@ -1746,6 +1746,7 @@ namespace RockGame
             // chests go anywhere but an enemy's base (out in the wild the grass clears round them: Container.OnNetworkSpawn)
             if ((kind == Item.Chest || kind == Item.SleepingBag) && baseTeam >= 0 && baseTeam != team && !Cfg.Builder) return "Not in the enemy base";
             if (kind == Item.AutoTurret && baseTeam != team && !Cfg.Builder) return Cfg.Emerald ? "Base turrets go in your own base" : "Auto turrets go in your own base";
+            if (kind == Item.BaseGuardian && baseTeam != team && !Cfg.Builder) return "The base guardian goes in your own base";
             bool anywhere = kind == Item.Ladder || kind == Item.BearTrap || kind == Item.Barricade || kind == Item.LandMine; // (Emerald mode's land mine: anywhere too) // (ladders, stun traps and barricades: their base too; the trap on the ground or any floor)
             if (kind == Item.Barricade) { var bp = Deployables.BarricadeEnemyProblem(team, pos); if (bp != null) return bp; } // (...not right up against their buildings)
             if (kind == Item.Barricade)
@@ -1760,7 +1761,7 @@ namespace RockGame
             // Auto Wood: the wood machine's spot stays free even before the machine is bought (it lands there later)
             if ((kind == Item.Chest || Workbench.IsBench(kind)) && Cfg.AutoWood && baseTeam == team
                 && new Vector2(pos.x - Cfg.WoodMachinePos(team).x, pos.z - Cfg.WoodMachinePos(team).z).magnitude < 1.4f) return "Keep the wood machine's spot clear";
-            bool smallThing = kind == Item.Chest || kind == Item.SleepingBag || kind == Item.BearTrap || kind == Item.AutoTurret || kind == Item.Ladder || kind == Item.LandMine;
+            bool smallThing = kind == Item.Chest || kind == Item.SleepingBag || kind == Item.BearTrap || kind == Item.AutoTurret || kind == Item.Ladder || kind == Item.LandMine || kind == Item.BaseGuardian;
             if (!smallThing && !Workbench.IsBench(kind) && Cfg.PointBlocked(pos)) return "Not on the bedrock";
             if (kind != Item.Chest && !anywhere && baseTeam >= 0 && baseTeam != team) return "Not in the enemy base";
             var rot = Quaternion.Euler(0, yaw, 0);
@@ -1796,6 +1797,7 @@ namespace RockGame
             else if (kind == Item.LandMine) { c = new Vector3(0, 0.08f, 0); half = new Vector3(0.17f, 0.05f, 0.17f); }
             else if (kind == Item.Ladder) { c = new Vector3(0, 0.6f, 0); half = new Vector3(0.35f, 0.45f, 0.12f); } // (just its foot: it leans on the wall)
             else if (kind == Item.AutoTurret) { c = new Vector3(0, 0.65f, 0); half = new Vector3(0.4f, 0.55f, 0.4f); }
+            else if (kind == Item.BaseGuardian) { c = new Vector3(0, 1.0f, 0); half = new Vector3(0.45f, 0.85f, 0.4f); }
             else if (kind == Item.Barricade) { c = new Vector3(0, Deployables.BarricadeH * 0.5f + 0.045f, 0); half = new Vector3(Deployables.BarricadeLen * 0.5f - 0.04f, Deployables.BarricadeH * 0.5f - 0.055f, Deployables.BarricadeFoot * 0.5f - 0.04f); }
             else if (kind == Item.LargeGate) { c = new Vector3(0, 2.45f * Cfg.BigWallTall, 0); half = new Vector3(Structure.GatePostX + 0.2f, 2.2f * Cfg.BigWallTall, 0.2f); } // the large gate (5.4 m wide, 4.9 m tall; Emerald mode's taller)
             else { c = new Vector3(0, 2.1f * Cfg.BigWallTall, 0); half = new Vector3(2.7f, 1.85f * Cfg.BigWallTall, 0.2f); } // the large wall (5.5 m wide, 4 m tall; Emerald mode's taller)
@@ -1851,11 +1853,11 @@ namespace RockGame
                 go.GetComponent<NetworkObject>().Spawn(true);
             }
             else if (Workbench.IsBench(kind)) Workbench.ServerSpawn(Team.Value, pos, yaw, Workbench.TierOfItem(kind));
-            else if (kind == Item.SleepingBag || kind == Item.BearTrap || kind == Item.Ladder || kind == Item.AutoTurret || kind == Item.Barricade || kind == Item.LandMine)
+            else if (kind == Item.SleepingBag || kind == Item.BearTrap || kind == Item.Ladder || kind == Item.AutoTurret || kind == Item.Barricade || kind == Item.LandMine || kind == Item.BaseGuardian)
             {
                 // the Trade Stations' placeables (Container.Deployables.cs): the turret has two slots, a weapon and its ammo
                 // (Emerald mode's base turret needs neither: no slots)
-                byte ck = kind == Item.SleepingBag ? Container.SleepBag : kind == Item.BearTrap ? Container.Trap : kind == Item.Ladder ? Container.Ladder : kind == Item.Barricade ? Container.Barricade : kind == Item.LandMine ? Container.Mine : Container.Turret;
+                byte ck = kind == Item.SleepingBag ? Container.SleepBag : kind == Item.BearTrap ? Container.Trap : kind == Item.Ladder ? Container.Ladder : kind == Item.Barricade ? Container.Barricade : kind == Item.LandMine ? Container.Mine : kind == Item.BaseGuardian ? Container.Guardian : Container.Turret;
                 var go = Instantiate(Bootstrap.I.containerPrefab, pos, rot);
                 go.GetComponent<Container>().ServerInit(ck, Team.Value, ck == Container.Turret && !Cfg.Emerald ? 2 : 0, null);
                 go.GetComponent<NetworkObject>().Spawn(true);

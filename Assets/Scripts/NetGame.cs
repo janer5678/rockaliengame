@@ -568,6 +568,12 @@ namespace RockGame
             }
         }
 
+        /// <summary>Items this PC has just picked up (E): gone from its screen at once, not a round trip later when the
+        /// server's list says so (the time it was picked up - if it's somehow still there a while later, it shows again).</summary>
+        readonly Dictionary<int, float> m_PickedHere = new Dictionary<int, float>();
+        public void HidePickedUp(int id) => m_PickedHere[id] = Time.time;
+        public bool PickedUpHere(int id) => m_PickedHere.TryGetValue(id, out var t) && Time.time - t < 1.5f;
+
         void SyncItemVisuals()
         {
             m_Seen.Clear();
@@ -575,6 +581,12 @@ namespace RockGame
             foreach (var it in Items)
             {
                 m_Seen.Add(it.Id);
+                if (PickedUpHere(it.Id))
+                {
+                    // picked up on this screen: gone already (the server's list catches up in a moment)
+                    if (m_ItemVisuals.TryGetValue(it.Id, out var hid) && hid && hid.activeSelf) hid.SetActive(false);
+                    continue;
+                }
                 bool fresh = false;
                 if (!m_ItemVisuals.TryGetValue(it.Id, out var go) || !go)
                 {
@@ -606,6 +618,7 @@ namespace RockGame
                     pos = Vector3.Lerp(it.From, it.Pos, t) + Vector3.up * Mathf.Sin(t * Mathf.PI) * (0.6f + 0.12f * Mathf.Min(flat, 6f));
                     rot *= Quaternion.Euler((1f - t) * 360f, 0, 0);
                 }
+                if (!go.activeSelf) go.SetActive(true);
                 go.transform.SetPositionAndRotation(pos, rot);
                 ItemBounce(it, go.transform, fresh); // (a stack that's been added to bounces)
                 ItemGlint(it, go.transform, t < 1f); // (and it glints now and then when you're near: NetGame.ItemGlint.cs)
@@ -614,7 +627,7 @@ namespace RockGame
             if (m_ItemVisuals.Count == m_Seen.Count) return;
             var gone = new List<int>();
             foreach (var kv in m_ItemVisuals) if (!m_Seen.Contains(kv.Key)) gone.Add(kv.Key);
-            foreach (var id in gone) { if (m_ItemVisuals[id]) Destroy(m_ItemVisuals[id]); m_ItemVisuals.Remove(id); m_ItemSeenAt.Remove(id); ForgetItemBounce(id); ForgetItemGlint(id); }
+            foreach (var id in gone) { if (m_ItemVisuals[id]) Destroy(m_ItemVisuals[id]); m_ItemVisuals.Remove(id); m_ItemSeenAt.Remove(id); ForgetItemBounce(id); ForgetItemGlint(id); m_PickedHere.Remove(id); }
         }
 
         public void Broadcast(string msg) => BroadcastRpc(new FixedString128Bytes(msg.Length > 120 ? msg.Substring(0, 120) : msg));

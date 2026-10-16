@@ -45,7 +45,7 @@ namespace RockGame
         [Tune("Emerald mode")] public static float AlienGunBodyDamage = 45f, AlienGunHeadDamage = 75f, AlienGunFireRate = 0.35f;
 
         /// <summary>Emerald mode's own things: nowhere else (Cfg.Removed).</summary>
-        public static bool EmeraldOnly(Item i) => i == Item.Emerald || i == Item.HighArmor || i == Item.Lightsaber || i == Item.HealBerry || i == Item.LandMine || i == Item.FortCreator || i == Item.AlienGun;
+        public static bool EmeraldOnly(Item i) => i == Item.Emerald || i == Item.HighArmor || i == Item.Lightsaber || i == Item.HealBerry || i == Item.LandMine || i == Item.FortCreator || i == Item.AlienGun || i == Item.BaseGuardian;
         /// <summary>Not crafted in Emerald mode: there's no Advanced Trade Station, and the death wand's in the emerald shop.</summary>
         public static bool EmeraldOut(Item i) => Emerald && (i == Item.Workbench2 || i == Item.DeathWand);
 
@@ -59,6 +59,9 @@ namespace RockGame
             public int Count;
             public Item Extra;
             public int ExtraCount;
+            /// <summary>A third thing with it (the walls pack's base guardian).</summary>
+            public Item Extra2;
+            public int Extra2Count;
             public int Price;
             public string Blurb;
         }
@@ -71,7 +74,7 @@ namespace RockGame
             get
             {
                 s_Deals.Clear();
-                void Add(Item id, int n, int price, string blurb, Item extra = Item.None, int extraN = 0) => s_Deals.Add(new EmeraldDeal { Id = id, Count = n, Price = Mathf.Max(0, price), Blurb = blurb, Extra = extra, ExtraCount = extraN });
+                void Add(Item id, int n, int price, string blurb, Item extra = Item.None, int extraN = 0, Item extra2 = Item.None, int extra2N = 0) => s_Deals.Add(new EmeraldDeal { Id = id, Count = n, Price = Mathf.Max(0, price), Blurb = blurb, Extra = extra, ExtraCount = extraN, Extra2 = extra2, Extra2Count = extra2N });
                 if (LuckyBlock)
                 {
                     // Lucky Block mode: just the one thing - a random airdrop item (LuckyBlock.cs)
@@ -83,6 +86,7 @@ namespace RockGame
                 Add(Item.Lightsaber, 1, EmeraldPriceLightsaber, $"quick glowing blade: {LightsaberDamage:0} a hit");
                 Add(Item.AlienGun, 1, EmeraldPriceAlienGun, $"{GunMag(Item.AlienGun)} shots, {AlienGunBodyDamage:0} body / {AlienGunHeadDamage:0} head - then it breaks");
                 Add(Item.C4, 1, EmeraldPriceC4, "thrown: wrecks every building piece nearby");
+                Add(Item.Barrier, 8, EmeraldPriceWalls, "8 tall steel walls and a gate - and a robot that lasers anyone who comes into your base", Item.LargeGate, 1, Item.BaseGuardian, 1);
                 return s_Deals;
             }
         }
@@ -99,6 +103,7 @@ namespace RockGame
                 case Item.FortCreator: return "Fort Creator";
                 case Item.LuckyBlock: return "Lucky Block";
                 case Item.AlienGun: return "Alien Gun";
+                case Item.BaseGuardian: return "Base Guardian";
                 default: return null;
             }
         }
@@ -112,6 +117,7 @@ namespace RockGame
                 case Item.HighArmor: return $"LMB: put it on - {HighArmorHp} armour, used up before your health.";
                 case Item.Lightsaber: return $"A quick glowing blade: {LightsaberDamage:0} damage a hit (x2 to the head), cuts through wood too.";
                 case Item.HealBerry: return "LMB / RMB: eat one - you're back on full health at once.";
+                case Item.BaseGuardian: return $"LMB: put it in your base - it hovers there, and any enemy who comes in gets laser bolts ({GuardianDamage:0} a hit) until they leave.";
                 case Item.AlienGun: return $"Like the revolver, but it hits harder ({AlienGunBodyDamage:0} body, {AlienGunHeadDamage:0} head) and never needs ammo: {GunMag(Item.AlienGun)} shots, then it breaks.";
                 case Item.LandMine: return "LMB: put it on the ground, anywhere. It's hard to see - an enemy who steps on it blows up.";
                 case Item.FortCreator: return "LMB: throw it - a fort pops up where it lands: tall walls round a lookout tower, and a gate your team opens.";
@@ -485,6 +491,15 @@ namespace RockGame
                 case Item.Emerald:
                     Gem(t, 0.34f, null, null);
                     return true;
+                case Item.BaseGuardian:
+                {
+                    // the guardian, small: a copy of the real thing (BaseGuardian.cs)
+                    var mini = new GameObject("mini").transform;
+                    mini.SetParent(t, false);
+                    Guardian.Build(PlayerNet.Local != null ? PlayerNet.Local.Team.Value : 0, mini, null);
+                    mini.localScale = Vector3.one * 0.18f;
+                    return true;
+                }
                 case Item.AlienGun:
                 {
                     // a revolver-sized ray gun (held like the revolver: grip under the back): a sleek pearly body, a bulb of
@@ -709,6 +724,7 @@ namespace RockGame
             {
                 ServerGive(d.Id, d.Count, Mathf.Clamp(Cfg.MaxData(d.Id), 0, 255));
                 if (d.Extra != Item.None && d.ExtraCount > 0) ServerGive(d.Extra, d.ExtraCount, Mathf.Clamp(Cfg.MaxData(d.Extra), 0, 255));
+                if (d.Extra2 != Item.None && d.Extra2Count > 0) ServerGive(d.Extra2, d.Extra2Count, Mathf.Clamp(Cfg.MaxData(d.Extra2), 0, 255));
             }
             EmeraldBuys++;
             if (d.Id != Item.LuckyBlock) CraftedRpc((byte)d.Id); // (a lucky block says what it was instead)
@@ -726,6 +742,14 @@ namespace RockGame
             if (d.Id == Item.LuckyBlock) return InvOps.Space(Inv, Item.LuckyBlock, 0) < 1 ? "Inventory full!" : null; // (a free slot for whatever it is)
             int data = Mathf.Clamp(Cfg.MaxData(d.Id), 0, 255);
             if (InvOps.Space(Inv, d.Id, data) < d.Count) return "Inventory full!";
+            // (the pack's other things need room too: a free slot each, if there's nowhere to stack them)
+            int free = 0;
+            for (int i = 0; i < Inv.Count; i++) if (Inv[i].Empty) free++;
+            int need = 0;
+            if (d.Extra != Item.None && InvOps.Space(Inv, d.Extra, Mathf.Clamp(Cfg.MaxData(d.Extra), 0, 255)) < d.ExtraCount) return "Inventory full!";
+            if (d.Extra != Item.None) need++;
+            if (d.Extra2 != Item.None) need++;
+            if (need > 0 && free < need + 1) return "Inventory full!";
             return null;
         }
 

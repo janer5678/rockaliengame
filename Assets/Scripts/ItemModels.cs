@@ -262,6 +262,18 @@ namespace RockGame
                     Art.Box(t, Cfg.TeamColor[PlayerNet.Local != null ? Mathf.Clamp(PlayerNet.Local.Team.Value, 0, 3) : 0], new Vector3(0, 0.22f, 0.031f), new Vector3(0.38f, 0.02f, 0.004f));
                     break;
                 }
+                case Item.LargeGate when Cfg.HighTechWalls:
+                case Item.Barrier when Cfg.HighTechWalls:
+                {
+                    // Emerald mode's high tech wall / gate, small: a steel panel between dark ribs with glowing seams
+                    var steel = new Color(0.36f, 0.4f, 0.47f); var dark = new Color(0.16f, 0.17f, 0.21f); var cyan = new Color(0.3f, 0.85f, 1f);
+                    var glow = Workbench.Glow(cyan, 1.7f);
+                    Art.Box(t, steel, new Vector3(0, 0.15f, 0), new Vector3(0.32f, 0.26f, 0.04f));
+                    for (int k = -1; k <= 1; k += 2) Art.Box(t, dark, new Vector3(k * 0.17f, 0.155f, 0), new Vector3(0.03f, 0.3f, 0.055f));
+                    for (int k = 0; k < 2; k++) Art.Box(t, cyan, new Vector3(0, 0.08f + k * 0.14f, 0.022f), new Vector3(0.28f, 0.012f, 0.004f), default, false, glow);
+                    if (item == Item.LargeGate) Art.Box(t, Color.white, new Vector3(0.09f, 0.15f, 0.03f), new Vector3(0.04f, 0.05f, 0.02f));
+                    break;
+                }
                 case Item.LargeGate:
                     for (int k = -2; k <= 2; k++)
                     {
