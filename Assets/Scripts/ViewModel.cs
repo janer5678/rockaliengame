@@ -525,7 +525,7 @@ namespace RockGame
         {
             // the spear lives on the rig; both hands grab the shaft with natural wrist angles
             float d = throwing ? 0f : s.Draw;
-            Vector3 pos = new Vector3(0.4f, 0.17f, 0.15f - d * 0.25f);
+            Vector3 pos = new Vector3(0.3f, 0.07f, 0.24f - d * 0.2f); // (over the shoulder, the shaft in view at the top right)
             if (throwing) pos = Vector3.Lerp(pos, new Vector3(0.15f, -0.02f, 0.8f), Smooth(throwK));
             var rot = sharedRot * Quaternion.Euler(86f, -6f, 0);
             AttachItemToRoot(shared + pos, rot);
@@ -590,7 +590,7 @@ namespace RockGame
             var rest = grip + bowRot * new Vector3(-0.032f, 0.062f, 0.06f);
             var dirIdle = (bowRot * new Vector3(-0.08f, 0.06f, 1f)).normalized;
             var dir = Vector3.Slerp(dirIdle, Vector3.forward, e).normalized;
-            var tip = rest + dir * Mathf.Lerp(0.22f, 0.07f, e);
+            var tip = rest + dir * Mathf.Lerp(0.4f, 0.25f, e); // (far enough through the rest that the fletching stays well out in front of your eye, never a slab across the view)
             const float arrowLen = 0.72f;
             var nock = tip - dir * arrowLen;
             if (m_Arrow)
@@ -653,7 +653,7 @@ namespace RockGame
             }
             kick *= 1f - 0.35f * aim; // (steadier down the sights)
             // the sights at the eye: the revolver's sit higher above its grip than the crossbow's
-            var aimed = s.Item == Item.Revolver ? new Vector3(0f, -0.104f, 0.38f) : new Vector3(0f, -0.075f, 0.3f); // (the revolver: the eye just over its notch, the drum and barrel low under the line)
+            var aimed = s.Item == Item.Revolver ? new Vector3(0f, -0.104f, 0.38f) : new Vector3(0f, -0.08f, 0.52f); // (the long guns held out far enough that their stocks don't fill the view) // (the revolver: the eye just over its notch, the drum and barrel low under the line)
             var pos = shared + Vector3.Lerp(new Vector3(0.2f, -0.2f, 0.42f), aimed, Smooth(aim)) + kickPos * kick;
             var rot = sharedRot * Quaternion.Euler(kickRot.x * kick, Mathf.Lerp(-6f, 0f, aim) + kickRot.y * kick, kickRot.z * kick);
             float r = s.Reload >= 0f ? Mathf.Sin(Mathf.Clamp01(s.Reload) * Mathf.PI) : 0f;
@@ -769,7 +769,7 @@ namespace RockGame
             float throwK = Mathf.Clamp01((Now - m_ThrowStart) / 0.3f);
             bool throwing = throwK < 1f;
             var ballPos = shared + new Vector3(0, -0.62f, 0.75f);
-            if (throwing) ballPos += new Vector3(0, 0.25f, 0.9f) * Smooth(throwK);
+            if (throwing) ballPos += new Vector3(0, 0.1f, 1.4f) * Smooth(throwK); // (pushed away from you, not up into your face)
             if (m_Ball)
             {
                 m_Ball.transform.localPosition = ballPos;
@@ -815,6 +815,7 @@ namespace RockGame
                 case Item.Barrier: AttachItemToRight(new Vector3(0, 0.04f, 0.06f), new Vector3(0, 20, 0), 0.8f); break;
                 case Item.Barricade: AttachItemToRight(new Vector3(0, 0.03f, 0.07f), new Vector3(0, 20, 0), 0.7f); break;
                 case Item.Arrow: AttachItemToRight(new Vector3(0, -0.1f, 0.02f), new Vector3(-30, 0, 0), 0.8f); break;
+                case Item.Emerald: AttachItemToRight(new Vector3(0, 0.03f, 0.06f), new Vector3(-15, 0, 0), 0.45f); break; // (a gem, held up small in the fingers - not a boulder filling the view)
                 default: AttachItemToRight(new Vector3(0, 0.05f, 0.07f), Vector3.zero, 1f); break;
             }
             HideLeft();

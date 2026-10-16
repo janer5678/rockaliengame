@@ -64,7 +64,7 @@ namespace RockGame
         {
             if (S != GameState.BallLive && S != GameState.SuddenDeath) return; // (the walls are still up: no machine yet)
             float f = m_WoodGenSecs / Mathf.Max(1f, BallPhase);
-            int lvl = f >= Cfg.WoodGenLevel3At ? 3 : f >= Cfg.WoodGenLevel2At ? 2 : 1;
+            int lvl = Cfg.LuckyBlock ? 1 : f >= Cfg.WoodGenLevel3At ? 3 : f >= Cfg.WoodGenLevel2At ? 2 : 1; // (Lucky Block mode: flat out from the start)
             bool up = false;
             for (int t = 0; t < Cfg.TeamCount; t++)
                 if (WoodGenLevelOf(t) < lvl) { WoodGenLevels.Value = (WoodGenLevels.Value & ~(3 << (t * 2))) | (lvl << (t * 2)); up = true; }

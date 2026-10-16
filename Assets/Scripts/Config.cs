@@ -25,7 +25,8 @@ namespace RockGame
         AntGun, ClutterBomb,
         BetterHatchet, // (Jonah Test Mode Bruh: the chainsaw's place - JonahBruh.cs)
         // Emerald mode's (Emerald.cs): the money, and the emerald shop's own things
-        Emerald, HighArmor, Lightsaber, HealBerry, LandMine, FortCreator }
+        Emerald, HighArmor, Lightsaber, HealBerry, LandMine, FortCreator,
+        LuckyBlock } // (Lucky Block mode: the emerald shop's one row - a random airdrop item, LuckyBlock.cs; never an item itself)
 
     /// <summary>
     /// The game mode (picked in the main menu, next to the players). They don't mix:
@@ -42,7 +43,8 @@ namespace RockGame
         AirdropTest, // Airdrop Test: Classic plus airdrop berry bushes all over the map (NetGame.AirdropBushes.cs)
         JonahBruh, // Jonah Test Mode Bruh: Classic with Jonah's changes, only in this mode (JonahBruh.cs)
         ClipFarm, // Clip Farm: Classic turned up for highlight clips (ClipFarm.cs)
-        Emerald } // Emerald mode: Classic with emerald spawners and an emerald shop (Emerald.cs)
+        Emerald, // Emerald mode: Classic with emerald spawners and an emerald shop (Emerald.cs)
+        LuckyBlock } // Lucky Block mode: Bedwars with no trees, a wood machine that spams wood and lucky blocks for emeralds (LuckyBlock.cs)
 
     public enum PieceType : byte { Foundation, Wall, Doorway, Floor, Stairs, Barrier, Window, Tower, EggBlock, Gate }
 
@@ -125,11 +127,11 @@ namespace RockGame
         public static GameMode Mode = GameMode.Duel;
         public static GameRules Rules = GameRules.Classic;
         /// <summary>Arsenal and Builder: cheap items and the powerful items menu.</summary>
-        public static bool PowerMenu => Rules == GameRules.Arsenal || Rules == GameRules.Builder || Rules == GameRules.AutoWood || ClassicMode || Jonah || AirdropTest || JonahBruh || ClipFarm || Emerald;
+        public static bool PowerMenu => (Rules == GameRules.Arsenal || Rules == GameRules.Builder || Rules == GameRules.AutoWood || ClassicMode || Jonah || AirdropTest || JonahBruh || ClipFarm || Emerald) && !LuckyBlock; // (Lucky Block mode: only the building plan)
         /// <summary>The five modes that are Classic with another way to win (Bedwars, 3 Goal, Progress, Assassin, Domination).</summary>
-        public static bool ClassicMode => (Rules >= GameRules.Bedwars && Rules <= GameRules.Domination) || Rules == GameRules.AutoWood || JonahBruhProgression || ClipFarm || Emerald; // (Classic plays like Progress now; Jonah Test Mode Bruh played as PROGRESSION: JonahBruh.cs)
+        public static bool ClassicMode => (Rules >= GameRules.Bedwars && Rules <= GameRules.Domination) || Rules == GameRules.AutoWood || JonahBruhProgression || ClipFarm || Emerald || LuckyBlock; // (Classic plays like Progress now; Jonah Test Mode Bruh played as PROGRESSION: JonahBruh.cs)
         /// <summary>The last game mode there is (the menus and the map key clamp to it).</summary>
-        public const GameRules LastRules = GameRules.Emerald;
+        public const GameRules LastRules = GameRules.LuckyBlock;
         /// <summary>The rules are 4 bits of the map key at RulesShift, and a fifth up here (modes 16 and on: Jonah Ideas Test).</summary>
         public const int RulesHighBit = 1 << 30;
         /// <summary>The game mode in a map key.</summary>
@@ -155,14 +157,14 @@ namespace RockGame
         /// the old names.
         /// </summary>
         public static string RulesName(GameRules r) => r == GameRules.Arsenal ? "Arsenal" : r == GameRules.Builder ? "Builder" : r == GameRules.Fun ? "Fun"
-            : r == GameRules.FunRandom ? "Fun Random" : r == GameRules.FunRandomLimited ? "Fun Random Limited" : r == GameRules.Primitive ? "Primitive Limited" : r == GameRules.BuildingPrimitive ? "Building Primitive" : r == GameRules.AutoWood ? "Classic" : r == GameRules.Tutorial ? "Tutorial" : r == GameRules.Dna ? "DNA" : r == GameRules.Bedwars ? "Bedwars" : r == GameRules.ThreeGoal ? "3 Goal" : r == GameRules.Progress ? "Progress" : r == GameRules.Assassin ? "Assassin" : r == GameRules.Domination ? "Domination" : r == GameRules.JonahTest ? "Jonah Ideas Test" : r == GameRules.AirdropTest ? "Airdrop Test" : r == GameRules.JonahBruh ? "Jonah Test Mode Bruh" : r == GameRules.ClipFarm ? "Clip Farm" : r == GameRules.Emerald ? "Emerald Mode" : "Primitive";
+            : r == GameRules.FunRandom ? "Fun Random" : r == GameRules.FunRandomLimited ? "Fun Random Limited" : r == GameRules.Primitive ? "Primitive Limited" : r == GameRules.BuildingPrimitive ? "Building Primitive" : r == GameRules.AutoWood ? "Classic" : r == GameRules.Tutorial ? "Tutorial" : r == GameRules.Dna ? "DNA" : r == GameRules.Bedwars ? "Bedwars" : r == GameRules.ThreeGoal ? "3 Goal" : r == GameRules.Progress ? "Progress" : r == GameRules.Assassin ? "Assassin" : r == GameRules.Domination ? "Domination" : r == GameRules.JonahTest ? "Jonah Ideas Test" : r == GameRules.AirdropTest ? "Airdrop Test" : r == GameRules.JonahBruh ? "Jonah Test Mode Bruh" : r == GameRules.ClipFarm ? "Clip Farm" : r == GameRules.Emerald ? "Emerald Mode" : r == GameRules.LuckyBlock ? "Lucky Block" : "Primitive";
         /// <summary>The mode's -rules name (the enum's, never renamed: classic, autowood, primitive...) - the tests' file names.</summary>
         public static string RulesId(GameRules r) => r.ToString().ToLowerInvariant();
         /// <summary>The game modes on the main menu's first row (the rest are under "More modes").</summary>
         public static readonly GameRules[] MainRules = { GameRules.Tutorial, GameRules.AutoWood, GameRules.Classic };
         /// <summary>The rest of the game modes, under "More modes".</summary>
         public static readonly GameRules[] MoreRules = { GameRules.Arsenal, GameRules.Builder, GameRules.Primitive, GameRules.BuildingPrimitive, GameRules.Dna, GameRules.Fun, GameRules.FunRandom, GameRules.FunRandomLimited,
-            GameRules.Bedwars, GameRules.ThreeGoal, GameRules.Assassin, GameRules.Domination, GameRules.JonahTest, GameRules.AirdropTest, GameRules.JonahBruh, GameRules.ClipFarm, GameRules.Emerald }; // (Progress is gone: Classic plays like it now)
+            GameRules.Bedwars, GameRules.ThreeGoal, GameRules.Assassin, GameRules.Domination, GameRules.JonahTest, GameRules.AirdropTest, GameRules.JonahBruh, GameRules.ClipFarm, GameRules.Emerald, GameRules.LuckyBlock }; // (Progress is gone: Classic plays like it now)
         public static string RulesDesc(GameRules r)
         {
             switch (r)
@@ -177,7 +179,8 @@ namespace RockGame
                 case GameRules.AirdropTest: return "Classic, plus purple AIRDROP BERRY BUSHES all over the map: pick one (E) and you get an airdrop item - a different one every time (you never get the same one twice; the others can still get it).";
                 case GameRules.JonahBruh: return $"Classic with Jonah's changes (pick NORMAL or PROGRESSION below): a one-cell spawn base, Armour at the top of the Advanced Trade Station ({JonahBruhArmorWood}; the station {JonahBruhBench2Wood}), no stun trap, ladder or chainsaw - a BETTER HATCHET instead (chops faster, {BetterHatchetWood} wood), the death wand only from airdrops. Walls only upgrade to MAGICAL STONE ({JonahBruhStoneWood} wood a piece, {JonahBruhStoneHpMul:0.#}x as strong). Respawn in the wild: pick the spot on the map.";
                 case GameRules.ClipFarm: return $"Classic turned up for clips. Everyone gets a random airdrop item when the wall drops and every time they respawn (every airdrop item's in), an airdrop every {ClipFarmDropEvery:0} s, airdrop berry bushes all over. Multi-kills, long shots, headshots, streaks, shutdowns, revenge and YEETs go up huge on everyone's screen with an air horn - and get marked on Steam's game recording timeline.";
-                case GameRules.Emerald: return $"Classic, plus EMERALDS: one grows on each emerald spawner (a raised platform on every team's way to the middle) every {EmeraldEvery / 60f:0.#} minutes. Spend them at the EMERALD SHOP beside your machine (E): shotgun, revolver, C4, the death wand, ammo, High Power Armour, a lightsaber, Instant Heal Berries, ender pearls, the knockback stick, tall defensive walls with a gate, land mines, an invisibility potion, a base turret and the fort creator. The Trade Station is a shop too (E on it; craft it any time in your base) - no Advanced one. Airdrops only come down in the middle or the middle of the left or right side.";
+                case GameRules.Emerald: return $"Classic, plus EMERALDS: one grows on each emerald spawner every {EmeraldEvery / 60f:0.#} minutes (from when the wall drops) - with two bases they're to the left and right of the ball, with more on every team's way to the middle. Spend them at the EMERALD SHOP beside your machine (E): the knockback stick {EmeraldPriceKnockStick}, an ender pearl {EmeraldPricePearls}, the revolver {EmeraldPriceRevolver} and a clip {EmeraldPriceAmmo}, the shotgun {EmeraldPriceShotgun} and a clip {EmeraldPriceShells}, C4 {EmeraldPriceC4}. The Trade Station is a shop too (E on it; craft it any time in your base) - no Advanced one. Airdrops only come down in the middle or the middle of the left or right side.";
+                case GameRules.LuckyBlock: return $"Bedwars (no ball: smash the enemy machines, last team standing) with no trees, berries or airdrops. You start with {LuckyStartWood} wood and your wood machine spams wood ({LuckyWoodPerSecond} a second) - the building plan's the only thing you craft. Emerald spawners outside every base and in between them grow emeralds; at the emerald shop beside your machine a LUCKY BLOCK ({LuckyBlockPrice} emeralds) gives you a random airdrop item. The wall drops after {LuckyWallDrop:0} seconds.";
                 case GameRules.Domination: return "Classic, but whoever has the ball (carried or in their machine) gets the Advanced Trade Station's items without building one. Lose the ball, lose them.";
                 case GameRules.Tutorial: return "New here? Start with this. Short, simple steps teach you the whole game - you do each one to go on, and each control unlocks as it's taught. The clock is stopped and it's always the small Plains map. Press PLAY TUTORIAL and pick Solo or With a friend.";
                 case GameRules.AutoWood: return HammerUpgrades ? "Keep the ball in your machine to fill your progress bar - fill it and you win (there's no clock). While it's in someone's machine everyone else's bar slowly drains. A wood machine in your base piles up wood by itself and speeds up as the match goes on. Upgrade your walls with UPGRADE (the green plus) on the building plan's wheel. Arsenal's prices and POWER ITEMS." : "Buy a wood machine in UPGRADES (E on the upgrade station beside your alien machine) and wood piles up at your base by itself - go and pick it up; more upgrades speed it up. Arsenal's prices and POWER ITEMS.";
@@ -735,7 +738,8 @@ namespace RockGame
         /// the sleeping bag and the alien helmet. Their code stays, so they can come back by taking them off this list.</summary>
         public static bool Removed(Item i) => i == Item.SleepingBag || i == Item.Helmet || (i == Item.AutoTurret && !Emerald) || i == Item.HeavyRam // (the auto turret: out for now - but Emerald mode's base turret; the High Strength ram: gone)
             || i == Item.Armor || ((i == Item.Barrier || i == Item.LargeGate) && !Emerald) // (the wooden armour: gone, heavy armour is "Armour" now; the large wall and gate: out for now - but Emerald mode's high defensive walls)
-            || (EmeraldOnly(i) && !Emerald) // (Emerald mode's own things: Emerald.cs)
+            || (i == Item.Emerald ? !HasEmeralds : EmeraldOnly(i) && !Emerald) // (Emerald mode's own things: Emerald.cs - the emerald's in Lucky Block mode too)
+            || i == Item.LuckyBlock // (Lucky Block mode's shop row: what it gives is a random airdrop item, never this)
             || i == Item.DecoyBase || i == Item.ChaosSigil // (the decoy base and the Sigil of CHAOS: taken out)
             || i == Item.GoldenRock || i == Item.InvSwapper // (the Rock of Immortality and the inventory swapper: taken out)
             || i == Item.BearTrap // (the stun trap: taken out)
@@ -986,6 +990,7 @@ namespace RockGame
         {
             s_Active.Clear();
             if (LimitedCrafting) { s_Active.AddRange(k_Limited); return s_Active; }
+            if (LuckyBlock) { s_Active.Add(Item.BuildingPlan); return s_Active; } // (Lucky Block mode: the building plan, nothing else)
             foreach (var it in k_Recipes) if (!(WoodMode && it == Item.Pickaxe) && (it != Item.Hammer || HammerOn) && (it != Item.Armor || Tutorial) && !JonahBruhOut(it) && (it != Item.BetterHatchet || JonahBruh) && it != Item.BearTrap && !EmeraldOut(it)) s_Active.Add(it); // (the stun trap: taken out) // (Jonah Test Mode Bruh: JonahBruh.cs)
             if (ThemeMaps.HasWater) s_Active.Add(Item.Boat); // THEME MAPS (the boat)
             return s_Active;
@@ -1048,7 +1053,7 @@ namespace RockGame
         public static int WoodGenLevel(int team) => NetGame.Instance != null && team >= 0 && team < 4 ? NetGame.Instance.WoodGenLevelOf(team) : 0;
         public const int MaxWoodGen = 3;
         /// <summary>Wood a second at each wood gen level: nothing until the machine is bought (level 1, the default speed), then faster.</summary>
-        public static int WoodGenRate(int level) => level >= 3 ? AutoWoodLevel2 : level == 2 ? AutoWoodLevel1 : level == 1 ? AutoWoodPerSecond : 0;
+        public static int WoodGenRate(int level) => LuckyBlock ? (level > 0 ? Mathf.Max(1, LuckyWoodPerSecond) : 0) : level >= 3 ? AutoWoodLevel2 : level == 2 ? AutoWoodLevel1 : level == 1 ? AutoWoodPerSecond : 0;
         /// <summary>What each wood gen level costs (the level being bought: 1 builds the machine, 2 and 3 speed it up).</summary>
         public static int WoodGenWood(int level) => level >= 3 ? WoodGen2Wood : level == 2 ? WoodGen1Wood : WoodGenBuildWood;
         /// <summary>Auto Wood: the wood machine stands on the bedrock to the right of the alien machine (as you look at it from your spawn).</summary>
@@ -1272,6 +1277,7 @@ namespace RockGame
             (20, new[] { "RevolverAmmoWood", "RevolverAmmoPerCraft" }),
             (21, new[] { "HeavyArmorWood", "DeathWandWood", "AirdropItemMask", "AirdropItemMask2" }),
             (22, new[] { "ModesCrossbowWood", "AirdropItemMask", "StickOfTruthShots", "TreeBreakerWood", "SpearGravity", "SpearStraightRange" }),
+            (23, new[] { "EmeraldPriceKnockStick", "EmeraldPricePearls", "EmeraldPriceRevolver", "EmeraldPriceAmmo", "EmeraldPriceShotgun", "EmeraldPriceShells", "EmeraldPriceC4" }),
             (19, new[] { "SpearWood", "BowWood", "BowStone", "ArrowWood", "RamWood", "RamStone", "ChestWood", "HatchetPlayerDamage", "HorseWalk", "HorseSprint", "ShotgunRange", "JonahBruhStoneWood" }),
         };
         const string MigrateKey = "RockGame.Tunables.migrated";

@@ -829,6 +829,7 @@ namespace RockGame
             Health.Value = Cfg.MaxHealth;
             Dead.Value = false;
             NetGame.SpawnPoint(Team.Value, false, Slot.Value, out var pos, out var yaw);
+            if (Cfg.LuckyBlock && Cfg.LuckyStartWood > 0) ServerGive(Item.Wood, Cfg.LuckyStartWood); // (Lucky Block mode: everyone starts with a pile of wood)
             // Bedwars: you start the match waking in your machine's cryochamber, like every respawn
             if (CryoSpot(out var podPos, out var podYaw) && Slot.Value == 0) { TeleportRpc(podPos, podYaw); CryoWakeRpc(); return; }
             TeleportRpc(pos, yaw);

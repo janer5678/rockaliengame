@@ -24,7 +24,7 @@ namespace RockGame
             MapKind.Islands, MapKind.Jungle, MapKind.Ice, MapKind.CherryBlossom, MapKind.Wonderland, MapKind.Swamp, MapKind.Cube, MapKind.Mars };
 
         /// <summary>The modes the main menu offers (the others are hidden for now; the dev main menu still has them all).</summary>
-        public static readonly GameRules[] MenuModes = { GameRules.AutoWood, GameRules.Classic, GameRules.Bedwars, GameRules.ThreeGoal, GameRules.Assassin, GameRules.Domination, GameRules.JonahTest, GameRules.AirdropTest, GameRules.JonahBruh, GameRules.ClipFarm, GameRules.Emerald };
+        public static readonly GameRules[] MenuModes = { GameRules.AutoWood, GameRules.Classic, GameRules.Bedwars, GameRules.ThreeGoal, GameRules.Assassin, GameRules.Domination, GameRules.JonahTest, GameRules.AirdropTest, GameRules.JonahBruh, GameRules.ClipFarm, GameRules.Emerald, GameRules.LuckyBlock };
 
         /// <summary>The dev main menu (the old all-in-one page) is up instead of the new one: Tab swaps them.</summary>
         public static bool DevMenuShown => s_I != null && (s_I.m_DevMenu || (Bootstrap.Testing && !TestNewMenu));
@@ -269,9 +269,10 @@ namespace RockGame
             float bw = 42 * k, bh = 42 * k, lw = 130 * k;
             var val = new GUIStyle(m_Center) { fontSize = Mathf.RoundToInt(20 * k), fontStyle = FontStyle.Bold };
             float cx = x;
-            if (SmallBtn(new Rect(cx, y, bw, bh), "−")) { Cfg.BallDropDelay = Mathf.Max(30f, Cfg.BallDropDelay - 30f); Cfg.SavePrefs(); }
-            GUI.Label(new Rect(cx + bw, y, lw, bh), $"{Clock(Cfg.BallDropDelay)} <size={Mathf.RoundToInt(13 * k)}>build</size>", val);
-            if (SmallBtn(new Rect(cx + bw + lw, y, bw, bh), "+")) { Cfg.BallDropDelay = Mathf.Min(1800f, Cfg.BallDropDelay + 30f); Cfg.SavePrefs(); }
+            bool fixedWall = rules == GameRules.LuckyBlock; // (Lucky Block mode: its own wall time - LuckyBlock.cs)
+            if (!fixedWall && SmallBtn(new Rect(cx, y, bw, bh), "−")) { Cfg.BallDropDelay = Mathf.Max(30f, Cfg.BallDropDelay - 30f); Cfg.SavePrefs(); }
+            GUI.Label(new Rect(cx + bw, y, lw, bh), $"{Clock(fixedWall ? Cfg.LuckyWallDrop : Cfg.BallDropDelay)} <size={Mathf.RoundToInt(13 * k)}>build</size>", val);
+            if (!fixedWall && SmallBtn(new Rect(cx + bw + lw, y, bw, bh), "+")) { Cfg.BallDropDelay = Mathf.Min(1800f, Cfg.BallDropDelay + 30f); Cfg.SavePrefs(); }
             cx += bw * 2 + lw + 18 * k;
             if (SmallBtn(new Rect(cx, y, bw, bh), "−")) { Cfg.MatchLength = Mathf.Max(60f, Cfg.MatchLength - 60f); Cfg.SavePrefs(); }
             GUI.Label(new Rect(cx + bw, y, lw, bh), $"{Clock(Cfg.MatchLength)} <size={Mathf.RoundToInt(13 * k)}>match</size>", val);

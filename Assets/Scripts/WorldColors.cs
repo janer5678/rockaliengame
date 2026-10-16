@@ -310,13 +310,15 @@ namespace RockGame
     {
         public const int Skin = 0, Knuckles = 1, Band = 2;
         /// <summary>The alien hands (ViewModel.Hands.cs): your own alien's colour - the team colour its body is tinted
-        /// (PlayerNet.TeamTint over the alien's grey skin) - with the fingertip pads a shade darker, in a slightly glossy
-        /// material (smooth and polished, like the rest of the game's rounded art). (They used to be one dark blue for everyone.)</summary>
+        /// (PlayerNet.TeamTint over the alien's grey skin) - with the fingertip pads a shade darker, in the world's matte
+        /// material (MatteHands; they were glossy, which read as plastic). (They used to be one dark blue for everyone.)</summary>
         public const int AlienSkin = 3, AlienPad = 4;
         public static readonly Color AlienBlue = new Color32(26, 43, 117, 255), AlienBluePad = new Color32(20, 34, 91, 255); // (exact bytes: no rounding drift)
         static readonly Dictionary<(Color, bool), Material> s_Polished = new Dictionary<(Color, bool), Material>();
         static Shader s_Skin;
         static bool s_SkinTried;
+        /// <summary>The alien hands in the world's matte material (true), not the glossy AlienSkin shader.</summary>
+        public const bool MatteHands = true;
 
         /// <summary>The alien hands' material in this colour: the stylised skin (Resources/World/AlienSkin: a soft two-tone
         /// light, a sheen, a blue fresnel rim), or, if that shader can't run, URP Lit made gently glossy. ghost: the see-through
@@ -324,6 +326,15 @@ namespace RockGame
         static Material Polished(Color c, bool ghost = false)
         {
             if (s_Polished.TryGetValue((c, ghost), out var m) && m) return m;
+            if (MatteHands)
+            {
+                // the world's own matte material, like the items held in the hands (the glossy skin read as plastic)
+                m = Art.NewMat(c);
+                m.name = ghost ? "alien hand (ghost)" : "alien hand";
+                Art.Register(m, c);
+                s_Polished[(c, ghost)] = m;
+                return m;
+            }
             if (!s_SkinTried) { s_SkinTried = true; s_Skin = Resources.Load<Shader>("World/AlienSkin"); if (s_Skin != null && !s_Skin.isSupported) s_Skin = null; }
             if (s_Skin != null)
             {

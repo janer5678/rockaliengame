@@ -170,6 +170,7 @@ namespace RockGame
                             if (rs == "jonahbruh" || rs == "bruh") rv = (int)GameRules.JonahBruh;
                             if (rs == "clipfarm" || rs == "clip") rv = (int)GameRules.ClipFarm;
                             if (rs == "emerald" || rs == "emeraldmode") rv = (int)GameRules.Emerald;
+                            if (rs == "luckyblock" || rs == "lucky") rv = (int)GameRules.LuckyBlock;
                             MapChoice = Cfg.WithRules(MapChoice, (GameRules)rv);
                         }
                         break;

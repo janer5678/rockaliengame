@@ -78,10 +78,10 @@ namespace RockGame
         /// front of it, the wood machine at the back on the right (its logs land in front of it), the spawn along the front.</summary>
         static readonly Vector3 k_SmallWood = new Vector3(-0.9f, 0f, -1.0f);
         /// <summary>(Emerald mode: the machine is narrower and moved over to the right, so the emerald shop fits on its left.)</summary>
-        static Vector3 k_SmallMachine => new Vector3(Emerald ? 0.36f : 0.6f, 0f, -1.05f);
-        static Vector3 k_SmallSocket => new Vector3(Emerald ? 0.36f : 0.6f, 0f, 0.02f);
+        static Vector3 k_SmallMachine => new Vector3(HasEmeralds ? 0.36f : 0.6f, 0f, -1.05f);
+        static Vector3 k_SmallSocket => new Vector3(HasEmeralds ? 0.36f : 0.6f, 0f, 0.02f);
         /// <summary>The small alien machine's width (x and z): narrower in Emerald mode (the emerald shop beside it).</summary>
-        public static float SmallMachineWide => Emerald ? 0.34f : SmallMachineScale;
+        public static float SmallMachineWide => HasEmeralds ? 0.34f : SmallMachineScale;
         static readonly float[] k_SmallSpawnX = { -0.5f, -1.12f, 0.12f, 0.75f };
         const float SmallSpawnZ = 1.02f;
 

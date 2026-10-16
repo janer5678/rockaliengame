@@ -93,7 +93,8 @@ namespace RockGame
             }
             var info = new Rect(x, top + Mathf.Min(view.height, contentH) + 6 * k, colW, footer);
             if (!DrawHoverInfo(info, k))
-                Shadowed(info, em ? $"Emeralds grow on the emerald spawners (the raised green platforms) - one every {Cfg.EmeraldEvery / 60f:0.#} minutes on each. LMB on BUY. {KT(Bind.Inventory)} or [Esc] closes this."
+                Shadowed(info, em ? (Cfg.LuckyBlock ? $"A lucky block: a random airdrop item. Emeralds grow on the emerald spawners (the raised green platforms) - outside your base every {Cfg.LuckyHomeEvery:0} s, in between the bases every {Cfg.LuckyMiddleEvery:0} s. LMB on BUY. {KT(Bind.Inventory)} or [Esc] closes this."
+                        : $"Emeralds grow on the emerald spawners (the raised green platforms) - one every {Cfg.EmeraldEvery / 60f:0.#} minutes on each. LMB on BUY. {KT(Bind.Inventory)} or [Esc] closes this.")
                     : $"The Trade Station's things are traded here, for wood. LMB on BUY. {KT(Bind.Inventory)} or [Esc] closes this.", CraftStyle(13 * k, FontStyle.Normal, TextAnchor.UpperLeft, Color.white, true));
         }
 
@@ -152,7 +153,7 @@ namespace RockGame
         /// <summary>A clock over each emerald spawner in view, and your emeralds top left.</summary>
         void DrawEmeraldHud(PlayerNet me, float k)
         {
-            if (!Cfg.Emerald) return;
+            if (!Cfg.HasEmeralds) return;
             var g = NetGame.Instance;
             var cam = Camera.main;
             if (Event.current.type == EventType.Repaint) EmeraldClocksShown.Clear();
@@ -168,7 +169,8 @@ namespace RockGame
                     if (sp.z <= 0f || dist > 60f) continue;
                     float left = g.EmeraldSecondsLeft(i);
                     if (left < 0f) continue;
-                    string text = left <= 0f ? "<color=#5dff8a>EMERALD!</color>" : $"<color=#9dffb8>EMERALD</color> {Mathf.FloorToInt(left / 60f)}:{Mathf.FloorToInt(left % 60f):00}";
+                    if (g.WallUp) left = EmeraldSpawner.EveryOf(i); // (no emeralds till the wall drops: the clock waits, full)
+                    string text = left <= 0f ? "<color=#5dff8a>EMERALD!</color>" : $"<color=#9dffb8>EMERALD</color> {Mathf.FloorToInt(left / 60f)}:{Mathf.FloorToInt(left % 60f):00}" + (g.WallUp ? " <color=#bbbbbb>(when the wall drops)</color>" : "");
                     var r = new Rect(sp.x - 90 * k, Screen.height - sp.y - 14 * k, 180 * k, 28 * k);
                     Shadowed(r, text, st);
                     if (Event.current.type == EventType.Repaint) EmeraldClocksShown.Add(text);

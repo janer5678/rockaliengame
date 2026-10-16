@@ -176,7 +176,7 @@ namespace RockGame
             switch ((GameState)cur)
             {
                 case GameState.PreBall when SuddenBall.Value: break; // (the sudden death round: its own banner - ServerStartSuddenRound)
-                case GameState.PreBall: if (Cfg.FunRules) break; if (Cfg.Tutorial) { Hud.Banner("TUTORIAL", "Do each step on the left. The clock is stopped."); break; } Hud.Banner("GATHER & BUILD", $"The ball waits under the glass dome - the walls drop in {Clock(Bootstrap.Fast ? Cfg.FastBallDropDelay : Cfg.BallDropDelay)}. " + (Cfg.Builder ? $"BUILDER: build and craft anywhere ({Binds.Name(Bind.Inventory)})." : $"Craft anywhere inside your base ({Binds.Name(Bind.Inventory)}).")); break;
+                case GameState.PreBall: if (Cfg.FunRules) break; if (Cfg.Tutorial) { Hud.Banner("TUTORIAL", "Do each step on the left. The clock is stopped."); break; } Hud.Banner("GATHER & BUILD", $"The ball waits under the glass dome - the walls drop in {Clock(Bootstrap.Fast ? Cfg.FastBallDropDelay : Cfg.WallDropDelay)}. " + (Cfg.Builder ? $"BUILDER: build and craft anywhere ({Binds.Name(Bind.Inventory)})." : $"Craft anywhere inside your base ({Binds.Name(Bind.Inventory)}).")); break;
                 case GameState.BallLive:
                     // the build phase is over: the glass wall and the dome slide down into the ground (fun modes: no build phase, gone at once)
                     if ((GameState)prev == GameState.PreBall && !Cfg.FunRules) MapBuilder.DropGlassWall();
@@ -240,7 +240,7 @@ namespace RockGame
                     // (a full lobby, everyone in the stadium, then the start countdown: NetGame.Lobby.cs)
                     if (ServerReadyToStart(players, now))
                     {
-                        float delay = Cfg.FunRules ? 0f : fast ? Cfg.FastBallDropDelay : Cfg.BallDropDelay; // fun modes: wall down and ball in from the start
+                        float delay = Cfg.FunRules ? 0f : fast ? Cfg.FastBallDropDelay : Cfg.WallDropDelay; // fun modes: wall down and ball in from the start
                         SetPhase(GameState.PreBall, delay);
                         ServerBeginReadySetRock(now); // everyone held still through the intro, then a 3, 2, 1 countdown (NetGame.ReadySetRock.cs)
                         if (Cfg.Tutorial) TimerPaused.Value = true; // the tutorial goes at your pace
@@ -257,7 +257,7 @@ namespace RockGame
                     {
                         if (Ball.Instance == null) SpawnBall();
                         if (Ball.Instance != null) Ball.Instance.ServerRelease(); // the dome's gone: the ball is up for grabs
-                        if (Cfg.NoBall) ServerUnlockBench(0, "the wall dropped"); // (Bedwars / Assassin: no ball to capture - the Trade Station unlocks now)
+                        if (Cfg.NoBall && !Cfg.LuckyBlock) ServerUnlockBench(0, "the wall dropped"); // (Bedwars / Assassin: no ball to capture - the Trade Station unlocks now)
                         SetPhase(GameState.BallLive, Cfg.ProgressMode && !SuddenBall.Value ? NoClockSeconds : BallPhaseNow); // (the sudden death round's walls dropping: its own 5 minutes; Progress / Classic: no clock at all)
                         m_SuddenDeathAt = -1;
                         if (SuddenBall.Value) { Broadcast("The walls are dropping - whoever has the ball in their machine when time runs out wins! Nobody: a rock fight in the stadium"); break; }
@@ -645,6 +645,7 @@ namespace RockGame
             // the rocks on the Highlands hills are real, minable stone nodes
             foreach (var p in MapBuilder.WildRocks)
             {
+                if (Cfg.LuckyBlock) break; // (Lucky Block mode: no trees - and in wood mode these are trees)
                 if (InsideScenery(p)) continue;
                 if (Cfg.DnaRules && rng.NextDouble() > Cfg.DnaRockShare) continue; // DNA mode: rocks are rarer
                 bool close = false;
@@ -682,6 +683,7 @@ namespace RockGame
             area *= area;
             area *= 2f / Cfg.Copies; // a quarter of the map per team in free for all
             int trees = Mathf.Max(6, Mathf.RoundToInt(24 * area)), stones = Mathf.Max(4, Mathf.RoundToInt(18 * area)), bushes = Mathf.Max(2, Mathf.RoundToInt(5 * area));
+            if (Cfg.LuckyBlock) return; // (Lucky Block mode: no trees, logs or berry bushes - the wood machine's your wood; the horses stay)
             // THEME MAPS: more or fewer of each to suit the map
             trees = Mathf.RoundToInt(trees * ThemeMaps.NodeMul(ResourceNode.Tree)); stones = Mathf.RoundToInt(stones * ThemeMaps.NodeMul(ResourceNode.Boulder)); bushes = Mathf.RoundToInt(bushes * ThemeMaps.NodeMul(ResourceNode.Bush));
             if (Cfg.DnaRules) stones = Mathf.Max(2, Mathf.RoundToInt(stones * Cfg.DnaRockShare)); // DNA mode: rocks are rarer
@@ -871,7 +873,7 @@ namespace RockGame
         /// </summary>
         void ServerTickScheduledDrops(double now)
         {
-            if (Cfg.FunRules || Cfg.Tutorial) return; // the fun modes hand out items instead; the tutorial has none
+            if (Cfg.FunRules || Cfg.Tutorial || Cfg.LuckyBlock) return; // the fun modes hand out items instead; the tutorial has none; Lucky Block mode has lucky blocks
             for (int i = m_OldCrates.Count - 1; i >= 0; i--)
             {
                 var c = m_OldCrates[i];

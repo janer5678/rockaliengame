@@ -35,10 +35,11 @@ namespace RockGame
         [Tune("Emerald mode")] public static float MineSplashRadius = 3f, MineSplashDamage = 60f;
         /// <summary>High defensive walls (the large wall and gate in this mode): this many times as tall, and as strong.</summary>
         [Tune("Emerald mode")] public static float BigWallTallMul = 1.4f, BigWallHpMul = 2f;
-        /// <summary>Emerald shop prices (emeralds).</summary>
-        [Tune("Emerald shop")] public static int EmeraldPriceHighArmor = 3, EmeraldPriceLightsaber = 4, EmeraldPriceShotgun = 3, EmeraldPriceRevolver = 3, EmeraldPriceC4 = 4, EmeraldPriceDeathWand = 8,
-            EmeraldPriceAmmo = 1, EmeraldPriceHealBerries = 1, EmeraldPricePearls = 1, EmeraldPriceKnockStick = 2, EmeraldPriceWalls = 4, EmeraldPriceMines = 2, EmeraldPriceInvis = 2,
-            EmeraldPriceTurret = 5, EmeraldPriceFort = 3;
+        /// <summary>Emerald shop prices (emeralds): the knockback stick, an ender pearl, the revolver, a clip of revolver
+        /// bullets, the shotgun, a clip of shells and C4.</summary>
+        [Tune("Emerald shop")] public static int EmeraldPriceKnockStick = 1, EmeraldPricePearls = 2, EmeraldPriceRevolver = 2, EmeraldPriceAmmo = 1, EmeraldPriceShotgun = 4, EmeraldPriceShells = 1, EmeraldPriceC4 = 3;
+        /// <summary>A clip of shotgun shells (the shotgun's own clip).</summary>
+        public const int ShotgunClip = 4;
 
         /// <summary>Emerald mode's own things: nowhere else (Cfg.Removed).</summary>
         public static bool EmeraldOnly(Item i) => i == Item.Emerald || i == Item.HighArmor || i == Item.Lightsaber || i == Item.HealBerry || i == Item.LandMine || i == Item.FortCreator;
@@ -68,24 +69,20 @@ namespace RockGame
             {
                 s_Deals.Clear();
                 void Add(Item id, int n, int price, string blurb, Item extra = Item.None, int extraN = 0) => s_Deals.Add(new EmeraldDeal { Id = id, Count = n, Price = Mathf.Max(0, price), Blurb = blurb, Extra = extra, ExtraCount = extraN });
-                int revolverClips = 3 * Mathf.Max(1, RevolverMag);
-                Add(Item.HighArmor, 1, EmeraldPriceHighArmor, $"+{HighArmorHp} armour, goes straight on");
-                Add(Item.Lightsaber, 1, EmeraldPriceLightsaber, $"quick glowing blade: {LightsaberDamage:0} a hit");
-                Add(Item.Shotgun, 1, EmeraldPriceShotgun, $"one shell at a time, {ShotgunPellets * ShotgunPelletDamage:0} up close");
-                Add(Item.Revolver, 1, EmeraldPriceRevolver, $"{RevolverMag} rounds, {RevolverBodyDamage:0} body / {RevolverHeadDamage:0} head");
-                Add(Item.C4, 1, EmeraldPriceC4, "thrown: wrecks every building piece nearby");
-                Add(Item.DeathWand, 1, EmeraldPriceDeathWand, "a bolt that kills whoever it hits");
-                Add(Item.RevolverAmmo, revolverClips, EmeraldPriceAmmo, $"3 clips for the revolver ({revolverClips} bullets)");
-                Add(Item.ShotgunShell, 12, EmeraldPriceAmmo, "3 clips for the shotgun (12 shells)");
-                Add(Item.Arrow, 15, EmeraldPriceAmmo, "3 clips for the bow and crossbow (15 arrows)");
-                Add(Item.HealBerry, 3, EmeraldPriceHealBerries, "eat one: full health at once");
-                Add(Item.EnderPearl, 2, EmeraldPricePearls, "throw it - you teleport where it lands");
+                if (LuckyBlock)
+                {
+                    // Lucky Block mode: just the one thing - a random airdrop item (LuckyBlock.cs)
+                    Add(Item.LuckyBlock, 1, LuckyBlockPrice, "a random airdrop item - any of them");
+                    return s_Deals;
+                }
+                int clip = Mathf.Max(1, RevolverMag);
                 Add(Item.KnockStick, 1, EmeraldPriceKnockStick, "knocks whoever it hits back a good way");
-                Add(Item.Barrier, 8, EmeraldPriceWalls, "8 very tall log walls and a gate that opens - wall your base in", Item.LargeGate, 1);
-                Add(Item.LandMine, 2, EmeraldPriceMines, "hard to see - whoever steps on one blows up");
-                Add(Item.InvisPotion, 1, EmeraldPriceInvis, $"invisible for {InvisTime:0} s");
-                Add(Item.AutoTurret, 1, EmeraldPriceTurret, $"in your base: looks all the way round, shoots enemies it sees ({BaseTurretDamage:0} a shot)");
-                Add(Item.FortCreator, 1, EmeraldPriceFort, "throw it - a fort pops up where it lands (walls, a gate, a lookout tower)");
+                Add(Item.EnderPearl, 1, EmeraldPricePearls, "throw it - you teleport where it lands");
+                Add(Item.Revolver, 1, EmeraldPriceRevolver, $"{RevolverMag} rounds, {RevolverBodyDamage:0} body / {RevolverHeadDamage:0} head");
+                Add(Item.RevolverAmmo, clip, EmeraldPriceAmmo, $"a clip for the revolver ({clip} bullets)");
+                Add(Item.Shotgun, 1, EmeraldPriceShotgun, $"one shell at a time, {ShotgunPellets * ShotgunPelletDamage:0} up close");
+                Add(Item.ShotgunShell, ShotgunClip, EmeraldPriceShells, $"a clip for the shotgun ({ShotgunClip} shells)");
+                Add(Item.C4, 1, EmeraldPriceC4, "thrown: wrecks every building piece nearby");
                 return s_Deals;
             }
         }
@@ -100,6 +97,7 @@ namespace RockGame
                 case Item.HealBerry: return "Instant Heal Berries";
                 case Item.LandMine: return "Land Mine";
                 case Item.FortCreator: return "Fort Creator";
+                case Item.LuckyBlock: return "Lucky Block";
                 default: return null;
             }
         }
@@ -108,7 +106,8 @@ namespace RockGame
         {
             switch (i)
             {
-                case Item.Emerald: return "Emerald mode's money: spend them at the emerald shop beside your alien machine. One grows on each emerald spawner every few minutes.";
+                case Item.Emerald: return LuckyBlock ? "Spend them on lucky blocks at the emerald shop beside your alien machine. They grow on the emerald spawners." : "Emerald mode's money: spend them at the emerald shop beside your alien machine. One grows on each emerald spawner every few minutes.";
+                case Item.LuckyBlock: return "Open it: a random airdrop item - any of them.";
                 case Item.HighArmor: return $"LMB: put it on - {HighArmorHp} armour, used up before your health.";
                 case Item.Lightsaber: return $"A quick glowing blade: {LightsaberDamage:0} damage a hit (x2 to the head), cuts through wood too.";
                 case Item.HealBerry: return "LMB / RMB: eat one - you're back on full health at once.";
@@ -158,7 +157,7 @@ namespace RockGame
         public const float EmeraldShopReach = 5f;
         public static bool AtOwnEmeraldShop(int team, Vector3 p)
         {
-            if (!Emerald || team < 0 || team >= TeamCount) return false;
+            if (!HasEmeralds || team < 0 || team >= TeamCount) return false;
             var m = EmeraldShopPos(team);
             p.y = m.y = 0f;
             return Vector3.Distance(p, m) <= EmeraldShopReach;
@@ -184,6 +183,8 @@ namespace RockGame
     {
         /// <summary>Where each spawner's emerald sits (on its top), spawner 0 in blue's part of the map.</summary>
         public static readonly List<Vector3> Tops = new List<Vector3>();
+        /// <summary>Seconds between emeralds on each spawner (Lucky Block mode's home and middle spawners go at their own pace).</summary>
+        public static readonly List<float> Every = new List<float>();
         public static readonly List<EmeraldSpawner> All = new List<EmeraldSpawner>();
         public const float StepH = 0.3f, TopR = 1.5f;
         public static readonly Color Green = new Color(0.25f, 1f, 0.5f), Stone = new Color(0.46f, 0.47f, 0.5f), StoneDark = new Color(0.34f, 0.35f, 0.38f);
@@ -191,46 +192,92 @@ namespace RockGame
         Light m_Light;
         public int Index { get; private set; }
 
-        /// <summary>Builds every spawner (Emerald mode) - after everything else on the map, so their spots dodge it.</summary>
+        /// <summary>Spawner i's seconds between emeralds.</summary>
+        public static float EveryOf(int i) => Mathf.Max(1f, i >= 0 && i < Every.Count ? Every[i] : Cfg.EmeraldEvery);
+
+        /// <summary>Builds every spawner (Emerald and Lucky Block mode) - after everything else on the map, so their spots dodge
+        /// it. Emerald mode: with two bases, one on the LEFT and one on the RIGHT of the ball (on the line between the
+        /// halves, well clear of both bases); with 3-4, one on every team's way to the middle, close in. Lucky Block mode:
+        /// one just outside every base, and the two (3-4 bases: four) in between the bases, nearer the middle.</summary>
         public static void BuildAll(Transform root)
         {
             Tops.Clear();
+            Every.Clear();
             All.Clear();
-            var first = FindSpot();
+            if (Cfg.LuckyBlock)
+            {
+                Place(root, HomeSpot(1f), Cfg.LuckyHomeEvery);
+                Place(root, SideSpot(Cfg.MapHalf * 0.3f), Cfg.LuckyMiddleEvery);
+            }
+            else if (Cfg.FourWay) Place(root, HomeSpot(0.12f), Cfg.EmeraldEvery);
+            else Place(root, SideSpot(Cfg.MapHalf * 0.32f), Cfg.EmeraldEvery);
+        }
+
+        /// <summary>One spawner in every team's part of the map (the same spot, turned round).</summary>
+        static void Place(Transform root, Vector3 first, float every)
+        {
             for (int k = 0; k < Cfg.Copies; k++)
             {
                 var p = Cfg.Copy(first, k);
                 p.y = MapBuilder.Height(p.x, p.z);
-                var go = new GameObject("EmeraldSpawner " + k);
+                var go = new GameObject("EmeraldSpawner " + All.Count);
                 go.transform.SetParent(root, false);
                 go.transform.SetPositionAndRotation(p, Quaternion.LookRotation(-new Vector3(p.x, 0, p.z).normalized));
                 var s = go.AddComponent<EmeraldSpawner>();
-                s.Index = k;
+                s.Index = All.Count;
                 s.Build();
                 All.Add(s);
                 Tops.Add(p + Vector3.up * (StepH * 3f + 0.02f));
+                Every.Add(every);
             }
         }
 
-        /// <summary>The spot in blue's part of the map: on the way from its base to the middle, half way between the dome and
-        /// the base's edge - moved a little to the side if something's in the way.</summary>
-        static Vector3 FindSpot()
+        /// <summary>A spot on blue's way from its base to the middle: `t` of the way from near the middle (0) out to just
+        /// outside the base (1) - moved a little to the side if something's in the way.</summary>
+        static Vector3 HomeSpot(float t)
         {
             var b = Cfg.BaseCenter[0];
             var dir = new Vector3(b.x, 0, b.z).normalized;
             float baseDist = new Vector2(b.x, b.z).magnitude;
             float near = MapBuilder.DomeRadius + 7f, far = baseDist - Cfg.BaseHalf - 5f;
-            float d = Mathf.Max(near, (near + far) * 0.5f);
+            float d = Mathf.Max(near, Mathf.Lerp(near, far, t));
             var side = Vector3.Cross(Vector3.up, dir);
-            Vector3 best = dir * d;
             foreach (float off in new[] { 0f, 5f, -5f, 10f, -10f, 15f, -15f })
-                foreach (float dd in new[] { 0f, 4f, -4f })
+                foreach (float dd in new[] { 0f, -4f, 4f })
                 {
                     var p = dir * (d + dd) + side * off;
-                    if (!Clear(p)) continue;
-                    return p;
+                    if (Clear(p)) return p;
                 }
-            return best;
+            return dir * d;
+        }
+
+        /// <summary>A spot `dist` from the middle, half way round between blue's base and the next one: with two bases, on
+        /// the line between the halves (to the left or right of the ball, as far from one base as the other); with 3-4 on
+        /// the diagonal. Moved in or out along that line if something's in the way, then a little off it.</summary>
+        static Vector3 SideSpot(float dist)
+        {
+            Vector3 dir;
+            if (Cfg.FourWay)
+            {
+                var a = Cfg.BaseCenter[0]; a.y = 0f;
+                var b = Cfg.Copy(Cfg.BaseCenter[0], 1); b.y = 0f;
+                dir = (a.normalized + b.normalized).normalized;
+            }
+            else
+            {
+                var axis = Cfg.BaseCenter[1] - Cfg.BaseCenter[0];
+                axis.y = 0f;
+                dir = Vector3.Cross(Vector3.up, axis.normalized);
+            }
+            dist = Mathf.Max(MapBuilder.DomeRadius + 8f, dist);
+            var across = Vector3.Cross(Vector3.up, dir);
+            foreach (float off in new[] { 0f, 3f, -3f, 6f, -6f })
+                foreach (float dd in new[] { 0f, 4f, -4f, 8f, -8f, 12f })
+                {
+                    var p = dir * (dist + dd) + across * off;
+                    if (Clear(p)) return p;
+                }
+            return dir * dist;
         }
 
         /// <summary>Nothing solid (scenery, rocks) on any team's copy of this spot, and dry land.</summary>
@@ -241,8 +288,9 @@ namespace RockGame
                 var q = Cfg.Copy(p, k);
                 q.y = MapBuilder.Height(q.x, q.z);
                 if (!ThemeMaps.SpotOk(q)) return false;
+                var glass = MapBuilder.GlassWallRoot;
                 foreach (var h in Physics.OverlapCapsule(q + Vector3.up * 0.5f, q + Vector3.up * 3f, 2.8f, ~0, QueryTriggerInteraction.Ignore))
-                    if (h.GetComponentInParent<GroundMarker>() == null) return false;
+                    if (h.GetComponentInParent<GroundMarker>() == null && (glass == null || !h.transform.IsChildOf(glass.transform))) return false; // (the glass wall's only up until it drops: a spawner on the line between the halves stands in it till then)
                 // not on a steep slope
                 float lo = float.MaxValue, hi = float.MinValue;
                 for (int a = 0; a < 8; a++)
@@ -390,7 +438,8 @@ namespace RockGame
             m_Holo = new GameObject("holo").transform;
             m_Holo.SetParent(t, false);
             m_Holo.localPosition = new Vector3(0, h + 0.32f * s, 0);
-            EmeraldModels.Gem(m_Holo, 0.36f * s, null, glow);
+            if (Cfg.LuckyBlock) { var lb = new GameObject("lucky").transform; lb.SetParent(m_Holo, false); lb.localPosition = new Vector3(0, -0.12f * s, 0); LuckyBlockModel.Build(lb, 0.3f * s, true); } // (Lucky Block mode: what it sells, over the roof)
+            else EmeraldModels.Gem(m_Holo, 0.36f * s, null, glow);
             foreach (var r in m_Holo.GetComponentsInChildren<MeshRenderer>()) r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             var lg = new GameObject("light");
             lg.transform.SetParent(t, false);
@@ -434,6 +483,9 @@ namespace RockGame
             {
                 case Item.Emerald:
                     Gem(t, 0.34f, null, null);
+                    return true;
+                case Item.LuckyBlock:
+                    LuckyBlockModel.Build(t, 0.3f);
                     return true;
                 case Item.HighArmor:
                 {
@@ -516,27 +568,36 @@ namespace RockGame
         /// <summary>Seconds till spawner i's next emerald (0: one's there; -1: not running).</summary>
         public float EmeraldSecondsLeft(int i) => i < 0 || i >= EmeraldAt.Count ? -1f : EmeraldAt[i] < 0 ? 0f : Mathf.Max(0f, (float)(EmeraldAt[i] - NetworkManager.ServerTime.Time));
         /// <summary>How far grown spawner i's next emerald is (0..1).</summary>
-        public float EmeraldGrowth(int i) => EmeraldWaiting(i) ? 1f : i < EmeraldAt.Count ? 1f - Mathf.Clamp01(EmeraldSecondsLeft(i) / Mathf.Max(1f, Cfg.EmeraldEvery)) : 0f;
+        public float EmeraldGrowth(int i) => EmeraldWaiting(i) ? 1f : i < EmeraldAt.Count ? 1f - Mathf.Clamp01(EmeraldSecondsLeft(i) / EmeraldSpawner.EveryOf(i)) : 0f;
 
         /// <summary>Test hook: emeralds the spawners have grown this match.</summary>
         public static int EmeraldsGrown;
 
         /// <summary>Server, every frame of a match (from the start): each spawner with no emerald on it grows one every
-        /// EmeraldEvery seconds.</summary>
+        /// EmeraldSpawner.EveryOf seconds - counted from when the glass wall drops (while it's up the clocks wait full,
+        /// and nothing comes out).</summary>
         void ServerTickEmeralds(double now)
         {
-            if (!Cfg.Emerald) return;
+            if (!Cfg.HasEmeralds) return;
             int n = EmeraldSpawner.Tops.Count;
-            while (EmeraldAt.Count < n) EmeraldAt.Add(now + Cfg.EmeraldEvery);
+            while (EmeraldAt.Count < n) EmeraldAt.Add(now + EmeraldSpawner.EveryOf(EmeraldAt.Count));
             while (m_EmeraldItem.Count < n) m_EmeraldItem.Add(-1);
+            bool wallUp = WallUp;
             for (int i = 0; i < n; i++)
             {
+                if (wallUp)
+                {
+                    // the glass wall's still up: no emeralds yet - every clock waits, full, for the wall to drop
+                    double full = now + EmeraldSpawner.EveryOf(i);
+                    if (EmeraldAt[i] >= 0 && System.Math.Abs(EmeraldAt[i] - full) > 0.5) EmeraldAt[i] = full;
+                    continue;
+                }
                 if (EmeraldAt[i] < 0)
                 {
                     // waiting: until it's picked up (or knocked off the pad), then the clock starts again
                     if (ItemOnPad(m_EmeraldItem[i], EmeraldSpawner.Tops[i])) continue;
                     m_EmeraldItem[i] = -1;
-                    EmeraldAt[i] = now + Cfg.EmeraldEvery;
+                    EmeraldAt[i] = now + EmeraldSpawner.EveryOf(i);
                     continue;
                 }
                 if (now < EmeraldAt[i]) continue;
@@ -592,7 +653,7 @@ namespace RockGame
         public void EmeraldBuyRpc(byte index)
         {
             var g = NetGame.Instance;
-            if (!Cfg.Emerald || Dead.Value || InSuddenDeath || g == null || g.S == GameState.GameOver) return;
+            if (!Cfg.HasEmeralds || Dead.Value || InSuddenDeath || g == null || g.S == GameState.GameOver) return;
             var deals = Cfg.EmeraldDeals;
             if (index >= deals.Count) return;
             var d = deals[index];
@@ -601,7 +662,15 @@ namespace RockGame
             if (why != null) { Notify(why); return; }
             InvOps.Remove(Inv, Item.Emerald, d.Price);
             SpentRpc((byte)Item.Emerald, d.Price);
-            if (d.Id == Item.HighArmor)
+            if (d.Id == Item.LuckyBlock)
+            {
+                // Lucky Block mode: a random airdrop item, from all of them (LuckyBlock.cs)
+                var loot = Cfg.LuckyBlockLoot();
+                ServerGive(loot.Id, loot.Count, loot.Data);
+                Notify($"LUCKY BLOCK: {Cfg.ItemName(loot.Id)}{(loot.Count > 1 ? " x" + loot.Count : "")}!");
+                LuckyRolls++;
+            }
+            else if (d.Id == Item.HighArmor)
             {
                 int old = ArmorHp.Value;
                 ArmorHp.Value = (byte)Mathf.Clamp(Cfg.HighArmorHp, 1, 255);
@@ -618,14 +687,15 @@ namespace RockGame
             Fx.Server(FxKind.Craft, Cfg.EmeraldShopPos(Team.Value), new Vector3(Team.Value, 0, 0));
         }
 
-        /// <summary>Test hook: things bought at emerald shops (on the server).</summary>
-        public static int EmeraldBuys;
+        /// <summary>Test hook: things bought at emerald shops (on the server), and lucky blocks opened.</summary>
+        public static int EmeraldBuys, LuckyRolls;
 
         /// <summary>Why this deal can't be bought right now (null = it can).</summary>
         public string EmeraldProblem(Cfg.EmeraldDeal d)
         {
             if (Count(Item.Emerald) < d.Price) return $"Not enough emeralds ({d.Price} needed)";
             if (d.Id == Item.HighArmor) return ArmorHp.Value >= Cfg.HighArmorHp ? "You're already wearing High Power Armour" : null;
+            if (d.Id == Item.LuckyBlock) return InvOps.Space(Inv, Item.LuckyBlock, 0) < 1 ? "Inventory full!" : null; // (a free slot for whatever it is)
             int data = Mathf.Clamp(Cfg.MaxData(d.Id), 0, 255);
             if (InvOps.Space(Inv, d.Id, data) < d.Count) return "Inventory full!";
             return null;

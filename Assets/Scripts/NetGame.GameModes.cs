@@ -7,7 +7,7 @@ namespace RockGame
 {
     public static partial class Cfg
     {
-        public static bool Bedwars => Rules == GameRules.Bedwars;
+        public static bool Bedwars => Rules == GameRules.Bedwars || LuckyBlock; // (Lucky Block mode is Bedwars too: LuckyBlock.cs)
         public static bool ThreeGoal => Rules == GameRules.ThreeGoal;
         public static bool ProgressMode => Rules == GameRules.Progress || Rules == GameRules.AutoWood || JonahBruhProgression || ClipFarm || Emerald; // (Classic plays like Progress now) // (Jonah Test Mode Bruh played as PROGRESSION: JonahBruh.cs)
         public static bool Assassin => Rules == GameRules.Assassin;
