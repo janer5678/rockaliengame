@@ -225,7 +225,7 @@ namespace RockGame
             RowLabel("Alien hands", lw);
             bool roundHands = ToggleBtn(GameSettings.RoundHands, GameSettings.RoundHands ? "On" : "Off", GUILayout.Width(90 * k), GUILayout.Height(30 * k));
             if (roundHands != GameSettings.RoundHands) GameSettings.SetRoundHands(roundHands);
-            GUILayout.Label("<color=#bbbbbb>  off: the original square robot hands</color>", m_Small, GUILayout.Height(30 * k));
+            GUILayout.Label("<color=#bbbbbb>  off: the old square hands</color>", m_Small, GUILayout.Height(30 * k));
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
         }

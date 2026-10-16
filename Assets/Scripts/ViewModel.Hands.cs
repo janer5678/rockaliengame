@@ -1,249 +1,365 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace RockGame
 {
     /// <summary>
-    /// The first-person alien hands (Settings > Display > Alien hands; off brings back the old square ones): a free,
-    /// professionally made low-poly arms model (the CC0 "WRAD ARMS" by wriks - Tools/Hands; Tools/alien_hands.py makes
-    /// Resources/Hands/AlienHands from it) in your alien's colour. Kept simple: each hand has two shapes baked in - a FIST
-    /// (round any handle) and a CUPPED hand (carrying the rock, the ball, berries, C4...) - and nothing is posed finger by
-    /// finger. Each frame the hand goes where the item's pose put the arm (m_R / m_L, as the block hands did): the fist's
-    /// hole on the handle, lined up along it, or the cupped palm towards what it carries; and the arm reaches it from its
-    /// own shoulder (two-bone IK), the elbow down and out, so the arms come in from the bottom corners of the screen.
+    /// The first-person arms (Settings > Display > Alien hands; off brings back the old square ones): the arms model
+    /// (ViewModel.Rig.cs - a real rigged pair of arms, three fingers and a thumb, in your team's colour) driven by the pose
+    /// skeleton built here. If the model can't be loaded, the skeleton wears the built mesh below instead: ONE smoothly
+    /// shaded skinned mesh per arm (forearm, wrist, palm, fingers and thumb flowing into each other).
+    ///
+    /// The skeleton: the hand (scaled HandScale), each finger's three joints and the thumb's (one transform each, so they
+    /// curl from their own knuckles - ViewModel.Fingers.cs poses them), and the forearm (from the wrist back towards the
+    /// elbow). Digits 0-2 are the fingers (index, middle, outer), 4 the thumb; 3 is unused.
+    ///
+    /// The hand's own frame (the RIGHT hand; the left is its mirror image): the wrist at the origin, the fingers along +Z,
+    /// the palm facing -Y, the thumb on the -X side. A finger curls with +X rotations (towards the palm), spreads with Y.
+    /// Everything stays under the arm (m_R / m_L) so IsHand() and the post-fx layers see it as hand.
     /// </summary>
     public partial class ViewModel
     {
-        /// <summary>Which way each elbow points (the right arm's, in the view; the left's is its mirror): down and out.</summary>
-        static readonly Vector3 k_ElbowHint = new Vector3(0.75f, -1f, -0.2f);
-        /// <summary>The model's shoulders moved down and back from where it has them (just below the eye): like a real
-        /// body's, so the arms reach into the view from the bottom corners and never sweep right past the camera.</summary>
-        static readonly Vector3 k_ShoulderShift = new Vector3(0f, -0.09f, -0.16f);
+        /// <summary>The fingers (digits 0..FingerCount-1); the thumb is digit 4.</summary>
+        const int FingerCount = 3;
 
-        sealed class HandRig
+        // ---- measurements (metres; taken from the arms model when it's there - MeasureRig) ----
+        /// <summary>Half the palm's thickness (the palm's underside is this far under the wrist's line).</summary>
+        static float PalmHalf = 0.013f;
+        /// <summary>How far in front of the wrist a handle held in the fist runs (under the palm's end, so the fingers wrap it from the knuckles).</summary>
+        static float GripZ = 0.062f;
+        /// <summary>About where the fingers' knuckles are, in front of the wrist.</summary>
+        static float KnuckleZ = 0.077f;
+        /// <summary>How big this hand is next to the one the grips were first worked out for (knuckles 7.85 cm out).</summary>
+        static float HS => KnuckleZ / 0.0785f;
+        /// <summary>Where each forearm heads, in the view (right hand; the left's is its mirror): down by your side, so the
+        /// arms come in from the bottom corners of the screen like an FPS rig's instead of reaching across it.</summary>
+        static readonly Vector3 k_ElbowAnchor = new Vector3(0.36f, -0.66f, -0.02f);
+        /// <summary>The hand (everything from the wrist out, measured below) is drawn this much bigger.</summary>
+        const float HandScale = 1f;
+
+        /// <summary>The knuckle of each finger - index, middle, outer - (slot 3 unused) and the thumb's root deep in the palm.</summary>
+        static readonly Vector3[] s_Base =
+        {
+            new Vector3(-0.0186f, 0.0008f, 0.0765f),
+            new Vector3(0.0000f, 0.0012f, 0.0800f),
+            new Vector3(0.0186f, 0.0000f, 0.0760f),
+            new Vector3(0.0186f, 0.0000f, 0.0760f),
+            new Vector3(-0.0205f, -0.0075f, 0.0170f),
+        };
+        /// <summary>Each digit's three bones: human proportions (the alien's own are long and claw-like).</summary>
+        static readonly float[] s_Len =
+        {
+            0.034f, 0.021f, 0.017f,
+            0.037f, 0.023f, 0.018f,
+            0.034f, 0.021f, 0.017f,
+            0.034f, 0.021f, 0.017f,
+            0.030f, 0.026f, 0.021f, // (the thumb: its fleshy base, then two pieces)
+        };
+        /// <summary>Each digit's radius at its root, its two joints and its tip.</summary>
+        static readonly float[] s_Rad =
+        {
+            0.0084f, 0.0078f, 0.0071f, 0.0067f,
+            0.0087f, 0.0080f, 0.0073f, 0.0069f,
+            0.0083f, 0.0077f, 0.0070f, 0.0066f,
+            0.0083f, 0.0077f, 0.0070f, 0.0066f,
+            0.0135f, 0.0103f, 0.0090f, 0.0085f,
+        };
+        static float Len(int d, int j) => s_Len[d * 3 + j];
+        static float Rad(int d, int j) => s_Rad[d * 4 + j];
+
+        sealed class AlienArm
         {
             public bool Right;
-            public Transform Root, Upper, Fore, Wrist, Grip, GripA, Knuck, Palm, PalmN;
-            public GameObject Fist, Cup, Wrap;
-            public Quaternion UpperRest, ForeRest;
+            public Transform Root, Hand, Forearm;
+            /// <summary>The arms model on this skeleton (null: the built mesh).</summary>
+            public ArmRig Rig;
+            /// <summary>[digit, joint]: 0-2 the fingers (index, middle, outer), 4 the thumb (3: none); joint 0 is the knuckle.</summary>
+            public readonly Transform[,] J = new Transform[5, 3];
         }
 
-        HandRig m_HR, m_HL;
-        static GameObject s_HandsPrefab;
-        static bool s_HandsTried;
+        AlienArm m_AR, m_AL;
 
-        static Transform FindDeep(Transform t, string name)
+        static Transform Node(Transform parent, string name, Vector3 pos)
         {
-            if (t.name == name) return t;
-            for (int i = 0; i < t.childCount; i++) { var f = FindDeep(t.GetChild(i), name); if (f != null) return f; }
-            return null;
+            var t = new GameObject(name).transform;
+            t.SetParent(parent, false);
+            t.localPosition = pos;
+            return t;
         }
 
-        /// <summary>Builds the hand under `arm` ("alien": hidden while the square hands are picked); null if the model's missing.</summary>
-        static HandRig BuildHand(Transform arm, HandColorHook hook, bool right)
+        /// <summary>Every digit there is: the fingers, then the thumb.</summary>
+        static readonly int[] s_Digits = { 0, 1, 2, 4 };
+
+        /// <summary>Builds the arm under `arm` (hidden while the square hands are picked): its skeleton and the skin on it.</summary>
+        static AlienArm BuildAlienArm(Transform arm, HandColorHook hook, bool right)
         {
-            if (!s_HandsTried) { s_HandsTried = true; s_HandsPrefab = Resources.Load<GameObject>("Hands/AlienHands"); }
-            var root = new GameObject("alien").transform;
-            root.SetParent(arm, false);
-            if (s_HandsPrefab == null) return null;
-            var inst = Object.Instantiate(s_HandsPrefab, root, false);
-            inst.name = "hands model";
-            var t = inst.transform;
-            // (importing the model mirrors it left to right: its ".l" arm - ArmL_ - is the game's right one)
-            string s = right ? ".l" : ".r", mine = right ? "ArmL_" : "ArmR_", other = right ? "ArmR_" : "ArmL_";
-            for (int i = t.childCount - 1; i >= 0; i--) if (t.GetChild(i).name.StartsWith(other)) Object.DestroyImmediate(t.GetChild(i).gameObject);
-            var h = new HandRig
+            MeasureRig(); // (the skeleton takes the model's measurements)
+            float sx = right ? 1f : -1f;
+            var a = new AlienArm { Right = right };
+            a.Root = Node(arm, "alien", Vector3.zero);
+            a.Hand = Node(a.Root, "hand", Vector3.zero);
+            a.Hand.localScale = Vector3.one * HandScale;
+            foreach (int d in s_Digits)
             {
-                Right = right, Root = t,
-                Upper = FindDeep(t, "bicep" + s), Fore = FindDeep(t, "forearm" + s), Wrist = FindDeep(t, "wrist" + s),
-                Grip = FindDeep(t, "grip" + s), GripA = FindDeep(t, "gripA" + s), Knuck = FindDeep(t, "knuck" + s),
-                Palm = FindDeep(t, "palm" + s), PalmN = FindDeep(t, "palmN" + s),
-                Fist = FindDeep(t, mine + "Fist")?.gameObject,
-                Cup = FindDeep(t, mine + "Cup")?.gameObject,
-                Wrap = FindDeep(t, mine + "Wrap")?.gameObject,
+                var j0 = Node(a.Hand, d < 4 ? "finger" + d : "thumb", new Vector3(s_Base[d].x * sx, s_Base[d].y, s_Base[d].z));
+                var j1 = Node(j0, "j1", new Vector3(0f, 0f, Len(d, 0)));
+                var j2 = Node(j1, "j2", new Vector3(0f, 0f, Len(d, 1)));
+                a.J[d, 0] = j0; a.J[d, 1] = j1; a.J[d, 2] = j2;
+            }
+            a.Forearm = Node(a.Root, "forearm", Vector3.zero);
+            a.Rig = BuildRig(a.Root, hook, right);
+            if (a.Rig != null) return a;
+
+            // (no model:) the skin: one mesh on the whole skeleton (bound in this rest pose: everything straight, the forearm behind the wrist)
+            var bones = new Transform[BoneCount];
+            bones[BoneHand] = a.Hand;
+            bones[BoneArm] = a.Forearm;
+            foreach (int d in s_Digits) for (int j = 0; j < 3; j++) bones[BoneJ(d, j)] = a.J[d, j];
+            var skin = new GameObject("skin");
+            skin.transform.SetParent(a.Root, false);
+            var smr = skin.AddComponent<SkinnedMeshRenderer>();
+            var mesh = SkinMesh(right);
+            if (mesh.bindposes == null || mesh.bindposes.Length != bones.Length)
+            {
+                var bind = new Matrix4x4[bones.Length];
+                for (int i = 0; i < bones.Length; i++) bind[i] = bones[i].worldToLocalMatrix * skin.transform.localToWorldMatrix;
+                mesh.bindposes = bind;
+            }
+            smr.sharedMesh = mesh;
+            smr.bones = bones;
+            smr.rootBone = a.Hand;
+            smr.quality = SkinQuality.Bone2;
+            smr.updateWhenOffscreen = true; // (it swings all over the view: never culled on a stale box)
+            hook.Track(skin, HandColorHook.AlienSkin);
+            return a;
+        }
+
+        static Quaternion Mirror(Quaternion q) => new Quaternion(q.x, -q.y, -q.z, q.w);
+
+        /// <summary>Puts the arm into a pose: the hand, every joint, then the forearm from the wrist back off the screen.</summary>
+        void ApplyAlien(AlienArm a, Transform arm, JointPose p)
+        {
+            if (a == null || !a.Root.gameObject.activeInHierarchy) return;
+            float sx = a.Right ? 1f : -1f;
+            a.Hand.localPosition = p.Pos;
+            a.Hand.localRotation = p.Rot;
+            for (int d = 0; d < FingerCount; d++)
+            {
+                a.J[d, 0].localRotation = Quaternion.Euler(0f, p.Spread[d] * sx, 0f) * Quaternion.Euler(p.A[d * 3], 0f, 0f);
+                a.J[d, 1].localRotation = Quaternion.Euler(p.A[d * 3 + 1], 0f, 0f);
+                a.J[d, 2].localRotation = Quaternion.Euler(p.A[d * 3 + 2], 0f, 0f);
+            }
+            a.J[4, 0].localRotation = a.Right ? p.Thumb : Mirror(p.Thumb);
+            a.J[4, 1].localRotation = Quaternion.Euler(p.A[13], 0f, 0f);
+            a.J[4, 2].localRotation = Quaternion.Euler(p.A[14], 0f, 0f);
+
+            // the forearm heads from the wrist down to your side (k_ElbowAnchor), so it leaves the screen by its bottom corner
+            // the way an FPS arm does - bent a little towards straight on from the hand (ElbowK) so the wrist never kinks
+            var zh = p.Rot * Vector3.forward;
+            var yh = p.Rot * Vector3.up;
+            var anchor = arm.InverseTransformPoint(m_Root.TransformPoint(new Vector3(k_ElbowAnchor.x * sx, k_ElbowAnchor.y, k_ElbowAnchor.z)));
+            var toAnchor = anchor - p.Pos;
+            if (toAnchor.sqrMagnitude < 1e-4f) toAnchor = Vector3.back;
+            var back = Vector3.Lerp(toAnchor.normalized, -zh, p.ElbowK * 0.45f);
+            if (back.sqrMagnitude < 1e-6f) back = Vector3.back;
+            back.Normalize();
+            a.Forearm.localPosition = p.Pos;
+            a.Forearm.localRotation = Quaternion.LookRotation(-back, yh);
+            if (a.Rig != null) ApplyRig(a, a.Rig);
+        }
+
+        // ======== the mesh ========
+
+        const int BoneHand = 0, BoneArm = 1, BoneCount = 2 + 4 * 3;
+        /// <summary>A digit's joint's bone (the thumb's after the three fingers').</summary>
+        static int BoneJ(int d, int j) => 2 + (d == 4 ? 3 : d) * 3 + j;
+
+        /// <summary>A vertex's two bones: all of a, or blended towards b by t.</summary>
+        static BoneWeight BW(int a, int b = -1, float t = 0f)
+        {
+            if (b < 0 || t <= 0f) return new BoneWeight { boneIndex0 = a, weight0 = 1f };
+            if (t >= 1f) return new BoneWeight { boneIndex0 = b, weight0 = 1f };
+            // (the heavier bone first)
+            return t <= 0.5f
+                ? new BoneWeight { boneIndex0 = a, weight0 = 1f - t, boneIndex1 = b, weight1 = t }
+                : new BoneWeight { boneIndex0 = b, weight0 = t, boneIndex1 = a, weight1 = 1f - t };
+        }
+
+        /// <summary>A mesh being built: triangles, each corner with its bones; made with smooth normals (averaged over every
+        /// corner at the same place, across the pieces too), so the whole arm is shaded as one seamless surface.</summary>
+        sealed class SkinBuild
+        {
+            public readonly List<Vector3> V = new List<Vector3>();
+            public readonly List<BoneWeight> W = new List<BoneWeight>();
+            public readonly List<int> T = new List<int>();
+
+            void Add(Vector3 p, BoneWeight w) { T.Add(V.Count); V.Add(p); W.Add(w); }
+            public void Tri(Vector3 a, BoneWeight wa, Vector3 b, BoneWeight wb, Vector3 c, BoneWeight wc) { Add(a, wa); Add(b, wb); Add(c, wc); }
+
+            /// <summary>Rings of the same number of points (each made by Ring, in its plane's x and y) joined into a tube
+            /// running along x × y, each end closed onto a point; it faces out.</summary>
+            public void Loft(List<Vector3[]> rings, List<BoneWeight> ws, Vector3 start, Vector3 end)
+            {
+                int n = rings[0].Length;
+                for (int r = 0; r + 1 < rings.Count; r++)
+                    for (int s = 0; s < n; s++)
+                    {
+                        int s1 = (s + 1) % n;
+                        Tri(rings[r][s], ws[r], rings[r][s1], ws[r], rings[r + 1][s], ws[r + 1]);
+                        Tri(rings[r][s1], ws[r], rings[r + 1][s1], ws[r + 1], rings[r + 1][s], ws[r + 1]);
+                    }
+                int last = rings.Count - 1;
+                for (int s = 0; s < n; s++)
+                {
+                    int s1 = (s + 1) % n;
+                    Tri(start, ws[0], rings[0][s1], ws[0], rings[0][s], ws[0]);
+                    Tri(end, ws[last], rings[last][s], ws[last], rings[last][s1], ws[last]);
+                }
+            }
+
+            public Mesh Make(string name, bool mirror)
+            {
+                var v = new List<Vector3>(V);
+                var t = new List<int>(T);
+                if (mirror)
+                {
+                    for (int i = 0; i < v.Count; i++) v[i] = new Vector3(-v[i].x, v[i].y, v[i].z);
+                    for (int i = 0; i + 2 < t.Count; i += 3) { int k = t[i + 1]; t[i + 1] = t[i + 2]; t[i + 2] = k; }
+                }
+                var m = new Mesh { name = name };
+                if (v.Count > 65000) m.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
+                m.SetVertices(v);
+                m.SetTriangles(t, 0);
+                m.boneWeights = W.ToArray();
+                m.normals = SmoothShade.SmoothNormals(v.ToArray(), t.ToArray());
+                m.RecalculateBounds();
+                return m;
+            }
+        }
+
+        /// <summary>A ring of `sides` points round c in the plane of x and y (anticlockwise looking along x × y): a
+        /// superellipse (pow 1: an ellipse; under 1: squarer) rx by ry, swelling by `top` on the +y side and `under` on the
+        /// -y side.</summary>
+        static Vector3[] Ring(Vector3 c, Vector3 x, Vector3 y, float rx, float ry, int sides, float pow = 1f, float top = 0f, float under = 0f)
+        {
+            var pts = new Vector3[sides];
+            for (int s = 0; s < sides; s++)
+            {
+                float an = Mathf.PI * 2f * s / sides + Mathf.PI / sides, cs = Mathf.Cos(an), sn = Mathf.Sin(an);
+                float px = Mathf.Sign(cs) * Mathf.Pow(Mathf.Abs(cs), pow) * rx;
+                float py = Mathf.Sign(sn) * Mathf.Pow(Mathf.Abs(sn), pow) * ry;
+                py += sn > 0f ? top * ry * sn * sn : -under * ry * sn * sn;
+                pts[s] = c + x * px + y * py;
+            }
+            return pts;
+        }
+
+        static readonly Mesh[] s_Skins = new Mesh[2];
+
+        /// <summary>The arm's skin (the right arm's, or its mirror for the left), in the rest pose, in metres: the forearm
+        /// along -Z behind the wrist, the hand (HandScale bigger) in front of it.</summary>
+        static Mesh SkinMesh(bool right)
+        {
+            int idx = right ? 0 : 1;
+            if (s_Skins[idx] != null) return s_Skins[idx];
+            var b = new SkinBuild();
+            Palm(b);
+            foreach (int d in s_Digits) Digit(b, d);
+            var m = b.Make("alien arm skin", !right);
+            s_Skins[idx] = m;
+            return m;
+        }
+
+        /// <summary>The bare forearm, the wrist and the palm: one loft from off the screen to the knuckles - the alien's slender
+        /// forearm, a narrow wrist, then the palm widening and flattening (its back gently domed, the knuckle line curved) -
+        /// weighted from the forearm over to the hand across the wrist.</summary>
+        static void Palm(SkinBuild b)
+        {
+            const int sides = 18;
+            var rings = new List<Vector3[]>();
+            var ws = new List<BoneWeight>();
+            // the forearm to the wrist (metres): (z, half width, half thickness, the hand's share)
+            var arm = new (float z, float w, float t, float h)[]
+            {
+                (-0.9f, 0.036f, 0.031f, 0f), (-0.55f, 0.034f, 0.029f, 0f), (-0.32f, 0.0345f, 0.0285f, 0f), (-0.2f, 0.0335f, 0.027f, 0f),
+                (-0.12f, 0.0305f, 0.0245f, 0f), (-0.07f, 0.0278f, 0.0215f, 0f), (-0.035f, 0.0262f, 0.0196f, 0.12f),
+                (-0.016f, 0.0256f, 0.0188f, 0.32f), (0f, 0.0254f, 0.0184f, 0.55f),
             };
-            if (h.Upper == null || h.Fore == null || h.Wrist == null || h.Grip == null || h.Fist == null || h.Cup == null) { Object.Destroy(inst); return null; }
-            h.UpperRest = h.Upper.localRotation;
-            h.ForeRest = h.Fore.localRotation;
-            foreach (var go in new[] { h.Fist, h.Cup, h.Wrap })
-                if (go != null && go.TryGetComponent(out SkinnedMeshRenderer smr))
+            foreach (var r in arm)
+            {
+                rings.Add(Ring(new Vector3(0f, 0f, r.z), Vector3.right, Vector3.up, r.w, r.t, sides, 0.85f));
+                ws.Add(BW(BoneArm, BoneHand, r.h));
+            }
+            // the hand (its own units, drawn HandScale bigger)
+            float W(float z) => Mathf.Lerp(0.0212f, 0.0318f, Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(z / 0.05f)));
+            float T(float z) => Mathf.Lerp(0.0152f, PalmHalf, Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(z / 0.06f)));
+            var zs = new[] { 0.012f, 0.024f, 0.036f, 0.048f, 0.06f, 0.07f, 0.078f, 0.0845f, 0.089f };
+            for (int i = 0; i < zs.Length; i++)
+            {
+                float z = zs[i];
+                float w = W(z), t = T(z);
+                if (i == zs.Length - 2) { w *= 0.88f; t *= 0.84f; }
+                if (i == zs.Length - 1) { w *= 0.62f; t *= 0.55f; }
+                // the back of the hand domes a little; the heel of the hand is fuller underneath near the wrist
+                float heel = Mathf.Sin(Mathf.Clamp01(z / 0.05f) * Mathf.PI) * 0.15f;
+                var pts = Ring(new Vector3(0f, 0f, z), Vector3.right, Vector3.up, w, t, sides, 0.66f, 0.1f, heel);
+                // the knuckle line curves back to either side of the middle finger
+                float bend = Mathf.Clamp01((z - 0.055f) / 0.035f) * 0.0065f;
+                for (int s = 0; s < sides; s++)
                 {
-                    smr.updateWhenOffscreen = true; // (it swings all over the view: never culled on a stale box)
-                    hook.Track(go, HandColorHook.AlienSkin);
+                    float u = pts[s].x / Mathf.Max(1e-4f, w);
+                    pts[s] = new Vector3(pts[s].x, pts[s].y, pts[s].z - bend * u * u) * HandScale;
                 }
-            return h;
+                rings.Add(pts);
+                ws.Add(BW(BoneArm, BoneHand, i == 0 ? 0.8f : 1f));
+            }
+            b.Loft(rings, ws, new Vector3(0f, 0f, -0.91f), new Vector3(0f, 0f, 0.0915f * HandScale));
         }
 
-        /// <summary>What a hand does with the item: wrap a fist round a handle running along `axis` (world), carry it in
-        /// a cupped palm facing `axis`, or wrap the fingers round the side of something big and round (the rock) - the palm
-        /// facing `axis`, the fingers pointing along `facing`.</summary>
-        enum Hold { Fist, Cup, Wrap }
-
-        /// <summary>Each gun's grip, in the gun's own space: its middle, and how far it leans back (degrees).</summary>
-        static bool GunGrip(Item it, out Vector3 at, out float tilt)
+        /// <summary>A finger (0-2) or the thumb (4): a rounded tube from inside the palm to its pad, a touch fuller at each
+        /// knuckle, the tip a soft dome; each joint's ring shared half and half by the bones either side so it bends smoothly.</summary>
+        static void Digit(SkinBuild b, int d)
         {
-            switch (it)
+            const int sides = 12;
+            bool thumb = d == 4;
+            float L0 = Len(d, 0), L1 = Len(d, 1), L2 = Len(d, 2);
+            float r0 = Rad(d, 0), r1 = Rad(d, 1), r2 = Rad(d, 2), r3 = Rad(d, 3);
+            int j0 = BoneJ(d, 0), j1 = BoneJ(d, 1), j2 = BoneJ(d, 2);
+            // (z along the digit from its root, radius, knuckle swell, the bones)
+            var list = new List<(float z, float r, float bump, BoneWeight w)>
             {
-                case Item.Pistol: at = new Vector3(0f, -0.05f, -0.012f); tilt = -12f; return true;
-                case Item.Revolver: at = new Vector3(0f, -0.045f, -0.072f); tilt = -18f; return true;
-                case Item.AlienGun: at = new Vector3(0f, -0.045f, -0.062f); tilt = -16f; return true;
-                case Item.Shotgun: at = new Vector3(0f, -0.07f, -0.022f); tilt = -15f; return true;
-                case Item.Sniper: at = new Vector3(0f, -0.065f, 0.02f); tilt = -15f; return true;
-                case Item.PortalGun: at = new Vector3(0f, -0.07f, -0.05f); tilt = 0f; return true;
-                case Item.RocketLauncher: at = new Vector3(0f, -0.09f, 0.05f); tilt = -10f; return true;
-                case Item.Crossbow: at = new Vector3(0f, -0.075f, -0.02f); tilt = -15f; return true;
-                case Item.AntGun: case Item.SlowGun: at = new Vector3(0f, -0.02f, -0.002f); tilt = -15f; return true;
-                default: at = Vector3.zero; tilt = 0f; return false;
+                (thumb ? -0.012f : -0.016f, r0 * (thumb ? 0.9f : 1.1f), 0f, BW(BoneHand)),
+                (-0.006f, r0 * 1.08f, 0f, BW(BoneHand)),
+                (0f, r0 * 1.05f, thumb ? 0f : 0.07f, BW(BoneHand, j0, 0.5f)),
+                (0.006f, r0, 0.03f, BW(j0)),
+                (L0 * 0.55f, Mathf.Lerp(r0, r1, 0.55f) * (thumb ? 1f : 0.96f), 0f, BW(j0)),
+                (L0 - 0.0045f, r1 * 0.99f, 0f, BW(j0)),
+                (L0, r1 * 1.04f, 0.06f, BW(j0, j1, 0.5f)),
+                (L0 + 0.0045f, r1, 0.02f, BW(j1)),
+                (L0 + L1 * 0.5f, Mathf.Lerp(r1, r2, 0.5f) * 0.96f, 0f, BW(j1)),
+                (L0 + L1 - 0.004f, r2 * 0.99f, 0f, BW(j1)),
+                (L0 + L1, r2 * 1.03f, 0.05f, BW(j1, j2, 0.5f)),
+                (L0 + L1 + 0.004f, r2, 0.01f, BW(j2)),
+                (L0 + L1 + L2 * 0.45f, Mathf.Lerp(r2, r3, 0.5f) * 0.98f, 0f, BW(j2)),
+            };
+            float tip = L0 + L1 + L2 - r3 * 0.35f;
+            list.Add((tip, r3 * 1.02f, 0f, BW(j2)));
+            list.Add((tip + r3 * 0.45f, r3 * 0.87f, 0f, BW(j2)));
+            list.Add((tip + r3 * 0.75f, r3 * 0.6f, 0f, BW(j2)));
+            var root = s_Base[d];
+            var rings = new List<Vector3[]>();
+            var ws = new List<BoneWeight>();
+            foreach (var e in list)
+            {
+                // a little wider than deep; the pad of the tip fuller underneath
+                bool pad = e.z > tip - 0.001f;
+                var c = root + new Vector3(0f, 0f, e.z);
+                var pts = Ring(c, Vector3.right, Vector3.up, e.r * 1.04f, e.r * (thumb ? 0.9f : 0.93f), sides, 1f, e.bump, pad ? 0.1f : 0.03f);
+                for (int s = 0; s < sides; s++) pts[s] *= HandScale;
+                rings.Add(pts);
+                ws.Add(e.w);
             }
+            b.Loft(rings, ws, (root + new Vector3(0f, 0f, list[0].z - r0 * 0.5f)) * HandScale, (root + new Vector3(0f, 0f, tip + r3 * 0.95f)) * HandScale);
         }
-
-        /// <summary>This frame's hold for each hand: what the hand does, along / towards what, where (world), and which
-        /// way the knuckles face.</summary>
-        void HandHold(bool right, Item item, bool ball, out Hold hold, out Vector3 axis, out Vector3 point, out Vector3 facing)
-        {
-            var H = m_ItemHolder;
-            var arm = right ? m_R : m_L;
-            Vector3 toItem = (ball && m_Ball ? m_Ball.transform.position : H.position) - arm.position;
-            hold = Hold.Fist;
-            axis = H.up;
-            point = arm.position;
-            facing = arm.forward;
-            // a gun in the right hand: the fist right round its grip, the knuckles towards the muzzle
-            if (right && !ball && GunGrip(item, out var g, out float tilt))
-            {
-                point = H.TransformPoint(g);
-                axis = H.rotation * (Quaternion.Euler(tilt, 0f, 0f) * Vector3.up);
-                facing = H.forward;
-                return;
-            }
-            if (ball) { hold = Hold.Cup; axis = toItem; return; }
-            switch (item)
-            {
-                case Item.Rock: case Item.GoldenRock:
-                {
-                    // Rust's rock: a hand up each side of it, the palm on it and the fingers curling up and over its top
-                    float sx = right ? 1f : -1f;
-                    var c = H.TransformPoint(new Vector3(0f, 0.02f, 0.04f));                 // (the rock's middle)
-                    var side = H.right * sx;
-                    point = c + side * (0.118f * H.lossyScale.x) - H.up * (0.02f * H.lossyScale.x) - H.forward * (0.03f * H.lossyScale.x); // (its side, a touch nearer you)
-                    hold = Hold.Wrap;
-                    axis = -side + H.up * 0.15f;                                              // (the palm faces in, onto it)
-                    facing = H.up * 0.85f + H.forward * 0.35f - side * 0.1f;                  // (the fingers up and over)
-                    return;
-                }
-                case Item.Ram: case Item.HeavyRam:
-                    hold = Hold.Cup; axis = toItem; return;
-                case Item.Chainsaw:
-                    axis = right ? H.up : H.forward; return; // (the rear handle stands up; the top bar runs along it)
-                case Item.Crossbow: case Item.Sniper: case Item.Shotgun: case Item.PortalGun: case Item.RocketLauncher:
-                case Item.Pistol: case Item.Revolver: case Item.AlienGun:
-                    if (!right) { hold = Hold.Cup; axis = toItem; } // (the other hand under the fore-end, or cupping the grip)
-                    return;
-                case Item.Bow: case Item.Spear: case Item.None:
-                    return;
-            }
-            // everything else in the right hand: tools, weapons, sticks and wands in a fist; small things and boxes carried
-            if (Cfg.IsMelee(item) || IsStick(item)) return;
-            hold = Hold.Cup;
-            axis = toItem.sqrMagnitude > 1e-6f ? toItem : arm.up;
-        }
-
-        static bool IsStick(Item i) => i == Item.DeathWand || i == Item.GiantStaff || i == Item.Connect4Wand || i == Item.GameshowWand || i == Item.StickOfTruth
-            || i == Item.GravityStaff || i == Item.ChaosSigil || i == Item.BallGrabber || i == Item.Decoy || i == Item.Arrow || i == Item.FakeFlare || i == Item.OmenMap
-            || i == Item.AntGun || i == Item.SlowGun || i == Item.InvisPotion || i == Item.SpeedJuice || i == Item.ShieldPotion || i == Item.BearJuice;
-
-        /// <summary>Puts both hands where this frame's poses put the arms.</summary>
-        void PoseHands(State s)
-        {
-            PoseHand(m_HR, m_R, s);
-            PoseHand(m_HL, m_L, s);
-        }
-
-        void PoseHand(HandRig h, Transform arm, State s)
-        {
-            if (h == null || !h.Root.gameObject.activeInHierarchy) return;
-            // a hand put away out of sight (the free hand): the whole arm goes
-            bool away = m_Root.InverseTransformPoint(arm.position).y < -0.7f;
-            HandHold(h.Right, s.Item, s.Ball, out var hold, out var axis, out var point, out var facing);
-            SetActive(h.Fist, !away && hold == Hold.Fist);
-            SetActive(h.Cup, !away && (hold == Hold.Cup || (hold == Hold.Wrap && h.Wrap == null)));
-            SetActive(h.Wrap, !away && hold == Hold.Wrap);
-            if (away) return;
-            float sx = h.Right ? 1f : -1f;
-            // the model's rest pose: put it back, the shoulders where they go (down and back from the eye)
-            h.Root.SetPositionAndRotation(m_Root.TransformPoint(k_ShoulderShift), m_Root.rotation);
-            h.Upper.localRotation = h.UpperRest;
-            h.Fore.localRotation = h.ForeRest;
-
-            // where the wrist goes: the fist's hole on the handle (its line along the handle, the knuckles forward), or the
-            // cupped palm on what it carries, facing it
-            var fwd = facing;
-            Quaternion from, to;
-            Vector3 at, marker;
-            if (hold == Hold.Fist)
-            {
-                var across = h.GripA.position - h.Grip.position;           // (the handle's line through the fist: towards the little finger)
-                var knuck = h.Knuck.position - h.Wrist.position;
-                from = Quaternion.LookRotation(Perp(knuck, across), -across);
-                var a = axis.sqrMagnitude > 1e-6f ? axis.normalized : arm.up;
-                to = Quaternion.LookRotation(Perp(fwd, a), a);
-                marker = h.Grip.position;
-                at = point;
-            }
-            else
-            {
-                var n = h.PalmN.position - h.Palm.position;                // (out of the palm)
-                var knuck = h.Knuck.position - h.Wrist.position;
-                from = Quaternion.LookRotation(Perp(knuck, n), -n);
-                var want = axis.sqrMagnitude > 1e-6f ? axis.normalized : arm.up;
-                to = Quaternion.LookRotation(Perp(fwd, want), -want);
-                marker = h.Palm.position;
-                at = hold == Hold.Wrap ? point : arm.position;
-            }
-            var turn = to * Quaternion.Inverse(from);
-            var wristRot = turn * h.Wrist.rotation;
-            var wristPos = at - turn * (marker - h.Wrist.position);
-
-            // ---- the arm reaches the wrist from the shoulder, the elbow down and out ----
-            var S = h.Upper.position;
-            float L1 = (h.Fore.position - S).magnitude, L2 = (h.Wrist.position - h.Fore.position).magnitude;
-            var d = wristPos - S;
-            float dist = d.magnitude, reach = (L1 + L2) * 0.999f;
-            if (dist > reach)
-            {
-                // out of reach: the shoulder comes along - but never forward into the view (its open end would show): what's
-                // left over, the hand falls just short
-                var shift = d * ((dist - reach) / dist);
-                var sv = m_Root.InverseTransformPoint(S + shift);
-                if (sv.z > 0.08f) { sv.z = 0.08f; /* (still well out to the side of the view) */ shift = m_Root.TransformPoint(sv) - S; }
-                h.Root.position += shift;
-                S += shift; d = wristPos - S; dist = d.magnitude;
-                if (dist > reach)
-                {
-                    var pull = d * ((dist - reach) / dist);
-                    wristPos -= pull;
-                    d = wristPos - S; dist = reach;
-                }
-            }
-            dist = Mathf.Max(dist, Mathf.Abs(L1 - L2) + 0.02f);
-            var dn = d.normalized;
-            var pole = m_Root.TransformDirection(new Vector3(k_ElbowHint.x * sx, k_ElbowHint.y, k_ElbowHint.z));
-            var po = pole - dn * Vector3.Dot(pole, dn);
-            if (po.sqrMagnitude < 1e-6f) po = m_Root.TransformDirection(Vector3.down);
-            po.Normalize();
-            float along = (L1 * L1 - L2 * L2 + dist * dist) / (2f * dist);
-            var E = S + dn * along + po * Mathf.Sqrt(Mathf.Max(0f, L1 * L1 - along * along));
-            h.Upper.rotation = Quaternion.FromToRotation(h.Fore.position - S, E - S) * h.Upper.rotation;
-            h.Fore.rotation = Quaternion.FromToRotation(h.Wrist.position - h.Fore.position, wristPos - h.Fore.position) * h.Fore.rotation;
-            h.Wrist.SetPositionAndRotation(wristPos, wristRot);
-        }
-
-        static Vector3 Perp(Vector3 v, Vector3 n)
-        {
-            n.Normalize();
-            var p = v - n * Vector3.Dot(v, n);
-            return p.sqrMagnitude > 1e-8f ? p.normalized : Vector3.Cross(n, Vector3.right).normalized;
-        }
-
-        static void SetActive(GameObject go, bool on) { if (go != null && go.activeSelf != on) go.SetActive(on); }
     }
 }

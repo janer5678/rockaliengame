@@ -310,10 +310,9 @@ namespace RockGame
     {
         public const int Skin = 0, Knuckles = 1, Band = 2;
         /// <summary>The alien hands (ViewModel.Hands.cs): your own alien's colour - the team colour its body is tinted
-        /// (PlayerNet.TeamTint over the alien's grey skin) - in the world's matte material (MatteHands; they were glossy,
-        /// which read as plastic). (AlienPad: a shade darker.)</summary>
+        /// (PlayerNet.TeamTint over the alien's grey skin) - with the fingertip pads a shade darker, in the world's matte
+        /// material (MatteHands; they were glossy, which read as plastic). (They used to be one dark blue for everyone.)</summary>
         public const int AlienSkin = 3, AlienPad = 4;
-        static Material PartMat(Color c, int part, bool ghost) => Polished(c, ghost);
         public static readonly Color AlienBlue = new Color32(26, 43, 117, 255), AlienBluePad = new Color32(20, 34, 91, 255); // (exact bytes: no rounding drift)
         static readonly Dictionary<(Color, bool), Material> s_Polished = new Dictionary<(Color, bool), Material>();
         static Shader s_Skin;
@@ -375,12 +374,11 @@ namespace RockGame
             return skin;
         }
 
-        /// <summary>The alien skin in a team's colour: the same colour the alien players' bodies are (their grey skin,
-        /// about 0.39, tinted the team colour x1.6 - PlayerNet.TeamTint), so your hands match your alien; the pads a shade
-        /// darker.</summary>
+        /// <summary>The alien skin in a team's colour: the team's own colour, clearly (blue hands for blue), a touch deeper
+        /// so the light reads on it; the pads a shade darker.</summary>
         public static Color AlienShade(Color team, bool pad)
         {
-            var c = team * 0.64f * (pad ? 0.8f : 1f);
+            var c = team * 0.78f * (pad ? 0.8f : 1f);
             c.a = 1f;
             return c;
         }
@@ -407,7 +405,7 @@ namespace RockGame
             if (r != null)
             {
                 m_Parts.Add((r, part));
-                if (part >= AlienSkin) r.sharedMaterial = PartMat(Shade(m_Team, part), part, m_Ghost); // (the alien hands: their colour straight away)
+                if (part >= AlienSkin) r.sharedMaterial = Polished(Shade(m_Team, part), m_Ghost); // (the alien hands: dark blue straight away)
             }
             return box;
         }
@@ -438,7 +436,7 @@ namespace RockGame
                 if (p.r == null) continue;
                 p.r.enabled = !m_Ghost; // (invisible: your own hands are gone - what you hold still shows)
                 var c = Shade(m_Team, p.part);
-                if (p.part >= AlienSkin) { var want = PartMat(c, p.part, m_Ghost); if (p.r.sharedMaterial != want) p.r.sharedMaterial = want; }
+                if (p.part >= AlienSkin) { var want = Polished(c, m_Ghost); if (p.r.sharedMaterial != want) p.r.sharedMaterial = want; }
                 else if (p.r.sharedMaterial == null || p.r.sharedMaterial.color != c) p.r.sharedMaterial = Art.Mat(c);
             }
         }

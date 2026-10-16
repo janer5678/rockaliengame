@@ -7,19 +7,18 @@ namespace RockGame
     {
         static int s_ShowFps = -1, s_RoundHands = -1;
 
-        /// <summary>Settings > Display > Alien hands (OFF to start with - the original square robot hands are the default
-        /// again): on, the first-person hands are the alien arms model instead. (A new key, so a saved "on" from before
-        /// doesn't keep the alien ones.)</summary>
+        /// <summary>Settings > Display > Round hands (on to start with): the first-person hands are round instead of the old
+        /// square ones. Off brings the old hands straight back.</summary>
         public static bool RoundHands
         {
-            get { if (s_RoundHands < 0) s_RoundHands = PlayerPrefs.GetInt("RockGame.AlienHands", 0); return s_RoundHands == 1; }
+            get { if (s_RoundHands < 0) s_RoundHands = PlayerPrefs.GetInt("RockGame.AlienArms", 1); return s_RoundHands == 1; }
         }
         public static event System.Action HandStyleChanged;
 
         public static void SetRoundHands(bool on, bool save = true)
         {
             s_RoundHands = on ? 1 : 0;
-            if (save) { PlayerPrefs.SetInt("RockGame.AlienHands", s_RoundHands); PlayerPrefs.Save(); }
+            if (save) { PlayerPrefs.SetInt("RockGame.AlienArms", s_RoundHands); PlayerPrefs.Save(); }
             HandStyleChanged?.Invoke();
         }
 
