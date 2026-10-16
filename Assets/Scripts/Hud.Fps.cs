@@ -11,10 +11,10 @@ namespace RockGame
         /// rounded off, or the rigged alien arms.</summary>
         public const int HandsSquare = 0, HandsRound = 1, HandsAlien = 2;
         public static readonly string[] HandStyleNames = { "Square", "Round", "Alien" };
-        /// <summary>Which hands (the alien arms to start with - a new key, so the last default doesn't stick).</summary>
+        /// <summary>Which hands (the square robot hands to start with - a new key, so the last default doesn't stick).</summary>
         public static int HandStyle
         {
-            get { if (s_HandStyle < 0) s_HandStyle = Mathf.Clamp(PlayerPrefs.GetInt("RockGame.HandStyle2", HandsAlien), 0, 2); return s_HandStyle; }
+            get { if (s_HandStyle < 0) s_HandStyle = Mathf.Clamp(PlayerPrefs.GetInt("RockGame.HandStyle3", HandsSquare), 0, 2); return s_HandStyle; }
         }
         /// <summary>The rigged alien arms are the ones showing (ViewModel.Fingers.cs poses them).</summary>
         public static bool RoundHands => HandStyle == HandsAlien;
@@ -23,7 +23,7 @@ namespace RockGame
         public static void SetHandStyle(int style, bool save = true)
         {
             s_HandStyle = Mathf.Clamp(style, 0, 2);
-            if (save) { PlayerPrefs.SetInt("RockGame.HandStyle2", s_HandStyle); PlayerPrefs.Save(); }
+            if (save) { PlayerPrefs.SetInt("RockGame.HandStyle3", s_HandStyle); PlayerPrefs.Save(); }
             HandStyleChanged?.Invoke();
         }
 
