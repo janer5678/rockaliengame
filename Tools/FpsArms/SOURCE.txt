@@ -1,6 +1,0 @@
-"fps arms (rigged only)" by para - OpenGameArt: https://opengameart.org/content/fps-arms-rigged-only
-Licence: CC0 1.0 (public domain dedication). Downloaded 2026-10-17 as "fps arms.7z"; FpsArmsRig1.fbx is the archive's
-"FPS ARMS RIG 1.fbx" (the T-pose rig), unchanged.
-
-Used for the first-person arms: only its skeleton - Tools/alien_arms.py builds the game's round alien arms on it (three fingers and a thumb, the
-little finger's bones taken off, each arm its own mesh) and writes Assets/Game/Resources/FpsArms/AlienArms.fbx.

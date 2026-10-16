@@ -310,8 +310,8 @@ namespace RockGame
     {
         public const int Skin = 0, Knuckles = 1, Band = 2;
         /// <summary>The alien hands (ViewModel.Hands.cs): your own alien's colour - the team colour its body is tinted
-        /// (PlayerNet.TeamTint over the alien's grey skin) - with the fingertip pads a shade darker, in the world's matte
-        /// material (MatteHands; they were glossy, which read as plastic). (They used to be one dark blue for everyone.)</summary>
+        /// (PlayerNet.TeamTint over the alien's grey skin) - in the world's matte material (MatteHands; they were glossy,
+        /// which read as plastic). (AlienPad: a shade darker.)</summary>
         public const int AlienSkin = 3, AlienPad = 4;
         static Material PartMat(Color c, int part, bool ghost) => Polished(c, ghost);
         public static readonly Color AlienBlue = new Color32(26, 43, 117, 255), AlienBluePad = new Color32(20, 34, 91, 255); // (exact bytes: no rounding drift)

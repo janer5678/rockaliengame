@@ -9,8 +9,8 @@ namespace RockGame
     /// of each animation (hands_X.png, and from the side: handsside_X.png) - the alien hands (Settings > Display > Alien
     /// hands, on), then a few with the old square ones (handssquare_X.png). Checks that each arm has both styles - the
     /// original box arm (five boxes: fist, knuckles, thumb, wrist band, forearm - their sizes and colours) and the alien one
-    /// (three three-jointed fingers and a thumb, a forearm) - with only the picked one showing, that the fingers really curl
-    /// round the handles they hold, that the poses put the arms where the original block-hand poses did, that nothing else
+    /// (a simple round fist, a thumb, a wrist and a forearm) - with only the picked one showing, that the fist is round
+    /// the handles it holds, that the poses put the arms where the original block-hand poses did, that nothing else
     /// is an arm model, and that Settings > Display > SHADING (Hands & items) shades the hands and what's held smooth and
     /// puts the flat meshes back.
     /// </summary>
@@ -184,23 +184,14 @@ namespace RockGame
                     { ok = false; why = $"box {i} ({t.name}) at {t.localPosition.ToString("F3")} size {t.localScale.ToString("F3")} (want {wp.ToString("F3")} {want[i].size.ToString("F3")}) shadows {rs[i].shadowCastingMode} cube {cube}"; }
                 }
                 Check(ok, $"the {(right ? "right" : "left")} arm keeps the original box arm for the square style: fist, darker knuckles, thumb, team wrist band, forearm ({why})");
-                // the alien arm: three fingers of three joints each and a thumb, each bone its own transform; a forearm; no shadows
+                // the alien hand: simple - a round fist, a thumb, a wrist and a forearm; no shadows
                 var al = h.Find("alien");
-                int digits = 0, jointed = 0;
-                var palm = al != null ? al.Find("hand") : null;
-                if (palm != null)
-                    foreach (Transform d in palm)
-                    {
-                        if (!d.name.StartsWith("finger") && d.name != "thumb") continue;
-                        digits++;
-                        var j1 = d.Find("j1");
-                        if (j1 != null && j1.Find("j2") != null) jointed++;
-                    }
+                bool parts = al != null && al.Find("fist") != null && al.Find("thumb") != null && al.Find("wrist") != null && al.Find("forearm/arm") != null;
                 bool shadowless = true;
                 if (al != null) foreach (var r in al.GetComponentsInChildren<Renderer>(true)) if (r.shadowCastingMode != UnityEngine.Rendering.ShadowCastingMode.Off) shadowless = false;
                 var sqPart = h.Find("square");
-                Check(al != null && al.gameObject.activeSelf && digits == 4 && jointed == 4 && al.Find("forearm") != null && shadowless && sqPart != null && !sqPart.gameObject.activeSelf,
-                    $"the {(right ? "right" : "left")} arm is the alien arm (three jointed fingers and a thumb, a forearm, no shadows), the square one hidden ({digits} digits, {jointed} jointed)");
+                Check(al != null && al.gameObject.activeSelf && parts && shadowless && sqPart != null && !sqPart.gameObject.activeSelf,
+                    $"the {(right ? "right" : "left")} arm is the simple alien hand (a round fist, a thumb, a wrist, a forearm, no shadows), the square one hidden");
             }
             // nothing anywhere is an alien / block arm model any more
             int armModels = 0;
@@ -236,24 +227,42 @@ namespace RockGame
             int posed = 0, posedOk = 0, gripped = 0, grippedOk = 0;
             var off = new System.Text.StringBuilder();
             var loose = new System.Text.StringBuilder();
+            var forearmOut = new System.Text.StringBuilder();
+            int forearmChecked = 0;
             yield return HandsPoseShots(me, pc, dir, poses, name =>
             {
-                // a fist round a handle: the middle and outer fingers of the hand holding it are well curled
-                if (name.EndsWith("_idle") && (name.StartsWith("hatchet") || name.StartsWith("pickaxe") || name.StartsWith("sword") || (name.StartsWith("pistol") && !name.Contains("ammo")) || (name.StartsWith("revolver") && !name.Contains("ammo")) || name.StartsWith("aliengun") || name.StartsWith("crossbow")))
+                // a fist round a handle: the handle runs through the fist (it's not floating off the hand)
+                if (name.EndsWith("_idle") && (name.StartsWith("hatchet") || name.StartsWith("pickaxe") || name.StartsWith("sword") || (name.StartsWith("pistol") && !name.Contains("ammo")) || (name.StartsWith("revolver") && !name.Contains("ammo")) || name.StartsWith("aliengun")))
                 {
                     gripped++;
-                    var hand = vm.DebugHand(true).Find("alien/hand");
-                    float curl = 0f;
-                    int fingers = 0;
-                    if (hand != null)
-                        foreach (Transform d in hand)
-                            if (d.name.StartsWith("finger") && d.name != "finger0")
-                            {
-                                fingers++;
-                                curl += Quaternion.Angle(Quaternion.identity, d.localRotation) + Quaternion.Angle(Quaternion.identity, d.Find("j1").localRotation);
-                            }
-                    if (fingers > 0 && curl > fingers * 50f) grippedOk++;
-                    else loose.Append($" {name} {curl:0}");
+                    var fist = vm.DebugHand(true).Find("alien/fist");
+                    var held = new List<Renderer>();
+                    vm.DebugHeld(held);
+                    bool touching = false;
+                    if (fist != null)
+                    {
+                        var fb = fist.GetComponent<Renderer>().bounds;
+                        fb.Expand(0.02f);
+                        foreach (var r in held) if (r.bounds.Intersects(fb)) touching = true;
+                    }
+                    if (touching) grippedOk++;
+                    else loose.Append($" {name}");
+                }
+                // the forearm never pokes out through the front of the fist
+                foreach (var hh in new[] { vm.DebugHand(true), vm.DebugHand(false) })
+                {
+                    var fore = hh.Find("alien/forearm");
+                    var armR = fore != null ? fore.Find("arm") : null;
+                    if (armR == null || !armR.gameObject.activeInHierarchy) continue;
+                    var mb = armR.GetComponent<MeshFilter>().sharedMesh.bounds;
+                    float most = -9f;
+                    for (int c = 0; c < 8; c++)
+                    {
+                        var corner = mb.center + Vector3.Scale(mb.extents, new Vector3((c & 1) == 0 ? -1 : 1, (c & 2) == 0 ? -1 : 1, (c & 4) == 0 ? -1 : 1));
+                        most = Mathf.Max(most, Vector3.Dot(armR.TransformPoint(corner) - fore.position, fore.forward));
+                    }
+                    forearmChecked++;
+                    if (most > 0.05f) forearmOut.Append($" {name} {hh.name} {most:0.00}m");
                 }
                 foreach (var (exp, right) in new[] { (expectR, true), (expectL, false) })
                 {
@@ -266,7 +275,8 @@ namespace RockGame
                 }
             });
             Check(posed > 0 && posedOk == posed, $"the arms sit where the Rust-style poses put them ({posedOk} / {posed}){off}");
-            Check(gripped > 0 && grippedOk == gripped, $"the fingers curl round the handles and grips ({grippedOk} / {gripped}){loose}");
+            Check(gripped > 0 && grippedOk == gripped, $"the fist is round the handles and grips ({grippedOk} / {gripped}){loose}");
+            Check(forearmChecked > 0 && forearmOut.Length == 0, $"the forearm never pokes out through the front of the fist ({forearmChecked} checked){forearmOut}");
 
             // the old square hands, with Settings > Display > Alien hands off
             GameSettings.SetRoundHands(false, false);
@@ -328,7 +338,7 @@ namespace RockGame
                 yield return new WaitForSeconds(0.3f);
                 int smooth = 0, total = 0, handSmooth = 0;
                 foreach (var r in held) { var m = r.GetComponent<MeshFilter>()?.sharedMesh; if (m == null || !m.isReadable) continue; total++; if (SmoothShade.IsSmooth(m)) smooth++; }
-                foreach (var r in handRs) if (SmoothShade.IsSmooth(MeshOf(r))) handSmooth++;
+                foreach (var r in handRs) { var hm = MeshOf(r); if (SmoothShade.IsSmooth(hm) || hm == Art.Sphere || hm == Art.Capsule) handSmooth++; } // (the alien hand's round parts are smooth already)
                 ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(dir, "handssmooth_" + it.ToString().ToLower() + "_on.png"));
                 yield return new WaitForEndOfFrame();
                 Check(total > 0 && smooth == total, $"shade smooth: every held {it} mesh is its smooth copy ({smooth}/{total})");
