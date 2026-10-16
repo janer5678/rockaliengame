@@ -422,7 +422,7 @@ namespace RockGame
         /// it up over your head and brings it smashing down in front.</summary>
         void PoseRock(Vector3 shared, Quaternion sharedRot, bool swinging, float e)
         {
-            var idle = new KP(new Vector3(0.03f, -0.22f, 0.5f), -8f, 0);
+            var idle = new KP(new Vector3(0.02f, -0.19f, 0.44f), -6f, 0); // (low in the middle and close, like Rust's)
             var raised = new KP(new Vector3(0.02f, 0.1f, 0.4f), -50f, 0);
             var slam = new KP(new Vector3(0.02f, -0.3f, 0.66f), 35f, 0);
             var recoil = new KP(new Vector3(0.03f, -0.12f, 0.55f), -15f, 0);

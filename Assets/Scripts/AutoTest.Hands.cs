@@ -113,7 +113,7 @@ namespace RockGame
                 Shot("handsside_" + p.name);
                 yield return null;
                 Destroy(side.gameObject);
-                Log("shot hands_" + p.name);
+                Log("shot hands_" + p.name + "  R: " + ViewModel.DebugArm + "  L: " + ViewModel.DebugArmL);
                 pc.DebugDraw = -1f;
                 ViewModel.DebugSwingE = ViewModel.DebugThrowE = ViewModel.DebugEatE = ViewModel.DebugUseE = ViewModel.DebugEquipE = -1f;
                 ViewModel.DebugAim = ViewModel.DebugBall = false;
@@ -215,7 +215,7 @@ namespace RockGame
             Vector3 RockSide(Vector3 idle, float pitch, float x) => idle + Quaternion.Euler(pitch, -4f, 0f) * new Vector3(x, -0.07f, -0.02f);
             var expectR = new Dictionary<string, Vector3>
             {
-                { "rock_idle", RockSide(new Vector3(0.03f, -0.22f, 0.5f), -8f, 0.09f) },
+                { "rock_idle", RockSide(new Vector3(0.02f, -0.19f, 0.44f), -6f, 0.09f) },
                 { "rock_slam", RockSide(new Vector3(0.02f, -0.3f, 0.66f), 35f, 0.09f) },
                 { "hatchet_idle", new Vector3(0.14f, -0.33f, 0.58f) },
                 { "hatchet_slam", new Vector3(0.05f, -0.37f, 0.62f) },
@@ -227,7 +227,7 @@ namespace RockGame
             };
             var expectL = new Dictionary<string, Vector3>
             {
-                { "rock_idle", RockSide(new Vector3(0.03f, -0.22f, 0.5f), -8f, -0.09f) },
+                { "rock_idle", RockSide(new Vector3(0.02f, -0.19f, 0.44f), -6f, -0.09f) },
                 { "hatchet_idle", new Vector3(-0.3f, -0.9f, 0.2f) },
                 { "crossbow_idle", new Vector3(0.2f, -0.2f, 0.42f) + Quaternion.Euler(0f, -6f, 0f) * new Vector3(-0.02f, -0.05f, 0.2f) },
             };

@@ -27,10 +27,10 @@ RENDER_DIR = argv[argv.index("--render") + 1] if "--render" in argv else None
 
 FINGERS = ["f_index", "f_middle", "f_ring"]
 # radii (metres) - slender like the alien's
-R_SHOULDER, R_UPPER, R_ELBOW, R_FORE, R_WRIST = 0.034, 0.03, 0.026, 0.025, 0.017
-R_PALM = 0.021                                   # each of the three branches that together make the palm (thick enough to fuse into one)
-R_FINGER = [0.0108, 0.0098, 0.0088, 0.0068]       # knuckle, two joints, tip (human thickness, a rounded tip)
-R_THUMB = [0.0145, 0.0118, 0.0098, 0.0074]
+R_SHOULDER, R_UPPER, R_ELBOW, R_FORE, R_WRIST = 0.038, 0.034, 0.03, 0.03, 0.022
+R_PALM = 0.025                                   # each of the three branches that together make the palm (thick enough to fuse into one)
+R_FINGER = [0.0124, 0.0113, 0.0101, 0.0078]       # knuckle, two joints, tip (human thickness, a rounded tip)
+R_THUMB = [0.0172, 0.0138, 0.0115, 0.0088]
 FINGER_LONGER = 1.0                               # (human length: they hold things like a person's)
 
 bpy.ops.wm.read_factory_settings(use_empty=True)

@@ -31,8 +31,10 @@ namespace RockGame
         /// forward, so the shoulders are just out of sight and the arms reach into the view from the bottom corners.</summary>
         static readonly Vector3 k_RigOffset = new Vector3(0f, -0.22f, 0.05f);
         /// <summary>Which way each elbow points (the right arm's, in the view; the left's is its mirror): down and out.</summary>
-        static readonly Vector3 k_ElbowHint = new Vector3(0.75f, -1f, -0.2f);
+        static readonly Vector3 k_ElbowHint = new Vector3(1.4f, -1f, -0.1f);
 
+        /// <summary>(tests) Where the last pose put each arm's shoulder, elbow and wrist (view space).</summary>
+        public static string DebugArm = "", DebugArmL = "";
         static GameObject s_RigPrefab;
         static bool s_RigTried, s_Measured;
 
@@ -252,6 +254,7 @@ namespace RockGame
             float along = (L1 * L1 - L2 * L2 + dist * dist) / (2f * dist);
             float h = Mathf.Sqrt(Mathf.Max(0f, L1 * L1 - along * along));
             var E = S + n * along + po * h;
+            if (a.Right) DebugArm = $"shoulder {m_Root.InverseTransformPoint(S):F3} elbow {m_Root.InverseTransformPoint(E):F3} wrist {m_Root.InverseTransformPoint(target):F3}"; else DebugArmL = $"shoulder {m_Root.InverseTransformPoint(S):F3} elbow {m_Root.InverseTransformPoint(E):F3} wrist {m_Root.InverseTransformPoint(target):F3}";
             up.rotation = Quaternion.FromToRotation(fo.position - S, E - S) * up.rotation;
             fo.rotation = Quaternion.FromToRotation(fe.position - fo.position, target - fo.position) * fo.rotation;
 
