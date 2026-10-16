@@ -313,6 +313,8 @@ namespace RockGame
         /// (PlayerNet.TeamTint over the alien's grey skin) - with the fingertip pads a shade darker, in the world's matte
         /// material (MatteHands; they were glossy, which read as plastic). (They used to be one dark blue for everyone.)</summary>
         public const int AlienSkin = 3, AlienPad = 4;
+        /// <summary>The arms' suit sleeve (a dark grey, a hint of the team colour in it) and its cuff (the team colour, bright).</summary>
+        public const int Sleeve = 5, Cuff = 6;
         public static readonly Color AlienBlue = new Color32(26, 43, 117, 255), AlienBluePad = new Color32(20, 34, 91, 255); // (exact bytes: no rounding drift)
         static readonly Dictionary<(Color, bool), Material> s_Polished = new Dictionary<(Color, bool), Material>();
         static Shader s_Skin;
@@ -368,17 +370,20 @@ namespace RockGame
         public static Color Shade(Color team, int part)
         {
             if (part == AlienSkin || part == AlienPad) return AlienShade(team, part == AlienPad);
+            if (part == Sleeve) { var sl = Color.Lerp(new Color(0.15f, 0.16f, 0.19f), team, 0.12f); sl.a = 1f; return sl; }
+            if (part == Cuff) { var cf = Color.Lerp(team, Color.white, 0.12f); cf.a = 1f; return cf; }
             var skin = ColorSlots.HandTint(team);
             if (part == Band) return team;
             if (part == Knuckles) { var dark = skin * 0.85f; dark.a = 1f; return dark; }
             return skin;
         }
 
-        /// <summary>The alien skin in a team's colour, as the body shows it (the grey skin texture, about 0.39, times the
-        /// team colour x1.6); the pads a shade darker.</summary>
+        /// <summary>The alien skin in a team's colour: the body's team colour (the grey skin texture, about 0.39, times the
+        /// team colour x1.6) softened a third of the way to the alien's grey, so the arms read as skin with the light
+        /// running over them rather than flat bright plastic; the pads a shade darker.</summary>
         public static Color AlienShade(Color team, bool pad)
         {
-            var c = team * (pad ? 0.5f : 0.62f);
+            var c = Color.Lerp(team * 0.62f, new Color(0.42f, 0.45f, 0.47f), 0.35f) * (pad ? 0.8f : 1f);
             c.a = 1f;
             return c;
         }

@@ -61,6 +61,8 @@ foreach ($m in $Modes) {
     $client = $client2 -or ($spec -match '\+client$')
     $name = $spec -replace '\+client2?$', ''
     $safe = $m -replace '[^\w]', '_'
+    # (long args - a -shotdir path - would push the log's path past Windows' 260 characters: keep the name short)
+    if ($safe.Length -gt 90) { $safe = $safe.Substring(0, 70) + '_' + ([System.BitConverter]::ToString([System.Security.Cryptography.MD5]::Create().ComputeHash([System.Text.Encoding]::UTF8.GetBytes($m))) -replace '-', '').Substring(0, 8) }
     $log = Join-Path $root "Logs/autotest/$safe.log"
     $clog = Join-Path $root "Logs/autotest/${safe}_client.log"
     Remove-Item $log, $clog -ErrorAction SilentlyContinue

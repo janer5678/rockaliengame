@@ -120,12 +120,15 @@ namespace RockGame
         }
 
         /// <summary>Every part of a hand that's showing (whichever style; not what it holds).</summary>
-        static List<MeshRenderer> HandParts(ViewModel vm, Transform hand)
+        static List<Renderer> HandParts(ViewModel vm, Transform hand)
         {
-            var l = new List<MeshRenderer>();
-            foreach (var r in hand.GetComponentsInChildren<MeshRenderer>()) if (vm.IsHand(r)) l.Add(r);
+            var l = new List<Renderer>();
+            foreach (var r in hand.GetComponentsInChildren<Renderer>()) if ((r is MeshRenderer || r is SkinnedMeshRenderer) && vm.IsHand(r)) l.Add(r);
             return l;
         }
+
+        /// <summary>A renderer's mesh (a MeshFilter's, or a skinned mesh's - the alien arms' skin).</summary>
+        static Mesh MeshOf(Renderer r) => r is SkinnedMeshRenderer sk ? sk.sharedMesh : r.GetComponent<MeshFilter>()?.sharedMesh;
 
         IEnumerator HandsShots(PlayerNet me, PlayerController pc)
         {
@@ -301,22 +304,22 @@ namespace RockGame
                 handRs.AddRange(HandParts(vm, vm.DebugHand(false)));
                 var all = new List<Renderer>(held); all.AddRange(handRs);
                 var before = new List<Mesh>();
-                foreach (var r in all) before.Add(r.GetComponent<MeshFilter>()?.sharedMesh);
+                foreach (var r in all) before.Add(MeshOf(r));
                 ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(dir, "handssmooth_" + it.ToString().ToLower() + "_off.png"));
                 yield return new WaitForEndOfFrame();
                 GameSettings.SmoothHands.Set(true, false);
                 yield return new WaitForSeconds(0.3f);
                 int smooth = 0, total = 0, handSmooth = 0;
                 foreach (var r in held) { var m = r.GetComponent<MeshFilter>()?.sharedMesh; if (m == null || !m.isReadable) continue; total++; if (SmoothShade.IsSmooth(m)) smooth++; }
-                foreach (var r in handRs) if (SmoothShade.IsSmooth(r.GetComponent<MeshFilter>()?.sharedMesh)) handSmooth++;
+                foreach (var r in handRs) if (SmoothShade.IsSmooth(MeshOf(r))) handSmooth++;
                 ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(dir, "handssmooth_" + it.ToString().ToLower() + "_on.png"));
                 yield return new WaitForEndOfFrame();
                 Check(total > 0 && smooth == total, $"shade smooth: every held {it} mesh is its smooth copy ({smooth}/{total})");
-                Check(handSmooth == handRs.Count && handRs.Count > 10, $"shade smooth: the hands are lit smoothly ({handSmooth}/{handRs.Count}, {it})");
+                Check(handSmooth == handRs.Count && handRs.Count >= 6, $"shade smooth: the hands are lit smoothly ({handSmooth}/{handRs.Count}, {it})");
                 GameSettings.SmoothHands.Set(false, false);
                 yield return new WaitForSeconds(0.3f);
                 bool back = true;
-                for (int i = 0; i < all.Count; i++) if (all[i] && all[i].GetComponent<MeshFilter>()?.sharedMesh != before[i]) back = false;
+                for (int i = 0; i < all.Count; i++) if (all[i] && MeshOf(all[i]) != before[i]) back = false;
                 Check(back, $"shade smooth off: the {it}'s and the hands' own flat meshes are back");
             }
 

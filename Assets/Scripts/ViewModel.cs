@@ -187,7 +187,7 @@ namespace RockGame
             hook.Track(Art.Box(square, band, new Vector3(0, 0, -0.075f), new Vector3(0.082f, 0.082f, 0.035f)), HandColorHook.Band);                // wrist band
             hook.Track(Art.Box(square, skin, new Vector3(0, 0, -0.32f), new Vector3(0.072f, 0.072f, 0.46f)), HandColorHook.Skin);                  // forearm
             // the alien arm (four fingers and a thumb, every joint its own transform: ViewModel.Hands.cs)
-            alien = BuildAlienArm(hand, hook, skin, dark, right);
+            alien = BuildAlienArm(hand, hook, right);
             ShowHandStyle(hand);
             foreach (var r in hand.GetComponentsInChildren<Renderer>(true)) r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off; // (the hidden style too)
             return hand;

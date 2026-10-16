@@ -31,6 +31,10 @@ as before. Code: `SteamConfig.cs` (the app ID), `SteamBoot.cs`, `SteamTransport.
 ### Spectating
 JOIN GAME on a match that has already started (or is full) no longer turns you away: you come in as a **spectator** (up to 8 per match). You get no body and no team and can't do anything in the world; the camera is a player's own first-person view (their eyes, where they're looking, what's in their hands). **Left click** watches the next player, **right click** the previous one. If the one you're watching dies you move on to someone alive after a moment; if they leave you move on at once. The HUD is just a bar along the bottom (who you're watching, the clock, LEAVE) and the chat. You see the victory cutscene and then the end screen ("BLUE WINS") with Leave game, like everyone else. Spectators never count as players (teams, the lobby countdown, who wins, someone leaving) and they're listed on their own SPECTATORS line under the scoreboard. A spectator stays a spectator for that match even if a place frees up. Code: `Spectator.cs`, `Hud.Spectator.cs`, `Bootstrap.Approve`. Test: `Tools\run_autotests.ps1 "spectate+client2:-fast"` (a 1v1 host, a client that plays, and a second client that joins the running match).
 
+### Patch 2026-10-16 (3): first-person arms remade from scratch
+- **New arms** (`ViewModel.Hands.cs`): each arm is now **one smooth skinned mesh** - forearm, wrist, palm, four fingers and a thumb all flowing into each other, the skin bending round every knuckle and over the wrist - instead of separate tubes with seams at every joint. Sturdier stylised proportions (thicker, rounder fingers with knuckle bumps and soft pads, a domed back of the hand, a thicker wrist), the skin your team colour softened towards the alien's grey so the light reads on it, and a **dark suit sleeve with a cuff in your team colour** covering the forearm (`HandColorHook.Sleeve` / `Cuff`). Same skeleton and poses as before; the square hands (Settings > Display > Alien hands off) are unchanged.
+- Tests: `Tools/run_autotests.ps1 "hands:-solo -shotdir DIR"` (photos of every pose); the runner now shortens long log names (a `-shotdir` path no longer breaks them).
+
 ### Patch 2026-10-16 (2): Lucky Block tweaks, less lag from the wacky items
 - **Emerald shop**: the Waterpipe Shotgun and the revolver are **5 emeralds** each.
 - **Lucky Block**: no emerald spawner by any base any more (just the ones in between the bases, every 20 s); lucky blocks are **1 emerald**; you can craft **battering rams for 250 wood** (`Cfg.LuckyRamWood`) as well as the building plan.
@@ -117,7 +121,8 @@ JOIN GAME on a match that has already started (or is full) no longer turns you a
 - **Progress**: the bars are small, top right (over the kill feed); it takes **400 s** to fill (`Cfg.ProgressSeconds`), and the menu's mode page has a PROGRESS TIME row to change it.
 - **The hammer**: the same mallet in a futuristic skin - gunmetal, glowing cyan rings, seams and cores that breathe (`HammerGlow`) - and a new icon.
 - **Airdrops**: the Rock of Immortality and the inventory swapper are out of the game; the airdrop pool starts with every item but C4 (`Cfg.AirdropItemMask`).
-- Tests: `Toolsun_autotests.ps1 "prompt7:-solo -rules jonahbruh","prompt7:-solo -rules progress","prompt7:-solo -map cherryblossom -rules autowood","prompt7menu"` (`AutoTest.Prompt7.cs`).
+- Tests: `Tools
+un_autotests.ps1 "prompt7:-solo -rules jonahbruh","prompt7:-solo -rules progress","prompt7:-solo -map cherryblossom -rules autowood","prompt7menu"` (`AutoTest.Prompt7.cs`).
 
 ### Patch 2026-10-13 (4): walk while dancing, a notebook that knows what gamers write, triple jump boots, the paint bucket
 - **Dance bomb**: you can walk about while you dance (still no attacking) - `PlayerNet.WackyFrozen` is what stops you moving now (locked in a ball, knocked flat, a minigame).
@@ -130,7 +135,8 @@ JOIN GAME on a match that has already started (or is full) no longer turns you a
 - **Rock of Immortality**: while it's in your hand you can't die (a killing hit leaves you on 1 HP; it's never used up). In your bag it does nothing.
 - **Bouncy castle**: crouched or sliding on it you don't bounce.
 - **Airdrop Test**: once you've had every airdrop item from the bushes the list starts over (anything can come again) and **ALL AIRDROP ITEMS TESTING** comes up big and fades away.
-- Tests: `Toolsun_autotests.ps1 "prompt6:-solo -rules airdroptest"` (`AutoTest.Prompt6.cs`).
+- Tests: `Tools
+un_autotests.ps1 "prompt6:-solo -rules airdroptest"` (`AutoTest.Prompt6.cs`).
 
 ### Patch 2026-10-13 (3): AIRDROP TEST mode, nothing goes on by itself, the Lifting Stick, thrown bear juice and bouncy castle
 - **Airdrop Test** (a new mode on the menu, `-rules airdroptest`; `NetGame.AirdropBushes.cs`): Classic, plus purple **airdrop berry bushes** all over the map (`Cfg.AirdropBushesPerSide` in each half, copied so every side gets the same; a gem and a faint beam over each). Pick one (E) and you get an airdrop item - one of the picked airdrop items, by rarity, that **you** haven't had from a bush yet (everyone can get the portal gun, nobody gets it twice). A picked bush grows back somewhere else on that side after `Cfg.AirdropBushRespawn`. Normal airdrops still come.
