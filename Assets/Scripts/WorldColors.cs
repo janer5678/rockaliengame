@@ -316,7 +316,9 @@ namespace RockGame
         public static readonly Color AlienBlue = new Color32(26, 43, 117, 255), AlienBluePad = new Color32(20, 34, 91, 255); // (exact bytes: no rounding drift)
         static readonly Dictionary<(Color, bool), Material> s_Polished = new Dictionary<(Color, bool), Material>();
         static Shader s_Skin;
-        static bool s_SkinTried;
+        static bool s_SkinTried, s_ArmsTexTried;
+        /// <summary>The arms model's baked shading (Resources/FpsArms/AlienArmsAO), under the alien hands' colour.</summary>
+        static Texture2D s_ArmsTex;
         /// <summary>The alien hands in the world's matte material (true), not the glossy AlienSkin shader.</summary>
         public const bool MatteHands = true;
 
@@ -328,9 +330,13 @@ namespace RockGame
             if (s_Polished.TryGetValue((c, ghost), out var m) && m) return m;
             if (MatteHands)
             {
-                // the world's own matte material, like the items held in the hands (the glossy skin read as plastic)
+                // the world's own matte material, like the items held in the hands (the glossy skin read as plastic),
+                // with the arms model's baked shading under the colour (Tools/alien_arms_v3.py: the creases between the
+                // fingers, the knuckles and the hollow of the palm darker, a faint grain over the skin)
                 m = Art.NewMat(c);
-                if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.4f); // (a soft sheen on the skin, not plastic)
+                if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.3f); // (matte skin, not plastic)
+                if (!s_ArmsTexTried) { s_ArmsTexTried = true; s_ArmsTex = Resources.Load<Texture2D>("FpsArms/AlienArmsAO"); }
+                if (s_ArmsTex != null && m.HasProperty("_BaseMap")) { m.SetTexture("_BaseMap", s_ArmsTex); m.mainTexture = s_ArmsTex; }
                 m.name = ghost ? "alien hand (ghost)" : "alien hand";
                 Art.Register(m, c);
                 s_Polished[(c, ghost)] = m;
