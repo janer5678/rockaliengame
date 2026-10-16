@@ -95,15 +95,15 @@ namespace RockGame
                 var deals = Cfg.EmeraldDeals;
                 var want = new (Item id, int n, int price)[]
                 {
-                    (Item.KnockStick, 1, 1), (Item.EnderPearl, 1, 2), (Item.Revolver, 1, 2), (Item.RevolverAmmo, Cfg.RevolverMag, 1),
-                    (Item.Shotgun, 1, 4), (Item.ShotgunShell, Cfg.ShotgunClip, 1), (Item.C4, 1, 3),
+                    (Item.KnockStick, 1, 1), (Item.EnderPearl, 1, 2), (Item.Revolver, 1, 5), (Item.RevolverAmmo, Cfg.RevolverMag, 1),
+                    (Item.Shotgun, 1, 5), (Item.ShotgunShell, Cfg.ShotgunClip, 1), (Item.C4, 1, 3),
                 };
                 bool same = deals.Count == want.Length;
                 for (int i = 0; same && i < want.Length; i++) same = deals[i].Id == want[i].id && deals[i].Count == want[i].n && deals[i].Price == want[i].price && deals[i].Extra == Item.None;
                 var list = new List<string>(); foreach (var d in deals) list.Add($"{d.Id} x{d.Count} {d.Price}");
                 Check(same, $"the shop: just these, at these prices ({string.Join(", ", list)})");
                 for (int i = 0; i < me.Inv.Count; i++) me.Inv[i] = default;
-                me.ServerGive(Item.Emerald, 20);
+                me.ServerGive(Item.Emerald, 25);
                 pc.LocalTeleport(Cfg.SpawnPos(team), Quaternion.LookRotation(back).eulerAngles.y);
                 yield return new WaitForSeconds(0.5f);
                 pc.OpenShop(PlayerController.ShopEmerald);
@@ -117,7 +117,7 @@ namespace RockGame
                 yield return new WaitForSeconds(0.3f);
                 var missing = new List<string>();
                 foreach (var w in want) if (me.Count(w.id) < w.n) missing.Add($"{w.id} ({me.Count(w.id)})");
-                Check(missing.Count == 0 && spent == 14 && me.Count(Item.Emerald) == 20 - spent, $"bought one of each for {spent} emeralds ({me.Count(Item.Emerald)} left){(missing.Count > 0 ? " - missing " + string.Join(", ", missing) : "")}");
+                Check(missing.Count == 0 && spent == 18 && me.Count(Item.Emerald) == 25 - spent, $"bought one of each for {spent} emeralds ({me.Count(Item.Emerald)} left){(missing.Count > 0 ? " - missing " + string.Join(", ", missing) : "")}");
                 Check(me.Count(Item.RevolverAmmo) == Cfg.RevolverMag && me.Count(Item.ShotgunShell) == Cfg.ShotgunClip, $"a clip each: {me.Count(Item.RevolverAmmo)} bullets, {me.Count(Item.ShotgunShell)} shells");
             }
 
@@ -154,14 +154,15 @@ namespace RockGame
             Check(g.S == GameState.PreBall && Cfg.WallDropDelay == 30f && wall <= 30.5f && wall > 5f, $"the wall drops after 30 s ({wall:0} s left now)");
             int nodes = 0; foreach (var n in ResourceNode.All) if (n != null) nodes++;
             Check(nodes == 0, $"no trees, logs, rocks or berry bushes anywhere ({nodes})");
-            Check(Cfg.CraftIndexOf(Item.BuildingPlan) >= 0 && Cfg.CraftIndexOf(Item.Hatchet) < 0 && Cfg.CraftIndexOf(Item.Workbench) < 0 && Cfg.CraftIndexOf(Item.Spear) < 0 && Cfg.PowerCount == 0,
-                "the building plan's the only thing to craft");
+            int ramI = Cfg.CraftIndexOf(Item.Ram);
+            Check(Cfg.CraftIndexOf(Item.BuildingPlan) >= 0 && ramI >= 0 && Cfg.CraftRecipe(ramI, team).Wood == 250 && Cfg.CraftRecipe(ramI, team).Stone == 0 && Cfg.CraftIndexOf(Item.Hatchet) < 0 && Cfg.CraftIndexOf(Item.Workbench) < 0 && Cfg.CraftIndexOf(Item.Spear) < 0 && Cfg.PowerCount == 0,
+                "the building plan and a 250 wood battering ram are the only things to craft");
             {
                 pc.MenuOpen = true;
                 for (int i = 0; i < 4; i++) yield return null;
                 yield return new WaitForEndOfFrame();
                 var rows = new List<string>(); foreach (var r in Hud.CraftRowsShown) rows.Add(r.Id.ToString());
-                Check(Hud.CraftRowsShown.Count == 1 && Hud.CraftRowsShown[0].Id == Item.BuildingPlan, $"the bag's crafting list: {string.Join(", ", rows)}");
+                Check(Hud.CraftRowsShown.Count == 2 && Hud.CraftRowsShown[0].Id == Item.BuildingPlan && Hud.CraftRowsShown[1].Id == Item.Ram, $"the bag's crafting list: {string.Join(", ", rows)}");
                 yield return Snap("prompt16_lucky_bag");
                 pc.CloseMenu();
             }
@@ -185,10 +186,10 @@ namespace RockGame
                 yield return Snap("prompt16_lucky_base");
             }
 
-            // ---- the spawners: one outside every base, and in between the bases
+            // ---- the spawners: in between the bases, none by a base
             var tops = EmeraldSpawner.Tops;
             {
-                Check(tops.Count == 2 * Cfg.Copies, $"{tops.Count} emerald spawners ({2 * Cfg.Copies} expected)");
+                Check(tops.Count == Cfg.Copies, $"{tops.Count} emerald spawners ({Cfg.Copies} expected)");
                 int home = 0, mid = 0;
                 var report = new List<string>();
                 for (int i = 0; i < tops.Count; i++)
@@ -197,10 +198,10 @@ namespace RockGame
                     for (int b = 0; b < Cfg.TeamCount; b++) nearest = Mathf.Min(nearest, Flat(tops[i], Cfg.BaseCenter[b]));
                     float every = EmeraldSpawner.EveryOf(i);
                     report.Add($"{nearest:0} m from a base, every {every:0} s");
-                    if (nearest > Cfg.BaseHalf && nearest < Cfg.BaseHalf + 14f && Mathf.Approximately(every, Cfg.LuckyHomeEvery)) home++;
+                    if (nearest < Cfg.BaseHalf + 14f) home++;
                     else if (nearest > Cfg.BaseHalf + 14f && Mathf.Approximately(every, Cfg.LuckyMiddleEvery)) mid++;
                 }
-                Check(home == Cfg.Copies && mid == Cfg.Copies, $"{home} just outside the bases, {mid} in between: {string.Join("; ", report)}");
+                Check(home == 0 && mid == Cfg.Copies, $"none by a base ({home}), {mid} in between: {string.Join("; ", report)}");
                 yield return new WaitForSeconds(2f);
                 int em = 0; foreach (var it in g.Items) if (it.Stack.Id == Item.Emerald) em++;
                 Check(em == 0, $"no emeralds before the wall drops ({em})");
@@ -209,7 +210,7 @@ namespace RockGame
             // ---- the emerald shop: one lucky block
             {
                 var deals = Cfg.EmeraldDeals;
-                Check(deals.Count == 1 && deals[0].Id == Item.LuckyBlock && deals[0].Price == Cfg.LuckyBlockPrice && Cfg.LuckyBlockPrice == 2, $"the shop: one row, a lucky block for {(deals.Count > 0 ? deals[0].Price : -1)} emeralds");
+                Check(deals.Count == 1 && deals[0].Id == Item.LuckyBlock && deals[0].Price == Cfg.LuckyBlockPrice && Cfg.LuckyBlockPrice == 1, $"the shop: one row, a lucky block for {(deals.Count > 0 ? deals[0].Price : -1)} emeralds");
                 Check(Cfg.Removed(Item.LuckyBlock) && !Cfg.Removed(Item.Emerald) && !Cfg.LuckyBlockPool.Contains(Item.Wood) && Cfg.LuckyBlockPool.Count > 20, $"a lucky block: any of {Cfg.LuckyBlockPool.Count} airdrop items (never wood, never a lucky block)");
                 me.ServerGive(Item.Emerald, 10);
                 pc.LocalTeleport(Cfg.SpawnPos(team), Quaternion.LookRotation(back).eulerAngles.y);
@@ -227,7 +228,7 @@ namespace RockGame
                 yield return new WaitForSeconds(0.3f);
                 int got = 0; var names = new List<string>();
                 foreach (var it in Cfg.LuckyBlockPool) { int d = me.Count(it) - before[it]; if (d > 0) { got += d; names.Add(it.ToString()); } }
-                Check(PlayerNet.LuckyRolls - rolls0 == 3 && got >= 3 && me.Count(Item.Emerald) == 4 && me.Count(Item.LuckyBlock) == 0, $"3 lucky blocks for 6 emeralds: {string.Join(", ", names)} ({me.Count(Item.Emerald)} emeralds left)");
+                Check(PlayerNet.LuckyRolls - rolls0 == 3 && got >= 3 && me.Count(Item.Emerald) == 7 && me.Count(Item.LuckyBlock) == 0, $"3 lucky blocks for 3 emeralds: {string.Join(", ", names)} ({me.Count(Item.Emerald)} emeralds left)");
             }
 
             // ---- the wall drops: the wood machine spams wood, the spawners start
@@ -252,6 +253,27 @@ namespace RockGame
                 pc.SetLook(Quaternion.LookRotation(back).eulerAngles.y, 14f);
                 yield return new WaitForSeconds(0.8f);
                 yield return Snap("prompt16_lucky_base_live");
+            }
+
+            // ---- the wacky items from this patch: the snail hides your own view, the dance bomb slows you, a lighter clutter bomb
+            {
+                double now = Unity.Netcode.NetworkManager.Singleton.ServerTime.Time;
+                me.DanceUntil.Value = now + 3.0;
+                yield return new WaitForSeconds(0.3f);
+                Check(me.Dancing && Mathf.Abs(me.WackySpeedMul - Cfg.DanceSpeedMul) < 0.01f && Cfg.DanceSpeedMul <= 0.35f, $"dancing: you move at {me.WackySpeedMul:0.00}x");
+                me.DanceUntil.Value = -1;
+                var front = OnGround(me.transform.position - back * 5f);
+                g.ServerAddGadget(Gadget.Snail, front, 0f, team, 4f, 7);
+                yield return new WaitForSeconds(0.6f);
+                Check(PlayerController.SnailShot(out _, out _) && !PlayerController.PipOn, "the attention snail: no window of your own view");
+                yield return Snap("prompt16_snail");
+                yield return new WaitForSeconds(4f);
+                int r0 = Object.FindObjectsByType<MeshRenderer>(FindObjectsSortMode.None).Length;
+                g.ServerAddGadget(Gadget.Clutter, front, 0f, team, 5f, 11);
+                yield return new WaitForSeconds(0.6f);
+                int added = Object.FindObjectsByType<MeshRenderer>(FindObjectsSortMode.None).Length - r0;
+                Check(added > 50 && added < 260, $"a clutter bomb: {added} pieces (it was about 540)");
+                yield return Snap("prompt16_clutter");
             }
             Log("prompt16 done");
             Application.Quit(0);

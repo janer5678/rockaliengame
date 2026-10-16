@@ -171,8 +171,10 @@ namespace RockGame
             var bits = new GameObject("clutter").transform;
             bits.SetParent(t, false);
             // glitter and confetti everywhere, balloons, big shapes and thick blobs of colour hanging in the air - dense
-            // enough that an alien in it is hard to make out
-            for (int i = 0; i < 420; i++)
+            // enough that an alien in it is hard to make out. (Kept to a few hundred pieces and a dozen see-through blobs:
+            // 540 pieces and 46 huge see-through spheres made the game crawl while one was out; the screen's own haze
+            // - Hud.DrawClutterScreen - does most of the hiding.)
+            for (int i = 0; i < 160; i++)
             {
                 var p = new Vector3(R(r, -rad, rad), R(r, 0.2f, 4.5f), R(r, -rad, rad));
                 if (new Vector2(p.x, p.z).magnitude > rad) continue;
@@ -180,7 +182,7 @@ namespace RockGame
                 var go = Art.Box(bits, c, p, Vector3.one * R(r, 0.05f, 0.14f), new Vector3(R(r, 0, 360), R(r, 0, 360), 0));
                 go.name = "bit";
             }
-            for (int i = 0; i < 40; i++)
+            for (int i = 0; i < 18; i++)
             {
                 var p = new Vector3(R(r, -rad, rad) * 0.8f, R(r, 1f, 3.5f), R(r, -rad, rad) * 0.8f);
                 var c = k_Bright[r.Next(k_Bright.Length)];
@@ -188,7 +190,7 @@ namespace RockGame
                 b.name = "balloon";
                 Art.Box(b.transform, Color.white, new Vector3(0, -1.1f, 0), new Vector3(0.02f, 1.6f, 0.02f));
             }
-            for (int i = 0; i < 34; i++)
+            for (int i = 0; i < 16; i++)
             {
                 var p = new Vector3(R(r, -rad, rad) * 0.75f, R(r, 0.6f, 2.8f), R(r, -rad, rad) * 0.75f);
                 var c = k_Bright[r.Next(k_Bright.Length)];
@@ -196,12 +198,12 @@ namespace RockGame
                 var go = Art.Part(bits, mesh, c, p, Vector3.one * R(r, 0.6f, 1.4f), new Vector3(R(r, 0, 360), R(r, 0, 360), R(r, 0, 360)));
                 go.name = "junk";
             }
-            for (int i = 0; i < 46; i++)
+            for (int i = 0; i < 12; i++)
             {
                 var p = new Vector3(R(r, -rad, rad) * 0.8f, R(r, 0.6f, 2.6f), R(r, -rad, rad) * 0.8f);
                 var c = k_Bright[r.Next(k_Bright.Length)];
                 c.a = 0.78f;
-                Art.Part(bits, Art.Sphere, Color.white, p, Vector3.one * R(r, 2f, 3.6f), default, false, Art.Ghost(c)).name = "blob";
+                Art.Part(bits, Art.Sphere, Color.white, p, Vector3.one * R(r, 2.6f, 4.2f), default, false, Art.Ghost(c)).name = "blob";
             }
             foreach (var mr in bits.GetComponentsInChildren<MeshRenderer>()) mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         }

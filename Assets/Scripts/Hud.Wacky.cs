@@ -112,7 +112,7 @@ namespace RockGame
                 if (game != null) foreach (var g in game.Gadgets) if (g.Kind == Gadget.Snail && g.Until > now) left = System.Math.Max(left, g.Until - now);
                 var st = new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt(30 * k) };
                 Shadowed(new Rect(0, bar * 0.2f, sw, bar * 0.7f), $"<color=#ffd24a>ATTENTION SNAIL</color>  <size={Mathf.RoundToInt(20 * k)}>{Mathf.CeilToInt((float)left)}</size>", st);
-                Shadowed(new Rect(0, sh - bar * 0.8f, sw, bar * 0.6f), "Everyone is looking at the snail. You can still move and fight - your own view is in the window.", m_Center);
+                Shadowed(new Rect(0, sh - bar * 0.8f, sw, bar * 0.6f), "Everyone is looking at the snail - nobody can see a thing of their own until it's over.", m_Center);
                 if (PlayerController.PipOn)
                 {
                     var pr = PlayerController.PipGuiRect;
@@ -156,7 +156,7 @@ namespace RockGame
                 var st = new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt(56 * k * pulse) };
                 Color c = Color.HSVToRGB(Mathf.Repeat(Time.time * 0.6f, 1f), 0.6f, 1f);
                 Shadowed(new Rect(0, sh * 0.18f, sw, 90 * k), $"<color=#{ColorUtility.ToHtmlStringRGB(c)}>DANCE!</color>", st);
-                Shadowed(new Rect(0, sh * 0.18f + 135 * k, sw, 26 * k), "You can still move about (but not attack)", m_Center); // (under the DANCE! note)
+                Shadowed(new Rect(0, sh * 0.18f + 135 * k, sw, 26 * k), "You can hardly move (and can't attack)", m_Center); // (under the DANCE! note)
             }
             if (me.KnockedDown)
             {
@@ -231,7 +231,7 @@ namespace RockGame
             }
             // glitter and confetti everywhere, flickering
             var fr = new System.Random(Mathf.FloorToInt(Time.time * 12f));
-            for (int i = 0; i < 160; i++)
+            for (int i = 0; i < 90; i++)
             {
                 float sz = (5f + (float)fr.NextDouble() * 16f) * k;
                 var col = Color.HSVToRGB((float)fr.NextDouble(), 0.8f, 1f); col.a = 0.9f * c;

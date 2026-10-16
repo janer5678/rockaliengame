@@ -31,6 +31,14 @@ as before. Code: `SteamConfig.cs` (the app ID), `SteamBoot.cs`, `SteamTransport.
 ### Spectating
 JOIN GAME on a match that has already started (or is full) no longer turns you away: you come in as a **spectator** (up to 8 per match). You get no body and no team and can't do anything in the world; the camera is a player's own first-person view (their eyes, where they're looking, what's in their hands). **Left click** watches the next player, **right click** the previous one. If the one you're watching dies you move on to someone alive after a moment; if they leave you move on at once. The HUD is just a bar along the bottom (who you're watching, the clock, LEAVE) and the chat. You see the victory cutscene and then the end screen ("BLUE WINS") with Leave game, like everyone else. Spectators never count as players (teams, the lobby countdown, who wins, someone leaving) and they're listed on their own SPECTATORS line under the scoreboard. A spectator stays a spectator for that match even if a place frees up. Code: `Spectator.cs`, `Hud.Spectator.cs`, `Bootstrap.Approve`. Test: `Tools\run_autotests.ps1 "spectate+client2:-fast"` (a 1v1 host, a client that plays, and a second client that joins the running match).
 
+### Patch 2026-10-16 (2): Lucky Block tweaks, less lag from the wacky items
+- **Emerald shop**: the Waterpipe Shotgun and the revolver are **5 emeralds** each.
+- **Lucky Block**: no emerald spawner by any base any more (just the ones in between the bases, every 20 s); lucky blocks are **1 emerald**; you can craft **battering rams for 250 wood** (`Cfg.LuckyRamWood`) as well as the building plan.
+- **Attention Snail**: no window of your own view any more - nobody sees their own screen at all while it's down.
+- **Dance Bomb**: dancers move at **0.3x** speed (`Cfg.DanceSpeedMul`).
+- **Lag**: the clutter bomb's cloud was ~540 separate pieces and 46 huge see-through spheres (now ~230 and 12 - the screen haze still hides you), and the attention snail drew the whole scene a second time for the corner window (gone). Those were the likely cause of the laggy patch.
+- Tests: `Tools/run_autotests.ps1 "prompt16:-solo -rules luckyblock","prompt16:-solo -rules luckyblock -mode ffa4","prompt16:-solo -rules emerald"`.
+
 ### Patch 2026-10-16: Emerald mode reworked, LUCKY BLOCK mode, new first-person hands
 - **Emerald mode**:
   - **Spawners**: with two bases they're to the **left and right of the ball** (on the line between the halves, as far from one base as the other, `MapHalf * 0.32` out); with 3-4 bases they stay on every team's way to the middle but much closer in (`EmeraldSpawner.BuildAll`).

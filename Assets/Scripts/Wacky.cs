@@ -27,6 +27,8 @@ namespace RockGame
         [Tune("Wacky items")] public static float ShieldTime = 10f, SlowTime = 6f, SlowMul = 0.35f, SlowRadius = 4.5f, AntTime = 7f, PrisonTime = 10f;
         /// <summary>An ant: how fast it walks and how high it jumps next to an alien (both way down).</summary>
         [Tune("Wacky items")] public static float AntSpeedMul = 0.3f, AntJumpMul = 0.35f;
+        /// <summary>The dance bomb: how fast a dancer can still move (x their speed).</summary>
+        [Tune("Wacky items")] public static float DanceSpeedMul = 0.3f;
         [Tune("Wacky items")] public static float DanceTime = 4f, DanceRadius = 9f, KnockDownTime = 2.5f, DecoyLife = 20f, DecoySpeed = 6.5f;
         [Tune("Wacky items")] public static float CastleLife = 180f, CastleBounce = 17f, SnailTime = 15f, SnailShortTime = 5f;
         [Tune("Wacky items")] public static float TruthRadius = 7f, TruthLaunch = 55f, SuicideRadius = 6f, SuicideFuse = 1.2f;
@@ -225,7 +227,7 @@ namespace RockGame
                 case Item.ChaosSigil: return $"LMB: every item in the game - in bags, chests and on the floor - rains down spread evenly over the whole map, and glows through walls for {ChaosGlowTime:0} s.";
                 case Item.DroneBot: return "LMB: put it down and drive it (WASD, Space hops). LMB blows it up: anyone close is left on 5 HP (40 or less: dead). E: back to your body.";
                 case Item.GameshowWand: return $"LMB: zap someone and everything stops for a trivia question. They get it right: you die. Wrong: they die. ({GameshowAnswerTime:0} s to answer.)";
-                case Item.DanceBomb: return $"LMB: throw it - everyone within {DanceRadius:0} m has to dance for {DanceTime:0} s (careful - you too).";
+                case Item.DanceBomb: return $"LMB: throw it - everyone within {DanceRadius:0} m has to dance for {DanceTime:0} s, barely able to move (careful - you too).";
                 case Item.DecoyBase: return "LMB: throw it - a copy of your whole base appears there. Anyone who hits it finds out it's fake.";
                 case Item.BaseRebuild: return $"LMB: everything of your base destroyed in the last {RebuildWindow:0} s comes back.";
                 case Item.FakeFlare: return "LMB: calls in a FAKE airdrop - it's full of every item in the game, and none of them come out.";

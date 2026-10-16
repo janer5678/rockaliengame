@@ -37,7 +37,7 @@ namespace RockGame
         [Tune("Emerald mode")] public static float BigWallTallMul = 1.4f, BigWallHpMul = 2f;
         /// <summary>Emerald shop prices (emeralds): the knockback stick, an ender pearl, the revolver, a clip of revolver
         /// bullets, the shotgun, a clip of shells and C4.</summary>
-        [Tune("Emerald shop")] public static int EmeraldPriceKnockStick = 1, EmeraldPricePearls = 2, EmeraldPriceRevolver = 2, EmeraldPriceAmmo = 1, EmeraldPriceShotgun = 4, EmeraldPriceShells = 1, EmeraldPriceC4 = 3;
+        [Tune("Emerald shop")] public static int EmeraldPriceKnockStick = 1, EmeraldPricePearls = 2, EmeraldPriceRevolver = 5, EmeraldPriceAmmo = 1, EmeraldPriceShotgun = 5, EmeraldPriceShells = 1, EmeraldPriceC4 = 3;
         /// <summary>A clip of shotgun shells (the shotgun's own clip).</summary>
         public const int ShotgunClip = 4;
 
@@ -198,7 +198,7 @@ namespace RockGame
         /// <summary>Builds every spawner (Emerald and Lucky Block mode) - after everything else on the map, so their spots dodge
         /// it. Emerald mode: with two bases, one on the LEFT and one on the RIGHT of the ball (on the line between the
         /// halves, well clear of both bases); with 3-4, one on every team's way to the middle, close in. Lucky Block mode:
-        /// one just outside every base, and the two (3-4 bases: four) in between the bases, nearer the middle.</summary>
+        /// just the two (3-4 bases: four) in between the bases, nearer the middle - none by any base.</summary>
         public static void BuildAll(Transform root)
         {
             Tops.Clear();
@@ -206,7 +206,6 @@ namespace RockGame
             All.Clear();
             if (Cfg.LuckyBlock)
             {
-                Place(root, HomeSpot(1f), Cfg.LuckyHomeEvery);
                 Place(root, SideSpot(Cfg.MapHalf * 0.3f), Cfg.LuckyMiddleEvery);
             }
             else if (Cfg.FourWay) Place(root, HomeSpot(0.12f), Cfg.EmeraldEvery);
@@ -683,7 +682,7 @@ namespace RockGame
                 if (d.Extra != Item.None && d.ExtraCount > 0) ServerGive(d.Extra, d.ExtraCount, Mathf.Clamp(Cfg.MaxData(d.Extra), 0, 255));
             }
             EmeraldBuys++;
-            CraftedRpc((byte)d.Id);
+            if (d.Id != Item.LuckyBlock) CraftedRpc((byte)d.Id); // (a lucky block says what it was instead)
             Fx.Server(FxKind.Craft, Cfg.EmeraldShopPos(Team.Value), new Vector3(Team.Value, 0, 0));
         }
 

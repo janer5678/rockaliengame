@@ -8,9 +8,9 @@ namespace RockGame
     /// last team standing) with emeralds instead of trees:
     /// - no trees, logs or berry bushes anywhere, and no airdrops;
     /// - everyone starts with LuckyStartWood wood, and the wood machine in every base spams wood (LuckyWoodPerSecond a
-    ///   second, from when the wall drops) - the building plan is the only thing in the bag's crafting list;
-    /// - emerald spawners (Emerald.cs): one just outside every base (an emerald every LuckyHomeEvery s) and the ones in
-    ///   between the bases, nearer the middle (every LuckyMiddleEvery s);
+    ///   second, from when the wall drops) - the building plan and the battering ram (LuckyRamWood) are all you craft;
+    /// - emerald spawners (Emerald.cs): the ones in between the bases, nearer the middle (an emerald every LuckyMiddleEvery
+    ///   s) - none by any base;
     /// - the emerald shop beside your machine sells just the one thing: a LUCKY BLOCK (LuckyBlockPrice emeralds) - a random
     ///   airdrop item, from the whole pool of them (LuckyBlockLoot);
     /// - the glass wall drops after LuckyWallDrop seconds.
@@ -22,9 +22,11 @@ namespace RockGame
         public static bool HasEmeralds => Emerald || LuckyBlock;
 
         /// <summary>A lucky block's price (emeralds).</summary>
-        [Tune("Lucky Block mode")] public static int LuckyBlockPrice = 2;
-        /// <summary>Seconds between emeralds on the spawner outside your base, and on the ones in between the bases.</summary>
-        [Tune("Lucky Block mode")] public static float LuckyHomeEvery = 35f, LuckyMiddleEvery = 20f;
+        [Tune("Lucky Block mode")] public static int LuckyBlockPrice = 1;
+        /// <summary>A battering ram's price (wood) - the one thing besides the building plan you can craft.</summary>
+        [Tune("Lucky Block mode")] public static int LuckyRamWood = 250;
+        /// <summary>Seconds between emeralds on the spawners (in between the bases - there's none by a base).</summary>
+        [Tune("Lucky Block mode")] public static float LuckyMiddleEvery = 20f;
         /// <summary>The wood machine's wood a second (from when the wall drops), and the wood everyone starts with.</summary>
         [Tune("Lucky Block mode")] public static int LuckyWoodPerSecond = 25, LuckyStartWood = 2000;
         /// <summary>Seconds before the glass wall drops.</summary>

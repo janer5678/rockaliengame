@@ -54,7 +54,7 @@ namespace RockGame
         public bool WackyNoAttack => Shielded || IsAnt || WackyHeld;
         /// <summary>Nothing can hurt this player right now.</summary>
         public bool WackySafe => Shielded || IsAnt || Prisoned || MinigameOn;
-        public float WackySpeedMul => (Slowed ? Cfg.SlowMul : 1f) * (IsBear ? Cfg.BearSpeedMul : 1f) * (IsAnt ? Cfg.AntSpeedMul : 1f);
+        public float WackySpeedMul => (Slowed ? Cfg.SlowMul : 1f) * (IsBear ? Cfg.BearSpeedMul : 1f) * (IsAnt ? Cfg.AntSpeedMul : 1f) * (Dancing ? Cfg.DanceSpeedMul : 1f); // (the dance bomb: dancing slows you right down)
         /// <summary>The team this player looks like they're on (a disguise shows the enemy's).</summary>
         public int ApparentTeam => Disguised ? DisguiseTeam.Value : Team.Value;
         /// <summary>The name over / on them: a disguised player borrows one of that team's players' names.</summary>

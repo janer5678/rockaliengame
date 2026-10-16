@@ -355,8 +355,7 @@ namespace RockGame
             }
             if (SnailShot(out var sp, out var sr, out float sf))
             {
-                // (your own eyes stay up in a window in the corner: you can still aim, hit and shoot)
-                if (!m_Net.Dead.Value) ShowPip(transform.position + Vector3.up * m_Eye, Quaternion.Euler(m_Pitch, m_Yaw, 0f) * Quaternion.Euler(Fx.ShakeEuler()));
+                // (no window of your own any more: nobody sees their own screen at all while the snail's down)
                 camPos = sp;
                 rot = sr;
                 fov = sf;

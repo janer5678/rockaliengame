@@ -93,7 +93,7 @@ namespace RockGame
             }
             var info = new Rect(x, top + Mathf.Min(view.height, contentH) + 6 * k, colW, footer);
             if (!DrawHoverInfo(info, k))
-                Shadowed(info, em ? (Cfg.LuckyBlock ? $"A lucky block: a random airdrop item. Emeralds grow on the emerald spawners (the raised green platforms) - outside your base every {Cfg.LuckyHomeEvery:0} s, in between the bases every {Cfg.LuckyMiddleEvery:0} s. LMB on BUY. {KT(Bind.Inventory)} or [Esc] closes this."
+                Shadowed(info, em ? (Cfg.LuckyBlock ? $"A lucky block: a random airdrop item. Emeralds grow on the emerald spawners (the raised green platforms) in between the bases - one every {Cfg.LuckyMiddleEvery:0} s on each. LMB on BUY. {KT(Bind.Inventory)} or [Esc] closes this."
                         : $"Emeralds grow on the emerald spawners (the raised green platforms) - one every {Cfg.EmeraldEvery / 60f:0.#} minutes on each. LMB on BUY. {KT(Bind.Inventory)} or [Esc] closes this.")
                     : $"The Trade Station's things are traded here, for wood. LMB on BUY. {KT(Bind.Inventory)} or [Esc] closes this.", CraftStyle(13 * k, FontStyle.Normal, TextAnchor.UpperLeft, Color.white, true));
         }
