@@ -54,7 +54,7 @@ namespace RockGame
         /// <summary>What the fingers do: fixed shapes, or closing on the held thing between two curls per joint.</summary>
         enum Fp : byte { Relaxed, Fist, LooseFist, Open, Cup, Support, Hook, Pinch, Point, Paper }
         /// <summary>What the thumb does (its base's turn, then its two joints - fixed or closing).</summary>
-        enum Tp : byte { Relaxed, Wrap, Pinch, Spread, Support, Tuck, Open }
+        enum Tp : byte { Relaxed, Wrap, Pinch, Spread, Support, Tuck, Open, Up }
 
         sealed class FingerSet { public float[] Min, Max, Spread; public bool Solve; }
         sealed class ThumbSet { public Quaternion Base; public float Min1, Min2, Max1, Max2; public bool Solve; }
@@ -93,6 +93,8 @@ namespace RockGame
             /* Support */ new ThumbSet { Base = TB(-0.45f, -0.25f, 0.86f, -0.85f, 0.5f, 0.1f), Min1 = 5, Min2 = 5, Max1 = 40, Max2 = 45, Solve = true },
             /* Tuck    */ new ThumbSet { Base = TB(-0.1f, -0.8f, 0.6f, -0.5f, 0.3f, -0.8f), Min1 = 35, Min2 = 30, Max1 = 35, Max2 = 30 },
             /* Open    */ new ThumbSet { Base = TB(-0.88f, 0f, 0.48f, -0.3f, 0.95f, 0.1f), Min1 = 3, Min2 = 2, Max1 = 3, Max2 = 2 },
+            // straight up along the fingers' side, nearly straight (the rock's thumbs, up its near face - Rust's)
+            /* Up      */ new ThumbSet { Base = TB(-0.42f, -0.12f, 0.9f, -0.9f, 0.4f, 0.1f), Min1 = 4, Min2 = 3, Max1 = 14, Max2 = 10, Solve = true },
         };
 
         // ======== what the fingers close on ========
@@ -629,16 +631,21 @@ namespace RockGame
                 {
                     case Item.Rock:
                     {
-                        // Rust's rock: cupped in both hands from underneath, palms up under either side of it, the fingers
-                        // curling up round its front and the thumbs up its sides
+                        // Rust's rock: a hand under each lower side of it, the palms turned in onto it, the fingers reaching
+                        // up round its back and the thumbs pointing straight up its near face (the forearms come up from below)
                         var b = hold != null ? hold.Box : new Bounds(new Vector3(0f, 0.02f, 0.04f), new Vector3(0.15f, 0.12f, 0.14f));
                         var c = b.center; var ex = b.extents;
-                        var nR = new Vector3(0.55f, -0.82f, -0.12f).normalized;
+                        var nR = new Vector3(0.66f, -0.68f, -0.32f).normalized;
                         var nL = new Vector3(-nR.x, nR.y, nR.z);
-                        var cR = Trace(hold, c + nR * 0.4f + new Vector3(0f, 0f, -ex.z * 0.15f), -nR);
-                        var cL = Trace(hold, c + nL * 0.4f + new Vector3(0f, 0f, -ex.z * 0.15f), -nL);
-                        One(m_TR, PalmOn(true, hold, H, cR, nR, new Vector3(-0.25f, 0.35f, 1f)).With(Fp.Cup, Tp.Spread), true, 0);
-                        One(m_TL, PalmOn(false, hold, H, cL, nL, new Vector3(0.25f, 0.35f, 1f)).With(Fp.Cup, Tp.Spread), false, 0);
+                        var cR = Trace(hold, c + nR * 0.4f, -nR);
+                        var cL = Trace(hold, c + nL * 0.4f, -nL);
+                        var fR = new Vector3(-0.2f, 0.72f, 0.66f);
+                        var fL = new Vector3(-fR.x, fR.y, fR.z);
+                        var gR = PalmOn(true, hold, H, cR, nR, fR).With(Fp.Cup, Tp.Up);
+                        var gL = PalmOn(false, hold, H, cL, nL, fL).With(Fp.Cup, Tp.Up);
+                        gR.ElbowK = gL.ElbowK = 0.9f; // (the forearms straight on from the hands: up from below)
+                        One(m_TR, gR, true, 0);
+                        One(m_TL, gL, false, 0);
                         sqR = sqL = 8f * strike;
                         break;
                     }

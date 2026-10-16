@@ -344,7 +344,7 @@ namespace RockGame
                 yield return new WaitForSeconds(0.3f);
                 int smooth = 0, total = 0, handSmooth = 0;
                 foreach (var r in held) { var m = r.GetComponent<MeshFilter>()?.sharedMesh; if (m == null || !m.isReadable) continue; total++; if (SmoothShade.IsSmooth(m)) smooth++; }
-                foreach (var r in handRs) if (SmoothShade.IsSmooth(MeshOf(r))) handSmooth++;
+                foreach (var r in handRs) if (SmoothShade.IsSmooth(MeshOf(r)) || SmoothShade.AlreadySmooth(MeshOf(r))) handSmooth++;
                 ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(dir, "handssmooth_" + it.ToString().ToLower() + "_on.png"));
                 yield return new WaitForEndOfFrame();
                 Check(total > 0 && smooth == total, $"shade smooth: every held {it} mesh is its smooth copy ({smooth}/{total})");

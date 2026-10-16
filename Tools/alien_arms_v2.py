@@ -28,10 +28,10 @@ RENDER_DIR = argv[argv.index("--render") + 1] if "--render" in argv else None
 FINGERS = ["f_index", "f_middle", "f_ring"]
 # radii (metres) - slender like the alien's
 R_SHOULDER, R_UPPER, R_ELBOW, R_FORE, R_WRIST = 0.034, 0.03, 0.026, 0.025, 0.017
-R_PALM = 0.0175                                   # each of the three branches that together make the palm (thick enough to fuse into one)
-R_FINGER = [0.0088, 0.0076, 0.0064, 0.0042]       # knuckle, two joints, tip
-R_THUMB = [0.0125, 0.0095, 0.0075, 0.0045]
-FINGER_LONGER = 1.18                              # the alien's fingers are long
+R_PALM = 0.021                                   # each of the three branches that together make the palm (thick enough to fuse into one)
+R_FINGER = [0.0108, 0.0098, 0.0088, 0.0068]       # knuckle, two joints, tip (human thickness, a rounded tip)
+R_THUMB = [0.0145, 0.0118, 0.0098, 0.0074]
+FINGER_LONGER = 1.0                               # (human length: they hold things like a person's)
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 bpy.ops.import_scene.fbx(filepath=SRC)
@@ -140,10 +140,10 @@ def claws(s):
         tip = T(last); d = (T(last) - H(last)).normalized()
         r = (R_FINGER if f != "thumb" else R_THUMB)[3]
         before = len(bm.verts)
-        res = bmesh.ops.create_cone(bm, cap_ends=True, segments=10, radius1=r * 1.15, radius2=0.0005, depth=0.016)
+        res = bmesh.ops.create_cone(bm, cap_ends=True, segments=10, radius1=r * 0.95, radius2=0.0012, depth=0.009)
         rot = Vector((0, 0, 1)).rotation_difference(d).to_matrix().to_4x4()
         bmesh.ops.transform(bm, matrix=rot, verts=res["verts"])
-        bmesh.ops.translate(bm, vec=tip + d * 0.0035, verts=res["verts"])
+        bmesh.ops.translate(bm, vec=tip + d * 0.0015 + Vector((0, 0, 0)), verts=res["verts"])
         groups.append((last, list(range(before, len(bm.verts)))))
     me = bpy.data.meshes.new("claws" + s); bm.to_mesh(me); bm.free()
     ob = bpy.data.objects.new(("ArmR" if s == ".R" else "ArmL") + "_claws", me)
@@ -188,7 +188,7 @@ def skin(me, s):
         # blend into the next / previous bone near a joint
         a, c = segs[best]
         L = (c - a).length
-        blend = min(0.012, L * 0.35)
+        blend = min(0.016, L * 0.45)  # (a soft bend at each joint)
         if best in nxt and bt * L > L - blend:
             k = 0.5 * (1.0 - (L - bt * L) / blend)
             w = {best: 1.0 - k, nxt[best]: k}

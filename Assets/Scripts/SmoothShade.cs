@@ -25,6 +25,9 @@ namespace RockGame
         /// <summary>(tests) How many meshes were swapped by the last Apply.</summary>
         public static int LastSwapped;
 
+        /// <summary>Meshes modelled smooth already (the alien arms - ArmR / ArmL and their claws): left as they are.</summary>
+        public static bool AlreadySmooth(Mesh m) => m != null && (m.name.StartsWith("ArmR") || m.name.StartsWith("ArmL"));
+
         /// <summary>Is this one of the smooth copies?</summary>
         public static bool IsSmooth(Mesh m) => m != null && s_Orig.ContainsKey(m);
 
@@ -117,6 +120,7 @@ namespace RockGame
         static Mesh Swap(Mesh m, bool on)
         {
             if (m == null) return null;
+            if (AlreadySmooth(m)) return null; // (modelled smooth: re-averaging its normals only makes it lumpy)
             if (on) { if (s_Orig.ContainsKey(m)) return null; return SmoothOf(m); }
             return s_Orig.TryGetValue(m, out var o) ? o : null;
         }
