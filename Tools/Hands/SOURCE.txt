@@ -1,0 +1,6 @@
+"WRAD ARMS" by wriks - https://wriks.itch.io/wrad-arms (https://wriks.motorcycles)
+Licence: CC0 1.0 Universal (LICENSE.txt) - free for commercial use, no attribution required (credited here anyway).
+Downloaded 2026-10-17 as WRAD_ARMS.zip; arms.glb is the archive's arms.glb, unchanged (its textures aren't used).
+
+Used for the first-person hands: Tools/alien_hands.py makes it the game's alien hands (three fingers and a thumb, a
+baked fist and a cupped hand) and writes Assets/Game/Resources/Hands/AlienHands.fbx.

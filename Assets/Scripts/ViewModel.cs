@@ -3,7 +3,7 @@ using UnityEngine;
 namespace RockGame
 {
     /// <summary>
-    /// First-person hands: simple round alien hands - a fist, a thumb and a forearm in your alien's colour
+    /// First-person hands: the alien hands - a low-poly arms model with a fist and a cupped hand, in your alien's colour
     /// (ViewModel.Hands.cs) - or - Settings > Display > Alien hands off - the old block
     /// hands (a box fist, a darker knuckle row, a thumb, a team-coloured wrist band and a square forearm). Every item has a
     /// hand pose, and the holds and animations are modelled on Rust's (from footage of every Rust weapon): each item
@@ -96,8 +96,8 @@ namespace RockGame
             Last = this;
             m_Root = new GameObject("ViewModel").transform;
             m_Root.SetParent(cam, false);
-            m_R = MakeArm(m_Root, team, true);
-            m_L = MakeArm(m_Root, team, false);
+            m_R = MakeArm(m_Root, team, true, out m_HR);
+            m_L = MakeArm(m_Root, team, false, out m_HL);
             m_ItemHolder = new GameObject("item").transform;
             m_ItemHolder.SetParent(m_Root, false);
             GameSettings.GraphicsChanged += OnGraphicsChanged;
@@ -171,7 +171,7 @@ namespace RockGame
         public void Eat() => m_EatStart = Now;
         public void Use() => m_UseStart = Now;
 
-        static Transform MakeArm(Transform parent, Color team, bool right)
+        static Transform MakeArm(Transform parent, Color team, bool right, out HandRig alien)
         {
             var hand = new GameObject(right ? "R" : "L").transform;
             hand.SetParent(parent, false);
@@ -189,8 +189,8 @@ namespace RockGame
             hook.Track(Art.Box(square, skin, new Vector3(-0.045f * side, 0.025f, 0.035f), new Vector3(0.03f, 0.03f, 0.065f), new Vector3(0, 20 * side, 0)), HandColorHook.Skin); // thumb
             hook.Track(Art.Box(square, band, new Vector3(0, 0, -0.075f), new Vector3(0.082f, 0.082f, 0.035f)), HandColorHook.Band);                // wrist band
             hook.Track(Art.Box(square, skin, new Vector3(0, 0, -0.32f), new Vector3(0.072f, 0.072f, 0.46f)), HandColorHook.Skin);                  // forearm
-            // the alien hand: a simple round fist and forearm (ViewModel.Hands.cs)
-            BuildSimpleHand(hand, hook, right);
+            // the alien hand: the arms model, a fist or a cupped hand (ViewModel.Hands.cs)
+            alien = BuildHand(hand, hook, right);
             ShowHandStyle(hand);
             foreach (var r in hand.GetComponentsInChildren<Renderer>(true)) r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off; // (the hidden style too)
             return hand;
@@ -336,7 +336,7 @@ namespace RockGame
             Quaternion sharedRot = Quaternion.Euler(m_Sway.y * 300f + pose * 14f + landDip * 60f + idlePitch + 50f * away, -m_Sway.x * 300f - pose * 22f - 12f * away,
                 bx * bobAmt * (1.5f + 3f * m_SprintK) + pose * 12f + idleRoll - 35f * away);
 
-            if (s.Ball) { PoseBall(shared, sharedRot); AimForearms(); return; }
+            if (s.Ball) { PoseBall(shared, sharedRot); PoseHands(s); return; }
             if (m_Item && !m_Item.activeSelf && s.Item != Item.Spear) m_Item.SetActive(true);
 
             switch (s.Item)
@@ -367,7 +367,7 @@ namespace RockGame
                 case Item.None: HideLeft(); Set(m_R, new Vector3(0.3f, -0.9f, 0.2f), Quaternion.identity); break;
                 default: PoseHeld(s.Item, shared, sharedRot); break;
             }
-            AimForearms();
+            PoseHands(s);
         }
 
         void Set(Transform t, Vector3 pos, Quaternion rot) { t.localPosition = pos; t.localRotation = rot; }
