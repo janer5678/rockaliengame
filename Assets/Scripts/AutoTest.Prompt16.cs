@@ -90,6 +90,22 @@ namespace RockGame
                 yield return Snap("prompt16_emerald_from_base");
             }
 
+            // ---- the dev settings: +10 emeralds
+            {
+                int e0 = me.Count(Item.Emerald);
+                pc.Paused = true;
+                Hud.OpenPause = 3;
+                Hud.SetDevSearch = "emerald";
+                yield return new WaitForSeconds(0.8f);
+                yield return Snap("prompt18_dev_emeralds");
+                Check(Hud.DevMatches == 1, $"Dev settings search \"emerald\": the +10 emeralds button ({Hud.DevMatches})");
+                Hud.SetDevSearch = "";
+                pc.Paused = false;
+                me.DevRpc(DevCmd.GiveEmeralds);
+                yield return new WaitForSeconds(0.4f);
+                Check(me.Count(Item.Emerald) == e0 + 10, $"+10 emeralds from the dev settings ({e0} -> {me.Count(Item.Emerald)})");
+            }
+
             // ---- the emerald shop
             {
                 var deals = Cfg.EmeraldDeals;

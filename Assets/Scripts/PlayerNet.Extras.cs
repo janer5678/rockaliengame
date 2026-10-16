@@ -8,7 +8,7 @@ namespace RockGame
         DropWallNow, TogglePauseTimer, AddMinute, SubMinute, TimerTo10s, SpawnAirdrop, BallToMe, BallToMiddle,
         GiveWood, GiveStone, GiveArrows, GiveOpItems, GiveCraftables, HealFull, ToggleGod, KillMe, StartSuddenDeath, WinNow,
         RegrowNodes, TpAirdrop, TpEnemyBase, TpMyBase, TpBall, SpawnHorse, SpawnCar, ClearInventory,
-        UnlockBench, VictoryCutsceneNow, // (new ones go on the end)
+        UnlockBench, VictoryCutsceneNow, GiveEmeralds, // (new ones go on the end)
     }
 
     /// <summary>Crossbow, fort tower, riding (cars and horses), dev tools and proximity voice.</summary>
@@ -218,6 +218,7 @@ namespace RockGame
                 case DevCmd.GiveWood: ServerGive(Cfg.GatherItem(Item.Wood), 1000); break;
                 case DevCmd.GiveStone: ServerGive(Cfg.GatherItem(Item.Stone), 1000); break;
                 case DevCmd.GiveArrows: ServerGive(Item.Arrow, 50); break;
+                case DevCmd.GiveEmeralds: ServerGive(Item.Emerald, 10); what = "gave themselves 10 emeralds"; break;
                 case DevCmd.GiveOpItems:
                 {
                     // every airdrop item (the wacky ones too); what doesn't fit in your bag lands on the ground round you

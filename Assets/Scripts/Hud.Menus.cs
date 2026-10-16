@@ -1239,7 +1239,7 @@ namespace RockGame
                 }),
                 ("ME", new[]
                 {
-                    new[] { ("+1000 wood", DevCmd.GiveWood), ("+1000 stone", DevCmd.GiveStone), ("+50 arrows", DevCmd.GiveArrows), ("Unlock trade station", DevCmd.UnlockBench) },
+                    new[] { ("+1000 wood", DevCmd.GiveWood), ("+1000 stone", DevCmd.GiveStone), ("+50 arrows", DevCmd.GiveArrows), ("+10 emeralds", DevCmd.GiveEmeralds), ("Unlock trade station", DevCmd.UnlockBench) },
                     new[] { ("All airdrop items", DevCmd.GiveOpItems), ("One of every craftable", DevCmd.GiveCraftables), ("Clear inventory", DevCmd.ClearInventory) },
                     new[] { ("Heal", DevCmd.HealFull), ("God mode on/off", DevCmd.ToggleGod), ("Kill me", DevCmd.KillMe) },
                 }),
