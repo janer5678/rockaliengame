@@ -330,6 +330,7 @@ namespace RockGame
             {
                 // the world's own matte material, like the items held in the hands (the glossy skin read as plastic)
                 m = Art.NewMat(c);
+                if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.4f); // (a soft sheen on the skin, not plastic)
                 m.name = ghost ? "alien hand (ghost)" : "alien hand";
                 Art.Register(m, c);
                 s_Polished[(c, ghost)] = m;
@@ -378,7 +379,9 @@ namespace RockGame
         /// so the light reads on it; the pads a shade darker.</summary>
         public static Color AlienShade(Color team, bool pad)
         {
-            var c = team * 0.78f * (pad ? 0.8f : 1f);
+            // (the body's colour: its grey skin texture, about 0.39, tinted the team colour x1.6 - PlayerNet.TeamTint;
+            // the pads - the alien arms' claws - nearly black, a hint of the colour)
+            var c = pad ? Color.Lerp(team * 0.62f, new Color(0.05f, 0.05f, 0.08f), 0.82f) : team * 0.62f;
             c.a = 1f;
             return c;
         }

@@ -229,6 +229,8 @@ namespace RockGame
         }
 
         static float Smooth(float t) { t = Mathf.Clamp01(t); return t * t * (3f - 2f * t); }
+        /// <summary>How far every resting hold sits up in the view with the alien arms.</summary>
+        public static readonly Vector3 k_AlienHandsUp = new Vector3(-0.01f, 0.07f, 0f);
         /// <summary>Eases out past 1 and back (a small overshoot), for things swinging into place.</summary>
         static float BackOut(float t) { t = Mathf.Clamp01(t) - 1f; const float c = 1.1f; return 1f + (c + 1f) * t * t * t + c * t * t; }
 
@@ -327,8 +329,14 @@ namespace RockGame
             float equip = BackOut(Mathf.Clamp01((Now - m_EquipStart) / 0.42f));
             float away = 1f - equip;
             float landDip = Mathf.Sin(m_Land * Mathf.PI) * 0.06f;
+            // the alien arms up in the view (the whole hand and wrist show, not just fingers behind the hotbar) - not while
+            // aiming down the sights, drawing the bow or winding up the spear, which line up on the crosshair
+            bool gunHeld = s.Item == Item.Crossbow || s.Item == Item.Sniper || s.Item == Item.Pistol || s.Item == Item.Revolver || s.Item == Item.AlienGun
+                || s.Item == Item.Shotgun || s.Item == Item.PortalGun || s.Item == Item.RocketLauncher;
+            float framed = GameSettings.HandStyle != GameSettings.HandsAlien ? 0f
+                : s.Ball ? 1f : 1f - Mathf.Clamp01(Mathf.Max(gunHeld ? m_AimK : 0f, Mathf.Max(s.Item == Item.Bow ? s.Draw : 0f, s.Item == Item.Spear ? m_SpearAimK : 0f)));
             Vector3 shared = bob + new Vector3(m_Sway.x + pose * 0.03f, m_Sway.y - m_CrouchK * 0.02f + breathe + m_Jump - landDip - pose * 0.07f, -pose * 0.04f)
-                + new Vector3(0.07f, -0.42f, -0.05f) * away;
+                + new Vector3(0.07f, -0.42f, -0.05f) * away + k_AlienHandsUp * framed;
             float idleRoll = Mathf.Sin(Now * 0.9f) * 0.8f * (1f - bobAmt), idlePitch = Mathf.Sin(Now * 1.7f + 0.6f) * 0.5f * (1f - bobAmt);
             Quaternion sharedRot = Quaternion.Euler(m_Sway.y * 300f + pose * 14f + landDip * 60f + idlePitch + 50f * away, -m_Sway.x * 300f - pose * 22f - 12f * away,
                 bx * bobAmt * (1.5f + 3f * m_SprintK) + pose * 12f + idleRoll - 35f * away);

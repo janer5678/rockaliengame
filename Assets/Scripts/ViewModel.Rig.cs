@@ -168,8 +168,9 @@ namespace RockGame
             var inst = Object.Instantiate(prefab, parent, false);
             inst.name = "arm model";
             var root = inst.transform;
-            var other = FindDeep(root, right ? "ArmL" : "ArmR");
-            if (other != null) Object.DestroyImmediate(other.gameObject);
+            // (the other arm's meshes - its skin and its claws - go)
+            string otherSide = right ? "ArmL" : "ArmR";
+            for (int i = root.childCount - 1; i >= 0; i--) if (root.GetChild(i).name.StartsWith(otherSide)) Object.DestroyImmediate(root.GetChild(i).gameObject);
             string s = right ? ".R" : ".L";
             var rig = new ArmRig
             {
@@ -204,7 +205,15 @@ namespace RockGame
             if (skin != null && skin.TryGetComponent(out SkinnedMeshRenderer smr))
             {
                 smr.updateWhenOffscreen = true; // (it swings all over the view: never culled on a stale box)
+                smr.quality = SkinQuality.Bone4; // (every bone a vertex has: two only and the skin crumples at the joints)
                 hook.Track(skin.gameObject, HandColorHook.AlienSkin);
+            }
+            // the dark claws on the fingertips (like the alien's)
+            var claws = FindDeep(root, (right ? "ArmR" : "ArmL") + "_claws");
+            if (claws != null && claws.TryGetComponent(out SkinnedMeshRenderer csmr))
+            {
+                csmr.updateWhenOffscreen = true;
+                hook.Track(claws.gameObject, HandColorHook.AlienPad);
             }
             return rig;
         }

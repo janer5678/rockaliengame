@@ -260,6 +260,7 @@ namespace RockGame
                     if (!exp.TryGetValue(name, out var e)) continue;
                     posed++;
                     var got = vm.DebugHand(right).localPosition;
+                    if (e.y > -0.85f) e += ViewModel.k_AlienHandsUp; // (the alien arms sit up in the view - not a hand put away)
                     if ((got - e).magnitude < 0.012f) posedOk++;
                     else off.Append($" {name} {(right ? "R" : "L")} {got} (want {e})");
                 }
