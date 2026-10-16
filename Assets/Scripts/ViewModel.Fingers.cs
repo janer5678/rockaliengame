@@ -629,11 +629,16 @@ namespace RockGame
                 {
                     case Item.Rock:
                     {
-                        // cupped round the rock from either side, fingers over its front, thumbs on top
+                        // Rust's rock: cupped in both hands from underneath, palms up under either side of it, the fingers
+                        // curling up round its front and the thumbs up its sides
                         var b = hold != null ? hold.Box : new Bounds(new Vector3(0f, 0.02f, 0.04f), new Vector3(0.15f, 0.12f, 0.14f));
                         var c = b.center; var ex = b.extents;
-                        One(m_TR, PalmOn(true, hold, H, c + new Vector3(ex.x, -ex.y * 0.2f, -ex.z * 0.25f), new Vector3(1f, -0.25f, -0.2f), new Vector3(-0.1f, 0.35f, 1f)).With(Fp.Cup, Tp.Spread), true, 0);
-                        One(m_TL, PalmOn(false, hold, H, c + new Vector3(-ex.x, -ex.y * 0.2f, -ex.z * 0.25f), new Vector3(-1f, -0.25f, -0.2f), new Vector3(0.1f, 0.35f, 1f)).With(Fp.Cup, Tp.Spread), false, 0);
+                        var nR = new Vector3(0.55f, -0.82f, -0.12f).normalized;
+                        var nL = new Vector3(-nR.x, nR.y, nR.z);
+                        var cR = Trace(hold, c + nR * 0.4f + new Vector3(0f, 0f, -ex.z * 0.15f), -nR);
+                        var cL = Trace(hold, c + nL * 0.4f + new Vector3(0f, 0f, -ex.z * 0.15f), -nL);
+                        One(m_TR, PalmOn(true, hold, H, cR, nR, new Vector3(-0.25f, 0.35f, 1f)).With(Fp.Cup, Tp.Spread), true, 0);
+                        One(m_TL, PalmOn(false, hold, H, cL, nL, new Vector3(0.25f, 0.35f, 1f)).With(Fp.Cup, Tp.Spread), false, 0);
                         sqR = sqL = 8f * strike;
                         break;
                     }
@@ -666,12 +671,12 @@ namespace RockGame
                         break;
                     case Item.Spear:
                     {
-                        // carried low: both hands on the shaft from above, palms in, the shaft running diagonally across them;
-                        // raised to throw: the right hand under the shaft (palm up, fingers over it), the left reaching ahead
+                        // carried in the right hand like Rust's, the shaft pointing up and away; raised to throw: the right
+                        // hand under the shaft (palm up, fingers over it), the left reaching ahead
                         float k = Smooth(m_SpearAimK);
-                        var idleR = Grip(true, hold, H, new Vector3(0f, 0.12f, 0f), down, fwd, 0.022f, 35f);
-                        var idleL = Grip(false, hold, H, new Vector3(0f, 0.62f, 0f), down, fwd, 0.022f, 35f);
-                        idleR.ElbowK = idleL.ElbowK = 0.1f; // (the hands hang over the shaft: the arms come from behind, not above)
+                        var idleR = Grip(true, hold, H, new Vector3(0f, 0.2f, 0f), down, fwd, 0.022f, 20f);
+                        var idleL = LeftFree();
+                        idleR.ElbowK = 0.3f;
                         var aimR = Grip(true, hold, H, new Vector3(0f, 0.15f, 0f), down, Vector3.left, 0.022f, 45f);
                         var aimL = Free(Quaternion.identity, Fp.Point, Tp.Relaxed);
                         Blend(m_TR, idleR, aimR, k, true);
@@ -833,8 +838,9 @@ namespace RockGame
                     R.Trigger = true;
                     break;
                 case Item.C4:
-                    // a brick: the hand over the top, fingers down its far side, the thumb on the near one
-                    R = PalmOn(true, hold, H, new Vector3(b.center.x + b.extents.x * 0.2f, b.max.y, b.center.z - b.extents.z * 0.15f), Vector3.up, new Vector3(-1f, 0f, 0.4f)).With(Fp.Support, Tp.Support);
+                    // Rust's explosive charge: in both hands, a palm flat on either side (the left lets go to throw it)
+                    both = throwK >= 1f;
+                    R = Side(true, hold, b);
                     break;
                 case Item.Scribble: case Item.DrawMonster:
                     // the notebook / the sheet by its bottom edge, like the building plan: palm under, fingers up its far face

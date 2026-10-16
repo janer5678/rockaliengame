@@ -30,6 +30,8 @@ namespace RockGame
                 Add(t.ToString().ToLower() + "_raised", t, () => { pc.DebugSwing(0.6f); ViewModel.DebugSwingE = 0.075f; });
                 Add(t.ToString().ToLower() + "_slam", t, () => { pc.DebugSwing(0.6f); ViewModel.DebugSwingE = 0.14f; });
             }
+            Add("hatchet_deploy", Item.Hatchet, () => ViewModel.DebugEquipE = 0.14f);
+            Add("pistol_deploy", Item.Pistol, () => ViewModel.DebugEquipE = 0.14f);
             Add("spear_idle", Item.Spear);
             Add("spear_thrust", Item.Spear, () => { pc.DebugSwing(0.6f); ViewModel.DebugSwingE = ViewModel.ImpactTime; });
             Add("spear_windup", Item.Spear, () => pc.DebugDraw = 1f);
@@ -113,7 +115,7 @@ namespace RockGame
                 Destroy(side.gameObject);
                 Log("shot hands_" + p.name);
                 pc.DebugDraw = -1f;
-                ViewModel.DebugSwingE = ViewModel.DebugThrowE = ViewModel.DebugEatE = ViewModel.DebugUseE = -1f;
+                ViewModel.DebugSwingE = ViewModel.DebugThrowE = ViewModel.DebugEatE = ViewModel.DebugUseE = ViewModel.DebugEquipE = -1f;
                 ViewModel.DebugAim = ViewModel.DebugBall = false;
                 yield return new WaitForSeconds(0.5f); // let it settle back to idle
             }
@@ -209,22 +211,23 @@ namespace RockGame
 
             // ---- every pose, photographed; the hands where the original poses put them ----
             // (the right hand's place in the view model at rest - no bob, sway or sprint - from the original poses)
-            Vector3 RockSide(Vector3 idle, float pitch, float x) => idle + Quaternion.Euler(pitch, -6f, 0f) * new Vector3(x, 0f, 0f);
+            // (the Rust-style poses: the rock cupped from below in the middle, tools low in the middle, C4 in both hands)
+            Vector3 RockSide(Vector3 idle, float pitch, float x) => idle + Quaternion.Euler(pitch, -4f, 0f) * new Vector3(x, -0.07f, -0.02f);
             var expectR = new Dictionary<string, Vector3>
             {
-                { "rock_idle", RockSide(new Vector3(0.08f, -0.26f, 0.55f), -5f, 0.13f) },
-                { "rock_slam", RockSide(new Vector3(0.03f, -0.3f, 0.68f), 35f, 0.13f) },
-                { "hatchet_idle", new Vector3(0.27f, -0.3f, 0.5f) },
-                { "hatchet_slam", new Vector3(0.14f, -0.38f, 0.62f) },
-                { "sword_idle", new Vector3(0.27f, -0.3f, 0.5f) },
-                { "buildingplan_idle", new Vector3(0.26f, -0.27f, 0.45f) },
-                { "c4_idle", new Vector3(0.26f, -0.27f, 0.45f) },
+                { "rock_idle", RockSide(new Vector3(0.03f, -0.22f, 0.5f), -8f, 0.09f) },
+                { "rock_slam", RockSide(new Vector3(0.02f, -0.3f, 0.66f), 35f, 0.09f) },
+                { "hatchet_idle", new Vector3(0.14f, -0.33f, 0.58f) },
+                { "hatchet_slam", new Vector3(0.05f, -0.37f, 0.62f) },
+                { "sword_idle", new Vector3(0.2f, -0.33f, 0.55f) },
+                { "buildingplan_idle", new Vector3(0.21f, -0.27f, 0.45f) },
+                { "c4_idle", new Vector3(0.05f, -0.27f, 0.44f) },
                 { "chest_idle", new Vector3(0.26f, -0.3f, 0.54f) }, // (a box is held a touch lower and further out)
                 { "crossbow_idle", new Vector3(0.2f, -0.2f, 0.42f) + Quaternion.Euler(0f, -6f, 0f) * new Vector3(0.02f, -0.1f, -0.06f) },
             };
             var expectL = new Dictionary<string, Vector3>
             {
-                { "rock_idle", RockSide(new Vector3(0.08f, -0.26f, 0.55f), -5f, -0.13f) },
+                { "rock_idle", RockSide(new Vector3(0.03f, -0.22f, 0.5f), -8f, -0.09f) },
                 { "hatchet_idle", new Vector3(-0.3f, -0.9f, 0.2f) },
                 { "crossbow_idle", new Vector3(0.2f, -0.2f, 0.42f) + Quaternion.Euler(0f, -6f, 0f) * new Vector3(-0.02f, -0.05f, 0.2f) },
             };
@@ -261,7 +264,7 @@ namespace RockGame
                     else off.Append($" {name} {(right ? "R" : "L")} {got} (want {e})");
                 }
             });
-            Check(posed > 0 && posedOk == posed, $"the arms sit where the original block-hand poses put them ({posedOk} / {posed}){off}");
+            Check(posed > 0 && posedOk == posed, $"the arms sit where the Rust-style poses put them ({posedOk} / {posed}){off}");
             Check(gripped > 0 && grippedOk == gripped, $"the fingers curl round the handles and grips ({grippedOk} / {gripped}){loose}");
 
             // the old square hands, with Settings > Display > Alien hands off

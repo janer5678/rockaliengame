@@ -374,12 +374,11 @@ namespace RockGame
             return skin;
         }
 
-        /// <summary>The alien skin in a team's colour: the body's team colour (the grey skin texture, about 0.39, times the
-        /// team colour x1.6) softened a third of the way to the alien's grey, so the arms read as skin with the light
-        /// running over them rather than flat bright plastic; the pads a shade darker.</summary>
+        /// <summary>The alien skin in a team's colour: the team's own colour, clearly (blue hands for blue), a touch deeper
+        /// so the light reads on it; the pads a shade darker.</summary>
         public static Color AlienShade(Color team, bool pad)
         {
-            var c = Color.Lerp(team * 0.62f, new Color(0.42f, 0.45f, 0.47f), 0.35f) * (pad ? 0.8f : 1f);
+            var c = team * 0.78f * (pad ? 0.8f : 1f);
             c.a = 1f;
             return c;
         }

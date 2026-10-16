@@ -3,14 +3,16 @@ using UnityEngine;
 namespace RockGame
 {
     /// <summary>
-    /// First-person hands: the alien arms with four jointed fingers and a thumb (ViewModel.Hands.cs builds them,
+    /// First-person hands: the alien arms with three jointed fingers and a thumb (ViewModel.Hands.cs builds them,
     /// ViewModel.Fingers.cs poses every finger on every item), or - Settings > Display > Alien hands off - the old block
     /// hands (a box fist, a darker knuckle row, a thumb, a team-coloured wrist band and a square forearm). Every item has a
-    /// hand pose. The rock is held in both hands; melee swings raise,
-    /// slam down, then either bounce back up with a short hit-stop when they connect or follow through
-    /// further down when they miss (Rust style). Two-handed items put the second hand on the item.
-    /// Locomotion is animated like a Mixamo-style FPS rig: figure-8 walk bob, a lowered and tilted sprint pose with the
-    /// free hand pumping, idle breathing, jump lag and a landing dip.
+    /// hand pose, and the holds and animations are modelled on Rust's (from footage of every Rust weapon): each item
+    /// comes up from below with a twist and settles when you switch to it; the rock is cupped in both hands from below
+    /// and smashed down from overhead; tools are held low in the middle in one fist and chopped down from a wind-up out to
+    /// the right; the bow is held tilted well over until you draw; the spear is carried in one hand pointing up and away;
+    /// C4 is held in both hands; thrown things are drawn back first. Melee swings bounce back up with a short hit-stop
+    /// when they connect or follow through further down when they miss. Locomotion: figure-8 walk bob, a lowered and
+    /// tilted sprint pose with the free hand pumping, idle breathing, jump lag and a landing dip.
     /// </summary>
     public partial class ViewModel
     {
@@ -50,7 +52,7 @@ namespace RockGame
 
         // ---- for the hands autotest ----
         /// <summary>When set (>= 0), the swing / throw / eat / use animations are held at this many seconds in.</summary>
-        public static float DebugSwingE = -1f, DebugThrowE = -1f, DebugEatE = -1f, DebugUseE = -1f;
+        public static float DebugSwingE = -1f, DebugThrowE = -1f, DebugEatE = -1f, DebugUseE = -1f, DebugEquipE = -1f;
         public static bool DebugAim, DebugBall;
 
         /// <summary>The newest view model (for the hands autotest).</summary>
@@ -223,6 +225,8 @@ namespace RockGame
         }
 
         static float Smooth(float t) { t = Mathf.Clamp01(t); return t * t * (3f - 2f * t); }
+        /// <summary>Eases out past 1 and back (a small overshoot), for things swinging into place.</summary>
+        static float BackOut(float t) { t = Mathf.Clamp01(t) - 1f; const float c = 1.1f; return 1f + (c + 1f) * t * t * t + c * t * t; }
 
         public void Update(State s)
         {
@@ -240,6 +244,7 @@ namespace RockGame
             if (DebugThrowE >= 0f) m_ThrowStart = Now - DebugThrowE;
             if (DebugEatE >= 0f) m_EatStart = Now - DebugEatE;
             if (DebugUseE >= 0f) m_UseStart = Now - DebugUseE;
+            if (DebugEquipE >= 0f) m_EquipStart = Now - DebugEquipE;
 
             // ---- models ----
             var want = s.Ball ? (Item)254 : s.Item;
@@ -298,7 +303,7 @@ namespace RockGame
             m_SprintK = Mathf.MoveTowards(m_SprintK, s.Sprint && !busy ? 1f : 0f, dt * 6f);
             // the spear is always carried the way it is when sprinting (lowered and tilted in), walking or standing - only
             // the bigger bob and the free hand pumping are the sprint's own
-            m_CarryK = Mathf.MoveTowards(m_CarryK, s.Item == Item.Spear && !s.Ball && !busy ? 1f : 0f, dt * 6f);
+            m_CarryK = Mathf.MoveTowards(m_CarryK, 0f, dt * 6f); // (Rust's spear is carried in one hand, pointing up and away - not lowered)
             float pose = Mathf.Max(m_SprintK, m_CarryK);
             // jump lag / landing dip
             if (s.Grounded && !m_WasGrounded && m_AirVel < -4f) m_Land = Mathf.Clamp01(-m_AirVel / 16f);
@@ -313,11 +318,16 @@ namespace RockGame
             float bx = Mathf.Sin(m_BobPhase), by = Mathf.Abs(Mathf.Cos(m_BobPhase));
             Vector3 bob = new Vector3(bx * 0.014f * (1f + m_SprintK), by * 0.018f * (1f + m_SprintK * 1.3f), 0) * bobAmt;
             float breathe = Mathf.Sin(Now * 1.7f) * 0.004f * (1f - bobAmt);
-            float equip = Smooth((Now - m_EquipStart) / 0.25f);
+            // switching to an item (Rust's deploy): it comes up from below and out to the right, tipped back and rolled
+            // over, and swings up into place with a small overshoot before it settles
+            float equip = BackOut(Mathf.Clamp01((Now - m_EquipStart) / 0.42f));
+            float away = 1f - equip;
             float landDip = Mathf.Sin(m_Land * Mathf.PI) * 0.06f;
             Vector3 shared = bob + new Vector3(m_Sway.x + pose * 0.03f, m_Sway.y - m_CrouchK * 0.02f + breathe + m_Jump - landDip - pose * 0.07f, -pose * 0.04f)
-                + Vector3.down * (1f - equip) * 0.45f;
-            Quaternion sharedRot = Quaternion.Euler(m_Sway.y * 300f + pose * 14f + landDip * 60f, -m_Sway.x * 300f - pose * 22f, bx * bobAmt * (1.5f + 3f * m_SprintK) + pose * 12f);
+                + new Vector3(0.07f, -0.42f, -0.05f) * away;
+            float idleRoll = Mathf.Sin(Now * 0.9f) * 0.8f * (1f - bobAmt), idlePitch = Mathf.Sin(Now * 1.7f + 0.6f) * 0.5f * (1f - bobAmt);
+            Quaternion sharedRot = Quaternion.Euler(m_Sway.y * 300f + pose * 14f + landDip * 60f + idlePitch + 50f * away, -m_Sway.x * 300f - pose * 22f - 12f * away,
+                bx * bobAmt * (1.5f + 3f * m_SprintK) + pose * 12f + idleRoll - 35f * away);
 
             if (s.Ball) { PoseBall(shared, sharedRot); UpdateAlienHands(s, swinging, swingE); return; }
             if (m_Item && !m_Item.activeSelf && s.Item != Item.Spear) m_Item.SetActive(true);
@@ -396,35 +406,38 @@ namespace RockGame
             return KP.Lerp(follow, idle, Smooth((e - down - followTime - 0.08f) / Mathf.Max(0.1f, end - down - followTime - 0.08f)));
         }
 
-        /// <summary>A big rock held in both hands in front of you, brought down two-handed.</summary>
+        /// <summary>The rock (Rust's): cupped in both hands from underneath, low in the middle of the view; the swing lifts
+        /// it up over your head and brings it smashing down in front.</summary>
         void PoseRock(Vector3 shared, Quaternion sharedRot, bool swinging, float e)
         {
-            var idle = new KP(new Vector3(0.08f, -0.26f, 0.55f), -5f, 0);
-            var raised = new KP(new Vector3(0.06f, 0.02f, 0.4f), -45f, 0);
-            var slam = new KP(new Vector3(0.03f, -0.3f, 0.68f), 35f, 0);
-            var recoil = new KP(new Vector3(0.05f, -0.1f, 0.55f), -15f, 0);
-            var follow = new KP(new Vector3(0.02f, -0.5f, 0.6f), 60f, 0);
+            var idle = new KP(new Vector3(0.03f, -0.22f, 0.5f), -8f, 0);
+            var raised = new KP(new Vector3(0.02f, 0.1f, 0.4f), -50f, 0);
+            var slam = new KP(new Vector3(0.02f, -0.3f, 0.66f), 35f, 0);
+            var recoil = new KP(new Vector3(0.03f, -0.12f, 0.55f), -15f, 0);
+            var follow = new KP(new Vector3(0.02f, -0.52f, 0.6f), 60f, 0);
             var k = Chop(idle, raised, slam, recoil, follow, swinging, e);
-            var rot = sharedRot * Quaternion.Euler(k.HandX, -6f, 0);
+            var rot = sharedRot * Quaternion.Euler(k.HandX, -4f, 0);
             AttachItemToRoot(shared + k.Pos, rot, 1f);
-            // hands on either side of the rock, wrists turned in
-            m_R.localPosition = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(0.13f, 0.0f, 0.0f)));
-            m_R.localRotation = rot * Quaternion.Euler(-20f, -35f, -75f);
-            m_L.localPosition = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(-0.13f, 0.0f, 0.0f)));
-            m_L.localRotation = rot * Quaternion.Euler(-20f, 35f, 75f);
+            // a hand under either side of it, palms up
+            m_R.localPosition = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(0.09f, -0.07f, -0.02f)));
+            m_R.localRotation = rot * Quaternion.Euler(-30f, -20f, -40f);
+            m_L.localPosition = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(-0.09f, -0.07f, -0.02f)));
+            m_L.localRotation = rot * Quaternion.Euler(-30f, 20f, 40f);
         }
 
         /// <summary>Hatchet / pickaxe: one hand; the tool pivots in the fist so the forearm stays out of frame.</summary>
         void PoseTool(Vector3 shared, Quaternion sharedRot, bool swinging, float e)
         {
-            var idle = new KP(new Vector3(0.27f, -0.3f, 0.5f), -8f, 22f);
-            var raised = new KP(new Vector3(0.3f, -0.1f, 0.38f), -30f, -18f);
-            var slam = new KP(new Vector3(0.14f, -0.38f, 0.62f), 6f, 82f);
-            var recoil = new KP(new Vector3(0.2f, -0.24f, 0.55f), -12f, 25f);
-            var follow = new KP(new Vector3(0.12f, -0.48f, 0.58f), 18f, 100f);
+            // (Rust's hatchet: the fist low in the middle with the tool nearly upright; the wind-up takes it out to the
+            // right and up by your shoulder, the chop brings it down through the middle and on below the view)
+            var idle = new KP(new Vector3(0.14f, -0.33f, 0.58f), -6f, 32f);
+            var raised = new KP(new Vector3(0.32f, -0.08f, 0.34f), -50f, -8f);
+            var slam = new KP(new Vector3(0.05f, -0.37f, 0.62f), 8f, 84f);
+            var recoil = new KP(new Vector3(0.12f, -0.24f, 0.54f), -12f, 28f);
+            var follow = new KP(new Vector3(0.0f, -0.52f, 0.56f), 20f, 105f);
             var k = Chop(idle, raised, slam, recoil, follow, swinging, e);
             float swingK = swinging ? 1f : 0f;
-            Set(m_R, shared + k.Pos, sharedRot * Quaternion.Euler(k.HandX, -18f + swingK * 6f, -8f));
+            Set(m_R, shared + k.Pos, sharedRot * Quaternion.Euler(k.HandX, -8f + swingK * 4f, -5f));
             AttachItemToRight(new Vector3(0, -0.06f, 0.01f), new Vector3(k.ItemX, 0, 0));
             HideLeft();
         }
@@ -433,12 +446,12 @@ namespace RockGame
         /// centimetres and a light knock), then back.</summary>
         void PoseHammer(Vector3 shared, Quaternion sharedRot, bool swinging, float e)
         {
-            var idle = new KP(new Vector3(0.27f, -0.3f, 0.5f), -8f, 22f);
-            var raised = new KP(new Vector3(0.27f, -0.27f, 0.47f), -14f, 14f);
-            var tap = new KP(new Vector3(0.25f, -0.31f, 0.56f), -4f, 34f);
-            var back = new KP(new Vector3(0.26f, -0.295f, 0.52f), -8f, 26f);
+            var idle = new KP(new Vector3(0.11f, -0.3f, 0.46f), -6f, 14f);
+            var raised = new KP(new Vector3(0.12f, -0.27f, 0.43f), -12f, 6f);
+            var tap = new KP(new Vector3(0.1f, -0.31f, 0.52f), -2f, 28f);
+            var back = new KP(new Vector3(0.105f, -0.295f, 0.48f), -6f, 18f);
             var k = Chop(idle, raised, tap, back, tap, swinging, e);
-            Set(m_R, shared + k.Pos, sharedRot * Quaternion.Euler(k.HandX, -18f, -8f));
+            Set(m_R, shared + k.Pos, sharedRot * Quaternion.Euler(k.HandX, -8f, -5f));
             AttachItemToRight(new Vector3(0, -0.06f, 0.01f), new Vector3(k.ItemX, 0, 0));
             HideLeft();
         }
@@ -452,11 +465,11 @@ namespace RockGame
         void PoseSword(Vector3 shared, Quaternion sharedRot, bool swinging, float e, float gripY = 0.06f)
         {
             // (Pos, the hand's yaw, the blade's yaw across the view: + is out to the right, -90 straight ahead)
-            var k = Chop(new KP(new Vector3(0.27f, -0.3f, 0.5f), -18f, -20f), new KP(new Vector3(0.44f, -0.2f, 0.36f), 14f, 15f),
+            var k = Chop(new KP(new Vector3(0.2f, -0.33f, 0.55f), -12f, -18f), new KP(new Vector3(0.44f, -0.2f, 0.36f), 14f, 15f),
                 new KP(new Vector3(0.1f, -0.25f, 0.6f), -35f, -92f), new KP(new Vector3(0.18f, -0.25f, 0.55f), -25f, -55f),
                 new KP(new Vector3(-0.12f, -0.33f, 0.52f), -55f, -155f), swinging, e, 0.7f, 0.2f);
             // (-, how far the blade is laid over on its side, how far it leans forward at rest)
-            var b = Chop(new KP(Vector3.zero, -12f, 20f), new KP(Vector3.zero, -70f, 0f), new KP(Vector3.zero, -82f, 0f), new KP(Vector3.zero, -70f, 0f),
+            var b = Chop(new KP(Vector3.zero, -12f, 36f), new KP(Vector3.zero, -70f, 0f), new KP(Vector3.zero, -82f, 0f), new KP(Vector3.zero, -70f, 0f),
                 new KP(Vector3.zero, -88f, 0f), swinging, e, 0.7f, 0.2f);
             Set(m_R, shared + k.Pos, sharedRot * Quaternion.Euler(-8f, k.HandX, b.HandX));
             var blade = sharedRot * Quaternion.Euler(0f, k.ItemX, 0f) * Quaternion.Euler(b.ItemX, 0f, b.HandX);
@@ -548,18 +561,17 @@ namespace RockGame
                 else if (m_ImpactKnown && m_Hit) thrust = 1f - Smooth((e - ImpactTime) / 0.1f) * 1.3f + Smooth((e - ImpactTime - 0.1f) / 0.3f) * 0.3f;
                 else thrust = 1f + Smooth((e - ImpactTime) / 0.08f) * 0.15f - Smooth((e - ImpactTime - 0.1f) / Mathf.Max(0.15f, m_SwingDur * 0.6f)) * 1.15f;
             }
-            var spearRot = sharedRot * Quaternion.Euler(80f, -5f, 0);
+            var spearRot = sharedRot * Quaternion.Euler(48f, -6f, 4f);
             // the poke drives the spear in towards the crosshair (its point lands on the middle of the screen), not
             // straight out past the right of it
-            var carry = new Vector3(0.22f, -0.13f, 0.14f);
+            var carry = new Vector3(0.3f, -0.32f, 0.36f);
             var toMiddle = (new Vector3(0f, 0f, SpearPokeAimDepth) - carry).normalized;
             float aim = Mathf.Clamp01(thrust * 1.6f);
             if (aim > 0f) spearRot = AimAtCrosshair(spearRot, carry, SpearPokeAimDepth, aim);
-            AttachItemToRoot(shared + carry + toMiddle * (thrust * 0.42f), spearRot); // (carried high enough for the hands on it to show)
-            m_R.localPosition = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(0.03f, 0.12f, 0)));
-            m_R.localRotation = sharedRot * Quaternion.Euler(-25f, -28f, -15f);
-            m_L.localPosition = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(-0.03f, 0.62f, 0)));
-            m_L.localRotation = sharedRot * Quaternion.Euler(-30f, 22f, 15f);
+            AttachItemToRoot(shared + carry + toMiddle * (thrust * 0.42f), spearRot);
+            m_R.localPosition = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(0.03f, 0.2f, 0)));
+            m_R.localRotation = sharedRot * Quaternion.Euler(-25f, -18f, -10f);
+            HideLeft(); // (one hand, like Rust's)
         }
 
         /// <summary>
@@ -573,8 +585,10 @@ namespace RockGame
             float e = Smooth(s.Draw);
             if (m_Item && m_Item.transform.childCount > 3) m_Item.transform.GetChild(3).gameObject.SetActive(false); // we draw the string ourselves
             // (the bow hand is held well out in front - it used to sit 0.1 nearer, cramped against the view)
-            var grip = shared + Vector3.Lerp(new Vector3(0.2f, -0.22f, 0.72f), new Vector3(0.045f, -0.12f, 0.69f), e);
-            var bowRot = sharedRot * Quaternion.Euler(Mathf.Lerp(-6f, 0f, e), Mathf.Lerp(-12f, -4f, e), Mathf.Lerp(-14f, -26f, e));
+            // (at rest, like Rust's: held low, the bow laid well over with its top limb out to the left; drawing stands it
+            // up in front of you)
+            var grip = shared + Vector3.Lerp(new Vector3(0.12f, -0.26f, 0.62f), new Vector3(0.045f, -0.12f, 0.69f), e);
+            var bowRot = sharedRot * Quaternion.Euler(Mathf.Lerp(-4f, 0f, e), Mathf.Lerp(-14f, -4f, e), Mathf.Lerp(52f, -14f, e));
             AttachItemToRoot(grip, bowRot, 1f);
 
             // bow hand: the fist round the grip itself (the bow's wood is 0.06 in front of the model's origin - the string
@@ -601,6 +615,8 @@ namespace RockGame
                 // the arrow model runs along +Y from -0.15 (fletching) to 0.6 (tip)
                 m_Arrow.transform.localRotation = Quaternion.LookRotation(dir) * Quaternion.Euler(90f, 0, 0);
                 m_Arrow.transform.localPosition = tip - dir * 0.6f;
+                // drawn, the fletching's back by your eye: out of the view (like Rust's), not a slab across it
+                for (int c = 2; c < m_Arrow.transform.childCount && c < 4; c++) { var f = m_Arrow.transform.GetChild(c).gameObject; if (f.activeSelf != e < 0.3f) f.SetActive(e < 0.3f); }
             }
 
             // string hand holds the nock at the lower right; drawn, it's back by your face (out of view)
@@ -791,14 +807,22 @@ namespace RockGame
             float useK = Mathf.Clamp01((Now - m_UseStart) / 0.3f);
             float use = useK < 1f ? Mathf.Sin(useK * Mathf.PI) : 0f;
             if (item == Item.DeathWand) use = Recoil(0.5f) * 1.5f; // the cast: flicked out hard, springing back
-            Vector3 idle = new Vector3(0.26f, -0.27f, 0.45f);
+            // (small things in the right hand at the lower right, a little in from the edge, like Rust's; C4 in both hands,
+            // low in the middle, like Rust's explosive charge)
+            Vector3 idle = item == Item.C4 ? new Vector3(0.05f, -0.27f, 0.44f) : new Vector3(0.21f, -0.27f, 0.45f);
             // a box (the chest, and the workbenches held like it): the hand under it further forward and a touch lower
-            if (item == Item.Chest || item == Item.Workbench || item == Item.Workbench2) idle += new Vector3(0f, -0.03f, 0.09f);
+            if (item == Item.Chest || item == Item.Workbench || item == Item.Workbench2) idle += new Vector3(0.05f, -0.03f, 0.09f);
             Vector3 pos = Vector3.Lerp(idle, new Vector3(0.04f, -0.13f, 0.22f), toMouth) + new Vector3(0, -0.05f, 0.12f) * use;
             float throwK = Mathf.Clamp01((Now - m_ThrowStart) / 0.35f);
-            if (throwK < 1f) pos += new Vector3(-0.05f, 0.12f, 0.3f) * Mathf.Sin(throwK * Mathf.PI); // lob (C4)
+            if (throwK < 1f)
+            {
+                // Rust's throw: drawn back up by the shoulder first, then flung out forward, and the hand comes back down
+                float back = Smooth(throwK / 0.3f) * (1f - Smooth((throwK - 0.3f) / 0.2f));
+                float fling = throwK < 0.3f ? 0f : Mathf.Sin(Mathf.Clamp01((throwK - 0.3f) / 0.7f) * Mathf.PI);
+                pos += new Vector3(0.09f, 0.13f, -0.13f) * back + new Vector3(-0.09f, 0.1f, 0.36f) * fling;
+            }
             Set(m_R, shared + pos, sharedRot * Quaternion.Euler(-12f - toMouth * 20f - use * 25f, -14f, -4f));
-            if (m_Item) m_Item.SetActive(throwK >= 1f || throwK < 0.45f);
+            if (m_Item) m_Item.SetActive(throwK >= 1f || throwK < 0.4f);
             switch (item)
             {
                 case Item.C4: AttachItemToRight(new Vector3(0, 0.05f, 0.07f), new Vector3(-20, 10, 0), 0.65f); break;
