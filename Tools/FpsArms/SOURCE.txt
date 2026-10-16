@@ -1,6 +1,6 @@
 "fps arms (rigged only)" by para - OpenGameArt: https://opengameart.org/content/fps-arms-rigged-only
 Licence: CC0 1.0 (public domain dedication). Downloaded 2026-10-17 as "fps arms.7z"; FpsArmsRig1.fbx is the archive's
-"FPS ARMS RIG 1.fbx" (the T-pose rig), unchanged.
+"FPS ARMS RIG 1.fbx" (the T-pose rig), unchanged; new_diff.png is its skin texture, unchanged (Tools/fps_arms_skin.py turns it into the tintable skin detail map).
 
 Used for the first-person arms: Tools/fps_arms.py turns it into the game's alien arms (three fingers and a thumb: the
 little finger taken off, each arm its own mesh on the shared armature) and writes Assets/Game/Resources/FpsArms/AlienArms.fbx.

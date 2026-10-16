@@ -204,7 +204,7 @@ namespace RockGame
             if (skin != null && skin.TryGetComponent(out SkinnedMeshRenderer smr))
             {
                 smr.updateWhenOffscreen = true; // (it swings all over the view: never culled on a stale box)
-                hook.Track(skin.gameObject, HandColorHook.AlienSkin);
+                hook.Track(skin.gameObject, HandColorHook.AlienModel);
             }
             return rig;
         }

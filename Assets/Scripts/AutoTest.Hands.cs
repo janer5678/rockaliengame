@@ -260,6 +260,7 @@ namespace RockGame
                     if (!exp.TryGetValue(name, out var e)) continue;
                     posed++;
                     var got = vm.DebugHand(right).localPosition;
+                    if (e.y > -0.85f) e += new Vector3(-0.01f, 0.06f, 0f); // (every resting hold sits up in the view: ViewModel.k_HandsUp - not a hand put away out of sight)
                     if ((got - e).magnitude < 0.012f) posedOk++;
                     else off.Append($" {name} {(right ? "R" : "L")} {got} (want {e})");
                 }
