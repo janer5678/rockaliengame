@@ -28,7 +28,7 @@ namespace RockGame
         static Vector2 s_WheelCenter;
         public static void WheelOpened() { s_WheelCenter = new Vector2(Screen.width / 2f, Screen.height / 2f); s_WheelLastMouse = Input.mousePosition; WheelHover = PlayerController.Local != null ? PlayerController.Local.WheelIndex : 0; }
         float m_LastHealth = 100f, m_DamageFlash;
-        GUIStyle m_Label, m_Center, m_Big, m_Small, m_Button, m_Box, m_Field;
+        GUIStyle m_Label, m_Center, m_Big, m_Small, m_Button, m_Box, m_Field, m_AmmoRight;
         float m_Scale = 1f;
 
         // drag & drop
@@ -423,7 +423,18 @@ namespace RockGame
             DrawBedList(game, k, m_RadarBottom + 34 * k); // (Bedwars: who still has a bed - under the radar and the FPS line)
             // ---- the weapon's ammo, big, top left (pistol, revolver, shotgun, bow, crossbow): tucked under the team box,
             // the base radar and the FPS line (their slots kept, so it doesn't jump when the radar comes and goes) ----
-            if ((Cfg.IsGun(me.HeldItem) || me.HeldItem == Item.Shotgun || me.HeldItem == Item.Bow || me.HeldItem == Item.Crossbow) && !me.Dead.Value)
+            if (me.HeldItem == Item.AlienGun && !me.Dead.Value)
+            {
+                // the alien gun: its shots left in the bottom right corner, above the pickup list
+                var ps = me.HeldStack;
+                AmmoRect = new Rect(Screen.width - 434 * k, Screen.height - 210 * k, 420 * k, 80 * k);
+                if (m_AmmoRight == null) m_AmmoRight = new GUIStyle(m_Label) { alignment = TextAnchor.LowerRight };
+                string big = $"<size={Mathf.RoundToInt(52 * k)}>", small = $"<size={Mathf.RoundToInt(22 * k)}>";
+                string col = ps.Data <= 3 ? "#ff7766" : "#9dffb0";
+                Shadowed(AmmoRect, $"{small}ALIEN GUN  </size><b>{big}<color={col}>{ps.Data}</color></size></b>{small} / {Cfg.GunMag(ps.Id)}\n<color=#bbbbbb>breaks after its last shot</color></size>", m_AmmoRight);
+                AmmoShownFrame = Time.frameCount;
+            }
+            else if ((Cfg.IsGun(me.HeldItem) || me.HeldItem == Item.Shotgun || me.HeldItem == Item.Bow || me.HeldItem == Item.Crossbow) && !me.Dead.Value)
             {
                 var ps = me.HeldStack;
                 float ay = 10 + (GameSettings.HudTeamBox.Value ? 34 * k : 0f) + 56 * k;
@@ -724,6 +735,7 @@ namespace RockGame
                 case Item.PistolAmmo: return "<b>Pistol Ammo</b>    the pistol reloads from this";
                 case Item.Revolver: return $"<b>Revolver</b>  ({s.Data}/{Cfg.RevolverMag})    LMB: shoot   {KT(Bind.Rotate)}: reload ({me.Count(Item.RevolverAmmo)} bullets)";
                 case Item.RevolverAmmo: return $"<b>Revolver Bullets</b> x{s.Count}    the revolver reloads from these";
+                case Item.AlienGun: return $"<b>Alien Gun</b>  ({s.Data} shot{(s.Data == 1 ? "" : "s")} left)    LMB: shoot ({Cfg.AlienGunBodyDamage:0} body, {Cfg.AlienGunHeadDamage:0} head) - no reloading: it breaks after its last shot";
                 case Item.Shotgun: return $"<b>Waterpipe Shotgun</b>  ({(s.Data > 0 ? "loaded" : "empty")}, {me.Count(Item.ShotgunShell)} shells)    LMB: fire   loads the next shell by itself (or {KT(Bind.Rotate)})";
                 case Item.ShotgunShell: return $"<b>Shotgun Shells</b> x{s.Count}    one at a time into the waterpipe shotgun";
                 case Item.Sword: return $"<b>Sword</b>    LMB: a slow, heavy swing - {Cfg.SwordBodyDamage:0} to the body, {Cfg.SwordHeadDamage:0} to the head";
@@ -920,6 +932,7 @@ namespace RockGame
                 case Item.TreeCracker: return $"  ({s.Data} uses left)";
                 case Item.Pistol: return $"  ({s.Data}/{Cfg.PistolMag})";
                 case Item.Revolver: return $"  ({s.Data}/{Cfg.RevolverMag})";
+                case Item.AlienGun: return $"  ({s.Data} shot{(s.Data == 1 ? "" : "s")} left)";
                 case Item.Shotgun: return s.Data > 0 ? "  (loaded)" : "  (empty)";
                 case Item.Armor: return $"  ({(s.Data > 0 ? s.Data : Cfg.ArmorHp)} armour HP)";
                 case Item.Crossbow: return s.Data > 0 ? "  (loaded)" : "  (empty)";

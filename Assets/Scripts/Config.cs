@@ -26,7 +26,8 @@ namespace RockGame
         BetterHatchet, // (Jonah Test Mode Bruh: the chainsaw's place - JonahBruh.cs)
         // Emerald mode's (Emerald.cs): the money, and the emerald shop's own things
         Emerald, HighArmor, Lightsaber, HealBerry, LandMine, FortCreator,
-        LuckyBlock } // (Lucky Block mode: the emerald shop's one row - a random airdrop item, LuckyBlock.cs; never an item itself)
+        LuckyBlock, // (Lucky Block mode: the emerald shop's one row - a random airdrop item, LuckyBlock.cs; never an item itself)
+        AlienGun } // (Emerald mode's shop: a hard-hitting revolver that breaks after its shots - Emerald.cs)
 
     /// <summary>
     /// The game mode (picked in the main menu, next to the players). They don't mix:
@@ -179,7 +180,7 @@ namespace RockGame
                 case GameRules.AirdropTest: return "Classic, plus purple AIRDROP BERRY BUSHES all over the map: pick one (E) and you get an airdrop item - a different one every time (you never get the same one twice; the others can still get it).";
                 case GameRules.JonahBruh: return $"Classic with Jonah's changes (pick NORMAL or PROGRESSION below): a one-cell spawn base, Armour at the top of the Advanced Trade Station ({JonahBruhArmorWood}; the station {JonahBruhBench2Wood}), no stun trap, ladder or chainsaw - a BETTER HATCHET instead (chops faster, {BetterHatchetWood} wood), the death wand only from airdrops. Walls only upgrade to MAGICAL STONE ({JonahBruhStoneWood} wood a piece, {JonahBruhStoneHpMul:0.#}x as strong). Respawn in the wild: pick the spot on the map.";
                 case GameRules.ClipFarm: return $"Classic turned up for clips. Everyone gets a random airdrop item when the wall drops and every time they respawn (every airdrop item's in), an airdrop every {ClipFarmDropEvery:0} s, airdrop berry bushes all over. Multi-kills, long shots, headshots, streaks, shutdowns, revenge and YEETs go up huge on everyone's screen with an air horn - and get marked on Steam's game recording timeline.";
-                case GameRules.Emerald: return $"Classic, plus EMERALDS: one grows on each emerald spawner every {EmeraldEvery / 60f:0.#} minutes (from when the wall drops) - with two bases they're to the left and right of the ball, with more on every team's way to the middle. Spend them at the EMERALD SHOP beside your machine (E): the knockback stick {EmeraldPriceKnockStick}, an ender pearl {EmeraldPricePearls}, the revolver {EmeraldPriceRevolver} and a clip {EmeraldPriceAmmo}, the shotgun {EmeraldPriceShotgun} and a clip {EmeraldPriceShells}, C4 {EmeraldPriceC4}. The Trade Station is a shop too (E on it; craft it any time in your base) - no Advanced one. Airdrops only come down in the middle or the middle of the left or right side.";
+                case GameRules.Emerald: return $"Classic, plus EMERALDS: one grows on each emerald spawner every {EmeraldEvery / 60f:0.#} minutes (from when the wall drops) - with two bases they're to the left and right of the ball, with more on every team's way to the middle. Spend them at the EMERALD SHOP beside your machine (E): the knockback stick {EmeraldPriceKnockStick}, an ender pearl {EmeraldPricePearls}, the lightsaber {EmeraldPriceLightsaber}, the ALIEN GUN {EmeraldPriceAlienGun} ({AlienGunShots} big shots, then it breaks), C4 {EmeraldPriceC4} - no other guns. The Trade Station is a shop too (E on it; craft it any time in your base) - no Advanced one. Airdrops only come down in the middle or the middle of the left or right side.";
                 case GameRules.LuckyBlock: return $"Bedwars (no ball: smash the enemy machines, last team standing) with no trees, berries or airdrops. You start with {LuckyStartWood} wood and your wood machine spams wood ({LuckyWoodPerSecond} a second) - you craft the building plan and battering rams ({LuckyRamWood} wood), nothing else. Emerald spawners in between the bases grow emeralds; at the emerald shop beside your machine a LUCKY BLOCK ({LuckyBlockPrice} emerald{(LuckyBlockPrice == 1 ? "" : "s")}) gives you a random airdrop item. The wall drops after {LuckyWallDrop:0} seconds.";
                 case GameRules.Domination: return "Classic, but whoever has the ball (carried or in their machine) gets the Advanced Trade Station's items without building one. Lose the ball, lose them.";
                 case GameRules.Tutorial: return "New here? Start with this. Short, simple steps teach you the whole game - you do each one to go on, and each control unlocks as it's taught. The clock is stopped and it's always the small Plains map. Press PLAY TUTORIAL and pick Solo or With a friend.";
@@ -232,14 +233,16 @@ namespace RockGame
             }
         }
         /// <summary>Teammates stand side by side: 0 in the middle, then right, left, further right...</summary>
-        /// <summary>The magazine guns: the pistol and the revolver.</summary>
-        public static bool IsGun(Item i) => i == Item.Pistol || i == Item.Revolver;
-        public static int GunMag(Item i) => i == Item.Revolver ? RevolverMag : PistolMag;
+        /// <summary>The magazine guns: the pistol, the revolver and Emerald mode's alien gun (which never reloads: it
+        /// breaks after its last shot - GunReloads).</summary>
+        public static bool IsGun(Item i) => i == Item.Pistol || i == Item.Revolver || i == Item.AlienGun;
+        public static bool GunReloads(Item i) => i != Item.AlienGun;
+        public static int GunMag(Item i) => i == Item.Revolver ? RevolverMag : i == Item.AlienGun ? Mathf.Clamp(AlienGunShots, 1, 255) : PistolMag;
         public static Item GunAmmo(Item i) => i == Item.Revolver ? Item.RevolverAmmo : Item.PistolAmmo;
-        public static float GunFireRate(Item i) => i == Item.Revolver ? RevolverFireRate : PistolFireRate;
+        public static float GunFireRate(Item i) => i == Item.Revolver ? RevolverFireRate : i == Item.AlienGun ? AlienGunFireRate : PistolFireRate;
         public static float GunReload(Item i) => i == Item.Revolver ? RevolverReload : PistolReload;
-        public static float GunBody(Item i) => i == Item.Revolver ? RevolverBodyDamage : PistolBodyDamage;
-        public static float GunHead(Item i) => i == Item.Revolver ? RevolverHeadDamage : PistolHeadDamage;
+        public static float GunBody(Item i) => i == Item.Revolver ? RevolverBodyDamage : i == Item.AlienGun ? AlienGunBodyDamage : PistolBodyDamage;
+        public static float GunHead(Item i) => i == Item.Revolver ? RevolverHeadDamage : i == Item.AlienGun ? AlienGunHeadDamage : PistolHeadDamage;
         public static float SlotOffset(int slot, float step) => slot == 0 ? 0f : ((slot + 1) / 2) * step * (slot % 2 == 1 ? 1f : -1f);
         /// <summary>More than two bases: the map is laid out four ways round with the glass walls in an X.</summary>
         public static bool FourWay => TeamCount > 2;
@@ -728,6 +731,7 @@ namespace RockGame
                 case Item.RocketLauncher: return RocketAmmo;
                 case Item.Pistol: return PistolMag;
                 case Item.Revolver: return RevolverMag;
+                case Item.AlienGun: return Mathf.Clamp(AlienGunShots, 1, 255);
                 case Item.TreeCracker: return TreeCrackerUses;
                 default: return WackyMaxData(i);
             }
@@ -1277,6 +1281,7 @@ namespace RockGame
             (20, new[] { "RevolverAmmoWood", "RevolverAmmoPerCraft" }),
             (21, new[] { "HeavyArmorWood", "DeathWandWood", "AirdropItemMask", "AirdropItemMask2" }),
             (22, new[] { "ModesCrossbowWood", "AirdropItemMask", "StickOfTruthShots", "TreeBreakerWood", "SpearGravity", "SpearStraightRange" }),
+            (25, new[] { "EmeraldPriceLightsaber", "EmeraldPriceAlienGun", "AlienGunShots", "AlienGunBodyDamage", "AlienGunHeadDamage", "AlienGunFireRate" }),
             (24, new[] { "EmeraldPriceRevolver", "EmeraldPriceShotgun", "LuckyBlockPrice" }),
             (23, new[] { "EmeraldPriceKnockStick", "EmeraldPricePearls", "EmeraldPriceRevolver", "EmeraldPriceAmmo", "EmeraldPriceShotgun", "EmeraldPriceShells", "EmeraldPriceC4" }),
             (19, new[] { "SpearWood", "BowWood", "BowStone", "ArrowWood", "RamWood", "RamStone", "ChestWood", "HatchetPlayerDamage", "HorseWalk", "HorseSprint", "ShotgunRange", "JonahBruhStoneWood" }),

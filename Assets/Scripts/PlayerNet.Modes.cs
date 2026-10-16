@@ -164,12 +164,19 @@ namespace RockGame
             if (Dead.Value || CarryingBall || InSuddenDeath || !Cfg.IsGun(gun) || Time.time < m_NextPistol) return;
             var st = HeldStack;
             if (st.Data <= 0) return;
-            Inv[HeldSlot.Value] = ItemStack.Of(gun, 1, st.Data - 1);
+            if (gun == Item.AlienGun && st.Data <= 1)
+            {
+                // the alien gun's last shot: it breaks (it never reloads)
+                Inv[HeldSlot.Value] = default;
+                Notify("Your alien gun fired its last shot and broke!");
+                Fx.Server(FxKind.HelmetBreak, EyePos + transform.forward * 0.6f - Vector3.up * 0.3f, Vector3.up);
+            }
+            else Inv[HeldSlot.Value] = ItemStack.Of(gun, 1, st.Data - 1);
             m_NextPistol = Time.time + Cfg.GunFireRate(gun) * 0.8f;
             Reveal();
             if (!PortalPass.ReachOk(EyePos, point, 250f)) point = EyePos + dir.normalized * 100f; // (a shot through a portal can land far off)
             // (not back to the shooter: they already drew their own tracer the moment they fired - two of them was the "double tracer")
-            PortalPass.ServerTracer(gun == Item.Revolver ? FxKind.RevolverTracer : FxKind.PistolTracer, EyePos + dir.normalized * 0.5f - Vector3.up * 0.15f, EyePos, dir, point, OwnerClientId); // (bends through portals)
+            PortalPass.ServerTracer(gun == Item.Revolver || gun == Item.AlienGun ? FxKind.RevolverTracer : FxKind.PistolTracer, EyePos + dir.normalized * 0.5f - Vector3.up * 0.15f, EyePos, dir, point, OwnerClientId); // (bends through portals)
             if (hasTarget && target.TryGet(out var tree)) ResourceNode.ServerStruck(tree); // (a bullet in a tree sends its birds up)
             if (!hasTarget) NetGame.Instance?.ServerMaybeHitMachine(point, this, false); // (Bedwars: a shot into an enemy machine)
             if (!hasTarget || !target.TryGet(out var no) || !GameAllowsCombat) return;
@@ -199,7 +206,7 @@ namespace RockGame
         public void ReloadPistolRpc()
         {
             var gun = HeldItem;
-            if (Dead.Value || !Cfg.IsGun(gun)) return;
+            if (Dead.Value || !Cfg.IsGun(gun) || !Cfg.GunReloads(gun)) return;
             var st = HeldStack;
             int want = Cfg.GunMag(gun) - st.Data;
             if (want <= 0) return;

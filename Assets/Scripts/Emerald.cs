@@ -35,14 +35,17 @@ namespace RockGame
         [Tune("Emerald mode")] public static float MineSplashRadius = 3f, MineSplashDamage = 60f;
         /// <summary>High defensive walls (the large wall and gate in this mode): this many times as tall, and as strong.</summary>
         [Tune("Emerald mode")] public static float BigWallTallMul = 1.4f, BigWallHpMul = 2f;
-        /// <summary>Emerald shop prices (emeralds): the knockback stick, an ender pearl, the revolver, a clip of revolver
-        /// bullets, the shotgun, a clip of shells and C4.</summary>
-        [Tune("Emerald shop")] public static int EmeraldPriceKnockStick = 1, EmeraldPricePearls = 2, EmeraldPriceRevolver = 5, EmeraldPriceAmmo = 1, EmeraldPriceShotgun = 5, EmeraldPriceShells = 1, EmeraldPriceC4 = 3;
-        /// <summary>A clip of shotgun shells (the shotgun's own clip).</summary>
-        public const int ShotgunClip = 4;
+        /// <summary>Emerald shop prices (emeralds): the knockback stick, an ender pearl, the lightsaber, the alien gun and C4.
+        /// (No other guns: no revolver, shotgun or ammo.)</summary>
+        [Tune("Emerald shop")] public static int EmeraldPriceKnockStick = 1, EmeraldPricePearls = 2, EmeraldPriceLightsaber = 3, EmeraldPriceAlienGun = 4, EmeraldPriceC4 = 3;
+        /// <summary>The ALIEN GUN (the emerald shop's gun): fires like the revolver (hitscan, LMB as fast as its fire rate) but
+        /// hits harder, never reloads, and breaks after its last shot (AlienGunShots); its shots left show in the bottom
+        /// right of the screen.</summary>
+        [Tune("Emerald mode")] public static int AlienGunShots = 10;
+        [Tune("Emerald mode")] public static float AlienGunBodyDamage = 45f, AlienGunHeadDamage = 75f, AlienGunFireRate = 0.35f;
 
         /// <summary>Emerald mode's own things: nowhere else (Cfg.Removed).</summary>
-        public static bool EmeraldOnly(Item i) => i == Item.Emerald || i == Item.HighArmor || i == Item.Lightsaber || i == Item.HealBerry || i == Item.LandMine || i == Item.FortCreator;
+        public static bool EmeraldOnly(Item i) => i == Item.Emerald || i == Item.HighArmor || i == Item.Lightsaber || i == Item.HealBerry || i == Item.LandMine || i == Item.FortCreator || i == Item.AlienGun;
         /// <summary>Not crafted in Emerald mode: there's no Advanced Trade Station, and the death wand's in the emerald shop.</summary>
         public static bool EmeraldOut(Item i) => Emerald && (i == Item.Workbench2 || i == Item.DeathWand);
 
@@ -75,13 +78,10 @@ namespace RockGame
                     Add(Item.LuckyBlock, 1, LuckyBlockPrice, "a random airdrop item - any of them");
                     return s_Deals;
                 }
-                int clip = Mathf.Max(1, RevolverMag);
                 Add(Item.KnockStick, 1, EmeraldPriceKnockStick, "knocks whoever it hits back a good way");
                 Add(Item.EnderPearl, 1, EmeraldPricePearls, "throw it - you teleport where it lands");
-                Add(Item.Revolver, 1, EmeraldPriceRevolver, $"{RevolverMag} rounds, {RevolverBodyDamage:0} body / {RevolverHeadDamage:0} head");
-                Add(Item.RevolverAmmo, clip, EmeraldPriceAmmo, $"a clip for the revolver ({clip} bullets)");
-                Add(Item.Shotgun, 1, EmeraldPriceShotgun, $"one shell at a time, {ShotgunPellets * ShotgunPelletDamage:0} up close");
-                Add(Item.ShotgunShell, ShotgunClip, EmeraldPriceShells, $"a clip for the shotgun ({ShotgunClip} shells)");
+                Add(Item.Lightsaber, 1, EmeraldPriceLightsaber, $"quick glowing blade: {LightsaberDamage:0} a hit");
+                Add(Item.AlienGun, 1, EmeraldPriceAlienGun, $"{GunMag(Item.AlienGun)} shots, {AlienGunBodyDamage:0} body / {AlienGunHeadDamage:0} head - then it breaks");
                 Add(Item.C4, 1, EmeraldPriceC4, "thrown: wrecks every building piece nearby");
                 return s_Deals;
             }
@@ -98,6 +98,7 @@ namespace RockGame
                 case Item.LandMine: return "Land Mine";
                 case Item.FortCreator: return "Fort Creator";
                 case Item.LuckyBlock: return "Lucky Block";
+                case Item.AlienGun: return "Alien Gun";
                 default: return null;
             }
         }
@@ -111,6 +112,7 @@ namespace RockGame
                 case Item.HighArmor: return $"LMB: put it on - {HighArmorHp} armour, used up before your health.";
                 case Item.Lightsaber: return $"A quick glowing blade: {LightsaberDamage:0} damage a hit (x2 to the head), cuts through wood too.";
                 case Item.HealBerry: return "LMB / RMB: eat one - you're back on full health at once.";
+                case Item.AlienGun: return $"Like the revolver, but it hits harder ({AlienGunBodyDamage:0} body, {AlienGunHeadDamage:0} head) and never needs ammo: {GunMag(Item.AlienGun)} shots, then it breaks.";
                 case Item.LandMine: return "LMB: put it on the ground, anywhere. It's hard to see - an enemy who steps on it blows up.";
                 case Item.FortCreator: return "LMB: throw it - a fort pops up where it lands: tall walls round a lookout tower, and a gate your team opens.";
                 default: return null;
@@ -483,6 +485,33 @@ namespace RockGame
                 case Item.Emerald:
                     Gem(t, 0.34f, null, null);
                     return true;
+                case Item.AlienGun:
+                {
+                    // a revolver-sized ray gun (held like the revolver: grip under the back): a sleek pearly body, a bulb of
+                    // glowing green goo where the drum would be, a ribbed barrel ringed in green ending in a glowing tip,
+                    // three little fins, a purple grip
+                    var shell = new Color(0.55f, 0.6f, 0.68f);
+                    var dark = new Color(0.2f, 0.22f, 0.28f);
+                    var grip = new Color(0.36f, 0.2f, 0.5f);
+                    var goo = EmeraldSpawner.Green;
+                    var glow = Workbench.Glow(goo, 1.8f);
+                    float cr = Art.Cylinder.bounds.extents.x, ch = Art.Cylinder.bounds.extents.y;
+                    Art.Box(t, grip, new Vector3(0, -0.05f, -0.06f), new Vector3(0.04f, 0.12f, 0.055f), new Vector3(-16, 0, 0));
+                    Art.Box(t, dark, new Vector3(0, -0.012f, -0.005f), new Vector3(0.01f, 0.032f, 0.04f));                     // (the trigger guard)
+                    Art.Part(t, Art.Sphere, shell, new Vector3(0, 0.035f, -0.035f), new Vector3(0.045f, 0.055f, 0.11f));        // (the body)
+                    Art.Part(t, Art.Sphere, goo, new Vector3(0, 0.04f, 0.015f), Vector3.one * 0.05f, default, false, glow);      // (the goo bulb)
+                    Art.Part(t, Art.Cylinder, dark, new Vector3(0, 0.045f, 0.12f), new Vector3(0.024f / cr, 0.07f / ch, 0.024f / cr), new Vector3(90, 0, 0));
+                    for (int k = 0; k < 3; k++)
+                        Art.Part(t, Art.Cylinder, goo, new Vector3(0, 0.045f, 0.075f + k * 0.035f), new Vector3((0.034f - k * 0.003f) / cr, 0.006f / ch, (0.034f - k * 0.003f) / cr), new Vector3(90, 0, 0), false, glow);
+                    Art.Part(t, Art.Sphere, goo, new Vector3(0, 0.045f, 0.195f), Vector3.one * 0.03f, default, false, glow);   // (the muzzle)
+                    Art.Box(t, shell * 0.9f, new Vector3(0, 0.078f, -0.04f), new Vector3(0.008f, 0.03f, 0.05f), new Vector3(20, 0, 0)); // (the top fin)
+                    for (int s = -1; s <= 1; s += 2)
+                        Art.Box(t, shell * 0.9f, new Vector3(s * 0.035f, 0.03f, -0.06f), new Vector3(0.03f, 0.008f, 0.045f), new Vector3(0, 0, s * -25f));
+                    // the sights: a blade at the front, a notch at the back - the highest things on it
+                    Art.Box(t, dark, new Vector3(0, 0.07f, 0.17f), new Vector3(0.005f, 0.02f, 0.01f));
+                    for (int s = -1; s <= 1; s += 2) Art.Box(t, dark, new Vector3(s * 0.008f, 0.085f, -0.085f), new Vector3(0.006f, 0.02f, 0.01f));
+                    return true;
+                }
                 case Item.LuckyBlock:
                     LuckyBlockModel.Build(t, 0.3f);
                     return true;

@@ -140,6 +140,7 @@ namespace RockGame
             switch (m_ItemId)
             {
                 case Item.Revolver: return m_ItemHolder.TransformPoint(new Vector3(0, 0.05f, 0.3f));
+                case Item.AlienGun: return m_ItemHolder.TransformPoint(new Vector3(0, 0.045f, 0.21f));
                 case Item.Pistol: return m_ItemHolder.TransformPoint(new Vector3(0, 0.035f, 0.25f));
                 case Item.Shotgun: return m_ItemHolder.TransformPoint(new Vector3(0, 0.04f, 0.56f));
                 case Item.Sniper: return m_ItemHolder.TransformPoint(new Vector3(0, 0.02f, 0.9f));
@@ -325,6 +326,7 @@ namespace RockGame
             {
                 case Item.Rock: case Item.GoldenRock: PoseRock(shared, sharedRot, swinging, swingE); break;
                 case Item.Sword: PoseSword(shared, sharedRot, swinging, swingE); break;
+                case Item.Lightsaber: PoseSword(shared, sharedRot, swinging, swingE, 0f); break; // (swung like the sword, held by its hilt)
                 case Item.Hammer: PoseHammer(shared, sharedRot, swinging, swingE); break;
                 case Item.Hatchet:
                 case Item.BetterHatchet:
@@ -341,6 +343,7 @@ namespace RockGame
                 case Item.Sniper:
                 case Item.Pistol:
                 case Item.Revolver:
+                case Item.AlienGun:
                 case Item.Shotgun:
                 case Item.PortalGun:
                 case Item.RocketLauncher: PoseCrossbow(s, shared, sharedRot); break;
@@ -446,7 +449,7 @@ namespace RockGame
         /// miss (a hit stops it there and it comes back). The wind-up is the shorter part; most of the time before the
         /// hit is the arc itself.
         /// </summary>
-        void PoseSword(Vector3 shared, Quaternion sharedRot, bool swinging, float e)
+        void PoseSword(Vector3 shared, Quaternion sharedRot, bool swinging, float e, float gripY = 0.06f)
         {
             // (Pos, the hand's yaw, the blade's yaw across the view: + is out to the right, -90 straight ahead)
             var k = Chop(new KP(new Vector3(0.27f, -0.3f, 0.5f), -18f, -20f), new KP(new Vector3(0.44f, -0.2f, 0.36f), 14f, 15f),
@@ -460,8 +463,8 @@ namespace RockGame
             // as it lands the blade points right at the crosshair: the slash hits where you aim
             float aimW = swinging ? StrikeAimWeight(e, 0.7f) : 0f;
             if (aimW > 0f) blade = AimAtCrosshair(blade, m_R.localPosition, 1.6f, aimW);
-            // the grip (0.06 up the hilt) stays in the fist whichever way the blade points
-            AttachItemToRoot(m_R.localPosition - blade * new Vector3(0f, 0.06f, 0f), blade);
+            // the grip (0.06 up the sword's hilt; the lightsaber's at its middle) stays in the fist whichever way the blade points
+            AttachItemToRoot(m_R.localPosition - blade * new Vector3(0f, gripY, 0f), blade);
             HideLeft();
         }
 
@@ -645,7 +648,7 @@ namespace RockGame
             float kick;
             switch (s.Item)
             {
-                case Item.Revolver: kick = Recoil(0.42f); kickPos = new Vector3(0, 0.045f, -0.06f); kickRot = new Vector3(-30f, 2f, -5f); break;
+                case Item.Revolver: case Item.AlienGun: kick = Recoil(0.42f); kickPos = new Vector3(0, 0.045f, -0.06f); kickRot = new Vector3(-30f, 2f, -5f); break;
                 case Item.Shotgun: kick = Recoil(0.55f); kickPos = new Vector3(0.01f, 0.035f, -0.17f); kickRot = new Vector3(-15f, -2f, 4f); break;
                 case Item.RocketLauncher: kick = Recoil(0.8f); kickPos = new Vector3(0, -0.02f, -0.2f); kickRot = new Vector3(-7f, 3f, -7f); break;
                 case Item.PortalGun: kick = Recoil(0.4f); kickPos = new Vector3(0, 0.01f, -0.08f); kickRot = new Vector3(-5f, 0, 0); break;

@@ -322,6 +322,7 @@ namespace RockGame
                 case Item.Sniper:
                 case Item.Pistol:
                 case Item.Revolver:
+                case Item.AlienGun:
                 case Item.Shotgun:
                 case Item.PortalGun:
                 case Item.RocketLauncher:

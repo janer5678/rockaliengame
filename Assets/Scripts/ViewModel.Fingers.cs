@@ -26,9 +26,10 @@ namespace RockGame
             /// <summary>The hand (its wrist) in the arm's space.</summary>
             public Vector3 Pos;
             public Quaternion Rot = Quaternion.identity, Thumb = Quaternion.identity;
-            /// <summary>[digit * 3 + joint] curl in degrees; digit 4 is the thumb (its joint 0 is Thumb, the base's turn).</summary>
+            /// <summary>[digit * 3 + joint] curl in degrees; digits 0-2 the fingers, digit 4 the thumb (its joint 0 is Thumb,
+            /// the base's turn); digit 3's slots are unused (three fingers and a thumb).</summary>
             public readonly float[] A = new float[15];
-            public readonly float[] Spread = new float[4];
+            public readonly float[] Spread = new float[FingerCount];
             /// <summary>How far the forearm follows the hand's own direction (0: the arm's old line).</summary>
             public float ElbowK = 0.45f;
 
@@ -36,7 +37,7 @@ namespace RockGame
             {
                 Pos = o.Pos; Rot = o.Rot; Thumb = o.Thumb; ElbowK = o.ElbowK;
                 System.Array.Copy(o.A, A, 15);
-                System.Array.Copy(o.Spread, Spread, 4);
+                System.Array.Copy(o.Spread, Spread, FingerCount);
             }
 
             public void Lerp(JointPose a, JointPose b, float t)
@@ -46,7 +47,7 @@ namespace RockGame
                 Thumb = Quaternion.Slerp(a.Thumb, b.Thumb, t);
                 ElbowK = Mathf.Lerp(a.ElbowK, b.ElbowK, t);
                 for (int i = 0; i < 15; i++) A[i] = Mathf.Lerp(a.A[i], b.A[i], t);
-                for (int i = 0; i < 4; i++) Spread[i] = Mathf.Lerp(a.Spread[i], b.Spread[i], t);
+                for (int i = 0; i < FingerCount; i++) Spread[i] = Mathf.Lerp(a.Spread[i], b.Spread[i], t);
             }
         }
 
@@ -60,21 +61,21 @@ namespace RockGame
 
         static FingerSet Fixed(float[] a, float[] spread) => new FingerSet { Min = a, Max = a, Spread = spread };
         static FingerSet Closing(float[] min, float[] max, float[] spread) => new FingerSet { Min = min, Max = max, Spread = spread, Solve = true };
-        static float[] Each(float a, float b, float c) => new[] { a, b, c, a, b, c, a, b, c, a, b, c };
+        static float[] Each(float a, float b, float c) => new[] { a, b, c, a, b, c, a, b, c };
 
-        // (index, middle, ring, little: knuckle, middle joint, end joint; spreads index..little, + towards the little finger)
+        // (index, middle, outer: knuckle, middle joint, end joint; spreads index..outer, + away from the thumb)
         static readonly FingerSet[] s_Fingers =
         {
-            /* Relaxed   */ Fixed(new float[] { 14, 20, 10, 18, 24, 12, 22, 28, 14, 26, 32, 16 }, new float[] { -6, -1, 4, 9 }),
-            /* Fist      */ Closing(Each(6, 10, 5), Each(92, 105, 80), new float[] { -2, -0.5f, 1, 2.5f }),
-            /* LooseFist */ Fixed(new float[] { 55, 75, 45, 60, 80, 50, 64, 84, 52, 68, 88, 55 }, new float[] { -2, 0, 2, 4 }),
-            /* Open      */ Fixed(new float[] { 2, 3, 2, 2, 3, 2, 3, 4, 2, 4, 5, 3 }, new float[] { -12, -3, 6, 15 }),
-            /* Cup       */ Closing(Each(4, 6, 3), Each(55, 60, 45), new float[] { -8, -2, 4, 10 }),
-            /* Support   */ Closing(Each(4, 6, 3), Each(70, 75, 55), new float[] { -5, -1, 3, 7 }),
-            /* Hook      */ Fixed(new float[] { 8, 70, 40, 10, 80, 45, 14, 82, 45, 55, 85, 55 }, new float[] { -3, -1, 1, 4 }),
-            /* Pinch     */ Fixed(new float[] { 45, 50, 25, 50, 60, 32, 58, 68, 40, 64, 74, 45 }, new float[] { -4, -1, 2, 5 }),
-            /* Point     */ Fixed(new float[] { 5, 6, 3, 8, 10, 5, 12, 14, 7, 16, 18, 9 }, new float[] { -8, -2, 4, 10 }),
-            /* Paper     */ Closing(Each(5, 8, 4), Each(55, 60, 40), new float[] { -3, -1, 1, 3 }),
+            /* Relaxed   */ Fixed(new float[] { 16, 22, 12, 20, 26, 14, 25, 31, 16 }, new float[] { -5, 0, 6 }),
+            /* Fist      */ Closing(Each(6, 10, 5), Each(92, 105, 80), new float[] { -1.5f, 0, 1.5f }),
+            /* LooseFist */ Fixed(new float[] { 55, 75, 45, 60, 80, 50, 66, 86, 54 }, new float[] { -2, 0, 3 }),
+            /* Open      */ Fixed(new float[] { 2, 3, 2, 2, 3, 2, 3, 4, 3 }, new float[] { -10, 0, 11 }),
+            /* Cup       */ Closing(Each(4, 6, 3), Each(55, 60, 45), new float[] { -7, 0, 8 }),
+            /* Support   */ Closing(Each(4, 6, 3), Each(70, 75, 55), new float[] { -4, 0, 5 }),
+            /* Hook      */ Fixed(new float[] { 8, 70, 40, 10, 80, 45, 14, 82, 45 }, new float[] { -3, 0, 3 }),
+            /* Pinch     */ Fixed(new float[] { 45, 50, 25, 50, 60, 32, 58, 68, 40 }, new float[] { -3, 0, 4 }),
+            /* Point     */ Fixed(new float[] { 5, 6, 3, 8, 10, 5, 12, 14, 7 }, new float[] { -7, 0, 8 }),
+            /* Paper     */ Closing(Each(5, 8, 4), Each(55, 60, 40), new float[] { -2, 0, 2 }),
         };
         /// <summary>The trigger finger: the index lies curled round the trigger (closing onto it if the gun has one).</summary>
         static readonly float[] s_TriggerMin = { 5, 30, 12 }, s_TriggerMax = { 32, 72, 42 };
@@ -341,7 +342,7 @@ namespace RockGame
         /// <summary>Where a bowstring sits in the hooked fingers.</summary>
         static readonly Vector3 HookG = new Vector3(0f, -0.022f, 0.112f);
 
-        /// <summary>A fist round a handle: c on its axis, a along it from the thumb's side to the little finger's, the
+        /// <summary>A fist round a handle: c on its axis, a along it from the thumb's side to the outer finger's, the
         /// knuckles facing f, r its thickness (all in `space`); diag turns the hand so the handle runs across the palm
         /// diagonally, as it does holding a long shaft.</summary>
         HandGoal Grip(bool right, ShapeSet set, Transform space, Vector3 c, Vector3 a, Vector3 f, float r, float diag = 0f)
@@ -385,22 +386,24 @@ namespace RockGame
         HandGoal SupportUnder(bool right, ShapeSet set, Vector3 c)
             => PalmOn(right, set, m_ItemHolder, c, Vector3.down, new Vector3(right ? -0.3f : 0.3f, 0f, 1f));
 
-        struct GunGrip { public Vector3 C, Up; public float R, SupZ, SupY; }
+        struct GunGrip { public Vector3 C, Up; public float R, D, SupZ, SupY; }
 
         /// <summary>Each gun's grip (from its model): where on it the fist goes (so the index finger is level with the trigger,
         /// just under the body), which way it runs, how thick it is; and where the other hand holds it underneath.</summary>
         static GunGrip Gun(Item it)
         {
-            GunGrip G(Vector3 centre, float tilt, float t, float r, float supZ, float supY)
+            GunGrip G(Vector3 centre, float tilt, float t, float r, float supZ, float supY, float d = 0f)
             {
                 float a = tilt * Mathf.Deg2Rad;
                 var u = new Vector3(0f, Mathf.Cos(a), Mathf.Sin(a));
-                return new GunGrip { C = centre + u * t, Up = u, R = r, SupZ = supZ, SupY = supY };
+                return new GunGrip { C = centre + u * t, Up = u, R = r, D = d > 0f ? d : r, SupZ = supZ, SupY = supY };
             }
             switch (it)
             {
-                case Item.Pistol: return G(new Vector3(0f, -0.06f, -0.01f), -12f, 0.021f, 0.026f, 0.15f, 0f);
-                case Item.Revolver: return G(new Vector3(0f, -0.05f, -0.07f), -18f, 0.016f, 0.024f, 0.15f, 0.01f);
+                // (the handguns' grips are deeper front to back than they're wide: d, so the fingers reach round the front)
+                case Item.Pistol: return G(new Vector3(0f, -0.06f, -0.01f), -12f, 0.012f, 0.026f, 0.15f, 0f, 0.031f);
+                case Item.Revolver: return G(new Vector3(0f, -0.05f, -0.07f), -18f, -0.004f, 0.024f, 0.15f, 0.01f, 0.029f);
+                case Item.AlienGun: return G(new Vector3(0f, -0.05f, -0.06f), -16f, 0.012f, 0.025f, 0.15f, 0.01f, 0.029f);
                 case Item.Shotgun: return G(new Vector3(0f, -0.08f, -0.02f), -15f, 0.021f, 0.024f, 0.2f, -0.03f);
                 case Item.Sniper: return G(new Vector3(0f, -0.07f, 0.02f), -15f, 0.01f, 0.021f, 0.18f, -0.03f);
                 case Item.PortalGun: return G(new Vector3(0f, -0.07f, -0.05f), 0f, -0.005f, 0.027f, 0.19f, -0.02f);
@@ -429,7 +432,7 @@ namespace RockGame
             var fs = s_Fingers[(int)g.Fingers];
             var ts = s_Thumbs[(int)g.Thumb];
             into.Pos = g.Pos; into.Rot = g.Rot; into.ElbowK = g.ElbowK; into.Thumb = ts.Base;
-            for (int d = 0; d < 4; d++)
+            for (int d = 0; d < FingerCount; d++)
             {
                 into.Spread[d] = fs.Spread[d];
                 for (int j = 0; j < 3; j++) into.A[d * 3 + j] = d == 0 && g.Trigger ? s_TriggerMin[j] : fs.Min[d * 3 + j];
@@ -468,7 +471,7 @@ namespace RockGame
             }
             if (s_Near.Count > 0)
             {
-                for (int d = 0; d < 4; d++)
+                for (int d = 0; d < FingerCount; d++)
                 {
                     bool trig = d == 0 && g.Trigger;
                     if (!fs.Solve && !trig) continue;
@@ -513,7 +516,7 @@ namespace RockGame
             m_Extra.Clear();
             var arm = right ? m_R : m_L;
             float s = Mathf.Max(1e-4f, space.lossyScale.x);
-            for (int d = 0; d < 4; d++)
+            for (int d = 0; d < FingerCount; d++)
             {
                 Chain(d, p.A[d * 3], p.A[d * 3 + 1], p.A[d * 3 + 2], p.Spread[d], p.Thumb);
                 var w = s_Caps;
@@ -532,7 +535,7 @@ namespace RockGame
         static void Squeeze(JointPose p, float deg)
         {
             if (deg == 0f) return;
-            for (int d = 0; d < 4; d++) { p.A[d * 3] += deg * 0.4f; p.A[d * 3 + 1] += deg; p.A[d * 3 + 2] += deg * 0.7f; }
+            for (int d = 0; d < FingerCount; d++) { p.A[d * 3] += deg * 0.4f; p.A[d * 3 + 1] += deg; p.A[d * 3 + 2] += deg * 0.7f; }
             p.A[13] += deg * 0.5f; p.A[14] += deg * 0.6f;
         }
 
@@ -542,7 +545,7 @@ namespace RockGame
             k = Mathf.Clamp01(k);
             var o = s_Fingers[(int)Fp.Open];
             var ot = s_Thumbs[(int)Tp.Open];
-            for (int d = 0; d < 4; d++)
+            for (int d = 0; d < FingerCount; d++)
             {
                 for (int j = 0; j < 3; j++) p.A[d * 3 + j] = Mathf.Lerp(p.A[d * 3 + j], o.Min[d * 3 + j], k);
                 p.Spread[d] = Mathf.Lerp(p.Spread[d], o.Spread[d], k);
@@ -555,7 +558,7 @@ namespace RockGame
         void Breathe(JointPose p, float phase)
         {
             float t = Now * 1.5f + phase;
-            for (int d = 0; d < 4; d++)
+            for (int d = 0; d < FingerCount; d++)
             {
                 float w = Mathf.Sin(t + d * 0.8f);
                 p.A[d * 3] += w * 0.6f; p.A[d * 3 + 1] += w * 1.3f; p.A[d * 3 + 2] += w * 0.8f;
@@ -617,7 +620,7 @@ namespace RockGame
                     One(m_TL, PalmOn(false, bs, bt, nL * rad, nL, new Vector3(0.2f, 0.5f, 1f)).With(Fp.Cup, Tp.Spread), false, 0);
                     float throwK = Mathf.Clamp01((now - m_ThrowStart) / 0.3f);
                     if (throwK < 1f) openR = openL = Smooth((throwK - 0.3f) / 0.35f);
-                    for (int d = 0; d < 4; d++) { float sp = (d - 1.2f) * 4f; m_TR.Spread[d] += sp; m_TL.Spread[d] += sp; }
+                    for (int d = 0; d < FingerCount; d++) { float sp = (d - 1f) * 5f; m_TR.Spread[d] += sp; m_TL.Spread[d] += sp; }
                 }
             }
             else
@@ -639,10 +642,14 @@ namespace RockGame
                     case Item.Hammer:
                     case Item.Pickaxe:
                     case Item.TreeCracker:
+                    case Item.KnockStick:
+                    case Item.KnockStick1:
+                    case Item.TreeBreaker:
                     {
                         // a fist round the handle (a little way up it, so it's well in view), thumb on top, the knuckles
                         // facing the way the head points
-                        float r = s.Item == Item.TreeCracker ? 0.035f : s.Item == Item.Hatchet || s.Item == Item.BetterHatchet || s.Item == Item.Hammer ? 0.03f : 0.027f;
+                        float r = s.Item == Item.TreeCracker || s.Item == Item.TreeBreaker ? 0.033f : s.Item == Item.Hatchet || s.Item == Item.BetterHatchet || s.Item == Item.Hammer || s.Item == Item.KnockStick1 ? 0.03f
+                            : s.Item == Item.KnockStick ? 0.022f : 0.027f;
                         var gt = Grip(true, hold, H, new Vector3(0f, 0.1f, 0f), down, fwd, r);
                         gt.ElbowK = 0.3f;
                         One(m_TR, gt, true, 0);
@@ -651,8 +658,9 @@ namespace RockGame
                         break;
                     }
                     case Item.Sword:
-                        // round the leather grip, the index just under the crossguard
-                        One(m_TR, Grip(true, hold, H, new Vector3(0f, 0.085f, 0f), down, fwd, 0.024f), true, 0);
+                    case Item.Lightsaber:
+                        // round the leather grip, the index just under the crossguard (the lightsaber: round the middle of its hilt)
+                        One(m_TR, s.Item == Item.Lightsaber ? Grip(true, hold, H, new Vector3(0f, 0.005f, 0f), down, fwd, 0.031f) : Grip(true, hold, H, new Vector3(0f, 0.085f, 0f), down, fwd, 0.024f), true, 0);
                         One(m_TL, LeftFree(), false, 0);
                         sqR = 10f * strike;
                         break;
@@ -675,8 +683,8 @@ namespace RockGame
                     }
                     case Item.Bow:
                     {
-                        // the bow hand's fist round the grip, the arrow resting on top of it; the string hand's first three
-                        // fingers hooked on the string (index above the arrow), the little finger tucked - and springing open
+                        // the bow hand's fist round the grip, the arrow resting on top of it; the string hand's three fingers
+                        // hooked on the string (index above the arrow) - and springing open
                         // when the arrow goes
                         float de = Smooth(s.Draw);
                         var gl = Grip(false, hold, H, new Vector3(0f, 0.012f, 0.06f), down, new Vector3(0.25f, 0f, 1f), 0.026f);
@@ -696,6 +704,7 @@ namespace RockGame
                     case Item.Sniper:
                     case Item.Pistol:
                     case Item.Revolver:
+                    case Item.AlienGun:
                     case Item.Shotgun:
                     case Item.PortalGun:
                     case Item.RocketLauncher:
@@ -754,17 +763,20 @@ namespace RockGame
             var H = m_ItemHolder;
             var hold = m_IS.List.Count > 0 ? m_IS : null;
             var gg = Gun(s.Item);
-            // the firing hand round the grip, the index finger on the trigger
-            var gr = Grip(true, hold, H, gg.C, -gg.Up, Vector3.forward, gg.R);
+            // the firing hand round the grip, the index finger on the trigger (the grip under the palm far enough back for the
+            // fingers to wrap round its front)
+            float hs = H.lossyScale.x;
+            var gr = GripAt(true, hold, H, gg.C, -gg.Up, Vector3.forward,
+                new Vector3(0f, -(PalmHalf + gg.R * hs / HandScale), Mathf.Min(GripZ, KnuckleZ - (gg.D * hs + 0.007f) / HandScale)));
             gr.Trigger = true;
             One(m_TR, gr, true, 0);
-            if (s.Item == Item.Pistol || s.Item == Item.Revolver)
+            if (s.Item == Item.Pistol || s.Item == Item.Revolver || s.Item == Item.AlienGun)
             {
                 // two hands round the grip: the left's fingers wrap over the right's (the revolver: only while aiming down
                 // the sights; reloading, the left thumbs rounds into the drum)
                 var cup = Grip(false, hold, H, gg.C + new Vector3(0f, -0.012f, 0.014f), -gg.Up, Vector3.forward, gg.R + 0.016f);
                 cup.Extra = FingerCaps(m_TR, true, H);
-                if (s.Item == Item.Pistol) { One(m_TL, cup, false, 0); return; }
+                if (s.Item == Item.Pistol || s.Item == Item.AlienGun) { One(m_TL, cup, false, 0); return; }
                 Blend(m_TL, LeftFree(), cup, Smooth(m_AimK), false);
                 if (s.Reload >= 0f)
                 {
@@ -813,6 +825,21 @@ namespace RockGame
             {
                 case Item.Meat: R = Grip(true, hold, H, new Vector3(0f, 0.05f, -0.13f), Vector3.back, Vector3.left, 0.0175f, 35f); break; // by the bone, palm up
                 case Item.InvisPotion: R = Grip(true, hold, H, new Vector3(0f, 0.08f, 0f), down, fwd, 0.075f); break;           // round the round flask
+                case Item.ShieldPotion: R = Grip(true, hold, H, new Vector3(0f, 0.08f, 0f), down, fwd, 0.07f); break;
+                case Item.BearJuice: R = Grip(true, hold, H, new Vector3(0f, 0.1f, 0f), down, fwd, 0.062f); break;             // round the jar
+                case Item.AntGun: case Item.SlowGun:
+                    // like a pistol: round the grip under the back, the index on the trigger
+                    R = Grip(true, hold, H, new Vector3(0f, -0.015f, -0.004f), new Vector3(0f, -0.966f, 0.259f), fwd, item == Item.SlowGun ? 0.028f : 0.025f);
+                    R.Trigger = true;
+                    break;
+                case Item.C4:
+                    // a brick: the hand over the top, fingers down its far side, the thumb on the near one
+                    R = PalmOn(true, hold, H, new Vector3(b.center.x + b.extents.x * 0.2f, b.max.y, b.center.z - b.extents.z * 0.15f), Vector3.up, new Vector3(-1f, 0f, 0.4f)).With(Fp.Support, Tp.Support);
+                    break;
+                case Item.Scribble: case Item.DrawMonster:
+                    // the notebook / the sheet by its bottom edge, like the building plan: palm under, fingers up its far face
+                    R = Grip(true, hold, H, new Vector3(b.center.x, b.min.y + 0.03f, b.center.z), Vector3.left, fwd, Mathf.Max(0.008f, b.extents.z)).With(Fp.Paper, Tp.Wrap);
+                    break;
                 case Item.SpeedJuice: R = Grip(true, hold, H, new Vector3(0f, 0.09f, 0f), down, fwd, 0.043f); break;            // round the can
                 case Item.DeathWand: R = Grip(true, hold, H, Vector3.zero, down, fwd, 0.0225f); sq += 6f * Mathf.Clamp01(Recoil(0.5f)); break;
                 case Item.GiantStaff: R = Grip(true, hold, H, new Vector3(0f, -0.05f, 0f), down, fwd, 0.02f); break;
@@ -823,10 +850,14 @@ namespace RockGame
                     R = Grip(true, hold, H, new Vector3(0f, -0.082f, 0.155f), Vector3.left, new Vector3(0f, 0.5f, 0.866f), 0.01f).With(Fp.Paper, Tp.Wrap);
                     break;
                 case Item.Berry:
+                case Item.HealBerry:
                 case Item.EnderPearl:
                     R = SupportUnder(true, hold, new Vector3(b.center.x, b.min.y, b.center.z - b.extents.z * 0.2f)).With(Fp.Cup, Tp.Support);
                     break;
                 default:
+                    // a stick, wand, staff, rolled map, flare...: a fist round its handle; anything big in both hands; the
+                    // rest sitting on the palm
+                    if (HandleAt(hold, out float gy, out float gr)) { R = Grip(true, hold, H, new Vector3(0f, gy, 0f), down, fwd, gr); break; }
                     both = b.size.x * H.lossyScale.x > 0.17f;
                     R = both ? Side(true, hold, b) : SupportUnder(true, hold, new Vector3(b.center.x, b.min.y, b.center.z - b.extents.z * 0.2f));
                     break;
@@ -837,6 +868,59 @@ namespace RockGame
             m_L.localPosition = m_Root.InverseTransformPoint(H.TransformPoint(new Vector3(b.min.x, b.min.y + b.size.y * 0.3f, b.center.z)));
             m_L.localRotation = Mirror(m_R.localRotation);
             One(m_TL, Side(false, hold, b), false, 0);
+        }
+
+        /// <summary>Is there a handle where the item's held (every model is built along +Y with its grip at the origin)? Yes
+        /// when it's no thicker than a fist closes round from the bottom up past where the fist goes, and carries on up out of
+        /// it: a stick, a wand, a staff, a rolled-up map, a flare. gy: where the fist goes on it; r: its thickness there.</summary>
+        static bool HandleAt(ShapeSet hold, out float gy, out float r)
+        {
+            gy = r = 0f;
+            if (hold == null || hold.List.Count == 0) return false;
+            // (worked out once per model)
+            if (s_HandleFor == hold.Version) { gy = s_HandleY; r = s_HandleR; return s_Handle; }
+            s_HandleFor = hold.Version;
+            s_Handle = FindHandle(hold, out s_HandleY, out s_HandleR);
+            gy = s_HandleY; r = s_HandleR;
+            return s_Handle;
+        }
+        static int s_HandleFor = -1;
+        static bool s_Handle;
+        static float s_HandleY, s_HandleR;
+
+        static bool FindHandle(ShapeSet hold, out float gy, out float r)
+        {
+            gy = r = 0f;
+            var b = hold.Box;
+            float lo = Mathf.Max(b.min.y + 0.008f, -0.03f);
+            float widest = 0f;
+            for (int k = 0; k <= 4; k++)
+            {
+                float w = HalfWidth(hold, new Vector3(0f, lo + k * 0.016f, 0f), b);
+                if (w < 0f || w > 0.042f) return false;
+                widest = Mathf.Max(widest, w);
+            }
+            gy = lo + 0.032f;
+            r = widest + 0.004f;
+            return b.max.y > gy + 0.07f;
+        }
+
+        static readonly Vector3[] s_Sides = { Vector3.right, Vector3.left, Vector3.forward, Vector3.back };
+
+        /// <summary>How far the item reaches out from its own axis (the vertical line through c) at c's height, from the four
+        /// sides; -1 if there's nothing there.</summary>
+        static float HalfWidth(ShapeSet set, Vector3 c, Bounds b)
+        {
+            float reach = Mathf.Max(b.extents.x, b.extents.z) * 2f + 0.1f;
+            float most = 0f;
+            foreach (var dir in s_Sides)
+            {
+                var from = c + dir * reach;
+                var hit = Trace(set, from, -dir);
+                if ((hit - from).sqrMagnitude < 1e-10f) return -1f; // (missed)
+                most = Mathf.Max(most, Vector3.Dot(hit - c, dir));
+            }
+            return most;
         }
 
         /// <summary>A big thing carried in both hands: each palm flat on its side, low down, fingers along it to the front.</summary>

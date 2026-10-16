@@ -19,9 +19,10 @@ namespace RockGame
         {
             if (m_PistolReloadStart >= 0) return;
             var st = m_Net.HeldStack;
-            if (Binds.Down(Bind.Rotate) && st.Data < Cfg.GunMag(gun)) { StartPistolReload(gun); return; }
+            bool reloads = Cfg.GunReloads(gun); // (the alien gun never reloads: it breaks after its last shot)
+            if (reloads && Binds.Down(Bind.Rotate) && st.Data < Cfg.GunMag(gun)) { StartPistolReload(gun); return; }
             if (!Binds.Down(Bind.Attack) || Time.time < m_NextPistolShot) return;
-            if (st.Data <= 0) { StartPistolReload(gun); return; }
+            if (st.Data <= 0) { if (reloads) StartPistolReload(gun); return; }
             m_NextPistolShot = Time.time + Cfg.GunFireRate(gun);
             // hitscan: whatever the crosshair is on, right now
             var ray = CenterRay();
@@ -41,10 +42,11 @@ namespace RockGame
             PortalPass.Tracers(ray.origin + ray.direction * 0.5f - Vector3.up * 0.15f, Fx.Gun.Sniper);
             // the shot: its own crack in your ears and a flash at the muzzle; the revolver bucks (the view model snaps up
             // at the wrist) with a little punch out of the view
-            Fx.Gunshot(gun == Item.Revolver ? Fx.Gun.Revolver : Fx.Gun.Pistol, m_VM.Muzzle(), ray.direction, true);
+            bool big = gun == Item.Revolver || gun == Item.AlienGun;
+            Fx.Gunshot(big ? Fx.Gun.Revolver : Fx.Gun.Pistol, m_VM.Muzzle(), ray.direction, true);
             m_VM.Use();
-            Fx.Kick(gun == Item.Revolver ? 3.6f : 2f);
-            if (gun == Item.Revolver) { Fx.Punch(1.8f); Fx.Shake(0.12f); }
+            Fx.Kick(big ? 3.6f : 2f);
+            if (big) { Fx.Punch(1.8f); Fx.Shake(0.12f); }
         }
 
         void StartPistolReload(Item gun)
@@ -62,7 +64,7 @@ namespace RockGame
 
         void TickPistolReload(Item held)
         {
-            if (!Cfg.IsGun(held) || m_Net.Dead.Value || (m_PistolReloadStart >= 0 && held != m_PistolReloadItem)) { m_PistolReloadStart = -1f; return; }
+            if (!Cfg.IsGun(held) || !Cfg.GunReloads(held) || m_Net.Dead.Value || (m_PistolReloadStart >= 0 && held != m_PistolReloadItem)) { m_PistolReloadStart = -1f; return; }
             if (m_PistolReloadStart < 0)
             {
                 // empty and there's ammo: it reloads by itself

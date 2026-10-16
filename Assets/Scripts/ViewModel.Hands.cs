@@ -4,17 +4,16 @@ using UnityEngine;
 namespace RockGame
 {
     /// <summary>
-    /// The first-person arms (Settings > Display > Alien hands; off brings back the old square ones), built from scratch
-    /// as ONE skinned mesh per arm like a real FPS rig: the forearm, the wrist, a broad palm, four fingers and a thumb all
-    /// flow into each other (no separate tubes with seams at every joint), and each knuckle bends the skin round it. Your
-    /// alien's skin in your team's colour, sturdy stylised proportions (thick, rounded fingers with knuckle bumps and
-    /// soft pads, a domed back of the hand, a thumb with a fleshy base), and a dark suit sleeve with a cuff in your team's
-    /// colour covering the forearm, so the arms come in from the bottom corners of the screen cleanly.
+    /// The first-person arms (Settings > Display > Alien hands; off brings back the old square ones): your alien's own bare
+    /// arms - the aliens are naked - with its four-digit hands (three fingers and a thumb, like the player model's), but
+    /// with shorter, more human fingers so they hold things naturally. Each arm is ONE smoothly shaded skinned mesh: the
+    /// slender forearm, the wrist, the palm, the fingers and the thumb all flow into each other, and the skin bends round
+    /// every knuckle and over the wrist, so the hands read as seamless and stay out of the way. In your alien's skin colour
+    /// (your team's, softened towards its grey: HandColorHook.AlienShade).
     ///
     /// The skeleton: the hand (scaled HandScale), each finger's three joints and the thumb's (one transform each, so they
     /// curl from their own knuckles - ViewModel.Fingers.cs poses them), and the forearm (from the wrist back towards the
-    /// elbow; the sleeve rides on it). The skin is weighted half and half across every joint, and over a few centimetres at
-    /// the wrist, so bends stay smooth. Settings > Display > SHADING smooths it (off: flat low-poly facets).
+    /// elbow). Digits 0-2 are the fingers (index, middle, outer), 4 the thumb; 3 is unused.
     ///
     /// The hand's own frame (the RIGHT hand; the left is its mirror image): the wrist at the origin, the fingers along +Z,
     /// the palm facing -Y, the thumb on the -X side. A finger curls with +X rotations (towards the palm), spreads with Y.
@@ -22,44 +21,48 @@ namespace RockGame
     /// </summary>
     public partial class ViewModel
     {
+        /// <summary>The fingers (digits 0..FingerCount-1); the thumb is digit 4.</summary>
+        const int FingerCount = 3;
+
         // ---- measurements (metres, in the hand's own size - it's drawn HandScale bigger) ----
         /// <summary>Half the palm's thickness.</summary>
-        const float PalmHalf = 0.0145f;
+        const float PalmHalf = 0.013f;
         /// <summary>How far in front of the wrist a handle held in the fist runs (under the palm's end, so the fingers wrap it from the knuckles).</summary>
-        const float GripZ = 0.063f;
+        const float GripZ = 0.062f;
+        /// <summary>About where the fingers' knuckles are, in front of the wrist.</summary>
+        const float KnuckleZ = 0.077f;
         /// <summary>Where each forearm heads, in the view (right hand; the left's is its mirror): down by your side, so the
         /// arms come in from the bottom corners of the screen like an FPS rig's instead of reaching across it.</summary>
         static readonly Vector3 k_ElbowAnchor = new Vector3(0.36f, -0.66f, -0.02f);
-        /// <summary>The hand (everything from the wrist out, measured below) is drawn this much bigger, so it reads at
-        /// first-person distance.</summary>
-        const float HandScale = 1.3f;
+        /// <summary>The hand (everything from the wrist out, measured below) is drawn this much bigger.</summary>
+        const float HandScale = 1.2f;
 
-        /// <summary>The knuckle (MCP) of each finger - index, middle, ring, little - and the thumb's root deep in the palm.</summary>
+        /// <summary>The knuckle of each finger - index, middle, outer - (slot 3 unused) and the thumb's root deep in the palm.</summary>
         static readonly Vector3[] s_Base =
         {
-            new Vector3(-0.0262f, 0.0010f, 0.0745f),
-            new Vector3(-0.0088f, 0.0016f, 0.0785f),
-            new Vector3(0.0088f, 0.0010f, 0.0760f),
-            new Vector3(0.0250f, -0.0010f, 0.0700f),
-            new Vector3(-0.0230f, -0.0080f, 0.0170f),
+            new Vector3(-0.0186f, 0.0008f, 0.0765f),
+            new Vector3(0.0000f, 0.0012f, 0.0800f),
+            new Vector3(0.0186f, 0.0000f, 0.0760f),
+            new Vector3(0.0186f, 0.0000f, 0.0760f),
+            new Vector3(-0.0205f, -0.0075f, 0.0170f),
         };
-        /// <summary>Each digit's three bones (stylised: a little shorter and chunkier than real fingers).</summary>
+        /// <summary>Each digit's three bones: human proportions (the alien's own are long and claw-like).</summary>
         static readonly float[] s_Len =
         {
-            0.035f, 0.022f, 0.018f,
-            0.038f, 0.024f, 0.019f,
-            0.036f, 0.023f, 0.018f,
-            0.029f, 0.018f, 0.016f,
-            0.032f, 0.027f, 0.022f, // (the thumb: its fleshy base, then two pieces)
+            0.034f, 0.021f, 0.017f,
+            0.037f, 0.023f, 0.018f,
+            0.034f, 0.021f, 0.017f,
+            0.034f, 0.021f, 0.017f,
+            0.030f, 0.026f, 0.021f, // (the thumb: its fleshy base, then two pieces)
         };
         /// <summary>Each digit's radius at its root, its two joints and its tip.</summary>
         static readonly float[] s_Rad =
         {
-            0.0099f, 0.0091f, 0.0083f, 0.0079f,
-            0.0102f, 0.0094f, 0.0085f, 0.0081f,
-            0.0097f, 0.0089f, 0.0081f, 0.0077f,
-            0.0086f, 0.0079f, 0.0072f, 0.0068f,
-            0.0150f, 0.0118f, 0.0103f, 0.0097f,
+            0.0084f, 0.0078f, 0.0071f, 0.0067f,
+            0.0087f, 0.0080f, 0.0073f, 0.0069f,
+            0.0083f, 0.0077f, 0.0070f, 0.0066f,
+            0.0083f, 0.0077f, 0.0070f, 0.0066f,
+            0.0135f, 0.0103f, 0.0090f, 0.0085f,
         };
         static float Len(int d, int j) => s_Len[d * 3 + j];
         static float Rad(int d, int j) => s_Rad[d * 4 + j];
@@ -68,7 +71,7 @@ namespace RockGame
         {
             public bool Right;
             public Transform Root, Hand, Forearm;
-            /// <summary>[digit, joint]: 0-3 the fingers (index..little), 4 the thumb; joint 0 is the knuckle.</summary>
+            /// <summary>[digit, joint]: 0-2 the fingers (index, middle, outer), 4 the thumb (3: none); joint 0 is the knuckle.</summary>
             public readonly Transform[,] J = new Transform[5, 3];
         }
 
@@ -82,8 +85,10 @@ namespace RockGame
             return t;
         }
 
-        /// <summary>Builds the arm under `arm` (hidden while the square hands are picked): its skeleton, the skinned skin
-        /// on it, and the sleeve and cuff on the forearm.</summary>
+        /// <summary>Every digit there is: the fingers, then the thumb.</summary>
+        static readonly int[] s_Digits = { 0, 1, 2, 4 };
+
+        /// <summary>Builds the arm under `arm` (hidden while the square hands are picked): its skeleton and the skin on it.</summary>
         static AlienArm BuildAlienArm(Transform arm, HandColorHook hook, bool right)
         {
             float sx = right ? 1f : -1f;
@@ -91,7 +96,7 @@ namespace RockGame
             a.Root = Node(arm, "alien", Vector3.zero);
             a.Hand = Node(a.Root, "hand", Vector3.zero);
             a.Hand.localScale = Vector3.one * HandScale;
-            for (int d = 0; d < 5; d++)
+            foreach (int d in s_Digits)
             {
                 var j0 = Node(a.Hand, d < 4 ? "finger" + d : "thumb", new Vector3(s_Base[d].x * sx, s_Base[d].y, s_Base[d].z));
                 var j1 = Node(j0, "j1", new Vector3(0f, 0f, Len(d, 0)));
@@ -101,10 +106,10 @@ namespace RockGame
             a.Forearm = Node(a.Root, "forearm", Vector3.zero);
 
             // the skin: one mesh on the whole skeleton (bound in this rest pose: everything straight, the forearm behind the wrist)
-            var bones = new Transform[2 + 15];
+            var bones = new Transform[BoneCount];
             bones[BoneHand] = a.Hand;
             bones[BoneArm] = a.Forearm;
-            for (int d = 0; d < 5; d++) for (int j = 0; j < 3; j++) bones[BoneJ(d, j)] = a.J[d, j];
+            foreach (int d in s_Digits) for (int j = 0; j < 3; j++) bones[BoneJ(d, j)] = a.J[d, j];
             var skin = new GameObject("skin");
             skin.transform.SetParent(a.Root, false);
             var smr = skin.AddComponent<SkinnedMeshRenderer>();
@@ -121,12 +126,6 @@ namespace RockGame
             smr.quality = SkinQuality.Bone2;
             smr.updateWhenOffscreen = true; // (it swings all over the view: never culled on a stale box)
             hook.Track(skin, HandColorHook.AlienSkin);
-
-            // the sleeve and its cuff, riding on the forearm (slightly oval like the arm in it)
-            var sleeve = Art.Part(a.Forearm, SleeveMesh(), Color.white, Vector3.zero, new Vector3(1.08f, 0.93f, 1f), Vector3.zero, false, null, "sleeve");
-            hook.Track(sleeve, HandColorHook.Sleeve);
-            var cuff = Art.Part(a.Forearm, CuffMesh(), Color.white, Vector3.zero, new Vector3(1.08f, 0.93f, 1f), Vector3.zero, false, null, "cuff");
-            hook.Track(cuff, HandColorHook.Cuff);
             return a;
         }
 
@@ -139,7 +138,7 @@ namespace RockGame
             float sx = a.Right ? 1f : -1f;
             a.Hand.localPosition = p.Pos;
             a.Hand.localRotation = p.Rot;
-            for (int d = 0; d < 4; d++)
+            for (int d = 0; d < FingerCount; d++)
             {
                 a.J[d, 0].localRotation = Quaternion.Euler(0f, p.Spread[d] * sx, 0f) * Quaternion.Euler(p.A[d * 3], 0f, 0f);
                 a.J[d, 1].localRotation = Quaternion.Euler(p.A[d * 3 + 1], 0f, 0f);
@@ -163,10 +162,11 @@ namespace RockGame
             a.Forearm.localRotation = Quaternion.LookRotation(-back, yh);
         }
 
-        // ======== the meshes ========
+        // ======== the mesh ========
 
-        const int BoneHand = 0, BoneArm = 1;
-        static int BoneJ(int d, int j) => 2 + d * 3 + j;
+        const int BoneHand = 0, BoneArm = 1, BoneCount = 2 + 4 * 3;
+        /// <summary>A digit's joint's bone (the thumb's after the three fingers').</summary>
+        static int BoneJ(int d, int j) => 2 + (d == 4 ? 3 : d) * 3 + j;
 
         /// <summary>A vertex's two bones: all of a, or blended towards b by t.</summary>
         static BoneWeight BW(int a, int b = -1, float t = 0f)
@@ -179,8 +179,8 @@ namespace RockGame
                 : new BoneWeight { boneIndex0 = b, weight0 = t, boneIndex1 = a, weight1 = 1f - t };
         }
 
-        /// <summary>A mesh being built: flat triangles (each its own three corners, so it's lit as low-poly facets until
-        /// SHADING smooths it), each corner with its bones.</summary>
+        /// <summary>A mesh being built: triangles, each corner with its bones; made with smooth normals (averaged over every
+        /// corner at the same place, across the pieces too), so the whole arm is shaded as one seamless surface.</summary>
         sealed class SkinBuild
         {
             public readonly List<Vector3> V = new List<Vector3>();
@@ -225,7 +225,7 @@ namespace RockGame
                 m.SetVertices(v);
                 m.SetTriangles(t, 0);
                 m.boneWeights = W.ToArray();
-                m.RecalculateNormals();
+                m.normals = SmoothShade.SmoothNormals(v.ToArray(), t.ToArray());
                 m.RecalculateBounds();
                 return m;
             }
@@ -258,89 +258,88 @@ namespace RockGame
             if (s_Skins[idx] != null) return s_Skins[idx];
             var b = new SkinBuild();
             Palm(b);
-            for (int d = 0; d < 5; d++) Digit(b, d);
+            foreach (int d in s_Digits) Digit(b, d);
             var m = b.Make("alien arm skin", !right);
             s_Skins[idx] = m;
             return m;
         }
 
-        /// <summary>The forearm, wrist and palm: one loft from inside the sleeve to the knuckles, rounded-box sections
-        /// (round at the wrist, wide and flat over the palm, the back of the hand domed and the knuckle line curved), weighted
-        /// from the forearm over to the hand across the wrist.</summary>
+        /// <summary>The bare forearm, the wrist and the palm: one loft from off the screen to the knuckles - the alien's slender
+        /// forearm, a narrow wrist, then the palm widening and flattening (its back gently domed, the knuckle line curved) -
+        /// weighted from the forearm over to the hand across the wrist.</summary>
         static void Palm(SkinBuild b)
         {
-            const int sides = 16;
+            const int sides = 18;
             var rings = new List<Vector3[]>();
             var ws = new List<BoneWeight>();
-            // inside the sleeve to the wrist (metres): (z, half width, half thickness, the hand's share)
+            // the forearm to the wrist (metres): (z, half width, half thickness, the hand's share)
             var arm = new (float z, float w, float t, float h)[]
             {
-                (-0.14f, 0.036f, 0.029f, 0f), (-0.09f, 0.034f, 0.027f, 0f), (-0.05f, 0.0322f, 0.0245f, 0f),
-                (-0.03f, 0.031f, 0.0232f, 0.15f), (-0.014f, 0.0303f, 0.0222f, 0.35f), (0f, 0.0302f, 0.0212f, 0.55f),
+                (-0.9f, 0.036f, 0.031f, 0f), (-0.55f, 0.034f, 0.029f, 0f), (-0.32f, 0.0345f, 0.0285f, 0f), (-0.2f, 0.0335f, 0.027f, 0f),
+                (-0.12f, 0.0305f, 0.0245f, 0f), (-0.07f, 0.0278f, 0.0215f, 0f), (-0.035f, 0.0262f, 0.0196f, 0.12f),
+                (-0.016f, 0.0256f, 0.0188f, 0.32f), (0f, 0.0254f, 0.0184f, 0.55f),
             };
             foreach (var r in arm)
             {
-                rings.Add(Ring(new Vector3(0f, 0f, r.z), Vector3.right, Vector3.up, r.w, r.t, sides, 0.8f));
+                rings.Add(Ring(new Vector3(0f, 0f, r.z), Vector3.right, Vector3.up, r.w, r.t, sides, 0.85f));
                 ws.Add(BW(BoneArm, BoneHand, r.h));
             }
             // the hand (its own units, drawn HandScale bigger)
-            float W(float z) => Mathf.Lerp(0.0235f, 0.0385f, Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(z / 0.05f)));
-            float T(float z) => Mathf.Lerp(0.0162f, 0.0138f, Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(z / 0.08f)));
+            float W(float z) => Mathf.Lerp(0.0212f, 0.0318f, Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(z / 0.05f)));
+            float T(float z) => Mathf.Lerp(0.0152f, PalmHalf, Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(z / 0.06f)));
             var zs = new[] { 0.012f, 0.024f, 0.036f, 0.048f, 0.06f, 0.07f, 0.078f, 0.0845f, 0.089f };
             for (int i = 0; i < zs.Length; i++)
             {
                 float z = zs[i];
                 float w = W(z), t = T(z);
-                if (i == zs.Length - 2) { w *= 0.9f; t *= 0.84f; }
-                if (i == zs.Length - 1) { w *= 0.66f; t *= 0.55f; }
-                // the back of the hand domes; the heel of the hand is fuller underneath near the wrist
-                float heel = Mathf.Sin(Mathf.Clamp01(z / 0.05f) * Mathf.PI) * 0.18f;
-                var pts = Ring(new Vector3(0f, 0f, z), Vector3.right, Vector3.up, w, t, sides, 0.62f, 0.12f, heel);
-                // the knuckle line curves back towards the little finger and the index (the middle finger's knuckle leads)
-                float bend = Mathf.Clamp01((z - 0.055f) / 0.035f) * 0.0075f;
+                if (i == zs.Length - 2) { w *= 0.88f; t *= 0.84f; }
+                if (i == zs.Length - 1) { w *= 0.62f; t *= 0.55f; }
+                // the back of the hand domes a little; the heel of the hand is fuller underneath near the wrist
+                float heel = Mathf.Sin(Mathf.Clamp01(z / 0.05f) * Mathf.PI) * 0.15f;
+                var pts = Ring(new Vector3(0f, 0f, z), Vector3.right, Vector3.up, w, t, sides, 0.66f, 0.1f, heel);
+                // the knuckle line curves back to either side of the middle finger
+                float bend = Mathf.Clamp01((z - 0.055f) / 0.035f) * 0.0065f;
                 for (int s = 0; s < sides; s++)
                 {
                     float u = pts[s].x / Mathf.Max(1e-4f, w);
-                    float lean = u > 0f ? u * u * 1.3f : u * u * 0.8f; // (the little finger's side sits further back)
-                    pts[s] = new Vector3(pts[s].x, pts[s].y, pts[s].z - bend * lean) * HandScale;
+                    pts[s] = new Vector3(pts[s].x, pts[s].y, pts[s].z - bend * u * u) * HandScale;
                 }
                 rings.Add(pts);
                 ws.Add(BW(BoneArm, BoneHand, i == 0 ? 0.8f : 1f));
             }
-            b.Loft(rings, ws, new Vector3(0f, 0f, -0.145f), new Vector3(0f, 0f, 0.0915f * HandScale));
+            b.Loft(rings, ws, new Vector3(0f, 0f, -0.91f), new Vector3(0f, 0f, 0.0915f * HandScale));
         }
 
-        /// <summary>A finger (0-3) or the thumb (4): a rounded tube from inside the palm to its pad, swelling a little at
-        /// each knuckle, thinner between, the tip a soft dome; each joint's ring shared half and half by the bones either
-        /// side of it so it bends smoothly.</summary>
+        /// <summary>A finger (0-2) or the thumb (4): a rounded tube from inside the palm to its pad, a touch fuller at each
+        /// knuckle, the tip a soft dome; each joint's ring shared half and half by the bones either side so it bends smoothly.</summary>
         static void Digit(SkinBuild b, int d)
         {
-            const int sides = 10;
+            const int sides = 12;
             bool thumb = d == 4;
             float L0 = Len(d, 0), L1 = Len(d, 1), L2 = Len(d, 2);
             float r0 = Rad(d, 0), r1 = Rad(d, 1), r2 = Rad(d, 2), r3 = Rad(d, 3);
             int j0 = BoneJ(d, 0), j1 = BoneJ(d, 1), j2 = BoneJ(d, 2);
-            // (z along the digit from its root, radius, knuckle bump, the bones)
+            // (z along the digit from its root, radius, knuckle swell, the bones)
             var list = new List<(float z, float r, float bump, BoneWeight w)>
             {
-                (thumb ? -0.012f : -0.016f, r0 * (thumb ? 0.9f : 1.12f), 0f, BW(BoneHand)),
-                (-0.006f, r0 * 1.1f, 0f, BW(BoneHand)),
-                (0f, r0 * 1.08f, thumb ? 0f : 0.14f, BW(BoneHand, j0, 0.5f)),
-                (0.006f, r0, 0.05f, BW(j0)),
-                (L0 * 0.55f, Mathf.Lerp(r0, r1, 0.55f) * (thumb ? 1f : 0.94f), 0f, BW(j0)),
-                (L0 - 0.0045f, r1 * 0.98f, 0f, BW(j0)),
-                (L0, r1 * 1.07f, 0.12f, BW(j0, j1, 0.5f)),
-                (L0 + 0.0045f, r1, 0.03f, BW(j1)),
-                (L0 + L1 * 0.5f, Mathf.Lerp(r1, r2, 0.5f) * 0.94f, 0f, BW(j1)),
-                (L0 + L1 - 0.004f, r2 * 0.98f, 0f, BW(j1)),
-                (L0 + L1, r2 * 1.06f, 0.1f, BW(j1, j2, 0.5f)),
-                (L0 + L1 + 0.004f, r2, 0.02f, BW(j2)),
-                (L0 + L1 + L2 * 0.45f, Mathf.Lerp(r2, r3, 0.5f) * 0.97f, 0f, BW(j2)),
+                (thumb ? -0.012f : -0.016f, r0 * (thumb ? 0.9f : 1.1f), 0f, BW(BoneHand)),
+                (-0.006f, r0 * 1.08f, 0f, BW(BoneHand)),
+                (0f, r0 * 1.05f, thumb ? 0f : 0.07f, BW(BoneHand, j0, 0.5f)),
+                (0.006f, r0, 0.03f, BW(j0)),
+                (L0 * 0.55f, Mathf.Lerp(r0, r1, 0.55f) * (thumb ? 1f : 0.96f), 0f, BW(j0)),
+                (L0 - 0.0045f, r1 * 0.99f, 0f, BW(j0)),
+                (L0, r1 * 1.04f, 0.06f, BW(j0, j1, 0.5f)),
+                (L0 + 0.0045f, r1, 0.02f, BW(j1)),
+                (L0 + L1 * 0.5f, Mathf.Lerp(r1, r2, 0.5f) * 0.96f, 0f, BW(j1)),
+                (L0 + L1 - 0.004f, r2 * 0.99f, 0f, BW(j1)),
+                (L0 + L1, r2 * 1.03f, 0.05f, BW(j1, j2, 0.5f)),
+                (L0 + L1 + 0.004f, r2, 0.01f, BW(j2)),
+                (L0 + L1 + L2 * 0.45f, Mathf.Lerp(r2, r3, 0.5f) * 0.98f, 0f, BW(j2)),
             };
             float tip = L0 + L1 + L2 - r3 * 0.35f;
             list.Add((tip, r3 * 1.02f, 0f, BW(j2)));
-            list.Add((tip + r3 * 0.45f, r3 * 0.86f, 0f, BW(j2)));
-            list.Add((tip + r3 * 0.75f, r3 * 0.58f, 0f, BW(j2)));
+            list.Add((tip + r3 * 0.45f, r3 * 0.87f, 0f, BW(j2)));
+            list.Add((tip + r3 * 0.75f, r3 * 0.6f, 0f, BW(j2)));
             var root = s_Base[d];
             var rings = new List<Vector3[]>();
             var ws = new List<BoneWeight>();
@@ -349,67 +348,12 @@ namespace RockGame
                 // a little wider than deep; the pad of the tip fuller underneath
                 bool pad = e.z > tip - 0.001f;
                 var c = root + new Vector3(0f, 0f, e.z);
-                var pts = Ring(c, Vector3.right, Vector3.up, e.r * 1.04f, e.r * (thumb ? 0.9f : 0.93f), sides, 1f, e.bump, pad ? 0.12f : 0.04f);
+                var pts = Ring(c, Vector3.right, Vector3.up, e.r * 1.04f, e.r * (thumb ? 0.9f : 0.93f), sides, 1f, e.bump, pad ? 0.1f : 0.03f);
                 for (int s = 0; s < sides; s++) pts[s] *= HandScale;
                 rings.Add(pts);
                 ws.Add(e.w);
             }
             b.Loft(rings, ws, (root + new Vector3(0f, 0f, list[0].z - r0 * 0.5f)) * HandScale, (root + new Vector3(0f, 0f, tip + r3 * 0.95f)) * HandScale);
-        }
-
-        static Mesh s_Sleeve, s_Cuff;
-
-        /// <summary>The suit's sleeve (on the forearm, along -Z from just behind the wrist, off the screen): loose fabric
-        /// with a few soft folds, widening towards the elbow.</summary>
-        static Mesh SleeveMesh()
-        {
-            if (s_Sleeve != null) return s_Sleeve;
-            const int sides = 14;
-            var b = new SkinBuild();
-            var rings = new List<Vector3[]>();
-            var ws = new List<BoneWeight>();
-            var prof = new (float z, float r)[] { (-0.062f, 0.0425f), (-0.1f, 0.0445f), (-0.14f, 0.0455f), (-0.18f, 0.046f), (-0.24f, 0.0475f), (-0.32f, 0.0495f), (-0.45f, 0.052f), (-0.7f, 0.054f), (-1.05f, 0.055f) };
-            for (int i = prof.Length - 1; i >= 0; i--) // (from the elbow end forwards, so the loft faces out)
-            {
-                var pts = Ring(new Vector3(0f, 0f, prof[i].z), Vector3.right, Vector3.up, prof[i].r, prof[i].r, sides);
-                // soft folds: the fabric bunches a little, differently at each ring
-                for (int s = 0; s < sides; s++)
-                {
-                    float an = Mathf.PI * 2f * s / sides;
-                    float fold = i == 0 ? 0f : Mathf.Sin(an * 3f + i * 1.7f) * 0.05f + Mathf.Sin(an * 5f + i * 2.9f) * 0.025f;
-                    var p = pts[s];
-                    pts[s] = new Vector3(p.x * (1f + fold), p.y * (1f + fold), p.z + (i == 0 ? 0f : Mathf.Sin(an * 2f + i) * 0.006f));
-                }
-                rings.Add(pts);
-                ws.Add(BW(0));
-            }
-            b.Loft(rings, ws, new Vector3(0f, 0f, -1.06f), new Vector3(0f, 0f, -0.062f));
-            s_Sleeve = b.Make("sleeve", false);
-            return s_Sleeve;
-        }
-
-        /// <summary>The cuff at the sleeve's end (the team's colour): a thick band with a rolled lip, open at the wrist end
-        /// round the arm.</summary>
-        static Mesh CuffMesh()
-        {
-            if (s_Cuff != null) return s_Cuff;
-            const int sides = 14;
-            var b = new SkinBuild();
-            // a lathe round the arm from the inside lip, over the rolled edge, along the band and back into the sleeve
-            var prof = new (float z, float r)[] { (-0.042f, 0.0335f), (-0.036f, 0.0385f), (-0.035f, 0.0438f), (-0.039f, 0.047f), (-0.047f, 0.0477f), (-0.064f, 0.0474f), (-0.069f, 0.0442f), (-0.071f, 0.0405f) };
-            var rings = new List<Vector3[]>();
-            foreach (var p in prof) rings.Add(Ring(new Vector3(0f, 0f, p.z), Vector3.right, Vector3.up, p.r, p.r, sides));
-            var w = BW(0);
-            for (int r = 0; r + 1 < rings.Count; r++)
-                for (int s = 0; s < sides; s++)
-                {
-                    int s1 = (s + 1) % sides;
-                    // (the profile runs forwards then back: wound so its outside faces out)
-                    b.Tri(rings[r][s], w, rings[r + 1][s], w, rings[r][s1], w);
-                    b.Tri(rings[r][s1], w, rings[r + 1][s], w, rings[r + 1][s1], w);
-                }
-            s_Cuff = b.Make("cuff", false);
-            return s_Cuff;
         }
     }
 }

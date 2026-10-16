@@ -95,8 +95,7 @@ namespace RockGame
                 var deals = Cfg.EmeraldDeals;
                 var want = new (Item id, int n, int price)[]
                 {
-                    (Item.KnockStick, 1, 1), (Item.EnderPearl, 1, 2), (Item.Revolver, 1, 5), (Item.RevolverAmmo, Cfg.RevolverMag, 1),
-                    (Item.Shotgun, 1, 5), (Item.ShotgunShell, Cfg.ShotgunClip, 1), (Item.C4, 1, 3),
+                    (Item.KnockStick, 1, 1), (Item.EnderPearl, 1, 2), (Item.Lightsaber, 1, 3), (Item.AlienGun, 1, 4), (Item.C4, 1, 3),
                 };
                 bool same = deals.Count == want.Length;
                 for (int i = 0; same && i < want.Length; i++) same = deals[i].Id == want[i].id && deals[i].Count == want[i].n && deals[i].Price == want[i].price && deals[i].Extra == Item.None;
@@ -117,8 +116,14 @@ namespace RockGame
                 yield return new WaitForSeconds(0.3f);
                 var missing = new List<string>();
                 foreach (var w in want) if (me.Count(w.id) < w.n) missing.Add($"{w.id} ({me.Count(w.id)})");
-                Check(missing.Count == 0 && spent == 18 && me.Count(Item.Emerald) == 25 - spent, $"bought one of each for {spent} emeralds ({me.Count(Item.Emerald)} left){(missing.Count > 0 ? " - missing " + string.Join(", ", missing) : "")}");
-                Check(me.Count(Item.RevolverAmmo) == Cfg.RevolverMag && me.Count(Item.ShotgunShell) == Cfg.ShotgunClip, $"a clip each: {me.Count(Item.RevolverAmmo)} bullets, {me.Count(Item.ShotgunShell)} shells");
+                Check(missing.Count == 0 && spent == 13 && me.Count(Item.Emerald) == 25 - spent, $"bought one of each for {spent} emeralds ({me.Count(Item.Emerald)} left){(missing.Count > 0 ? " - missing " + string.Join(", ", missing) : "")}");
+                bool noGuns = true;
+                foreach (var d in deals) if (d.Id == Item.Revolver || d.Id == Item.RevolverAmmo || d.Id == Item.Shotgun || d.Id == Item.ShotgunShell || d.Id == Item.Pistol || d.Id == Item.Sniper) noGuns = false;
+                Check(noGuns && !Cfg.Removed(Item.AlienGun) && !Cfg.Removed(Item.Lightsaber), "no revolver, shotgun or ammo in the shop - the lightsaber and the alien gun instead");
+                int slot = -1;
+                for (int i = 0; i < me.Inv.Count; i++) if (me.Inv[i].Id == Item.AlienGun) slot = i;
+                Check(slot >= 0 && me.Inv[slot].Data == 10 && Cfg.GunMag(Item.AlienGun) == 10 && Cfg.AlienGunBodyDamage > Cfg.RevolverBodyDamage && Cfg.AlienGunHeadDamage > Cfg.RevolverHeadDamage,
+                    $"the alien gun: 10 shots ({(slot >= 0 ? me.Inv[slot].Data : -1)}), harder hitting than the revolver ({Cfg.AlienGunBodyDamage:0}/{Cfg.AlienGunHeadDamage:0} vs {Cfg.RevolverBodyDamage:0}/{Cfg.RevolverHeadDamage:0})");
             }
 
             // ---- the wall drops: the clocks start
@@ -139,6 +144,54 @@ namespace RockGame
                 pc.SetLook(look, 6f);
                 yield return new WaitForSeconds(0.6f);
                 yield return Snap("prompt16_emerald_spawner");
+            }
+
+            // ---- the alien gun: shots left bottom right, more damage than the revolver, breaks after its 10th shot
+            {
+                int enemy = (team + 1) % Mathf.Max(2, Cfg.TeamCount);
+                PlayerNet.ServerAddBot(enemy);
+                yield return new WaitForSeconds(0.8f);
+                PlayerNet bot = null;
+                foreach (var p in PlayerNet.All) if (p != null && p.Bot.Value && p.Team.Value == enemy) bot = p;
+                if (bot == null) Log("FAIL: no bot for the alien gun");
+                else
+                {
+                    foreach (var mb in bot.GetComponents<MonoBehaviour>()) if (mb.GetType().Name.StartsWith("BotBrain")) mb.enabled = false;
+                    g.TimerPaused.Value = true;
+                    if (bot.Dead.Value) bot.ServerRespawn(false);
+                    yield return new WaitForSeconds(0.3f);
+                    // the two of us out in the open, the bot a few metres in front
+                    var side = Vector3.Cross(Vector3.up, back);
+                    var spot = OnGround(back * (MapBuilder.DomeRadius + 14f) + side * 12f);
+                    float yaw = Quaternion.LookRotation(-back).eulerAngles.y;
+                    pc.LocalTeleport(spot, yaw);
+                    pc.SetLook(yaw, 0f);
+                    bot.TeleportRpc(OnGround(spot - back * 6f), yaw + 180f);
+                    yield return Hold(me, Item.AlienGun);
+                    yield return new WaitForSeconds(0.8f);
+                    Check(Hud.AmmoRect.x > Screen.width * 0.5f && Hud.AmmoRect.y > Screen.height * 0.5f && Time.frameCount - Hud.AmmoShownFrame < 5,
+                        $"holding it: its shots left in the bottom right ({Hud.AmmoRect})");
+                    yield return Snap("prompt17_aliengun");
+                    float hp0 = bot.Health.Value;
+                    var at = bot.transform.position + Vector3.up * 1.0f;
+                    var dir = (at - me.EyePos).normalized;
+                    me.FirePistolRpc(true, new Unity.Netcode.NetworkObjectReference(bot.NetworkObject), at, dir);
+                    yield return new WaitForSeconds(0.45f);
+                    float dealt = hp0 - bot.Health.Value;
+                    Check(Mathf.Abs(dealt - Cfg.AlienGunBodyDamage) < 0.5f && dealt > Cfg.RevolverBodyDamage && me.HeldStack.Data == 9,
+                        $"a body shot: {dealt:0} damage (the revolver does {Cfg.RevolverBodyDamage:0}), {me.HeldStack.Data} shots left");
+                    yield return Snap("prompt17_aliengun_9");
+                    me.ReloadPistolRpc();
+                    yield return new WaitForSeconds(0.3f);
+                    Check(me.HeldStack.Data == 9, "no reloading it");
+                    for (int i = 0; i < 9; i++)
+                    {
+                        var fwd = me.transform.forward;
+                        me.FirePistolRpc(false, default, me.EyePos + fwd * 30f + Vector3.up * 5f, fwd);
+                        yield return new WaitForSeconds(0.4f);
+                    }
+                    Check(me.Count(Item.AlienGun) == 0 && me.HeldItem != Item.AlienGun, $"after its 10th shot it's gone ({me.Count(Item.AlienGun)} left)");
+                }
             }
             Log("prompt16 done");
             Application.Quit(0);
