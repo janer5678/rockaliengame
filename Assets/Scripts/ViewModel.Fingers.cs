@@ -531,6 +531,18 @@ namespace RockGame
             return m_Extra;
         }
 
+        /// <summary>A handgun's grip: the fingers under the trigger finger closed right round it into a fist (the round
+        /// fingers are thick: closing them only until they first touch the gun left them sticking out past the grip).</summary>
+        static void WrapGrip(JointPose p)
+        {
+            for (int d = 1; d < FingerCount; d++)
+            {
+                p.A[d * 3] = Mathf.Max(p.A[d * 3], 62f);
+                p.A[d * 3 + 1] = Mathf.Max(p.A[d * 3 + 1], 88f);
+                p.A[d * 3 + 2] = Mathf.Max(p.A[d * 3 + 2], 58f);
+            }
+        }
+
         // ---- what the actions do to the fingers ----
         static void Squeeze(JointPose p, float deg)
         {
@@ -772,9 +784,10 @@ namespace RockGame
             // fingers to wrap round its front)
             float hs = H.lossyScale.x;
             var gr = GripAt(true, hold, H, gg.C, -gg.Up, Vector3.forward,
-                new Vector3(0f, -(PalmHalf + gg.R * hs / HandScale), Mathf.Min(GripZ, KnuckleZ - (gg.D * hs + 0.007f) / HandScale)));
+                new Vector3(0f, -(PalmHalf + gg.R * hs / HandScale), Mathf.Min(GripZ, KnuckleZ - (gg.D * hs + Rad(1, 0) + 0.004f) / HandScale))); // (the grip's front far enough behind the knuckles for the fingers to wrap round it)
             gr.Trigger = true;
             One(m_TR, gr, true, 0);
+            if (s.Item == Item.Pistol || s.Item == Item.Revolver || s.Item == Item.AlienGun) WrapGrip(m_TR);
             if (s.Item == Item.Pistol || s.Item == Item.Revolver || s.Item == Item.AlienGun)
             {
                 // two hands round the grip: the left's fingers wrap over the right's (the revolver: only while aiming down
@@ -836,7 +849,10 @@ namespace RockGame
                     // like a pistol: round the grip under the back, the index on the trigger
                     R = Grip(true, hold, H, new Vector3(0f, -0.015f, -0.004f), new Vector3(0f, -0.966f, 0.259f), fwd, item == Item.SlowGun ? 0.028f : 0.025f);
                     R.Trigger = true;
-                    break;
+                    One(m_TR, R, true, 0);
+                    WrapGrip(m_TR);
+                    One(m_TL, LeftFree(), false, 0);
+                    return;
                 case Item.C4:
                     // Rust's explosive charge: in both hands, a palm flat on either side (the left lets go to throw it)
                     both = throwK >= 1f;

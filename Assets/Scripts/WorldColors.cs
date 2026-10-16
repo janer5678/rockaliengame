@@ -313,29 +313,7 @@ namespace RockGame
         /// (PlayerNet.TeamTint over the alien's grey skin) - with the fingertip pads a shade darker, in the world's matte
         /// material (MatteHands; they were glossy, which read as plastic). (They used to be one dark blue for everyone.)</summary>
         public const int AlienSkin = 3, AlienPad = 4;
-        /// <summary>The arms model (ViewModel.Rig.cs): the alien skin colour over the model's own skin detail (creases,
-        /// knuckles, nails: Resources/FpsArms/AlienArmsSkin).</summary>
-        public const int AlienModel = 5;
-        static readonly Dictionary<Color, Material> s_Textured = new Dictionary<Color, Material>();
-        static Texture2D s_SkinDetail;
-        static bool s_DetailTried;
-        static Material Textured(Color c)
-        {
-            if (s_Textured.TryGetValue(c, out var m) && m) return m;
-            if (!s_DetailTried) { s_DetailTried = true; s_SkinDetail = Resources.Load<Texture2D>("FpsArms/AlienArmsSkin"); }
-            m = Art.NewMat(c);
-            m.name = "alien arms";
-            if (s_SkinDetail != null)
-            {
-                if (m.HasProperty("_BaseMap")) m.SetTexture("_BaseMap", s_SkinDetail);
-                m.mainTexture = s_SkinDetail;
-            }
-            if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.3f);
-            Art.Register(m, c);
-            s_Textured[c] = m;
-            return m;
-        }
-        static Material PartMat(Color c, int part, bool ghost) => part == AlienModel ? Textured(c) : Polished(c, ghost);
+        static Material PartMat(Color c, int part, bool ghost) => Polished(c, ghost);
         public static readonly Color AlienBlue = new Color32(26, 43, 117, 255), AlienBluePad = new Color32(20, 34, 91, 255); // (exact bytes: no rounding drift)
         static readonly Dictionary<(Color, bool), Material> s_Polished = new Dictionary<(Color, bool), Material>();
         static Shader s_Skin;
@@ -390,18 +368,19 @@ namespace RockGame
         /// <summary>The colour of one part of the hands for this team.</summary>
         public static Color Shade(Color team, int part)
         {
-            if (part == AlienSkin || part == AlienPad || part == AlienModel) return AlienShade(team, part == AlienPad);
+            if (part == AlienSkin || part == AlienPad) return AlienShade(team, part == AlienPad);
             var skin = ColorSlots.HandTint(team);
             if (part == Band) return team;
             if (part == Knuckles) { var dark = skin * 0.85f; dark.a = 1f; return dark; }
             return skin;
         }
 
-        /// <summary>The alien skin in a team's colour: the team's own colour, clearly (blue hands for blue), softened a
-        /// little towards grey so the skin's light and shade read on it; the pads a shade darker.</summary>
+        /// <summary>The alien skin in a team's colour: the same colour the alien players' bodies are (their grey skin,
+        /// about 0.39, tinted the team colour x1.6 - PlayerNet.TeamTint), so your hands match your alien; the pads a shade
+        /// darker.</summary>
         public static Color AlienShade(Color team, bool pad)
         {
-            var c = Color.Lerp(team * 0.85f, new Color(0.55f, 0.58f, 0.66f), 0.22f) * (pad ? 0.8f : 1f);
+            var c = team * 0.64f * (pad ? 0.8f : 1f);
             c.a = 1f;
             return c;
         }

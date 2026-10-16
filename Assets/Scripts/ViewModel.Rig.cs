@@ -3,9 +3,9 @@ using UnityEngine;
 namespace RockGame
 {
     /// <summary>
-    /// The first-person arms MODEL: a real, artist-made rigged pair of arms (the CC0 "fps arms (rigged only)" model,
-    /// made into the aliens' three fingers and a thumb by Tools/fps_arms.py - Resources/FpsArms/AlienArms), in your team's
-    /// colour. The poses don't change: ViewModel.Fingers.cs still works out where each hand goes on each item and how every
+    /// The first-person arms MODEL (Resources/FpsArms/AlienArms, made by Tools/alien_arms.py): simple, round alien arms -
+    /// slender smooth arms, an egg of a palm, three round fingers and a thumb with ball fingertips - in your alien's colour,
+    /// skinned to a real arm rig (the skeleton of the CC0 "fps arms (rigged only)" model). The poses don't change: ViewModel.Fingers.cs still works out where each hand goes on each item and how every
     /// finger closes on it, on the invisible pose skeleton (AlienArm: the hand and each finger's joints). Every frame the
     /// model's bones are put onto that skeleton - the hand bone on the wrist, each finger and thumb bone turned the way its
     /// joint is - and each arm reaches its hand from its own shoulder with two-bone IK, so the elbow bends naturally
@@ -204,7 +204,7 @@ namespace RockGame
             if (skin != null && skin.TryGetComponent(out SkinnedMeshRenderer smr))
             {
                 smr.updateWhenOffscreen = true; // (it swings all over the view: never culled on a stale box)
-                hook.Track(skin.gameObject, HandColorHook.AlienModel);
+                hook.Track(skin.gameObject, HandColorHook.AlienSkin);
             }
             return rig;
         }
