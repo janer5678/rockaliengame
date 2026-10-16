@@ -572,6 +572,14 @@ namespace RockGame
         /// server's list says so (the time it was picked up - if it's somehow still there a while later, it shows again).</summary>
         readonly Dictionary<int, float> m_PickedHere = new Dictionary<int, float>();
         public void HidePickedUp(int id) => m_PickedHere[id] = Time.time;
+        /// <summary>(tests) How many items of this kind are showing in the world on this screen.</summary>
+        public int DebugShownItems(Item kind)
+        {
+            int n = 0;
+            foreach (var it in Items)
+                if (it.Stack.Id == kind && m_ItemVisuals.TryGetValue(it.Id, out var go) && go && go.activeInHierarchy) n++;
+            return n;
+        }
         public bool PickedUpHere(int id) => m_PickedHere.TryGetValue(id, out var t) && Time.time - t < 1.5f;
 
         void SyncItemVisuals()

@@ -280,6 +280,22 @@ namespace RockGame
                 yield return new WaitForEndOfFrame();
             }
             bool sqShown = vm.DebugHand(true).Find("square").gameObject.activeSelf && !vm.DebugHand(true).Find("alien").gameObject.activeSelf;
+            // the round robot hands (Settings > Display > Hands: Round): the same parts rounded off; the rock held up its sides
+            GameSettings.SetHandStyle(GameSettings.HandsRound, false);
+            foreach (var it in new[] { Item.Rock, Item.Hatchet, Item.Crossbow, Item.Pistol })
+            {
+                for (int i = 0; i < Cfg.PlayerSlots; i++) me.Inv[i] = default;
+                if (it != Item.Rock) me.ServerGive(it, 1);
+                yield return new WaitForSeconds(0.2f);
+                yield return Hold(me, it);
+                yield return new WaitForSeconds(0.6f);
+                ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(dir, "handsround_" + it.ToString().ToLower() + ".png"));
+                yield return new WaitForEndOfFrame();
+            }
+            var roundPart = vm.DebugHand(true).Find("round");
+            Check(roundPart != null && roundPart.gameObject.activeSelf && roundPart.childCount == 5 && !vm.DebugHand(true).Find("square").gameObject.activeSelf,
+                "Hands: Round - the five robot parts rounded off show instead of the square ones");
+            GameSettings.SetHandStyle(GameSettings.HandsSquare, false);
             Check(sqShown, "Alien hands off: the square hands show instead of the alien ones");
             GameSettings.SetRoundHands(true, false);
             yield return new WaitForSeconds(0.3f);

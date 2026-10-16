@@ -11,6 +11,66 @@ namespace RockGame
     /// </summary>
     public partial class AutoTest
     {
+        /// <summary>-autotest spearpick: throw a spear for real, pick it up with E (straight after it lands, and a while
+        /// after), and check no spear is left showing in the world - neither the dropped one nor the thrown one's stuck copy.</summary>
+        IEnumerator SpearPickShots(PlayerNet me, PlayerController pc)
+        {
+            string dir = ShotDir();
+            var g = NetGame.Instance;
+            int team = me.Team.Value;
+            foreach (float wait in new[] { 0.05f, 0.25f, 1.2f })
+            {
+                for (int i = 0; i < Cfg.PlayerSlots; i++) me.Inv[i] = default;
+                me.ServerGive(Item.Spear, 1);
+                var spot = Cfg.SpawnPos(team) - Cfg.BackDir(team) * 8f;
+                spot.y = MapBuilder.Height(spot.x, spot.z) + 0.1f;
+                float yaw = Quaternion.LookRotation(-Cfg.BackDir(team)).eulerAngles.y;
+                pc.LocalTeleport(spot, yaw);
+                pc.SetLook(yaw, 35f);
+                yield return new WaitForSeconds(0.4f);
+                yield return Hold(me, Item.Spear);
+                yield return new WaitForSeconds(0.5f);
+                int hits0 = ArrowProjectile.SpearHits;
+                Binds.TestHold(Bind.Aim, true);
+                yield return new WaitForSeconds(0.35f);
+                Binds.TestPress(Bind.Attack);
+                for (float t = 0; t < 3f && ArrowProjectile.SpearHits == hits0; t += 0.02f) yield return null;
+                Binds.TestReleaseAll();
+                yield return new WaitForSeconds(wait);
+                // walk up to it and look at it (the dropped spear, or where it landed if that's not there yet)
+                var at = ArrowProjectile.LastSpearHit;
+                for (float t = 0; t < 1f; t += 0.02f)
+                {
+                    bool found = false;
+                    foreach (var it in g.Items) if (it.Stack.Id == Item.Spear) { at = it.Center; found = true; }
+                    if (found) break;
+                    yield return null;
+                }
+                var flat = new Vector3(at.x - spot.x, 0, at.z - spot.z);
+                var stand = at - flat.normalized * 1.4f; stand.y = MapBuilder.Height(stand.x, stand.z) + 0.1f;
+                pc.LocalTeleport(stand, Quaternion.LookRotation(flat).eulerAngles.y);
+                yield return null; yield return null;
+                var to = at - me.EyePos;
+                pc.SetLook(Quaternion.LookRotation(new Vector3(to.x, 0, to.z)).eulerAngles.y, -Mathf.Asin(to.normalized.y) * Mathf.Rad2Deg);
+                yield return null; yield return null; yield return null;
+                Binds.TestPress(Bind.Interact);
+                int worst = 0;
+                for (int f = 0; f < 6; f++)
+                {
+                    yield return null;
+                    int shown = g.DebugShownItems(Item.Spear);
+                    foreach (var go in FindObjectsByType<ArrowProjectile>(FindObjectsSortMode.None)) if (go.IsSpearForTests) shown++;
+                    worst = Mathf.Max(worst, shown);
+                    if (f == 1) ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(dir, $"spearpick_{wait:0.00}.png"));
+                }
+                Binds.TestReleaseAll();
+                yield return new WaitForSeconds(0.6f);
+                Check(worst == 0 && me.Count(Item.Spear) == 1, $"picked up {wait:0.00}s after it landed: no spear left showing ({worst} still shown), it's in the bag ({me.Count(Item.Spear)})");
+            }
+            Log("spearpick done");
+            Application.Quit(0);
+        }
+
         IEnumerator HandAnimShots(PlayerNet me, PlayerController pc)
         {
             string dir = ShotDir();

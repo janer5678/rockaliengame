@@ -5,22 +5,30 @@ namespace RockGame
     /// <summary>Settings > Display > FPS counter (just on this PC, saved), and the uncapped framerate switch.</summary>
     public static partial class GameSettings
     {
-        static int s_ShowFps = -1, s_RoundHands = -1;
+        static int s_ShowFps = -1, s_HandStyle = -1;
 
-        /// <summary>Settings > Display > Alien hands (OFF to start with: the original square robot hands are the default;
-        /// on, the rigged alien arms model).</summary>
-        public static bool RoundHands
+        /// <summary>The first-person hands (Settings > Display > Hands): the original square robot hands, the same ones
+        /// rounded off, or the rigged alien arms.</summary>
+        public const int HandsSquare = 0, HandsRound = 1, HandsAlien = 2;
+        public static readonly string[] HandStyleNames = { "Square", "Round", "Alien" };
+        /// <summary>Which hands (Round to start with).</summary>
+        public static int HandStyle
         {
-            get { if (s_RoundHands < 0) s_RoundHands = PlayerPrefs.GetInt("RockGame.AlienArmsOn", 0); return s_RoundHands == 1; }
+            get { if (s_HandStyle < 0) s_HandStyle = Mathf.Clamp(PlayerPrefs.GetInt("RockGame.HandStyle", HandsRound), 0, 2); return s_HandStyle; }
         }
+        /// <summary>The rigged alien arms are the ones showing (ViewModel.Fingers.cs poses them).</summary>
+        public static bool RoundHands => HandStyle == HandsAlien;
         public static event System.Action HandStyleChanged;
 
-        public static void SetRoundHands(bool on, bool save = true)
+        public static void SetHandStyle(int style, bool save = true)
         {
-            s_RoundHands = on ? 1 : 0;
-            if (save) { PlayerPrefs.SetInt("RockGame.AlienArmsOn", s_RoundHands); PlayerPrefs.Save(); }
+            s_HandStyle = Mathf.Clamp(style, 0, 2);
+            if (save) { PlayerPrefs.SetInt("RockGame.HandStyle", s_HandStyle); PlayerPrefs.Save(); }
             HandStyleChanged?.Invoke();
         }
+
+        /// <summary>(tests) the alien arms on, or the square hands.</summary>
+        public static void SetRoundHands(bool on, bool save = true) => SetHandStyle(on ? HandsAlien : HandsSquare, save);
 
         /// <summary>Show the frames-per-second counter in the top left corner.</summary>
         public static bool ShowFps

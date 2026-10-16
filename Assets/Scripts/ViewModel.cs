@@ -189,6 +189,8 @@ namespace RockGame
             hook.Track(Art.Box(square, skin, new Vector3(-0.045f * side, 0.025f, 0.035f), new Vector3(0.03f, 0.03f, 0.065f), new Vector3(0, 20 * side, 0)), HandColorHook.Skin); // thumb
             hook.Track(Art.Box(square, band, new Vector3(0, 0, -0.075f), new Vector3(0.082f, 0.082f, 0.035f)), HandColorHook.Band);                // wrist band
             hook.Track(Art.Box(square, skin, new Vector3(0, 0, -0.32f), new Vector3(0.072f, 0.072f, 0.46f)), HandColorHook.Skin);                  // forearm
+            // the same hands rounded off (Settings > Display > Hands: Round - ViewModel.RoundHands.cs)
+            BuildRoundHand(hand, hook, skin, dark, band, side);
             // the alien arm (four fingers and a thumb, every joint its own transform: ViewModel.Hands.cs)
             alien = BuildAlienArm(hand, hook, right);
             ShowHandStyle(hand);
@@ -196,15 +198,17 @@ namespace RockGame
             return hand;
         }
 
-        /// <summary>Alien or square hands, as Settings > Display > Alien hands says.</summary>
+        /// <summary>Square, round or alien hands, as Settings > Display > Hands says.</summary>
         static void ShowHandStyle(Transform hand)
         {
             if (hand == null) return;
-            bool round = GameSettings.RoundHands;
+            int style = GameSettings.HandStyle;
             var sq = hand.Find("square");
+            var ro = hand.Find("round");
             var rd = hand.Find("alien");
-            if (sq) sq.gameObject.SetActive(!round);
-            if (rd) rd.gameObject.SetActive(round);
+            if (sq) sq.gameObject.SetActive(style == GameSettings.HandsSquare);
+            if (ro) ro.gameObject.SetActive(style == GameSettings.HandsRound);
+            if (rd) rd.gameObject.SetActive(style == GameSettings.HandsAlien);
         }
 
         void OnHandStyle() { ShowHandStyle(m_R); ShowHandStyle(m_L); }
@@ -418,6 +422,18 @@ namespace RockGame
             var k = Chop(idle, raised, slam, recoil, follow, swinging, e);
             var rot = sharedRot * Quaternion.Euler(k.HandX, -4f, 0);
             AttachItemToRoot(shared + k.Pos, rot, 1f);
+            if (GameSettings.HandStyle == GameSettings.HandsRound)
+            {
+                // the round hands: up the rock's sides, the knuckles curling up over it, palms in (Rust's)
+                foreach (var (arm, sx) in new[] { (m_R, 1f), (m_L, -1f) })
+                {
+                    arm.localPosition = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(0.088f * sx, -0.035f, -0.015f)));
+                    var up = m_ItemHolder.TransformDirection(new Vector3(-0.32f * sx, 1f, 0.22f));
+                    var outward = m_ItemHolder.TransformDirection(new Vector3(sx, 0.25f, 0f));
+                    arm.localRotation = Quaternion.Inverse(m_Root.rotation) * Quaternion.LookRotation(up, outward);
+                }
+                return;
+            }
             // a hand under either side of it, palms up
             m_R.localPosition = m_Root.InverseTransformPoint(m_ItemHolder.TransformPoint(new Vector3(0.09f, -0.07f, -0.02f)));
             m_R.localRotation = rot * Quaternion.Euler(-30f, -20f, -40f);

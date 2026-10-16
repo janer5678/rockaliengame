@@ -210,6 +210,7 @@ namespace RockGame
             if (m_Mode == "psxmodels") { yield return PsxModelShots(me, pc); yield break; }
             if (m_Mode == "hands") { yield return HandsShots(me, pc); yield break; }
             if (m_Mode == "handanim") { yield return HandAnimShots(me, pc); yield break; } // (AutoTest.HandAnim.cs)
+            if (m_Mode == "spearpick") { yield return SpearPickShots(me, pc); yield break; } // (AutoTest.HandAnim.cs)
             if (m_Mode == "psx") { yield return PsxShots(me, pc); yield break; }
             if (m_Mode == "grass") { yield return GrassShots(me, pc); yield break; }
             if (m_Mode == "nodes") { yield return NodesRoutine(me, pc); yield break; }

@@ -152,7 +152,15 @@ namespace RockGame
                 Destroy(gameObject);
                 return;
             }
-            if (m_Stuck) return;
+            if (m_Stuck)
+            {
+                // a landed spear's stuck copy goes as soon as the dropped spear it turned into is there (that one's picked
+                // up with E) - it lingered on, and stayed after the spear was picked up
+                if (m_Spear && NetGame.Instance != null)
+                    foreach (var it in NetGame.Instance.Items)
+                        if (it.Stack.Id == Item.Spear && (it.Pos - transform.position).sqrMagnitude < 1.5f * 1.5f) { Destroy(gameObject); return; }
+                return;
+            }
 
             float dt = Time.deltaTime;
             Vector3 pos = transform.position;
@@ -242,6 +250,18 @@ namespace RockGame
                 // (the ones in you were shadows only, like your body: your ragdoll is seen)
                 foreach (var r in a.GetComponentsInChildren<Renderer>()) r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
             }
+        }
+
+        /// <summary>Picked up with E: any landed spear's stuck copy near there goes at once.</summary>
+        public static void ClearStuckSpearsNear(Vector3 pos, float r)
+        {
+            for (int i = Flying.Count - 1; i >= 0; i--)
+            {
+                var a = Flying[i];
+                if (a != null && a.m_Spear && a.m_Stuck && !a.m_Following && (a.transform.position - pos).sqrMagnitude < r * r) Destroy(a.gameObject);
+            }
+            foreach (var a in Object.FindObjectsByType<ArrowProjectile>(FindObjectsSortMode.None))
+                if (a.m_Spear && a.m_Stuck && !a.m_Following && (a.transform.position - pos).sqrMagnitude < r * r) Destroy(a.gameObject);
         }
 
         /// <summary>A player died: the arrows still stuck in them (not carried onto a ragdoll) go.</summary>

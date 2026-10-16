@@ -2001,7 +2001,11 @@ namespace RockGame
                     m_Net.PickupItemRpc(t.ItemId);
                     m_VM.Use();
                     // it's gone from your screen straight away (a thrown spear you pick back up, anything) - if it all fits
-                    if (NetGame.Instance != null && InvOps.Space(m_Net.Inv, t.Stack.Id, t.Stack.Data) >= t.Stack.Count) NetGame.Instance.HidePickedUp(t.ItemId);
+                    if (NetGame.Instance != null && InvOps.Space(m_Net.Inv, t.Stack.Id, t.Stack.Data) >= t.Stack.Count)
+                    {
+                        NetGame.Instance.HidePickedUp(t.ItemId);
+                        if (t.Stack.Id == Item.Spear) foreach (var it in NetGame.Instance.Items) if (it.Id == t.ItemId) ArrowProjectile.ClearStuckSpearsNear(it.Pos, 1.5f);
+                    }
                     break;
                 case TargetKind.SelfSpear: m_Net.PullSpearRpc(m_Net.NetworkObject); Sfx.Play2D(Sfx.Flesh, 0.6f); break;
                 case TargetKind.Machine:
