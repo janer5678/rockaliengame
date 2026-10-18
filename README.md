@@ -3,6 +3,10 @@
 A 1v1 first-person "gather, build, raid" game for Unity 6 (6000.0.42f1, URP) using **Netcode for GameObjects 2.4**.
 Both players start with a rock, gather wood and stone, build a Rust-style base, craft tools and weapons, and fight over a ball that waits under a glass dome in the middle of the map.
 
+## 3D assets for Blender
+
+`powershell -ExecutionPolicy Bypass -File Tools/export_assets.ps1` (add `-NoBuild` to use the build that's there) makes **`Builds/RockAlienGame_3D_Assets.zip`**: every model in the game as OBJ + MTL and FBX, built by the game itself (`-autotest exportassets -host -solo -exportdir DIR`, `AutoTest.Export.cs`), plus `.blend` files. The alien comes in all four team colours in every pose the game uses (idle, walking, sprinting, crouching, jumping, sliding, bow, spear, aiming, eating, swings, carrying the ball, riding, dead, dancing, the lobby lounges, with what it holds), the first-person hands in all three styles and four colours, every item, every building piece in every tier, the deployables, vehicles, trees, bushes, stumps, machines, benches, shops, flags, the UFO, hats and gadgets. `blender/AlienRigged_Teams.blend` has the rigged alien in the four team skins ready to pose. The textures that go with a colour are baked by `Tools/tint_textures.py` (from the export's `tints.txt`) and Blender packs the lot with `Tools/blender_pack.py`.
+
 ## How to test
 
 ### Option A: two players inside the editor (Multiplayer Play Mode)

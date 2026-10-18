@@ -1,4 +1,4 @@
-using System.Collections;
+﻿using System.Collections;
 using Unity.Netcode;
 using UnityEngine;
 
@@ -198,6 +198,7 @@ namespace RockGame
             if (m_Mode == "prompt15") { yield return Prompt15Routine(me, pc); yield break; } // (AutoTest.Prompt15.cs)
             if (m_Mode == "prompt16") { yield return Prompt16Routine(me, pc); yield break; } // (AutoTest.Prompt16.cs)
             if (m_Mode == "aliens") { yield return AlienShots(me, pc); yield break; } // (AutoTest.AlienShots.cs)
+            if (m_Mode == "exportassets") { yield return ExportAssets(me, pc); yield break; } // (AutoTest.Export.cs: every model as OBJ for Blender)
             Check(Cfg.BaseTeamAt(me.transform.position) == me.Team.Value, $"spawned inside own base ({me.transform.position})");
             Check(me.Count(Item.Rock) == 0 && me.HeldItem == Item.Rock, "empty hand = holding the rock (no rock item)");
             Check(Vector3.Distance(me.transform.position, Cfg.SpawnPos(me.Team.Value, me.Slot.Value)) < 1.5f, $"sent home to the bedrock when the match started on {Cfg.MapLabel} (seed {Cfg.MapSeed})");
