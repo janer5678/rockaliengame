@@ -53,3 +53,4 @@ Thumbs.db
 
 # Steam (written from SteamConfig.cs in the editor)
 /steam_appid.txt
+/OLD Build/
