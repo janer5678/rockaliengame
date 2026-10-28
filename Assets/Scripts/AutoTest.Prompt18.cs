@@ -70,6 +70,25 @@ namespace RockGame
                 yield break;
             }
 
+            // ---- crafting is Classic's: the Trade Station waits for the capture, the Advanced one's back, nothing needs E on a bench
+            {
+                int ramI = Cfg.RecipeIndex(Item.Ram);
+                var ram = ramI >= 0 ? Cfg.GetRecipe(ramI) : default;
+                Check(!Cfg.BenchUnlocked(team) && !g.BenchUnlockedFor(team), "the Trade Station can't be crafted before the ball's been captured");
+                Check(Cfg.RecipeIndex(Item.Workbench2) >= 0 && !Cfg.EmeraldOut(Item.Workbench2) && Cfg.CraftTier(Item.HeavyArmor) == 2 && Cfg.CraftTier(Item.Ram) == 0,
+                    $"the Advanced Trade Station is back (Armour is tier {Cfg.CraftTier(Item.HeavyArmor)}, the ram a starter)");
+                Check(ramI >= 0 && ram.Wood == Cfg.RamWood && ram.Stone == Cfg.RamStone, $"the ram's at Classic's price ({ram.Wood} wood, {ram.Stone} stone)");
+                var l1 = new System.Collections.Generic.List<int>(); Cfg.AddTier(l1, 1);
+                var l2 = new System.Collections.Generic.List<int>(); Cfg.AddTier(l2, 2);
+                Check(l1.Count > 3 && l2.Count > 3, $"both tiers list their things ({l1.Count} / {l2.Count})");
+                int wb = Cfg.CraftIndexOf(Item.Workbench);
+                int had = me.Count(Item.Workbench);
+                me.ServerGive(Cfg.BuildItem, 400);
+                me.CraftRpc(wb);
+                yield return new WaitForSeconds(0.4f);
+                Check(me.Count(Item.Workbench) == had, "...crafting the Trade Station now is refused (no capture yet)");
+            }
+
             // ---- the spawners: on each team's own half, as far out to the side as before
             {
                 int n = EmeraldSpawner.Tops.Count;

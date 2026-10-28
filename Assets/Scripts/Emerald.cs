@@ -16,9 +16,8 @@ namespace RockGame
     ///   store (Hud.Emerald.cs) of things for your WHOLE TEAM, bought with emeralds (EmeraldDeals, Emerald.Perks.cs): an
     ///   INTRUDER ALARM, AUTO ARMOUR, CRAFT ANYWHERE, a RAID DISCOUNT and an INSTANT REPAIR. (Its old rows - the knockback
     ///   stick, pearls, the lightsaber, the alien gun, C4, the walls pack - are no longer sold; their code stays.)
-    /// - the Trade Station is a store too: E on it shows its items (you can't trade them from the bag), Armour at the top
-    ///   and the battering ram (EmeraldRamWood) at the bottom - and it can be crafted any time, in your base (no ball
-    ///   capture needed). There's no Advanced Trade Station at all.
+    /// - crafting is Classic's (since 2026-10-28): the Trade Station once the ball's been captured, the Advanced one after
+    ///   it, everything crafted from the bag's list in your base (the Trade Station's E shop is no more).
     /// The shop's own things: High Power Armour, the lightsaber, Instant Heal Berries, the base turret (360 degrees, no
     /// weapon or ammo needed), high defensive walls (8 tall log walls and a gate), land mines and the fort creator.
     /// </summary>
@@ -29,7 +28,7 @@ namespace RockGame
         /// <summary>Seconds between emeralds on a spawner (only one waits there at a time).</summary>
         [Tune("Emerald mode")] public static float EmeraldEvery = 150f; // (2 minutes 30 - was 3 minutes)
         /// <summary>The battering ram's price in Emerald mode (a Trade Station item there, at the bottom of its list).</summary>
-        [Tune("Emerald mode")] public static int EmeraldRamWood = 500;
+        public static int EmeraldRamWood = 500; // (unused since 2026-10-28: the ram is Classic's price in Emerald mode too)
         /// <summary>High Power Armour: how much armour it puts on.</summary>
         [Tune("Emerald mode")] public static int HighArmorHp = 150;
         [Tune("Emerald mode")] public static float LightsaberCooldown = 0.45f, LightsaberDamage = 42f, LightsaberRange = 3.1f, LightsaberStructureDamage = 30f;
@@ -51,7 +50,7 @@ namespace RockGame
         /// <summary>Emerald mode's own things: nowhere else (Cfg.Removed).</summary>
         public static bool EmeraldOnly(Item i) => i == Item.Emerald || i == Item.HighArmor || i == Item.Lightsaber || i == Item.HealBerry || i == Item.LandMine || i == Item.FortCreator || i == Item.AlienGun || i == Item.BaseGuardian;
         /// <summary>Not crafted in Emerald mode: there's no Advanced Trade Station, and the death wand's in the emerald shop.</summary>
-        public static bool EmeraldOut(Item i) => Emerald && (i == Item.Workbench2 || i == Item.DeathWand);
+        public static bool EmeraldOut(Item i) => false; // (since 2026-10-28 Emerald mode crafts everything Classic does, the Advanced Trade Station too)
 
         /// <summary>The tall walls of this mode (1 elsewhere).</summary>
         public static float BigWallTall => Emerald ? Mathf.Max(1f, BigWallTallMul) : 1f;

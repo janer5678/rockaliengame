@@ -1533,7 +1533,6 @@ namespace RockGame
             {
                 if (Cfg.BenchTier(Team.Value) < tier) { Notify($"The {Cfg.ItemName(r.Output)} needs a {(tier == 2 ? "Advanced Trade Station" : "Trade Station")} in your base"); return; }
                 if (!Cfg.CanCraftAt(Team.Value, transform.position)) { Notify($"{r.Name} can only be crafted inside your own base"); return; }
-                if (Cfg.Emerald && !Bot.Value && !Cfg.HasPerk(Team.Value, Item.CraftAnywherePerk) && !Cfg.AtOwnBench(Team.Value, transform.position)) { Notify($"Emerald mode: the {r.Name} is traded at your Trade Station ({"E"} on it)"); return; } // (Emerald.cs)
             }
             if (Workbench.IsBench(r.Output) && Workbench.ForTeam(Team.Value, Workbench.TierOfItem(r.Output)) != null) { Notify($"Your team already has a {Cfg.ItemName(r.Output)}"); return; }
             if (Cfg.Builder || power) { ServerCraftModes(r); return; } // (power items: armour-style ones just happen - PlayerNet.Modes.cs)

@@ -1903,12 +1903,6 @@ namespace RockGame
         void TapContainer(Container box)
         {
             if (box == null || !box.IsSpawned) return;
-            if (box.IsWorkbench && Cfg.Emerald && box.Team.Value == m_Net.Team.Value)
-            {
-                // Emerald mode: the Trade Station is a shop - its things are bought here (Hud.Emerald.cs)
-                OpenShop(ShopTrade);
-                return;
-            }
             if (box.Kind.Value == Container.Turret && Cfg.Emerald)
             {
                 // (the base turret needs nothing put in it)
@@ -2426,7 +2420,7 @@ namespace RockGame
                     string detail;
                     if (c.IsAirdrop) detail = $"{KT(Bind.Interact)}: open";
                     else if (c.IsGamble) detail = $"{KT(Bind.Interact)}: bet DNA - double it or lose it";
-                    else if (c.IsWorkbench) detail = c.Team.Value == m_Net.Team.Value ? (Cfg.Emerald ? $"{KT(Bind.Interact)}: trade  <color=#f0b878>({m_Net.Count(Item.Wood)} wood)</color>" : $"its items are in your crafting list ({KT(Bind.Inventory)}) in your base") : "";
+                    else if (c.IsWorkbench) detail = c.Team.Value == m_Net.Team.Value ? $"its items are in your crafting list ({KT(Bind.Inventory)}) in your base" : "";
                     else if (c.IsBag) detail = $"{KT(Bind.Interact)}: open";
                     // the placeables that don't open: just their health (the turret: its weapon and ammo)
                     else if (c.IsDeployable)

@@ -279,7 +279,7 @@ namespace RockGame
         {
             int team = me.Team.Value;
             // your team's benches decide what's listed wherever you are (out of your base it's greyed: ListProblem)
-            m_CraftTier = Cfg.Emerald && !Cfg.HasPerk(team, Item.CraftAnywherePerk) ? 0 : Cfg.BenchTier(team); // (Emerald mode: the Trade Station's things are bought at it - E - not from the bag; with CRAFT ANYWHERE they're in this list too, anywhere)
+            m_CraftTier = Cfg.BenchTier(team); // (Emerald mode too: its crafting is Classic's)
             m_CraftRows.Clear();
             for (int tier = 0; tier <= m_CraftTier; tier++)
             {
