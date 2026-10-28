@@ -115,7 +115,7 @@ namespace RockGame
                 float bw = 300 * k, bh = 54 * k;
                 if (DeathCard(new Rect(cx - bw - 8 * k, y, bw, bh), "1", "RESPAWN IN BASE", "", true, KeyCode.Alpha1)) pc.ChooseRespawn(false);
                 if (m_WildPick && Cfg.WildPicker) { DrawWildPicker(me, k); return; }
-                if (DeathCard(new Rect(cx + 8 * k, y, bw, bh), "2", "RESPAWN IN THE WILD", Cfg.WildPicker ? "pick the spot" : "", true, KeyCode.Alpha2))
+                if (DeathCard(new Rect(cx + 8 * k, y, bw, bh), "2", "RESPAWN IN THE WILD", Cfg.WildPicker ? "pick the spot on your half" : "", true, KeyCode.Alpha2))
                 {
                     if (Cfg.WildPicker) m_WildPick = true; // (pick where on the map: WildRespawn.cs)
                     else pc.ChooseRespawn(true);
@@ -261,7 +261,7 @@ namespace RockGame
             }
             var head = new GUIStyle(m_Big) { fontSize = Mathf.RoundToInt(26 * k) };
             Shadowed(new Rect(0, map.y - 66 * k, sw, 34 * k), "<b>RESPAWN IN THE WILD</b>", head);
-            Shadowed(new Rect(0, map.y - 32 * k, sw, 26 * k), "Click where you want to come back - not in the red (too close to an enemy base or an airdrop)  ·  RMB / Esc: back", m_Center);
+            Shadowed(new Rect(0, map.y - 32 * k, sw, 26 * k), "Click where you want to come back on your half - not in the red (the enemy's half, or too close to an enemy base or an airdrop)  ·  RMB / Esc: back", m_Center);
             var e = Event.current;
             var m = e.mousePosition;
             if (map.Contains(m))
@@ -269,7 +269,7 @@ namespace RockGame
                 var world = new Vector3((m.x - map.center.x) / size * 2 * half, 0, -(m.y - map.center.y) / size * 2 * half);
                 bool ok = Cfg.WildSpotOk(me.Team.Value, world, out string why);
                 DrawRing(m, 14 * k, 3, ok ? new Color(0.45f, 1f, 0.55f, 0.95f) : new Color(1f, 0.35f, 0.3f, 0.95f));
-                if (!ok) Shadowed(new Rect(m.x - 160 * k, m.y + 16 * k, 320 * k, 24 * k), $"<color=#ff8a7a>too close to {why}</color>", m_Center);
+                if (!ok) Shadowed(new Rect(m.x - 160 * k, m.y + 16 * k, 320 * k, 24 * k), why == "the enemy's half" ? "<color=#ff8a7a>that's the enemy's half</color>" : $"<color=#ff8a7a>too close to {why}</color>", m_Center);
                 if (ok && e.type == EventType.MouseDown && e.button == 0)
                 {
                     me.RespawnAtRpc(world);

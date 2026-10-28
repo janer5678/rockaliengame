@@ -32,8 +32,9 @@ namespace RockGame
         }
 
         /// <summary>Loot worth going for: the best of what's lying about (near ones first, airdrops from far off, a big
-        /// pile of wood more than a stick). False: nothing.</summary>
-        bool LootJob()
+        /// pile of wood more than a stick) - no further off than `reach` m (airdrops twice that), by what it's about
+        /// (BotBrain.Plans.cs: a farmer only what's right by it). False: nothing.</summary>
+        bool LootJob(float reach = 45f)
         {
             var g = NetGame.Instance;
             if (g == null || m_P.CarryingBall) return false;
@@ -51,7 +52,7 @@ namespace RockGame
                 if (it.Stack.Empty || it.Stack.Id == Item.Rock || m_LootSkip.Contains(it.Id)) continue;
                 float d = Flat(it.Pos, pos);
                 bool home = Cfg.BaseTeamAt(it.Pos) == MyTeam;
-                if (d > (home ? 45f : 28f) || !LootOk(it.Pos)) continue;
+                if (d > Mathf.Min(reach, home ? 45f : 28f) || !LootOk(it.Pos)) continue;
                 // (a few sticks out of the wood machine: let the pile grow first, unless it's right there)
                 if (it.Stack.Id == cur && it.Stack.Count < 40 && d > 6f) continue;
                 if (InvOps.Space(m_P.Inv, it.Stack.Id, it.Stack.Data) <= 0) continue;
@@ -66,7 +67,7 @@ namespace RockGame
                 if (c == null || !c.IsSpawned || !c.TakeOnly || c.Empty || Avoided(c) || !room) continue;
                 var cp = c.transform.position;
                 float d = Flat(cp, pos);
-                if (d > (c.IsAirdrop ? 95f : 30f) || !LootOk(cp)) continue;
+                if (d > (c.IsAirdrop ? Mathf.Min(reach * 2f, 95f) : Mathf.Min(reach, 30f)) || !LootOk(cp)) continue;
                 float s = d - (c.IsAirdrop ? 30f : 4f);
                 if (s < bs) { bs = s; bestBox = c; bestId = -1; }
             }

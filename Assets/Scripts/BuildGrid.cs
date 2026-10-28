@@ -209,6 +209,8 @@ namespace RockGame
                     for (int di = -1; di <= 1; di++)
                     for (int dj = -1; dj <= 1; dj++)
                         if ((di == 0 || dj == 0) && HasStairsAt(k.I + di, k.J + dj, l, exists)) return true;
+                    // a roof over the stairs: stairs two levels down hold up a floor over their top (the stairwell's lid)
+                    if (RoofOverStairs(k, exists)) return true;
                     // cantilever from a neighbouring floor
                     return exists(new PieceKey(PieceKey.KFloor, k.I + 1, k.J, k.L, 0)) || exists(new PieceKey(PieceKey.KFloor, k.I - 1, k.J, k.L, 0))
                         || exists(new PieceKey(PieceKey.KFloor, k.I, k.J + 1, k.L, 0)) || exists(new PieceKey(PieceKey.KFloor, k.I, k.J - 1, k.L, 0));
@@ -245,7 +247,7 @@ namespace RockGame
                 }
                 case PieceKey.KFloor:
                     if (k.L < 1) return false;
-                    return AnyWallAround(k.I, k.J, k.L, exists) || AnyWallAround(k.I, k.J, k.L - 1, exists) || AnyStairs(k.I, k.J, k.L - 1, exists);
+                    return AnyWallAround(k.I, k.J, k.L, exists) || AnyWallAround(k.I, k.J, k.L - 1, exists) || AnyStairs(k.I, k.J, k.L - 1, exists) || RoofOverStairs(k, exists);
                 case PieceKey.KStairs:
                     if (k.L == 0) return true;
                     return exists(new PieceKey(PieceKey.KFloor, k.I, k.J, k.L, 0)) || AnyWallAround(k.I, k.J, k.L, exists) || AnyWallAround(k.I, k.J, k.L - 1, exists)
@@ -260,6 +262,13 @@ namespace RockGame
                 || exists(new PieceKey(PieceKey.KEdge, i - 1, j, l, 0)) || exists(new PieceKey(PieceKey.KEdge, i, j - 1, l, 1)));
 
         static bool AnyStairs(int i, int j, int l, Func<PieceKey, bool> exists) => l >= 0 && HasStairsAt(i, j, l, exists);
+
+        /// <summary>A floor two levels over stairs in its own cell: a roof over the stairs (the stairs reach the level between,
+        /// so that one's taken; this one lids the stairwell with full headroom under it).</summary>
+        public static bool RoofOverStairs(PieceKey k, Func<PieceKey, bool> exists) => k.Kind == PieceKey.KFloor && AnyStairs(k.I, k.J, k.L - 2, exists);
+
+        /// <summary>Stairs right under this floor slot (their top: the slot a floor can't take - the one over it can, as a roof).</summary>
+        public static bool StairsUnder(PieceKey k, Func<PieceKey, bool> exists) => k.Kind == PieceKey.KFloor && AnyStairs(k.I, k.J, k.L - 1, exists);
 
         static bool HasStairsAt(int i, int j, int l, Func<PieceKey, bool> has)
         {

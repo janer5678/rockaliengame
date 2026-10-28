@@ -118,7 +118,8 @@ namespace RockGame
             while (Time.time < until && !(BotBrain.HouseBuilt(enemy, out _) >= built0 + 4 && TeamChestStock(enemy) > stock0)) yield return null;
             int built1 = BotBrain.HouseBuilt(enemy, out _);
             Check(built1 >= built0 + 4 && TeamChestStock(enemy) > stock0,
-                $"given 800 {cur} it builds its house (+{built1 - built0}, {built1} of {planSize} pieces) and stockpiles the rest ({TeamChestStock(enemy)} {cur} in its chest; going for {brain.Focus}, {brain.Job})");
+                $"given 800 {cur} it builds its house (+{built1 - built0}, {built1} of {planSize} pieces) and stockpiles the rest ({TeamChestStock(enemy)} {cur} in its chest; going for {brain.Focus}, {brain.Job})"
+                + (built1 >= built0 + 4 ? "" : " | trace: " + string.Join(" > ", brain.Trace)));
             yield return Snap("bots_house");
             // floor loot: something dropped right by it gets picked up (PickupItemRpc)
             var ng = NetGame.Instance;

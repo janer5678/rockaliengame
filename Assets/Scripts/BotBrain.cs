@@ -57,6 +57,10 @@ namespace RockGame
         Vector3 m_BlockPoint;
         float m_BlockedAt = -10f;
 
+        /// <summary>(tests) what it has been up to: every change of plan and job, with the time.</summary>
+        public readonly List<string> Trace = new List<string>(64);
+        void Note(string s) { if (Trace.Count < 400) Trace.Add($"{Time.time:0.0} {s}"); }
+
         /// <summary>(tests) how many times it has slid / jumped.</summary>
         public int Slides { get; private set; }
         public int Jumps { get; private set; }

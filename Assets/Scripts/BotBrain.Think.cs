@@ -7,11 +7,10 @@ namespace RockGame
     /// A bot's thinking (a few times a second, BotBrain.cs): one job, picked by what matters most right now.
     /// The ball in its hands beats everything; then an enemy running off with the ball; then its own skin (badly hurt
     /// with someone after it: back home to heal and eat); then a fight with an enemy it can see near enough (how near
-    /// depends on how aggressive it is - and a player in tree camo is just a tree to it); then the ball (fetch it when
-    /// it's loose, escort a teammate carrying it, raid the base it's in, defend it at home - by its leaning and how much
-    /// time is left); and then the economy - berries when hurt, floor loot and airdrops, putting down what it made, its
-    /// starter tools, the team chest, stashing its load, the team's goals (a bigger house, better weapons, more crafting
-    /// unlocked, more upgrades: BotBrain.Goals.cs), and otherwise farming trees - with a wander now and then.
+    /// depends on how aggressive it is and what it's about - and a player in tree camo is just a tree to it); then the
+    /// ball when it's right there (loose and near, a teammate running past with it) and enemies in its base; and then
+    /// whatever it has set its mind on for this stretch of the match (BotBrain.Plans.cs: farming till it has a load,
+    /// building up at home, raiding for the ball, hunting, guarding) - with a wander now and then.
     /// </summary>
     public partial class BotBrain
     {
@@ -47,8 +46,8 @@ namespace RockGame
                 return;
             }
 
-            // 3. who's about (sudden death: anyone on the platform)
-            float range = sudden ? 500f : 10f + 14f * m_Aggro + (m_Task == Task.Defend ? 8f : 0f);
+            // 3. who's about (sudden death: anyone on the platform) - a hunter or a guard looks further, a farmer keeps its head down
+            float range = sudden ? 500f : 10f + 14f * m_Aggro + (m_Task == Task.Defend || m_Plan == Plan.Hunt || m_Plan == Plan.Guard ? 8f : 0f) - (m_Plan == Plan.Farm ? 3f : 0f);
             var foe = PickTarget(range, sudden);
 
             // 4. badly hurt with someone stronger after it: back off home (healing in base, eating on the way)
@@ -63,18 +62,29 @@ namespace RockGame
             // 6. a wander it's on (a little look about), unless there's something for it to do with the ball
             if (m_Task == Task.Wander && Time.time < m_TaskUntil && !(withBall && ball.SocketTeam.Value < 0 && !ball.IsCarried)) return;
 
-            // 7. the ball (Bedwars: the machines)
-            if (withBall && BallJob(g, ball, carrier)) return;
-            if (live && Cfg.Bedwars && MachineJob(g)) return;
+            // 7. the ball right there (anyone would), and enemies in its base when it's about
+            if (withBall && BallNearJob(ball, carrier)) return;
+            var home = Cfg.BaseCenter[MyTeam];
+            if (live && !Cfg.Builder && m_Plan != Plan.Raid && m_Plan != Plan.Hunt && Flat(transform.position, home) < 45f && EnemyNear(home, 28f)) { Set(Task.Defend); return; }
 
-            // 8. the economy, and a wander when there's nothing to do
-            if (EconomyJob(g)) return;
+            // 8. what it has set its mind on (BotBrain.Plans.cs): a new plan when the last ran out or is done
+            if (m_Plan == Plan.None || Time.time >= m_PlanUntil || PlanDone(g, ball, carrier, withBall, live)) PickPlan(g, ball, carrier, withBall, live);
+            if (PlanJob(g, ball, carrier, withBall, live)) { m_PlanIdle = -1f; return; }
+            // nothing in the plan for it just now: a few seconds' grace (a piece not held up yet, a craft that didn't go through) before it's dropped
+            if (m_PlanIdle < 0f) m_PlanIdle = Time.time;
+            else if (Time.time - m_PlanIdle > 4f) PlanFailed();
+
+            // 9. nothing in that for it right now: the chest if it's loaded, the trees, or a look about
+            bool homeSide = !MapBuilder.GlassUp || Cfg.RegionOf(transform.position) == Cfg.RegionOf(home);
+            if (homeSide && StoreJob()) return;
+            if (FarmJob()) return;
             StartWander(8f);
         }
 
         void Set(Task t)
         {
             if (m_Task == t) return;
+            Note($"{m_Plan}: {t}");
             m_Task = t;
             m_Stuck = 0;
             m_TaskUntil = 0f;
@@ -104,89 +114,6 @@ namespace RockGame
             var home = Cfg.BaseCenter[MyTeam];
             var c = m_Bent == Bent.Raider ? pos : Vector3.Lerp(pos, home, 0.2f);
             GoTo(Around(c, 22f), 1.2f, Random.value < 0.5f * m_Playful);
-        }
-
-        // ---------------------------------------------------------------- the ball
-
-        /// <summary>The ball's in play: what this bot does about it (false: nothing - get on with the economy).</summary>
-        bool BallJob(NetGame g, Ball ball, PlayerNet carrier)
-        {
-            int team = MyTeam;
-            bool late = TimeLeft(g) < 150f;
-            bool geared = HasWeapon || m_P.ArmorHp.Value > 0;
-            bool alone = TeamSize(team) <= 1;
-            if (carrier != null)
-            {
-                // a teammate has it: raiders and defenders run with them (the others keep the economy going)
-                if (carrier.Team.Value == team && carrier != m_P && (m_Bent != Bent.Gatherer || late)) { Set(Task.Escort); return true; }
-                return false;
-            }
-            int sock = ball.SocketTeam.Value;
-            if (sock < 0)
-            {
-                // loose: go and get it (a defender only if it's not far from home - someone has to mind the base)
-                float d = Flat(ball.transform.position, transform.position);
-                if (m_Bent != Bent.Defender || alone || d < 45f || late) { Set(Task.Fetch); return true; }
-                return false;
-            }
-            if (sock == team)
-            {
-                // ours: defenders hold the base (everyone does if enemies are in it); raiders go hunting
-                if (m_Bent == Bent.Defender || EnemyNear(Cfg.BaseCenter[team], 28f)) { Set(Task.Defend); return true; }
-                if (m_Bent == Bent.Raider && geared && Hp01 > 0.6f) { m_HuntTeam = NearestEnemyTeam(); Set(Task.Hunt); return true; }
-                return false;
-            }
-            // in an enemy machine: raid for it (when it's ready for it - or time's running out)
-            bool go = m_Bent == Bent.Raider || alone ? Hp01 > 0.5f && (geared || late || m_Bent == Bent.Raider)
-                    : m_Bent == Bent.Gatherer ? (geared || late) && Hp01 > 0.6f
-                    : late && Hp01 > 0.6f;
-            if (!go) return false;
-            m_RaidTeam = sock;
-            m_RaidMachine = false;
-            Set(Task.Raid);
-            return true;
-        }
-
-        /// <summary>Bedwars: defenders guard the machine, the rest go and smash an enemy one when they're ready.</summary>
-        bool MachineJob(NetGame g)
-        {
-            bool alone = TeamSize(MyTeam) <= 1;
-            if (m_Bent == Bent.Defender && !alone) { Set(Task.Defend); return true; }
-            bool geared = HasWeapon || m_P.ArmorHp.Value > 0;
-            if (!geared && m_Bent != Bent.Raider && TimeLeft(g) > 150f) return false;
-            int best = -1;
-            float bd = float.MaxValue;
-            for (int t = 0; t < Cfg.TeamCount; t++)
-            {
-                if (t == MyTeam || g.MachineDown(t)) continue;
-                float d = Flat(Cfg.MachinePos(t), transform.position);
-                if (d < bd) { bd = d; best = t; }
-            }
-            if (best < 0) return false;
-            m_RaidTeam = best;
-            m_RaidMachine = true;
-            Set(Task.Raid);
-            return true;
-        }
-
-        // ---------------------------------------------------------------- the economy
-
-        bool EconomyJob(NetGame g)
-        {
-            bool homeSide = !MapBuilder.GlassUp || Cfg.RegionOf(transform.position) == Cfg.RegionOf(Cfg.BaseCenter[MyTeam]);
-            // hurt and out of berries: a bush (the eating itself happens on the way: TickEat)
-            if (Hp01 < 0.75f && m_P.Count(Item.Berry) == 0 && FindBush()) { Set(Task.Berries); return true; }
-            if (LootJob()) return true;                     // floor loot, death bags, airdrops (BotBrain.Loot.cs)
-            if (homeSide && DeployJob()) return true;       // what it made: a Trade Station, a chest, a bag, a turret
-            if (CraftJob(homeSide)) return true;            // the basics first: a hatchet, a spear
-            if (homeSide && ChestJob()) return true;        // somewhere to keep it all
-            if (homeSide && StoreJob()) return true;        // a good load on it (or junk): into the chest
-            if (homeSide && GoalJob(g)) return true;        // whatever the team's most behind on (BotBrain.Goals.cs)
-            // now and then just a look round, like a person
-            if (Random.value < 0.02f * m_Playful) { StartWander(6f); return true; }
-            // and otherwise it farms - always, well past what it needs (the spare goes in the chest)
-            if (FarmJob()) return true;
-            return homeSide && StoreJob(); // (full up)
         }
 
         // ---------------------------------------------------------------- who to fight

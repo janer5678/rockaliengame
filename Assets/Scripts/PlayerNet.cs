@@ -1635,7 +1635,7 @@ namespace RockGame
             float rebuild = Structure.RebuildWait(key);
             if (rebuild > 0f) { WallRebuildRefusals++; return Structure.RebuildWaitText(rebuild); }
             if (!unsupportedOk && !BuildGrid.IsSupported(key, BuildGrid.Registry.ContainsKey))
-                return t == PieceType.Floor ? "Floors need a wall below or a floor next to them" :
+                return t == PieceType.Floor ? "Floors need a wall below, a floor next to them or stairs under them" :
                        t == PieceType.Foundation ? "Foundations go on the ground" : "Needs a foundation or floor underneath";
             if (!AreaClear(t, pos, rot)) return "Placement blocked";
             return null;

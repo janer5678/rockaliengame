@@ -2163,6 +2163,12 @@ namespace RockGame
                 int rot = (Mathf.RoundToInt(m_Yaw / 90f) + m_RotOffset) & 3;
                 RefreshClientKeys();
                 visible = BuildGrid.ComputePlacement(t, ray, hit, hasHit, transform.position.y, rot, out m_GhostKey);
+                // a floor aimed at the top of some stairs (where it can't go): the roof over the stairs, one level up, if that can
+                if (visible && t == PieceType.Floor && m_GhostKey.L < Cfg.MaxLevel && BuildGrid.StairsUnder(m_GhostKey, m_ClientKeys.Contains))
+                {
+                    var lid = new PieceKey(PieceKey.KFloor, m_GhostKey.I, m_GhostKey.J, m_GhostKey.L + 1, 0);
+                    if (PlacementProblem(t, lid) == null) m_GhostKey = lid;
+                }
                 // aimed right at a spot where a piece was just destroyed: the ghost stays on it (red, with the seconds left)
                 bool cooling = visible && Cooling(t, m_GhostKey);
                 // walls/doorways/windows and foundations: don't make people aim at the exact bottom edge - look along the
@@ -2326,7 +2332,7 @@ namespace RockGame
             float wait = Structure.RebuildWait(key);
             if (wait > 0f) return Structure.RebuildWaitText(wait);
             if (!BuildGrid.IsSupported(key, m_ClientKeys.Contains))
-                return t == PieceType.Floor ? "Floors need a wall below or a floor next to them" : k_NeedsFoundation;
+                return t == PieceType.Floor ? "Floors need a wall below, a floor next to them or stairs under them" : k_NeedsFoundation;
             if (m_Net.Count(Cfg.BuildItem) < Cfg.PieceWood(t)) return $"Need {Cfg.PieceWood(t)} {Cfg.BuildName}";
             return null;
         }

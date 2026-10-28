@@ -5,7 +5,8 @@ namespace RockGame
 {
     /// <summary>
     /// "Respawn in the wild": in every mode (not the tutorial) you pick the spot on a map of the whole map
-    /// (Hud.Death.cs: DrawWildPicker) - but never close to an enemy base (WildBaseGap metres from its edge) or an airdrop
+    /// (Hud.Death.cs: DrawWildPicker) - but only on your own half of the wild (your team's side of the map: OnOwnSide,
+    /// the quarter with 4 teams), and never close to an enemy base (WildBaseGap metres from its edge) or an airdrop
     /// (WildDropGap metres from a crate on the ground, a fake one too, or one still beaming down). The picker shades
     /// those zones red; the server keeps to them too (NetGame.PickedSpawnPoint), and so does the random wild spot.
     /// </summary>
@@ -26,7 +27,12 @@ namespace RockGame
 
         static readonly List<Vector3> s_DropSpots = new List<Vector3>();
 
-        /// <summary>Can someone on `team` come back here in the wild? (why not, if not: "an enemy base" / "an airdrop")</summary>
+        /// <summary>Your half of the wild: the side of the map your base is on (RegionOf - a half with two teams, a quarter with
+        /// four). You only respawn in the wild on it.</summary>
+        public static bool OnOwnSide(int team, Vector3 p) => RegionOf(p) == team;
+
+        /// <summary>Can someone on `team` come back here in the wild? (why not, if not: "an enemy base" / "an airdrop" /
+        /// "the enemy's half")</summary>
         public static bool WildSpotOk(int team, Vector3 p, out string why)
         {
             why = null;
@@ -38,6 +44,7 @@ namespace RockGame
                 float dx = p.x - d.x, dz = p.z - d.z;
                 if (dx * dx + dz * dz < WildDropGap * WildDropGap) { why = "an airdrop"; return false; }
             }
+            if (team >= 0 && team < TeamCount && !OnOwnSide(team, p)) { why = "the enemy's half"; return false; }
             return true;
         }
         public static bool WildSpotOk(int team, Vector3 p) => WildSpotOk(team, p, out _);

@@ -422,9 +422,12 @@ namespace RockGame
 
         // ---------- Player ----------
         [Tune("Player")] public static float MaxHealth = 100f;
-        [Tune("Player")] public static float WalkSpeed = 5f;
-        [Tune("Player")] public static float SprintSpeed = 7.5f;
-        [Tune("Player")] public static float CrouchSpeed = 2.6f;
+        /// <summary>Everyone moves slower now (2026-10-28: 15% off walking, sprinting and crouching). The speeds before are
+        /// kept in OldWalkSpeed / OldSprintSpeed / OldCrouchSpeed to go back to.</summary>
+        [Tune("Player")] public static float WalkSpeed = 4.25f;
+        [Tune("Player")] public static float SprintSpeed = 6.4f;
+        [Tune("Player")] public static float CrouchSpeed = 2.2f;
+        public const float OldWalkSpeed = 5f, OldSprintSpeed = 7.5f, OldCrouchSpeed = 2.6f;
         [Tune("Player")] public static float JumpSpeed = 7.2f;
         [Tune("Player")] public static float JumpBuffer = 0.15f;  // a jump pressed this long before landing still jumps on landing (s)
         [Tune("Player")] public static float CoyoteTime = 0.12f;  // you can still jump this long after walking off an edge (s)
@@ -584,10 +587,10 @@ namespace RockGame
         [Tune("Arsenal and Builder")] public static float RevolverZoomFov = 52f;
         /// <summary>Auto Wood: wood added to a base's pile each second once the team has bought its wood machine (the wood
         /// gen's first level - no base starts with one).</summary>
-        [Tune("Auto Wood")] public static int AutoWoodPerSecond = 5;
+        [Tune("Auto Wood")] public static int AutoWoodPerSecond = 10; // (doubled 2026-10-28; was 5)
         /// <summary>The wood gen upgrade has three levels: the first builds the wood machine (Auto Wood Per Second), the
         /// next two speed it up - wood a second at each, and what each costs.</summary>
-        [Tune("Auto Wood")] public static int AutoWoodLevel1 = 12, AutoWoodLevel2 = 40; // (the third level was 25 a second)
+        [Tune("Auto Wood")] public static int AutoWoodLevel1 = 24, AutoWoodLevel2 = 80; // (doubled 2026-10-28: were 12 and 40; the third level was 25 a second before that)
         [Tune("Auto Wood")] public static int WoodGenBuildWood = 1000, WoodGen1Wood = 4000, WoodGen2Wood = 8000;
         /// <summary>The hammer's modes (Cfg.AutoWoodGen): the wood machine lands when the walls drop and goes up a level by
         /// itself this far through the ball phase.</summary>
@@ -1287,6 +1290,7 @@ namespace RockGame
             (21, new[] { "HeavyArmorWood", "DeathWandWood", "AirdropItemMask", "AirdropItemMask2" }),
             (22, new[] { "ModesCrossbowWood", "AirdropItemMask", "StickOfTruthShots", "TreeBreakerWood", "SpearGravity", "SpearStraightRange" }),
             (27, new[] { "SpearThrowDamage", "ArrowSpeed", "SwordHeadDamage", "SwordBodyDamage", "ShellWood", "RevolverAmmoWood", "TreeAmount", "TreeFellBonus", "TreeBreakerWood" }),
+            (28, new[] { "WalkSpeed", "SprintSpeed", "CrouchSpeed", "AutoWoodPerSecond", "AutoWoodLevel1", "AutoWoodLevel2" }),
             (26, new[] { "EmeraldPriceWalls", "GuardianDamage", "GuardianEvery", "GuardianRange", "GuardianHp" }),
             (25, new[] { "EmeraldPriceLightsaber", "EmeraldPriceAlienGun", "AlienGunShots", "AlienGunBodyDamage", "AlienGunHeadDamage", "AlienGunFireRate" }),
             (24, new[] { "EmeraldPriceRevolver", "EmeraldPriceShotgun", "LuckyBlockPrice" }),

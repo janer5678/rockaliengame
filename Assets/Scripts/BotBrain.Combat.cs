@@ -144,15 +144,27 @@ namespace RockGame
             }
         }
 
-        /// <summary>Off onto the enemy side, looking for a fight.</summary>
+        /// <summary>Looking for a fight, the way its plan has it (BotBrain.Plans.cs: m_HuntStyle): roaming the lanes between the
+        /// bases, lying in wait off the enemy's base (on their way out), or the approaches to its own base (nearby).</summary>
         void TickHunt()
         {
             var g = NetGame.Instance;
             if (g != null && g.S == GameState.SuddenDeath) { if (Flat(m_Goal, transform.position) < 2f) GoTo(Around(Cfg.ArenaCenter, 8f), 1f, true); return; }
             int enemy = m_HuntTeam >= 0 && m_HuntTeam < Cfg.TeamCount && m_HuntTeam != MyTeam ? m_HuntTeam : NearestEnemyTeam();
             if (enemy < 0) { Done(); return; }
-            if (Flat(m_Goal, transform.position) < 2.5f || Flat(m_Goal, Cfg.BaseCenter[MyTeam]) < 20f)
-                GoTo(Around(Vector3.Lerp(Cfg.BaseCenter[MyTeam], Cfg.BaseCenter[enemy], Random.Range(0.5f, 0.92f)), 18f), 2f, true);
+            var home = Cfg.BaseCenter[MyTeam];
+            var theirs = Cfg.BaseCenter[enemy];
+            if (Flat(m_Goal, transform.position) < 2.5f || (m_HuntStyle != 2 && Flat(m_Goal, home) < 20f))
+            {
+                Vector3 at;
+                switch (m_HuntStyle)
+                {
+                    case 1: at = Around(Vector3.Lerp(theirs, home, Random.Range(0.3f, 0.45f)), 14f); break; // (off their base, where they come out)
+                    case 2: at = Around(Vector3.Lerp(home, theirs, Random.Range(0.18f, 0.3f)), 14f); break;  // (the approaches to its own)
+                    default: at = Around(Vector3.Lerp(home, theirs, Random.Range(0.5f, 0.92f)), 18f); break; // (the lanes between)
+                }
+                GoTo(at, 2f, true);
+            }
             TryBreakBlocker();
         }
 

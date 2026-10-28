@@ -128,7 +128,7 @@ namespace RockGame
             float before = Cfg.WalkSpeed;
             Cfg.WalkSpeed = 6.5f;
             var path = SettingsFile.Export();
-            Check(path != null && System.IO.File.Exists(path) && System.IO.File.ReadAllText(path).Contains("WalkSpeed = 6.5    # CHANGED (default 5)"), $"settings exported to {path}");
+            Check(path != null && System.IO.File.Exists(path) && System.IO.File.ReadAllText(path).Contains($"WalkSpeed = 6.5    # CHANGED (default {Cfg.OldWalkSpeed * 0.85f:0.##})"), $"settings exported to {path}");
             Cfg.WalkSpeed = before;
             int n = SettingsFile.Import(out var err);
             Check(err == null && n == Cfg.TuneFields.Count && Mathf.Approximately(Cfg.WalkSpeed, 6.5f), $"settings imported back ({n} values, walk speed {Cfg.WalkSpeed})");
@@ -197,6 +197,7 @@ namespace RockGame
             if (m_Mode == "prompt12") { yield return Prompt12Routine(me, pc); yield break; } // (AutoTest.Prompt12.cs)
             if (m_Mode == "prompt15") { yield return Prompt15Routine(me, pc); yield break; } // (AutoTest.Prompt15.cs)
             if (m_Mode == "prompt16") { yield return Prompt16Routine(me, pc); yield break; } // (AutoTest.Prompt16.cs)
+            if (m_Mode == "prompt17") { yield return Prompt17Routine(me, pc); yield break; } // (AutoTest.Prompt17.cs)
             if (m_Mode == "aliens") { yield return AlienShots(me, pc); yield break; } // (AutoTest.AlienShots.cs)
             if (m_Mode == "exportassets") { yield return ExportAssets(me, pc); yield break; } // (AutoTest.Export.cs: every model as OBJ for Blender)
             Check(Cfg.BaseTeamAt(me.transform.position) == me.Team.Value, $"spawned inside own base ({me.transform.position})");

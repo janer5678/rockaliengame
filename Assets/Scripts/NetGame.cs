@@ -800,6 +800,8 @@ namespace RockGame
         {
             float half = Cfg.MapHalf - 6f;
             pick = new Vector3(Mathf.Clamp(pick.x, -half, half), 0f, Mathf.Clamp(pick.z, -half, half));
+            // only your own half of the wild (Cfg.OnOwnSide): a pick over the line is pulled back towards home till it's on your side
+            for (int i = 0; i < 24 && team >= 0 && team < Cfg.TeamCount && !Cfg.OnOwnSide(team, pick); i++) pick = Vector3.Lerp(pick, Cfg.BaseCenter[team], 0.12f);
             yaw = Quaternion.LookRotation(new Vector3(-pick.x, 0f, -pick.z).sqrMagnitude > 1f ? new Vector3(-pick.x, 0f, -pick.z) : Vector3.forward).eulerAngles.y; // (facing the middle)
             for (int ring = 0; ring < 30; ring++)
             {
@@ -820,7 +822,7 @@ namespace RockGame
             WildSpawnPoint(team, out pos, out yaw);
         }
 
-        /// <summary>"Respawn in the wild": a truly random free spot anywhere out in the wild (any side of the map, never in a base or the middle).</summary>
+        /// <summary>"Respawn in the wild": a random free spot out in the wild on your own half of the map (Cfg.OnOwnSide; never in a base or the middle).</summary>
         public static void WildSpawnPoint(int team, out Vector3 pos, out float yaw)
         {
             float half = Cfg.MapHalf;
