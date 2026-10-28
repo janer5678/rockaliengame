@@ -454,7 +454,6 @@ namespace RockGame
                 AmmoShownFrame = Time.frameCount;
             }
 
-            DrawBallWoodCorner(me, k); // (top left: the ball in your machine doubles your wood machine - BallWood.cs)
             DrawEmeraldHud(me, k); // (Emerald mode: the spawners' clocks, your emeralds - Hud.Emerald.cs)
             // ---- Builder crafting timers, then messages (top right) ----
             float my = 10 + DrawCraftStack(me, k, 10);
@@ -567,27 +566,7 @@ namespace RockGame
                     statY -= 26 * k;
                 }
                 statY = DrawWackyStatus(me, hr, statY, hw, k); // (the jump boots, a shield, slowed, an ant...: Hud.Wacky.cs)
-                // the ball buff, just above the armour: whichever team has the ball in its machine gathers x3 - shown to
-                // everyone, in capitals (a bit bigger than the other lines), so the others see the enemy has it and go for the ball
-                int buffTeam = Ball.Instance != null && Ball.Instance.IsSpawned && !Ball.Instance.IsCarried ? Ball.Instance.SocketTeam.Value : -1;
-                if (buffTeam >= 0 && (game == null || game.S != GameState.SuddenDeath))
-                {
-                    bool mine = buffTeam == me.Team.Value;
-                    var buffC = mine ? new Color(1f, 0.82f, 0.25f) : Color.Lerp(Cfg.TeamColor[Mathf.Clamp(buffTeam, 0, 3)], Color.white, 0.25f);
-                    string mul = $"{Cfg.BallGatherNow:0.#}X GATHERING FROM THE BALL";
-                    string line = mine ? $"<color=#ffd24a><b>YOUR TEAM HAS</b></color> <color=#eeeeee><b>{mul}</b></color>"
-                        : $"<color=#{ColorUtility.ToHtmlStringRGB(buffC)}><b>{Cfg.TeamLabel(buffTeam)} HAS</b></color> <color=#eeeeee><b>{mul}</b></color>";
-                    int buffSize = Mathf.RoundToInt(m_Small.fontSize * 1.3f);
-                    if (m_BuffStyle == null || m_BuffStyle.fontSize != buffSize) m_BuffStyle = new GUIStyle(m_Small) { fontSize = buffSize, alignment = TextAnchor.MiddleLeft, wordWrap = false, richText = true, clipping = TextClipping.Overflow };
-                    float bw = m_BuffStyle.CalcSize(new GUIContent(line)).x + 28 * k; // (bold counted: the rich text measured as drawn)
-                    var br = new Rect(hr.x, statY - 34 * k, Mathf.Max(hw, bw), 30 * k); // (lifted clear of the hotbar)
-                    Fill(br, new Color(buffC.r * 0.3f, buffC.g * 0.3f, buffC.b * 0.3f, 0.7f));
-                    Fill(new Rect(br.x, br.y, 6 * k, br.height), new Color(buffC.r, buffC.g, buffC.b, 0.95f));
-                    Shadowed(new Rect(br.x + 14 * k, br.y, br.width, br.height), line, m_BuffStyle);
-                    BuffShown = line;
-                    BuffShownAt = Time.time;
-                    statY -= 60 * k;
-                }
+                // (2026-10-28: the "X GATHERING FROM THE BALL" line is gone - the ball buffs are no more; BuffShown stays for the old tests)
                 if (me.HelmetHp.Value > 0)
                 {
                     Shadowed(new Rect(hr.x, statY, 400 * k, 22 * k), "<color=#a8c4e0><b>HELMET</b> (stops one headshot)</color>", m_Small);
@@ -697,6 +676,7 @@ namespace RockGame
                 case Item.SleepingBag: return $"<b>Sleeping Bag</b> x{s.Count}    LMB: put it down (not in an enemy base) - respawn at it when you die";
                 case Item.BearTrap: return $"<b>Stun Trap</b> x{s.Count}    LMB: set it on the ground or any floor - an enemy who steps on it is held {Cfg.BearTrapHold:0.#} s and seen through walls";
                 case Item.Barricade: return $"<b>Barricade</b> x{s.Count}    LMB: put it down - cover anywhere, even in the enemy base (not right up against their buildings)";
+                case Item.MedPen: return $"<b>Med Pen</b> x{s.Count}    LMB / RMB: jab it into your arm (+{Cfg.BerryHeal:0} HP at once)";
                 case Item.Ladder: return $"<b>Ladder</b> x{s.Count}    LMB: aim at a wall (yours or theirs, or a large wall) - it stands against it; walk into it and hold {KT(Bind.Forward)} to climb";
                 case Item.AutoTurret: return $"<b>Auto Turret</b>    LMB: place it in your base - then {KT(Bind.Interact)} on it and PUT A WEAPON (any) AND ARROWS IN IT";
                 case Item.Skull: return $"<b>Skull</b> x{s.Count}    Assassin: take it to your machine and {KT(Bind.Interact)}";
@@ -937,6 +917,7 @@ namespace RockGame
                 case Item.Armor: return $"  ({(s.Data > 0 ? s.Data : Cfg.ArmorHp)} armour HP)";
                 case Item.Crossbow: return s.Data > 0 ? "  (loaded)" : "  (empty)";
                 case Item.Berry: return $"  (RMB to eat, +{Cfg.BerryHeal:0} HP)";
+                case Item.MedPen: return $"  (LMB to jab, +{Cfg.BerryHeal:0} HP)";
                 default: return s.Count > 1 ? $"  x{s.Count}" : "";
             }
         }

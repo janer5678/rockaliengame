@@ -414,18 +414,21 @@ namespace RockGame
         {
             if (s == null || !s.IsSpawned) return;
             m_GonePieces.Add(new GonePiece { At = Time.time, Type = s.PType, Team = s.Team.Value, Tier = s.Tier.Value, Pos = s.transform.position, Rot = s.transform.rotation, Key = s.Key, HasKey = s.HasKey });
-            // (only the last minute or so is kept)
-            m_GonePieces.RemoveAll(g => Time.time - g.At > Mathf.Max(30f, Cfg.RebuildWindow + 5f));
+            // (only the last minute or so is kept - Emerald mode keeps the whole match's for the shop's INSTANT REPAIR: Emerald.Perks.cs)
+            float keep = Cfg.Emerald ? 7200f : Mathf.Max(30f, Cfg.RebuildWindow + 5f);
+            m_GonePieces.RemoveAll(g => Time.time - g.At > keep);
+            if (m_GonePieces.Count > 800) m_GonePieces.RemoveRange(0, m_GonePieces.Count - 800);
         }
 
-        /// <summary>Server: everything of this team's destroyed in the last Cfg.RebuildWindow seconds comes back as it was.</summary>
-        public int ServerRebuildBase(int team)
+        /// <summary>Server: everything of this team's destroyed in the last `window` seconds (Cfg.RebuildWindow by default) comes back as it was.</summary>
+        public int ServerRebuildBase(int team, float window = -1f)
         {
+            if (window < 0f) window = Cfg.RebuildWindow;
             int n = 0;
             for (int i = m_GonePieces.Count - 1; i >= 0; i--)
             {
                 var g = m_GonePieces[i];
-                if (g.Team != team || Time.time - g.At > Cfg.RebuildWindow) continue;
+                if (g.Team != team || Time.time - g.At > window) continue;
                 m_GonePieces.RemoveAt(i);
                 if (g.HasKey && BuildGrid.Registry.TryGetValue(g.Key, out var there) && there != null && there.IsSpawned) continue; // (something's been built there since)
                 var go = Instantiate(Bootstrap.I.structurePrefab, g.Pos, g.Rot);

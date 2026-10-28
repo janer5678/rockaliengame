@@ -8,10 +8,14 @@ namespace RockGame
     /// EMERALD MODE (GameRules.Emerald): Classic (keep the ball in your machine to fill your bar - no clock), plus:
     /// - airdrops only ever come down in three places: the middle, and the middle of the left and right sides (with 3-4
     ///   bases: closer in, on the diagonals) - each one picks one of them at random (Cfg.EmeraldDropSpots);
-    /// - EMERALD SPAWNERS: raised stone platforms, one on every team's way to the middle (EmeraldSpawner). Each grows ONE
-    ///   emerald every EmeraldEvery seconds (3 minutes) - while one's waiting there, no more come (NetGame.ServerTickEmeralds);
+    /// - EMERALD SPAWNERS: raised stone platforms - with two bases one on each team's own half, out to the side (half way
+    ///   to the map's edge, and half way out from the middle towards the base); with more, one on every team's way to the
+    ///   middle (EmeraldSpawner). Each grows ONE emerald every EmeraldEvery seconds (2 minutes 30) - while one's waiting
+    ///   there, no more come (NetGame.ServerTickEmeralds);
     /// - every base has an EMERALD SHOP on the bedrock, left of a smaller alien machine (EmeraldShop): E on it opens a
-    ///   store (Hud.Emerald.cs) of the Advanced Trade Station's things and more, bought with emeralds (EmeraldDeals);
+    ///   store (Hud.Emerald.cs) of things for your WHOLE TEAM, bought with emeralds (EmeraldDeals, Emerald.Perks.cs): an
+    ///   INTRUDER ALARM, AUTO ARMOUR, CRAFT ANYWHERE, a RAID DISCOUNT and an INSTANT REPAIR. (Its old rows - the knockback
+    ///   stick, pearls, the lightsaber, the alien gun, C4, the walls pack - are no longer sold; their code stays.)
     /// - the Trade Station is a store too: E on it shows its items (you can't trade them from the bag), Armour at the top
     ///   and the battering ram (EmeraldRamWood) at the bottom - and it can be crafted any time, in your base (no ball
     ///   capture needed). There's no Advanced Trade Station at all.
@@ -23,7 +27,7 @@ namespace RockGame
         public static bool Emerald => Rules == GameRules.Emerald;
 
         /// <summary>Seconds between emeralds on a spawner (only one waits there at a time).</summary>
-        [Tune("Emerald mode")] public static float EmeraldEvery = 180f;
+        [Tune("Emerald mode")] public static float EmeraldEvery = 150f; // (2 minutes 30 - was 3 minutes)
         /// <summary>The battering ram's price in Emerald mode (a Trade Station item there, at the bottom of its list).</summary>
         [Tune("Emerald mode")] public static int EmeraldRamWood = 500;
         /// <summary>High Power Armour: how much armour it puts on.</summary>
@@ -81,12 +85,12 @@ namespace RockGame
                     Add(Item.LuckyBlock, 1, LuckyBlockPrice, "a random airdrop item - any of them");
                     return s_Deals;
                 }
-                Add(Item.KnockStick, 1, EmeraldPriceKnockStick, "knocks whoever it hits back a good way");
-                Add(Item.EnderPearl, 1, EmeraldPricePearls, "throw it - you teleport where it lands");
-                Add(Item.Lightsaber, 1, EmeraldPriceLightsaber, $"quick glowing blade: {LightsaberDamage:0} a hit");
-                Add(Item.AlienGun, 1, EmeraldPriceAlienGun, $"{GunMag(Item.AlienGun)} shots, {AlienGunBodyDamage:0} body / {AlienGunHeadDamage:0} head - then it breaks");
-                Add(Item.C4, 1, EmeraldPriceC4, "thrown: wrecks every building piece nearby");
-                Add(Item.Barrier, 8, EmeraldPriceWalls, "8 tall steel walls and a gate - and a robot that lasers anyone who comes into your base", Item.LargeGate, 1, Item.BaseGuardian, 1);
+                // (2026-10-28: things for the whole team - Emerald.Perks.cs; the old rows - the stick, pearls, the lightsaber, the alien gun, C4, the walls - are gone)
+                Add(Item.BaseAlarm, 1, EmeraldPriceAlarm, $"your team: a siren whenever an enemy comes into your base ({AlarmCooldown:0} s between alarms)");
+                Add(Item.AutoArmor, 1, EmeraldPriceAutoArmor, $"your team: everyone respawns wearing Armour ({HeavyArmorHp}) every time");
+                Add(Item.CraftAnywherePerk, 1, EmeraldPriceCraftAnywhere, "your team: craft anywhere on the map, not just in your base");
+                Add(Item.RaidDiscount, 1, EmeraldPriceRaidDiscount, "your team: the raiding things (the ram, ladders, C4...) at half price");
+                Add(Item.BaseRepair, 1, EmeraldPriceRepair, "now: every damaged piece of your base is mended and what was destroyed comes back - not while an enemy's in your base");
                 return s_Deals;
             }
         }
@@ -104,6 +108,11 @@ namespace RockGame
                 case Item.LuckyBlock: return "Lucky Block";
                 case Item.AlienGun: return "Alien Gun";
                 case Item.BaseGuardian: return "Base Guardian";
+                case Item.BaseAlarm: return "Intruder Alarm";
+                case Item.AutoArmor: return "Auto Armour";
+                case Item.CraftAnywherePerk: return "Craft Anywhere";
+                case Item.RaidDiscount: return "Raid Discount";
+                case Item.BaseRepair: return "Instant Repair";
                 default: return null;
             }
         }
@@ -121,6 +130,11 @@ namespace RockGame
                 case Item.AlienGun: return $"Like the revolver, but it hits harder ({AlienGunBodyDamage:0} body, {AlienGunHeadDamage:0} head) and never needs ammo: {GunMag(Item.AlienGun)} shots, then it breaks.";
                 case Item.LandMine: return "LMB: put it on the ground, anywhere. It's hard to see - an enemy who steps on it blows up.";
                 case Item.FortCreator: return "LMB: throw it - a fort pops up where it lands: tall walls round a lookout tower, and a gate your team opens.";
+                case Item.BaseAlarm: return $"Your whole team: a siren and a message whenever an enemy comes into your base ({AlarmCooldown:0} s between alarms).";
+                case Item.AutoArmor: return $"Your whole team: everyone respawns wearing Armour ({HeavyArmorHp}) every time.";
+                case Item.CraftAnywherePerk: return "Your whole team: craft anywhere on the map, not just in your base.";
+                case Item.RaidDiscount: return "Your whole team: the raiding things - the ram, ladders, C4 - at half price.";
+                case Item.BaseRepair: return "Right now: every damaged piece of your base is mended and everything of yours destroyed this match comes back. Not while an enemy's in your base.";
                 default: return null;
             }
         }
@@ -215,7 +229,7 @@ namespace RockGame
                 Place(root, SideSpot(Cfg.MapHalf * 0.3f), Cfg.LuckyMiddleEvery);
             }
             else if (Cfg.FourWay) Place(root, HomeSpot(0.12f), Cfg.EmeraldEvery);
-            else Place(root, SideSpot(Cfg.MapHalf * 0.5f), Cfg.EmeraldEvery); // (was 0.32: further out to the side)
+            else Place(root, NearBaseSpot(Cfg.MapHalf * 0.5f, 0.5f), Cfg.EmeraldEvery); // (2026-10-28: as far out to the side as before - MapHalf * 0.5 - but half way out from the middle towards the base, not on the line between the halves: each team's is on its own half)
         }
 
         /// <summary>Forgets every spawner (a map without them: nothing of an earlier Emerald match's is left in the lists).</summary>
@@ -291,6 +305,28 @@ namespace RockGame
                     if (Clear(p)) return p;
                 }
             return dir * dist;
+        }
+
+        /// <summary>Blue's spawner with two bases: `side` out to the side of the ball (the same way SideSpot goes - that's its
+        /// x), and `toward` of the way from the middle out to blue's base centre (its z): on blue's own half, well clear of
+        /// the base. Moved along the base's way, then a little sideways, if something's in the way.</summary>
+        static Vector3 NearBaseSpot(float side, float toward)
+        {
+            var axis = Cfg.BaseCenter[1] - Cfg.BaseCenter[0];
+            axis.y = 0f;
+            var dir = Vector3.Cross(Vector3.up, axis.normalized);
+            var home = new Vector3(Cfg.BaseCenter[0].x, 0f, Cfg.BaseCenter[0].z);
+            float baseDist = home.magnitude;
+            var toBase = home.normalized;
+            side = Mathf.Max(MapBuilder.DomeRadius + 8f, side);
+            float along = Mathf.Clamp(baseDist * toward, 6f, Mathf.Max(6f, baseDist - Cfg.BaseHalf - 10f));
+            foreach (float dd in new[] { 0f, -4f, 4f, -8f, 8f, -12f, 12f })
+                foreach (float off in new[] { 0f, 3f, -3f, 6f, -6f })
+                {
+                    var p = dir * (side + off) + toBase * (along + dd);
+                    if (Clear(p)) return p;
+                }
+            return dir * side + toBase * along;
         }
 
         /// <summary>Nothing solid (scenery, rocks) on any team's copy of this spot, and dry land.</summary>
@@ -497,6 +533,8 @@ namespace RockGame
                 case Item.Emerald:
                     Gem(t, 0.34f, null, null);
                     return true;
+                case Item.BaseAlarm: case Item.AutoArmor: case Item.CraftAnywherePerk: case Item.RaidDiscount: case Item.BaseRepair:
+                    return EmeraldPerkModels.Build(item, t); // (the shop's team rows: Emerald.Perks.cs)
                 case Item.BaseGuardian:
                 {
                     // the guardian, small: a copy of the real thing (BaseGuardian.cs)
@@ -717,7 +755,8 @@ namespace RockGame
             if (why != null) { Notify(why); return; }
             InvOps.Remove(Inv, Item.Emerald, d.Price);
             SpentRpc((byte)Item.Emerald, d.Price);
-            if (d.Id == Item.LuckyBlock)
+            if (Cfg.IsEmeraldPerk(d.Id)) ServerBuyPerk(d.Id); // (the team perks and the instant repair: Emerald.Perks.cs)
+            else if (d.Id == Item.LuckyBlock)
             {
                 // Lucky Block mode: a random airdrop item, from all of them (LuckyBlock.cs)
                 var loot = Cfg.LuckyBlockLoot();
@@ -750,6 +789,7 @@ namespace RockGame
         public string EmeraldProblem(Cfg.EmeraldDeal d)
         {
             if (Count(Item.Emerald) < d.Price) return $"Not enough emeralds ({d.Price} needed)";
+            if (Cfg.IsEmeraldPerk(d.Id)) return PerkProblem(d.Id); // (Emerald.Perks.cs)
             if (d.Id == Item.HighArmor) return ArmorHp.Value >= Cfg.HighArmorHp ? "You're already wearing High Power Armour" : null;
             if (d.Id == Item.LuckyBlock) return InvOps.Space(Inv, Item.LuckyBlock, 0) < 1 ? "Inventory full!" : null; // (a free slot for whatever it is)
             int data = Mathf.Clamp(Cfg.MaxData(d.Id), 0, 255);

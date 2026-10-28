@@ -28,7 +28,10 @@ namespace RockGame
         Emerald, HighArmor, Lightsaber, HealBerry, LandMine, FortCreator,
         LuckyBlock, // (Lucky Block mode: the emerald shop's one row - a random airdrop item, LuckyBlock.cs; never an item itself)
         AlienGun, // (Emerald mode's shop: a hard-hitting revolver that breaks after its shots - Emerald.cs)
-        BaseGuardian } // (Emerald mode's walls pack: a robot that guards your base - BaseGuardian.cs)
+        BaseGuardian, // (Emerald mode's walls pack: a robot that guards your base - BaseGuardian.cs)
+        MedPen, // (a tier 1 heal you jab into your arm: a berry's worth at once - MedPen.cs)
+        // Emerald mode's shop rows that aren't things in a bag (Emerald.Perks.cs): the team perks, and the instant repair
+        BaseAlarm, AutoArmor, CraftAnywherePerk, RaidDiscount, BaseRepair }
 
     /// <summary>
     /// The game mode (picked in the main menu, next to the players). They don't mix:
@@ -181,7 +184,7 @@ namespace RockGame
                 case GameRules.AirdropTest: return "Classic, plus purple AIRDROP BERRY BUSHES all over the map: pick one (E) and you get an airdrop item - a different one every time (you never get the same one twice; the others can still get it).";
                 case GameRules.JonahBruh: return $"Classic with Jonah's changes (pick NORMAL or PROGRESSION below): a one-cell spawn base, Armour at the top of the Advanced Trade Station ({JonahBruhArmorWood}; the station {JonahBruhBench2Wood}), no stun trap, ladder or chainsaw - a BETTER HATCHET instead (chops faster, {BetterHatchetWood} wood), the death wand only from airdrops. Walls only upgrade to MAGICAL STONE ({JonahBruhStoneWood} wood a piece, {JonahBruhStoneHpMul:0.#}x as strong). Respawn in the wild: pick the spot on the map.";
                 case GameRules.ClipFarm: return $"Classic turned up for clips. Everyone gets a random airdrop item when the wall drops and every time they respawn (every airdrop item's in), an airdrop every {ClipFarmDropEvery:0} s, airdrop berry bushes all over. Multi-kills, long shots, headshots, streaks, shutdowns, revenge and YEETs go up huge on everyone's screen with an air horn - and get marked on Steam's game recording timeline.";
-                case GameRules.Emerald: return $"Classic, plus EMERALDS: one grows on each emerald spawner every {EmeraldEvery / 60f:0.#} minutes (from when the wall drops) - with two bases they're to the left and right of the ball, with more on every team's way to the middle. Spend them at the EMERALD SHOP beside your machine (E): the knockback stick {EmeraldPriceKnockStick}, an ender pearl {EmeraldPricePearls}, the lightsaber {EmeraldPriceLightsaber}, the ALIEN GUN {EmeraldPriceAlienGun} ({AlienGunShots} big shots, then it breaks), C4 {EmeraldPriceC4} - no other guns. The Trade Station is a shop too (E on it; craft it any time in your base) - no Advanced one. Airdrops only come down in the middle or the middle of the left or right side.";
+                case GameRules.Emerald: return $"Classic, plus EMERALDS: one grows on each emerald spawner every {EmeraldEvery / 60f:0.#} minutes (from when the wall drops) - with two bases each team has one on its own half, out to the side; with more, one on every team's way to the middle. Spend them at the EMERALD SHOP beside your machine (E) on things for your whole team: an INTRUDER ALARM {EmeraldPriceAlarm} (a siren whenever an enemy comes into your base), AUTO ARMOUR {EmeraldPriceAutoArmor} (respawn in armour every time), CRAFT ANYWHERE {EmeraldPriceCraftAnywhere}, a RAID DISCOUNT {EmeraldPriceRaidDiscount} (the ram and the other raiding things at half price) and an INSTANT REPAIR {EmeraldPriceRepair} (your base mended and rebuilt on the spot - not while an enemy's in it). The Trade Station is a shop too (E on it; craft it any time in your base) - no Advanced one. Airdrops only come down in the middle or the middle of the left or right side.";
                 case GameRules.LuckyBlock: return $"Bedwars (no ball: smash the enemy machines, last team standing) with no trees, berries or airdrops. You start with {LuckyStartWood} wood and your wood machine spams wood ({LuckyWoodPerSecond} a second) - you craft the building plan and battering rams ({LuckyRamWood} wood), nothing else. Emerald spawners in between the bases grow emeralds; at the emerald shop beside your machine a LUCKY BLOCK ({LuckyBlockPrice} emerald{(LuckyBlockPrice == 1 ? "" : "s")}) gives you a random airdrop item. The wall drops after {LuckyWallDrop:0} seconds.";
                 case GameRules.Domination: return "Classic, but whoever has the ball (carried or in their machine) gets the Advanced Trade Station's items without building one. Lose the ball, lose them.";
                 case GameRules.Tutorial: return "New here? Start with this. Short, simple steps teach you the whole game - you do each one to go on, and each control unlocks as it's taught. The clock is stopped and it's always the small Plains map. Press PLAY TUTORIAL and pick Solo or With a friend.";
@@ -448,11 +451,10 @@ namespace RockGame
         [Tune("Player")] public static float EnemyStepRange = 55f, EnemyStepRangeSprint = 75f;
         /// <summary>Standing in your own base heals you slowly (HP a second).</summary>
         [Tune("Player")] public static float BaseRegen = 2f;
-        /// <summary>While your team's ball is in your machine's socket (Builder: planted for your team), everything you gather
-        /// gives this much more: x1.5 in every mode and every team size (it was x3 outside a 1v1).</summary>
-        [Tune("Player")] public static float BallGatherMul = 1.5f;
-        /// <summary>The ball buff in this match (the same in every match now).</summary>
-        public static float BallGatherNow => BallGatherMul;
+        /// <summary>The ball in your machine no longer buffs anything (2026-10-28: the ball buffs are gone - the wood machine
+        /// simply always makes double, quietly: BallWood.cs). 1, kept for the old tests.</summary>
+        public const float BallGatherMul = 1f;
+        public static float BallGatherNow => 1f;
         [Tune("Player")] public static float BerryHeal = 25f, BerryEatTime = 1.5f, MeatEatTime = 3f;
         [Tune("Player")] public static int ArmorHp = 25;               // wooden armour: a second health bar, used up first (max 255)
         [Tune("Player")] public static float HeadshotMul = 2f;
@@ -534,6 +536,8 @@ namespace RockGame
         /// up against their buildings) - its price and how much it takes to break.</summary>
         [Tune("Crafting")] public static int BarricadeWood = 250;
         [Tune("Crafting")] public static float BarricadeHp = 600f;
+        /// <summary>The med pen (tier 1, MedPen.cs): a berry's heal, jabbed into your arm.</summary>
+        [Tune("Crafting")] public static int MedPenWood = 60;
         /// <summary>The Death Wand: no longer in airdrops - the last thing on the Advanced Trade Station's list.</summary>
         [Tune("Crafting")] public static int DeathWandWood = 5000;
         /// <summary>The Trade Station's ladder, bear trap, sleeping bag and large gate, and the Advanced one's auto turret.</summary>
@@ -655,6 +659,7 @@ namespace RockGame
                 case Item.Crossbow: return "Crossbow";
                 case Item.Armor: return "Wooden Armour";
                 case Item.Barricade: return "Barricade";
+                case Item.MedPen: return "Med Pen";
                 case Item.FortTower: return "Fort Tower";
                 case Item.Car: return "Wooden Car";
                 case Item.Saddle: return "Saddle";
@@ -704,6 +709,7 @@ namespace RockGame
                 case Item.RevolverAmmo: return 120;
                 case Item.EnderPearl: return 4;
                 case Item.Berry: return 20;
+                case Item.MedPen: return 10;
                 case Item.Barrier: return 8; // (Emerald mode's high defensive walls come 8 at a time)
                 case Item.LargeGate: return 3;
                 case Item.Emerald: return 99;
@@ -755,6 +761,7 @@ namespace RockGame
             || i == Item.DecoyBase || i == Item.ChaosSigil // (the decoy base and the Sigil of CHAOS: taken out)
             || i == Item.GoldenRock || i == Item.InvSwapper // (the Rock of Immortality and the inventory swapper: taken out)
             || i == Item.BearTrap // (the stun trap: taken out)
+            || IsEmeraldPerk(i) // (the emerald shop's team rows and its instant repair: rows in that shop, never things - Emerald.Perks.cs)
             || (JonahBruhOut(i) && i != Item.DeathWand) || (i == Item.BetterHatchet && !JonahBruh) || (i == Item.Hammer && !HammerOn); // (the hammer: only the tutorial's - UPGRADE is on the building plan now) // (Jonah Test Mode Bruh: JonahBruh.cs - its death wand isn't crafted, but comes in airdrops)
         /// <summary>Whether an airdrop item can still come in airdrops (and respawn loot / Fun Random): the death wand is crafted now.</summary>
         /// (The disguise kit only comes in team games: in a 1v1 there's nobody to blend in with.)
@@ -992,7 +999,7 @@ namespace RockGame
         }
 
         // ---------- Crafting ----------
-        static readonly Item[] k_Recipes = { Item.Hatchet, Item.Pickaxe, Item.Spear, Item.BuildingPlan, Item.Chest, Item.Bow, Item.Arrow, Item.Crossbow, Item.Armor, Item.Chainsaw, Item.BetterHatchet, Item.Ram, Item.Ladder, Item.Saddle, Item.Workbench, Item.Workbench2, Item.Hammer, Item.Barricade, Item.BearTrap, Item.DeathWand }; // (the bear trap is the stun trap; the auto turret is out for now: Removed; the High Strength ram, the large wall and gate are gone; the wooden armour only in the tutorial, which teaches it)
+        static readonly Item[] k_Recipes = { Item.Hatchet, Item.Pickaxe, Item.Spear, Item.BuildingPlan, Item.Chest, Item.Bow, Item.Arrow, Item.Crossbow, Item.Armor, Item.Chainsaw, Item.BetterHatchet, Item.Ram, Item.Ladder, Item.Saddle, Item.Workbench, Item.Workbench2, Item.Hammer, Item.MedPen, Item.BearTrap }; // (2026-10-28: the barricade and the death wand are out of crafting - the wand still comes in airdrops; the med pen is tier 1 - MedPen.cs) // (the bear trap is the stun trap; the auto turret is out for now: Removed; the High Strength ram, the large wall and gate are gone; the wooden armour only in the tutorial, which teaches it)
 
         static readonly Item[] k_Limited = { Item.Hatchet, Item.Spear, Item.BuildingPlan, Item.Ram };
         static readonly List<Item> s_Active = new List<Item>();
@@ -1041,6 +1048,7 @@ namespace RockGame
                 case Item.LargeGate: r = new Recipe { Output = Item.LargeGate, Count = 1, Wood = LargeGateWood }; break;
                 case Item.AutoTurret: r = new Recipe { Output = Item.AutoTurret, Count = 1, Wood = AutoTurretWood }; break;
                 case Item.Barricade: r = new Recipe { Output = Item.Barricade, Count = 1, Wood = BarricadeWood }; break;
+                case Item.MedPen: r = new Recipe { Output = Item.MedPen, Count = 1, Wood = MedPenWood }; break;
                 case Item.DeathWand: r = new Recipe { Output = Item.DeathWand, Count = 1, Wood = DeathWandWood }; break;
                 case Item.AlienDust: r = new Recipe { Output = Item.AlienDust, Count = Mathf.Max(1, DustPerBuy), Wood = DustBuyWood }; break;
                 default: r = new Recipe { Output = Item.Barrier, Count = 1, Wood = BarrierWood }; break;
@@ -1150,7 +1158,7 @@ namespace RockGame
 
         /// <summary>Spears and hatchets can be crafted anywhere; everything else only inside your own base.</summary>
         public static bool CraftAnywhere(Item i) => i == Item.Spear || i == Item.Hatchet;
-        public static bool CanCraftAt(int team, Vector3 p) => Builder || BaseTeamAt(p) == team;
+        public static bool CanCraftAt(int team, Vector3 p) => Builder || HasPerk(team, Item.CraftAnywherePerk) || BaseTeamAt(p) == team; // (Emerald mode's CRAFT ANYWHERE: Emerald.Perks.cs)
         public static bool CanCraftAt(int team, Vector3 p, Item i) => CraftAnywhere(i) || CanCraftAt(team, p);
 
         /// <summary>Raw base membership of a grid cell.</summary>
@@ -1291,6 +1299,7 @@ namespace RockGame
             (22, new[] { "ModesCrossbowWood", "AirdropItemMask", "StickOfTruthShots", "TreeBreakerWood", "SpearGravity", "SpearStraightRange" }),
             (27, new[] { "SpearThrowDamage", "ArrowSpeed", "SwordHeadDamage", "SwordBodyDamage", "ShellWood", "RevolverAmmoWood", "TreeAmount", "TreeFellBonus", "TreeBreakerWood" }),
             (28, new[] { "WalkSpeed", "SprintSpeed", "CrouchSpeed", "AutoWoodPerSecond", "AutoWoodLevel1", "AutoWoodLevel2" }),
+            (29, new[] { "EmeraldEvery" }),
             (26, new[] { "EmeraldPriceWalls", "GuardianDamage", "GuardianEvery", "GuardianRange", "GuardianHp" }),
             (25, new[] { "EmeraldPriceLightsaber", "EmeraldPriceAlienGun", "AlienGunShots", "AlienGunBodyDamage", "AlienGunHeadDamage", "AlienGunFireRate" }),
             (24, new[] { "EmeraldPriceRevolver", "EmeraldPriceShotgun", "LuckyBlockPrice" }),

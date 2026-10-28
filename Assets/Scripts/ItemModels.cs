@@ -716,6 +716,21 @@ namespace RockGame
                     Art.Part(t, Art.Cylinder, Art.Metal, new Vector3(0, -0.01f, 0.69f), new Vector3(0.12f, 0.02f, 0.12f), new Vector3(0, 0, 90));
                     break;
                 }
+                case Item.MedPen:
+                {
+                    // an auto-injector pen: a white body with an orange band and a little window, a dark cap at the bottom, a
+                    // steel needle out of the top (+Y) - held upright like the potions (MedPen.cs)
+                    float cr = 2f * Art.Cylinder.bounds.extents.x, ch = 2f * Art.Cylinder.bounds.extents.y;
+                    var white = new Color(0.92f, 0.93f, 0.95f);
+                    var orange = new Color(1f, 0.5f, 0.1f);
+                    Art.Part(t, Art.Cylinder, white, new Vector3(0, 0.1f, 0), new Vector3(0.034f / cr, 0.17f / ch, 0.034f / cr));
+                    Art.Part(t, Art.Cylinder, orange, new Vector3(0, 0.055f, 0), new Vector3(0.036f / cr, 0.03f / ch, 0.036f / cr));
+                    Art.Part(t, Art.Cylinder, new Color(0.15f, 0.15f, 0.17f), new Vector3(0, 0.012f, 0), new Vector3(0.038f / cr, 0.024f / ch, 0.038f / cr));
+                    Art.Box(t, new Color(0.55f, 0.8f, 1f), new Vector3(0, 0.12f, -0.016f), new Vector3(0.012f, 0.05f, 0.004f));
+                    Art.Part(t, Art.Cylinder, new Color(0.7f, 0.72f, 0.76f), new Vector3(0, 0.2f, 0), new Vector3(0.016f / cr, 0.03f / ch, 0.016f / cr));
+                    Art.Part(t, Art.Cylinder, Art.Metal, new Vector3(0, 0.235f, 0), new Vector3(0.004f / cr, 0.04f / ch, 0.004f / cr));
+                    break;
+                }
                 default: if (!EmeraldModels.Build(item, t)) WackyModels.Build(item, t); break; // (Emerald mode's things, the wacky airdrop items)
             }
             // PSX graphics: the PSX model takes the place of this one (same size, same grip)

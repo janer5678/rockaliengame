@@ -94,7 +94,7 @@ namespace RockGame
             var info = new Rect(x, top + Mathf.Min(view.height, contentH) + 6 * k, colW, footer);
             if (!DrawHoverInfo(info, k))
                 Shadowed(info, em ? (Cfg.LuckyBlock ? $"A lucky block: a random airdrop item. Emeralds grow on the emerald spawners (the raised green platforms) in between the bases - one every {Cfg.LuckyMiddleEvery:0} s on each. LMB on BUY. {KT(Bind.Inventory)} or [Esc] closes this."
-                        : $"Emeralds grow on the emerald spawners (the raised green platforms) - one every {Cfg.EmeraldEvery / 60f:0.#} minutes on each. LMB on BUY. {KT(Bind.Inventory)} or [Esc] closes this.")
+                        : $"Everything here is for your whole team. Emeralds grow on the emerald spawners (the raised green platforms - yours is on your half, out to the side) - one every {Cfg.EmeraldEvery / 60f:0.#} minutes on each. LMB on BUY. {KT(Bind.Inventory)} or [Esc] closes this.")
                     : $"The Trade Station's things are traded here, for wood. LMB on BUY. {KT(Bind.Inventory)} or [Esc] closes this.", CraftStyle(13 * k, FontStyle.Normal, TextAnchor.UpperLeft, Color.white, true));
         }
 
@@ -125,7 +125,8 @@ namespace RockGame
 
         void DrawEmeraldRow(PlayerNet me, Rect rr, int index, Cfg.EmeraldDeal d, float k, Event ev, bool canClick, bool visible)
         {
-            string problem = me.Count(Item.Emerald) < d.Price ? "can't afford" : me.EmeraldProblem(d) != null ? (d.Id == Item.HighArmor ? "wearing it" : "bag full") : null;
+            string why = me.Count(Item.Emerald) < d.Price ? null : me.EmeraldProblem(d);
+            string problem = me.Count(Item.Emerald) < d.Price ? "can't afford" : why == null ? null : Cfg.IsEmeraldPerk(d.Id) ? Cfg.PerkShort(why) : d.Id == Item.HighArmor ? "wearing it" : "bag full";
             if (ev.type == EventType.Repaint) ShopRowsShown.Add((d.Id, problem));
             if (!visible) return;
             string name = Cfg.ItemName(d.Id) + (d.Count > 1 ? $" <color=#bbbbbb>x{d.Count}</color>" : "") + (d.Extra != Item.None ? $" <color=#bbbbbb>+ {Cfg.ItemName(d.Extra).ToLower()}</color>" : "") + (d.Extra2 != Item.None ? $" <color=#bbbbbb>+ {Cfg.ItemName(d.Extra2).ToLower()}</color>" : "");

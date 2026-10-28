@@ -1243,7 +1243,7 @@ namespace RockGame
             Hit, Rocket, Sniper, Portal, Jet, Glass, Door, Click, Crowd, Whiz, Slide, Hoof, UiHover, UiClick, UiSlide, EnemyStep,
             Workshop, ArmorClank, StoneGrind, Engine, Unlock, TreeRustle, TreeOn, TreeOff,
             DoorWoodOpen, DoorWoodShut, DoorStoneOpen, DoorStoneShut, DoorMetalOpen, DoorMetalShut, DoorRefinedOpen, DoorRefinedShut, BigBoom, FarBoom, PistolShot, RevolverShot, ShotgunShot, FarShot, WandCast, PortalShot,
-            BeamHum, Socket, MachineHum;
+            BeamHum, Socket, MachineHum, Alarm;
         static readonly Dictionary<AudioClip, AudioClip[]> s_Variants = new Dictionary<AudioClip, AudioClip[]>();
         const int Rate = 44100;
 
@@ -1311,6 +1311,16 @@ namespace RockGame
             Beep = Make("beep", 0.08f, (t, d) => Mathf.Sign(Mathf.Sin(t * 2 * Mathf.PI * 1800)) * 0.25f);
             Zap = Make("zap", 0.3f, (t, d) => (Mathf.Sin(t * 2 * Mathf.PI * Mathf.Lerp(1400, 200, t / d)) * 0.5f + N() * 0.3f) * Env(t, 0.2f));
             Saw = Make("saw", 0.2f, (t, d) => (Mathf.Sign(Mathf.Sin(t * 2 * Mathf.PI * 95)) * 0.3f + N() * 0.25f) * (0.7f + 0.3f * Mathf.Sin(t * 2 * Mathf.PI * 25)), lowpass: 0.35f);
+            // the INTRUDER ALARM (Emerald mode's shop, Emerald.Perks.cs): a two-tone siren - 0.2 s of a hard-edged 880 Hz, 0.2 s
+            // of 660, eight times (whole cycles each, so no click at the changes), fading out at the end
+            Alarm = Make("alarm", 1.6f, (t, d) =>
+            {
+                int seg = Mathf.FloorToInt(t * 5f);
+                float f = (seg & 1) == 0 ? 880f : 660f;
+                float phase = t * f; // (176 and 132 whole cycles a segment: the phase lines up at every change)
+                float v = Mathf.Sin(phase * 2 * Mathf.PI) * 0.55f + Mathf.Sin(phase * 4 * Mathf.PI) * 0.18f + Mathf.Sign(Mathf.Sin(phase * 2 * Mathf.PI)) * 0.12f;
+                return v * 0.7f * Mathf.Min(1f, t * 40f) * Mathf.Clamp01((d - t) * 5f);
+            });
             Hum = Make("hum", 1.5f, (t, d) => (Mathf.Sin(t * 2 * Mathf.PI * 55) * 0.5f + Mathf.Sin(t * 2 * Mathf.PI * 110.5f) * 0.3f) * Mathf.Sin(t / d * Mathf.PI), lowpass: 0.5f);
             // the airdrop ship's gravity beam lowering its crate (loops: whole cycles of every tone in its 2 s, so no bump
             // at the seam): a deep throbbing hum with a thin shimmer on top

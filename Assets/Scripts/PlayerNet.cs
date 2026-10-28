@@ -656,7 +656,7 @@ namespace RockGame
         {
             bool dead = Dead.Value;
             if (!Mine) RemoteSounds(dead);
-            if (IsServer) { ServerTickCraft(); ServerTickBaseRegen(); ServerTickBleed(); ServerTickPing(); ServerTickWacky(); }
+            if (IsServer) { ServerTickCraft(); ServerTickBaseRegen(); ServerTickBleed(); ServerTickPing(); ServerTickWacky(); ServerTickIntruder(); }
             if (dead && !m_WasDead) { m_DeadSince = Time.time; SpawnRagdoll(); }
             m_WasDead = dead;
             // the dead leave no body of their own: it drops as a ragdoll (Ragdoll.cs) and the real one is hidden
@@ -1023,6 +1023,7 @@ namespace RockGame
             Dead.Value = false;
             if (pod) CryoWakeRpc();
             else Fx.Server(FxKind.Spawn, pos, Vector3.up);
+            if (!InWaitingArena) ServerAutoArmor(); // (Emerald mode's AUTO ARMOUR: back in armour every time - Emerald.Perks.cs)
             // game option: come back with a random airdrop item
             if ((Cfg.RespawnLoot || Cfg.ClipFarm) && !InWaitingArena) // (Clip Farm: always)
             {
@@ -1192,7 +1193,7 @@ namespace RockGame
                 weak = weak && n.IsWeakSpotHit(point, 0.8f);
                 bool tree = n.IsWood; // (a tree or a fallen log)
                 // every swing gathers Cfg.GatherMul times the tool's number; your team's ball in your base: everything you gather pays a bit more (DNA too)
-                int got = n.ServerHarvest(Mathf.RoundToInt((tree ? st.WoodGather : st.StoneGather) * Mathf.Max(0.01f, Cfg.GatherMul) * (BallBuff ? Cfg.BallGatherNow : 1f)), weak, transform.position);
+                int got = n.ServerHarvest(Mathf.RoundToInt((tree ? st.WoodGather : st.StoneGather) * Mathf.Max(0.01f, Cfg.GatherMul)), weak, transform.position); // (2026-10-28: no ball buff on gathering any more)
                 if (got > 0) ServerGive(Cfg.GatherItem(n.Yield), Cfg.GatherCount(n.Yield, got)); // DNA mode: DNA instead
                 if (got > 0 && n.Kind.Value == ResourceNode.Tree && n.Amount.Value <= 0 && Cfg.TreeFellBonus > 0)
                 {
@@ -1517,7 +1518,7 @@ namespace RockGame
             bool power = recipe >= Cfg.PowerBase;
             if (Dead.Value || recipe < 0 || (!power && recipe >= Cfg.RecipeCount) || (power && recipe - Cfg.PowerBase >= Cfg.PowerCount)) return;
             if (InSuddenDeath || (NetGame.Instance != null && NetGame.Instance.S == GameState.GameOver)) return;
-            var r = power ? Cfg.GetPowerRecipe(recipe - Cfg.PowerBase, Team.Value) : Cfg.GetRecipe(recipe);
+            var r = Cfg.CraftRecipe(recipe, Team.Value); // (priced for the team: Emerald mode's RAID DISCOUNT - Emerald.Perks.cs)
             if (!Tutorial.AllowsItemFor(this, r.Output)) { Notify("Not yet - the tutorial gets to that soon"); return; }
             if (Cfg.SuddenLocked(r.Output)) { Notify("Sudden death: only the basics can be made"); return; } // (NetGame.SuddenRound.cs)
             // the Workbench T1 is locked for everyone until a team (any team) has captured the ball (NetGame.Bench.cs)
@@ -1532,7 +1533,7 @@ namespace RockGame
             {
                 if (Cfg.BenchTier(Team.Value) < tier) { Notify($"The {Cfg.ItemName(r.Output)} needs a {(tier == 2 ? "Advanced Trade Station" : "Trade Station")} in your base"); return; }
                 if (!Cfg.CanCraftAt(Team.Value, transform.position)) { Notify($"{r.Name} can only be crafted inside your own base"); return; }
-                if (Cfg.Emerald && !Bot.Value && !Cfg.AtOwnBench(Team.Value, transform.position)) { Notify($"Emerald mode: the {r.Name} is traded at your Trade Station ({"E"} on it)"); return; } // (Emerald.cs)
+                if (Cfg.Emerald && !Bot.Value && !Cfg.HasPerk(Team.Value, Item.CraftAnywherePerk) && !Cfg.AtOwnBench(Team.Value, transform.position)) { Notify($"Emerald mode: the {r.Name} is traded at your Trade Station ({"E"} on it)"); return; } // (Emerald.cs)
             }
             if (Workbench.IsBench(r.Output) && Workbench.ForTeam(Team.Value, Workbench.TierOfItem(r.Output)) != null) { Notify($"Your team already has a {Cfg.ItemName(r.Output)}"); return; }
             if (Cfg.Builder || power) { ServerCraftModes(r); return; } // (power items: armour-style ones just happen - PlayerNet.Modes.cs)
@@ -2008,6 +2009,7 @@ namespace RockGame
             var st = HeldStack;
             if (ServerWearGear(st)) { m_NextEat = Time.time + 0.5f; return; } // (the jetpack, the wallhack glasses, the jump boots: PlayerNet.Gear.cs)
             if (st.Id == Item.HealBerry) { m_NextEat = Time.time + 0.6f; ServerEatHealBerry(); return; } // (Emerald mode: Emerald.cs)
+            if (st.Id == Item.MedPen) { ServerMedPen(); return; } // (jabbed into your arm: MedPen.cs / Emerald.Perks.cs)
             if (st.Id == Item.HighArmor)
             {
                 // High Power Armour (Emerald mode): what it has left (dropped by someone who died in it) or full; any you had on goes back in your bag

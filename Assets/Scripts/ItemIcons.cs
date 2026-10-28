@@ -301,7 +301,7 @@ namespace RockGame
                     t.localRotation = Quaternion.Euler(0, 0, 45); break;
                 case Item.Arrow: case Item.Pickaxe: case Item.DeathWand: case Item.GiantStaff: case Item.TreeCracker: case Item.Sword:
                 case Item.Connect4Wand: case Item.GameshowWand: case Item.StickOfTruth: case Item.GravityStaff: case Item.KnockStick: case Item.KnockStick1:
-                case Item.TreeBreaker: case Item.ChaosSigil: case Item.BallGrabber: case Item.Decoy:
+                case Item.TreeBreaker: case Item.ChaosSigil: case Item.BallGrabber: case Item.Decoy: case Item.MedPen:
                     t.localRotation = Quaternion.Euler(0, 0, -40); break;
                 case Item.Bow:
                     t.localRotation = Quaternion.Euler(0, 90, -35); break;

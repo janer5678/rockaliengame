@@ -125,6 +125,7 @@ namespace RockGame
                 case Item.Crossbow: return $"Crossbow: {Cfg.CrossbowDamage:0} damage, full power the moment you fire - no drawing. Reloads itself from your arrows.";
                 case Item.Armor: return $"Armour: {Cfg.ArmorHp} extra health used up before your own.";
                 case Item.Chainsaw: return $"Chainsaw: rips through wood and stone. {Cfg.ChainsawUses * Cfg.ChainsawWearEvery} uses.";
+                case Item.MedPen: return $"Med Pen: jab it into your arm - +{Cfg.BerryHeal:0} HP at once, no chewing. Stacks to {Cfg.MaxStack(Item.MedPen)}.";
                 case Item.Hammer: return $"Hammer: aim at one of your walls and LMB to upgrade it - {Cfg.HammerPrices}. It can't hurt players.";
                 case Item.BetterHatchet: return $"Better Hatchet: a steel hatchet - quicker swings and more wood a hit than the hatchet.";
                 case Item.HeavyRam: return "High Strength Battering Ram: 3x a normal ram. Wood, stone and metal break in one slam; armoured drops to wood.";
@@ -278,7 +279,7 @@ namespace RockGame
         {
             int team = me.Team.Value;
             // your team's benches decide what's listed wherever you are (out of your base it's greyed: ListProblem)
-            m_CraftTier = Cfg.Emerald ? 0 : Cfg.BenchTier(team); // (Emerald mode: the Trade Station's things are bought at it - E - not from the bag)
+            m_CraftTier = Cfg.Emerald && !Cfg.HasPerk(team, Item.CraftAnywherePerk) ? 0 : Cfg.BenchTier(team); // (Emerald mode: the Trade Station's things are bought at it - E - not from the bag; with CRAFT ANYWHERE they're in this list too, anywhere)
             m_CraftRows.Clear();
             for (int tier = 0; tier <= m_CraftTier; tier++)
             {

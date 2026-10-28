@@ -76,26 +76,24 @@ namespace RockGame
                 Check(bushes > 4, $"airdrop berry bushes all over the map ({bushes})");
             }
 
-            // ---- the ball in your machine: the wood machine makes double, and the top left says so
+            // ---- the wood machine always makes double (quietly: no x2 box), ball or no ball (2026-10-28: the ball buffs are gone)
             {
                 int lvl = Cfg.WoodGenLevel(team);
                 int rate = Cfg.WoodGenRate(lvl);
-                Check(lvl >= 1 && !Cfg.BallDoublesWood(team) && Cfg.WoodPerSecondNow(team) == rate, $"no ball: the wood machine makes {Cfg.WoodPerSecondNow(team)} a second (level {lvl})");
+                Check(lvl >= 1 && !Cfg.BallDoublesWood(team) && Cfg.WoodPerSecondNow(team) == rate * Cfg.AutoWoodSecretMul, $"no ball: the wood machine makes {Cfg.WoodPerSecondNow(team)} a second (level {lvl}: {rate} on the label, x{Cfg.AutoWoodSecretMul} for real)");
                 if (Ball.Instance != null) Ball.Instance.ServerSocket(team);
                 yield return new WaitForSeconds(0.5f);
-                Check(Cfg.BallDoublesWood(team) && Cfg.WoodPerSecondNow(team) == rate * 2, $"the ball in our machine: {Cfg.WoodPerSecondNow(team)} a second (x2)");
+                Check(!Cfg.BallDoublesWood(team) && Cfg.WoodPerSecondNow(team) == rate * Cfg.AutoWoodSecretMul, $"the ball in our machine: still {Cfg.WoodPerSecondNow(team)} a second (the ball buffs nothing now)");
                 int pile0 = WoodPileCount(g, team);
                 yield return new WaitForSeconds(4.05f);
                 int pile1 = WoodPileCount(g, team);
-                Check(pile1 - pile0 >= rate * 2 * 3, $"...and the pile really grows twice as fast ({pile1 - pile0} in 4 s, {rate} a second without the ball)");
+                Check(pile1 - pile0 >= rate * 2 * 3 && pile1 - pile0 <= rate * 2 * 5, $"...and the pile really grows at double the label ({pile1 - pile0} in 4 s, {rate} a second on the label)");
                 pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
                 yield return new WaitForSeconds(0.5f);
-                Check(Time.time - Hud.BallWoodShownAt < 0.5f && Hud.BallWoodShown.Contains("WOOD MACHINE x2") && Hud.BallWoodRect.x < Screen.width * 0.2f && Hud.BallWoodRect.y < Screen.height * 0.25f,
-                    $"top left of the screen: {Hud.BallWoodShown} at {Hud.BallWoodRect}");
-                yield return Snap("prompt12_ball_wood_x2");
+                Check(Hud.BallWoodShownAt < 0f && Time.time - Hud.BuffShownAt > 1f, "...and nothing on screen says so (no WOOD MACHINE x2 box, no gathering buff line)");
+                yield return Snap("prompt12_ball_wood_quiet");
                 Ball.Instance.ServerPlaceInDome();
                 yield return new WaitForSeconds(0.5f);
-                Check(!Cfg.BallDoublesWood(team) && Time.time - Hud.BallWoodShownAt > 0.3f, "ball gone: back to normal, the box goes");
             }
 
             // ---- the tree breaker: 400 a tree, 5000 wood of trees in all

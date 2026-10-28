@@ -198,6 +198,7 @@ namespace RockGame
             if (m_Mode == "prompt15") { yield return Prompt15Routine(me, pc); yield break; } // (AutoTest.Prompt15.cs)
             if (m_Mode == "prompt16") { yield return Prompt16Routine(me, pc); yield break; } // (AutoTest.Prompt16.cs)
             if (m_Mode == "prompt17") { yield return Prompt17Routine(me, pc); yield break; } // (AutoTest.Prompt17.cs)
+            if (m_Mode == "prompt18") { yield return Prompt18Routine(me, pc); yield break; } // (AutoTest.Prompt18.cs)
             if (m_Mode == "aliens") { yield return AlienShots(me, pc); yield break; } // (AutoTest.AlienShots.cs)
             if (m_Mode == "exportassets") { yield return ExportAssets(me, pc); yield break; } // (AutoTest.Export.cs: every model as OBJ for Blender)
             Check(Cfg.BaseTeamAt(me.transform.position) == me.Team.Value, $"spawned inside own base ({me.transform.position})");

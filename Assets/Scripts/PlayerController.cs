@@ -680,6 +680,7 @@ namespace RockGame
                         case Item.HeavyArmor:
                         case Item.InvisPotion: case Item.SpeedJuice: HandleUseItem(held); break;
                         case Item.HighArmor: case Item.HealBerry: HandleUseItem(held); break; // (Emerald mode)
+                        case Item.MedPen: HandleMedPen(); break; // (jabbed into your arm: MedPen.cs)
                         case Item.FortCreator: HandleLootThrow(held); break; // (Emerald mode: thrown, a fort where it lands)
                         case Item.Jetpack: case Item.Wallhack: case Item.JumpBoots: HandleUseItem(held); break; // (worn gear: put on when you click, never by itself)
                         default:
@@ -694,6 +695,7 @@ namespace RockGame
             if (!drawing) m_DrawStart = -1f;
             if (!drawing || held != Item.Spear) { m_SpearReleaseAt = -1f; m_SpearBufferUntil = -1f; }
             if ((held != Item.Berry && held != Item.Meat) || m_Net.Dead.Value || !input) m_EatStart = -1f;
+            if (held != Item.MedPen || m_Net.Dead.Value) m_InjectSendAt = -1f; // (the med pen put away mid-jab: no heal)
             float drawTime = held == Item.Spear ? Cfg.SpearDrawTime : Cfg.BowDrawTime;
             DrawAmount = m_DrawStart >= 0 ? Mathf.Clamp01((Time.time - m_DrawStart) / Mathf.Max(0.05f, drawTime)) : 0f;
             if (!input || carrying || gameOver || !Cfg.IsRam(held) || !Binds.Held(Bind.Attack)) RamCharge = 0f;

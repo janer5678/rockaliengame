@@ -43,7 +43,7 @@ namespace RockGame
         GameObject m_Item, m_Arrow, m_Ball, m_StringA, m_StringB;
         Item m_ItemId = (Item)255;
         bool m_WasBall;
-        float m_SwingStart = -10f, m_SwingDur = 0.6f, m_ThrowStart = -10f, m_EatStart = -10f, m_UseStart = -10f, m_EquipStart = -10f;
+        float m_SwingStart = -10f, m_SwingDur = 0.6f, m_ThrowStart = -10f, m_EatStart = -10f, m_UseStart = -10f, m_EquipStart = -10f, m_InjectStart = -10f;
         bool m_Hit, m_ImpactKnown;
         float m_FreezeUntil = -10f, m_FreezeE;
         Vector2 m_Sway;
@@ -369,6 +369,7 @@ namespace RockGame
                 case Item.Shotgun:
                 case Item.PortalGun:
                 case Item.RocketLauncher: PoseCrossbow(s, shared, sharedRot); break;
+                case Item.MedPen: PoseMedPen(shared, sharedRot); break; // (jabbed into the left forearm: MedPen.cs)
                 case Item.None: HideLeft(); Set(m_R, new Vector3(0.3f, -0.9f, 0.2f), Quaternion.identity); break;
                 default: PoseHeld(s.Item, shared, sharedRot); break;
             }
