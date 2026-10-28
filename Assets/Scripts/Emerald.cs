@@ -205,19 +205,25 @@ namespace RockGame
 
         /// <summary>Builds every spawner (Emerald and Lucky Block mode) - after everything else on the map, so their spots dodge
         /// it. Emerald mode: with two bases, one on the LEFT and one on the RIGHT of the ball (on the line between the
-        /// halves, well clear of both bases); with 3-4, one on every team's way to the middle, close in. Lucky Block mode:
+        /// halves, well out to the side - half way to the map's edge); with 3-4, one on every team's way to the middle, close in. Lucky Block mode:
         /// just the two (3-4 bases: four) in between the bases, nearer the middle - none by any base.</summary>
         public static void BuildAll(Transform root)
         {
-            Tops.Clear();
-            Every.Clear();
-            All.Clear();
+            ClearAll();
             if (Cfg.LuckyBlock)
             {
                 Place(root, SideSpot(Cfg.MapHalf * 0.3f), Cfg.LuckyMiddleEvery);
             }
             else if (Cfg.FourWay) Place(root, HomeSpot(0.12f), Cfg.EmeraldEvery);
-            else Place(root, SideSpot(Cfg.MapHalf * 0.32f), Cfg.EmeraldEvery);
+            else Place(root, SideSpot(Cfg.MapHalf * 0.5f), Cfg.EmeraldEvery); // (was 0.32: further out to the side)
+        }
+
+        /// <summary>Forgets every spawner (a map without them: nothing of an earlier Emerald match's is left in the lists).</summary>
+        public static void ClearAll()
+        {
+            Tops.Clear();
+            Every.Clear();
+            All.Clear();
         }
 
         /// <summary>One spawner in every team's part of the map (the same spot, turned round).</summary>
@@ -617,21 +623,23 @@ namespace RockGame
         public static int EmeraldsGrown;
 
         /// <summary>Server, every frame of a match (from the start): each spawner with no emerald on it grows one every
-        /// EmeraldSpawner.EveryOf seconds - counted from when the glass wall drops (while it's up the clocks wait full,
-        /// and nothing comes out).</summary>
+        /// EmeraldSpawner.EveryOf seconds - counted from when the glass wall drops (while it's up nothing comes out:
+        /// in Emerald mode the first emerald is already grown and drops the moment the wall does; in Lucky Block mode
+        /// the clocks wait, full).</summary>
         void ServerTickEmeralds(double now)
         {
             if (!Cfg.HasEmeralds) return;
             int n = EmeraldSpawner.Tops.Count;
-            while (EmeraldAt.Count < n) EmeraldAt.Add(now + EmeraldSpawner.EveryOf(EmeraldAt.Count));
+            while (EmeraldAt.Count < n) EmeraldAt.Add(FirstEmeraldAt(now, EmeraldAt.Count));
             while (m_EmeraldItem.Count < n) m_EmeraldItem.Add(-1);
             bool wallUp = WallUp;
             for (int i = 0; i < n; i++)
             {
                 if (wallUp)
                 {
-                    // the glass wall's still up: no emeralds yet - every clock waits, full, for the wall to drop
-                    double full = now + EmeraldSpawner.EveryOf(i);
+                    // the glass wall's still up: no emeralds yet - Emerald mode's first is grown, ready to drop with the
+                    // wall; Lucky Block's clocks wait, full, for the wall to drop
+                    double full = FirstEmeraldAt(now, i);
                     if (EmeraldAt[i] >= 0 && System.Math.Abs(EmeraldAt[i] - full) > 0.5) EmeraldAt[i] = full;
                     continue;
                 }
@@ -650,6 +658,10 @@ namespace RockGame
                 Fx.Server(FxKind.Spawn, EmeraldSpawner.Tops[i], Vector3.up);
             }
         }
+
+        /// <summary>When spawner i's first emerald comes: Emerald mode starts with one on every spawner (it drops as soon as
+        /// the wall does); Lucky Block mode grows the first like every other.</summary>
+        static double FirstEmeraldAt(double now, int i) => Cfg.Emerald ? now : now + EmeraldSpawner.EveryOf(i);
 
         bool ItemOnPad(int id, Vector3 top)
         {

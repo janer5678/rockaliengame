@@ -218,6 +218,9 @@ namespace RockGame
         Light m_Sun;
         float m_BaseShadowDistance = -1f;
         UniversalRenderPipelineAsset m_Urp;
+        // the pipeline asset as it was, for Low graphics to cap and Normal to put back (LowGraphics.cs)
+        float m_BaseRenderScale = -1f;
+        int m_BaseMsaa = -1, m_BaseCascades = -1, m_BaseShadowMap = -1, m_BaseMipLimit;
         RenderTexture m_UiRt;
         Material m_Mat;
         UiPass m_Pass;
@@ -237,6 +240,9 @@ namespace RockGame
         /// <summary>(tests) the sun's shadow strength and the shadow distance in use.</summary>
         public static float SunShadowStrength => s_I != null && s_I.m_Sun != null ? s_I.m_Sun.shadowStrength : -1f;
         public static float UrpShadowDistance => s_I != null && s_I.m_Urp != null ? s_I.m_Urp.shadowDistance : -1f;
+        /// <summary>(tests) the render scale and MSAA the pipeline is on (Low graphics: 0.75 and none).</summary>
+        public static float UrpRenderScale => s_I != null && s_I.m_Urp != null ? s_I.m_Urp.renderScale : -1f;
+        public static int UrpMsaa => s_I != null && s_I.m_Urp != null ? s_I.m_Urp.msaaSampleCount : -1;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void Init()
@@ -250,7 +256,15 @@ namespace RockGame
         void Awake()
         {
             m_Urp = GraphicsSettings.currentRenderPipeline as UniversalRenderPipelineAsset;
-            if (m_Urp != null) m_BaseShadowDistance = m_Urp.shadowDistance;
+            if (m_Urp != null)
+            {
+                m_BaseShadowDistance = m_Urp.shadowDistance;
+                m_BaseRenderScale = m_Urp.renderScale;
+                m_BaseMsaa = m_Urp.msaaSampleCount;
+                m_BaseCascades = m_Urp.shadowCascadeCount;
+                m_BaseShadowMap = m_Urp.mainLightShadowmapResolution;
+            }
+            m_BaseMipLimit = QualitySettings.globalTextureMipmapLimit;
             var sh = Resources.Load<Shader>("PostFx/UiComposite");
             if (sh != null && sh.isSupported)
             {
@@ -262,6 +276,7 @@ namespace RockGame
             else Debug.LogWarning("[RockGame] PostFx/UiComposite shader missing: post processing can't go over the UI");
             RenderPipelineManager.beginCameraRendering += OnBeginCamera;
             GameSettings.UiLookChanged += ApplyShadows;
+            DisplayPref.Changed += ApplyShadows; // (Low graphics on / off: LowGraphics.cs)
             ApplyShadows();
         }
 
@@ -269,7 +284,10 @@ namespace RockGame
         {
             RenderPipelineManager.beginCameraRendering -= OnBeginCamera;
             GameSettings.UiLookChanged -= ApplyShadows;
+            DisplayPref.Changed -= ApplyShadows;
             if (m_Urp != null && m_BaseShadowDistance > 0f) m_Urp.shadowDistance = m_BaseShadowDistance; // (the asset as it was - matters in the editor)
+            if (m_Urp != null && m_BaseRenderScale > 0f) { m_Urp.renderScale = m_BaseRenderScale; m_Urp.msaaSampleCount = m_BaseMsaa; m_Urp.shadowCascadeCount = m_BaseCascades; m_Urp.mainLightShadowmapResolution = m_BaseShadowMap; }
+            QualitySettings.globalTextureMipmapLimit = m_BaseMipLimit;
             if (m_UiRt != null) { m_UiRt.Release(); Destroy(m_UiRt); }
             if (m_Mat != null) Destroy(m_Mat);
             if (m_NotifRt != null) { m_NotifRt.Release(); Destroy(m_NotifRt); }
@@ -290,11 +308,23 @@ namespace RockGame
             else if (!Mathf.Approximately(m_Sun.shadowStrength, GameSettings.ShadowStrength)) m_Sun.shadowStrength = GameSettings.ShadowStrength;
         }
 
+        /// <summary>The sun's shadow strength and the pipeline asset's shadow distance from the sliders - and on Low graphics
+        /// (LowGraphics.cs) the distance capped, one cascade from a smaller shadow map, a 75% render scale, no MSAA and
+        /// textures one mip smaller (all put back as the asset had them on Normal).</summary>
         void ApplyShadows()
         {
             if (this == null) return;
             if (m_Sun != null) m_Sun.shadowStrength = GameSettings.ShadowStrength;
-            if (m_Urp != null) m_Urp.shadowDistance = GameSettings.ShadowDistance;
+            bool low = GameSettings.LowGfx;
+            if (m_Urp != null)
+            {
+                m_Urp.shadowDistance = GameSettings.ShadowDistanceNow;
+                if (m_BaseCascades > 0) m_Urp.shadowCascadeCount = low ? Mathf.Min(m_BaseCascades, GameSettings.LowShadowCascades) : m_BaseCascades;
+                if (m_BaseShadowMap > 0) m_Urp.mainLightShadowmapResolution = low ? Mathf.Min(m_BaseShadowMap, GameSettings.LowShadowMapSize) : m_BaseShadowMap;
+                if (m_BaseMsaa > 0) m_Urp.msaaSampleCount = low ? 1 : m_BaseMsaa;
+                if (m_BaseRenderScale > 0f && GameSettings.GraphicsMode == 0) m_Urp.renderScale = low ? Mathf.Min(m_BaseRenderScale, GameSettings.LowRenderScale) : m_BaseRenderScale; // (the PSX looks set their own)
+            }
+            QualitySettings.globalTextureMipmapLimit = low ? m_BaseMipLimit + 1 : m_BaseMipLimit;
         }
 
         // ------------------------------------------------------------------ the font

@@ -122,7 +122,7 @@ namespace RockGame
                     return $"{Cfg.ItemName(id)}: lets you obtain more stuff by trading resources intergalactically."
                         + (Cfg.BenchUnlocked(team) ? "" : " LOCKED");
                 case Item.Workbench2: return $"{Cfg.ItemName(id)}: lets you obtain EVEN MORE STUFF by trading resources intergalactically.";
-                case Item.Crossbow: return $"Crossbow: {Cfg.CrossbowDamage:0} damage, faster and flatter than the bow. Reloads itself from your arrows.";
+                case Item.Crossbow: return $"Crossbow: {Cfg.CrossbowDamage:0} damage, full power the moment you fire - no drawing. Reloads itself from your arrows.";
                 case Item.Armor: return $"Armour: {Cfg.ArmorHp} extra health used up before your own.";
                 case Item.Chainsaw: return $"Chainsaw: rips through wood and stone. {Cfg.ChainsawUses * Cfg.ChainsawWearEvery} uses.";
                 case Item.Hammer: return $"Hammer: aim at one of your walls and LMB to upgrade it - {Cfg.HammerPrices}. It can't hurt players.";
@@ -132,7 +132,7 @@ namespace RockGame
                 case Item.Boat: return $"Boat: put it on open water and {KT(Bind.Interact)} to drive it.";
                 case Item.Sword: return $"Sword: a slow heavy swing, {Cfg.SwordBodyDamage:0} body / {Cfg.SwordHeadDamage:0} head.";
                 case Item.Shotgun: return "Waterpipe Shotgun: one shell at a time, huge up close.";
-                case Item.ShotgunShell: return $"{Cfg.ItemName(id)}: ammo for the waterpipe shotgun, loaded one shell at a time.";
+                case Item.ShotgunShell: return $"{Cfg.ItemName(id)}: {Mathf.Max(1, Cfg.ShellsPerCraft)} a craft - ammo for the waterpipe shotgun, loaded one shell at a time.";
                 case Item.Revolver: return $"Revolver: {Cfg.RevolverMag} rounds, hitscan.";
                 case Item.RevolverAmmo: return $"{Cfg.ItemName(id)}: ammo for the revolver ({Cfg.RevolverMag} fill the cylinder; {KT(Bind.Rotate)} reloads).";
                 case Item.C4: return "C4: throw it at enemy buildings.";

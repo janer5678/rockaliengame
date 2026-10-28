@@ -543,7 +543,7 @@ namespace RockGame
         /// <summary>(tests) how many times someone knocked to the edge was put back.</summary>
         public static int Unsticks;
 
-        /// <summary>The tree breaker: the whole tree comes down in one hit, for a whole tree's Cfg.TreeBreakerWood (400) -
+        /// <summary>The tree breaker: the whole tree comes down in one hit, for a whole tree's Cfg.TreeBreakerWood (800) -
         /// and that much comes off its durability (Cfg.TreeBreakerDurability wood of trees in all).</summary>
         void ServerTreeBreak(ResourceNode n, Vector3 point, Vector3 dir)
         {

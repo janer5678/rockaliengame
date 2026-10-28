@@ -1191,8 +1191,8 @@ namespace RockGame
                 if (item == Item.TreeBreaker && n.IsWood) { ServerTreeBreak(n, point, dir); return; } // (PlayerNet.WackyMelee)
                 weak = weak && n.IsWeakSpotHit(point, 0.8f);
                 bool tree = n.IsWood; // (a tree or a fallen log)
-                // your team's ball in your base: everything you gather pays a bit more (DNA too)
-                int got = n.ServerHarvest(Mathf.RoundToInt((tree ? st.WoodGather : st.StoneGather) * (BallBuff ? Cfg.BallGatherNow : 1f)), weak, transform.position);
+                // every swing gathers Cfg.GatherMul times the tool's number; your team's ball in your base: everything you gather pays a bit more (DNA too)
+                int got = n.ServerHarvest(Mathf.RoundToInt((tree ? st.WoodGather : st.StoneGather) * Mathf.Max(0.01f, Cfg.GatherMul) * (BallBuff ? Cfg.BallGatherNow : 1f)), weak, transform.position);
                 if (got > 0) ServerGive(Cfg.GatherItem(n.Yield), Cfg.GatherCount(n.Yield, got)); // DNA mode: DNA instead
                 if (got > 0 && n.Kind.Value == ResourceNode.Tree && n.Amount.Value <= 0 && Cfg.TreeFellBonus > 0)
                 {

@@ -36,7 +36,7 @@ namespace RockGame
                 $"no wooden armour; the heavy armour is just Armour: +{Cfg.HeavyArmorHp} for {Cfg.HeavyArmorWood}");
             Check(Cfg.CraftIndexOf(Item.Barrier) < 0 && Cfg.CraftIndexOf(Item.LargeGate) < 0, "no large wall or large gate to craft");
             Check(Cfg.CraftTier(Item.Barricade) == 1 && Cfg.CraftIndexOf(Item.Barricade) >= 0, "the barricade is a Trade Station (T1) item");
-            Check(Cfg.ShellWood == 100 && Cfg.RevolverAmmoWood == 500 && Cfg.RevolverAmmoPerCraft == 6, $"shotgun shells 100 each, revolver bullets 500 for 6 ({Cfg.ShellWood}, {Cfg.RevolverAmmoWood})");
+            Check(Cfg.ShellWood == 250 && Cfg.ShellsPerCraft == 5 && Cfg.RevolverAmmoWood == 250 && Cfg.RevolverAmmoPerCraft == 6, $"shotgun shells 250 for 5, revolver bullets 250 for 6 ({Cfg.ShellWood} for {Cfg.ShellsPerCraft}, {Cfg.RevolverAmmoWood} for {Cfg.RevolverAmmoPerCraft})");
             Check(Cfg.AirdropCount == 5, $"5 airdrops a match by default ({Cfg.AirdropCount})");
             Check(Cfg.ArrowPlayerDamage < 50f && Cfg.CrossbowDamage < 55f, $"the bow and crossbow hit softer ({Cfg.ArrowPlayerDamage}, {Cfg.CrossbowDamage})");
             Check(Cfg.WoodGenRate(3) > 25 && Cfg.WoodGenRate(3) > Cfg.WoodGenRate(2), $"the wood gen's third level makes more wood ({Cfg.WoodGenRate(3)} a second, was 25)");

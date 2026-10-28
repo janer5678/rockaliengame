@@ -169,8 +169,8 @@ namespace RockGame
                     if (sp.z <= 0f || dist > 60f) continue;
                     float left = g.EmeraldSecondsLeft(i);
                     if (left < 0f) continue;
-                    if (g.WallUp) left = EmeraldSpawner.EveryOf(i); // (no emeralds till the wall drops: the clock waits, full)
-                    string text = left <= 0f ? "<color=#5dff8a>EMERALD!</color>" : $"<color=#9dffb8>EMERALD</color> {Mathf.FloorToInt(left / 60f)}:{Mathf.FloorToInt(left % 60f):00}" + (g.WallUp ? " <color=#bbbbbb>(when the wall drops)</color>" : "");
+                    if (g.WallUp) left = Cfg.Emerald ? 0f : EmeraldSpawner.EveryOf(i); // (no emeralds till the wall drops: Emerald mode's first is grown and waiting for it; Lucky Block's clock waits, full)
+                    string text = (left <= 0f ? "<color=#5dff8a>EMERALD!</color>" : $"<color=#9dffb8>EMERALD</color> {Mathf.FloorToInt(left / 60f)}:{Mathf.FloorToInt(left % 60f):00}") + (g.WallUp ? " <color=#bbbbbb>(when the wall drops)</color>" : "");
                     var r = new Rect(sp.x - 90 * k, Screen.height - sp.y - 14 * k, 180 * k, 28 * k);
                     Shadowed(r, text, st);
                     if (Event.current.type == EventType.Repaint) EmeraldClocksShown.Add(text);

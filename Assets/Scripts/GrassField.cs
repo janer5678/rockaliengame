@@ -27,12 +27,13 @@ namespace RockGame
         const float Tile = 8f;              // the patch of blades drawn on every square
         const float BladesPerM2 = 55f;
         const float Near = 11f;
-        // how far the grass goes and how many blades are drawn come from Settings > Display (GameSettings.GrassDistance / GrassDensity)
-        static float FadeEnd => GameSettings.GrassDistance;
+        // how far the grass goes and how many blades are drawn come from Settings > Display (GameSettings.GrassDistance / GrassDensity,
+        // capped on Low graphics: LowGraphics.cs)
+        static float FadeEnd => GameSettings.GrassDistanceNow;
         static float FadeStart => FadeEnd * 0.8f;
         static float DecorFadeEnd => Mathf.Min(FadeEnd, 90f) + 2f;   // (the flowers stop at 90 m even when the grass goes further)
         static float DecorFadeStart => DecorFadeEnd - 14f;
-        static float Density => GameSettings.GrassDensity;
+        static float Density => GameSettings.GrassDensityNow;
         static float Falloff => GameSettings.GrassFalloff;
         const int Levels = 3;               // squares of 8, 16 and 32 m (the far ones are one patch stretched)
         const float DecorChunk = 32f;

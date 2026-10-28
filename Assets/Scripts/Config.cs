@@ -466,12 +466,12 @@ namespace RockGame
         /// <summary>The thrown spear starts from where it is on screen (in your hand), aimed at what the crosshair is on.
         /// false = the old way: from the middle of you (the eye), straight along the crosshair.</summary>
         [Tune("Spear")] public static bool SpearFromHand = true;
-        [Tune("Spear")] public static float SpearDrawTime = 0.05f /* (full power at once: an instant throw) */, SpearThrowSpeed = 42f /* (was 30: faster and flatter, so it flies straight at the crosshair instead of lobbing over it) */, SpearThrowDamage = 90f, SpearThrowStructureDamage = 8f;
+        [Tune("Spear")] public static float SpearDrawTime = 0.05f /* (full power at once: an instant throw) */, SpearThrowSpeed = 42f /* (was 30: faster and flatter, so it flies straight at the crosshair instead of lobbing over it) */, SpearThrowDamage = 35f /* (the same as a stab, SpearPlayerDamage; was 90) */, SpearThrowStructureDamage = 8f;
         [Tune("Chainsaw")] public static float ChainsawCooldown = 0.15f, ChainsawRange = 2.4f, ChainsawPlayerDamage = 8f, ChainsawWoodGather = 12f, ChainsawStoneGather = 10f, ChainsawStructureDamage = 12f;
         [Tune("Melee")] public static float StoneStructureMeleeMul = 0.2f; // stone is very hard to melee - bring a ram
 
         // ---------- Bow ----------
-        [Tune("Bow")] public static float BowDrawTime = 0.8f, ArrowSpeed = 55f, ArrowGravity = 9.81f, ArrowPlayerDamage = 40f, ArrowWoodStructureDamage = 4f;
+        [Tune("Bow")] public static float BowDrawTime = 0.8f, ArrowSpeed = 60f /* (was 55: a little faster) */, ArrowGravity = 9.81f, ArrowPlayerDamage = 40f, ArrowWoodStructureDamage = 4f;
         /// <summary>The bow fires the moment you let go, however short the draw: an instant shot flies at this share of full speed (so it drops
         /// short) and does BowMinDamage; both grow the longer you hold it, the damage slowly at first and fastest near the full draw.</summary>
         [Tune("Bow")] public static float BowMinSpeed = 0.3f, BowMinDamage = 6f;
@@ -497,7 +497,9 @@ namespace RockGame
         [Tune("Ram")] public static int RamUses = 1;
 
         // ---------- Resources ----------
-        [Tune("Resources")] public static int TreeAmount = 300, StoneAmount = 250, TreeFellBonus = 100;
+        [Tune("Resources")] public static int TreeAmount = 600, StoneAmount = 250, TreeFellBonus = 200; // (a tree: 600 + the 200 felling bonus = 800 wood; was 300 + 100)
+        /// <summary>Everything a swing gathers is multiplied by this (2: twice the wood a hit, and trees are twice as big, so a tree farms for 800 in the same swings).</summary>
+        [Tune("Resources")] public static float GatherMul = 2f;
         [Tune("Resources")] public static float WeakSpotMul = 2f, NodeRespawnTime = 60f, BushRespawnTime = 150f;
 
         // ---------- Building ----------
@@ -561,11 +563,13 @@ namespace RockGame
         /// <summary>Fortify All Walls goes up a step every time your team buys it: stone, then sheet metal, then armoured
         /// (the old "refined" tier, back as the top step - only a little better than sheet metal).</summary>
         [Tune("Arsenal and Builder")] public static int FortifyStoneWood = 1000, FortifyMetalWood = 2000, FortifyArmouredWood = 3000;
-        [Tune("Arsenal and Builder")] public static int SwordWood = 500, C4Wood = 2500, HelmetWood = 800, ShotgunWood = 2000, ShellWood = 100, RevolverWood = 2500, RevolverAmmoWood = 500; // (a shell: 100 wood; six revolver bullets: 500)
+        [Tune("Arsenal and Builder")] public static int SwordWood = 500, C4Wood = 2500, HelmetWood = 800, ShotgunWood = 2000, ShellWood = 250, RevolverWood = 2500, RevolverAmmoWood = 250; // (a stack of five shells: 250 wood; a stack of six revolver bullets: 250 - were 100 a shell and 500 for six)
         /// <summary>Revolver bullets come six at a time (a full cylinder) for RevolverAmmoWood.</summary>
         [Tune("Arsenal and Builder")] public static int RevolverAmmoPerCraft = 6;
+        /// <summary>Shotgun shells come five at a time for ShellWood.</summary>
+        [Tune("Arsenal and Builder")] public static int ShellsPerCraft = 5;
         /// <summary>Sword: a slow, heavy swing (the swing time is adjustable) - its own head / body damage instead of the usual x2.</summary>
-        [Tune("Arsenal and Builder")] public static float SwordSwingTime = 1.5f, SwordHeadDamage = 150f, SwordBodyDamage = 95f, SwordRange = 2.9f;
+        [Tune("Arsenal and Builder")] public static float SwordSwingTime = 1.5f, SwordHeadDamage = 112.5f, SwordBodyDamage = 71.25f /* (25% under the 150 / 95 they were) */, SwordRange = 2.9f;
         /// <summary>Waterpipe shotgun: one shell at a time. Each pellet does full damage within PointBlank metres, falling off to FarMul at Range.</summary>
         [Tune("Arsenal and Builder")] public static int ShotgunPellets = 10;
         [Tune("Arsenal and Builder")] public static float ShotgunPelletDamage = 20f, ShotgunSpread = 5f, ShotgunPointBlank = 1f, ShotgunRange = 32f, ShotgunFarMul = 0.15f, ShotgunReload = 2.4f;
@@ -1088,7 +1092,7 @@ namespace RockGame
             {
                 case Item.Sword: return JonahPriced(new Recipe { Output = id, Count = 1, Wood = SwordWood });
                 case Item.Shotgun: return JonahPriced(new Recipe { Output = id, Count = 1, Wood = ShotgunWood });
-                case Item.ShotgunShell: return JonahPriced(new Recipe { Output = id, Count = 1, Wood = ShellWood });
+                case Item.ShotgunShell: return JonahPriced(new Recipe { Output = id, Count = Mathf.Max(1, ShellsPerCraft), Wood = ShellWood });
                 case Item.Revolver: return JonahPriced(new Recipe { Output = id, Count = 1, Wood = RevolverWood });
                 case Item.RevolverAmmo: return JonahPriced(new Recipe { Output = id, Count = Mathf.Max(1, RevolverAmmoPerCraft), Wood = RevolverAmmoWood });
                 case Item.C4: return JonahPriced(new Recipe { Output = id, Count = 1, Wood = C4Wood });
@@ -1105,7 +1109,7 @@ namespace RockGame
             {
                 case Item.Sword: return $"slow heavy swing: {SwordBodyDamage:0} body / {SwordHeadDamage:0} head";
                 case Item.Shotgun: return $"one shell at a time, {ShotgunPellets * ShotgunPelletDamage:0} up close";
-                case Item.ShotgunShell: return "one shell for the shotgun";
+                case Item.ShotgunShell: return ShellsPerCraft == 1 ? "one shell for the shotgun" : $"{ShellsPerCraft} shells for the shotgun";
                 case Item.Revolver: return $"{RevolverMag} rounds, {RevolverBodyDamage:0} body / {RevolverHeadDamage:0} head";
                 case Item.RevolverAmmo: return RevolverAmmoPerCraft == 1 ? "one bullet for the revolver" : $"{RevolverAmmoPerCraft} bullets for the revolver";
                 case Item.C4: return "thrown: wrecks every building piece nearby";
@@ -1282,6 +1286,7 @@ namespace RockGame
             (20, new[] { "RevolverAmmoWood", "RevolverAmmoPerCraft" }),
             (21, new[] { "HeavyArmorWood", "DeathWandWood", "AirdropItemMask", "AirdropItemMask2" }),
             (22, new[] { "ModesCrossbowWood", "AirdropItemMask", "StickOfTruthShots", "TreeBreakerWood", "SpearGravity", "SpearStraightRange" }),
+            (27, new[] { "SpearThrowDamage", "ArrowSpeed", "SwordHeadDamage", "SwordBodyDamage", "ShellWood", "RevolverAmmoWood", "TreeAmount", "TreeFellBonus", "TreeBreakerWood" }),
             (26, new[] { "EmeraldPriceWalls", "GuardianDamage", "GuardianEvery", "GuardianRange", "GuardianHp" }),
             (25, new[] { "EmeraldPriceLightsaber", "EmeraldPriceAlienGun", "AlienGunShots", "AlienGunBodyDamage", "AlienGunHeadDamage", "AlienGunFireRate" }),
             (24, new[] { "EmeraldPriceRevolver", "EmeraldPriceShotgun", "LuckyBlockPrice" }),

@@ -127,9 +127,9 @@ namespace RockGame
             var xbow = Cfg.GetRecipe(Cfg.RecipeIndex(Item.Crossbow));
             Check(Cfg.PowerMenu && Cfg.PowerCount == 7 && Cfg.PowerIndex(Item.Helmet) < 0 && Cfg.PowerIndex(Item.Pistol) < 0 && Cfg.PowerIndex(Item.FortifyBuff) < 0 && hat.Wood == Cfg.HatchetWood && xbow.Wood == 500, $"{Cfg.RulesName(Cfg.Rules)}: power menu ({Cfg.PowerCount} items, no pistol, no fortify - it's in UPGRADES), normal prices (hatchet {hat.Wood} wood), crossbow {xbow.Wood} wood");
             Check(Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.Sword)).Wood == 500 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.C4)).Wood == 2500
-                && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.Shotgun)).Wood == 2000 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.ShotgunShell)).Wood == 100
-                && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.Revolver)).Wood == 2500 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.RevolverAmmo)).Wood == 500 && Cfg.RevolverAmmoPerCraft == 6,
-                "power prices: sword 500, C4 2500, shotgun 2000 + 100 a shell, revolver 2500 + 100 a bullet");
+                && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.Shotgun)).Wood == 2000 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.ShotgunShell)).Wood == 250 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.ShotgunShell)).Count == 5
+                && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.Revolver)).Wood == 2500 && Cfg.GetPowerRecipe(Cfg.PowerIndex(Item.RevolverAmmo)).Wood == 250 && Cfg.RevolverAmmoPerCraft == 6,
+                "power prices: sword 500, C4 2500, shotgun 2000 + 250 for 5 shells, revolver 2500 + 250 for 6 bullets");
             Check(Cfg.MeleePlayerDamage(Item.Sword, true) == Cfg.SwordHeadDamage && Cfg.MeleePlayerDamage(Item.Sword, false) == Cfg.SwordBodyDamage && Cfg.Melee(Item.Sword).Cooldown > Cfg.Melee(Item.Hatchet).Cooldown,
                 $"sword: its own head / body damage (CHANGE VALUES), a slower swing ({Cfg.MeleePlayerDamage(Item.Sword, true)} / {Cfg.MeleePlayerDamage(Item.Sword, false)}, {Cfg.Melee(Item.Sword).Cooldown} s vs the hatchet's {Cfg.Melee(Item.Hatchet).Cooldown} s)");
             Check(Mathf.Abs(Cfg.ShotgunPellets * Cfg.ShotgunPelletDamage * Cfg.ShotgunFalloff(0.9f) - 200f) < 0.5f && Cfg.ShotgunFalloff(Cfg.ShotgunRange * 0.4f) < 0.7f, "shotgun: 200 within a metre, less further out");
@@ -166,14 +166,13 @@ namespace RockGame
             // the waterpipe shotgun: one shell at a time
             yield return BenchBuy(me, pc, Item.Shotgun);
             yield return BenchBuy(me, pc, Item.ShotgunShell);
-            yield return BenchBuy(me, pc, Item.ShotgunShell);
             yield return Hold(me, Item.Shotgun);
-            Check(me.HeldStack.Data == 0 && me.Count(Item.ShotgunShell) == 2, "bought a shotgun (empty) and 2 shells");
+            Check(me.HeldStack.Data == 0 && me.Count(Item.ShotgunShell) == Cfg.ShellsPerCraft, $"bought a shotgun (empty) and a stack of {Cfg.ShellsPerCraft} shells ({me.Count(Item.ShotgunShell)})");
             me.ReloadShotgunRpc();
             yield return new WaitForSeconds(0.3f);
             me.ReloadShotgunRpc();
             yield return new WaitForSeconds(0.3f);
-            Check(me.HeldStack.Data == 1 && me.Count(Item.ShotgunShell) == 1, "it takes one shell per reload");
+            Check(me.HeldStack.Data == 1 && me.Count(Item.ShotgunShell) == Cfg.ShellsPerCraft - 1, $"it takes one shell per reload ({me.Count(Item.ShotgunShell)} spare)");
             me.FireShotgunRpc(me.transform.forward);
             yield return new WaitForSeconds(0.4f);
             Check(me.HeldStack.Data == 0, "fired the shell");
@@ -350,6 +349,7 @@ namespace RockGame
             }
 
             // tree cracker (a Fun mode item now) fells a tree in one hit
+            for (int i = 0; i < me.Inv.Count; i++) if (me.Inv[i].Id == Item.ShotgunShell) me.Inv[i] = default; // (room for it: the spare shells' slot - a stack of 5 since 2026-10-28)
             me.ServerGive(Item.TreeCracker, 1, Cfg.TreeCrackerUses);
             yield return new WaitForSeconds(0.4f);
             yield return Hold(me, Item.TreeCracker);

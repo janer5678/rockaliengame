@@ -43,8 +43,8 @@ namespace RockGame
                     report.Add($"{c:0} m out, {nearest:0} m from the nearest base");
                     if (!Cfg.FourWay)
                     {
-                        // left / right of the ball: as far from one base as the other, well clear of both
-                        ok &= Mathf.Abs(nearest - second) < 6f && nearest > baseDist * 0.8f && c > MapBuilder.DomeRadius + 6f && c < Cfg.MapHalf * 0.5f;
+                        // left / right of the ball: as far from one base as the other, well clear of both, well out to the side (half way to the edge since 2026-10-28)
+                        ok &= Mathf.Abs(nearest - second) < 6f && nearest > baseDist * 0.8f && c >= Cfg.MapHalf * 0.4f && c < Cfg.MapHalf * 0.75f; // (SideSpot(MapHalf * 0.5) tries up to 8 m in / 12 m out for a clear spot)
                     }
                     else
                     {
@@ -69,7 +69,7 @@ namespace RockGame
                 yield return new WaitForSeconds(3f);
                 int n = 0; foreach (var it in g.Items) if (it.Stack.Id == Item.Emerald) n++;
                 float left = g.EmeraldSecondsLeft(0);
-                Check(n == 0 && !g.EmeraldWaiting(0) && left > EmeraldSpawner.EveryOf(0) - 2f, $"no emeralds before the wall drops ({n} out; the clock waits at {left:0} s of {EmeraldSpawner.EveryOf(0):0})");
+                Check(n == 0 && !g.EmeraldWaiting(0) && left < 0.5f && g.EmeraldGrowth(0) >= 0.99f, $"no emeralds before the wall drops - the first is grown and waiting for it ({n} out; {left:0} s left, grown {g.EmeraldGrowth(0):0.00})");
                 g.ServerEmeraldsNow();
                 yield return new WaitForSeconds(0.6f);
                 n = 0; foreach (var it in g.Items) if (it.Stack.Id == Item.Emerald) n++;
@@ -150,12 +150,12 @@ namespace RockGame
                 g.DevSkipPhase(GameState.PreBall);
                 for (float t = 0; t < 10f && g.S != GameState.BallLive; t += 0.25f) yield return new WaitForSeconds(0.25f);
                 yield return new WaitForSeconds(1.5f);
-                float left = g.EmeraldSecondsLeft(0);
-                Check(!g.WallUp && left > EmeraldSpawner.EveryOf(0) - 4f && left < EmeraldSpawner.EveryOf(0), $"the wall's down: the clock runs from the full {EmeraldSpawner.EveryOf(0):0} s ({left:0.0} left)");
+                int atOnce = 0; foreach (var it in g.Items) if (it.Stack.Id == Item.Emerald) atOnce++;
+                Check(!g.WallUp && g.EmeraldWaiting(0) && atOnce == tops.Count, $"the wall's down: the grown emerald dropped on every spawner at once ({atOnce} of {tops.Count})");
                 g.ServerEmeraldsNow();
                 yield return new WaitForSeconds(0.6f);
                 int n = 0; foreach (var it in g.Items) if (it.Stack.Id == Item.Emerald) n++;
-                Check(n == tops.Count, $"then they grow: {n} emeralds out");
+                Check(n == tops.Count, $"still one each (a spawner waits while its emerald sits there): {n} emeralds out");
                 var dir = new Vector3(tops[0].x, 0, tops[0].z).normalized;
                 var at = Solid(tops[0] + Quaternion.Euler(0, 35f, 0) * dir * 8f);
                 var look = Quaternion.LookRotation(new Vector3(tops[0].x - at.x, 0, tops[0].z - at.z)).eulerAngles.y;

@@ -98,10 +98,10 @@ namespace RockGame
         [Tune("Wacky items")] public static int BootsAirJumps = 2;
         [Tune("Wacky items")] public static float ScribbleSmite = 60f;
         [Tune("Wacky items")] public static int StickOfTruthShots = 1, SlowGunShots = 3, AntGunShots = 2;
-        /// <summary>The tree breaker: every tree it fells gives TreeBreakerWood (a whole tree's 400: TreeAmount + TreeFellBonus),
+        /// <summary>The tree breaker: every tree it fells gives TreeBreakerWood (a whole tree's 800: TreeAmount + TreeFellBonus),
         /// and it's good for TreeBreakerDurability wood of trees - that's its durability, counted in wood (the last tree
         /// still gives its full 400, then it breaks).</summary>
-        [Tune("Wacky items")] public static int TreeBreakerWood = 400, TreeBreakerDurability = 5000;
+        [Tune("Wacky items")] public static int TreeBreakerWood = 800, TreeBreakerDurability = 5000;
         /// <summary>The tree breaker's durability is kept in the stack's data (a byte) in steps of this much wood.</summary>
         public static int TreeBreakerUnit => Mathf.Max(1, Mathf.CeilToInt(Mathf.Max(1, TreeBreakerDurability) / 250f));
 

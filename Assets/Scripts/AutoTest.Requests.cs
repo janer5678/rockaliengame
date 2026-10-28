@@ -13,7 +13,11 @@ namespace RockGame
     {
         IEnumerator RequestTests(PlayerNet me, PlayerController pc, NetGame g, int team)
         {
-            Check(Cfg.SpearThrowDamage >= 90f && Cfg.SpearThrowDamage > Cfg.SpearPlayerDamage * 2f, $"a thrown spear hits hard ({Cfg.SpearThrowDamage} at a full wind-up, stab {Cfg.SpearPlayerDamage})");
+            Check(Mathf.Approximately(Cfg.SpearThrowDamage, Cfg.SpearPlayerDamage), $"a thrown spear hits as hard as a stab ({Cfg.SpearThrowDamage} thrown, stab {Cfg.SpearPlayerDamage})");
+            Check(Mathf.Approximately(Cfg.SwordHeadDamage, 112.5f) && Mathf.Approximately(Cfg.SwordBodyDamage, 71.25f), $"the sword does 25% less: {Cfg.SwordBodyDamage} body / {Cfg.SwordHeadDamage} head");
+            Check(Cfg.ArrowSpeed == 60f, $"arrows a little faster off the bow ({Cfg.ArrowSpeed} m/s)");
+            Check(Cfg.GatherMul == 2f && Cfg.TreeAmount + Cfg.TreeFellBonus == 800, $"double gather rate: {Cfg.GatherMul}x a swing, a tree farms for {Cfg.TreeAmount + Cfg.TreeFellBonus}");
+            yield return LowGraphicsTests();
             Check(Binds.Get(Bind.Crouch) == KeyCode.LeftControl && Binds.Get(Bind.Crouch, true) != KeyCode.C && Binds.Get(Bind.Slide) == KeyCode.C,
                 $"Ctrl only crouches, C slides (crouch {Binds.Get(Bind.Crouch)}/{Binds.Get(Bind.Crouch, true)}, slide {Binds.Get(Bind.Slide)})");
 

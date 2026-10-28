@@ -27,7 +27,7 @@ namespace RockGame
                 int xw = xi >= 0 ? Cfg.CraftRecipe(xi, team).Wood : -1;
                 Check(xw == 500, $"the crossbow costs {xw}");
                 Check(Cfg.StickOfTruthShots == 1 && Cfg.MaxData(Item.StickOfTruth) == 1, "the lifting stick is one use");
-                Check(Cfg.MaxData(Item.TreeBreaker) * Cfg.TreeBreakerUnit == 5000 && Cfg.TreeBreakerWood == 400, $"the tree breaker: {Cfg.MaxData(Item.TreeBreaker) * Cfg.TreeBreakerUnit} wood of trees, {Cfg.TreeBreakerWood} a tree");
+                Check(Cfg.MaxData(Item.TreeBreaker) * Cfg.TreeBreakerUnit == 5000 && Cfg.TreeBreakerWood == 800, $"the tree breaker: {Cfg.MaxData(Item.TreeBreaker) * Cfg.TreeBreakerUnit} wood of trees, {Cfg.TreeBreakerWood} a tree");
                 Check(Cfg.InAirdropPool(Item.DeathWand) && Cfg.AirdropLoot.Contains(Item.DeathWand), "the death wand's in the airdrops");
                 Check(Cfg.SpearGravity >= 20f && Cfg.SpearStraightRange <= 0f, $"the spear arcs down (gravity {Cfg.SpearGravity}, straight for {Cfg.SpearStraightRange} m)");
                 Check(Cfg.WildPicker, "respawn in the wild: pick the spot (every mode but the tutorial)");
@@ -130,10 +130,10 @@ namespace RockGame
                     if (hit == 0)
                     {
                         int left = SlotOf(Item.TreeBreaker) >= 0 ? me.SlotAt(SlotOf(Item.TreeBreaker)).Data * Cfg.TreeBreakerUnit : -1;
-                        Check(got == 400 && tree.Amount.Value <= 0 && left == 5000 - 400, $"a tree falls in one hit for the full {got} wood; {left} wood of trees left on it");
+                        Check(got == Cfg.TreeBreakerWood && tree.Amount.Value <= 0 && left == 5000 - Cfg.TreeBreakerWood, $"a tree falls in one hit for the full {got} wood; {left} wood of trees left on it");
                         yield return Snap("prompt12_tree_breaker");
                     }
-                    else Check(got == 400 && me.Count(Item.TreeBreaker) == 0, $"the last bit of it still gives the full {got}, then it breaks ({me.Count(Item.TreeBreaker)} left)");
+                    else Check(got == Cfg.TreeBreakerWood && me.Count(Item.TreeBreaker) == 0, $"the last bit of it still gives the full {got}, then it breaks ({me.Count(Item.TreeBreaker)} left)");
                 }
             }
 

@@ -346,6 +346,8 @@ namespace RockGame
             Pref(GameSettings.NotifOwn, GameSettings.NotifCel, GameSettings.NotifCelStrength, GameSettings.NotifOutline, GameSettings.NotifOutlineWidth,
                 GameSettings.NotifOutlineColour, GameSettings.NotifOutlineOpacity, GameSettings.NotifBloom, GameSettings.NotifBloomStrength,
                 GameSettings.NotifSaturation, GameSettings.NotifContrast);
+            // ---- quality (LowGraphics.cs) ----
+            Pref(GameSettings.LowGraphics);
             // ---- shadows ----
             Float("shadows.darkness", GShadows, DisplayDefaults.ShadowStrength, () => GameSettings.ShadowStrength, (v, s) => GameSettings.SetShadows(v, GameSettings.ShadowDistance, s));
             Float("shadows.distance", GShadows, DisplayDefaults.ShadowDistance, () => GameSettings.ShadowDistance, (v, s) => GameSettings.SetShadows(GameSettings.ShadowStrength, v, s));

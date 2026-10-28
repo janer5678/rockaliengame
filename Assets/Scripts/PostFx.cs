@@ -444,14 +444,15 @@ namespace RockGame
             m_Color.hueShift.Override(0f);
             m_Color.colorFilter.Override(Color.white);
             // the extra looks (all 0 / off unless switched on)
-            float dof = on ? GameSettings.ExtraNow(GameSettings.PostExtra.DepthOfField) : 0f;
+            bool low = GameSettings.LowGfx; // (Low graphics: no depth of field or ambient occlusion - LowGraphics.cs)
+            float dof = on && !low ? GameSettings.ExtraNow(GameSettings.PostExtra.DepthOfField) : 0f;
             m_Dof.mode.Override(dof > 0f ? DepthOfFieldMode.Gaussian : DepthOfFieldMode.Off);
             m_Dof.gaussianStart.Override(Mathf.Lerp(70f, 22f, dof));
             m_Dof.gaussianEnd.Override(Mathf.Lerp(260f, 90f, dof));
             m_Dof.gaussianMaxRadius.Override(Mathf.Lerp(0.5f, 1f, dof));
             m_Grain.intensity.Override(GameSettings.ExtraNow(GameSettings.PostExtra.FilmGrain) * 0.55f);
             m_Chroma.intensity.Override(GameSettings.ExtraNow(GameSettings.PostExtra.Chromatic) * 0.3f);
-            SetAo(on ? GameSettings.ExtraNow(GameSettings.PostExtra.AmbientOcclusion) : 0f);
+            SetAo(on && !low ? GameSettings.ExtraNow(GameSettings.PostExtra.AmbientOcclusion) : 0f);
             m_StylizeOn = on && m_Pass != null && (GameSettings.ExtraNow(GameSettings.PostExtra.Outlines) > 0f || GameSettings.ExtraNow(GameSettings.PostExtra.Haze) > 0f
                 || GameSettings.ExtraNow(GameSettings.PostExtra.Sharpen) > 0f || GameSettings.ExtraNow(GameSettings.PostExtra.CelBanding) > 0f || (m_MaskMat != null && (GameSettings.HandsOwn.Value || GameSettings.ToolsOwn.Value)));
             m_Volume.enabled = on;

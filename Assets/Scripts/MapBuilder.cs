@@ -191,6 +191,7 @@ namespace RockGame
             // further out, layers of mountain ranges, each taller and paler; and big boulders about the map (MapScenery)
             if (mountains) MapScenery.Build(root);
             if (Cfg.HasEmeralds) EmeraldSpawner.BuildAll(root); // Emerald / Lucky Block mode: the emerald spawners, clear of everything above (Emerald.cs)
+            else EmeraldSpawner.ClearAll(); // (any other mode: no spawners - and none left in the lists from an earlier Emerald match)
 
             BuildArena(root);
             if (Cfg.Map == MapKind.Plains || Cfg.IsHighlands)
@@ -606,6 +607,7 @@ namespace RockGame
             if (Cfg.SmallBedrock) BuildClimbStep(root, team, glow); // (Jonah Test Mode Bruh: the step up onto the machine)
             if (Cfg.HasBaseUpgrades) UpgradeStation.Create(root, team); // Arsenal / Auto Wood: the upgrade station, left of it
             if (Cfg.HasEmeralds) EmeraldShop.Create(root, team); // Emerald / Lucky Block mode: the emerald shop, left of it (Emerald.cs)
+            else EmeraldShop.ByTeam[team] = null; // (any other mode: no emerald shop - the old map's goes with the old map)
         }
 
         /// <summary>Jonah Test Mode Bruh's one-cell base: a metal step beside the machine - onto it, onto the machine's top,

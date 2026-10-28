@@ -87,6 +87,7 @@ namespace RockGame
                 {
                     case DisplayCat.Graphics:
                         DrawScreenSection();
+                        DrawQualitySection();  // (LowGraphics.cs)
                         DrawFrameRateSection();
                         DrawShadowsAndShading();
                         break;
@@ -171,6 +172,23 @@ namespace RockGame
             }
             GUILayout.EndHorizontal();
             GUILayout.Label($"<color=#bbbbbb>Now: {Screen.width} x {Screen.height}, {GameSettings.CurrentMode}, {GameSettings.ChosenRate.value:0.##} Hz. The refresh rate starts at the highest your screen can do; in a window it follows your desktop.</color>", m_SmallWrap);
+        }
+
+        /// <summary>QUALITY: Normal, or Low (LowGraphics.cs: the same look drawn cheaper; the other sliders are kept, just capped).</summary>
+        void DrawQualitySection()
+        {
+            float k = m_Scale, lw = 150 * k;
+            Caption("QUALITY  ·  just on this PC");
+            GUILayout.BeginHorizontal();
+            RowLabel("Graphics", lw);
+            bool low = GameSettings.LowGfx;
+            if (Choice(!low, "Normal", GUILayout.Height(30 * k), GUILayout.MinWidth(90 * k))) GameSettings.SetLowGraphics(false);
+            if (Choice(low, "Low", GUILayout.Height(30 * k), GUILayout.MinWidth(90 * k))) GameSettings.SetLowGraphics(true);
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
+            GUILayout.Label(low
+                ? $"<color=#bbbbbb>Low: the same look, drawn as cheaply as it can be - {GameSettings.LowRenderScale * 100f:0}% render scale, no anti-aliasing, shadows to {GameSettings.LowShadowDistance:0} m, grass to {GameSettings.LowGrassDistance:0} m at half density, no ambient occlusion or depth of field, smaller textures. Outlines, cel shading, haze, the alien glow and all your colours stay. Your sliders are kept: Normal brings them all back.</color>"
+                : "<color=#bbbbbb>Low keeps the game's look (outlines, cel shading, haze, glow, your colours) but draws it much cheaper: a lower render scale, no anti-aliasing, short shadows, less grass, no ambient occlusion or depth of field. For a PC that's struggling.</color>", m_SmallWrap);
         }
 
         void DrawFrameRateSection()
