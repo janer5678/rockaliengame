@@ -63,6 +63,7 @@ namespace RockGame
                 case Task.Hunt: TickHunt(); break;
                 case Task.Fight: TickFight(); break;
                 case Task.Retreat: TickRetreat(); break;
+                case Task.Rush: TickRush(g); break;
             }
         }
 
@@ -82,7 +83,14 @@ namespace RockGame
                 return;
             }
             if (m_P.Health.Value > Cfg.MaxHealth - Cfg.BerryHeal * 0.6f || m_P.Count(Item.Berry) == 0 || m_P.CarryingBall) return;
-            if (m_Target != null && Flat(m_Target.transform.position, transform.position) < 7f) return;
+            if (m_Target != null)
+            {
+                // in a fight it eats too: hurt, between swings, when they're not right on it (or running for it)
+                float td = Flat(m_Target.transform.position, transform.position);
+                bool fightEat = (Hp01 < 0.55f && td > 3.2f) || (Hp01 < 0.35f && (td > 2f || m_Task == Task.Retreat));
+                if (td < 7f && !fightEat) return;
+                if (td < 7f) FightEats++;
+            }
             if (Time.time < m_SlideUntil) return;
             int slot = HotbarFor(Item.Berry);
             if (slot < 0) return;
@@ -92,6 +100,19 @@ namespace RockGame
         }
 
         bool Eating => m_EatAt >= 0f;
+        /// <summary>(tests) berries it has started eating in the middle of a fight.</summary>
+        public int FightEats { get; private set; }
+
+        /// <summary>A bush with berries on it near enough to stop for on the way (it stocks up while it's out farming:
+        /// berries are its heals in a fight).</summary>
+        bool BerryStop(float range, int want)
+        {
+            if (m_P.Count(Item.Berry) >= want || InvOps.Space(m_P.Inv, Item.Berry) <= 0) return false;
+            if (m_Bush != null && (!m_Bush.IsSpawned || m_Bush.Amount.Value <= 0 || Flat(m_Bush.transform.position, transform.position) > range)) m_Bush = null;
+            if (m_Bush == null && !FindBush(range)) return false;
+            Set(Task.Berries);
+            return true;
+        }
 
         // ---------------------------------------------------------------- farming
 
@@ -194,11 +215,11 @@ namespace RockGame
 
         // ---------------------------------------------------------------- berries
 
-        bool FindBush()
+        bool FindBush(float range = 40f)
         {
             if (m_Bush != null && m_Bush.IsSpawned) return true;
             m_Bush = null;
-            float bd = 40f;
+            float bd = range;
             var pos = transform.position;
             int region = Cfg.RegionOf(pos);
             foreach (var n in ResourceNode.All)
@@ -332,9 +353,9 @@ namespace RockGame
         bool DeployJob()
         {
             int team = MyTeam;
+            if (Has(Item.Chest) && NeedChest() && !Avoided(Item.Chest)) { StartDeploy(Item.Chest); return true; } // (the chest first: somewhere for the wood)
             if (Has(Item.Workbench) && Workbench.ForTeam(team, 1) == null && !Avoided(Item.Workbench)) { StartDeploy(Item.Workbench); return true; }
             if (Has(Item.Workbench2) && Workbench.ForTeam(team, 1) != null && Workbench.ForTeam(team, 2) == null && !Avoided(Item.Workbench2)) { StartDeploy(Item.Workbench2); return true; }
-            if (Has(Item.Chest) && NeedChest() && !Avoided(Item.Chest)) { StartDeploy(Item.Chest); return true; }
             if (Has(Item.SleepingBag) && !TeamHasBox(Container.SleepBag) && !Avoided(Item.SleepingBag)) { StartDeploy(Item.SleepingBag); return true; }
             if (Has(Item.AutoTurret) && !Avoided(Item.AutoTurret)) { StartDeploy(Item.AutoTurret); return true; }
             return false;
@@ -384,6 +405,10 @@ namespace RockGame
             var c = Cfg.BaseCenter[team];
             yaw = Workbench.DefaultYaw(team);
             at = default;
+            // a chest goes on the base's own foundations first; only the team's first one (it needs somewhere to put its wood)
+            // goes in the room by the machine while there are none yet - the next waits for a foundation
+            if (kind == Item.Chest && FoundationSpot(team, out at, yaw)) return true;
+            if (kind == Item.Chest && TeamHasBox(Container.Chest) && !Cfg.Builder) return false;
             for (int k = 0; k < 8; k++)
             {
                 Vector3 p;
@@ -404,6 +429,51 @@ namespace RockGame
                 at = p;
                 return true;
             }
+            return false;
+        }
+
+        static readonly List<Structure> s_Found = new List<Structure>(32);
+
+        /// <summary>A chest's spot on one of its team's foundations in its base: the back ones first, never on the way in
+        /// (in front of the doors), never one that already has a chest on it.</summary>
+        bool FoundationSpot(int team, out Vector3 at, float yaw)
+        {
+            at = default;
+            var c = Cfg.BaseCenter[team];
+            var back = Cfg.BackDir(team);
+            var lat = Vector3.Cross(Vector3.up, back);
+            s_Found.Clear();
+            foreach (var s in Structure.All)
+            {
+                if (s == null || !s.IsSpawned || s.Team.Value != team || s.PType != PieceType.Foundation) continue;
+                var sp = s.transform.position;
+                if (Cfg.BaseTeamAt(sp) != team) continue;
+                var d = sp - c; d.y = 0f;
+                if (Vector3.Dot(d, back) < -1.5f && Mathf.Abs(Vector3.Dot(d, lat)) < 2.6f) continue; // (in front of the doors: the way in)
+                if (ChestOn(sp)) continue;
+                s_Found.Add(s);
+            }
+            s_Found.Sort((a, b) => Vector3.Dot(b.transform.position - c, back).CompareTo(Vector3.Dot(a.transform.position - c, back)));
+            int tries = 0;
+            foreach (var s in s_Found)
+            {
+                if (++tries > 10) break;
+                var mid = BuildGrid.PieceCenter(s.Key);
+                var p = new Vector3(mid.x, mid.y + 3f, mid.z);
+                if (!Physics.Raycast(p, Vector3.down, out var hit, 6f, Mask, QueryTriggerInteraction.Ignore) || hit.collider.GetComponentInParent<Structure>() != s) continue;
+                p = hit.point;
+                if (!PlayerNet.FindDeploySpot(Item.Chest, team, ref p, yaw, out _)) continue;
+                at = p;
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>A chest already standing on this foundation's cell.</summary>
+        static bool ChestOn(Vector3 p)
+        {
+            foreach (var k in Container.All)
+                if (k != null && k.IsSpawned && k.Kind.Value == Container.Chest && Mathf.Abs(k.transform.position.x - p.x) < 1.5f && Mathf.Abs(k.transform.position.z - p.z) < 1.5f) return true;
             return false;
         }
 

@@ -27,7 +27,8 @@ namespace RockGame
             var item = m_P.HeldItem;
             var st = Cfg.Melee(item);
             float reach = st.Range > 0f ? st.Range : Cfg.RockRange;
-            GoTo(tp, Mathf.Max(1.3f, reach - 0.9f), d > 2.5f);
+            if (Eating) GoTo(transform.position + (transform.position - tp).normalized * 4f, 0.5f, false); // (eating a berry: backing off from them)
+            else GoTo(tp, Mathf.Max(1.3f, reach - 0.9f), d > 2.5f);
             m_Strafe = d < reach + 1.2f && m_Skill > 0.45f && !Eating;
             m_HasLook = true;
             m_LookAt = t.EyePos - Vector3.up * 0.3f;
@@ -72,11 +73,13 @@ namespace RockGame
             int sock = b.SocketTeam.Value;
             if (raid ? sock < 0 || sock == MyTeam : sock >= 0) { Done(); return; }
             var bp = b.transform.position;
-            GoTo(bp, 0.7f, true);
-            m_HasLook = true;
-            m_LookAt = bp;
-            if (Vector3.Distance(bp, m_P.EyePos) <= Cfg.InteractRange + 1.5f)
+            // only with nothing in between (no reaching through a wall - a 1x1 round the machine has to be got into first)
+            bool clear = !PlayerNet.WallBetween(m_P.EyePos, bp);
+            if (clear && Vector3.Distance(bp, m_P.EyePos) <= Cfg.InteractRange + 1.5f)
             {
+                GoTo(bp, 0.7f, true);
+                m_HasLook = true;
+                m_LookAt = bp;
                 if (Time.time >= m_NextUse)
                 {
                     m_NextUse = Time.time + 0.25f;
@@ -85,7 +88,12 @@ namespace RockGame
                 }
                 return;
             }
-            TryBreakBlocker();
+            // in their base: in by an open door or over an open top first, then the weakest way (BotBrain.Raid.cs)
+            if (raid && !clear && RaidWay(sock, bp)) return;
+            GoTo(bp, 0.7f, true);
+            m_HasLook = Flat(bp, transform.position) < 10f;
+            m_LookAt = bp;
+            if (!TryBreakBlocker() && !clear && Flat(bp, transform.position) < 4f) BreakToward(bp); // (right by it, walled off: through)
         }
 
         /// <summary>Carrying the ball: home to its machine and into the socket (Builder: put down at home).</summary>
@@ -133,14 +141,22 @@ namespace RockGame
             var back = Cfg.BackDir(team);
             if (Time.time >= m_NextPatrol || Flat(m_Goal, transform.position) < 1f && Random.value < 0.01f)
             {
-                m_NextPatrol = Time.time + Random.Range(4f, 9f);
-                var side = Vector3.Cross(Vector3.up, back) * m_SideSign;
-                GoTo(Around(Cfg.BaseCenter[team] - back * Random.Range(4.5f, 9f) + side * Random.Range(-2f, 5f), 3f), 1f, false);
+                // on the move round the outside of the base (out front, then a side, now and then round the back), a few
+                // seconds at each spot looking out
+                m_NextPatrol = Time.time + Random.Range(3f, 6f);
+                var side = Vector3.Cross(Vector3.up, back);
+                float ring = 3f * OuterR(team) + 3f;
+                int spot = Random.Range(0, 5);
+                var at = spot <= 1 ? Cfg.BaseCenter[team] - back * ring + side * Random.Range(-4f, 4f)
+                    : spot <= 3 ? Cfg.BaseCenter[team] + side * ring * (spot == 2 ? 1f : -1f) + back * Random.Range(-3f, 3f)
+                    : Cfg.BaseCenter[team] + back * ring + side * Random.Range(-4f, 4f);
+                GoTo(Around(at, 2f), 1f, Random.value < 0.5f);
             }
             if (Flat(m_Goal, transform.position) < 1.5f)
             {
                 m_HasLook = true;
-                m_LookAt = transform.position - back * 10f + Vector3.up * 1.5f;
+                var outward = transform.position - Cfg.BaseCenter[team]; outward.y = 0f;
+                m_LookAt = transform.position + (outward.sqrMagnitude > 0.1f ? outward.normalized : -back) * 10f + Vector3.up * 1.5f;
             }
         }
 
@@ -206,7 +222,7 @@ namespace RockGame
             {
                 if (s.Team.Value == MyTeam)
                 {
-                    if (s.HasDoor && !s.DoorOpen.Value && Time.time >= m_NextUse) { m_NextUse = Time.time + 1f; m_P.ToggleDoorRpc(s.NetworkObject); }
+                    if (s.HasDoor && !s.DoorOpen.Value) OpenDoor(s); // (and shut behind it: TickDoors)
                     return false;
                 }
                 no = s.NetworkObject;

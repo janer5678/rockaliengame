@@ -161,7 +161,7 @@ namespace RockGame
             if (id == Cfg.CurrencyItem || Cfg.IsMelee(id)) return true;
             switch (id)
             {
-                case Item.BuildingPlan: case Item.Berry: case Item.Meat: case Item.Ram:
+                case Item.BuildingPlan: case Item.Berry: case Item.Meat: case Item.Ram: case Item.Ladder: case Item.MedPen:
                 case Item.Armor: case Item.HeavyArmor: case Item.Helmet: case Item.InvisPotion:
                 case Item.Chest: case Item.Workbench: case Item.Workbench2: case Item.SleepingBag: case Item.AutoTurret:
                     return true;

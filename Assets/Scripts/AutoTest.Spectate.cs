@@ -45,6 +45,13 @@ namespace RockGame
                     Check(pitchOff < 3f && yawOff < 3f, $"looking where they look (pitch {pitchOff:0.0}, yaw {yawOff:0.0} degrees off)");
                     Check(Time.time - Hud.SpectatorBarShownAt < 0.5f && Hud.SpectatorBarText.Contains(first.DisplayName), $"the spectator bar: \"{Hud.SpectatorBarText}\"");
                     Check(first.Dead.Value || Time.time - Hud.WatchedHotbarShownAt < 0.5f, "their hotbar is shown along the bottom (what's in their hand picked out)");
+                    Check(Time.time - Hud.SpectatorProgressShownAt < 0.5f, $"the match's progress panel is shown at the top too (\"{Hud.SpectatorProgressText}\")");
+                    Spectator.ShowInventory = true;
+                    var tg0 = Spectator.Target;
+                    yield return new WaitForSeconds(0.3f);
+                    Check(tg0 == null || tg0.WatchOpen.Value != 0 || Hud.WatchedPanel == "Inventory", $"[Inventory] shows their bag without them opening it (\"{Hud.WatchedPanel}\")");
+                    yield return Snap("spectate_inventory");
+                    Spectator.ShowInventory = false;
                 }
                 // the playing client has its bag open (below): watching it, we see it too
                 float bagUntil = Time.time + 8f;

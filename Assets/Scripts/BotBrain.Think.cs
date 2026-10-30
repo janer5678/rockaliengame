@@ -39,7 +39,7 @@ namespace RockGame
 
             // 2. an enemy has the ball: after them (from most of the map away)
             bool hurt = Hp01 < m_RetreatAt;
-            if (carrier != null && carrier.Team.Value != MyTeam && Hostile(carrier) && Flat(carrier.transform.position, transform.position) < 90f && !hurt)
+            if (carrier != null && carrier.Team.Value != MyTeam && Hostile(carrier) && Flat(carrier.transform.position, transform.position) < 140f && !hurt)
             {
                 m_Target = carrier;
                 Set(Task.Fight);
@@ -67,12 +67,20 @@ namespace RockGame
             var home = Cfg.BaseCenter[MyTeam];
             if (live && !Cfg.Builder && m_Plan != Plan.Raid && m_Plan != Plan.Hunt && Flat(transform.position, home) < 45f && EnemyNear(home, 28f)) { Set(Task.Defend); return; }
 
-            // 8. what it has set its mind on (BotBrain.Plans.cs): a new plan when the last ran out or is done
+            // 8. what it has set its mind on (BotBrain.Plans.cs): a new plan when the last ran out or is done (a Rusher drops
+            // whatever it's doing half a minute before the wall goes)
+            if (WantsRush(g) && m_Plan != Plan.Rush) StartPlan(Plan.Rush, 0);
             if (m_Plan == Plan.None || Time.time >= m_PlanUntil || PlanDone(g, ball, carrier, withBall, live)) PickPlan(g, ball, carrier, withBall, live);
             if (PlanJob(g, ball, carrier, withBall, live)) { m_PlanIdle = -1f; return; }
             // nothing in the plan for it just now: a few seconds' grace (a piece not held up yet, a craft that didn't go through) before it's dropped
             if (m_PlanIdle < 0f) m_PlanIdle = Time.time;
-            else if (Time.time - m_PlanIdle > 4f) PlanFailed();
+            else if (Time.time - m_PlanIdle > 4f)
+            {
+                // nothing in it: straight on to something else (no standing about in between)
+                PlanFailed();
+                PickPlan(g, ball, carrier, withBall, live);
+                if (PlanJob(g, ball, carrier, withBall, live)) { m_PlanIdle = -1f; return; }
+            }
 
             // 9. nothing in that for it right now: the chest if it's loaded, the trees, or a look about
             bool homeSide = !MapBuilder.GlassUp || Cfg.RegionOf(transform.position) == Cfg.RegionOf(home);

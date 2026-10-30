@@ -261,13 +261,17 @@ namespace RockGame
                 {
                     case Bent.Raider: return gl == Goal.Weapons ? 0.6f : gl == Goal.Crafting ? 0.3f : gl == Goal.Base ? (build ? 0.3f : 0f) : 0.1f;
                     case Bent.Defender: return gl == Goal.Base ? (build ? 0.9f : 0.6f) : gl == Goal.Weapons ? 0.3f : 0.2f;
-                    default: return gl == Goal.Upgrades ? 0.5f : gl == Goal.Crafting ? 0.4f : gl == Goal.Base ? (build ? 0.6f : 0.3f) : 0f;
+                    case Bent.Rusher: return gl == Goal.Weapons ? 0.5f : gl == Goal.Base ? (build ? 0.5f : 0.2f) : 0.2f;
+                    default: return gl == Goal.Upgrades ? 0.5f : gl == Goal.Crafting ? 0.6f : gl == Goal.Base ? (build ? 0.6f : 0.3f) : 0f;
                 }
             }
             float mineW = WeaponScore(m_P);
-            if (BaseStep(out var s)) { s.Score = (EnemyBest(s_Base) - s_Base[team]) / 6f + bias(Goal.Base); m_Steps.Add(s); }
-            if (WeaponStep(out s)) { s.Score = EnemyBest(s_Weapons) - mineW + bias(Goal.Weapons); m_Steps.Add(s); }
-            if (CraftingStep(out s)) { s.Score = EnemyBest(s_Craft) - s_Craft[team] + bias(Goal.Crafting); m_Steps.Add(s); }
+            bool open = !Enclosed(team);
+            // keeping up: whatever the enemy is ahead on counts for more the further behind it is (a Trade Station they have
+            // and it hasn't most of all), and a base that isn't shut in comes before everything
+            if (BaseStep(out var s)) { s.Score = (EnemyBest(s_Base) - s_Base[team]) / 6f + bias(Goal.Base) + (open ? 3f : 0f); m_Steps.Add(s); }
+            if (WeaponStep(out s)) { s.Score = EnemyBest(s_Weapons) - mineW + bias(Goal.Weapons) + (g.S == GameState.BallLive && !HasWeapon ? 1f : 0f); m_Steps.Add(s); }
+            if (CraftingStep(out s)) { float behind = EnemyBest(s_Craft) - s_Craft[team]; s.Score = behind * 2f + (behind > 0f ? 1f : 0.3f) + bias(Goal.Crafting); m_Steps.Add(s); }
             if (UpgradeStep(out s)) { s.Score = EnemyBest(s_Upgrades) - s_Upgrades[team] + bias(Goal.Upgrades); m_Steps.Add(s); }
             m_Steps.Sort((a, b) => b.Score.CompareTo(a.Score));
             m_Focus = m_Steps.Count > 0 ? m_Steps[0].Goal : Goal.None;

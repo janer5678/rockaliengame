@@ -105,6 +105,27 @@ namespace RockGame
             MeleeRpc(target != null, target != null ? new NetworkObjectReference(target) : default, point, weak);
         }
 
+        static readonly RaycastHit[] s_WallHits = new RaycastHit[16];
+
+        /// <summary>A building piece in the way from a to b (a wall, a shut door, a floor) - an open doorway or one whose door
+        /// is broken off doesn't count. A player can't take the ball through a wall because they can't aim at it through
+        /// one; a bot is held to the same (PickupBallRpc).</summary>
+        public static bool WallBetween(Vector3 a, Vector3 b)
+        {
+            var d = b - a;
+            float len = d.magnitude;
+            if (len < 0.05f) return false;
+            int n = Physics.RaycastNonAlloc(a, d / len, s_WallHits, len - 0.15f, ~(1 << HitboxLayer), QueryTriggerInteraction.Ignore);
+            for (int i = 0; i < n; i++)
+            {
+                var s = s_WallHits[i].collider.GetComponentInParent<Structure>();
+                if (s == null || !s.IsSpawned) continue;
+                if ((s.PType == PieceType.Doorway || s.PType == PieceType.Gate) && (!s.HasDoor || s.DoorOpen.Value)) continue;
+                return true;
+            }
+            return false;
+        }
+
         /// <summary>A bot put somewhere (the server moves it: it's the bot's owner).</summary>
         void BotTeleport(Vector3 pos, float yaw)
         {

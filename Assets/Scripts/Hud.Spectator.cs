@@ -14,6 +14,9 @@ namespace RockGame
         /// <summary>Test hook: when the spectator bar was last drawn (Time.time; -1 never) and what it said.</summary>
         public static float SpectatorBarShownAt { get; private set; } = -1f;
         public static string SpectatorBarText { get; private set; } = "";
+        /// <summary>Test hook: when a spectator last saw the match's progress panel at the top (Time.time; -1 never) and its label.</summary>
+        public static float SpectatorProgressShownAt { get; private set; } = -1f;
+        public static string SpectatorProgressText { get; private set; } = "";
 
         void DrawSpectator(Bootstrap boot)
         {
@@ -26,6 +29,27 @@ namespace RockGame
 
             Chat.Draw(k, m_Small, Fill, Shadowed);
             var t = Spectator.Target;
+            // how the match is going, as the one being watched sees it: the timer panel at the top (the phase, the clock, the
+            // ball's whereabouts for their team), the modes' score chips under it, the Progress bars / Bedwars beds, the kill feed
+            if (game != null && game.S != GameState.Waiting)
+            {
+                int team = t != null ? Mathf.Clamp(t.Team.Value, 0, 3) : 0;
+                TopPanelFor(game, team, boot, out string topLabel, out string topClock, out string sub, out Color topAccent, out float topLeft);
+                if (topLabel == "YOUR PROGRESS") topLabel = Cfg.TeamName[team] + " PROGRESS"; // (it's theirs, not ours)
+                if (topLabel != "")
+                {
+                    string tag = TestTimerTag ?? (Cfg.Rules != GameRules.Classic ? Cfg.RulesName(Cfg.Rules).ToUpper() : "");
+                    float ph = DrawTopPanel(game, topLabel, topClock, tag, sub, topAccent, topLeft, k);
+                    DrawModePanel(game, team, k, 8 + ph + 6 * k);
+                    SpectatorProgressShownAt = Time.time;
+                    SpectatorProgressText = topLabel;
+                }
+                DrawBedList(game, k, 10f);
+                float my = 10f;
+                float pc0 = DrawProgressCorner(game, team, k, my);
+                if (pc0 > 0) my += pc0 + 4 * k;
+                DrawKillFeed(k, my);
+            }
             string who = t != null ? t.DisplayName : "nobody yet";
             string clock = "";
             if (game != null)
@@ -44,7 +68,7 @@ namespace RockGame
             SpectatorBarText = $"SPECTATING {who}";
             SpectatorBarShownAt = Time.time;
             Shadowed(new Rect(bar.x + 16 * k, bar.y + 6 * k, w, 28 * k), $"<b>SPECTATING</b>  <b><size={Mathf.RoundToInt(20 * k)}>{name}</size></b>", m_Label);
-            Shadowed(new Rect(bar.x + 16 * k, bar.y + 32 * k, w, 22 * k), $"<color=#bbbbbb>Left click: next player   ·   Right click: previous</color>" + (clock != "" ? $"   ·   {clock}" : ""), m_Small);
+            Shadowed(new Rect(bar.x + 16 * k, bar.y + 32 * k, w, 22 * k), $"<color=#bbbbbb>Left click: next player   ·   Right click: previous   ·   [{Binds.Name(Bind.Inventory)}] their inventory</color>" + (clock != "" ? $"   ·   {clock}" : ""), m_Small);
             var lr = new Rect(bar.xMax - 104 * k, bar.y + 12 * k, 92 * k, 34 * k);
             if (lr.Contains(Event.current.mousePosition) || bar.Contains(Event.current.mousePosition)) MouseOverUI = true;
             if (BtnAt(lr, "LEAVE", m_Button)) boot.Leave();
@@ -74,8 +98,14 @@ namespace RockGame
             }
             WatchedHotbarShownAt = Time.time;
             var open = (WatchUi)t.WatchOpen.Value;
-            WatchedPanel = open == WatchUi.None ? "" : open.ToString();
-            if (open == WatchUi.None) return;
+            // what they're wearing and how they are, on the left of the hotbar
+            string kit = $"<b>{Mathf.CeilToInt(t.Health.Value)}</b> HP" + (t.ArmorHp.Value > 0 ? $"   ·   ARMOUR <b>{t.ArmorHp.Value}</b>" : "") + (t.HelmetHp.Value > 0 ? $"   ·   HELMET <b>{t.HelmetHp.Value}</b>" : "");
+            Shadowed(new Rect(hx, hy - 24 * k, n * (slot + gap), 22 * k), kit, m_Small);
+            hy -= 22 * k; // (their open screen goes above that line)
+            // [Inventory] (Tab) shows their bag even when they don't have it open themselves
+            bool peek = open == WatchUi.None && Spectator.ShowInventory;
+            WatchedPanel = open == WatchUi.None ? (peek ? "Inventory" : "") : open.ToString();
+            if (open == WatchUi.None && !peek) return;
 
             // their open screen, above the hotbar: the bag (3 rows of 6) on the left, the chest or the upgrades on the right
             const int cols = Cfg.HotbarSize;

@@ -18,9 +18,12 @@ namespace RockGame
     public partial class BotBrain : MonoBehaviour
     {
         /// <summary>What a bot is doing (tests and debugging can read it: Job).</summary>
-        public enum Task : byte { Idle, Lounge, Wander, Farm, Berries, Store, Craft, Deploy, Build, Fetch, Carry, Escort, Raid, Defend, Hunt, Fight, Retreat, Loot, Upgrade, Arm }
-        /// <summary>A bot's leaning in a team: raiders go for the enemy, gatherers build up the economy, defenders hold the base.</summary>
-        public enum Bent : byte { Raider, Gatherer, Defender }
+        public enum Task : byte { Idle, Lounge, Wander, Farm, Berries, Store, Craft, Deploy, Build, Fetch, Carry, Escort, Raid, Defend, Hunt, Fight, Retreat, Loot, Upgrade, Arm, Rush }
+        /// <summary>A bot's personality, dealt at random like the ghosts in Pac-Man - each its own play style, and all of them
+        /// wanting the ball in their machine above anything: a Raider (the hunter: the best weapons and armour it can get,
+        /// roaming the map for kills), a Gatherer (the crafter: farming, the Trade Stations, the upgrades), a Defender (the
+        /// builder: the best base first, the ball after) and a Rusher (waiting at the glass wall before it drops, first to the ball).</summary>
+        public enum Bent : byte { Raider, Gatherer, Defender, Rusher }
 
         PlayerNet m_P;
         CharacterController m_CC;
@@ -44,6 +47,12 @@ namespace RockGame
         bool m_HasLook, m_Sprint, m_Arrived;
         float m_Stop = 0.8f;
         float m_VelY, m_StuckCheck, m_SideUntil, m_StrafeFlip, m_StrafeSign = 1f;
+        // looking about (eased: Look) and moving (eased: m_MoveDir); backing out of a corner (Detour)
+        float m_YawVel, m_PitchNow, m_PitchVel, m_DetourUntil;
+        Vector3 m_MoveDir, m_Detour;
+        /// <summary>(tests) how often it has been stuck, and pushed out of something it was inside.</summary>
+        public int StuckTotal { get; private set; }
+        public int PushedOut { get; private set; }
         bool m_Strafe;
         int m_Stuck;
         // steering round things in the way (re-checked a few times a second)
@@ -66,6 +75,8 @@ namespace RockGame
         public int Jumps { get; private set; }
 
         const float ReachTree = 1.25f;
+        /// <summary>(tests) every new bot gets this personality (-1: dealt at random).</summary>
+        public static int TestBent = -1;
 
         static int Mask => ~(1 << PlayerNet.HitboxLayer);
 
@@ -93,7 +104,10 @@ namespace RockGame
             m_Blocker = null;
             m_LootBox = null;
             m_LootId = -1;
-            m_OpenedDoor = null;
+            m_OpenedDoors.Clear();
+            m_DetourUntil = 0f;
+            m_ClimbT = -1f;
+            m_MoveDir = Vector3.zero;
         }
 
         void InitPersonality()
@@ -102,7 +116,7 @@ namespace RockGame
             // a stable little random generator per bot: the same bot keeps its character all match
             var r = new System.Random((int)(m_P.NetworkObjectId * 2654435761u % int.MaxValue) ^ 0x5bd1e995);
             float F() => (float)r.NextDouble();
-            m_Bent = (Bent)r.Next(0, 3);
+            m_Bent = TestBent >= 0 ? (Bent)(TestBent & 3) : (Bent)r.Next(0, 4);
             m_Aggro = Mathf.Lerp(0.25f, 1f, F());
             m_Skill = Mathf.Lerp(0.35f, 0.95f, F());
             m_RetreatAt = Mathf.Lerp(0.22f, 0.45f, 1f - m_Aggro * 0.6f);
@@ -200,10 +214,13 @@ namespace RockGame
             // in or out of its own house: by way of the front doors (BotBrain.House.cs)
             bool routed = false;
             var goal = lobby ? m_Goal : Route(pos, out routed);
+            if (!lobby && TickClimb(dt)) return; // (up a ladder and over a wall: BotBrain.Raid.cs)
+            bool detour = !lobby && Time.time < m_DetourUntil;
+            if (detour) goal = m_Detour; // (backing out of a corner it got stuck in: Detour)
             var to = goal - pos;
             to.y = 0f;
             float dist = to.magnitude;
-            var wish = !m_Arrived && dist > (routed ? 0.25f : m_Stop) ? to / Mathf.Max(dist, 0.001f) : Vector3.zero;
+            var wish = (!m_Arrived || detour) && dist > (routed || detour ? 0.25f : m_Stop) ? to / Mathf.Max(dist, 0.001f) : Vector3.zero;
             // fighting up close: circle the target, now one way, now the other
             if (m_Strafe && !lobby)
             {
@@ -221,27 +238,37 @@ namespace RockGame
                 wish = back.sqrMagnitude > 0.01f ? back.normalized : Vector3.zero;
             }
 
-            float speed = lobby ? Cfg.WalkSpeed * 0.5f : m_Sprint ? Cfg.SprintSpeed : Cfg.WalkSpeed;
+            // a person runs anywhere more than a few steps off (walking only up close, circling someone, or about the lobby)
+            bool run = m_Sprint || (dist > 4.5f && !m_Strafe);
+            float speed = lobby ? Cfg.WalkSpeed * 0.5f : run ? Cfg.SprintSpeed : Cfg.WalkSpeed;
             if (m_P.CarryingBall) speed *= Cfg.BallCarrySpeedMul;
             speed *= m_P.WackySpeedMul; // (slowed, an ant, a bear)
             if (m_P.WackyFrozen) speed = 0f; // (timed out, knocked flat, a minigame on - dancing they still walk)
             bool grounded = m_CC.isGrounded;
-            var vel = wish * speed;
+            // speeding up and turning take a moment, like a player's (no instant flips from one way to another)
+            m_MoveDir = Vector3.MoveTowards(m_MoveDir, wish, (wish.sqrMagnitude > 0.01f ? 9f : 12f) * dt);
+            var vel = m_MoveDir * speed;
+            // downhill ahead: how far the ground drops over the next 3 m, per metre
+            float drop = 0f;
+            if (wish.sqrMagnitude > 0.01f && !lobby) drop = (MapBuilder.Height(pos.x, pos.z) - MapBuilder.Height(pos.x + wish.x * 3f, pos.z + wish.z * 3f)) / 3f;
 
             // the slide: now and then, running flat out a long way, it drops into one (a boost that bleeds away)
             if (Time.time < m_SlideUntil)
             {
                 m_SlideSpeed = Mathf.MoveTowards(m_SlideSpeed, 0f, (Cfg.SprintSpeed + Cfg.SlideBoost) / Mathf.Lerp(0.5f, 1.6f, Cfg.SlideSlipperiness / 10f) * dt);
+                if (drop > 0.05f) m_SlideSpeed = Mathf.Min(Cfg.SlideMaxSpeed, m_SlideSpeed + drop * Cfg.Gravity * 0.9f * dt); // (downhill it keeps going, faster)
                 m_SlideDir = Vector3.RotateTowards(m_SlideDir, wish.sqrMagnitude > 0.01f ? wish : m_SlideDir, Cfg.SlideSteer * Mathf.Deg2Rad * dt, 0f);
                 vel = m_SlideDir * m_SlideSpeed;
                 if (m_SlideSpeed < Cfg.SlideMinSpeed || !grounded) m_SlideUntil = 0f;
             }
-            else if (!lobby && m_Sprint && grounded && dist > 9f && Time.time >= m_NextSlide && Time.time >= m_SteerUntil && !m_P.CarryingBall && !Eating
-                     && Vector3.Dot(wish, transform.forward) > 0.9f && Random.value < 0.6f * dt * m_Playful)
+            else if (!lobby && run && grounded && Time.time >= m_SteerUntil && !m_P.CarryingBall && !Eating && Vector3.Dot(wish, transform.forward) > 0.85f
+                     && ((drop > 0.09f && dist > 6f && Time.time >= m_NextSlide - Cfg.SlideBoostCooldown && Random.value < 4f * dt) // (down a slope: nearly always)
+                         || (dist > 9f && Time.time >= m_NextSlide && Random.value < 0.6f * dt * m_Playful)))
             {
-                m_SlideUntil = Time.time + 1.6f;
+                m_SlideUntil = Time.time + (drop > 0.09f ? 2.4f : 1.6f);
                 m_SlideSpeed = Mathf.Min(Cfg.SprintSpeed + Cfg.SlideBoost, Cfg.SlideMaxSpeed);
                 m_SlideDir = wish;
+                m_MoveDir = wish;
                 m_NextSlide = Time.time + Cfg.SlideBoostCooldown + Random.Range(3f, 9f) / m_Playful;
                 Slides++;
                 Sfx.Play(Sfx.Slide, pos, 0.5f, 0.08f, 35f);
@@ -261,35 +288,87 @@ namespace RockGame
                 if (tried.magnitude > 0.02f && went.magnitude < tried.magnitude * 0.3f) m_Shove = Vector3.zero;
             }
 
-            // face where it's looking (a target, a tree) or else where it's going
-            var face = m_HasLook ? m_LookAt - pos : (vel.sqrMagnitude > 0.1f ? vel : to);
+            Look(pos, vel, to, dt);
+
+            // stuck (a wall, a rock, a tree, a doorway): a jump and a sidestep; still stuck, out of anything it's inside of and
+            // back out of the corner another way; stuck for long, it gives up on that goal
+            if (Time.time >= m_StuckCheck)
+            {
+                m_StuckCheck = Time.time + 0.7f;
+                if (wish.sqrMagnitude > 0.1f && (transform.position - m_LastPos).sqrMagnitude < 0.3f * 0.3f)
+                {
+                    m_Stuck++;
+                    StuckTotal++;
+                    if (m_Stuck == 1 || m_Stuck == 3) Jump();
+                    m_SideUntil = Time.time + 0.8f;
+                    m_SideSign = Random.value < 0.5f ? -1f : 1f;
+                    if (m_Stuck >= 2) { PushOut(); Detour(wish); }
+                    if (m_Stuck >= 5) { m_Stuck = 0; GaveUp(); }
+                }
+                else m_Stuck = 0;
+                m_LastPos = transform.position;
+            }
+        }
+
+        /// <summary>
+        /// Where it looks, like a person would: the head turns smoothly (eased in and out, never a snap) - quicker onto
+        /// someone it's fighting; on the move, the way it's going with its eyes a little down the path; up or down at
+        /// whatever it's looking at. So watching it (spectating, the kill cam) moves the way a player's view does.
+        /// </summary>
+        void Look(Vector3 pos, Vector3 vel, Vector3 to, float dt)
+        {
+            var face = m_HasLook ? m_LookAt - pos : (vel.sqrMagnitude > 0.5f ? vel : to);
             face.y = 0f;
             if (face.sqrMagnitude > 0.01f)
-                transform.rotation = Quaternion.RotateTowards(transform.rotation, Quaternion.LookRotation(face.normalized), 540f * dt);
-            // and tip its head up / down at it
-            float pitch = 0f;
+            {
+                float want = Quaternion.LookRotation(face.normalized).eulerAngles.y;
+                bool fight = m_HasLook && (m_Task == Task.Fight || m_Task == Task.Retreat);
+                float yaw = Mathf.SmoothDampAngle(transform.eulerAngles.y, want, ref m_YawVel, fight ? 0.07f : m_HasLook ? 0.12f : 0.2f, fight ? 720f : 380f, dt);
+                transform.rotation = Quaternion.Euler(0f, yaw, 0f);
+            }
+            float pitch = 6f; // (on the move: eyes on the ground a little way ahead)
             if (m_HasLook)
             {
                 var d = m_LookAt - m_P.EyePos;
                 float flat = new Vector2(d.x, d.z).magnitude;
                 pitch = Mathf.Clamp(-Mathf.Atan2(d.y, Mathf.Max(flat, 0.1f)) * Mathf.Rad2Deg, -60f, 60f);
             }
-            if (Mathf.Abs(m_P.Pitch.Value - pitch) > 3f) m_P.Pitch.Value = pitch;
+            else if (vel.sqrMagnitude < 0.5f) pitch = 2f + Mathf.Sin(Time.time * 0.6f + m_SideSign) * 4f; // (standing about: glancing round a little)
+            m_PitchNow = Mathf.SmoothDampAngle(m_PitchNow, pitch, ref m_PitchVel, m_HasLook ? 0.1f : 0.25f, 240f, dt);
+            if (Mathf.Abs(m_P.Pitch.Value - m_PitchNow) > 0.35f) m_P.Pitch.Value = m_PitchNow;
+        }
 
-            // stuck (a wall, a rock, a tree): jump, and sidestep for a moment; stuck for long, give up on the goal
-            if (Time.time >= m_StuckCheck)
+        /// <summary>Somehow inside a building piece or a deployable (built round it, shoved into it): out of it.</summary>
+        void PushOut()
+        {
+            var pos = transform.position;
+            float r = m_CC.radius, h = m_CC.height;
+            var move = Vector3.zero;
+            foreach (var c in Physics.OverlapCapsule(pos + Vector3.up * (r + 0.05f), pos + Vector3.up * (h - r), r - 0.02f, Mask, QueryTriggerInteraction.Ignore))
             {
-                m_StuckCheck = Time.time + 0.8f;
-                if (wish.sqrMagnitude > 0.1f && (transform.position - m_LastPos).sqrMagnitude < 0.25f * 0.25f)
+                if (c == m_CC || c.transform.IsChildOf(transform)) continue;
+                if (c.GetComponentInParent<Structure>() == null && c.GetComponentInParent<Container>() == null) continue;
+                if (Physics.ComputePenetration(m_CC, pos, transform.rotation, c, c.transform.position, c.transform.rotation, out var dir, out float dd) && dd > 0.02f)
                 {
-                    Jump();
-                    m_SideUntil = Time.time + 0.9f;
-                    m_SideSign = Random.value < 0.5f ? -1f : 1f;
-                    if (++m_Stuck >= 5) { m_Stuck = 0; GaveUp(); }
+                    dir.y = 0f;
+                    if (dir.sqrMagnitude > 0.0001f) move += dir.normalized * (dd + 0.08f);
                 }
-                else m_Stuck = 0;
-                m_LastPos = transform.position;
             }
+            if (move.sqrMagnitude < 0.0004f) return;
+            m_CC.enabled = false;
+            transform.position = pos + Vector3.ClampMagnitude(move, 1.2f);
+            m_CC.enabled = true;
+            Physics.SyncTransforms();
+            PushedOut++;
+        }
+
+        /// <summary>Stuck against something: back off and round it for a moment (off to one side of the way it was going).</summary>
+        void Detour(Vector3 wish)
+        {
+            var side = Vector3.Cross(Vector3.up, wish) * m_SideSign;
+            m_Detour = transform.position - wish * Random.Range(1f, 2f) + side * Random.Range(2f, 3.5f);
+            m_DetourUntil = Time.time + 1.1f;
+            m_SteerUntil = 0f;
         }
 
         void Jump()

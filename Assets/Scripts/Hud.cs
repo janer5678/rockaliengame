@@ -296,31 +296,13 @@ namespace RockGame
 
         // ------------------------------------------------------------------ in-game HUD
 
-        void DrawGame(Bootstrap boot, PlayerNet me, PlayerController pc)
+        /// <summary>What the timer panel at the top says for `team` (the phase, the clock, the line under it): the players'
+        /// HUD for their own team, a spectator's for the team of whoever they're watching.</summary>
+        void TopPanelFor(NetGame game, int team, Bootstrap boot, out string topLabel, out string topClock, out string sub, out Color topAccent, out float topLeft)
         {
-            var game = NetGame.Instance;
-            float sw = Screen.width, sh = Screen.height, k = m_Scale;
-            int team = me.Team.Value;
-            // the victory cutscene: just letterbox bars and a caption over it; the victory screen waits until it's over
-            if (game != null && VictoryCutscene.Active) { DrawVictoryCutscene(game, team); return; }
-            if (WallPicker.Active) return; // (Jonah's wall picker draws its own)
-            if (MatchIntro.DrawHud(k, m_Big, m_Label, m_Small, Fill, Shadowed)) return; // (the match intro: MatchIntro.cs)
-            // Settings > Display > INTERFACE > HUD opacity (only while nothing is open over the game)
-            s_HudAlpha = pc.MenuOpen || pc.Paused ? 1f : GameSettings.HudOpacity;
-            GUI.color = new Color(1f, 1f, 1f, s_HudAlpha);
-
-            if (m_DamageFlash > 0) Fill(new Rect(0, 0, sw, sh), new Color(0.8f, 0, 0, m_DamageFlash * 0.5f));
-            float wake = Time.time - s_WakeTime;
-            if (wake < 1.6f)
-            {
-                float a = Mathf.Clamp01(1f - wake / 1.6f);
-                Fill(new Rect(0, 0, sw, sh), new Color(0.75f, 0.95f, 1f, a * a * 0.95f));
-            }
-
-            // ---- top centre: phase & timer (Hud.Notify.cs: DrawTopPanel) ----
-            string topLabel = "", topClock = "", sub = "";
-            Color topAccent = Color.white;
-            float topLeft = -1f;
+            topLabel = ""; topClock = ""; sub = "";
+            topAccent = Color.white;
+            topLeft = -1f;
             if (game != null)
             {
                 switch (game.S)
@@ -384,6 +366,31 @@ namespace RockGame
                         break;
                 }
             }
+        }
+
+        void DrawGame(Bootstrap boot, PlayerNet me, PlayerController pc)
+        {
+            var game = NetGame.Instance;
+            float sw = Screen.width, sh = Screen.height, k = m_Scale;
+            int team = me.Team.Value;
+            // the victory cutscene: just letterbox bars and a caption over it; the victory screen waits until it's over
+            if (game != null && VictoryCutscene.Active) { DrawVictoryCutscene(game, team); return; }
+            if (WallPicker.Active) return; // (Jonah's wall picker draws its own)
+            if (MatchIntro.DrawHud(k, m_Big, m_Label, m_Small, Fill, Shadowed)) return; // (the match intro: MatchIntro.cs)
+            // Settings > Display > INTERFACE > HUD opacity (only while nothing is open over the game)
+            s_HudAlpha = pc.MenuOpen || pc.Paused ? 1f : GameSettings.HudOpacity;
+            GUI.color = new Color(1f, 1f, 1f, s_HudAlpha);
+
+            if (m_DamageFlash > 0) Fill(new Rect(0, 0, sw, sh), new Color(0.8f, 0, 0, m_DamageFlash * 0.5f));
+            float wake = Time.time - s_WakeTime;
+            if (wake < 1.6f)
+            {
+                float a = Mathf.Clamp01(1f - wake / 1.6f);
+                Fill(new Rect(0, 0, sw, sh), new Color(0.75f, 0.95f, 1f, a * a * 0.95f));
+            }
+
+            // ---- top centre: phase & timer (Hud.Notify.cs: DrawTopPanel) ----
+            TopPanelFor(game, team, boot, out string topLabel, out string topClock, out string sub, out Color topAccent, out float topLeft);
             float topBottom = 10f;
             if (topLabel != "")
             {

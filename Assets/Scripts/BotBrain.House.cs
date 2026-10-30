@@ -176,7 +176,7 @@ namespace RockGame
         static float Facing(int team, PlanPiece p) => FacingKey(team, p.Key);
 
         /// <summary>How much a piece faces out the back of the base (1: right at the back, -1: the front).</summary>
-        static float FacingKey(int team, PieceKey k)
+        public static float FacingKey(int team, PieceKey k)
         {
             var p = BuildGrid.PieceCenter(k);
             var d = p - Cfg.BaseCenter[team];
@@ -193,6 +193,27 @@ namespace RockGame
             foreach (var p in plan)
                 if (BuildGrid.Registry.TryGetValue(p.Key, out var s) && s != null && s.Team.Value == team) n++;
             return n;
+        }
+
+        static readonly float[] s_EnclosedAt = { -10f, -10f, -10f, -10f };
+        static readonly bool[] s_Enclosed = new bool[4];
+
+        /// <summary>The team's machine is shut in: its room's ground-floor walls and doorways are all up (or the outer ring's
+        /// are) - a piece or two that can't go in anywhere (the machine, a chest in the way) aside. Looked at once a second.</summary>
+        public static bool Enclosed(int team)
+        {
+            if (team < 0 || team > 3 || Cfg.Builder) return true;
+            if (Time.time - s_EnclosedAt[team] < 1f) return s_Enclosed[team];
+            s_EnclosedAt[team] = Time.time;
+            int missInner = 0, missOuter = 0;
+            foreach (var p in HousePlan(team))
+            {
+                if (p.Stage != 0 && p.Stage != 4) continue;
+                if (BuildGrid.OnBedrock(p.Key)) continue;
+                if (BuildGrid.Registry.TryGetValue(p.Key, out var s) && s != null && s.IsSpawned) continue;
+                if (p.Stage == 0) missInner++; else missOuter++;
+            }
+            return s_Enclosed[team] = missInner <= 1 || missOuter <= 1;
         }
 
         // ---------------------------------------------------------------- building it
@@ -228,10 +249,19 @@ namespace RockGame
             BuildGrid.Pose(piece.Type, piece.Key, out var wp, out _);
             var mid = BuildGrid.PieceCenter(piece.Key);
             float far = Vector3.Distance(wp, transform.position);
-            if (far > 9f) // (the server takes it from up to 11 m)
+            // walls are put up from outside them, so it never shuts itself in (the roof from anywhere near)
+            var stand = mid;
+            if (piece.Type != PieceType.Floor)
             {
-                // walk up to it (from outside the house: it's built from the front and the sides)
-                GoTo(mid, 4.5f, Flat(mid, transform.position) > 12f);
+                var outward = mid - Cfg.BaseCenter[MyTeam];
+                outward.y = 0f;
+                if (outward.sqrMagnitude > 0.01f) stand = mid + outward.normalized * 2.5f;
+            }
+            bool wrongSide = piece.Type != PieceType.Floor && piece.Type != PieceType.Foundation && far < 9f
+                && Flat(transform.position, Cfg.BaseCenter[MyTeam]) < Flat(mid, Cfg.BaseCenter[MyTeam]) - 0.6f && Flat(transform.position, mid) < 4f;
+            if (far > 9f || wrongSide) // (the server takes it from up to 11 m)
+            {
+                GoTo(stand, 1.2f, Flat(stand, transform.position) > 6f);
                 return;
             }
             m_Arrived = true;
@@ -254,8 +284,12 @@ namespace RockGame
 
         // ---------------------------------------------------------------- in and out by the doors
 
-        Structure m_OpenedDoor;
+        /// <summary>Doors it has opened and not shut yet (it shuts every one behind it).</summary>
+        readonly List<Structure> m_OpenedDoors = new List<Structure>(2);
+        readonly Dictionary<Structure, float> m_DoorWait = new Dictionary<Structure, float>(), m_DoorNear = new Dictionary<Structure, float>();
         float m_NextDoor;
+        /// <summary>(tests) doors it has shut behind itself.</summary>
+        public int DoorsShut { get; private set; }
 
         /// <summary>Which part of its base a point is in: 0 inside the inner room, 1 in the outer ring, 2 outside (only
         /// counting the rings that have their doorways up).</summary>
@@ -338,13 +372,24 @@ namespace RockGame
         void OpenDoor(Structure s)
         {
             if (s == null || !s.IsSpawned || !s.HasDoor || s.DoorOpen.Value || Time.time < m_NextDoor) return;
-            m_NextDoor = Time.time + 0.7f;
+            m_NextDoor = Time.time + 0.5f;
             m_P.ToggleDoorRpc(s.NetworkObject);
-            if (s.DoorOpen.Value) m_OpenedDoor = s;
+            if (s.DoorOpen.Value && !m_OpenedDoors.Contains(s)) { m_OpenedDoors.Add(s); DoorsOpened++; }
         }
 
-        /// <summary>Its own closed door right in front of it: open it. A door it opened, now a few steps behind it with
-        /// nobody else in it: shut it (a good player does - a careless one leaves it).</summary>
+        /// <summary>Where a doorway's gap really is (a grid piece's own pose; a large gate's middle).</summary>
+        static Vector3 DoorPos(Structure s)
+        {
+            if (s.Key.Kind == PieceKey.KEdge && BuildGrid.Registry.TryGetValue(s.Key, out var r) && r == s) { BuildGrid.Pose(s.PType, s.Key, out var p, out _); return p; }
+            return s.transform.position;
+        }
+
+        /// <summary>(tests) doors it has opened.</summary>
+        public int DoorsOpened { get; private set; }
+
+        /// <summary>Its own closed door right in front of it: open it. Every door it opened, once it's through and a couple of
+        /// steps past it: shut it behind itself, going in or out (a teammate right in the doorway gets a moment to come
+        /// through first; an enemy gets the door shut in their face).</summary>
         void TickDoors()
         {
             if (m_Blocker != null && Time.time - m_BlockedAt < 0.4f && Vector3.Distance(m_P.EyePos, m_BlockPoint) < 2.6f)
@@ -352,18 +397,35 @@ namespace RockGame
                 var s = m_Blocker.GetComponentInParent<Structure>();
                 if (s != null && s.IsSpawned && s.Team.Value == MyTeam && s.HasDoor && !s.DoorOpen.Value) OpenDoor(s);
             }
-            var d = m_OpenedDoor;
-            if (d == null) return;
-            if (!d.IsSpawned || !d.HasDoor || !d.DoorOpen.Value) { m_OpenedDoor = null; return; }
-            float away = Flat(d.transform.position, transform.position);
-            if (away > 7f) { m_OpenedDoor = null; return; }
-            if (away < 3.2f || Time.time < m_NextDoor) return;
-            foreach (var p in PlayerNet.All)
-                if (p != null && p != m_P && p.IsSpawned && !p.Dead.Value && Flat(p.transform.position, d.transform.position) < 3f) return; // (someone's coming through)
-            if (Random.value > 0.35f + 0.6f * m_Skill) { m_OpenedDoor = null; return; } // (left open)
-            m_NextDoor = Time.time + 0.7f;
-            m_P.ToggleDoorRpc(d.NetworkObject);
-            m_OpenedDoor = null;
+            for (int i = m_OpenedDoors.Count - 1; i >= 0; i--)
+            {
+                var d = m_OpenedDoors[i];
+                if (d == null || !d.IsSpawned || !d.HasDoor || !d.DoorOpen.Value) { m_OpenedDoors.RemoveAt(i); m_DoorWait.Remove(d); m_DoorNear.Remove(d); continue; }
+                var dp = DoorPos(d);
+                float away = Flat(dp, transform.position);
+                // gone right off without it (a respawn, knocked flying): too far to reach now (the reach ToggleDoorRpc allows)
+                if (Vector3.Distance(d.transform.position, transform.position) > Cfg.InteractRange + 2.8f) { Note($"too far from a door to shut it ({away:0.0} m)"); m_OpenedDoors.RemoveAt(i); m_DoorWait.Remove(d); m_DoorNear.Remove(d); continue; }
+                // through it (it came right up to the doorway and is now past it), or it went off another way
+                float near = m_DoorNear.TryGetValue(d, out var nd) ? Mathf.Min(nd, away) : away;
+                m_DoorNear[d] = near;
+                if (!(near < 1.4f && away > 2.1f) && away < 4f) continue;
+                if (Time.time < m_NextDoor) continue;
+                bool mate = false;
+                foreach (var p in PlayerNet.All)
+                    if (p != null && p != m_P && p.IsSpawned && !p.Dead.Value && p.Team.Value == MyTeam && Flat(p.transform.position, dp) < 1.6f) mate = true;
+                if (mate)
+                {
+                    // a teammate in the doorway: give them a moment, then shut it anyway
+                    if (!m_DoorWait.TryGetValue(d, out var since)) m_DoorWait[d] = since = Time.time;
+                    if (Time.time - since < 2.5f) continue;
+                }
+                m_NextDoor = Time.time + 0.3f;
+                m_P.ToggleDoorRpc(d.NetworkObject);
+                if (!d.DoorOpen.Value) DoorsShut++; else Note("a door would not shut");
+                m_OpenedDoors.RemoveAt(i);
+                m_DoorWait.Remove(d);
+                m_DoorNear.Remove(d);
+            }
         }
     }
 }

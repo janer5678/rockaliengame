@@ -87,6 +87,9 @@ namespace RockGame
 
         /// <summary>Who's being watched (null: nobody to watch right now).</summary>
         public static PlayerNet Target => I != null ? I.m_Target : null;
+        /// <summary>[Inventory] (Tab) toggles it: the watched player's bag and kit shown all the time, not just while they
+        /// have their bag open (Hud.Spectator.cs).</summary>
+        public static bool ShowInventory;
         /// <summary>Test hooks: how many times the watched player changed, and the camera's last pose.</summary>
         public static int Switches { get; private set; }
         public static Vector3 CamPos { get; private set; }
@@ -143,6 +146,7 @@ namespace RockGame
             {
                 if (Input.GetMouseButtonDown(0)) Cycle(1, false);
                 else if (Input.GetMouseButtonDown(1)) Cycle(-1, false);
+                if (Binds.Down(Bind.Inventory)) ShowInventory = !ShowInventory; // (their bag, whether they have it open or not: Hud.Spectator.cs)
             }
         }
 

@@ -2193,6 +2193,7 @@ namespace RockGame
             if (Dead.Value || b == null || b.IsCarried || InSuddenDeath) return;
             if (NetGame.Instance != null && NetGame.Instance.WallUp) return; // under the glass dome until the wall drops
             if (Vector3.Distance(b.transform.position, EyePos) > Cfg.InteractRange + 2f) return;
+            if (Bot.Value && WallBetween(EyePos, b.transform.position)) return; // (a bot can't reach it through a wall either - a player can't aim through one)
             b.ServerPickup(this); // (the kill feed says who picked it up - no top-right message as well)
         }
 
