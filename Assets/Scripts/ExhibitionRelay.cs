@@ -11,16 +11,16 @@ namespace RockGame
 {
     /// <summary>
     /// Unity Relay for the exhibition build (Exhibition.cs): the host and the clients all connect out to Unity's relay
-    /// server, so nothing has to reach a school PC from outside - no port, no IP, just a join code. It goes over secure
-    /// WebSockets (wss, TCP port 443, what a browser uses for https), the likeliest thing to be let through a school's
-    /// firewall; -relayudp uses DTLS over UDP instead, which is quicker but more often blocked (all four PCs have to match).
+    /// server, so nothing has to reach a school PC from outside - no port, no IP, just a join code. It goes over DTLS (encrypted
+    /// UDP). -relaywss uses secure WebSockets instead (TCP port 443, for a network that blocks UDP; all four PCs have to
+    /// match), but that isn't reliable yet: in Tools/run_relay_test.ps1 its clients connect and then drop 30 s later.
     /// Needs the project linked to Unity Cloud with Relay switched on (see README.md, Exhibition build).
     /// </summary>
     public static class ExhibitionRelay
     {
         /// <summary>The players and a few spectators.</summary>
         const int MaxConnections = 11;
-        public static readonly bool Wss = Array.IndexOf(Environment.GetCommandLineArgs(), "-relayudp") < 0;
+        public static readonly bool Wss = Array.IndexOf(Environment.GetCommandLineArgs(), "-relaywss") >= 0;
         static string Kind => Wss ? "wss" : "dtls";
 
         /// <summary>The next session goes through the relay (false: plain IP - HOST ON THIS NETWORK, the tests).</summary>

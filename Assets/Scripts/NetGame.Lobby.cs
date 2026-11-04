@@ -150,6 +150,7 @@ namespace RockGame
         {
             Bootstrap.s_RejoinExpectedUntil = Time.unscaledTime + RejoinWindow;
             Exhibition.RememberTeam();
+            Exhibition.ClientNextPart();
             Debug.Log("[RockGame] the host is going back to the lobby: rejoining when it drops");
         }
 

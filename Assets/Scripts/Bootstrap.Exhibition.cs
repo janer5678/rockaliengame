@@ -12,6 +12,21 @@ namespace RockGame
         /// <summary>Hosting through Relay failed: the front screen offers plain IP instead.</summary>
         public bool RelayFailed { get; private set; }
 
+        /// <summary>The transport onto the relay. Someone joining is sent the whole world in one go, far quicker than it can
+        /// get through the relay (it's nothing for a local connection): with the default queues the host's overflows and they
+        /// get dropped, so there's room to queue it all (the same reason SteamBoot gives Steam a bigger send buffer), and the
+        /// host gives a slow PC longer to get in.</summary>
+        void UseRelayData()
+        {
+            m_Ut.UseWebSockets = ExhibitionRelay.Wss;
+            m_Ut.MaxSendQueueSize = RelaySendQueue;
+            m_Ut.MaxPacketQueueSize = RelayPacketQueue;
+            m_Nm.NetworkConfig.ClientConnectionBufferTimeout = RelayJoinWait;
+            m_Ut.SetRelayServerData(ExhibitionRelay.Data);
+        }
+
+        const int RelaySendQueue = 32 * 1024 * 1024, RelayPacketQueue = 4096, RelayJoinWait = 60;
+
         /// <summary>A join code rather than an IP (it has no dots).</summary>
         static bool IsRelayCode(string s) => !string.IsNullOrWhiteSpace(s) && s.IndexOf('.') < 0;
 
@@ -50,9 +65,9 @@ namespace RockGame
             RelayBusy = false;
             if (t.IsFaulted) { Status = ExhibitionRelay.Why(t.Exception); yield break; }
             UseSteam(false);
-            m_Ut.UseWebSockets = ExhibitionRelay.Wss;
-            m_Ut.SetRelayServerData(ExhibitionRelay.Data);
+            UseRelayData();
             m_Nm.NetworkConfig.ConnectionData = System.Text.Encoding.UTF8.GetBytes(GameSettings.PlayerName);
+            Debug.Log($"[RockGame] t={Time.realtimeSinceStartup:0.0} connecting through Relay");
             if (!m_Nm.StartClient()) Status = "Could not start client";
         }
 

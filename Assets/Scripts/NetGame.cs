@@ -88,7 +88,7 @@ namespace RockGame
                 // build the host's map (same map + seed = same terrain and UFO spots)
                 Cfg.SetMap(MapKey.Value, MapSeed.Value);
                 GameSettings.ApplyHostGraphics(Cfg.HostGraphics); // the host picks the graphics for everyone
-                if (!MapBuilder.IsBuilt(MapKey.Value, MapSeed.Value)) MapBuilder.Build();
+                if (!MapBuilder.IsBuilt(MapKey.Value, MapSeed.Value)) { if (Exhibition.On) Debug.LogWarning($"[RockGame] building the map after connecting: host {MapKey.Value}/{MapSeed.Value}, built {MapBuilder.BuiltKey}/{MapBuilder.BuiltSeed}"); MapBuilder.Build(); }
             }
             if (IsServer)
             {

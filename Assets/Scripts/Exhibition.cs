@@ -47,6 +47,11 @@ namespace RockGame
         /// <summary>The READY screen (or the moment before the match) is up: the UFO behind it, not the ship lobby's room.</summary>
         public static bool LobbyUp => On && ShipLobby.Active;
 
+        /// <summary>Every session's map seed. Building a map holds a PC up for many seconds, and Relay drops whoever goes quiet
+        /// for about 10: so everyone already has the map built before they connect (Bootstrap.CleanupLocal) and joining
+        /// finds it there (MapBuilder.IsBuilt) instead of building it with the connection open.</summary>
+        public const int Seed = 4242;
+
         public static int LobbyKey => Key(GameRules.Tutorial);
         public static int MatchKey => Key(GameRules.AutoWood); // (the menu's Classic)
 
@@ -72,10 +77,18 @@ namespace RockGame
 
         public static void ForgetTeam() => s_WantTeam = -1;
 
+        /// <summary>A client, told the host is restarting: the map it builds while it's out is the next part's (see Seed).</summary>
+        public static void ClientNextPart()
+        {
+            if (On) Bootstrap.MapChoice = Cfg.Tutorial ? MatchKey : LobbyKey;
+        }
+
         /// <summary>Every frame (Bootstrap.Update).</summary>
         public static void Tick()
         {
             if (!On) return;
+            // (in the log: Relay drops whoever goes quiet for too long, and a long frame is how that starts)
+            if (Time.unscaledDeltaTime > 3f) Debug.Log($"[RockGame] t={Time.realtimeSinceStartup:0.0} stalled {Time.unscaledDeltaTime:0.0} s");
             var me = PlayerNet.Local;
             if (me == null || !me.IsSpawned) { s_Claimed = null; return; }
             if (me == s_Claimed) return;

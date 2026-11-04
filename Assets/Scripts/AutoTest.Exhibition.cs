@@ -17,10 +17,12 @@ namespace RockGame
         {
             NetGame.TestLobby = true;
             MatchIntro.TestsToo = true;
+            yield return ExhibitionRelayConnect();
             float until = Time.time + 90f;
             while ((PlayerNet.Local == null || NetGame.Instance == null || !NetGame.Instance.IsSpawned || PlayerNet.All.Count < Exhibition.Needed) && Time.time < until) yield return null;
             if (PlayerNet.All.Count < Exhibition.Needed) { Log($"FAIL: only {PlayerNet.All.Count} players got in"); Application.Quit(2); yield break; }
             bool host = NetworkManager.Singleton.IsHost;
+            Check(Cfg.MapSeed == Exhibition.Seed && MapBuilder.IsBuilt(Cfg.MapKey, Cfg.MapSeed), "the map was built before connecting (no rebuild with the connection open)");
             string who = host ? "host" : "client" + NetworkManager.Singleton.LocalClientId;
             var me = PlayerNet.Local;
             yield return new WaitForSeconds(2f);
@@ -111,8 +113,10 @@ namespace RockGame
             if (!host) { yield return new WaitForSeconds(1.5f); yield return Snap($"exhibition_finished_{who}"); }
 
             // into the match by itself: no READY, no crash, the same teams
+            // (the new session's game, not the old one still closing: a client takes on the next part's settings as it's told to go)
+            var tutorialGame = NetGame.Instance;
             until = Time.time + 100f;
-            while (Time.time < until && !(!Cfg.Tutorial && NetGame.Instance != null && NetGame.Instance.IsSpawned && NetGame.Instance.S != GameState.Waiting && PlayerNet.Local != null)) yield return null;
+            while (Time.time < until && !(!Cfg.Tutorial && NetGame.Instance != null && NetGame.Instance != tutorialGame && NetGame.Instance.IsSpawned && NetGame.Instance.S != GameState.Waiting && PlayerNet.Local != null)) yield return null;
             Check(Cfg.Rules == GameRules.AutoWood && Cfg.Map == MapKind.Highlands && Cfg.Size == MapSize.Big && Cfg.Mode == GameMode.Teams, $"into a Classic match, Highlands medium, 2v2 ({Cfg.Rules}, {Cfg.Map}, {Cfg.Size})");
             Check(NetGame.Instance != null && NetGame.Instance.S != GameState.Waiting, "...it started with nobody pressing READY");
             Check(PlayerNet.Local != null && PlayerNet.Local.Team.Value == myTeam, "...on the same team");
@@ -133,9 +137,43 @@ namespace RockGame
             Check(PlayerNet.Local != null && PlayerNet.Local.Team.Value == myTeam, "...the same teams");
             Check(PlayerNet.All.Count == Exhibition.Needed, $"...and everyone's back ({PlayerNet.All.Count})");
             yield return Snap($"exhibition_ready_again_{who}");
-            yield return new WaitForSeconds(host ? 25f : 1f); // (the clients check theirs a while after the host: it stays up for them)
+            yield return new WaitForSeconds(host ? 60f : 30f); // (everyone checks theirs at a different moment: nobody leaves until they all have, the host last)
             Log("exhibition test done");
             Application.Quit(0);
+        }
+
+        /// <summary>-relayfile FILE -relayrole host|join (Tools/run_relay_test.ps1): through real Unity Relay, as on the front
+        /// screen - the host's HOST writes its join code to the file, the others type it in and JOIN.</summary>
+        IEnumerator ExhibitionRelayConnect()
+        {
+            string file = null, role = null;
+            var args = System.Environment.GetCommandLineArgs();
+            for (int i = 0; i < args.Length - 1; i++)
+            {
+                if (args[i] == "-relayfile") file = args[i + 1];
+                if (args[i] == "-relayrole") role = args[i + 1];
+            }
+            if (file == null) yield break;
+            yield return new WaitForSeconds(2f);
+            var boot = Bootstrap.I;
+            float until = Time.time + 60f;
+            if (role == "host")
+            {
+                boot.ExhibitionHost();
+                while (!boot.IsHostSession && !boot.RelayFailed && Time.time < until) yield return null;
+                Check(boot.IsHostSession && ExhibitionRelay.Active, $"HOST through Relay (\"{boot.Status}\")");
+                if (!boot.IsHostSession) { Application.Quit(3); yield break; }
+                Log($"join code {ExhibitionRelay.Code}");
+                System.IO.File.WriteAllText(file, ExhibitionRelay.Code);
+                yield break;
+            }
+            while (!System.IO.File.Exists(file) && Time.time < until) yield return new WaitForSeconds(0.5f);
+            yield return new WaitForSeconds(0.5f);
+            boot.Ip = System.IO.File.ReadAllText(file).Trim();
+            boot.Join();
+            until = Time.time + 60f;
+            while (!boot.InSession && Time.time < until) yield return null;
+            Check(boot.InSession && ExhibitionRelay.Active, $"JOIN through Relay with the code {boot.Ip} (\"{boot.Status}\")");
         }
 
         /// <summary>-autotest exhibitionfront -exhibition (no -host): the front screen, and HOST without Relay set up: it says

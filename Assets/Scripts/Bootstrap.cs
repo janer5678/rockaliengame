@@ -70,7 +70,7 @@ namespace RockGame
             if (test || !Cfg.WoodIsNormal) MapChoice &= ~Cfg.WoodBit; else MapChoice |= Cfg.WoodBit;
             if (Exhibition.On) { MapChoice = Exhibition.LobbyKey; Ip = ""; }
             ParseMapArgs();
-            Cfg.SetMap(MapChoice, 0);
+            Cfg.SetMap(MapChoice, Exhibition.On ? Exhibition.Seed : 0);
             MapBuilder.Build();
         }
 
@@ -207,13 +207,13 @@ namespace RockGame
             Status = "";
             // the host's graphics are everyone's graphics for the match
             MapChoice = (MapChoice & ~(Cfg.GraphicsMask << Cfg.GraphicsShift)) | (GameSettings.GraphicsMode << Cfg.GraphicsShift);
-            Cfg.SetMap(MapChoice, s_SeedOverride >= 0 ? s_SeedOverride : Random.Range(1, 999999));
+            Cfg.SetMap(MapChoice, s_SeedOverride >= 0 ? s_SeedOverride : Exhibition.On ? Exhibition.Seed : Random.Range(1, 999999));
             MapBuilder.Build();
             // a real game with Steam up goes through Steam's relay (friends join by invite) and takes IP joins on the
             // usual port as well (someone on the same network); solo and the tutorial stay on IP
             bool steam = m_St != null && !Solo && !Cfg.Tutorial;
             UseSteam(steam, true);
-            if (ExhibitionRelay.Active) { m_Ut.UseWebSockets = ExhibitionRelay.Wss; m_Ut.SetRelayServerData(ExhibitionRelay.Data); }
+            if (ExhibitionRelay.Active) UseRelayData();
             else { m_Ut.UseWebSockets = false; m_Ut.SetConnectionData("127.0.0.1", ParsedPort, "0.0.0.0"); }
             if (!m_Nm.StartHost()) { Status = steam ? "Could not start hosting through Steam" : "Could not start host (is the port already in use?)"; return; }
             SteamStarted();
@@ -266,7 +266,7 @@ namespace RockGame
             GameSettings.RestoreGraphics(); // and our own graphics
             Tutorial.Reset();
             Chat.Reset();
-            Cfg.SetMap(MapChoice, 0);
+            Cfg.SetMap(MapChoice, Exhibition.On ? Exhibition.Seed : 0);
             MapBuilder.Build();
         }
 
@@ -363,7 +363,7 @@ namespace RockGame
             if (Time.unscaledTime > m_RejoinUntil) { m_Rejoining = false; SteamLobby.Leave(); Status = "Couldn't get back into the lobby"; return; }
             if (m_Nm.ShutdownInProgress || Time.unscaledTime < m_NextRejoin) return;
             if (m_Nm.IsListening) { m_Nm.Shutdown(); m_NextRejoin = Time.unscaledTime + 0.5f; return; } // (the old connection's still open: close it first)
-            m_NextRejoin = Time.unscaledTime + (Exhibition.On ? 12f : 1.5f); // (through Relay it takes longer than 1.5 s just to connect)
+            m_NextRejoin = Time.unscaledTime + (Exhibition.On ? 20f : 1.5f); // (through Relay it takes longer than 1.5 s just to connect)
             Join();
             Debug.Log("[RockGame] rejoining the host for the lobby");
             m_RejoinTried = true;
@@ -372,11 +372,11 @@ namespace RockGame
 
         void OnClientDisconnect(ulong id)
         {
-            if (m_Nm.IsServer) return;
+            if (m_Nm.IsServer) { if (Exhibition.On) Debug.Log($"[RockGame] t={Time.realtimeSinceStartup:0.0} client {id} dropped"); return; }
             if (id == m_Nm.LocalClientId || id == NetworkManager.ServerClientId)
             {
                 string reason = m_Nm.DisconnectReason;
-                Debug.Log($"[RockGame] disconnected (reason \"{reason}\", rejoin expected {Time.unscaledTime < s_RejoinExpectedUntil})");
+                Debug.Log($"[RockGame] t={Time.realtimeSinceStartup:0.0} disconnected (reason \"{reason}\", rejoin expected {Time.unscaledTime < s_RejoinExpectedUntil})");
                 Status = string.IsNullOrEmpty(reason) ? "Disconnected from host" : "Disconnected: " + reason;
                 CleanupLocal();
                 if (reason == BackToLobbyReason || Time.unscaledTime < s_RejoinExpectedUntil) { m_Rejoining = true; m_RejoinTried = false; m_RejoinUntil = Time.unscaledTime + (Exhibition.On ? 70f : 25f); m_NextRejoin = Time.unscaledTime + 1.2f; Status = "Back to the lobby..."; }
