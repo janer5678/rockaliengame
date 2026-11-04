@@ -269,8 +269,8 @@ namespace RockGame
             if (Rules == GameRules.Tutorial)
             {
                 // the tutorial is always the small, flat Plains map with the normal (wood) materials, whatever the menu says
-                Map = MapKind.Plains;
-                Size = MapSize.Small;
+                // (the exhibition build plays it on the key's Highlands, medium, like its match)
+                if (!Exhibition.On) { Map = MapKind.Plains; Size = MapSize.Small; }
                 AirdropSides = AirdropCenter = RespawnLoot = false;
                 WoodMode = WoodIsNormal;
             }

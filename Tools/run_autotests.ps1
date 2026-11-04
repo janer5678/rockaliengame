@@ -3,6 +3,7 @@
 #   "name:args"   extra args for the host (give -solo / -fast yourself; -fast ends the match after 90 s, too soon for the long tests)
 #   "name+client" also starts a second copy as a client 6 s later
 #   "name+client2" ...and a third copy, another client, 14 s after that (the spectate test: it joins the running match)
+#   "name+client3" ...and a fourth, 6 s after that (the exhibition test: a full 2v2)
 param([string[]]$Modes = @('inv:-solo','upgrades:-solo -rules autowood','feel:-solo','ui:-solo','craftui:-solo','scenery:-solo','world:-solo','dome:-solo','nodes:-solo','victory:-solo','buildbias:-solo'), [int]$TimeoutSec = 480)
 $root = Split-Path $PSScriptRoot -Parent
 $exe = Join-Path $root 'Builds/Windows/Alien Rock Game.exe'
@@ -57,9 +58,10 @@ function Report($tag, $log, $exit) {
 }
 foreach ($m in $Modes) {
     $spec, $extra = $m -split ':', 2
-    $client2 = $spec -match '\+client2$'
+    $client3 = $spec -match '\+client3$'
+    $client2 = $client3 -or ($spec -match '\+client2$')
     $client = $client2 -or ($spec -match '\+client$')
-    $name = $spec -replace '\+client2?$', ''
+    $name = $spec -replace '\+client[23]?$', ''
     $safe = $m -replace '[^\w]', '_'
     # (long args - a -shotdir path - would push the log's path past Windows' 260 characters: keep the name short)
     if ($safe.Length -gt 90) { $safe = $safe.Substring(0, 70) + '_' + ([System.BitConverter]::ToString([System.Security.Cryptography.MD5]::Create().ComputeHash([System.Text.Encoding]::UTF8.GetBytes($m))) -replace '-', '').Substring(0, 8) }
@@ -79,6 +81,13 @@ foreach ($m in $Modes) {
         Start-Sleep -Seconds 14
         $c2 = Start-Quiet $exe "$win -client 127.0.0.1 -autotest $name $extra -logFile `"$c2log`""
     }
+    $c3 = $null
+    $c3log = Join-Path $root "Logs/autotest/${safe}_client3.log"
+    if ($client3) {
+        Remove-Item $c3log -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 6
+        $c3 = Start-Quiet $exe "$win -client 127.0.0.1 -autotest $name $extra -logFile `"$c3log`""
+    }
     $done = $p.WaitForExit($TimeoutSec * 1000)
     if (-not $done) { $p.Kill() }
     $cdone = $true
@@ -86,4 +95,5 @@ foreach ($m in $Modes) {
     Report $m $log $(if ($done) { $p.ExitCode } else { 'TIMEOUT' })
     if ($c) { Report "$m (client)" $clog $(if ($cdone) { $c.ExitCode } else { 'TIMEOUT' }) }
     if ($c2) { $c2done = $c2.WaitForExit(30000); if (-not $c2done) { $c2.Kill() }; Report "$m (client 2)" $c2log $(if ($c2done) { $c2.ExitCode } else { 'TIMEOUT' }) }
+    if ($c3) { $c3done = $c3.WaitForExit(30000); if (-not $c3done) { $c3.Kill() }; Report "$m (client 3)" $c3log $(if ($c3done) { $c3.ExitCode } else { 'TIMEOUT' }) }
 }

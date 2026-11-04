@@ -32,6 +32,22 @@ as before. Code: `SteamConfig.cs` (the app ID), `SteamBoot.cs`, `SteamTransport.
 - **Moving to the game's own Steam app:** change `AppId` in `SteamConfig.cs` to the new number and rebuild. That's all.
   (The build writes `steam_appid.txt` next to the exe; leave that file out of what's uploaded to Steam.)
 
+### Exhibition build (four PCs, one group of visitors after another)
+**Rock Game > Build Exhibition Player** (headless: `-executeMethod RockGame.EditorTools.ProjectSetup.BuildExhibition`) makes `Builds/Exhibition/Alien Rock Game Exhibition.exe`, with its own saved settings. Copy the whole folder to each PC.
+
+Flow: HOST on one PC, the join code from its screen + JOIN on the other three. Then round and round with nothing to set up: the READY screen over the main menu's UFO (READY n/4, the two teams under it: click the other one to swap), all four READY plays the UFO crash, the tutorial in 2v2, a Classic match, back to the READY screen. All on Highlands, medium. If a PC drops out, the current join code is in the corner of the screen (each part of the round has a new one; the PCs that stay connected are handed it by themselves).
+
+**Unity Relay needs setting up once** (the build works without it, but only over plain IP: HOST then fails, says why and offers HOST ON THIS NETWORK; the other PCs type the IP from the corner of its screen):
+1. In the Unity editor: Edit > Project Settings > Services, link the project to a Unity Cloud project (create one if asked). This changes `ProjectSettings/ProjectSettings.asset`: commit it.
+2. On cloud.unity.com: open that project, Products > Multiplayer > Relay, and launch it. Relay is pay-as-you-go with a free tier (50 average monthly concurrent users).
+3. Build again.
+
+It connects over secure WebSockets (TCP 443, like https), the likeliest thing to get through a school's firewall. `-relayudp` on all four PCs uses UDP instead, which is quicker where it's allowed.
+
+Rules of thumb built in (`Exhibition.cs`): after the first player finishes the tutorial the others get 2 minutes (it moves on at once when all have); the tutorial's regroup step goes on after 90 s without whoever's behind; the match starts after 30 s without whoever hasn't reconnected. No Steam, no Leave game in the pause menu. Try it with fewer PCs: `-exhibitneed 2`; on a normal build add `-exhibition`.
+
+Test: `Tools/run_autotests.ps1 "exhibition+client3:-exhibition -shotdir DIR"` (the whole round, four copies over IP). Code: `Exhibition.cs`, `ExhibitionRelay.cs`, `Bootstrap.Exhibition.cs`, `Hud.Exhibition.cs`.
+
 ### Spectating
 JOIN GAME on a match that has already started (or is full) no longer turns you away: you come in as a **spectator** (up to 8 per match). You get no body and no team and can't do anything in the world; the camera is a player's own first-person view (their eyes, where they're looking, what's in their hands). **Left click** watches the next player, **right click** the previous one. If the one you're watching dies you move on to someone alive after a moment; if they leave you move on at once. The HUD is just a bar along the bottom (who you're watching, the clock, LEAVE) and the chat. You see the victory cutscene and then the end screen ("BLUE WINS") with Leave game, like everyone else. Spectators never count as players (teams, the lobby countdown, who wins, someone leaving) and they're listed on their own SPECTATORS line under the scoreboard. A spectator stays a spectator for that match even if a place frees up. Code: `Spectator.cs`, `Hud.Spectator.cs`, `Bootstrap.Approve`. Test: `Tools\run_autotests.ps1 "spectate+client2:-fast"` (a 1v1 host, a client that plays, and a second client that joins the running match).
 

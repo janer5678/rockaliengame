@@ -33,6 +33,7 @@ namespace RockGame
 
         void DrawLobby(Bootstrap boot, PlayerNet me)
         {
+            if (Exhibition.On) { DrawExhibitionLobby(boot, me); return; } // (the READY screen: Hud.Exhibition.cs)
             float k = m_Scale, sw = Screen.width, sh = Screen.height;
             LobbyShownAt = Time.time;
             var g = NetGame.Instance;

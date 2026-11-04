@@ -144,6 +144,7 @@ namespace RockGame
         static float s_FirstAtWall = -1f;
         static readonly Dictionary<ulong, float> s_NextHome = new Dictionary<ulong, float>();
         static readonly bool[] s_HutBuilt = new bool[4];
+        static readonly HashSet<ulong> s_HutPlayers = new HashSet<ulong>();
         static readonly HashSet<ulong> s_Kit = new HashSet<ulong>();
         /// <summary>Server: the finale - 0 not yet, 1 asked for (the wall drops first if it's still up), 2 the clock is running.</summary>
         static int s_Finale, s_FinaleTeam;
@@ -194,6 +195,7 @@ namespace RockGame
             s_FirstAtWall = -1f;
             s_NextHome.Clear();
             for (int i = 0; i < s_HutBuilt.Length; i++) s_HutBuilt[i] = false;
+            s_HutPlayers.Clear();
             s_Kit.Clear();
             s_Finale = 0;
             s_FinaleTeam = 0;
@@ -431,6 +433,14 @@ namespace RockGame
         {
             int n = 0, drop = StepAt("drop");
             foreach (var p in PlayerNet.All) if (p != null && p.IsSpawned && !p.TutAtWall.Value && p.TutStep.Value <= drop) n++;
+            return n;
+        }
+
+        /// <summary>How many others haven't got to the regroup step yet (the exhibition build).</summary>
+        static int PlayersBehind()
+        {
+            int n = 0, at = StepAt("friend");
+            foreach (var p in PlayerNet.All) if (p != null && p.IsSpawned && p != Me && p.TutStep.Value < at) n++;
             return n;
         }
 
@@ -708,6 +718,7 @@ namespace RockGame
 
         static string FriendBody()
         {
+            if (Exhibition.On) return "The next part you all play " + Hi("together") + ": the glass wall, a raid and the ball. Waiting for everyone to get here.";
             var g = G;
             var other = Other;
             if (g != null && g.IsServer)
@@ -1023,21 +1034,21 @@ namespace RockGame
                 // ---- with a friend: the host stops here until a second player is in; whoever joins starts here ----
                 new Step
                 {
-                    Id = "friend", Title = "With a friend",
+                    Id = "friend", Title = Exhibition.On ? "Regroup" : "With a friend",
                     BodyF = FriendBody,
-                    Goal = "Wait for your friend",
-                    Progress = () => { var o = Other; return o == null ? "nobody has joined yet" : $"{o.DisplayName} is here"; },
-                    Hint = "Nobody coming? Leave the game (Esc) and play the tutorial Solo to see how it ends.",
+                    Goal = Exhibition.On ? "Wait for everyone" : "Wait for your friend",
+                    Progress = () => { if (Exhibition.On) return $"{PlayersBehind()} still to come"; var o = Other; return o == null ? "nobody has joined yet" : $"{o.DisplayName} is here"; },
+                    Hint = Exhibition.On ? "They'll be here soon - it goes on without them in a moment." : "Nobody coming? Leave the game (Esc) and play the tutorial Solo to see how it ends.",
                     Skip = () => !Friend,
-                    Enter = () => { if (G != null && !G.IsServer && !s_SawLobby) Ask(AskKit); },
-                    Done = () => OthersAt(StepAt("friend")),
-                    Target = () => { var o = Other; return o != null ? o.transform.position + Vector3.up * 2.4f : (Vector3?)null; }, TargetLabel = "FRIEND",
+                    Enter = () => { if (G != null && !G.IsServer && !s_SawLobby && !Exhibition.On) Ask(AskKit); },
+                    Done = () => OthersAt(StepAt("friend")) || (Exhibition.On && Time.time - s_StepStart > Exhibition.RegroupWait),
+                    Target = () => { if (Exhibition.On) return null; var o = Other; return o != null ? o.transform.position + Vector3.up * 2.4f : (Vector3?)null; }, TargetLabel = "FRIEND",
                 },
                 // ---- the glass wall: it drops once everyone has walked up to it ----
                 new Step
                 {
                     Id = "glass", Title = "The glass wall",
-                    BodyF = () => "Walk to the " + Hi("glass wall") + "." + (Friend ? " It drops when you're both there." : ""),
+                    BodyF = () => "Walk to the " + Hi("glass wall") + "." + (Exhibition.On ? " It drops when everyone's there." : Friend ? " It drops when you're both there." : ""),
                     Goal = "Walk up to the glass wall",
                     Done = () => NearWall(Me.transform.position, 16f) || WallDown, // (a good way off it counts: no walking right up to the glass)
                     Target = () => WallSpot(Team), TargetLabel = "GLASS WALL",
@@ -1049,6 +1060,7 @@ namespace RockGame
                     {
                         int left = PlayersNotAtWall();
                         if (!WallDown && left > 0) return $"Waiting for {left} more player{(left == 1 ? "" : "s")}...";
+                        if (Exhibition.On) return "The wall is down! Now for the " + Hi("other team") + ".";
                         if (Friend) return "The wall is down! Your friend is the " + Hi("other team") + ".";
                         return "The wall is down! The " + Hi("enemy") + " has the ball in " + Hi("their machine") + ".";
                     },
@@ -1062,7 +1074,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "raid", Title = "Raid!",
-                    BodyF = () => (Friend ? "Raid your friend's " + Hi("hut") + "! " : "Raid the enemy base! ") + "Throw your " + Hi("C4") + $" ({K(Bind.Attack)}) at the door, then stand back.",
+                    BodyF = () => (Exhibition.On ? "Raid the other team's " + Hi("hut") + "! " : Friend ? "Raid your friend's " + Hi("hut") + "! " : "Raid the enemy base! ") + "Throw your " + Hi("C4") + $" ({K(Bind.Attack)}) at the door, then stand back.",
                     Goal = "Blow their door open",
                     Progress = () => Count(Item.C4) > 0 ? $"C4 {Count(Item.C4)}"
                         : s_NoC4Since >= 0f && Time.time - s_NoC4Since < Cfg.C4Fuse + 0.5f ? "C4 ticking - stand back!"
@@ -1086,7 +1098,7 @@ namespace RockGame
                 new Step
                 {
                     Id = "toball", Title = "Get the ball",
-                    BodyF = () => Friend ? "Race your friend to the " + Hi("ball") + "!" : "Go to the " + Hi("ball") + " in their machine.",
+                    BodyF = () => Exhibition.On ? "Race the other team to the " + Hi("ball") + "!" : Friend ? "Race your friend to the " + Hi("ball") + "!" : "Go to the " + Hi("ball") + " in their machine.",
                     Goal = "Run to the ball",
                     Done = () => Me.CarryingBall || (Ball.Instance != null && Vector3.Distance(Ball.Instance.transform.position, Me.transform.position) < 6f) || (Friend && Captured),
                     Target = () => BallSpot, TargetLabel = "BALL",
@@ -1109,7 +1121,7 @@ namespace RockGame
                 {
                     Id = "score", Title = "Take it home",
                     BodyF = () => Me.CarryingBall ? "Take it home and throw it (" + K(Bind.Attack) + ") into " + Hi("your machine") + "."
-                        : Friend && Captured ? "Your friend scored first - the " + Hi("Trade Station") + " is unlocked anyway."
+                        : Friend && Captured ? (Exhibition.On ? "Somebody scored first" : "Your friend scored first") + " - the " + Hi("Trade Station") + " is unlocked anyway."
                         : "You lost it! Get it back.",
                     Goal = "Put the ball in your machine",
                     Hint = $"Stand at your machine, look at the glowing socket and click {K(Bind.Attack)}.",
@@ -1276,13 +1288,14 @@ namespace RockGame
             if (me.TutStep.Value != MyStep) me.TutStep.Value = MyStep; // so the server knows what's unlocked for us
             if (G != null && G.S == GameState.Waiting) s_SawLobby = true; // (started together from the ship lobby)
             if (G == null || G.S == GameState.Waiting) return;
+            if (Exhibition.On && MatchIntro.Active) return; // (the exhibition build's UFO crash plays first)
             if (!s_Started)
             {
                 Build();
                 s_Started = true;
                 // the host starts at the top. Whoever joins somebody's tutorial isn't taken through the early steps: they
                 // start at the "with a friend" step (everything before it unlocked, a starter kit) and wait there for the host
-                s_Index = G.IsServer || s_SawLobby ? 0 : Mathf.Max(0, StepAt("friend"));
+                s_Index = G.IsServer || s_SawLobby || Exhibition.On ? 0 : Mathf.Max(0, StepAt("friend"));
                 SkipAhead();
                 EnterStep();
             }
@@ -1419,6 +1432,9 @@ namespace RockGame
                 if (s_Steps[i].Id == id) { s_Index = i; s_Finished = false; EnterStep(); return true; }
             return false;
         }
+
+        /// <summary>AutoTest only: done with the tutorial.</summary>
+        public static void TestFinish() { s_Finished = true; SyncStep(); }
 
         /// <summary>AutoTest: the ids of every step, in order.</summary>
         public static List<string> StepIds()
@@ -1642,8 +1658,10 @@ namespace RockGame
         static void ServerHut(PlayerNet p)
         {
             int team = p.Team.Value;
-            if (team < 0 || team >= s_HutBuilt.Length || s_HutBuilt[team] || Bootstrap.I == null) return;
-            s_HutBuilt[team] = true;
+            if (team < 0 || team >= s_HutBuilt.Length || Bootstrap.I == null) return;
+            // (the exhibition build's 2v2: a hut each, or the second teammate would have no door to blow)
+            if (Exhibition.On) { if (!s_HutPlayers.Add(p.OwnerClientId)) return; }
+            else { if (s_HutBuilt[team]) return; s_HutBuilt[team] = true; }
             int enemy = EnemyOf(team);
             var rot = Quaternion.LookRotation(-Cfg.BackDir(enemy)); // (its +z, the door's side, faces the middle of the map)
             var side = rot * Quaternion.Euler(0, 90f, 0);
@@ -1801,7 +1819,7 @@ namespace RockGame
                 // (kept short: it sits over the victory screen)
                 string txt = "Win a match with the ball " + Hi("in your machine") + " when the clock ends.\n"
                     + $"Hold {K(Bind.Scoreboard)} for the scoreboard.\n"
-                    + Hi("Leave game") + ", then host a real match!";
+                    + (Exhibition.On ? "The match starts in " + Hi($"{Mathf.CeilToInt(Mathf.Max(0f, G != null ? G.ExhibitionNextIn : 0f))} s") + " - waiting for the others!" : Hi("Leave game") + ", then host a real match!");
                 float fh = 30 * k + 30 * k + RichHeight(txt, fb, fw - 24 * k) + 12 * k;
                 fill(new Rect(fx, fy, fw, fh), new Color(0.04f, 0.06f, 0.1f, 0.82f));
                 fill(new Rect(fx, fy, 4 * k, fh), new Color(0.49f, 1f, 0.49f, 0.9f));
@@ -1844,7 +1862,7 @@ namespace RockGame
                 if (parts.Count > 0) newText = "<color=#7dff7d><b>NEW:</b></color> " + string.Join("   ", parts);
             }
             float newH = newText != null ? RichHeight(newText, body, w - 24 * k) + 2 * k : 0f;
-            string extra = locked ? "<color=#ff9f7a><b>Not yet!</b> You'll learn that soon.</color>" : hint ? $"<color=#aaaaaa><i>Hint: {st.Hint}</i></color>" : null;
+            string extra = Exhibition.On && G != null && G.ExhibitionNextIn >= 0f ? $"<color=#ffd24a><b>Someone's finished!</b> The match starts in {Mathf.CeilToInt(G.ExhibitionNextIn)} s.</color>" : locked ? "<color=#ff9f7a><b>Not yet!</b> You'll learn that soon.</color>" : hint ? $"<color=#aaaaaa><i>Hint: {st.Hint}</i></color>" : null;
             float extraH = extra != null ? RichHeight(extra, body, w - 24 * k) + 2 * k : 0f;
             float goalH = Mathf.Max(26 * k, RichHeight(goal, body, w - 24 * k));
             float h = 26 * k + 32 * k + bodyH + newH + 4 * k + goalH + extraH + 8 * k;

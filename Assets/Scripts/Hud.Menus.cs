@@ -91,6 +91,7 @@ namespace RockGame
             if (OpenModeOptions) { OpenModeOptions = false; m_Page = MenuPage.ModeOptions; }
             if (OpenValues) { OpenValues = false; m_Page = MenuPage.Values; m_Open.Add("v:Match"); m_Open.Add("v:Player"); }
             if (OpenSettingsTab >= 0) { m_Tab = (SettingsTab)OpenSettingsTab; OpenSettingsTab = -1; m_Page = MenuPage.Settings; OnTabOpened(); }
+            if (Exhibition.On) { DrawExhibitionFront(boot); return; } // (HOST or JOIN and nothing else: Hud.Exhibition.cs)
             switch (m_Page)
             {
                 case MenuPage.ModeOptions: DrawModeOptions(boot); return;
@@ -1191,7 +1192,7 @@ namespace RockGame
             }
             GUI.enabled = true;
             GUILayout.FlexibleSpace();
-            if (Btn("Leave game", GUILayout.Height(38 * k))) boot.Leave();
+            if (!Exhibition.On && Btn("Leave game", GUILayout.Height(38 * k))) boot.Leave(); // (the exhibition's visitors can't throw a PC out of the session)
             GUILayout.EndArea();
         }
 

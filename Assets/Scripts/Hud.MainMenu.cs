@@ -27,7 +27,7 @@ namespace RockGame
         public static readonly GameRules[] MenuModes = { GameRules.AutoWood, GameRules.Classic, GameRules.Bedwars, GameRules.ThreeGoal, GameRules.Assassin, GameRules.Domination, GameRules.JonahTest, GameRules.AirdropTest, GameRules.JonahBruh, GameRules.ClipFarm, GameRules.Emerald, GameRules.LuckyBlock };
 
         /// <summary>The dev main menu (the old all-in-one page) is up instead of the new one: Tab swaps them.</summary>
-        public static bool DevMenuShown => s_I != null && (s_I.m_DevMenu || (Bootstrap.Testing && !TestNewMenu));
+        public static bool DevMenuShown => s_I != null && !Exhibition.On && (s_I.m_DevMenu || (Bootstrap.Testing && !TestNewMenu));
         /// <summary>(tests) show the new main menu / the name screen / one of its screens (1.. NewPage) though it's a test.</summary>
         public static bool TestNewMenu, TestNameScreen;
         /// <summary>The new menu's map page is up: the background is the map itself (MenuScene's flight round it), not the UFO.</summary>
@@ -46,7 +46,7 @@ namespace RockGame
 
         void NewMenuKeys(Bootstrap boot)
         {
-            if (boot == null || boot.InSession || Typing || m_Rebinding) return;
+            if (boot == null || boot.InSession || Typing || m_Rebinding || Exhibition.On) return;
             if (Input.GetKeyDown(KeyCode.Tab) && GUIUtility.keyboardControl == 0 && m_Page == MenuPage.Main) { m_DevMenu = !m_DevMenu; ClickSound(); }
             if (!m_DevMenu && m_Page == MenuPage.Main && m_New != NewPage.Root && Input.GetKeyDown(KeyCode.Escape)) { NewBack(); ClickSound(); }
         }

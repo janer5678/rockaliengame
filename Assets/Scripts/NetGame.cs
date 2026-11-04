@@ -226,6 +226,7 @@ namespace RockGame
             ServerTickModes(now);
             ServerTickGameModes(now); // (Bedwars, 3 Goal, Progress, Assassin, Domination: NetGame.GameModes.cs)
             ServerTickBenchUnlock(); // the Workbench T1 unlocks once a team has captured the ball
+            ServerTickExhibition(); // the exhibition build: the tutorial done, on to the match (Exhibition.cs)
             Tutorial.ServerTick(this); // tutorial: clock stopped, late joiners in, the wall drops once everyone reaches it
             SpaceArena.ServerTick(this); // sudden death and the waiting stadium: falling off the platform into space
             ServerTickGraves(now); // old gravestones go (NetGame.Graves.cs)
