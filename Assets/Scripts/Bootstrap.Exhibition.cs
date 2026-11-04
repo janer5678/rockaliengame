@@ -76,7 +76,7 @@ namespace RockGame
         /// so it has to come before the restart. If it can't be had the old one's tried again.</summary>
         IEnumerator ExhibitionBeforeRestart()
         {
-            MapChoice = Cfg.Tutorial ? Exhibition.MatchKey : Exhibition.LobbyKey;
+            MapChoice = Exhibition.NextKey;
             Exhibition.ExpectBack = PlayerNet.All.Count;
             Exhibition.RememberTeam();
             if (!ExhibitionRelay.Active) yield break;

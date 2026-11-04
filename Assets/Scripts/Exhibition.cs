@@ -8,14 +8,16 @@ namespace RockGame
     /// The exhibition build (ProjectSetup.BuildExhibition, or any build with -exhibition): four PCs, one group of visitors
     /// after another, nothing to set up between them. HOST or JOIN once (a Unity Relay join code: ExhibitionRelay.cs), then
     /// round and round: the READY screen (over the main menu's UFO: Hud.Exhibition.cs), everyone READY plays the UFO crash
-    /// (MatchIntro), the tutorial in 2v2, a Classic match, and back to the READY screen. All on Highlands, medium.
-    /// The READY screen and the tutorial are one session (rules Tutorial) and the match is another (rules AutoWood); going
-    /// from one to the other is the usual back to the lobby restart (Bootstrap.BackToLobby: everyone drops and comes straight
-    /// back in), which is why the session's rules are what says which part we're in.
+    /// (MatchIntro), a Classic match in 2v2, and back to the READY screen. All on Highlands, medium. Going back is the usual
+    /// back to the lobby restart (Bootstrap.BackToLobby: everyone drops and comes straight back in).
+    /// With UseTutorial the 2v2 tutorial comes between the crash and the match: the READY screen and the tutorial are then
+    /// one session (rules Tutorial) and the match another (rules AutoWood), and the session's rules say which part we're in.
     /// </summary>
     public static class Exhibition
     {
         public static readonly bool On = IsOn();
+        /// <summary>Play the tutorial before the match (off: READY, the crash, straight into the match).</summary>
+        public const bool UseTutorial = false;
         /// <summary>Players READY before it starts (-exhibitneed N: fewer PCs, for trying it out).</summary>
         public static readonly int Needed = Arg("-exhibitneed", 4);
         /// <summary>Everyone's finished the tutorial: this long, then the match. Someone has: the others get this long to
@@ -43,7 +45,8 @@ namespace RockGame
         }
 
         public static bool TutorialPhase => On && Cfg.Tutorial;
-        public static bool MatchPhase => On && !Cfg.Tutorial;
+        /// <summary>This session is the match that follows the tutorial: it starts by itself as everyone comes back in.</summary>
+        public static bool MatchPhase => On && UseTutorial && !Cfg.Tutorial;
         /// <summary>The READY screen (or the moment before the match) is up: the UFO behind it, not the ship lobby's room.</summary>
         public static bool LobbyUp => On && ShipLobby.Active;
 
@@ -52,7 +55,9 @@ namespace RockGame
         /// finds it there (MapBuilder.IsBuilt) instead of building it with the connection open.</summary>
         public const int Seed = 4242;
 
-        public static int LobbyKey => Key(GameRules.Tutorial);
+        public static int LobbyKey => Key(UseTutorial ? GameRules.Tutorial : GameRules.AutoWood);
+        /// <summary>What the next session plays (with the tutorial, the two parts take turns).</summary>
+        public static int NextKey => UseTutorial && Cfg.Tutorial ? MatchKey : LobbyKey;
         public static int MatchKey => Key(GameRules.AutoWood); // (the menu's Classic)
 
         static int Key(GameRules rules)
@@ -80,7 +85,7 @@ namespace RockGame
         /// <summary>A client, told the host is restarting: the map it builds while it's out is the next part's (see Seed).</summary>
         public static void ClientNextPart()
         {
-            if (On) Bootstrap.MapChoice = Cfg.Tutorial ? MatchKey : LobbyKey;
+            if (On) Bootstrap.MapChoice = NextKey;
         }
 
         /// <summary>Every frame (Bootstrap.Update).</summary>
@@ -109,7 +114,7 @@ namespace RockGame
         /// match is everyone coming back from the tutorial, READY already, or whoever's made it after WaitForAllBack.</summary>
         int ServerExhibitionNeed(double now)
         {
-            if (Cfg.Tutorial) return Exhibition.Needed;
+            if (!Exhibition.MatchPhase) return Exhibition.Needed;
             foreach (var p in PlayerNet.All) if (p != null && p.IsSpawned && !p.LobbyReady.Value) p.LobbyReady.Value = true;
             if (m_ExhibitionWaitSince < 0) m_ExhibitionWaitSince = now;
             return now - m_ExhibitionWaitSince > Exhibition.WaitForAllBack ? 1 : Mathf.Max(1, Exhibition.ExpectBack);

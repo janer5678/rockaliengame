@@ -27,7 +27,7 @@ namespace RockGame
             var me = PlayerNet.Local;
             yield return new WaitForSeconds(2f);
             Check(ShipLobby.Active && Hud.ExhibitionLobbyShownAt > Time.time - 1f, "the READY screen is up");
-            Check(Cfg.Tutorial && Cfg.Map == MapKind.Highlands && Cfg.Size == MapSize.Big && Cfg.Mode == GameMode.Teams, $"tutorial, Highlands medium, 2v2 ({Cfg.Map}, {Cfg.Size}, {Cfg.Mode})");
+            Check(Cfg.Tutorial == Exhibition.UseTutorial && Cfg.Map == MapKind.Highlands && Cfg.Size == MapSize.Big && Cfg.Mode == GameMode.Teams, $"the right rules, Highlands medium, 2v2 ({Cfg.Map}, {Cfg.Size}, {Cfg.Mode})");
             Check(MenuSpace.Showing && GameObject.Find("ShipLobby") == null, "the UFO in space behind it, no ship lobby room");
             int[] onTeam = new int[2];
             foreach (var p in PlayerNet.All) onTeam[p.Team.Value]++;
@@ -63,6 +63,9 @@ namespace RockGame
             until = Time.time + 25f;
             while (MatchIntro.Active && Time.time < until) yield return null;
 
+            int myTeam = me.Team.Value, plays = MatchIntro.Plays;
+            if (Exhibition.UseTutorial)
+            {
             // the tutorial, from the first step for everyone (a client isn't dropped in at the regroup step)
             yield return new WaitForSeconds(1.5f);
             Check(Tutorial.On && Tutorial.Friend && Tutorial.StepId == "machine", $"the tutorial's first step ({Tutorial.StepId})");
@@ -93,7 +96,6 @@ namespace RockGame
             }
 
             // finishing it: the host last, and it waits for the host
-            int myTeam = me.Team.Value, plays = MatchIntro.Plays;
             if (host)
             {
                 until = Time.time + 30f;
@@ -112,25 +114,29 @@ namespace RockGame
             Tutorial.TestFinish();
             if (!host) { yield return new WaitForSeconds(1.5f); yield return Snap($"exhibition_finished_{who}"); }
 
+            }
+
             // into the match by itself: no READY, no crash, the same teams
             // (the new session's game, not the old one still closing: a client takes on the next part's settings as it's told to go)
             var tutorialGame = NetGame.Instance;
             until = Time.time + 100f;
-            while (Time.time < until && !(!Cfg.Tutorial && NetGame.Instance != null && NetGame.Instance != tutorialGame && NetGame.Instance.IsSpawned && NetGame.Instance.S != GameState.Waiting && PlayerNet.Local != null)) yield return null;
+            if (Exhibition.UseTutorial)
+                while (Time.time < until && !(!Cfg.Tutorial && NetGame.Instance != null && NetGame.Instance != tutorialGame && NetGame.Instance.IsSpawned && NetGame.Instance.S != GameState.Waiting && PlayerNet.Local != null)) yield return null;
             Check(Cfg.Rules == GameRules.AutoWood && Cfg.Map == MapKind.Highlands && Cfg.Size == MapSize.Big && Cfg.Mode == GameMode.Teams, $"into a Classic match, Highlands medium, 2v2 ({Cfg.Rules}, {Cfg.Map}, {Cfg.Size})");
-            Check(NetGame.Instance != null && NetGame.Instance.S != GameState.Waiting, "...it started with nobody pressing READY");
+            Check(NetGame.Instance != null && NetGame.Instance.S != GameState.Waiting, "...and it's running");
             Check(PlayerNet.Local != null && PlayerNet.Local.Team.Value == myTeam, "...on the same team");
             Check(PlayerNet.All.Count == Exhibition.Needed, $"...everyone's back ({PlayerNet.All.Count})");
-            Check(MatchIntro.Plays == plays, "...no second crash");
-            Check(!MatchIntro.Active, "...straight into it");
+            Check(MatchIntro.Plays == plays, "...the crash only played once");
+            Check(!MatchIntro.Active, "...and it's finished");
             yield return new WaitForSeconds(3f);
             yield return Snap($"exhibition_match_{who}");
 
             // the match ends: back to the READY screen, not the front screen
             if (host) NetGame.Instance.ServerVictoryCutscene((myTeam + 1) % 2, "test over");
+            var matchGame = NetGame.Instance;
             until = Time.time + 120f;
-            while (Time.time < until && !(Cfg.Tutorial && ShipLobby.Active && PlayerNet.Local != null && PlayerNet.Local.IsSpawned && NetGame.Instance.S == GameState.Waiting)) yield return null;
-            Check(Cfg.Tutorial && ShipLobby.Active, "the match over: back to the READY screen");
+            while (Time.time < until && !(NetGame.Instance != null && NetGame.Instance != matchGame && NetGame.Instance.IsSpawned && ShipLobby.Active && PlayerNet.Local != null && PlayerNet.Local.IsSpawned && NetGame.Instance.S == GameState.Waiting)) yield return null;
+            Check(NetGame.Instance != matchGame && ShipLobby.Active, "the match over: back to the READY screen");
             yield return new WaitForSeconds(4f);
             Check(Hud.ExhibitionLobbyShownAt > Time.time - 1f, "...it's the READY screen that's drawn");
             Check(PlayerNet.Local != null && !PlayerNet.Local.LobbyReady.Value, "...nobody's READY");
