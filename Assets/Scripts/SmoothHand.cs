@@ -7,21 +7,20 @@ using UnityEngine;
 namespace RockGame
 {
     /// <summary>
-    /// The SMOOTH first-person arm (Settings > Display > Hands: Smooth - the default): a chunky three-fingered alien hand
-    /// that is ONE continuous surface from the fingertips to the elbow. The other hand styles are boxes (Square, Round)
-    /// or thin tubes with a model's thin fingers (Alien); this one is sculpted as a signed-distance field - a thick palm
-    /// slab, a narrow wrist swelling into the forearm, fat round-cone fingers and thumb, knuckle bumps with ridges down
-    /// the back of the hand to them, pads on the palm - with every part blended into the next (webbing between the
-    /// fingers, the thumb's mound flowing into the palm), then turned into a mesh once, in the background as the game
-    /// starts (about a second):
+    /// The SMOOTH first-person arm (Settings > Display > Hands: Smooth - the default): the player aliens' own hand, as ONE
+    /// continuous surface from the fingertips to the elbow. The aliens are lanky, flat-sided and long-fingered, in one deep
+    /// colour, so that is what this is: a flat block of a palm, three long fingers and a long thumb that are each a single
+    /// straight bar with flat sides and softened edges tapering to a blunt point (no balls at the joints, no bulges), and
+    /// a four-sided forearm with rounded corners. It is sculpted as a signed-distance field, each part blended a little
+    /// into the next (webbing at the fingers' roots, the fingers running back into the hand as low ridges), then turned
+    /// into a mesh once, in the background as the game starts (about a second):
     ///  - surface nets over a 1.9 mm grid (long cells down the forearm), every point then pulled onto the true surface;
-    ///  - the normals are the field's own gradient, so the shading is as smooth as the shape whatever the triangles are;
-    ///  - baked into the vertex colours (HandSkin.shader reads them): how enclosed each point is (creases darker -
-    ///    between the fingers, round the knuckles, in the web of the thumb), how the surface curves (bumps a touch
-    ///    brighter, hollows darker), which side is the palm side (lighter); and in the UVs, where each digit's nail is;
+    ///  - the normals are the field's own gradient, so flat faces shade flat and edges turn cleanly whatever the triangles are;
+    ///  - baked into the vertex colours (HandSkin.shader reads them): how enclosed each point is (creases darker), how
+    ///    the surface curves (edges a touch brighter, hollows darker), which side is the palm side (lighter);
     ///  - skinned to the pose skeleton ViewModel.Fingers.cs already drives (so every item's grip works as it does for the
-    ///    Alien arms), with three in-between bones per joint that each take a share of the joint's turn: a bent knuckle
-    ///    stays a round knuckle instead of pinching flat the way plain two-bone skinning does.
+    ///    Alien arms), with three in-between bones per joint that each take a share of the joint's turn: a bent finger
+    ///    keeps its thickness at the joint instead of pinching flat the way plain two-bone skinning does.
     /// The measurements below are also the pose skeleton's while this style is picked (ViewModel.UseProfile).
     /// The hand's frame is ViewModel.Hands.cs's: the RIGHT hand, wrist at the origin, fingers along +Z, the back of the
     /// hand +Y, the thumb on the -X side; the left hand is the mirror image.
@@ -58,50 +57,63 @@ namespace RockGame
         /// <summary>The whole arm is sculpted at about life size (the numbers below), then made this much bigger: the
         /// game's tools are chunky toys with handles 5-6 cm thick, and a life-size hand looks lost on them.</summary>
         public static readonly float Size = P("size", 1.15f);
-        static readonly float FR = P("finger.rad", 1.04f), FL = P("finger.len", 0.9f), TR = P("thumb.rad", 1f);
-        static readonly float Gap = P("finger.gap", 0.0285f);
+        static readonly float FL = P("finger.len", 1f), FW = P("finger.wide", 1f);
+        static readonly float Gap = P("finger.gap", 0.0235f);
 
         static Vector3[] Scaled(Vector3[] a) { var r = new Vector3[a.Length]; for (int i = 0; i < a.Length; i++) r[i] = a[i] * Size; return r; }
-        static float[] Scaled(float[] a) { var r = new float[a.Length]; for (int i = 0; i < a.Length; i++) r[i] = a[i] * Size; return r; }
+        static float[] Scaled(float[] a, float k = 1f) { var r = new float[a.Length]; for (int i = 0; i < a.Length; i++) r[i] = a[i] * k; return r; }
 
         static readonly Vector3[] BaseU =
         {
-            new Vector3(-Gap, 0.0015f, 0.0790f),
-            new Vector3(0f, 0.0030f, 0.0830f),
-            new Vector3(Gap, 0.0005f, 0.0770f),
-            new Vector3(Gap, 0.0005f, 0.0770f),
-            new Vector3(P("thumb.x", -0.0260f), P("thumb.y", -0.0085f), P("thumb.z", 0.0150f)),
+            new Vector3(-Gap, 0.0005f, 0.0840f),
+            new Vector3(0f, 0.0010f, 0.0880f),
+            new Vector3(Gap, 0.0000f, 0.0820f),
+            new Vector3(Gap, 0.0000f, 0.0820f),
+            new Vector3(P("thumb.x", -0.0225f), P("thumb.y", -0.0065f), P("thumb.z", 0.0190f)),
         };
+        // (long alien fingers: each longer than the palm)
         static readonly float[] LenU =
         {
-            0.0290f * FL, 0.0195f * FL, 0.0150f * FL,
-            0.0310f * FL, 0.0205f * FL, 0.0155f * FL,
-            0.0280f * FL, 0.0185f * FL, 0.0145f * FL,
-            0.0280f * FL, 0.0185f * FL, 0.0145f * FL,
-            0.0290f, 0.0220f, 0.0175f,
+            0.0360f * FL, 0.0260f * FL, 0.0220f * FL,
+            0.0390f * FL, 0.0280f * FL, 0.0230f * FL,
+            0.0340f * FL, 0.0250f * FL, 0.0210f * FL,
+            0.0340f * FL, 0.0250f * FL, 0.0210f * FL,
+            0.0340f, 0.0280f, 0.0240f,
         };
-        static readonly float[] RadU =
+        /// <summary>Half of each digit's width (across the hand) at its root, its two joints and where its tip starts.</summary>
+        static readonly float[] WideU = Scaled(new[]
         {
-            0.0132f * FR, 0.0124f * FR, 0.0113f * FR, 0.0099f * FR,
-            0.0136f * FR, 0.0127f * FR, 0.0116f * FR, 0.0101f * FR,
-            0.0130f * FR, 0.0122f * FR, 0.0111f * FR, 0.0097f * FR,
-            0.0130f * FR, 0.0122f * FR, 0.0111f * FR, 0.0097f * FR,
-            0.0168f * TR, 0.0142f * TR, 0.0129f * TR, 0.0119f * TR,
-        };
-        static readonly float PalmHalfU = P("palm.half", 0.0158f);
+            0.0105f, 0.0096f, 0.0086f, 0.0070f,
+            0.0108f, 0.0098f, 0.0088f, 0.0072f,
+            0.0102f, 0.0093f, 0.0084f, 0.0068f,
+            0.0102f, 0.0093f, 0.0084f, 0.0068f,
+            0.0125f, 0.0106f, 0.0093f, 0.0077f,
+        }, FW);
+        /// <summary>Half of each digit's depth (pad to back) at the same places: what the grip solver takes as its radius.</summary>
+        static readonly float[] RadU = Scaled(new[]
+        {
+            0.0096f, 0.0087f, 0.0077f, 0.0061f,
+            0.0099f, 0.0089f, 0.0079f, 0.0063f,
+            0.0093f, 0.0084f, 0.0075f, 0.0059f,
+            0.0093f, 0.0084f, 0.0075f, 0.0059f,
+            0.0114f, 0.0096f, 0.0083f, 0.0067f,
+        }, FW);
+        static readonly float PalmHalfU = P("palm.half", 0.0125f);
+        /// <summary>How far past its last bone a digit's tip runs (narrowing to a blunt point).</summary>
+        const float TipU = 0.0070f;
 
         /// <summary>The knuckle of each finger - index, middle, outer - (slot 3 unused) and the thumb's root low in the palm.</summary>
         public static readonly Vector3[] Base = Scaled(BaseU);
-        /// <summary>Each digit's three bones: short and fat.</summary>
-        public static readonly float[] Len = Scaled(LenU);
-        /// <summary>Each digit's radius at its root, its two joints and its tip.</summary>
-        public static readonly float[] Rad = Scaled(RadU);
+        /// <summary>Each digit's three bones.</summary>
+        public static readonly float[] Len = Scaled(LenU, Size);
+        /// <summary>Each digit's radius (half its depth) at its root, its two joints and its tip.</summary>
+        public static readonly float[] Rad = Scaled(RadU, Size);
         /// <summary>Half the palm's thickness, where the middle knuckle is, and where a handle in the fist runs.</summary>
         public static readonly float PalmHalf = PalmHalfU * Size, KnuckleZ = Base[1].z, GripZ = Base[1].z * 0.8f;
 
         /// <summary>The pose the mesh is made (and bound) in: the fingers fanned apart, so each is its own shape with
         /// webbing only at its root, and the thumb down and out to its side.</summary>
-        public static readonly float[] RestSpread = { -P("rest.spread", 13f), 0f, P("rest.spread", 13f), 0f, 0f };
+        public static readonly float[] RestSpread = { -P("rest.spread", 12f), 0f, P("rest.spread", 12f), 0f, 0f };
         public static readonly Quaternion RestThumb = Quaternion.LookRotation(new Vector3(-0.42f, -0.50f, 0.76f).normalized, new Vector3(-0.6f, 0.62f, -0.5f));
 
         // ---- the bones (ViewModel.Smooth.cs builds them in this order) ----
@@ -116,43 +128,44 @@ namespace RockGame
 
         // ======== the field ========
 
-        struct Cone
+        /// <summary>A digit: one long tapering bar with flat sides and softened edges - a little wider underneath (the pad)
+        /// than on its back - narrowing to a blunt point. No balls at the joints, no bulges: the player aliens' fingers are
+        /// plain tapered prisms, and these are the same idea with the corners taken off.</summary>
+        sealed class Bar
         {
-            float ax, ay, az, bx, by, bz, r1, r2, l2, rr, a2, il2;
+            public Vector3 P0, X, Y, Z;
+            /// <summary>Stations along it (from just inside the palm to the tip): half its width and half its depth there.</summary>
+            public float[] T, A, B;
+            /// <summary>How much of the corners is rounded off (a share of the smaller half size).</summary>
+            public float Edge = 0.36f;
+            /// <summary>The back is this much narrower than the middle, the pad this much wider.</summary>
+            public float Wedge = 0.13f;
+            /// <summary>Every edge is rounded by at least this (the tip's too).</summary>
+            const float Soft = 0.0016f;
 
-            public Cone(Vector3 a, Vector3 b, float ra, float rb)
-            {
-                ax = a.x; ay = a.y; az = a.z;
-                bx = b.x - a.x; by = b.y - a.y; bz = b.z - a.z;
-                r1 = ra; r2 = rb;
-                l2 = bx * bx + by * by + bz * bz;
-                rr = r1 - r2;
-                a2 = l2 - rr * rr;
-                il2 = 1f / l2;
-            }
-
-            /// <summary>The distance to a round cone (two spheres and the cone between them).</summary>
             public float D(float px, float py, float pz)
             {
-                float pax = px - ax, pay = py - ay, paz = pz - az;
-                float y = pax * bx + pay * by + paz * bz;
-                float z = y - l2;
-                float qx = pax * l2 - bx * y, qy = pay * l2 - by * y, qz = paz * l2 - bz * y;
-                float x2 = qx * qx + qy * qy + qz * qz;
-                float y2 = y * y * l2, z2 = z * z * l2;
-                float k = Sg(rr) * rr * rr * x2;
-                if (Sg(z) * a2 * z2 > k) return (float)Math.Sqrt(x2 + z2) * il2 - r2;
-                if (Sg(y) * a2 * y2 < k) return (float)Math.Sqrt(x2 + y2) * il2 - r1;
-                return ((float)Math.Sqrt(x2 * a2 * il2) + y * rr) * il2 - r1;
+                float rx = px - P0.x, ry = py - P0.y, rz = pz - P0.z;
+                float t = rx * Z.x + ry * Z.y + rz * Z.z, x = rx * X.x + ry * X.y + rz * X.z, y = rx * Y.x + ry * Y.y + rz * Y.z;
+                int n = T.Length;
+                float tc = t < T[0] ? T[0] : t > T[n - 1] ? T[n - 1] : t;
+                int i = 0;
+                while (i < n - 2 && tc > T[i + 1]) i++;
+                float u = (tc - T[i]) / (T[i + 1] - T[i]);
+                float a = A[i] + (A[i + 1] - A[i]) * u - Soft, b = B[i] + (B[i + 1] - B[i]) * u - Soft;
+                float yn = y / b; yn = yn < -1f ? -1f : yn > 1f ? 1f : yn;
+                float w = 1f - Wedge * yn;
+                a *= w;
+                float rr = Edge * Math.Min(a, b);
+                float qx = Math.Abs(x) - (a - rr), qy = Math.Abs(y) - (b - rr);
+                float ox = qx > 0f ? qx : 0f, oy = qy > 0f ? qy : 0f;
+                float d2 = (float)Math.Sqrt(ox * ox + oy * oy) + Math.Min(Math.Max(qx, qy), 0f) - rr;
+                float dz = Math.Max(T[0] - t, t - (T[n - 1] - Soft));
+                float d = dz <= 0f ? Math.Max(d2, dz) : d2 > 0f ? (float)Math.Sqrt(d2 * d2 + dz * dz) : dz;
+                return d - Soft;
             }
         }
 
-        static float Sg(float v) => v > 0f ? 1f : v < 0f ? -1f : 0f;
-        static float Sphere(in Vector4 s, float x, float y, float z)
-        {
-            float dx = x - s.x, dy = y - s.y, dz = z - s.z;
-            return (float)Math.Sqrt(dx * dx + dy * dy + dz * dz) - s.w;
-        }
         /// <summary>The smaller of two distances, rounded off where they meet (over k): shapes melt into each other.</summary>
         static float Smin(float a, float b, float k)
         {
@@ -168,7 +181,7 @@ namespace RockGame
         sealed class DigitRest
         {
             public Vector3 P0, Z, Y, X;
-            public float L0, L1, L2, R0, R1, R2, R3;
+            public float L0, L1, L2, R0, R1, R2, R3, Tip;
             public float Total => L0 + L1 + L2;
         }
 
@@ -176,26 +189,21 @@ namespace RockGame
         {
             /// <summary>The digits as the mesh has them (the size the arm's drawn).</summary>
             public readonly DigitRest[] Rest = new DigitRest[4];
-            readonly Cone[][] m_Digit = new Cone[4][];
-            readonly Vector4[][] m_Bump = new Vector4[4][];
+            readonly Bar[] m_Digit = new Bar[4];
             readonly Vector3[] m_DC = new Vector3[4];
             readonly float[] m_DR = new float[4];
-            readonly Vector4[] m_Knuckle = new Vector4[3];
-            readonly Cone[] m_Ridge = new Cone[3];
-            readonly Vector4[] m_RootPad = new Vector4[3];
-            readonly Cone m_Pad;
-            readonly Vector4 m_Ulna;
-            // the palm's slab: a rounded trapezoid (seen from above) with a thickness
-            readonly float m_Zc, m_He, m_W1, m_W2, m_Yc, m_Hy, m_Re, m_Rc;
-            // the wrist and forearm: an oval tube, (z, half width, half thickness)
+            // the palm: a flat block, a trapezoid seen from above (narrow at the wrist, wide at the knuckles), thicker
+            // at the heel than at the knuckles, its edges bevelled
+            readonly float m_Zc, m_He, m_W1, m_W2, m_TopW, m_TopK, m_Re, m_Rc, m_Z0, m_Z1;
+            // the wrist and forearm: a squared-off tube, (z, half width, half thickness)
             readonly float[] m_Tz, m_Ta, m_Tb, m_Ma, m_Mb;
+            readonly float m_Square = P("arm.square", 4f);
             /// <summary>Behind this the arm is only the forearm tube (nothing of the hand reaches it).</summary>
             public const float ZFast = -0.075f;
             public const float ZEnd = -0.9f;
             /// <summary>Where the forearm's tube ends: thin by then, and deep inside the palm.</summary>
             const float TubeFront = 0.062f;
-            static readonly float KJoint = 0.002f, KBump = 0.003f, KWeb = P("k.web", 0.0045f), KRoot = P("k.root", 0.007f),
-                KThumb = P("k.thumb", 0.010f), KWrist = P("k.wrist", 0.014f), KKnuckle = 0.006f, KPad = 0.008f;
+            static readonly float KWeb = P("k.web", 0.003f), KRoot = P("k.root", 0.0045f), KThumb = P("k.thumb", 0.007f), KWrist = P("k.wrist", 0.009f);
 
             public Field()
             {
@@ -207,46 +215,31 @@ namespace RockGame
                     {
                         P0 = Base[d], Z = rot * Vector3.forward, Y = rot * Vector3.up, X = rot * Vector3.right,
                         L0 = Len[d * 3], L1 = Len[d * 3 + 1], L2 = Len[d * 3 + 2],
-                        R0 = Rad[d * 4], R1 = Rad[d * 4 + 1], R2 = Rad[d * 4 + 2], R3 = Rad[d * 4 + 3],
+                        R0 = Rad[d * 4], R1 = Rad[d * 4 + 1], R2 = Rad[d * 4 + 2], R3 = Rad[d * 4 + 3], Tip = TipU * Size,
                     };
-                    // (the shapes below are sculpted at life size: Eval scales them up)
-                    var r = new DigitRest
+                    // (the shape itself is sculpted at life size: Eval scales it up)
+                    float l0 = LenU[d * 3], l1 = LenU[d * 3 + 1], l2 = LenU[d * 3 + 2], tot = l0 + l1 + l2;
+                    float w0 = WideU[d * 4], w1 = WideU[d * 4 + 1], w2 = WideU[d * 4 + 2], w3 = WideU[d * 4 + 3];
+                    float h0 = RadU[d * 4], h1 = RadU[d * 4 + 1], h2 = RadU[d * 4 + 2], h3 = RadU[d * 4 + 3];
+                    m_Digit[q] = new Bar
                     {
                         P0 = BaseU[d], Z = rot * Vector3.forward, Y = rot * Vector3.up, X = rot * Vector3.right,
-                        L0 = LenU[d * 3], L1 = LenU[d * 3 + 1], L2 = LenU[d * 3 + 2],
-                        R0 = RadU[d * 4], R1 = RadU[d * 4 + 1], R2 = RadU[d * 4 + 2], R3 = RadU[d * 4 + 3],
+                        T = new[] { d < 4 ? -0.042f : -0.016f, 0f, l0, l0 + l1, tot, tot + TipU },
+                        A = new[] { d < 4 ? w0 * 0.78f : w0, w0, w1, w2, w3, w3 * 0.6f },
+                        B = new[] { d < 4 ? h0 * 0.62f : h0, h0, h1, h2, h3, h3 * 0.58f },
                     };
-                    Vector3 p1 = r.P0 + r.Z * r.L0, p2 = p1 + r.Z * r.L1, p3 = p2 + r.Z * r.L2;
-                    m_Digit[q] = new[] { new Cone(r.P0, p1, r.R0, r.R1), new Cone(p1, p2, r.R1, r.R2), new Cone(p2, p3, r.R2, r.R3) };
-                    // a touch fuller over the back of each joint, and the pad under the tip
-                    float bump = P("joint.bump", 0.0012f), pad = P("tip.pad", 0.0012f);
-                    var b1 = p1 + r.Y * bump; var b2 = p2 + r.Y * bump * 0.8f; var b3 = Vector3.Lerp(p2, p3, 0.75f) - r.Y * pad;
-                    m_Bump[q] = new[] { new Vector4(b1.x, b1.y, b1.z, r.R1 * 1.03f), new Vector4(b2.x, b2.y, b2.z, r.R2 * 1.03f), new Vector4(b3.x, b3.y, b3.z, Mathf.Lerp(r.R2, r.R3, 0.75f)) };
-                    m_DC[q] = (r.P0 + p3) * 0.5f;
-                    m_DR[q] = r.Total * 0.5f + r.R0 + 0.004f;
+                    m_DC[q] = BaseU[d] + rot * Vector3.forward * (tot * 0.5f);
+                    m_DR[q] = tot * 0.5f + TipU + w0 + 0.006f;
                 }
-                // the knuckles: a bump on the back of the hand behind each finger's root
-                float kUp = P("knuckle.up", 0.0042f), kBack = P("knuckle.back", 0.0030f);
-                for (int d = 0; d < 3; d++) m_Knuckle[d] = new Vector4(BaseU[d].x, BaseU[d].y + kUp, BaseU[d].z - kBack, RadU[d * 4] * 0.97f);
-                // a ridge down the back of the hand to each knuckle (it rises out of the hand towards the knuckle), and a
-                // pad on the palm under each finger's root
-                float ridge = P("ridge.up", 0.0058f), rootPad = P("rootpad.down", 0.0068f);
-                for (int d = 0; d < 3; d++)
-                {
-                    m_Ridge[d] = new Cone(new Vector3(BaseU[d].x * 0.5f, ridge, 0.012f), new Vector3(BaseU[d].x, BaseU[d].y + kUp, BaseU[d].z - kBack), 0.0098f, RadU[d * 4] * 0.9f);
-                    m_RootPad[d] = new Vector4(BaseU[d].x * 0.96f, -rootPad, BaseU[d].z - 0.0125f, 0.0104f);
-                }
-                // the pad down the outer edge of the palm, and the bone on the back of the wrist's outer side
-                m_Pad = new Cone(new Vector3(0.0235f, -0.0042f, 0.0140f), new Vector3(0.0268f, -0.0036f, 0.0500f), 0.0125f, 0.0115f);
-                m_Ulna = new Vector4(0.0195f, 0.0085f, -0.0150f, P("ulna.r", 0.0078f));
-                float z0 = 0.0020f, z1 = BaseU[1].z + 0.0005f;
-                m_Zc = (z0 + z1) * 0.5f; m_He = (z1 - z0) * 0.5f;
-                m_W1 = P("palm.w1", 0.0305f); m_W2 = Gap + RadU[0] + 0.0002f;
-                m_Yc = 0.0003f; m_Hy = PalmHalfU - 0.0002f; m_Re = P("palm.round", 0.0118f); m_Rc = 0.012f;
+                m_Z0 = 0.0020f; m_Z1 = BaseU[1].z + 0.0005f;
+                m_Zc = (m_Z0 + m_Z1) * 0.5f; m_He = (m_Z1 - m_Z0) * 0.5f;
+                m_W1 = P("palm.w1", 0.0270f); m_W2 = Gap + WideU[0] + 0.0012f;
+                m_TopW = P("palm.top.wrist", 0.0138f); m_TopK = P("palm.top.knuckle", 0.0092f);
+                m_Re = P("palm.bevel", 0.0044f); m_Rc = 0.0085f;
                 float aw = P("arm.w", 1f), at = P("arm.t", 1f);
                 m_Tz = new[] { ZEnd - 0.05f, -0.300f, -0.130f, -0.060f, -0.022f, 0.000f, 0.030f, TubeFront };
-                m_Ta = new[] { 0.0430f * aw, 0.0412f * aw, 0.0388f * aw, 0.0328f, 0.0298f, 0.0300f, 0.0225f, 0.0120f };
-                m_Tb = new[] { 0.0372f * at, 0.0352f * at, 0.0324f * at, 0.0260f, 0.0214f, 0.0196f, 0.0115f, 0.0040f };
+                m_Ta = new[] { 0.0385f * aw, 0.0370f * aw, 0.0345f * aw, 0.0292f, 0.0260f, 0.0258f, 0.0200f, 0.0110f };
+                m_Tb = new[] { 0.0335f * at, 0.0322f * at, 0.0292f * at, 0.0228f, 0.0188f, 0.0168f, 0.0100f, 0.0040f };
                 int n = m_Tz.Length;
                 m_Ma = new float[n]; m_Mb = new float[n];
                 for (int i = 0; i < n; i++)
@@ -272,14 +265,23 @@ namespace RockGame
                 b = h00 * m_Tb[i] + h10 * h * m_Mb[i] + h01 * m_Tb[i + 1] + h11 * h * m_Mb[i + 1];
             }
 
+            /// <summary>The forearm: its section a square with well-rounded corners (a superellipse), like the player
+            /// aliens' four-sided arms.</summary>
             float Tube(float x, float y, float z)
             {
                 TubeAt(z, out float a, out float b);
-                float xa = x / a, yb = y / b;
-                float q = (float)Math.Sqrt(xa * xa + yb * yb);
+                double xa = Math.Abs(x) / a, yb = Math.Abs(y) / b, n = m_Square;
+                double xn = Math.Pow(xa, n), yn = Math.Pow(yb, n);
+                double q = Math.Pow(xn + yn, 1.0 / n);
                 float d;
-                if (q < 1e-4f) d = -Math.Min(a, b);
-                else d = q * (q - 1f) / (float)Math.Sqrt(xa * xa / (a * a) + yb * yb / (b * b));
+                if (q < 1e-4) d = -Math.Min(a, b);
+                else
+                {
+                    // (the distance, near enough: how far past 1 the section's own measure is, over how fast that grows)
+                    double gx = (xa > 1e-9 ? xn / xa : 0.0) / a, gy = (yb > 1e-9 ? yn / yb : 0.0) / b;
+                    double g = Math.Sqrt(gx * gx + gy * gy) * Math.Pow(q, 1.0 - n);
+                    d = (float)((q - 1.0) / Math.Max(g, 1e-9));
+                }
                 float front = z - TubeFront; // (it stops inside the palm)
                 if (front > d) d = front;
                 float back = ZEnd + 0.014f - z; // (and is closed off at the elbow end, far out of sight)
@@ -298,8 +300,12 @@ namespace RockGame
                 float cbx = px - r2 + k2x * t, cby = py - he + k2y * t;
                 float s = cbx < 0f && cay < 0f ? -1f : 1f;
                 float d2 = s * (float)Math.Sqrt(Math.Min(cax * cax + cay * cay, cbx * cbx + cby * cby)) - m_Rc;
-                // its thickness, the edges rounded over
-                float wx = d2 + m_Re, wy = Math.Abs(y - m_Yc) - m_Hy + m_Re;
+                // its thickness: flat underneath (where things are held against it), the back sloping down from the heel
+                // to the knuckles; the edges bevelled
+                float k = (z - m_Z0) / (m_Z1 - m_Z0); k = k < 0f ? 0f : k > 1f ? 1f : k;
+                float top = m_TopW + (m_TopK - m_TopW) * k;
+                float yc = (top - PalmHalfU) * 0.5f, hy = (top + PalmHalfU) * 0.5f;
+                float wx = d2 + m_Re, wy = Math.Abs(y - yc) - hy + m_Re;
                 float ox = wx > 0f ? wx : 0f, oy = wy > 0f ? wy : 0f;
                 return Math.Min(Math.Max(wx, wy), 0f) + (float)Math.Sqrt(ox * ox + oy * oy) - m_Re;
             }
@@ -324,27 +330,13 @@ namespace RockGame
                     return tube;
                 }
                 float body = Smin(Slab(x, y, z), tube, KWrist);
-                for (int d = 0; d < 3; d++)
-                {
-                    body = Smin(body, Sphere(m_Knuckle[d], x, y, z), KKnuckle);
-                    body = Smin(body, m_Ridge[d].D(x, y, z), KPad);
-                    body = Smin(body, Sphere(m_RootPad[d], x, y, z), KPad);
-                }
-                body = Smin(body, m_Pad.D(x, y, z), KPad);
-                body = Smin(body, Sphere(m_Ulna, x, y, z), 0.012f);
                 if (g != null) g[0] = body;
                 float all = body, fing = 1e9f;
                 for (int q = 0; q < 4; q++)
                 {
                     float dx = x - m_DC[q].x, dy = y - m_DC[q].y, dz = z - m_DC[q].z;
                     float dd = (float)Math.Sqrt(dx * dx + dy * dy + dz * dz) - m_DR[q];
-                    if (dd < 0.03f)
-                    {
-                        var c = m_Digit[q];
-                        dd = Smin(Smin(c[0].D(x, y, z), c[1].D(x, y, z), KJoint), c[2].D(x, y, z), KJoint);
-                        var b = m_Bump[q];
-                        for (int i = 0; i < b.Length; i++) dd = Smin(dd, Sphere(b[i], x, y, z), KBump);
-                    }
+                    if (dd < 0.03f) dd = m_Digit[q].D(x, y, z);
                     if (g != null) g[1 + q] = dd;
                     if (q < 3) fing = Smin(fing, dd, KWeb);
                     else { all = Smin(all, fing, KRoot); all = Smin(all, dd, KThumb); }
@@ -445,7 +437,7 @@ namespace RockGame
             for (int q = 0; q < 4; q++)
             {
                 var r = f.Rest[q];
-                var tip = r.P0 + r.Z * r.Total;
+                var tip = r.P0 + r.Z * (r.Total + r.Tip);
                 foreach (var p in new[] { r.P0, tip })
                 {
                     xLo = Math.Min(xLo, p.x - r.R0 - 0.004f); xHi = Math.Max(xHi, p.x + r.R0 + 0.004f);
@@ -590,7 +582,7 @@ namespace RockGame
                 Add(hi, share * fr);
             }
             float sigma = 0.002f * sz;
-            float aoGain = P("ao.gain", 2.1f), sideOcc = P("ao.side", 0.8f), cavGain = P("cavity.gain", 0.0045f);
+            float aoGain = P("ao.gain", 1.8f), sideOcc = P("ao.side", 0.38f), cavGain = P("cavity.gain", 0.0038f);
             float ce = P("cavity.reach", 0.0034f) * sz;
             float[] aoH = { 0.002f * sz, 0.005f * sz, 0.010f * sz, 0.018f * sz }, aoW = { 0.34f, 0.28f, 0.22f, 0.16f };
             for (int i = 0; i < n; i++)
@@ -611,17 +603,17 @@ namespace RockGame
                     var r = f.Rest[q];
                     var rel = p - r.P0;
                     float a = Vector3.Dot(rel, r.Z), lx = Vector3.Dot(rel, r.X), ny = Vector3.Dot(nr, r.Y), nx = Vector3.Dot(nr, r.X);
-                    float z1 = r.L0 - 0.75f * r.R1, z2 = r.L0 + r.L1 - 0.75f * r.R2;
+                    float z1 = r.L0 - 0.6f * r.R1, z2 = r.L0 + r.L1 - 0.6f * r.R2;
                     int j0 = JointBase(q, 0), j1 = JointBase(q, 1), j2 = JointBase(q, 2);
                     if (a < z1) Pair(BoneHand, j0, j0 + 3, q < 3 ? S(a, -r.R0, 0.55f * r.R0) : S(a, -0.6f * r.R0, 0.6f * r.L0), share, ref body);
-                    else if (a < z2) Pair(j0 + 3, j1, j1 + 3, S(a, z1, r.L0 + 0.75f * r.R1), share, ref body);
-                    else Pair(j1 + 3, j2, j2 + 3, S(a, z2, r.L0 + r.L1 + 0.75f * r.R2), share, ref body);
+                    else if (a < z2) Pair(j0 + 3, j1, j1 + 3, S(a, z1, r.L0 + 0.6f * r.R1), share, ref body);
+                    else Pair(j1 + 3, j2, j2 + 3, S(a, z2, r.L0 + r.L1 + 0.6f * r.R2), share, ref body);
                     palm += share * S(-ny, 0.15f, 0.75f);
                     if (share > best)
                     {
                         // where this point is on the digit's nail: across it (-1..1) and along it (0 at its base, 1 at its end)
                         best = share;
-                        float n0 = r.L0 + r.L1 + r.L2 * 0.22f, n1 = r.Total + r.R3 * 0.62f;
+                        float n0 = r.L0 + r.L1 + r.L2 * 0.3f, n1 = r.Total + r.Tip * 0.7f;
                         nailU = lx / (r.R3 * 0.74f);
                         nailV = (a - n0) / (n1 - n0);
                         dorsal = ny;

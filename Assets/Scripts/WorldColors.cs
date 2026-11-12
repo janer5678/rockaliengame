@@ -365,19 +365,19 @@ namespace RockGame
         static Shader s_HandSkin;
         static bool s_HandSkinTried;
 
-        /// <summary>The smooth hands' skin for a team: the team's colour, a little lighter and softer than the flag's (it
-        /// has to read against that team's own base floor and take light and shade), or the hands colour picked.</summary>
+        /// <summary>The smooth hands' skin for a team: the deep shade of the team's colour the player aliens' bodies are
+        /// (they're your alien's own hands), or the hands colour picked.</summary>
         public static Color SmoothShade(Color team)
         {
             if (!ColorSlots.HandsTeam) return ColorSlots.Hands.Value;
             Color.RGBToHSV(team, out float h, out float s, out float v);
-            var c = Color.HSVToRGB(h, s * SmoothHand.P("skin.sat", 0.76f), v * SmoothHand.P("skin.val", 0.84f));
+            var c = Color.HSVToRGB(h, Mathf.Min(1f, s * SmoothHand.P("skin.sat", 1.1f)), v * SmoothHand.P("skin.val", 0.7f));
             c.a = 1f;
             return c;
         }
 
-        /// <summary>The smooth hands' material in this colour (Resources/World/HandSkin): the palm side lighter and less
-        /// saturated, the creases a deep shade, dark nails, a pale rim - all worked out from the skin colour.</summary>
+        /// <summary>The smooth hands' material in this colour (Resources/World/HandSkin): the palm side a little lighter,
+        /// the creases a deeper shade, a pale rim - all worked out from the skin colour (no nails: the aliens have none).</summary>
         static Material SmoothMat(Color c)
         {
             if (s_SmoothMats.TryGetValue(c, out var m) && m) return m;
@@ -388,15 +388,15 @@ namespace RockGame
                 Color.RGBToHSV(c, out float h, out float s, out float v);
                 m.SetColor("_BaseColor", c);
                 m.color = c;
-                m.SetColor("_PalmColor", Color.HSVToRGB(h, s * SmoothHand.P("skin.palm.sat", 0.72f), Mathf.Min(1f, v * 1.06f + 0.05f)));
-                m.SetColor("_CreaseColor", Color.HSVToRGB(Mathf.Repeat(h + 0.015f, 1f), Mathf.Min(1f, s * 1.1f + 0.06f), v * SmoothHand.P("skin.crease", 0.34f)));
+                m.SetColor("_PalmColor", Color.HSVToRGB(h, s * SmoothHand.P("skin.palm.sat", 0.86f), Mathf.Min(1f, v * SmoothHand.P("skin.palm.val", 1.16f) + 0.03f)));
+                m.SetColor("_CreaseColor", Color.HSVToRGB(Mathf.Repeat(h + 0.015f, 1f), Mathf.Min(1f, s * 1.1f + 0.06f), v * SmoothHand.P("skin.crease", 0.42f)));
                 m.SetColor("_NailColor", Color.HSVToRGB(h, Mathf.Min(1f, s * SmoothHand.P("skin.nail.sat", 0.62f)), Mathf.Min(1f, v * SmoothHand.P("skin.nail", 1.04f) + 0.05f)));
                 m.SetColor("_RimColor", Color.HSVToRGB(h, s * 0.4f, 1f));
                 m.SetFloat("_Smoothness", 0.4f);
-                m.SetVector("_Look", new Vector4(SmoothHand.P("look.fill", 0.26f), SmoothHand.P("look.rim", 0.3f), SmoothHand.P("look.spec", 0.12f), SmoothHand.P("look.nail", 1f)));
+                m.SetVector("_Look", new Vector4(SmoothHand.P("look.fill", 0.26f), SmoothHand.P("look.rim", 0.3f), SmoothHand.P("look.spec", 0.14f), SmoothHand.P("look.nail", 0f)));
                 m.SetVector("_Look2", new Vector4(SmoothHand.P("look.spec.pow", 14f), SmoothHand.P("look.nail.shine", 1.8f), SmoothHand.P("look.wrap", 0.38f), SmoothHand.P("look.sun", 1f)));
-                m.SetFloat("_Form", SmoothHand.P("look.form", 0.22f));
-                m.SetFloat("_Ambient", SmoothHand.P("look.ambient", 0.78f));
+                m.SetFloat("_Form", SmoothHand.P("look.form", 0.2f));
+                m.SetFloat("_Ambient", SmoothHand.P("look.ambient", 0.95f));
             }
             else
             {

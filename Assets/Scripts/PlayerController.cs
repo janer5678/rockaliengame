@@ -795,6 +795,7 @@ namespace RockGame
                 Bob = m_Bob,
                 Speed = m_Speed,
                 Look = m_LookDelta,
+                Move = new Vector2(Vector3.Dot(m_LastPlanar, transform.right), Vector3.Dot(m_LastPlanar, transform.forward)),
                 Crouch = Crouching,
             });
         }

@@ -100,7 +100,7 @@ namespace RockGame
             {
                 pc.DebugDraw = -1f;
                 ViewModel.DebugSwingE = ViewModel.DebugThrowE = ViewModel.DebugEatE = ViewModel.DebugUseE = ViewModel.DebugEquipE = -1f;
-                ViewModel.DebugAim = ViewModel.DebugBall = false;
+                ViewModel.DebugAim = ViewModel.DebugBall = ViewModel.DebugHit = false;
             }
             IEnumerator Frames(string name, int n, System.Action<int, float> set)
             {
@@ -117,15 +117,19 @@ namespace RockGame
                 yield return new WaitForSeconds(0.3f);
             }
 
-            // swings: the whole swing, from the click to back at rest
-            foreach (var it in new[] { Item.Rock, Item.Hatchet, Item.Sword, Item.Pickaxe, Item.Spear })
-            {
-                string n = it.ToString().ToLower() + "_swing";
-                if (!Want(n)) continue;
-                yield return Give(it);
-                pc.DebugSwing(0.6f);
-                yield return Frames(n, 12, (f, k) => ViewModel.DebugSwingE = k * 0.6f);
-            }
+            // swings: the whole swing, from the click to back at rest, with the weapon's own timing (the sword's is slow) -
+            // one that misses (X_swing: it follows through) and one that hits (X_hit: it bounces back)
+            foreach (var it in new[] { Item.Rock, Item.Hatchet, Item.Sword, Item.Spear, Item.Hammer })
+                foreach (bool hit in new[] { false, true })
+                {
+                    string n = it.ToString().ToLower() + (hit ? "_hit" : "_swing");
+                    if (!Want(n)) continue;
+                    yield return Give(it);
+                    ViewModel.Last.WatchedSwing(it);
+                    float len = Mathf.Max(0.45f, Mathf.Max(0.35f, Cfg.Melee(it).Cooldown) * 0.9f);
+                    ViewModel.DebugHit = hit;
+                    yield return Frames(n, 16, (f, k) => ViewModel.DebugSwingE = k * len);
+                }
             // switching to an item: it comes up into the hand
             foreach (var it in new[] { Item.Hatchet, Item.Pistol, Item.Rock })
             {
@@ -139,6 +143,8 @@ namespace RockGame
             if (Want("berry_eat")) { yield return Give(Item.Berry); yield return Frames("berry_eat", 8, (f, k) => ViewModel.DebugEatE = k * 0.6f); }
             // the bow drawn back, the spear wound up
             if (Want("bow_draw")) { yield return Give(Item.Bow); yield return Frames("bow_draw", 8, (f, k) => pc.DebugDraw = k); }
+            // ...and let go (as it happens: a frame every twentieth of a second or so)
+            if (Want("bow_release")) { yield return Give(Item.Bow); pc.DebugDraw = 1f; yield return new WaitForSeconds(0.4f); yield return Frames("bow_release", 8, (f, k) => pc.DebugDraw = 0f); }
             if (Want("spear_windup")) { yield return Give(Item.Spear); yield return Frames("spear_windup", 8, (f, k) => pc.DebugDraw = k); }
             // a gun's shot (the kick)
             if (Want("revolver_fire")) { yield return Give(Item.Revolver); yield return Frames("revolver_fire", 8, (f, k) => ViewModel.DebugUseE = k * 0.42f); }

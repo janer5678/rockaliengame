@@ -26,12 +26,12 @@ namespace RockGame
             var poses = new List<(string name, Item item, System.Action set)>();
             void Add(string n, Item it, System.Action a = null) => poses.Add((n, it, a));
             Add("rock_idle", Item.Rock);
-            Add("rock_raised", Item.Rock, () => { pc.DebugSwing(0.6f); ViewModel.DebugSwingE = 0.075f; });
+            Add("rock_raised", Item.Rock, () => { pc.DebugSwing(0.6f); ViewModel.DebugSwingE = 0.055f; });
             Add("rock_slam", Item.Rock, () => { pc.DebugSwing(0.6f); ViewModel.DebugSwingE = 0.14f; });
             foreach (var t in new[] { Item.Hatchet, Item.Pickaxe, Item.Sword, Item.TreeCracker })
             {
                 Add(t.ToString().ToLower() + "_idle", t);
-                Add(t.ToString().ToLower() + "_raised", t, () => { pc.DebugSwing(0.6f); ViewModel.DebugSwingE = 0.075f; });
+                Add(t.ToString().ToLower() + "_raised", t, () => { pc.DebugSwing(0.6f); ViewModel.DebugSwingE = 0.055f; });
                 Add(t.ToString().ToLower() + "_slam", t, () => { pc.DebugSwing(0.6f); ViewModel.DebugSwingE = 0.14f; });
             }
             Add("hatchet_deploy", Item.Hatchet, () => ViewModel.DebugEquipE = 0.14f);
@@ -220,14 +220,14 @@ namespace RockGame
             // ---- every pose, photographed; the hands where the original poses put them ----
             // (the right hand's place in the view model at rest - no bob, sway or sprint - from the original poses)
             // (the Rust-style poses: the rock cupped from below in the middle, tools low in the middle, C4 in both hands)
-            Vector3 RockSide(Vector3 idle, float pitch, float x) => idle + Quaternion.Euler(pitch, -4f, 0f) * new Vector3(x, -0.07f, -0.02f);
+            Vector3 RockSide(ViewModel.Key k, float x) => k.Pos + k.Q * new Vector3(x, -0.07f, -0.02f);
             var expectR = new Dictionary<string, Vector3>
             {
-                { "rock_idle", RockSide(new Vector3(0.02f, -0.19f, 0.44f), -6f, 0.09f) },
-                { "rock_slam", RockSide(new Vector3(0.02f, -0.3f, 0.66f), 35f, 0.09f) },
-                { "hatchet_idle", new Vector3(0.14f, -0.33f, 0.58f) },
-                { "hatchet_slam", new Vector3(0.05f, -0.37f, 0.62f) },
-                { "sword_idle", new Vector3(0.2f, -0.33f, 0.55f) },
+                { "rock_idle", RockSide(ViewModel.RockIdle, 0.09f) },
+                { "rock_slam", RockSide(ViewModel.RockHit, 0.09f) },
+                { "hatchet_idle", ViewModel.ToolIdle.Pos },
+                { "hatchet_slam", ViewModel.ToolHit.Pos },
+                { "sword_idle", ViewModel.SwordIdlePos },
                 { "buildingplan_idle", new Vector3(0.21f, -0.27f, 0.45f) },
                 { "c4_idle", new Vector3(0.05f, -0.27f, 0.44f) },
                 { "chest_idle", new Vector3(0.26f, -0.3f, 0.54f) }, // (a box is held a touch lower and further out)
@@ -235,7 +235,7 @@ namespace RockGame
             };
             var expectL = new Dictionary<string, Vector3>
             {
-                { "rock_idle", RockSide(new Vector3(0.02f, -0.19f, 0.44f), -6f, -0.09f) },
+                { "rock_idle", RockSide(ViewModel.RockIdle, -0.09f) },
                 { "hatchet_idle", new Vector3(-0.3f, -0.9f, 0.2f) },
                 { "crossbow_idle", new Vector3(0.2f, -0.2f, 0.42f) + Quaternion.Euler(0f, -6f, 0f) * new Vector3(-0.02f, -0.05f, 0.2f) },
             };
