@@ -147,35 +147,6 @@ namespace RockGame.EditorTools
             if (Application.isBatchMode && report.summary.result != BuildResult.Succeeded) EditorApplication.Exit(1);
         }
 
-        /// <summary>The exhibition build (Exhibition.cs, README.md): its own folder and its own saved settings (PlayerPrefs go by
-        /// the product name), with the EXHIBITION define, so it starts on HOST / JOIN with nothing to pass on the command line.</summary>
-        [MenuItem("Rock Game/Build Exhibition Player")]
-        public static void BuildExhibition()
-        {
-            EnsurePostFxVariants();
-            PlayerSettings.SplashScreen.show = false;
-            PlayerSettings.SplashScreen.showUnityLogo = false;
-            PlayerSettings.fullScreenMode = FullScreenMode.FullScreenWindow;
-            PlayerSettings.defaultIsNativeResolution = true;
-            string product = PlayerSettings.productName;
-            BuildReport report;
-            try
-            {
-                PlayerSettings.productName = "Alien Rock Game Exhibition";
-                report = BuildPipeline.BuildPlayer(new BuildPlayerOptions
-                {
-                    scenes = new[] { ScenePath },
-                    locationPathName = "Builds/Exhibition/Alien Rock Game Exhibition.exe",
-                    target = BuildTarget.StandaloneWindows64,
-                    options = BuildOptions.None,
-                    extraScriptingDefines = new[] { "EXHIBITION" },
-                });
-            }
-            finally { PlayerSettings.productName = product; }
-            Debug.Log($"[RockGame] Exhibition build result: {report.summary.result}, errors: {report.summary.totalErrors}, size: {report.summary.totalSize / (1024 * 1024)} MB, Unity Cloud project: \"{CloudProjectSettings.projectId}\"");
-            if (Application.isBatchMode && report.summary.result != BuildResult.Succeeded) EditorApplication.Exit(1);
-        }
-
         /// <summary>Old builds' leftovers next to the exe (from when it was RockBaseBrawl.exe, and an unused data folder):
         /// deleted before each build, so Builds/Windows only ever has the one exe, Alien Rock Game.exe.</summary>
         static void DeleteStaleWindowsBuilds()

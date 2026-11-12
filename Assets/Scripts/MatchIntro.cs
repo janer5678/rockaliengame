@@ -91,7 +91,7 @@ namespace RockGame
             Cues(e);
         }
 
-        static bool Wanted() => NetGame.ReadyLobby && (Exhibition.On ? !Exhibition.MatchPhase : !Cfg.Tutorial) && /* (the exhibition build: once a round, as READY ends) */ (!Bootstrap.Testing || TestsToo) && (PlayerNet.Local != null || Spectator.Active);
+        static bool Wanted() => NetGame.ReadyLobby && !Cfg.Tutorial && (!Bootstrap.Testing || TestsToo) && (PlayerNet.Local != null || Spectator.Active);
 
         /// <summary>This screen's intro is over (or it had none): the host starts the 3, 2, 1 countdown once every screen has
         /// said so (NetGame.ReadySetRock.cs).</summary>

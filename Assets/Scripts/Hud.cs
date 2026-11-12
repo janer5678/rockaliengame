@@ -286,7 +286,6 @@ namespace RockGame
             }
             if (ShipLobby.Active) { if (!MenuScene.LobbyPreview) DrawLobby(boot, me); return; } // (before the match: the ship lobby - Hud.Lobby.cs)
             DrawGame(boot, me, pc);
-            if (Exhibition.On && PlayerNet.All.Count < Exhibition.Needed) DrawExhibitionCode(boot, 15f); // (someone's dropped out: what they need to get back in)
         }
 
         void DrawLeaveButton(Bootstrap boot, Rect r)

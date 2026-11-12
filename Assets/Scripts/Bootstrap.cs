@@ -10,7 +10,7 @@ namespace RockGame
     /// Command line: -host | -client [ip] | -port N | -solo | -fast | -map plains|highlands | -small | -big | -wood | -normal | -sides | -anywhere | -mode 1v1|2v2|ffa3|ffa4 | -rules classic|autowood|primitive|... | -seed N
     /// </summary>
     [RequireComponent(typeof(NetworkManager))]
-    public partial class Bootstrap : MonoBehaviour
+    public class Bootstrap : MonoBehaviour
     {
         public static Bootstrap I;
         public static bool Solo, Fast;
@@ -40,7 +40,7 @@ namespace RockGame
         /// <summary>This PC's IP on the local network (a Steam host can be joined with it too: HybridTransport).</summary>
         public static string LanIp => Tutorial.LocalIp();
         /// <summary>What COPY ROOM ID copies: the host's SteamID on Steam, its IP otherwise (what JOIN takes).</summary>
-        public string RoomId => !IsHostSession ? Ip.Trim() : ExhibitionRelay.Active ? ExhibitionRelay.Code : OnSteam ? SteamBoot.MyId.ToString() : Tutorial.LocalIp();
+        public string RoomId => !IsHostSession ? Ip.Trim() : OnSteam ? SteamBoot.MyId.ToString() : Tutorial.LocalIp();
         public void SetStatus(string s) => Status = s;
 
         void Awake()
@@ -54,7 +54,7 @@ namespace RockGame
             // the refresh rate: the highest the screen has (or what was picked in Settings > Display)
             bool test = Testing = System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-autotest") >= 0;
             GameSettings.ApplyDisplayAtStartup(test);
-            if (!Exhibition.On) SteamBoot.Init(); // (Steam, if it's running: hosting and joining through it - SteamBoot.cs; the exhibition build uses Relay)
+            SteamBoot.Init(); // (Steam, if it's running: hosting and joining through it - SteamBoot.cs)
             Application.runInBackground = true;
             // a first start: the (new) Classic, the Auto Wood rules
             MapChoice = PlayerPrefs.GetInt("RockGame.Map", test ? 0 : (int)GameRules.AutoWood << Cfg.RulesShift);
@@ -68,9 +68,8 @@ namespace RockGame
             // wood is the normal materials now (the menu has no Materials row). The tests keep the old stone materials
             // unless they ask for -wood, so they don't depend on what this PC last hosted; -normal still gets stone.
             if (test || !Cfg.WoodIsNormal) MapChoice &= ~Cfg.WoodBit; else MapChoice |= Cfg.WoodBit;
-            if (Exhibition.On) { MapChoice = Exhibition.LobbyKey; Ip = ""; }
             ParseMapArgs();
-            Cfg.SetMap(MapChoice, Exhibition.On ? Exhibition.Seed : 0);
+            Cfg.SetMap(MapChoice, 0);
             MapBuilder.Build();
         }
 
@@ -207,14 +206,13 @@ namespace RockGame
             Status = "";
             // the host's graphics are everyone's graphics for the match
             MapChoice = (MapChoice & ~(Cfg.GraphicsMask << Cfg.GraphicsShift)) | (GameSettings.GraphicsMode << Cfg.GraphicsShift);
-            Cfg.SetMap(MapChoice, s_SeedOverride >= 0 ? s_SeedOverride : Exhibition.On ? Exhibition.Seed : Random.Range(1, 999999));
+            Cfg.SetMap(MapChoice, s_SeedOverride >= 0 ? s_SeedOverride : Random.Range(1, 999999));
             MapBuilder.Build();
             // a real game with Steam up goes through Steam's relay (friends join by invite) and takes IP joins on the
             // usual port as well (someone on the same network); solo and the tutorial stay on IP
             bool steam = m_St != null && !Solo && !Cfg.Tutorial;
             UseSteam(steam, true);
-            if (ExhibitionRelay.Active) UseRelayData();
-            else { m_Ut.UseWebSockets = false; m_Ut.SetConnectionData("127.0.0.1", ParsedPort, "0.0.0.0"); }
+            m_Ut.SetConnectionData("127.0.0.1", ParsedPort, "0.0.0.0");
             if (!m_Nm.StartHost()) { Status = steam ? "Could not start hosting through Steam" : "Could not start host (is the port already in use?)"; return; }
             SteamStarted();
             if (steam) SteamLobby.Host(Cfg.PlayersNeeded + 8); // (the invite / Join Game side: SteamLobby.cs - room for spectators too)
@@ -223,9 +221,6 @@ namespace RockGame
         public void Join()
         {
             Solo = false; // (joining is never solo - a solo game played before mustn't stick: the host decides the lobby)
-            if (Exhibition.On && IsRelayCode(Ip)) { StartCoroutine(ExhibitionJoinRoutine()); return; } // (a join code: Bootstrap.Exhibition.cs)
-            ExhibitionRelay.Clear();
-            m_Ut.UseWebSockets = false;
             // a Steam room ID (the host's SteamID) goes through Steam; anything else is an IP
             if (SteamBoot.TryParseId(Ip, out ulong hostId))
             {
@@ -251,8 +246,6 @@ namespace RockGame
             m_Rejoining = false; s_RejoinExpectedUntil = -1f; // (leaving on purpose: no rejoining the lobby after)
             m_Nm.Shutdown();
             SteamLobby.Leave();
-            ExhibitionRelay.Clear();
-            Exhibition.ForgetTeam();
             Status = "";
             CleanupLocal();
         }
@@ -266,7 +259,7 @@ namespace RockGame
             GameSettings.RestoreGraphics(); // and our own graphics
             Tutorial.Reset();
             Chat.Reset();
-            Cfg.SetMap(MapChoice, Exhibition.On ? Exhibition.Seed : 0);
+            Cfg.SetMap(MapChoice, 0);
             MapBuilder.Build();
         }
 
@@ -326,10 +319,9 @@ namespace RockGame
         {
             m_Restarting = true;
             s_BotsToReAdd = PlayerNet.BotTeams();
-            if (Exhibition.On) yield return ExhibitionBeforeRestart(); // (on to the next part's rules and a new join code: Bootstrap.Exhibition.cs)
             // (tell everyone first: however their connection drops, they know to come back in)
             if (NetGame.Instance != null && NetGame.Instance.IsSpawned) NetGame.Instance.BackToLobbyRpc();
-            yield return new WaitForSecondsRealtime(ExhibitionRelay.Active ? 1.5f : 0.5f); // (through Relay: longer for the new join code to get there)
+            yield return new WaitForSecondsRealtime(0.5f);
             var ids = new System.Collections.Generic.List<ulong>(m_Nm.ConnectedClientsIds);
             foreach (var id in ids) if (id != NetworkManager.ServerClientId) m_Nm.DisconnectClient(id, BackToLobbyReason);
             yield return new WaitForSecondsRealtime(0.4f);
@@ -357,13 +349,13 @@ namespace RockGame
         /// <summary>Client, let go with BackToLobbyReason: back in to the same host as soon as it's up again.</summary>
         void TickRejoin()
         {
-            if (!m_Rejoining || RelayBusy) return;
+            if (!m_Rejoining) return;
             if (m_Nm.IsConnectedClient && m_RejoinTried) { m_Rejoining = false; s_RejoinExpectedUntil = -1f; return; } // (back in)
             if (m_Nm.IsConnectedClient && !m_RejoinTried && !m_Nm.ShutdownInProgress) { m_Nm.Shutdown(); m_NextRejoin = Time.unscaledTime + 0.5f; return; } // (still on the old connection: drop it)
             if (Time.unscaledTime > m_RejoinUntil) { m_Rejoining = false; SteamLobby.Leave(); Status = "Couldn't get back into the lobby"; return; }
             if (m_Nm.ShutdownInProgress || Time.unscaledTime < m_NextRejoin) return;
             if (m_Nm.IsListening) { m_Nm.Shutdown(); m_NextRejoin = Time.unscaledTime + 0.5f; return; } // (the old connection's still open: close it first)
-            m_NextRejoin = Time.unscaledTime + (Exhibition.On ? 20f : 1.5f); // (through Relay it takes longer than 1.5 s just to connect)
+            m_NextRejoin = Time.unscaledTime + 1.5f;
             Join();
             Debug.Log("[RockGame] rejoining the host for the lobby");
             m_RejoinTried = true;
@@ -372,14 +364,14 @@ namespace RockGame
 
         void OnClientDisconnect(ulong id)
         {
-            if (m_Nm.IsServer) { if (Exhibition.On) Debug.Log($"[RockGame] t={Time.realtimeSinceStartup:0.0} client {id} dropped"); return; }
+            if (m_Nm.IsServer) return;
             if (id == m_Nm.LocalClientId || id == NetworkManager.ServerClientId)
             {
                 string reason = m_Nm.DisconnectReason;
-                Debug.Log($"[RockGame] t={Time.realtimeSinceStartup:0.0} disconnected (reason \"{reason}\", rejoin expected {Time.unscaledTime < s_RejoinExpectedUntil})");
+                Debug.Log($"[RockGame] disconnected (reason \"{reason}\", rejoin expected {Time.unscaledTime < s_RejoinExpectedUntil})");
                 Status = string.IsNullOrEmpty(reason) ? "Disconnected from host" : "Disconnected: " + reason;
                 CleanupLocal();
-                if (reason == BackToLobbyReason || Time.unscaledTime < s_RejoinExpectedUntil) { m_Rejoining = true; m_RejoinTried = false; m_RejoinUntil = Time.unscaledTime + (Exhibition.On ? 70f : 25f); m_NextRejoin = Time.unscaledTime + 1.2f; Status = "Back to the lobby..."; }
+                if (reason == BackToLobbyReason || Time.unscaledTime < s_RejoinExpectedUntil) { m_Rejoining = true; m_RejoinTried = false; m_RejoinUntil = Time.unscaledTime + 25f; m_NextRejoin = Time.unscaledTime + 1.2f; Status = "Back to the lobby..."; }
                 else SteamLobby.Leave(); // (out for good: out of the friend's Steam lobby too)
             }
         }
@@ -390,7 +382,6 @@ namespace RockGame
         {
             SteamBoot.Tick(); // (Steam's callbacks: invites, connections)
             TickRejoin(); // (back to the lobby after a match)
-            Exhibition.Tick(); // (back on your team after a restart)
             // Menu camera: one long, slow cinematic loop through the map while not in a match (and the menu's trees) - MenuScene.cs
             if (PlayerController.Local == null && Camera.main != null && InSession && !Spectator.Active) // (a spectator's camera: Spectator.cs)
             {
@@ -403,8 +394,8 @@ namespace RockGame
             }
             Ragdoll.Tick(); // (the bodies of the dead: Ragdoll.cs)
             MenuScene.Preview = !InSession && Hud.MapPreview; // (the map page: a quick, low look round the map)
-            MenuSpace.Tick(Exhibition.LobbyUp || (!InSession && !Hud.DevMenuShown && !Hud.MapPreview)); // (the new main menu: the UFO in space)
-            MenuScene.Tick(InSession || Exhibition.On || (!Hud.DevMenuShown && !Hud.MapPreview)); // (the dev main menu: the flight over the map)
+            MenuSpace.Tick(!InSession && !Hud.DevMenuShown && !Hud.MapPreview); // (the new main menu: the UFO in space)
+            MenuScene.Tick(InSession || (!Hud.DevMenuShown && !Hud.MapPreview)); // (the dev main menu: the flight over the map)
         }
     }
 }

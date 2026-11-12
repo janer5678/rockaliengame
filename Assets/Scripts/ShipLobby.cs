@@ -236,7 +236,7 @@ namespace RockGame
 
         void LateUpdate()
         {
-            if (!Active || Exhibition.On) // (the exhibition build's READY screen is over the UFO: Hud.Exhibition.cs)
+            if (!Active)
             {
                 if (m_Room != null) Clear();
                 Customising = false;

@@ -55,8 +55,7 @@ namespace RockGame
         {
             if ((Bootstrap.Solo || (Cfg.Tutorial && !ReadyLobby)) && players >= 1) return true;
             bool ready = ReadyLobby;
-            int need = Exhibition.On ? ServerExhibitionNeed(now) : 2; // (the exhibition build wants all four: Exhibition.cs)
-            bool everyone = (ready ? players >= need : players >= Cfg.PlayersNeeded) && players >= Spectator.ServerPlayerClients(NetworkManager); // (spectators aren't waited for)
+            bool everyone = (ready ? players >= 2 : players >= Cfg.PlayersNeeded) && players >= Spectator.ServerPlayerClients(NetworkManager); // (spectators aren't waited for)
             if (everyone)
                 foreach (var p in PlayerNet.All)
                     if (p == null || !p.ServerInStadium || (ready && !p.LobbyReady.Value)) { everyone = false; break; }
@@ -149,8 +148,6 @@ namespace RockGame
         public void BackToLobbyRpc()
         {
             Bootstrap.s_RejoinExpectedUntil = Time.unscaledTime + RejoinWindow;
-            Exhibition.RememberTeam();
-            Exhibition.ClientNextPart();
             Debug.Log("[RockGame] the host is going back to the lobby: rejoining when it drops");
         }
 

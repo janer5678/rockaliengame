@@ -88,7 +88,7 @@ namespace RockGame
                 // build the host's map (same map + seed = same terrain and UFO spots)
                 Cfg.SetMap(MapKey.Value, MapSeed.Value);
                 GameSettings.ApplyHostGraphics(Cfg.HostGraphics); // the host picks the graphics for everyone
-                if (!MapBuilder.IsBuilt(MapKey.Value, MapSeed.Value)) { if (Exhibition.On) Debug.LogWarning($"[RockGame] building the map after connecting: host {MapKey.Value}/{MapSeed.Value}, built {MapBuilder.BuiltKey}/{MapBuilder.BuiltSeed}"); MapBuilder.Build(); }
+                if (!MapBuilder.IsBuilt(MapKey.Value, MapSeed.Value)) MapBuilder.Build();
             }
             if (IsServer)
             {
@@ -226,7 +226,6 @@ namespace RockGame
             ServerTickModes(now);
             ServerTickGameModes(now); // (Bedwars, 3 Goal, Progress, Assassin, Domination: NetGame.GameModes.cs)
             ServerTickBenchUnlock(); // the Workbench T1 unlocks once a team has captured the ball
-            ServerTickExhibition(); // the exhibition build: the tutorial done, on to the match (Exhibition.cs)
             Tutorial.ServerTick(this); // tutorial: clock stopped, late joiners in, the wall drops once everyone reaches it
             SpaceArena.ServerTick(this); // sudden death and the waiting stadium: falling off the platform into space
             ServerTickGraves(now); // old gravestones go (NetGame.Graves.cs)
