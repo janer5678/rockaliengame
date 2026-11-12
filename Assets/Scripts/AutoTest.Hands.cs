@@ -6,13 +6,17 @@ namespace RockGame
 {
     /// <summary>
     /// -autotest hands -host -solo -shotdir DIR (windowed): the first-person hands holding every item, in the key moments
-    /// of each animation (hands_X.png, and from the side: handsside_X.png) - the alien hands (Settings > Display > Alien
-    /// hands, on), then a few with the old square ones (handssquare_X.png). Checks that each arm has both styles - the
-    /// original box arm (five boxes: fist, knuckles, thumb, wrist band, forearm - their sizes and colours) and the alien one
-    /// (three three-jointed fingers and a thumb, a forearm) - with only the picked one showing, that the fingers really curl
-    /// round the handles they hold, that the poses put the arms where the original block-hand poses did, that nothing else
-    /// is an arm model, and that Settings > Display > SHADING (Hands & items) shades the hands and what's held smooth and
-    /// puts the flat meshes back.
+    /// of each animation - the SMOOTH hands (Settings > Display > Hands: Smooth, the default: handssmooth_X.png, from the
+    /// side handssmoothside_X.png, and held up on their own to be looked at: handssmooth_show_X.png), the alien arms
+    /// (hands_X.png, handsside_X.png), then a few with the square and round ones (handssquare_X.png, handsround_X.png).
+    /// Checks that each arm has every style - the original box arm (five boxes: fist, knuckles, thumb, wrist band, forearm
+    /// - their sizes and colours), the alien one and the smooth one (three three-jointed fingers and a thumb, a forearm;
+    /// the smooth one a single fine skin on its in-between bones) - with only the picked one showing, that the fingers
+    /// really curl round the handles they hold, that the poses put the arms where the original block-hand poses did, that
+    /// nothing else is an arm model, and that Settings > Display > SHADING (Hands & items) shades the hands and what's
+    /// held smooth and puts the flat meshes back (handsshade_X_on / _off.png).
+    /// -hands a,b,... : only the poses whose names start with one of these; -handstyle smooth | alien : only that style's
+    /// pose shots.
     /// </summary>
     public partial class AutoTest
     {
@@ -66,7 +70,7 @@ namespace RockGame
 
         /// <summary>Gives and holds each pose's item, sets the pose up and photographs it (from the eye and from the side);
         /// `each` runs while the pose is held (for checks).</summary>
-        IEnumerator HandsPoseShots(PlayerNet me, PlayerController pc, string dir, List<(string name, Item item, System.Action set)> poses, System.Action<string> each)
+        IEnumerator HandsPoseShots(PlayerNet me, PlayerController pc, string dir, List<(string name, Item item, System.Action set)> poses, System.Action<string> each, string prefix = "hands")
         {
             // -hands a,b,...: only the poses whose names start with one of these (to iterate on a few quickly)
             string only = null;
@@ -97,7 +101,7 @@ namespace RockGame
                 }
                 p.set?.Invoke();
                 yield return new WaitForSeconds(0.6f); // (the equip animation when the ball appears, the spear's raise)
-                Shot("hands_" + p.name);
+                Shot(prefix + "_" + p.name);
                 yield return new WaitForEndOfFrame();
                 each?.Invoke(p.name);
                 // the same from the side (a second camera off to the right), to see how the hands hold the item
@@ -110,10 +114,10 @@ namespace RockGame
                 side.transform.position = main.transform.TransformPoint(new Vector3(0.95f, 0.1f, 0.3f));
                 side.transform.LookAt(main.transform.TransformPoint(new Vector3(0.05f, -0.22f, 0.42f)), main.transform.up);
                 yield return new WaitForEndOfFrame();
-                Shot("handsside_" + p.name);
+                Shot(prefix + "side_" + p.name);
                 yield return null;
                 Destroy(side.gameObject);
-                Log("shot hands_" + p.name + "  R: " + ViewModel.DebugArm + "  L: " + ViewModel.DebugArmL);
+                Log("shot " + prefix + "_" + p.name + "  R: " + ViewModel.DebugArm + "  L: " + ViewModel.DebugArmL);
                 pc.DebugDraw = -1f;
                 ViewModel.DebugSwingE = ViewModel.DebugThrowE = ViewModel.DebugEatE = ViewModel.DebugUseE = ViewModel.DebugEquipE = -1f;
                 ViewModel.DebugAim = ViewModel.DebugBall = false;
@@ -152,6 +156,10 @@ namespace RockGame
             var vm = ViewModel.Last;
             Check(vm != null, "there's a first-person view model");
             if (vm == null) { Application.Quit(1); yield break; }
+
+            // (a PC that never picked a hand style starts on the smooth hands)
+            Check(GameSettings.HandStyleNames.Length == 4 && (GameSettings.HandStyle == GameSettings.HandsSmooth || PlayerPrefs.HasKey("RockGame.HandStyle6")),
+                $"Settings > Display > Hands has four styles and starts on Smooth ({GameSettings.HandStyleNames[GameSettings.HandStyle]})");
 
             // ---- the hands are the original box arms ----
             var teamCol = Cfg.TeamColor[Mathf.Clamp(team, 0, 3)];
@@ -231,18 +239,107 @@ namespace RockGame
                 { "hatchet_idle", new Vector3(-0.3f, -0.9f, 0.2f) },
                 { "crossbow_idle", new Vector3(0.2f, -0.2f, 0.42f) + Quaternion.Euler(0f, -6f, 0f) * new Vector3(-0.02f, -0.05f, 0.2f) },
             };
+            string onlyStyle = null;
+            {
+                var cl = System.Environment.GetCommandLineArgs();
+                for (int i = 0; i < cl.Length - 1; i++) if (cl[i] == "-handstyle") onlyStyle = cl[i + 1];
+            }
+
+            // ---- the smooth hands (the default): one fine skin per arm on the pose skeleton and its in-between bones ----
+            GameSettings.SetHandStyle(GameSettings.HandsSmooth, false);
+            yield return new WaitForSeconds(0.3f);
+            foreach (bool right in new[] { true, false })
+            {
+                var h = vm.DebugHand(right);
+                var sm = h.Find("smooth");
+                int digits = 0, jointed = 0;
+                var palm = sm != null ? sm.Find("hand") : null;
+                if (palm != null)
+                    foreach (Transform d in palm)
+                    {
+                        if (!d.name.StartsWith("finger") && d.name != "thumb") continue;
+                        digits++;
+                        var j1 = d.Find("j1");
+                        if (j1 != null && j1.Find("j2") != null) jointed++;
+                    }
+                var skinT = sm != null ? sm.Find("skin") : null;
+                var smr = skinT != null ? skinT.GetComponent<SkinnedMeshRenderer>() : null;
+                var mesh = smr != null ? smr.sharedMesh : null;
+                int verts = mesh != null ? mesh.vertexCount : 0, bones = smr != null ? smr.bones.Length : 0;
+                bool others = h.Find("square").gameObject.activeSelf || h.Find("round").gameObject.activeSelf || h.Find("alien").gameObject.activeSelf;
+                Check(sm != null && sm.gameObject.activeSelf && digits == 4 && jointed == 4 && sm.Find("forearm") != null && !others,
+                    $"the {(right ? "right" : "left")} arm is the smooth arm (three jointed fingers and a thumb, a forearm), the other styles hidden ({digits} digits, {jointed} jointed)");
+                Check(smr != null && verts > 8000 && bones == SmoothHand.BoneCount && smr.shadowCastingMode == UnityEngine.Rendering.ShadowCastingMode.Off && smr.quality == SkinQuality.Bone4
+                    && mesh.colors32.Length == verts && SmoothShade.AlreadySmooth(mesh),
+                    $"the {(right ? "right" : "left")} smooth arm is one fine skin on its bones ({verts} points, {bones} bones, no shadows, baked colours)");
+                Check(smr != null && smr.sharedMaterial != null && smr.sharedMaterial.shader != null && smr.sharedMaterial.shader.name == "RockGame/HandSkin",
+                    $"the {(right ? "right" : "left")} smooth arm wears the hand skin material ({(smr != null && smr.sharedMaterial != null ? smr.sharedMaterial.shader.name : "none")})");
+            }
+            // (held up on their own, to be looked at)
+            if (onlyStyle != "alien")
+                for (int s = 0; s < ViewModel.ShowCount; s++)
+                {
+                    ViewModel.DebugShow = s;
+                    yield return new WaitForSeconds(0.5f);
+                    ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(dir, "handssmooth_show_" + ViewModel.ShowNames[s] + ".png"));
+                    yield return new WaitForEndOfFrame();
+                    yield return null;
+                }
+            // ...the setting itself (Settings > Display > HUD & TIMER > Hands: Square / Round / Alien / Smooth)
+            if (onlyStyle != "alien")
+            {
+                ViewModel.DebugShow = 1;
+                pc.Paused = true;
+                Hud.OpenPause = 2;
+                yield return new WaitForSeconds(0.4f);
+                Hud.OpenDisplayCategory((int)Hud.DisplayCat.HudTimer);
+                Hud.SetSettingsScroll(0f);
+                yield return new WaitForSeconds(0.4f);
+                ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(dir, "handssmooth_settings.png"));
+                yield return new WaitForEndOfFrame();
+                yield return null;
+                Hud.OpenDisplayCategory(0);
+                pc.Paused = false;
+                yield return new WaitForSeconds(0.4f);
+            }
+            // ...and in the other teams' colours
+            if (onlyStyle != "alien")
+            {
+                ViewModel.DebugShow = 1;
+                for (int t = 0; t < 4; t++)
+                {
+                    if (t == team) continue;
+                    ViewModel.DebugTeam = t;
+                    yield return new WaitForSeconds(0.3f);
+                    ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(dir, "handssmooth_show_team" + t + ".png"));
+                    yield return new WaitForEndOfFrame();
+                    yield return null;
+                }
+                ViewModel.DebugTeam = -1;
+            }
+            ViewModel.DebugShow = -1;
+            yield return new WaitForSeconds(0.4f);
+
             var poses = HandsPoses(pc);
             poses.Add(("workbench_idle", Item.Workbench, null)); // (newer than the block hands: held the old way)
             int posed = 0, posedOk = 0, gripped = 0, grippedOk = 0;
             var off = new System.Text.StringBuilder();
             var loose = new System.Text.StringBuilder();
-            yield return HandsPoseShots(me, pc, dir, poses, name =>
+            // (every pose with the smooth hands, then with the alien arms: the same checks for both)
+            foreach (var (styleId, styleRoot, prefix) in new[] { (GameSettings.HandsSmooth, "smooth", "handssmooth"), (GameSettings.HandsAlien, "alien", "hands") })
+            {
+            if (onlyStyle != null && onlyStyle != styleRoot) continue;
+            GameSettings.SetHandStyle(styleId, false);
+            yield return new WaitForSeconds(0.3f);
+            posed = posedOk = gripped = grippedOk = 0;
+            off.Clear(); loose.Clear();
+            yield return HandsPoseShots(me, pc, dir, new List<(string name, Item item, System.Action set)>(poses), name => // (a copy: -hands thins the list out)
             {
                 // a fist round a handle: the middle and outer fingers of the hand holding it are well curled
                 if (name.EndsWith("_idle") && (name.StartsWith("hatchet") || name.StartsWith("pickaxe") || name.StartsWith("sword") || (name.StartsWith("pistol") && !name.Contains("ammo")) || (name.StartsWith("revolver") && !name.Contains("ammo")) || name.StartsWith("aliengun") || name.StartsWith("crossbow")))
                 {
                     gripped++;
-                    var hand = vm.DebugHand(true).Find("alien/hand");
+                    var hand = vm.DebugHand(true).Find(styleRoot + "/hand");
                     float curl = 0f;
                     int fingers = 0;
                     if (hand != null)
@@ -264,9 +361,10 @@ namespace RockGame
                     if ((got - e).magnitude < 0.012f) posedOk++;
                     else off.Append($" {name} {(right ? "R" : "L")} {got} (want {e})");
                 }
-            });
-            Check(posed > 0 && posedOk == posed, $"the arms sit where the Rust-style poses put them ({posedOk} / {posed}){off}");
-            Check(gripped > 0 && grippedOk == gripped, $"the fingers curl round the handles and grips ({grippedOk} / {gripped}){loose}");
+            }, prefix);
+            Check(posed > 0 && posedOk == posed, $"{styleRoot} hands: the arms sit where the Rust-style poses put them ({posedOk} / {posed}){off}");
+            Check(gripped > 0 && grippedOk == gripped, $"{styleRoot} hands: the fingers curl round the handles and grips ({grippedOk} / {gripped}){loose}");
+            }
 
             // the old square hands, with Settings > Display > Alien hands off
             GameSettings.SetRoundHands(false, false);
@@ -298,7 +396,7 @@ namespace RockGame
                 "Hands: Round - the five robot parts rounded off show instead of the square ones");
             GameSettings.SetHandStyle(GameSettings.HandsSquare, false);
             Check(sqShown, "Alien hands off: the square hands show instead of the alien ones");
-            GameSettings.SetRoundHands(true, false);
+            GameSettings.SetHandStyle(GameSettings.HandsSmooth, false); // (the default again, for the checks below)
             yield return new WaitForSeconds(0.3f);
 
             // ---- the colour setting reaches the boxes ----
@@ -323,6 +421,9 @@ namespace RockGame
 
             // ---- shade smooth (Settings > Display > SHADING > Hands & items): the boxes and what's held become their
             // smooth copies; off puts the very same meshes back ----
+            // (shade smooth is on to start with since the 2026-10-12 defaults: start each check from off, the flat meshes)
+            GameSettings.SmoothHands.Set(false, false);
+            yield return new WaitForSeconds(0.3f);
             foreach (var it in new[] { Item.Hatchet, Item.Rock, Item.Crossbow })
             {
                 for (int i = 0; i < Cfg.PlayerSlots; i++) me.Inv[i] = default;
@@ -338,14 +439,14 @@ namespace RockGame
                 var all = new List<Renderer>(held); all.AddRange(handRs);
                 var before = new List<Mesh>();
                 foreach (var r in all) before.Add(MeshOf(r));
-                ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(dir, "handssmooth_" + it.ToString().ToLower() + "_off.png"));
+                ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(dir, "handsshade_" + it.ToString().ToLower() + "_off.png"));
                 yield return new WaitForEndOfFrame();
                 GameSettings.SmoothHands.Set(true, false);
                 yield return new WaitForSeconds(0.3f);
                 int smooth = 0, total = 0, handSmooth = 0;
                 foreach (var r in held) { var m = r.GetComponent<MeshFilter>()?.sharedMesh; if (m == null || !m.isReadable) continue; total++; if (SmoothShade.IsSmooth(m)) smooth++; }
                 foreach (var r in handRs) if (SmoothShade.IsSmooth(MeshOf(r)) || SmoothShade.AlreadySmooth(MeshOf(r))) handSmooth++;
-                ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(dir, "handssmooth_" + it.ToString().ToLower() + "_on.png"));
+                ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(dir, "handsshade_" + it.ToString().ToLower() + "_on.png"));
                 yield return new WaitForEndOfFrame();
                 Check(total > 0 && smooth == total, $"shade smooth: every held {it} mesh is its smooth copy ({smooth}/{total})");
                 Check(handSmooth == handRs.Count && handRs.Count >= 2, $"shade smooth: the hands are lit smoothly ({handSmooth}/{handRs.Count}, {it})");
@@ -358,6 +459,8 @@ namespace RockGame
 
             // shade smooth (Aliens & crowd): the alien player models get their smooth copies, and their own meshes back after
             {
+                GameSettings.SmoothAliens.Set(false, false); // (on to start with: from the alien's own meshes)
+                yield return null;
                 var hooks2 = FindObjectsByType<SmoothShadeHook>(FindObjectsSortMode.None);
                 var skins = new List<SkinnedMeshRenderer>();
                 foreach (var h in hooks2) if (h.Aliens) skins.AddRange(h.GetComponentsInChildren<SkinnedMeshRenderer>(true));

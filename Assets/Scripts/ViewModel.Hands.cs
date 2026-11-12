@@ -73,6 +73,8 @@ namespace RockGame
             public Transform Root, Hand, Forearm;
             /// <summary>The arms model on this skeleton (null: the built mesh).</summary>
             public ArmRig Rig;
+            /// <summary>The smooth arm's in-between bones (ViewModel.Smooth.cs; null: an Alien arm).</summary>
+            public SmoothRig Smooth;
             /// <summary>[digit, joint]: 0-2 the fingers (index, middle, outer), 4 the thumb (3: none); joint 0 is the knuckle.</summary>
             public readonly Transform[,] J = new Transform[5, 3];
         }
@@ -93,7 +95,8 @@ namespace RockGame
         /// <summary>Builds the arm under `arm` (hidden while the square hands are picked): its skeleton and the skin on it.</summary>
         static AlienArm BuildAlienArm(Transform arm, HandColorHook hook, bool right)
         {
-            MeasureRig(); // (the skeleton takes the model's measurements)
+            bool smoothWas = s_SmoothNow;
+            UseProfile(false); // (the skeleton takes the model's measurements)
             float sx = right ? 1f : -1f;
             var a = new AlienArm { Right = right };
             a.Root = Node(arm, "alien", Vector3.zero);
@@ -108,6 +111,7 @@ namespace RockGame
             }
             a.Forearm = Node(a.Root, "forearm", Vector3.zero);
             a.Rig = BuildRig(a.Root, hook, right);
+            UseProfile(smoothWas);
             if (a.Rig != null) return a;
 
             // (no model:) the skin: one mesh on the whole skeleton (bound in this rest pose: everything straight, the forearm behind the wrist)
@@ -164,8 +168,11 @@ namespace RockGame
             if (back.sqrMagnitude < 1e-6f) back = Vector3.back;
             back.Normalize();
             a.Forearm.localPosition = p.Pos;
-            a.Forearm.localRotation = Quaternion.LookRotation(-back, yh);
+            // (the smooth arm: the hand's own turn swung round to lie along the arm - no roll between the two, so the
+            // wrist only ever bends, and nothing flips when the back of the hand lines up with the arm)
+            a.Forearm.localRotation = a.Smooth != null ? Quaternion.FromToRotation(zh, -back) * p.Rot : Quaternion.LookRotation(-back, yh);
             if (a.Rig != null) ApplyRig(a, a.Rig);
+            if (a.Smooth != null) ApplySmooth(a);
         }
 
         // ======== the mesh ========

@@ -5,9 +5,10 @@ using UnityEngine;
 namespace RockGame
 {
     /// <summary>
-    /// -autotest handanim -host -solo -shotdir DIR [-anims a,b] (windowed): the first-person hands' ANIMATIONS frame by
-    /// frame (handanim_NAME_NN.png) - each swing, the switch to an item, a throw, eating, the bow's draw, the spear's
-    /// wind-up, a gun's kick - so how they move can be looked at, not just how they hold still.
+    /// -autotest handanim -host -solo -shotdir DIR [-anims a,b] [-handstyle alien] (windowed): the first-person hands'
+    /// ANIMATIONS frame by frame (handanim_NAME_NN.png) - each swing, the switch to an item, a throw, eating, the bow's
+    /// draw, the spear's wind-up, a gun's kick - so how they move can be looked at, not just how they hold still. With
+    /// the smooth hands (the default style) unless -handstyle alien asks for the alien arms.
     /// </summary>
     public partial class AutoTest
     {
@@ -78,11 +79,12 @@ namespace RockGame
             pc.LocalTeleport(Cfg.SpawnPos(team), Cfg.SpawnYaw(team));
             pc.SetLook(Cfg.SpawnYaw(team), 8f);
             GameSettings.SetGraphics(0, false);
-            GameSettings.SetRoundHands(true, false);
-            yield return new WaitForSeconds(0.8f);
             string only = null;
             var args = System.Environment.GetCommandLineArgs();
             for (int i = 0; i < args.Length - 1; i++) if (args[i] == "-anims") only = args[i + 1];
+            // (the smooth hands, the default - or the alien arms: -handstyle alien)
+            GameSettings.SetHandStyle(System.Array.IndexOf(args, "-handstyle") is int hs && hs >= 0 && hs + 1 < args.Length && args[hs + 1] == "alien" ? GameSettings.HandsAlien : GameSettings.HandsSmooth, false);
+            yield return new WaitForSeconds(0.8f);
             bool Want(string n) => string.IsNullOrEmpty(only) || System.Array.Exists(only.Split(','), k => n.StartsWith(k));
 
             IEnumerator Give(Item it)

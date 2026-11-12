@@ -576,7 +576,19 @@ namespace RockGame
         {
             if (m_PrevDraw > 0.25f && s.Draw <= 0.001f) m_BowRelease = Now;
             m_PrevDraw = s.Draw;
-            if (m_AR == null || m_AL == null || !GameSettings.RoundHands) { m_HandsShown = false; return; }
+            // the arms that show: the alien ones or the smooth ones, each with its own measurements
+            bool smooth = GameSettings.HandStyle == GameSettings.HandsSmooth;
+            AlienArm ar = smooth ? m_SR : m_AR, al = smooth ? m_SL : m_AL;
+            if (ar == null || al == null || !GameSettings.FingerHands) { m_HandsShown = false; return; }
+            UseProfile(smooth);
+            if (m_ProfileSeen != s_ProfileVersion)
+            {
+                // (other measurements: every solved grip is stale, and there's no blending from the other hands' pose)
+                m_ProfileSeen = s_ProfileVersion;
+                foreach (var c in m_CacheR) c.Key = -1;
+                foreach (var c in m_CacheL) c.Key = -1;
+                m_HandsShown = false;
+            }
             if (m_Item != m_IS.For) BuildShapes(m_IS, m_ItemHolder, m_Item);
             if (m_Ball != m_BS.For) BuildShapes(m_BS, m_Ball ? m_Ball.transform : null, m_Ball);
 
@@ -593,8 +605,8 @@ namespace RockGame
             float k = Smooth((Now - m_HandsSwitch) / 0.12f);
             if (k >= 1f) { m_ShowR.Copy(m_TR); m_ShowL.Copy(m_TL); }
             else { m_ShowR.Lerp(m_FromR, m_TR, k); m_ShowL.Lerp(m_FromL, m_TL, k); }
-            ApplyAlien(m_AR, m_R, m_ShowR);
-            ApplyAlien(m_AL, m_L, m_ShowL);
+            ApplyAlien(ar, m_R, m_ShowR);
+            ApplyAlien(al, m_L, m_ShowL);
         }
 
         /// <summary>Every item's hold for both hands (into m_TR / m_TL), and what its actions do to the fingers.</summary>
@@ -608,6 +620,8 @@ namespace RockGame
             float strike = swinging ? Bump(e, m_Down - 0.05f, m_Down + 0.16f) : 0f;
             var down = Vector3.down;
             var fwd = Vector3.forward;
+
+            if (DebugShow >= 0) { ShowGoals(); return; } // (tests: the hands held up to be looked at)
 
             if (s.Ball)
             {

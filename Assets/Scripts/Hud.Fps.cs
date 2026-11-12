@@ -8,23 +8,26 @@ namespace RockGame
         static int s_ShowFps = -1, s_HandStyle = -1;
 
         /// <summary>The first-person hands (Settings > Display > Hands): the original square robot hands, the same ones
-        /// rounded off, or the rigged alien arms.</summary>
-        public const int HandsSquare = 0, HandsRound = 1, HandsAlien = 2;
-        public static readonly string[] HandStyleNames = { "Square", "Round", "Alien" };
-        /// <summary>Which hands (the square robot hands to start with - a new key, so the last default doesn't stick; the
-        /// alien arms are one click away in Settings > Display > Hands).</summary>
+        /// rounded off, the rigged alien arms, or the smooth chunky hands (SmoothHand.cs).</summary>
+        public const int HandsSquare = 0, HandsRound = 1, HandsAlien = 2, HandsSmooth = 3;
+        public static readonly string[] HandStyleNames = { "Square", "Round", "Alien", "Smooth" };
+        /// <summary>Which hands (the smooth hands to start with - a new key, so the last default doesn't stick; the
+        /// others are one click away in Settings > Display > Hands).</summary>
         public static int HandStyle
         {
-            get { if (s_HandStyle < 0) s_HandStyle = Mathf.Clamp(PlayerPrefs.GetInt(k_HandStyleKey, HandsSquare), 0, 2); return s_HandStyle; }
+            get { if (s_HandStyle < 0) s_HandStyle = Mathf.Clamp(PlayerPrefs.GetInt(k_HandStyleKey, HandsSmooth), 0, 3); return s_HandStyle; }
         }
-        const string k_HandStyleKey = "RockGame.HandStyle5";
-        /// <summary>The rigged alien arms are the ones showing (ViewModel.Fingers.cs poses them).</summary>
+        const string k_HandStyleKey = "RockGame.HandStyle6";
+        /// <summary>The rigged alien arms are the ones showing.</summary>
         public static bool RoundHands => HandStyle == HandsAlien;
+        /// <summary>Hands with fingers are the ones showing - the alien arms or the smooth hands (ViewModel.Fingers.cs
+        /// poses them on every item).</summary>
+        public static bool FingerHands => HandStyle == HandsAlien || HandStyle == HandsSmooth;
         public static event System.Action HandStyleChanged;
 
         public static void SetHandStyle(int style, bool save = true)
         {
-            s_HandStyle = Mathf.Clamp(style, 0, 2);
+            s_HandStyle = Mathf.Clamp(style, 0, 3);
             if (save) { PlayerPrefs.SetInt(k_HandStyleKey, s_HandStyle); PlayerPrefs.Save(); }
             HandStyleChanged?.Invoke();
         }

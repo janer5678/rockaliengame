@@ -54,6 +54,8 @@ namespace RockGame
         /// <summary>When set (>= 0), the swing / throw / eat / use animations are held at this many seconds in.</summary>
         public static float DebugSwingE = -1f, DebugThrowE = -1f, DebugEatE = -1f, DebugUseE = -1f, DebugEquipE = -1f;
         public static bool DebugAim, DebugBall;
+        /// <summary>When set (>= 0), the hands are in this team's colour whatever team you're on.</summary>
+        public static int DebugTeam = -1;
 
         /// <summary>The newest view model (for the hands autotest).</summary>
         public static ViewModel Last;
@@ -96,8 +98,8 @@ namespace RockGame
             Last = this;
             m_Root = new GameObject("ViewModel").transform;
             m_Root.SetParent(cam, false);
-            m_R = MakeArm(m_Root, team, true, out m_AR);
-            m_L = MakeArm(m_Root, team, false, out m_AL);
+            m_R = MakeArm(m_Root, team, true, out m_AR, out m_SR);
+            m_L = MakeArm(m_Root, team, false, out m_AL, out m_SL);
             m_ItemHolder = new GameObject("item").transform;
             m_ItemHolder.SetParent(m_Root, false);
             GameSettings.GraphicsChanged += OnGraphicsChanged;
@@ -171,7 +173,7 @@ namespace RockGame
         public void Eat() => m_EatStart = Now;
         public void Use() => m_UseStart = Now;
 
-        static Transform MakeArm(Transform parent, Color team, bool right, out AlienArm alien)
+        static Transform MakeArm(Transform parent, Color team, bool right, out AlienArm alien, out AlienArm smooth)
         {
             var hand = new GameObject(right ? "R" : "L").transform;
             hand.SetParent(parent, false);
@@ -193,12 +195,14 @@ namespace RockGame
             BuildRoundHand(hand, hook, skin, dark, band, side);
             // the alien arm (four fingers and a thumb, every joint its own transform: ViewModel.Hands.cs)
             alien = BuildAlienArm(hand, hook, right);
+            // the smooth chunky hand: one sculpted skin on a skeleton of its own (ViewModel.Smooth.cs)
+            smooth = BuildSmoothArm(hand, hook, right);
             ShowHandStyle(hand);
             foreach (var r in hand.GetComponentsInChildren<Renderer>(true)) r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off; // (the hidden style too)
             return hand;
         }
 
-        /// <summary>Square, round or alien hands, as Settings > Display > Hands says.</summary>
+        /// <summary>Square, round, alien or smooth hands, as Settings > Display > Hands says.</summary>
         static void ShowHandStyle(Transform hand)
         {
             if (hand == null) return;
@@ -206,9 +210,11 @@ namespace RockGame
             var sq = hand.Find("square");
             var ro = hand.Find("round");
             var rd = hand.Find("alien");
+            var sm = hand.Find("smooth");
             if (sq) sq.gameObject.SetActive(style == GameSettings.HandsSquare);
             if (ro) ro.gameObject.SetActive(style == GameSettings.HandsRound);
             if (rd) rd.gameObject.SetActive(style == GameSettings.HandsAlien);
+            if (sm) sm.gameObject.SetActive(style == GameSettings.HandsSmooth);
         }
 
         void OnHandStyle() { ShowHandStyle(m_R); ShowHandStyle(m_L); }
@@ -217,6 +223,7 @@ namespace RockGame
         /// lobby recolours them).</summary>
         public void SetTeam(Color team)
         {
+            if (DebugTeam >= 0) team = Cfg.TeamColor[Mathf.Clamp(DebugTeam, 0, 3)];
             if (m_R != null && m_R.TryGetComponent(out HandColorHook r)) r.SetTeam(team);
             if (m_L != null && m_L.TryGetComponent(out HandColorHook l)) l.SetTeam(team);
         }
@@ -333,7 +340,7 @@ namespace RockGame
             // aiming down the sights, drawing the bow or winding up the spear, which line up on the crosshair
             bool gunHeld = s.Item == Item.Crossbow || s.Item == Item.Sniper || s.Item == Item.Pistol || s.Item == Item.Revolver || s.Item == Item.AlienGun
                 || s.Item == Item.Shotgun || s.Item == Item.PortalGun || s.Item == Item.RocketLauncher;
-            float framed = GameSettings.HandStyle != GameSettings.HandsAlien ? 0f
+            float framed = !GameSettings.FingerHands ? 0f
                 : s.Ball ? 1f : 1f - Mathf.Clamp01(Mathf.Max(gunHeld ? m_AimK : 0f, Mathf.Max(s.Item == Item.Bow ? s.Draw : 0f, s.Item == Item.Spear ? m_SpearAimK : 0f)));
             Vector3 shared = bob + new Vector3(m_Sway.x + pose * 0.03f, m_Sway.y - m_CrouchK * 0.02f + breathe + m_Jump - landDip - pose * 0.07f, -pose * 0.04f)
                 + new Vector3(0.07f, -0.42f, -0.05f) * away + k_AlienHandsUp * framed;
@@ -341,6 +348,7 @@ namespace RockGame
             Quaternion sharedRot = Quaternion.Euler(m_Sway.y * 300f + pose * 14f + landDip * 60f + idlePitch + 50f * away, -m_Sway.x * 300f - pose * 22f - 12f * away,
                 bx * bobAmt * (1.5f + 3f * m_SprintK) + pose * 12f + idleRoll - 35f * away);
 
+            if (DebugShow >= 0) { PoseShow(); UpdateAlienHands(s, false, 0f); return; }
             if (s.Ball) { PoseBall(shared, sharedRot); UpdateAlienHands(s, swinging, swingE); return; }
             if (m_Item && !m_Item.activeSelf && s.Item != Item.Spear) m_Item.SetActive(true);
 

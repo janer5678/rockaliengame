@@ -224,9 +224,9 @@ namespace RockGame
             GUILayout.BeginHorizontal();
             RowLabel("Hands", lw);
             for (int hs = 0; hs < GameSettings.HandStyleNames.Length; hs++)
-                if (ToggleBtn(GameSettings.HandStyle == hs, GameSettings.HandStyleNames[hs], GUILayout.Width(90 * k), GUILayout.Height(30 * k)) && GameSettings.HandStyle != hs)
+                if (ToggleBtn(GameSettings.HandStyle == hs, GameSettings.HandStyleNames[hs], GUILayout.Width(80 * k), GUILayout.Height(30 * k)) && GameSettings.HandStyle != hs)
                     GameSettings.SetHandStyle(hs);
-            GUILayout.Label("<color=#bbbbbb>  the robot hands, square or round, or the alien arms</color>", m_Small, GUILayout.Height(30 * k));
+            // (four styles fill the row: no room for a note beside them)
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
         }

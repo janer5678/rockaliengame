@@ -360,7 +360,7 @@ namespace RockGame
             }
             yield return null;
 
-            // ---------------- the first-person hands: three styles, every team colour, a few things held ----------------
+            // ---------------- the first-person hands: four styles, every team colour, a few things held ----------------
             var vm = ViewModel.Last;
             if (vm == null) { Log("FAIL: no first-person view model to export"); }
             else
@@ -374,7 +374,7 @@ namespace RockGame
                     ("bow_drawn", Item.Bow, () => pc.DebugDraw = 1f),
                     ("pistol", Item.Pistol, null),
                 };
-                var styles = new (int style, string name)[] { (GameSettings.HandsSquare, "square"), (GameSettings.HandsRound, "round"), (GameSettings.HandsAlien, "alien") };
+                var styles = new (int style, string name)[] { (GameSettings.HandsSquare, "square"), (GameSettings.HandsRound, "round"), (GameSettings.HandsAlien, "alien"), (GameSettings.HandsSmooth, "smooth") };
                 var handsRoot = vm.DebugHand(true).parent;
                 foreach (var hp in handPoses)
                 {

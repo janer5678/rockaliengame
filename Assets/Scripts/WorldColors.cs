@@ -358,6 +358,59 @@ namespace RockGame
             s_Polished[(c, ghost)] = m;
             return m;
         }
+        /// <summary>The smooth hands (SmoothHand.cs): one skin, in a soft shade of your team's colour - or the colour
+        /// picked for the hands in Settings > Display > World colours - in the HandSkin material.</summary>
+        public const int SmoothSkin = 5;
+        static readonly Dictionary<Color, Material> s_SmoothMats = new Dictionary<Color, Material>();
+        static Shader s_HandSkin;
+        static bool s_HandSkinTried;
+
+        /// <summary>The smooth hands' skin for a team: the team's colour, a little lighter and softer than the flag's (it
+        /// has to read against that team's own base floor and take light and shade), or the hands colour picked.</summary>
+        public static Color SmoothShade(Color team)
+        {
+            if (!ColorSlots.HandsTeam) return ColorSlots.Hands.Value;
+            Color.RGBToHSV(team, out float h, out float s, out float v);
+            var c = Color.HSVToRGB(h, s * SmoothHand.P("skin.sat", 0.76f), v * SmoothHand.P("skin.val", 0.84f));
+            c.a = 1f;
+            return c;
+        }
+
+        /// <summary>The smooth hands' material in this colour (Resources/World/HandSkin): the palm side lighter and less
+        /// saturated, the creases a deep shade, dark nails, a pale rim - all worked out from the skin colour.</summary>
+        static Material SmoothMat(Color c)
+        {
+            if (s_SmoothMats.TryGetValue(c, out var m) && m) return m;
+            if (!s_HandSkinTried) { s_HandSkinTried = true; s_HandSkin = Resources.Load<Shader>("World/HandSkin"); if (s_HandSkin != null && !s_HandSkin.isSupported) s_HandSkin = null; }
+            if (s_HandSkin != null)
+            {
+                m = new Material(s_HandSkin) { name = "smooth hand" };
+                Color.RGBToHSV(c, out float h, out float s, out float v);
+                m.SetColor("_BaseColor", c);
+                m.color = c;
+                m.SetColor("_PalmColor", Color.HSVToRGB(h, s * SmoothHand.P("skin.palm.sat", 0.72f), Mathf.Min(1f, v * 1.06f + 0.05f)));
+                m.SetColor("_CreaseColor", Color.HSVToRGB(Mathf.Repeat(h + 0.015f, 1f), Mathf.Min(1f, s * 1.1f + 0.06f), v * SmoothHand.P("skin.crease", 0.34f)));
+                m.SetColor("_NailColor", Color.HSVToRGB(h, Mathf.Min(1f, s * SmoothHand.P("skin.nail.sat", 0.62f)), Mathf.Min(1f, v * SmoothHand.P("skin.nail", 1.04f) + 0.05f)));
+                m.SetColor("_RimColor", Color.HSVToRGB(h, s * 0.4f, 1f));
+                m.SetFloat("_Smoothness", 0.4f);
+                m.SetVector("_Look", new Vector4(SmoothHand.P("look.fill", 0.26f), SmoothHand.P("look.rim", 0.3f), SmoothHand.P("look.spec", 0.12f), SmoothHand.P("look.nail", 1f)));
+                m.SetVector("_Look2", new Vector4(SmoothHand.P("look.spec.pow", 14f), SmoothHand.P("look.nail.shine", 1.8f), SmoothHand.P("look.wrap", 0.38f), SmoothHand.P("look.sun", 1f)));
+                m.SetFloat("_Form", SmoothHand.P("look.form", 0.22f));
+                m.SetFloat("_Ambient", SmoothHand.P("look.ambient", 0.78f));
+            }
+            else
+            {
+                m = Art.NewMat(c);
+                if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.4f);
+                m.name = "smooth hand (plain)";
+            }
+            s_SmoothMats[c] = m;
+            return m;
+        }
+
+        /// <summary>A fingered hand part's material (the alien arms', the smooth hands').</summary>
+        static Material SkinMat(int part, Color c, bool ghost) => part == SmoothSkin ? SmoothMat(c) : Polished(c, ghost);
+
         Color m_Team;
         bool m_Ghost;
 
@@ -374,6 +427,7 @@ namespace RockGame
         /// <summary>The colour of one part of the hands for this team.</summary>
         public static Color Shade(Color team, int part)
         {
+            if (part == SmoothSkin) return SmoothShade(team);
             if (part == AlienSkin || part == AlienPad) return AlienShade(team, part == AlienPad);
             var skin = ColorSlots.HandTint(team);
             if (part == Band) return team;
@@ -414,7 +468,7 @@ namespace RockGame
             if (r != null)
             {
                 m_Parts.Add((r, part));
-                if (part >= AlienSkin) r.sharedMaterial = Polished(Shade(m_Team, part), m_Ghost); // (the alien hands: dark blue straight away)
+                if (part >= AlienSkin) r.sharedMaterial = SkinMat(part, Shade(m_Team, part), m_Ghost); // (the alien hands: dark blue straight away)
             }
             return box;
         }
@@ -445,7 +499,7 @@ namespace RockGame
                 if (p.r == null) continue;
                 p.r.enabled = !m_Ghost; // (invisible: your own hands are gone - what you hold still shows)
                 var c = Shade(m_Team, p.part);
-                if (p.part >= AlienSkin) { var want = Polished(c, m_Ghost); if (p.r.sharedMaterial != want) p.r.sharedMaterial = want; }
+                if (p.part >= AlienSkin) { var want = SkinMat(p.part, c, m_Ghost); if (p.r.sharedMaterial != want) p.r.sharedMaterial = want; }
                 else if (p.r.sharedMaterial == null || p.r.sharedMaterial.color != c) p.r.sharedMaterial = Art.Mat(c);
             }
         }
