@@ -354,7 +354,7 @@ namespace RockGame
                         routed = true;
                         if (Flat(pos, dp) < 2.8f) OpenDoor(m_RouteDoor);
                         float off = Mathf.Abs(Vector3.Dot(pos - dp, Vector3.Cross(Vector3.up, m_RouteN)));
-                        return past > -0.7f || off < 0.45f ? dp + m_RouteN * 1.8f : dp - m_RouteN * 1.3f; // (in it or lined up: straight through; else level with it first)
+                        return off < 0.45f || past > 0.3f ? dp + m_RouteN * 1.8f : dp - m_RouteN * 1.3f; // (lined up, or through the gap already: straight on; off to one side of it - even half into it - back level with it first, or it rubs along the frame)
                     }
                 }
             }
@@ -458,6 +458,18 @@ namespace RockGame
                 else if (s != null) why += $", a {(s.Team.Value == MyTeam ? "own" : "enemy")} {s.PType} in the way";
                 else why += $", {hit.collider.name} in the way";
             }
+            // its own chest / Trade Station in the way, low or high: picked up, to go down somewhere better
+            if (!cleared && to.sqrMagnitude > 0.01f)
+                foreach (float h in new[] { 0.35f, 0.7f, 1.0f })
+                {
+                    if (!Physics.Raycast(pos + Vector3.up * h, to.normalized, out var ch, 2.6f, Mask, QueryTriggerInteraction.Ignore)) continue;
+                    var box = ch.collider.GetComponentInParent<Container>();
+                    if (box == null) continue;
+                    bool up = PackUpInWay(box);
+                    why += $", its own {(box.IsWorkbench ? "Trade Station" : "container " + box.Kind.Value)} in the way: {(up ? "picked up" : "couldn't pick it up")}";
+                    cleared = up;
+                    break;
+                }
             // (what's low down in the way, and how high it's standing - for the log)
             if (to.sqrMagnitude > 0.01f && Physics.Raycast(pos + Vector3.up * 0.35f, to.normalized, out var low, 1.5f, Mask, QueryTriggerInteraction.Ignore))
             {
@@ -480,6 +492,35 @@ namespace RockGame
             Note("long stuck: " + why);
         }
 
+        /// <summary>The lane in front of a team's doors - from just inside the room's doorways out past the outer ring's -
+        /// that nothing a bot puts down may go in (a Trade Station or a chest there boarded it in).</summary>
+        public static bool InDoorLane(int team, Vector3 p)
+        {
+            if (team < 0 || team > 3) return false;
+            var c = Cfg.BaseCenter[team];
+            var back = Cfg.BackDir(team);
+            var d = p - c; d.y = 0f;
+            float fwd = Vector3.Dot(d, -back), side = Mathf.Abs(Vector3.Dot(d, Vector3.Cross(Vector3.up, back)));
+            return fwd > 0.6f && fwd < 3f * OuterR(team) + 4f && side < 2.8f;
+        }
+
+        /// <summary>(tests) its own things in the way it picked back up (to put down somewhere better).</summary>
+        public int PackedUp { get; private set; }
+
+        /// <summary>One of its own chests / Trade Stations in the way: picked back up (PackUpRpc, like a player holding E -
+        /// the Advanced Trade Station before the first; a chest only once it's empty), so it goes down somewhere better.</summary>
+        bool PackUpInWay(Container c)
+        {
+            if (c == null || !c.IsSpawned || c.Team.Value != MyTeam || !(c.IsWorkbench || c.Breakable)) return false;
+            if (c.IsWorkbench && c.BenchTier == 1 && Workbench.ForTeam(MyTeam, 2) != null) c = Workbench.ForTeam(MyTeam, 2);
+            if (c == null || m_P.PackUpProblem(c) != null) return false;
+            m_P.PackUpRpc(c.NetworkObject);
+            if (c.IsSpawned) return false;
+            PackedUp++;
+            Avoid(Container.ItemOf(c.Kind.Value), 0f);
+            return true;
+        }
+
         /// <summary>(tests) times it backed out of a doorway to let a teammate through.</summary>
         public int DoorYields { get; private set; }
 
@@ -499,7 +540,7 @@ namespace RockGame
                 var q = p.transform.position;
                 if (Flat(q, pos) > 1.6f || Flat(q, dp) > 2.2f) continue;
                 if (Vector3.Dot(q - pos, m_RouteN) < 0.1f) continue; // (behind it, not in its way)
-                if (p.Bot.Value && p.NetworkObjectId > m_P.NetworkObjectId) continue; // (the newer bot gives way, not it)
+                if (p.Bot.Value && (p.NetworkObjectId > m_P.NetworkObjectId || !p.TryGetComponent(out BotBrain ob) || ob.m_RouteDoor != d)) continue; // (the newer bot gives way - and only to one going through this same doorway, not one just standing in it)
                 m_Detour = dp - m_RouteN * 2.4f + Vector3.Cross(Vector3.up, m_RouteN) * m_SideSign * 1.2f;
                 m_DetourUntil = Time.time + 1.6f;
                 m_DoorDetour = false;

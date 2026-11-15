@@ -45,6 +45,10 @@ namespace RockGame
             m_Strafe = d < reach + 1.2f && m_Skill > 0.45f && !Eating;
             m_HasLook = true;
             m_LookAt = t.EyePos - Vector3.up * 0.3f;
+            // (in their own base behind its walls: in by the way a raid would go - an open door, a gap, the team's breach - not
+            // through whatever wall is straight in front)
+            int tb = Cfg.BaseTeamAt(tp);
+            if (d > reach + 1f && tb == t.Team.Value && tb != MyTeam && PlayerNet.WallBetween(m_P.EyePos, t.EyePos) && RaidWay(tb, tp)) return;
             if (d > reach + 1f && TryBreakBlocker()) return; // (walled off from them: through the wall)
             if (Eating || m_P.CarryingBall || Time.time < m_NextSwing || !Cfg.IsMelee(item)) return;
             var body = tp + Vector3.up * (t.Crouch.Value ? 0.8f : 1.1f);

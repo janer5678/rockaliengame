@@ -92,6 +92,22 @@ namespace RockGame
             // a human teammate said "follow", or a teammate is being hit and it is the one going to help (BotBrain.Talk.cs)
             if (BuddyJob(mind)) return;
 
+            // no staying in: once the ball's out, a good while inside its own base with nothing going on there (nobody in or
+            // near it, no alarm) and it heads out - farming, or hunting if it's armed - with building and guarding put off
+            bool inside = Flat(transform.position, home) < 3f * OuterR(MyTeam) + 1f;
+            if (!live || !inside || EnemyNear(home, 40f) || Time.time - mind.AlarmAt < 12f || m_P.CarryingBall || Cfg.Builder) m_InsideSince = Time.time;
+            else if (Time.time - m_InsideSince > 40f)
+            {
+                m_InsideSince = Time.time;
+                m_PlanOff[(int)Plan.Build] = m_PlanOff[(int)Plan.Guard] = Time.time + 45f;
+                bool armed = HasWeapon || BestRangedHeld() != Item.None;
+                StartPlan(armed && m_P.Count(Cfg.CurrencyItem) >= 250 && Random.value < 0.6f ? Plan.Hunt : Plan.Farm, Mathf.RoundToInt(m_StoreAt));
+                if (m_Plan == Plan.Hunt) m_HuntStyle = 0;
+                m_PlanStance = mind.Stance;
+                LeftHome++;
+                Note("too long inside: out");
+            }
+
             // 8. what it has set its mind on (BotBrain.Plans.cs): a new plan when the last ran out or is done, or the team's
             // stance changed (a Rusher drops whatever it's doing half a minute before the wall goes)
             if (WantsRush(g) && m_Plan != Plan.Rush) StartPlan(Plan.Rush, 0);
@@ -117,6 +133,9 @@ namespace RockGame
         }
 
         Stance m_PlanStance;
+        float m_InsideSince;
+        /// <summary>(tests) times it had been inside its base too long with nothing going on and went out.</summary>
+        public int LeftHome { get; private set; }
         float m_RetreatSeen = -10f;
         /// <summary>(tests) airdrops it has gone for.</summary>
         public int AirdropsRun { get; private set; }

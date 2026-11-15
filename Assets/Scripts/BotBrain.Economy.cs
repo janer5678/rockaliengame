@@ -433,7 +433,8 @@ namespace RockGame
             for (int k = 0; k < 8; k++)
             {
                 Vector3 p;
-                if (Workbench.IsBench(kind)) p = k == 0 ? Workbench.DefaultPos(team, Workbench.TierOfItem(kind)) : c - back * Random.Range(3.5f, 8f) + left * Random.Range(-7f, 7f);
+                // (a Trade Station: at the side of the room by the machine - its usual spot is right inside a doorway - else out on the pad to the side or back)
+                if (Workbench.IsBench(kind)) p = k < 2 ? c + left * 2.15f * ((Workbench.TierOfItem(kind) == 2) == (k == 0) ? -1f : 1f) + back * 0.7f : c + back * Random.Range(-1f, 7f) + left * Random.Range(4.2f, 8f) * (k % 2 == 0 ? 1f : -1f);
                 else if (kind == Item.Chest)
                 {
                     float side = (k % 2 == 0 ? m_SideSign : -m_SideSign);
@@ -446,7 +447,7 @@ namespace RockGame
                 p.y = Cfg.BaseY + 3f;
                 if (Physics.Raycast(p, Vector3.down, out var hit, 8f, Mask, QueryTriggerInteraction.Ignore)) p.y = hit.point.y;
                 else p.y = MapBuilder.Height(p.x, p.z);
-                if (!PlayerNet.FindDeploySpot(kind, team, ref p, yaw, out _)) continue;
+                if (!PlayerNet.FindDeploySpot(kind, team, ref p, yaw, out _) || InDoorLane(team, p)) continue; // (never in the lane in front of the doors: it boarded itself in)
                 at = p;
                 return true;
             }
@@ -470,7 +471,7 @@ namespace RockGame
                 var sp = s.transform.position;
                 if (Cfg.BaseTeamAt(sp) != team) continue;
                 var d = sp - c; d.y = 0f;
-                if (Vector3.Dot(d, back) < -1.5f && Mathf.Abs(Vector3.Dot(d, lat)) < 2.6f) continue; // (in front of the doors: the way in)
+                if (InDoorLane(team, sp)) continue; // (in front of the doors: the way in and out)
                 if (ChestOn(sp)) continue;
                 s_Found.Add(s);
             }
@@ -483,7 +484,7 @@ namespace RockGame
                 var p = new Vector3(mid.x, mid.y + 3f, mid.z);
                 if (!Physics.Raycast(p, Vector3.down, out var hit, 6f, Mask, QueryTriggerInteraction.Ignore) || hit.collider.GetComponentInParent<Structure>() != s) continue;
                 p = hit.point;
-                if (!PlayerNet.FindDeploySpot(Item.Chest, team, ref p, yaw, out _)) continue;
+                if (!PlayerNet.FindDeploySpot(Item.Chest, team, ref p, yaw, out _) || InDoorLane(team, p)) continue;
                 at = p;
                 return true;
             }

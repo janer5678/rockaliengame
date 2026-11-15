@@ -31,7 +31,10 @@ namespace RockGame
 
         Vector3 m_FleeTo;
         float m_FleeUntil = -1f;
-        bool m_BreachWay;
+        bool m_BreachWay, m_GapWay;
+        Vector3 m_GapAt, m_GapN;
+        /// <summary>(tests) gaps in an enemy's walls it went in by.</summary>
+        public int GapsUsed { get; private set; }
         float m_RaidBest = float.MaxValue, m_RaidProgressAt;
         /// <summary>(tests) times a raid stalled and it tried another way in.</summary>
         public int RaidSwitches { get; private set; }
@@ -76,6 +79,18 @@ namespace RockGame
         {
             if (team < 0 || team > 3 || Flat(transform.position, bp) > 45f) return false;
             if (Time.time >= m_NextWay) { m_NextWay = Time.time + 1f; PickWay(team, bp); }
+            if (m_GapWay)
+            {
+                // through a gap in their walls: up to it, then straight on through
+                var gpos = transform.position;
+                float past = Vector3.Dot(gpos - m_GapAt, m_GapN);
+                if (past > 1.2f) { m_GapWay = false; m_NextWay = 0f; GapsUsed++; return false; }
+                float goff = Mathf.Abs(Vector3.Dot(gpos - m_GapAt, Vector3.Cross(Vector3.up, m_GapN)));
+                GoTo(goff < 0.6f || past > -0.8f ? m_GapAt + m_GapN * 2f : m_GapAt - m_GapN * 1.4f, 0.2f, true);
+                m_HasLook = true;
+                m_LookAt = m_GapAt + m_GapN * 3f + Vector3.up * 1.2f;
+                return true;
+            }
             if (m_BreachWay)
             {
                 // through the hole a teammate made
@@ -155,6 +170,26 @@ namespace RockGame
                 if (w != null && w != s) cost += w.Health.Value / smash * run;
                 if (cost < best) { best = cost; m_RaidDoor = s; bestOpen = open && w == null; }
             }
+            // a gap in their walls (a wall broken down, one never built): just the walk there and on - checked really open
+            m_GapWay = false;
+            foreach (var p in HousePlan(team))
+            {
+                if ((p.Stage != 0 && p.Stage != 4) || p.Key.Kind != PieceKey.KEdge || BuildGrid.Registry.ContainsKey(p.Key) || BuildGrid.OnBedrock(p.Key)) continue;
+                BuildGrid.Pose(PieceType.Wall, p.Key, out var gp, out var grot);
+                float toBall = Flat(gp, bp);
+                if (toBall > 24f || toBall >= dMe - 0.5f) continue;
+                var gn = grot * Vector3.forward; gn.y = 0f;
+                if (gn.sqrMagnitude < 0.01f) continue;
+                gn.Normalize();
+                var mid = gp + Vector3.up * 1.1f;
+                // (really open: nothing across it either way - a human's base needn't follow a bot's plan)
+                if (Physics.Raycast(mid - gn * 1.2f, gn, 2.4f, Mask, QueryTriggerInteraction.Ignore) || Physics.Raycast(mid + Vector3.Cross(Vector3.up, gn) * 0.9f, -Vector3.Cross(Vector3.up, gn), 1.8f, Mask, QueryTriggerInteraction.Ignore)) continue;
+                float cost = Flat(pos, gp) + toBall;
+                var w = FirstWall(m_P.EyePos, mid, team);
+                if (w != null) cost += w.Health.Value / smash * run;
+                if (cost < best - 1f) { best = cost; m_GapWay = true; m_GapAt = gp; m_GapN = Vector3.Dot(bp - gp, gn) >= 0f ? gn : -gn; m_RaidDoor = null; bestOpen = w == null; }
+            }
+            if (m_GapWay) return;
             // a hole a teammate broke lately: the walk there and on is all it costs
             var mind = MindOf(MyTeam);
             m_BreachWay = false;
