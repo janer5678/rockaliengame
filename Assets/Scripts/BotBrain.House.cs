@@ -368,6 +368,31 @@ namespace RockGame
             return goingOut ? inPt : outPt;
         }
 
+        /// <summary>(tests) its own walls it has taken down to get out of its base.</summary>
+        public int BrokeOut { get; private set; }
+
+        /// <summary>
+        /// Stuck against one of its own walls on its way out of its base (shut in: a room that went up without its doorway,
+        /// or one it can't get to): it takes the wall down with the building plan's Demolish (DemolishRpc, like a player)
+        /// and walks out - the house plan puts it back up later, from outside.
+        /// </summary>
+        void BreakOut()
+        {
+            if (m_Blocker == null || Time.time - m_BlockedAt > 1.5f || m_P.CarryingBall) return;
+            var s = m_Blocker.GetComponentInParent<Structure>();
+            if (s == null || !s.IsSpawned || s.Team.Value != MyTeam) return;
+            if (s.HasDoor) { OpenDoor(s); return; }
+            if (s.PType != PieceType.Wall && s.PType != PieceType.Window && s.PType != PieceType.Doorway) return;
+            var home = Cfg.BaseCenter[MyTeam];
+            float ring = 3f * OuterR(MyTeam) + 1f;
+            if (Flat(transform.position, home) > ring || Flat(m_Goal, home) <= Flat(s.transform.position, home)) return; // (only on its way out)
+            int slot = HotbarFor(Item.BuildingPlan);
+            if (slot < 0) return;
+            Hold(slot);
+            m_P.DemolishRpc(s.NetworkObject);
+            if (!s.IsSpawned) { BrokeOut++; m_Blocker = null; m_Stuck = 0; Note("broke out through its own wall"); }
+        }
+
         /// <summary>Open one of its team's doors (it's right by it).</summary>
         void OpenDoor(Structure s)
         {

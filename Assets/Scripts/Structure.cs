@@ -382,7 +382,9 @@ namespace RockGame
         }
 
         /// <summary>Server: it was just hit - no hammer upgrades for a few seconds (Cfg.HammerHitLock).</summary>
-        void NoteHit() { if (IsServer && IsSpawned) HitAt.Value = NetworkManager.ServerTime.Time; }
+        void NoteHit() { if (IsServer && IsSpawned) { HitAt.Value = NetworkManager.ServerTime.Time; ServerHit?.Invoke(this); } }
+        /// <summary>Server: a piece was just hit (the bots' base-under-attack alarm: BotBrain.Team.cs).</summary>
+        public static System.Action<Structure> ServerHit;
 
         public void ServerUpgrade(int tier = 1)
         {

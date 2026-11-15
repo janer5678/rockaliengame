@@ -55,6 +55,8 @@ namespace RockGame
                 if (d > Mathf.Min(reach, home ? 45f : 28f) || !LootOk(it.Pos)) continue;
                 // (a few sticks out of the wood machine: let the pile grow first, unless it's right there)
                 if (it.Stack.Id == cur && it.Stack.Count < 40 && d > 6f) continue;
+                // (the wood machine's pile at home: the team's collector empties it - the rest only take what they walk past)
+                if (home && it.Stack.Id == cur && d > 5f && !IsCollector) continue;
                 if (InvOps.Space(m_P.Inv, it.Stack.Id, it.Stack.Data) <= 0) continue;
                 float ground = MapBuilder.Height(it.Pos.x, it.Pos.z);
                 if (it.Center.y - ground > 3.2f) continue; // (stuck up high in something)

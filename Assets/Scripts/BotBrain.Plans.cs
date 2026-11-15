@@ -115,6 +115,18 @@ namespace RockGame
             }
             // the Rusher: half a minute before the wall drops, out to the glass by the ball to be first to it
             if (WantsRush(g)) { StartPlan(Plan.Rush, load); return; }
+            // the team's stance comes first after the drop: a siege, a loose ball, a carrier, holding the ball (BotBrain.Team.cs)
+            var mind = MindOf(team);
+            if (live && !pre && withBall && StancePlan(mind, g, load)) return;
+            if (mind.Stance == Stance.Prepare)
+            {
+                // their machine, not going in yet: gear up (the craft list, a raiding tool) and harass, nothing slow
+                raid = 0f;
+                guard *= 0.3f;
+                build += onHand >= 60 ? 1.5f : 0f;
+                hunt += geared ? 0.8f : 0f;
+            }
+            if (mind.Stance == Stance.Hold) { raid = 0f; guard = 0f; } // (the anchor guards: StancePlan)
             // plans that came to nothing lately are put off
             if (Time.time < m_PlanOff[(int)Plan.Farm]) farm = 0f;
             if (Time.time < m_PlanOff[(int)Plan.Build]) build = 0f;
@@ -217,6 +229,9 @@ namespace RockGame
                     if (ball.SocketTeam.Value == MyTeam) return false;
                     m_RaidTeam = ball.SocketTeam.Value;
                     m_RaidMachine = false;
+                    // a siege: everyone meets at the rally point first and goes in together (already in there: carry on)
+                    var mind = MindOf(MyTeam);
+                    if (mind.Stance == Stance.Siege && !mind.Go && Flat(transform.position, Cfg.BaseCenter[m_RaidTeam]) > 3f * OuterR(m_RaidTeam) + 18f) { Set(Task.Regroup); return true; }
                     Set(Task.Raid);
                     return true;
                 case Plan.Hunt:

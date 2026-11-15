@@ -34,12 +34,15 @@ namespace RockGame
             bool withBall = live && !Cfg.NoBall && ball != null && ball.IsSpawned;
             var carrier = withBall ? ball.Carrier : null;
 
+            // its team's mind: the stance, the siege, what they've all seen (BotBrain.Team.cs)
+            var mind = TeamMind(g, ball, carrier, withBall, live);
+
             // 1. the ball in its hands: home with it, nothing else matters
             if (m_P.CarryingBall) { Set(Task.Carry); return; }
 
-            // 2. an enemy has the ball: after them (from most of the map away)
+            // 2. an enemy has the ball: after them (from anywhere on the map - cutting them off on their way home: TickFight)
             bool hurt = Hp01 < m_RetreatAt;
-            if (carrier != null && carrier.Team.Value != MyTeam && Hostile(carrier) && Flat(carrier.transform.position, transform.position) < 140f && !hurt)
+            if (carrier != null && carrier.Team.Value != MyTeam && Hostile(carrier) && Flat(carrier.transform.position, transform.position) < 400f && !hurt)
             {
                 m_Target = carrier;
                 Set(Task.Fight);
@@ -47,7 +50,7 @@ namespace RockGame
             }
 
             // 3. who's about (sudden death: anyone on the platform) - a hunter or a guard looks further, a farmer keeps its head down
-            float range = sudden ? 500f : 10f + 14f * m_Aggro + (m_Task == Task.Defend || m_Plan == Plan.Hunt || m_Plan == Plan.Guard ? 8f : 0f) - (m_Plan == Plan.Farm ? 3f : 0f);
+            float range = sudden ? 500f : 16f + 16f * m_Aggro + (m_Task == Task.Defend || m_Plan == Plan.Hunt || m_Plan == Plan.Guard || m_Plan == Plan.Raid ? 10f : 0f) - (m_Plan == Plan.Farm ? 4f : 0f);
             var foe = PickTarget(range, sudden);
 
             // 4. badly hurt with someone stronger after it: back off home (healing in base, eating on the way)
@@ -66,11 +69,18 @@ namespace RockGame
             if (withBall && BallNearJob(ball, carrier)) return;
             var home = Cfg.BaseCenter[MyTeam];
             if (live && !Cfg.Builder && m_Plan != Plan.Raid && m_Plan != Plan.Hunt && Flat(transform.position, home) < 45f && EnemyNear(home, 28f)) { Set(Task.Defend); return; }
+            // the base's alarm (a piece being hit, an enemy seen in it): back to deal with it, from a good way off - unless
+            // it's in the middle of a raid of its own, or someone else on the team is already on it
+            if (live && !Cfg.Builder && (mind.Stance == Stance.Hold || mind.Stance == Stance.Prepare || mind.Stance == Stance.Develop) && Time.time - mind.AlarmAt < 8f
+                && Flat(transform.position, home) < 150f && !MateOnAlarm(mind))
+            { Set(Task.Defend); return; }
 
-            // 8. what it has set its mind on (BotBrain.Plans.cs): a new plan when the last ran out or is done (a Rusher drops
-            // whatever it's doing half a minute before the wall goes)
+            // 8. what it has set its mind on (BotBrain.Plans.cs): a new plan when the last ran out or is done, or the team's
+            // stance changed (a Rusher drops whatever it's doing half a minute before the wall goes)
             if (WantsRush(g) && m_Plan != Plan.Rush) StartPlan(Plan.Rush, 0);
-            if (m_Plan == Plan.None || Time.time >= m_PlanUntil || PlanDone(g, ball, carrier, withBall, live)) PickPlan(g, ball, carrier, withBall, live);
+            bool newStance = mind.Stance != m_PlanStance;
+            m_PlanStance = mind.Stance;
+            if (m_Plan == Plan.None || Time.time >= m_PlanUntil || newStance || PlanDone(g, ball, carrier, withBall, live)) PickPlan(g, ball, carrier, withBall, live);
             if (PlanJob(g, ball, carrier, withBall, live)) { m_PlanIdle = -1f; return; }
             // nothing in the plan for it just now: a few seconds' grace (a piece not held up yet, a craft that didn't go through) before it's dropped
             if (m_PlanIdle < 0f) m_PlanIdle = Time.time;
@@ -87,6 +97,23 @@ namespace RockGame
             if (homeSide && StoreJob()) return;
             if (FarmJob()) return;
             StartWander(8f);
+        }
+
+        Stance m_PlanStance;
+
+        /// <summary>Someone else on its team (a human, or a bot already defending) is nearer the alarm than it is.</summary>
+        bool MateOnAlarm(Mind m)
+        {
+            float mine = Flat(transform.position, m.AlarmPos);
+            foreach (var p in PlayerNet.All)
+            {
+                if (p == null || p == m_P || !p.IsSpawned || p.Dead.Value || p.Team.Value != MyTeam) continue;
+                if (Flat(p.transform.position, m.AlarmPos) >= mine - 5f) continue;
+                if (!p.Bot.Value) return true;
+                var b = p.GetComponent<BotBrain>();
+                if (b != null && (b.m_Task == Task.Defend || b.m_Task == Task.Fight)) return true;
+            }
+            return false;
         }
 
         void Set(Task t)
@@ -145,6 +172,8 @@ namespace RockGame
                 if (hurtNow) r = Mathf.Max(r, 16f);
                 if (p == m_Target) r *= 1.4f; // (it doesn't give up on someone the moment they step back)
                 if (!anyRange && (d > r || (d > 3f && !CanSee(p)))) continue;
+                // not after someone back in their own base (its turrets, its walls, their mates) unless it's raiding it
+                if (!anyRange && d > 8f && m_Plan != Plan.Raid && !p.CarryingBall && Cfg.BaseTeamAt(p.transform.position) == p.Team.Value) continue;
                 float score = d - (Cfg.MaxHealth - p.Health.Value) * 0.08f * m_Aggro - (p == m_Target ? 3f : 0f) - (p.CarryingBall ? 15f : 0f);
                 if (score < bs) { bs = score; best = p; }
             }
@@ -191,6 +220,8 @@ namespace RockGame
             return n;
         }
 
-        static float TimeLeft(NetGame g) => NetworkManager.Singleton != null && !g.NoClock ? (float)(g.PhaseEnd.Value - NetworkManager.Singleton.ServerTime.Time) : 999f;
+        static float TimeLeft(NetGame g) => NetworkManager.Singleton != null && !g.NoClock ? (float)(g.PhaseEnd.Value - NetworkManager.Singleton.ServerTime.Time) * SimScale : 999f;
+        /// <summary>(tests: AutoTest.BotSim) how much faster than real time the match is played (its phases cut to match).</summary>
+        public static float SimScale = 1f;
     }
 }

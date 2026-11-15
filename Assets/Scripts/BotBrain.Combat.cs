@@ -28,6 +28,14 @@ namespace RockGame
             var st = Cfg.Melee(item);
             float reach = st.Range > 0f ? st.Range : Cfg.RockRange;
             if (Eating) GoTo(transform.position + (transform.position - tp).normalized * 4f, 0.5f, false); // (eating a berry: backing off from them)
+            else if (t.CarryingBall && d > 14f)
+            {
+                // running home with the ball: not chased from behind but cut off - ahead of them on their way to their machine
+                var mp = Cfg.MachinePos(t.Team.Value);
+                float left = Flat(tp, mp);
+                var lead = tp + (mp - tp).normalized * Mathf.Min(d * 0.55f, left * 0.8f);
+                GoTo(Flat(lead, transform.position) < d ? lead : tp, 1.3f, true);
+            }
             else GoTo(tp, Mathf.Max(1.3f, reach - 0.9f), d > 2.5f);
             m_Strafe = d < reach + 1.2f && m_Skill > 0.45f && !Eating;
             m_HasLook = true;
@@ -139,6 +147,15 @@ namespace RockGame
         {
             int team = MyTeam;
             var back = Cfg.BackDir(team);
+            // the alarm's going: where the base was hit / the enemy was seen (it sees them when it gets there: Think)
+            var mind = MindOf(team);
+            if (Time.time - mind.AlarmAt < 8f && Flat(mind.AlarmPos, transform.position) > 3f)
+            {
+                GoTo(mind.AlarmPos, 2f, true);
+                m_NextPatrol = Time.time + 2f;
+                TryBreakBlocker(); // (its own doors in the way)
+                return;
+            }
             if (Time.time >= m_NextPatrol || Flat(m_Goal, transform.position) < 1f && Random.value < 0.01f)
             {
                 // on the move round the outside of the base (out front, then a side, now and then round the back), a few
@@ -170,6 +187,14 @@ namespace RockGame
             if (enemy < 0) { Done(); return; }
             var home = Cfg.BaseCenter[MyTeam];
             var theirs = Cfg.BaseCenter[enemy];
+            // where one of them was seen lately (by it or a teammate): there first
+            if (FreshFoe(m_HuntStyle == 3 ? 40f : 20f, out var seen) && Flat(seen, transform.position) < 170f)
+            {
+                GoTo(seen, 2f, true);
+                TryBreakBlocker();
+                return;
+            }
+            if (m_HuntStyle == 3) m_HuntStyle = 0; // (cutting off a carrier with nobody to see: the lanes)
             if (Flat(m_Goal, transform.position) < 2.5f || (m_HuntStyle != 2 && Flat(m_Goal, home) < 20f))
             {
                 Vector3 at;

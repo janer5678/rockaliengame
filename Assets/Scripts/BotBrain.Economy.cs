@@ -64,6 +64,7 @@ namespace RockGame
                 case Task.Fight: TickFight(); break;
                 case Task.Retreat: TickRetreat(); break;
                 case Task.Rush: TickRush(g); break;
+                case Task.Regroup: TickRegroup(); break;
             }
         }
 

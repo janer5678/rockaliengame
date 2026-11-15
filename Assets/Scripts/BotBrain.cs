@@ -18,7 +18,7 @@ namespace RockGame
     public partial class BotBrain : MonoBehaviour
     {
         /// <summary>What a bot is doing (tests and debugging can read it: Job).</summary>
-        public enum Task : byte { Idle, Lounge, Wander, Farm, Berries, Store, Craft, Deploy, Build, Fetch, Carry, Escort, Raid, Defend, Hunt, Fight, Retreat, Loot, Upgrade, Arm, Rush }
+        public enum Task : byte { Idle, Lounge, Wander, Farm, Berries, Store, Craft, Deploy, Build, Fetch, Carry, Escort, Raid, Defend, Hunt, Fight, Retreat, Loot, Upgrade, Arm, Rush, Regroup }
         /// <summary>A bot's personality, dealt at random like the ghosts in Pac-Man - each its own play style, and all of them
         /// wanting the ball in their machine above anything: a Raider (the hunter: the best weapons and armour it can get,
         /// roaming the map for kills), a Gatherer (the crafter: farming, the Trade Stations, the upgrades), a Defender (the
@@ -116,7 +116,7 @@ namespace RockGame
             // a stable little random generator per bot: the same bot keeps its character all match
             var r = new System.Random((int)(m_P.NetworkObjectId * 2654435761u % int.MaxValue) ^ 0x5bd1e995);
             float F() => (float)r.NextDouble();
-            m_Bent = TestBent >= 0 ? (Bent)(TestBent & 3) : (Bent)r.Next(0, 4);
+            m_Bent = TestBent >= 0 ? (Bent)(TestBent & 3) : TeamBent(r.Next(0, 4));
             m_Aggro = Mathf.Lerp(0.25f, 1f, F());
             m_Skill = Mathf.Lerp(0.35f, 0.95f, F());
             m_RetreatAt = Mathf.Lerp(0.22f, 0.45f, 1f - m_Aggro * 0.6f);
@@ -126,6 +126,21 @@ namespace RockGame
             m_ThinkEvery = Mathf.Lerp(0.5f, 0.85f, F());
             m_SideSign = r.Next(0, 2) == 0 ? -1f : 1f;
             m_NextSlide = Time.time + Random.Range(2f, 6f);
+        }
+
+        /// <summary>Its personality, dealt per team like a hand of cards: the bots on a team each get a different one (in a
+        /// shuffle of the four that changes with the map and the team), so a team's bots play off each other.</summary>
+        Bent TeamBent(int fallback)
+        {
+            int team = MyTeam;
+            if (team < 0 || team > 3) return (Bent)fallback;
+            int idx = 0;
+            foreach (var p in PlayerNet.All)
+                if (p != null && p != m_P && p.IsSpawned && p.Bot.Value && p.Team.Value == team && p.NetworkObjectId < m_P.NetworkObjectId) idx++;
+            var r = new System.Random(Cfg.MapSeed ^ (team * 0x51ed27) ^ 0x1b873593);
+            var deck = new List<int> { 0, 1, 2, 3 };
+            for (int i = 3; i > 0; i--) { int j = r.Next(i + 1); (deck[i], deck[j]) = (deck[j], deck[i]); }
+            return (Bent)deck[idx % 4];
         }
 
         void Update()
@@ -303,6 +318,7 @@ namespace RockGame
                     m_SideUntil = Time.time + 0.8f;
                     m_SideSign = Random.value < 0.5f ? -1f : 1f;
                     if (m_Stuck >= 2) { PushOut(); Detour(wish); }
+                    if (m_Stuck >= 3) BreakOut(); // (shut in its own base: through its own wall - BotBrain.House.cs)
                     if (m_Stuck >= 5) { m_Stuck = 0; GaveUp(); }
                 }
                 else m_Stuck = 0;
