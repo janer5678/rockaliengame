@@ -22,6 +22,11 @@ namespace RockGame
             if (t == null || !Hostile(t)) { m_Target = null; Done(); return; }
             var tp = t.transform.position;
             float d = Flat(tp, transform.position);
+            // through a door the enemy just opened, after whoever opened it (BotBrain.Raid.cs)
+            if (DoorRushStep(t)) return;
+            // a ranged weapon when it beats its melee at this range (BotBrain.Guns.cs)
+            if (RangedFight(t, d)) return;
+            m_DrawFrom = -1f;
             // the right weapon for the distance: a sword up close, a spear's reach when they keep off - never just the spear
             if (Time.time >= m_NextSwing - 0.15f) HoldBest(Use.Fight, d);
             var item = m_P.HeldItem;
@@ -83,6 +88,7 @@ namespace RockGame
             var bp = b.transform.position;
             // only with nothing in between (no reaching through a wall - a 1x1 round the machine has to be got into first)
             bool clear = !PlayerNet.WallBetween(m_P.EyePos, bp);
+            if (raid) WatchDoors(sock, bp); // (a door swinging open deeper in: through it, after whoever opened it)
             if (clear && Vector3.Distance(bp, m_P.EyePos) <= Cfg.InteractRange + 1.5f)
             {
                 GoTo(bp, 0.7f, true);
@@ -97,6 +103,7 @@ namespace RockGame
                 return;
             }
             // in their base: in by an open door or over an open top first, then the weakest way (BotBrain.Raid.cs)
+            if (raid) RaidStall(bp);
             if (raid && !clear && RaidWay(sock, bp)) return;
             GoTo(bp, 0.7f, true);
             m_HasLook = Flat(bp, transform.position) < 10f;
@@ -263,6 +270,15 @@ namespace RockGame
             m_HasLook = true;
             m_LookAt = m_BlockPoint;
             m_BlockedAt = Time.time; // (still in the way while it's at it)
+            // a raid stuck on a strong wall, with C4 on it: on the wall, and back off out of the blast (BotBrain.Guns.cs)
+            if (s != null && s.Team.Value != MyTeam && m_Plan == Plan.Raid && s.Health.Value > 150f && Has(Item.C4) && PlantC4(s, m_BlockPoint))
+            {
+                var away = transform.position - m_BlockPoint; away.y = 0f;
+                m_FleeTo = transform.position + (away.sqrMagnitude > 0.01f ? away.normalized : -transform.forward) * (Cfg.C4Radius + 2.5f);
+                m_FleeUntil = Time.time + Cfg.C4Fuse + 0.6f;
+                m_Blocker = null;
+                return true;
+            }
             // a ram (a raider brings one for walls): hold it up for the wind-up, then the strike (RamStrikeRpc)
             if (s != null && s.Team.Value != MyTeam && Has(Item.Ram))
             {
@@ -274,7 +290,7 @@ namespace RockGame
                     m_NextSwing = Time.time + Cfg.RamWindup * 0.9f;
                     m_RamFrom = Time.time;
                     m_P.RamStrikeRpc(no, m_BlockPoint);
-                    if (!no.IsSpawned) m_Blocker = null;
+                    if (!no.IsSpawned) { m_Blocker = null; NoteBreach(m_BlockPoint, s); }
                     return true;
                 }
             }
@@ -285,7 +301,7 @@ namespace RockGame
             m_NextSwing = Time.time + st.Cooldown + Random.Range(0.05f, 0.25f);
             m_P.BotMelee(no, m_BlockPoint, false);
             // broken (or not there any more): on its way again
-            if (!no.IsSpawned) m_Blocker = null;
+            if (!no.IsSpawned) { m_Blocker = null; NoteBreach(m_BlockPoint, s); }
             return true;
         }
     }

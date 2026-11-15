@@ -41,6 +41,8 @@ namespace RockGame
         void Tick(NetGame g, float dt)
         {
             TickEat();
+            CheckArrow();
+            if (Time.time < m_FleeUntil) { GoTo(m_FleeTo, 0.5f, true); return; } // (its own C4 about to go off: clear of it)
             switch (m_Task)
             {
                 case Task.Wander:

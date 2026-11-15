@@ -29,12 +29,63 @@ namespace RockGame
 
         // ---------------------------------------------------------------- the way in
 
+        Vector3 m_FleeTo;
+        float m_FleeUntil = -1f;
+        bool m_BreachWay;
+        float m_RaidBest = float.MaxValue, m_RaidProgressAt;
+        /// <summary>(tests) times a raid stalled and it tried another way in.</summary>
+        public int RaidSwitches { get; private set; }
+
+        /// <summary>It broke through a piece of the base it's raiding: the team's breach - the other raiders use it too.</summary>
+        void NoteBreach(Vector3 at, Structure s)
+        {
+            if (s == null || m_Plan != Plan.Raid) return;
+            var m = MindOf(MyTeam);
+            m.Breach = at;
+            m.BreachAt = Time.time;
+            m.BreachTeam = s.Team.Value;
+            m_RaidProgressAt = Time.time;
+        }
+
+        /// <summary>A raid getting nowhere (no nearer the ball, nothing broken, for a good while): another way in - the
+        /// next door, the ladder, round the other side.</summary>
+        void RaidStall(Vector3 bp)
+        {
+            float d = Flat(transform.position, bp);
+            if (d > 45f) { m_RaidBest = float.MaxValue; m_RaidProgressAt = Time.time; return; }
+            if (d < m_RaidBest - 1.5f) { m_RaidBest = d; m_RaidProgressAt = Time.time; }
+            if (Time.time - m_RaidProgressAt < 22f) return;
+            m_RaidProgressAt = Time.time;
+            m_RaidBest = d;
+            if (m_RaidDoor != null) m_DoorDone[m_RaidDoor] = Time.time;
+            m_RaidDoor = null;
+            m_WayLadder = false;
+            m_BreachWay = false;
+            m_NextWay = 0f;
+            RaidSwitches++;
+            Note("the raid stalled: another way in");
+            // round the other side for a bit
+            var side = Vector3.Cross(Vector3.up, (bp - transform.position).normalized) * (Random.value < 0.5f ? -1f : 1f);
+            m_Detour = bp + side * 10f + (transform.position - bp).normalized * 4f;
+            m_DetourUntil = Time.time + 3f;
+        }
+
         /// <summary>Walled off from the ball in team's base: the way in (an open door, a ladder, the weakest door to break).
         /// False: no better way than straight at it (breaking whatever's in front).</summary>
         bool RaidWay(int team, Vector3 bp)
         {
             if (team < 0 || team > 3 || Flat(transform.position, bp) > 45f) return false;
             if (Time.time >= m_NextWay) { m_NextWay = Time.time + 1f; PickWay(team, bp); }
+            if (m_BreachWay)
+            {
+                // through the hole a teammate made
+                var m = MindOf(MyTeam);
+                if (Time.time - m.BreachAt > 45f || Flat(transform.position, m.Breach) < 1.2f) { m_BreachWay = false; m_NextWay = 0f; return false; }
+                GoTo(m.Breach, 0.3f, true);
+                m_HasLook = true;
+                m_LookAt = m.Breach + Vector3.up;
+                return true;
+            }
             if (m_WayLadder) return LadderWay();
             var d = m_RaidDoor;
             if (d == null || !d.IsSpawned) return false;
@@ -104,6 +155,14 @@ namespace RockGame
                 if (w != null && w != s) cost += w.Health.Value / smash * run;
                 if (cost < best) { best = cost; m_RaidDoor = s; bestOpen = open && w == null; }
             }
+            // a hole a teammate broke lately: the walk there and on is all it costs
+            var mind = MindOf(MyTeam);
+            m_BreachWay = false;
+            if (Time.time - mind.BreachAt < 45f && mind.BreachTeam == team && Flat(pos, mind.Breach) > 1.5f)
+            {
+                float via = Flat(pos, mind.Breach) + Flat(mind.Breach, bp);
+                if (via < best - 2f) { m_BreachWay = true; m_RaidDoor = null; return; }
+            }
             if (bestOpen) return;
             // nothing open: over the wall with a ladder, if it has one and there's no roof on the far side
             if (Has(Item.Ladder) && first != null && LadderFits(first, bp)) { m_WayLadder = true; m_RaidDoor = null; }
@@ -150,6 +209,79 @@ namespace RockGame
             m_BlockPoint = hit.point;
             m_BlockedAt = Time.time;
             TryBreakBlocker();
+        }
+
+        // ---------------------------------------------------------------- a door opening in front of it
+
+        readonly Dictionary<Structure, bool> m_DoorWasOpen = new Dictionary<Structure, bool>();
+        Structure m_Rush;
+        PlayerNet m_Opener;
+        float m_RushUntil, m_NextDoorWatch;
+        /// <summary>(tests) doors the enemy opened mid-raid that it ran through after them.</summary>
+        public int DoorRushes { get; private set; }
+
+        /// <summary>
+        /// Raiding team's base: watching its doors. One that swings open (someone inside opened it) and leads deeper in -
+        /// nearer the ball than it is - is the way in: it runs for it, through it, and after whoever opened it.
+        /// </summary>
+        void WatchDoors(int team, Vector3 deeper)
+        {
+            if (team < 0 || team > 3 || Time.time < m_NextDoorWatch) return;
+            m_NextDoorWatch = Time.time + 0.2f;
+            var pos = transform.position;
+            foreach (var s in Structure.All)
+            {
+                if (s == null || !s.IsSpawned || s.Team.Value != team || !s.HasDoor) continue;
+                var dp = s.transform.position;
+                if (Flat(dp, pos) > 30f) { m_DoorWasOpen.Remove(s); continue; }
+                bool open = s.DoorOpen.Value;
+                bool was = m_DoorWasOpen.TryGetValue(s, out var w) ? w : open;
+                m_DoorWasOpen[s] = open;
+                if (!open || was) continue;
+                if (Flat(dp, deeper) > Flat(pos, deeper) + 3f) continue; // (not on the way in)
+                // who opened it: the enemy nearest the door
+                PlayerNet who = null;
+                float wd = 7f;
+                foreach (var p in PlayerNet.All)
+                {
+                    if (!Hostile(p)) continue;
+                    float pd = Flat(p.transform.position, dp);
+                    if (pd < wd) { wd = pd; who = p; }
+                }
+                m_Rush = s;
+                m_Opener = who;
+                m_RushUntil = Time.time + 9f;
+                m_RaidDoor = s;            // (and it's the raid's way in from now: RaidWay)
+                m_NextWay = Time.time + 4f;
+                DoorRushes++;
+                Note($"a door opened in their base - through it{(who != null ? " after " + who.DisplayName : "")}");
+                if (who != null) { m_Target = who; Set(Task.Fight); }
+                return;
+            }
+        }
+
+        /// <summary>A door rush on: who it's after (Think keeps it on them even out of sight).</summary>
+        bool Rushing => m_Rush != null && m_Rush.IsSpawned && Time.time < m_RushUntil && m_Opener != null && Hostile(m_Opener);
+
+        /// <summary>Fighting through a door: while the target's on the far side of it (and it's still open), through the
+        /// doorway first - lined up, then straight in. True while it's doing that.</summary>
+        bool DoorRushStep(PlayerNet t)
+        {
+            var d = m_Rush;
+            if (d == null || !d.IsSpawned || Time.time > m_RushUntil || (d.HasDoor && !d.DoorOpen.Value && d.DoorHealth.Value > 0f)) { m_Rush = null; return false; }
+            var dp = DoorPos(d);
+            var n = d.transform.forward; n.y = 0f; n.Normalize();
+            var pos = transform.position;
+            float side = Vector3.Dot(pos - dp, n) >= 0f ? 1f : -1f;
+            float theirs = Vector3.Dot(t.transform.position - dp, n) >= 0f ? 1f : -1f;
+            if (side == theirs) { m_Rush = null; return false; } // (through: on them)
+            var lat = Vector3.Cross(Vector3.up, n);
+            float off = Mathf.Abs(Vector3.Dot(pos - dp, lat));
+            float ahead = Vector3.Dot(pos - dp, n * side);
+            GoTo(off < 0.7f && ahead < 2.4f ? dp - n * side * 2f : dp + n * side * 1.3f, 0.2f, true);
+            m_HasLook = true;
+            m_LookAt = t.EyePos;
+            return true;
         }
 
         // ---------------------------------------------------------------- ladders
@@ -280,6 +412,7 @@ namespace RockGame
 
         bool m_Prepped;
         Vector3 m_RushSpot;
+        static readonly List<Item> s_Kit = new List<Item>(6);
 
         /// <summary>Off to raid the ball out of enemy's machine, still near home: a weapon first, then a raiding tool for that
         /// base - a ladder when there's no roof over their machine, else a ram (wooden doors and walls go down fast to one).
@@ -289,12 +422,23 @@ namespace RockGame
             if (m_Prepped || !homeSide || Flat(transform.position, Cfg.BaseCenter[MyTeam]) > 45f) return false;
             if (!HasWeapon && CraftJob(true)) return true;
             int onHand = m_P.Count(Cfg.CurrencyItem), wealth = onHand + ChestStock();
-            var tool = Item.None;
-            if (!Has(Item.Ladder) && Roofless(Cfg.SocketPos(enemy) + Vector3.up * 0.5f)) tool = Item.Ladder;
-            else if (!Has(Item.Ram)) tool = Item.Ram;
+            // the raid gets heavier each time one's beaten back (the team's wipes): a ladder or a ram the first time, then
+            // both, then C4 as well - and ammo for its guns and armour on before going back in
+            int wipes = MindOf(MyTeam).Wipes;
+            s_Kit.Clear();
+            if (AmmoNeed(out var ammo)) s_Kit.Add(ammo);
+            if (wipes >= 1 && m_P.ArmorHp.Value <= 0 && !Has(Item.Armor) && !Has(Item.HeavyArmor)) s_Kit.Add(Item.Armor);
+            bool open = Roofless(Cfg.SocketPos(enemy) + Vector3.up * 0.5f);
+            if (open && !Has(Item.Ladder)) s_Kit.Add(Item.Ladder);
+            if ((!open || wipes >= 1) && !Has(Item.Ram)) s_Kit.Add(Item.Ram);
+            if (wipes >= 1 && CountItem(Item.C4) < Mathf.Min(3, wipes)) s_Kit.Add(Item.C4);
+            foreach (var tool in s_Kit)
+            {
+                if (!Craftable(tool, out int idx, out int cost) || wealth < cost + 40) continue;
+                return StartStep(new Step { Goal = Goal.Weapons, Kind = StepKind.Craft, Item = tool, Idx = idx, Cost = cost }, onHand); // (back here for the next on the list)
+            }
             m_Prepped = true;
-            if (tool == Item.None || !Craftable(tool, out int idx, out int cost) || wealth < cost + 40) return false;
-            return StartStep(new Step { Goal = Goal.Weapons, Kind = StepKind.Craft, Item = tool, Idx = idx, Cost = cost }, onHand);
+            return false;
         }
 
         // ---------------------------------------------------------------- the Rusher

@@ -44,6 +44,11 @@ namespace RockGame
             public int RaidTeam = -1;
             public PlayerNet Anchor, Collector;
             public int Sieges, Wipes;
+            public Vector3 Breach;
+            public float BreachAt = -100f;
+            public int BreachTeam = -1;
+            public Container Drop;
+            public PlayerNet DropBot;
         }
 
         static readonly Mind[] s_Minds = new Mind[4];
@@ -136,6 +141,7 @@ namespace RockGame
             }
             if (m.Stance == Stance.Siege) SiegeTick(g, m, team);
             PickRoles(m, team, style);
+            PickDrop(m, team, live && !pre);
             // what any of them can see (and the base's alarm when an enemy's in it)
             float now = Time.time;
             var home = Cfg.BaseCenter[team];
@@ -244,6 +250,38 @@ namespace RockGame
             if (style == TeamStyle.Aggro && bots < 2) anchor = null;
             m.Anchor = anchor;
             m.Collector = anchor != null ? anchor : nearest;
+        }
+
+        /// <summary>An airdrop down with something in it (not in an enemy base): the bot nearest it that can be spared goes
+        /// for it - not the anchor while the ball's at home, not a carrier or someone already in a siege.</summary>
+        static void PickDrop(Mind m, int team, bool live)
+        {
+            m.Drop = null;
+            m.DropBot = null;
+            if (!live) return;
+            Container best = null;
+            PlayerNet who = null;
+            float bd = 170f;
+            foreach (var c in Container.All)
+            {
+                if (c == null || !c.IsSpawned || !c.IsAirdrop || c.Empty) continue;
+                var cp = c.transform.position;
+                int bt = Cfg.BaseTeamAt(cp);
+                if (bt >= 0 && bt != team) continue;
+                float lim = Cfg.MapHalf - 6f;
+                if (Mathf.Abs(cp.x) > lim || Mathf.Abs(cp.z) > lim) continue;
+                foreach (var p in PlayerNet.All)
+                {
+                    if (p == null || !p.IsSpawned || !p.Bot.Value || p.Dead.Value || p.Team.Value != team || p.CarryingBall) continue;
+                    if (p == m.Anchor && m.Stance == Stance.Hold) continue;
+                    var b = p.GetComponent<BotBrain>();
+                    if (b == null || (m.Stance == Stance.Siege && m.Go && b.m_Plan == Plan.Raid) || b.Avoided(c)) continue;
+                    float d = Flat(p.transform.position, cp);
+                    if (d < bd) { bd = d; best = c; who = p; }
+                }
+            }
+            m.Drop = best;
+            m.DropBot = who;
         }
 
         /// <summary>Every bot on the team alive has a real weapon and armour on (or can't get any).</summary>

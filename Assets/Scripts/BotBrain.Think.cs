@@ -49,13 +49,18 @@ namespace RockGame
                 return;
             }
 
+            // 2b. a door just opened in the base it is raiding: after whoever opened it, through it (even out of sight)
+            if (Rushing && !hurt) { m_Target = m_Opener; Set(Task.Fight); return; }
+            if (m_Plan == Plan.Raid && m_RaidTeam >= 0 && m_RaidTeam < Cfg.TeamCount && withBall && ball.SocketTeam.Value == m_RaidTeam && Flat(transform.position, Cfg.BaseCenter[m_RaidTeam]) < 40f) WatchDoors(m_RaidTeam, ball.transform.position);
+
             // 3. who's about (sudden death: anyone on the platform) - a hunter or a guard looks further, a farmer keeps its head down
             float range = sudden ? 500f : 16f + 16f * m_Aggro + (m_Task == Task.Defend || m_Plan == Plan.Hunt || m_Plan == Plan.Guard || m_Plan == Plan.Raid ? 10f : 0f) - (m_Plan == Plan.Farm ? 4f : 0f);
             var foe = PickTarget(range, sudden);
 
             // 4. badly hurt with someone stronger after it: back off home (healing in base, eating on the way)
-            if (!sudden && foe != null && hurt && foe.Health.Value > hp * 0.8f) { m_Target = foe; Set(Task.Retreat); return; }
-            if (!sudden && m_Task == Task.Retreat && Hp01 < 0.7f && foe != null) return;
+            if (!sudden && foe != null && hurt && foe.Health.Value > hp * 0.8f) { m_Target = foe; m_RetreatSeen = Time.time; Set(Task.Retreat); return; }
+            // (a retreat sticks: till it has healed up, or a few seconds after it last saw anyone after it - no turning back the moment they drop out of sight)
+            if (!sudden && m_Task == Task.Retreat && Hp01 < 0.7f && (foe != null || Time.time - m_RetreatSeen < 6f)) { if (foe != null) { m_Target = foe; m_RetreatSeen = Time.time; } return; }
 
             // 5. a fight
             if (foe != null) { m_Target = foe; Set(Task.Fight); return; }
@@ -74,6 +79,14 @@ namespace RockGame
             if (live && !Cfg.Builder && (mind.Stance == Stance.Hold || mind.Stance == Stance.Prepare || mind.Stance == Stance.Develop) && Time.time - mind.AlarmAt < 8f
                 && Flat(transform.position, home) < 150f && !MateOnAlarm(mind))
             { Set(Task.Defend); return; }
+
+            // an airdrop down: the team's pick goes for it (BotBrain.Team.cs: PickDrop)
+            if (mind.DropBot == m_P && mind.Drop != null && mind.Drop.IsSpawned && !mind.Drop.Empty && !Avoided(mind.Drop))
+            {
+                if (m_LootBox != mind.Drop) { m_LootBox = mind.Drop; m_LootId = -1; Note("off to an airdrop"); AirdropsRun++; }
+                Set(Task.Loot);
+                return;
+            }
 
             // 8. what it has set its mind on (BotBrain.Plans.cs): a new plan when the last ran out or is done, or the team's
             // stance changed (a Rusher drops whatever it's doing half a minute before the wall goes)
@@ -100,6 +113,9 @@ namespace RockGame
         }
 
         Stance m_PlanStance;
+        float m_RetreatSeen = -10f;
+        /// <summary>(tests) airdrops it has gone for.</summary>
+        public int AirdropsRun { get; private set; }
 
         /// <summary>Someone else on its team (a human, or a bot already defending) is nearer the alarm than it is.</summary>
         bool MateOnAlarm(Mind m)

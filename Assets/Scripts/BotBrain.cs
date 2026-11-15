@@ -107,6 +107,8 @@ namespace RockGame
             m_OpenedDoors.Clear();
             m_DetourUntil = 0f;
             m_ClimbT = -1f;
+            m_Rush = null;
+            m_DoorWasOpen.Clear();
             m_MoveDir = Vector3.zero;
         }
 
@@ -243,8 +245,8 @@ namespace RockGame
                 var side = Vector3.Cross(Vector3.up, to.sqrMagnitude > 0.01f ? to.normalized : transform.forward) * m_StrafeSign;
                 wish = (wish + side * 0.85f).normalized;
             }
-            if (Time.time < m_SideUntil && wish.sqrMagnitude > 0.01f) wish = (wish + Vector3.Cross(Vector3.up, wish) * m_SideSign).normalized;
-            if (wish.sqrMagnitude > 0.01f && !lobby) wish = Steer(wish, dist);
+            if (Time.time < m_SideUntil && wish.sqrMagnitude > 0.01f && !(detour && m_DoorDetour)) wish = (wish + Vector3.Cross(Vector3.up, wish) * m_SideSign).normalized;
+            if (wish.sqrMagnitude > 0.01f && !lobby && !(detour && m_DoorDetour)) wish = Steer(wish, dist); // (lined up through a doorway: straight, no steering off the frame)
             // never off the platform in space (the waiting stadium, sudden death)
             if (wish.sqrMagnitude > 0.01f && SpaceArena.NearArena(pos) && !SpaceArena.OverPlatform(pos + wish * 1.5f))
             {
@@ -319,6 +321,7 @@ namespace RockGame
                     m_SideSign = Random.value < 0.5f ? -1f : 1f;
                     if (m_Stuck >= 2) { PushOut(); Detour(wish); }
                     if (m_Stuck >= 3) BreakOut(); // (shut in its own base: through its own wall - BotBrain.House.cs)
+                    DoorUnstick(); // (at one of its own doorways: open it, line up, straight through)
                     if (m_Stuck >= 5) { m_Stuck = 0; GaveUp(); }
                 }
                 else m_Stuck = 0;
@@ -384,6 +387,7 @@ namespace RockGame
             var side = Vector3.Cross(Vector3.up, wish) * m_SideSign;
             m_Detour = transform.position - wish * Random.Range(1f, 2f) + side * Random.Range(2f, 3.5f);
             m_DetourUntil = Time.time + 1.1f;
+            m_DoorDetour = false;
             m_SteerUntil = 0f;
         }
 

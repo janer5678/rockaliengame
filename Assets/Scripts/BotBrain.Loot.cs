@@ -54,7 +54,7 @@ namespace RockGame
                 bool home = Cfg.BaseTeamAt(it.Pos) == MyTeam;
                 if (d > Mathf.Min(reach, home ? 45f : 28f) || !LootOk(it.Pos)) continue;
                 // (a few sticks out of the wood machine: let the pile grow first, unless it's right there)
-                if (it.Stack.Id == cur && it.Stack.Count < 40 && d > 6f) continue;
+                if (it.Stack.Id == cur && it.Stack.Count < 40 && d > 2.5f) continue;
                 // (the wood machine's pile at home: the team's collector empties it - the rest only take what they walk past)
                 if (home && it.Stack.Id == cur && d > 5f && !IsCollector) continue;
                 if (InvOps.Space(m_P.Inv, it.Stack.Id, it.Stack.Data) <= 0) continue;
@@ -160,11 +160,11 @@ namespace RockGame
         /// and potions, things it's about to put down, and a bow and arrows for the turret.</summary>
         bool KeepsItem(Item id)
         {
-            if (id == Cfg.CurrencyItem || Cfg.IsMelee(id)) return true;
+            if (id == Cfg.CurrencyItem || Cfg.IsMelee(id) || IsRanged(id) || IsAmmo(id)) return true; // (its loadout: BotBrain.Guns.cs)
             switch (id)
             {
                 case Item.BuildingPlan: case Item.Berry: case Item.Meat: case Item.Ram: case Item.Ladder: case Item.MedPen:
-                case Item.Armor: case Item.HeavyArmor: case Item.Helmet: case Item.InvisPotion:
+                case Item.Armor: case Item.HeavyArmor: case Item.Helmet: case Item.InvisPotion: case Item.C4:
                 case Item.Chest: case Item.Workbench: case Item.Workbench2: case Item.SleepingBag: case Item.AutoTurret:
                     return true;
                 case Item.Bow: case Item.Crossbow: case Item.Arrow:

@@ -98,8 +98,9 @@ namespace RockGame
             switch (i)
             {
                 case Item.Hatchet: case Item.Pickaxe: return 0.5f;
-                case Item.Spear: case Item.Bow: case Item.Chainsaw: case Item.TreeCracker: return 1f;
-                case Item.Crossbow: return 1.5f;
+                case Item.Spear: case Item.Chainsaw: case Item.TreeCracker: return 1f;
+                case Item.Bow: return 1.3f;
+                case Item.Crossbow: return 1.7f;
                 case Item.Sword: case Item.Pistol: return 2f;
                 case Item.Shotgun: case Item.Revolver: case Item.Sniper: case Item.C4: return 2.5f;
                 case Item.RocketLauncher: case Item.DeathWand: case Item.GiantStaff: return 3f;
@@ -144,17 +145,23 @@ namespace RockGame
             return true;
         }
 
-        static readonly Item[] k_Arms = { Item.Sword, Item.Armor, Item.Chainsaw, Item.HeavyArmor };
+        /// <summary>The tech ladder, in the order it climbs it: a bow (range), armour, a crossbow, a sword, a revolver,
+        /// heavy armour, a shotgun (up close) - the chainsaw on the way for a gatherer (it chops fast). Each rung is
+        /// skipped once it has that or better on the same line (ranged: bow &lt; crossbow &lt; revolver; close: spear &lt;
+        /// sword; the shotgun on top).</summary>
+        static readonly Item[] k_Ladder = { Item.Bow, Item.Armor, Item.Crossbow, Item.Sword, Item.Revolver, Item.HeavyArmor, Item.Shotgun, Item.Chainsaw };
 
-        /// <summary>The next weapon / armour it wants: a sword, armour, a chainsaw (it chops fast too), heavy armour -
-        /// and a raider going up against walls wants a ram.</summary>
+        /// <summary>The next weapon / armour it wants: ammo for what it carries first, then the next rung of the tech ladder
+        /// it can make - and a raider going up against walls wants a ram.</summary>
         bool WeaponStep(out Step s)
         {
             s = new Step { Goal = Goal.Weapons, Kind = StepKind.Craft };
+            if (AmmoNeed(out var ammo) && Craftable(ammo, out s.Idx, out s.Cost)) { s.Item = ammo; return true; }
             if (m_Bent == Bent.Raider && !Has(Item.Ram) && EnemyBest(s_Base) >= 6f && Craftable(Item.Ram, out s.Idx, out s.Cost)) { s.Item = Item.Ram; return true; }
-            foreach (var id in k_Arms)
+            foreach (var id in k_Ladder)
             {
-                if (Got(id)) continue;
+                if (Got(id) || OnLadderPast(id)) continue;
+                if (id == Item.Chainsaw && m_Bent != Bent.Gatherer) continue;
                 if (id == Item.HeavyArmor && m_P.ArmorHp.Value >= Cfg.HeavyArmorHp) continue;
                 if (!Craftable(id, out s.Idx, out s.Cost)) continue;
                 s.Item = id;
@@ -162,6 +169,30 @@ namespace RockGame
             }
             return false;
         }
+
+        /// <summary>It already has something better on that line of the ladder.</summary>
+        bool OnLadderPast(Item id)
+        {
+            switch (id)
+            {
+                case Item.Bow: return Has(Item.Crossbow) || Has(Item.Revolver) || Has(Item.Sniper);
+                case Item.Crossbow: return Has(Item.Revolver) || Has(Item.Sniper);
+                case Item.Armor: return Has(Item.HeavyArmor) || m_P.ArmorHp.Value > 0;
+                default: return false;
+            }
+        }
+
+        /// <summary>Running low on ammo for a weapon it carries: arrows for the bow / crossbow, bullets, shells.</summary>
+        bool AmmoNeed(out Item ammo)
+        {
+            ammo = Item.None;
+            if ((Has(Item.Bow) || Has(Item.Crossbow)) && CountItem(Item.Arrow) < 12) ammo = Item.Arrow;
+            else if (Has(Item.Revolver) && CountItem(Item.RevolverAmmo) < 12) ammo = Item.RevolverAmmo;
+            else if (Has(Item.Shotgun) && CountItem(Item.ShotgunShell) < 5) ammo = Item.ShotgunShell;
+            return ammo != Item.None;
+        }
+
+        static bool IsAmmo(Item i) => i == Item.Arrow || i == Item.RevolverAmmo || i == Item.ShotgunShell || i == Item.PistolAmmo;
 
         /// <summary>The next Trade Station: the T1 (once the ball's been captured), then the T2.</summary>
         bool CraftingStep(out Step s)
@@ -270,8 +301,10 @@ namespace RockGame
             // keeping up: whatever the enemy is ahead on counts for more the further behind it is (a Trade Station they have
             // and it hasn't most of all), and a base that isn't shut in comes before everything
             if (BaseStep(out var s)) { s.Score = (EnemyBest(s_Base) - s_Base[team]) / 6f + bias(Goal.Base) + (open ? 3f : 0f); m_Steps.Add(s); }
-            if (WeaponStep(out s)) { s.Score = EnemyBest(s_Weapons) - mineW + bias(Goal.Weapons) + (g.S == GameState.BallLive && !HasWeapon ? 1f : 0f); m_Steps.Add(s); }
-            if (CraftingStep(out s)) { float behind = EnemyBest(s_Craft) - s_Craft[team]; s.Score = behind * 2f + (behind > 0f ? 1f : 0.3f) + bias(Goal.Crafting); m_Steps.Add(s); }
+            // the tech: once the base is shut in, the next weapon and the Trade Station that unlocks more come first for
+            // every bot (a team that's out-gunned can't win its fights) - ammo for what it carries above all
+            if (WeaponStep(out s)) { s.Score = EnemyBest(s_Weapons) - mineW + bias(Goal.Weapons) + (open ? 0f : 1.2f) + (g.S == GameState.BallLive && !HasWeapon ? 1f : 0f) + (IsAmmo(s.Item) ? 1.5f : 0f); m_Steps.Add(s); }
+            if (CraftingStep(out s)) { float behind = EnemyBest(s_Craft) - s_Craft[team]; s.Score = behind * 2f + (behind > 0f ? 1f : 0.3f) + bias(Goal.Crafting) + (open ? 0f : 1f); m_Steps.Add(s); }
             if (UpgradeStep(out s)) { s.Score = EnemyBest(s_Upgrades) - s_Upgrades[team] + bias(Goal.Upgrades); m_Steps.Add(s); }
             m_Steps.Sort((a, b) => b.Score.CompareTo(a.Score));
             m_Focus = m_Steps.Count > 0 ? m_Steps[0].Goal : Goal.None;

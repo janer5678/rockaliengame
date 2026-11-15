@@ -113,7 +113,7 @@ namespace RockGame
             Cfg.RespawnTime = respawn;
             Log($"botsim over after {gameSeconds:0} game seconds: {(g != null ? g.S.ToString() : "-")}, winner {(g != null && g.Winner.Value >= 0 ? Cfg.TeamName[g.Winner.Value] : "none")} ({(g != null ? g.EndReason.Value.ToString() : "")}), {captures} captures ({steals} taken from a machine)");
             float liveTotal = 0f;
-            int totalKills = 0, outBots = 0;
+            int totalKills = 0, outBots = 0, shots = 0, ranged = 0;
             for (int i = 0; i < n; i++)
             {
                 var p = bots[i];
@@ -132,15 +132,41 @@ namespace RockGame
                 foreach (var kv in plans) ps.Append($"{kv.Key} x{kv.Value} ");
                 float pctOut = (field[i] + raidT[i]) / Mathf.Max(1f, alive);
                 if (pctOut > 0.35f) outBots++;
-                Log($"botsim {p.DisplayName} ({Cfg.TeamName[p.Team.Value]}, {b.Leaning}): home {home[i] / Mathf.Max(1f, alive) * 100f:0}% field {field[i] / Mathf.Max(1f, alive) * 100f:0}% enemy base {raidT[i] / Mathf.Max(1f, alive) * 100f:0}% enemy half {enemyHalf[i] / Mathf.Max(1f, alive) * 100f:0}% dead {deadT[i]:0}s | K{p.Kills.Value} D{p.Deaths.Value} | stuck {b.StuckTotal} | job changes {changes[i]}, flips {flips[i]} | built {b.Built} crafted {b.Crafted} farm hits {b.FarmHits} | plans: {ps}| jobs: {jobs}");
+                shots += b.ShotsFired; ranged += HasRanged(p) ? 1 : 0;
+                Log($"botsim {p.DisplayName} ({Cfg.TeamName[p.Team.Value]}, {b.Leaning}): home {home[i] / Mathf.Max(1f, alive) * 100f:0}% field {field[i] / Mathf.Max(1f, alive) * 100f:0}% enemy base {raidT[i] / Mathf.Max(1f, alive) * 100f:0}% enemy half {enemyHalf[i] / Mathf.Max(1f, alive) * 100f:0}% dead {deadT[i]:0}s | K{p.Kills.Value} D{p.Deaths.Value} | stuck {b.StuckTotal} | job changes {changes[i]}, flips {flips[i]} | shots {b.ShotsFired} ({b.ShotsHit} hit) door unsticks {b.DoorUnsticks} broke out {b.BrokeOut} door rushes {b.DoorRushes} C4 {b.C4Planted} raid switches {b.RaidSwitches} airdrops {b.AirdropsRun} | kit: {Kit(p)} | built {b.Built} crafted {b.Crafted} farm hits {b.FarmHits} | plans: {ps}| jobs: {jobs}");
                 var tr = b.Trace;
                 Log($"botsim {p.DisplayName} trace (last 40): {string.Join(" > ", tr.GetRange(Mathf.Max(0, tr.Count - 40), Mathf.Min(40, tr.Count)))}");
             }
             Check(outBots >= 2, $"the bots get out and about: {outBots} of {n} spent over a third of the match away from home");
             Check(totalKills >= 4, $"they fight: {totalKills} kills between them");
+            Check(ranged >= 2 && shots > 0, $"they climb the tech: {ranged} of {n} end up with a ranged weapon, {shots} shots fired");
             Check(captures >= 1, $"the ball gets taken: {captures} captures, {steals} of them out of a machine");
             Log("botsim done");
             Application.Quit(0);
+        }
+
+        /// <summary>A player's weapons, armour and raiding kit, for the log.</summary>
+        static string Kit(PlayerNet p)
+        {
+            var sb = new StringBuilder();
+            for (int i = 0; i < p.Inv.Count; i++)
+            {
+                var id = p.Inv[i].Id;
+                if (id == Item.None || id == Cfg.CurrencyItem || id == Item.Berry || id == Item.BuildingPlan || id == Item.Wood || id == Item.Stone) continue;
+                sb.Append(id).Append(p.Inv[i].Count > 1 ? "x" + p.Inv[i].Count : "").Append(' ');
+            }
+            if (p.ArmorHp.Value > 0) sb.Append($"armour {p.ArmorHp.Value}");
+            return sb.ToString();
+        }
+
+        static bool HasRanged(PlayerNet p)
+        {
+            for (int i = 0; i < p.Inv.Count; i++)
+            {
+                var id = p.Inv[i].Id;
+                if (id == Item.Bow || id == Item.Crossbow || id == Item.Shotgun || id == Item.Revolver || id == Item.Pistol || id == Item.Sniper) return true;
+            }
+            return false;
         }
 
         static int CountTeam(int t)

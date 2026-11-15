@@ -368,6 +368,48 @@ namespace RockGame
             return goingOut ? inPt : outPt;
         }
 
+        bool m_DoorDetour;
+        /// <summary>(tests) times it was stuck at one of its own doorways and worked its way through.</summary>
+        public int DoorUnsticks { get; private set; }
+
+        /// <summary>
+        /// Stuck right by one of its own doorways it's trying to get through: the door open if it's shut (straight away -
+        /// no waiting on its last door's toggle), then lined up with the gap from a step out and straight through it, with
+        /// no steering or sidestepping to knock it into the frame (Move).
+        /// </summary>
+        void DoorUnstick()
+        {
+            var pos = transform.position;
+            Structure best = null;
+            float bd = 3.2f;
+            foreach (var s in Structure.All)
+            {
+                if (s == null || !s.IsSpawned || s.Team.Value != MyTeam || (s.PType != PieceType.Doorway && s.PType != PieceType.Gate)) continue;
+                float d = Flat(DoorPos(s), pos);
+                if (d < bd) { bd = d; best = s; }
+            }
+            if (best == null) return;
+            var dp = DoorPos(best);
+            var n = best.transform.forward; n.y = 0f;
+            if (n.sqrMagnitude < 0.01f) return;
+            n.Normalize();
+            float side = Vector3.Dot(pos - dp, n) >= 0f ? 1f : -1f;
+            if (Vector3.Dot(m_Goal - dp, n) * side > 0f && Vector3.Dot(Route(pos, out _) - dp, n) * side > 0f) return; // (not going through it)
+            if (best.HasDoor && !best.DoorOpen.Value && best.DoorHealth.Value > 0f)
+            {
+                m_NextDoor = 0f;
+                OpenDoor(best);
+            }
+            var lat = Vector3.Cross(Vector3.up, n);
+            float off = Vector3.Dot(pos - dp, lat);
+            // off to one side of the gap: back out a step, level with it; lined up: through
+            m_Detour = Mathf.Abs(off) > 0.35f ? dp + n * side * 1.3f : dp - n * side * 1.8f;
+            m_DetourUntil = Time.time + 1.2f;
+            m_DoorDetour = true;
+            m_SteerUntil = 0f;
+            DoorUnsticks++;
+        }
+
         /// <summary>(tests) its own walls it has taken down to get out of its base.</summary>
         public int BrokeOut { get; private set; }
 
@@ -437,12 +479,12 @@ namespace RockGame
                 if (Time.time < m_NextDoor) continue;
                 bool mate = false;
                 foreach (var p in PlayerNet.All)
-                    if (p != null && p != m_P && p.IsSpawned && !p.Dead.Value && p.Team.Value == MyTeam && Flat(p.transform.position, dp) < 1.6f) mate = true;
+                    if (p != null && p != m_P && p.IsSpawned && !p.Dead.Value && p.Team.Value == MyTeam && Flat(p.transform.position, dp) < 2.4f) mate = true;
                 if (mate)
                 {
-                    // a teammate in the doorway: give them a moment, then shut it anyway
+                    // a teammate in the doorway: not in their face - it waits till they're through (a long while at most)
                     if (!m_DoorWait.TryGetValue(d, out var since)) m_DoorWait[d] = since = Time.time;
-                    if (Time.time - since < 2.5f) continue;
+                    if (Time.time - since < 10f) continue;
                 }
                 m_NextDoor = Time.time + 0.3f;
                 m_P.ToggleDoorRpc(d.NetworkObject);
