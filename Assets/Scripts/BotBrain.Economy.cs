@@ -24,6 +24,7 @@ namespace RockGame
         float m_DeployYaw, m_DeployPickedAt = -100f;
         bool m_DeployOk;
         float m_NextSwing, m_NextUse, m_EatAt = -1f;
+        float m_NextBerryStop;
         /// <summary>Things it gave up on for a while (a tree it couldn't get to, a bush, a craft that didn't go through).</summary>
         readonly Dictionary<Object, float> m_Avoid = new Dictionary<Object, float>();
         readonly Dictionary<Item, float> m_CraftFail = new Dictionary<Item, float>();
@@ -110,6 +111,7 @@ namespace RockGame
         /// berries are its heals in a fight).</summary>
         bool BerryStop(float range, int want)
         {
+            if (Time.time < m_NextBerryStop && m_P.Count(Item.Berry) > 0) return false; // (not stop after stop: one, then on its way)
             if (m_P.Count(Item.Berry) >= want || InvOps.Space(m_P.Inv, Item.Berry) <= 0) return false;
             if (m_Bush != null && (!m_Bush.IsSpawned || m_Bush.Amount.Value <= 0 || Flat(m_Bush.transform.position, transform.position) > range)) m_Bush = null;
             if (m_Bush == null && !FindBush(range)) return false;
@@ -151,7 +153,8 @@ namespace RockGame
                 if (glass && Cfg.RegionOf(np) != region) continue;
                 int bt = Cfg.BaseTeamAt(np);
                 if (bt >= 0 && bt != MyTeam) continue;
-                float s = Flat(np, pos) + Flat(np, home) * 0.25f + (OtherBotOn(n) ? 10f : 0f);
+                bool near = MindOf(MyTeam).Stance == Stance.Prepare; // (getting ready to take the ball back: farming near home, together, where they can fight back)
+                float s = Flat(np, pos) + Flat(np, home) * (near ? 1.2f : 0.25f) + (OtherBotOn(n) ? (near ? 0f : 10f) : 0f);
                 if (s < bs) { bs = s; best = n; }
             }
             return best;
@@ -247,6 +250,7 @@ namespace RockGame
             m_Arrived = true;
             m_NextUse = Time.time + 0.5f;
             m_P.PickBerriesRpc(b.NetworkObject);
+            m_NextBerryStop = Time.time + 25f; // (stocked up a bit: on with what it was doing for a while)
             m_Bush = null;
             m_NextThink = Time.time + 0.2f;
         }
@@ -291,6 +295,14 @@ namespace RockGame
                 if (Got(id) || !Craftable(id, out int i, out _)) continue;
                 item = id; idx = i; r = Cfg.CraftRecipe(i, MyTeam);
                 return true;
+            }
+            // once the ball's out: a bow and arrows are basics too (a starter craft - every bot has one again soon after it
+            // comes back to life, out of the team chest, or it's out-shot every fight)
+            var g = NetGame.Instance;
+            if (g != null && g.S == GameState.BallLive)
+            {
+                if (BestRangedHeld() == Item.None && !Has(Item.Bow) && Craftable(Item.Bow, out int bi, out _)) { item = Item.Bow; idx = bi; r = Cfg.CraftRecipe(bi, MyTeam); return true; }
+                if ((Has(Item.Bow) || Has(Item.Crossbow)) && CountItem(Item.Arrow) < 10 && Craftable(Item.Arrow, out int ai, out _)) { item = Item.Arrow; idx = ai; r = Cfg.CraftRecipe(ai, MyTeam); return true; }
             }
             return false;
         }

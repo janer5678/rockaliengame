@@ -420,7 +420,7 @@ namespace RockGame
         bool RaidPrep(int enemy, bool homeSide)
         {
             if (m_Prepped || !homeSide || Flat(transform.position, Cfg.BaseCenter[MyTeam]) > 45f) return false;
-            if (!HasWeapon && CraftJob(true)) return true;
+            if (CraftJob(true)) return true; // (its basics first: a weapon, a bow and arrows)
             int onHand = m_P.Count(Cfg.CurrencyItem), wealth = onHand + ChestStock();
             // the raid gets heavier each time one's beaten back (the team's wipes): a ladder or a ram the first time, then
             // both, then C4 as well - and ammo for its guns and armour on before going back in

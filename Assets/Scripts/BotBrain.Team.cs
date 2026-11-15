@@ -44,6 +44,8 @@ namespace RockGame
             public int RaidTeam = -1;
             public PlayerNet Anchor, Collector;
             public int Sieges, Wipes;
+            public int LostTo = -1;
+            public float PrepSince;
             public Vector3 Breach;
             public float BreachAt = -100f;
             public int BreachTeam = -1;
@@ -125,17 +127,24 @@ namespace RockGame
             if (!live || pre || !withBall || Cfg.Builder) want = Stance.Develop;
             else if (carrier != null) want = carrier.Team.Value == team ? Stance.Escort : Stance.Intercept;
             else if (sock < 0) want = Stance.Contest;
-            else if (sock == team) want = Stance.Hold;
+            else if (sock == team) { want = Stance.Hold; m.LostTo = -1; }
             else
             {
                 // their machine: gear up first, then go in - sooner the closer they are to winning, and the bolder the team
                 float danger = Danger(g, team);
-                float prep = style == TeamStyle.Aggro ? 18f : style == TeamStyle.Turtle ? 75f : style == TeamStyle.Sneaky ? 40f : 45f;
-                float risk = style == TeamStyle.Aggro ? 0.3f : style == TeamStyle.Turtle ? 0.6f : 0.45f;
+                // (a team that's just lost the ball has to get its tech up before it can take it back: a Trade Station, a
+                // ranged weapon each, a ram or ladder - so it takes the time, unless their bar's getting full; their base
+                // empty - everyone dead or out - is the moment to go whatever)
+                float prep = style == TeamStyle.Aggro ? 40f : style == TeamStyle.Turtle ? 110f : style == TeamStyle.Sneaky ? 60f : 75f;
+                float risk = style == TeamStyle.Aggro ? 0.45f : style == TeamStyle.Turtle ? 0.7f : style == TeamStyle.Sneaky ? 0.5f : 0.55f;
+                // (the clock for getting ready runs from when the ball went into their machine, or the last wipe)
+                if (m.LostTo != sock) { m.LostTo = sock; m.PrepSince = Time.time; }
                 bool ready = TeamGeared(team);
-                if (m.Stance == Stance.Siege) want = Stance.Siege;
-                else if (m.Stance != Stance.Prepare) want = ready || danger > risk ? Stance.Siege : Stance.Prepare;
-                else want = ready || danger > risk || Time.time - m.StanceSince > prep ? Stance.Siege : Stance.Prepare;
+                bool urgent = danger > risk || Time.time - m.PrepSince > prep;
+                bool chance = BaseEmpty(sock) && TeamNear(team, Cfg.BaseCenter[sock], 70f); // (their base empty and some of us close enough to use it)
+                bool fighting = m.Stance == Stance.Siege && m.Go && Time.time - m.GoAt < 25f; // (in there now: see it through)
+                // re-judged every time (no sieges that go on after the reason's gone): ready, out of time, an opening, or in it
+                want = ready || urgent || chance || fighting ? Stance.Siege : Stance.Prepare;
                 if (want == Stance.Siege && m.RaidTeam != sock) { m.RaidTeam = sock; if (m.Stance == Stance.Siege) StartRally(m, team, sock, style); }
             }
             if (want != m.Stance)
@@ -217,7 +226,9 @@ namespace RockGame
             {
                 float wait = TeamStyleOf(team) == TeamStyle.Aggro ? 14f : 28f;
                 bool atRally = there > 0 && Time.time - m.RallyAt > 3f;
-                if ((raiders > 0 && there >= raiders) || humanIn || Danger(g, team) > 0.85f || (atRally && Time.time - m.RallyAt > wait))
+                bool empty = there > 0 && BaseEmpty(enemy);
+                if (empty) TeamSay(team, "Their base is empty - go now!", "empty", 20f);
+                if ((raiders > 0 && there >= raiders) || humanIn || empty || Danger(g, team) > 0.85f || (atRally && Time.time - m.RallyAt > wait))
                 {
                     m.Go = true;
                     m.GoAt = Time.time;
@@ -229,7 +240,7 @@ namespace RockGame
                 // nobody left in there (dead, or beaten back): regroup and try again - geared up first, unless there's no time
                 m.Wipes++;
                 StartRally(m, team, enemy, TeamStyleOf(team));
-                if (Danger(g, team) < 0.75f) { m.Stance = Stance.Prepare; m.StanceSince = Time.time; TeamSay(team, "They held us off. Gearing up - next time we bring more.", "wipe", 30f); }
+                if (Danger(g, team) < 0.75f) { m.Stance = Stance.Prepare; m.StanceSince = Time.time; m.PrepSince = Time.time; TeamSay(team, "They held us off. Gearing up - next time we bring more.", "wipe", 30f); }
                 else TeamSay(team, "No time - regroup and go again!", "wipe", 30f);
             }
         }
@@ -294,18 +305,58 @@ namespace RockGame
             m.DropBot = who;
         }
 
-        /// <summary>Every bot on the team alive has a real weapon and armour on (or can't get any).</summary>
+        /// <summary>Ready to take the ball back: the team's Trade Station down (once there can be one), and every bot alive
+        /// with a real weapon, a ranged one (with ammo) once it can make one, armour if it can get any - and a way through
+        /// their walls (a ram, a ladder or C4) on one of them, if any can be made.</summary>
         static bool TeamGeared(int team)
         {
+            bool breach = false, canBreach = false;
+            BotBrain any = null;
             foreach (var p in PlayerNet.All)
             {
                 if (p == null || !p.IsSpawned || !p.Bot.Value || p.Dead.Value || p.Team.Value != team) continue;
                 var b = p.GetComponent<BotBrain>();
                 if (b == null) continue;
+                any = b;
                 if (!b.HasWeapon && b.Craftable(Item.Spear, out _, out _)) return false;
-                if (p.ArmorHp.Value <= 0 && !b.Has(Item.Armor) && b.Craftable(Item.Armor, out _, out _)) return false;
+                if (b.BestRangedHeld() == Item.None && b.Craftable(Item.Bow, out _, out _)) return false;
+                if (p.ArmorHp.Value <= 0 && !b.Has(Item.Armor) && !b.Has(Item.HeavyArmor) && (b.Craftable(Item.Armor, out _, out _) || b.Craftable(Item.HeavyArmor, out _, out _))) return false;
+                if (b.Has(Item.Ram) || b.Has(Item.Ladder) || b.Has(Item.C4)) breach = true;
+                if (b.Craftable(Item.Ram, out _, out _) || b.Craftable(Item.Ladder, out _, out _) || b.Craftable(Item.C4, out _, out _)) canBreach = true;
             }
-            return true;
+            if (any != null && Cfg.BenchUnlocked(team) && Workbench.ForTeam(team, 1) == null && !any.Has(Item.Workbench) && any.Craftable(Item.Workbench, out _, out _)) return false;
+            return breach || !canBreach;
+        }
+
+        /// <summary>A ranged weapon it has with something to fire (None: none).</summary>
+        Item BestRangedHeld()
+        {
+            var inv = m_P.Inv;
+            for (int s = 0; s < inv.Count; s++) if (IsRanged(inv[s].Id) && CanFire(inv[s].Id, s)) return inv[s].Id;
+            return Item.None;
+        }
+
+        /// <summary>Someone on the team alive within `range` m of `at`.</summary>
+        static bool TeamNear(int team, Vector3 at, float range)
+        {
+            foreach (var p in PlayerNet.All)
+                if (p != null && p.IsSpawned && !p.Dead.Value && p.Team.Value == team && Flat(p.transform.position, at) < range) return true;
+            return false;
+        }
+
+        /// <summary>Nobody at home in their base: every enemy dead or well away from it - the moment to go in.</summary>
+        static bool BaseEmpty(int enemy)
+        {
+            if (enemy < 0 || enemy >= Cfg.TeamCount) return false;
+            var eb = Cfg.BaseCenter[enemy];
+            int players = 0;
+            foreach (var p in PlayerNet.All)
+            {
+                if (p == null || !p.IsSpawned || p.Team.Value != enemy) continue;
+                players++;
+                if (!p.Dead.Value && Flat(p.transform.position, eb) < 3f * OuterR(enemy) + 30f) return false;
+            }
+            return players > 0;
         }
 
         static bool SeesFrom(PlayerNet q, PlayerNet p)
@@ -362,7 +413,7 @@ namespace RockGame
                     // the rest rove: out to cut raiders off on their way in (or wait off the enemy base), once armed
                     if (!geared || (m_P.Count(Cfg.CurrencyItem) >= 150 && Random.value < 0.35f)) return false;
                     StartPlan(Plan.Hunt, load);
-                    m_HuntStyle = style == TeamStyle.Aggro || style == TeamStyle.Sneaky || Random.value < 0.35f ? 1 : 2;
+                    m_HuntStyle = style == TeamStyle.Aggro && Random.value < 0.5f ? 0 : 2; // (the approaches to its base and the middle - not camping outside theirs, where they come back to life: a team that can never get its gear back never gets the ball back)
                     return true;
             }
             return false;

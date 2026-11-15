@@ -176,11 +176,11 @@ namespace RockGame
                 for (int i = 0; ok && i < rs.Length; i++)
                 {
                     var mf = rs[i].GetComponent<MeshFilter>();
-                    bool cube = mf != null && (mf.sharedMesh == Art.Cube || SmoothShade.IsSmooth(mf.sharedMesh));
+                    bool cube = mf != null && mf.sharedMesh != null && mf.sharedMesh.name == "rounded box"; // (every part a rounded block)
                     if (!cube || rs[i].shadowCastingMode != UnityEngine.Rendering.ShadowCastingMode.Off) { ok = false; why = $"box {i} ({rs[i].name}) cube {cube} shadows {rs[i].shadowCastingMode}"; }
                 }
                 if (ok && (rs[0].transform.localPosition.sqrMagnitude > 0.0001f)) { ok = false; why = $"the palm is at {rs[0].transform.localPosition.ToString("F3")}, not where the old fist was"; }
-                Check(ok, $"the {(right ? "right" : "left")} arm has the square alien hand: palm, three long fingers with dark tips, a thumb, a bare forearm, all blocks round the old fist's place ({why})");
+                Check(ok, $"the {(right ? "right" : "left")} arm has the square alien hand: palm, three long fingers with dark tips, a thumb, a bare forearm, all rounded blocks round the old fist's place ({why})");
                 // the alien arm: three fingers of three joints each and a thumb, each bone its own transform; a forearm; no shadows
                 var al = h.Find("alien");
                 int digits = 0, jointed = 0;

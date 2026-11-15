@@ -255,10 +255,13 @@ namespace RockGame
             {
                 var outward = mid - Cfg.BaseCenter[MyTeam];
                 outward.y = 0f;
-                if (outward.sqrMagnitude > 0.01f) stand = mid + outward.normalized * 2.5f;
+                // (from outside it - unless its ring has a doorway up already, then from inside: no walking round a raised pad)
+                bool ringDoor = DoorOf(MyTeam, piece.Stage <= 2 ? 0 : 1, transform.position, out _, out _);
+                if (outward.sqrMagnitude > 0.01f) stand = mid + outward.normalized * (ringDoor && piece.Type != PieceType.Doorway ? -1.8f : 2.5f);
             }
             bool wrongSide = piece.Type != PieceType.Floor && piece.Type != PieceType.Foundation && far < 9f
-                && Flat(transform.position, Cfg.BaseCenter[MyTeam]) < Flat(mid, Cfg.BaseCenter[MyTeam]) - 0.6f && Flat(transform.position, mid) < 4f;
+                && Flat(transform.position, Cfg.BaseCenter[MyTeam]) < Flat(mid, Cfg.BaseCenter[MyTeam]) - 0.6f && Flat(transform.position, mid) < 4f
+                && !DoorOf(MyTeam, piece.Stage <= 2 ? 0 : 1, transform.position, out _, out _); // (its ring has a doorway up already: building from inside can't shut it in - and walking round outside a raised pad on a slope had it stuck in the doorway)
             if (far > 9f || wrongSide) // (the server takes it from up to 11 m)
             {
                 GoTo(stand, 1.2f, Flat(stand, transform.position) > 6f);
@@ -336,6 +339,25 @@ namespace RockGame
             float ring = 3f * OuterR(team);
             if (Flat(pos, c) > ring + 6f && Flat(goal, c) > ring + 6f) return goal; // (nowhere near home)
             if (Flat(goal, pos) <= m_Stop + 0.2f) return goal;
+            // through a doorway it has started through: committed till it's a step past it (in the doorway it's on the line
+            // between inside and outside - deciding again every frame had it flip between the two and stand there)
+            if (m_RouteDoor != null)
+            {
+                if (!m_RouteDoor.IsSpawned || Time.time > m_RouteUntil) m_RouteDoor = null;
+                else
+                {
+                    var dp = DoorPos(m_RouteDoor);
+                    float past = Vector3.Dot(pos - dp, m_RouteN);
+                    if (past > 1.1f) m_RouteDoor = null;
+                    else
+                    {
+                        routed = true;
+                        if (Flat(pos, dp) < 2.8f) OpenDoor(m_RouteDoor);
+                        float off = Mathf.Abs(Vector3.Dot(pos - dp, Vector3.Cross(Vector3.up, m_RouteN)));
+                        return past > -0.7f || off < 0.45f ? dp + m_RouteN * 1.8f : dp - m_RouteN * 1.3f; // (in it or lined up: straight through; else level with it first)
+                    }
+                }
+            }
             bool innerUp = DoorOf(team, 0, pos, out _, out _), outerUp = DoorOf(team, 1, pos, out _, out _);
             if (!innerUp && !outerUp) return goal;
             int rp = RingOf(team, pos, innerUp, outerUp), rg = RingOf(team, goal, innerUp, outerUp);
@@ -353,7 +375,14 @@ namespace RockGame
             float fwd = Vector3.Dot(rel, -back); // (+: in front of the doorway)
             if (Flat(pos, door) < 2.8f) OpenDoor(doorS);
             // lined up with it: through
-            if (latOff < 0.6f && (goingOut ? fwd > -2.4f && fwd < 1.0f : fwd < 2.4f && fwd > -1.0f)) return goingOut ? outPt : inPt;
+            if (latOff < 0.6f && (goingOut ? fwd > -2.4f && fwd < 1.0f : fwd < 2.4f && fwd > -1.0f))
+            {
+                // lined up with it: through - and it sticks with that till it's through (above)
+                m_RouteDoor = doorS;
+                m_RouteN = goingOut ? -back : back;
+                m_RouteUntil = Time.time + 4f;
+                return goingOut ? outPt : inPt;
+            }
             // round to the front of the room it's going into / out of first (it's at the back or the side)
             float ahead = Vector3.Dot(pos - c, -back);
             float line = b == 0 ? 3f : ring;
@@ -366,6 +395,119 @@ namespace RockGame
                 return Flat(pos, cp) < 1.2f ? (goingOut ? inPt : outPt) : cp;
             }
             return goingOut ? inPt : outPt;
+        }
+
+        Structure m_RouteDoor;
+        Vector3 m_RouteN;
+        float m_RouteUntil;
+        Vector3 m_WatchPos;
+        float m_WatchAt, m_WatchNext;
+        /// <summary>(tests) times it was stuck for a long while (12 s trying to get somewhere and not 3 m from where it
+        /// was), and the last few of what the situation was.</summary>
+        public int LongStucks { get; private set; }
+        public readonly List<string> StuckWhy = new List<string>(8);
+
+        /// <summary>
+        /// The watchdog, once a second: trying to get somewhere for 12 s and still where it was - whatever the cause, it
+        /// gets itself out: every one of its own doors by it open, then its own piece in the way taken down (Demolish, like
+        /// a player), or, nothing of its own in the way, off to one side and round. It notes what the situation was.
+        /// </summary>
+        void Watchdog()
+        {
+            if (Time.time < m_WatchNext) return;
+            m_WatchNext = Time.time + 1f;
+            var pos = transform.position;
+            bool wants = !m_Arrived && Flat(m_Goal, pos) > Mathf.Max(m_Stop + 1.5f, 4f) && m_ClimbT < 0f && Time.time >= m_FleeUntil;
+            if (!wants || Flat(pos, m_WatchPos) > 3f) { m_WatchPos = pos; m_WatchAt = Time.time; return; }
+            if (Time.time - m_WatchAt < 12f) return;
+            m_WatchAt = Time.time;
+            LongStucks++;
+            var home = Cfg.BaseCenter[MyTeam];
+            var route = Route(pos, out bool routed);
+            Structure door = null;
+            float dd = 6f;
+            foreach (var s in Structure.All)
+            {
+                if (s == null || !s.IsSpawned || s.Team.Value != MyTeam || !s.HasDoor) continue;
+                float d = Flat(DoorPos(s), pos);
+                if (d < dd) { dd = d; door = s; }
+                if (d < 4f && !s.DoorOpen.Value && s.DoorHealth.Value > 0f) { m_NextDoor = 0f; OpenDoor(s); }
+            }
+            string why = $"{Time.time:0}s {m_Plan}/{m_Task} {Flat(pos, home):0.0}m from home, goal {Flat(m_Goal, pos):0.0}m off ({Flat(m_Goal, home):0}m from home), "
+                + $"{(routed ? $"routed to {Flat(route, pos):0.0}m off" : "not routed")}, "
+                + (door != null ? $"own door {dd:0.0}m ({(door.DoorOpen.Value ? "open" : door.DoorHealth.Value <= 0f ? "broken" : "shut")})" : "no own door near");
+            // something of its own in the way to where it's going: down it comes
+            var to = route - pos; to.y = 0f;
+            bool cleared = false;
+            if (to.sqrMagnitude > 0.01f && Physics.Raycast(pos + Vector3.up * 1f, to.normalized, out var hit, 2.5f, Mask, QueryTriggerInteraction.Ignore))
+            {
+                var s = hit.collider.GetComponentInParent<Structure>();
+                if (s != null && s.IsSpawned && s.Team.Value == MyTeam && Cfg.BaseTeamAt(s.transform.position) == MyTeam && !m_P.CarryingBall)
+                {
+                    if (s.HasDoor && !s.DoorOpen.Value && s.DoorHealth.Value > 0f) { m_NextDoor = 0f; OpenDoor(s); why += $", its {s.PType} shut in the way: opened"; cleared = true; }
+                    else if (s.PType == PieceType.Doorway || s.PType == PieceType.Gate) { why += $", against its {s.PType}'s frame: back and lined up again"; m_RouteDoor = null; } // (never its own doorway down)
+                    else
+                    {
+                        int slot = HotbarFor(Item.BuildingPlan);
+                        if (slot >= 0) { Hold(slot); m_P.DemolishRpc(s.NetworkObject); }
+                        cleared = !s.IsSpawned;
+                        why += $", its own {s.PType} in the way: {(cleared ? "demolished" : "couldn't demolish")}";
+                        if (cleared) BrokeOut++;
+                    }
+                }
+                else if (s != null) why += $", a {(s.Team.Value == MyTeam ? "own" : "enemy")} {s.PType} in the way";
+                else why += $", {hit.collider.name} in the way";
+            }
+            // (what's low down in the way, and how high it's standing - for the log)
+            if (to.sqrMagnitude > 0.01f && Physics.Raycast(pos + Vector3.up * 0.35f, to.normalized, out var low, 1.5f, Mask, QueryTriggerInteraction.Ignore))
+            {
+                var ls = low.collider.GetComponentInParent<Structure>();
+                var lc = low.collider.GetComponentInParent<Container>();
+                why += $", low down {low.distance:0.0}m: {(ls != null ? ls.PType.ToString() : lc != null ? "container " + lc.Kind.Value : low.collider.name)}";
+            }
+            why += $", {pos.y - MapBuilder.Height(pos.x, pos.z):0.0}m above the ground";
+            if (!cleared)
+            {
+                // round it another way: off to one side for a couple of seconds
+                var side = Vector3.Cross(Vector3.up, to.sqrMagnitude > 0.01f ? to.normalized : transform.forward) * (Random.value < 0.5f ? -1f : 1f);
+                m_Detour = pos + side * Random.Range(3f, 5f) - (to.sqrMagnitude > 0.01f ? to.normalized : Vector3.zero) * 1.5f;
+                m_DetourUntil = Time.time + 2f;
+                m_DoorDetour = false;
+                PushOut();
+            }
+            if (StuckWhy.Count >= 8) StuckWhy.RemoveAt(0);
+            StuckWhy.Add(why);
+            Note("long stuck: " + why);
+        }
+
+        /// <summary>(tests) times it backed out of a doorway to let a teammate through.</summary>
+        public int DoorYields { get; private set; }
+
+        /// <summary>
+        /// Going through its own doorway with a teammate (a bot newer than it - the older one goes first - or any human) right
+        /// there in the way: it backs out to the side it came from and waits a moment, so they're not stuck nose to nose in
+        /// the gap. True: it's backing off.
+        /// </summary>
+        bool DoorwayYield(Vector3 pos)
+        {
+            var d = m_RouteDoor;
+            if (d == null) return false;
+            var dp = DoorPos(d);
+            foreach (var p in PlayerNet.All)
+            {
+                if (p == null || p == m_P || !p.IsSpawned || p.Dead.Value || p.Team.Value != MyTeam) continue;
+                var q = p.transform.position;
+                if (Flat(q, pos) > 1.6f || Flat(q, dp) > 2.2f) continue;
+                if (Vector3.Dot(q - pos, m_RouteN) < 0.1f) continue; // (behind it, not in its way)
+                if (p.Bot.Value && p.NetworkObjectId > m_P.NetworkObjectId) continue; // (the newer bot gives way, not it)
+                m_Detour = dp - m_RouteN * 2.4f + Vector3.Cross(Vector3.up, m_RouteN) * m_SideSign * 1.2f;
+                m_DetourUntil = Time.time + 1.6f;
+                m_DoorDetour = false;
+                m_RouteDoor = null;
+                DoorYields++;
+                return true;
+            }
+            return false;
         }
 
         bool m_DoorDetour;

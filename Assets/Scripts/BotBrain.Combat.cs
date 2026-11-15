@@ -209,7 +209,7 @@ namespace RockGame
                 {
                     case 1: at = Around(Vector3.Lerp(theirs, home, Random.Range(0.3f, 0.45f)), 14f); break; // (off their base, where they come out)
                     case 2: at = Around(Vector3.Lerp(home, theirs, Random.Range(0.18f, 0.3f)), 14f); break;  // (the approaches to its own)
-                    default: at = Around(Vector3.Lerp(home, theirs, Random.Range(0.5f, 0.92f)), 18f); break; // (the lanes between)
+                    default: at = Around(Vector3.Lerp(home, theirs, Random.Range(0.4f, 0.72f)), 18f); break; // (the lanes between)
                 }
                 GoTo(at, 2f, true);
             }

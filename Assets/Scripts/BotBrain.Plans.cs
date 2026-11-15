@@ -182,7 +182,7 @@ namespace RockGame
                 case Plan.Raid: m_PlanUntil = Time.time + Random.Range(60f, 110f); break;
                 case Plan.Hunt:
                     m_PlanUntil = Time.time + Random.Range(35f, 75f) * (0.7f + m_Aggro * 0.6f);
-                    m_HuntStyle = Random.value < 0.4f ? 0 : m_Aggro > 0.6f ? 1 : 2;
+                    m_HuntStyle = Random.value < 0.4f ? 0 : m_Aggro > 0.6f && MindOf(MyTeam).Stance == Stance.Prepare ? 1 : 2; // (waiting off their base only to harass a team holding the ball)
                     break;
                 case Plan.Guard: m_PlanUntil = Time.time + Random.Range(25f, 45f); break;
                 case Plan.Rush: m_PlanUntil = Time.time + 60f; AtWallAt = -1f; break;
@@ -252,6 +252,7 @@ namespace RockGame
                     if (hungry && FindBush()) { Set(Task.Berries); return true; }
                     if (BerryStop(12f, 5)) return true;
                     if (LootJob(30f)) return true;
+                    if (homeSide && Flat(transform.position, Cfg.BaseCenter[MyTeam]) < 45f && m_Task != Task.Hunt && CraftJob(true)) return true; // (a bow and arrows before it goes out looking for a fight)
                     if (m_Task != Task.Hunt) { m_HuntTeam = NearestEnemyTeam(); Set(Task.Hunt); }
                     return true;
                 case Plan.Guard:

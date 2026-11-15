@@ -192,21 +192,25 @@ namespace RockGame
             square.SetParent(hand, false);
             var aSkin = HandColorHook.Shade(team, HandColorHook.AlienSkin);
             var aTip = HandColorHook.Shade(team, HandColorHook.AlienPad);
-            hook.Track(Art.Box(square, aSkin, new Vector3(0, 0.002f, -0.004f), new Vector3(0.074f, 0.072f, 0.088f)), HandColorHook.AlienSkin); // palm
+            // every part a rounded block (big soft edges, shaded smooth: RoundedBox), the joints overlapping so each finger
+            // and the arm read as one smooth piece
+            void Part(Color c, Vector3 pos, Vector3 size, float round, Vector3 euler, int part, string name)
+                => hook.Track(Art.Part(square, RoundedBox(size, round), c, pos, Vector3.one, euler, false, null, name), part);
+            Part(aSkin, new Vector3(0, 0.002f, -0.004f), new Vector3(0.074f, 0.07f, 0.088f), 0.026f, Vector3.zero, HandColorHook.AlienSkin, "palm");
             for (int f = -1; f <= 1; f++)
             {
-                float fx = f * 0.025f;
+                float fx = f * 0.0245f;
                 float len = f == 0 ? 1.12f : 1f; // (the middle finger longest)
-                // over the top of the grip, then down its front, the tip dark
-                hook.Track(Art.Box(square, aSkin, new Vector3(fx, 0.026f, 0.054f), new Vector3(0.02f, 0.022f, 0.05f * len)), HandColorHook.AlienSkin);
-                hook.Track(Art.Box(square, aSkin, new Vector3(fx, -0.004f * len, 0.078f + 0.004f * len), new Vector3(0.019f, 0.058f * len, 0.02f), new Vector3(8f, 0, 0)), HandColorHook.AlienSkin);
-                hook.Track(Art.Box(square, aTip, new Vector3(fx, -0.036f * len, 0.072f + 0.004f * len), new Vector3(0.017f, 0.016f, 0.018f), new Vector3(-25f, 0, 0)), HandColorHook.AlienPad);
+                // over the top of the grip, then down its front (a knuckle's overlap between), the tip dark
+                Part(aSkin, new Vector3(fx, 0.025f, 0.054f), new Vector3(0.021f, 0.022f, 0.056f * len), 0.0105f, Vector3.zero, HandColorHook.AlienSkin, "finger");
+                Part(aSkin, new Vector3(fx, -0.004f * len, 0.078f + 0.004f * len), new Vector3(0.02f, 0.062f * len, 0.021f), 0.0098f, new Vector3(8f, 0, 0), HandColorHook.AlienSkin, "finger2");
+                Part(aTip, new Vector3(fx, -0.036f * len, 0.073f + 0.004f * len), new Vector3(0.018f, 0.019f, 0.019f), 0.0088f, new Vector3(-25f, 0, 0), HandColorHook.AlienPad, "tip");
             }
-            hook.Track(Art.Box(square, aSkin, new Vector3(-0.044f * side, 0.022f, 0.03f), new Vector3(0.022f, 0.022f, 0.066f), new Vector3(0, 22 * side, 0)), HandColorHook.AlienSkin); // thumb
-            hook.Track(Art.Box(square, aTip, new Vector3(-0.056f * side, 0.026f, 0.062f), new Vector3(0.018f, 0.018f, 0.016f), new Vector3(0, 22 * side, 0)), HandColorHook.AlienPad); // (its tip)
-            hook.Track(Art.Box(square, aSkin, new Vector3(0, -0.002f, -0.07f), new Vector3(0.056f, 0.058f, 0.05f)), HandColorHook.AlienSkin);   // wrist
-            hook.Track(Art.Box(square, aSkin, new Vector3(0, -0.004f, -0.28f), new Vector3(0.054f, 0.056f, 0.38f)), HandColorHook.AlienSkin);   // forearm
-            hook.Track(Art.Box(square, aSkin, new Vector3(0, -0.006f, -0.5f), new Vector3(0.064f, 0.066f, 0.12f)), HandColorHook.AlienSkin);    // (fuller towards the elbow)
+            Part(aSkin, new Vector3(-0.044f * side, 0.022f, 0.03f), new Vector3(0.023f, 0.023f, 0.07f), 0.0112f, new Vector3(0, 22 * side, 0), HandColorHook.AlienSkin, "thumb");
+            Part(aTip, new Vector3(-0.057f * side, 0.026f, 0.063f), new Vector3(0.019f, 0.019f, 0.019f), 0.0092f, new Vector3(0, 22 * side, 0), HandColorHook.AlienPad, "thumbtip");
+            Part(aSkin, new Vector3(0, -0.002f, -0.07f), new Vector3(0.058f, 0.06f, 0.07f), 0.026f, Vector3.zero, HandColorHook.AlienSkin, "wrist");
+            Part(aSkin, new Vector3(0, -0.004f, -0.28f), new Vector3(0.056f, 0.058f, 0.4f), 0.026f, Vector3.zero, HandColorHook.AlienSkin, "forearm");
+            Part(aSkin, new Vector3(0, -0.006f, -0.5f), new Vector3(0.066f, 0.068f, 0.14f), 0.031f, Vector3.zero, HandColorHook.AlienSkin, "elbow"); // (fuller towards the elbow)
             // the same hands rounded off (Settings > Display > Hands: Round - ViewModel.RoundHands.cs)
             BuildRoundHand(hand, hook, skin, dark, band, side);
             // the alien arm (four fingers and a thumb, every joint its own transform: ViewModel.Hands.cs)

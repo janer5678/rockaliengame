@@ -157,6 +157,14 @@ namespace RockGame
         {
             s = new Step { Goal = Goal.Weapons, Kind = StepKind.Craft };
             if (AmmoNeed(out var ammo) && Craftable(ammo, out s.Idx, out s.Cost)) { s.Item = ammo; return true; }
+            // getting ready to take the ball back: a way through their walls for the team (a ram, or a ladder over an open top)
+            if (MindOf(MyTeam).Stance == Stance.Prepare && !TeamHasBreach())
+            {
+                var b = Ball.Instance;
+                bool open = b != null && b.SocketTeam.Value >= 0 && Roofless(Cfg.SocketPos(b.SocketTeam.Value) + Vector3.up * 0.5f);
+                var tool = open && Craftable(Item.Ladder, out _, out _) ? Item.Ladder : Item.Ram;
+                if (Craftable(tool, out s.Idx, out s.Cost)) { s.Item = tool; return true; }
+            }
             if (m_Bent == Bent.Raider && !Has(Item.Ram) && EnemyBest(s_Base) >= 6f && Craftable(Item.Ram, out s.Idx, out s.Cost)) { s.Item = Item.Ram; return true; }
             foreach (var id in k_Ladder)
             {
@@ -166,6 +174,18 @@ namespace RockGame
                 if (!Craftable(id, out s.Idx, out s.Cost)) continue;
                 s.Item = id;
                 return true;
+            }
+            return false;
+        }
+
+        /// <summary>A bot on its team carries a ram, a ladder or C4.</summary>
+        bool TeamHasBreach()
+        {
+            foreach (var p in PlayerNet.All)
+            {
+                if (p == null || !p.IsSpawned || !p.Bot.Value || p.Team.Value != MyTeam) continue;
+                var b = p.GetComponent<BotBrain>();
+                if (b != null && (b.Has(Item.Ram) || b.Has(Item.Ladder) || b.Has(Item.C4))) return true;
             }
             return false;
         }

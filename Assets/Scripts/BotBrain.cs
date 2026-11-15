@@ -108,6 +108,7 @@ namespace RockGame
             m_DetourUntil = 0f;
             m_ClimbT = -1f;
             m_Rush = null;
+            m_RouteDoor = null;
             m_DoorWasOpen.Clear();
             m_MoveDir = Vector3.zero;
         }
@@ -231,6 +232,8 @@ namespace RockGame
             // in or out of its own house: by way of the front doors (BotBrain.House.cs)
             bool routed = false;
             var goal = lobby ? m_Goal : Route(pos, out routed);
+            bool straight = (Time.time < m_DetourUntil && m_DoorDetour) || (m_RouteDoor != null && routed && Flat(pos, DoorPos(m_RouteDoor)) < 2.6f); // (through its own doorway: straight, no steering or sidestepping into the frame)
+            if (straight && !lobby && DoorwayYield(pos)) straight = false; // (a teammate coming the other way in the doorway: the newer one backs out and lets them by)
             if (!lobby && TickClimb(dt)) return; // (up a ladder and over a wall: BotBrain.Raid.cs)
             bool detour = !lobby && Time.time < m_DetourUntil;
             if (detour) goal = m_Detour; // (backing out of a corner it got stuck in: Detour)
@@ -245,8 +248,8 @@ namespace RockGame
                 var side = Vector3.Cross(Vector3.up, to.sqrMagnitude > 0.01f ? to.normalized : transform.forward) * m_StrafeSign;
                 wish = (wish + side * 0.85f).normalized;
             }
-            if (Time.time < m_SideUntil && wish.sqrMagnitude > 0.01f && !(detour && m_DoorDetour)) wish = (wish + Vector3.Cross(Vector3.up, wish) * m_SideSign).normalized;
-            if (wish.sqrMagnitude > 0.01f && !lobby && !(detour && m_DoorDetour)) wish = Steer(wish, dist); // (lined up through a doorway: straight, no steering off the frame)
+            if (Time.time < m_SideUntil && wish.sqrMagnitude > 0.01f && !straight) wish = (wish + Vector3.Cross(Vector3.up, wish) * m_SideSign).normalized;
+            if (wish.sqrMagnitude > 0.01f && !lobby && !straight) wish = Steer(wish, dist); // (lined up through a doorway: straight, no steering off the frame)
             // never off the platform in space (the waiting stadium, sudden death)
             if (wish.sqrMagnitude > 0.01f && SpaceArena.NearArena(pos) && !SpaceArena.OverPlatform(pos + wish * 1.5f))
             {
@@ -306,6 +309,7 @@ namespace RockGame
             }
 
             Look(pos, vel, to, dt);
+            if (!lobby) Watchdog(); // (stuck for long, whatever the cause: out - BotBrain.House.cs)
 
             // stuck (a wall, a rock, a tree, a doorway): a jump and a sidestep; still stuck, out of anything it's inside of and
             // back out of the corner another way; stuck for long, it gives up on that goal
@@ -416,6 +420,17 @@ namespace RockGame
                 // only something low in the way: hop it
                 if (Physics.Raycast(pos + Vector3.up * 0.35f, wish, out var low, 0.9f, Mask, QueryTriggerInteraction.Ignore) && low.normal.y < 0.6f && !IsTarget(low.collider)) Jump(); // (not a slope it can walk up)
                 return wish;
+            }
+            // a teammate coming the other way in a doorway: one of them (the newer) steps back and aside to let them by
+            var mate = hit.collider.GetComponentInParent<PlayerNet>();
+            if (mate != null && mate != m_P && mate.Team.Value == MyTeam && (!mate.Bot.Value || m_P.NetworkObjectId > mate.NetworkObjectId))
+            {
+                var aside = Vector3.Cross(Vector3.up, wish) * m_SideSign;
+                m_Detour = pos - wish * 1.4f + aside * 1.3f;
+                m_DetourUntil = Time.time + 1.1f;
+                m_DoorDetour = false;
+                m_RouteDoor = null;
+                return (aside - wish).normalized;
             }
             m_Blocker = hit.collider;
             m_BlockPoint = hit.point;

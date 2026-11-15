@@ -252,7 +252,7 @@ namespace RockGame
             var eye = m_P.EyePos;
             var dir = (aim - eye).normalized;
             // the aim error: a cone that's narrower the better the bot (and a little wider far off)
-            float err = Mathf.Lerp(2.6f, 0.45f, m_Skill) * (0.8f + Mathf.Clamp01(d / 50f) * 0.5f);
+            float err = Mathf.Lerp(5f, 1.8f, m_Skill) * (0.8f + Mathf.Clamp01(d / 50f) * 0.5f);
             dir = Quaternion.AngleAxis(Random.Range(-err, err), Vector3.up) * Quaternion.AngleAxis(Random.Range(-err, err) * 0.6f, Vector3.Cross(Vector3.up, dir)) * dir;
             m_ShotFrom = eye + dir * 0.6f;
             m_ShotVel = dir * speed;

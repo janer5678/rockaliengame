@@ -133,9 +133,10 @@ namespace RockGame
                 float pctOut = (field[i] + raidT[i]) / Mathf.Max(1f, alive);
                 if (pctOut > 0.35f) outBots++;
                 shots += b.ShotsFired; ranged += HasRanged(p) ? 1 : 0;
-                Log($"botsim {p.DisplayName} ({Cfg.TeamName[p.Team.Value]}, {b.Leaning}): home {home[i] / Mathf.Max(1f, alive) * 100f:0}% field {field[i] / Mathf.Max(1f, alive) * 100f:0}% enemy base {raidT[i] / Mathf.Max(1f, alive) * 100f:0}% enemy half {enemyHalf[i] / Mathf.Max(1f, alive) * 100f:0}% dead {deadT[i]:0}s | K{p.Kills.Value} D{p.Deaths.Value} | stuck {b.StuckTotal} | job changes {changes[i]}, flips {flips[i]} | shots {b.ShotsFired} ({b.ShotsHit} hit) door unsticks {b.DoorUnsticks} broke out {b.BrokeOut} door rushes {b.DoorRushes} C4 {b.C4Planted} raid switches {b.RaidSwitches} airdrops {b.AirdropsRun} | kit: {Kit(p)} | built {b.Built} crafted {b.Crafted} farm hits {b.FarmHits} | plans: {ps}| jobs: {jobs}");
+                Log($"botsim {p.DisplayName} ({Cfg.TeamName[p.Team.Value]}, {b.Leaning}): home {home[i] / Mathf.Max(1f, alive) * 100f:0}% field {field[i] / Mathf.Max(1f, alive) * 100f:0}% enemy base {raidT[i] / Mathf.Max(1f, alive) * 100f:0}% enemy half {enemyHalf[i] / Mathf.Max(1f, alive) * 100f:0}% dead {deadT[i]:0}s | K{p.Kills.Value} D{p.Deaths.Value} | stuck {b.StuckTotal} | job changes {changes[i]}, flips {flips[i]} | long stucks {b.LongStucks} | shots {b.ShotsFired} ({b.ShotsHit} hit) door unsticks {b.DoorUnsticks} broke out {b.BrokeOut} door rushes {b.DoorRushes} C4 {b.C4Planted} raid switches {b.RaidSwitches} airdrops {b.AirdropsRun} | kit: {Kit(p)} | built {b.Built} crafted {b.Crafted} farm hits {b.FarmHits} | plans: {ps}| jobs: {jobs}");
                 var tr = b.Trace;
                 Log($"botsim {p.DisplayName} trace (last 40): {string.Join(" > ", tr.GetRange(Mathf.Max(0, tr.Count - 40), Mathf.Min(40, tr.Count)))}");
+                if (b.StuckWhy.Count > 0) Log($"botsim {p.DisplayName} long stucks: {string.Join(" || ", b.StuckWhy)}");
             }
             Check(outBots >= 2, $"the bots get out and about: {outBots} of {n} spent over a third of the match away from home");
             Check(totalKills >= 4, $"they fight: {totalKills} kills between them");
