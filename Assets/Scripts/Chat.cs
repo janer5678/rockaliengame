@@ -214,10 +214,13 @@ namespace RockGame
             string line = $"<color=#{c}><b>{who}</b></color>: {t}";
             if (line.Length > 120) line = line.Substring(0, 120);
             var g = NetGame.Instance;
+            if (!Bot.Value) BotBrain.HeardChat(this, t, team); // (bots on the team take orders: BotBrain.Talk.cs)
             if (!team) { g.ChatLineRpc(new FixedString128Bytes(line), false, g.RpcTarget.ClientsAndHost); return; }
-            // team chat: only the sender's team gets it (marked "(TEAM CHAT)" on their screens)
+            // team chat: only the sender's team gets it (marked "(TEAM CHAT)" on their screens) - its human players (a bot's
+            // owner is the host, whatever team the host is on) and anyone spectating
             var ids = new List<ulong>();
-            foreach (var p in All) if (p.Team.Value == Team.Value && !ids.Contains(p.OwnerClientId)) ids.Add(p.OwnerClientId);
+            foreach (var p in All) if (p.Team.Value == Team.Value && !p.Bot.Value && !ids.Contains(p.OwnerClientId)) ids.Add(p.OwnerClientId);
+            foreach (var id in NetworkManager.ConnectedClientsIds) if (Spectator.ServerIs(id) && !ids.Contains(id)) ids.Add(id);
             if (ids.Count > 0) g.ChatLineRpc(new FixedString128Bytes(line), true, g.RpcTarget.Group(ids, RpcTargetUse.Temp));
             LastTeamChatTo = ids.Count;
         }

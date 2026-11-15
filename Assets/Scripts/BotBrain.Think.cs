@@ -36,6 +36,7 @@ namespace RockGame
 
             // its team's mind: the stance, the siege, what they've all seen (BotBrain.Team.cs)
             var mind = TeamMind(g, ball, carrier, withBall, live);
+            TalkTick();
 
             // 1. the ball in its hands: home with it, nothing else matters
             if (m_P.CarryingBall) { Set(Task.Carry); return; }
@@ -58,7 +59,7 @@ namespace RockGame
             var foe = PickTarget(range, sudden);
 
             // 4. badly hurt with someone stronger after it: back off home (healing in base, eating on the way)
-            if (!sudden && foe != null && hurt && foe.Health.Value > hp * 0.8f) { m_Target = foe; m_RetreatSeen = Time.time; Set(Task.Retreat); return; }
+            if (!sudden && foe != null && hurt && foe.Health.Value > hp * 0.8f) { m_Target = foe; m_RetreatSeen = Time.time; if (m_Task != Task.Retreat) Say("Hurt - falling back!", "retreat" + m_P.NetworkObjectId, 30f); Set(Task.Retreat); return; }
             // (a retreat sticks: till it has healed up, or a few seconds after it last saw anyone after it - no turning back the moment they drop out of sight)
             if (!sudden && m_Task == Task.Retreat && Hp01 < 0.7f && (foe != null || Time.time - m_RetreatSeen < 6f)) { if (foe != null) { m_Target = foe; m_RetreatSeen = Time.time; } return; }
 
@@ -83,10 +84,13 @@ namespace RockGame
             // an airdrop down: the team's pick goes for it (BotBrain.Team.cs: PickDrop)
             if (mind.DropBot == m_P && mind.Drop != null && mind.Drop.IsSpawned && !mind.Drop.Empty && !Avoided(mind.Drop))
             {
-                if (m_LootBox != mind.Drop) { m_LootBox = mind.Drop; m_LootId = -1; Note("off to an airdrop"); AirdropsRun++; }
+                if (m_LootBox != mind.Drop) { m_LootBox = mind.Drop; m_LootId = -1; Note("off to an airdrop"); AirdropsRun++; Say("Getting the airdrop.", "drop", 30f); }
                 Set(Task.Loot);
                 return;
             }
+
+            // a human teammate said "follow", or a teammate is being hit and it is the one going to help (BotBrain.Talk.cs)
+            if (BuddyJob(mind)) return;
 
             // 8. what it has set its mind on (BotBrain.Plans.cs): a new plan when the last ran out or is done, or the team's
             // stance changed (a Rusher drops whatever it's doing half a minute before the wall goes)

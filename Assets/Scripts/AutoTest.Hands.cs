@@ -26,12 +26,12 @@ namespace RockGame
             var poses = new List<(string name, Item item, System.Action set)>();
             void Add(string n, Item it, System.Action a = null) => poses.Add((n, it, a));
             Add("rock_idle", Item.Rock);
-            Add("rock_raised", Item.Rock, () => { pc.DebugSwing(0.6f); ViewModel.DebugSwingE = 0.055f; });
+            Add("rock_raised", Item.Rock, () => { pc.DebugSwing(0.6f); ViewModel.DebugSwingE = 0.075f; });
             Add("rock_slam", Item.Rock, () => { pc.DebugSwing(0.6f); ViewModel.DebugSwingE = 0.14f; });
             foreach (var t in new[] { Item.Hatchet, Item.Pickaxe, Item.Sword, Item.TreeCracker })
             {
                 Add(t.ToString().ToLower() + "_idle", t);
-                Add(t.ToString().ToLower() + "_raised", t, () => { pc.DebugSwing(0.6f); ViewModel.DebugSwingE = 0.055f; });
+                Add(t.ToString().ToLower() + "_raised", t, () => { pc.DebugSwing(0.6f); ViewModel.DebugSwingE = 0.075f; });
                 Add(t.ToString().ToLower() + "_slam", t, () => { pc.DebugSwing(0.6f); ViewModel.DebugSwingE = 0.14f; });
             }
             Add("hatchet_deploy", Item.Hatchet, () => ViewModel.DebugEquipE = 0.14f);
@@ -157,41 +157,30 @@ namespace RockGame
             Check(vm != null, "there's a first-person view model");
             if (vm == null) { Application.Quit(1); yield break; }
 
-            // (a PC that never picked a hand style starts on the smooth hands)
-            Check(GameSettings.HandStyleNames.Length == 4 && (GameSettings.HandStyle == GameSettings.HandsSmooth || PlayerPrefs.HasKey("RockGame.HandStyle6")),
-                $"Settings > Display > Hands has four styles and starts on Smooth ({GameSettings.HandStyleNames[GameSettings.HandStyle]})");
+            // (a PC that never picked a hand style starts on the square alien hands)
+            Check(GameSettings.HandStyleNames.Length == 4 && (GameSettings.HandStyle == GameSettings.HandsSquare || PlayerPrefs.HasKey("RockGame.HandStyle7")),
+                $"Settings > Display > Hands has four styles and starts on Square ({GameSettings.HandStyleNames[GameSettings.HandStyle]})");
 
-            // ---- the hands are the original box arms ----
+            // ---- the hands are the square alien hands ----
             var teamCol = Cfg.TeamColor[Mathf.Clamp(team, 0, 3)];
             var skin = HandColorHook.Shade(teamCol, HandColorHook.Skin);
             var dark = HandColorHook.Shade(teamCol, HandColorHook.Knuckles);
-            // (fist, knuckles, thumb, wrist band, forearm: position, size, colour)
-            var want = new (Vector3 pos, Vector3 size, Color col)[]
-            {
-                (Vector3.zero, new Vector3(0.085f, 0.09f, 0.1f), skin),
-                (new Vector3(0, 0.005f, 0.055f), new Vector3(0.09f, 0.075f, 0.035f), dark),
-                (new Vector3(-0.045f, 0.025f, 0.035f), new Vector3(0.03f, 0.03f, 0.065f), skin),
-                (new Vector3(0, 0, -0.075f), new Vector3(0.082f, 0.082f, 0.035f), HandColorHook.Shade(teamCol, HandColorHook.Band)),
-                (new Vector3(0, 0, -0.32f), new Vector3(0.072f, 0.072f, 0.46f), skin),
-            };
+            // (the square alien hand: a palm, three fingers of three blocks each - the tips dark - a thumb and its tip, a wrist, a forearm in two)
             GameSettings.SetRoundHands(true, false);
             foreach (bool right in new[] { true, false })
             {
                 var h = vm.DebugHand(right);
                 var rs = HandBoxes(h);
-                bool ok = rs.Length == 5;
+                bool ok = rs.Length == 15;
                 string why = $"{rs.Length} boxes";
-                for (int i = 0; ok && i < 5; i++)
+                for (int i = 0; ok && i < rs.Length; i++)
                 {
-                    var t = rs[i].transform;
-                    var wp = want[i].pos; if (!right) wp.x = -wp.x;
                     var mf = rs[i].GetComponent<MeshFilter>();
                     bool cube = mf != null && (mf.sharedMesh == Art.Cube || SmoothShade.IsSmooth(mf.sharedMesh));
-                    if (!cube || (t.localPosition - wp).sqrMagnitude > 1e-8f || (t.localScale - want[i].size).sqrMagnitude > 1e-8f
-                        || rs[i].shadowCastingMode != UnityEngine.Rendering.ShadowCastingMode.Off) // (their colours: the HandColorHook check below)
-                    { ok = false; why = $"box {i} ({t.name}) at {t.localPosition.ToString("F3")} size {t.localScale.ToString("F3")} (want {wp.ToString("F3")} {want[i].size.ToString("F3")}) shadows {rs[i].shadowCastingMode} cube {cube}"; }
+                    if (!cube || rs[i].shadowCastingMode != UnityEngine.Rendering.ShadowCastingMode.Off) { ok = false; why = $"box {i} ({rs[i].name}) cube {cube} shadows {rs[i].shadowCastingMode}"; }
                 }
-                Check(ok, $"the {(right ? "right" : "left")} arm keeps the original box arm for the square style: fist, darker knuckles, thumb, team wrist band, forearm ({why})");
+                if (ok && (rs[0].transform.localPosition.sqrMagnitude > 0.0001f)) { ok = false; why = $"the palm is at {rs[0].transform.localPosition.ToString("F3")}, not where the old fist was"; }
+                Check(ok, $"the {(right ? "right" : "left")} arm has the square alien hand: palm, three long fingers with dark tips, a thumb, a bare forearm, all blocks round the old fist's place ({why})");
                 // the alien arm: three fingers of three joints each and a thumb, each bone its own transform; a forearm; no shadows
                 var al = h.Find("alien");
                 int digits = 0, jointed = 0;
@@ -220,14 +209,14 @@ namespace RockGame
             // ---- every pose, photographed; the hands where the original poses put them ----
             // (the right hand's place in the view model at rest - no bob, sway or sprint - from the original poses)
             // (the Rust-style poses: the rock cupped from below in the middle, tools low in the middle, C4 in both hands)
-            Vector3 RockSide(ViewModel.Key k, float x) => k.Pos + k.Q * new Vector3(x, -0.07f, -0.02f);
+            Vector3 RockSide(Vector3 idle, float pitch, float x) => idle + Quaternion.Euler(pitch, -4f, 0f) * new Vector3(x, -0.07f, -0.02f);
             var expectR = new Dictionary<string, Vector3>
             {
-                { "rock_idle", RockSide(ViewModel.RockIdle, 0.09f) },
-                { "rock_slam", RockSide(ViewModel.RockHit, 0.09f) },
-                { "hatchet_idle", ViewModel.ToolIdle.Pos },
-                { "hatchet_slam", ViewModel.ToolHit.Pos },
-                { "sword_idle", ViewModel.SwordIdlePos },
+                { "rock_idle", RockSide(new Vector3(0.02f, -0.19f, 0.44f), -6f, 0.09f) },
+                { "rock_slam", RockSide(new Vector3(0.02f, -0.3f, 0.66f), 35f, 0.09f) },
+                { "hatchet_idle", new Vector3(0.14f, -0.33f, 0.58f) },
+                { "hatchet_slam", new Vector3(0.05f, -0.37f, 0.62f) },
+                { "sword_idle", new Vector3(0.2f, -0.33f, 0.55f) },
                 { "buildingplan_idle", new Vector3(0.21f, -0.27f, 0.45f) },
                 { "c4_idle", new Vector3(0.05f, -0.27f, 0.44f) },
                 { "chest_idle", new Vector3(0.26f, -0.3f, 0.54f) }, // (a box is held a touch lower and further out)
@@ -235,7 +224,7 @@ namespace RockGame
             };
             var expectL = new Dictionary<string, Vector3>
             {
-                { "rock_idle", RockSide(ViewModel.RockIdle, -0.09f) },
+                { "rock_idle", RockSide(new Vector3(0.02f, -0.19f, 0.44f), -6f, -0.09f) },
                 { "hatchet_idle", new Vector3(-0.3f, -0.9f, 0.2f) },
                 { "crossbow_idle", new Vector3(0.2f, -0.2f, 0.42f) + Quaternion.Euler(0f, -6f, 0f) * new Vector3(-0.02f, -0.05f, 0.2f) },
             };

@@ -49,6 +49,11 @@ namespace RockGame
             public int BreachTeam = -1;
             public Container Drop;
             public PlayerNet DropBot;
+            // a human teammate's orders (BotBrain.Talk.cs), and a teammate being hit
+            public PlayerNet Follow, HelpOf, HelpBot;
+            public float FollowUntil, OrderUntil, OrderAt = -100f, HelpAt = -100f;
+            public Plan Order;
+            public Vector3 HelpPos;
         }
 
         static readonly Mind[] s_Minds = new Mind[4];
@@ -138,7 +143,9 @@ namespace RockGame
                 m.Stance = want;
                 m.StanceSince = Time.time;
                 if (want == Stance.Siege) { m.RaidTeam = sock; StartRally(m, team, sock, style); m.Sieges++; }
+                StanceCallout(m, team, carrier);
             }
+            HelpTick(m, team);
             if (m.Stance == Stance.Siege) SiegeTick(g, m, team);
             PickRoles(m, team, style);
             PickDrop(m, team, live && !pre);
@@ -157,6 +164,7 @@ namespace RockGame
                 }
                 if (m.Seen.TryGetValue(p, out var s) && now - s.at < 1f && Flat(pp, home) < 3f * OuterR(team) + 10f && live && !pre)
                 {
+                    if (now - m.AlarmAt > 10f) TeamSay(team, $"{p.DisplayName} is in our base!", "alarm", 25f);
                     m.AlarmAt = now;
                     m.AlarmPos = pp;
                 }
@@ -213,6 +221,7 @@ namespace RockGame
                 {
                     m.Go = true;
                     m.GoAt = Time.time;
+                    TeamSay(team, humanIn ? "You're in? Right behind you - GO!" : "Everyone here - GO GO GO!", "go", 15f);
                 }
             }
             else if (Time.time - m.GoAt > 15f && close == 0)
@@ -220,7 +229,8 @@ namespace RockGame
                 // nobody left in there (dead, or beaten back): regroup and try again - geared up first, unless there's no time
                 m.Wipes++;
                 StartRally(m, team, enemy, TeamStyleOf(team));
-                if (Danger(g, team) < 0.75f) { m.Stance = Stance.Prepare; m.StanceSince = Time.time; }
+                if (Danger(g, team) < 0.75f) { m.Stance = Stance.Prepare; m.StanceSince = Time.time; TeamSay(team, "They held us off. Gearing up - next time we bring more.", "wipe", 30f); }
+                else TeamSay(team, "No time - regroup and go again!", "wipe", 30f);
             }
         }
 

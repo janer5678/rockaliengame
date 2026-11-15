@@ -336,7 +336,13 @@ namespace RockGame
             int armour = m_P.ArmorHp.Value;
             m_P.CraftRpc(m_WantIdx);
             m_HoldFor = 0;
-            if (CountItem(item) > before || m_P.ArmorHp.Value != armour) Crafted++;
+            if (CountItem(item) > before || m_P.ArmorHp.Value != armour)
+            {
+                Crafted++;
+                // new gear worth a word to the team (the tech ladder, the raiding kit)
+                if (System.Array.IndexOf(k_Ladder, item) >= 0 || item == Item.C4 || item == Item.Ram || item == Item.Workbench || item == Item.Workbench2)
+                    Say(item == Item.Workbench || item == Item.Workbench2 ? $"Made the {Cfg.ItemName(item)} - putting it down." : $"Got {ItemWord(item)}.", "got" + m_P.NetworkObjectId, 25f);
+            }
             else m_CraftFail[item] = Time.time + 30f; // (didn't go through - not again for a while; Builder: it's queued)
             Done();
         }

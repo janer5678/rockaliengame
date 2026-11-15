@@ -281,6 +281,42 @@ namespace RockGame
         /// </summary>
         bool GoalJob(NetGame g)
         {
+            if (!ScoreSteps(g)) return false;
+            var cur = Cfg.CurrencyItem;
+            int onHand = m_P.Count(cur);
+            int wealth = onHand + ChestStock();
+            int reserved = 0;
+            foreach (var st in m_Steps)
+            {
+                bool cheap = st.Cost <= CheapCost;
+                bool ok = cheap ? onHand >= st.Cost || wealth - reserved >= st.Cost + Mathf.RoundToInt(m_Keep) : wealth - reserved >= st.Cost;
+                if (ok && StartStep(st, onHand)) return true;
+                if (!cheap) reserved += st.Cost;
+            }
+            return false;
+        }
+
+        /// <summary>The big thing it's saving up for (the most wanted step it can't pay for yet), what it'll cost, and how
+        /// far off it is (false: nothing it can't already afford).</summary>
+        bool SavingFor(out Item item, out int cost, out int have)
+        {
+            item = Item.None; cost = 0;
+            have = m_P.Count(Cfg.CurrencyItem) + ChestStock();
+            var g = NetGame.Instance;
+            if (g == null || !ScoreSteps(g)) return false;
+            foreach (var st in m_Steps)
+            {
+                if (st.Cost <= CheapCost || have >= st.Cost) continue;
+                item = st.Kind == StepKind.Piece ? Item.BuildingPlan : st.Item;
+                cost = st.Cost;
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>Every goal's next step, most wanted first (m_Steps; m_Focus the top one). False: none.</summary>
+        bool ScoreSteps(NetGame g)
+        {
             Score();
             m_Steps.Clear();
             int team = MyTeam;
@@ -308,18 +344,7 @@ namespace RockGame
             if (UpgradeStep(out s)) { s.Score = EnemyBest(s_Upgrades) - s_Upgrades[team] + bias(Goal.Upgrades); m_Steps.Add(s); }
             m_Steps.Sort((a, b) => b.Score.CompareTo(a.Score));
             m_Focus = m_Steps.Count > 0 ? m_Steps[0].Goal : Goal.None;
-            var cur = Cfg.CurrencyItem;
-            int onHand = m_P.Count(cur);
-            int wealth = onHand + ChestStock();
-            int reserved = 0;
-            foreach (var st in m_Steps)
-            {
-                bool cheap = st.Cost <= CheapCost;
-                bool ok = cheap ? onHand >= st.Cost || wealth - reserved >= st.Cost + Mathf.RoundToInt(m_Keep) : wealth - reserved >= st.Cost;
-                if (ok && StartStep(st, onHand)) return true;
-                if (!cheap) reserved += st.Cost;
-            }
-            return false;
+            return m_Steps.Count > 0;
         }
 
         /// <summary>Go and do it - fetching the wood from the team chest first if it's short.</summary>

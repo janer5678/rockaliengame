@@ -11,13 +11,13 @@ namespace RockGame
         /// rounded off, the rigged alien arms, or the smooth chunky hands (SmoothHand.cs).</summary>
         public const int HandsSquare = 0, HandsRound = 1, HandsAlien = 2, HandsSmooth = 3;
         public static readonly string[] HandStyleNames = { "Square", "Round", "Alien", "Smooth" };
-        /// <summary>Which hands (the smooth hands to start with - a new key, so the last default doesn't stick; the
+        /// <summary>Which hands (the square alien hands to start with - a new key, so the last default doesn't stick; the
         /// others are one click away in Settings > Display > Hands).</summary>
         public static int HandStyle
         {
-            get { if (s_HandStyle < 0) s_HandStyle = Mathf.Clamp(PlayerPrefs.GetInt(k_HandStyleKey, HandsSmooth), 0, 3); return s_HandStyle; }
+            get { if (s_HandStyle < 0) s_HandStyle = Mathf.Clamp(PlayerPrefs.GetInt(k_HandStyleKey, HandsSquare), 0, 3); return s_HandStyle; }
         }
-        const string k_HandStyleKey = "RockGame.HandStyle6";
+        const string k_HandStyleKey = "RockGame.HandStyle7";
         /// <summary>The rigged alien arms are the ones showing.</summary>
         public static bool RoundHands => HandStyle == HandsAlien;
         /// <summary>Hands with fingers are the ones showing - the alien arms or the smooth hands (ViewModel.Fingers.cs

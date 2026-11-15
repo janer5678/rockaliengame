@@ -143,8 +143,8 @@ namespace RockGame
         void TickEscort()
         {
             var b = Ball.Instance;
-            var c = b != null ? b.Carrier : null;
-            if (c == null || c.Team.Value != MyTeam) { Done(); return; }
+            var c = m_EscortOf != null ? m_EscortOf : b != null ? b.Carrier : null; // (a teammate it's following or helping: BotBrain.Talk.cs)
+            if (c == null || !c.IsSpawned || c.Dead.Value || c.Team.Value != MyTeam || c == m_P) { m_EscortOf = null; Done(); return; }
             var at = c.transform.position - c.transform.forward * 3f + c.transform.right * 2.5f * m_SideSign;
             GoTo(at, 1.5f, Flat(at, transform.position) > 3f);
         }

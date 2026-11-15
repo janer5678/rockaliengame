@@ -59,6 +59,9 @@ namespace RockGame
         }
 
         float m_PlanStarted;
+        Item m_SavingFor;
+        /// <summary>(tests, spectating) the big thing it last set out to save up for.</summary>
+        public Item SavingTarget => m_SavingFor;
 
         /// <summary>A Rusher, half a minute before the wall drops: time to go and wait at the glass by the ball.</summary>
         bool WantsRush(NetGame g) =>
@@ -117,6 +120,7 @@ namespace RockGame
             if (WantsRush(g)) { StartPlan(Plan.Rush, load); return; }
             // the team's stance comes first after the drop: a siege, a loose ball, a carrier, holding the ball (BotBrain.Team.cs)
             var mind = MindOf(team);
+            if (OrderPlan(mind, load)) return; // (a human teammate's order: BotBrain.Talk.cs)
             if (live && !pre && withBall && StancePlan(mind, g, load)) return;
             if (mind.Stance == Stance.Prepare)
             {
@@ -163,6 +167,16 @@ namespace RockGame
                 case Plan.Farm:
                     m_PlanWood = m_P.Count(Cfg.CurrencyItem) + Mathf.RoundToInt(load * Random.Range(0.6f, 1.1f));
                     m_PlanUntil = Time.time + Random.Range(60f, 120f);
+                    // saving up for something big (a crossbow, the next Trade Station): out till it has enough for it
+                    if (SavingFor(out var want, out int cost, out int have))
+                    {
+                        int need = cost - have + 20;
+                        int carry = InvOps.Space(m_P.Inv, Cfg.GatherItem(Item.Wood)) + m_P.Count(Cfg.CurrencyItem) - 20;
+                        m_PlanWood = Mathf.Max(m_PlanWood, Mathf.Min(m_P.Count(Cfg.CurrencyItem) + need, carry));
+                        m_PlanUntil = Time.time + Random.Range(90f, 150f);
+                        m_SavingFor = want;
+                        Say($"Saving up for {ItemWord(want)} ({have}/{cost} wood).", "save" + m_P.NetworkObjectId, 70f);
+                    }
                     break;
                 case Plan.Build: m_PlanUntil = Time.time + 120f; break; // (it ends sooner, when there's nothing left it can pay for: PlanJob)
                 case Plan.Raid: m_PlanUntil = Time.time + Random.Range(60f, 110f); break;
