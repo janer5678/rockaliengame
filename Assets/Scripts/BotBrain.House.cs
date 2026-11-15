@@ -354,7 +354,10 @@ namespace RockGame
                         routed = true;
                         if (Flat(pos, dp) < 2.8f) OpenDoor(m_RouteDoor);
                         float off = Mathf.Abs(Vector3.Dot(pos - dp, Vector3.Cross(Vector3.up, m_RouteN)));
-                        return off < 0.45f || past > 0.3f ? dp + m_RouteN * 1.8f : dp - m_RouteN * 1.3f; // (lined up, or through the gap already: straight on; off to one side of it - even half into it - back level with it first, or it rubs along the frame)
+                        // (the gap's 1.2 m and a body's 0.8 m across: lined up to a hand's width or it catches the frame - so on the
+                        // centre line through it; off it before the gap, onto the line first; wedged half in, back out a step onto it)
+                        if (past > 0.3f || off < 0.12f) return dp + m_RouteN * 1.8f;
+                        return dp + m_RouteN * Mathf.Min(past - 0.6f, -0.9f);
                     }
                 }
             }
@@ -586,7 +589,7 @@ namespace RockGame
             var lat = Vector3.Cross(Vector3.up, n);
             float off = Vector3.Dot(pos - dp, lat);
             // off to one side of the gap: back out a step, level with it; lined up: through
-            m_Detour = Mathf.Abs(off) > 0.35f ? dp + n * side * 1.3f : dp - n * side * 1.8f;
+            m_Detour = Mathf.Abs(off) > 0.12f ? dp + n * side * 1.3f : dp - n * side * 1.8f;
             m_DetourUntil = Time.time + 1.2f;
             m_DoorDetour = true;
             m_SteerUntil = 0f;

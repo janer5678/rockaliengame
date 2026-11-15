@@ -121,8 +121,8 @@ namespace RockGame
             if (open)
             {
                 // lined up with it: straight through; otherwise round to the front of it first
-                if (off < 0.7f && ahead < 2.4f) GoTo(through, 0.2f, true);
-                else GoTo(front, 0.3f, true);
+                if (off < 0.15f && ahead < 2.4f) GoTo(through, 0.2f, true);
+                else GoTo(front, 0.05f, true);
                 m_LookAt = through + Vector3.up * 1.4f;
                 return true;
             }
@@ -313,7 +313,7 @@ namespace RockGame
             var lat = Vector3.Cross(Vector3.up, n);
             float off = Mathf.Abs(Vector3.Dot(pos - dp, lat));
             float ahead = Vector3.Dot(pos - dp, n * side);
-            GoTo(off < 0.7f && ahead < 2.4f ? dp - n * side * 2f : dp + n * side * 1.3f, 0.2f, true);
+            GoTo(off < 0.15f && ahead < 2.4f ? dp - n * side * 2f : dp + n * side * 1.3f, 0.05f, true);
             m_HasLook = true;
             m_LookAt = t.EyePos;
             return true;
